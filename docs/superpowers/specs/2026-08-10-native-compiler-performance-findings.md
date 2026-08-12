@@ -348,7 +348,7 @@ failure branches); one-error-then-abort parsing; host-side DisposePtr
 The language *design* is not inherently slow — the systemic problems are
 three implementation decisions:
 
-### 2.1 `string` is a 256-byte by-value Str255
+### 2.1 `string` is a 256-byte by-value Str255 [FIXED 2026-08-12 — param ABI by-address (immutable params); storage unchanged; see 2026-08-12-param-abi-immutability-design.md]
 
 Every parameter, return, list element, and map key slot copies 256 bytes
 regardless of content (`cgSizeOf(KStr)` = 256, `cg68k.cla:1231`;

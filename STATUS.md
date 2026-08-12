@@ -1,9 +1,9 @@
-# Session status — 2026-08-11 (layer1-compiler-perf close-out)
+# Session status — 2026-08-12 (param-abi close-out)
 
-Handoff summary for the next session. Branch: `worktree-native-perf-findings`
-(stacked on unmerged `mac-resident-clarusc` → `map-hashtable` →
-`datetime-instrumentation`, pushed to origin, **not merged** — merge is
-Andrew's call).
+Handoff summary for the next session. Current branch: `param-abi` (stacked
+on unmerged `memory-leak-fix` → `layer1-compiler-perf` → `datetime-
+instrumentation` → `map-hashtable` → `mac-resident-clarusc`, **not
+merged** — merge is Andrew's call).
 
 ## Why this session happened
 
@@ -127,9 +127,68 @@ With both fixed, T2 is fully green. Next: the Snow two-compile rerun (step
 1 below) is the remaining validation step for the leak fix on real
 hardware (expect compile #2 timings to now track compile #1's, not the
 degraded ~4x-slower numbers the original investigation measured); after
-that, merge decisions cover five stacked phases (`mac-resident-clarusc`,
+that, merge decisions cover six stacked phases (`mac-resident-clarusc`,
 `map-hashtable`, `datetime-instrumentation`, `layer1-compiler-perf`,
-`memory-leak-fix`).
+`memory-leak-fix`, `param-abi`).
+
+## 4. param-abi phase close-out (2026-08-12, this session, branch `param-abi`)
+
+**Phase complete on branch `param-abi` (stacked on `memory-leak-fix`).**
+Implements the 2026-08-10 performance findings doc's §2.1: immutable
+parameters (language + checker) plus by-address `KStr`/`KRec` parameter
+passing on both lanes (storage unchanged — see the ROADMAP's param-abi
+entry for full detail, design doc, and fix-round history). 8 tasks,
+commits `94725e2..f210e4f`; ledger:
+`.superpowers/sdd/2026-08-12-param-abi-immutability/progress.md`.
+
+- **Snapshot regen (Task 8 step 1):** `clarusc/clarusc.c` regenerated to a
+  Go-free fixed point in 2 iterations (the first re-emission still
+  differed — `retain_FuncSig`/`retain_Scope`/etc. gained `const` params —
+  a second boot-and-reemit cycle converged to byte-identical output).
+  `TestSnapshotFixedPoint` PASS.
+- **Full selfhost gate (Task 8 step 2):** `go test ./internal/selfhost
+  -count=1 -timeout 30m` — **green, 0 failures, 89s** (`TestClarusModules`
+  incl. `check_test`/`asm68k_test`, `TestErrorGoldens` incl.
+  `param_assign`, `TestSnapshotFixedPoint`, the works).
+- **Perf (Task 8 step 3), 10-pair interleaved medians, old = merge-base
+  `cc3f798` snapshot vs. new = this phase's regenerated snapshot:**
+
+  | Benchmark | Old | New | Delta |
+  |---|---|---|---|
+  | Host self-compile (`emit clarusc/main.cla`) | 0.42s | 0.39s | 1.08x faster |
+  | `emit68k testdata/cg68k/tickprobe.cla` wall time | 0.02s | 0.02s | no measurable change |
+  | Peak RSS, `emit68k tickprobe.cla` | 29.35 MB | 30.64 MB | ~4% higher |
+
+  `tickprobe.cla` is too small a fixture to exercise the copy-avoidance
+  this phase targets; its numbers are dominated by fixed compiler-process
+  overhead (the new snapshot's larger generated-C, ~3.45MB vs ~3.42MB,
+  plausibly explains the small RSS bump). The frozen-`macgui.cla` macro
+  (`/tmp/l1src`, the layer1 phase's real-multi-segment-workload
+  benchmark) was **SKIPPED** — its frozen source predates this phase's
+  own immutable-parameters checker and now fails to compile against it
+  (11 `cannot assign to parameter` errors across
+  `lib.cla`/`lower.cla`/`res68k.cla`/`cg68k.cla`/`drive.cla`). A fresh
+  frozen snapshot taken post-param-abi would be needed to recover that
+  signal.
+- **T2's full emulator body still owed before merge** — `scripts/
+  test-merge.sh`'s gated native `internal/mactest` lane was not run this
+  session (Andrew's merge-gate call, per standing convention). T1 + the
+  full `internal/selfhost` body are green.
+- **Docs (Task 8 step 4):** findings doc §2.1 annotated `[FIXED
+  2026-08-12]`; ROADMAP phase entry added (design/plan paths, task
+  ledger, fix rounds, perf table, deferred items); this STATUS section.
+- **Deferred (full detail in ROADMAP entry):** bare-`EIntr` arg release
+  gap on both lanes (pre-existing, narrowed not closed); `KArr` param ABI
+  still out of scope (KStr/KRec only this phase); `toBytes` mutation
+  guard fires on method name alone (inert today, one registrant).
+
+**Next steps unblocked by this phase:** the precompiled-artifacts design
+notes (`docs/superpowers/specs/
+2026-08-12-precompiled-artifacts-design-notes.md`) were deliberately
+parked pending this ABI rewrite (its own "Sequencing decision" section) —
+that prerequisite is now satisfied, so a future session can pick that doc
+back up and plan the bake/object-code/artifact-cache work on a frozen
+param ABI.
 
 ## Recommended next steps (in order)
 
@@ -195,15 +254,28 @@ that, merge decisions cover five stacked phases (`mac-resident-clarusc`,
    including its §3b amendment) — full detail in the ROADMAP's
    `clarusc-live-log` phase entry. Frozen-scenario goldens re-verified,
    no churn.
-4. Pick a Layer-2/Layer-3 target once on-Mac numbers exist: candidates are
-   `string`'s 256-byte `Str255` representation, §1.7's full double-codegen
-   fix (needs relocation), or codegen's calls-out-for-everything pattern
-   (findings doc §2.3).
+4. **PARTIALLY DONE (param-abi phase, 2026-08-12) — see section 4 above.**
+   §2.1 (`string`'s by-value `Str255` call ABI) is fixed — parameters now
+   pass `KStr`/`KRec` by address, storage unchanged. Remaining
+   Layer-2/Layer-3 candidates: §1.7's full double-codegen fix (needs
+   relocation — this is now unblocked to plan against a frozen ABI, see
+   the precompiled-artifacts design notes), or codegen's
+   calls-out-for-everything pattern (findings doc §2.3).
 5. **DONE (memory-leak-fix phase close-out, 2026-08-12) — see section 3
    above.** T2 (`scripts/test-merge.sh`'s `go test ./internal/selfhost`
    body) is fully green; the two pre-existing `TestClarusModules` goldens
    are fixed.
 6. Merge decisions (Andrew's): `mac-resident-clarusc` still gated on a
    Snow acceptance PASS; `map-hashtable`, `datetime-instrumentation`,
-   `layer1-compiler-perf`, and `memory-leak-fix` are all review-approved
-   and stacked on top of it, unmerged.
+   `layer1-compiler-perf`, `memory-leak-fix`, and `param-abi` are all
+   stacked on top of it, unmerged. `param-abi` additionally still owes a
+   full `scripts/test-merge.sh` run (the gated native `internal/mactest`
+   emulator lane) before it's merge-ready — T1 + full `internal/selfhost`
+   are green, but the native T2 boots have not been run this phase.
+7. **Precompiled-artifacts work is now unblocked** (param-abi phase
+   close-out, 2026-08-12): the design notes doc's own "Sequencing
+   decision" named the param-ABI rewrite as the prerequisite before
+   freezing the ABI surface for baked/object-code artifacts; that
+   prerequisite landed this phase. Next session can pick
+   `docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`
+   back up and turn it into a spec/plan.

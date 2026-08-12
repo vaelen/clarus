@@ -876,6 +876,113 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   compile #1's per-phase timing (the direct prediction of the 0-growth
   result above), then the formal Snow acceptance PASS.
 
+- **param-abi (branch `param-abi`, 2026-08-12, based on `memory-leak-fix`):
+  DONE (T1 + selfhost; T2 emulator body still owed before merge).**
+  Implements the 2026-08-10 performance findings doc's §2.1 in its agreed
+  "smaller cut, widened" form: design
+  `docs/superpowers/specs/2026-08-12-param-abi-immutability-design.md`,
+  plan `docs/superpowers/plans/2026-08-12-param-abi-immutability.md`. Two
+  coupled changes: (1) **language: parameters are immutable** — rebinding
+  a parameter, or storing through a value-typed parameter, is now a build
+  error (checker rule + reference update); (2) **ABI: `string` and record
+  parameters pass by address** (4-byte pointer) on both lanes instead of
+  copying the full 256-byte `Str255`/record payload at every call site,
+  with call-site classification into borrow (pass the existing address)
+  vs. copy (materialize a temp first) so callee-side immutability is
+  actually load-bearing at the ABI level. Storage is unchanged —
+  `cgSizeOf(KStr)` stays 256, records stay inline; this is call-convention
+  only, not the separate variable-length-string-storage question.
+
+  **8 tasks, commits `94725e2..f210e4f`; full ledger:
+  `.superpowers/sdd/2026-08-12-param-abi-immutability/progress.md`.**
+  Task 1 migrated the 13 pre-existing param-rebinding call sites ahead of
+  the language change; Task 2 added the checker rule + reference update;
+  Task 3 added IR/lowering per-arg borrow/copy classification (no
+  behavior change yet); Task 4 landed core-suite aliasing guard cases
+  that pass both before and after the ABI flip (58 → 62 cases); Tasks 5/6
+  flipped the host (cprint) and native (cg68k) lanes to by-address
+  KStr/KRec params; Task 7 deleted the now-redundant callee-entry param
+  retain/release walks; Task 8 (this entry) regenerated the bootstrap
+  snapshot to a fixed point, ran the full selfhost gate, measured perf,
+  and closed out docs.
+
+  **Fix rounds:**
+  - **Task 1:** a MacRoman 0xD1 byte in a `lib.cla` comment was corrupted
+    to U+FFFD by the initial edit pass — restored byte-for-byte.
+  - **Task 2 (3 Critical):** the first checker pass only gated bare
+    identifiers; `file.load` record fill, `askOpen`/`askSave` (missed
+    field-of-param roots), and `fromBytes`/`toBytes` method mutation all
+    slipped through unguarded. Fixed via a shared `isParam`-gating helper
+    threaded through the ~30-routine builtin table, with a full
+    enumeration spot-check on re-review.
+  - **Task 5 (1 Critical):** an ARC leak on nested-call/inline-new
+    borrowed record arguments — `ECallFn`/`ENewRec` record rvalues
+    reached via the `fpAddrable` fallback stripped ARC tracking through
+    `fpHandoff`, so `useDoc(makeDoc())`-shaped calls leaked a handle per
+    call, invisible to every existing gate. Fixed with kind-dispatch in
+    `fpCallFnArg` (an `ENewRec` value is never addressable in C, so an
+    exempt-list approach was rejected in favor of dispatching on the
+    argument's expression kind); added a new mandatory core-suite case
+    (`ParamNestedCallArg`, case 62) so the shape stays covered.
+  - **Task 6 (native lane):** a hardware-only D0/D1 register clobber in
+    `cgFlushArgReleases` on the 68k lane, caught only because Task 6 also
+    ran the native T2 suite boots as a bonus check (62/62 core, 25/25
+    toolbox, both green) — fixed once A1 was confirmed protected by
+    `cgEmitRecWalkCall` itself and A0 scratch by calling convention.
+
+  **Measured results (10-pair interleaved medians; old = merge-base
+  `cc3f798`'s bootstrap snapshot, new = this phase's regenerated
+  snapshot, both built with the current `runtime/host`):**
+
+  | Benchmark | Old | New | Delta |
+  |---|---|---|---|
+  | Host self-compile (`emit clarusc/main.cla`) | 0.42s | 0.39s | 1.08x faster |
+  | `emit68k testdata/cg68k/tickprobe.cla` wall time | 0.02s | 0.02s | no measurable change (10ms `time` resolution floor) |
+  | Peak RSS, `emit68k tickprobe.cla` | 29.35 MB | 30.64 MB | ~4% higher |
+
+  Honest read: `tickprobe.cla` is a tiny fixture (2-3 functions), too
+  small to exercise the copy-avoidance this phase is actually for — its
+  wall time and RSS are dominated by fixed compiler-process overhead
+  (the new snapshot's larger generated-C size, ~3.45MB vs ~3.42MB,
+  plausibly accounts for the small RSS increase) rather than by the ABI
+  change. The self-compile number (clarusc compiling its own
+  string-parameter-dense ~13k-line source) is the more representative
+  signal, and it is modestly positive. The layer1 phase's own findings
+  doc note applies again here: **host self-compile gains are structurally
+  modest; a large multi-segment 68k workload is where a call-convention
+  win like this should show up clearly** — see the deferred frozen-fixture
+  item below.
+
+  **Deferred / debt:**
+  - **Frozen-fixture macro SKIPPED, not measured.** The layer1 phase's
+    `/tmp/l1src` frozen-`macgui.cla` procedure (`docs/superpowers/plans/
+    2026-08-11-layer1-compiler-perf.md`'s byte-identity gate) is the one
+    benchmark that would exercise a real multi-segment compile — but its
+    frozen source predates this phase's own immutable-parameters checker
+    rule and now fails to compile against it (`cannot assign to
+    parameter` on 11 pre-existing param-rebinding sites in the frozen
+    `lib.cla`/`lower.cla`/`res68k.cla`/`cg68k.cla`/`drive.cla`). A future
+    phase wanting this signal needs a fresh frozen snapshot taken
+    post-param-abi.
+  - **Bare-`EIntr` arg release gap, both lanes** (pre-existing, narrowed
+    but not closed by Task 6): `list_pop`/`list_shift` results passed
+    directly as a borrowed call argument get no scheduled release on
+    either lane — pre-dates this phase, flagged again here.
+  - **`KArr` param ABI still out of scope.** This phase covers `KStr`/
+    `KRec` only; array parameters still copy by value at the ABI level.
+  - **`toBytes` name-only guard nit** (Task 2, deferred as inert): the
+    mutation guard fires on the method name alone, before the
+    receiver-kind switch — harmless today because only
+    `stringTextMethods` registers a method named `toBytes`, but not a
+    principled check.
+
+  **T2 owed before merge:** the full `scripts/test-merge.sh` body
+  (`internal/selfhost` plus the gated native `internal/mactest` emulator
+  lane) was not run this session — Andrew's merge-gate call, per
+  standing project convention. T1 + the full `internal/selfhost` gate
+  (including `TestSnapshotFixedPoint`, `TestClarusModules`, and
+  `TestErrorGoldens`) are green.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).
