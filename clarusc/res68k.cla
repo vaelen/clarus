@@ -235,20 +235,22 @@ func app68PbmIsDigit(c: int): bool {
 // comments (pbm2icn.c's skip_ws), returning the new position.
 func app68PbmSkipWs(raw: text, pos: int): int {
     var c: int
+    var pos2: int
+    pos2 = pos
 
-    while pos < raw.length {
-        c = int(raw[pos])
+    while pos2 < raw.length {
+        c = int(raw[pos2])
         if app68PbmIsSpace(c) {
-            pos = pos + 1
+            pos2 = pos2 + 1
         } else if c == int('#') {
-            while pos < raw.length and int(raw[pos]) != 10 {
-                pos = pos + 1
+            while pos2 < raw.length and int(raw[pos2]) != 10 {
+                pos2 = pos2 + 1
             }
         } else {
-            return pos
+            return pos2
         }
     }
-    return pos
+    return pos2
 }
 
 func app68PbmGetBit(icon: text, row: int, col: int): int {

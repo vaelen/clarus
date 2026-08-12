@@ -1975,7 +1975,7 @@ LBL_213:
         EORI.L #1,D0
         TST.L D0
         BEQ.W LBL_241
-        JSR 3250(A5)
+        JSR 3234(A5)
 LBL_241:
 LBL_210:
         UNLK A6
@@ -5251,7 +5251,7 @@ LBL_439:
         MOVE.L D0,-36(A6)
         MOVE.L -36(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3242(A5)
+        JSR 3266(A5)
         ADDQ.L #4,A7
         MOVE.L D0,-40(A6)
         MOVE.L -40(A6),D0
@@ -11544,7 +11544,7 @@ LBL_70:
         DC.W $A8A3  ; UiEraseRect
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3242(A5)
+        JSR 3266(A5)
         ADDQ.L #4,A7
         MOVE.L D0,-28(A6)
         MOVE.L -28(A6),D0

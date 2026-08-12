@@ -6037,7 +6037,7 @@ LBL_158:
         MOVE.L D0,-(A7)
         MOVE.L #1903520116,D0
         MOVE.L D0,-(A7)
-        LEA 3258(A5),A0
+        LEA 3242(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -6055,7 +6055,7 @@ LBL_158:
         MOVE.L D0,-(A7)
         MOVE.L #1868656752,D0
         MOVE.L D0,-(A7)
-        LEA 3266(A5),A0
+        LEA 3250(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -6069,7 +6069,7 @@ LBL_158:
         EXT.L D0
         MOVE.L D0,-4(A6)
 LBL_542:
-        JSR 3250(A5)
+        JSR 3234(A5)
 LBL_541:
         UNLK A6
         RTS
@@ -7647,7 +7647,7 @@ LBL_610:
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3234(A5)
+        JSR 3258(A5)
         ADDQ.L #8,A7
 LBL_611:
         MOVEQ #0,D0

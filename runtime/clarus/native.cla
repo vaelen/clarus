@@ -295,20 +295,22 @@ func natItoa(v: int, dst: ptr): int {
     var d: int
     var n: int
     var i: int
+    var v2: int
+    v2 = v
 
-    neg = v < 0
+    neg = v2 < 0
     if neg {
-        v = 0 - v
+        v2 = 0 - v2
     }
     j = 0
-    if v == 0 {
+    if v2 == 0 {
         pokeb(natDigits, int('0'))
         j = 1
     } else {
-        while v > 0 {
-            d = v mod 10
+        while v2 > 0 {
+            d = v2 mod 10
             pokeb(natDigits + j, int('0') + d)
-            v = v / 10
+            v2 = v2 / 10
             j = j + 1
         }
     }

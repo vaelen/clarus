@@ -1935,8 +1935,9 @@ LBL_217:
         ;   local d : -10(A6)  size 4
         ;   local n : -14(A6)  size 4
         ;   local i : -18(A6)  size 4
+        ;   local v2 : -22(A6)  size 4
 LBL_34:
-        LINK A6,#-8314
+        LINK A6,#-8318
         MOVEQ #0,D0
         MOVE.B D0,-2(A6)
         MOVEQ #0,D0
@@ -1947,7 +1948,11 @@ LBL_34:
         MOVE.L D0,-14(A6)
         MOVEQ #0,D0
         MOVE.L D0,-18(A6)
-        MOVE.L 12(A6),D1
+        MOVEQ #0,D0
+        MOVE.L D0,-22(A6)
+        MOVE.L 12(A6),D0
+        MOVE.L D0,-22(A6)
+        MOVE.L -22(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SLT D0
@@ -1958,14 +1963,14 @@ LBL_34:
         TST.L D0
         BEQ.W LBL_222
         MOVEQ #0,D1
-        MOVE.L 12(A6),D0
+        MOVE.L -22(A6),D0
         SUB.L D0,D1
         MOVE.L D1,D0
-        MOVE.L D0,12(A6)
+        MOVE.L D0,-22(A6)
 LBL_222:
         MOVEQ #0,D0
         MOVE.L D0,-6(A6)
-        MOVE.L 12(A6),D1
+        MOVE.L -22(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SEQ D0
@@ -1982,14 +1987,14 @@ LBL_222:
         BRA.W LBL_224
 LBL_223:
 LBL_225:
-        MOVE.L 12(A6),D1
+        MOVE.L -22(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SGT D0
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_226
-        MOVE.L 12(A6),D1
+        MOVE.L -22(A6),D1
         MOVEQ #10,D0
         BSR.W LBL_106
         MOVE.L D0,-10(A6)
@@ -2002,10 +2007,10 @@ LBL_225:
         ADD.L D1,D0
         MOVEA.L (A7)+,A0
         MOVE.B D0,(A0)
-        MOVE.L 12(A6),D1
+        MOVE.L -22(A6),D1
         MOVEQ #10,D0
         BSR.W LBL_105
-        MOVE.L D0,12(A6)
+        MOVE.L D0,-22(A6)
         MOVE.L -6(A6),D1
         MOVEQ #1,D0
         ADD.L D1,D0

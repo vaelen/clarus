@@ -9889,16 +9889,18 @@ func cgEmitStoreStr(dst: int, src: int) {
     var cap: int
     var args: list of int
     var addrs: list of bool
+    var src2: int
+    src2 = src
 
-    sk = irExprKind(src)
+    sk = irExprKind(src2)
     if sk == ECallFn {
-        cgCallFnInto(src, dst)
+        cgCallFnInto(src2, dst)
         return
     }
     if sk == EIntr {
-        nm = poolGet(irIntrName(src))
+        nm = poolGet(irIntrName(src2))
         if nm == "str_concat" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             args = cgFreshIntList()
             args.add(a0e)
@@ -9911,7 +9913,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             return
         }
         if nm == "str_concat_char" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             args = cgFreshIntList()
             args.add(a0e)
@@ -9924,7 +9926,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             return
         }
         if nm == "str_prepend_char" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             args = cgFreshIntList()
             args.add(a0e)
@@ -9937,7 +9939,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             return
         }
         if nm == "str_slice" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             a2e = irExprNext(a1e)
             args = cgFreshIntList()
@@ -9953,7 +9955,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             return
         }
         if nm == "text_slice" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             a2e = irExprNext(a1e)
             args = cgFreshIntList()
@@ -9974,10 +9976,10 @@ func cgEmitStoreStr(dst: int, src: int) {
             // producing EIntr, reached here exactly like str_concat/etc
             // above). Args (fieldAddr, N): fills dst IN PLACE via a clamped
             // rtStrStore(dst, dst's own declared capacity, fieldAddr) --
-            // the SAME generic dst/cap/src shape this function's own tail
+            // the SAME generic dst/cap/src2 shape this function's own tail
             // (below) already uses for a plain EVarRef/EStrConst source,
-            // just with src replaced by the field's raw address.
-            a0e = irIntrArgsHead(src)
+            // just with src2 replaced by the field's raw address.
+            a0e = irIntrArgsHead(src2)
             args = cgFreshIntList()
             args.add(dst)
             args.add(newIRIntConst(irtN(irExprType(dst)), irIntT))
@@ -9994,7 +9996,7 @@ func cgEmitStoreStr(dst: int, src: int) {
         if nm == "lasterr_msg" {
             // Task 12.5: natLastErrMsg() -> dst, a zero-arg hidden-result-
             // pointer call -- the same shape cgCallFnInto uses for a
-            // zero-arg user function, hand-emitted here since src is an
+            // zero-arg user function, hand-emitted here since src2 is an
             // EIntr node, not the ECallFn shape cgCallFnInto expects.
             fi = findIRFuncIdxByName(rnLastErrMsg)
             if fi == -1 or not shakeReachable(fi) {
@@ -10018,7 +10020,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // -- cgEmitFunc's own reverse-offset rule then lands path
             // (pushed last) at 8(A6) and dst at 12(A6), matching
             // `func natFileName(dst: ptr, path: ptr)` exactly.
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             fi = findIRFuncIdxByName(rnFileName)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: natFileName not found/reachable")
@@ -10033,35 +10035,35 @@ func cgEmitStoreStr(dst: int, src: int) {
             return
         }
         if nm == "list_pop" or nm == "list_shift" {
-            cgCopyScratchToDst(cgIntrListPopLike(src, nm), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrListPopLike(src2, nm), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "list_first" or nm == "list_last" {
-            cgCopyScratchToDst(cgIntrListFirstLast(src, nm), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrListFirstLast(src2, nm), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "map_get" {
-            cgCopyScratchToDst(cgIntrMapGet(src, false), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGet(src2, false), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "map_get_dv" or nm == "map_get_dv_birth" {
-            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "map_get_dv_birth", false), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGetDv(src2, nm == "map_get_dv_birth", false), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "sortedmap_get" {
-            cgCopyScratchToDst(cgIntrMapGet(src, true), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGet(src2, true), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "sortedmap_get_dv" or nm == "sortedmap_get_dv_birth" {
-            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "sortedmap_get_dv_birth", true), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGetDv(src2, nm == "sortedmap_get_dv_birth", true), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "intmap_get" {
-            cgCopyScratchToDst(cgIntrIntMapGet(src), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrIntMapGet(src2), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "intmap_get_dv" or nm == "intmap_get_dv_birth" {
-            cgCopyScratchToDst(cgIntrIntMapGetDv(src, nm == "intmap_get_dv_birth"), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrIntMapGetDv(src2, nm == "intmap_get_dv_birth"), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "str_coerce" {
@@ -10073,7 +10075,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // by lowCoerceStr's own construction) and cgExprAddr's the
             // inner expr (now itself materializes via cgExprAddr's own
             // Task 14.7 fallback if the inner expr isn't addressable).
-            src = irIntrArgsHead(src)
+            src2 = irIntrArgsHead(src2)
         } else if nm == "ui_get_field_text" or nm == "ui_get_label_text" {
             // Task 14 (native-5e gate, textwidgets.cla): `field.text` read
             // -- fills dst IN PLACE via rtUiWidgetGetStr(instV, wIdx,
@@ -10086,7 +10088,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // (native-gaps-cleanup Task 5) reuses this identical call
             // shape -- rtUiWidgetGetStr's own RTUI_LABEL arm reads the
             // labels[] slot rtUiWidgetSetStr's RTUI_LABEL arm writes.
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             fi = findIRFuncIdxByName(rnUiWidgetGetStr)
             if fi == -1 or not shakeReachable(fi) {
@@ -10108,7 +10110,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // fills dst in place via rtUiGetTitle(instV, dst255), the
             // window-scoped (no wIdx/prop) sibling of ui_get_field_text
             // just above.
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             fi = findIRFuncIdxByName(rnUiGetTitle)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiGetTitle not found/reachable")
@@ -10128,7 +10130,7 @@ func cgEmitStoreStr(dst: int, src: int) {
     }
 
     // EStrConst/EVarRef (and any other addressable source): a clamped
-    // copy via rtStrStore(dst, dst's own capacity, src) -- routed through
+    // copy via rtStrStore(dst, dst's own capacity, src2) -- routed through
     // cgCallRuntime (task-8-review round 1 fix, Important 2: this was the
     // hand-rolled duplicate cgCallRuntime's own doc comment complained
     // was never actually used) since every argument here is genuinely
@@ -10139,7 +10141,7 @@ func cgEmitStoreStr(dst: int, src: int) {
     args = cgFreshIntList()
     args.add(dst)
     args.add(newIRIntConst(cap, irIntT))
-    args.add(src)
+    args.add(src2)
     addrs = cgFreshBoolList()
     addrs.add(true)
     addrs.add(false)
@@ -10175,12 +10177,14 @@ func cgEmitReturnStr(src: int) {
     var cap: int
     var args: list of int
     var addrs: list of bool
+    var src2: int
+    src2 = src
 
-    sk = irExprKind(src)
+    sk = irExprKind(src2)
     if sk == EIntr {
-        nm = poolGet(irIntrName(src))
+        nm = poolGet(irIntrName(src2))
         if nm == "str_concat" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             args = cgFreshIntList()
             args.add(a0e)
@@ -10193,7 +10197,7 @@ func cgEmitReturnStr(src: int) {
             return
         }
         if nm == "str_concat_char" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             args = cgFreshIntList()
             args.add(a0e)
@@ -10206,7 +10210,7 @@ func cgEmitReturnStr(src: int) {
             return
         }
         if nm == "str_prepend_char" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             args = cgFreshIntList()
             args.add(a0e)
@@ -10219,7 +10223,7 @@ func cgEmitReturnStr(src: int) {
             return
         }
         if nm == "str_slice" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             a2e = irExprNext(a1e)
             args = cgFreshIntList()
@@ -10235,7 +10239,7 @@ func cgEmitReturnStr(src: int) {
             return
         }
         if nm == "text_slice" {
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             a1e = irExprNext(a0e)
             a2e = irExprNext(a1e)
             args = cgFreshIntList()
@@ -10272,7 +10276,7 @@ func cgEmitReturnStr(src: int) {
             // "lasterr_msg" arm and generic tail already use), pushed
             // FIRST (dst), then path's address SECOND -- same declaration
             // order (dst, path) as cgEmitStoreStr's arm.
-            a0e = irIntrArgsHead(src)
+            a0e = irIntrArgsHead(src2)
             fi = findIRFuncIdxByName(rnFileName)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: natFileName not found/reachable")
@@ -10292,7 +10296,7 @@ func cgEmitReturnStr(src: int) {
             // unwrap and fall through to the generic clamped-copy tail
             // below, which already computes cap from cgCurRetType (==
             // target, by lowCoerceStr's own construction).
-            src = irIntrArgsHead(src)
+            src2 = irIntrArgsHead(src2)
         } else {
             log("cg68k: cgEmitReturnStr: intrinsic " + nm + " unsupported in return context")
             quit 1
@@ -10307,7 +10311,7 @@ func cgEmitReturnStr(src: int) {
     }
     a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
-    cgExprAddr(src)
+    cgExprAddr(src2)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     cgCallFunc(fi)
     cgCleanupStack(12)

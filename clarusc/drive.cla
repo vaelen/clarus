@@ -775,30 +775,32 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     var missing: bool
     var diskProbe: text
     var progressLine: string
+    var key2: string
+    key2 = key
 
     altPath = ""
     if hostPaths {
         readPath = normalizePath(rawPath)
         path = readPath
-        key = ""
+        key2 = ""
         if rtDir != "" and readPath.length > rtDir.length and readPath[0, rtDir.length] == rtDir {
-            key = readPath[rtDir.length, readPath.length - rtDir.length]
+            key2 = readPath[rtDir.length, readPath.length - rtDir.length]
         }
-    } else if entry or not feHasKey(key) {
-        // Entry file, or a non-entry file whose key no resource could ever
+    } else if entry or not feHasKey(key2) {
+        // Entry file, or a non-entry file whose key2 no resource could ever
         // satisfy: plain disk-path identity (see the function comment above
-        // for why this must NOT fall through to key-as-identity).
+        // for why this must NOT fall through to key2-as-identity).
         readPath = rawPath
         path = readPath
     } else {
-        // Non-entry, feHasKey(key) true: could be satisfied either way.
+        // Non-entry, feHasKey(key2) true: could be satisfied either way.
         readPath = rawPath
         diskProbe = ""
         if file.readText(readPath, diskProbe) {
             path = readPath
-            altPath = key
+            altPath = key2
         } else {
-            path = key
+            path = key2
         }
     }
 
@@ -819,7 +821,7 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     }
 
     src = ""
-    ok = feReadSource(readPath, key, src)
+    ok = feReadSource(readPath, key2, src)
     if not ok {
         if entry {
             entryFailed = true
@@ -866,7 +868,7 @@ func expand(rawPath: string, entry: bool, key: string): bool {
                 incResolved = drivePathJoin(dir, incName)
                 incKey = ""
                 if not hostPaths {
-                    incKey = driveKeyResolve(key, incName)
+                    incKey = driveKeyResolve(key2, incName)
                 }
                 missing = expand(incResolved, false, incKey)
                 if missing {

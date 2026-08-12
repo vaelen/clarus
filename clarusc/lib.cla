@@ -140,19 +140,21 @@ func numToStr(n: int): string {
     var s: string
     var d: int
     var neg: bool
+    var cur: int
+    cur = n
 
-    if n == 0 {
+    if cur == 0 {
         return "0"
     }
-    neg = n < 0
+    neg = cur < 0
     s = ""
-    while n != 0 {
-        d = n mod 10
+    while cur != 0 {
+        d = cur mod 10
         if d < 0 {
             d = 0 - d
         }
         s = char(48 + d) + s
-        n = n / 10
+        cur = cur / 10
     }
     if neg {
         s = "-" + s
@@ -162,7 +164,7 @@ func numToStr(n: int): string {
 
 // isLetter, isDigit, isAlnum, and isIdentStart mirror
 // internal/lexer/lexer.go's byte predicates exactly (isIdentStart excludes
-// '_' Ñ it's valid only as an identifier continuation character, not a
+// '_' ï¿½ it's valid only as an identifier continuation character, not a
 // start).
 func isDigit(c: char): bool {
     return c >= '0' and c <= '9'

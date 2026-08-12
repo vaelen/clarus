@@ -2342,10 +2342,12 @@ func lowNullValueAppend(tail: int, dst: int, t: int): int {
     var k: IRKind
     var n: int
     var ix: int
+    var t2: int
+    t2 = tail
 
     k = irtKind(t)
     if k == KText or k == KList or k == KMap or k == KSortedMap or k == KIntMap {
-        tail = irStmtListAppend(tail, newIRAssign(dst, newIRIntConst(0, t)))
+        t2 = irStmtListAppend(t2, newIRAssign(dst, newIRIntConst(0, t)))
     } else if k == KRec {
         ri = 0
         while ri < irRecords.count {
@@ -2354,7 +2356,7 @@ func lowNullValueAppend(tail: int, dst: int, t: int): int {
                 while f != -1 {
                     if irtNeedsCtor(irFieldSlotType(f)) {
                         ft = irFieldSlotType(f)
-                        tail = lowNullValueAppend(tail, newIRFieldRef(dst, irFieldSlotName(f), ft), ft)
+                        t2 = lowNullValueAppend(t2, newIRFieldRef(dst, irFieldSlotName(f), ft), ft)
                     }
                     f = irFieldSlotNext(f)
                 }
@@ -2369,12 +2371,12 @@ func lowNullValueAppend(tail: int, dst: int, t: int): int {
             n = irtN(t)
             ix = 0
             while ix < n {
-                tail = lowNullValueAppend(tail, newIRIndexRef(dst, newIRIntConst(ix, irIntT), et), et)
+                t2 = lowNullValueAppend(t2, newIRIndexRef(dst, newIRIntConst(ix, irIntT), et), et)
                 ix = ix + 1
             }
         }
     }
-    return tail
+    return t2
 }
 
 // lowCountedStoreRecVal (ARC Task 7, site 1; extracted for ARC fix-wave
@@ -2499,10 +2501,12 @@ func lowCountedStoreVal(dst: int, srcAst: int, src: int, t: int): int {
     var tmpNameIdx: int
     var head: int
     var tail: int
+    var src2: int
+    src2 = src
 
     tmpNameIdx = -1
-    isBirth = lowStoreIsBirth(srcAst) or lowStoreIntrOwnsResult(src)
-    if irtKind(t) == KText and irtKind(irExprType(src)) == KStr {
+    isBirth = lowStoreIsBirth(srcAst) or lowStoreIntrOwnsResult(src2)
+    if irtKind(t) == KText and irtKind(irExprType(src2)) == KStr {
         // A Text destination fed by a Str source: NEVER lowStoreStmt's own
         // inline ITextStore branch here -- that intrinsic copies the
         // string's bytes into dst's ALREADY-EXISTING buffer IN PLACE
@@ -2524,11 +2528,11 @@ func lowCountedStoreVal(dst: int, srcAst: int, src: int, t: int): int {
         // syntactically non-birth, but the COERCION itself always
         // constructs fresh), the value actually being stored here is
         // always a brand-new box.
-        src = lowCoerceStr(t, src)
+        src2 = lowCoerceStr(t, src2)
         isBirth = true
     }
 
-    srcUsed = src
+    srcUsed = src2
     head = -1
     tail = -1
     if exprKind(srcAst) != ExIdent {
@@ -2588,7 +2592,7 @@ func lowCountedStoreVal(dst: int, srcAst: int, src: int, t: int): int {
         // (NULL-safe), and nulls it after transfer -- memory-leak-fix Task 2, findings root-cause 1.
         irLocalMarkNoBirth(lowAddLocal(tmpNameIdx, t))
         head = newIRExprStmt(newIRIntr(IRelease(), newIRVarRef(tmpNameIdx, false, t), irVoidT))
-        tail = irStmtListAppend(head, newIRAssign(newIRVarRef(tmpNameIdx, false, t), src))
+        tail = irStmtListAppend(head, newIRAssign(newIRVarRef(tmpNameIdx, false, t), src2))
         srcUsed = newIRVarRef(tmpNameIdx, false, t)
     }
 
