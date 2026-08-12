@@ -7801,18 +7801,8 @@ LBL_570:
         RTS
         ; func smokeTakePoint  (JT slot 104)
         ;   param p : 8(A6)  size 4
-        ;   local __ret3 : -4(A6)  size 4
 LBL_103:
-        LINK A6,#-8300
-        MOVEQ #0,D0
-        MOVE.L D0,-4(A6)
-        MOVEA.L 8(A6),A0
-        MOVE.L A1,-(A7)
-        LEA 0(A0),A0
-        MOVE.L A0,-(A7)
-        BSR.W LBL_229
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
+        LINK A6,#-8296
         MOVEA.L 8(A6),A0
         LEA 0(A0),A0
         MOVE.L (A0),D0
@@ -7829,15 +7819,6 @@ LBL_103:
         MOVE.L (A0),D0
         MOVE.L (A7)+,D1
         ADD.L D1,D0
-        MOVE.L D0,-4(A6)
-        MOVEA.L 8(A6),A0
-        MOVE.L A1,-(A7)
-        LEA 0(A0),A0
-        MOVE.L A0,-(A7)
-        BSR.W LBL_230
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        MOVE.L -4(A6),D0
         BRA.W LBL_578
 LBL_578:
         UNLK A6
@@ -10894,7 +10875,7 @@ LBL_661:
         RTS
         ; func other  (JT slot 112)
         ;   local l : -4(A6)  size 4
-        ;   local __ret4 : -8(A6)  size 4
+        ;   local __ret3 : -8(A6)  size 4
 LBL_111:
         LINK A6,#-8304
         LEA -4(A6),A0

@@ -3081,9 +3081,11 @@ func lowFor(s: int): int {
 // resurrecting a disqualify list.
 
 // lowFreeNames: the CURRENT function's scope-exit-release candidate names
-// (body-top locals of a counted kind, plus any handle-backed record
-// PARAMS -- lowRetainRecParams, ARC Task 7 site 2), in declaration order --
-// reset at the start of every lowRunEscapePrepass.
+// (body-top locals of a counted kind only -- param-abi phase Task 7
+// deleted the record/heap-scalar-array PARAM entries lowRetainRecParams
+// used to add here, now that both backends pass KStr/KRec params by
+// address and a param never owns its record's handles), in declaration
+// order -- reset at the start of every lowRunEscapePrepass.
 var lowFreeNames: list of string
 
 // lowFreeTypes: candidate name -> IR type index.
@@ -3165,13 +3167,12 @@ func lowCollectScopeExitCandidates(bodyBlk: int) {
 
 // lowRunEscapePrepass resets this function/handler body's own scope-exit
 // bookkeeping and collects its release candidates -- called from
-// lowFuncBody/lowHandlerFunc BEFORE lowBlock lowers that same body (so
-// lowFreeNames/lowFreeTypes are ready for lowReturn to consult mid-body,
-// and lowRetainRecParams -- ARC Task 7 site 2 -- can append its own
-// record params right after). Also resets lowRetTempIdx (ARC Task 3
-// review fix) -- lowNewReturnTemp's per-function cache -- to -1, so each
-// function/handler body mints (at most) its own one shared return-value
-// synthetic, never a stale one left over from the previous function.
+// lowFuncBody/lowHandlerFunc BEFORE lowBlock lowers that same body, so
+// lowFreeNames/lowFreeTypes are ready for lowReturn to consult mid-body.
+// Also resets lowRetTempIdx (ARC Task 3 review fix) -- lowNewReturnTemp's
+// per-function cache -- to -1, so each function/handler body mints (at
+// most) its own one shared return-value synthetic, never a stale one left
+// over from the previous function.
 func lowRunEscapePrepass(bodyBlk: int) {
     lowRetTempIdx = -1
     lowFreeNames.clear()
@@ -4103,81 +4104,23 @@ func lowBlock(blk: int): int {
 
 // lowFuncBody lowers params + a body block into an ir.Func, registering the
 // signature scope and returning its irFuncs index (stmt.go's lowerFuncBody).
-// lowRetainRecParams (ARC Task 7 site 2) walks astParamsHead's own
-// declared params (never a synthetic window-instance/menu-dummy param
-// lowHandlerFunc prepends itself -- always a KWinRef, never record-typed,
-// so astParamsHead correctly excludes it already) and, for each
-// handle-backed record param, retain-walks it -- a C struct param is
-// passed BY VALUE (the callee's own copy shares its caller's handle-field
-// pointers with no retain of its own until this runs, since C's calling
-// convention performs the struct copy invisibly, with no hook for the
-// CALLER to insert a retain around) -- and registers it into
-// lowFreeNames/lowFreeTypes for the SAME unconditional scope-exit release
-// every return/trailing-exit already applies to a body-top local
-// (lowBuildScopeExitFrees, lowCollectScopeExitCandidates' own comment).
 //
-// Caller contract: call AFTER lowRunEscapePrepass (which resets
-// lowFreeNames to bodyBlk's own top-level locals only -- a param added
-// before that reset would be wiped) and BEFORE lowBlock lowers the body
-// (so a `return` inside it already sees the param registered). Returns
-// the retain statement chain's head, or -1 if no param is record-bearing;
-// the caller splices it onto the FRONT of its own bodyHead.
-func lowRetainRecParams(astParamsHead: int): int {
-    var p: int
-    var pt: int
-    var pname: string
-    var head: int
-    var tail: int
-
-    head = -1
-    tail = -1
-    p = astParamsHead
-    while p != -1 {
-        pt = lowResolveType(paramType(p))
-        // memory-leak-fix phase, fix round 3 (F-family sweep): a
-        // heap-scalar fixed array param (`text[3]`) has the SAME hazard
-        // as a rec-bearing param -- the callee's own by-value struct copy
-        // aliases the caller's array slots with no retain of its own, so
-        // a slot-level store inside the callee (`a[0] = ...`, now ARC-
-        // tracked via lowIndexAssign's TyArr branch) would release a
-        // handle the caller's own copy is still aliasing. Confirmed by
-        // hand-probe: `func f(a: text[3]) { a[0] = "x" }` -> rt_rc:
-        // over-release without this retain.
-        if lowIsRecBearing(pt) or lowArrHeapScalarBearing(pt) {
-            pname = poolGet(paramName(p))
-            lowFreeNames.add(pname)
-            lowFreeTypes[pname] = pt
-            tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), newIRVarRef(paramName(p), false, pt), irVoidT)))
-            if head == -1 {
-                head = tail
-            }
-        }
-        p = declNext(p)
-    }
-    return head
-}
-
-// lowPrependStmts splices extraHead's statement chain onto the FRONT of
-// bodyHead's (ARC Task 7: lowFuncBody/lowHandlerFunc's own shared
-// "retain record params before the rest of the body" wiring). Returns the
-// combined chain's head; either argument may be -1.
-func lowPrependStmts(extraHead: int, bodyHead: int): int {
-    var tail: int
-
-    if extraHead == -1 {
-        return bodyHead
-    }
-    if bodyHead == -1 {
-        return extraHead
-    }
-    tail = extraHead
-    while irStmtNext(tail) != -1 {
-        tail = irStmtNext(tail)
-    }
-    irStmtListAppend(tail, bodyHead)
-    return extraHead
-}
-
+// param-abi phase Task 7: this used to run lowRetainRecParams here --
+// retain-walking each handle-backed record/heap-scalar-array param and
+// prepending the retain statements via lowPrependStmts (both now deleted)
+// -- because a C struct param used to be passed BY VALUE, so the callee's
+// own copy silently aliased the caller's handle-field pointers with no
+// retain of its own. Tasks 5-6 made both backends pass KStr/KRec params
+// BY ADDRESS instead: a param never owns its record's handles at all (the
+// caller, or the call-site copy-temp, does), so the entry retain + its
+// matching scope-exit release were a balanced but pure-waste pair -- and
+// registering params into lowFreeNames/lowFreeTypes is gone with them, so
+// a param is never a scope-exit-release candidate. The KArr case (still
+// C by-value-copy on the host lane) is sound too: Task 2's immutability
+// makes the slot-store mutation that used to alias-corrupt the caller's
+// copy a compile error, so the callee's own aliased copy is simply never
+// written through and never released -- ownership stays with the caller,
+// balanced without any retain.
 func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int {
     var paramsHead: int
     var paramsTail: int
@@ -4186,7 +4129,6 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int 
     var savedRet: int
     var bodyHead: int
     var fn: int
-    var retainHead: int
 
     lowPushScope()
 
@@ -4208,10 +4150,8 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int 
     savedRet = lowCurFuncRet
     lowCurFuncRet = ret
     lowRunEscapePrepass(bodyBlk)
-    retainHead = lowRetainRecParams(astParamsHead)
     bodyHead = lowBlock(bodyBlk)
     bodyHead = lowAppendTrailingFrees(bodyHead)
-    bodyHead = lowPrependStmts(retainHead, bodyHead)
     lowCurFuncRet = savedRet
 
     fn = newIRFunc(nameIdx, paramsHead, ret, lowLocalsHead, bodyHead)
@@ -5101,7 +5041,6 @@ func lowHandlerFunc(cName: string, winType: int, instParamName: int, astParamsHe
     var savedWinType: int
     var savedRet: int
     var bodyHead: int
-    var retainHead: int
 
     nameIdx = intern(cName)
     lowPushScope()
@@ -5141,10 +5080,8 @@ func lowHandlerFunc(cName: string, winType: int, instParamName: int, astParamsHe
     savedRet = lowCurFuncRet
     lowCurFuncRet = irVoidT
     lowRunEscapePrepass(body)
-    retainHead = lowRetainRecParams(astParamsHead)
     bodyHead = lowBlock(body)
     bodyHead = lowAppendTrailingFrees(bodyHead)
-    bodyHead = lowPrependStmts(retainHead, bodyHead)
     lowCurFuncRet = savedRet
 
     lowCurWinType = savedWinType

@@ -5097,13 +5097,18 @@ func cpEmitOneRcWalk(i: int, name: int) {
     // pointer) -- the walk body below only ever READS through r (passing
     // each field's own handle value on to a nested retain/release call),
     // never writes one of r's own fields, so this is honest, not just
-    // permissive; it's also load-bearing now that a KRec BY-REF param's
-    // entry retain (lowRetainRecParams) calls this on a `const clar_rec_X
-    // *` deref (cpFuncProto's new by-ref param type) -- without `const`
-    // here, that call would warn "discards qualifiers" (-Wall). Every
-    // EXISTING non-const caller (a local/temp record's own copy site)
-    // keeps compiling unchanged: C always allows passing a plain `T *`
-    // where `const T *` is expected.
+    // permissive; it's also load-bearing for the retain/release-bracket
+    // copy-temp fpAddrable/cpEmitRcWalks' IRetain/IRelease arm builds
+    // around a by-ref KRec param used as a nested-call argument (Task 5
+    // review fix, `ARC leak on nested-call/inline-new borrowed record
+    // arg`): `&(*cv_p)` on a `const clar_rec_X *cv_p` param is itself a
+    // `const clar_rec_X *`, and without `const` here that call would warn
+    // "discards qualifiers" (-Wall). Task 7 deleted the OTHER caller this
+    // comment used to cite (lowRetainRecParams' own callee-entry retain,
+    // now gone along with every param's entry retain/exit release) --
+    // this one remains. Every EXISTING non-const caller (a local/temp
+    // record's own copy site) keeps compiling unchanged: C always allows
+    // passing a plain `T *` where `const T *` is expected.
     cpRecBuf.add(toText("static void clar_retain_" + recName + "(const " + ctype + " *r) {"))
     cpRecBuf.add(retainBody)
     cpRecBuf.add(toText("}"))
@@ -5160,8 +5165,7 @@ func cpEmitFunc(f: int) {
 
     // param-abi phase Task 5: rebuild cpByRefParams for THIS function
     // before printing anything that could read a param (the body below,
-    // and lowRetainRecParams' own prepended entry-retain statements,
-    // already spliced onto irFuncBodyHead by lower.cla) -- cleared at this
+    // already lowered onto irFuncBodyHead by lower.cla) -- cleared at this
     // function's own end, see below.
     cpByRefParams.clear()
     p = irFuncParamsHead(f)
