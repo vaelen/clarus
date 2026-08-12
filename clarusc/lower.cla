@@ -873,6 +873,54 @@ func lowArgs(argsHead: int): int {
     return head
 }
 
+// lowIsValueKind reports whether t's IR type kind is a value kind (KStr,
+// KRec, KArr) -- storage that lives inline in its container rather than
+// behind a heap-reachable indirection (a KList/KMap/KText/KIntMap element
+// or field). lowArgNeedsCopy's root-walk (below) treats stepping through
+// anything else as leaving safely-borrowable storage.
+func lowIsValueKind(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    return k == KStr or k == KRec or k == KArr
+}
+
+// lowArgNeedsCopy classifies a KStr/KRec call-argument expression (param-abi
+// phase, Task 3 -- spec doc's own borrow/copy table, single authority here):
+// walk EFieldRef/EIndexRef wrappers toward the root, staying borrow only
+// while every step's BASE stays value-typed (KStr/KRec/KArr) storage; a
+// step through anything else (a KList/KMap/KText/KIntMap element or field)
+// means the arg is reachable through container storage the callee could
+// re-enter past the call, so it needs a COPY. At the root: a global
+// EVarRef needs COPY (its storage outlives the call); a local/param
+// EVarRef, an EStrConst, or any other rvalue temp (ECallFn, EIntr, EConv,
+// ENewRec, ...) borrows -- nothing else can alias a caller-local temporary
+// during the callee's lifetime.
+func lowArgNeedsCopy(e: int): bool {
+    var k: IRExprKind
+    var cur: int
+    var base: int
+
+    cur = e
+    k = irExprKind(cur)
+    while k == EFieldRef or k == EIndexRef {
+        if k == EFieldRef {
+            base = irFieldRefX(cur)
+        } else {
+            base = irIndexRefX(cur)
+        }
+        if not lowIsValueKind(irExprType(base)) {
+            return true
+        }
+        cur = base
+        k = irExprKind(cur)
+    }
+    if k == EVarRef {
+        return irVarRefGlobal(cur)
+    }
+    return false
+}
+
 // lowCallArgs lowers a user function call's argument chain, coercing each arg
 // through lowCoerceStr against the callee's DECLARED param IR type (read back
 // from the checker's already-resolved FuncSig, whose signatures phase 1
@@ -890,13 +938,19 @@ func lowArgs(argsHead: int): int {
 // both extern-only) and ONLY against a ptr or int param (any other
 // pairing is a checker error) -- so no isExtern flag is needed here, and
 // the `pt` checks below are exhaustive for this arg shape.
-func lowCallArgs(argsHead: int, sig: int): int {
+//
+// isUserCall (param-abi phase, Task 3): true only for a real user-function
+// (ECallFn) call -- lowArgNeedsCopy's borrow/copy classification is an
+// ECallFn-only ABI concern (Tasks 5-6), so it must NOT run for an
+// ECallExt (extern) call, whose ABI this phase leaves untouched.
+func lowCallArgs(argsHead: int, sig: int, isUserCall: bool): int {
     var head: int
     var tail: int
     var a: int
     var i: int
     var le: int
     var pt: int
+    var k: IRKind
 
     head = -1
     tail = -1
@@ -927,6 +981,12 @@ func lowCallArgs(argsHead: int, sig: int): int {
             le = lowExpr(a)
             if i < funcSigParamCount(sig) {
                 le = lowCoerceStr(lowType(funcSigParam(sig, i)), le)
+            }
+            if isUserCall {
+                k = irtKind(irExprType(le))
+                if (k == KStr or k == KRec) and lowArgNeedsCopy(le) {
+                    irArgMarkCopy(le)
+                }
             }
         }
         if head == -1 {
@@ -994,10 +1054,10 @@ func lowCall(e: int): int {
             return newIRCallFn(intern("rtNow"), -1, ty)
         } else if name == "dateTimeStr" {
             symIdx = scopeLookup(curScope, identName(fn))
-            return newIRCallFn(intern("rtDateTimeStr"), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
+            return newIRCallFn(intern("rtDateTimeStr"), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx, true), ty)
         } else if name == "durationStr" {
             symIdx = scopeLookup(curScope, identName(fn))
-            return newIRCallFn(intern("rtDurationStr"), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
+            return newIRCallFn(intern("rtDurationStr"), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx, true), ty)
         }
         symIdx = scopeLookup(curScope, identName(fn))
         if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {
@@ -1011,10 +1071,10 @@ func lowCall(e: int): int {
             return newIRConv(CvPtrToOverlay, lowExpr(callArgsHead(e)), -1, ty)
         }
         if symIdx != -1 and irIsExtern(identName(fn)) {
-            return newIRCallExt(identName(fn), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
+            return newIRCallExt(identName(fn), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx, false), ty)
         }
         if symIdx != -1 and symbols[symIdx].isFunc {
-            return newIRCallFn(identName(fn), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
+            return newIRCallFn(identName(fn), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx, true), ty)
         }
         lowUnsupported("call to " + name)
         return -1

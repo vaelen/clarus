@@ -313,6 +313,14 @@ record IRExpr {
     convOp: IRConvOp
     ty: int
     next: int
+    // argCopy (param-abi phase, Task 3): true when this KStr/KRec call-arg
+    // expression needs a COPY at the call site rather than a borrow --
+    // set only by lower.cla's lowArgNeedsCopy classifier, for user-function
+    // (ECallFn) call args. Unread by both backends this task (Tasks 5-6
+    // consume it); every other constructor leaves it false (Clarus records
+    // zero/false-default an omitted field), so this is a pure additive,
+    // behavior-inert field for Task 3.
+    argCopy: bool
 }
 
 // IRLocal covers both ir.go's Func.Params and Func.Locals -- identical
@@ -2013,6 +2021,17 @@ func irLocalMarkNoBirth(i: int) {
 
 func irLocalNoBirth(i: int): bool {
     return irLocals[i].nobirth
+}
+
+// irArgMarkCopy/irArgNeedsCopy (param-abi phase, Task 3): mark/query pair
+// for IRExpr.argCopy, same direct-indexed-field-write idiom as
+// irLocalMarkNoBirth/irLocalNoBirth just above.
+func irArgMarkCopy(i: int) {
+    irExprs[i].argCopy = true
+}
+
+func irArgNeedsCopy(i: int): bool {
+    return irExprs[i].argCopy
 }
 
 // ================================================================
