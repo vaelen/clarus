@@ -163,16 +163,28 @@ that, merge decisions cover five stacked phases (`mac-resident-clarusc`,
    correctly, just degraded. Evidence: the live-log phase ledger's timing
    entries (`.superpowers/sdd/2026-08-11-clarusc-live-log/progress.md`)
    and screenshots under that workspace's `evidence/`.
-1. **Now: finish the Snow acceptance rerun for a formal PASS.** Procedure
-   notes: boot Snow at 1x, engage fast-forward from the TOOLBAR after the
-   app is up (`start_fastforward` at boot hangs the launch path —
-   `macresident_test.go:79`); fast-forward is not a steady ratio (observed
-   4-7x); size `CLARUS_MACRESIDENT_SETTLE` off the degraded compile-2
-   numbers until the fix is confirmed on real hardware (≥2h30m settle,
-   `-timeout` above it) — expect to shrink this once compile #2 ≈ compile
-   #1 is confirmed. The worktree needs a `snow/` symlink to the main
-   checkout's local assets (`ln -s /Users/andrew/repos/clarus/snow snow`) — not in
-   git.
+1. **IN PROGRESS (launched 2026-08-12 09:48 JST, detached): the Snow
+   acceptance rerun.** Running at commit `0e633c2` via
+   `.superpowers/sdd/2026-08-12-memory-leak-fix/snow-rerun.sh`
+   (`CLARUS_MACRESIDENT_SETTLE=2h30m`, `-timeout 5h`, mouse-move nudger
+   against the display idle-lock); log:
+   `.superpowers/sdd/2026-08-12-memory-leak-fix/snow-rerun.log`. The
+   formal assertions (byte-identity vs host oracles, alert-free trace,
+   standalone TickProbe boot) fire when the settle expires ~12:18 JST —
+   CHECK THAT LOG for the verdict. Interim results confirmed live by
+   Andrew (10:15-10:45 JST): compile #1 itself is 3-6x faster (Measure
+   36m34s -> ~10m, seg-1 emit 20m34s -> ~3.5m, seg-2 ~2.5m) — the leaks
+   were self-poisoning even the first compile — and compile #2's
+   per-phase times ≈ compile #1's (degradation GONE on hardware). Both
+   compiles finished and ClarusC.APPL quit cleanly to Finder, no alert.
+   Once the verdict is PASS, future runs can size
+   `CLARUS_MACRESIDENT_SETTLE` off ~20m/compile (e.g. 45m-1h settle),
+   not the old degraded numbers. Procedure notes (for future runs): boot
+   Snow at 1x, engage fast-forward from the TOOLBAR after the app is up
+   (`start_fastforward` at boot hangs the launch path —
+   `macresident_test.go:79`); fast-forward is not a steady ratio
+   (observed 4-7x). The worktree now HAS the `snow/`/`toolchain/`/
+   `macplus/`/`Retro68/` symlinks (created 2026-08-12, not in git).
 2. **Capture real on-Mac per-phase timings** using the instrumentation —
    partially DONE 2026-08-12: compile-#1 numbers for tickprobe (3 seg)
    are in the ledger (Measured 36m34s / seg-1 emit 20m34s of ~66m total —
