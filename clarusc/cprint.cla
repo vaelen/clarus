@@ -267,6 +267,20 @@ var cpArrEmitted: map of int
 // case) -- cprint.go's printer.loopN.
 var cpLoopN: int
 
+// cpByRefParams (param-abi phase, Task 5) names the current function's
+// KStr/KRec parameters -- these print as `const T *cv_name` (cpFuncProto)
+// instead of the ordinary by-value `T cv_name`, so every READ of one needs
+// an extra `(*cv_name)` deref (fpVarText, below). Rebuilt at the top of
+// every cpEmitFunc call and cleared at its end -- a param can never share
+// its name with a local/loop-bound variable in the SAME function (the
+// checker registers params and locals into one flat per-function scope,
+// "redeclaration of X" otherwise -- check.cla's own paramsHead loop), so
+// membership here can never misfire against an unrelated local while a
+// function is being printed, and staying empty between functions makes the
+// set inert everywhere else (record ctors, globals init) that also calls
+// fpExpr/fpVarText outside any function body.
+var cpByRefParams: map of int
+
 // ================================================================
 // funcPrinter (funcprint.go): one function body's lines, temp counter, and
 // indent. Modeled as module state -- one function is printed at a time and
@@ -1095,6 +1109,27 @@ func cpTypeEqual(a: int, b: int): bool {
 // Expression + statement printing (funcprint.go / intr.go subset)
 // ================================================================
 
+// fpVarText (param-abi phase, Task 5) renders a variable reference's C
+// name: `cv_name` ordinarily, or `(*cv_name)` when name is one of the
+// current function's by-ref KStr/KRec params (cpByRefParams) -- ALWAYS
+// parenthesized so a composed access like `(*cv_p).f` or `(*cv_p).b[i]`
+// (fpFieldRef/fpIndexRef, both of which recurse through fpExpr -> here)
+// stays correct C. The one shared choke point for every "cv_" + name
+// construction driven by a real Clarus variable reference -- see this
+// task's report for the full site-by-site audit of why every OTHER
+// "cv_"-building site in this file (struct field-name suffixes, fresh
+// loop-bound locals, global init, callback wire params) is provably
+// exempt instead of routed here.
+func fpVarText(nameIdx: int): text {
+    var nm: string
+
+    nm = poolGet(nameIdx)
+    if cpByRefParams.has(nm) {
+        return toText("(*cv_" + nm + ")")
+    }
+    return toText("cv_" + nm)
+}
+
 func fpExpr(e: int): text {
     switch irExprKind(e) {
     case EIntConst {
@@ -1104,7 +1139,7 @@ func fpExpr(e: int): text {
         return toText("clar_lit_" + numToStr(irStrConstIdx(e)))
     }
     case EVarRef {
-        return toText("cv_" + poolGet(irVarRefName(e)))
+        return fpVarText(irVarRefName(e))
     }
     case EBin {
         return fpBin(e)
@@ -1202,6 +1237,61 @@ func fpIsHandleType(t: int): bool {
 // fpHandoff call untracks it: the +1 becomes the slot's ownership / the
 // return's own transfer). `pop`/`shift` stay a plain transfer with no
 // retain (see IListPop/IListShift below) -- unaffected by this convention.
+// fpCallFnArg (param-abi phase, Task 5) renders one ECallFn argument a
+// against its already-IR-coerced type (lowCoerceStr ran at lower time, so
+// a's own C type already matches the callee's declared param capacity
+// exactly): a scalar/handle/xrec/callback argument is unaffected, printed
+// exactly as before (fpExpr, by value or by handle pointer). A KStr/KRec
+// argument instead passes the callee's new by-ref pointer param an
+// address, per irArgNeedsCopy(a)'s Task 3 classification (single source of
+// truth -- this function does not re-derive it):
+//   - borrow (false): `&(<addrable form>)` -- fpAddrable already covers
+//     every addressable shape (a bare var, `.field`/`[i]` chains, a
+//     literal, an intrinsic that materializes its own result into a named
+//     temp) and falls back to materializing a genuine rvalue into a fresh
+//     temp itself (fpCopyToTemp) when none of those apply -- the exact
+//     "rvalue temps: materialize via the existing tracked-temp machinery"
+//     shape the brief calls for, reused rather than reimplemented.
+//   - copy (true): hoist a fresh statement-level temp via the SAME
+//     tracked-temp machinery fpCallFn's own call-RESULT path uses just
+//     below (fpNewTrackedTmp/fpStmtTmpRel) -- but only for a handle-bearing
+//     record (irRecHasHandleField), which alone needs a retain (the raw
+//     struct copy just below aliases the source's handle-field pointers)
+//     and a matching release at end of statement; a plain KStr or an
+//     all-scalar KRec copy needs neither (fpNeedsRelease's own gate,
+//     mirrored here), so it uses the untracked fpNewTmp instead -- using
+//     fpNewTrackedTmp there too would wrongly emit a release call for a
+//     record with nothing to release (fpNewTrackedTmp's isRec branch marks
+//     every KRec temp for release unconditionally, correct only because
+//     its ONLY other caller already gates on the same handle-bearing test
+//     before calling it).
+func fpCallFnArg(a: int): text {
+    var t: int
+    var k: IRKind
+    var name: text
+    var handleBearing: bool
+
+    t = irExprType(a)
+    k = irtKind(t)
+    if k != KStr and k != KRec {
+        return fpExpr(a)
+    }
+    if not irArgNeedsCopy(a) {
+        return "&(" + fpAddrable(a) + ")"
+    }
+    handleBearing = k == KRec and irRecHasHandleField(irtName(t))
+    if handleBearing {
+        name = fpNewTrackedTmp(t)
+    } else {
+        name = fpNewTmp(cpCType(t))
+    }
+    fpEmit(name + " = " + fpExpr(a) + ";")
+    if handleBearing {
+        fpRetainVal(name, t)
+    }
+    return "&(" + name + ")"
+}
+
 func fpCallFn(e: int): text {
     var args: text
     var a: int
@@ -1218,7 +1308,7 @@ func fpCallFn(e: int): text {
             args = args + ", "
         }
         first = false
-        argText = fpExpr(a)
+        argText = fpCallFnArg(a)
         args = args + argText
         a = irExprNext(a)
     }
@@ -4207,6 +4297,8 @@ func cpFuncProto(f: int): text {
     var p: int
     var first: bool
     var linkage: string
+    var pt: int
+    var pk: IRKind
 
     params = toText("")
     first = true
@@ -4216,7 +4308,20 @@ func cpFuncProto(f: int): text {
             params = params + ", "
         }
         first = false
-        params = params + cpCType(irLocalType(p)) + " cv_" + poolGet(irLocalName(p))
+        pt = irLocalType(p)
+        pk = irtKind(pt)
+        // param-abi phase Task 5: a KStr/KRec param prints BY-REFERENCE
+        // (`const T *`), not cpCType's ordinary by-value struct -- every
+        // read site derefs via fpVarText. `const` is load-bearing, not
+        // decoration: params are checker-enforced immutable (Task 2), so
+        // no callee code ever writes through this pointer, and marking it
+        // const lets a borrowed argument's OWN const-qualified storage
+        // (a caller-side literal, e.g.) pass without a cast either.
+        if pk == KStr or pk == KRec {
+            params = params + "const " + cpCType(pt) + " *cv_" + poolGet(irLocalName(p))
+        } else {
+            params = params + cpCType(pt) + " cv_" + poolGet(irLocalName(p))
+        }
         p = irLocalNext(p)
     }
     if first {
@@ -4951,11 +5056,22 @@ func cpEmitOneRcWalk(i: int, name: int) {
         }
         f = irFieldSlotNext(f)
     }
-    cpRecBuf.add(toText("static void clar_retain_" + recName + "(" + ctype + " *r) {"))
+    // param-abi phase Task 5: `const` on `r` (widened from a plain
+    // pointer) -- the walk body below only ever READS through r (passing
+    // each field's own handle value on to a nested retain/release call),
+    // never writes one of r's own fields, so this is honest, not just
+    // permissive; it's also load-bearing now that a KRec BY-REF param's
+    // entry retain (lowRetainRecParams) calls this on a `const clar_rec_X
+    // *` deref (cpFuncProto's new by-ref param type) -- without `const`
+    // here, that call would warn "discards qualifiers" (-Wall). Every
+    // EXISTING non-const caller (a local/temp record's own copy site)
+    // keeps compiling unchanged: C always allows passing a plain `T *`
+    // where `const T *` is expected.
+    cpRecBuf.add(toText("static void clar_retain_" + recName + "(const " + ctype + " *r) {"))
     cpRecBuf.add(retainBody)
     cpRecBuf.add(toText("}"))
     cpRecBuf.add(toText(""))
-    cpRecBuf.add(toText("static void clar_release_" + recName + "(" + ctype + " *r) {"))
+    cpRecBuf.add(toText("static void clar_release_" + recName + "(const " + ctype + " *r) {"))
     cpRecBuf.add(releaseBody)
     cpRecBuf.add(toText("}"))
     cpRecBuf.add(toText(""))
@@ -5000,9 +5116,24 @@ func cpEmitFunc(f: int) {
     var i: int
     var declared: map of int
     var nm: string
+    var p: int
 
     cpEnsureType(irFuncRet(f))
     fpReset(1)
+
+    // param-abi phase Task 5: rebuild cpByRefParams for THIS function
+    // before printing anything that could read a param (the body below,
+    // and lowRetainRecParams' own prepended entry-retain statements,
+    // already spliced onto irFuncBodyHead by lower.cla) -- cleared at this
+    // function's own end, see below.
+    cpByRefParams.clear()
+    p = irFuncParamsHead(f)
+    while p != -1 {
+        if irtKind(irLocalType(p)) == KStr or irtKind(irLocalType(p)) == KRec {
+            cpByRefParams[poolGet(irLocalName(p))] = 1
+        }
+        p = irLocalNext(p)
+    }
 
     // Every local (var-declared, or a for-range loop's bound variable) is
     // hoisted to the top of the C function (Ch5: "var only at the top of a
@@ -5105,6 +5236,12 @@ func cpEmitFunc(f: int) {
     // them. Clearing here (not disposing -- cpRestBuf now owns them) closes
     // that gap unconditionally rather than relying on being non-last.
     fpReset(fpIndent)
+    // param-abi phase Task 5: drop this function's by-ref param names now
+    // that its body is fully printed -- cpByRefParams stays empty (inert)
+    // for every OTHER fpExpr/fpVarText call between here and the next
+    // cpEmitFunc (record ctors, globals init), and the next call rebuilds
+    // it fresh anyway, so this is defense in depth, not load-bearing.
+    cpByRefParams.clear()
 }
 
 // cpEmitExternProtos emits one `extern` C prototype per registered
