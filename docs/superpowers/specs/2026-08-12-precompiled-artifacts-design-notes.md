@@ -4,9 +4,9 @@ Status: **discussion notes, not a spec.** Captures the design conversation
 around the 2026-08-10 performance findings doc's Layer 3 items 3 (bake the
 runtime pre-parsed), 5 (precompiled object code + linker), and 6 (on-disk
 artifact cache). Deliberately parked: the agreed prerequisite is §2.1's
-string call-ABI change (see "Sequencing decision" at the end), which gets
-its own spec (`2026-08-12-string-call-abi-design.md`). Pick this doc back
-up when that phase lands.
+param-ABI change (see "Sequencing decision" at the end), which gets
+its own spec (`2026-08-12-param-abi-immutability-design.md`). Pick this
+doc back up when that phase lands.
 
 ## The unifying idea
 
@@ -157,8 +157,9 @@ up, and artifacts shrink. Not a hard blocker (version stamp → artifacts
 regenerate free on host), but doing the one known big ABI rewrite first
 avoids churning the compatibility boundary twice.
 
-§2.1 scope agreed: **by-reference string *calling convention*, storage
-unchanged** (records/lists/map slots stay inline 256-byte; `cgSizeOf(KStr)`
-stays 256) — the classic Pascal `Str255` value-parameter treatment.
+§2.1 scope agreed (widened during brainstorming, same day): **immutable
+parameters (language change) + by-reference string AND record parameter
+calling convention, storage unchanged** (`cgSizeOf(KStr)` stays 256;
+records stay inline) — see `2026-08-12-param-abi-immutability-design.md`.
 Variable-length string storage stays a separate, later decision (a memory
 play, and the one that would destabilize the ABI again).
