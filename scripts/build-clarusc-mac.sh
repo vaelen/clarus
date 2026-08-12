@@ -1,5 +1,5 @@
 #!/bin/bash
-# build-clarusc-mac.sh [--events FILE]
+# build-clarusc-mac.sh [--events FILE] [--no-bake-ir]
 #
 # Builds ClarusC.APPL, the Mac-resident compiler's GUI front end (Task 10,
 # mac-resident-clarusc phase): clarusc/macgui.cla, self-baked with the
@@ -15,6 +15,16 @@
 # --events (deterministic UI driving, e.g. a boot-smoke test that just
 # needs the app to open its window and quit, with no real input).
 #
+# CLIR bake (runtime-ir-bake Task 6, Mac integration): by DEFAULT, this
+# script also runs `clarusc --bake-ir --lane 68k` to generate the 68k-lane
+# runtime IR artifact, then embeds it (plus its stamp sidecar) via
+# `emit68k --bake-ir FILE` -- so ClarusC.APPL consumes the baked runtime
+# by default, per the phase's own plan (clarusc/macgui.cla's gcCompile:
+# CLIR resource present + accepted -> bake path; absent or refused ->
+# CLFS-source fallback, same as always). --no-bake-ir skips both steps,
+# for building a from-source-only ClarusC.APPL (fallback-path testing, or
+# isolating a bake-specific bug).
+#
 # Always runs from the repo root (cd below): every --bake NAME is used
 # VERBATIM as the baked resource's own name (cliResolveBake, main.cla),
 # and that name is also the KEY drive.cla's driveKeyResolve computes for
@@ -25,10 +35,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 EVENTS=""
+BAKE_IR=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --events) shift; EVENTS="$1" ;;
-        *) echo "usage: build-clarusc-mac.sh [--events FILE]" >&2; exit 2 ;;
+        --no-bake-ir) BAKE_IR=0 ;;
+        *) echo "usage: build-clarusc-mac.sh [--events FILE] [--no-bake-ir]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -50,6 +62,18 @@ if [ -n "$EVENTS" ]; then
     EVENTS_ARG="--events $EVENTS"
 fi
 
+# 2b. by default, generate the 68k-lane CLIR runtime bake with the SAME
+#     bootstrapped $CLARUSC, then embed it (+ its stamp sidecar,
+#     cliResolveBakeIr/main.cla) via `--bake-ir` below. --bake-ir also
+#     writes CLIR_PATH.stamp unconditionally (main.cla's bakeIrMode) --
+#     no separate step needed here.
+BAKE_IR_ARG=""
+if [ "$BAKE_IR" = "1" ]; then
+    CLIR_PATH="$ROOT/build-run/clarusc-mac.clir"
+    "$CLARUSC" --bake-ir --lane 68k --rtdir runtime/clarus/ -o "$CLIR_PATH"
+    BAKE_IR_ARG="--bake-ir $CLIR_PATH"
+fi
+
 # 3. emit. --partition 50331648 (48MB): the plan's own section 7 estimate for
 #    this app's compile working set was 14-22MB, plus headroom. Originally
 #    landed at a 4MB compromise (Task 10) because the then-current
@@ -66,5 +90,5 @@ fi
 #    for the same note.
 mkdir -p build-68k/ClarusC
 "$CLARUSC" emit68k --rtdir runtime/clarus/ -o build-68k/ClarusC/ClarusC.bin \
-    $BAKES $EVENTS_ARG --partition 50331648 clarusc/macgui.cla
+    $BAKES $EVENTS_ARG $BAKE_IR_ARG --partition 50331648 clarusc/macgui.cla
 echo "built: build-68k/ClarusC/ClarusC.bin"

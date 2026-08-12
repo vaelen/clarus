@@ -55,6 +55,20 @@ func feProgressStep(cur: int, total: int, label: string) {
 func feProgressTick() {
 }
 
+// feExpectedStamp (bake.cla's front-end seam, runtime-ir-bake Task 6):
+// same as main.cla's host CLI (disk read + hash) -- this harness DOES
+// set haveRtbake for real (below), so bkCheckRtbakeHeader's stamp check
+// genuinely runs; must match whatever produced the bake file passed on
+// argv, exactly like main.cla's own --rtbake consumer.
+func feExpectedStamp(): int {
+    var compilerSrc: text
+    compilerSrc = ""
+    if bkFindClarusC(compilerSrc) {
+        return bkHashText(compilerSrc)
+    }
+    return 0
+}
+
 on App.startCLI(args: list of string) {
     var i: int
     var entries: list of string

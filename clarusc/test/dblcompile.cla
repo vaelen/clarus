@@ -57,6 +57,20 @@ func feProgressStep(cur: int, total: int, label: string) {
 func feProgressTick() {
 }
 
+// feExpectedStamp (bake.cla's front-end seam, runtime-ir-bake Task 6):
+// same as main.cla's host CLI (disk read + hash) -- required for the
+// standalone check to resolve, since bake.cla's bkCheckRtbakeHeader now
+// names it unconditionally, even though this harness never sets
+// haveRtbake and so never actually calls it.
+func feExpectedStamp(): int {
+    var compilerSrc: text
+    compilerSrc = ""
+    if bkFindClarusC(compilerSrc) {
+        return bkHashText(compilerSrc)
+    }
+    return 0
+}
+
 on App.startCLI(args: list of string) {
     var i: int
     var entries: list of string

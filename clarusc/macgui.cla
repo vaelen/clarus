@@ -44,10 +44,10 @@ include "uiblob.cla"
 include "drive.cla"
 // runtime-ir-bake Task 4: drive.cla's driveCompile now names bake.cla
 // symbols directly (see clarusc/test/dblcompile.cla's own comment on
-// this same include, added for the identical reason) -- macgui.cla
-// itself never sets haveRtbake (Mac-resident compiles are from-source
-// only, for now), but still needs bake.cla present for driveCompile's
-// standalone check to resolve.
+// this same include, added for the identical reason) -- needed for
+// driveCompile's standalone check to resolve regardless of whether this
+// build ever takes the bake path. Task 6 (Mac integration): gcCompile
+// below now DOES set haveRtbake, by default -- see its own doc comment.
 include "bake.cla"
 
 // gcGet1NamedResource: a SECOND declaration of the same trap Get1NamedResource
@@ -125,6 +125,51 @@ func feReadSource(path: string, key: string, out: text): bool {
         return false
     }
     return file.readResource(key, out)
+}
+
+// feExpectedStamp (runtime-ir-bake Task 6) is macgui.cla's own
+// implementation of bake.cla's front-end seam -- see
+// bkCheckRtbakeHeader's own doc comment for the full contract. Unlike
+// main.cla's host implementation (re-hash clarusc/clarusc.c off disk),
+// ClarusC.APPL's own boot disk carries no such file (baking the 3.5MB
+// bootstrap C source just to re-hash it on a 68k CPU every compile would
+// be both wasteful of resource-fork space and slow) -- it reads the tiny
+// 4-byte stamp sidecar scripts/build-clarusc-mac.sh embeds under
+// bkStampResourceName instead (cliResolveBakeIr, main.cla; the SAME
+// `clarusc --bake-ir` run that generated the CLIR artifact also computed
+// and persisted this value, so the two always agree by construction --
+// no independent re-verification is possible or needed on this lane).
+// Absent resource, or a too-short read, returns 0 -- the SAME "can't
+// verify" sentinel bake.cla's own writer already uses when clarusc.c is
+// unreachable, which a real (never legitimately zero) stamp always fails
+// to match, so bkCheckRtbakeHeader refuses cleanly rather than crashing.
+//
+// Save/restores bkLoadBuf/bkLoadPos around its own tiny parse: this
+// function runs FROM INSIDE bkCheckRtbakeHeader (called partway through
+// ITS OWN parse of the CLIR buffer being validated), which resumes
+// reading from those same two globals immediately afterward -- clobbering
+// them here without restoring would corrupt that resume position.
+func feExpectedStamp(): int {
+    var buf: text
+    var savedBuf: text
+    var savedPos: int
+    var result: int
+
+    buf = ""
+    if not file.readResource(bkStampResourceName, buf) {
+        return 0
+    }
+    if buf.length < 4 {
+        return 0
+    }
+    savedBuf = bkLoadBuf
+    savedPos = bkLoadPos
+    bkLoadBuf = buf
+    bkLoadPos = 0
+    result = bkGetU32()
+    bkLoadBuf = savedBuf
+    bkLoadPos = savedPos
+    return result
 }
 
 // gcProgressBuf accumulates drive.cla's compile-progress lines during
@@ -400,6 +445,46 @@ func gcLog(w: Log, line: string) {
 // astReset() (ast.cla: the four AST arenas) -- the same two calls
 // main.cla's startCLI makes, but only ONCE (per-process); here, EVERY
 // compile.
+// gcResolveBakePath (runtime-ir-bake Task 6) decides, fresh for THIS
+// compile, whether to take the CLIR bake path (the DEFAULT) or fall back
+// to CLFS-source -- setting haveRtbake/rtbakeBytes (drive.cla's own
+// per-compile-owned globals, reset here every call, never cached across
+// compiles, matching driveCompile's own "install re-parses from scratch
+// every call" discipline: bake.cla's own doc comment; TestLeakGate/
+// DoubleCompileBake is the oracle for this on the host side) and
+// returning a short status line naming which path ran, and why. Split
+// out of gcCompile (which just logs the result on two channels -- see
+// its own doc comment) purely to keep gcCompile itself under macgui.
+// cla's per-function 32KB native segment budget, same reasoning as main.
+// cla's cliResolveBake split (Task 5).
+//
+// Fallback is taken whenever the resource is absent, unreadable, or its
+// header is refused (format/version/lane/stamp mismatch --
+// bkCheckRtbakeHeader, the SAME check bake.cla's own bkLoadRtbake runs
+// internally, factored out so this decision can be made BEFORE
+// committing to driveCompile: a refused bake must never surface as a
+// user-facing compile failure, only a silent, logged fallback).
+func gcResolveBakePath(): string {
+    var clirBuf: text
+
+    haveRtbake = false
+    if not feHasKey(bkClirResourceName) {
+        return "clarusc: CLFS-source fallback (no CLIR resource baked into this app)"
+    }
+    clirBuf = ""
+    if not file.readResource(bkClirResourceName, clirBuf) {
+        return "clarusc: CLFS-source fallback (CLIR resource present but unreadable: " + lastError.message + ")"
+    }
+    if not bkCheckRtbakeHeader(clirBuf, bkLane68k) {
+        resetDiags()
+        return "clarusc: CLFS-source fallback (CLIR resource refused -- format/version/lane/stamp mismatch)"
+    }
+    resetDiags()
+    haveRtbake = true
+    rtbakeBytes = clirBuf
+    return "clarusc: bake path (CLIR resource)"
+}
+
 func gcCompile(w: Log, p: string) {
     var entries: list of string
     var ok: bool
@@ -409,12 +494,30 @@ func gcCompile(w: Log, p: string) {
     var creator: string
     var fork: text
     var wrote: bool
+    var bakeMsg: string
 
     driveReset()
     resetDiags()
     astReset()
+
+    // bakeMsg records WHICH path ran, and why, on two channels: log()
+    // (natLog, flushed into RunMac's own captured "log" stream at quit --
+    // the channel an automated test can actually read) and gcBaseLog
+    // (the on-screen Log window a real user sees) -- both written BEFORE
+    // gcBaseLog is captured/the ticker starts, below, since
+    // gcFlushProgress later REPLACES w.Output.text wholesale from
+    // gcBaseLog + accumulated progress (gcLog's own append-in-place idiom
+    // would otherwise be silently discarded the moment this compile
+    // finishes -- macresident_test.go's own doc comment on gcLog's
+    // never-trace-visible behavior is the same reason, restated here for
+    // this new call site).
+    bakeMsg = gcResolveBakePath()
+    log(bakeMsg)
+
     gcProgressBuf = ""
     gcBaseLog = w.Output.text
+    gcBaseLog.append(bakeMsg)
+    gcBaseLog.append("\n")
     gcTickerRing.clear()
     gcLiveActive = true
     hostPaths = false

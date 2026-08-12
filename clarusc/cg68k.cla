@@ -536,16 +536,26 @@ var cgAppIconPath: string
 var cgLastFork: text
 var cgLastCreator: string(7)
 
-// cgBakeNames/cgBakeDatas (Task 5, mac-resident-clarusc) hold one entry
-// per `emit68k --bake FILE` flag, in flag order -- main.cla sets both
-// before calling cg68Program, same hand-off pattern as cgEventsBytes
-// above: cgBakeNames[i] is FILE exactly as passed on the command line
-// (also the CLFS resource's own name, verbatim), cgBakeDatas[i] is that
-// file's raw bytes. Empty (both zero-length lists) for a build with no
-// `--bake` flag, which is every build except the Mac-resident compiler's
-// own self-baking build -- cg68WriteImage below folds these into one
-// 'CLFS' resource per entry, id 128+i.
+// cgBakeNames/cgBakeTypes/cgBakeDatas (Task 5, mac-resident-clarusc; Task
+// generalized to typed blobs by runtime-ir-bake Task 6) hold one entry
+// per resource main.cla wants folded into the emitted .bin's resource
+// fork -- one entry per `emit68k --bake FILE` flag (cliResolveBake, main.
+// cla; always type "CLFS") IN FLAG ORDER, then (Task 6) one more pair of
+// entries for `emit68k --bake-ir FILE` (cliResolveBakeIr: the CLIR
+// artifact + its stamp sidecar, both ALSO type "CLFS" today -- see
+// bake.cla's bkClirResourceName doc comment for why this task didn't
+// need a second Mac resource TYPE to make the loader typed-blob-aware).
+// main.cla sets all three before calling cg68Program, same hand-off
+// pattern as cgEventsBytes above: cgBakeNames[i] is the resource's own
+// name (a --bake FILE's own path, verbatim, or one of bake.cla's two
+// reserved constants), cgBakeTypes[i] is its Mac resource type,
+// cgBakeDatas[i] is its raw bytes. Empty (all three zero-length lists)
+// for a build with no `--bake`/`--bake-ir` flag at all, which is every
+// build except the Mac-resident compiler's own self-baking build --
+// cg68BuildFork below folds these into one resource per entry, id
+// 128+i, typed per cgBakeTypes[i] instead of a hardcoded literal.
 var cgBakeNames: list of string
+var cgBakeTypes: list of string
 var cgBakeDatas: list of text
 
 // cgSizePartitionBytes (Task 10, mac-resident-clarusc) overrides the
@@ -11761,15 +11771,18 @@ func cg68BuildFork(jtEntries: list of int, jtSegNums: list of int, segBytes: lis
         bi = bi + 1
     }
 
-    // Task 5 (mac-resident-clarusc): one 'CLFS' resource per `emit68k
-    // --bake FILE` flag (main.cla), id 128+i in flag order, named FILE
-    // exactly as passed, bytes verbatim. cgBakeNames/cgBakeDatas are both
-    // empty for every ordinary build (no --bake flag), so this loop is a
-    // no-op and the resource set -- and the resulting image -- is byte-
-    // identical to before this task.
+    // Task 5 (mac-resident-clarusc), generalized to typed blobs by
+    // runtime-ir-bake Task 6: one resource per cgBakeNames entry (see its
+    // own doc comment above -- ordinary `--bake FILE` CLFS sources, then
+    // the CLIR artifact + stamp sidecar if `--bake-ir` was also given),
+    // id 128+i in entry order, named cgBakeNames[i], typed
+    // cgBakeTypes[i], bytes cgBakeDatas[i] verbatim. All three lists stay
+    // empty for every ordinary build (no --bake/--bake-ir flag), so this
+    // loop is a no-op and the resource set -- and the resulting image --
+    // stays byte-identical to before either task.
     bi = 0
     while bi < cgBakeNames.count {
-        extraTypes.add("CLFS")
+        extraTypes.add(cgBakeTypes[bi])
         extraIds.add(128 + bi)
         extraNames.add(cgBakeNames[bi])
         extraDatas.add(cgBakeDatas[bi])
