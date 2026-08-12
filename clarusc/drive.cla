@@ -556,8 +556,7 @@ func rtModuleKey(mod: string): string {
 // equals the "runtime/clarus/uitest.cla" key when rtDir is left at its
 // default -- a --rtdir override still ends in the same "uitest.cla" tail
 // either way. Shared by bake.cla's own generator (bakeGenerateChain,
-// splitting the base/uitest lowering) and loader (bkFindUitestPathIdx)
-// AND, as of runtime-ir-bake Task 5 fix round 2, this file's own
+// splitting the base/uitest lowering) and this file's own
 // driveManifestSplice (repositioning uitest.cla's decl nodes to
 // combined2's tail on the from-source path) -- lives here rather than in
 // bake.cla since bake.cla includes drive.cla, not the reverse.
@@ -1755,31 +1754,36 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     if haveRtbake and testapi {
         // runtime-ir-bake Task 5, deliverable (a): the bake path's own
         // --testapi check#1 -- no driveEarlySplice (no source-level
-        // re-parse of uitest.cla; the bake already carries its checked
-        // signatures) and no combined checkProgram call, so the baked
-        // checker-symbol preload can be injected BETWEEN phase 1 (user's
-        // own top-level names) and phase 2 (user function bodies, which
-        // may call UiTestVerb etc.) -- see
-        // bkInstallCheckerSymbolsForTestapi's own doc comment (bake.cla)
-        // for exactly why that ordering, and for how a user name
-        // colliding with a UiTest* one gets attributed to uitest.cla
-        // itself (deliverable (c)).
+        // re-parse of the runtime; the bake already carries its checked
+        // signatures) and no combined checkProgram call. Fix round 2
+        // widened the preload from a 16-name lookup to full checker-
+        // symbol visibility (all thirteen early-spliced modules) via a
+        // WHOLESALE funcSigs/symbols/scopes replacement
+        // (bkInstallCheckerSymbolsForTestapi, bake.cla) -- which is why
+        // this now runs BEFORE checkPhase1 (round 1 had it AFTER):
+        // funcSigs/symbols/scopes are append-only arenas the user's own
+        // checkPhase1 keeps appending to, so the wholesale replacement
+        // must land first, or it would discard whatever the user's own
+        // phase 1 already declared. A user name colliding with an
+        // installed one is then caught by the ordinary scopeDeclare
+        // call inside the USER's OWN checkPhase1 (attributed to the
+        // user's file -- see bkInstallCheckerSymbolsForTestapi's own
+        // doc comment for why that matches from-source's real behavior,
+        // not deliverable (c)'s original assumption).
         earlySpliceDone = false
         checkReset()
         // bkInstallTypeArenaPrefix must run BEFORE checkPhase1 (user's
         // own type uses would otherwise land at the same low indices the
         // baked non-singleton types -- e.g. TyStr, `string` -- need; see
         // its own doc comment for why this is load-bearing, not just
-        // tidy) and stays testapi-only: non-testapi never calls
-        // bkInstallCheckerSymbolsForTestapi, so no baked type index is
+        // tidy) and stays testapi-only: non-testapi never calls either
+        // install function, so no baked type/checker-symbol index is
         // ever referenced on that path, and it must see zero runtime
         // symbols regardless (deliverable (a)'s negative test).
         bkInstallTypeArenaPrefix()
-        if combined != -1 {
-            checkPhase1(combined)
-        }
         bkInstallCheckerSymbolsForTestapi()
         if combined != -1 {
+            checkPhase1(combined)
             checkPhase2(combined)
         }
     } else {

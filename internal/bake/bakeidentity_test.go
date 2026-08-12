@@ -268,20 +268,101 @@ func TestRtbakeTestapiNegative(t *testing.T) {
 	}
 }
 
-// TestRtbakeTestapiForcedAttribution (deliverable (c)): a --testapi
-// program that itself DECLARES a top-level `UiTestVerb` collides with the
-// baked checker-symbol preload's own scopeDeclare call -- the resulting
-// "redeclared" diagnostic must name uitest.cla (the baked runtime file),
-// not the user's own fixture, proving the baked declFileTab/curPathIdx
-// table (Task 4's own "load and retain" floor) actually drives
-// attribution now (bkInstallCheckerSymbolsForTestapi, bake.cla). This is
-// the only class of runtime-attributed diagnostic reachable on the bake
-// path: the runtime is pre-lowered, so no LOWERING diagnostic can ever
-// arise for baked content again; this is a check-time one, forced by a
-// deliberate name collision (task-5-report.md explains why check#1 never
-// naturally attributes a redeclaration to the runtime side for any
-// legitimate program).
-func TestRtbakeTestapiForcedAttribution(t *testing.T) {
+// TestRtbakeTestapiManifestOnlyNegative (fix round 2's own required
+// negative test): a --testapi program naming a MANIFEST-ONLY module's
+// own internal (sortedmapKeySlot, runtime/clarus/sortedmap.cla -- one of
+// the four modules driveManifestSplice only ever splices for check#2,
+// retired on the bake path, never for check#1) must error identically
+// under --rtbake and from-source, EVEN THOUGH testapi's own preload now
+// covers the full thirteen early-spliced modules (fix round 2's own
+// widening) -- proving that widening stayed correctly scoped: the four
+// manifest-only modules stay invisible to check#1 on BOTH paths, exactly
+// like a from-source --testapi compile (whose own check#1 never splices
+// them either).
+func TestRtbakeTestapiManifestOnlyNegative(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+
+	src := `app ManifestInternalTest {
+    name: "ManifestInternalTest"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "testapi manifest-only-internal negative fixture."
+    id: "MFIT"
+}
+
+window Probe {
+    title: "ManifestInternalTest"
+    size: 300, 120
+}
+
+on App.launch {
+    open Probe
+}
+
+extend Probe {
+    on opened {
+        sortedmapKeySlot(0, 0)
+    }
+}
+`
+	fixture := filepath.Join(dir, "manifest_internal.cla")
+	if err := os.WriteFile(fixture, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcCmd := exec.Command(exe, "emit68k", "--testapi", "-o", filepath.Join(dir, "src.bin"), fixture)
+	srcCmd.Dir = RepoRoot(t)
+	srcOut, srcErr := srcCmd.CombinedOutput()
+	if srcErr == nil {
+		t.Fatalf("from-source --testapi naming sortedmapKeySlot: expected failure, got success\n%s", srcOut)
+	}
+
+	bakeCmd := exec.Command(exe, "emit68k", "--rtbake", bakePath, "--testapi", "-o", filepath.Join(dir, "bake.bin"), fixture)
+	bakeCmd.Dir = RepoRoot(t)
+	bakeOut, bakeErr := bakeCmd.CombinedOutput()
+	if bakeErr == nil {
+		t.Fatalf("--rtbake --testapi naming sortedmapKeySlot: expected failure, got success\n%s", bakeOut)
+	}
+
+	const want = "undefined: sortedmapKeySlot"
+	if !bytes.Contains(srcOut, []byte(want)) {
+		t.Fatalf("from-source diagnostic missing %q:\n%s", want, srcOut)
+	}
+	if !bytes.Contains(bakeOut, []byte(want)) {
+		t.Fatalf("--rtbake diagnostic missing %q:\n%s", want, bakeOut)
+	}
+}
+
+// TestRtbakeTestapiCollisionParity (deliverable (c), corrected in fix
+// round 2): a --testapi program that itself DECLARES a top-level
+// `UiTestVerb` collides with the preloaded checker symbol -- round 1's
+// own version of this test asserted the resulting diagnostic names
+// uitest.cla (the baked runtime file); that assumption was WRONG,
+// verified by direct comparison against from-source's own real output
+// for the identical fixture: from-source's own check#1 declares the
+// early-spliced modules FIRST (driveEarlySplice) and user code SECOND,
+// so scopeDeclare's own "first declared, in this scope, keeps it" rule
+// attributes the "redeclaration of X" diagnostic to the USER's file, at
+// the user's own collision line -- NEVER to the runtime file, for this
+// specific collision direction, on EITHER path. Fix round 2's own
+// bkInstallCheckerSymbolsForTestapi (bake.cla) runs its preload BEFORE
+// the user's own checkPhase1 too, so the bake path now produces the
+// EXACT SAME "redeclaration of X" diagnostic, at the exact same user
+// file:line, as from-source -- this test asserts that parity directly
+// (byte-identical diagnostic text) rather than a hardcoded (and, it
+// turns out, incorrect) assumption about which file gets named.
+//
+// (Deliverable (c)'s own broader claim -- SOME diagnostic naming a baked
+// runtime file, proving the retained declFileTab table has a real
+// consumer -- has no organically-reachable trigger on the bake path
+// after this correction: check#1 never walks a baked runtime decl node
+// at all, only the user's own chain, so curPathIdx never naturally
+// becomes a runtime path during a --testapi compile. See task-5-
+// report.md's fix round 2 section.)
+func TestRtbakeTestapiCollisionParity(t *testing.T) {
 	exe := claruscboot.CurrentExe(t)
 	dir := t.TempDir()
 	bakePath := filepath.Join(dir, "rt68k.clir")
@@ -313,17 +394,26 @@ func UiTestVerb(x: int): bool {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(exe, "emit68k", "--rtbake", bakePath, "--testapi", "-o", filepath.Join(dir, "out.bin"), fixture)
-	cmd.Dir = RepoRoot(t)
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("expected the redeclaration to fail the compile, got success\n%s", out)
+	srcCmd := exec.Command(exe, "emit68k", "--testapi", "-o", filepath.Join(dir, "src.bin"), fixture)
+	srcCmd.Dir = RepoRoot(t)
+	srcOut, srcErr := srcCmd.CombinedOutput()
+	if srcErr == nil {
+		t.Fatalf("from-source: expected the redeclaration to fail the compile, got success\n%s", srcOut)
 	}
-	if !bytes.Contains(out, []byte("runtime/clarus/uitest.cla")) {
-		t.Fatalf("expected the diagnostic to attribute to runtime/clarus/uitest.cla, got:\n%s", out)
+
+	bakeCmd := exec.Command(exe, "emit68k", "--rtbake", bakePath, "--testapi", "-o", filepath.Join(dir, "bake.bin"), fixture)
+	bakeCmd.Dir = RepoRoot(t)
+	bakeOut, bakeErr := bakeCmd.CombinedOutput()
+	if bakeErr == nil {
+		t.Fatalf("--rtbake: expected the redeclaration to fail the compile, got success\n%s", bakeOut)
 	}
-	if !bytes.Contains(out, []byte("redeclared")) {
-		t.Fatalf("expected a redeclaration diagnostic, got:\n%s", out)
+
+	const want = "collide.cla:18:1: redeclaration of UiTestVerb"
+	if !bytes.Contains(srcOut, []byte(want)) {
+		t.Fatalf("from-source diagnostic missing %q:\n%s", want, srcOut)
+	}
+	if !bytes.Contains(bakeOut, []byte(want)) {
+		t.Fatalf("--rtbake diagnostic missing %q:\n%s", want, bakeOut)
 	}
 }
 
@@ -693,31 +783,24 @@ func TestBakeFullCorpusSuiteCore(t *testing.T) {
 	}
 }
 
-// TestBakeFullCorpusSuiteToolbox: the toolbox suite's --testapi gui.cla
-// composition does NOT yet compile via --rtbake -- a genuinely NEW gap
-// found by adding this test (not something fix rounds 1/2 targeted or
-// fixed): testsuite/toolbox/cases_uitest.cla, cases_finfo.cla, and
-// cases_resources.cla name RAW runtime internals directly (UiNewPtr,
-// UiGetNextEvent, rtUiHandleMouseDown, UiStrAddr, ...), not just the 16
-// UiTest* wrapper names bkInstallCheckerSymbolsForTestapi preloads
-// (bake.cla). From-source --testapi's own check#1 sees ALL THIRTEEN
-// early-spliced modules' top-level names (driveEarlySplice splices core.
-// cla..uidialogs.cla+uitest.cla into ONE combined chain, declaring every
-// one of them into the same scope) -- not just uitest.cla's own, an
-// assumption this task's deliverable (a) got wrong from the start (the
-// core suite's own gui.cla composition happens not to name anything
-// outside the 16-name set, which is why it passes and this gap went
-// undetected until this specific suite build was added to the gate).
-// A real fix needs bkInstallCheckerSymbolsForTestapi to preload ALL
-// thirteen early-spliced modules' own checker symbols (funcSigs/symbols/
-// scopes), not just uitest.cla's -- the natural approach mirrors this
-// task's own base/uitest IR split (bake.cla's bakeGenerateChain): a
-// SECOND checker-side boundary captured in the generator, marking where
-// "core.cla..uitest.cla" ends and "sortedmap.cla.." begins, installed
-// wholesale for testapi instead of the current 16-name lookup. Out of
-// scope for this fix round (a genuinely new widening, not a structural
-// reorder like fixes 1/2) -- documented here, asserted to STILL fail so
-// a future fix trips this test instead of it silently going stale.
+// TestBakeFullCorpusSuiteToolbox (fix round 2): the checker-symbol-scope
+// gap round 1 found (testsuite/toolbox/cases_uitest.cla, cases_finfo.
+// cla, and cases_resources.cla name RAW runtime internals -- UiNewPtr,
+// UiStrAddr, ...) is closed -- bkInstallCheckerSymbolsForTestapi now
+// installs full checker-symbol visibility for all THIRTEEN early-
+// spliced modules, not just uitest.cla's 16 UiTest* wrapper names (see
+// its own doc comment, bake.cla). The toolbox suite's own gui.cla
+// composition also directly names toolbox/files.cla -- a NESTED include
+// of uidialogs.cla (one of the thirteen), so its own names are now
+// visible via the SAME preload as toolbox/files.cla's own direct
+// inclusion, a genuine collision from-source resolves via expand()'s own
+// dedup/hoisting (no live re-parse on the bake path to dedup against);
+// bkComputeManifestPaths (deliverable (b)) was widened to cover every
+// file the bake transitively touched (via bkLoadedDeclFileTab, not just
+// bakeModuleList's own top-level entries), so this compile now falls
+// back to a from-source recompile -- byte-identical to it by
+// construction, exactly like TestBakeFullCorpusSuiteCore's own direct
+// (non-fallback) path.
 func TestBakeFullCorpusSuiteToolbox(t *testing.T) {
 	requireBakeFull(t)
 	exe := claruscboot.CurrentExe(t)
@@ -725,15 +808,15 @@ func TestBakeFullCorpusSuiteToolbox(t *testing.T) {
 	bakePath := filepath.Join(dir, "rt68k.clir")
 	RunBakeIR(t, exe, "68k", bakePath)
 
-	bakeOut := filepath.Join(dir, "toolbox.bin")
-	args := append([]string{"emit68k", "--testapi", "--rtbake", bakePath, "-o", bakeOut}, toolboxSuiteGUIFiles...)
-	cmd := exec.Command(exe, args...)
-	cmd.Dir = RepoRoot(t)
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("toolbox suite --rtbake build now SUCCEEDS -- the checker-symbol-scope gap (this test's own doc comment) appears fixed; replace this test with a byte-identity assertion like TestBakeFullCorpusSuiteCore")
-	}
-	if !bytes.Contains(out, []byte("undefined:")) {
-		t.Fatalf("expected the documented checker-symbol-scope failure (undefined: ...), got a different error:\n%s", out)
+	srcDir := filepath.Join(dir, "toolbox-src")
+	bakeDir := filepath.Join(dir, "toolbox-bake")
+	os.MkdirAll(srcDir, 0o755)
+	os.MkdirAll(bakeDir, 0o755)
+	srcOut := filepath.Join(srcDir, "toolbox.bin")
+	bakeOut := filepath.Join(bakeDir, "toolbox.bin")
+	srcData := runSuiteEmit68k(t, exe, toolboxSuiteGUIFiles, srcOut, "")
+	bakeData := runSuiteEmit68k(t, exe, toolboxSuiteGUIFiles, bakeOut, bakePath)
+	if !bytes.Equal(srcData, bakeData) {
+		t.Fatalf("toolbox suite: --rtbake fork (%d bytes) != from-source fork (%d bytes)", len(bakeData), len(srcData))
 	}
 }

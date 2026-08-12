@@ -43,11 +43,13 @@ include "drive.cla"
 // ================================================================
 
 const bkMagic: string = "CLIR"
-// bkFormatVersion 2 (runtime-ir-bake Task 5): added bkSecUitestBounds (the
-// base/uitest IR-arena boundary counts -- see that section's own doc
-// comment). Pre-release format; the loader refuses any other version
-// outright (no compat shim), per this phase's own controller resolution.
-const bkFormatVersion: int = 2
+// bkFormatVersion 3 (runtime-ir-bake Task 5, fix round 2): added
+// bkSecCheckerVisibility (the testapi-visible checker-symbol boundary --
+// see that section's own doc comment). Version 2 added bkSecUitestBounds
+// (the base/uitest IR-arena boundary counts). Pre-release format; the
+// loader refuses any other version outright (no compat shim), per this
+// phase's own controller resolution.
+const bkFormatVersion: int = 3
 
 // Lane tags (brief's format block: 0=68k, 1=c).
 const bkLane68k: int = 0
@@ -111,8 +113,23 @@ const bkSecDeclFileTab: int = 43
 // uitest.cla at all -- bakeModuleList's own doc comment). See task-5-
 // report.md's "inherited problem" section for the full root-cause chain.
 const bkSecUitestBounds: int = 44
+// bkSecCheckerVisibility (format version 3, Task 5 fix round 2): two
+// counts -- funcSigs.count/symbols.count captured right after the
+// generator's own checkPhase1 call over the thirteen testapi-visible
+// modules (core.cla..uidialogs.cla + uitest.cla), before checkPhase1
+// runs again over the four manifest-only modules (sortedmap.cla/
+// datetime.cla(+lane)/ser.cla/native.cla). A testapi install uses these
+// as a visibility boundary (NOT a truncation boundary -- funcSigs/
+// symbols/scopes install in FULL; only the topScope's own name->symbol
+// bindings above the boundary are excluded when repopulating the live
+// topScope), so a --testapi compile's own check#1 sees exactly the
+// same names a from-source --testapi compile's own check#1 does (the
+// thirteen early-spliced modules, not the four manifest-only ones,
+// which from-source only ever exposes to check#2 -- retired on the bake
+// path). See bkInstallCheckerSymbolsForTestapi's own doc comment.
+const bkSecCheckerVisibility: int = 45
 
-const bkSectionCount: int = 41
+const bkSectionCount: int = 42
 
 // ================================================================
 // Byte-buffer primitives -- explicit one-byte-at-a-time big-endian
@@ -293,6 +310,17 @@ func bakeModuleList(lane: int): list of string {
 var bkGenBaseIrFuncsCount: int
 var bkGenBaseIrStrLitsCount: int
 
+// bkGenEarlyFuncSigsCount/bkGenEarlySymbolsCount (runtime-ir-bake Task 5,
+// fix round 2): funcSigs.count/symbols.count captured right after
+// bakeGenerateChain's own checkPhase1 call over the thirteen testapi-
+// visible modules (core.cla..uidialogs.cla + uitest.cla), before the
+// four manifest-only modules' own checkPhase1 call runs. Consumed by
+// bkInstallCheckerSymbolsForTestapi to decide which baked topScope
+// bindings are visible to a --testapi compile's own check#1 -- see that
+// function's own doc comment.
+var bkGenEarlyFuncSigsCount: int
+var bkGenEarlySymbolsCount: int
+
 // drivePathIsUitest (moved to drive.cla, fix round 2): originally lived
 // here as bkPathIsUitest, but drive.cla's own driveManifestSplice needs
 // it too now (its own uitest-tail-repositioning partition) and drive.cla
@@ -316,12 +344,17 @@ func bakeGenerateChain(lane: int): bool {
     var uitTail: int
     var baseHead: int
     var baseTail: int
+    var earlyVisibleAsmHeadsBoundary: int
+    var uitestTailNode: int
+    var savedNextAfterUitest: int
+    var manifestOnlyHead: int
 
     mods = bakeModuleList(lane)
     if not haveRtDir {
         rtDir = findRtDir(mods[0])
     }
 
+    earlyVisibleAsmHeadsBoundary = 0
     i = 0
     while i < mods.count {
         rtPath = joinPath(rtDir, mods[i])
@@ -332,6 +365,17 @@ func bakeGenerateChain(lane: int): bool {
                 log("clarusc --bake-ir: runtime module " + mods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
             }
             quit 1
+        }
+        // runtime-ir-bake Task 5, fix round 2: uitest.cla is always the
+        // last of the THIRTEEN "testapi early-visible" modules in
+        // bakeModuleList's own fixed order (core.cla..uidialogs.cla,
+        // then uitest.cla, THEN the four manifest-only modules --
+        // sortedmap.cla/datetime.cla(+lane)/ser.cla/native.cla). Capture
+        // the asmHeads boundary right here so the checker-phase split
+        // below knows where "testapi-visible" ends -- see this
+        // function's own checkPhase1 split, just below.
+        if mods[i] == "uitest.cla" {
+            earlyVisibleAsmHeadsBoundary = asmHeads.count
         }
         i = i + 1
     }
@@ -364,7 +408,50 @@ func bakeGenerateChain(lane: int): bool {
         return false
     }
 
-    checkProgram(combined)
+    // runtime-ir-bake Task 5, fix round 2: split checkProgram's own
+    // phase 1 (name declaration) into two calls -- the thirteen
+    // testapi-visible modules first, then the four manifest-only ones --
+    // so bkGenEarlyFuncSigsCount/bkGenEarlySymbolsCount capture exactly
+    // where testapi-visible checker symbols end. Phase 2 (body checking)
+    // stays ONE call over the whole `combined` chain, unchanged --
+    // bodies can be checked in any order once every top-level name is
+    // declared, so this split is invisible to it.
+    //
+    // The split is done via a temporary sever-and-restore of uitest.cla's
+    // own tail node's `.next` field, NOT by building two new chains via
+    // declListAppend (this function's own base/uitest split, above,
+    // already learned the hard way -- see its own doc comment -- that
+    // reusing declListAppend on nodes ALSO reachable through `combined`
+    // corrupts `combined` itself, since they are the SAME underlying
+    // decl nodes). Sever-and-restore touches exactly one field, once,
+    // and puts it back before checkPhase2 ever needs the whole chain
+    // intact again.
+    checkReset()
+    manifestOnlyHead = -1
+    if earlyVisibleAsmHeadsBoundary > 0 and earlyVisibleAsmHeadsBoundary < asmHeads.count {
+        uitestTailNode = asmTails[earlyVisibleAsmHeadsBoundary - 1]
+        savedNextAfterUitest = declNext(uitestTailNode)
+        declListAppend(uitestTailNode, -1)
+        checkPhase1(combined)
+        bkGenEarlyFuncSigsCount = funcSigs.count
+        bkGenEarlySymbolsCount = symbols.count
+        declListAppend(uitestTailNode, savedNextAfterUitest)
+        manifestOnlyHead = asmHeads[earlyVisibleAsmHeadsBoundary]
+        if manifestOnlyHead != -1 {
+            checkPhase1(manifestOnlyHead)
+        }
+    } else {
+        // Defensive fallback (should never trigger: bakeModuleList always
+        // puts uitest.cla before the four manifest-only modules) --
+        // behaves like the original single-pass checkProgram, and the
+        // installed testapi visibility boundary ends up covering
+        // everything (matches the OLD, pre-fix-round-2 behavior rather
+        // than silently mis-declaring).
+        checkPhase1(combined)
+        bkGenEarlyFuncSigsCount = funcSigs.count
+        bkGenEarlySymbolsCount = symbols.count
+    }
+    checkPhase2(combined)
     if diags.count > 0 {
         return false
     }
@@ -1132,6 +1219,17 @@ func bkWriteUitestBounds(): text {
     return sec
 }
 
+// bkWriteCheckerVisibility (format version 3, Task 5 fix round 2): the
+// testapi-visible checker-symbol boundary -- see bkSecCheckerVisibility's
+// own doc comment.
+func bkWriteCheckerVisibility(): text {
+    var sec: text
+
+    bkPutU32(sec, bkGenEarlyFuncSigsCount)
+    bkPutU32(sec, bkGenEarlySymbolsCount)
+    return sec
+}
+
 // ================================================================
 // Top-level orchestrator
 // ================================================================
@@ -1226,6 +1324,7 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     bkEmitSection(out, bkSecCheckerSymbols, bkWriteCheckerSymbols())
     bkEmitSection(out, bkSecDeclFileTab, bkWriteDeclFileTab())
     bkEmitSection(out, bkSecUitestBounds, bkWriteUitestBounds())
+    bkEmitSection(out, bkSecCheckerVisibility, bkWriteCheckerVisibility())
 
     if not file.writeText(outPath, out, fileTypeData, "????") {
         log("clarusc --bake-ir: cannot write " + outPath + ": " + lastError.message)
@@ -1470,6 +1569,13 @@ var bkLoadedDeclFileTab: list of int
 // testapi install back to -- see bkSecUitestBounds' own doc comment.
 var bkLdBaseIrFuncsCount: int
 var bkLdBaseIrStrLitsCount: int
+
+// bkLdEarlyFuncSigsCount/bkLdEarlySymbolsCount (format version 3, Task 5
+// fix round 2): the testapi-visible checker-symbol boundary --
+// bkInstallCheckerSymbolsForTestapi's own visibility filter. See
+// bkSecCheckerVisibility's own doc comment.
+var bkLdEarlyFuncSigsCount: int
+var bkLdEarlySymbolsCount: int
 
 // bkLoadedModules (Task 5, deliverable (b)): the bake header's own
 // module-key manifest, retained rather than discarded (Task 4's own
@@ -2083,6 +2189,14 @@ func bkReadUitestBounds() {
     bkLdBaseIrStrLitsCount = bkGetU32()
 }
 
+// bkReadCheckerVisibility (format version 3, Task 5 fix round 2): the
+// testapi-visible checker-symbol boundary -- see bkSecCheckerVisibility's
+// own doc comment.
+func bkReadCheckerVisibility() {
+    bkLdEarlyFuncSigsCount = bkGetU32()
+    bkLdEarlySymbolsCount = bkGetU32()
+}
+
 // bkLoadSections reads the section table (sectionCount, then that many
 // `id(2) len(4) payload(len)` frames) and dispatches each to its own
 // reader by id -- section ORDER in the file always matches bkWriteFile's
@@ -2192,6 +2306,8 @@ func bkLoadSections(): bool {
             bkLoadedDeclFileTab = bkReadIntList()
         } else if id == bkSecUitestBounds {
             bkReadUitestBounds()
+        } else if id == bkSecCheckerVisibility {
+            bkReadCheckerVisibility()
         } else {
             emitDiag(1, 1, "--rtbake: unknown section id " + numToStr(id))
             return false
@@ -2385,19 +2501,42 @@ func bkComputeManifestPaths() {
     var p: string
     var m: map of bool
 
-    if bkLoadedModules.count == 0 {
-        bkManifestPaths = m
-        return
+    if bkLoadedModules.count > 0 {
+        prefixLen = rtModuleKey("").length
+        if not haveRtDir {
+            rtDir = findRtDir(bkLoadedModules[0][prefixLen, bkLoadedModules[0].length - prefixLen])
+        }
+        i = 0
+        while i < bkLoadedModules.count {
+            bareMod = bkLoadedModules[i][prefixLen, bkLoadedModules[i].length - prefixLen]
+            p = normalizePath(joinPath(rtDir, bareMod))
+            m[p] = true
+            i = i + 1
+        }
     }
-    prefixLen = rtModuleKey("").length
-    if not haveRtDir {
-        rtDir = findRtDir(bkLoadedModules[0][prefixLen, bkLoadedModules[0].length - prefixLen])
-    }
+    // runtime-ir-bake Task 5, fix round 2: ALSO cover every file the
+    // bake transitively touched, not just bakeModuleList's own top-level
+    // 17/18 entries -- found the hard way, building the toolbox suite:
+    // uidialogs.cla itself `include`s toolbox/files.cla and toolbox/
+    // standardfile.cla (nested, not a top-level bakeModuleList module),
+    // and the toolbox suite's OWN gui.cla composition ALSO names toolbox/
+    // files.cla directly as one of its own entry files -- from-source
+    // handles this the ordinary way (expand()'s own dedup/hoisting
+    // recognizes the SAME disk path reached two ways and hoists the
+    // user's already-parsed instance into the runtime chain's position
+    // instead of re-declaring it); the bake path has no live re-parse of
+    // the runtime side to dedup against, so without this, a suite
+    // composition that directly names a nested-include file collides
+    // (two declarations of the same names) instead of falling back.
+    // Reuses bkLoadedDeclFileTab (Task 4's own retained table, already
+    // loaded) rather than a new serialized field -- every baked decl's
+    // OWN file is already recorded there, nested includes included, so
+    // no format change is needed for this part.
     i = 0
-    while i < bkLoadedModules.count {
-        bareMod = bkLoadedModules[i][prefixLen, bkLoadedModules[i].length - prefixLen]
-        p = normalizePath(joinPath(rtDir, bareMod))
-        m[p] = true
+    while i < bkLoadedDeclFileTab.count {
+        if bkLoadedDeclFileTab[i] != -1 {
+            m[poolGet(bkLoadedDeclFileTab[i])] = true
+        }
         i = i + 1
     }
     bkManifestPaths = m
@@ -2556,144 +2695,73 @@ func bkInstallArenas(testapi: bool) {
 // --testapi checker-symbol preload (Task 5, deliverables (a)/(c))
 // ================================================================
 
-// bkUitestTestapiNames: uitest.cla's own user-facing UiTest* surface --
-// UiTestVerb plus every wrapper, and UiTestChecksum (runtime/clarus/
-// uitest.cla's own top doc comment) -- rtUiTestIntToStr is a private
-// helper (not "UiTest*"-named, never meant for a test program to call
-// directly) and is deliberately excluded. Hardcoded rather than derived
-// from the bake's own module boundaries: uitest.cla is a small, curated,
-// rarely-changed test-API surface (the SAME "hardcode the known name set"
-// precedent bkInstallArenas' own eight-dispatcher skip list already
-// uses), and every SIGNATURE is still read back from the bake itself
-// (bkInstallCheckerSymbolsForTestapi below), so a change to an EXISTING
-// name's params/return type is picked up automatically -- only adding or
-// renaming a UiTest* function needs this list updated too.
-// ponytail: a name-list ceiling, not a derived-from-bake one; upgrade to
-// a real module-boundary scan (mirroring drivePathIsUitest's declFileTab
-// walk) if uitest.cla's surface starts changing often enough for this to
-// go stale.
-func bkUitestTestapiNames(): list of string {
-    var names: list of string
-
-    names.add("UiTestVerb")
-    names.add("UiTestClick")
-    names.add("UiTestDblClick")
-    names.add("UiTestKey")
-    names.add("UiTestType")
-    names.add("UiTestMenu")
-    names.add("UiTestClose")
-    names.add("UiTestResize")
-    names.add("UiTestZoom")
-    names.add("UiTestAnswerOpen")
-    names.add("UiTestAnswerSave")
-    names.add("UiTestAnswerChanges")
-    names.add("UiTestAnswerCancel")
-    names.add("UiTestAnswerPopup")
-    names.add("UiTestTick")
-    names.add("UiTestChecksum")
-    return names
-}
-
-// bkFindUitestPathIdx scans the retained bkLoadedDeclFileTab (Task 4's own
-// "at minimum load and retain" floor -- this is Task 5's consumer) for
-// the first decl attributed to uitest.cla, returning its interned path-
-// pool index (valid against the LIVE strPool once bkInstallPool has run,
-// since a baked path-pool index is a plain prefix offset into the SAME
-// pool). Returns -1 if the bake somehow carries no uitest.cla decls at
-// all (bakeModuleList always includes it, so this should never happen in
-// practice -- callers treat -1 defensively, not as a hard error).
-func bkFindUitestPathIdx(): int {
-    var i: int
-
-    i = 0
-    while i < bkLoadedDeclFileTab.count {
-        if drivePathIsUitest(bkLoadedDeclFileTab[i]) {
-            return bkLoadedDeclFileTab[i]
-        }
-        i = i + 1
-    }
-    return -1
-}
-
-// bkInstallCheckerSymbolsForTestapi (Task 5, deliverables (a)/(c)): for
-// each of uitest.cla's own UiTest* names, looks it up BY NAME in the
-// baked topScope (Task 4's retained bkLoadedScopes/bkLoadedSymbols/
-// bkLoadedFuncSigs -- loaded, never installed, until now), builds a FRESH
-// live FuncSig+Symbol from the baked one's fields (every field is either
-// a primitive scalar type index -- valid verbatim, since checkReset's own
-// typesReset bootstrap creates the same singleton primitives at the same
-// low indices on every compile, baked or live, and uitest.cla's own
-// signatures use nothing else, confirmed by direct read of runtime/
-// clarus/uitest.cla -- or a plain bool/int flag, also copied verbatim),
-// and scopeDeclare()s it into the LIVE topScope. Caller's contract
-// (checkReset already ran, topScope is otherwise still empty): call this
-// AFTER the user program's own checkPhase1 (so a user top-level decl that
-// legitimately shadows a UiTest* name wins the ordinary "declared first,
-// in this scope, keeps it" rule -- scopeDeclare's own doc comment) but
-// BEFORE checkPhase2 (so a user function body calling UiTestVerb etc.
-// still resolves it -- phase 2 needs every top-level name, user's own AND
-// these, already declared). A declare collision (the user's own code
-// already claimed a UiTest* name) is diagnosed HERE, attributed to
-// uitest.cla itself via curPathIdx set from bkFindUitestPathIdx's own
-// baked declFileTab lookup -- the "runtime-attributed diagnostic"
-// deliverable (c) asks for: check-time is the ONLY class reachable on the
-// bake path (the runtime is pre-lowered; no LOWERING diagnostic can ever
-// arise for baked content again -- task-5-report.md says so explicitly).
+// bkInstallCheckerSymbolsForTestapi (Task 5 deliverable (a); widened in
+// fix round 2 from a 16-hardcoded-name lookup to full checker-symbol
+// visibility): installs the WHOLE baked funcSigs/symbols/scopes arrays
+// verbatim (funcSigs/symbols are append-only arenas -- newFuncSig/
+// scopeDeclare, called next by the user's own checkPhase1, just keep
+// appending past whatever's already there; scopeNew does the same for
+// scopes -- so a wholesale install needs no index surgery: every INDEX
+// the baked arrays' own Symbol.sigIdx / Scope.names values reference
+// stays valid, since nothing is removed or renumbered, only referenced
+// or not), then REPLACES the live topScope's own `names` map with a
+// FILTERED copy: only bindings whose symbol index is below
+// bkLdEarlySymbolsCount (bkSecCheckerVisibility's own boundary -- the
+// thirteen testapi-visible modules: core.cla..uidialogs.cla + uitest.
+// cla) survive; the four manifest-only modules' own bindings
+// (sortedmap.cla/datetime.cla(+lane)/ser.cla/native.cla -- symbol
+// indices >= the boundary) are simply never entered into scope, so
+// scopeLookup can never find them -- behavior-identical to from-source
+// --testapi's own check#1, which literally never declares those four
+// modules at all (driveManifestSplice only splices them for check#2,
+// retired on the bake path).
+//
+// Design choice (fix round 2, replacing round 1's narrower 16-name
+// lookup): considered a boundary-TRUNCATION shape mirroring the IR base/
+// uitest split (bkInstallArenas) instead -- install only a [0,
+// earlyFuncSigsCount)+[uitestStart,uitestEnd) SUBSET of funcSigs/symbols.
+// Rejected: Symbol.sigIdx (into funcSigs) and Scope.names values (into
+// symbols) would then need REMAPPING wherever a truncated-and-recombined
+// range shifted an index, the same class of cross-reference surgery the
+// string-literal-pool problem (task-5-report.md's "inherited problem")
+// already proved risky under time pressure. The visibility-filter shape
+// here needs no remapping at all: nothing is removed, only what's
+// LOOKED UP is restricted, so every existing index stays exactly where
+// it was baked.
+//
+// Caller's contract (checkReset already ran, topScope is otherwise still
+// empty): call this BEFORE the user program's own checkPhase1 (unlike
+// round 1's after-the-fact declare loop) -- scopeDeclare's own "first
+// declared, in this scope, wins" rule then means a user top-level decl
+// that collides with an installed name is diagnosed by the USER's OWN
+// checkFuncSig/scopeDeclare call, during their own checkPhase1,
+// attributed to the USER's file via the ordinary setCheckPath(d)
+// mechanism -- VERIFIED to be exactly what from-source --testapi's own
+// check#1 does for the identical collision (driveEarlySplice declares
+// the early-spliced modules FIRST, user code SECOND, so the SAME
+// "second declaration loses" rule attributes the diagnostic to the user
+// there too, never to the runtime file -- round 1's own
+// TestRtbakeTestapiForcedAttribution assumed the opposite attribution
+// and was WRONG about from-source's real behavior; fixed to a from-
+// source/bake PARITY assertion instead, see task-5-report.md's own fix
+// round 2 section).
 func bkInstallCheckerSymbolsForTestapi() {
-    var names: list of string
-    var uitestPath: int
-    var savedPath: int
-    var i: int
-    var nm: int
-    var symIdx: int
-    var bakedSym: Symbol
-    var bakedSig: FuncSig
-    var freshSym: Symbol
-    var freshSigIdx: int
-    var freshParams: list of int
-    var j: int
-    var topNames: intmap of int
+    var filteredTopNames: intmap of int
+    var k: int
+    var v: int
+    var srcNames: intmap of int
 
-    names = bkUitestTestapiNames()
-    uitestPath = bkFindUitestPathIdx()
-    savedPath = curPathIdx
+    funcSigs = bkLoadedFuncSigs
+    symbols = bkLoadedSymbols
+    scopes = bkLoadedScopes
     if bkLoadedScopes.count <= topScope {
         return
     }
-    topNames = bkLoadedScopes[topScope].names
-
-    i = 0
-    while i < names.count {
-        nm = intern(names[i])
-        symIdx = topNames.get(nm, -1)
-        if symIdx != -1 and symIdx < bkLoadedSymbols.count {
-            bakedSym = bkLoadedSymbols[symIdx]
-            bakedSig = bkLoadedFuncSigs[bakedSym.sigIdx]
-            // newFuncSig's own doc comment: "list of T is a handle --
-            // aliasing it into two FuncSigs would be a checker bug." A
-            // FRESH list handle every iteration (driveFreshIntList(), not
-            // a `.clear()`'d reuse of one outer local -- reusing one
-            // handle across iterations would alias EVERY earlier
-            // iteration's already-stored FuncSig.params to this same
-            // list too, corrupting all of them the next time it's
-            // cleared), copied element-by-element from bakedSig.params
-            // rather than assigned directly, so each fresh FuncSig owns
-            // its own independent params list.
-            freshParams = driveFreshIntList()
-            j = 0
-            while j < bakedSig.params.count {
-                freshParams.add(bakedSig.params[j])
-                j = j + 1
-            }
-            freshSigIdx = newFuncSig(freshParams, bakedSig.ret)
-            freshSym = bakedSym
-            freshSym.sigIdx = freshSigIdx
-            curPathIdx = uitestPath
-            if not scopeDeclare(topScope, freshSym) {
-                emitDiag(1, 1, names[i] + " redeclared (a runtime UiTest* name; --testapi makes it a reserved identifier)")
-            }
-            curPathIdx = savedPath
+    srcNames = bkLoadedScopes[topScope].names
+    for k, v in srcNames {
+        if v < bkLdEarlySymbolsCount {
+            filteredTopNames[k] = v
         }
-        i = i + 1
     }
+    scopes[topScope].names = filteredTopNames
 }
