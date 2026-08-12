@@ -456,18 +456,11 @@ on App.startCLI(args: list of string) {
         quit 0
     }
 
-    // runtime-ir-bake Task 4: --rtbake does not support --testapi yet --
-    // driveEarlySplice (below, via driveCompile) would re-expand/re-lex/
-    // re-parse ui*.cla/uitest.cla as real user-chain source ON TOP of
-    // the same modules' already-baked IR, a genuine double-declaration
-    // hazard; Task 5 owns wiring the baked checker-symbol preload a real
-    // --testapi + --rtbake compile needs instead. Checked here (a clear
-    // CLI usage error) rather than left to driveCompile's own diagnostic
-    // path, since it's knowable before any parsing starts.
-    if haveRtbakeFlag and testApiFlag {
-        log("clarusc: --rtbake does not support --testapi yet")
-        quit 2
-    }
+    // runtime-ir-bake Task 5: --rtbake + --testapi is now supported --
+    // driveCompile's own bake-path check#1 branch preloads the baked
+    // checker symbols instead of re-parsing uitest.cla from source (see
+    // its own doc comment, drive.cla). No CLI-level refusal needed here
+    // any more (Task 4's own, now removed).
     if haveRtbakeFlag {
         rtbakeBytes = ""
         if not file.readText(rtbakePath, rtbakeBytes) {

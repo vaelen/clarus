@@ -43,7 +43,11 @@ include "drive.cla"
 // ================================================================
 
 const bkMagic: string = "CLIR"
-const bkFormatVersion: int = 1
+// bkFormatVersion 2 (runtime-ir-bake Task 5): added bkSecUitestBounds (the
+// base/uitest IR-arena boundary counts -- see that section's own doc
+// comment). Pre-release format; the loader refuses any other version
+// outright (no compat shim), per this phase's own controller resolution.
+const bkFormatVersion: int = 2
 
 // Lane tags (brief's format block: 0=68k, 1=c).
 const bkLane68k: int = 0
@@ -97,8 +101,18 @@ const bkSecStrPool: int = 40
 const bkSecLowCounters: int = 41
 const bkSecCheckerSymbols: int = 42
 const bkSecDeclFileTab: int = 43
+// bkSecUitestBounds (format version 2, Task 5): two counts -- irFuncs.count
+// and irStrLits.count captured right after the generator lowers the BASE
+// runtime chain (every baked module except uitest.cla) and BEFORE it goes
+// on to lower uitest.cla itself (bakeGenerateChain's own doc comment) --
+// the boundary a non-testapi install truncates both arenas back to, so a
+// non-testapi --rtbake build carries exactly the same irFuncs/irStrLits
+// content a from-source non-testapi compile would (which never splices
+// uitest.cla at all -- bakeModuleList's own doc comment). See task-5-
+// report.md's "inherited problem" section for the full root-cause chain.
+const bkSecUitestBounds: int = 44
 
-const bkSectionCount: int = 40
+const bkSectionCount: int = 41
 
 // ================================================================
 // Byte-buffer primitives -- explicit one-byte-at-a-time big-endian
@@ -269,6 +283,38 @@ func bakeModuleList(lane: int): list of string {
     return mods
 }
 
+// bkGenBaseIrFuncsCount/bkGenBaseIrStrLitsCount (Task 5, inherited-problem
+// fix): the irFuncs.count/irStrLits.count boundary bakeGenerateChain
+// records right after lowering the BASE runtime chain (every baked module
+// except uitest.cla) and before lowering uitest.cla itself -- serialized
+// verbatim by bkWriteUitestBounds, consumed by bkInstallArenas to truncate
+// a non-testapi install back to exactly what a from-source non-testapi
+// compile would have produced. See bkSecUitestBounds' own doc comment.
+var bkGenBaseIrFuncsCount: int
+var bkGenBaseIrStrLitsCount: int
+
+// bkPathIsUitest reports whether pathIdx (an interned path-pool index,
+// resolved via poolGet) names uitest.cla -- a plain basename suffix match
+// rather than an exact-string compare against rtModuleKey("uitest.cla"),
+// since the RECORDED identity (declFileTab/curPathIdx, drive.cla's
+// expand()) is always the DISK path (joinPath(rtDir, "uitest.cla")),
+// which only equals the "runtime/clarus/uitest.cla" key when rtDir is
+// left at its default -- a --rtdir override still ends in the same
+// "uitest.cla" tail either way. Shared by the generator (bakeGenerateChain,
+// splitting the base/uitest lowering below) and the loader (bake.cla's
+// own bkFindUitestPathIdx, Task 5 deliverable (a)/(c)).
+func bkPathIsUitest(pathIdx: int): bool {
+    var p: string
+    var want: string
+
+    if pathIdx == -1 {
+        return false
+    }
+    p = poolGet(pathIdx)
+    want = "uitest.cla"
+    return p.length >= want.length and p[p.length - want.length, want.length] == want
+}
+
 // ================================================================
 // Generator: assemble the runtime chain as the program, check once,
 // lower once -- Task 1 Step 3's proven shape, no other accommodation.
@@ -280,6 +326,10 @@ func bakeGenerateChain(lane: int): bool {
     var rtPath: string
     var h: int
     var tail: int
+    var uitHead: int
+    var uitTail: int
+    var baseHead: int
+    var baseTail: int
 
     mods = bakeModuleList(lane)
     if not haveRtDir {
@@ -333,12 +383,98 @@ func bakeGenerateChain(lane: int): bool {
         return false
     }
 
-    combined2 = combined
+    // runtime-ir-bake Task 5 (inherited-problem fix): lower the BASE
+    // runtime chain (every module except uitest.cla) and uitest.cla
+    // itself in two SEPARATE lowerProgram calls, in that order, instead
+    // of one combined call over `combined` -- their IR-arena
+    // contributions then land in two contiguous ranges (irFuncs/irStrLits
+    // only grow, never insert, across a lowerProgram call: the same
+    // append-only discipline the bake-install path already relies on for
+    // lowResumeFromBake's "append user IR after baked IR" contract), so
+    // bkInstallArenas can truncate a non-testapi install back to the base
+    // range below. checkProgram above is UNCHANGED -- the checker-symbol
+    // block still captures uitest.cla's checked signatures regardless of
+    // testapi, exactly as Task 3 built it; only LOWERING splits.
+    //
+    // asmHeads[i]'s own file identity (declFileTab, set by expand() for
+    // every decl, including these runtime ones) is used rather than a
+    // fixed position in bakeModuleList's own module-index order: a
+    // runtime module that itself `include`s another file would otherwise
+    // shift every later module's asmHeads index by one per nested include,
+    // silently misclassifying it as "uitest" or vice versa. None of the
+    // 17/18 modules here currently nest an include, but this stays
+    // correct regardless.
+    // Uses asmTails[i] (expand()'s own pre-stitch tail for asmHeads[i],
+    // recorded before ANY declListAppend ever touches it) rather than
+    // re-deriving via lastDecl(h) here: the combined-building loop just
+    // above already stitched every asmHeads[i]'s own tail's `.next` to
+    // the NEXT module in bakeModuleList order, so calling lastDecl(h) a
+    // second time, now, would walk straight through that stitch into
+    // every module AFTER h too -- driveEarlySplice's own rebuild loop
+    // (drive.cla) uses this exact same asmTails[idx] idiom for the same
+    // reason.
+    baseHead = -1
+    baseTail = -1
+    uitHead = -1
+    uitTail = -1
+    i = 0
+    while i < asmHeads.count {
+        h = asmHeads[i]
+        if h != -1 {
+            if bkPathIsUitest(getDeclFile(h)) {
+                if uitHead == -1 {
+                    uitHead = h
+                } else {
+                    uitTail = declListAppend(uitTail, h)
+                }
+                uitTail = asmTails[i]
+            } else {
+                if baseHead == -1 {
+                    baseHead = h
+                } else {
+                    baseTail = declListAppend(baseTail, h)
+                }
+                baseTail = asmTails[i]
+            }
+        }
+        i = i + 1
+    }
+    // Explicitly terminate each group's own final tail: combined's own
+    // stitching (the loop above) already pointed BOTH baseTail's and
+    // uitTail's underlying nodes at whatever module followed them in
+    // bakeModuleList's FULL order (e.g. uitest.cla's own single entry's
+    // tail still points at sortedmap.cla's head) -- a gap between two
+    // SAME-group entries gets bridged automatically by the next same-
+    // group declListAppend call above, but the LAST entry of a group
+    // (uitest.cla is a group of exactly one) never gets a following
+    // same-group entry to do that, so its stale tail link must be cut
+    // here or lowerProgram would walk straight through it into every
+    // module after it, re-lowering them a second time -- driveEarlySplice
+    // (drive.cla) terminates its own rebuilt chain the identical way.
+    declListAppend(baseTail, -1)
+    declListAppend(uitTail, -1)
+
     irReset()
-    lowerProgram(combined2)
+    lowResumeFromBake = false
+    if baseHead != -1 {
+        lowerProgram(baseHead)
+    }
     if diags.count > 0 {
         return false
     }
+    bkGenBaseIrFuncsCount = irFuncs.count
+    bkGenBaseIrStrLitsCount = irStrLits.count
+
+    lowResumeFromBake = true
+    if uitHead != -1 {
+        lowerProgram(uitHead)
+    }
+    lowResumeFromBake = false
+    if diags.count > 0 {
+        return false
+    }
+
+    combined2 = combined
     return true
 }
 
@@ -987,6 +1123,17 @@ func bkWriteDeclFileTab(): text {
     return sec
 }
 
+// bkWriteUitestBounds (format version 2, Task 5): the base/uitest IR-arena
+// boundary counts bakeGenerateChain captured -- see bkSecUitestBounds' own
+// doc comment.
+func bkWriteUitestBounds(): text {
+    var sec: text
+
+    bkPutU32(sec, bkGenBaseIrFuncsCount)
+    bkPutU32(sec, bkGenBaseIrStrLitsCount)
+    return sec
+}
+
 // ================================================================
 // Top-level orchestrator
 // ================================================================
@@ -1080,6 +1227,7 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     bkEmitSection(out, bkSecLowCounters, bkWriteLowCounters())
     bkEmitSection(out, bkSecCheckerSymbols, bkWriteCheckerSymbols())
     bkEmitSection(out, bkSecDeclFileTab, bkWriteDeclFileTab())
+    bkEmitSection(out, bkSecUitestBounds, bkWriteUitestBounds())
 
     if not file.writeText(outPath, out, fileTypeData, "????") {
         log("clarusc --bake-ir: cannot write " + outPath + ": " + lastError.message)
@@ -1318,6 +1466,33 @@ var bkLoadedScopes: list of Scope
 var bkLoadedTypeArena: list of TypeInfo
 var bkLoadedEnumMembers: list of EnumMemberInfo
 var bkLoadedDeclFileTab: list of int
+
+// bkLdBaseIrFuncsCount/bkLdBaseIrStrLitsCount (format version 2, Task 5):
+// the base/uitest IR-arena boundary bkInstallArenas truncates a non-
+// testapi install back to -- see bkSecUitestBounds' own doc comment.
+var bkLdBaseIrFuncsCount: int
+var bkLdBaseIrStrLitsCount: int
+
+// bkLoadedModules (Task 5, deliverable (b)): the bake header's own
+// module-key manifest, retained rather than discarded (Task 4's own
+// report flagged this as a "reads then discards" gap) -- one
+// "runtime/clarus/NAME" key per baked runtime module, in bakeModuleList's
+// own order. bkComputeManifestPaths turns this into the disk-path
+// identity set expand() dedups a user `include` against.
+var bkLoadedModules: list of string
+
+// bkManifestPaths: the CURRENT bake's module disk-path identity set
+// (bkComputeManifestPaths' own output), checked by drive.cla's expand()
+// -- gated on haveRtbake there, so it is a no-op (empty map, never
+// consulted) for every non-bake compile.
+var bkManifestPaths: map of bool
+
+// bkManifestHoistHit: set true by expand() the moment a user include
+// collides with bkManifestPaths -- driveCompile checks this right after
+// Phase A and falls back to a full from-source recompile when it fires
+// (deliverable (b)'s "hoisting case"). Reset false before every bake-path
+// Phase A run (driveCompile).
+var bkManifestHoistHit: bool
 
 // ---- Section readers -- mirror bkWrite* field-for-field ----
 
@@ -1903,6 +2078,13 @@ func bkReadCheckerSymbols() {
     bkLoadedEnumMembers = lEnumMembers
 }
 
+// bkReadUitestBounds (format version 2, Task 5): the base/uitest IR-arena
+// boundary counts -- see bkSecUitestBounds' own doc comment.
+func bkReadUitestBounds() {
+    bkLdBaseIrFuncsCount = bkGetU32()
+    bkLdBaseIrStrLitsCount = bkGetU32()
+}
+
 // bkLoadSections reads the section table (sectionCount, then that many
 // `id(2) len(4) payload(len)` frames) and dispatches each to its own
 // reader by id -- section ORDER in the file always matches bkWriteFile's
@@ -2010,6 +2192,8 @@ func bkLoadSections(): bool {
             bkReadCheckerSymbols()
         } else if id == bkSecDeclFileTab {
             bkLoadedDeclFileTab = bkReadIntList()
+        } else if id == bkSecUitestBounds {
+            bkReadUitestBounds()
         } else {
             emitDiag(1, 1, "--rtbake: unknown section id " + numToStr(id))
             return false
@@ -2048,12 +2232,14 @@ func bkLoadSections(): bool {
 func bkLoadRtbake(buf: text, wantLane: int): bool {
     var magic: string
     var i: int
+    var n: int
     var version: int
     var lane: int
     var stampLen: int
     var stamp: int
     var compilerSrc: text
     var expectStamp: int
+    var loadedMods: list of string
 
     if buf.length < 15 {
         emitDiag(1, 1, "--rtbake: file too short to be a CLIR bake")
@@ -2095,11 +2281,19 @@ func bkLoadRtbake(buf: text, wantLane: int): bool {
         return false
     }
 
-    i = bkGetU16()
-    while i > 0 {
-        bkGetStrShort()
-        i = i - 1
+    // runtime-ir-bake Task 5 (b): retained (not discarded) into
+    // bkLoadedModules -- bkComputeManifestPaths (below) turns these
+    // module KEYS (rtModuleKey's "runtime/clarus/NAME" form, written by
+    // bkWriteFile) into the disk-path identity expand()'s own dedup uses,
+    // so a user `include` of one of these SAME files is detected during
+    // Phase A instead of silently double-declaring against the baked IR.
+    n = bkGetU16()
+    i = 0
+    while i < n {
+        loadedMods.add(bkGetStrShort())
+        i = i + 1
     }
+    bkLoadedModules = loadedMods
 
     return bkLoadSections()
 }
@@ -2128,6 +2322,87 @@ func bkInstallPool() {
         strIndex[strPool[i]] = i
         i = i + 1
     }
+}
+
+// bkInstallTypeArenaPrefix (Task 5, deliverable (a)): testapi-only --
+// replaces the just-checkReset()'d typeArena/enumMembers with the baked
+// versions (Task 4's retained bkLoadedTypeArena/bkLoadedEnumMembers),
+// BEFORE the user program's own checkPhase1 creates any type of its own
+// -- the same "install a verbatim-identical prefix, so baked indices
+// stay valid, before anything else can intern/allocate on top of it"
+// discipline bkInstallPool already uses for strPool, applied here to
+// typeArena instead.
+//
+// Why this is needed at all (found the hard way, via a real crash): NOT
+// every type is a checkReset()-seeded singleton at a fixed low index --
+// typesInit() only pre-seeds ~11 kind-only singletons (int/bool/fixed/
+// char/text/void/address/ptr/error/callback + the saveChoice enum);
+// TyStr (`string`) is NOT among them (types.cla's typesInit, directly
+// read) -- it gets its own fresh typeArena entry on first use, so its
+// INDEX depends on how many other types were interned before it in THIS
+// PARTICULAR process. UiTestVerb and five of its own siblings take a
+// `string` parameter -- their baked FuncSig.params entries are baked-
+// PROCESS-specific indices, invalid against a live compile's own
+// (much smaller, freshly checkReset()'d) typeArena. bkInstallCheckerSym
+// bolsForTestapi's own fresh-FuncSig construction copies those baked
+// indices verbatim (by design -- see its own doc comment on why that's
+// safe for TRUE singletons), so this install has to run first, or
+// typeKind(pt) on a copied-but-invalid index reads out of bounds
+// (verified: "runtime error: list index out of range", reproduced with a
+// --testapi bake fixture that actually CALLS UiTestVerb, not just
+// declares a window -- tickprobe.cla's own fixture never calls any
+// UiTest* function, which is why it never tripped this).
+//
+// Safe by the identical determinism argument bkInstallPool's own doc
+// comment already makes for strPool: typesInit()'s singleton seeding is
+// unconditional and first (typesReset -> typesInit, called at the very
+// top of checkReset(), before ANYTHING else in this compile could
+// intern/allocate a type) in BOTH the bake generator's own checkReset()
+// call and this compile's -- so the baked typeArena's own FIRST ~11
+// entries are BYTE-IDENTICAL to what this compile's checkReset() just
+// built, and REPLACING (not appending to) the just-built array with the
+// baked one is exactly "the singleton prefix, then more" -- never a
+// mismatch. enumMembers travels the same way (seedSaveChoice, called
+// from the SAME typesInit(), is equally deterministic).
+func bkInstallTypeArenaPrefix() {
+    typeArena = bkLoadedTypeArena
+    enumMembers = bkLoadedEnumMembers
+}
+
+// bkComputeManifestPaths (Task 5, deliverable (b)) builds bkManifestPaths
+// -- the disk-path identity expand()'s own hostPaths branch would compute
+// for each baked runtime module (normalizePath(joinPath(rtDir, NAME)),
+// bare NAME recovered by stripping rtModuleKey("")'s own fixed prefix off
+// each retained "runtime/clarus/NAME" key) -- so a user `include` of one
+// of these SAME files collides during Phase A's own expand() calls
+// (drive.cla's new haveRtbake-gated check) instead of silently double-
+// declaring against the baked IR. Resolves rtDir the same lazy-fill-once
+// way bakeGenerateChain/driveManifestSplice already do, so a --rtdir
+// override (or its absence) is honored identically. Called once, right
+// after bkInstallPool, before Phase A parses any user entries.
+func bkComputeManifestPaths() {
+    var i: int
+    var prefixLen: int
+    var bareMod: string
+    var p: string
+    var m: map of bool
+
+    if bkLoadedModules.count == 0 {
+        bkManifestPaths = m
+        return
+    }
+    prefixLen = rtModuleKey("").length
+    if not haveRtDir {
+        rtDir = findRtDir(bkLoadedModules[0][prefixLen, bkLoadedModules[0].length - prefixLen])
+    }
+    i = 0
+    while i < bkLoadedModules.count {
+        bareMod = bkLoadedModules[i][prefixLen, bkLoadedModules[i].length - prefixLen]
+        p = normalizePath(joinPath(rtDir, bareMod))
+        m[p] = true
+        i = i + 1
+    }
+    bkManifestPaths = m
 }
 
 // bkInstallArenas is the second install step -- called by driveCompile
@@ -2162,13 +2437,30 @@ func bkInstallPool() {
 // sites always resolve a callee by interned NAME, ir.cla's
 // findIRFuncIdxByName), so dropping these eight baked entries and
 // re-numbering everyone after them is safe.
-func bkInstallArenas() {
+// testapi (Task 5, inherited-problem fix): when false, irFuncs and
+// irStrLits are truncated back to the base/uitest boundary
+// (bkLdBaseIrFuncsCount/bkLdBaseIrStrLitsCount, bkSecUitestBounds) BEFORE
+// the dispatcher-name filter below runs, dropping uitest.cla's own
+// functions and string literals entirely -- exactly what a from-source
+// non-testapi compile has (it never splices uitest.cla in the first
+// place, bakeModuleList's own doc comment), closing the byte-identity gap
+// Task 4's report root-caused (cg68k.cla's single-segment shortcut and
+// cprint.cla's string-literal-pool printer both walk irStrLits by
+// PRESENCE, not shake reachability). testapi=true installs both arenas in
+// full, unchanged from Task 4's own behavior -- a from-source --testapi
+// build ALSO always carries uitest.cla (driveEarlySplice), so there is no
+// gap to close on that path.
+func bkInstallArenas(testapi: bool) {
     var skipNames: list of int
     var skip: intmap of bool
     var i: int
     var filtered: list of IRFunc
     var filteredIdx: intmap of int
     var nm: int
+    var srcFuncs: list of IRFunc
+    var srcStrLits: list of int
+    var truncFuncs: list of IRFunc
+    var truncStrLits: list of int
 
     skipNames.add(intern("clar_ui_fire_winevent"))
     skipNames.add(intern("clar_ui_fire_widget"))
@@ -2189,10 +2481,27 @@ func bkInstallArenas() {
     irExprs = bkLdIrExprs
     irLocals = bkLdIrLocals
 
+    srcFuncs = bkLdIrFuncs
+    srcStrLits = bkLdIrStrLits
+    if not testapi {
+        i = 0
+        while i < bkLdIrFuncs.count and i < bkLdBaseIrFuncsCount {
+            truncFuncs.add(bkLdIrFuncs[i])
+            i = i + 1
+        }
+        srcFuncs = truncFuncs
+        i = 0
+        while i < bkLdIrStrLits.count and i < bkLdBaseIrStrLitsCount {
+            truncStrLits.add(bkLdIrStrLits[i])
+            i = i + 1
+        }
+        srcStrLits = truncStrLits
+    }
+
     i = 0
-    while i < bkLdIrFuncs.count {
-        if not skip.get(bkLdIrFuncs[i].name, false) {
-            filtered.add(bkLdIrFuncs[i])
+    while i < srcFuncs.count {
+        if not skip.get(srcFuncs[i].name, false) {
+            filtered.add(srcFuncs[i])
         }
         i = i + 1
     }
@@ -2223,7 +2532,7 @@ func bkInstallArenas() {
     irWidgetHandlerEntries = bkLdIrWidgetHandlerEntries
     irMenuHandlerEntries = bkLdIrMenuHandlerEntries
     irEveryEntries = bkLdIrEveryEntries
-    irStrLits = bkLdIrStrLits
+    irStrLits = srcStrLits
     irExternNames = bkLdIrExternNames
     irExternRetTys = bkLdIrExternRetTys
     irExternParamStart = bkLdIrExternParamStart
@@ -2270,4 +2579,150 @@ func bkInstallArenas() {
     lowStoreTempN = bkLdLowStoreTempN
     lowRetTempN = bkLdLowRetTempN
     lowStrIdx = bkLdLowStrIdx
+}
+
+// ================================================================
+// --testapi checker-symbol preload (Task 5, deliverables (a)/(c))
+// ================================================================
+
+// bkUitestTestapiNames: uitest.cla's own user-facing UiTest* surface --
+// UiTestVerb plus every wrapper, and UiTestChecksum (runtime/clarus/
+// uitest.cla's own top doc comment) -- rtUiTestIntToStr is a private
+// helper (not "UiTest*"-named, never meant for a test program to call
+// directly) and is deliberately excluded. Hardcoded rather than derived
+// from the bake's own module boundaries: uitest.cla is a small, curated,
+// rarely-changed test-API surface (the SAME "hardcode the known name set"
+// precedent bkInstallArenas' own eight-dispatcher skip list already
+// uses), and every SIGNATURE is still read back from the bake itself
+// (bkInstallCheckerSymbolsForTestapi below), so a change to an EXISTING
+// name's params/return type is picked up automatically -- only adding or
+// renaming a UiTest* function needs this list updated too.
+// ponytail: a name-list ceiling, not a derived-from-bake one; upgrade to
+// a real module-boundary scan (mirroring bkPathIsUitest's declFileTab
+// walk) if uitest.cla's surface starts changing often enough for this to
+// go stale.
+func bkUitestTestapiNames(): list of string {
+    var names: list of string
+
+    names.add("UiTestVerb")
+    names.add("UiTestClick")
+    names.add("UiTestDblClick")
+    names.add("UiTestKey")
+    names.add("UiTestType")
+    names.add("UiTestMenu")
+    names.add("UiTestClose")
+    names.add("UiTestResize")
+    names.add("UiTestZoom")
+    names.add("UiTestAnswerOpen")
+    names.add("UiTestAnswerSave")
+    names.add("UiTestAnswerChanges")
+    names.add("UiTestAnswerCancel")
+    names.add("UiTestAnswerPopup")
+    names.add("UiTestTick")
+    names.add("UiTestChecksum")
+    return names
+}
+
+// bkFindUitestPathIdx scans the retained bkLoadedDeclFileTab (Task 4's own
+// "at minimum load and retain" floor -- this is Task 5's consumer) for
+// the first decl attributed to uitest.cla, returning its interned path-
+// pool index (valid against the LIVE strPool once bkInstallPool has run,
+// since a baked path-pool index is a plain prefix offset into the SAME
+// pool). Returns -1 if the bake somehow carries no uitest.cla decls at
+// all (bakeModuleList always includes it, so this should never happen in
+// practice -- callers treat -1 defensively, not as a hard error).
+func bkFindUitestPathIdx(): int {
+    var i: int
+
+    i = 0
+    while i < bkLoadedDeclFileTab.count {
+        if bkPathIsUitest(bkLoadedDeclFileTab[i]) {
+            return bkLoadedDeclFileTab[i]
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// bkInstallCheckerSymbolsForTestapi (Task 5, deliverables (a)/(c)): for
+// each of uitest.cla's own UiTest* names, looks it up BY NAME in the
+// baked topScope (Task 4's retained bkLoadedScopes/bkLoadedSymbols/
+// bkLoadedFuncSigs -- loaded, never installed, until now), builds a FRESH
+// live FuncSig+Symbol from the baked one's fields (every field is either
+// a primitive scalar type index -- valid verbatim, since checkReset's own
+// typesReset bootstrap creates the same singleton primitives at the same
+// low indices on every compile, baked or live, and uitest.cla's own
+// signatures use nothing else, confirmed by direct read of runtime/
+// clarus/uitest.cla -- or a plain bool/int flag, also copied verbatim),
+// and scopeDeclare()s it into the LIVE topScope. Caller's contract
+// (checkReset already ran, topScope is otherwise still empty): call this
+// AFTER the user program's own checkPhase1 (so a user top-level decl that
+// legitimately shadows a UiTest* name wins the ordinary "declared first,
+// in this scope, keeps it" rule -- scopeDeclare's own doc comment) but
+// BEFORE checkPhase2 (so a user function body calling UiTestVerb etc.
+// still resolves it -- phase 2 needs every top-level name, user's own AND
+// these, already declared). A declare collision (the user's own code
+// already claimed a UiTest* name) is diagnosed HERE, attributed to
+// uitest.cla itself via curPathIdx set from bkFindUitestPathIdx's own
+// baked declFileTab lookup -- the "runtime-attributed diagnostic"
+// deliverable (c) asks for: check-time is the ONLY class reachable on the
+// bake path (the runtime is pre-lowered; no LOWERING diagnostic can ever
+// arise for baked content again -- task-5-report.md says so explicitly).
+func bkInstallCheckerSymbolsForTestapi() {
+    var names: list of string
+    var uitestPath: int
+    var savedPath: int
+    var i: int
+    var nm: int
+    var symIdx: int
+    var bakedSym: Symbol
+    var bakedSig: FuncSig
+    var freshSym: Symbol
+    var freshSigIdx: int
+    var freshParams: list of int
+    var j: int
+    var topNames: intmap of int
+
+    names = bkUitestTestapiNames()
+    uitestPath = bkFindUitestPathIdx()
+    savedPath = curPathIdx
+    if bkLoadedScopes.count <= topScope {
+        return
+    }
+    topNames = bkLoadedScopes[topScope].names
+
+    i = 0
+    while i < names.count {
+        nm = intern(names[i])
+        symIdx = topNames.get(nm, -1)
+        if symIdx != -1 and symIdx < bkLoadedSymbols.count {
+            bakedSym = bkLoadedSymbols[symIdx]
+            bakedSig = bkLoadedFuncSigs[bakedSym.sigIdx]
+            // newFuncSig's own doc comment: "list of T is a handle --
+            // aliasing it into two FuncSigs would be a checker bug." A
+            // FRESH list handle every iteration (driveFreshIntList(), not
+            // a `.clear()`'d reuse of one outer local -- reusing one
+            // handle across iterations would alias EVERY earlier
+            // iteration's already-stored FuncSig.params to this same
+            // list too, corrupting all of them the next time it's
+            // cleared), copied element-by-element from bakedSig.params
+            // rather than assigned directly, so each fresh FuncSig owns
+            // its own independent params list.
+            freshParams = driveFreshIntList()
+            j = 0
+            while j < bakedSig.params.count {
+                freshParams.add(bakedSig.params[j])
+                j = j + 1
+            }
+            freshSigIdx = newFuncSig(freshParams, bakedSig.ret)
+            freshSym = bakedSym
+            freshSym.sigIdx = freshSigIdx
+            curPathIdx = uitestPath
+            if not scopeDeclare(topScope, freshSym) {
+                emitDiag(1, 1, names[i] + " redeclared (a runtime UiTest* name; --testapi makes it a reserved identifier)")
+            }
+            curPathIdx = savedPath
+        }
+        i = i + 1
+    }
 }

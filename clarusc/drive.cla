@@ -819,6 +819,24 @@ func expand(rawPath: string, entry: bool, key: string): bool {
         }
     }
 
+    // runtime-ir-bake Task 5 (b): a user `include` resolving to one of
+    // the CURRENT bake's own runtime-module disk paths (bake.cla's own
+    // bkComputeManifestPaths, computed once right after bkInstallPool,
+    // before Phase A ever calls expand()) -- gated on haveRtbake, so this
+    // is a no-op (bkManifestPaths stays an empty/unset map) for every
+    // from-source compile. Recorded and skipped exactly like an ordinary
+    // dedup (no new asmHeads entry, no diagnostic here); driveCompile
+    // checks bkManifestHoistHit right after Phase A and falls back to a
+    // full from-source recompile of the same entries when it fires -- the
+    // bake has no live scope/IR to make that module's symbols visible to
+    // check#1 the way a from-source hoist would (drive.cla's own
+    // hoistDedups, which this path deliberately does not attempt to
+    // reuse: it operates on asmHeads indices the bake path never
+    // populates for runtime modules in the first place).
+    if haveRtbake and bkManifestPaths.has(path) {
+        bkManifestHoistHit = true
+        return false
+    }
     if seenPaths.has(path) {
         // Record WHICH file this include deduped against (index, or -1 for
         // a file still being expanded further up the recursion), so a
@@ -1390,6 +1408,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     var tail: int
     var earlySpliceDone: bool
     var wantLane: int
+    var fallbackOk: bool
 
     // findings 1.4 fix round 1: invalidate cg68k.cla's cgFindRecordByName/
     // cgSizeOf lookup caches (cgRecIdxByName, cgSizeMemo) HERE, not only on
@@ -1425,18 +1444,14 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     // half of the baked image is loaded but deliberately never installed
     // this task, Task 5's job).
     //
-    // --testapi is refused here rather than silently mishandled: this
-    // task's own byte-identity gate only covers non-testapi fixtures
-    // (Task 5 owns wiring the baked checker-symbol preload a --testapi
-    // compile needs), and driveEarlySplice (below) would otherwise
-    // re-expand/re-lex/re-parse ui*.cla/uitest.cla as real user-chain
-    // source ON TOP of the same modules' already-baked IR -- a genuine
-    // double-declaration hazard, not just an unimplemented feature.
+    // runtime-ir-bake Task 5: --testapi + --rtbake is now supported --
+    // driveEarlySplice (which would re-expand/re-lex/re-parse ui*.cla/
+    // uitest.cla as real user-chain source ON TOP of the same modules'
+    // already-baked IR, a genuine double-declaration hazard) is simply
+    // never called on this path any more (see the check#1 branch below);
+    // --testapi instead gets the baked checker-symbol preload
+    // (bkInstallCheckerSymbolsForTestapi, bake.cla).
     if haveRtbake {
-        if testapi {
-            emitDiag(1, 1, "--rtbake does not support --testapi yet")
-            return false
-        }
         wantLane = bkLaneC
         if want68k {
             wantLane = bkLane68k
@@ -1445,6 +1460,8 @@ func driveCompile(entries: list of string, testapi: bool): bool {
             return false
         }
         bkInstallPool()
+        bkComputeManifestPaths()
+        bkManifestHoistHit = false
     }
 
     drvStartTicks = TickCount()
@@ -1465,6 +1482,34 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     }
     if entryFailed {
         return false
+    }
+
+    // runtime-ir-bake Task 5 (b): a user include collided with one of the
+    // bake's own manifest modules (expand()'s own haveRtbake-gated check,
+    // above in this file) -- the bake has no live scope/IR to make that
+    // module's symbols visible to check#1 the way a from-source hoist
+    // would (drive.cla's own hoistDedups, built for an ALREADY-assembled
+    // user chain the bake path has none of), so this compile falls back
+    // to a full from-source recompile of the SAME entries rather than
+    // silently mis-declaring or mis-erroring. Correctness over speed
+    // (design spec's own "Interactions handled explicitly" section) --
+    // ordinary user code has no reason to include a bare
+    // runtime/clarus/*.cla file, so this is expected to be rare.
+    if haveRtbake and bkManifestHoistHit {
+        log("clarusc --rtbake: user include collides with a runtime module; falling back to a from-source compile")
+        haveRtbake = false
+        bkManifestHoistHit = false
+        driveReset()
+        resetDiags()
+        astReset()
+        fallbackOk = driveCompile(entries, testapi)
+        // Restored (not left false) so a LATER, unrelated compile in the
+        // same long-running process (macgui.cla's Mac-resident compiler,
+        // the one front end that calls driveCompile more than once) still
+        // tries the bake path fresh -- this fallback is scoped to "for
+        // that compile" only, per the design spec's own wording.
+        haveRtbake = true
+        return fallbackOk
     }
     driveProgressPhase("Parsed user program")
     // Everything expanded so far is the user program's own; everything a
@@ -1516,13 +1561,44 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         return false
     }
 
-    earlySpliceDone = driveEarlySplice(testapi)
-
     // Phase B: one checker pass over the whole program, collecting all
     // check-phase diagnostics (they follow every parse diagnostic).
     driveProgressStage("Checking")
-    if combined != -1 {
-        checkProgram(combined)
+    if haveRtbake and testapi {
+        // runtime-ir-bake Task 5, deliverable (a): the bake path's own
+        // --testapi check#1 -- no driveEarlySplice (no source-level
+        // re-parse of uitest.cla; the bake already carries its checked
+        // signatures) and no combined checkProgram call, so the baked
+        // checker-symbol preload can be injected BETWEEN phase 1 (user's
+        // own top-level names) and phase 2 (user function bodies, which
+        // may call UiTestVerb etc.) -- see
+        // bkInstallCheckerSymbolsForTestapi's own doc comment (bake.cla)
+        // for exactly why that ordering, and for how a user name
+        // colliding with a UiTest* one gets attributed to uitest.cla
+        // itself (deliverable (c)).
+        earlySpliceDone = false
+        checkReset()
+        // bkInstallTypeArenaPrefix must run BEFORE checkPhase1 (user's
+        // own type uses would otherwise land at the same low indices the
+        // baked non-singleton types -- e.g. TyStr, `string` -- need; see
+        // its own doc comment for why this is load-bearing, not just
+        // tidy) and stays testapi-only: non-testapi never calls
+        // bkInstallCheckerSymbolsForTestapi, so no baked type index is
+        // ever referenced on that path, and it must see zero runtime
+        // symbols regardless (deliverable (a)'s negative test).
+        bkInstallTypeArenaPrefix()
+        if combined != -1 {
+            checkPhase1(combined)
+        }
+        bkInstallCheckerSymbolsForTestapi()
+        if combined != -1 {
+            checkPhase2(combined)
+        }
+    } else {
+        earlySpliceDone = driveEarlySplice(testapi)
+        if combined != -1 {
+            checkProgram(combined)
+        }
     }
     if diags.count > 0 {
         return false
@@ -1569,7 +1645,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         driveProgressStage("Loading Runtime")
         driveProgress("Loading runtime")
         irReset()
-        bkInstallArenas()
+        bkInstallArenas(testapi)
         combined2 = combined
         driveProgressPhase("Installed baked runtime")
 

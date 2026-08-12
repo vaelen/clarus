@@ -5521,10 +5521,22 @@ func setCheckPath(d: int) {
     }
 }
 
-func checkProgram(declHead: int) {
+// checkPhase1/checkPhase2 (runtime-ir-bake Task 5) are checkProgram's own
+// two walks, split into their own callable halves so a caller can inject
+// extra top-level declarations BETWEEN them -- the bake path's own
+// --testapi checker-symbol preload (bake.cla's bkInstallCheckerSymbolsFor
+// Testapi) declares the baked UiTest* symbols here, after the user's own
+// phase 1 (so a user program that legitimately SHADOWS a runtime name
+// still wins the ordinary "first declared, in THIS scope, keeps it"
+// scopeDeclare contract -- matching a from-source collision's own
+// attribution) but before phase 2 (so a user function body calling
+// UiTestVerb etc. still resolves it, phase 2 running only after every
+// top-level name -- user's own AND the preloaded ones -- is declared).
+// checkProgram itself is unchanged for every other caller: reset, then
+// both phases back-to-back over the SAME declHead, exactly as before this
+// split.
+func checkPhase1(declHead: int) {
     var d: int
-
-    checkReset()
 
     d = declHead
     while d != -1 {
@@ -5532,6 +5544,10 @@ func checkProgram(declHead: int) {
         checkTopDeclPhase1(d)
         d = declNext(d)
     }
+}
+
+func checkPhase2(declHead: int) {
+    var d: int
 
     d = declHead
     while d != -1 {
@@ -5550,4 +5566,10 @@ func checkProgram(declHead: int) {
         driveProgressTick()
         d = declNext(d)
     }
+}
+
+func checkProgram(declHead: int) {
+    checkReset()
+    checkPhase1(declHead)
+    checkPhase2(declHead)
 }

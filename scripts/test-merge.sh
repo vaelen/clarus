@@ -41,5 +41,18 @@ T2B_START=$(date +%s)
 CLARUS_MAC_TESTS=1 go test ./internal/mactest -count=1 -timeout 90m
 echo "test-merge.sh: internal/mactest (gated, native lane; cprint-Mac lane opt-in via CLARUS_CPRINT_MAC_TESTS=1) PASS in $(($(date +%s) - T2B_START))s"
 
+# runtime-ir-bake Task 5: the bake package's own exhaustive full-corpus
+# byte-identity gate (every testdata/cg68k fixture, self-compile, the
+# emitui corpus via the C lane) -- gated behind CLARUS_BAKE_FULL=1, off
+# by the T1 body's own default run just above (which only exercises the
+# small representative slice, TestBakePathByteIdentity). See
+# internal/bake/bakeidentity_test.go's own doc comments for the
+# documented-divergent fixture lists this asserts STAY divergent (a
+# narrower, precisely-bounded residual of Task 4's original inherited
+# problem -- task-5-report.md).
+T2C_START=$(date +%s)
+CLARUS_BAKE_FULL=1 go test ./internal/bake -count=1 -timeout 10m
+echo "test-merge.sh: internal/bake full-corpus gate (CLARUS_BAKE_FULL=1) PASS in $(($(date +%s) - T2C_START))s"
+
 END=$(date +%s)
 echo "test-merge.sh: PASS in $((END - START))s"
