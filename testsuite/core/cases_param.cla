@@ -10,7 +10,7 @@
 // nothing has flipped yet.
 //
 // Case -> what it pins:
-//   ParamAliasGlobal  <- a scalar param must keep its value after the
+//   ParamAliasGlobal  <- a string param must keep its value after the
 //                        callee reassigns a same-named global mid-call
 //                        (the caller passed the global's value in,
 //                        not a live view of the global itself).
@@ -34,6 +34,25 @@
 //                        case caught it because every other case borrows
 //                        a NAMED var/global, never a bare nested call or
 //                        `new` result.
+//   ParamContainerElemArg <- final-review fix wave (UAF fix): a
+//                        map-of-record-with-text-field ELEMENT (`gm["k"]`,
+//                        a bare EIntr map_get root, not a named var) passed
+//                        DIRECTLY as a by-ref record argument, where the
+//                        callee removes that very key MID-CALL, then reads
+//                        the param's text field -- the OLD content must
+//                        still be readable. Before the fix, `gm["k"]`
+//                        classified as borrow: the materialized temp was
+//                        an UNRETAINED shallow copy whose text handle was
+//                        kept alive only by the map's own element, which
+//                        the callee's `remove` just released -- a real
+//                        use-after-free (`runtime error: slice out of
+//                        range` on host, reproduced before this fix).
+//                        Plus a list.pop()-as-arg subcase: an OWNING
+//                        container read (ownership already transferred out
+//                        of the list) used directly as a call argument --
+//                        asserts no crash and correct content (the
+//                        release-only-scheduling half of this same fix is
+//                        proven by the leak gate, not assertable in-case).
 //
 // Params are immutable (Task 2): none of these helpers assign to or
 // store through a parameter -- caseParamAliasHandle's global doc/`d`
@@ -114,4 +133,40 @@ func caseParamNestedCallArg(): TestResult {
         return tkFail("ParamNestedCallArg", "inline new-record arg corrupted")
     }
     return tkPass("ParamNestedCallArg")
+}
+
+var pgParamMap: map of PParamDoc
+var pgParamList: list of PParamDoc
+
+// paramMapElemHelper removes gm's own "k" entry BEFORE reading its record
+// param d -- the exact final-review UAF repro shape: `gm["k"]` (a bare
+// EIntr map_get root) borrowed as a call argument, with the callee
+// re-entering the very container the arg was read from, past the call,
+// removing the aliased element mid-call. pgParamMap must be the record's
+// SOLE owner at call time (no separate named local duplicating the
+// reference) for a stale borrow to actually dangle -- caseParamContainerElemArg
+// below stores a bare makeNestedDoc() birth directly into the map, never
+// through a named var.
+func paramMapElemHelper(d: PParamDoc): text {
+    pgParamMap.remove("k")
+    return d.body
+}
+
+func caseParamContainerElemArg(): TestResult {
+    pgParamMap.clear()
+    pgParamMap["k"] = makeNestedDoc()
+    if paramMapElemHelper(pgParamMap["k"]) != "nested" {
+        return tkFail("ParamContainerElemArg", "map-element arg died on mid-call remove")
+    }
+    // Owning-read subcase: list.pop() transfers the element's ownership
+    // OUT of the list -- passed directly as a call argument, it must
+    // neither crash nor corrupt content (the release-only-scheduling half
+    // of this fix -- no leak -- is proven by the leak gate, not
+    // assertable here).
+    pgParamList.clear()
+    pgParamList.add(makeNestedDoc())
+    if readParamDocBody(pgParamList.pop()) != "nested" {
+        return tkFail("ParamContainerElemArg", "list-pop arg corrupted")
+    }
+    return tkPass("ParamContainerElemArg")
 }
