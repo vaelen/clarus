@@ -294,10 +294,16 @@ func TestMacResidentClaruscOnSnow(t *testing.T) {
 	tickFork := readForkFromMacBinaryBytes(t, tickBin)
 	catFork := readForkFromMacBinaryBytes(t, catBin)
 
-	if !bytes.Equal(tickFork, tickOracle) {
+	// normalizeForkReserved (below): a real Mac's own Resource/File
+	// Manager can scribble filename/type/creator bookkeeping into the
+	// Inside-Macintosh-reserved span (bytes 16-255) the instant a fresh
+	// file sits on a live, booted HFS volume -- structurally never
+	// resource data on either side, so it's excluded before comparing,
+	// not compared away by accident.
+	if !bytes.Equal(normalizeForkReserved(tickFork), normalizeForkReserved(tickOracle)) {
 		dumpForkMismatch(t, "TickProbe", tickFork, tickOracle)
 	}
-	if !bytes.Equal(catFork, catOracle) {
+	if !bytes.Equal(normalizeForkReserved(catFork), normalizeForkReserved(catOracle)) {
 		dumpForkMismatch(t, "CatProbe", catFork, catOracle)
 	}
 
@@ -354,10 +360,21 @@ func macResidentExtractApp(t *testing.T, d *snowDisk, name string) []byte {
 		}
 		misses = append(misses, fmt.Sprintf("%s: %v\n%s", c, err, out))
 	}
+	// runtime-ir-bake Task 6 fix round 2: the loop above always unmounts
+	// after its OWN last attempt (each iteration's unmount() runs
+	// unconditionally), so hfsutils' single global "current volume"
+	// pointer is unmounted by the time execution reaches here -- calling
+	// hls directly used to surface a bare, confusing "No volume is
+	// current; use `hmount' or `hvol'" instead of ever reaching this
+	// function's own richer listing-based diagnostic (found live: a
+	// settle-expired run's own extraction failure showed exactly that
+	// raw hfsutils error, not this message). Re-mount first.
+	unmount := d.mount(t)
 	rootListing := d.runHfs(t, "hls", "-l", ":")
 	startupListing := d.runHfs(t, "hls", "-l", ":System Folder:Startup Items:")
-	t.Fatalf("%s not found at any candidate location:\n%s\nvolume root listing:\n%s\nStartup Items listing:\n%s",
-		name, strings.Join(misses, "\n"), rootListing, startupListing)
+	unmount()
+	t.Fatalf("%s not found at any candidate location -- if both listings below look like an untouched/empty boot disk, the settle window most likely expired BEFORE the on-Mac compile finished writing %s at all (raise CLARUS_MACRESIDENT_SETTLE and re-run) rather than %s having landed somewhere unexpected:\n%s\nvolume root listing:\n%s\nStartup Items listing:\n%s",
+		name, name, name, strings.Join(misses, "\n"), rootListing, startupListing)
 	return nil
 }
 
@@ -384,10 +401,64 @@ func readForkFromMacBinaryBytes(t *testing.T, img []byte) []byte {
 	return readForkFromMacBinary(t, tmp)
 }
 
+// resourceForkHeaderLen/resourceForkReservedEnd document Inside
+// Macintosh's own resource-fork header layout -- Volume I, "The Resource
+// Manager" (p. I-128, Figure 9 and the field table right after it):
+//
+//	16 bytes  data offset(4) + map offset(4) + data length(4) + map length(4)
+//	112 bytes "Reserved for system use"
+//	128 bytes "Available for application data" (16+112+128 = 256)
+//
+// -- confirmed against the PDF text directly (pdftotext extraction; the
+// file itself exceeds this tool's 100MB direct-read cap), and matching
+// this repo's own writer (clarusc/app68k.cla's app68BuildResourceFork:
+// "256-byte header (16 real bytes + 240 reserved)"). A REAL Mac's
+// Resource/File Manager can -- and empirically does -- scribble into
+// that 240-byte span (filename/type/creator bookkeeping) the instant a
+// file is created or touched on a live, booted HFS volume; the host
+// oracle (cg68BuildFork's own raw bytes, written once, never opened by a
+// live Resource Manager) always leaves it zeroed. resourceForkDataStart
+// (256) is also literally the fork's own data-offset header field on
+// every fork this package builds, so bytes before it are NEVER resource
+// data by construction, on either side of a comparison.
+//
+// Found (runtime-ir-bake Task 6 fix round 2): a real on-Mac
+// TestClarusCBakePathOnSnow run's own TickProbe fork carried
+// `09 'TickProbe' 02 00 00 00 'AP...'` at offset 0x30 (49) where the
+// host oracle had zeros -- structurally within the reserved span either
+// way, not a compile divergence.
+const resourceForkHeaderLen = 16
+const resourceForkDataStart = 256
+
+// normalizeForkReserved returns a copy of fork with bytes
+// [resourceForkHeaderLen, resourceForkDataStart) zeroed -- see the
+// consts' own doc comment. Both TestMacResidentClaruscOnSnow and
+// TestClarusCBakePathOnSnow compare THIS, not the raw bytes, so a real
+// Mac's own reserved-area bookkeeping never fails either test.
+func normalizeForkReserved(fork []byte) []byte {
+	out := append([]byte(nil), fork...)
+	end := resourceForkDataStart
+	if end > len(out) {
+		end = len(out)
+	}
+	for i := resourceForkHeaderLen; i < end; i++ {
+		out[i] = 0
+	}
+	return out
+}
+
 // dumpForkMismatch writes both sides of a failed fork comparison to
 // t.TempDir() and fails the test with their paths plus the first
 // divergent byte offset -- per the brief: "dump both forks to files and
 // xxd-diff the first divergence... report it, don't paper over it."
+// Callers pass the RAW (un-normalized) bytes here even though the
+// pass/fail decision itself compares normalizeForkReserved's output --
+// this dump labels whether the first raw divergence falls inside the
+// Inside-Macintosh-reserved span (< resourceForkDataStart -- should be
+// unreachable, since that's exactly what normalization already
+// excluded; a defensive/diagnostic label, not a masking mechanism) or a
+// REAL divergence at or past resourceForkDataStart, which is the only
+// way this function is ever actually reached today.
 func dumpForkMismatch(t *testing.T, name string, gotMac, wantHost []byte) {
 	t.Helper()
 	dir := t.TempDir()
@@ -407,6 +478,10 @@ func dumpForkMismatch(t *testing.T, name string, gotMac, wantHost []byte) {
 			break
 		}
 	}
+	region := "REAL divergence (at or past the resource-data offset, resourceForkDataStart=256 -- NOT the reserved span)"
+	if div >= 0 && div < resourceForkDataStart {
+		region = "inside the Inside-Macintosh-reserved span (<256) -- unexpected, since normalizeForkReserved should already have excluded this"
+	}
 	// Fix round 3: t.TempDir()'s own dump files don't survive past the test
 	// process's exit, and round 2's own failure needed a live re-run just to
 	// see what the mismatched bytes actually were -- log the first 64 bytes
@@ -414,8 +489,8 @@ func dumpForkMismatch(t *testing.T, name string, gotMac, wantHost []byte) {
 	// self-sufficient even after TempDir cleanup.
 	t.Logf("%s on-Mac fork, first 64 bytes:\n%s", name, hex.Dump(head(gotMac, 64)))
 	t.Logf("%s host oracle fork, first 64 bytes:\n%s", name, hex.Dump(head(wantHost, 64)))
-	t.Fatalf("%s fork mismatch: on-Mac %d bytes vs host oracle %d bytes; first divergence at byte %d\non-Mac fork:   %s\nhost fork:     %s\nxxd -s %d -l 64 <file> to inspect",
-		name, len(gotMac), len(wantHost), div, macPath, hostPath, maxInt(div-16, 0))
+	t.Fatalf("%s fork mismatch: on-Mac %d bytes vs host oracle %d bytes; first divergence at byte %d (%s)\non-Mac fork:   %s\nhost fork:     %s\nxxd -s %d -l 64 <file> to inspect",
+		name, len(gotMac), len(wantHost), div, region, macPath, hostPath, maxInt(div-16, 0))
 }
 
 // head returns b's first n bytes, or all of b if shorter.

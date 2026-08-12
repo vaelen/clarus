@@ -45,12 +45,14 @@ import (
 	"time"
 )
 
-// clarusCBakeSettle is a conservative default for the single scripted
-// compile this test drives -- half of macResidentCompileSettle's own
-// 110-minute figure (that one sized for a from-source DOUBLE compile;
-// this one is a single BAKE-path compile, expected faster on both
-// counts), pending a real measurement. macResidentSettle (shared helper,
-// macresident_test.go) already reads CLARUS_MACRESIDENT_SETTLE when set.
+// clarusCBakeSettle: originally a conservative guess (half of
+// macResidentCompileSettle's own 110-minute two-compile figure),
+// validated by a real controller run (fix round 2) that completed --
+// clean exit, byte-identical fork -- in 3302s (~55.0m), landing almost
+// exactly on this default. Left unchanged rather than tightened: a
+// single lucky-timing run isn't grounds to shave the margin. macResidentSettle
+// (shared helper, macresident_test.go) already reads
+// CLARUS_MACRESIDENT_SETTLE when set.
 const clarusCBakeSettle = 55 * time.Minute
 
 // clarusCBakeSettleDuration is macResidentSettle's own env-override
@@ -156,7 +158,18 @@ func TestClarusCBakePathOnSnow(t *testing.T) {
 
 	tickBin := macResidentExtractApp(t, d, "TickProbe")
 	tickFork := readForkFromMacBinaryBytes(t, tickBin)
-	if !bytes.Equal(tickFork, tickOracle) {
+	// normalizeForkReserved (macresident_test.go): a real Mac's own
+	// Resource/File Manager can scribble filename/type/creator
+	// bookkeeping into the Inside-Macintosh-reserved span (bytes
+	// 16-255) the instant a fresh file sits on a live, booted HFS
+	// volume -- structurally never resource data on either side (the
+	// fork's own data-offset header field, byte-identical on both sides
+	// already, names 256 as where real resource data starts), so it's
+	// excluded before comparing, not compared away by accident. Found
+	// exactly this way, fix round 2: a real run's own TickProbe fork
+	// diverged from the host oracle at byte 48 with `09 'TickProbe' ...`
+	// where the host had zeros -- both forks otherwise byte-identical.
+	if !bytes.Equal(normalizeForkReserved(tickFork), normalizeForkReserved(tickOracle)) {
 		dumpForkMismatch(t, "TickProbe", tickFork, tickOracle)
 	}
 }
