@@ -40,12 +40,13 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // `FAIL <name>: <detail>` line per case plus a final `TOTAL n PASS p
 // FAIL f` line -- exactly the log RunMac's capture protocol already
 // surfaces as `out` for any other native boot. This test parses that
-// capture for all 58 real CoreTest cases (57 + SelfCheck, runner.cla's
+// capture for all 61 real CoreTest cases (60 + SelfCheck, runner.cla's
 // own nCoreCases -- grown from 42 by the map-hashtable phase's
 // sortedmap/hashtable-map/intmap case families, then 57 by the
 // datetime-instrumentation phase's own case family, then 58 by the
-// layer1-compiler-perf phase's own ClearBasics case) PASS in this ONE
-// boot, plus the matching TOTAL line --
+// layer1-compiler-perf phase's own ClearBasics case, then 61 by the
+// param-abi phase's ParamAliasGlobal/ParamAliasHandle/ParamBorrowChain
+// cases) PASS in this ONE boot, plus the matching TOTAL line --
 // success criterion 2's native/GUI half (the host/CLI half is
 // internal/testsuite's TestCoreSuiteCLI; the Mac/native CLI half, once
 // TestSuiteOn68k in native_test.go, was retired by test-consolidation --
@@ -88,8 +89,8 @@ func TestCoreSuiteGUIOnMac(t *testing.T) {
 // width phase's SerMixedScalarRec pin/task-6-review's own
 // XRecFieldsRoundtrip, then 46/50/54 via that phase's sortedmap/
 // hashtable-map/intmap case additions): parses the PASS/FAIL/TOTAL lines
-// kit.cla's tkReport funnels every case through, requiring all 58 real
-// CoreTest cases (57 + SelfCheck) PASS and the matching TOTAL line,
+// kit.cla's tkReport funnels every case through, requiring all 61 real
+// CoreTest cases (60 + SelfCheck) PASS and the matching TOTAL line,
 // regardless of which lane produced the capture.
 func checkCoreSuiteCapture(t *testing.T, out string) {
 	t.Helper()
@@ -106,13 +107,13 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 			total = line
 		}
 	}
-	if passes != 58 {
-		t.Errorf("PASS lines: got %d, want 58\ncapture:\n%s", passes, out)
+	if passes != 61 {
+		t.Errorf("PASS lines: got %d, want 61\ncapture:\n%s", passes, out)
 	}
 	if fails != 0 {
 		t.Errorf("FAIL lines: got %d, want 0", fails)
 	}
-	if want := "TOTAL 58 PASS 58 FAIL 0"; total != want {
+	if want := "TOTAL 61 PASS 61 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

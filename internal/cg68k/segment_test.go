@@ -72,6 +72,7 @@ func segmentationFixture(root string) []string {
 		filepath.Join("testsuite", "core", "cases_misc.cla"),
 		filepath.Join("testsuite", "core", "cases_xrec.cla"),
 		filepath.Join("testsuite", "core", "cases_datetime.cla"),
+		filepath.Join("testsuite", "core", "cases_param.cla"),
 		filepath.Join("testsuite", "core", "cli_mac.cla"),
 	}
 	abs := make([]string, len(rel))

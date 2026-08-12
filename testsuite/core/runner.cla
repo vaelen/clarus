@@ -51,6 +51,12 @@
 // ClearBasics (cases_list.cla, layer1-compiler-perf phase Task 8) is the
 // 56th real case: `.clear()` (count -> 0, capacity retained, re-add
 // works) across list/map/intmap/sortedmap in one aggregate case.
+//
+// ParamAliasGlobal/ParamAliasHandle/ParamBorrowChain (cases_param.cla,
+// param-abi phase Task 4) are the 57th-59th real cases: by-value
+// parameter semantics under aliasing, written against TODAY'S full-copy
+// convention so they stay green across the coming borrow/copy ABI flip
+// (Tasks 5-7) as a live semantic guard.
 
 enum CoreTest {
     All
@@ -111,16 +117,19 @@ enum CoreTest {
     DateTimeStrVectors
     NowSanity
     ClearBasics
+    ParamAliasGlobal
+    ParamAliasHandle
+    ParamBorrowChain
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 57 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 60 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 58
+const nCoreCases: int = 61
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -300,6 +309,15 @@ func coreCaseName(t: CoreTest): string {
     case ClearBasics {
         return "ClearBasics"
     }
+    case ParamAliasGlobal {
+        return "ParamAliasGlobal"
+    }
+    case ParamAliasHandle {
+        return "ParamAliasHandle"
+    }
+    case ParamBorrowChain {
+        return "ParamBorrowChain"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -377,6 +395,9 @@ func coreAllCases(): list of CoreTest {
     l.add(DateTimeStrVectors)
     l.add(NowSanity)
     l.add(ClearBasics)
+    l.add(ParamAliasGlobal)
+    l.add(ParamAliasHandle)
+    l.add(ParamBorrowChain)
     l.add(SelfCheck)
     return l
 }
@@ -641,6 +662,18 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, ClearBasics) {
         results.add(caseClearBasics())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, ParamAliasGlobal) {
+        results.add(caseParamAliasGlobal())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, ParamAliasHandle) {
+        results.add(caseParamAliasHandle())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, ParamBorrowChain) {
+        results.add(caseParamBorrowChain())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

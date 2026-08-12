@@ -1,0 +1,83 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_param.cla: by-value parameter semantics under aliasing
+// (param-abi phase, Task 4). These cases guard the borrow/copy
+// classification the ABI flip (Tasks 5-7) will introduce: each one
+// must pass IDENTICALLY under TODAY'S full-copy-by-value convention and
+// under the future by-address + call-site-copy convention. If one of
+// these fails today, that is a bug in the case, not the compiler --
+// nothing has flipped yet.
+//
+// Case -> what it pins:
+//   ParamAliasGlobal  <- a scalar param must keep its value after the
+//                        callee reassigns a same-named global mid-call
+//                        (the caller passed the global's value in,
+//                        not a live view of the global itself).
+//   ParamAliasHandle  <- a record param carrying a text field must keep
+//                        that field's content readable after the
+//                        callee drops the global holding the original
+//                        record (the param owns/borrows its own handle,
+//                        not the global's).
+//   ParamBorrowChain  <- a string value threaded through two levels of
+//                        param passing comes back unchanged.
+//
+// Params are immutable (Task 2): none of these helpers assign to or
+// store through a parameter -- caseParamAliasHandle's global doc/`d`
+// pair mirrors the plain-value copy pattern proven in cases_rec.cla's
+// caseRecFieldGlobalAlias.
+
+record PParamDoc {
+    title: string
+    body:  text
+}
+
+var pgParamName: string
+var pgParamDoc: PParamDoc
+
+func paramAliasGlobalHelper(s: string): string {
+    var out: string
+    pgParamName = "MUTATED"   // reassign the global mid-call
+    out = s                   // param must still hold the OLD value
+    return out
+}
+
+func caseParamAliasGlobal(): TestResult {
+    pgParamName = "original"
+    if paramAliasGlobalHelper(pgParamName) != "original" {
+        return tkFail("ParamAliasGlobal", "param aliased global write")
+    }
+    return tkPass("ParamAliasGlobal")
+}
+
+func paramAliasHandleHelper(d: PParamDoc): text {
+    var fresh: PParamDoc
+    pgParamDoc = fresh   // releases the global's old handles
+    return d.body        // param's own handle must still be alive
+}
+
+func caseParamAliasHandle(): TestResult {
+    pgParamDoc.title = "t"
+    pgParamDoc.body = "alive"
+    if paramAliasHandleHelper(pgParamDoc) != "alive" {
+        return tkFail("ParamAliasHandle", "handle died under aliasing")
+    }
+    return tkPass("ParamAliasHandle")
+}
+
+func paramBorrowChain2(s: string): string {
+    return s
+}
+
+func paramBorrowChain1(s: string): string {
+    return paramBorrowChain2(s)
+}
+
+func caseParamBorrowChain(): TestResult {
+    var loc: string
+    loc = "chained"
+    if paramBorrowChain1(loc) != "chained" {
+        return tkFail("ParamBorrowChain", "borrow chain corrupted value")
+    }
+    return tkPass("ParamBorrowChain")
+}
