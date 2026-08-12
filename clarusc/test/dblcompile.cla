@@ -29,6 +29,14 @@ include "../cprint.cla"
 include "../cg68k.cla"
 include "../uiblob.cla"
 include "../drive.cla"
+// runtime-ir-bake Task 4: drive.cla's driveCompile now names bake.cla
+// symbols (bkLaneC/bkLoadRtbake/bkInstallPool/bkInstallArenas) directly
+// in its own source -- every front end including drive.cla needs
+// bake.cla in its own file set for that reference to resolve at
+// standalone-check time, even one (like this harness) that never sets
+// haveRtbake, exactly like it already needs cg68k.cla/shake.cla for
+// driveCompile's OTHER unconditionally-named calls.
+include "../bake.cla"
 
 // Front-end seam: same as main.cla's host CLI (disk reads, no resources).
 func feReadSource(path: string, key: string, out: text): bool {

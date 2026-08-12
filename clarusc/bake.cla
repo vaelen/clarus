@@ -1087,3 +1087,1187 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     }
     return true
 }
+
+// ================================================================
+// Loader: `--rtbake FILE` on the host emit/emit68k paths (runtime-ir-bake
+// Task 4). Mirrors the writer above section-for-section, field-for-field,
+// in the same fixed order bakeWriteFile emits them -- consuming exactly
+// what bkWrite* produced. Two-stage install, matching drive.cla's own
+// pipeline order (load+verify stamp -> [check user] -> install -> lower
+// user):
+//   1. bkLoadRtbake parses the WHOLE file (header + every section) into
+//      the bkLd*/bkLoaded* pending globals below, touching no live
+//      compiler state at all.
+//   2. bkInstallPool copies the intern pool into live strPool/strIndex --
+//      called BEFORE Phase A (driveCompile), since every baked IR
+//      arena's string-index fields are ABSOLUTE strPool indices captured
+//      at bake time; nothing else may intern() before this runs.
+//   3. bkInstallArenas copies everything else (the IR arenas, the
+//      lowering counters) into live state -- called AFTER check#1
+//      (driveCompile), so a bake's retained-but-uninstalled checker-
+//      symbol/declFileTab state (Task 5's own job -- see below) can
+//      never influence check#1's diagnostics for user code.
+// ================================================================
+
+// bkLoadBuf/bkLoadPos: the read cursor. A module-level pair, not a
+// scalar out-param (Ch3: user functions cannot fill one) -- the read
+// counterpart of bkPutByte's own `out: text` in-place-mutation idiom.
+var bkLoadBuf: text
+var bkLoadPos: int
+
+func bkGetByte(): int {
+    var b: int
+    b = int(bkLoadBuf[bkLoadPos])
+    bkLoadPos = bkLoadPos + 1
+    return b
+}
+
+func bkGetU16(): int {
+    var b0: int
+    var b1: int
+    b0 = bkGetByte()
+    b1 = bkGetByte()
+    return (b0 << 8) | b1
+}
+
+func bkGetU32(): int {
+    var b0: int
+    var b1: int
+    var b2: int
+    var b3: int
+    b0 = bkGetByte()
+    b1 = bkGetByte()
+    b2 = bkGetByte()
+    b3 = bkGetByte()
+    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+}
+
+func bkGetBool(): bool {
+    return bkGetByte() != 0
+}
+
+// bkGetStr/bkGetStrShort mirror bkPutStr/bkPutStrShort's own two length-
+// prefix conventions (4-byte BE for pool strings, 1-byte for the
+// header's module keys) -- both build through a char[255] buffer +
+// fromBytes, the same byte-copy idiom lib.cla's internText already uses,
+// since every string this format carries (pool entries, module keys) is
+// well under the string type's own 255-byte cap by construction (the
+// writer could never have produced a longer one -- see bake.cla's own
+// header doc comment).
+func bkGetStr(): string {
+    var n: int
+    var buf: char[255]
+    var i: int
+    var s: string
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        buf[i] = char(bkGetByte())
+        i = i + 1
+    }
+    s.fromBytes(buf, n)
+    return s
+}
+
+func bkGetStrShort(): string {
+    var n: int
+    var buf: char[255]
+    var i: int
+    var s: string
+
+    n = bkGetByte()
+    i = 0
+    while i < n {
+        buf[i] = char(bkGetByte())
+        i = i + 1
+    }
+    s.fromBytes(buf, n)
+    return s
+}
+
+// bkReadIntList/bkReadIntIntMap: shared bodies for every plain `list of
+// int` / `intmap of int` section (bkWriteIntList's own read-side twin,
+// generalized to cover irCbGlueNames/irStrLits/declFileTab too, all the
+// same shape).
+func bkReadIntList(): list of int {
+    var n: int
+    var i: int
+    var l: list of int
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        l.add(bkGetU32())
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIntIntMap(): intmap of int {
+    var n: int
+    var i: int
+    var k: int
+    var v: int
+    var m: intmap of int
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        k = bkGetU32()
+        v = bkGetU32()
+        m[k] = v
+        i = i + 1
+    }
+    return m
+}
+
+func bkLaneName(lane: int): string {
+    if lane == bkLane68k {
+        return "68k"
+    }
+    return "c"
+}
+
+// ---- Pending state (parsed by bkLoadRtbake, consumed by bkInstall*) ----
+
+var bkLdIrTypes: list of IRType
+var bkLdIrStmts: list of IRStmt
+var bkLdIrExprs: list of IRExpr
+var bkLdIrLocals: list of IRLocal
+var bkLdIrFuncs: list of IRFunc
+var bkLdIrFuncIdxByName: intmap of int
+var bkLdIrCbGlueNames: list of int
+var bkLdIrGlobals: list of IRGlobal
+var bkLdIrFieldSlots: list of IRFieldSlot
+var bkLdIrRecords: list of IRRecordLayout
+var bkLdIrEnumMembers: list of IREnumMember
+var bkLdIrEnums: list of IREnumLayout
+var bkLdIrWidgetDescs: list of IRWidgetDesc
+var bkLdIrColumnDescs: list of IRColumnDesc
+var bkLdIrBindDescs: list of IRBindDesc
+var bkLdIrWindowDescs: list of IRWindowDesc
+var bkLdIrMenuItemDescs: list of IRMenuItemDesc
+var bkLdIrMenuDescs: list of IRMenuDesc
+var bkLdIrWinHandlers: list of IRWinHandlers
+var bkLdIrWidgetHandlerEntries: list of IRWidgetHandlerEntry
+var bkLdIrMenuHandlerEntries: list of IRMenuHandlerEntry
+var bkLdIrEveryEntries: list of IREveryEntry
+var bkLdIrStrLits: list of int
+var bkLdIrExternNames: list of int
+var bkLdIrExternRetTys: list of int
+var bkLdIrExternParamStart: list of int
+var bkLdIrExternParamCountArr: list of int
+var bkLdIrExternParamTys: list of int
+var bkLdIrExternTrapWords: list of int
+var bkLdIrExternConvs: list of int
+var bkLdIrExternSels: list of int
+var bkLdIrExternParamRegs: list of int
+var bkLdIrExternRetRegs: list of int
+var bkLdIrLayoutNeededByName: intmap of int
+var bkLdIrRcWalkNeededByName: intmap of int
+
+var bkLdIrHasLaunch: bool
+var bkLdIrHasStartEmpty: bool
+var bkLdIrHasStartCLI: bool
+var bkLdIrHasOpenDocument: bool
+var bkLdIrAppName: int
+var bkLdIrAppVersion: int
+var bkLdIrAppAuthor: int
+var bkLdIrAppAbout: int
+var bkLdIrAppId: int
+var bkLdIrAppDoctype: int
+var bkLdIrAppStack: int
+var bkLdIrHasApp: bool
+var bkLdIrMenuHandlersHead: int
+var bkLdIrMenuHandlersTail: int
+var bkLdIrMenuHandlerCount: int
+var bkLdIrEveryHead: int
+var bkLdIrEveryTail: int
+var bkLdIrEveryCount: int
+var bkLdIrVoidT: int
+var bkLdIrIntT: int
+var bkLdIrBoolT: int
+var bkLdIrFixedT: int
+var bkLdIrCharT: int
+var bkLdIrTextT: int
+var bkLdIrErrT: int
+var bkLdIrPtrT: int
+var bkLdIrWordT: int
+
+var bkLdStrPool: list of string
+
+var bkLdLowSwitchN: int
+var bkLdUiMenuCount: int
+var bkLdLowStoreTempN: int
+var bkLdLowRetTempN: int
+var bkLdLowStrIdx: map of int
+
+// bkLoaded* (checker symbols + declFileTab): parsed and RETAINED, but
+// deliberately never installed into live check.cla/types.cla/lib.cla
+// state by this task -- see bkLoadRtbake's own doc comment and this
+// task's report (open question (b)). Shape: a straight field-for-field
+// mirror of the live types (FuncSig/Symbol/Scope/TypeInfo/
+// EnumMemberInfo, types.cla; a plain decl-arena-index -> interned-path-
+// index list, lib.cla's own declFileTab shape) -- exactly what a future
+// Task 5 needs to wire `--testapi` symbol visibility / runtime-
+// attributed diagnostics without re-deriving anything.
+var bkLoadedFuncSigs: list of FuncSig
+var bkLoadedSymbols: list of Symbol
+var bkLoadedScopes: list of Scope
+var bkLoadedTypeArena: list of TypeInfo
+var bkLoadedEnumMembers: list of EnumMemberInfo
+var bkLoadedDeclFileTab: list of int
+
+// ---- Section readers -- mirror bkWrite* field-for-field ----
+
+func bkReadIrTypes(): list of IRType {
+    var n: int
+    var i: int
+    var e: IRType
+    var l: list of IRType
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.k = IRKind(bkGetU32())
+        e.n = bkGetU32()
+        e.elem = bkGetU32()
+        e.name = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrStmts(): list of IRStmt {
+    var n: int
+    var i: int
+    var e: IRStmt
+    var l: list of IRStmt
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.kind = IRStmtKind(bkGetU32())
+        e.a = bkGetU32()
+        e.b = bkGetU32()
+        e.c = bkGetU32()
+        e.next = bkGetU32()
+        e.nameIdx = bkGetU32()
+        e.intVal = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrExprs(): list of IRExpr {
+    var n: int
+    var i: int
+    var e: IRExpr
+    var l: list of IRExpr
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.kind = IRExprKind(bkGetU32())
+        e.a = bkGetU32()
+        e.b = bkGetU32()
+        e.name = bkGetU32()
+        e.intVal = bkGetU32()
+        e.global = bkGetBool()
+        e.convOp = IRConvOp(bkGetU32())
+        e.ty = bkGetU32()
+        e.next = bkGetU32()
+        e.argCopy = bkGetBool()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrLocals(): list of IRLocal {
+    var n: int
+    var i: int
+    var e: IRLocal
+    var l: list of IRLocal
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.name = bkGetU32()
+        e.t = bkGetU32()
+        e.next = bkGetU32()
+        e.nobirth = bkGetBool()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrFuncs(): list of IRFunc {
+    var n: int
+    var i: int
+    var e: IRFunc
+    var l: list of IRFunc
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.name = bkGetU32()
+        e.paramsHead = bkGetU32()
+        e.ret = bkGetU32()
+        e.localsHead = bkGetU32()
+        e.bodyHead = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrGlobals(): list of IRGlobal {
+    var n: int
+    var i: int
+    var e: IRGlobal
+    var l: list of IRGlobal
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.name = bkGetU32()
+        e.t = bkGetU32()
+        e.init = bkGetU32()
+        e.initBirth = bkGetBool()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrFieldSlots(): list of IRFieldSlot {
+    var n: int
+    var i: int
+    var e: IRFieldSlot
+    var l: list of IRFieldSlot
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.name = bkGetU32()
+        e.t = bkGetU32()
+        e.default = bkGetU32()
+        e.defaultStr = bkGetU32()
+        e.next = bkGetU32()
+        e.xkind = bkGetU32()
+        e.xn = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrRecords(): list of IRRecordLayout {
+    var n: int
+    var i: int
+    var e: IRRecordLayout
+    var l: list of IRRecordLayout
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.name = bkGetU32()
+        e.fieldsHead = bkGetU32()
+        e.isOverlay = bkGetBool()
+        e.isXRec = bkGetBool()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrEnumMembers(): list of IREnumMember {
+    var n: int
+    var i: int
+    var e: IREnumMember
+    var l: list of IREnumMember
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.name = bkGetU32()
+        e.value = bkGetU32()
+        e.label = bkGetU32()
+        e.next = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrEnums(): list of IREnumLayout {
+    var n: int
+    var i: int
+    var e: IREnumLayout
+    var l: list of IREnumLayout
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.name = bkGetU32()
+        e.membersHead = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrWidgetDescs(): list of IRWidgetDesc {
+    var n: int
+    var i: int
+    var e: IRWidgetDesc
+    var l: list of IRWidgetDesc
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.nameIdx = bkGetU32()
+        e.kindIdx = bkGetU32()
+        e.captionIdx = bkGetU32()
+        e.atKind = bkGetU32()
+        e.x = bkGetU32()
+        e.yIsBottom = bkGetBool()
+        e.y = bkGetU32()
+        e.widthIsFill = bkGetBool()
+        e.width = bkGetU32()
+        e.fillBoth = bkGetBool()
+        e.isDefault = bkGetBool()
+        e.isCancel = bkGetBool()
+        e.isBuffered = bkGetBool()
+        e.isScrollV = bkGetBool()
+        e.isScrollH = bkGetBool()
+        e.bindsIdx = bkGetU32()
+        e.rowsGlobalIdx = bkGetU32()
+        e.columnsHead = bkGetU32()
+        e.next = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrColumnDescs(): list of IRColumnDesc {
+    var n: int
+    var i: int
+    var e: IRColumnDesc
+    var l: list of IRColumnDesc
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.headerIdx = bkGetU32()
+        e.fieldIndex = bkGetU32()
+        e.widthPx = bkGetU32()
+        e.widthFill = bkGetBool()
+        e.next = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrBindDescs(): list of IRBindDesc {
+    var n: int
+    var i: int
+    var e: IRBindDesc
+    var l: list of IRBindDesc
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.widgetIndex = bkGetU32()
+        e.fieldIndex = bkGetU32()
+        e.next = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrWindowDescs(): list of IRWindowDesc {
+    var n: int
+    var i: int
+    var e: IRWindowDesc
+    var l: list of IRWindowDesc
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.nameIdx = bkGetU32()
+        e.titleIdx = bkGetU32()
+        e.w = bkGetU32()
+        e.h = bkGetU32()
+        e.resizable = bkGetBool()
+        e.minW = bkGetU32()
+        e.minH = bkGetU32()
+        e.widgetsHead = bkGetU32()
+        e.stateFieldsHead = bkGetU32()
+        e.formRecNameIdx = bkGetU32()
+        e.formBindsHead = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrMenuItemDescs(): list of IRMenuItemDesc {
+    var n: int
+    var i: int
+    var e: IRMenuItemDesc
+    var l: list of IRMenuItemDesc
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.nameIdx = bkGetU32()
+        e.captionIdx = bkGetU32()
+        e.keyIdx = bkGetU32()
+        e.isSeparator = bkGetBool()
+        e.next = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrMenuDescs(): list of IRMenuDesc {
+    var n: int
+    var i: int
+    var e: IRMenuDesc
+    var l: list of IRMenuDesc
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.nameIdx = bkGetU32()
+        e.titleIdx = bkGetU32()
+        e.itemsHead = bkGetU32()
+        e.isStandardEdit = bkGetBool()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrWinHandlers(): list of IRWinHandlers {
+    var n: int
+    var i: int
+    var e: IRWinHandlers
+    var l: list of IRWinHandlers
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.winTypeNameIdx = bkGetU32()
+        e.openedFn = bkGetU32()
+        e.closeRequestFn = bkGetU32()
+        e.closedFn = bkGetU32()
+        e.resizedFn = bkGetU32()
+        e.keyFn = bkGetU32()
+        e.acceptedFn = bkGetU32()
+        e.cancelledFn = bkGetU32()
+        e.formRecNameIdx = bkGetU32()
+        e.widgetHead = bkGetU32()
+        e.widgetTail = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrWidgetHandlerEntries(): list of IRWidgetHandlerEntry {
+    var n: int
+    var i: int
+    var e: IRWidgetHandlerEntry
+    var l: list of IRWidgetHandlerEntry
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.widgetIndex = bkGetU32()
+        e.clickFn = bkGetU32()
+        e.changeFn = bkGetU32()
+        e.dragFn = bkGetU32()
+        e.enterFn = bkGetU32()
+        e.selectFn = bkGetU32()
+        e.doubleClickFn = bkGetU32()
+        e.next = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrMenuHandlerEntries(): list of IRMenuHandlerEntry {
+    var n: int
+    var i: int
+    var e: IRMenuHandlerEntry
+    var l: list of IRMenuHandlerEntry
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.menuNameIdx = bkGetU32()
+        e.itemNameIdx = bkGetU32()
+        e.menuIdx = bkGetU32()
+        e.itemIdx = bkGetU32()
+        e.funcNameIdx = bkGetU32()
+        e.scopeWinTypeNameIdx = bkGetU32()
+        e.next = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrEveryEntries(): list of IREveryEntry {
+    var n: int
+    var i: int
+    var e: IREveryEntry
+    var l: list of IREveryEntry
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        e.funcNameIdx = bkGetU32()
+        e.ticks = bkGetU32()
+        e.next = bkGetU32()
+        l.add(e)
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadIrScalars() {
+    bkLdIrHasLaunch = bkGetBool()
+    bkLdIrHasStartEmpty = bkGetBool()
+    bkLdIrHasStartCLI = bkGetBool()
+    bkLdIrHasOpenDocument = bkGetBool()
+    bkLdIrAppName = bkGetU32()
+    bkLdIrAppVersion = bkGetU32()
+    bkLdIrAppAuthor = bkGetU32()
+    bkLdIrAppAbout = bkGetU32()
+    bkLdIrAppId = bkGetU32()
+    bkLdIrAppDoctype = bkGetU32()
+    bkLdIrAppStack = bkGetU32()
+    bkLdIrHasApp = bkGetBool()
+    bkLdIrMenuHandlersHead = bkGetU32()
+    bkLdIrMenuHandlersTail = bkGetU32()
+    bkLdIrMenuHandlerCount = bkGetU32()
+    bkLdIrEveryHead = bkGetU32()
+    bkLdIrEveryTail = bkGetU32()
+    bkLdIrEveryCount = bkGetU32()
+    bkLdIrVoidT = bkGetU32()
+    bkLdIrIntT = bkGetU32()
+    bkLdIrBoolT = bkGetU32()
+    bkLdIrFixedT = bkGetU32()
+    bkLdIrCharT = bkGetU32()
+    bkLdIrTextT = bkGetU32()
+    bkLdIrErrT = bkGetU32()
+    bkLdIrPtrT = bkGetU32()
+    bkLdIrWordT = bkGetU32()
+}
+
+func bkReadStrPool(): list of string {
+    var n: int
+    var i: int
+    var l: list of string
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        l.add(bkGetStr())
+        i = i + 1
+    }
+    return l
+}
+
+func bkReadLowCounters() {
+    var n: int
+    var i: int
+    var k: string
+    var v: int
+    var m: map of int
+
+    bkLdLowSwitchN = bkGetU32()
+    bkLdUiMenuCount = bkGetU32()
+    bkLdLowStoreTempN = bkGetU32()
+    bkLdLowRetTempN = bkGetU32()
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        k = bkGetStr()
+        v = bkGetU32()
+        m[k] = v
+        i = i + 1
+    }
+    bkLdLowStrIdx = m
+}
+
+func bkReadCheckerSymbols() {
+    var n: int
+    var i: int
+    var j: int
+    var pn: int
+    var sig: FuncSig
+    var params: list of int
+    var lFuncSigs: list of FuncSig
+    var sym: Symbol
+    var lSymbols: list of Symbol
+    var scope: Scope
+    var lScopes: list of Scope
+    var ti: TypeInfo
+    var lTypeArena: list of TypeInfo
+    var em: EnumMemberInfo
+    var lEnumMembers: list of EnumMemberInfo
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        pn = bkGetU32()
+        params = driveFreshIntList()
+        j = 0
+        while j < pn {
+            params.add(bkGetU32())
+            j = j + 1
+        }
+        sig.params = params
+        sig.ret = bkGetU32()
+        lFuncSigs.add(sig)
+        i = i + 1
+    }
+    bkLoadedFuncSigs = lFuncSigs
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        sym.nameIdx = bkGetU32()
+        sym.typeIdx = bkGetU32()
+        sym.isFunc = bkGetBool()
+        sym.sigIdx = bkGetU32()
+        sym.isType = bkGetBool()
+        sym.isConst = bkGetBool()
+        sym.isParam = bkGetBool()
+        sym.constIsStr = bkGetBool()
+        sym.constInt = bkGetU32()
+        sym.constStrIdx = bkGetU32()
+        sym.isMenu = bkGetBool()
+        sym.isExtern = bkGetBool()
+        sym.isCallback = bkGetBool()
+        lSymbols.add(sym)
+        i = i + 1
+    }
+    bkLoadedSymbols = lSymbols
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        scope.parent = bkGetU32()
+        scope.names = bkReadIntIntMap()
+        lScopes.add(scope)
+        i = i + 1
+    }
+    bkLoadedScopes = lScopes
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        ti.kind = TypeKind(bkGetU32())
+        ti.n = bkGetU32()
+        ti.elem = bkGetU32()
+        ti.nameIdx = bkGetU32()
+        lTypeArena.add(ti)
+        i = i + 1
+    }
+    bkLoadedTypeArena = lTypeArena
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        em.nameIdx = bkGetU32()
+        em.value = bkGetU32()
+        em.labelIdx = bkGetU32()
+        lEnumMembers.add(em)
+        i = i + 1
+    }
+    bkLoadedEnumMembers = lEnumMembers
+}
+
+// bkLoadSections reads the section table (sectionCount, then that many
+// `id(2) len(4) payload(len)` frames) and dispatches each to its own
+// reader by id -- section ORDER in the file always matches bkWriteFile's
+// own fixed emission order, but this dispatches by id rather than
+// assuming that, so a future format extension (a reordered or additional
+// section) fails loudly (an unknown id) instead of silently
+// misinterpreting bytes. The post-dispatch bkLoadPos check is a free
+// integrity proof: every reader must consume EXACTLY `len` bytes, or the
+// bake is corrupt (or this loader has a field-order bug) -- either way,
+// a clear diagnostic beats a garbled downstream compile.
+func bkLoadSections(): bool {
+    var n: int
+    var i: int
+    var id: int
+    var len: int
+    var expectedPos: int
+
+    n = bkGetU16()
+    if n != bkSectionCount {
+        emitDiag(1, 1, "--rtbake: bad section count " + numToStr(n) + " (want " + numToStr(bkSectionCount) + ")")
+        return false
+    }
+    i = 0
+    while i < n {
+        id = bkGetU16()
+        len = bkGetU32()
+        expectedPos = bkLoadPos + len
+        if id == bkSecIrTypes {
+            bkLdIrTypes = bkReadIrTypes()
+        } else if id == bkSecIrStmts {
+            bkLdIrStmts = bkReadIrStmts()
+        } else if id == bkSecIrExprs {
+            bkLdIrExprs = bkReadIrExprs()
+        } else if id == bkSecIrLocals {
+            bkLdIrLocals = bkReadIrLocals()
+        } else if id == bkSecIrFuncs {
+            bkLdIrFuncs = bkReadIrFuncs()
+        } else if id == bkSecIrFuncIdxByName {
+            bkLdIrFuncIdxByName = bkReadIntIntMap()
+        } else if id == bkSecIrCbGlueNames {
+            bkLdIrCbGlueNames = bkReadIntList()
+        } else if id == bkSecIrGlobals {
+            bkLdIrGlobals = bkReadIrGlobals()
+        } else if id == bkSecIrFieldSlots {
+            bkLdIrFieldSlots = bkReadIrFieldSlots()
+        } else if id == bkSecIrRecords {
+            bkLdIrRecords = bkReadIrRecords()
+        } else if id == bkSecIrEnumMembers {
+            bkLdIrEnumMembers = bkReadIrEnumMembers()
+        } else if id == bkSecIrEnums {
+            bkLdIrEnums = bkReadIrEnums()
+        } else if id == bkSecIrWidgetDescs {
+            bkLdIrWidgetDescs = bkReadIrWidgetDescs()
+        } else if id == bkSecIrColumnDescs {
+            bkLdIrColumnDescs = bkReadIrColumnDescs()
+        } else if id == bkSecIrBindDescs {
+            bkLdIrBindDescs = bkReadIrBindDescs()
+        } else if id == bkSecIrWindowDescs {
+            bkLdIrWindowDescs = bkReadIrWindowDescs()
+        } else if id == bkSecIrMenuItemDescs {
+            bkLdIrMenuItemDescs = bkReadIrMenuItemDescs()
+        } else if id == bkSecIrMenuDescs {
+            bkLdIrMenuDescs = bkReadIrMenuDescs()
+        } else if id == bkSecIrWinHandlers {
+            bkLdIrWinHandlers = bkReadIrWinHandlers()
+        } else if id == bkSecIrWidgetHandlerEntries {
+            bkLdIrWidgetHandlerEntries = bkReadIrWidgetHandlerEntries()
+        } else if id == bkSecIrMenuHandlerEntries {
+            bkLdIrMenuHandlerEntries = bkReadIrMenuHandlerEntries()
+        } else if id == bkSecIrEveryEntries {
+            bkLdIrEveryEntries = bkReadIrEveryEntries()
+        } else if id == bkSecIrStrLits {
+            bkLdIrStrLits = bkReadIntList()
+        } else if id == bkSecIrExternNames {
+            bkLdIrExternNames = bkReadIntList()
+        } else if id == bkSecIrExternRetTys {
+            bkLdIrExternRetTys = bkReadIntList()
+        } else if id == bkSecIrExternParamStart {
+            bkLdIrExternParamStart = bkReadIntList()
+        } else if id == bkSecIrExternParamCountArr {
+            bkLdIrExternParamCountArr = bkReadIntList()
+        } else if id == bkSecIrExternParamTys {
+            bkLdIrExternParamTys = bkReadIntList()
+        } else if id == bkSecIrExternTrapWords {
+            bkLdIrExternTrapWords = bkReadIntList()
+        } else if id == bkSecIrExternConvs {
+            bkLdIrExternConvs = bkReadIntList()
+        } else if id == bkSecIrExternSels {
+            bkLdIrExternSels = bkReadIntList()
+        } else if id == bkSecIrExternParamRegs {
+            bkLdIrExternParamRegs = bkReadIntList()
+        } else if id == bkSecIrExternRetRegs {
+            bkLdIrExternRetRegs = bkReadIntList()
+        } else if id == bkSecIrLayoutNeededByName {
+            bkLdIrLayoutNeededByName = bkReadIntIntMap()
+        } else if id == bkSecIrRcWalkNeededByName {
+            bkLdIrRcWalkNeededByName = bkReadIntIntMap()
+        } else if id == bkSecIrScalars {
+            bkReadIrScalars()
+        } else if id == bkSecStrPool {
+            bkLdStrPool = bkReadStrPool()
+        } else if id == bkSecLowCounters {
+            bkReadLowCounters()
+        } else if id == bkSecCheckerSymbols {
+            bkReadCheckerSymbols()
+        } else if id == bkSecDeclFileTab {
+            bkLoadedDeclFileTab = bkReadIntList()
+        } else {
+            emitDiag(1, 1, "--rtbake: unknown section id " + numToStr(id))
+            return false
+        }
+        if bkLoadPos != expectedPos {
+            emitDiag(1, 1, "--rtbake: section " + numToStr(id) + " framing mismatch (corrupt bake)")
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// bkLoadRtbake parses buf (the raw --rtbake FILE contents) into the
+// bkLd*/bkLoaded* pending globals above, validating the header against
+// wantLane (the CURRENT compile's own target -- bkLane68k for emit68k,
+// bkLaneC for emit) and against a freshly recomputed stamp. Touches no
+// live compiler state -- see bkInstallPool/bkInstallArenas for that.
+//
+// Stamp contract (this task's open question (a)): the stamp is a hash of
+// the committed clarusc/clarusc.c snapshot (bake.cla's own bkHashText/
+// bkFindClarusC, Task 3). The loader recomputes that SAME hash the SAME
+// way, over the LOADING compiler's own clarusc/clarusc.c, and refuses on
+// any mismatch, naming both values -- "regenerate with --bake-ir" is
+// always the fix. Known gap, accepted for this phase (see this task's
+// report): a dev binary built from EDITED .cla sources still stamps/
+// checks against the COMMITTED snapshot, since bkFindClarusC always
+// reads clarusc/clarusc.c off disk, never the running binary's own
+// (possibly different) source -- both the generator (bake.cla,
+// unmodified since Task 3) and this loader share that exact same proxy,
+// so a bake generated and loaded by binaries built from the same
+// checkout always agree, and the snapshot is regenerated at every phase
+// close (CLAUDE.md), keeping drift bounded to "mid-phase, uncommitted
+// .cla edits" -- exactly the same caveat any other snapshot-bootstrapped
+// tool in this repo already carries.
+func bkLoadRtbake(buf: text, wantLane: int): bool {
+    var magic: string
+    var i: int
+    var version: int
+    var lane: int
+    var stampLen: int
+    var stamp: int
+    var compilerSrc: text
+    var expectStamp: int
+
+    if buf.length < 15 {
+        emitDiag(1, 1, "--rtbake: file too short to be a CLIR bake")
+        return false
+    }
+    magic = buf[0, 4]
+    if magic != bkMagic {
+        emitDiag(1, 1, "--rtbake: bad magic (not a CLIR bake)")
+        return false
+    }
+
+    bkLoadBuf = buf
+    bkLoadPos = 4
+    version = bkGetU32()
+    if version != bkFormatVersion {
+        emitDiag(1, 1, "--rtbake: format version " + numToStr(version) + " unsupported (want " + numToStr(bkFormatVersion) + ")")
+        return false
+    }
+    lane = bkGetByte()
+    if lane != wantLane {
+        emitDiag(1, 1, "--rtbake: lane mismatch (bake is " + bkLaneName(lane) + ", this compile wants " + bkLaneName(wantLane) + ")")
+        return false
+    }
+    stampLen = bkGetU16()
+    if stampLen != 4 {
+        emitDiag(1, 1, "--rtbake: unexpected stamp length " + numToStr(stampLen))
+        return false
+    }
+    stamp = bkGetU32()
+
+    compilerSrc = ""
+    if bkFindClarusC(compilerSrc) {
+        expectStamp = bkHashText(compilerSrc)
+    } else {
+        expectStamp = 0
+    }
+    if stamp != expectStamp {
+        emitDiag(1, 1, "--rtbake: stamp mismatch (bake=" + numToStr(stamp) + ", this compiler=" + numToStr(expectStamp) + "); regenerate with --bake-ir")
+        return false
+    }
+
+    i = bkGetU16()
+    while i > 0 {
+        bkGetStrShort()
+        i = i - 1
+    }
+
+    return bkLoadSections()
+}
+
+// bkInstallPool copies the intern-pool prefix into live strPool/strIndex
+// -- called by driveCompile BEFORE Phase A (see its own doc comment for
+// why: every baked IR arena's string-index fields are absolute strPool
+// indices captured at bake time, so nothing may intern() a NEW string
+// before this runs, or a user identifier could steal one of those low
+// indices out from under the baked arenas). Rebuilds strIndex alongside
+// (not just strPool) so a user identifier/literal identical to a baked
+// one dedups against it via the ordinary intern() path, the same as any
+// other repeated string -- a nice-to-have (avoids pool bloat), not
+// load-bearing (nothing downstream iterates strPool/strIndex; every
+// consumer is a by-index poolGet or a by-value map lookup, per this
+// task's report).
+func bkInstallPool() {
+    var freshIndex: map of int
+    var i: int
+
+    strPool = bkLdStrPool
+    freshIndex = driveFreshIntMap()
+    strIndex = freshIndex
+    i = 0
+    while i < strPool.count {
+        strIndex[strPool[i]] = i
+        i = i + 1
+    }
+}
+
+// bkInstallArenas is the second install step -- called by driveCompile
+// AFTER check#1 (so the retained-but-uninstalled checker-symbol state
+// above can never influence check#1's own diagnostics for user code --
+// this task's open question (b)) and BEFORE the bake-path lowerProgram
+// call, immediately after irReset() has just cleared every arena this
+// function is about to overwrite ("install = deserialize into the
+// just-reset arenas," the brief's own contract).
+//
+// The eight reverse-waist dispatcher stubs (clar_ui_fire_winevent and
+// its seven siblings, lower.cla's lowSynthUiDispatchers) are the one
+// deliberate exception, filtered out of the installed irFuncs/
+// irFuncIdxByName here rather than installed verbatim: the runtime-only
+// bake generator built them against an always-empty/false
+// irWindowDescs/irMenuDescs/irEveryCount/irHasStartEmpty/
+// irHasOpenDocument (the runtime chain declares no app/window/menu/
+// every section at all), so their baked bodies are permanently the
+// no-handler stub shape -- never this program's real one.
+// lowSynthUiDispatchers() always runs again after user lowering
+// (unconditional, un-gated by lowResumeFromBake -- see lower.cla's own
+// header comment on that flag) and rebuilds all eight against the REAL
+// combined state; ir.cla's newIRFunc only registers a name into
+// irFuncIdxByName the FIRST time it's seen (`if not
+// irFuncIdxByName.has(name) { ... }`), so if the stale baked stand-ins
+// kept their names, the fresh rebuild would silently lose the naming
+// race and sit orphaned/unreachable while the stale stub's name (and
+// its permanently-empty body) stayed live. Filtering here -- so the
+// fresh rebuild has a clean name to claim -- needed no change to
+// lower.cla's eight dispatcher-building functions at all; nothing else
+// in the compiler ever references an irFuncs entry by ARENA INDEX (call
+// sites always resolve a callee by interned NAME, ir.cla's
+// findIRFuncIdxByName), so dropping these eight baked entries and
+// re-numbering everyone after them is safe.
+func bkInstallArenas() {
+    var skipNames: list of int
+    var skip: intmap of bool
+    var i: int
+    var filtered: list of IRFunc
+    var filteredIdx: intmap of int
+    var nm: int
+
+    skipNames.add(intern("clar_ui_fire_winevent"))
+    skipNames.add(intern("clar_ui_fire_widget"))
+    skipNames.add(intern("clar_ui_fire_menu"))
+    skipNames.add(intern("clar_ui_fire_every"))
+    skipNames.add(intern("clar_ui_fire_releasevars"))
+    skipNames.add(intern("clar_ui_fire_staterows"))
+    skipNames.add(intern("clar_ui_fire_launchdoc"))
+    skipNames.add(intern("clar_ui_fire_startempty"))
+    i = 0
+    while i < skipNames.count {
+        skip[skipNames[i]] = true
+        i = i + 1
+    }
+
+    irTypes = bkLdIrTypes
+    irStmts = bkLdIrStmts
+    irExprs = bkLdIrExprs
+    irLocals = bkLdIrLocals
+
+    i = 0
+    while i < bkLdIrFuncs.count {
+        if not skip.get(bkLdIrFuncs[i].name, false) {
+            filtered.add(bkLdIrFuncs[i])
+        }
+        i = i + 1
+    }
+    irFuncs = filtered
+    i = 0
+    while i < irFuncs.count {
+        nm = irFuncs[i].name
+        if not filteredIdx.has(nm) {
+            filteredIdx[nm] = i
+        }
+        i = i + 1
+    }
+    irFuncIdxByName = filteredIdx
+
+    irCbGlueNames = bkLdIrCbGlueNames
+    irGlobals = bkLdIrGlobals
+    irFieldSlots = bkLdIrFieldSlots
+    irRecords = bkLdIrRecords
+    irEnumMembers = bkLdIrEnumMembers
+    irEnums = bkLdIrEnums
+    irWidgetDescs = bkLdIrWidgetDescs
+    irColumnDescs = bkLdIrColumnDescs
+    irBindDescs = bkLdIrBindDescs
+    irWindowDescs = bkLdIrWindowDescs
+    irMenuItemDescs = bkLdIrMenuItemDescs
+    irMenuDescs = bkLdIrMenuDescs
+    irWinHandlers = bkLdIrWinHandlers
+    irWidgetHandlerEntries = bkLdIrWidgetHandlerEntries
+    irMenuHandlerEntries = bkLdIrMenuHandlerEntries
+    irEveryEntries = bkLdIrEveryEntries
+    irStrLits = bkLdIrStrLits
+    irExternNames = bkLdIrExternNames
+    irExternRetTys = bkLdIrExternRetTys
+    irExternParamStart = bkLdIrExternParamStart
+    irExternParamCountArr = bkLdIrExternParamCountArr
+    irExternParamTys = bkLdIrExternParamTys
+    irExternTrapWords = bkLdIrExternTrapWords
+    irExternConvs = bkLdIrExternConvs
+    irExternSels = bkLdIrExternSels
+    irExternParamRegs = bkLdIrExternParamRegs
+    irExternRetRegs = bkLdIrExternRetRegs
+    irLayoutNeededByName = bkLdIrLayoutNeededByName
+    irRcWalkNeededByName = bkLdIrRcWalkNeededByName
+
+    irHasLaunch = bkLdIrHasLaunch
+    irHasStartEmpty = bkLdIrHasStartEmpty
+    irHasStartCLI = bkLdIrHasStartCLI
+    irHasOpenDocument = bkLdIrHasOpenDocument
+    irAppName = bkLdIrAppName
+    irAppVersion = bkLdIrAppVersion
+    irAppAuthor = bkLdIrAppAuthor
+    irAppAbout = bkLdIrAppAbout
+    irAppId = bkLdIrAppId
+    irAppDoctype = bkLdIrAppDoctype
+    irAppStack = bkLdIrAppStack
+    irHasApp = bkLdIrHasApp
+    irMenuHandlersHead = bkLdIrMenuHandlersHead
+    irMenuHandlersTail = bkLdIrMenuHandlersTail
+    irMenuHandlerCount = bkLdIrMenuHandlerCount
+    irEveryHead = bkLdIrEveryHead
+    irEveryTail = bkLdIrEveryTail
+    irEveryCount = bkLdIrEveryCount
+    irVoidT = bkLdIrVoidT
+    irIntT = bkLdIrIntT
+    irBoolT = bkLdIrBoolT
+    irFixedT = bkLdIrFixedT
+    irCharT = bkLdIrCharT
+    irTextT = bkLdIrTextT
+    irErrT = bkLdIrErrT
+    irPtrT = bkLdIrPtrT
+    irWordT = bkLdIrWordT
+
+    lowSwitchN = bkLdLowSwitchN
+    uiMenuCount = bkLdUiMenuCount
+    lowStoreTempN = bkLdLowStoreTempN
+    lowRetTempN = bkLdLowRetTempN
+    lowStrIdx = bkLdLowStrIdx
+}

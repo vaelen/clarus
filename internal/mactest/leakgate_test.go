@@ -53,6 +53,9 @@ func TestLeakGate(t *testing.T) {
 	t.Run("DoubleCompile", func(t *testing.T) {
 		runDoubleCompileGate(t)
 	})
+	t.Run("DoubleCompileBake", func(t *testing.T) {
+		runDoubleCompileGateBake(t)
+	})
 }
 
 // parseLiveCount reads a CLARUS_MEM_REPORT file and returns the
@@ -233,5 +236,140 @@ func runDoubleCompileGate(t *testing.T) {
 	}
 	if !bytes.Equal(forkAlt0, forkAlt2) {
 		t.Fatalf("alternating run: leakfork_0.bin (%d bytes) != leakfork_2.bin (%d bytes): stale state leaked across a different-fixture compile", len(forkAlt0), len(forkAlt2))
+	}
+}
+
+// buildDblcompileBake builds clarusc/test/dblcompile_bake.cla (the
+// --rtbake twin of dblcompile.cla, runtime-ir-bake Task 4) and returns
+// the exe path.
+func buildDblcompileBake(t *testing.T) string {
+	t.Helper()
+	root := repoRoot(t)
+	return buildHostFromFixture(t, filepath.Join(root, "clarusc", "test", "dblcompile_bake.cla"), "dblcompile_bake")
+}
+
+// bakeRt68k runs `clarusc --bake-ir --lane 68k -o outPath` (the same
+// current-source oracle exe every other bake test in this repo uses)
+// and returns outPath.
+func bakeRt68k(t *testing.T, outPath string) string {
+	t.Helper()
+	exe := hostOracleClarusc(t)
+	cmd := exec.Command(exe, "--bake-ir", "--lane", "68k", "-o", outPath)
+	cmd.Dir = repoRoot(t)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("clarusc --bake-ir --lane 68k: %v\n%s", err, out)
+	}
+	return outPath
+}
+
+// runDblcompileBakeOnce runs exe with [bakePath, entry...] in workDir,
+// under CLARUS_MEM_STRICT, and returns the parsed live count -- the
+// --rtbake twin of runDblcompileOnce. workDir must sit under the repo
+// root for two independent reasons: dblcompile_bake's own nested
+// findRtDir walk-up (same as runDblcompileOnce's own doc comment) AND
+// bake.cla's bkFindClarusC walk-up (the stamp-recompute half of the
+// loader's refusal check, clarusc/bake.cla), which searches for
+// clarusc/clarusc.c the same "up to 10 parent levels" way.
+func runDblcompileBakeOnce(t *testing.T, exe, bakePath, workDir string, entries []string) int {
+	t.Helper()
+	reportPath := filepath.Join(workDir, "report.txt")
+	argv := append([]string{bakePath}, entries...)
+	cmd := exec.Command(exe, argv...)
+	cmd.Dir = workDir
+	cmd.Env = append(os.Environ(),
+		"CLARUS_MEM_STRICT=1",
+		"CLARUS_MEM_REPORT="+reportPath)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run dblcompile_bake %v: %v\nstdout: %s\nstderr: %s", argv, err, stdout.String(), stderr.String())
+	}
+	live, _ := parseLiveCount(t, reportPath)
+	return live
+}
+
+// runDoubleCompileGateBake is runDoubleCompileGate's own --rtbake twin:
+// proves the bake-path install (clarusc/bake.cla's bkLoadRtbake/
+// bkInstallPool/bkInstallArenas, runtime-ir-bake Task 4) doesn't retain
+// heap blocks across repeated in-process compiles either, and that
+// re-installing the SAME baked image fresh every compile doesn't leak
+// stale state into a later, DIFFERENT entry's compile (the same
+// alternating-fixture byte-identity oracle runDoubleCompileGate itself
+// uses, here over the --rtbake fork instead of the from-source one).
+func runDoubleCompileGateBake(t *testing.T) {
+	t.Helper()
+	root := repoRoot(t)
+	exe := buildDblcompileBake(t)
+	tickprobe := filepath.Join(root, "testdata", "cg68k", "tickprobe.cla")
+	catprobe := filepath.Join(root, "testdata", "mac-resident", "catprobe.cla")
+
+	scratchRoot := filepath.Join(root, "build-run")
+	if err := os.MkdirAll(scratchRoot, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", scratchRoot, err)
+	}
+	bakeDir, err := os.MkdirTemp(scratchRoot, "leakgate-bake-clir-")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	defer os.RemoveAll(bakeDir)
+	bakePath := bakeRt68k(t, filepath.Join(bakeDir, "rt68k.clir"))
+
+	work1, err := os.MkdirTemp(scratchRoot, "leakgate-bake-1x-")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	defer os.RemoveAll(work1)
+	live1 := runDblcompileBakeOnce(t, exe, bakePath, work1, []string{tickprobe})
+
+	work3, err := os.MkdirTemp(scratchRoot, "leakgate-bake-3x-")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	defer os.RemoveAll(work3)
+	live3 := runDblcompileBakeOnce(t, exe, bakePath, work3, []string{tickprobe, tickprobe, tickprobe})
+
+	growthPerCompile := (live3 - live1) / 2
+	if growthPerCompile > 64 {
+		t.Fatalf("bake-path live-block growth per extra compile = %d (live1=%d live3=%d), want <= 64", growthPerCompile, live1, live3)
+	}
+
+	fork0, err := os.ReadFile(filepath.Join(work3, "leakfork_0.bin"))
+	if err != nil {
+		t.Fatalf("read leakfork_0.bin: %v", err)
+	}
+	fork2, err := os.ReadFile(filepath.Join(work3, "leakfork_2.bin"))
+	if err != nil {
+		t.Fatalf("read leakfork_2.bin: %v", err)
+	}
+	if !bytes.Equal(fork0, fork2) {
+		t.Fatalf("bake-path leakfork_0.bin (%d bytes) != leakfork_2.bin (%d bytes): stale state leaked into the 3rd compile's fork", len(fork0), len(fork2))
+	}
+
+	// Alternating-fixture oracle: tickprobe, catprobe, tickprobe -- a
+	// DIFFERENT entry in the middle slot, same reasoning as
+	// runDoubleCompileGate's own alternating run.
+	workAlt, err := os.MkdirTemp(scratchRoot, "leakgate-bake-3x-alt-")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	defer os.RemoveAll(workAlt)
+	liveAlt := runDblcompileBakeOnce(t, exe, bakePath, workAlt, []string{tickprobe, catprobe, tickprobe})
+
+	growthPerCompileAlt := (liveAlt - live1) / 2
+	if growthPerCompileAlt > 64 {
+		t.Fatalf("bake-path alternating-fixture live-block growth per extra compile = %d (live1=%d liveAlt=%d), want <= 64", growthPerCompileAlt, live1, liveAlt)
+	}
+
+	forkAlt0, err := os.ReadFile(filepath.Join(workAlt, "leakfork_0.bin"))
+	if err != nil {
+		t.Fatalf("read leakfork_0.bin (alt): %v", err)
+	}
+	forkAlt2, err := os.ReadFile(filepath.Join(workAlt, "leakfork_2.bin"))
+	if err != nil {
+		t.Fatalf("read leakfork_2.bin (alt): %v", err)
+	}
+	if !bytes.Equal(forkAlt0, forkAlt2) {
+		t.Fatalf("bake-path alternating run: leakfork_0.bin (%d bytes) != leakfork_2.bin (%d bytes): stale state leaked across a different-fixture compile", len(forkAlt0), len(forkAlt2))
 	}
 }

@@ -42,6 +42,13 @@ include "cprint.cla"
 include "cg68k.cla"
 include "uiblob.cla"
 include "drive.cla"
+// runtime-ir-bake Task 4: drive.cla's driveCompile now names bake.cla
+// symbols directly (see clarusc/test/dblcompile.cla's own comment on
+// this same include, added for the identical reason) -- macgui.cla
+// itself never sets haveRtbake (Mac-resident compiles are from-source
+// only, for now), but still needs bake.cla present for driveCompile's
+// standalone check to resolve.
+include "bake.cla"
 
 // gcGet1NamedResource: a SECOND declaration of the same trap Get1NamedResource
 // (toolbox/resources.cla) already catalogs, with a `string` `name` param

@@ -42,6 +42,25 @@ var lowScopes: list of LowScope
 // (lower.go's strIdx): identical literals share one clar_lit_K slot.
 var lowStrIdx: map of int
 
+// lowResumeFromBake (runtime-ir-bake Task 4) tells lowerProgram (below) it
+// is lowering USER code only, on top of an already-installed baked
+// runtime image (bake.cla's bkInstallArenas), rather than starting a
+// program's IR from scratch -- gates the two pieces of lowerProgram's own
+// top that would otherwise silently duplicate baked state: the counter
+// resets (lowSwitchN/uiMenuCount/lowStrIdx must RESUME from the baked
+// end-values a normal compile's own driveCompile already restored via
+// bkInstallArenas, not restart at zero) and lowBuiltinSaveChoiceLayout
+// (the runtime bake's own lowerProgram call already built the ONE
+// "saveChoice" IREnumLayout+members this program needs; calling it again
+// would mint a second, dead-weight copy). The front end (driveCompile)
+// sets this immediately before every lowerProgram call, true or false,
+// the same "always set, never rely on a stale value" convention
+// wantEmit/want68k already use -- never left implicitly true across
+// compiles. Default false: every OTHER lowerProgram caller (the bake
+// generator's own bakeGenerateChain, and driveCompile's own from-source
+// branch) is completely unaffected by this flag's existence.
+var lowResumeFromBake: bool
+
 // lowCurFuncRet is the enclosing function's declared return IR type index,
 // for the Return-statement coercion Task 4 adds (lower.go's curFuncRet).
 var lowCurFuncRet: int
@@ -6356,9 +6375,21 @@ func lowerProgram(declHead: int): int {
     var freshStrIdx: map of int
     var freshUiMenuItemIdx: map of int
 
-    lowSwitchN = 0
-    uiMenuCount = 0
-    lowStrIdx = freshStrIdx
+    // runtime-ir-bake Task 4: lowResumeFromBake skips exactly the two
+    // pieces of reset that would clobber/duplicate an already-installed
+    // baked runtime image -- see its own doc comment above (lowStrIdx's
+    // decl) for why. Every other reset below (lowCurWinType and
+    // siblings, lowTitleIdx, uiMenuItemIdx) is legitimately per-compile-
+    // fresh regardless of a bake -- none of it has a baked counterpart
+    // (task-1-report.md section (b): lowTitleIdx is the same "re-derive,
+    // don't bake" lazy-guard family as ir.cla's iXxxIdx accessors;
+    // uiMenuItemIdx starts empty from the runtime bake and is reassigned
+    // fresh every lowerProgram call regardless, per that same report).
+    if not lowResumeFromBake {
+        lowSwitchN = 0
+        uiMenuCount = 0
+        lowStrIdx = freshStrIdx
+    }
     lowCurWinType = -1
     lowCurHandlerEvent = -1
     lowCurAcceptedParam = -1
@@ -6381,7 +6412,9 @@ func lowerProgram(declHead: int): int {
     // unbounded growth violates this phase's bounded-memory charter.
     // Fresh-reassign, matching lowStrIdx's own idiom just above.
     uiMenuItemIdx = freshUiMenuItemIdx
-    lowBuiltinSaveChoiceLayout()
+    if not lowResumeFromBake {
+        lowBuiltinSaveChoiceLayout()
+    }
     // ARC Task 6 stopped calling the window-var/globals escape prepasses
     // (cpEmitWinReleaseFn/cpEmitGlobalsInit release unconditionally now);
     // ARC Task 8 deleted the pass functions themselves along with the rest

@@ -66,6 +66,21 @@ var combined2: int
 var rtDir: string
 var haveRtDir: bool
 
+// haveRtbake/rtbakeBytes (runtime-ir-bake Task 4): the host CLI's
+// `--rtbake FILE` opt-in, mirroring rtDir/haveRtDir's own "front end sets
+// these before calling driveCompile" convention. rtbakeBytes is the raw
+// '.clir' file content (main.cla reads it via file.readText, same as
+// --events/--bake); haveRtbake gates the whole bake-path branch inside
+// driveCompile (below) and driveManifestSplice's now-skipped call. Left
+// at its zero value (false/"") by every caller that doesn't set it --
+// today, that's every caller except main.cla's emit/emit68k handling.
+// Deliberately NOT reset by driveReset(): like rtDir/haveRtDir, once a
+// front end has resolved which bake file backs this process's compiles,
+// that doesn't change compile to compile (internal/bake's DoubleCompile-
+// style leak-gate variant relies on exactly this -- see its own harness).
+var haveRtbake: bool
+var rtbakeBytes: text
+
 // seenPaths keys the include-once set (driver.go's `seen`), keyed by the
 // path after normalizePath's lexical cleanup: "//" and "./" segments
 // collapsed and "seg/.." pairs resolved, so "sub/common.cla" and
@@ -1115,7 +1130,18 @@ func driveEarlySplice(testapi: bool): bool {
 // Sets the global combined2. Returns false on any new diagnostic (the
 // front end renders `diags` itself, exactly as driveCompile's own doc
 // comment promises).
-func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
+// driveResolveAppName (runtime-ir-bake Task 4: extracted verbatim out of
+// driveManifestSplice's own top, which used to inline this under `if
+// want68k { ... }` -- pure code motion, no behavior change) resolves the
+// user app's raw name/icon path into cg68k.cla's cgAppRawName/
+// cgAppIconPath globals, purely from `combined` (the checked USER AST)
+// and entries (driveCompile's own entries param, for the
+// baseNameNoExt(entries[0]) fallback) -- never from the runtime chain.
+// Needed by BOTH driveManifestSplice's own from-source want68k path
+// (unchanged call below) and driveCompile's bake-path branch (which skips
+// driveManifestSplice entirely -- see its own doc comment -- but still
+// needs this same resolution for cg68BuildFork).
+func driveResolveAppName(entries: list of string) {
     var d: int
     var appIdx: int
     var nameV: string
@@ -1124,6 +1150,37 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     var item: int
     var pname: string
     var vh: int
+
+    d = combined
+    appIdx = -1
+    while d != -1 {
+        if declKind(d) == DkApp { appIdx = d }
+        d = declNext(d)
+    }
+    nameV = ""
+    iconV = ""
+    resolved = ""
+    if appIdx != -1 {
+        item = appDeclPropsHead(appIdx)
+        while item != -1 {
+            pname = poolGet(propertyName(item))
+            vh = propertyValuesHead(item)
+            if pname == "name" { nameV = poolGet(stringLitIdx(vh)) }
+            if pname == "icon" { iconV = poolGet(stringLitIdx(vh)) }
+            item = declNext(item)
+        }
+        if nameV != "" { resolved = nameV } else { resolved = poolGet(appDeclName(appIdx)) }
+    }
+    if resolved == "" { resolved = baseNameNoExt(entries[0]) }
+    cgAppRawName = resolved
+    if appIdx != -1 and iconV != "" {
+        cgAppIconPath = joinPath(dirOf(poolGet(appDeclPathIdx(appIdx))), iconV)
+    } else {
+        cgAppIconPath = ""
+    }
+}
+
+func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     var neededMods: list of string
     var rtHeads: list of int
     var rtTail: int
@@ -1137,33 +1194,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     var hoistBefore: int
 
     if want68k {
-        d = combined
-        appIdx = -1
-        while d != -1 {
-            if declKind(d) == DkApp { appIdx = d }
-            d = declNext(d)
-        }
-        nameV = ""
-        iconV = ""
-        resolved = ""
-        if appIdx != -1 {
-            item = appDeclPropsHead(appIdx)
-            while item != -1 {
-                pname = poolGet(propertyName(item))
-                vh = propertyValuesHead(item)
-                if pname == "name" { nameV = poolGet(stringLitIdx(vh)) }
-                if pname == "icon" { iconV = poolGet(stringLitIdx(vh)) }
-                item = declNext(item)
-            }
-            if nameV != "" { resolved = nameV } else { resolved = poolGet(appDeclName(appIdx)) }
-        }
-        if resolved == "" { resolved = baseNameNoExt(entries[0]) }
-        cgAppRawName = resolved
-        if appIdx != -1 and iconV != "" {
-            cgAppIconPath = joinPath(dirOf(poolGet(appDeclPathIdx(appIdx))), iconV)
-        } else {
-            cgAppIconPath = ""
-        }
+        driveResolveAppName(entries)
     }
 
     if not earlySpliceDone {
@@ -1358,6 +1389,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     var h: int
     var tail: int
     var earlySpliceDone: bool
+    var wantLane: int
 
     // findings 1.4 fix round 1: invalidate cg68k.cla's cgFindRecordByName/
     // cgSizeOf lookup caches (cgRecIdxByName, cgSizeMemo) HERE, not only on
@@ -1376,6 +1408,44 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     // with this one there; nothing populates either cache between this
     // call and cg68Measure's.
     cgResetCodegenState()
+
+    // runtime-ir-bake Task 4: --rtbake path -- load+verify the baked
+    // runtime image and install its intern-pool prefix BEFORE Phase A
+    // (below) does any lexing/parsing of user code. This has to happen
+    // before Phase A, not after check#1 like the arena install below:
+    // every baked IR arena's own string-index fields (an IRFunc's name,
+    // for instance) are ABSOLUTE strPool indices captured at bake time,
+    // so the baked strings must occupy strPool's low indices (0..K-1)
+    // before ANYTHING else calls intern() -- and Phase A's lexer does,
+    // continuously, as soon as it starts. See bake.cla's own loader doc
+    // comment for the two-stage install this splits into (pool now,
+    // arenas + lowering counters after check#1, below) and this task's
+    // report for why: check#1 for user code must run against a clean,
+    // bake-uninfluenced checker (open question (b) -- the checker-symbol
+    // half of the baked image is loaded but deliberately never installed
+    // this task, Task 5's job).
+    //
+    // --testapi is refused here rather than silently mishandled: this
+    // task's own byte-identity gate only covers non-testapi fixtures
+    // (Task 5 owns wiring the baked checker-symbol preload a --testapi
+    // compile needs), and driveEarlySplice (below) would otherwise
+    // re-expand/re-lex/re-parse ui*.cla/uitest.cla as real user-chain
+    // source ON TOP of the same modules' already-baked IR -- a genuine
+    // double-declaration hazard, not just an unimplemented feature.
+    if haveRtbake {
+        if testapi {
+            emitDiag(1, 1, "--rtbake does not support --testapi yet")
+            return false
+        }
+        wantLane = bkLaneC
+        if want68k {
+            wantLane = bkLane68k
+        }
+        if not bkLoadRtbake(rtbakeBytes, wantLane) {
+            return false
+        }
+        bkInstallPool()
+    }
 
     drvStartTicks = TickCount()
     drvPhaseTicks = drvStartTicks
@@ -1463,6 +1533,57 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         return true
     }
 
+    // runtime-ir-bake Task 4: the bake path branches here -- combined2/
+    // driveManifestSplice/check#2 are all bypassed (the brief's own
+    // pipeline order: load+verify stamp -> [check user, above,
+    // unchanged] -> install -> lower user). irReset() first (creates the
+    // singleton IRType entries at their fixed low indices, resets every
+    // lazy-intern iXxxIdx guard, matches a from-source compile's own
+    // reset discipline exactly), THEN bkInstallArenas() REPLACES those
+    // just-reset arenas with the baked equivalents -- see bkInstallArenas'
+    // own doc comment (bake.cla) for why installing the eight reverse-
+    // waist dispatcher stubs verbatim would be wrong (their baked bodies
+    // reflect the RUNTIME chain's own always-empty app/window/menu/every
+    // state, not this program's).
+    if haveRtbake {
+        if want68k {
+            driveResolveAppName(entries)
+        }
+        // Every runtime module is unconditionally in the baked chain
+        // (bake.cla's bakeModuleList mirrors driveManifestSplice's own
+        // now-unconditional neededMods list exactly), so these 11 C-lane
+        // "ported" flags (cprint.cla) are unconditionally true here too,
+        // matching what driveManifestSplice itself would set -- this
+        // path never calls it, so nothing else sets them.
+        cpCorePorted = true
+        cpStrPorted = true
+        cpTextPorted = true
+        cpTextArcPorted = true
+        cpListPorted = true
+        cpListArcPorted = true
+        cpMapPorted = true
+        cpMapArcPorted = true
+        cpIntMapPorted = true
+        cpSortedMapPorted = true
+        cpSerPorted = true
+        driveProgressStage("Loading Runtime")
+        driveProgress("Loading runtime")
+        irReset()
+        bkInstallArenas()
+        combined2 = combined
+        driveProgressPhase("Installed baked runtime")
+
+        driveProgressStage("Lowering")
+        lowResumeFromBake = true
+        lowerProgram(combined2)
+        lowResumeFromBake = false
+        if diags.count > 0 {
+            return false
+        }
+        driveProgressPhase("Lowered")
+        return true
+    }
+
     driveProgressStage("Loading Runtime")
     driveProgress("Loading runtime")
     if not driveManifestSplice(entries, earlySpliceDone) {
@@ -1472,6 +1593,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
 
     driveProgressStage("Lowering")
     irReset()
+    lowResumeFromBake = false
     lowerProgram(combined2)
     // native-gaps-cleanup Task 2: lowerProgram can itself emitDiag now
     // (lowCheckLiteral4CCArg/lowCheckLiteralFilter, lower.cla).

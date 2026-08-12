@@ -158,6 +158,8 @@ on App.startCLI(args: list of string) {
     var vh: int
     var testApiFlag: bool
     var partitionDigitIdx: int
+    var rtbakePath: string
+    var haveRtbakeFlag: bool
 
     // Reset-at-start: one clarusc invocation checks (or emits) one program
     // (each differential-harness case is a fresh exec). These resets clear the
@@ -293,6 +295,23 @@ on App.startCLI(args: list of string) {
             // (below) is already mode-agnostic (gated on testApiFlag alone,
             // never on emitMode/emitMode68k), so no other change is needed.
             testApiFlag = true
+        } else if (emitMode or emitMode68k) and args[i] == "--rtbake" {
+            // runtime-ir-bake Task 4: opts this compile into the baked
+            // CLIR image instead of splicing/checking/lowering the
+            // runtime chain from source -- drive.cla's driveCompile
+            // reads haveRtbake/rtbakeBytes (set below, once the whole
+            // flag list is known and the lane -- want68k -- is settled).
+            i = i + 1
+            if i >= args.count {
+                if emitMode68k {
+                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--rtbake FILE] FILE...")
+                } else {
+                    log("usage: clarusc emit -o OUT.c [--rtdir DIR] [--testapi] [--rtbake FILE] FILE...")
+                }
+                quit 2
+            }
+            rtbakePath = args[i]
+            haveRtbakeFlag = true
         } else if emitMode68k and args[i] == "--listing" {
             listingFlag = true
         } else if emitMode68k and args[i] == "--nopeep" {
@@ -435,6 +454,27 @@ on App.startCLI(args: list of string) {
             quit 1
         }
         quit 0
+    }
+
+    // runtime-ir-bake Task 4: --rtbake does not support --testapi yet --
+    // driveEarlySplice (below, via driveCompile) would re-expand/re-lex/
+    // re-parse ui*.cla/uitest.cla as real user-chain source ON TOP of
+    // the same modules' already-baked IR, a genuine double-declaration
+    // hazard; Task 5 owns wiring the baked checker-symbol preload a real
+    // --testapi + --rtbake compile needs instead. Checked here (a clear
+    // CLI usage error) rather than left to driveCompile's own diagnostic
+    // path, since it's knowable before any parsing starts.
+    if haveRtbakeFlag and testApiFlag {
+        log("clarusc: --rtbake does not support --testapi yet")
+        quit 2
+    }
+    if haveRtbakeFlag {
+        rtbakeBytes = ""
+        if not file.readText(rtbakePath, rtbakeBytes) {
+            log("clarusc: cannot read --rtbake " + rtbakePath + ": " + lastError.message)
+            quit 1
+        }
+        haveRtbake = true
     }
 
     // Task 6 (mac-resident-clarusc): the whole pipeline -- Phase A

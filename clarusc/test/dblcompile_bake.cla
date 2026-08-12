@@ -1,0 +1,132 @@
+// dblcompile_bake.cla: cross-compile leak-gate harness for the --rtbake
+// path (runtime-ir-bake Task 4) -- the bake-path twin of dblcompile.cla
+// (memory-leak-fix Task 1's own harness), same per-compile sequence
+// (driveReset/resetDiags/astReset -> driveCompile -> driveEmit68kFork)
+// repeated in ONE host process, once per entry, but with haveRtbake/
+// rtbakeBytes set so every compile installs the SAME baked runtime image
+// fresh (bake.cla's own bkLoadRtbake/bkInstallPool/bkInstallArenas parse
+// the file bytes from scratch on every driveCompile call -- nothing
+// about the install itself is memoized across compiles) instead of
+// splicing/checking/lowering runtime source. Proves the install path
+// itself doesn't leak (0 block growth across repeats) and doesn't leave
+// stale state a DIFFERENT entry's compile could observe (the alternating-
+// fixture oracle internal/mactest/leakgate_test.go's DoubleCompile
+// subtest already applies to dblcompile.cla).
+//
+// Usage: scripts/clarus-run.sh clarusc/test/dblcompile_bake.cla -- \
+//            /path/to/rt68k.clir testdata/cg68k/tickprobe.cla ...
+
+include "../lib.cla"
+include "../tok.cla"
+include "../lex.cla"
+include "../ast.cla"
+include "../parse.cla"
+include "../types.cla"
+include "../check.cla"
+include "../ir.cla"
+include "../lower.cla"
+include "../shake.cla"
+include "../asm68k.cla"
+include "../peep68k.cla"
+include "../app68k.cla"
+include "../res68k.cla"
+include "../cprint.cla"
+include "../cg68k.cla"
+include "../uiblob.cla"
+include "../drive.cla"
+include "../bake.cla"
+
+// Front-end seam: same as main.cla's host CLI (disk reads, no resources).
+func feReadSource(path: string, key: string, out: text): bool {
+    return file.readText(path, out)
+}
+
+func feHasKey(key: string): bool {
+    return false
+}
+
+func feProgress(line: string) {
+    log(line)
+}
+
+func feProgressStep(cur: int, total: int, label: string) {
+}
+
+func feProgressTick() {
+}
+
+on App.startCLI(args: list of string) {
+    var i: int
+    var entries: list of string
+    var ok: bool
+    var built: bool
+    var t0: int
+    var t1: int
+    var fork: text
+    var wrote: bool
+    var di: int
+    var bakeBytes: text
+
+    hostPaths = true
+    rtDir = ""
+    haveRtDir = false
+
+    if args.count < 2 {
+        log("usage: dblcompile_bake BAKE_FILE ENTRY...")
+        quit 2
+    }
+    bakeBytes = ""
+    if not file.readText(args[0], bakeBytes) {
+        log("dblcompile_bake: cannot read bake file: " + args[0])
+        quit 2
+    }
+    // Set once, kept for the whole process: rtbakeBytes doesn't change
+    // between compiles (mirrors rtDir/haveRtDir's own "resolved once,
+    // preserved across compiles" convention, drive.cla's driveReset doc
+    // comment) -- every compile's OWN install still runs fresh, since
+    // bkLoadRtbake/bkInstallPool/bkInstallArenas re-parse/re-copy from
+    // these same bytes every driveCompile call, memoizing nothing.
+    rtbakeBytes = bakeBytes
+    haveRtbake = true
+
+    i = 1
+    while i < args.count {
+        t0 = TickCount()
+        driveReset()
+        resetDiags()
+        astReset()
+        wantEmit = true
+        want68k = true
+        entries = cgFreshStringList()
+        entries.add(args[i])
+        ok = driveCompile(entries, false)
+        if entryFailed {
+            log("dblcompile_bake: cannot open entry file: " + args[i])
+            quit 2
+        }
+        if not ok {
+            log("dblcompile_bake: compile FAILED: " + args[i])
+            di = 0
+            while di < diags.count {
+                log(formatDiag(poolGet(diagPaths[di]), diags[di]))
+                di = di + 1
+            }
+            quit 1
+        }
+        built = driveEmit68kFork("", false, 0, false)
+        if not built {
+            log("dblcompile_bake: emit68k failed: " + args[i])
+            quit 1
+        }
+        fork = driveLastFork()
+        wrote = file.writeText("leakfork_" + numToStr(i - 1) + ".bin", fork, fileTypeText, "????")
+        if not wrote {
+            log("dblcompile_bake: fork write failed")
+            quit 1
+        }
+        t1 = TickCount()
+        log("COMPILE " + numToStr(i - 1) + " " + args[i] + " ticks=" + numToStr(t1 - t0) + " fork=" + numToStr(fork.length))
+        i = i + 1
+    }
+    quit 0
+}
