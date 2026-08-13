@@ -1,11 +1,11 @@
 # Session status — 2026-08-14 (object-code-linker DONE, T2 GREEN, Snow PASS at tip)
 
-Handoff summary for the next session. Current branch:
-`precompiled-artifacts` (created from `fallback-trigger-narrowing`/`main`
-at `e143af1`). Not yet merged — `fallback-trigger-narrowing` (and
-everything under it, the six-phase stack plus `runtime-ir-bake`) are all
-on `origin/main` already; `precompiled-artifacts` (this session's
-`object-code-linker` phase) stacks on top, unmerged.
+Handoff summary for the next session. **`precompiled-artifacts` (the
+`object-code-linker` phase) was MERGED to `main` (fast-forward
+`e143af1..6009c65`, Andrew's instruction, 2026-08-14 01:42 JST) and
+pushed to origin** — everything through stage 3.5 is now on
+`origin/main`. The local checkout sits on the `precompiled-artifacts`
+branch pointer, which equals `main`.
 
 ## 0. START HERE next session
 
@@ -34,7 +34,8 @@ runtime-ir-bake ~55m `TickProbe` reference was not captured by that
 run; a verbose re-run is optional, informational-only, and does not
 gate the merge.
 
-Once Snow is green, the precompiled-artifacts notes doc's own staging
+With Snow green and the phase MERGED (see the top of this document),
+the precompiled-artifacts notes doc's own staging
 (`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`)
 has one item left: **stage 4, the user-module artifact cache**
 (standalone object files + keying, generalizing this phase's
@@ -46,8 +47,7 @@ scope, gated behind a future oracle-relaxation decision (today's
 byte-identity oracle requires reproducing the exact from-source layout;
 relaxing that is a separate, not-yet-made call). No spec/plan exists yet
 for stage 4 — first job is speccing it, same process as the three prior
-phases. Merge decisions for the whole unmerged stack remain Andrew's
-call.
+phases. Nothing is left unmerged.
 
 ## 0a. object-code-linker close-out (DONE, this session)
 
@@ -669,12 +669,11 @@ boots it.
    the top of this document. `fallback-trigger-narrowing` is now on
    `origin/main` too (its own Snow rerun PASSED, section 0b above);
    `precompiled-artifacts` (this session's `object-code-linker` phase,
-   section 0a above) stacks on top, unmerged, its own T2 GREEN and Snow
-   PENDING. Merge remains Andrew's call.
-7. **DONE (spec/plan/implementation) — see section 0/0a above.**
-   Precompiled-artifacts stage 3.5 (object code + linker) was speced,
-   planned, and implemented on branch `precompiled-artifacts` — T2
-   GREEN, Snow PENDING at the true tip, **not yet merged**. Stage 4
-   (the user-module artifact cache) is next in the precompiled-artifacts
-   notes doc's own staging, once Snow lands and merge decisions are
-   made.
+   section 0a above) was merged and pushed too (2026-08-14, after its
+   Snow re-run PASSED) — see the top of this document.
+7. **DONE and MERGED — see section 0/0a above.** Precompiled-artifacts
+   stage 3.5 (object code + linker) was speced, planned, implemented,
+   fully gated (T2 GREEN, Snow PASS at `6bf4f6e`), and merged to
+   `origin/main` (`e143af1..6009c65`, 2026-08-14). Stage 4 (the
+   user-module artifact cache) is next in the precompiled-artifacts
+   notes doc's own staging.
