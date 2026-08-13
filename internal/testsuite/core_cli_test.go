@@ -194,7 +194,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"ArrHolderElementStore",
 			"EnumIntRoundTrip", "EnumSaveChoiceValue", "FixedMathOps", "ConstCaseLabel", "SwitchIntRange", "SwitchIntMultiLabel",
 			"SerBinRoundtrip", "SerFileRoundtrip", "SerFileNameRoundtrip", "SerMixedScalarRec",
-			"MiscArithBasic", "MiscBreakContWhile", "MiscCrc8Smbus", "MiscEmitArithAddMul", "MiscEmitControlForRange", "MiscEmitFuncRecursion", "MiscMutRecEvenOdd", "MiscWhileCondText", "MiscWideProtoSumBoxMetrics", "MiscLongCondChain",
+			"MiscArithBasic", "MiscBreakContWhile", "MiscCrc8Smbus", "MiscEmitArithAddMul", "MiscArithWrap32", "MiscEmitControlForRange", "MiscEmitFuncRecursion", "MiscMutRecEvenOdd", "MiscWhileCondText", "MiscWideProtoSumBoxMetrics", "MiscLongCondChain",
 			"XRecFieldsRoundtrip",
 			"SortedMapSetCount", "SortedMapHasRemove", "SortedMapOfListUpsert", "SortedMapIterOrder",
 			"MapGrowRehash", "MapRemoveSwap", "MapIterComplete", "MapLongKeys",

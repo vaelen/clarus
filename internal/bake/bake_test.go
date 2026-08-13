@@ -88,6 +88,41 @@ func TestBakeHeaderSanity(t *testing.T) {
 	}
 }
 
+// TestBakeHeaderBodyHashMasked pins the Snow bake-path fix wave's own
+// symptom shut (2026-08-13, snow-failure-rca.md): bkHashTextFrom
+// (clarusc/bake.cla) always ends its loop with `h = h & 0x7FFFFFFF`, so a
+// correctly-computed body hash can never have bit 31 set. Before the fix,
+// cprint.cla's fpBin emitted the FNV multiply as plain signed `int32_t *`,
+// which is signed-overflow UB that clang -O1+ used to prove (wrongly, for
+// this program) that the following mask was dead code and delete it --
+// so a HOST-written header carried the raw unmasked 32-bit FNV instead,
+// differing from the masked value a real 68k AND.L always computes,
+// which is exactly what made the Mac refuse the artifact. This is a
+// direct, lane-independent proxy for that acceptance check: it doesn't
+// need real 68k hardware to prove bit 31 is clear, only that the HOST
+// writer itself, which computes and re-verifies its own bodyHash in the
+// same process (see clarusc/bake.cla's bkCheckRtbakeHeader doc comment on
+// why the host lane was structurally blind to this), now emits a value
+// that the mask could actually have produced.
+func TestBakeHeaderBodyHashMasked(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	for _, lane := range []string{"68k", "c"} {
+		lane := lane
+		t.Run(lane, func(t *testing.T) {
+			dir := t.TempDir()
+			data := RunBakeIR(t, exe, lane, filepath.Join(dir, "out.clir"))
+
+			hdr, err := ParseHeader(data)
+			if err != nil {
+				t.Fatalf("ParseHeader: %v", err)
+			}
+			if hdr.BodyHash&0x80000000 != 0 {
+				t.Errorf("BodyHash = 0x%08x has bit 31 set; bkHashTextFrom's `& 0x7FFFFFFF` mask cannot produce this value -- signed-overflow UB regression (snow-failure-rca.md)", hdr.BodyHash)
+			}
+		})
+	}
+}
+
 // TestBakeCorruptStampFixture proves CorruptStampFixture actually
 // corrupts the stamp (and nothing else the header cares about): the
 // corrupt file still parses structurally (ParseHeader succeeds -- only

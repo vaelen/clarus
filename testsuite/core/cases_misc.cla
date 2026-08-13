@@ -8,6 +8,13 @@
 //   MiscBreakContWhile      <- breakcont.cla (while: break)
 //   MiscCrc8Smbus           <- crc8.cla (CRC-8/SMBUS of "123456789" == 244)
 //   MiscEmitArithAddMul     <- emit_arith.cla ("int add/mul ok" / "int sub ok")
+//   MiscArithWrap32         <- Snow bake-path fix wave (2026-08-13,
+//                              snow-failure-rca.md): the lane-parity
+//                              regression pin. Runs on BOTH the host CLI
+//                              (cprint.cla's C emission) and natively
+//                              (cg68k.cla's real 68k codegen), so a wrapped
+//                              expected value that only matches on one lane
+//                              fails there and pins the class of bug shut.
 //   MiscEmitControlForRange <- emit_control.cla ("for range accumulate ok")
 //   MiscEmitFuncRecursion   <- emit_func.cla ("recursion ok", fact(5))
 //   MiscMutRecEvenOdd       <- mutrec.cla (mutual recursion, isEven/isOdd)
@@ -105,6 +112,39 @@ func caseMiscEmitArithAddMul(): TestResult {
         return tkFail("MiscEmitArithAddMul", "sub wrong")
     }
     return tkPass("MiscEmitArithAddMul")
+}
+
+// caseMiscArithWrap32 pins int32 wraparound for the four operators
+// cprint.cla's fpBin/fpUn route through the CLAR_*32 macros (Snow
+// bake-path fix wave, 2026-08-13): `*`, `+`, `-`, `<<`, and unary `-`.
+// Each expected value is the exact two's-complement wrap, computed
+// independently (not by re-deriving the same arithmetic in Clarus, which
+// would just repeat whatever bug it's checking for). intMin is built as
+// `(-2147483647) - 1` rather than a bare `-2147483648` literal, since
+// 2147483648 itself overflows a positive int32 literal.
+func caseMiscArithWrap32(): TestResult {
+    var intMin: int
+
+    if 100000 * 100000 != 1410065408 {
+        return tkFail("MiscArithWrap32", "mul wrap wrong")
+    }
+    if 2147483647 + 1 != -2147483648 {
+        return tkFail("MiscArithWrap32", "add wrap wrong")
+    }
+    intMin = (-2147483647) - 1
+    if intMin - 1 != 2147483647 {
+        return tkFail("MiscArithWrap32", "sub wrap wrong")
+    }
+    if -intMin != -2147483648 {
+        return tkFail("MiscArithWrap32", "unary neg wrap wrong")
+    }
+    if (1 << 31) != -2147483648 {
+        return tkFail("MiscArithWrap32", "shl wrap wrong (1<<31)")
+    }
+    if (100000 << 20) != 1778384896 {
+        return tkFail("MiscArithWrap32", "shl wrap wrong (100000<<20)")
+    }
+    return tkPass("MiscArithWrap32")
 }
 
 func caseMiscEmitControlForRange(): TestResult {
