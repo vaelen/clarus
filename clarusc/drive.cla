@@ -1882,13 +1882,29 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         // (right after this) preloads baked checker symbols for exactly
         // that early-visible boundary, so leaving these parsed copies in
         // `combined` would hard double-declare against the SAME names
-        // (Task 1 Step 4's own probe finding). This is case (b)'s "dedup
-        // fully" from the design spec: the file was still parsed (harmless
-        // -- proven content-identical by the hash check in expand()), just
-        // never reaches the checker or lowering. Non-early-visible
+        // (Task 1 Step 4's own probe finding). Non-early-visible
         // collisions (bkManifestCollidedEarly false) stay in `combined`
         // unchanged -- their symbols are never preloaded, so check#1 seeing
         // them is exactly case (a)'s ordinary check-only behavior.
+        //
+        // DEVIATION (fix round 1, task-2-report.md's own Deviations
+        // section): the design brief's Interfaces line says case (b) is
+        // "full dedup (no parse)". What actually happens is "dedup BEFORE
+        // THE CHECKER" -- expand() (Phase A, above in this file) already
+        // lexed/parsed the collided file into `combined` by the time this
+        // branch runs, and only excises its decls here. A genuine no-parse
+        // would have to decide case (a) vs (b) AT expand() time, but that
+        // decision needs isUiProg, which is only known once Phase A (every
+        // expand() call) has finished -- expand() itself cannot look
+        // ahead. Behaviorally equivalent to "no parse" for every consumer
+        // that matters (checker never sees these decls, lowering never
+        // sees them, the parsed-then-discarded AST/pool entries are
+        // exactly the check-only-include shape the leak gate already
+        // proves clean) -- the only thing NOT saved is the lex/parse CPU
+        // cost itself, which the corpus gate does not measure. Revisit
+        // only if that cost is ever shown to matter; the fix would be
+        // deferring the collision hash-check/parse decision past Phase A
+        // instead of doing it inline in expand().
         earlySkip = driveFreshIntList()
         i = 0
         while i < bkManifestCollidedIdx.count {
