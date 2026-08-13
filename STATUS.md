@@ -1,14 +1,46 @@
-# Session status — 2026-08-13 (runtime-ir-bake DONE, T2 green)
+# Session status — 2026-08-13 (runtime-ir-bake MERGED; fallback-trigger-narrowing specced+planned)
 
-Handoff summary for the next session. Current branch: `runtime-ir-bake`
-(stacked on unmerged `param-abi` → `memory-leak-fix` →
-`layer1-compiler-perf` → `datetime-instrumentation` → `map-hashtable` →
-`mac-resident-clarusc`, **not merged** — merge is Andrew's call).
+Handoff summary for the next session. Current branch:
+`fallback-trigger-narrowing` (created from `main` after the
+runtime-ir-bake merge). **`runtime-ir-bake` was MERGED to `main`
+(fast-forward `322765a..b16e8f0`, Andrew's instruction, 2026-08-13
+09:56 JST) and pushed to origin** — the six-phase stack plus
+runtime-ir-bake are all on `origin/main`.
 
-## 0. START HERE next session: stage 3.5 (object code + linker) is next
+## 0. START HERE next session: implement fallback-trigger-narrowing
+
+Brainstormed, specced, and planned 2026-08-13 morning (Andrew-approved
+design). **Spec (normative):**
+`docs/superpowers/specs/2026-08-13-fallback-trigger-narrowing-design.md`
+**Plan (4 tasks):**
+`docs/superpowers/plans/2026-08-13-fallback-trigger-narrowing.md`
+
+One-paragraph summary: a user `include` of a bake-carried file (the 18
+runtime modules or the three transitively-baked toolbox catalog files)
+currently abandons the bake for that compile. The fix mirrors
+from-source's hoist-dedup by construction: parse the user's copy for
+check#1 visibility only, drop it before lowering (the baked IR already
+holds the module at the hoist position), so byte-identity holds by
+construction. A per-module source hash (CLIR v4→v5) scopes the remaining
+fallback to genuine on-disk drift. Housekeeping folded in: the
+`macgui.cla` fallback-reason string (stale since the v4 body hash) and
+the dead tight-scratch indirection in `cg68k.cla` (zero-churn goldens
+required). Execution: subagent-driven per CLAUDE.md (sonnet impl/review,
+opus for the hardest reviews, most-capable final review; NEVER Fable for
+subagents; log models at dispatch). Task 1 is a probe wave (commits
+nothing) verifying the two load-bearing assumptions — checker-state
+parity and exact-drop — and choosing the subtree-drop mechanic; its
+report may amend Tasks 2-3. Merge gate: full T2 at tip PLUS the standing
+Snow rerun (`TestClarusCBakePathOnSnow`, ~1h) since `bake.cla`/
+`macgui.cla` change.
+
+After this phase, stage 3.5 (object code + linker) per
+`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`.
+
+## 1. runtime-ir-bake close-out (DONE, merged)
 
 `runtime-ir-bake` is DONE, full `scripts/test-merge.sh` GREEN (232s at
-commit `3bdbb3b`) — see section 5 below for the close-out. Task 7's own
+commit `3bdbb3b`, re-confirmed 233s at tip `b16e8f0`). Task 7's own
 first full T2 run found a real, pre-existing regression (two independent
 latent bugs, neither introduced by this phase); it was root-caused and
 fixed the same day, in a follow-up session, with a regression test added
