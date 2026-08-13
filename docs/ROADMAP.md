@@ -1951,6 +1951,66 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `CLARUS_BAKE_FULL` bake corpus 6s). **Snow PENDING** (standing rule,
   controller's job post-final-review). Merge remains Andrew's call.
 
+  **Snow bake-path fix wave (2026-08-13, same branch):** the Snow run
+  above DID execute and FAILED — three `CLFS-source fallback` lines
+  (`.superpowers/sdd/2026-08-13-object-code-linker/snow-rerun.log`), an
+  artifact-acceptance refusal, not a codegen bug. RCA
+  (`snow-failure-rca.md` in the same workspace, PROVEN): `bkHashTextFrom`
+  (`bake.cla:330`) computes the CLIR body-integrity hash with
+  `h = h * bkFnvPrime`, and the C lane's emitted arithmetic (`fpBin`,
+  `cprint.cla:1560`) prints that as plain signed `int32_t *` — signed-
+  overflow UB that Apple clang -O1+ used to prove the following
+  `h & 0x7FFFFFFF` mask dead and delete it. A HOST-written CLIR header's
+  bodyHash therefore carried the raw *unmasked* 32-bit FNV, while the
+  68k lane's real `AND.L` always applies the mask; the two agree only
+  when bit 31 of the raw FNV happens to be 0 (a per-artifact coin
+  flip — v5 landed heads and PASSED, v6 landed tails and FAILED).
+  Structurally invisible to every existing host-side oracle, because the
+  same UB-affected binary both writes and re-checks its own hash.
+  **Latent twin, also cured:** the same bug affects
+  fallback-trigger-narrowing's per-module manifest drift-guard hashes —
+  9 of the 27 baked runtime/toolbox modules
+  (`datetime_68k.cla`/`datetime.cla`/`ser.cla`/`ui.cla`/`uidialogs.cla`/
+  `uitable.cla`/`toolbox/{memory,osutils,resources}.cla`) had
+  lane-divergent drift hashes, masked from view only because the
+  body-hash refusal fired first.
+
+  Fix: `fpBin`/`fpUn` (`cprint.cla`) now route the four wrap-sensitive
+  operators — `* + - <<` and unary `-` — through
+  `CLAR_{ADD,SUB,MUL,SHL,NEG}32` macros (new, `runtime/host/rt.h`) that
+  force `uint32_t` arithmetic, so the C lane wraps by construction
+  instead of by luck, matching the 68k lane's real ALU
+  (`AND.L`/`MULU.L`/`ASL.L`, which never trap). Division, modulo,
+  comparisons, and `>>` are unchanged — `>>` must stay a signed
+  arithmetic shift to match the 68k lane's `ASR`, not become an
+  unsigned/logical one. Verified: the fixed writer's bodyHash now has
+  bit 31 masked, equals an independent reimplementation of the masked
+  FNV over the real body bytes, agrees between `-O0` and `-O1` builds
+  (the RCA's own discriminating check), and all 9 previously-divergent
+  module hashes now store the masked value (confirmed against the OLD
+  unfixed snapshot's own output for the same inputs). Regression-pinned
+  two ways: `MiscArithWrap32` (`testsuite/core`, runs on both the host
+  CLI and natively, so a lane-only-correct wrapped value fails) and
+  `internal/bake`'s `TestBakeHeaderBodyHashMasked` (bit31==0 on a
+  freshly generated host-side artifact, both lanes).
+  `clarusc/clarusc.c` regenerated to a verified fresh fixed point (the
+  fix changes the printer, so the self-hosted snapshot embeds it).
+
+  **Correction to the RCA's own "no emitted-C goldens exist" claim:**
+  19 `testdata/emitui/*.c.golden` fixtures DO exist and DID need
+  regenerating (pure `CLAR_*32(...)` text substitution at every
+  wrap-sensitive call site, nothing else changed; each regenerated
+  golden re-verified m68k-toolchain-compile-clean). The `--bake-ir`
+  artifact byte-identity gates (`internal/bake`'s
+  `TestBakePathByteIdentity`/`CLARUS_BAKE_FULL` corpus) confirm the 68k
+  lane's own emitted bytes are BYTE-IDENTICAL before and after this fix
+  (expected: `cg68k.cla`'s native codegen never had this bug — only the
+  C lane's printer did). Full gate results, per-operator reasoning, and
+  before/after evidence: `fixwave-report.md` in this workspace. T2
+  GREEN again post-fix. **Snow re-run is still PENDING** — this fix
+  wave has not been proven on real hardware; that remains the
+  controller's job, same standing rule as before.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

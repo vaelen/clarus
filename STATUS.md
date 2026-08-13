@@ -9,16 +9,28 @@ on `origin/main` already; `precompiled-artifacts` (this session's
 
 ## 0. START HERE next session
 
-The `object-code-linker` phase (section 0a below) is DONE and T2 GREEN,
-but its Snow proof is **PENDING** — the standing rule
-(`TestClarusCBakePathOnSnow`, `CLARUS_SNOW_TESTS=1`) must be re-run
-manually before merge, since this phase touched `clarusc/bake.cla` and
-`clarusc/cg68k.cla`. That run is explicitly NOT this session's job (the
-controller runs it post-final-review, at the true tip) — check whether
-it has landed; if not, that is the next action, and it doubles as this
-phase's own headline on-hardware measurement (compare the on-Mac
-Measure + emit wall-clock against the runtime-ir-bake phase's ~55m
-post-leak-fix `TickProbe` reference).
+The `object-code-linker` phase (section 0a below) is DONE and T2 GREEN.
+Its Snow proof DID run and **FAILED** (three `CLFS-source fallback`
+lines — artifact-acceptance refusal, not a codegen bug). Root cause
+found and FIXED this session (the Snow bake-path fix wave,
+2026-08-13): `bkHashTextFrom`'s FNV multiply was signed-`int32_t` C
+arithmetic (`cprint.cla`'s `fpBin`), which is signed-overflow UB that
+clang -O1+ used to delete the masking `&` that follows it, so a
+host-written CLIR header carried an unmasked hash the real 68k `AND.L`
+never produces. Full RCA: `.superpowers/sdd/2026-08-13-object-code-linker/
+snow-failure-rca.md`; the fix + verification + gates:
+`.superpowers/sdd/2026-08-13-object-code-linker/fixwave-report.md`. T2
+is GREEN again post-fix. **The Snow RE-RUN is now PENDING** — the
+standing rule (`TestClarusCBakePathOnSnow`, `CLARUS_SNOW_TESTS=1`)
+still applies (this phase touched `clarusc/bake.cla` and
+`clarusc/cg68k.cla`, and the fix wave touched `clarusc/cprint.cla` +
+regenerated the `clarusc/clarusc.c` snapshot besides). That run is
+explicitly NOT this session's job (the controller runs it
+post-final-review, at the true tip) — check whether it has landed; if
+not, that is the next action, and it doubles as this phase's own
+headline on-hardware measurement (compare the on-Mac Measure + emit
+wall-clock against the runtime-ir-bake phase's ~55m post-leak-fix
+`TickProbe` reference).
 
 Once Snow is green, the precompiled-artifacts notes doc's own staging
 (`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`)

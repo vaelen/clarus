@@ -247,6 +247,16 @@ symmetrically with the IR truncation `bkInstallArenas` already performs
   as the headline measurement: **on-Mac Measure + emit wall-clock**,
   compared against the phase-entry numbers (Measure ~10m post-leak-fix
   for TickProbe compile #1).
+  [The first actual Snow run under this spec DID catch a real bug none
+  of the above host-side oracles could see: `bkHashTextFrom`'s FNV
+  multiply is signed-`int32_t` arithmetic in the C lane's emitted code,
+  which is signed-overflow UB that clang -O1+ exploited to delete the
+  following masking `&`, so a host-written CLIR header's bodyHash was
+  the raw unmasked FNV instead of the masked value the real 68k `AND.L`
+  always computes — undetectable by any host-vs-host oracle, since the
+  same UB-affected binary both writes and re-checks its own hash. Fixed
+  in the Snow bake-path fix wave (2026-08-13); see
+  `snow-failure-rca.md` and `fixwave-report.md` in this workspace.]
 
 ## Load-bearing assumptions → probe task
 
