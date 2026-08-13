@@ -1057,8 +1057,10 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   Task 6 wired `ClarusC.APPL` to consume the bake by default
   (`--bake-ir` embedding, stamp sidecar, `--no-bake-ir` opt-out) and
   root-caused a real, previously-**documented-but-not-fixed** cg68k
-  codegen bug the bake path exposed (below), then proved the whole path
-  byte-identical to the host oracle on real Snow hardware. Task 7 fixed
+  codegen bug the bake path exposed (below), then proved the bake path
+  byte-identical to the host `--rtbake` oracle for one fixture
+  (`tickprobe.cla`, 68k lane) on real Snow hardware (Snow run 3). Task 7
+  fixed
   three deferred review minors, regenerated the bootstrap snapshot to a
   fixed point, measured perf, wrote docs, then — running this whole
   phase's FIRST full T2 (including the gated native-emulator lane) —
@@ -1280,6 +1282,30 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   - Everything param-abi already deferred (bare-`EIntr` arg release gap,
     `KArr` param ABI, `toBytes` name-only guard) is untouched by this
     phase, still open.
+  - **Stamp-proxy gap (final-review fix wave, carried from Tasks 3/4's
+    own deferred minors):** the stamp hashes the *committed*
+    `clarusc/clarusc.c` snapshot, not the running binary's own source —
+    a dev binary built from mid-phase, uncommitted `.cla` edits still
+    stamps/checks against that same committed snapshot. Bounded and
+    accepted: both the generator and every loader share the exact same
+    proxy, so a bake generated and loaded by binaries built from the
+    same checkout always agree, and the snapshot is regenerated at every
+    phase close (`CLAUDE.md`). Longer-term fix, not attempted: hash the
+    live runtime module source set instead of the bootstrap snapshot.
+  - **Deliverable 5(c)'s honest narrowing** ("baked `curPathIdx` path
+    stamps so runtime-attributed diagnostics/panics still name the right
+    source file"): runtime-attributed diagnostics are actually an
+    UNREACHABLE class on the bake path — check#1 never walks baked
+    decls at all, so nothing there can ever attribute a diagnostic to
+    one. `declFileTab`'s real (and only) consumer on this path is
+    `bkComputeManifestPaths`' nested-include dedup, not diagnostic
+    attribution. See the design doc's own `[Task 5/7 annotation]`
+    entries for the sibling narrowings this joins.
+  - **Standing rule:** `TestClarusCBakePathOnSnow` (opt-in,
+    `CLARUS_SNOW_TESTS=1`) is the ONLY proof that `ClarusC.APPL`'s
+    default bake path works on real hardware — it must be re-run
+    manually after any change to `clarusc/bake.cla` or
+    `clarusc/macgui.cla`; neither T1 nor T2 boots it.
 
   **T2 (`scripts/test-merge.sh`): GREEN at `3bdbb3b`, 232s** (T1 body
   11s, `internal/selfhost` 92s, gated native `internal/mactest` lane

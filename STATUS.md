@@ -46,6 +46,14 @@ after. Short version (full writeup: ROADMAP `runtime-ir-bake` entry's
 - Tree is clean; `git worktree list` shows only the main worktree
   (scratch investigation worktrees from the earlier session were
   removed).
+- **Final-review fix wave (2026-08-13, commits after `1f75848`):** added
+  a CLIR body-integrity hash (format v4 — see ROADMAP entry's "Deferred
+  / phase debt" for the write-up) plus a `bkGetByte` bounds guard, a
+  `driveReset` defensive-reset parity fix, and doc corrections. **Standing
+  rule going forward: re-run `TestClarusCBakePathOnSnow`
+  (`CLARUS_SNOW_TESTS=1`) manually after any future change to
+  `clarusc/bake.cla` or `clarusc/macgui.cla`** — it's the only proof of
+  the `ClarusC.APPL` default bake path, and neither T1 nor T2 boots it.
 
 Design context (unchanged): **Spec (normative):**
 `docs/superpowers/specs/2026-08-12-runtime-ir-bake-design.md` (now
@@ -333,7 +341,18 @@ row math still has no upper clamp against the live row count (deliberate
 — a clamp would mask a recurrence of the same bug class); include-dedup
 fallback trigger is broad (correct but slower, narrowing direction
 recorded); object code + linker (stage 3.5) is next, no longer blocked;
-everything param-abi already deferred remains open.
+everything param-abi already deferred remains open. Plus, from the
+final-review fix wave: the stamp-proxy gap (stamp hashes the committed
+`clarusc.c` snapshot, not a mid-phase dev binary's own edited sources —
+bounded/accepted, longer-term fix is hashing the runtime module source
+set); deliverable 5(c)'s honest narrowing (runtime-attributed
+diagnostics are unreachable on the bake path — check#1 never walks
+baked decls; `declFileTab`'s actual consumer is nested-include dedup via
+`bkComputeManifestPaths`); and a standing rule — **re-run
+`TestClarusCBakePathOnSnow` (opt-in, `CLARUS_SNOW_TESTS=1`) manually
+after any change to `clarusc/bake.cla` or `clarusc/macgui.cla`**, it is
+the only proof of the `ClarusC.APPL` default path and neither T1 nor T2
+boots it.
 
 ## Recommended next steps (in order)
 
