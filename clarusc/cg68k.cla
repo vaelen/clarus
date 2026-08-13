@@ -6341,20 +6341,67 @@ func cgIntr4(e: int, nameIdx: int, addr0: bool, addr1: bool, addr2: bool, addr3:
 // scratch buffer itself in place, noting the whole indirection was now a
 // tight-to-tight copy with nothing left to bridge.
 //
-// fallback-trigger-narrowing Task 4 (housekeeping, 2026-08-13) removed it
-// for real: cgIntrStrFromBytes/cgIntrTextFromBytes now pass the array
-// argument's own address (cgExprAddr) straight to rtStrFromBytes/
-// rtTextFromBytes as the source buffer; cgIntrStrToBytes/cgIntrTextToBytes
-// pass it as the destination buffer, so the runtime call reads/writes the
-// array's own storage directly and no scratch copy (fill OR drain) runs at
-// all. Confirmed behavior-preserving before removal: since both ends were
-// already tight, a fill/drain through scratch and a direct address pass
-// have the identical byte-level effect on the array. Not exercised by any
-// testdata/cg68k or testdata/emitui golden (grepped clean beforehand), so
-// this is invisible to the T1 golden gate; functional coverage is
-// testsuite/toolbox/cases_resources.cla's `.toBytes()`/`buf[i]` round trip
-// (native T2 lane) and internal/selfhost's testdata/run/lib/strings.cla
-// behavior fixture.
+// fallback-trigger-narrowing Task 4 (housekeeping, 2026-08-13) removed
+// the indirection for three of the four intrinsics: cgIntrStrFromBytes/
+// cgIntrStrToBytes/cgIntrTextToBytes now pass the array argument's own
+// address (cgExprAddr) straight to rtStrFromBytes/rtStrToBytes/
+// rtTextToBytes as the source or destination buffer, so the runtime call
+// reads/writes the array's own storage directly with no scratch copy at
+// all -- safe because each of those three runtime functions does its
+// BlockMove immediately, with NO allocating call in between the buffer
+// address being taken and the copy running (verified against
+// runtime/clarus/str.cla's rtStrFromBytes/rtStrToBytes and
+// runtime/clarus/text.cla's rtTextToBytes, each read line by line before
+// removing its own scratch step). Not exercised by any testdata/cg68k or
+// testdata/emitui golden (grepped clean beforehand), so this is invisible
+// to the T1 golden gate; functional coverage is testsuite/toolbox/
+// cases_resources.cla's `.toBytes()`/`buf[i]` round trip and testsuite/
+// core/cases_ser.cla (native T2 lane) plus internal/selfhost's
+// testdata/run/lib/strings.cla behavior fixture -- NEITHER native fixture
+// exercises a heap-resident (list-element) array, only locals/globals, so
+// they don't independently prove the claim below for that case.
+//
+// cgIntrTextFromBytes keeps the scratch fill (final-review fix wave,
+// same day): rtTextFromBytes (runtime/clarus/text.cla:537-556) calls
+// rtTextGrow(t, n) -- which can SetHandleSize/allocate, and classic Mac
+// OS heap compaction can relocate OTHER unlocked handles during that
+// call -- BEFORE TextBlockMoveData(buf, mp, n) reads through `buf`. If
+// `a1e` resolves through cgFieldRefAddr/cgIndexRefAddr into a list
+// element's own backing Handle (cgForListStmt's own doc comment above,
+// ~line 10648, already documents that store as relocatable), a direct
+// `buf = cgExprAddr(a1e)` taken before the call can go stale by the time
+// TextBlockMoveData uses it -- the exact stale-pointer-across-compaction
+// bug class the runtime-ir-bake phase's own T2 blocker found FIVE
+// separate live instances of (ROADMAP `runtime-ir-bake` entry, "T2
+// blocker" subsection); a comment-only fix was rejected as
+// under-defending against a repeat. The A6-relative scratch buffer this
+// function fills BEFORE the call is not itself relocatable (ordinary
+// stack storage), so `mp`'s write target is the only thing that can move,
+// and TextBlockMoveData's own `buf` source stays valid throughout.
+// cgIntrStrFromBytes does NOT need this: rtStrFromBytes has no allocating
+// call of any kind between entry and its own StrBlockMoveData.
+
+// cgFillTightScratchFromPaddedArr unrolls a compile-time-bounded copy (N
+// is always a compile-time constant, same cgArrDefaultAt precedent) of
+// arrExpr's own N tightly-packed char elements into a scratchOff(A6) byte
+// buffer, one element per iteration -- ahead of rtTextFromBytes's own
+// allocating rtTextGrow call, so the buffer TextBlockMoveData reads from
+// is never a relocatable address (see the block comment above). The ONLY
+// remaining caller is cgIntrTextFromBytes; the other three fromBytes/
+// toBytes intrinsics pass their array argument's address directly.
+func cgFillTightScratchFromPaddedArr(arrExpr: int, scratchOff: int, n: int) {
+    var i: int
+
+    cgExprAddr(arrExpr)
+    a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    i = 0
+    while i < n {
+        a68Emit(OpMove, 1, AmInd, 1, 0, AmPostInc, 0, 0)
+        a68Emit(OpAdda, 4, AmImm, 0, 1, AmAn, 1, 0)
+        i = i + 1
+    }
+}
 
 // cgIntrStrFromBytes/cgIntrStrToBytes/cgIntrTextFromBytes/cgIntrTextToBytes
 // mirror fpIntrCall's own IStrFromBytes/IStrToBytes/ITextFromBytes/
@@ -6414,15 +6461,18 @@ func cgIntrTextFromBytes(e: int) {
     var a1e: int
     var a2e: int
     var n: int
+    var scratchOff: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     a2e = irExprNext(a1e)
     n = irtN(irExprType(a1e))
+    scratchOff = cgAllocBigTmpOff(irStrType(n))
+    cgFillTightScratchFromPaddedArr(a1e, scratchOff, n)
 
     cgExpr(a0e)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgExprAddr(a1e)
+    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
