@@ -1590,9 +1590,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `CLARUS_BAKE_FULL` bake corpus 5s). Full logs:
   `.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/task4-t2.log`
   (pre-fix-wave) and `task4-t2-fixwave.log` (post-fix-wave, the current
-  tip's own gate result). **Merge-ready from a testing standpoint** once
-  the Snow rerun above confirms PASS (merge itself remains Andrew's
-  call).
+  tip's own gate result). The standing Snow rule was then satisfied at
+  the same tip: `TestClarusCBakePathOnSnow` PASS (2026-08-13, 55m
+  settle, 3302s, zero drift-fallback lines). **Fully gated and
+  merge-ready from a testing standpoint** (merge itself remains
+  Andrew's call).
 
 ## Small open items (not yet scheduled)
 

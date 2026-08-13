@@ -1,4 +1,4 @@
-# Session status — 2026-08-13 (fallback-trigger-narrowing DONE, T2 GREEN; Snow rerun pending at tip)
+# Session status — 2026-08-13 (fallback-trigger-narrowing DONE, T2 GREEN, Snow PASS at tip)
 
 Handoff summary for the next session. Current branch:
 `fallback-trigger-narrowing` (created from `main` after the
@@ -10,11 +10,12 @@ narrowing` stacks on top, unmerged.
 
 ## 0. START HERE next session: precompiled-artifacts stage 3.5 (object code + linker)
 
-`fallback-trigger-narrowing` is DONE (section 0b below) — its own
-prerequisite Snow rerun is still pending (standing rule: this phase
-touched `bake.cla`/`macgui.cla`, so `TestClarusCBakePathOnSnow` must run
-manually before merge; the controller runs it separately after final
-review, at the true tip). Once that's confirmed PASS, stage 3.5 (object
+`fallback-trigger-narrowing` is DONE (section 0b below), and its
+prerequisite Snow rerun PASSED at the true tip `7642deb` (2026-08-13
+14:00 JST: `TestClarusCBakePathOnSnow`, `CLARUS_SNOW_TESTS=1`, 55m
+settle, exit 0, zero "differs from the baked copy" lines — log:
+`.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/snow-rerun.log`).
+The phase is fully gated. Stage 3.5 (object
 code + linker) — the next item in
 `docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`'s
 own staging — is next in line. No spec/plan exists yet for 3.5; first job
@@ -102,10 +103,12 @@ drift only, logging the drifted path.
   recorded in the ROADMAP entry's "Deferred / phase debt" list — none
   newly introduced this task, all carried honestly rather than smoothed
   over.
-- **Standing rule still applies, PENDING**: `TestClarusCBakePathOnSnow`
-  (`CLARUS_SNOW_TESTS=1`) has NOT been re-run yet for this phase's
-  `bake.cla`/`macgui.cla` changes — the controller runs it separately,
-  after final review, at the true tip (see section 0 above).
+- **Standing rule satisfied — Snow PASS**: `TestClarusCBakePathOnSnow`
+  (`CLARUS_SNOW_TESTS=1`, 55m settle) re-run at the true tip `7642deb`
+  after the final-review fix wave, PASS (3302s, exit 0), no
+  drift-fallback lines in the captured output — the `ClarusC.APPL`
+  default bake path is proven on hardware with this phase's
+  `bake.cla`/`macgui.cla`/`cg68k.cla` changes in place.
 
 ## 0c. runtime-ir-bake close-out recap (DONE, merged to main)
 
