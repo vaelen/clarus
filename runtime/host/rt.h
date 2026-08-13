@@ -4,6 +4,24 @@
 #include <stdint.h>
 #include <string.h>
 
+/* clarus int/fixed arithmetic wraps on overflow (two's-complement, same as
+   the 68k lane's real ALU: AND.L/MULU.L/ASL.L etc. never trap). Plain
+   `int32_t` `+`/`-`/`*`/`<<` in C is instead UB on signed overflow, which
+   clang -O1+ exploits (see docs/.../snow-failure-rca.md, 2026-08-13: it
+   proved -O1 deletes a masking `&` that follows an overflowing `int32_t *`
+   because it can assume the multiply never overflows). cprint.cla's fpBin/
+   fpUn route every wrap-sensitive `+ - * << unary-` through these so the C
+   lane wraps by construction instead of by (missing) luck. Division,
+   modulo, comparisons, and `>>` are excluded: div/mod trap by contract on
+   both lanes instead of wrapping, and `>>` must stay a signed arithmetic
+   shift to match the 68k lane's ASR (an unsigned shift would change
+   negative-operand behavior instead of preserving it). */
+#define CLAR_ADD32(a, b) ((int32_t)((uint32_t)(a) + (uint32_t)(b)))
+#define CLAR_SUB32(a, b) ((int32_t)((uint32_t)(a) - (uint32_t)(b)))
+#define CLAR_MUL32(a, b) ((int32_t)((uint32_t)(a) * (uint32_t)(b)))
+#define CLAR_SHL32(a, b) ((int32_t)((uint32_t)(a) << (uint32_t)(b)))
+#define CLAR_NEG32(a)    ((int32_t)(0u - (uint32_t)(a)))
+
 /* Strings: [len][bytes...] — a strN value is a struct {uint8_t len; uint8_t b[N];}.
    All functions take the raw pointer to the len byte plus the capacity N. */
 void rt_str_store(uint8_t *dst, int dstcap, const uint8_t *src);      /* clamped; sets lastError on truncation */

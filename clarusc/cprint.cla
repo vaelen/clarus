@@ -1554,9 +1554,15 @@ func cOp(op: string): string {
 // fpBin prints an EBin node: and/or route to fpAndOr (short-circuit); ptr +
 // int / ptr - int (Task 2, Ch13) casts through `char *` so the C `+`/`-`
 // advances by 1-byte units rather than whatever `void *` arithmetic a
-// compiler extension might otherwise apply; every other operator
-// (arithmetic, bitwise, comparison) prints as a plain `(x op y)` via cOp --
-// funcprint.go's expr's *ir.Bin case.
+// compiler extension might otherwise apply; the four wrap-sensitive
+// int32/fixed operators (Snow bake-path fix wave, 2026-08-13 --
+// snow-failure-rca.md) route through the CLAR_*32 macros (rt.h) so C
+// overflow wraps by construction instead of being UB that -O1+ can exploit,
+// matching the 68k lane's real ALU (AND.L/MULU.L/ASL.L never trap); every
+// other operator (div, mod, bitwise &/|/^, >>, comparisons) prints as a
+// plain `(x op y)` via cOp -- funcprint.go's expr's *ir.Bin case. `>>` stays
+// signed/unconverted: it must keep C's arithmetic-shift-on-negative
+// behaviour to match the 68k lane's ASR, not switch to a logical shift.
 func fpBin(e: int): text {
     var op: string
 
@@ -1566,6 +1572,15 @@ func fpBin(e: int): text {
     }
     if irtKind(irExprType(e)) == KPtr and (op == "+" or op == "-") {
         return "(void *)((char *)(" + fpExpr(irBinX(e)) + ") " + op + " (" + fpExpr(irBinY(e)) + "))"
+    }
+    if op == "*" {
+        return "CLAR_MUL32(" + fpExpr(irBinX(e)) + ", " + fpExpr(irBinY(e)) + ")"
+    } else if op == "+" {
+        return "CLAR_ADD32(" + fpExpr(irBinX(e)) + ", " + fpExpr(irBinY(e)) + ")"
+    } else if op == "-" {
+        return "CLAR_SUB32(" + fpExpr(irBinX(e)) + ", " + fpExpr(irBinY(e)) + ")"
+    } else if op == "<<" {
+        return "CLAR_SHL32(" + fpExpr(irBinX(e)) + ", " + fpExpr(irBinY(e)) + ")"
     }
     return "(" + fpExpr(irBinX(e)) + " " + cOp(op) + " " + fpExpr(irBinY(e)) + ")"
 }
@@ -1668,7 +1683,12 @@ func fpAndOr(e: int): text {
     return t
 }
 
-// fpUn prints an EUn node (funcprint.go's un).
+// fpUn prints an EUn node (funcprint.go's un). Unary `-` is only ever
+// checked against Int/Fixed (check.cla's checkUnary), i.e. always int32_t
+// in C, and negating INT_MIN is signed-overflow UB in C the same way `*` was
+// (Snow bake-path fix wave, 2026-08-13) while the 68k lane's plain NEG.L
+// wraps INT_MIN to itself with no trap -- so it routes through CLAR_NEG32
+// (rt.h) rather than a bare `(-(x))`.
 func fpUn(e: int): text {
     var x: text
     var op: string
@@ -1676,7 +1696,7 @@ func fpUn(e: int): text {
     x = fpExpr(irUnX(e))
     op = poolGet(irUnOp(e))
     if op == "-" {
-        return "(-(" + x + "))"
+        return "CLAR_NEG32(" + x + ")"
     } else if op == "not" {
         return "(!(" + x + "))"
     } else if op == "~" {
