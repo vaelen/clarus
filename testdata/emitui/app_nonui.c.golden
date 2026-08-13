@@ -525,7 +525,7 @@ static void clar_init_globals(void) {
     cv_rtUiAppleMenuHandle = 0;
     cv_rtUiAppleMenuHandle = (void *)(intptr_t)(0);
     cv_rtUiStdEditMenuIdx = 0;
-    cv_rtUiStdEditMenuIdx = (-(1));
+    cv_rtUiStdEditMenuIdx = CLAR_NEG32(1);
     cv_rtUiSys7 = 0;
     cv_rtUiSys7 = 0;
     cv_rtUiEveryDueArr = 0;
@@ -706,7 +706,7 @@ static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need) {
     }
     while (1) {
         if (!((cv_newcap < cv_need))) break;
-        cv_newcap = (cv_newcap * 2);
+        cv_newcap = CLAR_MUL32(cv_newcap, 2);
     }
     cv_err = rt_ext_TextSetHandleSize((cv_rt)->cv_h, cv_newcap);
     if (cv_err != 0) {
@@ -743,7 +743,7 @@ static void clar_fn_rtTextRetain(void * cv_t) {
         return;
     }
     cv_rt = ((clar_rec_RtText *)(cv_t));
-    (cv_rt)->cv_rc = ((cv_rt)->cv_rc + 1);
+    (cv_rt)->cv_rc = CLAR_ADD32((cv_rt)->cv_rc, 1);
 }
 
 static void clar_fn_rtTextRelease(void * cv_t) {
@@ -756,7 +756,7 @@ static void clar_fn_rtTextRelease(void * cv_t) {
     if ((cv_rt)->cv_rc <= 0) {
         rt_ext_TextRcCheck(cv_t, (cv_rt)->cv_rc);
     }
-    (cv_rt)->cv_rc = ((cv_rt)->cv_rc - 1);
+    (cv_rt)->cv_rc = CLAR_SUB32((cv_rt)->cv_rc, 1);
     if ((cv_rt)->cv_rc == 0) {
         rt_ext_TextDisposeHandle((cv_rt)->cv_h);
         rt_ext_TextDisposePtr(cv_t);
@@ -807,7 +807,7 @@ static void clar_fn_rtListRetain(void * cv_l) {
         return;
     }
     cv_rl = ((clar_rec_RtList *)(cv_l));
-    (cv_rl)->cv_rc = ((cv_rl)->cv_rc + 1);
+    (cv_rl)->cv_rc = CLAR_ADD32((cv_rl)->cv_rc, 1);
 }
 
 static void clar_fn_rtListRelease(void * cv_l) {
@@ -820,7 +820,7 @@ static void clar_fn_rtListRelease(void * cv_l) {
     if ((cv_rl)->cv_rc <= 0) {
         rt_ext_ListRcCheck(cv_l, (cv_rl)->cv_rc);
     }
-    (cv_rl)->cv_rc = ((cv_rl)->cv_rc - 1);
+    (cv_rl)->cv_rc = CLAR_SUB32((cv_rl)->cv_rc, 1);
     if ((cv_rl)->cv_rc == 0) {
         rt_ext_ListDisposeHandle((cv_rl)->cv_data);
         rt_ext_ListDisposePtr(cv_l);
@@ -844,7 +844,7 @@ static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i) {
         clar_fn_rtPanic(&(clar_lit_8));
     }
     cv_mp = rt_ext_ListHandleDeref((cv_rl)->cv_data);
-    cv_off = (cv_i * (cv_rl)->cv_elemsize);
+    cv_off = CLAR_MUL32(cv_i, (cv_rl)->cv_elemsize);
     return (void *)((char *)(cv_mp) + (cv_off));
     return 0;
 }
@@ -855,7 +855,7 @@ static int32_t clar_fn_rtListCount(void * cv_l) {
 }
 
 static void * clar_fn_mapValSlot(void * cv_m, int32_t cv_i) {
-    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_vals)) + ((cv_i * (((clar_rec_RtMap *)(cv_m)))->cv_valsize)));
+    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_vals)) + (CLAR_MUL32(cv_i, (((clar_rec_RtMap *)(cv_m)))->cv_valsize)));
     return 0;
 }
 
@@ -905,7 +905,7 @@ static void clar_fn_rtMapRetain(void * cv_m) {
         return;
     }
     cv_rm = ((clar_rec_RtMap *)(cv_m));
-    (cv_rm)->cv_rc = ((cv_rm)->cv_rc + 1);
+    (cv_rm)->cv_rc = CLAR_ADD32((cv_rm)->cv_rc, 1);
 }
 
 static void clar_fn_rtMapRelease(void * cv_m) {
@@ -918,7 +918,7 @@ static void clar_fn_rtMapRelease(void * cv_m) {
     if ((cv_rm)->cv_rc <= 0) {
         rt_ext_MapRcCheck(cv_m, (cv_rm)->cv_rc);
     }
-    (cv_rm)->cv_rc = ((cv_rm)->cv_rc - 1);
+    (cv_rm)->cv_rc = CLAR_SUB32((cv_rm)->cv_rc, 1);
     if ((cv_rm)->cv_rc == 0) {
         rt_ext_MapDisposeHandle((cv_rm)->cv_keys);
         rt_ext_MapDisposeHandle((cv_rm)->cv_vals);
@@ -976,7 +976,7 @@ static void clar_fn_rtIntMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
 }
 
 static void * clar_fn_sortedmapValSlot(void * cv_m, int32_t cv_i) {
-    return (void *)((char *)(rt_ext_SortedMapHandleDeref((((clar_rec_RtSortedMap *)(cv_m)))->cv_vals)) + ((cv_i * (((clar_rec_RtSortedMap *)(cv_m)))->cv_valsize)));
+    return (void *)((char *)(rt_ext_SortedMapHandleDeref((((clar_rec_RtSortedMap *)(cv_m)))->cv_vals)) + (CLAR_MUL32(cv_i, (((clar_rec_RtSortedMap *)(cv_m)))->cv_valsize)));
     return 0;
 }
 
@@ -1014,7 +1014,7 @@ static void clar_fn_rtSortedMapRetain(void * cv_m) {
         return;
     }
     cv_rm = ((clar_rec_RtSortedMap *)(cv_m));
-    (cv_rm)->cv_rc = ((cv_rm)->cv_rc + 1);
+    (cv_rm)->cv_rc = CLAR_ADD32((cv_rm)->cv_rc, 1);
 }
 
 static void clar_fn_rtSortedMapRelease(void * cv_m) {
@@ -1027,7 +1027,7 @@ static void clar_fn_rtSortedMapRelease(void * cv_m) {
     if ((cv_rm)->cv_rc <= 0) {
         rt_ext_SortedMapRcCheck(cv_m, (cv_rm)->cv_rc);
     }
-    (cv_rm)->cv_rc = ((cv_rm)->cv_rc - 1);
+    (cv_rm)->cv_rc = CLAR_SUB32((cv_rm)->cv_rc, 1);
     if ((cv_rm)->cv_rc == 0) {
         rt_ext_SortedMapDisposeHandle((cv_rm)->cv_keys);
         rt_ext_SortedMapDisposeHandle((cv_rm)->cv_vals);

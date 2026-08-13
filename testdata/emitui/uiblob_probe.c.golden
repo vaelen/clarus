@@ -675,7 +675,7 @@ static void clar_init_globals(void) {
     cv_rtUiAppleMenuHandle = 0;
     cv_rtUiAppleMenuHandle = (void *)(intptr_t)(0);
     cv_rtUiStdEditMenuIdx = 0;
-    cv_rtUiStdEditMenuIdx = (-(1));
+    cv_rtUiStdEditMenuIdx = CLAR_NEG32(1);
     cv_rtUiSys7 = 0;
     cv_rtUiSys7 = 0;
     cv_rtUiEveryDueArr = 0;
@@ -1203,7 +1203,7 @@ static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need) {
     }
     while (1) {
         if (!((cv_newcap < cv_need))) break;
-        cv_newcap = (cv_newcap * 2);
+        cv_newcap = CLAR_MUL32(cv_newcap, 2);
     }
     cv_err = rt_ext_TextSetHandleSize((cv_rt)->cv_h, cv_newcap);
     if (cv_err != 0) {
@@ -1240,7 +1240,7 @@ static void clar_fn_rtTextRetain(void * cv_t) {
         return;
     }
     cv_rt = ((clar_rec_RtText *)(cv_t));
-    (cv_rt)->cv_rc = ((cv_rt)->cv_rc + 1);
+    (cv_rt)->cv_rc = CLAR_ADD32((cv_rt)->cv_rc, 1);
 }
 
 static void clar_fn_rtTextRelease(void * cv_t) {
@@ -1253,7 +1253,7 @@ static void clar_fn_rtTextRelease(void * cv_t) {
     if ((cv_rt)->cv_rc <= 0) {
         rt_ext_TextRcCheck(cv_t, (cv_rt)->cv_rc);
     }
-    (cv_rt)->cv_rc = ((cv_rt)->cv_rc - 1);
+    (cv_rt)->cv_rc = CLAR_SUB32((cv_rt)->cv_rc, 1);
     if ((cv_rt)->cv_rc == 0) {
         rt_ext_TextDisposeHandle((cv_rt)->cv_h);
         rt_ext_TextDisposePtr(cv_t);
@@ -1335,11 +1335,11 @@ static void clar_fn_rtTextAppendStr(void * cv_t, void * cv_s) {
     cv_n = rt_peekb(cv_s);
     cv_rt = ((clar_rec_RtText *)(cv_t));
     cv_len0 = (cv_rt)->cv_len;
-    clar_fn_rtTextGrow(cv_t, (cv_len0 + cv_n));
+    clar_fn_rtTextGrow(cv_t, CLAR_ADD32(cv_len0, cv_n));
     cv_rt = ((clar_rec_RtText *)(cv_t));
     cv_mp = rt_ext_TextHandleDeref((cv_rt)->cv_h);
     rt_ext_TextBlockMoveData((void *)((char *)(cv_s) + (1)), (void *)((char *)(cv_mp) + (cv_len0)), cv_n);
-    (cv_rt)->cv_len = (cv_len0 + cv_n);
+    (cv_rt)->cv_len = CLAR_ADD32(cv_len0, cv_n);
 }
 
 static void clar_fn_rtTextAppendChar(void * cv_t, int32_t cv_c) {
@@ -1351,11 +1351,11 @@ static void clar_fn_rtTextAppendChar(void * cv_t, int32_t cv_c) {
     cv_mp = 0;
     cv_rt = ((clar_rec_RtText *)(cv_t));
     cv_len0 = (cv_rt)->cv_len;
-    clar_fn_rtTextGrow(cv_t, (cv_len0 + 1));
+    clar_fn_rtTextGrow(cv_t, CLAR_ADD32(cv_len0, 1));
     cv_rt = ((clar_rec_RtText *)(cv_t));
     cv_mp = rt_ext_TextHandleDeref((cv_rt)->cv_h);
     rt_pokeb((void *)((char *)(cv_mp) + (cv_len0)), cv_c);
-    (cv_rt)->cv_len = (cv_len0 + 1);
+    (cv_rt)->cv_len = CLAR_ADD32(cv_len0, 1);
 }
 
 static void clar_fn_rtTextAppendText(void * cv_t, void * cv_src) {
@@ -1375,13 +1375,13 @@ static void clar_fn_rtTextAppendText(void * cv_t, void * cv_src) {
     cv_n = (cv_rs)->cv_len;
     cv_rt = ((clar_rec_RtText *)(cv_t));
     cv_len0 = (cv_rt)->cv_len;
-    clar_fn_rtTextGrow(cv_t, (cv_len0 + cv_n));
+    clar_fn_rtTextGrow(cv_t, CLAR_ADD32(cv_len0, cv_n));
     cv_rs = ((clar_rec_RtText *)(cv_src));
     cv_rt = ((clar_rec_RtText *)(cv_t));
     cv_srcmp = rt_ext_TextHandleDeref((cv_rs)->cv_h);
     cv_dstmp = rt_ext_TextHandleDeref((cv_rt)->cv_h);
     rt_ext_TextBlockMoveData(cv_srcmp, (void *)((char *)(cv_dstmp) + (cv_len0)), cv_n);
-    (cv_rt)->cv_len = (cv_len0 + cv_n);
+    (cv_rt)->cv_len = CLAR_ADD32(cv_len0, cv_n);
 }
 
 static void clar_fn_rtListGrow(void * cv_l, int32_t cv_need) {
@@ -1408,9 +1408,9 @@ static void clar_fn_rtListGrow(void * cv_l, int32_t cv_need) {
     }
     while (1) {
         if (!((cv_newcap < cv_need))) break;
-        cv_newcap = (cv_newcap * 2);
+        cv_newcap = CLAR_MUL32(cv_newcap, 2);
     }
-    cv_err = rt_ext_ListSetHandleSize((cv_rl)->cv_data, (cv_newcap * cv_elemsize));
+    cv_err = rt_ext_ListSetHandleSize((cv_rl)->cv_data, CLAR_MUL32(cv_newcap, cv_elemsize));
     if (cv_err != 0) {
         clar_fn_rtPanic(&(clar_lit_6));
     }
@@ -1446,7 +1446,7 @@ static void clar_fn_rtListRetain(void * cv_l) {
         return;
     }
     cv_rl = ((clar_rec_RtList *)(cv_l));
-    (cv_rl)->cv_rc = ((cv_rl)->cv_rc + 1);
+    (cv_rl)->cv_rc = CLAR_ADD32((cv_rl)->cv_rc, 1);
 }
 
 static void clar_fn_rtListRelease(void * cv_l) {
@@ -1459,7 +1459,7 @@ static void clar_fn_rtListRelease(void * cv_l) {
     if ((cv_rl)->cv_rc <= 0) {
         rt_ext_ListRcCheck(cv_l, (cv_rl)->cv_rc);
     }
-    (cv_rl)->cv_rc = ((cv_rl)->cv_rc - 1);
+    (cv_rl)->cv_rc = CLAR_SUB32((cv_rl)->cv_rc, 1);
     if ((cv_rl)->cv_rc == 0) {
         rt_ext_ListDisposeHandle((cv_rl)->cv_data);
         rt_ext_ListDisposePtr(cv_l);
@@ -1483,7 +1483,7 @@ static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i) {
         clar_fn_rtPanic(&(clar_lit_8));
     }
     cv_mp = rt_ext_ListHandleDeref((cv_rl)->cv_data);
-    cv_off = (cv_i * (cv_rl)->cv_elemsize);
+    cv_off = CLAR_MUL32(cv_i, (cv_rl)->cv_elemsize);
     return (void *)((char *)(cv_mp) + (cv_off));
     return 0;
 }
@@ -1496,12 +1496,12 @@ static void clar_fn_rtListPush(void * cv_l, void * cv_elem) {
     int32_t cv_off;
     cv_off = 0;
     cv_rl = ((clar_rec_RtList *)(cv_l));
-    clar_fn_rtListGrow(cv_l, ((cv_rl)->cv_count + 1));
+    clar_fn_rtListGrow(cv_l, CLAR_ADD32((cv_rl)->cv_count, 1));
     cv_rl = ((clar_rec_RtList *)(cv_l));
     cv_mp = rt_ext_ListHandleDeref((cv_rl)->cv_data);
-    cv_off = ((cv_rl)->cv_count * (cv_rl)->cv_elemsize);
+    cv_off = CLAR_MUL32((cv_rl)->cv_count, (cv_rl)->cv_elemsize);
     rt_ext_ListBlockMoveData(cv_elem, (void *)((char *)(cv_mp) + (cv_off)), (cv_rl)->cv_elemsize);
-    (cv_rl)->cv_count = ((cv_rl)->cv_count + 1);
+    (cv_rl)->cv_count = CLAR_ADD32((cv_rl)->cv_count, 1);
 }
 
 static int32_t clar_fn_rtListCount(void * cv_l) {
@@ -1510,17 +1510,17 @@ static int32_t clar_fn_rtListCount(void * cv_l) {
 }
 
 static void * clar_fn_mapEntrySlot(void * cv_m, int32_t cv_i) {
-    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_keys)) + ((cv_i * 12)));
+    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_keys)) + (CLAR_MUL32(cv_i, 12)));
     return 0;
 }
 
 static void * clar_fn_mapValSlot(void * cv_m, int32_t cv_i) {
-    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_vals)) + ((cv_i * (((clar_rec_RtMap *)(cv_m)))->cv_valsize)));
+    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_vals)) + (CLAR_MUL32(cv_i, (((clar_rec_RtMap *)(cv_m)))->cv_valsize)));
     return 0;
 }
 
 static void * clar_fn_mapIndexSlot(void * cv_m, int32_t cv_i) {
-    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_index)) + ((cv_i * 4)));
+    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_index)) + (CLAR_MUL32(cv_i, 4)));
     return 0;
 }
 
@@ -1563,9 +1563,9 @@ static int32_t clar_fn_mapHash(void * cv_key) {
     while (1) {
         if (!((cv_i < cv_klen))) break;
         cv_b = rt_peekb((void *)((char *)((void *)((char *)(cv_key) + (1))) + (cv_i)));
-        cv_h = (((cv_h << 5) + cv_h) + cv_b);
+        cv_h = CLAR_ADD32(CLAR_ADD32(CLAR_SHL32(cv_h, 5), cv_h), cv_b);
         cv_h = (cv_h & 2147483647);
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     return cv_h;
     return 0;
@@ -1586,7 +1586,7 @@ static int32_t clar_fn_mapPoolKeyEq(void * cv_m, int32_t cv_keyOff, int32_t cv_k
         if (rt_peekb((void *)((char *)(cv_base) + (cv_i))) != rt_peekb((void *)((char *)((void *)((char *)(cv_key) + (1))) + (cv_i)))) {
             return 0;
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     return 1;
     return 0;
@@ -1603,22 +1603,22 @@ static int32_t clar_fn_mapIndexFindSlot(void * cv_m, int32_t cv_hash, void * cv_
     cv_v = 0;
     cv_indexcap = (((clar_rec_RtMap *)(cv_m)))->cv_indexcap;
     if (cv_indexcap == 0) {
-        return (-(1));
+        return CLAR_NEG32(1);
     }
     cv_klen = rt_peekb(cv_key);
-    cv_slot = (cv_hash & (cv_indexcap - 1));
+    cv_slot = (cv_hash & CLAR_SUB32(cv_indexcap, 1));
     while (1) {
         if (!(1)) break;
         cv_v = rt_peekl(clar_fn_mapIndexSlot(cv_m, cv_slot));
         if (cv_v == -1) {
-            return (-(1));
+            return CLAR_NEG32(1);
         }
         if (cv_v != -2) {
             if ((clar_fn_mapEntryHash(cv_m, cv_v) == cv_hash) && clar_fn_mapPoolKeyEq(cv_m, clar_fn_mapEntryKeyOff(cv_m, cv_v), clar_fn_mapEntryKeyLen(cv_m, cv_v), cv_key, cv_klen)) {
                 return cv_slot;
             }
         }
-        cv_slot = ((cv_slot + 1) & (cv_indexcap - 1));
+        cv_slot = (CLAR_ADD32(cv_slot, 1) & CLAR_SUB32(cv_indexcap, 1));
     }
     return 0;
 }
@@ -1628,7 +1628,7 @@ static int32_t clar_fn_mapIndexLookup(void * cv_m, int32_t cv_hash, void * cv_ke
     cv_slot = 0;
     cv_slot = clar_fn_mapIndexFindSlot(cv_m, cv_hash, cv_key);
     if (cv_slot < 0) {
-        return (-(1));
+        return CLAR_NEG32(1);
     }
     return rt_peekl(clar_fn_mapIndexSlot(cv_m, cv_slot));
     return 0;
@@ -1644,8 +1644,8 @@ static int32_t clar_fn_mapIndexSlotFor(void * cv_m, int32_t cv_hash, void * cv_k
     int32_t cv_v;
     cv_v = 0;
     cv_indexcap = (((clar_rec_RtMap *)(cv_m)))->cv_indexcap;
-    cv_slot = (cv_hash & (cv_indexcap - 1));
-    cv_firstTomb = (-(1));
+    cv_slot = (cv_hash & CLAR_SUB32(cv_indexcap, 1));
+    cv_firstTomb = CLAR_NEG32(1);
     while (1) {
         if (!(1)) break;
         cv_v = rt_peekl(clar_fn_mapIndexSlot(cv_m, cv_slot));
@@ -1658,7 +1658,7 @@ static int32_t clar_fn_mapIndexSlotFor(void * cv_m, int32_t cv_hash, void * cv_k
         if ((cv_v == -2) && (cv_firstTomb < 0)) {
             cv_firstTomb = cv_slot;
         }
-        cv_slot = ((cv_slot + 1) & (cv_indexcap - 1));
+        cv_slot = (CLAR_ADD32(cv_slot, 1) & CLAR_SUB32(cv_indexcap, 1));
     }
     return 0;
 }
@@ -1678,7 +1678,7 @@ static void clar_fn_mapIndexInsert(void * cv_m, int32_t cv_hash, int32_t cv_entr
     cv_old = rt_peekl(cv_slotPtr);
     rt_pokel(cv_slotPtr, cv_entryIdx);
     if (cv_old == -2) {
-        (cv_rm)->cv_tombs = ((cv_rm)->cv_tombs - 1);
+        (cv_rm)->cv_tombs = CLAR_SUB32((cv_rm)->cv_tombs, 1);
     }
 }
 
@@ -1692,7 +1692,7 @@ static void clar_fn_mapAllocIndex(void * cv_m, int32_t cv_newcap) {
     int32_t cv_i;
     cv_i = 0;
     cv_rm = ((clar_rec_RtMap *)(cv_m));
-    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_index, (cv_newcap * 4));
+    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_index, CLAR_MUL32(cv_newcap, 4));
     if (cv_err != 0) {
         clar_fn_rtPanic(&(clar_lit_6));
     }
@@ -1701,8 +1701,8 @@ static void clar_fn_mapAllocIndex(void * cv_m, int32_t cv_newcap) {
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_newcap))) break;
-        rt_pokel((void *)((char *)(cv_mp) + ((cv_i * 4))), -1);
-        cv_i = (cv_i + 1);
+        rt_pokel((void *)((char *)(cv_mp) + (CLAR_MUL32(cv_i, 4))), -1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
 }
 
@@ -1716,7 +1716,7 @@ static void clar_fn_mapRehash(void * cv_m) {
     int32_t cv_h;
     cv_h = 0;
     cv_rm = ((clar_rec_RtMap *)(cv_m));
-    cv_newcap = ((cv_rm)->cv_indexcap * 2);
+    cv_newcap = CLAR_MUL32((cv_rm)->cv_indexcap, 2);
     clar_fn_mapAllocIndex(cv_m, cv_newcap);
     cv_rm = ((clar_rec_RtMap *)(cv_m));
     (cv_rm)->cv_tombs = 0;
@@ -1725,7 +1725,7 @@ static void clar_fn_mapRehash(void * cv_m) {
         if (!((cv_i < (cv_rm)->cv_count))) break;
         cv_h = clar_fn_mapEntryHash(cv_m, cv_i);
         clar_fn_mapIndexInsert(cv_m, cv_h, cv_i);
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
 }
 
@@ -1737,7 +1737,7 @@ static void clar_fn_mapEnsureIndexCapacity(void * cv_m) {
         clar_fn_mapAllocIndex(cv_m, 8);
         return;
     }
-    if ((((cv_rm)->cv_count + (cv_rm)->cv_tombs) * 4) >= ((cv_rm)->cv_indexcap * 3)) {
+    if (CLAR_MUL32(CLAR_ADD32((cv_rm)->cv_count, (cv_rm)->cv_tombs), 4) >= CLAR_MUL32((cv_rm)->cv_indexcap, 3)) {
         clar_fn_mapRehash(cv_m);
     }
 }
@@ -1763,9 +1763,9 @@ static void clar_fn_mapGrowEntries(void * cv_m, int32_t cv_need) {
     }
     while (1) {
         if (!((cv_newcap < cv_need))) break;
-        cv_newcap = (cv_newcap * 2);
+        cv_newcap = CLAR_MUL32(cv_newcap, 2);
     }
-    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_keys, (cv_newcap * 12));
+    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_keys, CLAR_MUL32(cv_newcap, 12));
     if (cv_err != 0) {
         clar_fn_rtPanic(&(clar_lit_6));
     }
@@ -1796,9 +1796,9 @@ static void clar_fn_mapGrowVals(void * cv_m, int32_t cv_need) {
     }
     while (1) {
         if (!((cv_newcap < cv_need))) break;
-        cv_newcap = (cv_newcap * 2);
+        cv_newcap = CLAR_MUL32(cv_newcap, 2);
     }
-    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_vals, (cv_newcap * cv_valsize));
+    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_vals, CLAR_MUL32(cv_newcap, cv_valsize));
     if (cv_err != 0) {
         clar_fn_rtPanic(&(clar_lit_6));
     }
@@ -1826,7 +1826,7 @@ static void clar_fn_mapGrowPool(void * cv_m, int32_t cv_need) {
     }
     while (1) {
         if (!((cv_newcap < cv_need))) break;
-        cv_newcap = (cv_newcap * 2);
+        cv_newcap = CLAR_MUL32(cv_newcap, 2);
     }
     cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_keypool, cv_newcap);
     if (cv_err != 0) {
@@ -1846,12 +1846,12 @@ static int32_t clar_fn_mapPoolAppend(void * cv_m, void * cv_key) {
     cv_mp = 0;
     cv_klen = rt_peekb(cv_key);
     cv_rm = ((clar_rec_RtMap *)(cv_m));
-    clar_fn_mapGrowPool(cv_m, ((cv_rm)->cv_poolused + cv_klen));
+    clar_fn_mapGrowPool(cv_m, CLAR_ADD32((cv_rm)->cv_poolused, cv_klen));
     cv_rm = ((clar_rec_RtMap *)(cv_m));
     cv_off = (cv_rm)->cv_poolused;
     cv_mp = rt_ext_MapHandleDeref((cv_rm)->cv_keypool);
     rt_ext_MapBlockMoveData((void *)((char *)(cv_key) + (1)), (void *)((char *)(cv_mp) + (cv_off)), cv_klen);
-    (cv_rm)->cv_poolused = (cv_off + cv_klen);
+    (cv_rm)->cv_poolused = CLAR_ADD32(cv_off, cv_klen);
     return cv_off;
     return 0;
 }
@@ -1902,7 +1902,7 @@ static void clar_fn_rtMapRetain(void * cv_m) {
         return;
     }
     cv_rm = ((clar_rec_RtMap *)(cv_m));
-    (cv_rm)->cv_rc = ((cv_rm)->cv_rc + 1);
+    (cv_rm)->cv_rc = CLAR_ADD32((cv_rm)->cv_rc, 1);
 }
 
 static void clar_fn_rtMapRelease(void * cv_m) {
@@ -1915,7 +1915,7 @@ static void clar_fn_rtMapRelease(void * cv_m) {
     if ((cv_rm)->cv_rc <= 0) {
         rt_ext_MapRcCheck(cv_m, (cv_rm)->cv_rc);
     }
-    (cv_rm)->cv_rc = ((cv_rm)->cv_rc - 1);
+    (cv_rm)->cv_rc = CLAR_SUB32((cv_rm)->cv_rc, 1);
     if ((cv_rm)->cv_rc == 0) {
         rt_ext_MapDisposeHandle((cv_rm)->cv_keys);
         rt_ext_MapDisposeHandle((cv_rm)->cv_vals);
@@ -1949,15 +1949,15 @@ static void clar_fn_rtMapSet(void * cv_m, void * cv_key, void * cv_val) {
         return;
     }
     clar_fn_mapEnsureIndexCapacity(cv_m);
-    clar_fn_mapGrowEntries(cv_m, ((cv_rm)->cv_count + 1));
-    clar_fn_mapGrowVals(cv_m, ((cv_rm)->cv_count + 1));
+    clar_fn_mapGrowEntries(cv_m, CLAR_ADD32((cv_rm)->cv_count, 1));
+    clar_fn_mapGrowVals(cv_m, CLAR_ADD32((cv_rm)->cv_count, 1));
     cv_klen = rt_peekb(cv_key);
     cv_keyOff = clar_fn_mapPoolAppend(cv_m, cv_key);
     cv_idx = (cv_rm)->cv_count;
     clar_fn_mapSetEntryMeta(cv_m, cv_idx, cv_h, cv_keyOff, cv_klen);
     rt_ext_MapBlockMoveData(cv_val, clar_fn_mapValSlot(cv_m, cv_idx), (cv_rm)->cv_valsize);
     clar_fn_mapIndexInsert(cv_m, cv_h, cv_idx);
-    (cv_rm)->cv_count = ((cv_rm)->cv_count + 1);
+    (cv_rm)->cv_count = CLAR_ADD32((cv_rm)->cv_count, 1);
 }
 
 static int32_t clar_fn_rtMapGetDv(void * cv_m, void * cv_key, void * cv_out) {
@@ -2027,12 +2027,12 @@ static int32_t clar_fn_uidI32(void * cv_p) {
     cv_b1 = rt_peekb((void *)((char *)(cv_p) + (1)));
     cv_b2 = rt_peekb((void *)((char *)(cv_p) + (2)));
     cv_b3 = rt_peekb((void *)((char *)(cv_p) + (3)));
-    return ((((cv_b0 << 24) | (cv_b1 << 16)) | (cv_b2 << 8)) | cv_b3);
+    return (((CLAR_SHL32(cv_b0, 24) | CLAR_SHL32(cv_b1, 16)) | CLAR_SHL32(cv_b2, 8)) | cv_b3);
     return 0;
 }
 
 static void * clar_fn_uidStrPtr(int32_t cv_off) {
-    if (cv_off == (-(1))) {
+    if (cv_off == CLAR_NEG32(1)) {
         return (void *)(intptr_t)(0);
     }
     return (void *)((char *)((&clar_ui_blob[0])) + (cv_off));
@@ -2085,7 +2085,7 @@ static int32_t clar_fn_uidAppOff(void) {
 }
 
 static void * clar_fn_uidWinBase(int32_t cv_winIdx) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidWinsOff()))) + ((cv_winIdx * 48)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidWinsOff()))) + (CLAR_MUL32(cv_winIdx, 48)));
     return 0;
 }
 
@@ -2155,7 +2155,7 @@ static int32_t clar_fn_uidWinFormOff(int32_t cv_winIdx) {
 }
 
 static void * clar_fn_uidWidgetBase(int32_t cv_winIdx, int32_t cv_widgetIdx) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidWinWidgetsOff(cv_winIdx)))) + ((cv_widgetIdx * 52)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidWinWidgetsOff(cv_winIdx)))) + (CLAR_MUL32(cv_widgetIdx, 52)));
     return 0;
 }
 
@@ -2230,7 +2230,7 @@ static int32_t clar_fn_uidWidgetTableOff(int32_t cv_winIdx, int32_t cv_widgetIdx
 }
 
 static void * clar_fn_uidMenuBase(int32_t cv_menuIdx) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidMenusOff()))) + ((cv_menuIdx * 20)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidMenusOff()))) + (CLAR_MUL32(cv_menuIdx, 20)));
     return 0;
 }
 
@@ -2260,7 +2260,7 @@ static int32_t clar_fn_uidMenuIsStandardEdit(int32_t cv_menuIdx) {
 }
 
 static void * clar_fn_uidItemBase(int32_t cv_menuIdx, int32_t cv_itemIdx) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidMenuItemsOff(cv_menuIdx)))) + ((cv_itemIdx * 16)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidMenuItemsOff(cv_menuIdx)))) + (CLAR_MUL32(cv_itemIdx, 16)));
     return 0;
 }
 
@@ -2285,7 +2285,7 @@ static int32_t clar_fn_uidItemSeparator(int32_t cv_menuIdx, int32_t cv_itemIdx) 
 }
 
 static void * clar_fn_uidMenuHandlerBase(int32_t cv_k) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidMhOff()))) + ((cv_k * 24)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidMhOff()))) + (CLAR_MUL32(cv_k, 24)));
     return 0;
 }
 
@@ -2325,18 +2325,18 @@ static void * clar_fn_uidMenuHandlerItemName(int32_t cv_k) {
 }
 
 static int32_t clar_fn_uidEveryTicks(int32_t cv_k) {
-    return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidEveryOff()))) + ((cv_k * 4))));
+    return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidEveryOff()))) + (CLAR_MUL32(cv_k, 4))));
     return 0;
 }
 
 static int32_t clar_fn_uidHasApp(void) {
-    return (clar_fn_uidAppOff() != (-(1)));
+    return (clar_fn_uidAppOff() != CLAR_NEG32(1));
     return 0;
 }
 
 static int32_t clar_fn_uidAppNameOff(void) {
     if (!(clar_fn_uidHasApp())) {
-        return (-(1));
+        return CLAR_NEG32(1);
     }
     return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidAppOff()))) + (0)));
     return 0;
@@ -2349,7 +2349,7 @@ static void * clar_fn_uidAppName(void) {
 
 static int32_t clar_fn_uidAppVersionOff(void) {
     if (!(clar_fn_uidHasApp())) {
-        return (-(1));
+        return CLAR_NEG32(1);
     }
     return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidAppOff()))) + (4)));
     return 0;
@@ -2362,7 +2362,7 @@ static void * clar_fn_uidAppVersion(void) {
 
 static int32_t clar_fn_uidAppAuthorOff(void) {
     if (!(clar_fn_uidHasApp())) {
-        return (-(1));
+        return CLAR_NEG32(1);
     }
     return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidAppOff()))) + (8)));
     return 0;
@@ -2375,7 +2375,7 @@ static void * clar_fn_uidAppAuthor(void) {
 
 static int32_t clar_fn_uidAppAboutOff(void) {
     if (!(clar_fn_uidHasApp())) {
-        return (-(1));
+        return CLAR_NEG32(1);
     }
     return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidAppOff()))) + (12)));
     return 0;
@@ -2402,7 +2402,7 @@ static int32_t clar_fn_uidFormBindsOff(int32_t cv_off) {
 }
 
 static void * clar_fn_uidBindBase(int32_t cv_bindsOff, int32_t cv_k) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_bindsOff))) + ((cv_k * 8)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_bindsOff))) + (CLAR_MUL32(cv_k, 8)));
     return 0;
 }
 
@@ -2423,8 +2423,8 @@ static int32_t clar_fn_uidFormFindFieldIndex(int32_t cv_off, int32_t cv_widgetId
     cv_nBinds = 0;
     int32_t cv_b;
     cv_b = 0;
-    if (cv_off == (-(1))) {
-        return (-(1));
+    if (cv_off == CLAR_NEG32(1)) {
+        return CLAR_NEG32(1);
     }
     cv_bindsOff = clar_fn_uidFormBindsOff(cv_off);
     cv_nBinds = clar_fn_uidFormNBinds(cv_off);
@@ -2434,9 +2434,9 @@ static int32_t clar_fn_uidFormFindFieldIndex(int32_t cv_off, int32_t cv_widgetId
         if (clar_fn_uidBindWidgetIndex(cv_bindsOff, cv_b) == cv_widgetIdx) {
             return clar_fn_uidBindFieldIndex(cv_bindsOff, cv_b);
         }
-        cv_b = (cv_b + 1);
+        cv_b = CLAR_ADD32(cv_b, 1);
     }
-    return (-(1));
+    return CLAR_NEG32(1);
     return 0;
 }
 
@@ -2461,7 +2461,7 @@ static int32_t clar_fn_uidTableColsOff(int32_t cv_off) {
 }
 
 static void * clar_fn_uidColBase(int32_t cv_colsOff, int32_t cv_k) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_colsOff))) + ((cv_k * 16)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_colsOff))) + (CLAR_MUL32(cv_k, 16)));
     return 0;
 }
 
@@ -2496,7 +2496,7 @@ static int32_t clar_fn_uidLayoutRecSize(int32_t cv_off) {
 }
 
 static void * clar_fn_uidFieldBase(int32_t cv_layoutOff, int32_t cv_k) {
-    return (void *)((char *)((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_layoutOff))) + (8))) + ((cv_k * 24)));
+    return (void *)((char *)((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_layoutOff))) + (8))) + (CLAR_MUL32(cv_k, 24)));
     return 0;
 }
 
@@ -2531,7 +2531,7 @@ static int32_t clar_fn_uidFieldEnumValuesOff(int32_t cv_layoutOff, int32_t cv_k)
 }
 
 static int32_t clar_fn_uidEnumLabelOff(int32_t cv_enumLabelsOff, int32_t cv_n) {
-    return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_enumLabelsOff))) + ((cv_n * 4))));
+    return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_enumLabelsOff))) + (CLAR_MUL32(cv_n, 4))));
     return 0;
 }
 
@@ -2541,7 +2541,7 @@ static void * clar_fn_uidEnumLabel(int32_t cv_enumLabelsOff, int32_t cv_n) {
 }
 
 static int32_t clar_fn_uidEnumValue(int32_t cv_enumValuesOff, int32_t cv_n) {
-    return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_enumValuesOff))) + ((cv_n * 4))));
+    return clar_fn_uidI32((void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_enumValuesOff))) + (CLAR_MUL32(cv_n, 4))));
     return 0;
 }
 
@@ -2651,7 +2651,7 @@ static void clar_fn_rtUiNaturalSize(int32_t cv_winIdx, void * cv_outW, void * cv
         cv_hh = clar_fn_rtUiKindHeight(cv_kind);
         cv___switch1 = cv_atKind;
         if (cv___switch1 == 2) {
-            cv_x = (cv_prevRight + 8);
+            cv_x = CLAR_ADD32(cv_prevRight, 8);
         } else {
             if (cv___switch1 == 1) {
                 cv_x = cv_prevLeft;
@@ -2664,7 +2664,7 @@ static void clar_fn_rtUiNaturalSize(int32_t cv_winIdx, void * cv_outW, void * cv
             }
         }
         if (clar_fn_uidWidgetYIsBottom(cv_winIdx, cv_i) || (cv_atKind == 3)) {
-            cv_y = (cv_prevBottom + 8);
+            cv_y = CLAR_ADD32(cv_prevBottom, 8);
         } else {
             cv_y = clar_fn_uidWidgetY(cv_winIdx, cv_i);
         }
@@ -2680,17 +2680,17 @@ static void clar_fn_rtUiNaturalSize(int32_t cv_winIdx, void * cv_outW, void * cv
         if (clar_fn_uidWidgetFillBoth(cv_winIdx, cv_i)) {
             cv_hh = clar_fn_rtUiKindHeight(cv_kind);
         }
-        cv_right = (cv_x + cv_ww);
+        cv_right = CLAR_ADD32(cv_x, cv_ww);
         if (cv_right > cv_maxRight) {
             cv_maxRight = cv_right;
         }
         cv_prevLeft = cv_x;
         cv_prevRight = cv_right;
-        cv_prevBottom = (cv_y + cv_hh);
-        cv_i = (cv_i + 1);
+        cv_prevBottom = CLAR_ADD32(cv_y, cv_hh);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
-    rt_pokel(cv_outW, (cv_maxRight + 8));
-    rt_pokel(cv_outH, (cv_prevBottom + 8));
+    rt_pokel(cv_outW, CLAR_ADD32(cv_maxRight, 8));
+    rt_pokel(cv_outH, CLAR_ADD32(cv_prevBottom, 8));
 }
 
 static void * clar_fn_rtUiOpen(int32_t cv_winIdx) {
@@ -2761,33 +2761,33 @@ static void * clar_fn_rtUiOpen(int32_t cv_winIdx) {
         (cv_w)->cv_state = (void *)(intptr_t)(0);
     }
     cv_nWidgets = clar_fn_uidWinNWidgets(cv_winIdx);
-    (cv_w)->cv_ctrlsH = clar_fn_rtUiAllocLocked((cv_nWidgets * 4));
+    (cv_w)->cv_ctrlsH = clar_fn_rtUiAllocLocked(CLAR_MUL32(cv_nWidgets, 4));
     (cv_w)->cv_ctrls = rt_ext_UiHandleDeref((cv_w)->cv_ctrlsH);
-    (cv_w)->cv_rectsH = clar_fn_rtUiAllocLocked((cv_nWidgets * 8));
+    (cv_w)->cv_rectsH = clar_fn_rtUiAllocLocked(CLAR_MUL32(cv_nWidgets, 8));
     (cv_w)->cv_rects = rt_ext_UiHandleDeref((cv_w)->cv_rectsH);
-    (cv_w)->cv_labelsH = clar_fn_rtUiAllocLocked((cv_nWidgets * 256));
+    (cv_w)->cv_labelsH = clar_fn_rtUiAllocLocked(CLAR_MUL32(cv_nWidgets, 256));
     (cv_w)->cv_labels = rt_ext_UiHandleDeref((cv_w)->cv_labelsH);
-    (cv_w)->cv_canvasH = clar_fn_rtUiAllocLocked((cv_nWidgets * 36));
+    (cv_w)->cv_canvasH = clar_fn_rtUiAllocLocked(CLAR_MUL32(cv_nWidgets, 36));
     (cv_w)->cv_canvases = rt_ext_UiHandleDeref((cv_w)->cv_canvasH);
-    (cv_w)->cv_teH = clar_fn_rtUiAllocLocked((cv_nWidgets * 4));
+    (cv_w)->cv_teH = clar_fn_rtUiAllocLocked(CLAR_MUL32(cv_nWidgets, 4));
     (cv_w)->cv_tes = rt_ext_UiHandleDeref((cv_w)->cv_teH);
-    (cv_w)->cv_hbarsH = clar_fn_rtUiAllocLocked((cv_nWidgets * 4));
+    (cv_w)->cv_hbarsH = clar_fn_rtUiAllocLocked(CLAR_MUL32(cv_nWidgets, 4));
     (cv_w)->cv_hbars = rt_ext_UiHandleDeref((cv_w)->cv_hbarsH);
     (cv_w)->cv_enabledH = clar_fn_rtUiAllocLocked(cv_nWidgets);
     (cv_w)->cv_logicalEnabled = rt_ext_UiHandleDeref((cv_w)->cv_enabledH);
-    (cv_w)->cv_listsH = clar_fn_rtUiAllocLocked((cv_nWidgets * 4));
+    (cv_w)->cv_listsH = clar_fn_rtUiAllocLocked(CLAR_MUL32(cv_nWidgets, 4));
     (cv_w)->cv_lists = rt_ext_UiHandleDeref((cv_w)->cv_listsH);
-    (cv_w)->cv_popupsH = clar_fn_rtUiAllocLocked((cv_nWidgets * 4));
+    (cv_w)->cv_popupsH = clar_fn_rtUiAllocLocked(CLAR_MUL32(cv_nWidgets, 4));
     (cv_w)->cv_popups = rt_ext_UiHandleDeref((cv_w)->cv_popupsH);
-    (cv_w)->cv_popupSelH = clar_fn_rtUiAllocLocked((cv_nWidgets * 4));
+    (cv_w)->cv_popupSelH = clar_fn_rtUiAllocLocked(CLAR_MUL32(cv_nWidgets, 4));
     (cv_w)->cv_popupSel = rt_ext_UiHandleDeref((cv_w)->cv_popupSelH);
-    (cv_w)->cv_focusIdx = (-(1));
+    (cv_w)->cv_focusIdx = CLAR_NEG32(1);
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_nWidgets))) break;
         rt_pokel((void *)((char *)(clar_fn_rtUiCanvasBufAt(cv_w, cv_i)) + (32)), 8);
         rt_pokeb((void *)((char *)((cv_w)->cv_logicalEnabled) + (cv_i)), 1);
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     cv_reqW = clar_fn_uidWinW(cv_winIdx);
     cv_reqH = clar_fn_uidWinH(cv_winIdx);
@@ -2807,34 +2807,34 @@ static void * clar_fn_rtUiOpen(int32_t cv_winIdx) {
     cv_screenBottom = rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (4)));
     cv_screenRight = rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (6)));
     rt_ext_UiDisposePtr(cv_screenBoundsSlot);
-    cv_screenW = (cv_screenRight - cv_screenLeft);
-    cv_screenH = (cv_screenBottom - cv_screenTop);
-    cv_left = ((cv_screenW - cv_reqW) / 2);
+    cv_screenW = CLAR_SUB32(cv_screenRight, cv_screenLeft);
+    cv_screenH = CLAR_SUB32(cv_screenBottom, cv_screenTop);
+    cv_left = (CLAR_SUB32(cv_screenW, cv_reqW) / 2);
     if (cv_left < 4) {
         cv_left = 4;
     }
     cv_ww = cv_reqW;
-    if (cv_ww > ((cv_screenW - cv_left) - 2)) {
-        cv_ww = ((cv_screenW - cv_left) - 2);
+    if (cv_ww > CLAR_SUB32(CLAR_SUB32(cv_screenW, cv_left), 2)) {
+        cv_ww = CLAR_SUB32(CLAR_SUB32(cv_screenW, cv_left), 2);
         if (cv_ww < 1) {
             cv_ww = 1;
         }
     }
     cv_top = 44;
     cv_hh = cv_reqH;
-    if (((cv_top + cv_hh) + 2) > cv_screenH) {
-        cv_top = (20 + 19);
-        if (((cv_top + cv_hh) + 2) > cv_screenH) {
-            cv_hh = ((cv_screenH - cv_top) - 2);
+    if (CLAR_ADD32(CLAR_ADD32(cv_top, cv_hh), 2) > cv_screenH) {
+        cv_top = CLAR_ADD32(20, 19);
+        if (CLAR_ADD32(CLAR_ADD32(cv_top, cv_hh), 2) > cv_screenH) {
+            cv_hh = CLAR_SUB32(CLAR_SUB32(cv_screenH, cv_top), 2);
             if (cv_hh < 1) {
                 cv_hh = 1;
             }
         }
     }
     cv_boundsRect = rt_ext_UiNewPtr(8);
-    rt_ext_UiSetRect(cv_boundsRect, cv_left, cv_top, (cv_left + cv_ww), (cv_top + cv_hh));
+    rt_ext_UiSetRect(cv_boundsRect, cv_left, cv_top, CLAR_ADD32(cv_left, cv_ww), CLAR_ADD32(cv_top, cv_hh));
     cv_formOff = clar_fn_uidWinFormOff(cv_winIdx);
-    if (cv_formOff != (-(1))) {
+    if (cv_formOff != CLAR_NEG32(1)) {
         if (cv_rtUiSys7) {
             cv_procId = 5;
         } else {
@@ -2848,7 +2848,7 @@ static void * clar_fn_rtUiOpen(int32_t cv_winIdx) {
         }
     }
     cv_titlePtr = clar_fn_uidWinTitle(cv_winIdx);
-    (cv_w)->cv_wp = rt_ext_UiNewWindow((void *)(intptr_t)(0), cv_boundsRect, cv_titlePtr, 0, cv_procId, (void *)(intptr_t)((-(1))), 1, 0);
+    (cv_w)->cv_wp = rt_ext_UiNewWindow((void *)(intptr_t)(0), cv_boundsRect, cv_titlePtr, 0, cv_procId, (void *)(intptr_t)(CLAR_NEG32(1)), 1, 0);
     rt_ext_UiDisposePtr(cv_boundsRect);
     if ((cv_w)->cv_wp == (void *)(intptr_t)(0)) {
         clar_fn_rtPanic(&(clar_lit_6));
@@ -2864,7 +2864,7 @@ static void * clar_fn_rtUiOpen(int32_t cv_winIdx) {
         if (clar_fn_uidWidgetKind(cv_winIdx, cv_i) == 7) {
             clar_fn_rtUiTableSyncOne(cv_inst, cv_i);
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     cv_i = 0;
     while (1) {
@@ -2876,7 +2876,7 @@ static void * clar_fn_rtUiOpen(int32_t cv_winIdx) {
             rt_ext_UiSetPort(cv_savedPort);
             cv_i = cv_nWidgets;
         } else {
-            cv_i = (cv_i + 1);
+            cv_i = CLAR_ADD32(cv_i, 1);
         }
     }
     rt_ext_UiShowWindow((cv_w)->cv_wp);
@@ -2913,7 +2913,7 @@ static void clar_fn_rtUiTeardownWindow(void * cv_inst) {
             rt_ext_UiLDispose(cv_lh);
             rt_ext_UiDisposeHandle(cv_ldefH);
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     rt_ext_UiDisposeWindow((cv_w)->cv_wp);
     clar_fn_rtUiTraceClose(cv_winIdx, cv_inst);
@@ -2931,10 +2931,10 @@ static void clar_fn_rtUiTeardownWindow(void * cv_inst) {
             rt_ext_UiTEDispose(clar_fn_rtUiTeAt(cv_w, cv_i));
         }
         if (clar_fn_rtUiPopupAt(cv_w, cv_i) != (void *)(intptr_t)(0)) {
-            rt_ext_UiDeleteMenu((1000 + cv_i));
+            rt_ext_UiDeleteMenu(CLAR_ADD32(1000, cv_i));
             rt_ext_UiDisposeMenu(clar_fn_rtUiPopupAt(cv_w, cv_i));
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     if ((cv_w)->cv_stateH != (void *)(intptr_t)(0)) {
         rt_ext_UiDisposeHandle((cv_w)->cv_stateH);
@@ -3097,9 +3097,9 @@ static void clar_fn_rtUiBuildAppleMenu(void) {
         rt_ext_UiDisposePtr(cv_prefix);
         cv_n = rt_peekb(cv_buf);
         rt_ext_UiBlockMoveData((void *)((char *)(cv_appName) + (1)), (void *)((char *)((void *)((char *)(cv_buf) + (1))) + (cv_n)), cv_appNameLen);
-        cv_n = (cv_n + cv_appNameLen);
+        cv_n = CLAR_ADD32(cv_n, cv_appNameLen);
         rt_pokeb((void *)((char *)((void *)((char *)(cv_buf) + (1))) + (cv_n)), 201);
-        rt_pokeb(cv_buf, (cv_n + 1));
+        rt_pokeb(cv_buf, CLAR_ADD32(cv_n, 1));
         rt_ext_UiAppendMenu(cv_rtUiAppleMenuHandle, cv_buf);
         rt_ext_UiDisposePtr(cv_buf);
         rt_ext_UiAppendMenuStr(cv_rtUiAppleMenuHandle, (const uint8_t*)&(clar_lit_16));
@@ -3151,14 +3151,14 @@ static void clar_fn_rtUiBuildMenus(void) {
     cv_nMenus = clar_fn_uidNMenus();
     cv_rtUiNMenusVal = cv_nMenus;
     if (cv_nMenus > 0) {
-        cv_rtUiMenuHandlesArr = rt_ext_UiNewPtrClear((cv_nMenus * 4));
+        cv_rtUiMenuHandlesArr = rt_ext_UiNewPtrClear(CLAR_MUL32(cv_nMenus, 4));
     } else {
         cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
     }
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_nMenus))) break;
-        cv_mh = rt_ext_UiNewMenu((2 + cv_i), clar_fn_uidMenuTitle(cv_i));
+        cv_mh = rt_ext_UiNewMenu(CLAR_ADD32(2, cv_i), clar_fn_uidMenuTitle(cv_i));
         if (clar_fn_uidMenuIsStandardEdit(cv_i)) {
             rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_18));
             rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_16));
@@ -3185,17 +3185,17 @@ static void clar_fn_rtUiBuildMenus(void) {
                     if (cv_key != 0) {
                         rt_pokeb((void *)((char *)((void *)((char *)(cv_buf) + (1))) + (cv_n)), ((int32_t)(47)));
                         rt_pokeb((void *)((char *)((void *)((char *)(cv_buf) + (2))) + (cv_n)), cv_key);
-                        rt_pokeb(cv_buf, (cv_n + 2));
+                        rt_pokeb(cv_buf, CLAR_ADD32(cv_n, 2));
                     }
                     rt_ext_UiAppendMenu(cv_mh, cv_buf);
                     rt_ext_UiDisposePtr(cv_buf);
                 }
-                cv_j = (cv_j + 1);
+                cv_j = CLAR_ADD32(cv_j, 1);
             }
         }
         rt_ext_UiInsertMenu(cv_mh, 0);
-        rt_pokel((void *)((char *)(cv_rtUiMenuHandlesArr) + ((cv_i * 4))), ((int32_t)(intptr_t)(cv_mh)));
-        cv_i = (cv_i + 1);
+        rt_pokel((void *)((char *)(cv_rtUiMenuHandlesArr) + (CLAR_MUL32(cv_i, 4))), ((int32_t)(intptr_t)(cv_mh)));
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     rt_ext_UiDrawMenuBar();
 }
@@ -3206,14 +3206,14 @@ static void clar_fn_rtUiMenuEnable(int32_t cv_menuIdx, int32_t cv_itemIdx, int32
     if (((cv_rtUiMenuHandlesArr == (void *)(intptr_t)(0)) || (cv_menuIdx < 0)) || (cv_menuIdx >= cv_rtUiNMenusVal)) {
         return;
     }
-    cv_mh = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_rtUiMenuHandlesArr) + ((cv_menuIdx * 4)))));
+    cv_mh = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_rtUiMenuHandlesArr) + (CLAR_MUL32(cv_menuIdx, 4)))));
     if (cv_mh == (void *)(intptr_t)(0)) {
         return;
     }
     if (cv_enable) {
-        rt_ext_UiEnableItem(cv_mh, (cv_itemIdx + 1));
+        rt_ext_UiEnableItem(cv_mh, CLAR_ADD32(cv_itemIdx, 1));
     } else {
-        rt_ext_UiDisableItem(cv_mh, (cv_itemIdx + 1));
+        rt_ext_UiDisableItem(cv_mh, CLAR_ADD32(cv_itemIdx, 1));
     }
 }
 
@@ -3235,12 +3235,12 @@ static void clar_fn_rtUiMenuRecomputeDim(void) {
     while (1) {
         if (!((cv_k < cv_nMh))) break;
         cv_scopeWinIdx = clar_fn_uidMenuHandlerScopeWinIdx(cv_k);
-        if (cv_scopeWinIdx != (-(1))) {
+        if (cv_scopeWinIdx != CLAR_NEG32(1)) {
             cv_enable = (clar_fn_rtUiFront(cv_scopeWinIdx) != (void *)(intptr_t)(0));
             clar_fn_rtUiMenuEnable(clar_fn_uidMenuHandlerMenuIdx(cv_k), clar_fn_uidMenuHandlerItemIdx(cv_k), cv_enable);
             clar_fn_rtUiTraceDimCheck(cv_k, cv_enable);
         }
-        cv_k = (cv_k + 1);
+        cv_k = CLAR_ADD32(cv_k, 1);
     }
     if (cv_rtUiStdEditMenuIdx >= 0) {
         cv_front = clar_fn_rtUiWinstOf(rt_ext_UiFrontWindow());
@@ -3249,7 +3249,7 @@ static void clar_fn_rtUiMenuRecomputeDim(void) {
         while (1) {
             if (!((cv_j <= 5))) break;
             clar_fn_rtUiMenuEnable(cv_rtUiStdEditMenuIdx, cv_j, cv_enable);
-            cv_j = (cv_j + 1);
+            cv_j = CLAR_ADD32(cv_j, 1);
         }
         clar_fn_rtUiTraceStdEditDim(cv_enable);
     }
@@ -3346,8 +3346,8 @@ static void clar_fn_rtUiMenuDispatch(int32_t cv_result) {
         clar_fn_rtUiAppleSelect(cv_itemNum);
         return;
     }
-    cv_menuIdx = (cv_menuID - 2);
-    cv_itemIdx = (cv_itemNum - 1);
+    cv_menuIdx = CLAR_SUB32(cv_menuID, 2);
+    cv_itemIdx = CLAR_SUB32(cv_itemNum, 1);
     if (cv_menuIdx == cv_rtUiStdEditMenuIdx) {
         clar_fn_rtUiStdEditDispatch(cv_itemIdx);
         return;
@@ -3359,7 +3359,7 @@ static void clar_fn_rtUiMenuDispatch(int32_t cv_result) {
         if ((clar_fn_uidMenuHandlerMenuIdx(cv_k) == cv_menuIdx) && (clar_fn_uidMenuHandlerItemIdx(cv_k) == cv_itemIdx)) {
             cv_scopeWinIdx = clar_fn_uidMenuHandlerScopeWinIdx(cv_k);
             cv_skip = 0;
-            if (cv_scopeWinIdx != (-(1))) {
+            if (cv_scopeWinIdx != CLAR_NEG32(1)) {
                 cv_front = clar_fn_rtUiFront(cv_scopeWinIdx);
                 if (cv_front == (void *)(intptr_t)(0)) {
                     cv_skip = 1;
@@ -3372,7 +3372,7 @@ static void clar_fn_rtUiMenuDispatch(int32_t cv_result) {
                 clar_fn_clar_ui_fire_menu(cv_k, cv_front);
             }
         }
-        cv_k = (cv_k + 1);
+        cv_k = CLAR_ADD32(cv_k, 1);
     }
 }
 
@@ -3386,7 +3386,7 @@ static void clar_fn_rtUiBuildEvery(void) {
     cv_n = clar_fn_uidNEvery();
     cv_rtUiNEveryVal = cv_n;
     if (cv_n > 0) {
-        cv_rtUiEveryDueArr = rt_ext_UiNewPtrClear((cv_n * 4));
+        cv_rtUiEveryDueArr = rt_ext_UiNewPtrClear(CLAR_MUL32(cv_n, 4));
     } else {
         cv_rtUiEveryDueArr = (void *)(intptr_t)(0);
     }
@@ -3398,8 +3398,8 @@ static void clar_fn_rtUiBuildEvery(void) {
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_n))) break;
-        rt_pokel((void *)((char *)(cv_rtUiEveryDueArr) + ((cv_i * 4))), (cv_now + clar_fn_uidEveryTicks(cv_i)));
-        cv_i = (cv_i + 1);
+        rt_pokel((void *)((char *)(cv_rtUiEveryDueArr) + (CLAR_MUL32(cv_i, 4))), CLAR_ADD32(cv_now, clar_fn_uidEveryTicks(cv_i)));
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
 }
 
@@ -3421,13 +3421,13 @@ static void clar_fn_rtUiEveryPump(void) {
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_rtUiNEveryVal))) break;
-        cv_due = rt_peekl((void *)((char *)(cv_rtUiEveryDueArr) + ((cv_i * 4))));
-        if ((cv_now - cv_due) >= 0) {
-            rt_pokel((void *)((char *)(cv_rtUiEveryDueArr) + ((cv_i * 4))), (cv_now + clar_fn_uidEveryTicks(cv_i)));
+        cv_due = rt_peekl((void *)((char *)(cv_rtUiEveryDueArr) + (CLAR_MUL32(cv_i, 4))));
+        if (CLAR_SUB32(cv_now, cv_due) >= 0) {
+            rt_pokel((void *)((char *)(cv_rtUiEveryDueArr) + (CLAR_MUL32(cv_i, 4))), CLAR_ADD32(cv_now, clar_fn_uidEveryTicks(cv_i)));
             clar_fn_rtUiTraceEveryFire(cv_i);
             clar_fn_clar_ui_fire_every(cv_i);
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
 }
 
@@ -3470,7 +3470,7 @@ static void clar_fn_rtUiDrawDefaultOutline(void * cv_box) {
     cv_r = 0;
     cv_r = rt_ext_UiNewPtr(8);
     rt_ext_UiBlockMoveData(cv_box, cv_r, 8);
-    rt_ext_UiInsetRect(cv_r, (-(4)), (-(4)));
+    rt_ext_UiInsetRect(cv_r, CLAR_NEG32(4), CLAR_NEG32(4));
     rt_ext_UiPenSize(3, 3);
     rt_ext_UiFrameRoundRect(cv_r, 16, 16);
     rt_ext_UiPenNormal();
@@ -3544,7 +3544,7 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
         rt_ext_UiDrawControls(cv_wp);
         if (clar_fn_uidWinResizable((cv_w)->cv_winIdx)) {
             cv_corner = rt_ext_UiNewPtr(8);
-            rt_ext_UiSetRect(cv_corner, (rt_peekw((void *)((char *)(cv_wp) + (22))) - 15), (rt_peekw((void *)((char *)(cv_wp) + (20))) - 15), rt_peekw((void *)((char *)(cv_wp) + (22))), rt_peekw((void *)((char *)(cv_wp) + (20))));
+            rt_ext_UiSetRect(cv_corner, CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (22))), 15), CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (20))), 15), rt_peekw((void *)((char *)(cv_wp) + (22))), rt_peekw((void *)((char *)(cv_wp) + (20))));
             cv_saveClip = rt_ext_UiNewRgn();
             rt_ext_UiGetClip(cv_saveClip);
             rt_ext_UiClipRect(cv_corner);
@@ -3574,12 +3574,12 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                             cv_frame = rt_ext_UiNewPtr(8);
                             cv_teMp = rt_ext_UiHandleDeref(cv_te);
                             rt_ext_UiBlockMoveData((void *)((char *)(cv_teMp) + (8)), cv_frame, 8);
-                            rt_ext_UiInsetRect(cv_frame, (0 - 3), (0 - 3));
+                            rt_ext_UiInsetRect(cv_frame, CLAR_SUB32(0, 3), CLAR_SUB32(0, 3));
                             if (rt_peekw((void *)((char *)(cv_frame) + (2))) <= 0) {
-                                rt_pokew((void *)((char *)(cv_frame) + (2)), (-(1)));
+                                rt_pokew((void *)((char *)(cv_frame) + (2)), CLAR_NEG32(1));
                             }
                             if (rt_peekw((void *)((char *)(cv_frame) + (0))) <= 0) {
-                                rt_pokew((void *)((char *)(cv_frame) + (0)), (-(1)));
+                                rt_pokew((void *)((char *)(cv_frame) + (0)), CLAR_NEG32(1));
                             }
                             rt_ext_UiFrameRect(cv_frame);
                             rt_ext_UiDisposePtr(cv_frame);
@@ -3588,7 +3588,7 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                         if ((cv_kind == 4) && (rt_peekb(clar_fn_rtUiLabelAt(cv_w, cv_i)) > 0)) {
                             cv_labelRect = rt_ext_UiNewPtr(8);
                             rt_ext_UiBlockMoveData(clar_fn_rtUiRectAt(cv_w, cv_i), cv_labelRect, 8);
-                            rt_pokew((void *)((char *)(cv_labelRect) + (6)), ((rt_peekw((void *)((char *)(cv_labelRect) + (2))) + 70) - 4));
+                            rt_pokew((void *)((char *)(cv_labelRect) + (6)), CLAR_SUB32(CLAR_ADD32(rt_peekw((void *)((char *)(cv_labelRect) + (2))), 70), 4));
                             cv_s = clar_fn_rtUiLabelAt(cv_w, cv_i);
                             rt_ext_UiTextBox((void *)((char *)(cv_s) + (1)), rt_peekb(cv_s), cv_labelRect, 0);
                             rt_ext_UiDisposePtr(cv_labelRect);
@@ -3598,7 +3598,7 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                             if (rt_peekb(clar_fn_rtUiLabelAt(cv_w, cv_i)) > 0) {
                                 cv_labelRect = rt_ext_UiNewPtr(8);
                                 rt_ext_UiBlockMoveData(clar_fn_rtUiRectAt(cv_w, cv_i), cv_labelRect, 8);
-                                rt_pokew((void *)((char *)(cv_labelRect) + (6)), ((rt_peekw((void *)((char *)(cv_labelRect) + (2))) + 70) - 4));
+                                rt_pokew((void *)((char *)(cv_labelRect) + (6)), CLAR_SUB32(CLAR_ADD32(rt_peekw((void *)((char *)(cv_labelRect) + (2))), 70), 4));
                                 cv_s = clar_fn_rtUiLabelAt(cv_w, cv_i);
                                 rt_ext_UiTextBox((void *)((char *)(cv_s) + (1)), rt_peekb(cv_s), cv_labelRect, 0);
                                 rt_ext_UiDisposePtr(cv_labelRect);
@@ -3606,29 +3606,29 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                             cv_box = rt_ext_UiNewPtr(8);
                             clar_fn_rtUiPopupBoxInto(cv_inst, cv_i, cv_box);
                             rt_ext_UiFrameRect(cv_box);
-                            rt_ext_UiMoveTo((rt_peekw((void *)((char *)(cv_box) + (2))) + 1), (rt_peekw((void *)((char *)(cv_box) + (4))) + 1));
-                            rt_ext_UiLineTo((rt_peekw((void *)((char *)(cv_box) + (6))) + 1), (rt_peekw((void *)((char *)(cv_box) + (4))) + 1));
-                            rt_ext_UiLineTo((rt_peekw((void *)((char *)(cv_box) + (6))) + 1), (rt_peekw((void *)((char *)(cv_box) + (0))) + 1));
+                            rt_ext_UiMoveTo(CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (2))), 1), CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (4))), 1));
+                            rt_ext_UiLineTo(CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (6))), 1), CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (4))), 1));
+                            rt_ext_UiLineTo(CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (6))), 1), CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (0))), 1));
                             cv_popupH = clar_fn_rtUiPopupAt(cv_w, cv_i);
                             if (cv_popupH != (void *)(intptr_t)(0)) {
                                 cv_itemText = rt_ext_UiNewPtr(256);
                                 rt_pokeb(cv_itemText, 0);
-                                rt_ext_UiGetMenuItemText(cv_popupH, (clar_fn_rtUiPopupSelAt(cv_w, cv_i) + 1), cv_itemText);
+                                rt_ext_UiGetMenuItemText(cv_popupH, CLAR_ADD32(clar_fn_rtUiPopupSelAt(cv_w, cv_i), 1), cv_itemText);
                                 cv_textRect = rt_ext_UiNewPtr(8);
                                 rt_ext_UiBlockMoveData(cv_box, cv_textRect, 8);
                                 rt_ext_UiInsetRect(cv_textRect, 4, 2);
-                                rt_pokew((void *)((char *)(cv_textRect) + (6)), (rt_peekw((void *)((char *)(cv_textRect) + (6))) - 16));
+                                rt_pokew((void *)((char *)(cv_textRect) + (6)), CLAR_SUB32(rt_peekw((void *)((char *)(cv_textRect) + (6))), 16));
                                 rt_ext_UiTextBox((void *)((char *)(cv_itemText) + (1)), rt_peekb(cv_itemText), cv_textRect, 0);
                                 rt_ext_UiDisposePtr(cv_itemText);
                                 rt_ext_UiDisposePtr(cv_textRect);
-                                cv_cx = (rt_peekw((void *)((char *)(cv_box) + (6))) - 10);
-                                cv_cy = (((rt_peekw((void *)((char *)(cv_box) + (0))) + rt_peekw((void *)((char *)(cv_box) + (4)))) / 2) - 2);
+                                cv_cx = CLAR_SUB32(rt_peekw((void *)((char *)(cv_box) + (6))), 10);
+                                cv_cy = CLAR_SUB32((CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (0))), rt_peekw((void *)((char *)(cv_box) + (4)))) / 2), 2);
                                 cv_pk = 0;
                                 while (1) {
                                     if (!((cv_pk < 5))) break;
-                                    rt_ext_UiMoveTo((cv_cx - cv_pk), (cv_cy + cv_pk));
-                                    rt_ext_UiLineTo((cv_cx + cv_pk), (cv_cy + cv_pk));
-                                    cv_pk = (cv_pk + 1);
+                                    rt_ext_UiMoveTo(CLAR_SUB32(cv_cx, cv_pk), CLAR_ADD32(cv_cy, cv_pk));
+                                    rt_ext_UiLineTo(CLAR_ADD32(cv_cx, cv_pk), CLAR_ADD32(cv_cy, cv_pk));
+                                    cv_pk = CLAR_ADD32(cv_pk, 1);
                                 }
                             }
                             rt_ext_UiDisposePtr(cv_box);
@@ -3645,22 +3645,22 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                                 cv_lhMp = rt_ext_UiHandleDeref(cv_lh);
                                 rt_pokew((void *)((char *)(cv_headerRect) + (4)), rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (0))));
                                 rt_ext_UiFrameRect(cv_box);
-                                cv_fillW = clar_fn_rtUiTableFillWidth(cv_colsOff, cv_nCols, (rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (6))) - rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (2)))));
+                                cv_fillW = clar_fn_rtUiTableFillWidth(cv_colsOff, cv_nCols, CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (6))), rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (2)))));
                                 cv_hx = rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (2)));
                                 cv_ck = 0;
                                 while (1) {
                                     if (!((cv_ck < cv_nCols))) break;
-                                    rt_ext_UiMoveTo((cv_hx + 2), (rt_peekw((void *)((char *)(cv_headerRect) + (4))) - 3));
+                                    rt_ext_UiMoveTo(CLAR_ADD32(cv_hx, 2), CLAR_SUB32(rt_peekw((void *)((char *)(cv_headerRect) + (4))), 3));
                                     rt_ext_UiDrawText((void *)((char *)(clar_fn_uidColHeader(cv_colsOff, cv_ck)) + (1)), 0, rt_peekb(clar_fn_uidColHeader(cv_colsOff, cv_ck)));
                                     if (clar_fn_uidColWidthFill(cv_colsOff, cv_ck)) {
-                                        cv_hx = (cv_hx + cv_fillW);
+                                        cv_hx = CLAR_ADD32(cv_hx, cv_fillW);
                                     } else {
-                                        cv_hx = (cv_hx + clar_fn_uidColWidthPx(cv_colsOff, cv_ck));
+                                        cv_hx = CLAR_ADD32(cv_hx, clar_fn_uidColWidthPx(cv_colsOff, cv_ck));
                                     }
-                                    cv_ck = (cv_ck + 1);
+                                    cv_ck = CLAR_ADD32(cv_ck, 1);
                                 }
-                                rt_ext_UiMoveTo(rt_peekw((void *)((char *)(cv_box) + (2))), (rt_peekw((void *)((char *)(cv_headerRect) + (4))) - 1));
-                                rt_ext_UiLineTo(rt_peekw((void *)((char *)(cv_box) + (6))), (rt_peekw((void *)((char *)(cv_headerRect) + (4))) - 1));
+                                rt_ext_UiMoveTo(rt_peekw((void *)((char *)(cv_box) + (2))), CLAR_SUB32(rt_peekw((void *)((char *)(cv_headerRect) + (4))), 1));
+                                rt_ext_UiLineTo(rt_peekw((void *)((char *)(cv_box) + (6))), CLAR_SUB32(rt_peekw((void *)((char *)(cv_headerRect) + (4))), 1));
                                 rt_ext_UiLUpdate((void *)(intptr_t)(rt_peekl((void *)((char *)(cv_wp) + (24)))), cv_lh);
                                 rt_ext_UiDisposePtr(cv_headerRect);
                                 rt_ext_UiDisposePtr(cv_box);
@@ -3669,7 +3669,7 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                     }
                 }
             }
-            cv_i = (cv_i + 1);
+            cv_i = CLAR_ADD32(cv_i, 1);
         }
         clar_fn_rtUiFlushBufferedCanvases(cv_inst);
     }
@@ -3726,7 +3726,7 @@ static void clar_fn_rtUiHandleActivate(void * cv_wp, int32_t cv_activating) {
         if (cv_lh != (void *)(intptr_t)(0)) {
             rt_ext_UiLActivate(cv_activating, cv_lh);
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     if ((cv_w)->cv_focusIdx >= 0) {
         cv_te = clar_fn_rtUiTeAt(cv_w, (cv_w)->cv_focusIdx);
@@ -3744,7 +3744,7 @@ static void clar_fn_rtUiInvalGrowCorner(void * cv_wp) {
     void * cv_r;
     cv_r = 0;
     cv_r = rt_ext_UiNewPtr(8);
-    rt_ext_UiSetRect(cv_r, (rt_peekw((void *)((char *)(cv_wp) + (22))) - 15), (rt_peekw((void *)((char *)(cv_wp) + (20))) - 15), rt_peekw((void *)((char *)(cv_wp) + (22))), rt_peekw((void *)((char *)(cv_wp) + (20))));
+    rt_ext_UiSetRect(cv_r, CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (22))), 15), CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (20))), 15), rt_peekw((void *)((char *)(cv_wp) + (22))), rt_peekw((void *)((char *)(cv_wp) + (20))));
     rt_ext_UiEraseRect(cv_r);
     rt_ext_UiInvalRect(cv_r);
     rt_ext_UiDisposePtr(cv_r);
@@ -3807,11 +3807,11 @@ static void clar_fn_rtUiHandleGrow(void * cv_wp, void * cv_inst, int32_t cv_wher
     cv_contLeft = rt_peekw((void *)((char *)(cv_contRgnMp) + (4)));
     cv_screenBoundsSlot = rt_ext_UiNewPtr(8);
     rt_ext_UiScreenBounds(cv_screenBoundsSlot);
-    cv_screenW = (rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (6))) - rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (2))));
-    cv_screenH = (rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (4))) - rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (0))));
+    cv_screenW = CLAR_SUB32(rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (6))), rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (2))));
+    cv_screenH = CLAR_SUB32(rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (4))), rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (0))));
     rt_ext_UiDisposePtr(cv_screenBoundsSlot);
-    cv_maxW = ((cv_screenW - cv_contLeft) - 2);
-    cv_maxH = ((cv_screenH - cv_contTop) - 2);
+    cv_maxW = CLAR_SUB32(CLAR_SUB32(cv_screenW, cv_contLeft), 2);
+    cv_maxH = CLAR_SUB32(CLAR_SUB32(cv_screenH, cv_contTop), 2);
     if (cv_maxW < 1) {
         cv_maxW = 1;
     }
@@ -3864,11 +3864,11 @@ static void clar_fn_rtUiApplyZoom(void * cv_wp, void * cv_inst, int32_t cv_part)
     if (cv_part == 8) {
         cv_screenBoundsSlot = rt_ext_UiNewPtr(8);
         rt_ext_UiScreenBounds(cv_screenBoundsSlot);
-        cv_screenW = (rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (6))) - rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (2))));
-        cv_screenH = (rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (4))) - rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (0))));
+        cv_screenW = CLAR_SUB32(rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (6))), rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (2))));
+        cv_screenH = CLAR_SUB32(rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (4))), rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (0))));
         rt_ext_UiDisposePtr(cv_screenBoundsSlot);
         cv_stdRect = rt_ext_UiNewPtr(8);
-        rt_ext_UiSetRect(cv_stdRect, 4, (20 + 19), (cv_screenW - 2), (cv_screenH - 2));
+        rt_ext_UiSetRect(cv_stdRect, 4, CLAR_ADD32(20, 19), CLAR_SUB32(cv_screenW, 2), CLAR_SUB32(cv_screenH, 2));
         cv_dataH = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_wp) + (130))));
         if (cv_dataH != (void *)(intptr_t)(0)) {
             cv_dataMp = (void *)(intptr_t)(rt_peekl(cv_dataH));
@@ -3883,7 +3883,7 @@ static void clar_fn_rtUiApplyZoom(void * cv_wp, void * cv_inst, int32_t cv_part)
     rt_ext_UiZoomWindow(cv_wp, cv_part, cv_isFront);
     rt_ext_UiInvalRect((void *)((char *)(cv_wp) + (16)));
     rt_ext_UiSetPort(cv_savedPort);
-    clar_fn_rtUiApplyResize(cv_wp, cv_inst, (rt_peekw((void *)((char *)(cv_wp) + (22))) - rt_peekw((void *)((char *)(cv_wp) + (18)))), (rt_peekw((void *)((char *)(cv_wp) + (20))) - rt_peekw((void *)((char *)(cv_wp) + (16)))));
+    clar_fn_rtUiApplyResize(cv_wp, cv_inst, CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (22))), rt_peekw((void *)((char *)(cv_wp) + (18)))), CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (20))), rt_peekw((void *)((char *)(cv_wp) + (16)))));
 }
 
 static void clar_fn_rtUiHandleZoom(void * cv_wp, void * cv_inst, int32_t cv_wherePt, int32_t cv_part) {
@@ -3972,7 +3972,7 @@ static int32_t clar_fn_rtUiFindFlagged(void * cv_inst, int32_t cv_flag, void * c
             rt_pokel(cv_outIdx, cv_i);
             return 1;
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     return 0;
     return 0;
@@ -3994,7 +3994,7 @@ static int32_t clar_fn_rtUiCanvasHit(void * cv_inst, int32_t cv_localPt, void * 
             rt_pokel(cv_outIdx, cv_i);
             return 1;
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     return 0;
     return 0;
@@ -4024,7 +4024,7 @@ static void clar_fn_rtUiFireCanvasXY(void * cv_inst, int32_t cv_wIdx, int32_t cv
     } else {
         clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_26));
     }
-    clar_fn_clar_ui_fire_widget((cv_w)->cv_winIdx, cv_inst, cv_wIdx, cv_event, (cv_localH - cv_rLeft), (cv_localV - cv_rTop));
+    clar_fn_clar_ui_fire_widget((cv_w)->cv_winIdx, cv_inst, cv_wIdx, cv_event, CLAR_SUB32(cv_localH, cv_rLeft), CLAR_SUB32(cv_localV, cv_rTop));
 }
 
 static void clar_fn_rtUiHandleCanvasClick(void * cv_wp, void * cv_inst, int32_t cv_wIdx, int32_t cv_wherePt) {
@@ -4115,7 +4115,7 @@ static void clar_fn_rtUiHandleContentClick(void * cv_wp, void * cv_inst, int32_t
                     return;
                 }
             }
-            cv_ti = (cv_ti + 1);
+            cv_ti = CLAR_ADD32(cv_ti, 1);
         }
         cv_rfCon = rt_peekl((void *)((char *)(rt_ext_UiHandleDeref(cv_ctrl)) + (36)));
         if ((cv_rfCon & 32768) != 0) {
@@ -4303,7 +4303,7 @@ static void clar_fn_rtUiHandleKey(void * cv_ev) {
         if (cv_ch != 27) {
             if (((cv_rtUiModalActive && (cv_rtUiModalInst == cv_inst)) && (cv_ch != 8)) && (!(((cv_ch >= 28) && (cv_ch <= 31))))) {
                 cv_fieldIdx = clar_fn_uidFormFindFieldIndex(clar_fn_uidWinFormOff(cv_winIdx), (cv_w)->cv_focusIdx);
-                if (cv_fieldIdx != (-(1))) {
+                if (cv_fieldIdx != CLAR_NEG32(1)) {
                     cv_ftype = clar_fn_uidFieldFtype(clar_fn_uidFormLayoutOff(clar_fn_uidWinFormOff(cv_winIdx)), cv_fieldIdx);
                     if (((cv_ftype == 0) || (cv_ftype == 1)) && (!(clar_fn_rtUiFormCharOk(clar_fn_rtUiTeAt(cv_w, (cv_w)->cv_focusIdx), cv_ch, cv_ftype)))) {
                         rt_ext_UiSysBeep(1);
@@ -4424,7 +4424,7 @@ static void clar_fn_rtUiLaunch(void) {
             if (!(((rt_peekb(cv_cursor) != 0) && (rt_peekb(cv_cursor) != 10)))) break;
             cv_cursor = (void *)((char *)(cv_cursor) + (1));
         }
-        cv_lineLen = (((int32_t)(intptr_t)(cv_cursor)) - ((int32_t)(intptr_t)(cv_lineStart)));
+        cv_lineLen = CLAR_SUB32(((int32_t)(intptr_t)(cv_cursor)), ((int32_t)(intptr_t)(cv_lineStart)));
         cv_isLaunchDoc = 0;
         if (cv_lineLen >= 10) {
             if ((((((((((rt_peekb((void *)((char *)(cv_lineStart) + (0))) == ((int32_t)(108))) && (rt_peekb((void *)((char *)(cv_lineStart) + (1))) == ((int32_t)(97)))) && (rt_peekb((void *)((char *)(cv_lineStart) + (2))) == ((int32_t)(117)))) && (rt_peekb((void *)((char *)(cv_lineStart) + (3))) == ((int32_t)(110)))) && (rt_peekb((void *)((char *)(cv_lineStart) + (4))) == ((int32_t)(99)))) && (rt_peekb((void *)((char *)(cv_lineStart) + (5))) == ((int32_t)(104)))) && (rt_peekb((void *)((char *)(cv_lineStart) + (6))) == ((int32_t)(100)))) && (rt_peekb((void *)((char *)(cv_lineStart) + (7))) == ((int32_t)(111)))) && (rt_peekb((void *)((char *)(cv_lineStart) + (8))) == ((int32_t)(99)))) && (rt_peekb((void *)((char *)(cv_lineStart) + (9))) == ((int32_t)(32)))) {
@@ -4433,7 +4433,7 @@ static void clar_fn_rtUiLaunch(void) {
         }
         if (cv_isLaunchDoc) {
             cv_found = 1;
-            cv_pathLen = (cv_lineLen - 10);
+            cv_pathLen = CLAR_SUB32(cv_lineLen, 10);
             if (cv_pathLen > 255) {
                 cv_pathLen = 255;
             }
@@ -4454,45 +4454,45 @@ static void clar_fn_rtUiLaunch(void) {
 }
 
 static void * clar_fn_rtUiCtrlAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
-    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_ctrls) + ((cv_i * 4)))));
+    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_ctrls) + (CLAR_MUL32(cv_i, 4)))));
     return 0;
 }
 
 static void clar_fn_rtUiSetCtrlAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i, void * cv_v) {
-    rt_pokel((void *)((char *)((cv_w)->cv_ctrls) + ((cv_i * 4))), ((int32_t)(intptr_t)(cv_v)));
+    rt_pokel((void *)((char *)((cv_w)->cv_ctrls) + (CLAR_MUL32(cv_i, 4))), ((int32_t)(intptr_t)(cv_v)));
 }
 
 static void * clar_fn_rtUiRectAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
-    return (void *)((char *)((cv_w)->cv_rects) + ((cv_i * 8)));
+    return (void *)((char *)((cv_w)->cv_rects) + (CLAR_MUL32(cv_i, 8)));
     return 0;
 }
 
 static void * clar_fn_rtUiLabelAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
-    return (void *)((char *)((cv_w)->cv_labels) + ((cv_i * 256)));
+    return (void *)((char *)((cv_w)->cv_labels) + (CLAR_MUL32(cv_i, 256)));
     return 0;
 }
 
 static void * clar_fn_rtUiCanvasBufAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
-    return (void *)((char *)((cv_w)->cv_canvases) + ((cv_i * 36)));
+    return (void *)((char *)((cv_w)->cv_canvases) + (CLAR_MUL32(cv_i, 36)));
     return 0;
 }
 
 static void * clar_fn_rtUiTeAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
-    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_tes) + ((cv_i * 4)))));
+    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_tes) + (CLAR_MUL32(cv_i, 4)))));
     return 0;
 }
 
 static void clar_fn_rtUiSetTeAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i, void * cv_v) {
-    rt_pokel((void *)((char *)((cv_w)->cv_tes) + ((cv_i * 4))), ((int32_t)(intptr_t)(cv_v)));
+    rt_pokel((void *)((char *)((cv_w)->cv_tes) + (CLAR_MUL32(cv_i, 4))), ((int32_t)(intptr_t)(cv_v)));
 }
 
 static void * clar_fn_rtUiHbarAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
-    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_hbars) + ((cv_i * 4)))));
+    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_hbars) + (CLAR_MUL32(cv_i, 4)))));
     return 0;
 }
 
 static void clar_fn_rtUiSetHbarAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i, void * cv_v) {
-    rt_pokel((void *)((char *)((cv_w)->cv_hbars) + ((cv_i * 4))), ((int32_t)(intptr_t)(cv_v)));
+    rt_pokel((void *)((char *)((cv_w)->cv_hbars) + (CLAR_MUL32(cv_i, 4))), ((int32_t)(intptr_t)(cv_v)));
 }
 
 static int32_t clar_fn_rtUiEnabledAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
@@ -4668,8 +4668,8 @@ static void clar_fn_rtUiLayout(void * cv_inst) {
     cv_winIdx = (cv_w)->cv_winIdx;
     cv_savedPort = clar_fn_rtUiGetPortSaved();
     rt_ext_UiSetPort((cv_w)->cv_wp);
-    cv_contentW = (rt_peekw((void *)((char *)((cv_w)->cv_wp) + (22))) - rt_peekw((void *)((char *)((cv_w)->cv_wp) + (18))));
-    cv_contentH = (rt_peekw((void *)((char *)((cv_w)->cv_wp) + (20))) - rt_peekw((void *)((char *)((cv_w)->cv_wp) + (16))));
+    cv_contentW = CLAR_SUB32(rt_peekw((void *)((char *)((cv_w)->cv_wp) + (22))), rt_peekw((void *)((char *)((cv_w)->cv_wp) + (18))));
+    cv_contentH = CLAR_SUB32(rt_peekw((void *)((char *)((cv_w)->cv_wp) + (20))), rt_peekw((void *)((char *)((cv_w)->cv_wp) + (16))));
     cv_prevLeft = 0;
     cv_prevRight = 0;
     cv_prevBottom = 0;
@@ -4682,7 +4682,7 @@ static void clar_fn_rtUiLayout(void * cv_inst) {
         cv_hh = clar_fn_rtUiKindHeight(cv_kind);
         cv___switch4 = cv_atKind;
         if (cv___switch4 == 2) {
-            cv_x = (cv_prevRight + 8);
+            cv_x = CLAR_ADD32(cv_prevRight, 8);
         } else {
             if (cv___switch4 == 1) {
                 cv_x = cv_prevLeft;
@@ -4695,7 +4695,7 @@ static void clar_fn_rtUiLayout(void * cv_inst) {
             }
         }
         if (clar_fn_uidWidgetYIsBottom(cv_winIdx, cv_i) || (cv_atKind == 3)) {
-            cv_y = (cv_prevBottom + 8);
+            cv_y = CLAR_ADD32(cv_prevBottom, 8);
         } else {
             cv_y = clar_fn_uidWidgetY(cv_winIdx, cv_i);
         }
@@ -4712,16 +4712,16 @@ static void clar_fn_rtUiLayout(void * cv_inst) {
         }
         if (cv_widthIsFill || cv_fillBoth) {
             if (cv_flushR) {
-                cv_ww = ((cv_contentW - cv_x) + 1);
+                cv_ww = CLAR_ADD32(CLAR_SUB32(cv_contentW, cv_x), 1);
             } else {
-                cv_ww = ((cv_contentW - cv_x) - 8);
+                cv_ww = CLAR_SUB32(CLAR_SUB32(cv_contentW, cv_x), 8);
             }
         } else {
             if ((cv_kind == 4) && (rt_peekb(clar_fn_rtUiLabelAt(cv_w, cv_i)) > 0)) {
                 if (clar_fn_uidWidgetWidth(cv_winIdx, cv_i) == 0) {
-                    cv_ww = (130 + 70);
+                    cv_ww = CLAR_ADD32(130, 70);
                 } else {
-                    cv_ww = (clar_fn_uidWidgetWidth(cv_winIdx, cv_i) + 70);
+                    cv_ww = CLAR_ADD32(clar_fn_uidWidgetWidth(cv_winIdx, cv_i), 70);
                 }
             } else {
                 if (clar_fn_uidWidgetWidth(cv_winIdx, cv_i) == 0) {
@@ -4736,15 +4736,15 @@ static void clar_fn_rtUiLayout(void * cv_inst) {
         }
         if (cv_fillBoth) {
             if (cv_flushB) {
-                cv_hh = ((cv_contentH - cv_y) + 1);
+                cv_hh = CLAR_ADD32(CLAR_SUB32(cv_contentH, cv_y), 1);
             } else {
-                cv_hh = ((cv_contentH - cv_y) - 8);
+                cv_hh = CLAR_SUB32(CLAR_SUB32(cv_contentH, cv_y), 8);
             }
             if (cv_hh < 0) {
                 cv_hh = 0;
             }
         }
-        rt_ext_UiSetRect(clar_fn_rtUiRectAt(cv_w, cv_i), cv_x, cv_y, (cv_x + cv_ww), (cv_y + cv_hh));
+        rt_ext_UiSetRect(clar_fn_rtUiRectAt(cv_w, cv_i), cv_x, cv_y, CLAR_ADD32(cv_x, cv_ww), CLAR_ADD32(cv_y, cv_hh));
         if ((cv_kind == 4) || (cv_kind == 5)) {
             clar_fn_rtUiTeRelayout(cv_inst, cv_i);
         } else {
@@ -4760,9 +4760,9 @@ static void clar_fn_rtUiLayout(void * cv_inst) {
             }
         }
         cv_prevLeft = cv_x;
-        cv_prevRight = (cv_x + cv_ww);
-        cv_prevBottom = (cv_y + cv_hh);
-        cv_i = (cv_i + 1);
+        cv_prevRight = CLAR_ADD32(cv_x, cv_ww);
+        cv_prevBottom = CLAR_ADD32(cv_y, cv_hh);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     rt_ext_UiSetPort(cv_savedPort);
 }
@@ -4879,7 +4879,7 @@ static void clar_fn_rtUiMakeWidgets(void * cv_inst) {
                             }
                             if ((cv_flags & 16) != 0) {
                                 cv_teMp = rt_ext_UiHandleDeref(cv_teH);
-                                rt_pokew((void *)((char *)(cv_teMp) + (72)), (-(1)));
+                                rt_pokew((void *)((char *)(cv_teMp) + (72)), CLAR_NEG32(1));
                                 cv_hb = rt_ext_UiNewControl((cv_w)->cv_wp, cv_placeholder, cv_emptyStr, 1, 0, 0, 0, 16, 0);
                                 clar_fn_rtUiSetHbarAt(cv_w, cv_i, cv_hb);
                                 cv_hbMp = rt_ext_UiHandleDeref(cv_hb);
@@ -4892,10 +4892,10 @@ static void clar_fn_rtUiMakeWidgets(void * cv_inst) {
                                 clar_fn_rtUiSetCtrlAt(cv_w, cv_i, (void *)(intptr_t)(0));
                                 clar_fn_rtUiPstrcpy(clar_fn_rtUiLabelAt(cv_w, cv_i), clar_fn_uidWidgetCaption(cv_winIdx, cv_i));
                                 clar_fn_rtUiSetPopupSelAt(cv_w, cv_i, 0);
-                                cv_mh = rt_ext_UiNewMenu((1000 + cv_i), clar_fn_rtUiEmptyPStrGet());
+                                cv_mh = rt_ext_UiNewMenu(CLAR_ADD32(1000, cv_i), clar_fn_rtUiEmptyPStrGet());
                                 cv_formOff = clar_fn_uidWinFormOff(cv_winIdx);
                                 cv_fieldIndex = clar_fn_uidFormFindFieldIndex(cv_formOff, cv_i);
-                                if (cv_fieldIndex != (-(1))) {
+                                if (cv_fieldIndex != CLAR_NEG32(1)) {
                                     cv_layoutOff = clar_fn_uidFormLayoutOff(cv_formOff);
                                     cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIndex);
                                     cv_enumLabelsOff = clar_fn_uidFieldEnumLabelsOff(cv_layoutOff, cv_fieldIndex);
@@ -4903,17 +4903,17 @@ static void clar_fn_rtUiMakeWidgets(void * cv_inst) {
                                     while (1) {
                                         if (!((cv_b < cv_enumCount))) break;
                                         rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_30));
-                                        rt_ext_UiSetMenuItemText(cv_mh, (cv_b + 1), clar_fn_uidEnumLabel(cv_enumLabelsOff, cv_b));
-                                        cv_b = (cv_b + 1);
+                                        rt_ext_UiSetMenuItemText(cv_mh, CLAR_ADD32(cv_b, 1), clar_fn_uidEnumLabel(cv_enumLabelsOff, cv_b));
+                                        cv_b = CLAR_ADD32(cv_b, 1);
                                     }
                                 }
-                                rt_ext_UiInsertMenu(cv_mh, (-(1)));
+                                rt_ext_UiInsertMenu(cv_mh, CLAR_NEG32(1));
                                 clar_fn_rtUiSetPopupAt(cv_w, cv_i, cv_mh);
                             } else {
                                 if (cv___switch5 == 7) {
                                     clar_fn_rtUiSetCtrlAt(cv_w, cv_i, (void *)(intptr_t)(0));
                                     cv_rowH = clar_fn_rtUiTableRowH();
-                                    cv_cellSizePacked = ((cv_rowH << 16) | 1);
+                                    cv_cellSizePacked = (CLAR_SHL32(cv_rowH, 16) | 1);
                                     cv_dataBoundsRect = rt_ext_UiNewPtr(8);
                                     rt_ext_UiSetRect(cv_dataBoundsRect, 0, 0, 1, 0);
                                     cv_lh = rt_ext_UiLNew(cv_placeholder, cv_dataBoundsRect, cv_cellSizePacked, 0, (cv_w)->cv_wp, 0, 0, 0, 1);
@@ -4943,7 +4943,7 @@ static void clar_fn_rtUiMakeWidgets(void * cv_inst) {
             cv_ctrlMp = rt_ext_UiHandleDeref(cv_ctrl);
             rt_pokel((void *)((char *)(cv_ctrlMp) + (36)), cv_i);
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     rt_ext_UiDisposePtr(cv_emptyStr);
     rt_ext_UiDisposePtr(cv_placeholder);
@@ -5105,7 +5105,7 @@ static void clar_fn_rtUiWidgetSetText(void * cv_instV, int32_t cv_wIdx, void * c
     cv_teMp = rt_ext_UiHandleDeref(cv_te);
     cv_viewTop = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0)));
     cv_viewBottom = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (4)));
-    cv_contentBottom = (rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (0))) + (rt_peekw((void *)((char *)(cv_teMp) + (94))) * rt_peekw((void *)((char *)(cv_teMp) + (24)))));
+    cv_contentBottom = CLAR_ADD32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (0))), CLAR_MUL32(rt_peekw((void *)((char *)(cv_teMp) + (94))), rt_peekw((void *)((char *)(cv_teMp) + (24)))));
     if (cv_contentBottom < cv_viewTop) {
         cv_contentBottom = cv_viewTop;
     }
@@ -5200,8 +5200,8 @@ static void clar_fn_rtUiWidgetSetInt(void * cv_instV, int32_t cv_wIdx, int32_t c
         if (cv_sel < 0) {
             cv_sel = 0;
         }
-        if ((cv_count > 0) && (cv_sel > (cv_count - 1))) {
-            cv_sel = (cv_count - 1);
+        if ((cv_count > 0) && (cv_sel > CLAR_SUB32(cv_count, 1))) {
+            cv_sel = CLAR_SUB32(cv_count, 1);
         }
         if (cv_count == 0) {
             cv_sel = 0;
@@ -5219,7 +5219,7 @@ static void clar_fn_rtUiWidgetSetInt(void * cv_instV, int32_t cv_wIdx, int32_t c
         cv_count = clar_fn_rtListCount(cv_rows);
         cv_row = cv_v;
         if (cv_row >= cv_count) {
-            cv_row = (cv_count - 1);
+            cv_row = CLAR_SUB32(cv_count, 1);
         }
         clar_fn_rtUiTableSelectExclusive(cv_lh, cv_row);
         rt_ext_UiInvalRect((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (0)));
@@ -5261,7 +5261,7 @@ static int32_t clar_fn_rtUiWidgetGetInt(void * cv_instV, int32_t cv_wIdx, int32_
     cv_w = ((clar_rec_RtUiWinst *)(cv_instV));
     cv_r = clar_fn_rtUiRectAt(cv_w, cv_wIdx);
     if (cv_prop == 6) {
-        return (rt_peekw((void *)((char *)(cv_r) + (4))) - rt_peekw((void *)((char *)(cv_r) + (0))));
+        return CLAR_SUB32(rt_peekw((void *)((char *)(cv_r) + (4))), rt_peekw((void *)((char *)(cv_r) + (0))));
     }
     cv_kind = clar_fn_uidWidgetKind((cv_w)->cv_winIdx, cv_wIdx);
     if ((cv_prop == 4) && (cv_kind == 6)) {
@@ -5270,7 +5270,7 @@ static int32_t clar_fn_rtUiWidgetGetInt(void * cv_instV, int32_t cv_wIdx, int32_
     if ((cv_prop == 4) && (cv_kind == 7)) {
         return clar_fn_rtUiTableGetSelected(clar_fn_rtUiListAt(cv_w, cv_wIdx));
     }
-    return (rt_peekw((void *)((char *)(cv_r) + (6))) - rt_peekw((void *)((char *)(cv_r) + (2))));
+    return CLAR_SUB32(rt_peekw((void *)((char *)(cv_r) + (6))), rt_peekw((void *)((char *)(cv_r) + (2))));
     return 0;
 }
 
@@ -5334,8 +5334,8 @@ static void clar_fn_rtUiCanvasMake(void * cv_cb, int32_t cv_ww, int32_t cv_hh) {
     if ((cv_buf)->cv_port == (void *)(intptr_t)(0)) {
         clar_fn_rtPanic(&(clar_lit_6));
     }
-    cv_rowBytes = (((cv_w2 + 15) / 16) * 2);
-    (cv_buf)->cv_pixels = rt_ext_UiNewPtrClear((cv_rowBytes * cv_h2));
+    cv_rowBytes = CLAR_MUL32((CLAR_ADD32(cv_w2, 15) / 16), 2);
+    (cv_buf)->cv_pixels = rt_ext_UiNewPtrClear(CLAR_MUL32(cv_rowBytes, cv_h2));
     if ((cv_buf)->cv_pixels == (void *)(intptr_t)(0)) {
         clar_fn_rtPanic(&(clar_lit_6));
     }
@@ -5378,9 +5378,9 @@ static void clar_fn_rtUiCanvasReallocAll(void * cv_inst) {
         if ((cv_kind == 2) && ((cv_flags & 4) != 0)) {
             cv_r = clar_fn_rtUiRectAt(cv_w, cv_i);
             clar_fn_rtUiCanvasDispose(clar_fn_rtUiCanvasBufAt(cv_w, cv_i));
-            clar_fn_rtUiCanvasMake(clar_fn_rtUiCanvasBufAt(cv_w, cv_i), (rt_peekw((void *)((char *)(cv_r) + (6))) - rt_peekw((void *)((char *)(cv_r) + (2)))), (rt_peekw((void *)((char *)(cv_r) + (4))) - rt_peekw((void *)((char *)(cv_r) + (0)))));
+            clar_fn_rtUiCanvasMake(clar_fn_rtUiCanvasBufAt(cv_w, cv_i), CLAR_SUB32(rt_peekw((void *)((char *)(cv_r) + (6))), rt_peekw((void *)((char *)(cv_r) + (2)))), CLAR_SUB32(rt_peekw((void *)((char *)(cv_r) + (4))), rt_peekw((void *)((char *)(cv_r) + (0)))));
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
 }
 
@@ -5412,7 +5412,7 @@ static void clar_fn_rtUiFlushBufferedCanvases(void * cv_inst) {
             cv_bm = clar_fn_rtUiBitMapFill(cv_buf);
             rt_ext_UiCopyBits(cv_bm, (void *)((char *)((cv_w)->cv_wp) + (2)), (void *)((char *)(cv_bm) + (6)), clar_fn_rtUiRectAt(cv_w, cv_i), 0, (void *)(intptr_t)(0));
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
 }
 
@@ -5577,8 +5577,8 @@ static void clar_fn_rtUiCanvasLine(void * cv_instV, int32_t cv_wIdx, int32_t cv_
     clar_rec_RtUiCanvasTarget cv_t;
     cv_t = clar_new_RtUiCanvasTarget();
     cv_t = clar_fn_rtUiCanvasBegin(cv_instV, cv_wIdx);
-    rt_ext_UiMoveTo((cv_x0 + (cv_t).cv_dx), (cv_y0 + (cv_t).cv_dy));
-    rt_ext_UiLineTo((cv_x1 + (cv_t).cv_dx), (cv_y1 + (cv_t).cv_dy));
+    rt_ext_UiMoveTo(CLAR_ADD32(cv_x0, (cv_t).cv_dx), CLAR_ADD32(cv_y0, (cv_t).cv_dy));
+    rt_ext_UiLineTo(CLAR_ADD32(cv_x1, (cv_t).cv_dx), CLAR_ADD32(cv_y1, (cv_t).cv_dy));
     clar_fn_rtUiCanvasEnd(&(cv_t));
 }
 
@@ -5596,11 +5596,11 @@ static void clar_fn_rtUiCanvasRect(void * cv_instV, int32_t cv_wIdx, int32_t cv_
     cv_t = clar_fn_rtUiCanvasBegin(cv_instV, cv_wIdx);
     cv_w = ((clar_rec_RtUiWinst *)(cv_instV));
     cv_r = rt_ext_UiNewPtr(8);
-    rt_ext_UiSetRect(cv_r, (cv_x + (cv_t).cv_dx), (cv_y + (cv_t).cv_dy), ((cv_x + (cv_t).cv_dx) + cv_ww), ((cv_y + (cv_t).cv_dy) + cv_hh));
+    rt_ext_UiSetRect(cv_r, CLAR_ADD32(cv_x, (cv_t).cv_dx), CLAR_ADD32(cv_y, (cv_t).cv_dy), CLAR_ADD32(CLAR_ADD32(cv_x, (cv_t).cv_dx), cv_ww), CLAR_ADD32(CLAR_ADD32(cv_y, (cv_t).cv_dy), cv_hh));
     if (cv_fill) {
         cv_buf = ((clar_rec_RtUiCanvasBuf *)(clar_fn_rtUiCanvasBufAt(cv_w, cv_wIdx)));
         cv_pats = clar_fn_rtUiGrayPatsGet();
-        rt_ext_UiFillRect(cv_r, (void *)((char *)(cv_pats) + (((cv_buf)->cv_patLevel * 8))));
+        rt_ext_UiFillRect(cv_r, (void *)((char *)(cv_pats) + (CLAR_MUL32((cv_buf)->cv_patLevel, 8))));
     } else {
         rt_ext_UiFrameRect(cv_r);
     }
@@ -5622,10 +5622,10 @@ static void clar_fn_rtUiCanvasFillCircle(void * cv_instV, int32_t cv_wIdx, int32
     cv_t = clar_fn_rtUiCanvasBegin(cv_instV, cv_wIdx);
     cv_w = ((clar_rec_RtUiWinst *)(cv_instV));
     cv_box = rt_ext_UiNewPtr(8);
-    rt_ext_UiSetRect(cv_box, ((cv_x + (cv_t).cv_dx) - cv_radius), ((cv_y + (cv_t).cv_dy) - cv_radius), ((cv_x + (cv_t).cv_dx) + cv_radius), ((cv_y + (cv_t).cv_dy) + cv_radius));
+    rt_ext_UiSetRect(cv_box, CLAR_SUB32(CLAR_ADD32(cv_x, (cv_t).cv_dx), cv_radius), CLAR_SUB32(CLAR_ADD32(cv_y, (cv_t).cv_dy), cv_radius), CLAR_ADD32(CLAR_ADD32(cv_x, (cv_t).cv_dx), cv_radius), CLAR_ADD32(CLAR_ADD32(cv_y, (cv_t).cv_dy), cv_radius));
     cv_buf = ((clar_rec_RtUiCanvasBuf *)(clar_fn_rtUiCanvasBufAt(cv_w, cv_wIdx)));
     cv_pats = clar_fn_rtUiGrayPatsGet();
-    rt_ext_UiFillOval(cv_box, (void *)((char *)(cv_pats) + (((cv_buf)->cv_patLevel * 8))));
+    rt_ext_UiFillOval(cv_box, (void *)((char *)(cv_pats) + (CLAR_MUL32((cv_buf)->cv_patLevel, 8))));
     rt_ext_UiDisposePtr(cv_box);
     clar_fn_rtUiCanvasEnd(&(cv_t));
 }
@@ -5637,7 +5637,7 @@ static void clar_fn_rtUiCanvasCircle(void * cv_instV, int32_t cv_wIdx, int32_t c
     cv_box = 0;
     cv_t = clar_fn_rtUiCanvasBegin(cv_instV, cv_wIdx);
     cv_box = rt_ext_UiNewPtr(8);
-    rt_ext_UiSetRect(cv_box, ((cv_x + (cv_t).cv_dx) - cv_radius), ((cv_y + (cv_t).cv_dy) - cv_radius), ((cv_x + (cv_t).cv_dx) + cv_radius), ((cv_y + (cv_t).cv_dy) + cv_radius));
+    rt_ext_UiSetRect(cv_box, CLAR_SUB32(CLAR_ADD32(cv_x, (cv_t).cv_dx), cv_radius), CLAR_SUB32(CLAR_ADD32(cv_y, (cv_t).cv_dy), cv_radius), CLAR_ADD32(CLAR_ADD32(cv_x, (cv_t).cv_dx), cv_radius), CLAR_ADD32(CLAR_ADD32(cv_y, (cv_t).cv_dy), cv_radius));
     rt_ext_UiFrameOval(cv_box);
     rt_ext_UiDisposePtr(cv_box);
     clar_fn_rtUiCanvasEnd(&(cv_t));
@@ -5647,7 +5647,7 @@ static void clar_fn_rtUiCanvasDrawText(void * cv_instV, int32_t cv_wIdx, int32_t
     clar_rec_RtUiCanvasTarget cv_t;
     cv_t = clar_new_RtUiCanvasTarget();
     cv_t = clar_fn_rtUiCanvasBegin(cv_instV, cv_wIdx);
-    rt_ext_UiMoveTo((cv_x + (cv_t).cv_dx), (cv_y + (cv_t).cv_dy));
+    rt_ext_UiMoveTo(CLAR_ADD32(cv_x, (cv_t).cv_dx), CLAR_ADD32(cv_y, (cv_t).cv_dy));
     rt_ext_UiDrawString(cv_s);
     clar_fn_rtUiCanvasEnd(&(cv_t));
 }
@@ -5694,31 +5694,31 @@ static int32_t clar_fn_rtUiTeWidestLine(void * cv_te) {
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_n))) break;
-        cv_a = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (96))) + ((cv_i * 2))));
-        cv_b = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (96))) + (((cv_i + 1) * 2))));
+        cv_a = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (96))) + (CLAR_MUL32(cv_i, 2))));
+        cv_b = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (96))) + (CLAR_MUL32(CLAR_ADD32(cv_i, 1), 2))));
         if ((cv_b > cv_a) && (rt_peekb((void *)((char *)((void *)((char *)(cv_hTextMp) + (cv_b))) - (1))) == 13)) {
-            cv_b = (cv_b - 1);
+            cv_b = CLAR_SUB32(cv_b, 1);
         }
         cv_lineW = 0;
         cv_pos = cv_a;
         while (1) {
             if (!((cv_pos < cv_b))) break;
-            cv_chunkLen = (cv_b - cv_pos);
+            cv_chunkLen = CLAR_SUB32(cv_b, cv_pos);
             if (cv_chunkLen > 1024) {
                 cv_chunkLen = 1024;
             }
-            cv_lineW = (cv_lineW + rt_ext_UiTextWidth(cv_hTextMp, cv_pos, cv_chunkLen));
+            cv_lineW = CLAR_ADD32(cv_lineW, rt_ext_UiTextWidth(cv_hTextMp, cv_pos, cv_chunkLen));
             if (cv_lineW > 32767) {
                 cv_lineW = 32767;
                 cv_pos = cv_b;
             } else {
-                cv_pos = (cv_pos + cv_chunkLen);
+                cv_pos = CLAR_ADD32(cv_pos, cv_chunkLen);
             }
         }
         if (cv_lineW > cv_widest) {
             cv_widest = cv_lineW;
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     rt_ext_UiHSetState(cv_hText, cv_state);
     rt_ext_UiSetPort(cv_savedPort);
@@ -5758,31 +5758,31 @@ static void clar_fn_rtUiTeScrollSync(void * cv_inst, int32_t cv_wIdx) {
     cv_sb = clar_fn_rtUiCtrlAt(cv_w, cv_wIdx);
     cv_hb = clar_fn_rtUiHbarAt(cv_w, cv_wIdx);
     if (cv_sb != (void *)(intptr_t)(0)) {
-        cv_viewH = (rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (4))) - rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0))));
-        cv_contentH = (rt_peekw((void *)((char *)(cv_teMp) + (94))) * rt_peekw((void *)((char *)(cv_teMp) + (24))));
-        cv_maxScroll = (cv_contentH - cv_viewH);
+        cv_viewH = CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (4))), rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0))));
+        cv_contentH = CLAR_MUL32(rt_peekw((void *)((char *)(cv_teMp) + (94))), rt_peekw((void *)((char *)(cv_teMp) + (24))));
+        cv_maxScroll = CLAR_SUB32(cv_contentH, cv_viewH);
         if (cv_maxScroll < 0) {
             cv_maxScroll = 0;
         }
         rt_ext_UiSetControlMaximum(cv_sb, cv_maxScroll);
-        cv_offset = (rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0))) - rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (0))));
+        cv_offset = CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0))), rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (0))));
         if (cv_offset > cv_maxScroll) {
-            rt_ext_UiTEScroll(0, (cv_offset - cv_maxScroll), cv_te);
+            rt_ext_UiTEScroll(0, CLAR_SUB32(cv_offset, cv_maxScroll), cv_te);
             cv_offset = cv_maxScroll;
         }
         rt_ext_UiSetControlValue(cv_sb, cv_offset);
     }
     if (cv_hb != (void *)(intptr_t)(0)) {
-        cv_viewW = (rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (6))) - rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (2))));
+        cv_viewW = CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (6))), rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (2))));
         cv_widest = clar_fn_rtUiTeWidestLine(cv_te);
-        cv_maxScroll = (cv_widest - cv_viewW);
+        cv_maxScroll = CLAR_SUB32(cv_widest, cv_viewW);
         if (cv_maxScroll < 0) {
             cv_maxScroll = 0;
         }
         rt_ext_UiSetControlMaximum(cv_hb, cv_maxScroll);
-        cv_offset = (rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (2))) - rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (2))));
+        cv_offset = CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (2))), rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (2))));
         if (cv_offset > cv_maxScroll) {
-            rt_ext_UiTEScroll((cv_offset - cv_maxScroll), 0, cv_te);
+            rt_ext_UiTEScroll(CLAR_SUB32(cv_offset, cv_maxScroll), 0, cv_te);
             cv_offset = cv_maxScroll;
         }
         rt_ext_UiSetControlValue(cv_hb, cv_offset);
@@ -5837,7 +5837,7 @@ static int32_t clar_fn_rtUiFieldCap(void * cv_inst, int32_t cv_wIdx) {
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     cv_formOff = clar_fn_uidWinFormOff((cv_w)->cv_winIdx);
     cv_fieldIdx = clar_fn_uidFormFindFieldIndex(cv_formOff, cv_wIdx);
-    if (cv_fieldIdx == (-(1))) {
+    if (cv_fieldIdx == CLAR_NEG32(1)) {
         return 255;
     }
     cv_layoutOff = clar_fn_uidFormLayoutOff(cv_formOff);
@@ -5964,16 +5964,16 @@ static void clar_fn_rtUiTeRelayout(void * cv_inst, int32_t cv_i) {
     }
     cv_vW = 15;
     if (cv_flushR) {
-        cv_vW = (cv_vW + 1);
+        cv_vW = CLAR_ADD32(cv_vW, 1);
     }
     cv_hH = 15;
     if (cv_flushB) {
-        cv_hH = (cv_hH + 1);
+        cv_hH = CLAR_ADD32(cv_hH, 1);
     }
     cv_frame = rt_ext_UiNewPtr(8);
     cv_teMp = rt_ext_UiHandleDeref(cv_te);
     rt_ext_UiBlockMoveData((void *)((char *)(cv_teMp) + (8)), cv_frame, 8);
-    rt_ext_UiInsetRect(cv_frame, (0 - 3), (0 - 3));
+    rt_ext_UiInsetRect(cv_frame, CLAR_SUB32(0, 3), CLAR_SUB32(0, 3));
     rt_ext_UiEraseRect(cv_frame);
     rt_ext_UiDisposePtr(cv_frame);
     cv_r = clar_fn_rtUiRectAt(cv_w, cv_i);
@@ -5982,7 +5982,7 @@ static void clar_fn_rtUiTeRelayout(void * cv_inst, int32_t cv_i) {
     cv_boxBottom = rt_peekw((void *)((char *)(cv_r) + (4)));
     cv_boxRight = rt_peekw((void *)((char *)(cv_r) + (6)));
     if ((cv_kind == 4) && (rt_peekb(clar_fn_rtUiLabelAt(cv_w, cv_i)) > 0)) {
-        cv_boxLeft = (cv_boxLeft + 70);
+        cv_boxLeft = CLAR_ADD32(cv_boxLeft, 70);
     }
     cv_teLeft = cv_boxLeft;
     cv_teTop = cv_boxTop;
@@ -5996,37 +5996,37 @@ static void clar_fn_rtUiTeRelayout(void * cv_inst, int32_t cv_i) {
         cv_hasH = (cv_hb != (void *)(intptr_t)(0));
         if (cv_hasV) {
             if (cv_boxTop <= 0) {
-                cv_vTop = (-(1));
+                cv_vTop = CLAR_NEG32(1);
             } else {
                 cv_vTop = cv_boxTop;
             }
             cv_sbBottom = cv_boxBottom;
             if (cv_hasH) {
-                cv_sbBottom = (cv_boxBottom - cv_hH);
+                cv_sbBottom = CLAR_SUB32(cv_boxBottom, cv_hH);
             }
-            rt_ext_UiMoveControl(cv_ctrl, (cv_boxRight - cv_vW), cv_vTop);
-            rt_ext_UiSizeControl(cv_ctrl, cv_vW, (cv_sbBottom - cv_vTop));
-            cv_teRight = (cv_teRight - cv_vW);
+            rt_ext_UiMoveControl(cv_ctrl, CLAR_SUB32(cv_boxRight, cv_vW), cv_vTop);
+            rt_ext_UiSizeControl(cv_ctrl, cv_vW, CLAR_SUB32(cv_sbBottom, cv_vTop));
+            cv_teRight = CLAR_SUB32(cv_teRight, cv_vW);
         }
         if (cv_hasH) {
             if (cv_boxLeft <= 0) {
-                cv_hLeft = (-(1));
+                cv_hLeft = CLAR_NEG32(1);
             } else {
                 cv_hLeft = cv_boxLeft;
             }
             cv_sbRight = cv_boxRight;
             if (cv_hasV) {
-                cv_sbRight = (cv_boxRight - cv_vW);
+                cv_sbRight = CLAR_SUB32(cv_boxRight, cv_vW);
             }
-            rt_ext_UiMoveControl(cv_hb, cv_hLeft, (cv_boxBottom - cv_hH));
-            rt_ext_UiSizeControl(cv_hb, (cv_sbRight - cv_hLeft), cv_hH);
-            cv_teBottom = (cv_teBottom - cv_hH);
+            rt_ext_UiMoveControl(cv_hb, cv_hLeft, CLAR_SUB32(cv_boxBottom, cv_hH));
+            rt_ext_UiSizeControl(cv_hb, CLAR_SUB32(cv_sbRight, cv_hLeft), cv_hH);
+            cv_teBottom = CLAR_SUB32(cv_teBottom, cv_hH);
         }
     }
-    cv_teLeft = (cv_teLeft + 3);
-    cv_teTop = (cv_teTop + 3);
-    cv_teRight = (cv_teRight - 3);
-    cv_teBottom = (cv_teBottom - 3);
+    cv_teLeft = CLAR_ADD32(cv_teLeft, 3);
+    cv_teTop = CLAR_ADD32(cv_teTop, 3);
+    cv_teRight = CLAR_SUB32(cv_teRight, 3);
+    cv_teBottom = CLAR_SUB32(cv_teBottom, 3);
     if (cv_teRight < cv_teLeft) {
         cv_teRight = cv_teLeft;
     }
@@ -6043,13 +6043,13 @@ static void clar_fn_rtUiTeRelayout(void * cv_inst, int32_t cv_i) {
     rt_pokew((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (4)), cv_teBottom);
     rt_pokew((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (6)), cv_teRight);
     if ((cv_kind == 5) && (cv_hb != (void *)(intptr_t)(0))) {
-        rt_pokew((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (6)), (cv_teLeft + 2000));
+        rt_pokew((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (6)), CLAR_ADD32(cv_teLeft, 2000));
     }
     rt_ext_UiTECalText(cv_te);
     clar_fn_rtUiTeScrollSync(cv_inst, cv_i);
     cv_frame = rt_ext_UiNewPtr(8);
     rt_ext_UiSetRect(cv_frame, cv_teLeft, cv_teTop, cv_teRight, cv_teBottom);
-    rt_ext_UiInsetRect(cv_frame, (0 - 3), (0 - 3));
+    rt_ext_UiInsetRect(cv_frame, CLAR_SUB32(0, 3), CLAR_SUB32(0, 3));
     rt_ext_UiInvalRect(cv_frame);
     rt_ext_UiDisposePtr(cv_frame);
 }
@@ -6103,7 +6103,7 @@ static int32_t clar_fn_rtUiTeHit(void * cv_inst, int32_t cv_localPt, void * cv_o
                 return 1;
             }
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     return 0;
     return 0;
@@ -6161,15 +6161,15 @@ void clar_fn_rtUiScrollbarAction(void * cv_ctrl, short cv_part) {
     cv_teMp = rt_ext_UiHandleDeref(cv_te);
     cv_step = 0;
     if (cv_horiz) {
-        cv_viewW = (rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (6))) - rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (2))));
+        cv_viewW = CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (6))), rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (2))));
         if (cv_part == 20) {
-            cv_step = (0 - 8);
+            cv_step = CLAR_SUB32(0, 8);
         } else {
             if (cv_part == 21) {
                 cv_step = 8;
             } else {
                 if (cv_part == 22) {
-                    cv_step = (0 - cv_viewW);
+                    cv_step = CLAR_SUB32(0, cv_viewW);
                 } else {
                     if (cv_part == 23) {
                         cv_step = cv_viewW;
@@ -6184,15 +6184,15 @@ void clar_fn_rtUiScrollbarAction(void * cv_ctrl, short cv_part) {
         if (cv_lineH <= 0) {
             cv_lineH = 1;
         }
-        cv_viewH = (rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (4))) - rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0))));
+        cv_viewH = CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (4))), rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0))));
         if (cv_part == 20) {
-            cv_step = (0 - cv_lineH);
+            cv_step = CLAR_SUB32(0, cv_lineH);
         } else {
             if (cv_part == 21) {
                 cv_step = cv_lineH;
             } else {
                 if (cv_part == 22) {
-                    cv_step = (0 - cv_viewH);
+                    cv_step = CLAR_SUB32(0, cv_viewH);
                 } else {
                     if (cv_part == 23) {
                         cv_step = cv_viewH;
@@ -6205,14 +6205,14 @@ void clar_fn_rtUiScrollbarAction(void * cv_ctrl, short cv_part) {
     }
     cv_oldVal = rt_ext_UiGetControlValue(cv_ctrl);
     cv_maxVal = rt_ext_UiGetControlMaximum(cv_ctrl);
-    cv_newVal = (cv_oldVal + cv_step);
+    cv_newVal = CLAR_ADD32(cv_oldVal, cv_step);
     if (cv_newVal < 0) {
         cv_newVal = 0;
     }
     if (cv_newVal > cv_maxVal) {
         cv_newVal = cv_maxVal;
     }
-    cv_applied = (cv_oldVal - cv_newVal);
+    cv_applied = CLAR_SUB32(cv_oldVal, cv_newVal);
     if (cv_applied == 0) {
         return;
     }
@@ -6250,9 +6250,9 @@ static void clar_fn_rtUiHandleScrollbarClick(void * cv_inst, void * cv_ctrl, int
             cv_te = clar_fn_rtUiTeAt(((clar_rec_RtUiWinst *)(cv_inst)), cv_wIdx);
             if ((cv_newVal != cv_oldVal) && (cv_te != (void *)(intptr_t)(0))) {
                 if (cv_horiz) {
-                    rt_ext_UiTEScroll((cv_oldVal - cv_newVal), 0, cv_te);
+                    rt_ext_UiTEScroll(CLAR_SUB32(cv_oldVal, cv_newVal), 0, cv_te);
                 } else {
-                    rt_ext_UiTEScroll(0, (cv_oldVal - cv_newVal), cv_te);
+                    rt_ext_UiTEScroll(0, CLAR_SUB32(cv_oldVal, cv_newVal), cv_te);
                 }
             }
         }
@@ -6303,7 +6303,7 @@ static void clar_fn_rtUiStdEditPaste(void * cv_inst, void * cv_te) {
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     rt_ext_UiTEFromScrap();
     cv_teMp = rt_ext_UiHandleDeref(cv_te);
-    cv_newLen = ((rt_peekw((void *)((char *)(cv_teMp) + (60))) - (rt_peekw((void *)((char *)(cv_teMp) + (34))) - rt_peekw((void *)((char *)(cv_teMp) + (32))))) + rt_ext_UiTEGetScrapLength());
+    cv_newLen = CLAR_ADD32(CLAR_SUB32(rt_peekw((void *)((char *)(cv_teMp) + (60))), CLAR_SUB32(rt_peekw((void *)((char *)(cv_teMp) + (34))), rt_peekw((void *)((char *)(cv_teMp) + (32))))), rt_ext_UiTEGetScrapLength());
     cv_kind = clar_fn_uidWidgetKind((cv_w)->cv_winIdx, (cv_w)->cv_focusIdx);
     if ((cv_kind == 5) && (cv_newLen > 32000)) {
         clar_fn_rtSetLastErr(1, &(clar_lit_3));
@@ -6314,30 +6314,30 @@ static void clar_fn_rtUiStdEditPaste(void * cv_inst, void * cv_te) {
 }
 
 static void * clar_fn_rtUiListAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
-    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_lists) + ((cv_i * 4)))));
+    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_lists) + (CLAR_MUL32(cv_i, 4)))));
     return 0;
 }
 
 static void clar_fn_rtUiSetListAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i, void * cv_v) {
-    rt_pokel((void *)((char *)((cv_w)->cv_lists) + ((cv_i * 4))), ((int32_t)(intptr_t)(cv_v)));
+    rt_pokel((void *)((char *)((cv_w)->cv_lists) + (CLAR_MUL32(cv_i, 4))), ((int32_t)(intptr_t)(cv_v)));
 }
 
 static void * clar_fn_rtUiPopupAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
-    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_popups) + ((cv_i * 4)))));
+    return (void *)(intptr_t)(rt_peekl((void *)((char *)((cv_w)->cv_popups) + (CLAR_MUL32(cv_i, 4)))));
     return 0;
 }
 
 static void clar_fn_rtUiSetPopupAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i, void * cv_v) {
-    rt_pokel((void *)((char *)((cv_w)->cv_popups) + ((cv_i * 4))), ((int32_t)(intptr_t)(cv_v)));
+    rt_pokel((void *)((char *)((cv_w)->cv_popups) + (CLAR_MUL32(cv_i, 4))), ((int32_t)(intptr_t)(cv_v)));
 }
 
 static int32_t clar_fn_rtUiPopupSelAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i) {
-    return rt_peekl((void *)((char *)((cv_w)->cv_popupSel) + ((cv_i * 4))));
+    return rt_peekl((void *)((char *)((cv_w)->cv_popupSel) + (CLAR_MUL32(cv_i, 4))));
     return 0;
 }
 
 static void clar_fn_rtUiSetPopupSelAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i, int32_t cv_v) {
-    rt_pokel((void *)((char *)((cv_w)->cv_popupSel) + ((cv_i * 4))), cv_v);
+    rt_pokel((void *)((char *)((cv_w)->cv_popupSel) + (CLAR_MUL32(cv_i, 4))), cv_v);
 }
 
 static void clar_fn_rtUiPopupBoxInto(void * cv_inst, int32_t cv_wIdx, void * cv_out) {
@@ -6346,7 +6346,7 @@ static void clar_fn_rtUiPopupBoxInto(void * cv_inst, int32_t cv_wIdx, void * cv_
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     rt_ext_UiBlockMoveData(clar_fn_rtUiRectAt(cv_w, cv_wIdx), cv_out, 8);
     if (rt_peekb(clar_fn_rtUiLabelAt(cv_w, cv_wIdx)) > 0) {
-        rt_pokew((void *)((char *)(cv_out) + (2)), (rt_peekw((void *)((char *)(cv_out) + (2))) + 70));
+        rt_pokew((void *)((char *)(cv_out) + (2)), CLAR_ADD32(rt_peekw((void *)((char *)(cv_out) + (2))), 70));
     }
 }
 
@@ -6362,11 +6362,11 @@ static int32_t clar_fn_rtUiTableFillWidth(int32_t cv_colsOff, int32_t cv_nCols, 
     while (1) {
         if (!((cv_k < cv_nCols))) break;
         if (!(clar_fn_uidColWidthFill(cv_colsOff, cv_k))) {
-            cv_fixedSum = (cv_fixedSum + clar_fn_uidColWidthPx(cv_colsOff, cv_k));
+            cv_fixedSum = CLAR_ADD32(cv_fixedSum, clar_fn_uidColWidthPx(cv_colsOff, cv_k));
         }
-        cv_k = (cv_k + 1);
+        cv_k = CLAR_ADD32(cv_k, 1);
     }
-    cv_fillW = (cv_totalW - cv_fixedSum);
+    cv_fillW = CLAR_SUB32(cv_totalW, cv_fixedSum);
     if (cv_fillW < 0) {
         cv_fillW = 0;
     }
@@ -6393,43 +6393,43 @@ static void clar_fn_rtUiFixedToStr(int32_t cv_v, void * cv_out255) {
     cv_pad = 0;
     cv_neg = (cv_v < 0);
     if (cv_neg) {
-        cv_uv = (0 - cv_v);
+        cv_uv = CLAR_SUB32(0, cv_v);
     } else {
         cv_uv = cv_v;
     }
     cv_ibuf = rt_ext_UiNewPtr(256);
     cv_fbuf = rt_ext_UiNewPtr(256);
     rt_ext_UiNumToString((cv_uv >> 16), cv_ibuf);
-    cv_frac = (((cv_uv & 65535) * 10000) / 65536);
+    cv_frac = (CLAR_MUL32((cv_uv & 65535), 10000) / 65536);
     rt_ext_UiNumToString(cv_frac, cv_fbuf);
     cv_n = 0;
     if (cv_neg) {
-        cv_n = (cv_n + 1);
+        cv_n = CLAR_ADD32(cv_n, 1);
         rt_pokeb((void *)((char *)(cv_out255) + (cv_n)), ((int32_t)(45)));
     }
     cv_i = 0;
     while (1) {
         if (!((cv_i < rt_peekb(cv_ibuf)))) break;
-        cv_n = (cv_n + 1);
+        cv_n = CLAR_ADD32(cv_n, 1);
         rt_pokeb((void *)((char *)(cv_out255) + (cv_n)), rt_peekb((void *)((char *)((void *)((char *)(cv_ibuf) + (1))) + (cv_i))));
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
-    cv_n = (cv_n + 1);
+    cv_n = CLAR_ADD32(cv_n, 1);
     rt_pokeb((void *)((char *)(cv_out255) + (cv_n)), ((int32_t)(46)));
-    cv_pad = (4 - rt_peekb(cv_fbuf));
+    cv_pad = CLAR_SUB32(4, rt_peekb(cv_fbuf));
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_pad))) break;
-        cv_n = (cv_n + 1);
+        cv_n = CLAR_ADD32(cv_n, 1);
         rt_pokeb((void *)((char *)(cv_out255) + (cv_n)), ((int32_t)(48)));
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     cv_i = 0;
     while (1) {
         if (!((cv_i < rt_peekb(cv_fbuf)))) break;
-        cv_n = (cv_n + 1);
+        cv_n = CLAR_ADD32(cv_n, 1);
         rt_pokeb((void *)((char *)(cv_out255) + (cv_n)), rt_peekb((void *)((char *)((void *)((char *)(cv_fbuf) + (1))) + (cv_i))));
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     rt_pokeb(cv_out255, cv_n);
     rt_ext_UiDisposePtr(cv_ibuf);
@@ -6461,7 +6461,7 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
     cv_found = 0;
     cv_base = (void *)((char *)(cv_rec) + (clar_fn_uidFieldOffset(cv_layoutOff, cv_fieldIdx)));
     cv_ftype = clar_fn_uidFieldFtype(cv_layoutOff, cv_fieldIdx);
-    rt_ext_UiMoveTo((rt_peekw((void *)((char *)(cv_colRect) + (2))) + 2), (rt_peekw((void *)((char *)(cv_colRect) + (4))) - 3));
+    rt_ext_UiMoveTo(CLAR_ADD32(rt_peekw((void *)((char *)(cv_colRect) + (2))), 2), CLAR_SUB32(rt_peekw((void *)((char *)(cv_colRect) + (4))), 3));
     if (cv_ftype == 4) {
         rt_ext_UiDrawText((void *)((char *)(cv_base) + (1)), 0, rt_peekb(cv_base));
     } else {
@@ -6509,7 +6509,7 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
                                     cv_found = 1;
                                     cv_k = cv_enumCount;
                                 } else {
-                                    cv_k = (cv_k + 1);
+                                    cv_k = CLAR_ADD32(cv_k, 1);
                                 }
                             }
                             if (!(cv_found)) {
@@ -6531,7 +6531,7 @@ static int32_t clar_fn_rtUiTableRowH(void) {
     cv_h = 0;
     cv_fi = rt_ext_UiNewPtr(8);
     rt_ext_UiGetFontInfo(cv_fi);
-    cv_h = ((rt_peekw((void *)((char *)(cv_fi) + (0))) + rt_peekw((void *)((char *)(cv_fi) + (2)))) + rt_peekw((void *)((char *)(cv_fi) + (6))));
+    cv_h = CLAR_ADD32(CLAR_ADD32(rt_peekw((void *)((char *)(cv_fi) + (0))), rt_peekw((void *)((char *)(cv_fi) + (2)))), rt_peekw((void *)((char *)(cv_fi) + (6))));
     rt_ext_UiDisposePtr(cv_fi);
     if (cv_h > 0) {
         return cv_h;
@@ -6541,7 +6541,7 @@ static int32_t clar_fn_rtUiTableRowH(void) {
 }
 
 static int32_t clar_fn_rtUiTableHeaderH(void) {
-    return (clar_fn_rtUiTableRowH() + 4);
+    return CLAR_ADD32(clar_fn_rtUiTableRowH(), 4);
     return 0;
 }
 
@@ -6615,7 +6615,7 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
         cv_row = clar_fn_rtUiHiWord(cv_cellPacked);
         if ((cv_row >= 0) && (cv_row < cv_count)) {
             cv_rec = clar_fn_rtListAt(cv_rows, cv_row);
-            cv_fillW = clar_fn_rtUiTableFillWidth(cv_colsOff, cv_nCols, (rt_peekw((void *)((char *)(cv_rectPtr) + (6))) - rt_peekw((void *)((char *)(cv_rectPtr) + (2)))));
+            cv_fillW = clar_fn_rtUiTableFillWidth(cv_colsOff, cv_nCols, CLAR_SUB32(rt_peekw((void *)((char *)(cv_rectPtr) + (6))), rt_peekw((void *)((char *)(cv_rectPtr) + (2)))));
             cv_x = rt_peekw((void *)((char *)(cv_rectPtr) + (2)));
             cv_k = 0;
             while (1) {
@@ -6626,7 +6626,7 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
                     cv_w = clar_fn_uidColWidthPx(cv_colsOff, cv_k);
                 }
                 cv_colRect = rt_ext_UiNewPtr(8);
-                rt_ext_UiSetRect(cv_colRect, cv_x, rt_peekw((void *)((char *)(cv_rectPtr) + (0))), (cv_x + cv_w), rt_peekw((void *)((char *)(cv_rectPtr) + (4))));
+                rt_ext_UiSetRect(cv_colRect, cv_x, rt_peekw((void *)((char *)(cv_rectPtr) + (0))), CLAR_ADD32(cv_x, cv_w), rt_peekw((void *)((char *)(cv_rectPtr) + (4))));
                 cv_saveClip = rt_ext_UiNewRgn();
                 rt_ext_UiGetClip(cv_saveClip);
                 rt_ext_UiClipRect(cv_colRect);
@@ -6634,8 +6634,8 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
                 rt_ext_UiSetClip(cv_saveClip);
                 rt_ext_UiDisposeRgn(cv_saveClip);
                 rt_ext_UiDisposePtr(cv_colRect);
-                cv_x = (cv_x + cv_w);
-                cv_k = (cv_k + 1);
+                cv_x = CLAR_ADD32(cv_x, cv_w);
+                cv_k = CLAR_ADD32(cv_k, 1);
             }
         }
         if (cv_select) {
@@ -6673,13 +6673,13 @@ static void clar_fn_rtUiTableRelayout(void * cv_inst, int32_t cv_i) {
     cv_listRect = rt_ext_UiNewPtr(8);
     rt_ext_UiBlockMoveData(cv_box, cv_listRect, 8);
     cv_headerH = clar_fn_rtUiTableHeaderH();
-    rt_pokew((void *)((char *)(cv_listRect) + (0)), (rt_peekw((void *)((char *)(cv_listRect) + (0))) + cv_headerH));
+    rt_pokew((void *)((char *)(cv_listRect) + (0)), CLAR_ADD32(rt_peekw((void *)((char *)(cv_listRect) + (0))), cv_headerH));
     if (rt_peekw((void *)((char *)(cv_listRect) + (4))) < rt_peekw((void *)((char *)(cv_listRect) + (0)))) {
         rt_pokew((void *)((char *)(cv_listRect) + (4)), rt_peekw((void *)((char *)(cv_listRect) + (0))));
     }
     rt_ext_UiInsetRect(cv_listRect, 1, 0);
-    rt_pokew((void *)((char *)(cv_listRect) + (4)), (rt_peekw((void *)((char *)(cv_listRect) + (4))) - 1));
-    rt_pokew((void *)((char *)(cv_listRect) + (6)), (rt_peekw((void *)((char *)(cv_listRect) + (6))) - 15));
+    rt_pokew((void *)((char *)(cv_listRect) + (4)), CLAR_SUB32(rt_peekw((void *)((char *)(cv_listRect) + (4))), 1));
+    rt_pokew((void *)((char *)(cv_listRect) + (6)), CLAR_SUB32(rt_peekw((void *)((char *)(cv_listRect) + (6))), 15));
     if (rt_peekw((void *)((char *)(cv_listRect) + (4))) < rt_peekw((void *)((char *)(cv_listRect) + (0)))) {
         rt_pokew((void *)((char *)(cv_listRect) + (4)), rt_peekw((void *)((char *)(cv_listRect) + (0))));
     }
@@ -6689,12 +6689,12 @@ static void clar_fn_rtUiTableRelayout(void * cv_inst, int32_t cv_i) {
     cv_lhMp = rt_ext_UiHandleDeref(cv_lh);
     rt_pokew((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (0)), rt_peekw((void *)((char *)(cv_listRect) + (0))));
     rt_pokew((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (2)), rt_peekw((void *)((char *)(cv_listRect) + (2))));
-    cv_cellW = (rt_peekw((void *)((char *)(cv_listRect) + (6))) - rt_peekw((void *)((char *)(cv_listRect) + (2))));
+    cv_cellW = CLAR_SUB32(rt_peekw((void *)((char *)(cv_listRect) + (6))), rt_peekw((void *)((char *)(cv_listRect) + (2))));
     if (cv_cellW < 1) {
         cv_cellW = 1;
     }
     rt_pokew((void *)((char *)(cv_lhMp) + (18)), cv_cellW);
-    rt_ext_UiLSize(cv_cellW, (rt_peekw((void *)((char *)(cv_listRect) + (4))) - rt_peekw((void *)((char *)(cv_listRect) + (0)))), cv_lh);
+    rt_ext_UiLSize(cv_cellW, CLAR_SUB32(rt_peekw((void *)((char *)(cv_listRect) + (4))), rt_peekw((void *)((char *)(cv_listRect) + (0)))), cv_lh);
     rt_ext_UiInvalRect(cv_box);
     rt_ext_UiDisposePtr(cv_box);
     rt_ext_UiDisposePtr(cv_listRect);
@@ -6714,7 +6714,7 @@ static int32_t clar_fn_rtUiTableGetSelected(void * cv_lh) {
     cv_lhMp = rt_ext_UiHandleDeref(cv_lh);
     cv_count = rt_peekw((void *)((char *)(cv_lhMp) + (76)));
     cv_cell = rt_ext_UiNewPtr(4);
-    cv_found = (-(1));
+    cv_found = CLAR_NEG32(1);
     cv_row = 0;
     while (1) {
         if (!((cv_row < cv_count))) break;
@@ -6724,7 +6724,7 @@ static int32_t clar_fn_rtUiTableGetSelected(void * cv_lh) {
             cv_found = cv_row;
             cv_row = cv_count;
         } else {
-            cv_row = (cv_row + 1);
+            cv_row = CLAR_ADD32(cv_row, 1);
         }
     }
     rt_ext_UiDisposePtr(cv_cell);
@@ -6737,10 +6737,10 @@ static void clar_fn_rtUiTableSelectExclusive(void * cv_lh, int32_t cv_row) {
     cv_cur = 0;
     cv_cur = clar_fn_rtUiTableGetSelected(cv_lh);
     if (cv_cur >= 0) {
-        rt_ext_UiLSetSelect(0, (cv_cur << 16), cv_lh);
+        rt_ext_UiLSetSelect(0, CLAR_SHL32(cv_cur, 16), cv_lh);
     }
     if (cv_row >= 0) {
-        rt_ext_UiLSetSelect(1, (cv_row << 16), cv_lh);
+        rt_ext_UiLSetSelect(1, CLAR_SHL32(cv_row, 16), cv_lh);
     }
 }
 
@@ -6765,7 +6765,7 @@ static int32_t clar_fn_rtUiTableHit(void * cv_inst, int32_t cv_localPt, void * c
                 return 1;
             }
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     return 0;
     return 0;
@@ -6802,7 +6802,7 @@ static void clar_fn_rtUiTableClick(void * cv_inst, int32_t cv_wIdx, int32_t cv_l
     cv_lh = clar_fn_rtUiListAt(cv_w, cv_wIdx);
     cv_lhMp = rt_ext_UiHandleDeref(cv_lh);
     if (cv_rtUiScripted) {
-        cv_row = (rt_peekw((void *)((char *)(cv_lhMp) + (20))) + ((clar_fn_rtUiHiWord(cv_localPt) - rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (0)))) / rt_peekw((void *)((char *)(cv_lhMp) + (16)))));
+        cv_row = CLAR_ADD32(rt_peekw((void *)((char *)(cv_lhMp) + (20))), (CLAR_SUB32(clar_fn_rtUiHiWord(cv_localPt), rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (0)))) / rt_peekw((void *)((char *)(cv_lhMp) + (16)))));
         if (cv_row < 0) {
             cv_row = 0;
         }
@@ -6860,9 +6860,9 @@ static void clar_fn_rtUiTableSyncOne(void * cv_inst, int32_t cv_wIdx) {
     cv_savedPort = clar_fn_rtUiGetPortSaved();
     rt_ext_UiSetPort((cv_w)->cv_wp);
     if (cv_dataCount > cv_lmCount) {
-        rt_ext_UiLAddRow((cv_dataCount - cv_lmCount), cv_lmCount, cv_lh);
+        rt_ext_UiLAddRow(CLAR_SUB32(cv_dataCount, cv_lmCount), cv_lmCount, cv_lh);
     } else {
-        rt_ext_UiLDelRow((cv_lmCount - cv_dataCount), cv_dataCount, cv_lh);
+        rt_ext_UiLDelRow(CLAR_SUB32(cv_lmCount, cv_dataCount), cv_dataCount, cv_lh);
     }
     cv_lhMp = rt_ext_UiHandleDeref(cv_lh);
     rt_ext_UiInvalRect((void *)((char *)(cv_lhMp) + (0)));
@@ -6893,7 +6893,7 @@ static void clar_fn_rtUiTablesSync(void) {
                 if (clar_fn_uidWidgetKind((cv_w)->cv_winIdx, cv_i) == 7) {
                     clar_fn_rtUiTableSyncOne(cv_inst, cv_i);
                 }
-                cv_i = (cv_i + 1);
+                cv_i = CLAR_ADD32(cv_i, 1);
             }
         }
         cv_wp = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_wp) + (144))));
@@ -6916,7 +6916,7 @@ static int32_t clar_fn_rtUiPopupHit(void * cv_inst, int32_t cv_localPt, void * c
             rt_pokel(cv_outIdx, cv_i);
             return 1;
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     return 0;
     return 0;
@@ -6934,7 +6934,7 @@ static void clar_fn_rtUiPopupAssertAlive(void * cv_inst, int32_t cv_wIdx) {
     int32_t cv_expect;
     cv_expect = 0;
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
-    cv_mh = rt_ext_UiGetMenuHandle((1000 + cv_wIdx));
+    cv_mh = rt_ext_UiGetMenuHandle(CLAR_ADD32(1000, cv_wIdx));
     if (cv_mh == (void *)(intptr_t)(0)) {
         clar_fn_rtPanic(&(clar_lit_34));
     }
@@ -6943,9 +6943,9 @@ static void clar_fn_rtUiPopupAssertAlive(void * cv_inst, int32_t cv_wIdx) {
     }
     cv_formOff = clar_fn_uidWinFormOff((cv_w)->cv_winIdx);
     cv_expect = 0;
-    if (cv_formOff != (-(1))) {
+    if (cv_formOff != CLAR_NEG32(1)) {
         cv_fieldIndex = clar_fn_uidFormFindFieldIndex(cv_formOff, cv_wIdx);
-        if (cv_fieldIndex != (-(1))) {
+        if (cv_fieldIndex != CLAR_NEG32(1)) {
             cv_expect = clar_fn_uidFieldEnumCount(clar_fn_uidFormLayoutOff(cv_formOff), cv_fieldIndex);
         }
     }
@@ -7002,10 +7002,10 @@ static void clar_fn_rtUiPopupClick(void * cv_inst, int32_t cv_pIdx) {
     rt_pokew((void *)((char *)(cv_anchor) + (0)), rt_peekw((void *)((char *)(cv_box) + (0))));
     rt_pokew((void *)((char *)(cv_anchor) + (2)), rt_peekw((void *)((char *)(cv_box) + (2))));
     rt_ext_UiLocalToGlobal(cv_anchor);
-    cv_result = rt_ext_UiPopUpMenuSelect(clar_fn_rtUiPopupAt(cv_w, cv_pIdx), rt_peekw((void *)((char *)(cv_anchor) + (0))), rt_peekw((void *)((char *)(cv_anchor) + (2))), (clar_fn_rtUiPopupSelAt(cv_w, cv_pIdx) + 1));
+    cv_result = rt_ext_UiPopUpMenuSelect(clar_fn_rtUiPopupAt(cv_w, cv_pIdx), rt_peekw((void *)((char *)(cv_anchor) + (0))), rt_peekw((void *)((char *)(cv_anchor) + (2))), CLAR_ADD32(clar_fn_rtUiPopupSelAt(cv_w, cv_pIdx), 1));
     cv_newItem = clar_fn_rtUiLoWord(cv_result);
     if (cv_newItem != 0) {
-        clar_fn_rtUiPopupPick(cv_inst, cv_pIdx, (cv_newItem - 1));
+        clar_fn_rtUiPopupPick(cv_inst, cv_pIdx, CLAR_SUB32(cv_newItem, 1));
     }
     rt_ext_UiDisposePtr(cv_anchor);
     rt_ext_UiDisposePtr(cv_box);
@@ -7021,16 +7021,16 @@ static void clar_fn_rtUiAnswerInit(void) {
 
 static void clar_fn_rtUiAnswerCheckRoom(void) {
     clar_fn_rtUiAnswerInit();
-    if (((cv_rtUiAnswerTail + 1) % 8) == cv_rtUiAnswerHead) {
+    if ((CLAR_ADD32(cv_rtUiAnswerTail, 1) % 8) == cv_rtUiAnswerHead) {
         clar_fn_rtPanic(&(clar_lit_38));
     }
 }
 
 static void clar_fn_rtUiAnswerPushVal(int32_t cv_kind, int32_t cv_val) {
     clar_fn_rtUiAnswerCheckRoom();
-    rt_pokel((void *)((char *)(cv_rtUiAnswerKinds) + ((cv_rtUiAnswerTail * 4))), cv_kind);
-    rt_pokel((void *)((char *)(cv_rtUiAnswerVals) + ((cv_rtUiAnswerTail * 4))), cv_val);
-    cv_rtUiAnswerTail = ((cv_rtUiAnswerTail + 1) % 8);
+    rt_pokel((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_rtUiAnswerTail, 4))), cv_kind);
+    rt_pokel((void *)((char *)(cv_rtUiAnswerVals) + (CLAR_MUL32(cv_rtUiAnswerTail, 4))), cv_val);
+    cv_rtUiAnswerTail = (CLAR_ADD32(cv_rtUiAnswerTail, 1) % 8);
 }
 
 static void clar_fn_rtUiAnswerPushPath(int32_t cv_kind, void * cv_srcC) {
@@ -7044,21 +7044,21 @@ static void clar_fn_rtUiAnswerPushPath(int32_t cv_kind, void * cv_srcC) {
     cv_n = 0;
     while (1) {
         if (!((rt_peekb((void *)((char *)(cv_srcC) + (cv_n))) != 0))) break;
-        cv_n = (cv_n + 1);
+        cv_n = CLAR_ADD32(cv_n, 1);
     }
     if (cv_n > 255) {
         cv_n = 255;
     }
-    rt_pokel((void *)((char *)(cv_rtUiAnswerKinds) + ((cv_rtUiAnswerTail * 4))), cv_kind);
-    cv_dst = (void *)((char *)(cv_rtUiAnswerStrs) + ((cv_rtUiAnswerTail * 256)));
+    rt_pokel((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_rtUiAnswerTail, 4))), cv_kind);
+    cv_dst = (void *)((char *)(cv_rtUiAnswerStrs) + (CLAR_MUL32(cv_rtUiAnswerTail, 256)));
     rt_pokeb(cv_dst, cv_n);
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_n))) break;
         rt_pokeb((void *)((char *)((void *)((char *)(cv_dst) + (1))) + (cv_i)), rt_peekb((void *)((char *)(cv_srcC) + (cv_i))));
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
-    cv_rtUiAnswerTail = ((cv_rtUiAnswerTail + 1) % 8);
+    cv_rtUiAnswerTail = (CLAR_ADD32(cv_rtUiAnswerTail, 1) % 8);
 }
 
 static int32_t clar_fn_rtUiAnswerPopIdx(void) {
@@ -7069,7 +7069,7 @@ static int32_t clar_fn_rtUiAnswerPopIdx(void) {
         clar_fn_rtPanic(&(clar_lit_39));
     }
     cv_idx = cv_rtUiAnswerHead;
-    cv_rtUiAnswerHead = ((cv_rtUiAnswerHead + 1) % 8);
+    cv_rtUiAnswerHead = (CLAR_ADD32(cv_rtUiAnswerHead, 1) % 8);
     return cv_idx;
     return 0;
 }
@@ -7078,8 +7078,8 @@ static void clar_fn_rtUiAnswerPop(void * cv_outKind, void * cv_outVal) {
     int32_t cv_idx;
     cv_idx = 0;
     cv_idx = clar_fn_rtUiAnswerPopIdx();
-    rt_pokel(cv_outKind, rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + ((cv_idx * 4)))));
-    rt_pokel(cv_outVal, rt_peekl((void *)((char *)(cv_rtUiAnswerVals) + ((cv_idx * 4)))));
+    rt_pokel(cv_outKind, rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_idx, 4)))));
+    rt_pokel(cv_outVal, rt_peekl((void *)((char *)(cv_rtUiAnswerVals) + (CLAR_MUL32(cv_idx, 4)))));
 }
 
 static void clar_fn_rtUiTextAppendStrSafe(void * cv_t, void * cv_s) {
@@ -7105,7 +7105,7 @@ static void * clar_fn_rtUiIntToText(int32_t cv_v) {
     cv_n = cv_v;
     cv_neg = (cv_n < 0);
     if (cv_neg) {
-        cv_n = (-(cv_n));
+        cv_n = CLAR_NEG32(cv_n);
     }
     cv_digits = rt_ext_UiNewPtr(16);
     cv_i = 0;
@@ -7116,9 +7116,9 @@ static void * clar_fn_rtUiIntToText(int32_t cv_v) {
         while (1) {
             if (!((cv_n > 0))) break;
             cv_d = (cv_n % 10);
-            rt_pokeb((void *)((char *)(cv_digits) + (cv_i)), (((int32_t)(48)) + cv_d));
+            rt_pokeb((void *)((char *)(cv_digits) + (cv_i)), CLAR_ADD32(((int32_t)(48)), cv_d));
             cv_n = (cv_n / 10);
-            cv_i = (cv_i + 1);
+            cv_i = CLAR_ADD32(cv_i, 1);
         }
     }
     if (cv_neg) {
@@ -7126,7 +7126,7 @@ static void * clar_fn_rtUiIntToText(int32_t cv_v) {
     }
     while (1) {
         if (!((cv_i > 0))) break;
-        cv_i = (cv_i - 1);
+        cv_i = CLAR_SUB32(cv_i, 1);
         clar_fn_rtTextAppendChar(cv_t, rt_peekb((void *)((char *)(cv_digits) + (cv_i))));
     }
     rt_ext_UiDisposePtr(cv_digits);
@@ -7154,7 +7154,7 @@ static void clar_fn_rtUiTraceInit(void) {
     cv_nMh = 0;
     cv_nWins = clar_fn_uidNWins();
     if (cv_nWins > 0) {
-        cv_rtUiTraceWinCounts = rt_ext_UiNewPtrClear((cv_nWins * 4));
+        cv_rtUiTraceWinCounts = rt_ext_UiNewPtrClear(CLAR_MUL32(cv_nWins, 4));
     } else {
         cv_rtUiTraceWinCounts = (void *)(intptr_t)(0);
     }
@@ -7175,8 +7175,8 @@ static int32_t clar_fn_rtUiTraceNextId(int32_t cv_winIdx) {
     if (cv_rtUiTraceWinCounts == (void *)(intptr_t)(0)) {
         return 0;
     }
-    cv_v = (rt_peekl((void *)((char *)(cv_rtUiTraceWinCounts) + ((cv_winIdx * 4)))) + 1);
-    rt_pokel((void *)((char *)(cv_rtUiTraceWinCounts) + ((cv_winIdx * 4))), cv_v);
+    cv_v = CLAR_ADD32(rt_peekl((void *)((char *)(cv_rtUiTraceWinCounts) + (CLAR_MUL32(cv_winIdx, 4)))), 1);
+    rt_pokel((void *)((char *)(cv_rtUiTraceWinCounts) + (CLAR_MUL32(cv_winIdx, 4))), cv_v);
     return cv_v;
     return 0;
 }
@@ -7497,7 +7497,7 @@ static int32_t clar_fn_rtUiStrEq(void * cv_a, void * cv_b) {
         if (rt_peekb((void *)((char *)(cv_a) + (cv_i))) != rt_peekb((void *)((char *)((void *)((char *)(cv_b) + (1))) + (cv_i)))) {
             return 0;
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     return (rt_peekb((void *)((char *)(cv_a) + (cv_i))) == 0);
     return 0;
@@ -7525,11 +7525,11 @@ static int32_t clar_fn_rtUiAtoi(void * cv_s) {
         if ((cv_c < ((int32_t)(48))) || (cv_c > ((int32_t)(57)))) {
             break;
         }
-        cv_v = ((cv_v * 10) + (cv_c - ((int32_t)(48))));
-        cv_i = (cv_i + 1);
+        cv_v = CLAR_ADD32(CLAR_MUL32(cv_v, 10), CLAR_SUB32(cv_c, ((int32_t)(48))));
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     if (cv_neg) {
-        cv_v = (-(cv_v));
+        cv_v = CLAR_NEG32(cv_v);
     }
     return cv_v;
     return 0;
@@ -7553,7 +7553,7 @@ static int32_t clar_fn_rtUiScriptKeyArg(void * cv_s) {
         if ((cv_c < ((int32_t)(48))) || (cv_c > ((int32_t)(57)))) {
             cv_allDigits = 0;
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     if (cv_allDigits) {
         return clar_fn_rtUiAtoi(cv_s);
@@ -7570,7 +7570,7 @@ static void clar_fn_rtUiTextAppendCStr(void * cv_t, void * cv_s) {
     cv_n = 0;
     while (1) {
         if (!((rt_peekb((void *)((char *)(cv_s) + (cv_n))) != 0))) break;
-        cv_n = (cv_n + 1);
+        cv_n = CLAR_ADD32(cv_n, 1);
     }
     cv_scratch = clar_fn_rtTextNew();
     clar_fn_rtTextFromBytes(cv_scratch, cv_s, cv_n, cv_n);
@@ -7598,7 +7598,7 @@ static int32_t clar_fn_rtUiScriptNextLine(void) {
             if (!(((rt_peekb(cv_rtUiScriptCursor) != 0) && (rt_peekb(cv_rtUiScriptCursor) != 10)))) break;
             if (cv_n < 255) {
                 rt_pokeb((void *)((char *)(cv_rtUiScriptLineBuf) + (cv_n)), rt_peekb(cv_rtUiScriptCursor));
-                cv_n = (cv_n + 1);
+                cv_n = CLAR_ADD32(cv_n, 1);
             }
             cv_rtUiScriptCursor = (void *)((char *)(cv_rtUiScriptCursor) + (1));
         }
@@ -7621,7 +7621,7 @@ static int32_t clar_fn_rtUiSkipSpaces(int32_t cv_p) {
     cv_q = cv_p;
     while (1) {
         if (!(((cv_q < cv_rtUiScriptLineLen) && (rt_peekb((void *)((char *)(cv_rtUiScriptLineBuf) + (cv_q))) == ((int32_t)(32)))))) break;
-        cv_q = (cv_q + 1);
+        cv_q = CLAR_ADD32(cv_q, 1);
     }
     return cv_q;
     return 0;
@@ -7638,9 +7638,9 @@ static int32_t clar_fn_rtUiCopyToken(int32_t cv_p, void * cv_dst, int32_t cv_max
         if (!(((cv_q < cv_rtUiScriptLineLen) && (rt_peekb((void *)((char *)(cv_rtUiScriptLineBuf) + (cv_q))) != ((int32_t)(32)))))) break;
         if (cv_n < cv_maxLen) {
             rt_pokeb((void *)((char *)(cv_dst) + (cv_n)), rt_peekb((void *)((char *)(cv_rtUiScriptLineBuf) + (cv_q))));
-            cv_n = (cv_n + 1);
+            cv_n = CLAR_ADD32(cv_n, 1);
         }
-        cv_q = (cv_q + 1);
+        cv_q = CLAR_ADD32(cv_q, 1);
     }
     rt_pokeb((void *)((char *)(cv_dst) + (cv_n)), 0);
     return cv_q;
@@ -7700,7 +7700,7 @@ static void clar_fn_rtUiScriptDrag(int32_t cv_x, int32_t cv_y) {
     cv_tIdxSlot = 0;
     int32_t cv_tIdx;
     cv_tIdx = 0;
-    cv_wherePt = ((cv_y << 16) | (cv_x & 65535));
+    cv_wherePt = (CLAR_SHL32(cv_y, 16) | (cv_x & 65535));
     cv_wpSlot = rt_ext_UiNewPtr(4);
     cv_part = rt_ext_UiFindWindow(cv_wherePt, cv_wpSlot);
     cv_wp = (void *)(intptr_t)(rt_peekl(cv_wpSlot));
@@ -7752,12 +7752,12 @@ static void clar_fn_rtUiScriptType(void) {
     cv_p = 0;
     cv_p = 4;
     if (rt_peekb((void *)((char *)(cv_rtUiScriptLineBuf) + (cv_p))) == ((int32_t)(32))) {
-        cv_p = (cv_p + 1);
+        cv_p = CLAR_ADD32(cv_p, 1);
     }
     while (1) {
         if (!((cv_p < cv_rtUiScriptLineLen))) break;
         clar_fn_rtUiScriptKey(rt_peekb((void *)((char *)(cv_rtUiScriptLineBuf) + (cv_p))));
-        cv_p = (cv_p + 1);
+        cv_p = CLAR_ADD32(cv_p, 1);
     }
 }
 
@@ -7766,7 +7766,7 @@ static void * clar_fn_rtUiScriptRestOfLine(int32_t cv_verbLen) {
     cv_p = 0;
     cv_p = cv_verbLen;
     if (rt_peekb((void *)((char *)(cv_rtUiScriptLineBuf) + (cv_p))) == ((int32_t)(32))) {
-        cv_p = (cv_p + 1);
+        cv_p = CLAR_ADD32(cv_p, 1);
     }
     return (void *)((char *)(cv_rtUiScriptLineBuf) + (cv_p));
     return 0;
@@ -7855,11 +7855,11 @@ static void clar_fn_rtUiScriptZoom(void) {
     }
     cv_screenBoundsSlot = rt_ext_UiNewPtr(8);
     rt_ext_UiScreenBounds(cv_screenBoundsSlot);
-    cv_screenW = (rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (6))) - rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (2))));
-    cv_screenH = (rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (4))) - rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (0))));
+    cv_screenW = CLAR_SUB32(rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (6))), rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (2))));
+    cv_screenH = CLAR_SUB32(rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (4))), rt_peekw((void *)((char *)(cv_screenBoundsSlot) + (0))));
     rt_ext_UiDisposePtr(cv_screenBoundsSlot);
     cv_std = rt_ext_UiNewPtr(8);
-    rt_ext_UiSetRect(cv_std, 4, (20 + 19), (cv_screenW - 2), (cv_screenH - 2));
+    rt_ext_UiSetRect(cv_std, 4, CLAR_ADD32(20, 19), CLAR_SUB32(cv_screenW, 2), CLAR_SUB32(cv_screenH, 2));
     cv_contRgnH = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_wp) + (118))));
     cv_contRgnMp = (void *)(intptr_t)(rt_peekl(cv_contRgnH));
     cv_content = rt_ext_UiNewPtr(8);
@@ -7886,25 +7886,25 @@ static void clar_fn_rtUiScriptEveryPump(void) {
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_rtUiNEveryVal))) break;
-        cv_due = rt_peekl((void *)((char *)(cv_rtUiEveryDueArr) + ((cv_i * 4))));
-        if ((cv_rtUiVirtualTicks - cv_due) >= 0) {
-            rt_pokel((void *)((char *)(cv_rtUiEveryDueArr) + ((cv_i * 4))), (cv_rtUiVirtualTicks + clar_fn_uidEveryTicks(cv_i)));
+        cv_due = rt_peekl((void *)((char *)(cv_rtUiEveryDueArr) + (CLAR_MUL32(cv_i, 4))));
+        if (CLAR_SUB32(cv_rtUiVirtualTicks, cv_due) >= 0) {
+            rt_pokel((void *)((char *)(cv_rtUiEveryDueArr) + (CLAR_MUL32(cv_i, 4))), CLAR_ADD32(cv_rtUiVirtualTicks, clar_fn_uidEveryTicks(cv_i)));
             clar_fn_rtUiTraceEveryFire(cv_i);
             clar_fn_clar_ui_fire_every(cv_i);
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
 }
 
 static void clar_fn_rtUiScriptTick(int32_t cv_n) {
-    cv_rtUiVirtualTicks = (cv_rtUiVirtualTicks + cv_n);
+    cv_rtUiVirtualTicks = CLAR_ADD32(cv_rtUiVirtualTicks, cv_n);
     clar_fn_rtUiScriptEveryPump();
     clar_fn_rtUiTeIdleFront();
     clar_fn_rtUiFlushAllBuffered();
 }
 
 static void clar_fn_rtUiScriptMenu(int32_t cv_m, int32_t cv_itemNum) {
-    clar_fn_rtUiMenuDispatch(((cv_m << 16) | (cv_itemNum & 65535)));
+    clar_fn_rtUiMenuDispatch((CLAR_SHL32(cv_m, 16) | (cv_itemNum & 65535)));
 }
 
 static void clar_fn_rtUiPumpPassive(void) {
@@ -7934,9 +7934,9 @@ static void clar_fn_rtUiPumpPassive(void) {
 
 static int32_t clar_fn_rtUiHexDigit(int32_t cv_d) {
     if (cv_d < 10) {
-        return (((int32_t)(48)) + cv_d);
+        return CLAR_ADD32(((int32_t)(48)), cv_d);
     }
-    return (((int32_t)(65)) + (cv_d - 10));
+    return CLAR_ADD32(((int32_t)(65)), CLAR_SUB32(cv_d, 10));
     return 0;
 }
 
@@ -7954,7 +7954,7 @@ static void * clar_fn_rtUiHexLineText(void * cv_src) {
         cv_b = rt_peekb((void *)((char *)(cv_src) + (cv_i)));
         clar_fn_rtTextAppendChar(cv_t, clar_fn_rtUiHexDigit(((cv_b >> 4) & 15)));
         clar_fn_rtTextAppendChar(cv_t, clar_fn_rtUiHexDigit((cv_b & 15)));
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     return cv_t;
     return 0;
@@ -7988,11 +7988,11 @@ static void clar_fn_rtUiTestSnap(void * cv_namePtr) {
     if (cv_rowBytes != 64) {
         clar_fn_rtPanic(&(clar_lit_70));
     }
-    cv_rows = (rt_peekw((void *)((char *)(cv_boundsSlot) + (4))) - rt_peekw((void *)((char *)(cv_boundsSlot) + (0))));
+    cv_rows = CLAR_SUB32(rt_peekw((void *)((char *)(cv_boundsSlot) + (4))), rt_peekw((void *)((char *)(cv_boundsSlot) + (0))));
     rt_ext_UiDisposePtr(cv_baseAddrSlot);
     rt_ext_UiDisposePtr(cv_rowBytesSlot);
     rt_ext_UiDisposePtr(cv_boundsSlot);
-    cv_total = (cv_rows * cv_rowBytes);
+    cv_total = CLAR_MUL32(cv_rows, cv_rowBytes);
     cv_hdr = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_hdr, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_71)));
     clar_fn_rtUiTextAppendCStr(cv_hdr, cv_namePtr);
@@ -8001,7 +8001,7 @@ static void clar_fn_rtUiTestSnap(void * cv_namePtr) {
     while (1) {
         if (!((cv_off < cv_total))) break;
         clar_fn_rtUiEmitLine(clar_fn_rtUiHexLineText((void *)((char *)(cv_baseAddr) + (cv_off))));
-        cv_off = (cv_off + 64);
+        cv_off = CLAR_ADD32(cv_off, 64);
     }
     clar_fn_rtUiEmitLine(clar_fn_rtUiLitLine(&(clar_lit_72)));
 }
@@ -8144,18 +8144,18 @@ static int32_t clar_fn_rtUiParseInt(void * cv_p, int32_t cv_len, void * cv_out) 
         if ((cv_c < ((int32_t)(48))) || (cv_c > ((int32_t)(57)))) {
             return 0;
         }
-        if (cv_v > ((2147483647 - (cv_c - ((int32_t)(48)))) / 10)) {
+        if (cv_v > (CLAR_SUB32(2147483647, CLAR_SUB32(cv_c, ((int32_t)(48)))) / 10)) {
             return 0;
         }
-        cv_v = ((cv_v * 10) + (cv_c - ((int32_t)(48))));
+        cv_v = CLAR_ADD32(CLAR_MUL32(cv_v, 10), CLAR_SUB32(cv_c, ((int32_t)(48))));
         cv_anyDigit = 1;
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     if (!(cv_anyDigit)) {
         return 0;
     }
     if (cv_neg) {
-        rt_pokel(cv_out, (0 - cv_v));
+        rt_pokel(cv_out, CLAR_SUB32(0, cv_v));
     } else {
         rt_pokel(cv_out, cv_v);
     }
@@ -8188,7 +8188,7 @@ static int32_t clar_fn_rtUiParseFixed(void * cv_p, int32_t cv_len, void * cv_out
         return 0;
     }
     cv_i = 0;
-    cv_dot = (-(1));
+    cv_dot = CLAR_NEG32(1);
     cv_neg = 0;
     if (rt_peekb(cv_p) == ((int32_t)(45))) {
         cv_neg = 1;
@@ -8210,7 +8210,7 @@ static int32_t clar_fn_rtUiParseFixed(void * cv_p, int32_t cv_len, void * cv_out
                 cv_anyDigit = 1;
             }
         }
-        cv_i = (cv_i + 1);
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     if (!(cv_anyDigit)) {
         return 0;
@@ -8229,25 +8229,25 @@ static int32_t clar_fn_rtUiParseFixed(void * cv_p, int32_t cv_len, void * cv_out
     while (1) {
         if (!((cv_j < cv_limit))) break;
         cv_c = rt_peekb((void *)((char *)(cv_p) + (cv_j)));
-        if (cv_ipart > ((32767 - (cv_c - ((int32_t)(48)))) / 10)) {
+        if (cv_ipart > (CLAR_SUB32(32767, CLAR_SUB32(cv_c, ((int32_t)(48)))) / 10)) {
             return 0;
         }
-        cv_ipart = ((cv_ipart * 10) + (cv_c - ((int32_t)(48))));
-        cv_j = (cv_j + 1);
+        cv_ipart = CLAR_ADD32(CLAR_MUL32(cv_ipart, 10), CLAR_SUB32(cv_c, ((int32_t)(48))));
+        cv_j = CLAR_ADD32(cv_j, 1);
     }
     cv_frac = 0;
     if (cv_dot >= 0) {
-        cv_j = (cv_len - 1);
+        cv_j = CLAR_SUB32(cv_len, 1);
         while (1) {
             if (!((cv_j > cv_dot))) break;
             cv_c = rt_peekb((void *)((char *)(cv_p) + (cv_j)));
-            cv_frac = ((cv_frac + ((cv_c - ((int32_t)(48))) * 65536)) / 10);
-            cv_j = (cv_j - 1);
+            cv_frac = (CLAR_ADD32(cv_frac, CLAR_MUL32(CLAR_SUB32(cv_c, ((int32_t)(48))), 65536)) / 10);
+            cv_j = CLAR_SUB32(cv_j, 1);
         }
     }
-    cv_v = ((cv_ipart << 16) | cv_frac);
+    cv_v = (CLAR_SHL32(cv_ipart, 16) | cv_frac);
     if (cv_neg) {
-        rt_pokel(cv_out, (0 - cv_v));
+        rt_pokel(cv_out, CLAR_SUB32(0, cv_v));
     } else {
         rt_pokel(cv_out, cv_v);
     }
@@ -8308,7 +8308,7 @@ static int32_t clar_fn_rtUiFormCharOk(void * cv_te, int32_t cv_ch, int32_t cv_ft
                 rt_ext_UiHUnlock(cv_th);
                 return 0;
             }
-            cv_i = (cv_i + 1);
+            cv_i = CLAR_ADD32(cv_i, 1);
         }
         rt_ext_UiHUnlock(cv_th);
         return 1;
@@ -8438,14 +8438,14 @@ static void clar_fn_rtUiFormFill(void * cv_inst) {
                             cv_sel = cv_k;
                             cv_k = cv_enumCount;
                         } else {
-                            cv_k = (cv_k + 1);
+                            cv_k = CLAR_ADD32(cv_k, 1);
                         }
                     }
                     clar_fn_rtUiSetPopupSelAt(cv_w, cv_wIdx, cv_sel);
                 }
             }
         }
-        cv_b = (cv_b + 1);
+        cv_b = CLAR_ADD32(cv_b, 1);
     }
     rt_ext_UiDisposePtr(cv_text);
     rt_ext_UiSetPort(cv_savedPort);
@@ -8543,7 +8543,7 @@ static void clar_fn_rtUiFormAccept(void * cv_inst) {
                     while (1) {
                         if (!((cv_z < cv_strCap))) break;
                         rt_pokeb((void *)((char *)((void *)((char *)(cv_base) + (1))) + (cv_z)), 0);
-                        cv_z = (cv_z + 1);
+                        cv_z = CLAR_ADD32(cv_z, 1);
                     }
                 } else {
                     if (cv_ftype == 2) {
@@ -8577,7 +8577,7 @@ static void clar_fn_rtUiFormAccept(void * cv_inst) {
                 }
             }
         }
-        cv_b = (cv_b + 1);
+        cv_b = CLAR_ADD32(cv_b, 1);
     }
     rt_ext_UiDisposePtr(cv_text);
     if (cv_rtUiModalWbKind == 1) {
@@ -8640,7 +8640,7 @@ static void clar_fn_rtUiEdit(int32_t cv_winIdx, void * cv_src, int32_t cv_isNew,
         clar_fn_rtPanic(&(clar_lit_95));
     }
     cv_formOff = clar_fn_uidWinFormOff(cv_winIdx);
-    if (cv_formOff == (-(1))) {
+    if (cv_formOff == CLAR_NEG32(1)) {
         clar_fn_rtPanic(&(clar_lit_96));
     }
     cv_layoutOff = clar_fn_uidFormLayoutOff(cv_formOff);
@@ -8671,7 +8671,7 @@ static void clar_fn_rtUiEdit(int32_t cv_winIdx, void * cv_src, int32_t cv_isNew,
         if (cv_klen > 255) {
             cv_klen = 255;
         }
-        rt_ext_UiBlockMoveData(cv_key255, cv_rtUiModalKey255, (cv_klen + 1));
+        rt_ext_UiBlockMoveData(cv_key255, cv_rtUiModalKey255, CLAR_ADD32(cv_klen, 1));
     }
     cv_inst = clar_fn_rtUiOpen(cv_winIdx);
     cv_rtUiModalInst = cv_inst;
@@ -8693,7 +8693,7 @@ static int32_t clar_fn_rtUiAskOpen(void * cv_path255, void * cv_filter) {
     cv_kind = 0;
     if (cv_rtUiScripted) {
         cv_idx = clar_fn_rtUiAnswerPopIdx();
-        cv_kind = rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + ((cv_idx * 4))));
+        cv_kind = rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_idx, 4))));
         if (cv_kind == 3) {
             clar_fn_rtUiEmitLine(clar_fn_rtUiLitLine(&(clar_lit_97)));
             return 0;
@@ -8702,7 +8702,7 @@ static int32_t clar_fn_rtUiAskOpen(void * cv_path255, void * cv_filter) {
             clar_fn_rtPanic(&(clar_lit_98));
             return 0;
         }
-        clar_fn_rtUiPstrcpy(cv_path255, (void *)((char *)(cv_rtUiAnswerStrs) + ((cv_idx * 256))));
+        clar_fn_rtUiPstrcpy(cv_path255, (void *)((char *)(cv_rtUiAnswerStrs) + (CLAR_MUL32(cv_idx, 256))));
         clar_fn_rtUiTraceAskPath(&(clar_lit_99), cv_path255);
         return 1;
     }
@@ -8717,7 +8717,7 @@ static int32_t clar_fn_rtUiAskSave(void * cv_path255, void * cv_suggested) {
     cv_kind = 0;
     if (cv_rtUiScripted) {
         cv_idx = clar_fn_rtUiAnswerPopIdx();
-        cv_kind = rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + ((cv_idx * 4))));
+        cv_kind = rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_idx, 4))));
         if (cv_kind == 3) {
             clar_fn_rtUiEmitLine(clar_fn_rtUiLitLine(&(clar_lit_100)));
             return 0;
@@ -8726,7 +8726,7 @@ static int32_t clar_fn_rtUiAskSave(void * cv_path255, void * cv_suggested) {
             clar_fn_rtPanic(&(clar_lit_101));
             return 0;
         }
-        clar_fn_rtUiPstrcpy(cv_path255, (void *)((char *)(cv_rtUiAnswerStrs) + ((cv_idx * 256))));
+        clar_fn_rtUiPstrcpy(cv_path255, (void *)((char *)(cv_rtUiAnswerStrs) + (CLAR_MUL32(cv_idx, 256))));
         clar_fn_rtUiTraceAskPath(&(clar_lit_102), cv_path255);
         return 1;
     }
@@ -8749,12 +8749,12 @@ static int32_t clar_fn_rtUiAskSaveChanges(void * cv_name) {
     cv_t = 0;
     if (cv_rtUiScripted) {
         cv_idx = clar_fn_rtUiAnswerPopIdx();
-        cv_kind = rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + ((cv_idx * 4))));
+        cv_kind = rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_idx, 4))));
         if (cv_kind != 2) {
             clar_fn_rtPanic(&(clar_lit_103));
             return 0;
         }
-        cv_v = rt_peekl((void *)((char *)(cv_rtUiAnswerVals) + ((cv_idx * 4))));
+        cv_v = rt_peekl((void *)((char *)(cv_rtUiAnswerVals) + (CLAR_MUL32(cv_idx, 4))));
         cv_t = clar_fn_rtTextNew();
         clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_104)));
         if (cv_v == 0) {
@@ -8772,12 +8772,12 @@ static int32_t clar_fn_rtUiAskSaveChanges(void * cv_name) {
     cv_empty = clar_fn_rtUiEmptyPStrGet();
     rt_ext_UiParamText(cv_name, cv_empty, cv_empty, cv_empty);
     cv_item = rt_ext_UiAlert(130, (void *)(intptr_t)(0));
-    return (cv_item - 1);
+    return CLAR_SUB32(cv_item, 1);
     return 0;
 }
 
 static void * clar_fn_sortedmapValSlot(void * cv_m, int32_t cv_i) {
-    return (void *)((char *)(rt_ext_SortedMapHandleDeref((((clar_rec_RtSortedMap *)(cv_m)))->cv_vals)) + ((cv_i * (((clar_rec_RtSortedMap *)(cv_m)))->cv_valsize)));
+    return (void *)((char *)(rt_ext_SortedMapHandleDeref((((clar_rec_RtSortedMap *)(cv_m)))->cv_vals)) + (CLAR_MUL32(cv_i, (((clar_rec_RtSortedMap *)(cv_m)))->cv_valsize)));
     return 0;
 }
 
@@ -8815,7 +8815,7 @@ static void clar_fn_rtSortedMapRetain(void * cv_m) {
         return;
     }
     cv_rm = ((clar_rec_RtSortedMap *)(cv_m));
-    (cv_rm)->cv_rc = ((cv_rm)->cv_rc + 1);
+    (cv_rm)->cv_rc = CLAR_ADD32((cv_rm)->cv_rc, 1);
 }
 
 static void clar_fn_rtSortedMapRelease(void * cv_m) {
@@ -8828,7 +8828,7 @@ static void clar_fn_rtSortedMapRelease(void * cv_m) {
     if ((cv_rm)->cv_rc <= 0) {
         rt_ext_SortedMapRcCheck(cv_m, (cv_rm)->cv_rc);
     }
-    (cv_rm)->cv_rc = ((cv_rm)->cv_rc - 1);
+    (cv_rm)->cv_rc = CLAR_SUB32((cv_rm)->cv_rc, 1);
     if ((cv_rm)->cv_rc == 0) {
         rt_ext_SortedMapDisposeHandle((cv_rm)->cv_keys);
         rt_ext_SortedMapDisposeHandle((cv_rm)->cv_vals);
@@ -8854,7 +8854,7 @@ static void clar_fn_rtSortedMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
 }
 
 static void clar_fn_ui_every_0(void) {
-    cv_ticks = (cv_ticks + 1);
+    cv_ticks = CLAR_ADD32(cv_ticks, 1);
 }
 
 static void clar_fn_handler_App_launch(void) {
@@ -8876,7 +8876,7 @@ static void clar_fn_ui_Main_resized(void * cv_window) {
 }
 
 static void clar_fn_ui_Main_key(void * cv_window, uint8_t cv_k) {
-    ((*(clar_uistate_Main *)clar_fn_rtUiState(cv_window))).cv_state = (((*(clar_uistate_Main *)clar_fn_rtUiState(cv_window))).cv_state + 1);
+    ((*(clar_uistate_Main *)clar_fn_rtUiState(cv_window))).cv_state = CLAR_ADD32(((*(clar_uistate_Main *)clar_fn_rtUiState(cv_window))).cv_state, 1);
 }
 
 static void clar_fn_ui_Main_Go_click(void * cv_window) {
