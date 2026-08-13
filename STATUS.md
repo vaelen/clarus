@@ -1,43 +1,95 @@
-# Session status — 2026-08-13 (runtime-ir-bake MERGED; fallback-trigger-narrowing specced+planned)
+# Session status — 2026-08-13 (fallback-trigger-narrowing DONE, T2 GREEN; Snow rerun pending at tip)
 
 Handoff summary for the next session. Current branch:
 `fallback-trigger-narrowing` (created from `main` after the
-runtime-ir-bake merge). **`runtime-ir-bake` was MERGED to `main`
-(fast-forward `322765a..b16e8f0`, Andrew's instruction, 2026-08-13
-09:56 JST) and pushed to origin** — the six-phase stack plus
-runtime-ir-bake are all on `origin/main`.
+runtime-ir-bake merge, `b16e8f0`). Not yet merged. `runtime-ir-bake`
+itself was MERGED to `main` (fast-forward `322765a..b16e8f0`, 2026-08-13
+09:56 JST) and pushed to origin earlier this same day — the six-phase
+stack plus runtime-ir-bake are all on `origin/main`; `fallback-trigger-
+narrowing` stacks on top, unmerged.
 
-## 0. START HERE next session: implement fallback-trigger-narrowing
+## 0. START HERE next session: precompiled-artifacts stage 3.5 (object code + linker)
 
-Brainstormed, specced, and planned 2026-08-13 morning (Andrew-approved
-design). **Spec (normative):**
-`docs/superpowers/specs/2026-08-13-fallback-trigger-narrowing-design.md`
-**Plan (4 tasks):**
-`docs/superpowers/plans/2026-08-13-fallback-trigger-narrowing.md`
+`fallback-trigger-narrowing` is DONE (section 0b below) — its own
+prerequisite Snow rerun is still pending (standing rule: this phase
+touched `bake.cla`/`macgui.cla`, so `TestClarusCBakePathOnSnow` must run
+manually before merge; the controller runs it separately after final
+review, at the true tip). Once that's confirmed PASS, stage 3.5 (object
+code + linker) — the next item in
+`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`'s
+own staging — is next in line. No spec/plan exists yet for 3.5; first job
+is speccing it, same process as runtime-ir-bake and fallback-trigger-
+narrowing before it. Merge decisions for the whole unmerged stack
+(`fallback-trigger-narrowing` on top of the six phases already on
+`origin/main`) remain Andrew's call.
 
-One-paragraph summary: a user `include` of a bake-carried file (the 18
-runtime modules or the three transitively-baked toolbox catalog files)
-currently abandons the bake for that compile. The fix mirrors
-from-source's hoist-dedup by construction: parse the user's copy for
-check#1 visibility only, drop it before lowering (the baked IR already
-holds the module at the hoist position), so byte-identity holds by
-construction. A per-module source hash (CLIR v4→v5) scopes the remaining
-fallback to genuine on-disk drift. Housekeeping folded in: the
-`macgui.cla` fallback-reason string (stale since the v4 body hash) and
-the dead tight-scratch indirection in `cg68k.cla` (zero-churn goldens
-required). Execution: subagent-driven per CLAUDE.md (sonnet impl/review,
-opus for the hardest reviews, most-capable final review; NEVER Fable for
-subagents; log models at dispatch). Task 1 is a probe wave (commits
-nothing) verifying the two load-bearing assumptions — checker-state
-parity and exact-drop — and choosing the subtree-drop mechanic; its
-report may amend Tasks 2-3. Merge gate: full T2 at tip PLUS the standing
-Snow rerun (`TestClarusCBakePathOnSnow`, ~1h) since `bake.cla`/
-`macgui.cla` change.
+## 0b. fallback-trigger-narrowing close-out (DONE, this session)
 
-After this phase, stage 3.5 (object code + linker) per
-`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`.
+Design `docs/superpowers/specs/2026-08-13-fallback-trigger-narrowing-design.md`
+(now annotated where Task 2 narrowed a claim). Plan (4 tasks)
+`docs/superpowers/plans/2026-08-13-fallback-trigger-narrowing.md`. Full
+ledger: `.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/progress.md`.
+Full detail: ROADMAP's `fallback-trigger-narrowing` entry.
 
-## 0b. runtime-ir-bake close-out recap (DONE, merged to main)
+Resolved runtime-ir-bake's own recorded debt item, "include-dedup
+fallback trigger too broad": a user `include` of a bake-carried file (the
+18 runtime modules, or nested includes like `toolbox/{files,standardfile,
+appleevents}.cla`) used to abandon the bake unconditionally for that
+compile. Now it mirrors from-source's own hoist-dedup by construction —
+parse the user's copy for check#1 visibility, drop it before lowering —
+so byte-identity holds by construction, and a new per-module source hash
+(CLIR format v4 → v5) scopes the REMAINING fallback to genuine on-disk
+drift only, logging the drifted path.
+
+- **4 tasks, commits `fa59108..4d1beb4`.** Task 1 (probe, no tree
+  commits) verified both load-bearing assumptions PASS and chose the
+  decl-chain-surgery drop mechanic. Task 2 (`fa59108`, fix round 1
+  `9afbf72`) implemented the mechanism + CLIR v5, and along the way found
+  and fixed a real latent gap in the ORIGINAL runtime-ir-bake testapi
+  preload (it never baked `check.cla`'s own `fieldInfos`/
+  `recFieldsHeadByName` side tables, silently breaking any record-bearing
+  early-visible manifest module under the new dedup path — closed with a
+  new `bkSecFieldInfo` section). Task 3 (`d8ee325`, fix round 1
+  `5e71b1f`) built the oracle set (collision/drift/testapi-parity tests,
+  plus one bonus coverage-gap test). Task 4 (this session,
+  `a65cdd5`/`0570af5`/`4d1beb4`) did the housekeeping the design folded
+  in: `macgui.cla`'s fallback-reason string now enumerates the real v5
+  refusal set (was stale since the v4 body-hash check) and documents the
+  new drift-fallback reason; `cg68k.cla`'s now-redundant tight-to-tight
+  scratch buffer in `fromBytes`/`toBytes` codegen was removed for real
+  (arrays are passed by address directly since `cgArrElemStride` made
+  them tight), confirmed zero golden churn; the bootstrap snapshot was
+  regenerated to a Go-free fixed point (converged round 1, reverified
+  round 2).
+- **Deviation from the design** (Task 2 fix round 1, annotated in the
+  spec's own "testapi interaction" section): the design's case (b)
+  ("full dedup, no parse") is implemented as "dedup BEFORE THE CHECKER"
+  — `expand()` still parses the collided file (harmless, hash-proven
+  identical), only the excise from the checker/lowering is new, because
+  `isUiProg` isn't known until Phase A finishes. Observable behavior
+  matches "full dedup" (proven by the corpus byte-identity gate); the
+  parse-cost saving the design's wording implied does not.
+- **T2 (`scripts/test-merge.sh`): GREEN at `4d1beb4`, 240s** (T1 body
+  18s, `internal/selfhost` 92s, gated native `internal/mactest` lane
+  125s, `CLARUS_BAKE_FULL` bake corpus 5s). Run this session at tip,
+  foreground, logged to
+  `.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/task4-t2.log`.
+- **All deferred minors** (from both Task 2's and Task 3's own review
+  rounds — drift-log-line/`--rtdir` edge case, bake-time `readText`
+  failure with no diagnostic, `bkInstallFieldInfo`'s widened preload
+  contract, the still-open field-table visibility-boundary gap, the
+  `bkSecFieldInfo` unrecorded-invariant note, `driveRebuildChainSkipping`'s
+  missing early exit, the drift fixture's semantically-null mutation, the
+  four root-directory test fixtures, `copyTree`'s mode-flattening) are
+  recorded in the ROADMAP entry's "Deferred / phase debt" list — none
+  newly introduced this task, all carried honestly rather than smoothed
+  over.
+- **Standing rule still applies, PENDING**: `TestClarusCBakePathOnSnow`
+  (`CLARUS_SNOW_TESTS=1`) has NOT been re-run yet for this phase's
+  `bake.cla`/`macgui.cla` changes — the controller runs it separately,
+  after final review, at the true tip (see section 0 above).
+
+## 0c. runtime-ir-bake close-out recap (DONE, merged to main)
 
 `runtime-ir-bake` is DONE, full `scripts/test-merge.sh` GREEN (232s at
 commit `3bdbb3b`, re-confirmed 233s at tip `b16e8f0`). Task 7's own
@@ -355,7 +407,7 @@ summary here.
   pre-param-abi by-value string push, which made every native
   list-bounds panic print an EMPTY message and hid bug 1's own
   diagnostic for a full session). Root-caused and fixed same day,
-  commit `3bdbb3b` — see section 0 above and the ROADMAP entry's "T2
+  commit `3bdbb3b` — see section 0c above and the ROADMAP entry's "T2
   blocker" subsection for the full narrative. The prior session's
   leading hypothesis (Task 5's splice reorder, `e72b92a`) was disproven
   by a code-independent repro flip, not confirmed.
@@ -461,20 +513,18 @@ boots it.
    above.** T2 (`scripts/test-merge.sh`'s `go test ./internal/selfhost`
    body) is fully green; the two pre-existing `TestClarusModules` goldens
    are fixed.
-6. Merge decisions (Andrew's): `mac-resident-clarusc` still gated on a
-   Snow acceptance PASS; `map-hashtable`, `datetime-instrumentation`,
-   `layer1-compiler-perf`, `memory-leak-fix`, `param-abi`, and now
-   `runtime-ir-bake` are all stacked on top of it, unmerged, in that
-   order. `param-abi`'s full `scripts/test-merge.sh` ran GREEN at
-   `5e44fd3` (2026-08-12, 225s total incl. the native emulator lane) —
-   fully gated and merge-ready. **`runtime-ir-bake`'s full
-   `scripts/test-merge.sh` is ALSO GREEN**, at `3bdbb3b` (232s) — fully
-   gated and merge-ready from a testing standpoint. None of the six
-   stacked, unmerged phases have been merged yet.
-7. **Next session: precompiled-artifacts stage 3.5 (object code +
-   linker)** is next in line — the param-ABI prerequisite landed in the
-   param-abi phase, the runtime-ir-bake phase's T2 blocker that would
-   have made starting 3.5 premature is now fixed, and the IR-bake
-   serializer/loader is the reusable foundation 3.5 builds on (see the
-   notes doc's own staging). No spec/plan exists yet for 3.5 — first job
-   is speccing it, same as runtime-ir-bake specced item 3.
+6. **SUPERSEDED — merged.** `mac-resident-clarusc`, `map-hashtable`,
+   `datetime-instrumentation`, `layer1-compiler-perf`, `memory-leak-fix`,
+   `param-abi`, and `runtime-ir-bake` (the six-phase stack plus
+   runtime-ir-bake) were all merged to `main` 2026-08-13 09:56 JST
+   (fast-forward `322765a..b16e8f0`) and pushed to `origin/main` — see
+   the top of this document. `fallback-trigger-narrowing` is now the one
+   unmerged phase, stacked on top of that merged `main`; its own T2 is
+   GREEN (section 0b above) and its Snow rerun is pending. Merge remains
+   Andrew's call.
+7. **DONE — see section 0 above.** Precompiled-artifacts stage 3.5
+   (object code + linker) is next in line, now that
+   `fallback-trigger-narrowing` (which this item originally preceded) is
+   also DONE. No spec/plan exists yet for 3.5 — first job is speccing it,
+   same process as runtime-ir-bake and fallback-trigger-narrowing before
+   it.

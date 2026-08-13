@@ -1262,16 +1262,16 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   post-param-abi baseline), not a precise before/after delta.
 
   **Deferred / phase debt:**
-  - **Include-dedup fallback trigger is broad** (Task 5 review, Important
-    3; explicitly carried to this entry per the review's own scoping):
-    any program `include`-ing `toolbox/{files,standardfile,appleevents}.cla`
-    (transitive bake inputs) silently falls back to a from-source compile
+  - **Include-dedup fallback trigger is broad — RESOLVED (fallback-trigger-
+    narrowing phase, below).** Was: Task 5 review, Important 3; explicitly
+    carried to this entry per the review's own scoping: any program
+    `include`-ing `toolbox/{files,standardfile,appleevents}.cla`
+    (transitive bake inputs) silently fell back to a from-source compile
     for that build — correct, but loses the speedup, visible only via a
-    Log line. Narrowing direction: distinguish a `--testapi`-only or
-    extern-only-declaration collision (harmless, could stay on the bake
-    path) from a real hoisting collision (needs fallback). Not attempted
-    this phase (Task 6 was explicitly told not to; Task 7 only documents
-    it).
+    Log line. The successor phase narrowed the trigger to genuine on-disk
+    drift via a per-module source hash (CLIR v5) plus a check-only-include
+    mechanism that mirrors from-source's own hoist-dedup — see that
+    entry's own writeup for the mechanism and its case-(b) amendment.
   - **`rtUiTableClick`'s row math has no upper clamp** against the live
     row count (T2-blocker fix's own deliberate choice, above) — a
     robustness hole for a future instance of the same stale-master-
@@ -1292,6 +1292,12 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     same checkout always agree, and the snapshot is regenerated at every
     phase close (`CLAUDE.md`). Longer-term fix, not attempted: hash the
     live runtime module source set instead of the bootstrap snapshot.
+    **Still open** — the fallback-trigger-narrowing phase's own per-module
+    hash (below) closes only the include-collision slice of this gap (a
+    user-included manifest file that's drifted on disk is now detected);
+    the stamp itself still hashes the committed `clarusc.c` snapshot, not
+    the live runtime source set, for every OTHER path (non-collision
+    drift, the stamp's own generator/loader identity check).
   - **Deliverable 5(c)'s honest narrowing** ("baked `curPathIdx` path
     stamps so runtime-attributed diagnostics/panics still name the right
     source file"): runtime-attributed diagnostics are actually an
@@ -1312,6 +1318,241 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   124s, `CLARUS_BAKE_FULL` bake corpus 5s). **Merge-ready from a testing
   standpoint** (merge itself remains Andrew's call, per standing
   convention).
+
+- **fallback-trigger-narrowing (branch `fallback-trigger-narrowing`,
+  2026-08-13, based on `runtime-ir-bake`/`main` at `b16e8f0`): DONE, T2
+  GREEN (see below).**
+  Successor to runtime-ir-bake, resolving that phase's own recorded debt
+  item "include-dedup fallback trigger too broad" (above). Design
+  `docs/superpowers/specs/2026-08-13-fallback-trigger-narrowing-design.md`,
+  plan `docs/superpowers/plans/2026-08-13-fallback-trigger-narrowing.md`.
+  Full ledger:
+  `.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/progress.md`.
+
+  On the bake path, a user `include` that resolves to a bake-carried file
+  (the 18 runtime modules or their nested includes — notably
+  `toolbox/{files,standardfile,appleevents}.cla`, the exact files the
+  toolbox cookbook tells users to compose) used to abandon the bake
+  unconditionally for that compile. This phase mirrors from-source's own
+  hoist-dedup by construction: on a manifest collision, parse the user's
+  copy into the user chain for check#1 visibility (diagnostics attribute
+  to the real file, same as from-source), then drop the parsed subtree
+  before lowering — the baked IR already carries that module's lowered
+  form at the hoist position, so byte-identity holds by construction. A
+  new per-module source hash (CLIR format v4 → v5) scopes the remaining
+  fallback to genuine on-disk drift only, logging the drifted path.
+
+  **4 tasks, commits `fa59108..4d1beb4`.** Task 1 was a probe wave (no
+  tree commits — hacked `drive.cla` locally, reverted after measuring)
+  that verified both load-bearing assumptions PASS (checker-state
+  parity: the check-only user-position copy is the only source of a
+  non-testapi collision's symbols, so there's no double-registration
+  hazard to parity-check against; exact drop: zero stray IR survives a
+  decl-chain-surgery sever of the parsed-but-unwanted subtree before
+  `lowerProgram`), chose the drop mechanic (decl-chain surgery —
+  generalizing `driveEarlySplice`'s own hoisted-skip relink loop to an
+  arbitrary skip list, not a new AST-walk skip flag threaded through
+  every decl consumer), and captured the exact testapi double-declare
+  diagnostic text a real dedup-under-testapi resolution needs to avoid
+  (10 `redeclaration of <Name>` lines, one per top-level name in the
+  collided file). It also corrected a stale citation (`bkComputeManifestPaths`
+  is at `bake.cla:2672`, not the plan's `2623-2631`).
+
+  Task 2 (`fa59108`, fix round 1 `9afbf72`) implemented the mechanism:
+  `expand()`'s collision branch now reads the resolved file once, hashes
+  it, and compares against a new per-manifest-module hash table
+  (`bkSecManifestHashes = 46`, format v5, written at `--bake-ir` time by
+  walking `asmHeads` so nested includes get their own hash entry exactly
+  like the 18 top-level modules) — hash-equal falls through to an
+  ordinary check-only parse (case a); hash-different-or-absent sets the
+  first drifted path and returns false, driving the existing fallback
+  with a new log line naming the exact file (`clarusc --rtbake: <path>
+  differs from the baked copy; falling back to a from-source compile`).
+  Before `lowerProgram`, every collided subtree is severed from the decl
+  chain the Task 1 probe proved sufficient — `combined2` is only rebuilt
+  when a collision actually occurred, so the zero-collision case (the
+  overwhelming majority of bake compiles) pays no cost. Under `--testapi`
+  with the collided module already early-visible (preloaded checker
+  symbols), the excise happens BEFORE `checkPhase1` instead (case b), so
+  the parsed-but-unwanted decls never reach the checker or lowering —
+  avoiding the hard double-declare Task 1's own probe proved would
+  otherwise fire.
+
+  **Unplanned addition, found mid-Task-2 by testing against the real
+  toolbox-suite composition rather than a synthetic fixture:** case (b)'s
+  excise-before-checker approach silently produced wrong compiles
+  (`undefined: ioNamePtr`/`undefined: fdType`, etc.) for any
+  record-bearing early-visible manifest module, because the ORIGINAL
+  runtime-ir-bake testapi preload only ever baked
+  `funcSigs`/`symbols`/`scopes`/`typeArena`/`enumMembers` — never
+  `check.cla`'s own `fieldInfos`/`recFieldsHeadByName` side tables, which
+  `lower.cla` also reads at lowering time. This is a real, previously
+  latent gap in the original phase's preload (nothing before this task
+  ever forced a record-bearing early-visible module through a
+  no-parse/dedup-fully path), not something the design anticipated —
+  fixed in-scope since the toolbox-suite corpus gate is one of this
+  task's own required gates: a new `bkSecFieldInfo = 47` section
+  (`bkSectionCount` 42 → 44) wholesale-bakes and reinstalls
+  `fieldInfos`/`recFieldsHeadByName`, mirroring `bkSecCheckerSymbols`'s
+  own convention.
+
+  **Deviation from the design/plan, found by review (Task 2 fix round
+  1):** the design's Interfaces line describes case (b) as "full dedup
+  (no parse)"; what's actually implemented is "dedup BEFORE THE
+  CHECKER" — `expand()` still lexes/parses the collided file into
+  `combined` like any other include (harmless, proven content-identical
+  by the hash check), and only the excise from `combined` right before
+  `checkPhase1` is new. The checker and lowering never see the collided
+  decls (proven by the corpus byte-identity gate), so the OBSERVABLE
+  behavior matches "full dedup" — but the parse cost the design's wording
+  implies removing is still paid. Root cause: the case-(a)/(b) choice
+  needs `isUiProg`, which isn't known until Phase A (every `expand()`
+  call) finishes, so `expand()` has no way to look ahead mid-Phase-A and
+  skip parsing a file it hasn't classified yet. Chosen remedy: a
+  documented amendment (drive.cla's own case-(b) doc comment states this
+  plainly, with the reasoning) rather than a Phase-A restructure to defer
+  the collision decision past every `expand()` call — judged a
+  materially bigger, riskier change than this task's scope for a cost
+  (some parse cycles on files the checker/lowering already never see)
+  nothing in this phase's gates penalizes. Also annotated in the design
+  spec's own "testapi interaction" section.
+
+  Task 3 (`d8ee325`, fix round 1 `5e71b1f`) built the oracle set:
+  `TestBakeFullCorpusSuiteToolbox` needed no change (Task 2 had already
+  flipped it to a genuine no-fallback byte-identity assertion, matching
+  `TestBakeFullCorpusSuiteCore`'s shape exactly). `TestRtbakeIncludeCheckOnly`
+  (Task 2's own rename/flip of the old dedup-fallback test) was extended
+  into a two-fixture table (`CoreCla`, a top-level module with real
+  funcs/globals/strlits; `ToolboxFiles`, a nested pure-extern-catalog
+  include) plus a negative twin,
+  `TestRtbakeIncludeCheckOnlyUndefinedExternNegative`, sharpened in fix
+  round 1 to reference `SFGetFile`/`SFReply` — symbols that ARE in the
+  bake (a sibling nested include of the same early-spliced module) but
+  NOT in the specific collided file, discriminating a real
+  visibility-leak bug from the compiler simply reporting an unknown name
+  outright. `TestRtbakeDriftFallback` bakes from a private temp copy of
+  the runtime tree, mutates a file's bytes post-bake, and asserts the
+  exact drift log line fires and the from-source fallback still succeeds
+  byte-identical to a plain from-source compile — its path-identity chase
+  (a nested manifest module's hash key is fixed at BAKE time via
+  `bkLoadedDeclFileTab`, not recomputed against a compile-time `--rtdir`
+  override) is recorded in the task report for future readers.
+  `TestRtbakeTestapiIncludeParity` proves case (b) end to end on the real
+  early-visible/testapi combination (no fallback, byte-identical); its
+  own doc comment records why the redeclaration diagnostic shape Task 1
+  captured is structurally unreachable once the real dedup lands (that
+  shape only ever appeared under Task 1's own probe hack, which
+  disabled the real fix to prove it was necessary). A bonus test beyond
+  the plan's four,
+  `TestRtbakeTestapiManifestOnlyIncludeParity` (a `--testapi` program
+  directly including a NOT-early-visible manifest module,
+  `runtime/clarus/sortedmap.cla`), closes a real coverage gap for Task
+  2's own deferred field-info-visibility-boundary minor — passed clean
+  (no bug found), kept as a standing regression oracle for that gap.
+
+  Task 4 (housekeeping + close-out, commits `a65cdd5`, `0570af5`,
+  `4d1beb4`, this entry): `macgui.cla`'s `gcResolveBakePath` fallback
+  string enumerated a pre-v4 refusal set (missing the body-hash check);
+  updated to `format/version/lane/stamp/body-hash mismatch`, and its doc
+  comment now documents the new per-module drift fallback as a fourth
+  reason category — decided later, inside `driveCompile`, surfaced
+  through the same `feProgress`/`log()` seam as `gcResolveBakePath`'s own
+  bakeMsg, not by this function. `cg68k.cla`'s
+  `cgFillTightScratchFromPaddedArr`/`cgDrainTightScratchToPaddedArr` —
+  left in place, self-documented as redundant, by runtime-ir-bake Task
+  6's own stride fix — were removed for real:
+  `cgIntrStrFromBytes`/`cgIntrTextFromBytes` now pass the array
+  argument's own address straight to the runtime call as the source
+  buffer, `cgIntrStrToBytes`/`cgIntrTextToBytes` pass it as the
+  destination, so the runtime reads/writes the array's own storage
+  directly with no scratch copy at all. Confirmed no
+  `testdata/cg68k`/`testdata/emitui` golden exercises this code path
+  before removing it; `go test ./internal/cg68k/... ./internal/emitui/...
+  -count=1` showed zero churn, as required. The bootstrap snapshot
+  (`clarusc/clarusc.c`) was then regenerated to a Go-free fixed point —
+  converged at round 1 (stage-1 snapshot → emit gen1 → cc → emit gen2,
+  `cmp` identical) and reverified stable through a second round;
+  `TestSnapshotFixedPoint` and the full `go test ./internal/selfhost
+  -count=1 -timeout 30m` (91s) both green.
+
+  **Deferred / phase debt (all from the task ledger, none newly
+  introduced this task):**
+  - **Drift log line can fire misleadingly under a `--rtdir` override**
+    (Task 2): a resolved path with no baked hash entry (defensive
+    "absent means drift" branch) doesn't distinguish "genuinely not in
+    the manifest" from "hashed under a different `--rtdir` than this
+    compile's" — `drive.cla:891-897` vs `bkComputeManifestPaths`'s own
+    dual-keying. Not hit by any oracle in this phase (every fixture uses
+    the bake-time `--rtdir`), recorded for a future `--rtdir`-mismatch
+    test.
+  - **Bake-time `file.readText` failure silently skips a manifest hash
+    entry**, no diagnostic (`bake.cla:1415`) — would surface later as
+    the "absent" defensive-drift branch above, not a crash, but with no
+    direct signal at `--bake-ir` time.
+  - **`bkInstallFieldInfo` runs on every testapi+UI bake compile**, not
+    only case-(b) collisions (`drive.cla:1937`) — the preload contract
+    widened for correctness (see the field-info gap above) rather than
+    being scoped to exactly the compiles that need it. Harmless
+    (wholesale replace, same convention as the existing
+    `bkInstallTypeArenaPrefix`) but broader than strictly necessary.
+  - **No visibility boundary on the field-table install**, unlike
+    `bkSecCheckerVisibility`'s own gating — Task 3's
+    `TestRtbakeTestapiManifestOnlyIncludeParity` closes the coverage gap
+    (a manifest-only module's fields get installed wholesale with no
+    gate) but does NOT fix the underlying gap; it passed clean because
+    each compile's own `checkRecordDecl` run allocates fresh
+    type-arena/decl indices for the freshly-parsed check-only copy, so
+    the wholesale-installed baked entries and the user-chain entries
+    don't collide today — plausible, not independently proven beyond the
+    test passing. Now a standing regression oracle: if a future change
+    makes them collide, this is the test that goes red.
+  - **`bkSecFieldInfo` sufficiency rests on an unrecorded invariant**
+    (baked modules have no `method`/`window`/`form`/`every`/`on`
+    decls) — a naming/doc note at `bake.cla:2906` area was not added
+    this phase; still open.
+  - **`driveRebuildChainSkipping`'s membership scan lacks an early
+    exit** (`drive.cla:1056-1061`) — cosmetic, collision counts are
+    realistically 1-3 per compile.
+  - **Drift fixture's mutation is semantically null** (Task 3): the
+    `TestRtbakeDriftFallback` byte mutation is a comment-byte append, so
+    the byte-compare half of the oracle proves detection only via the
+    log line, not via a content-visible difference. A stronger variant
+    (append a new external func and call it) is recorded but not
+    implemented.
+  - **Four Task 3 fixtures are written to the repo root** with
+    `t.Cleanup` only (no crash-safe temp location) — a `SIGKILL`
+    mid-test leaves untracked `*.cla` files. Pre-existing pattern in
+    this test file, forced by include-path resolution
+    (`toolbox/files.cla`-style includes resolve against `cmd.Dir`, not
+    the fixture's own location).
+  - **`TestRtbakeDriftFallback`'s own doc comment overstates which
+    runtime the two compiles read** — only `toolbox/files.cla` comes
+    from the drifted temp copy; both compiles otherwise read the repo's
+    real `runtime/clarus/`. Cosmetic, not corrected this phase.
+  - **`copyTree` (Task 3's new test helper) flattens file modes** to
+    0644/0755 — harmless for `.cla` fixtures, would matter if ever
+    reused to copy executables.
+  - **Stamp-proxy gap: only the include-collision slice is closed**
+    (see the runtime-ir-bake entry's own updated debt item, above) — the
+    per-module hash this phase adds detects drift ONLY for a file a user
+    actually `include`s and collides on; the stamp itself still hashes
+    the committed `clarusc.c` snapshot for everything else. Longer-term
+    fix (hash the live runtime source set) remains open, unattempted.
+  - Everything else runtime-ir-bake already deferred (`rtUiTableClick`'s
+    unclamped row math, object code/linker stage 3.5 readiness, every
+    param-abi-era item) is untouched by this phase, still open.
+  - **Standing rule still applies**: this phase touched both
+    `clarusc/bake.cla` and `clarusc/macgui.cla`, so
+    `TestClarusCBakePathOnSnow` (`CLARUS_SNOW_TESTS=1`) must be
+    re-run manually before merge — **pending as of this entry**; the
+    controller runs it separately, after final review, at the true tip.
+
+  **T2 (`scripts/test-merge.sh`): GREEN at `4d1beb4`, 240s** (T1 body
+  18s, `internal/selfhost` 92s, gated native `internal/mactest` lane
+  125s, `CLARUS_BAKE_FULL` bake corpus 5s). Full log:
+  `.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/task4-t2.log`.
+  **Merge-ready from a testing standpoint** once the Snow rerun above
+  confirms PASS (merge itself remains Andrew's call).
 
 ## Small open items (not yet scheduled)
 

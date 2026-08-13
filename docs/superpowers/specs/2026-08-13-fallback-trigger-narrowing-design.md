@@ -1,6 +1,13 @@
 # Fallback-Trigger Narrowing — Design
 
-Date: 2026-08-13. Status: approved by Andrew (brainstorm session, this date).
+Date: 2026-08-13. Status: **DONE (2026-08-13, branch
+`fallback-trigger-narrowing`, commits `fa59108..4d1beb4`)** — see the
+ROADMAP `fallback-trigger-narrowing` entry and
+`.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/progress.md` for
+the task ledger. The annotation below (Task 2/4, 2026-08-13) marks the one
+claim the implementation narrowed; the design otherwise landed as
+approved.
+Originally: approved by Andrew (brainstorm session, this date).
 Successor to the runtime-ir-bake phase (merged to main at `b16e8f0`);
 resolves that phase's recorded debt item "include-dedup fallback trigger
 too broad" (ROADMAP runtime-ir-bake entry, STATUS next-steps).
@@ -88,6 +95,33 @@ one copy exists and user code resolves against it. A parity test
 asserts identical diagnostics on both paths for a testapi program that
 includes a collided catalog file (and for the redeclaration case, the
 existing collision-parity test pattern applies).
+
+> **[Task 2/4 annotation, 2026-08-13]** "Dedup fully (no check-only
+> parse)" narrowed in implementation: `expand()` still lexes/parses the
+> collided file into `combined` like any other include (it can't yet
+> know this collision will resolve to case (b) — that needs `isUiProg`,
+> which isn't known until Phase A finishes); only the excise from
+> `combined`, right before `checkPhase1`, is new. The checker and
+> lowering never see the collided decls — proven by the toolbox-suite
+> corpus byte-identity gate, and by construction unable to reach the
+> redeclaration diagnostic shape this section's own parity test
+> anticipated (that shape only ever appeared under the probe wave's own
+> hack, which disabled the real fix to prove it necessary in the first
+> place; `TestRtbakeTestapiIncludeParity`'s doc comment records this).
+> So "dedup" holds observably (checker-visibility, lowering, and
+> byte-identity all match "one copy"), but "no parse" does not — the
+> lex/parse cost is still paid on a file the checker/lowering discard.
+> Judged a documented amendment over a bigger Phase-A restructure (see
+> `.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/task-2-report.md`,
+> "Deviations from the brief" item 4, and its fix-round-1 writeup).
+> Separately, this same task discovered and fixed a real, previously
+> latent gap the ORIGINAL runtime-ir-bake preload left in this
+> mechanism: case (b)'s excise-before-checker approach needs
+> `check.cla`'s `fieldInfos`/`recFieldsHeadByName` side tables for any
+> record-bearing early-visible module, which the original preload never
+> baked (only `funcSigs`/`symbols`/`scopes`/`typeArena`/`enumMembers`)
+> — a new `bkSecFieldInfo` section (format v5) closes it. See the
+> ROADMAP `fallback-trigger-narrowing` entry for the full writeup.
 
 Non-testapi programs never see baked checker symbols
 (runtime-ir-bake invariant, unchanged): for them the check-only copy is
