@@ -2104,9 +2104,13 @@ var bkLdEarlySymbolsCount: int
 // field below is built into a fully-local `lXxx` first and assigned
 // here only once, at the very end of a successful parse), truncated to
 // the runtime/testapi boundary by bkInstallObjCode alongside
-// bkInstallArenas' own irFuncs truncation, then read by a future
-// compile's own Measure-skip/paste link pass (Task 3). See
-// bkWriteObjCode/bkWriteObjMeta for the exact field-for-field shape.
+// bkInstallArenas' own irFuncs truncation. MOST of these fields are then
+// read by a future compile's own Measure-skip/paste link pass (Task 3)
+// -- but not all: the per-function StrLit First/Count/Flat triple and
+// the eight once-per-artifact size-bucket scalars below are staged and
+// truncated same as everything else, then deliberately left unconsumed
+// -- see each field's own doc comment for why. See bkWriteObjCode/
+// bkWriteObjMeta for the exact field-for-field wire shape.
 //
 // The flat run/hole payload itself (bkReadObjCode's own lRuns/lHoles)
 // is assigned straight into cg68k.cla's OWN cgObjRuns/cgObjHoles below,
@@ -2145,6 +2149,20 @@ var bkLdObjFuncFrameSize: list of int
 // the 32KB single-function ceiling that three nested-list globals here
 // tipped an unrelated, already-near-the-edge cprint.cla function over
 // it; this is not a stylistic preference.
+// bkLdObjFuncStrLitFirst/Count/Flat are staged and truncated like every
+// other field in this section but DELIBERATELY UNCONSUMED by Task 3's
+// link pass: cgObjBuildFuncStrLits (cg68k.cla) rebuilds a baked
+// function's own strlit pool-ref set entirely from that function's own
+// hole list instead, in stored order -- the wire array here can't be
+// used directly because Amendment A2 filters cgListOobMsgIdx OUT of it
+// at write time (its bake-time numeric index isn't valid at compile
+// time), which destroys the panic entry's real chronological position
+// among the surviving entries; re-deriving from holes reproduces that
+// position exactly (see cgObjBuildFuncStrLits' own doc comment for the
+// full story, including the byte-identity regression this cost before
+// the fix). A future reader must not wire these three fields into
+// cg68Measure as a shortcut -- they are validated at load time
+// (bkObjPoolIdxValid) but their own VALUES are stale for this purpose.
 var bkLdObjFuncStrLitFirst: list of int
 var bkLdObjFuncStrLitCount: list of int
 var bkLdObjFuncStrLitFlat: list of int
@@ -2157,6 +2175,27 @@ var bkLdObjFuncSerdescFlat: list of int
 var bkLdObjFuncUsesUiBlob: list of bool
 var bkLdObjFuncUsesUiEvents: list of bool
 
+// bkLdObjSeg1ExtraSize/GlueBundleSize/PoolSize/StrLitSize/EnumTableSize/
+// SerdescSize/UiBlobSize/UiEventsSize: the once-per-artifact fixed-cost
+// buckets and per-pool-entry size tables Task 2's wire format carries
+// (bkWriteObjMeta), staged here at load time, and DELIBERATELY
+// UNCONSUMED by Task 3's Measure-skip -- see cg68k.cla's own
+// cgObjPasteEligible section header (~cg68k.cla:13040-13063) for the
+// full reasoning. Short version: these eight values measure the CURRENT
+// PROGRAM's universe (cgEmitInitGlobalsStub/cgEmitFreeGlobalsStub walk
+// `irGlobals.count`, cgEmitRcWalks walks `irRecords.count`,
+// cgEmitPoolsBody measures the live pool) -- the runtime-baked prefix
+// PLUS whatever this program's own user globals/records/literals append.
+// The artifact only ever captured the bare runtime-only baseline
+// (cgObjCaptureRuntime's own doc comment), so substituting these baked
+// scalars for a real measurement would silently UNDER-measure
+// cgPackProgram's own per-segment budget for any program with even one
+// user var/record/literal -- i.e. nearly every real program -- and could
+// shift a segment-packing decision away from what a from-source compile
+// would choose, breaking byte-identity on segment LAYOUT rather than on
+// any one function's own bytes. A future reader tempted to wire these
+// into cg68Measure as a further speedup must re-derive them from the
+// CURRENT compile's own irGlobals/irRecords/pool state, not from here.
 var bkLdObjSeg1ExtraSize: int
 var bkLdObjGlueBundleSize: int
 var bkLdObjPoolSize: int
@@ -2169,10 +2208,16 @@ var bkLdObjUiEventsSize: int
 // bkRuntimeFuncBoundary (object-code-linker Task 2): the installed
 // runtime function count -- set in bkInstallArenas, right after irFuncs
 // itself is assigned (== irFuncs.count at that point, respecting the
-// SAME non-testapi truncation irFuncs just went through). A future
-// compile's own link pass (Task 3) uses this as "which irFuncs indices
-// are baked object, not freshly codegen'd" -- 0 until bkInstallArenas
-// first runs, meaningless (and never consulted) on any non-bake compile.
+// SAME non-testapi truncation irFuncs just went through). Its ONLY
+// consumer is bkInstallObjCode's own truncation of the four per-function
+// objcode index arrays (bkLdObjValid/RunFirst/HoleFirst/NHoles) to this
+// same boundary, right after bkInstallArenas returns. It is deliberately
+// NOT Task 3's own baked-index predicate -- cgObjPasteEligible (cg68k.cla)
+// answers "is index i baked" purely from bkLdObjValid[i], never from this
+// field, and never resets across compiles (stays whatever the last bake
+// install left it), so a future reader must not treat `bkRuntimeFuncBoundary
+// != 0` as "this is a bake compile." 0 until bkInstallArenas first runs,
+// stale-but-harmless (unread) after that on any non-bake compile.
 var bkRuntimeFuncBoundary: int
 
 // bkLoadedModules (Task 5, deliverable (b)): the bake header's own
