@@ -627,7 +627,6 @@ func rtUiTableRelayout(inst: ptr, i: int) {
     if lh == ptr(0) {
         return
     }
-    lhMp = UiHandleDeref(lh)
     box = UiNewPtr(rtUiRectSize)
     UiBlockMoveData(rtUiRectAt(w, i), box, rtUiRectSize)
     listRect = UiNewPtr(rtUiRectSize)
@@ -653,6 +652,19 @@ func rtUiTableRelayout(inst: ptr, i: int) {
     // directly, then LSize to apply the new width/height. cellSize.h stays
     // equal to the FULL view width (this table's single LM column spans it
     // entirely) so LClick's own cell hit-testing covers the whole row.
+    // Re-derive the ListRec's master pointer HERE, not before the
+    // UiNewPtr calls above: NewPtr allocates a NONrelocatable block, which
+    // lets the Memory Manager compact the heap and RELOCATE the (unlocked)
+    // ListHandle LNew returned -- a master pointer captured earlier would
+    // by then address free space or another block, so these three pokes
+    // would silently miss the ListRec (leaving rView at LNew's own
+    // all-zero placeholder, which makes every later scripted row-hit
+    // computation -- rtUiTableClick's own visible.top + (v - rView.top) /
+    // cellSize.v -- resolve against top 0 and hand user code an
+    // out-of-range row) AND corrupt six bytes of whatever moved in. Same
+    // re-derive discipline rtUiTableSyncOne's own LAddRow/LDelRow comment
+    // already states below.
+    lhMp = UiHandleDeref(lh)
     pokew(lhMp + rtUiListRView + 0, peekw(listRect + 0))
     pokew(lhMp + rtUiListRView + 2, peekw(listRect + 2))
     cellW = peekw(listRect + 6) - peekw(listRect + 2)

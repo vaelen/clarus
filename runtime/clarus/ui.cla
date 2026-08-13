@@ -1656,8 +1656,8 @@ func rtUiHandleUpdate(wp: ptr) {
                 // just narrower (rt_ui.c:2791-2821).
                 te = rtUiTeAt(w, i)
                 if te != ptr(0) {
-                    teMp = UiHandleDeref(te)
                     frame = UiNewPtr(rtUiRectSize)
+                    teMp = UiHandleDeref(te) // AFTER the NewPtr -- it can relocate te
                     UiBlockMoveData(teMp + rtUiTeViewRect, frame, rtUiRectSize)
                     UiInsetRect(frame, 0 - rtUiTeFrameInset, 0 - rtUiTeFrameInset)
                     // Flush edges (fix-flush): push a frame edge that lands
@@ -1740,7 +1740,6 @@ func rtUiHandleUpdate(wp: ptr) {
                 // frame line, so the LDEF's per-cell EraseRect (which
                 // covers rView.top and below) can never erase it.
                 lh = rtUiListAt(w, i)
-                lhMp = UiHandleDeref(lh)
                 tableOff = uidWidgetTableOff(w.winIdx, i)
                 colsOff = uidTableColsOff(tableOff)
                 nCols = uidTableNCols(tableOff)
@@ -1748,6 +1747,7 @@ func rtUiHandleUpdate(wp: ptr) {
                 UiBlockMoveData(rtUiRectAt(w, i), box, rtUiRectSize)
                 headerRect = UiNewPtr(rtUiRectSize)
                 UiBlockMoveData(box, headerRect, rtUiRectSize)
+                lhMp = UiHandleDeref(lh) // AFTER both NewPtrs -- they can relocate lh
                 pokew(headerRect + 4, peekw(lhMp + rtUiListRView + 0)) // .bottom = view.top
                 UiFrameRect(box)
                 fillW = rtUiTableFillWidth(colsOff, nCols, peekw(lhMp + rtUiListRView + 6) - peekw(lhMp + rtUiListRView + 2))

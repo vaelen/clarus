@@ -9914,16 +9914,16 @@ LBL_718:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_721
-        MOVE.L -40(A6),D0
-        MOVEA.L D0,A0
-        MOVE.L (A0),D0
-        MOVE.L D0,-44(A6)
         MOVEQ #8,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
         DC.W $A11E  ; UiNewPtr
         MOVE.L A0,D0
         MOVE.L D0,-48(A6)
+        MOVE.L -40(A6),D0
+        MOVEA.L D0,A0
+        MOVE.L (A0),D0
+        MOVE.L D0,-44(A6)
         MOVE.L -44(A6),D1
         MOVEQ #8,D0
         ADD.L D1,D0
@@ -10497,10 +10497,6 @@ LBL_736:
         JSR 2162(A5)
         ADDQ.L #8,A7
         MOVE.L D0,-84(A6)
-        MOVE.L -84(A6),D0
-        MOVEA.L D0,A0
-        MOVE.L (A0),D0
-        MOVE.L D0,-88(A6)
         MOVE.L -8(A6),D0
         MOVEA.L D0,A0
         LEA 8(A0),A0
@@ -10558,6 +10554,10 @@ LBL_736:
         MOVEA.L (A7)+,A1
         MOVEA.L (A7)+,A0
         DC.W $A22E  ; UiBlockMoveData
+        MOVE.L -84(A6),D0
+        MOVEA.L D0,A0
+        MOVE.L (A0),D0
+        MOVE.L D0,-88(A6)
         MOVE.L -112(A6),D1
         MOVEQ #4,D0
         ADD.L D1,D0

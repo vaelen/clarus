@@ -964,6 +964,7 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     }
     if contentBottom < viewBottom {
         eraseRect = UiNewPtr(rtUiRectSize)
+        teMp = UiHandleDeref(te) // AFTER the NewPtr -- it can relocate te
         UiSetRect(eraseRect, peekw(teMp + rtUiTeViewRect + 2), contentBottom, peekw(teMp + rtUiTeViewRect + 6), viewBottom)
         UiEraseRect(eraseRect)
         UiDisposePtr(eraseRect)

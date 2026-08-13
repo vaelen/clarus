@@ -57706,9 +57706,7 @@ static void clar_fn_cgEmitPanic(int32_t cv_msgLitIdx) {
     clar_fn_cgCallFunc(cv_storeFi);
     clar_fn_cgCleanupStack(12);
     clar_fn_a68Emit(1, 4, 2, 7, 0, 2, 0, 0);
-    clar_fn_a68Emit(5, 4, 8, 0, (0 - 256), 2, 7, 0);
-    clar_fn_a68Emit(1, 4, 2, 7, 0, 2, 1, 0);
-    clar_fn_cgBlockCopy(256);
+    clar_fn_a68Emit(0, 4, 2, 0, 0, 5, 7, 0);
     clar_fn_cgCallFunc(cv_panicFi);
 }
 

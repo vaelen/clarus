@@ -3742,18 +3742,22 @@ func cgReserveDeepScratch(startNeg: int): int {
 }
 
 // cgEmitPanic calls rtPanic(msg) with msgLitIdx's own pool literal,
-// coerced into a fresh str(255) the same way cgPushArgs' own KStr
-// addressable-arg path materializes ANY str argument for a real Clarus
-// call (reserve the callee's own by-value param slot, block-copy into it)
-// -- rtPanic's `msg: string` param is str(255), not `ptr`, so this can't
-// reuse cgEmitPtrRcCall's simpler "push one 4-byte value" shape. Two
-// scratch str(255) slots: #1 receives the literal via rtStrStore (clamped
-// copy, same call shape as cgDefaultInitStrAt's own explicit-default arm),
-// #2 is rtPanic's OWN reserved param slot, block-copied from #1 (mirrors
-// cgPushArgs' generic KStr-addressable-arg shape exactly). rtPanic never
-// returns (core.cla's CorePanic aborts) -- no cleanup after the JSR, same
-// trust cgDefaultInitStrAt's own callees) already place in every OTHER
-// no-return runtime call this file emits.
+// materialized into ONE scratch str(255) (filled by rtStrStore -- clamped
+// copy, same call shape as cgDefaultInitStrAt's own explicit-default arm)
+// whose ADDRESS is then pushed as rtPanic's single argument, exactly the
+// shape cgPushArgs' own KStr addressable-arg path uses for every other
+// Clarus call (`cgExprAddr` then MOVE.L A0,-(SP); cgArgSlotSize(KStr) ==
+// 4). rtPanic's `msg: string` param slot HOLDS AN ADDRESS -- the
+// param-abi phase's by-address ABI (cgCurFrameIsRef) applies to every
+// IRFunc cgEmitFunc compiles, rtPanic included, so this call site must
+// pass a pointer, not a 256-byte by-value block. It used to push the
+// block (a second scratch slot, block-copied from the first), a stale
+// pre-param-abi shape that made every native list-bounds-check panic
+// print an EMPTY message: rtPanic read the literal's own first four bytes
+// (length byte + first three chars) AS the pointer. rtPanic never returns
+// (core.cla's CorePanic aborts) -- no cleanup after the JSR, same trust
+// cgDefaultInitStrAt's own callees already place in every OTHER no-return
+// runtime call this file emits.
 func cgEmitPanic(msgLitIdx: int) {
     var storeFi: int
     var panicFi: int
@@ -3777,9 +3781,7 @@ func cgEmitPanic(msgLitIdx: int) {
     cgCallFunc(storeFi)
     cgCleanupStack(12)
     a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 0, 0)
-    a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
-    a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
-    cgBlockCopy(256)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     cgCallFunc(panicFi)
 }
 
