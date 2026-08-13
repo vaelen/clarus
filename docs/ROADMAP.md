@@ -1342,7 +1342,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   new per-module source hash (CLIR format v4 → v5) scopes the remaining
   fallback to genuine on-disk drift only, logging the drifted path.
 
-  **4 tasks, commits `fa59108..4d1beb4`.** Task 1 was a probe wave (no
+  **4 tasks, commits `fa59108..f05d15c`.** Task 1 was a probe wave (no
   tree commits — hacked `drive.cla` locally, reverted after measuring)
   that verified both load-bearing assumptions PASS (checker-state
   parity: the check-only user-position copy is the only source of a
@@ -1460,20 +1460,57 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   bakeMsg, not by this function. `cg68k.cla`'s
   `cgFillTightScratchFromPaddedArr`/`cgDrainTightScratchToPaddedArr` —
   left in place, self-documented as redundant, by runtime-ir-bake Task
-  6's own stride fix — were removed for real:
-  `cgIntrStrFromBytes`/`cgIntrTextFromBytes` now pass the array
-  argument's own address straight to the runtime call as the source
-  buffer, `cgIntrStrToBytes`/`cgIntrTextToBytes` pass it as the
-  destination, so the runtime reads/writes the array's own storage
-  directly with no scratch copy at all. Confirmed no
-  `testdata/cg68k`/`testdata/emitui` golden exercises this code path
-  before removing it; `go test ./internal/cg68k/... ./internal/emitui/...
-  -count=1` showed zero churn, as required. The bootstrap snapshot
-  (`clarusc/clarusc.c`) was then regenerated to a Go-free fixed point —
-  converged at round 1 (stage-1 snapshot → emit gen1 → cc → emit gen2,
-  `cmp` identical) and reverified stable through a second round;
-  `TestSnapshotFixedPoint` and the full `go test ./internal/selfhost
-  -count=1 -timeout 30m` (91s) both green.
+  6's own stride fix — were removed initially for all four
+  fromBytes/toBytes intrinsics (`cgIntrStrFromBytes`/`cgIntrStrToBytes`/
+  `cgIntrTextFromBytes`/`cgIntrTextToBytes` all made to pass the array
+  argument's own address straight to the runtime call); the final review
+  found this unsafe for one of the four (see "Final-review fix wave"
+  below), so the shipped state keeps the scratch fill for
+  `cgIntrTextFromBytes` and removes it for real only in the other three.
+  The bootstrap snapshot (`clarusc/clarusc.c`) was regenerated to a
+  Go-free fixed point after both this task's own edit and the fix wave's
+  correction — each time converged at round 1 (stage-1 snapshot → emit
+  gen1 → cc → emit gen2, `cmp` identical) and reverified stable through a
+  second round; `TestSnapshotFixedPoint` and the full `go test
+  ./internal/selfhost -count=1 -timeout 30m` (91-93s across the two runs)
+  both green each time.
+
+  **Final-review fix wave (2026-08-13, commits `a408e2a`/`f05d15c`):** the
+  whole-branch final review found the Task 4 cg68k removal above unsafe
+  for `cgIntrTextFromBytes` specifically: `rtTextFromBytes`
+  (`runtime/clarus/text.cla:537-556`) calls the allocating `rtTextGrow(t,
+  n)` BEFORE `TextBlockMoveData(buf, mp, n)` reads through `buf` — if the
+  array argument resolves into a list element's own relocatable
+  Handle-backed storage (`cgForListStmt`'s own doc comment, ~cg68k.cla
+  line 10648, already documents that store as relocatable), a direct
+  address taken before the call can go stale by the time
+  `TextBlockMoveData` uses it. The other three intrinsics' own runtime
+  functions (`rtStrFromBytes`, `rtStrToBytes`, `rtTextToBytes`) do their
+  BlockMove immediately with no allocating call in between — verified
+  clean, confirmed to stay direct. Restored
+  `cgFillTightScratchFromPaddedArr` and `cgIntrTextFromBytes`'s original
+  scratch-fill shape (the array is copied into non-relocatable A6 stack
+  storage before the call, so the runtime's own source address can never
+  move underneath it) rather than a comment-only acknowledgment — this
+  project has now found this exact stale-pointer-across-compaction bug
+  class SIX times (the runtime-ir-bake T2 blocker's own five sites, plus
+  this one caught before it ever shipped), which the review judged strong
+  enough precedent to prefer the real fix over documenting the risk.
+  **Corrected framing (also final-review, Important #2):** the golden
+  gate (`go test ./internal/cg68k/... ./internal/emitui/... -count=1`,
+  zero churn both before and after the fix) is **inert for this code
+  path**, not evidence of correctness — no `testdata/cg68k`/
+  `testdata/emitui` golden exercises `fromBytes`/`toBytes` at all, so the
+  gate would show zero churn regardless of what these four functions did.
+  The real evidence for the shipped shape is the source-level argument
+  above (read each runtime function's own body before deciding whether
+  its caller needs the scratch) plus T2's native lane
+  (`testsuite/toolbox/cases_resources.cla`'s `.toBytes()`/`buf[i]` round
+  trip, `testsuite/core/cases_ser.cla`) — and even those two fixtures only
+  exercise LOCAL/global arrays, not a heap-resident (list-element) one, so
+  neither independently proves the relocation claim either; the fix is a
+  source-level correctness argument about what `rtTextGrow` can do, not
+  something any current test forces to fail without it.
 
   **Deferred / phase debt (all from the task ledger, none newly
   introduced this task):**
@@ -1547,12 +1584,15 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     re-run manually before merge — **pending as of this entry**; the
     controller runs it separately, after final review, at the true tip.
 
-  **T2 (`scripts/test-merge.sh`): GREEN at `4d1beb4`, 240s** (T1 body
-  18s, `internal/selfhost` 92s, gated native `internal/mactest` lane
-  125s, `CLARUS_BAKE_FULL` bake corpus 5s). Full log:
-  `.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/task4-t2.log`.
-  **Merge-ready from a testing standpoint** once the Snow rerun above
-  confirms PASS (merge itself remains Andrew's call).
+  **T2 (`scripts/test-merge.sh`): GREEN at `4d1beb4`, 240s**, then
+  **RE-RUN GREEN at `f05d15c` (post-fix-wave), 224s** (T1 body 17s,
+  `internal/selfhost` 77s, gated native `internal/mactest` lane 125s,
+  `CLARUS_BAKE_FULL` bake corpus 5s). Full logs:
+  `.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/task4-t2.log`
+  (pre-fix-wave) and `task4-t2-fixwave.log` (post-fix-wave, the current
+  tip's own gate result). **Merge-ready from a testing standpoint** once
+  the Snow rerun above confirms PASS (merge itself remains Andrew's
+  call).
 
 ## Small open items (not yet scheduled)
 

@@ -41,7 +41,7 @@ so byte-identity holds by construction, and a new per-module source hash
 (CLIR format v4 → v5) scopes the REMAINING fallback to genuine on-disk
 drift only, logging the drifted path.
 
-- **4 tasks, commits `fa59108..4d1beb4`.** Task 1 (probe, no tree
+- **4 tasks, commits `fa59108..f05d15c`.** Task 1 (probe, no tree
   commits) verified both load-bearing assumptions PASS and chose the
   decl-chain-surgery drop mechanic. Task 2 (`fa59108`, fix round 1
   `9afbf72`) implemented the mechanism + CLIR v5, and along the way found
@@ -56,11 +56,29 @@ drift only, logging the drifted path.
   in: `macgui.cla`'s fallback-reason string now enumerates the real v5
   refusal set (was stale since the v4 body-hash check) and documents the
   new drift-fallback reason; `cg68k.cla`'s now-redundant tight-to-tight
-  scratch buffer in `fromBytes`/`toBytes` codegen was removed for real
-  (arrays are passed by address directly since `cgArrElemStride` made
-  them tight), confirmed zero golden churn; the bootstrap snapshot was
-  regenerated to a Go-free fixed point (converged round 1, reverified
-  round 2).
+  scratch buffer in `fromBytes`/`toBytes` codegen was initially removed
+  for all four intrinsics (arrays passed by address directly since
+  `cgArrElemStride` made them tight) — the final review found this unsafe
+  for one of the four (next bullet), so the shipped state keeps the
+  scratch for that one; the bootstrap snapshot was regenerated to a
+  Go-free fixed point after both edits.
+- **Final-review fix wave (`a408e2a`/`f05d15c`):** two Important findings,
+  both in Task 4's cg68k work. **I1:** `cgIntrTextFromBytes`'s direct
+  address pass was unsafe — `rtTextFromBytes` calls the allocating
+  `rtTextGrow` BEFORE its own `TextBlockMoveData` read, so an array
+  argument resolving into a list element's relocatable Handle storage
+  could go stale mid-call; the other three intrinsics' own runtime
+  functions do their BlockMove immediately with no allocating call
+  first, so they stay direct. Fixed by restoring the scratch-fill shape
+  for `cgIntrTextFromBytes` only (real fix, not a comment — this bug
+  class has now bitten the project six times counting the runtime-ir-bake
+  T2 blocker's five sites). **I2:** the ROADMAP's "zero golden churn, as
+  required" wording was corrected — no golden exercises this code path at
+  all, so the gate is INERT here, not evidence; real coverage is the
+  source-level argument above plus T2's native lane, and neither native
+  fixture exercises a heap-resident array either. Snapshot regenerated
+  again (converged round 1, reverified round 2), `TestSnapshotFixedPoint`
+  + full `internal/selfhost` (93s) green.
 - **Deviation from the design** (Task 2 fix round 1, annotated in the
   spec's own "testapi interaction" section): the design's case (b)
   ("full dedup, no parse") is implemented as "dedup BEFORE THE CHECKER"
@@ -69,11 +87,11 @@ drift only, logging the drifted path.
   `isUiProg` isn't known until Phase A finishes. Observable behavior
   matches "full dedup" (proven by the corpus byte-identity gate); the
   parse-cost saving the design's wording implied does not.
-- **T2 (`scripts/test-merge.sh`): GREEN at `4d1beb4`, 240s** (T1 body
-  18s, `internal/selfhost` 92s, gated native `internal/mactest` lane
-  125s, `CLARUS_BAKE_FULL` bake corpus 5s). Run this session at tip,
-  foreground, logged to
-  `.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/task4-t2.log`.
+- **T2 (`scripts/test-merge.sh`): GREEN at `4d1beb4`, 240s**, then
+  **RE-RUN GREEN at `f05d15c` (post-fix-wave), 224s** (T1 body 17s,
+  `internal/selfhost` 77s, gated native `internal/mactest` lane 125s,
+  `CLARUS_BAKE_FULL` bake corpus 5s). Both runs this session, foreground,
+  logged to `task4-t2.log` and `task4-t2-fixwave.log` respectively.
 - **All deferred minors** (from both Task 2's and Task 3's own review
   rounds — drift-log-line/`--rtdir` edge case, bake-time `readText`
   failure with no diagnostic, `bkInstallFieldInfo`'s widened preload
