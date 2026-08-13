@@ -12037,15 +12037,37 @@ func cg68Measure(): bool {
     i = 0
     while i < irFuncs.count {
         if shakeReachable(i) {
-            before = a68SizeSoFar()
-            // Task 15 (findings 1.8): bump the epoch per cgRecFuncIdx
-            // change -- each function gets its own recording context.
-            cgSeenEpoch = cgSeenEpoch + 1
-            cgRecMode = 1
-            cgRecFuncIdx = i
-            cgEmitFunc(i)
-            cgRecMode = 0
-            cgFuncSize.add(a68SizeSoFar() - before)
+            // object-code-linker Task 3: a baked+valid function's own
+            // size/frame/pool-usage came out of a REAL Measure pass at
+            // bake time (Amendment A5 -- cg68Measure never calls
+            // a68Finish, so there was never any BYTE production to
+            // suppress here either way); install that recorded data
+            // straight into the same per-function tables cgEmitFunc's
+            // own recording would have filled, instead of re-running it.
+            // See this file's own cgObjPasteEligible doc comment for why
+            // cgSeg1ExtraSize/cgGlueBundleSize/cgPoolSize and the pool
+            // size tables, just below this loop, are NOT given the same
+            // treatment.
+            if cgObjPasteEligible(i) {
+                cgFuncSize.add(bkLdObjFuncSize[i])
+                cgFuncFrameSizes[i] = bkLdObjFuncFrameSize[i]
+                cgFuncStrLits[i] = cgObjBuildFuncStrLits(i)
+                cgFuncEnumTables[i] = cgObjFlatSlice(bkLdObjFuncEnumTableFlat, bkLdObjFuncEnumTableFirst[i], bkLdObjFuncEnumTableCount[i])
+                cgFuncSerdescs[i] = cgObjFlatSlice(bkLdObjFuncSerdescFlat, bkLdObjFuncSerdescFirst[i], bkLdObjFuncSerdescCount[i])
+                cgFuncUsesUiBlob[i] = bkLdObjFuncUsesUiBlob[i]
+                cgFuncUsesUiEvents[i] = bkLdObjFuncUsesUiEvents[i]
+                cgObjApplyGlueUsage(i)
+            } else {
+                before = a68SizeSoFar()
+                // Task 15 (findings 1.8): bump the epoch per cgRecFuncIdx
+                // change -- each function gets its own recording context.
+                cgSeenEpoch = cgSeenEpoch + 1
+                cgRecMode = 1
+                cgRecFuncIdx = i
+                cgEmitFunc(i)
+                cgRecMode = 0
+                cgFuncSize.add(a68SizeSoFar() - before)
+            }
         } else {
             cgFuncSize.add(0)
         }
@@ -13000,6 +13022,326 @@ func cgObjCaptureRuntime(): bool {
     return ok
 }
 
+// ================================================================
+// object-code-linker Task 3: Measure-skip + paste-with-fixups link
+// pass -- consumes the bkLdObj*/cgObjRuns/cgObjHoles staging Task 2's
+// loader populated on a --rtbake compile. Two hook points: cg68Measure's
+// own per-function loop (above) substitutes a baked function's own
+// measured size/frame/pool-usage data for a real cgEmitFunc call;
+// cg68ProgramFork's own per-segment function loop (below) substitutes a
+// PASTE (cgObjPasteFunc) for a real cgEmitFunc call. A function is
+// eligible for either substitution iff cgObjPasteEligible(i) -- loaded,
+// in-bounds, and not tainted at capture time (Amendment A6's
+// taint-and-discard path, cgObjDumpSegment's own doc comment). Every
+// OTHER function (user code always; a taint-discarded runtime function;
+// any compile with no baked objects installed at all) takes the
+// ordinary cgEmitFunc path, unchanged.
+//
+// Deliberately NOT skipped: cgSeg1ExtraSize/cgGlueBundleSize/cgPoolSize
+// and the per-pool-entry size tables (cgStrLitSize/cgEnumTableSize/
+// cgSerdescSize/cgUiBlobSize/cgUiEventsSize) stay REAL-measured every
+// compile, never substituted from the artifact, even though Task 2's
+// wire format carries baked copies of all of them (bkLdObjSeg1ExtraSize
+// etc.). Those routines (cgEmitInitGlobalsStub/cgEmitFreeGlobalsStub:
+// `while i < irGlobals.count`; cgEmitRcWalks: `while i < irRecords.count`;
+// cgEmitPoolsBody: the whole live pool) iterate the CURRENT PROGRAM's
+// full irGlobals/irRecords/irStrLits/irEnums arrays -- the runtime-baked
+// PREFIX plus this program's own appended user globals/records/
+// literals -- never just the runtime baseline the artifact captured
+// (cgObjCaptureRuntime runs over a bare runtime-only universe with no
+// user code at all). Substituting the baked scalar would silently
+// UNDER-measure cgPackProgram's own per-segment budget for any program
+// with even one user `var`/`record`/literal -- i.e. nearly every real
+// program -- risking a segment-packing decision that diverges from what
+// a from-source compile would have chosen (the REAL per-segment loop,
+// below, always re-emits these routines for real, unconditionally,
+// regardless of baking, so the BYTES themselves stay correct; only
+// which functions got packed into which segment could silently drift,
+// breaking the byte-identity gate on segment LAYOUT rather than on any
+// one function's own bytes). The per-function skip above is where the
+// real payoff lives anyway -- cgEmitFunc, not this one-time overhead,
+// is what scales with the ~500-function runtime.
+// ================================================================
+
+// cgObjPasteEligible: is irFuncs index i a valid, loaded, in-bounds
+// baked object this compile can paste instead of re-generating? False
+// on every non-bake compile (bkLdObjValid stays at its empty default,
+// never touched by bkInstallObjCode -- drive.cla only calls that inside
+// `if haveRtbake`) and false for any index bkInstallObjCode's own
+// truncation dropped or Amendment A6's taint-and-discard left invalid.
+func cgObjPasteEligible(i: int): bool {
+    if bkLdObjValid.count == 0 {
+        return false
+    }
+    if i < 0 or i >= bkLdObjValid.count {
+        return false
+    }
+    return bkLdObjValid[i]
+}
+
+// cgObjFlatSlice copies flat[first, first+count) into a fresh list --
+// bkLdObjFuncEnumTableFlat/SerdescFlat's own per-function First/Count
+// pair (Task 2's flat-not-nested staging shape, chosen to keep
+// cg_free_globals cheap -- see bkLdObjValid's own doc comment)
+// unflattened back into the per-function `list of int` cgFuncEnumTables/
+// cgFuncSerdescs already want.
+func cgObjFlatSlice(flat: list of int, first: int, count: int): list of int {
+    var l: list of int
+    var i: int
+
+    l = cgFreshIntList()
+    i = 0
+    while i < count {
+        l.add(flat[first + i])
+        i = i + 1
+    }
+    return l
+}
+
+// cgObjBuildFuncStrLits reconstructs baked function f's own strlit pool-
+// ref set for cgFuncStrLits[f] -- built ENTIRELY from f's own hole list,
+// not from bkLdObjFuncStrLitFlat's wire array, and deliberately so: a
+// real Measure's cgRecordStrLit records a strlit index into
+// cgFuncStrLits[i] on its FIRST reference only (cgStrLitSeen's own
+// per-function epoch guard dedups repeats), in the exact chronological
+// order cgStmts walks the function body -- and every strlit reference
+// this backend ever emits takes the SAME position-dependent
+// `LEA d16(PC),An` shape (Task 1's own hole-completeness proof), so a
+// hole-list scan in stored order reproduces that same first-occurrence
+// order exactly, panic-message hole included at whatever position it
+// actually falls (not tacked on at the end). The wire array can't do
+// this: Amendment A2 filters cgListOobMsgIdx OUT of it at write time
+// (its bake-time numeric index isn't valid at compile time), which
+// destroys the panic entry's own relative position among the surviving
+// entries -- re-appending it at the end, this function's own first
+// version, passed the COUNT check but failed the full-corpus byte-
+// identity gate on arc.cla: nat_UiSFGetFile's own four `codes[N]`
+// list-index bounds checks all hole the SAME dedup'd panic entry, and
+// real Measure records it interleaved (between two ordinary strlit
+// refs, mid-function), not trailing -- cgPackProgram's own segment pool
+// SET accumulates in cgFuncStrLits' iteration order (cgPoolDeltaAndUnion),
+// so a wrong relative order here can reorder the shared string pool's
+// own on-disk bytes for whichever segment first discovers an entry via
+// this function, well past merely getting the SIZE right (which the
+// hole-count-vs-dedup fix, immediately below in git history, already
+// covers on its own).
+func cgObjBuildFuncStrLits(f: int): list of int {
+    var l: list of int
+    var hf: int
+    var nh: int
+    var k: int
+    var j: int
+    var h: CgObjHole
+    var sym: int
+    var found: bool
+
+    l = cgFreshIntList()
+    hf = bkLdObjHoleFirst[f]
+    nh = bkLdObjNHoles[f]
+    k = 0
+    while k < nh {
+        h = cgObjHoles[hf + k]
+        if h.kind == cgHoleLabel and (h.cls == cgRelClsPoolStr or h.cls == cgRelClsPanicMsg) {
+            if h.cls == cgRelClsPanicMsg {
+                sym = cgListOobMsgIdx
+            } else {
+                sym = h.sym
+            }
+            found = false
+            j = 0
+            while j < l.count {
+                if l[j] == sym {
+                    found = true
+                }
+                j = j + 1
+            }
+            if not found {
+                l.add(sym)
+            }
+        }
+        k = k + 1
+    }
+    return l
+}
+
+// cgObjApplyGlueUsage replays baked function f's own mul32/div32/mod32
+// glue USAGE side effect that skipping its cgEmitFunc call also skips:
+// cgMul32Label/cgDiv32Label/cgMod32Label are lazy getters expression
+// codegen calls inline (cgExpr, a 32-bit multiply/divide/modulo needing
+// the shared glue routine) -- each sets its own cgXUsed flag TRUE (once,
+// idempotently) as a SIDE EFFECT of being called at all, and
+// cg68Measure's own glue-bundle-size step right after the whole
+// function loop (`if cgMul32Used { cgEmitMul32(cgMul32Lbl) }`, mirrored
+// again in cg68ProgramFork's real per-segment emission) reads that flag
+// -- never cleared per baked function, only ever set. A baked function
+// that skips cgEmitFunc entirely never calls these getters, so a
+// program whose ONLY mul32/div32/mod32 user is a BAKED runtime function
+// would leave cgXUsed false, silently dropping the glue routine's own
+// bytes from the real fork even though a pasted CALL hole into it still
+// exists (an unbound label at a68Finish, or worse if some other segment
+// happens to bind the same label id by coincidence). Scans f's own
+// hole list for a cgRelClsGlue reference (sym 1/2/3 -- sym 4 is
+// free-globals, unconditionally emitted every segment regardless of any
+// flag, see cg68ProgramFork's own doc comment) and calls the matching
+// getter, discarding its label result: Measure's own throwaway stream
+// only needs the FLAG side effect and a valid (if throwaway) label for
+// its own glue-bundle-size accounting, both of which the getter already
+// provides idempotently.
+func cgObjApplyGlueUsage(f: int) {
+    var hf: int
+    var nh: int
+    var k: int
+    var h: CgObjHole
+    var junk: int
+
+    hf = bkLdObjHoleFirst[f]
+    nh = bkLdObjNHoles[f]
+    k = 0
+    while k < nh {
+        h = cgObjHoles[hf + k]
+        if h.kind == cgHoleLabel and h.cls == cgRelClsGlue {
+            if h.sym == 1 {
+                junk = cgMul32Label()
+            } else if h.sym == 2 {
+                junk = cgDiv32Label()
+            } else if h.sym == 3 {
+                junk = cgMod32Label()
+            }
+        }
+        k = k + 1
+    }
+}
+
+// cgObjResolveLabel resolves a cgHoleLabel hole's own (cls, sym) into a
+// live a68 label id -- mirrors cgObjBuildLabelMaps' own forward
+// direction (pool entry -> label) rather than reading back a captured
+// label id, since label ids are only valid within the segment that
+// allocated them (a68Reset wipes a68LabelAddr every segment) and this
+// compile's own segment layout is not guaranteed to match the bake-time
+// layout at all -- that IS the byte-identity gate: relocation, not
+// replay. cgRelClsFuncLabel/cgRelClsJt never appear on the wire
+// (cgObjRecordHole always promotes them to cgHoleCall/cgHoleJtAddr) --
+// kept here anyway, defensively, same reasoning as cgObjRecordHole's own
+// doc comment for keeping the class ids alive.
+func cgObjResolveLabel(cls: int, sym: int): int {
+    if cls == cgRelClsPanicMsg {
+        return cgStrLitLabels[cgListOobMsgIdx]
+    }
+    if cls == cgRelClsPoolStr {
+        return cgStrLitLabels[sym]
+    }
+    if cls == cgRelClsPoolEnum {
+        return cgEnumTableLabels[sym]
+    }
+    if cls == cgRelClsPoolSer {
+        return cgSerdescLabels[sym]
+    }
+    if cls == cgRelClsPoolUiBlob {
+        return cgUiBlobLabel
+    }
+    if cls == cgRelClsPoolUiEvt {
+        return cgUiEventsLabel
+    }
+    if cls == cgRelClsRcRetain {
+        return cgRecRetainLbls[sym]
+    }
+    if cls == cgRelClsRcRelease {
+        return cgRecReleaseLbls[sym]
+    }
+    if cls == cgRelClsFuncLabel {
+        return cgFuncLabels[sym]
+    }
+    if cls == cgRelClsGlue {
+        if sym == 1 {
+            return cgMul32Lbl
+        }
+        if sym == 2 {
+            return cgDiv32Lbl
+        }
+        if sym == 3 {
+            return cgMod32Lbl
+        }
+        return cgFreeGlobalsLbl
+    }
+    log("cg68k: paste: unresolvable hole class " + numToStr(cls))
+    quit 1
+    return -1
+}
+
+// cgObjPasteHole re-emits one captured hole via the SAME a68Emit shape
+// Task 1's probe proved (this file's own object-code-linker Task 2
+// header comment): a call hole hands off to cgCallFunc(sym) verbatim
+// (Amendment A1 -- it alone decides BSR.W vs JSR d16(A5) from THIS
+// compile's own live segment assignment); a JT-address hole and a
+// cbGlue-address hole both re-emit the captured op/size/modes with a
+// freshly computed JT displacement substituted into whichever operand
+// slot srcSlot names (cbGlue's own target func index is resolved via
+// cgCbGlueFuncIdx[sym] -- sym is an irCbGlueNames position, not a
+// stable irFuncs index, per cgHoleCbGlueAddr's own doc comment; safe
+// here because drive.cla's driveEmit68kFork already calls
+// cg68SynthCbGlue() before cg68ProgramFork on every real compile); every
+// other (label) hole resolves via cgObjResolveLabel.
+func cgObjPasteHole(h: CgObjHole) {
+    var sv: int
+    var dv: int
+    var v: int
+    var fi: int
+
+    if h.kind == cgHoleCall {
+        cgCallFunc(h.sym)
+        return
+    }
+    sv = h.sv
+    dv = h.dv
+    if h.kind == cgHoleJtAddr {
+        v = cgJtDisp(cgJtSlot(h.sym))
+    } else if h.kind == cgHoleCbGlueAddr {
+        fi = cgCbGlueFuncIdx[h.sym]
+        v = cgJtDisp(cgJtSlot(fi))
+    } else {
+        v = cgObjResolveLabel(h.cls, h.sym)
+    }
+    if h.srcSlot {
+        sv = v
+    } else {
+        dv = v
+    }
+    a68Emit(A68Op(h.op), h.size, A68Mode(h.sm), h.sr, sv, A68Mode(h.dm), h.dr, dv)
+}
+
+// cgObjPasteFunc re-materializes baked function f from its captured
+// runs+holes instead of running cgEmitFunc -- Task 1's own proven paste
+// mechanic: a68CommentMarker()+a68Bind(cgFuncLabels[f]) shapes the item
+// stream exactly like cgEmitFunc's own non-listing entry (both zero-
+// length, so the bind lands at the same address either way), then every
+// run streams in verbatim via a68DcBytes (length-exact, so a68Pc tracks
+// cgEmitFunc's own layout identically) with each hole re-emitted in
+// between by cgObjPasteHole. peepFunc deliberately does not run over
+// pasted items -- the captured bytes are already post-peephole (Task
+// 1's own finding: peephole's own safety rules already make calls/
+// KindData/KindBind barriers, so no cross-function peephole window is
+// lost by skipping it here).
+func cgObjPasteFunc(f: int) {
+    var rf: int
+    var hf: int
+    var nh: int
+    var k: int
+
+    rf = bkLdObjRunFirst[f]
+    hf = bkLdObjHoleFirst[f]
+    nh = bkLdObjNHoles[f]
+    a68CommentMarker()
+    a68Bind(cgFuncLabels[f])
+    k = 0
+    while k <= nh {
+        a68DcBytes(cgObjRuns[rf + k])
+        if k < nh {
+            cgObjPasteHole(cgObjHoles[hf + k])
+        }
+        k = k + 1
+    }
+}
+
 // cg68ProgramFork (Task 9, mac-resident-clarusc -- renamed from the old
 // cg68Program, which this function now sits under) is the top-level
 // emit68k driver up through building the raw resource fork: measure the
@@ -13169,7 +13511,15 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
                     objSegItemEnd.add(a68Items.count)
                     objSegTainted.add(cgObjCaptureTainted)
                 } else {
-                    cgEmitFunc(i)
+                    // object-code-linker Task 3: paste a baked+valid
+                    // function's captured bytes instead of re-running
+                    // cgEmitFunc -- see cgObjPasteEligible/cgObjPasteFunc's
+                    // own doc comments, above this function.
+                    if cgObjPasteEligible(i) {
+                        cgObjPasteFunc(i)
+                    } else {
+                        cgEmitFunc(i)
+                    }
                 }
             }
             driveProgressTick()

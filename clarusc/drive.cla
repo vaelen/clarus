@@ -525,6 +525,29 @@ func driveReset() {
     bkManifestDriftPath = ""
     bkManifestCollidedIdx = driveFreshIntList()
     bkManifestCollidedEarly = driveFreshBoolList()
+    // object-code-linker Task 3: defensive reset, found the hard way (not
+    // added preemptively) -- TestRtbakeDriftFallback crashed with "list
+    // index out of range" until this line existed. bkLdObjValid is
+    // populated by bkLoadRtbake (called from driveCompile's own
+    // `if haveRtbake` block, BEFORE Phase A) and stays populated with THAT
+    // attempt's own per-function data even when the SAME driveCompile call
+    // later detects manifest drift and falls back to a from-source
+    // recompile (haveRtbake set false, driveReset() called, THEN a
+    // recursive driveCompile() with bkInstallObjCode never called again --
+    // haveRtbake is false this time). Without this reset, cg68Measure's
+    // own cgObjPasteEligible(i) kept reading the ABORTED bake attempt's
+    // stale bkLdObjValid/irFuncs-index-space data against the fallback
+    // compile's OWN, differently-numbered irFuncs -- an out-of-bounds (or
+    // silently wrong) index. Resetting bkLdObjValid alone is sufficient:
+    // every other bkLdObj* field is only ever read from behind a
+    // cgObjPasteEligible(i) check, which is false the instant this list is
+    // empty (see its own doc comment, cg68k.cla). Safe at BOTH of this
+    // function's call sites (the fallback point, right before the
+    // recursive driveCompile; macgui.cla's gcCompile, right before ITS OWN
+    // driveCompile) -- both run strictly before any `if haveRtbake` block
+    // that would legitimately repopulate it for the compile about to
+    // start.
+    bkLdObjValid = driveFreshBoolList()
 }
 
 // findRtDir resolves the default --rtdir when the flag is omitted: it walks
