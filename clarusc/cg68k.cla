@@ -6330,83 +6330,31 @@ func cgIntr4(e: int, nameIdx: int, addr0: bool, addr1: bool, addr2: bool, addr3:
 // gate: strings.cla's `buf[3] = 'z'` after `packed.toBytes(buf)` produced
 // "ABCDEFzH" instead of "ABCzEFGH").
 //
-// runtime-ir-bake Task 6 fix round 2 (2026-08-13): `cgArrElemStride`
-// (toolbox-integration Task 6, 2026-08-04 -- three days AFTER the fix
-// above) made a `char[N]` ARRAY's own element spacing tight (1 byte, no
-// padding) too, to fix a DIFFERENT bug (extern-record storage needing
-// truly contiguous bytes) -- but never updated these two functions' own
-// hardcoded stride-2 walk of `arrExpr`, silently reintroducing the exact
-// same "every other byte" corruption Task 16 had fixed, just on the
-// OTHER side of the mismatch (both ends now tight, but this code still
-// walks the source 2 bytes per element). Found via
-// TestClarusCBakePathOnSnow (internal/mactest/clarusc_bake_test.go):
-// bake.cla's bkGetStr builds each interned string via a `char[255] buf`
-// + `buf[i] = char(bkGetByte())` loop (tight, correct, per
-// cgArrElemStride) then `s.fromBytes(buf, n)` -- on real 68k hardware,
-// "rtListNew" (9 bytes) came back as "rLsNw" + 4 garbage/pad bytes:
-// exactly the even-indexed characters (0,2,4,6,8), the stride-2-read
-// signature. Never caught before because it corrupts CONTENT, not
-// length or structure -- every existing test comparing fromBytes/toBytes
-// round-trips through the SAME (consistently, symmetrically wrong)
-// mismatch would have kept passing; only a lookup keyed on the resulting
-// STRING VALUE (bake.cla's own strIndex dedup-by-name) exposed it.
+// runtime-ir-bake Task 6 fix round 2 (2026-08-13) traced a real-hardware
+// string-corruption bug to this same pair: `cgArrElemStride`
+// (toolbox-integration Task 6, 2026-08-04) had since made a `char[N]`
+// ARRAY's own element spacing tight too (a DIFFERENT fix, for extern-record
+// storage needing contiguous bytes), so the scratch-buffer indirection's
+// hardcoded stride-2 walk of `arrExpr` was reading every other byte of an
+// already-tight source -- reintroducing Task 16's exact bug on the OTHER
+// side of the mismatch. That fix round corrected the stride but left the
+// scratch buffer itself in place, noting the whole indirection was now a
+// tight-to-tight copy with nothing left to bridge.
 //
-// Fix: both functions now walk `arrExpr` at stride 1 (cgArrElemStride's
-// OWN current char-array rule), matching what's actually there. The
-// scratch-buffer indirection itself is now a tight-to-tight copy --
-// redundant since the fix above, but left in place rather than removed
-// under this fix round's own time budget (a real simplification,
-// deliberately deferred, not a correctness concern either way).
-
-// cgFillTightScratchFromPaddedArr unrolls a compile-time-bounded copy (N
-// is always a compile-time constant, same cgArrDefaultAt precedent) of
-// arrExpr's own N tightly-packed char elements into a scratchOff(A6) byte
-// buffer, one element per iteration -- ahead of a FromBytes runtime call.
-func cgFillTightScratchFromPaddedArr(arrExpr: int, scratchOff: int, n: int) {
-    var i: int
-
-    cgExprAddr(arrExpr)
-    a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
-    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
-    i = 0
-    while i < n {
-        a68Emit(OpMove, 1, AmInd, 1, 0, AmPostInc, 0, 0)
-        a68Emit(OpAdda, 4, AmImm, 0, 1, AmAn, 1, 0)
-        i = i + 1
-    }
-}
-
-// cgDrainTightScratchToPaddedArr copies the first D0 (n, the actual byte
-// count a ToBytes runtime call just returned) bytes of a tight
-// scratchOff(A6) buffer into arrExpr's own tightly-packed char elements --
-// the mirror of cgFillTightScratchFromPaddedArr, for the opposite
-// direction (see its own doc comment above for the stride-1 fix, Task 6
-// fix round 2, and why "padded" in these two names is now historical).
-// D0 is PRESERVED throughout (this intrinsic's own return value, cgExpr's
-// "leaves the value in D0" postcondition) -- D1 is the runtime loop
-// counter instead (n itself isn't known at compile time here, unlike the
-// Fill direction above, so this one is a real DBRA loop, guarded against
-// n==0). Elements [n, N) of arrExpr are left untouched, matching str.cla's
-// own "only [0,n) written" contract exactly.
-func cgDrainTightScratchToPaddedArr(arrExpr: int, scratchOff: int) {
-    var skipLbl: int
-    var loopLbl: int
-
-    a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
-    skipLbl = a68NewLabel()
-    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 1, 0)
-    a68EmitBr(OpBcc, 7, skipLbl)
-    cgExprAddr(arrExpr)
-    a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
-    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
-    a68Emit(OpSubq, 4, AmImm, 0, 1, AmDn, 1, 0)
-    loopLbl = a68NewLabel()
-    a68Bind(loopLbl)
-    a68Emit(OpMove, 1, AmPostInc, 0, 0, AmInd, 1, 0)
-    a68Emit(OpAdda, 4, AmImm, 0, 1, AmAn, 1, 0)
-    a68Emit(OpDbra, 2, AmDn, 1, 0, AmPCLabel, 0, loopLbl)
-    a68Bind(skipLbl)
-}
+// fallback-trigger-narrowing Task 4 (housekeeping, 2026-08-13) removed it
+// for real: cgIntrStrFromBytes/cgIntrTextFromBytes now pass the array
+// argument's own address (cgExprAddr) straight to rtStrFromBytes/
+// rtTextFromBytes as the source buffer; cgIntrStrToBytes/cgIntrTextToBytes
+// pass it as the destination buffer, so the runtime call reads/writes the
+// array's own storage directly and no scratch copy (fill OR drain) runs at
+// all. Confirmed behavior-preserving before removal: since both ends were
+// already tight, a fill/drain through scratch and a direct address pass
+// have the identical byte-level effect on the array. Not exercised by any
+// testdata/cg68k or testdata/emitui golden (grepped clean beforehand), so
+// this is invisible to the T1 golden gate; functional coverage is
+// testsuite/toolbox/cases_resources.cla's `.toBytes()`/`buf[i]` round trip
+// (native T2 lane) and internal/selfhost's testdata/run/lib/strings.cla
+// behavior fixture.
 
 // cgIntrStrFromBytes/cgIntrStrToBytes/cgIntrTextFromBytes/cgIntrTextToBytes
 // mirror fpIntrCall's own IStrFromBytes/IStrToBytes/ITextFromBytes/
@@ -6422,20 +6370,17 @@ func cgIntrStrFromBytes(e: int) {
     var a1e: int
     var a2e: int
     var n: int
-    var scratchOff: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     a2e = irExprNext(a1e)
     n = irtN(irExprType(a1e))
-    scratchOff = cgAllocBigTmpOff(irStrType(n))
-    cgFillTightScratchFromPaddedArr(a1e, scratchOff, n)
 
     cgExprAddr(a0e)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, irtN(irExprType(a0e)), AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    cgExprAddr(a1e)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
@@ -6449,23 +6394,19 @@ func cgIntrStrToBytes(e: int) {
     var a0e: int
     var a1e: int
     var n: int
-    var scratchOff: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     n = irtN(irExprType(a1e))
-    scratchOff = cgAllocBigTmpOff(irStrType(n))
 
     cgExprAddr(a0e)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    cgExprAddr(a1e)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgJsrByName(rnStrToBytes)
     cgCleanupStack(12)
-
-    cgDrainTightScratchToPaddedArr(a1e, scratchOff)
 }
 
 func cgIntrTextFromBytes(e: int) {
@@ -6473,18 +6414,15 @@ func cgIntrTextFromBytes(e: int) {
     var a1e: int
     var a2e: int
     var n: int
-    var scratchOff: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     a2e = irExprNext(a1e)
     n = irtN(irExprType(a1e))
-    scratchOff = cgAllocBigTmpOff(irStrType(n))
-    cgFillTightScratchFromPaddedArr(a1e, scratchOff, n)
 
     cgExpr(a0e)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    cgExprAddr(a1e)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
@@ -6498,23 +6436,19 @@ func cgIntrTextToBytes(e: int) {
     var a0e: int
     var a1e: int
     var n: int
-    var scratchOff: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     n = irtN(irExprType(a1e))
-    scratchOff = cgAllocBigTmpOff(irStrType(n))
 
     cgExpr(a0e)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    cgExprAddr(a1e)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgJsrByName(rnTextToBytes)
     cgCleanupStack(12)
-
-    cgDrainTightScratchToPaddedArr(a1e, scratchOff)
 }
 
 // cgIntrTextCmp mirrors fpTextCmp's own 3-way dispatch (cprint.cla:
