@@ -7395,6 +7395,7 @@ static void clar_fn_cgIntr1(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0);
 static void clar_fn_cgIntr2(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0, int32_t cv_addr1);
 static void clar_fn_cgIntr3(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0, int32_t cv_addr1, int32_t cv_addr2);
 static void clar_fn_cgIntr4(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0, int32_t cv_addr1, int32_t cv_addr2, int32_t cv_addr3);
+static void clar_fn_cgFillTightScratchFromPaddedArr(int32_t cv_arrExpr, int32_t cv_scratchOff, int32_t cv_n);
 static void clar_fn_cgIntrStrFromBytes(int32_t cv_e);
 static void clar_fn_cgIntrStrToBytes(int32_t cv_e);
 static void clar_fn_cgIntrTextFromBytes(int32_t cv_e);
@@ -60466,6 +60467,21 @@ static void clar_fn_cgIntr4(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0, 
 
 }
 
+static void clar_fn_cgFillTightScratchFromPaddedArr(int32_t cv_arrExpr, int32_t cv_scratchOff, int32_t cv_n) {
+    int32_t cv_i;
+    cv_i = 0;
+    clar_fn_cgExprAddr(cv_arrExpr);
+    clar_fn_a68Emit(1, 4, 2, 0, 0, 2, 1, 0);
+    clar_fn_a68Emit(2, 0, 6, 6, cv_scratchOff, 2, 0, 0);
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < cv_n))) break;
+        clar_fn_a68Emit(0, 1, 3, 1, 0, 4, 0, 0);
+        clar_fn_a68Emit(5, 4, 8, 0, 1, 2, 1, 0);
+        cv_i = (cv_i + 1);
+    }
+}
+
 static void clar_fn_cgIntrStrFromBytes(int32_t cv_e) {
     int32_t cv_a0e;
     cv_a0e = 0;
@@ -60522,13 +60538,17 @@ static void clar_fn_cgIntrTextFromBytes(int32_t cv_e) {
     cv_a2e = 0;
     int32_t cv_n;
     cv_n = 0;
+    int32_t cv_scratchOff;
+    cv_scratchOff = 0;
     cv_a0e = clar_fn_irIntrArgsHead(cv_e);
     cv_a1e = clar_fn_irExprNext(cv_a0e);
     cv_a2e = clar_fn_irExprNext(cv_a1e);
     cv_n = clar_fn_irtN(clar_fn_irExprType(cv_a1e));
+    cv_scratchOff = clar_fn_cgAllocBigTmpOff(clar_fn_irStrType(cv_n));
+    clar_fn_cgFillTightScratchFromPaddedArr(cv_a1e, cv_scratchOff, cv_n);
     clar_fn_cgExpr(cv_a0e);
     clar_fn_a68Emit(0, 4, 1, 0, 0, 5, 7, 0);
-    clar_fn_cgExprAddr(cv_a1e);
+    clar_fn_a68Emit(2, 0, 6, 6, cv_scratchOff, 2, 0, 0);
     clar_fn_a68Emit(0, 4, 2, 0, 0, 5, 7, 0);
     clar_fn_a68Emit(0, 4, 8, 0, cv_n, 1, 0, 0);
     clar_fn_a68Emit(0, 4, 1, 0, 0, 5, 7, 0);
