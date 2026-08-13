@@ -49,16 +49,21 @@ type Header struct {
 	Lane          int
 	Stamp         []byte
 	StampOffset   int // offset of Stamp's first byte within the file
+	BodyHash      uint32
+	BodyOffset    int // offset of the first body byte (everything BodyHash covers) within the file
 	Modules       []string
 	Sections      []Section
 }
 
 // ParseHeader parses data as a CLIR artifact per clarusc/bake.cla's format
 // (magic 'CLIR' | formatVersion(4) | laneTag(1) | stampLen(2) | stamp |
-// moduleCount(2) | [keyLen(1) key]... | sectionCount(2) | [id(2) len(4)
-// payload]...), and verifies the section table accounts for every
-// remaining byte (a structural well-formedness check, not a section-
-// content decode).
+// bodyHash(4) | moduleCount(2) | [keyLen(1) key]... | sectionCount(2) |
+// [id(2) len(4) payload]...) -- bodyHash (format v4, final-review fix
+// wave) is an FNV hash over everything from BodyOffset to the end of the
+// file, the loader's own integrity check over bkCheckRtbakeHeader's
+// counterpart in clarusc/bake.cla. Verifies the section table accounts
+// for every remaining byte (a structural well-formedness check, not a
+// section-content decode).
 func ParseHeader(data []byte) (*Header, error) {
 	pos := 0
 	need := func(n int) error {
@@ -99,6 +104,13 @@ func ParseHeader(data []byte) (*Header, error) {
 	stampOffset := pos
 	stamp := append([]byte(nil), data[pos:pos+stampLen]...)
 	pos += stampLen
+
+	if err := need(4); err != nil {
+		return nil, err
+	}
+	bodyHash := binary.BigEndian.Uint32(data[pos:])
+	pos += 4
+	bodyOffset := pos
 
 	if err := need(2); err != nil {
 		return nil, err
@@ -149,6 +161,8 @@ func ParseHeader(data []byte) (*Header, error) {
 		Lane:          lane,
 		Stamp:         stamp,
 		StampOffset:   stampOffset,
+		BodyHash:      bodyHash,
+		BodyOffset:    bodyOffset,
 		Modules:       modules,
 		Sections:      sections,
 	}, nil
@@ -195,6 +209,36 @@ func CorruptStampFixture(t *testing.T, exe, lane, dir string) string {
 	corrupt[hdr.StampOffset] ^= 0xFF
 
 	corruptPath := filepath.Join(dir, "corrupt-stamp-"+lane+".clir")
+	if err := os.WriteFile(corruptPath, corrupt, 0o644); err != nil {
+		t.Fatalf("write %s: %v", corruptPath, err)
+	}
+	return corruptPath
+}
+
+// CorruptBodyFixture bakes a fresh valid lane artifact into dir, flips
+// one bit of a byte PAST the header (inside the module manifest/section
+// body bkCheckRtbakeHeader's format-v4 bodyHash now covers), writes the
+// result to dir/corrupt-body-<lane>.clir, and returns that path -- the
+// final-review fix wave's own loader-refusal test is expected to call
+// this rather than read a committed binary fixture (same reasoning as
+// CorruptStampFixture, above).
+func CorruptBodyFixture(t *testing.T, exe, lane, dir string) string {
+	t.Helper()
+	validPath := filepath.Join(dir, "valid-body-"+lane+".clir")
+	data := RunBakeIR(t, exe, lane, validPath)
+
+	hdr, err := ParseHeader(data)
+	if err != nil {
+		t.Fatalf("parse header of freshly-baked %s: %v", validPath, err)
+	}
+	if hdr.BodyOffset >= len(data) {
+		t.Fatalf("bake %s: empty body, cannot corrupt", lane)
+	}
+
+	corrupt := append([]byte(nil), data...)
+	corrupt[hdr.BodyOffset] ^= 0xFF
+
+	corruptPath := filepath.Join(dir, "corrupt-body-"+lane+".clir")
 	if err := os.WriteFile(corruptPath, corrupt, 0o644); err != nil {
 		t.Fatalf("write %s: %v", corruptPath, err)
 	}

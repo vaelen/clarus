@@ -43,13 +43,21 @@ include "drive.cla"
 // ================================================================
 
 const bkMagic: string = "CLIR"
-// bkFormatVersion 3 (runtime-ir-bake Task 5, fix round 2): added
+// bkFormatVersion 4 (final-review fix wave): added bkHeaderBodyHash, a
+// 4-byte FNV hash (bkHashTextFrom, below) over every byte AFTER the
+// header, stored in the header itself and verified by
+// bkCheckRtbakeHeader BEFORE any section is parsed -- a truncated or
+// corrupted buffer is refused there, in front of BOTH the host loader's
+// full parse (bkLoadRtbake) and macgui.cla's own bake-vs-fallback
+// decision (gcResolveBakePath), instead of surfacing as a hard compile
+// failure only after the Mac side already committed to the bake path.
+// Version 3 (runtime-ir-bake Task 5, fix round 2) added
 // bkSecCheckerVisibility (the testapi-visible checker-symbol boundary --
 // see that section's own doc comment). Version 2 added bkSecUitestBounds
 // (the base/uitest IR-arena boundary counts). Pre-release format; the
 // loader refuses any other version outright (no compat shim), per this
 // phase's own controller resolution.
-const bkFormatVersion: int = 3
+const bkFormatVersion: int = 4
 
 // bkClirResourceName/bkStampResourceName (runtime-ir-bake Task 6, Mac
 // integration): reserved 'CLFS' resource names ClarusC.APPL's own build
@@ -238,12 +246,22 @@ const bkFnvSeed: int = 5381
 const bkFnvPrime: int = 16777619
 
 func bkHashText(data: text): int {
+    return bkHashTextFrom(data, 0)
+}
+
+// bkHashTextFrom is bkHashText's own body, starting at an arbitrary
+// offset rather than 0 -- bkCheckRtbakeHeader's body-integrity check
+// (format v4) needs to hash everything in a loaded buffer AFTER the
+// fixed-size header without ever materializing that (up to ~1.1MB)
+// remainder as a `string` slice, which Chapter 3's 255-byte slice cap
+// would reject outright; walking `data[i]` by index has no such limit.
+func bkHashTextFrom(data: text, start: int): int {
     var h: int
     var i: int
     var b: int
 
     h = bkFnvSeed
-    i = 0
+    i = start
     while i < data.length {
         b = int(data[i])
         h = h ^ b
@@ -1280,25 +1298,86 @@ func bkWriteCheckerVisibility(): text {
 // ================================================================
 
 // bakeWriteFile runs the generator (bakeGenerateChain) for lane, then
-// serializes every section into outPath in the brief's format:
-//   magic(4) formatVersion(4) laneTag(1) stampLen(2) stamp
+// serializes every section into outPath in the brief's format (format
+// v4, final-review fix wave -- added bodyHash):
+//   magic(4) formatVersion(4) laneTag(1) stampLen(2) stamp bodyHash(4)
 //   moduleCount(2) [keyLen(1) key]... sectionCount(2) [id(2) len(4) payload]...
+// bodyHash (bkHashTextFrom) covers everything from moduleCount onward --
+// the whole "body" -- built into its own buffer first so the hash can be
+// computed before the header (which embeds it) is ever written; see
+// bkCheckRtbakeHeader for the read-side verification this exists for.
 // Returns false on a checker/lowering diagnostic (diags stays populated
 // for the caller to print, exactly as driveCompile's own contract) or a
 // write failure (logged directly, same as emitMode's own write-failure
 // path in main.cla).
 func bakeWriteFile(lane: int, outPath: string): bool {
     var out: text
+    var body: text
     var mods: list of string
     var stamp: text
     var compilerSrc: text
     var i: int
+    var bodyHash: int
 
     if not bakeGenerateChain(lane) {
         return false
     }
 
     mods = bakeModuleList(lane)
+
+    body = ""
+    bkPutU16(body, mods.count)
+    i = 0
+    while i < mods.count {
+        bkPutStrShort(body, rtModuleKey(mods[i]))
+        i = i + 1
+    }
+
+    bkPutU16(body, bkSectionCount)
+    bkEmitSection(body, bkSecIrTypes, bkWriteIrTypes())
+    bkEmitSection(body, bkSecIrStmts, bkWriteIrStmts())
+    bkEmitSection(body, bkSecIrExprs, bkWriteIrExprs())
+    bkEmitSection(body, bkSecIrLocals, bkWriteIrLocals())
+    bkEmitSection(body, bkSecIrFuncs, bkWriteIrFuncs())
+    bkEmitSection(body, bkSecIrFuncIdxByName, bkWriteIrFuncIdxByName())
+    bkEmitSection(body, bkSecIrCbGlueNames, bkWriteIrCbGlueNames())
+    bkEmitSection(body, bkSecIrGlobals, bkWriteIrGlobals())
+    bkEmitSection(body, bkSecIrFieldSlots, bkWriteIrFieldSlots())
+    bkEmitSection(body, bkSecIrRecords, bkWriteIrRecords())
+    bkEmitSection(body, bkSecIrEnumMembers, bkWriteIrEnumMembers())
+    bkEmitSection(body, bkSecIrEnums, bkWriteIrEnums())
+    bkEmitSection(body, bkSecIrWidgetDescs, bkWriteIrWidgetDescs())
+    bkEmitSection(body, bkSecIrColumnDescs, bkWriteIrColumnDescs())
+    bkEmitSection(body, bkSecIrBindDescs, bkWriteIrBindDescs())
+    bkEmitSection(body, bkSecIrWindowDescs, bkWriteIrWindowDescs())
+    bkEmitSection(body, bkSecIrMenuItemDescs, bkWriteIrMenuItemDescs())
+    bkEmitSection(body, bkSecIrMenuDescs, bkWriteIrMenuDescs())
+    bkEmitSection(body, bkSecIrWinHandlers, bkWriteIrWinHandlers())
+    bkEmitSection(body, bkSecIrWidgetHandlerEntries, bkWriteIrWidgetHandlerEntries())
+    bkEmitSection(body, bkSecIrMenuHandlerEntries, bkWriteIrMenuHandlerEntries())
+    bkEmitSection(body, bkSecIrEveryEntries, bkWriteIrEveryEntries())
+    bkEmitSection(body, bkSecIrStrLits, bkWriteIrStrLits())
+    bkEmitSection(body, bkSecIrExternNames, bkWriteIntList(irExternNames))
+    bkEmitSection(body, bkSecIrExternRetTys, bkWriteIntList(irExternRetTys))
+    bkEmitSection(body, bkSecIrExternParamStart, bkWriteIntList(irExternParamStart))
+    bkEmitSection(body, bkSecIrExternParamCountArr, bkWriteIntList(irExternParamCountArr))
+    bkEmitSection(body, bkSecIrExternParamTys, bkWriteIntList(irExternParamTys))
+    bkEmitSection(body, bkSecIrExternTrapWords, bkWriteIntList(irExternTrapWords))
+    bkEmitSection(body, bkSecIrExternConvs, bkWriteIntList(irExternConvs))
+    bkEmitSection(body, bkSecIrExternSels, bkWriteIntList(irExternSels))
+    bkEmitSection(body, bkSecIrExternParamRegs, bkWriteIntList(irExternParamRegs))
+    bkEmitSection(body, bkSecIrExternRetRegs, bkWriteIntList(irExternRetRegs))
+    bkEmitSection(body, bkSecIrLayoutNeededByName, bkWriteIrLayoutNeededByName())
+    bkEmitSection(body, bkSecIrRcWalkNeededByName, bkWriteIrRcWalkNeededByName())
+    bkEmitSection(body, bkSecIrScalars, bkWriteIrScalars())
+    bkEmitSection(body, bkSecStrPool, bkWriteStrPool())
+    bkEmitSection(body, bkSecLowCounters, bkWriteLowCounters())
+    bkEmitSection(body, bkSecCheckerSymbols, bkWriteCheckerSymbols())
+    bkEmitSection(body, bkSecDeclFileTab, bkWriteDeclFileTab())
+    bkEmitSection(body, bkSecUitestBounds, bkWriteUitestBounds())
+    bkEmitSection(body, bkSecCheckerVisibility, bkWriteCheckerVisibility())
+
+    bodyHash = bkHashText(body)
 
     out = ""
     out.append(bkMagic)
@@ -1321,56 +1400,9 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     bkPutU16(out, stamp.length)
     out.append(stamp)
 
-    bkPutU16(out, mods.count)
-    i = 0
-    while i < mods.count {
-        bkPutStrShort(out, rtModuleKey(mods[i]))
-        i = i + 1
-    }
+    bkPutU32(out, bodyHash)
 
-    bkPutU16(out, bkSectionCount)
-    bkEmitSection(out, bkSecIrTypes, bkWriteIrTypes())
-    bkEmitSection(out, bkSecIrStmts, bkWriteIrStmts())
-    bkEmitSection(out, bkSecIrExprs, bkWriteIrExprs())
-    bkEmitSection(out, bkSecIrLocals, bkWriteIrLocals())
-    bkEmitSection(out, bkSecIrFuncs, bkWriteIrFuncs())
-    bkEmitSection(out, bkSecIrFuncIdxByName, bkWriteIrFuncIdxByName())
-    bkEmitSection(out, bkSecIrCbGlueNames, bkWriteIrCbGlueNames())
-    bkEmitSection(out, bkSecIrGlobals, bkWriteIrGlobals())
-    bkEmitSection(out, bkSecIrFieldSlots, bkWriteIrFieldSlots())
-    bkEmitSection(out, bkSecIrRecords, bkWriteIrRecords())
-    bkEmitSection(out, bkSecIrEnumMembers, bkWriteIrEnumMembers())
-    bkEmitSection(out, bkSecIrEnums, bkWriteIrEnums())
-    bkEmitSection(out, bkSecIrWidgetDescs, bkWriteIrWidgetDescs())
-    bkEmitSection(out, bkSecIrColumnDescs, bkWriteIrColumnDescs())
-    bkEmitSection(out, bkSecIrBindDescs, bkWriteIrBindDescs())
-    bkEmitSection(out, bkSecIrWindowDescs, bkWriteIrWindowDescs())
-    bkEmitSection(out, bkSecIrMenuItemDescs, bkWriteIrMenuItemDescs())
-    bkEmitSection(out, bkSecIrMenuDescs, bkWriteIrMenuDescs())
-    bkEmitSection(out, bkSecIrWinHandlers, bkWriteIrWinHandlers())
-    bkEmitSection(out, bkSecIrWidgetHandlerEntries, bkWriteIrWidgetHandlerEntries())
-    bkEmitSection(out, bkSecIrMenuHandlerEntries, bkWriteIrMenuHandlerEntries())
-    bkEmitSection(out, bkSecIrEveryEntries, bkWriteIrEveryEntries())
-    bkEmitSection(out, bkSecIrStrLits, bkWriteIrStrLits())
-    bkEmitSection(out, bkSecIrExternNames, bkWriteIntList(irExternNames))
-    bkEmitSection(out, bkSecIrExternRetTys, bkWriteIntList(irExternRetTys))
-    bkEmitSection(out, bkSecIrExternParamStart, bkWriteIntList(irExternParamStart))
-    bkEmitSection(out, bkSecIrExternParamCountArr, bkWriteIntList(irExternParamCountArr))
-    bkEmitSection(out, bkSecIrExternParamTys, bkWriteIntList(irExternParamTys))
-    bkEmitSection(out, bkSecIrExternTrapWords, bkWriteIntList(irExternTrapWords))
-    bkEmitSection(out, bkSecIrExternConvs, bkWriteIntList(irExternConvs))
-    bkEmitSection(out, bkSecIrExternSels, bkWriteIntList(irExternSels))
-    bkEmitSection(out, bkSecIrExternParamRegs, bkWriteIntList(irExternParamRegs))
-    bkEmitSection(out, bkSecIrExternRetRegs, bkWriteIntList(irExternRetRegs))
-    bkEmitSection(out, bkSecIrLayoutNeededByName, bkWriteIrLayoutNeededByName())
-    bkEmitSection(out, bkSecIrRcWalkNeededByName, bkWriteIrRcWalkNeededByName())
-    bkEmitSection(out, bkSecIrScalars, bkWriteIrScalars())
-    bkEmitSection(out, bkSecStrPool, bkWriteStrPool())
-    bkEmitSection(out, bkSecLowCounters, bkWriteLowCounters())
-    bkEmitSection(out, bkSecCheckerSymbols, bkWriteCheckerSymbols())
-    bkEmitSection(out, bkSecDeclFileTab, bkWriteDeclFileTab())
-    bkEmitSection(out, bkSecUitestBounds, bkWriteUitestBounds())
-    bkEmitSection(out, bkSecCheckerVisibility, bkWriteCheckerVisibility())
+    out.append(body)
 
     if not file.writeText(outPath, out, fileTypeData, "????") {
         log("clarusc --bake-ir: cannot write " + outPath + ": " + lastError.message)
@@ -1406,8 +1438,26 @@ func bakeWriteFile(lane: int, outPath: string): bool {
 var bkLoadBuf: text
 var bkLoadPos: int
 
+// bkLoadOverrun (final-review fix wave): set true the first time
+// bkGetByte is asked to read past bkLoadBuf's end, instead of indexing
+// out of range (an uncatchable runtime error, per Chapter 3 -- "raises a
+// runtime error" -- straight out of a hand-crafted or bit-flipped bake).
+// Defense in depth for the narrow window before bkCheckRtbakeHeader's
+// own body-hash check runs (or if the hash field itself were truncated,
+// which the header's own length check already rules out) -- the hash
+// check is expected to catch every ordinary corruption/truncation case
+// first. Checked, and refused loudly, at the end of a full parse
+// (bkLoadSections); reset at the start of every bkCheckRtbakeHeader call
+// so repeated compiles in one process (macgui.cla) don't carry a stale
+// flag forward.
+var bkLoadOverrun: bool
+
 func bkGetByte(): int {
     var b: int
+    if bkLoadPos >= bkLoadBuf.length {
+        bkLoadOverrun = true
+        return 0
+    }
     b = int(bkLoadBuf[bkLoadPos])
     bkLoadPos = bkLoadPos + 1
     return b
@@ -2380,6 +2430,14 @@ func bkLoadSections(): bool {
         emitDiag(1, 1, "--rtbake: trailing " + numToStr(bkLoadBuf.length - bkLoadPos) + " unconsumed byte(s) after the last section (truncated or overlong bake)")
         return false
     }
+    // bkLoadOverrun: defense in depth (its own doc comment, above) --
+    // the body-hash check should already have refused any buffer that
+    // could trigger this, so reaching here loud rather than silent means
+    // that check itself was somehow bypassed or its own field truncated.
+    if bkLoadOverrun {
+        emitDiag(1, 1, "--rtbake: read past end of buffer while parsing (corrupt or truncated bake)")
+        return false
+    }
     return true
 }
 
@@ -2400,18 +2458,25 @@ func bkLoadSections(): bool {
 // feExpectedStamp for the full reasoning).
 //
 // bkCheckRtbakeHeader validates buf's header (magic, format version,
-// lane, stamp) against wantLane, WITHOUT parsing the rest of the file
-// (module manifest, IR sections) -- split out of bkLoadRtbake (below,
-// which continues into the full parse on success) so a front end can
-// cheaply ask "would this bake be accepted?" BEFORE committing to it
-// (macgui.cla's gcCompile: the never-cached, per-compile bake-vs-
-// fallback decision, Task 6 -- a refused bake must never surface as a
-// user-facing compile failure, so the decision has to be made, and acted
-// on, before driveCompile's own unconditional `if not bkLoadRtbake(...)
-// { return false }` would otherwise fail the whole compile). On success,
-// leaves bkLoadBuf/bkLoadPos positioned right after the stamp field, for
-// bkLoadRtbake's own caller-visible contract (unchanged) to continue
-// parsing from.
+// lane, stamp, body-hash -- format v4, final-review fix wave) against
+// wantLane, WITHOUT parsing the rest of the file into section structures
+// -- split out of bkLoadRtbake (below, which continues into the full
+// parse on success) so a front end can cheaply ask "would this bake be
+// accepted?" BEFORE committing to it (macgui.cla's gcCompile: the
+// never-cached, per-compile bake-vs-fallback decision, Task 6 -- a
+// refused bake must never surface as a user-facing compile failure, so
+// the decision has to be made, and acted on, before driveCompile's own
+// unconditional `if not bkLoadRtbake(...) { return false }` would
+// otherwise fail the whole compile). The body-hash check DOES walk every
+// byte after the header (bkHashTextFrom) to compute the comparison hash
+// -- not free, but still no section-structure parsing -- so a truncated
+// buffer, a section-level bit flip, or any other body corruption is
+// caught HERE, before a front end can ever act on "accepted", instead of
+// only surfacing later inside bkLoadRtbake's own full parse (which used
+// to run only after macgui.cla had already committed to the bake path).
+// On success, leaves bkLoadBuf/bkLoadPos positioned right after the
+// body-hash field, for bkLoadRtbake's own caller-visible contract
+// (unchanged) to continue parsing from.
 //
 // Stamp contract (Task 4's own open question (a)): the stamp is a hash of
 // the committed clarusc/clarusc.c snapshot (bake.cla's own bkHashText/
@@ -2434,8 +2499,15 @@ func bkCheckRtbakeHeader(buf: text, wantLane: int): bool {
     var stampLen: int
     var stamp: int
     var expectStamp: int
+    var bodyHash: int
+    var actualBodyHash: int
 
-    if buf.length < 15 {
+    bkLoadOverrun = false
+
+    // Header is magic(4) + formatVersion(4) + laneTag(1) + stampLen(2) +
+    // stamp(4) + bodyHash(4) = 19 bytes (format v4, final-review fix
+    // wave -- was 15 before bodyHash was added).
+    if buf.length < 19 {
         emitDiag(1, 1, "--rtbake: file too short to be a CLIR bake")
         return false
     }
@@ -2467,6 +2539,17 @@ func bkCheckRtbakeHeader(buf: text, wantLane: int): bool {
     expectStamp = feExpectedStamp()
     if stamp != expectStamp {
         emitDiag(1, 1, "--rtbake: stamp mismatch (bake=" + numToStr(stamp) + ", this compiler=" + numToStr(expectStamp) + "); regenerate with --bake-ir")
+        return false
+    }
+
+    bodyHash = bkGetU32()
+    // Everything from here (bkLoadPos) to buf.length is "the body" --
+    // exactly what bakeWriteFile hashed before writing the header. Walk
+    // it by index (bkHashTextFrom), never as a slice -- a `string` slice
+    // is capped at 255 bytes (Chapter 3) and this body is ~1.1MB.
+    actualBodyHash = bkHashTextFrom(buf, bkLoadPos)
+    if actualBodyHash != bodyHash {
+        emitDiag(1, 1, "--rtbake: body hash mismatch (corrupt or truncated bake); regenerate with --bake-ir")
         return false
     }
     return true

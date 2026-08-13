@@ -512,6 +512,11 @@ func driveReset() {
     // correctness check, not just a style nicety) would catch a future
     // bakeGenerateChain change that left it set.
     lowSkipUiDispatchers = false
+    // final-review fix wave: same rationale, same seam -- driveCompile's
+    // own --rtbake branch (above in this file) already clears
+    // lowResumeFromBake on both its exits, so this is a no-op today too;
+    // added so the leak gate would catch a future change that left it set.
+    lowResumeFromBake = false
 }
 
 // findRtDir resolves the default --rtdir when the flag is omitted: it walks

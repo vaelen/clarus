@@ -459,11 +459,16 @@ func gcLog(w: Log, line: string) {
 // cla's cliResolveBake split (Task 5).
 //
 // Fallback is taken whenever the resource is absent, unreadable, or its
-// header is refused (format/version/lane/stamp mismatch --
+// header is refused (format/version/lane/stamp/body-hash mismatch --
 // bkCheckRtbakeHeader, the SAME check bake.cla's own bkLoadRtbake runs
 // internally, factored out so this decision can be made BEFORE
 // committing to driveCompile: a refused bake must never surface as a
-// user-facing compile failure, only a silent, logged fallback).
+// user-facing compile failure, only a silent, logged fallback). The
+// body-hash check (format v4, final-review fix wave) covers every byte
+// after the header -- a truncated resource read or a corrupted section
+// is now refused HERE too, not just inside driveCompile's own later full
+// parse, so this claim now holds for section-level corruption as well
+// as the header fields it always covered.
 func gcResolveBakePath(): string {
     var clirBuf: text
 

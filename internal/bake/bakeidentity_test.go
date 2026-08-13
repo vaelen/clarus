@@ -145,6 +145,35 @@ func TestRtbakeCorruptStampRefused(t *testing.T) {
 	}
 }
 
+// TestRtbakeCorruptBodyRefused proves the loader refuses a bake whose
+// BODY (past the header -- module manifest or any IR section) was
+// corrupted, via the format-v4 bodyHash check (final-review fix wave):
+// clear diagnostic, nonzero exit. The header fields (magic/version/lane/
+// stamp) all still match here -- only a body byte changed -- so this
+// proves the new check catches a corruption class the pre-v4 header
+// check couldn't. The CLI (host lane) is what this test exercises
+// directly; on the Mac lane, the SAME bkCheckRtbakeHeader call is what
+// macgui.cla's gcResolveBakePath runs before ever setting haveRtbake, so
+// the same corrupted body there is classified as an ordinary logged
+// fallback (structural via bkCheckRtbakeHeader), not a hard compile
+// failure -- not independently exercised by this Go-side test, which has
+// no Mac lane to boot.
+func TestRtbakeCorruptBodyRefused(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	dir := t.TempDir()
+	corruptPath := CorruptBodyFixture(t, exe, "68k", dir)
+
+	cmd := exec.Command(exe, "emit68k", "--rtbake", corruptPath, "-o", filepath.Join(dir, "out.bin"), filepath.Join(RepoRoot(t), "testdata", "cg68k", "arith.cla"))
+	cmd.Dir = RepoRoot(t)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("clarusc emit68k --rtbake <corrupt-body>: expected nonzero exit, got success\n%s", out)
+	}
+	if !bytes.Contains(out, []byte("body hash mismatch")) {
+		t.Fatalf("expected a clear body-hash-mismatch diagnostic, got:\n%s", out)
+	}
+}
+
 // TestRtbakeLaneMismatchRefused proves the loader refuses a bake built
 // for the wrong lane (a c-lane bake fed to emit68k) -- the controller's
 // own resolution ("wrong lane = refused-stamp-class error with a clear

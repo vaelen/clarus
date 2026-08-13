@@ -54,8 +54,8 @@ func TestBakeHeaderSanity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseHeader: %v", err)
 			}
-			if hdr.FormatVersion != 3 {
-				t.Errorf("FormatVersion = %d, want 3 (runtime-ir-bake Task 5 fix round 2: bkSecCheckerVisibility added)", hdr.FormatVersion)
+			if hdr.FormatVersion != 4 {
+				t.Errorf("FormatVersion = %d, want 4 (final-review fix wave: bodyHash added)", hdr.FormatVersion)
 			}
 			if hdr.Lane != wantLaneTag[lane] {
 				t.Errorf("Lane = %d, want %d", hdr.Lane, wantLaneTag[lane])
