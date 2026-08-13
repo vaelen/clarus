@@ -609,12 +609,28 @@ func TestRtbakeIncludeCheckOnly(t *testing.T) {
 }
 
 // TestRtbakeIncludeCheckOnlyUndefinedExternNegative (fallback-trigger-
-// narrowing Task 3, Step 2's own negative twin): a fixture that includes
-// toolbox/files.cla (a real manifest collision, hash-equal, check-only
-// include) but calls an extern that ISN'T declared anywhere in that file
-// must still error identically on both paths -- proving the check-only
-// include doesn't accidentally widen visibility (or silently swallow an
-// undefined-name error) beyond what the included file itself declares.
+// narrowing Task 3, Step 2's own negative twin; symbols swapped in fix
+// round 1, review Important #1): a fixture that includes toolbox/
+// files.cla (a real manifest collision, hash-equal, check-only include)
+// but references SFGetFile/SFReply -- both declared in toolbox/
+// standardfile.cla, a DIFFERENT nested include reached via the SAME
+// early-spliced module (runtime/clarus/uidialogs.cla `include`s both
+// toolbox/standardfile.cla and toolbox/files.cla, uidialogs.cla:10-11) --
+// must still error identically on both paths. round 1's own original
+// version referenced a name (PBFakeSyncNotInCatalog) declared nowhere in
+// the bake at all, so it could only fail if the compiler stopped
+// reporting undefined names outright; it could never have caught a bake
+// bug that leaked toolbox/standardfile.cla's OWN baked visibility into a
+// files.cla-only compile. SFGetFile IS in the bake (nested include, same
+// as toolbox/files.cla) but NOT in toolbox/files.cla, so a check-only
+// include that accidentally widened visibility to its own SIBLING
+// manifest module would compile this where from-source errors. SFReply
+// (an extern record, referenced here as a var's type) is the sharper
+// half aimed at the field-info visibility gap Task 2's own review
+// flagged as a deferred minor (bkInstallFieldInfo installs
+// recFieldsHeadByName for every baked record, standardfile.cla's SFReply
+// included, with no visibility gate) -- record types/fields are exactly
+// what that install touches.
 func TestRtbakeIncludeCheckOnlyUndefinedExternNegative(t *testing.T) {
 	exe := claruscboot.CurrentExe(t)
 	root := RepoRoot(t)
@@ -624,7 +640,7 @@ func TestRtbakeIncludeCheckOnlyUndefinedExternNegative(t *testing.T) {
 
 	fixtureName := "checkonly_undefined_extern_fixture.cla"
 	fixturePath := filepath.Join(root, fixtureName)
-	src := "include \"toolbox/files.cla\"\n\nfunc main() {\n    var pb: ptr\n    var r: int\n    r = PBFakeSyncNotInCatalog(pb)\n}\n"
+	src := "include \"toolbox/files.cla\"\n\nfunc main() {\n    var pb: ptr\n    var r: int\n    var reply: SFReply\n    r = PBGetFInfoSync(pb)\n    SFGetFile(pb)\n}\n"
 	if err := os.WriteFile(fixturePath, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -634,22 +650,24 @@ func TestRtbakeIncludeCheckOnlyUndefinedExternNegative(t *testing.T) {
 	srcCmd.Dir = root
 	srcOut, srcErr := srcCmd.CombinedOutput()
 	if srcErr == nil {
-		t.Fatalf("from-source: calling an extern not declared in toolbox/files.cla: expected failure, got success\n%s", srcOut)
+		t.Fatalf("from-source: referencing SFReply/SFGetFile (declared only in toolbox/standardfile.cla, not toolbox/files.cla): expected failure, got success\n%s", srcOut)
 	}
 
 	bakeCmd := exec.Command(exe, "emit68k", "--rtbake", bakePath, "-o", filepath.Join(dir, "bake.bin"), fixtureName)
 	bakeCmd.Dir = root
 	bakeOut, bakeErr := bakeCmd.CombinedOutput()
 	if bakeErr == nil {
-		t.Fatalf("--rtbake: calling an extern not declared in toolbox/files.cla: expected failure, got success\n%s", bakeOut)
+		t.Fatalf("--rtbake: referencing SFReply/SFGetFile (declared only in toolbox/standardfile.cla, not toolbox/files.cla): expected failure, got success\n%s", bakeOut)
 	}
 
-	const want = "undefined: PBFakeSyncNotInCatalog"
-	if !bytes.Contains(srcOut, []byte(want)) {
-		t.Fatalf("from-source diagnostic missing %q:\n%s", want, srcOut)
-	}
-	if !bytes.Contains(bakeOut, []byte(want)) {
-		t.Fatalf("--rtbake diagnostic missing %q:\n%s", want, bakeOut)
+	wants := []string{"undefined: SFReply", "undefined: SFGetFile"}
+	for _, want := range wants {
+		if !bytes.Contains(srcOut, []byte(want)) {
+			t.Fatalf("from-source diagnostic missing %q:\n%s", want, srcOut)
+		}
+		if !bytes.Contains(bakeOut, []byte(want)) {
+			t.Fatalf("--rtbake diagnostic missing %q:\n%s", want, bakeOut)
+		}
 	}
 }
 
