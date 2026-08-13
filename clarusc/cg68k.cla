@@ -12478,6 +12478,17 @@ const cgRelClsRcRelease: int = 9
 const cgRelClsPanicMsg: int = 10
 const cgRelClsJt: int = 11
 
+// cgRelClsUnknown (fix round 1, review finding I1): cgObjHoleOf's own
+// signal for "this IS a position-dependent site (an out-of-function
+// AmPCLabel), but none of cgObjBuildLabelMaps' own label->class tables
+// know it" -- distinct from cgHoleClsNone (0, "not a hole at all", the
+// ordinary/common case: no PC-relative operand, or an intra-function
+// branch). Conflating the two would silently bake the position-
+// dependent bytes verbatim into a run instead of a hole. Never a real
+// wire value; cgObjDumpSegment fails the bake loudly the moment it sees
+// this, per Amendment A3's own "fails the bake loudly" clause.
+const cgRelClsUnknown: int = -1
+
 // CgObjHole is one captured hole record -- the a68 item shape a paste
 // (Task 3) re-emits from, minus the hole-side operand's own value. See
 // this section's own header comment for the kind/cls/sym contract.
@@ -12693,6 +12704,14 @@ func cgObjHoleOf(idx: int, a0: int, a1: int, lblCls: list of int, lblSym: list o
         return cgHoleClsNone
     }
     cgObjHoleSymOut = lblSym[lbl]
+    if lblCls[lbl] == cgHoleClsNone {
+        // fix round 1 (I1): an out-of-function AmPCLabel that
+        // cgObjBuildLabelMaps never classified -- structurally a hole,
+        // but this file doesn't know which kind. Signalled distinctly
+        // from "not a hole" so the caller fails loudly instead of
+        // baking the position-dependent bytes verbatim.
+        return cgRelClsUnknown
+    }
     return lblCls[lbl]
 }
 
@@ -12731,7 +12750,17 @@ func cgObjRecordHole(idx: int, cls: int, sym: int) {
             s = cbSlot
         }
     }
+    // fix round 1 (review finding I3): cls is wire-meaningful ONLY for
+    // kind==cgHoleLabel (cgHoleCall/JtAddr/CbGlueAddr all resolve
+    // entirely from kind+sym, per their own table in this section's
+    // header doc comment) -- zeroed here for every other kind so the
+    // shipped bytes actually match that documented contract, rather
+    // than leaking c's own pre-collapse classification (cgRelClsJt/
+    // cgRelClsFuncLabel) onto the wire unused.
     h.cls = c
+    if h.kind != cgHoleLabel {
+        h.cls = 0
+    }
     h.sym = s
     h.op = int(a68Items[idx].op)
     h.size = a68Items[idx].size
@@ -12774,7 +12803,25 @@ func cgObjSlice(b: text, start: int, n: int): text {
 // see that block's own doc comment for why these are params, not
 // globals) and appends its byte runs + hole records into the flat,
 // whole-capture cgObjRuns/cgObjHoles arrays.
-func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segItemEnd: list of int, segTainted: list of bool) {
+//
+// Fix round 1 (review finding I1, Amendment A3's own "fails the bake
+// loudly" clause): returns false, after logging a specific reason, on
+// any of the four invariant violations a silently-wrong bake could
+// otherwise produce -- (a) cgObjHoleOf returning cgRelClsUnknown (an
+// out-of-function position-dependent reference this file's own label
+// maps don't classify -- without this check it would fall through as
+// "not a hole" and get baked into a run verbatim, wrong the moment
+// layout ever differs from bake time); (b) a hole's own symbol
+// resolving negative (cgObjFuncForJtSlot found no owning function for a
+// JT slot -- without this check a -1 "target func index" would
+// serialize and only surface as a confusing loader-side refusal, far
+// from its actual cause); (c) a hole site whose own byte width isn't
+// exactly 4 (Task 1's own proven invariant for every hole shape this
+// format supports -- asm68k.cla's own len field, no re-measurement
+// needed); (d) the subsuming per-function assertion
+// sum(len(runs)) + 4*holes == cgFuncSize[f], the cheapest whole-function
+// proof that (a)-(c) didn't miss a case together.
+func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segItemEnd: list of int, segTainted: list of bool): bool {
     var k: int
     var i: int
     var st: int
@@ -12788,6 +12835,8 @@ func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segIte
     var runStart: int
     var lblCls: list of int
     var lblSym: list of int
+    var sumLen: int
+    var p: int
 
     lblCls = cgFreshIntListSized(a68LabelAddr.count)
     lblSym = cgFreshIntListSized(a68LabelAddr.count)
@@ -12819,7 +12868,19 @@ func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segIte
             i = st
             while i < en {
                 cls = cgObjHoleOf(i, a0, a1, lblCls, lblSym)
+                if cls == cgRelClsUnknown {
+                    log("cg68k: bake capture: unresolvable position-dependent reference in " + poolGet(irFuncName(f)))
+                    return false
+                }
                 if cls != cgHoleClsNone {
+                    if cgObjHoleSymOut < 0 {
+                        log("cg68k: bake capture: hole with no resolved symbol in " + poolGet(irFuncName(f)))
+                        return false
+                    }
+                    if a68Items[i].len != 4 {
+                        log("cg68k: bake capture: hole width != 4 bytes in " + poolGet(irFuncName(f)))
+                        return false
+                    }
                     nh = nh + 1
                     cgObjRuns.add(cgObjSlice(b, a0 + runStart, (a68Items[i].addr - a0) - runStart))
                     cgObjRecordHole(i, cls, cgObjHoleSymOut)
@@ -12829,9 +12890,24 @@ func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segIte
             }
             cgObjRuns.add(cgObjSlice(b, a0 + runStart, (a1 - a0) - runStart))
             cgObjNHoles[f] = nh
+
+            // Amendment A3's subsuming per-function assertion: the
+            // captured runs, plus 4 bytes per hole, must exactly
+            // reproduce the function's own measured size.
+            sumLen = 0
+            p = cgObjRunFirst[f]
+            while p <= cgObjRunFirst[f] + nh {
+                sumLen = sumLen + cgObjRuns[p].length
+                p = p + 1
+            }
+            if sumLen + 4 * nh != cgFuncSize[f] {
+                log("cg68k: bake capture: byte-count mismatch in " + poolGet(irFuncName(f)))
+                return false
+            }
         }
         k = k + 1
     }
+    return true
 }
 
 // cgObjCaptureRuntime is bake.cla's own entry point (called once, from
@@ -13124,7 +13200,9 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
         // now (a68Finish just succeeded) -- dump every function this
         // segment captured into the flat cgObjRuns/cgObjHoles arrays.
         if cgBakeCapture {
-            cgObjDumpSegment(objSegFuncIdx, objSegItemStart, objSegItemEnd, objSegTainted)
+            if not cgObjDumpSegment(objSegFuncIdx, objSegItemStart, objSegItemEnd, objSegTainted) {
+                return false
+            }
         }
 
         if s == 1 {

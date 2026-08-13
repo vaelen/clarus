@@ -3046,6 +3046,14 @@ func bkReadObjMeta(): bool {
     var lSerdescFlat: list of int
     var lUsesUiBlob: list of bool
     var lUsesUiEvents: list of bool
+    var lSeg1ExtraSize: int
+    var lGlueBundleSize: int
+    var lPoolSize: int
+    var lStrLitSize: list of int
+    var lEnumTableSize: list of int
+    var lSerdescSize: list of int
+    var lUiBlobSize: int
+    var lUiEventsSize: int
 
     count = bkGetU32()
     lSize = driveFreshIntList()
@@ -3109,6 +3117,43 @@ func bkReadObjMeta(): bool {
         lUsesUiEvents.add(bkGetBool())
         i = i + 1
     }
+    // fix round 1 (review finding I2): the once-per-artifact fixed
+    // buckets below are read into LOCALS too, same as everything above
+    // -- a post-dispatch framing refusal (bkLoadSections' own
+    // expectedPos check, run by the CALLER after this function returns)
+    // must never land after a live bkLdObj* global was already written,
+    // or a truncated/corrupt section could leave the staging state
+    // half-updated even though the load as a whole gets refused.
+    // bkReadObjCode already has this shape (locals throughout, one
+    // assignment block at the very end); this mirrors it.
+    lSeg1ExtraSize = bkGetU32()
+    lGlueBundleSize = bkGetU32()
+    lPoolSize = bkGetU32()
+
+    n = bkGetU32()
+    lStrLitSize = driveFreshIntList()
+    k = 0
+    while k < n {
+        lStrLitSize.add(bkGetU32())
+        k = k + 1
+    }
+    n = bkGetU32()
+    lEnumTableSize = driveFreshIntList()
+    k = 0
+    while k < n {
+        lEnumTableSize.add(bkGetU32())
+        k = k + 1
+    }
+    n = bkGetU32()
+    lSerdescSize = driveFreshIntList()
+    k = 0
+    while k < n {
+        lSerdescSize.add(bkGetU32())
+        k = k + 1
+    }
+    lUiBlobSize = bkGetU32()
+    lUiEventsSize = bkGetU32()
+
     bkLdObjFuncSize = lSize
     bkLdObjFuncFrameSize = lFrame
     bkLdObjFuncStrLitFirst = lStrLitFirst
@@ -3122,34 +3167,14 @@ func bkReadObjMeta(): bool {
     bkLdObjFuncSerdescFlat = lSerdescFlat
     bkLdObjFuncUsesUiBlob = lUsesUiBlob
     bkLdObjFuncUsesUiEvents = lUsesUiEvents
-
-    bkLdObjSeg1ExtraSize = bkGetU32()
-    bkLdObjGlueBundleSize = bkGetU32()
-    bkLdObjPoolSize = bkGetU32()
-
-    n = bkGetU32()
-    bkLdObjStrLitSize = driveFreshIntList()
-    k = 0
-    while k < n {
-        bkLdObjStrLitSize.add(bkGetU32())
-        k = k + 1
-    }
-    n = bkGetU32()
-    bkLdObjEnumTableSize = driveFreshIntList()
-    k = 0
-    while k < n {
-        bkLdObjEnumTableSize.add(bkGetU32())
-        k = k + 1
-    }
-    n = bkGetU32()
-    bkLdObjSerdescSize = driveFreshIntList()
-    k = 0
-    while k < n {
-        bkLdObjSerdescSize.add(bkGetU32())
-        k = k + 1
-    }
-    bkLdObjUiBlobSize = bkGetU32()
-    bkLdObjUiEventsSize = bkGetU32()
+    bkLdObjSeg1ExtraSize = lSeg1ExtraSize
+    bkLdObjGlueBundleSize = lGlueBundleSize
+    bkLdObjPoolSize = lPoolSize
+    bkLdObjStrLitSize = lStrLitSize
+    bkLdObjEnumTableSize = lEnumTableSize
+    bkLdObjSerdescSize = lSerdescSize
+    bkLdObjUiBlobSize = lUiBlobSize
+    bkLdObjUiEventsSize = lUiEventsSize
     return true
 }
 
