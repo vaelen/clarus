@@ -517,6 +517,14 @@ func driveReset() {
     // lowResumeFromBake on both its exits, so this is a no-op today too;
     // added so the leak gate would catch a future change that left it set.
     lowResumeFromBake = false
+    // fallback-trigger-narrowing Task 2: defensive reset, same rationale
+    // -- driveCompile's own --rtbake branch already resets all three
+    // right before Phase A runs, so this is a no-op on the ordinary
+    // bake-path call sequence too; added so the leak gate would catch a
+    // future change that left stale collision state across compiles.
+    bkManifestDriftPath = ""
+    bkManifestCollidedIdx = driveFreshIntList()
+    bkManifestCollidedEarly = driveFreshBoolList()
 }
 
 // findRtDir resolves the default --rtdir when the flag is omitted: it walks
@@ -804,6 +812,10 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     var diskProbe: text
     var progressLine: string
     var key2: string
+    var diskSrc: text
+    var haveDiskSrc: bool
+    var manifestCollision: bool
+    var manifestCollisionEarly: bool
     key2 = key
 
     altPath = ""
@@ -832,23 +844,59 @@ func expand(rawPath: string, entry: bool, key: string): bool {
         }
     }
 
-    // runtime-ir-bake Task 5 (b): a user `include` resolving to one of
-    // the CURRENT bake's own runtime-module disk paths (bake.cla's own
+    // fallback-trigger-narrowing Task 2: a user `include` resolving to
+    // one of the CURRENT bake's own manifest paths (bake.cla's own
     // bkComputeManifestPaths, computed once right after bkInstallPool,
-    // before Phase A ever calls expand()) -- gated on haveRtbake, so this
-    // is a no-op (bkManifestPaths stays an empty/unset map) for every
-    // from-source compile. Recorded and skipped exactly like an ordinary
-    // dedup (no new asmHeads entry, no diagnostic here); driveCompile
-    // checks bkManifestHoistHit right after Phase A and falls back to a
-    // full from-source recompile of the same entries when it fires -- the
-    // bake has no live scope/IR to make that module's symbols visible to
-    // check#1 the way a from-source hoist would (drive.cla's own
-    // hoistDedups, which this path deliberately does not attempt to
-    // reuse: it operates on asmHeads indices the bake path never
-    // populates for runtime modules in the first place).
-    if haveRtbake and bkManifestPaths.has(path) {
-        bkManifestHoistHit = true
-        return false
+    // before Phase A ever calls expand()) is drift-checked against the
+    // baked copy's own source hash (bkManifestHashes) -- gated on
+    // haveRtbake, so this whole block is a no-op (bkManifestPaths stays
+    // an empty/unset map) for every from-source compile. An ALREADY-seen
+    // path (seenPaths/altPath, checked here too) skips straight to the
+    // ordinary dedup below instead of re-hashing/re-reading -- a repeat
+    // include of the same manifest path must dedup exactly like any
+    // other repeat.
+    //
+    // Hash EQUAL: check-only include -- let it parse into the user chain
+    // normally (fall through below), so check#1 sees it and attributes
+    // diagnostics to the real file, exactly like from-source's own
+    // hoist-dedup does. manifestCollision/manifestCollisionEarly (read
+    // below, once asmHeads.add has this file's own index) record this
+    // for driveCompile's own two sever points (Task 1's decl-chain-
+    // surgery mechanic, generalized to a list): the early-visible ones
+    // get excised BEFORE checkPhase1 when a --testapi UI compile is
+    // about to preload baked checker symbols over the SAME names (Task 1
+    // Step 4's hard double-declare otherwise); ALL of them get excised
+    // before lowering, since the baked IR already carries each one's
+    // lowered form.
+    //
+    // Hash DIFFERENT (or simply absent from bkManifestHashes -- should
+    // not happen for anything bkComputeManifestPaths itself found, but
+    // treated the same conservative way): the existing from-source
+    // fallback, now scoped to provable staleness -- bkManifestDriftPath
+    // records the FIRST drifted path found, for driveCompile's own
+    // post-Phase-A log line.
+    diskSrc = ""
+    haveDiskSrc = false
+    manifestCollision = false
+    manifestCollisionEarly = false
+    if haveRtbake and bkManifestPaths.has(path) and not seenPaths.has(path) and not (altPath != "" and seenPaths.has(altPath)) {
+        ok = feReadSource(readPath, key2, diskSrc)
+        if not ok {
+            if entry {
+                entryFailed = true
+            }
+            return true
+        }
+        haveDiskSrc = true
+        if bkManifestHashes.has(path) and bkManifestHashes[path] == bkHashText(diskSrc) {
+            manifestCollision = true
+            manifestCollisionEarly = bkManifestEarlyVisible.has(path) and bkManifestEarlyVisible[path]
+        } else {
+            if bkManifestDriftPath == "" {
+                bkManifestDriftPath = path
+            }
+            return false
+        }
     }
     if seenPaths.has(path) {
         // Record WHICH file this include deduped against (index, or -1 for
@@ -867,7 +915,12 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     }
 
     src = ""
-    ok = feReadSource(readPath, key2, src)
+    if haveDiskSrc {
+        src = diskSrc
+        ok = true
+    } else {
+        ok = feReadSource(readPath, key2, src)
+    }
     if not ok {
         if entry {
             entryFailed = true
@@ -935,6 +988,10 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     } else {
         asmTails.add(lastDecl(head))
     }
+    if manifestCollision {
+        bkManifestCollidedIdx.add(asmHeads.count - 1)
+        bkManifestCollidedEarly.add(manifestCollisionEarly)
+    }
     seenPaths[path] = asmHeads.count
     if altPath != "" {
         seenPaths[altPath] = asmHeads.count
@@ -965,6 +1022,55 @@ func hoistDedups(fromHit: int): list of int {
         }
         j = j + 1
     }
+    return out
+}
+
+// driveRebuildChainSkipping (fallback-trigger-narrowing Task 2): rebuilds
+// a decl chain from asmHeads[0..asmHeads.count), skipping every index
+// present in skip -- the same asmHeads/asmTails relink idiom
+// driveManifestSplice's own hoisted-skip loop already uses (this file,
+// userChainRebuilt: walk asmHeads in order, relink kept segments via
+// declListAppend, each segment's own end taken from asmTails[i] rather
+// than lastDecl since a hoisted/skipped segment's own tail may already
+// point past its natural end), generalized to an arbitrary caller-
+// supplied skip list instead of the hoistedHead global. Every collided
+// index this task tracks lives entirely within asmHeads' own range on
+// the bake path (--rtbake never calls driveEarlySplice/
+// driveManifestSplice, so every expand() call is user-side there), so a
+// full asmHeads walk is exactly "the whole chain minus what's skipped."
+// Terminates the rebuilt chain's own tail with -1, matching that idiom.
+func driveRebuildChainSkipping(skip: list of int): int {
+    var out: int
+    var outTail: int
+    var i: int
+    var j: int
+    var h: int
+    var skipped: bool
+
+    out = -1
+    outTail = -1
+    i = 0
+    while i < asmHeads.count {
+        skipped = false
+        j = 0
+        while j < skip.count {
+            if skip[j] == i {
+                skipped = true
+            }
+            j = j + 1
+        }
+        h = asmHeads[i]
+        if h != -1 and not skipped {
+            if out == -1 {
+                out = h
+            } else {
+                outTail = declListAppend(outTail, h)
+            }
+            outTail = asmTails[i]
+        }
+        i = i + 1
+    }
+    declListAppend(outTail, -1)
     return out
 }
 
@@ -1604,6 +1710,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     var wantLane: int
     var fallbackOk: bool
     var isUiProg: bool
+    var earlySkip: list of int
 
     // findings 1.4 fix round 1: invalidate cg68k.cla's cgFindRecordByName/
     // cgSizeOf lookup caches (cgRecIdxByName, cgSizeMemo) HERE, not only on
@@ -1656,7 +1763,9 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         }
         bkInstallPool()
         bkComputeManifestPaths()
-        bkManifestHoistHit = false
+        bkManifestDriftPath = ""
+        bkManifestCollidedIdx = driveFreshIntList()
+        bkManifestCollidedEarly = driveFreshBoolList()
     }
 
     drvStartTicks = TickCount()
@@ -1679,21 +1788,20 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         return false
     }
 
-    // runtime-ir-bake Task 5 (b): a user include collided with one of the
-    // bake's own manifest modules (expand()'s own haveRtbake-gated check,
-    // above in this file) -- the bake has no live scope/IR to make that
-    // module's symbols visible to check#1 the way a from-source hoist
-    // would (drive.cla's own hoistDedups, built for an ALREADY-assembled
-    // user chain the bake path has none of), so this compile falls back
-    // to a full from-source recompile of the SAME entries rather than
-    // silently mis-declaring or mis-erroring. Correctness over speed
-    // (design spec's own "Interactions handled explicitly" section) --
-    // ordinary user code has no reason to include a bare
-    // runtime/clarus/*.cla file, so this is expected to be rare.
-    if haveRtbake and bkManifestHoistHit {
-        log("clarusc --rtbake: user include collides with a runtime module; falling back to a from-source compile")
+    // fallback-trigger-narrowing Task 2: a user include collided with one
+    // of the bake's own manifest paths AND its on-disk bytes no longer
+    // match the baked copy's own source hash (expand()'s own haveRtbake-
+    // gated check, above in this file, sets bkManifestDriftPath) -- a
+    // hash-EQUAL collision no longer reaches here at all (it took the
+    // check-only-include path instead, see below). Provable drift only:
+    // the from-source fallback this used to trigger unconditionally on
+    // ANY manifest collision now only fires when the disk copy is
+    // genuinely stale, naming the drifted file so the log line is
+    // actionable instead of generic.
+    if haveRtbake and bkManifestDriftPath != "" {
+        log("clarusc --rtbake: " + bkManifestDriftPath + " differs from the baked copy; falling back to a from-source compile")
         haveRtbake = false
-        bkManifestHoistHit = false
+        bkManifestDriftPath = ""
         driveReset()
         resetDiags()
         astReset()
@@ -1768,6 +1876,30 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     // check-phase diagnostics (they follow every parse diagnostic).
     driveProgressStage("Checking")
     if haveRtbake and testapi and isUiProg {
+        // fallback-trigger-narrowing Task 2: excise every EARLY-VISIBLE
+        // check-only collision (bkManifestCollidedEarly) out of `combined`
+        // BEFORE checkPhase1 runs below -- bkInstallCheckerSymbolsForTestapi
+        // (right after this) preloads baked checker symbols for exactly
+        // that early-visible boundary, so leaving these parsed copies in
+        // `combined` would hard double-declare against the SAME names
+        // (Task 1 Step 4's own probe finding). This is case (b)'s "dedup
+        // fully" from the design spec: the file was still parsed (harmless
+        // -- proven content-identical by the hash check in expand()), just
+        // never reaches the checker or lowering. Non-early-visible
+        // collisions (bkManifestCollidedEarly false) stay in `combined`
+        // unchanged -- their symbols are never preloaded, so check#1 seeing
+        // them is exactly case (a)'s ordinary check-only behavior.
+        earlySkip = driveFreshIntList()
+        i = 0
+        while i < bkManifestCollidedIdx.count {
+            if bkManifestCollidedEarly[i] {
+                earlySkip.add(bkManifestCollidedIdx[i])
+            }
+            i = i + 1
+        }
+        if earlySkip.count > 0 {
+            combined = driveRebuildChainSkipping(earlySkip)
+        }
         // runtime-ir-bake Task 5, deliverable (a): the bake path's own
         // --testapi check#1 -- no driveEarlySplice (no source-level
         // re-parse of the runtime; the bake already carries its checked
@@ -1797,6 +1929,12 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         // ever referenced on that path, and it must see zero runtime
         // symbols regardless (deliverable (a)'s negative test).
         bkInstallTypeArenaPrefix()
+        // fallback-trigger-narrowing Task 2: same load-bearing ordering
+        // requirement as bkInstallTypeArenaPrefix (must run before
+        // checkPhase1) -- see bkInstallFieldInfo's own doc comment for
+        // what gap this closes (a baked record type made NAMEABLE by the
+        // installs around it, but not FIELD-ACCESSIBLE, without this).
+        bkInstallFieldInfo()
         bkInstallCheckerSymbolsForTestapi()
         if combined != -1 {
             checkPhase1(combined)
@@ -1860,7 +1998,22 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         // for a non-UI --testapi bake install to keep that a plain
         // truncated (non-testapi-shaped) install wouldn't already match.
         bkInstallArenas(testapi and isUiProg)
+        // fallback-trigger-narrowing Task 2: sever EVERY check-only
+        // collision (bkManifestCollidedIdx, both case (a) and any case
+        // (b) already excised from `combined` above) out of the chain
+        // lowerProgram actually walks -- Task 1's own probe-proven drop
+        // point (right here, before combined2 is ever assigned): the
+        // baked IR just installed above already carries each collided
+        // module's lowered form, so a user-position copy must never reach
+        // lowering too, or it would double-lower the same declarations.
+        // Rebuilding from asmHeads unconditionally would be a no-op-but-
+        // wasteful churn on the overwhelmingly common case (no collision
+        // at all), so this only replaces the plain assignment when there
+        // is something to skip.
         combined2 = combined
+        if bkManifestCollidedIdx.count > 0 {
+            combined2 = driveRebuildChainSkipping(bkManifestCollidedIdx)
+        }
         driveProgressPhase("Installed baked runtime")
 
         driveProgressStage("Lowering")

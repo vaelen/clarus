@@ -498,16 +498,20 @@ func UiTestVerb(x: int): bool {
 	}
 }
 
-// TestRtbakeIncludeDedupFallback (deliverable (b)): a user file that
-// directly `include`s a baked runtime module (a bare
+// TestRtbakeIncludeCheckOnly (was TestRtbakeIncludeDedupFallback,
+// deliverable (b); renamed by fallback-trigger-narrowing Task 2): a user
+// file that directly `include`s a baked runtime module (a bare
 // "runtime/clarus/core.cla" path, matching the bake's own module-key
-// manifest -- bkComputeManifestPaths, bake.cla) triggers the documented
-// from-source fallback for that compile (drive.cla's own
-// bkManifestHoistHit check, right after Phase A) rather than mis-
-// declaring or mis-erroring -- the fallback compile's own output must
-// still be byte-identical to a plain from-source compile of the SAME
-// fixture (it IS one, just reached via one extra recompile).
-func TestRtbakeIncludeDedupFallback(t *testing.T) {
+// manifest -- bkComputeManifestPaths, bake.cla) USED to trigger an
+// unconditional from-source fallback for the whole compile
+// (bkManifestHoistHit). Task 2's drift guard narrows that: the on-disk
+// file is unmodified, so its hash matches the baked copy's own
+// (bkManifestHashes), and non-testapi has no preloaded checker symbols
+// to collide with -- the compile now takes the real check-only-include
+// bake path (no "falling back" note at all) and stays byte-identical to
+// a plain from-source compile of the same fixture, same as before, just
+// without the extra recompile.
+func TestRtbakeIncludeCheckOnly(t *testing.T) {
 	exe := claruscboot.CurrentExe(t)
 	root := RepoRoot(t)
 	dir := t.TempDir()
@@ -552,10 +556,10 @@ func TestRtbakeIncludeDedupFallback(t *testing.T) {
 	bakeCmd.Dir = root
 	bakeOutput, err := bakeCmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("--rtbake compile of the dedup fixture failed (fallback should have made it succeed): %v\n%s", err, bakeOutput)
+		t.Fatalf("--rtbake compile of the dedup fixture failed: %v\n%s", err, bakeOutput)
 	}
-	if !bytes.Contains(bakeOutput, []byte("falling back to a from-source compile")) {
-		t.Fatalf("expected the fallback note in the --rtbake compile's own output, got:\n%s", bakeOutput)
+	if bytes.Contains(bakeOutput, []byte("falling back")) {
+		t.Fatalf("--rtbake compile of the dedup fixture: unexpectedly fell back to from-source (Task 2's check-only include should have kept the real bake path):\n%s", bakeOutput)
 	}
 
 	srcData, err := os.ReadFile(srcOut)
@@ -567,7 +571,7 @@ func TestRtbakeIncludeDedupFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(srcData, bakeData) {
-		t.Fatalf("fallback compile (%d bytes) != from-source compile (%d bytes) of the same fixture", len(bakeData), len(srcData))
+		t.Fatalf("--rtbake compile (%d bytes) != from-source compile (%d bytes) of the same fixture", len(bakeData), len(srcData))
 	}
 }
 
@@ -941,34 +945,31 @@ func TestBakeFullCorpusSuiteCore(t *testing.T) {
 }
 
 // TestBakeFullCorpusSuiteToolbox (fix round 2, corrected in fix round 3
-// -- IMPORTANT 2): the checker-symbol-scope gap round 1 found
-// (testsuite/toolbox/cases_uitest.cla, cases_finfo.cla, and cases_
-// resources.cla name RAW runtime internals -- UiNewPtr, UiStrAddr, ...)
-// is closed -- bkInstallCheckerSymbolsForTestapi now installs full
-// checker-symbol visibility for all THIRTEEN early-spliced modules, not
-// just uitest.cla's 16 UiTest* wrapper names (see its own doc comment,
-// bake.cla). But the toolbox suite's own gui.cla composition is NOT an
-// example of the bake path actually compiling this shape: it directly
-// names toolbox/files.cla, toolbox/standardfile.cla, and toolbox/
+// -- IMPORTANT 2; flipped by fallback-trigger-narrowing Task 2): the
+// checker-symbol-scope gap round 1 found (testsuite/toolbox/
+// cases_uitest.cla, cases_finfo.cla, and cases_resources.cla name RAW
+// runtime internals -- UiNewPtr, UiStrAddr, ...) is closed --
+// bkInstallCheckerSymbolsForTestapi installs full checker-symbol
+// visibility for all THIRTEEN early-spliced modules, not just
+// uitest.cla's 16 UiTest* wrapper names (see its own doc comment,
+// bake.cla). The toolbox suite's own gui.cla composition directly names
+// toolbox/files.cla, toolbox/standardfile.cla, and toolbox/
 // appleevents.cla, each ALSO a transitive nested include of one of the
 // thirteen early-spliced modules (uidialogs.cla:10-11, ui.cla:179) --
-// deliverable (b)'s own fallback (bkComputeManifestPaths, widened in fix
-// round 2 to cover every file the bake transitively touched, not just
-// bakeModuleList's own top-level entries) correctly detects this and
-// falls back to a full from-source recompile for the WHOLE composition.
-// This test therefore asserts the EXPLICIT fallback-class shape (the
-// fallback note IS present, byte-identical to from-source by
-// construction, since it IS a from-source recompile) rather than proving
-// anything about the bake path itself for a toolbox-catalog composition
-// -- round 2's own version of this test asserted plain byte-identity
-// without checking whether "falling back" ever appeared in the output,
-// so it was PASSING VACUOUSLY (from-source compared against a silently-
-// fallen-back from-source recompile, proving --rtbake was never
-// actually exercised for this suite at all). Narrowing the fallback
-// trigger (e.g. testapi-only or extern-only-decl collisions don't need
-// to force a WHOLE-compile fallback) so a toolbox-catalog composition
-// can keep the real bake path is deferred to Task 6/7 -- out of scope
-// for this fix round.
+// runtime-ir-bake's own fallback (bkComputeManifestPaths, widened in fix
+// round 2 to cover every file the bake transitively touched) used to
+// treat this as an unconditional collision and fall back to a full
+// from-source recompile for the WHOLE composition, so THIS test used to
+// assert the EXPLICIT fallback-class shape instead of proving anything
+// about the bake path itself. Task 2's drift-hash + check-only-include
+// mechanism narrows that: these three files are unmodified on disk (hash
+// matches the baked copy), and their symbols ARE part of the testapi
+// preload boundary (early-visible), so expand()'s own case (b) applies
+// -- dedup fully, no check-only parse, matching from-source's own
+// post-dedup state (drive.cla). The composition now takes the REAL bake
+// path (no "falling back" note at all) and must be byte-identical to
+// from-source -- the genuine bake-path assertion this test's own history
+// above wanted all along.
 func TestBakeFullCorpusSuiteToolbox(t *testing.T) {
 	requireBakeFull(t)
 	exe := claruscboot.CurrentExe(t)
@@ -983,7 +984,7 @@ func TestBakeFullCorpusSuiteToolbox(t *testing.T) {
 	srcOut := filepath.Join(srcDir, "toolbox.bin")
 	bakeOut := filepath.Join(bakeDir, "toolbox.bin")
 	srcData := runSuiteEmit68k(t, exe, toolboxSuiteGUIFiles, srcOut, "", false)
-	bakeData := runSuiteEmit68k(t, exe, toolboxSuiteGUIFiles, bakeOut, bakePath, true)
+	bakeData := runSuiteEmit68k(t, exe, toolboxSuiteGUIFiles, bakeOut, bakePath, false)
 	if !bytes.Equal(srcData, bakeData) {
 		t.Fatalf("toolbox suite: --rtbake fork (%d bytes) != from-source fork (%d bytes)", len(bakeData), len(srcData))
 	}

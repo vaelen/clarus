@@ -43,21 +43,29 @@ include "drive.cla"
 // ================================================================
 
 const bkMagic: string = "CLIR"
-// bkFormatVersion 4 (final-review fix wave): added bkHeaderBodyHash, a
-// 4-byte FNV hash (bkHashTextFrom, below) over every byte AFTER the
-// header, stored in the header itself and verified by
-// bkCheckRtbakeHeader BEFORE any section is parsed -- a truncated or
-// corrupted buffer is refused there, in front of BOTH the host loader's
-// full parse (bkLoadRtbake) and macgui.cla's own bake-vs-fallback
-// decision (gcResolveBakePath), instead of surfacing as a hard compile
-// failure only after the Mac side already committed to the bake path.
-// Version 3 (runtime-ir-bake Task 5, fix round 2) added
+// bkFormatVersion 5 (fallback-trigger-narrowing Task 2): added
+// bkSecManifestHashes -- one FNV hash (bkHashText) plus an
+// early-visibility flag per manifest-path source file (the same universe
+// bkComputeManifestPaths' own bkManifestPaths covers, top-level runtime
+// modules AND every nested include they pull in), so a user `include`
+// that resolves to a manifest path can be drift-checked against the
+// baked copy instead of forcing an unconditional fallback -- see
+// bkWriteManifestHashes/bkReadManifestHashes and drive.cla's expand()
+// for the collision branch that consumes this. Version 4 (final-review
+// fix wave) added bkHeaderBodyHash, a 4-byte FNV hash (bkHashTextFrom,
+// below) over every byte AFTER the header, stored in the header itself
+// and verified by bkCheckRtbakeHeader BEFORE any section is parsed -- a
+// truncated or corrupted buffer is refused there, in front of BOTH the
+// host loader's full parse (bkLoadRtbake) and macgui.cla's own
+// bake-vs-fallback decision (gcResolveBakePath), instead of surfacing as
+// a hard compile failure only after the Mac side already committed to
+// the bake path. Version 3 (runtime-ir-bake Task 5, fix round 2) added
 // bkSecCheckerVisibility (the testapi-visible checker-symbol boundary --
 // see that section's own doc comment). Version 2 added bkSecUitestBounds
 // (the base/uitest IR-arena boundary counts). Pre-release format; the
 // loader refuses any other version outright (no compat shim), per this
 // phase's own controller resolution.
-const bkFormatVersion: int = 4
+const bkFormatVersion: int = 5
 
 // bkClirResourceName/bkStampResourceName (runtime-ir-bake Task 6, Mac
 // integration): reserved 'CLFS' resource names ClarusC.APPL's own build
@@ -161,7 +169,35 @@ const bkSecUitestBounds: int = 44
 // path). See bkInstallCheckerSymbolsForTestapi's own doc comment.
 const bkSecCheckerVisibility: int = 45
 
-const bkSectionCount: int = 42
+// bkSecManifestHashes (format version 5, fallback-trigger-narrowing Task
+// 2): one entry per distinct manifest-path source file (the same
+// universe bkComputeManifestPaths' own bkManifestPaths covers) -- a path
+// string, its FNV source hash (bkHashText), and an early-visibility flag
+// (whether that file's checker symbols fall within the testapi preload
+// boundary, bkGenEarlyVisibleAsmHeadsBoundary). The drift guard: a user
+// `include` colliding with a manifest path is hash-compared against this
+// before deciding check-only-include vs from-source fallback. See
+// bkWriteManifestHashes/bkReadManifestHashes.
+const bkSecManifestHashes: int = 46
+
+// bkSecFieldInfo (format version 5, fallback-trigger-narrowing Task 2):
+// check.cla's own record-field side tables (fieldInfos, the FieldInfo
+// arena, plus recFieldsHeadByName, the record-name -> fieldInfos-head
+// map) -- discovered missing from the ORIGINAL testapi checker-symbol
+// bake (bkSecCheckerSymbols only ever carried funcSigs/symbols/scopes/
+// typeArena/enumMembers): a --testapi UI compile's own case-(b) full
+// dedup (drive.cla's expand()) excises an early-visible manifest
+// collision's decls from `combined` entirely, so checkRecordDecl never
+// runs for it this compile -- without this section's own install
+// (bkInstallFieldInfo), a record type from the baked side (e.g.
+// toolbox/files.cla's IOParam) would be NAMEABLE (typeArena/scopes cover
+// that) but its OWN FIELDS unresolvable ("undefined: ioNamePtr"), and
+// lower.cla reads the SAME two tables again during lowering, so this is
+// load-bearing there too, not just for check#1 diagnostics. See
+// bkWriteFieldInfo/bkReadFieldInfo/bkInstallFieldInfo.
+const bkSecFieldInfo: int = 47
+
+const bkSectionCount: int = 44
 
 // ================================================================
 // Byte-buffer primitives -- explicit one-byte-at-a-time big-endian
@@ -363,6 +399,17 @@ var bkGenBaseIrStrLitsCount: int
 var bkGenEarlyFuncSigsCount: int
 var bkGenEarlySymbolsCount: int
 
+// bkGenEarlyVisibleAsmHeadsBoundary (fallback-trigger-narrowing Task 2):
+// bakeGenerateChain's own local earlyVisibleAsmHeadsBoundary, persisted
+// -- the asmHeads-index cutoff between the thirteen testapi-visible
+// modules (PLUS every file they transitively `include`, e.g. toolbox/
+// files.cla via uidialogs.cla) and the four manifest-only modules after
+// them. bkWriteManifestHashes reads this to tag each manifest path as
+// early-visible or not, matching bkGenEarlyFuncSigsCount/
+// bkGenEarlySymbolsCount's own boundary exactly (uitest.cla is the last
+// early-visible module in bakeModuleList's fixed order either way).
+var bkGenEarlyVisibleAsmHeadsBoundary: int
+
 // bkPathIsUitest reports whether pathIdx (an interned path-pool index,
 // resolved via poolGet) names uitest.cla -- a plain basename suffix match
 // rather than an exact-string compare against rtModuleKey("uitest.cla"),
@@ -442,6 +489,12 @@ func bakeGenerateChain(lane: int): bool {
         }
         i = i + 1
     }
+    // fallback-trigger-narrowing Task 2: persisted past this function's
+    // own return (a plain local otherwise) so bkWriteManifestHashes,
+    // called later from bakeWriteFile, can classify each manifest path
+    // as early-visible (within the testapi preload boundary) without
+    // re-deriving the split.
+    bkGenEarlyVisibleAsmHeadsBoundary = earlyVisibleAsmHeadsBoundary
     if entryFailed {
         log("clarusc --bake-ir: cannot open a runtime module")
         quit 1
@@ -1254,6 +1307,36 @@ func bkWriteCheckerSymbols(): text {
     return sec
 }
 
+// bkWriteFieldInfo (format version 5, fallback-trigger-narrowing Task 2):
+// check.cla's own record-field side tables, verbatim -- fieldInfos (the
+// FieldInfo arena, index-linked via .next) then recFieldsHeadByName (the
+// record-name -> fieldInfos-head map), each self-delimited by its own
+// leading count, matching bkWriteCheckerSymbols' own field-order
+// convention. See bkSecFieldInfo's own doc comment for why this exists.
+func bkWriteFieldInfo(): text {
+    var sec: text
+    var i: int
+    var k: int
+    var v: int
+
+    bkPutU32(sec, fieldInfos.count)
+    i = 0
+    while i < fieldInfos.count {
+        bkPutU32(sec, fieldInfos[i].nameIdx)
+        bkPutU32(sec, fieldInfos[i].typeIdx)
+        bkPutU32(sec, fieldInfos[i].next)
+        i = i + 1
+    }
+
+    bkPutU32(sec, recFieldsHeadByName.count)
+    for k, v in recFieldsHeadByName {
+        bkPutU32(sec, k)
+        bkPutU32(sec, v)
+    }
+
+    return sec
+}
+
 // bkWriteDeclFileTab: lib.cla's declFileTab (decl-arena-index ->
 // interned source-path index), verbatim -- the curPathIdx stamp table
 // the brief's format block names, so a runtime-attributed diagnostic/
@@ -1290,6 +1373,59 @@ func bkWriteCheckerVisibility(): text {
 
     bkPutU32(sec, bkGenEarlyFuncSigsCount)
     bkPutU32(sec, bkGenEarlySymbolsCount)
+    return sec
+}
+
+// bkWriteManifestHashes (format version 5, fallback-trigger-narrowing
+// Task 2): the drift guard's per-manifest-path source hash + early-
+// visibility flag, one entry per DISTINCT file bakeGenerateChain's own
+// expand() calls touched -- walking asmHeads (0..count), not
+// bakeModuleList, so nested includes (toolbox/files.cla via
+// uidialogs.cla, etc.) get their own entry exactly like the eighteen
+// top-level modules do, with no separate pass needed. Each file's own
+// path comes from declFileTab[asmHeads[i]] (setDeclFile stamped every
+// decl in that file with the same pathIdx during Phase A) -- the SAME
+// disk-path identity bkComputeManifestPaths' own second loop already
+// uses to build bkManifestPaths, so this map's keys match that map's
+// keys one-for-one. Hashes the file straight off disk (bkHashText over
+// file.readText's own bytes), not any live buffer -- this runs once, at
+// --bake-ir time, not on any per-user-compile hot path (drive.cla's own
+// collision branch reuses ITS OWN already-read bytes instead of
+// re-reading -- see its own doc comment). Early-visible iff i is below
+// bkGenEarlyVisibleAsmHeadsBoundary, mirroring bkGenEarlyFuncSigsCount/
+// bkGenEarlySymbolsCount's own split exactly.
+func bkWriteManifestHashes(): text {
+    var sec: text
+    var entries: text
+    var count: int
+    var i: int
+    var p: string
+    var src: text
+    var seen: map of bool
+
+    entries = ""
+    count = 0
+    i = 0
+    while i < asmHeads.count {
+        if asmHeads[i] != -1 {
+            p = poolGet(getDeclFile(asmHeads[i]))
+            if not seen.has(p) {
+                seen[p] = true
+                src = ""
+                if file.readText(p, src) {
+                    bkPutStrShort(entries, p)
+                    bkPutU32(entries, bkHashText(src))
+                    bkPutBool(entries, i < bkGenEarlyVisibleAsmHeadsBoundary)
+                    count = count + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+
+    sec = ""
+    bkPutU32(sec, count)
+    sec.append(entries)
     return sec
 }
 
@@ -1373,9 +1509,11 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     bkEmitSection(body, bkSecStrPool, bkWriteStrPool())
     bkEmitSection(body, bkSecLowCounters, bkWriteLowCounters())
     bkEmitSection(body, bkSecCheckerSymbols, bkWriteCheckerSymbols())
+    bkEmitSection(body, bkSecFieldInfo, bkWriteFieldInfo())
     bkEmitSection(body, bkSecDeclFileTab, bkWriteDeclFileTab())
     bkEmitSection(body, bkSecUitestBounds, bkWriteUitestBounds())
     bkEmitSection(body, bkSecCheckerVisibility, bkWriteCheckerVisibility())
+    bkEmitSection(body, bkSecManifestHashes, bkWriteManifestHashes())
 
     bodyHash = bkHashText(body)
 
@@ -1660,6 +1798,15 @@ var bkLoadedTypeArena: list of TypeInfo
 var bkLoadedEnumMembers: list of EnumMemberInfo
 var bkLoadedDeclFileTab: list of int
 
+// bkLoadedFieldInfos/bkLoadedRecFieldsHeadByName (format version 5,
+// fallback-trigger-narrowing Task 2): check.cla's own record-field side
+// tables (FieldInfo arena + record-name -> fieldInfos-head map), parsed
+// and retained the SAME "not installed until an install function runs"
+// way as bkLoadedFuncSigs and friends above -- bkInstallFieldInfo does
+// the install. See bkSecFieldInfo's own doc comment for why this exists.
+var bkLoadedFieldInfos: list of FieldInfo
+var bkLoadedRecFieldsHeadByName: intmap of int
+
 // bkLdBaseIrFuncsCount/bkLdBaseIrStrLitsCount (format version 2, Task 5):
 // the base/uitest IR-arena boundary bkInstallArenas truncates a non-
 // testapi install back to -- see bkSecUitestBounds' own doc comment.
@@ -1687,12 +1834,45 @@ var bkLoadedModules: list of string
 // consulted) for every non-bake compile.
 var bkManifestPaths: map of bool
 
-// bkManifestHoistHit: set true by expand() the moment a user include
-// collides with bkManifestPaths -- driveCompile checks this right after
-// Phase A and falls back to a full from-source recompile when it fires
-// (deliverable (b)'s "hoisting case"). Reset false before every bake-path
-// Phase A run (driveCompile).
-var bkManifestHoistHit: bool
+// bkManifestHashes/bkManifestEarlyVisible (format version 5, fallback-
+// trigger-narrowing Task 2): the drift guard's own baked lookups, keyed
+// identically to bkManifestPaths -- bkManifestHashes[path] is the baked
+// FNV hash of that manifest path's source (bake.cla's own
+// bkWriteManifestHashes); bkManifestEarlyVisible[path] is whether that
+// path's checker symbols fall within the testapi preload boundary
+// (bkInstallCheckerSymbolsForTestapi's own visibility set). Populated by
+// bkReadManifestHashes, once per bkLoadRtbake call; a no-op (empty maps)
+// for every non-bake compile, same as bkManifestPaths itself.
+var bkManifestHashes: map of int
+var bkManifestEarlyVisible: map of bool
+
+// bkManifestDriftPath (fallback-trigger-narrowing Task 2; was
+// bkManifestHoistHit, a plain bool -- renamed since the new fallback log
+// line needs the actual drifted path): set by expand() the moment a
+// user include resolves to a manifest path WHOSE ON-DISK BYTES NO LONGER
+// MATCH the baked hash (a genuine drift, not just a collision -- a
+// hash-equal collision no longer forces a fallback at all, see expand()
+// itself). driveCompile checks this right after Phase A and falls back
+// to a full from-source recompile when it's non-empty. Empty ("") means
+// no drift; reset before every bake-path Phase A run (driveCompile).
+var bkManifestDriftPath: string
+
+// bkManifestCollidedIdx/bkManifestCollidedEarly (fallback-trigger-
+// narrowing Task 2): the asmHeads indices of every hash-EQUAL manifest
+// collision expand() let parse into the user chain this compile (check-
+// only include -- check#1 sees it, attributed to the real file), with a
+// parallel early-visibility flag (bkManifestEarlyVisible's own value for
+// that collision's path, captured once at collision time). driveCompile
+// consumes both: the early ones get severed out of `combined` BEFORE
+// checkPhase1 when a --testapi UI compile is about to preload baked
+// checker symbols (avoiding the hard double-declare Task 1's own probe
+// proved -- "dedup fully, no parse" for that case); ALL of them get
+// severed out of the freshly-rebuilt `combined2` before lowering
+// (Task 1's own decl-chain-surgery mechanic, generalized from a single
+// index to a list) -- the baked IR already carries each one's lowered
+// form. Reset before every bake-path Phase A run (driveCompile).
+var bkManifestCollidedIdx: list of int
+var bkManifestCollidedEarly: list of bool
 
 // ---- Section readers -- mirror bkWrite* field-for-field ----
 
@@ -2278,6 +2458,29 @@ func bkReadCheckerSymbols() {
     bkLoadedEnumMembers = lEnumMembers
 }
 
+// bkReadFieldInfo (format version 5, fallback-trigger-narrowing Task 2):
+// mirrors bkWriteFieldInfo field-for-field. bkReadIntIntMap (already used
+// above for scope.names) reads recFieldsHeadByName's own count-prefixed
+// key/value pairs verbatim -- same intmap-of-int shape.
+func bkReadFieldInfo() {
+    var n: int
+    var i: int
+    var fi: FieldInfo
+    var lFieldInfos: list of FieldInfo
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        fi.nameIdx = bkGetU32()
+        fi.typeIdx = bkGetU32()
+        fi.next = bkGetU32()
+        lFieldInfos.add(fi)
+        i = i + 1
+    }
+    bkLoadedFieldInfos = lFieldInfos
+    bkLoadedRecFieldsHeadByName = bkReadIntIntMap()
+}
+
 // bkReadUitestBounds (format version 2, Task 5): the base/uitest IR-arena
 // boundary counts -- see bkSecUitestBounds' own doc comment.
 func bkReadUitestBounds() {
@@ -2291,6 +2494,29 @@ func bkReadUitestBounds() {
 func bkReadCheckerVisibility() {
     bkLdEarlyFuncSigsCount = bkGetU32()
     bkLdEarlySymbolsCount = bkGetU32()
+}
+
+// bkReadManifestHashes (format version 5, fallback-trigger-narrowing
+// Task 2): mirrors bkWriteManifestHashes field-for-field, populating
+// BOTH bkManifestHashes and bkManifestEarlyVisible in one pass (they
+// share the same count prefix and per-entry path key).
+func bkReadManifestHashes() {
+    var n: int
+    var i: int
+    var p: string
+    var hashes: map of int
+    var early: map of bool
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        p = bkGetStrShort()
+        hashes[p] = bkGetU32()
+        early[p] = bkGetBool()
+        i = i + 1
+    }
+    bkManifestHashes = hashes
+    bkManifestEarlyVisible = early
 }
 
 // bkLoadSections reads the section table (sectionCount, then that many
@@ -2398,12 +2624,16 @@ func bkLoadSections(): bool {
             bkReadLowCounters()
         } else if id == bkSecCheckerSymbols {
             bkReadCheckerSymbols()
+        } else if id == bkSecFieldInfo {
+            bkReadFieldInfo()
         } else if id == bkSecDeclFileTab {
             bkLoadedDeclFileTab = bkReadIntList()
         } else if id == bkSecUitestBounds {
             bkReadUitestBounds()
         } else if id == bkSecCheckerVisibility {
             bkReadCheckerVisibility()
+        } else if id == bkSecManifestHashes {
+            bkReadManifestHashes()
         } else {
             emitDiag(1, 1, "--rtbake: unknown section id " + numToStr(id))
             return false
@@ -2656,6 +2886,26 @@ func bkInstallPool() {
 func bkInstallTypeArenaPrefix() {
     typeArena = bkLoadedTypeArena
     enumMembers = bkLoadedEnumMembers
+}
+
+// bkInstallFieldInfo (fallback-trigger-narrowing Task 2): the same
+// wholesale-replace argument bkInstallTypeArenaPrefix's own doc comment
+// makes, simpler still -- fieldInfos/recFieldsHeadByName have no
+// deterministic singleton prefix to preserve (checkReset's own
+// fieldInfos.clear() / fresh recFieldsHeadByName map leaves both
+// genuinely empty), and nothing between checkReset() and this call (in
+// the SAME testapi+UI branch that calls bkInstallTypeArenaPrefix, right
+// before it) ever touches either global, so a straight replace is exactly
+// "empty, then the baked content." Must run before checkPhase1 for the
+// same reason bkInstallTypeArenaPrefix must: check.cla's own field-access
+// resolution (and lower.cla's, during lowering) reads these tables
+// directly, and a record type made NAMEABLE by the typeArena/checker-
+// symbol install without its OWN fields installed here resolves the type
+// but not `.fieldName` on it -- see bkSecFieldInfo's own doc comment for
+// how this was found.
+func bkInstallFieldInfo() {
+    fieldInfos = bkLoadedFieldInfos
+    recFieldsHeadByName = bkLoadedRecFieldsHeadByName
 }
 
 // bkComputeManifestPaths (Task 5, deliverable (b)) builds bkManifestPaths
