@@ -396,9 +396,26 @@ func TestRealEventLoopTickOn68k(t *testing.T) {
 // by internal/selfhost/behavior_test.go against each fixture's own
 // testdata/runerr/*.behavior golden (T1, ungated). The .cla/.err/.behavior
 // files for all 6 fixtures STAY -- the host test still consumes them.
+//
+// `listindex` (runtime-ir-bake Task 7 finisher, 2026-08-13, the T2-blocker
+// fix's own regression test) is added alongside `oob` rather than
+// replacing it: `oob` traps via a `int[N]` array read, an ORDINARY call
+// path (cgListElemAddr's fixed-array arm); `listindex` traps via a `list
+// of T` read, which resolves through cgListAddrFromRegs' INLINE bounds
+// check and its own cgEmitPanic(cgListOobMsgIdx) call -- the exact path
+// whose stale by-value-string ABI (fixed in commit 3bdbb3b) printed an
+// EMPTY `runtime error: ` message on every native list-bounds panic,
+// masking the real T2 blocker (a stale ListRec master pointer in
+// rtUiTableRelayout) for a full session. A booted native panic asserting
+// the real message text is the regression test for that class of bug --
+// host-side behavior_test.go coverage (which already passed throughout,
+// since the host cprint lane never had this ABI bug) can't catch it.
 func TestRunErrOn68k(t *testing.T) {
 	requireMac(t)
-	files := []string{filepath.Join(repoRoot(t), "testdata", "runerr", "oob.cla")}
+	files := []string{
+		filepath.Join(repoRoot(t), "testdata", "runerr", "oob.cla"),
+		filepath.Join(repoRoot(t), "testdata", "runerr", "listindex.cla"),
+	}
 	for _, f := range files {
 		f := f
 		base := strings.TrimSuffix(filepath.Base(f), ".cla")

@@ -1,0 +1,14 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+on App.launch {
+    var g: list of int
+    var i: int
+    var v: int
+
+    g.add(1)
+    g.add(2)
+    i = 5
+    v = g[i]
+    alert("unreachable")
+}

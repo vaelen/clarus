@@ -1,13 +1,15 @@
 # Runtime IR bake — precompiled-artifacts item 3, at IR depth (2026-08-12)
 
-Status: **Implemented (2026-08-13, branch `runtime-ir-bake`, commits
-`322765a..ac423b0`) but T2-BLOCKED** — see the ROADMAP `runtime-ir-bake`
-entry and `.superpowers/sdd/2026-08-12-runtime-ir-bake/progress.md` for
-the task ledger, and the ROADMAP entry's own "T2 blocker" subsection for
-a pre-existing regression (Task 5, commit `e72b92a`) discovered by
-Task 7's first full native-emulator T2 run, still unresolved. Annotations
-below (Task N/7, 2026-08-13) mark claims the implementation narrowed; the
-design otherwise landed as approved.
+Status: **DONE (2026-08-13, branch `runtime-ir-bake`, commits
+`322765a..3bdbb3b`), full T2 GREEN (232s)** — see the ROADMAP
+`runtime-ir-bake` entry and
+`.superpowers/sdd/2026-08-12-runtime-ir-bake/progress.md` for the task
+ledger, and the entry's own "T2 blocker" subsection for two
+pre-existing, latent bugs (unrelated to this design) that Task 7's
+first full native-emulator T2 run discovered and a same-day follow-up
+root-caused and fixed. Annotations below (Task N/7, 2026-08-13) mark
+claims the implementation narrowed; the design otherwise landed as
+approved.
 Originally: design approved in discussion (Andrew, 2026-08-12 evening),
 pre-plan. Implements the first stage of the precompiled-artifacts
 program (`2026-08-12-precompiled-artifacts-design-notes.md`), deepened

@@ -1020,8 +1020,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `TestErrorGoldens`) are green.
 
 - **runtime-ir-bake (branch `runtime-ir-bake`, 2026-08-12/13, based on
-  `param-abi`): Tasks 1-6 + Task 7 Steps 0-3 DONE; Step 4 (T2) BLOCKED
-  by a newly-discovered pre-existing regression, not yet merge-ready.**
+  `param-abi`): DONE, T2 GREEN (232s at `3bdbb3b`).**
   Implements precompiled-artifacts item 3 at IR depth (deepened from the
   notes doc's "pre-parsed bake" v1 during brainstorm): design
   `docs/superpowers/specs/2026-08-12-runtime-ir-bake-design.md`, plan
@@ -1039,107 +1038,134 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   artifact). Full ledger:
   `.superpowers/sdd/2026-08-12-runtime-ir-bake/progress.md`.
 
-  **7 tasks, commits `322765a..c99d95a`, plus a Task 7 close-out wave
-  (housekeeping + snapshot regen, `c99d95a..ac423b0`).** Task 1 was a
-  probe wave (no tree commits — reverted after measuring; report +
-  amendments only) that found the naive superset splice breaks 26/28
-  non-UI native fixtures (a latent `cg68AddRoots`/dispatcher-synthesis
-  bug, below) and narrowed the "check#2 adds nothing" assumption. Task 2
-  fixed the dispatcher bug and made the from-source splice unconditional
-  superset, re-blessing goldens once. Task 3 built the `'CLIR'`
-  serializer (`clarusc --bake-ir`). Task 4 built the loader (`--rtbake` on
-  the host emit paths) plus the leak gate's bake-path twin. Task 5 closed
-  the bake-vs-from-source byte-identity gap across the full corpus (both
+  **7 tasks, commits `322765a..c99d95a`, a Task 7 close-out wave
+  (housekeeping + snapshot regen, `c99d95a..ac423b0`), then a T2-blocker
+  fix (`3bdbb3b`).** Task 1 was a probe wave (no tree commits — reverted
+  after measuring; report + amendments only) that found the naive
+  superset splice breaks 26/28 non-UI native fixtures (a latent
+  `cg68AddRoots`/dispatcher-synthesis bug, below) and narrowed the
+  "check#2 adds nothing" assumption. Task 2 fixed the dispatcher bug and
+  made the from-source splice unconditional superset, re-blessing
+  goldens once. Task 3 built the `'CLIR'` serializer (`clarusc
+  --bake-ir`). Task 4 built the loader (`--rtbake` on the host emit
+  paths) plus the leak gate's bake-path twin. Task 5 closed the
+  bake-vs-from-source byte-identity gap across the full corpus (both
   lanes) through two controller-directed fix rounds plus a
   changes-requested review's own fix round — the riskiest diff of the
-  phase, reviewed by Opus. **One of Task 5's fix rounds is also the
-  source of the T2 blocker below.** Task 6 wired `ClarusC.APPL` to
-  consume the bake by default (`--bake-ir` embedding, stamp sidecar,
-  `--no-bake-ir` opt-out) and root-caused a real, previously-
-  **documented-but-not-fixed** cg68k codegen bug the bake path exposed
-  (below), then proved the whole path byte-identical to the host oracle
-  on real Snow hardware. Task 7 (this entry) fixed three deferred review
-  minors, regenerated the bootstrap snapshot to a fixed point, measured
-  perf, wrote docs, then — running this whole phase's FIRST full T2
-  (including the gated native-emulator lane) — found the blocker below.
+  phase, reviewed by Opus; **Task 5's own fix round 1 was initially
+  misattributed as the T2 blocker's cause (see below) — it wasn't.**
+  Task 6 wired `ClarusC.APPL` to consume the bake by default
+  (`--bake-ir` embedding, stamp sidecar, `--no-bake-ir` opt-out) and
+  root-caused a real, previously-**documented-but-not-fixed** cg68k
+  codegen bug the bake path exposed (below), then proved the whole path
+  byte-identical to the host oracle on real Snow hardware. Task 7 fixed
+  three deferred review minors, regenerated the bootstrap snapshot to a
+  fixed point, measured perf, wrote docs, then — running this whole
+  phase's FIRST full T2 (including the gated native-emulator lane) —
+  found a real regression, root-caused it in a follow-up session
+  (below), and closed the phase out T2-green.
 
-  **T2 BLOCKER (found 2026-08-13, Task 7 Step 4, unresolved):**
-  `CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
-  TestToolboxSuiteOn68k` (the gated native-emulator toolbox-suite boot,
-  part of `scripts/test-merge.sh`'s native lane) crashes with a native
-  runtime panic (`##CLARUS-EXIT## 3`, `nat_CorePanic` fired with a
-  **completely empty message** — not a normal fail-closed diagnostic
-  like `lower.cla`'s `lowSynthPanic` always produces) partway through
-  the scripted suite run, at the very first UI action inside
-  `testsuite/toolbox/cases_popuptable.cla`'s `casePopuptable()` — a
-  table-row `select` on the `PopupTableWin` `Marks` table widget. Every
-  case before it (window/menu/every/canvas/scroll dispatch, ~14 cases)
-  passes clean.
-  - **Confirmed real and pre-existing, not caused by Task 7's own work**
-    (housekeeping, snapshot regen, doc edits): manual bisection via git
-    worktrees, rebuilding the exact toolbox-suite native binary at each
-    commit and booting it in the emulator —
-    `322765a` (pre-phase base) PASS, `d5e1ed7` (Task 2) PASS, `4248ddd`
-    (Task 4) PASS, `b3d205e` (Task 5 impl round 1) PASS,
-    **`e72b92a` (Task 5 fix round 1) FAILS — same crash**, `45ba8a1`
-    (Task 5 end) FAILS, `c99d95a` (Task 6 end, this phase's pre-Task-7
-    base) FAILS. The regression was introduced by `e72b92a` ("fix:
-    bake-path structural identity — skip generator dispatchers, reorder
-    testapi splice") and has survived unchanged through every later
-    commit.
-  - **Why it evaded Tasks 5/6's own gates:** those gates only assert
-    "bake-path output == from-source output" (byte-identity), never
-    "output == correct behavior." If a decl-chain reordering bug (see
-    below) produces the SAME wrong codegen on both the bake path and the
-    from-source `--testapi` path, byte-identity holds while both are
-    equally broken. `TestToolboxSuiteOn68k` is a live UI-driven
-    behavioral boot — apparently never run as part of Tasks 5/6's own
-    per-task gates (only individually-scoped checks were) — so Task 7
-    Step 4 is the first time in the whole phase this exact 34-file
-    `--testapi` composition was exercised dynamically on real hardware.
-  - **Leading hypothesis, NOT confirmed (needs 68k register/memory-level
-    tracing this environment doesn't have):** `drive.cla`'s
-    `driveManifestSplice`, in its `earlySpliceDone` branch (added by
-    `e72b92a`, further reworked by Task 5's later fix rounds — current
-    shape reassembles `combined2` from three separately-tracked decl
-    chains, `earlyRuntimeChain`/`rtHeads`/`uitestChain`/
-    `userChainRebuilt`, to match the bake's fixed module order), shifts
-    the relative POSITION of runtime decls in a way that corrupts an
-    A5-relative jump-table offset used by table-widget event dispatch
-    specifically (not window/menu/every dispatch, which is unaffected).
-    The empty `nat_CorePanic("")` message is consistent with a wrong
-    `JSR N(A5)` landing on `nat_CorePanic`'s own entry by coincidence
-    rather than a real, intentional panic call — `nat_CorePanic`'s slot
-    number shifts from 19 to 396 between a passing and failing build
-    (pure reordering artifact, not evidence on its own, but consistent
-    with the theory). Supporting evidence a dedicated investigation
-    gathered (543K tokens, 310 tool calls, ~100 min): the crash's
-    presence is sensitive to ANY unrelated structural change (segment
-    packing budget, `--nopeep`, one unused `const` added to an unrelated
-    file) — the classic signature of undefined behavior/memory
-    corruption tied to code layout, not a deterministic logic bug
-    locatable by code review alone. Literally reverting the splice order
-    does make the crash disappear, but reopens the byte-identity gap
-    Task 5's fix rounds closed (`TestBakeFullCorpusTestapi`/
-    `TestBakeFullCorpusSuiteCore` regress) — so it is a real regression
-    trade, not a fix.
-  - **Ruled out:** 16-bit PC-relative displacement overflow in
-    `asm68k.cla` (checked via an added range-check diagnostic against the
-    exact crashing binary — zero overflows fired); insufficient stack
-    reserve alone (widened `cgToolboxHeadroom` well past the computed
-    need, still crashed).
-  - **Next steps for whoever picks this up:** this needs real 68k
-    debugger-level tracing (register/memory state at the crash PC), not
-    available in this environment — or a careful manual audit of
-    `driveManifestSplice`'s decl-chain surgery against cg68k's A5
-    jump-table slot-assignment logic, cross-referencing exactly which
-    function occupies the wrong-but-landed-on slot for a `select`-event
-    dispatch on a table widget specifically. Repro:
-    `CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
-    TestToolboxSuiteOn68k -v -timeout 5m` (fast, ~40s, deterministic).
-    Do not start precompiled-artifacts stage 3.5 (object code + linker)
-    until this is resolved — the notes doc's own 2026-08-13 update says
-    why.
+  **T2 blocker (found 2026-08-13, Task 7 Step 4; root-caused and fixed
+  same day, commit `3bdbb3b`):** `CLARUS_MAC_TESTS=1 go test
+  ./internal/mactest -run TestToolboxSuiteOn68k` (the gated
+  native-emulator toolbox-suite boot, part of `scripts/test-merge.sh`'s
+  native lane) crashed with a native runtime panic (`##CLARUS-EXIT## 3`,
+  `nat_CorePanic` fired with a **completely empty message**) at the very
+  first UI action inside `testsuite/toolbox/cases_popuptable.cla`'s
+  `casePopuptable()` — a table-row `select` on the `PopupTableWin`
+  `Marks` table widget.
+  - **Two independent, genuinely latent bugs, neither introduced by this
+    phase:**
+    1. **`rtUiTableRelayout` (`runtime/clarus/uitable.cla`)** captured the
+       table's `ListRec` master pointer BEFORE two `UiNewPtr` calls, then
+       wrote `rView.top`/`.left`/`cellSize.h` through it. `NewPtr`
+       allocates a NONrelocatable block, so the Memory Manager may
+       compact the heap and relocate the unlocked `ListHandle` `LNew`
+       returned — when it does, those pokes miss the `ListRec` entirely,
+       leaving `rView` at `LNew`'s all-zero placeholder rect. The
+       scripted click math then computes `row = (54 - 0) / 16 = 3` for a
+       3-row table (should be 1), handing user code an out-of-range
+       index — proven by arithmetic (0 is the unique `rView.top`
+       producing the observed row, and 0 is exactly `uiwidgets.cla`'s
+       placeholder rect), not by elimination. A scripted audit for the
+       same shape (deref, then an allocating call, then a use) found
+       four MORE sites with the identical bug, two of them also stale
+       WRITES: `uitext.cla`'s `rtUiTeRelayout` (8 pokes),
+       `ui.cla`'s `rtUiHandleUpdate` (twice), `uiwidgets.cla`'s
+       `rtUiWidgetSetText`. All five now re-derive the master pointer
+       immediately before use — the discipline `uitable.cla`'s own
+       `rtUiTableSyncOne` already documented ("re-derive: LAddRow/LDelRow
+       can move memory") but the other five sites hadn't followed.
+    2. **`cgEmitPanic` (`clarusc/cg68k.cla`)** still used the
+       pre-`param-abi` by-value string ABI, pushing a 256-byte `Str255`
+       block for `rtPanic(msg)` — but `cgArgSlotSize(KStr) == 4` and
+       `cgCurFrameIsRef` mean every `IRFunc`'s str param slot holds an
+       ADDRESS now. `rtPanic` therefore read the string literal's own
+       first four bytes (length byte + first three chars) as a pointer,
+       which is why **every** native list-bounds-check panic printed an
+       EMPTY `runtime error: ` message — masking bug 1's own diagnostic
+       for a full session (the prior investigation's "empty message"
+       puzzle, below). A param-abi-migration gap, missed because
+       `cgEmitPanic`'s one call site (`cgListAddrFromRegs`' inline list
+       bounds check) has no test that asserts the panic TEXT natively —
+       fixed with a regression fixture, `testdata/runerr/listindex.cla`
+       (see Verification below).
+  - **`e72b92a` did not cause either bug and is untouched by the fix.**
+    It changed code sizes, which changed the app heap layout, which
+    changed whether the Memory Manager's compaction happened to relocate
+    the `ListRec` in bug 1 — a genuine correctness bug that was equally
+    present at EVERY commit in the earlier bisection table
+    (`322765a` through `c99d95a`), just heap-layout-lucky at some of
+    them. **Any earlier PASS of `TestToolboxSuiteOn68k`, this phase or
+    before, was luck of the heap layout, not proof of correctness** —
+    worth remembering before treating a green native UI boot as proof
+    that handle discipline is sound.
+  - **How it was found:** isolated via a code-independent flip
+    (`--bake`'s own resource-fork NAME argument, `../../testdata/...`
+    vs `testdata/...`, changes only the baked resource's byte length,
+    not the compiled code) — `cmp` on the emitted segment images showed
+    them BYTE-IDENTICAL between a passing and failing build, which
+    excluded every code-layout theory (jump tables, glue-table ordinals,
+    displacement overflow, segment packing, decl order) — including the
+    prior session's own leading hypothesis (an A5 jump-table offset
+    corruption from the Task 5 splice reorder), which was consequently
+    WRONG, not merely unconfirmed. From there: grepped for the sole
+    producer of `runtime error: ` (`nat_CorePanic`), found `cgEmitPanic`
+    as the second, undocumented producer, reproduced its ABI bug
+    standalone in 3 lines of Clarus, fixed it, rebuilt the failing
+    config (now correctly naming the crash), added a temporary probe to
+    localize the exact out-of-range index, and traced it to
+    `rtUiTableRelayout`'s stale pointer by arithmetic. Full narrative:
+    `.superpowers/sdd/2026-08-12-runtime-ir-bake/t2-blocker-fix-report.md`.
+  - **Why this evaded Tasks 5/6's own byte-identity gates**: those gates
+    only assert "bake-path output == from-source output," never "output
+    == correct behavior" — both bugs are equally present on both paths,
+    so byte-identity held while both were broken. `TestToolboxSuiteOn68k`
+    is a live UI-driven behavioral boot that Task 7 Step 4 was the first
+    to run for this exact composition in the whole phase.
+  - **Fix does NOT preserve non-testapi byte-identity to pre-fix HEAD**,
+    deliberately: `cgEmitPanic` is a real codegen bug affecting every
+    native build containing a list index, not something bake-specific.
+    `testdata/cg68k/*.s` / `testdata/emitui/*.c.golden` goldens
+    regenerated accordingly (a 6-instruction block copy replaced by one
+    address push, plus label renumbering) — exactly the expected shape
+    for a genuine codegen fix, not unexplained churn.
+  - **Regression test added** (Task 7 finisher, same day):
+    `testdata/runerr/listindex.cla`/`.err`/`.behavior`, alongside the
+    existing `oob.cla` (fixed-array OOB, an ordinary call path) in
+    `TestRunErrOn68k` — `listindex` traps via `list of T` indexing,
+    which resolves through `cgEmitPanic`'s inline path specifically, and
+    asserts the real panic TEXT on a booted native binary. Host-side
+    `internal/selfhost/behavior_test.go` auto-discovers the same fixture
+    via its `testdata/runerr/*.cla` glob (T2, not T1) — its `.behavior`
+    golden was generated and verified stable.
+  - **Remaining, deliberately unfixed concern**: `rtUiTableClick`'s
+    scripted row math still has no upper clamp against the live row
+    count (its own `ponytail:` comment says so). With the relayout bug
+    fixed there's no known way to reach it, but the runtime handing user
+    code an out-of-range row index is a robustness hole — deliberately
+    NOT clamped, since a clamp would mask the next occurrence of this
+    bug class exactly the way this one was masked for a session.
 
   **Latent bugs found (all pre-existing, none introduced by this
   phase):**
@@ -1244,20 +1270,22 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     path) from a real hoisting collision (needs fallback). Not attempted
     this phase (Task 6 was explicitly told not to; Task 7 only documents
     it).
+  - **`rtUiTableClick`'s row math has no upper clamp** against the live
+    row count (T2-blocker fix's own deliberate choice, above) — a
+    robustness hole for a future instance of the same stale-master-
+    pointer bug class to hide behind again. Not clamped on purpose.
   - **Object code + linker (item 3.5, the precompiled-artifacts notes
-    doc's staging) is the natural next phase, but BLOCKED on the T2
-    regression above** — building a new stage on the same
-    decl-chain/position-sensitive machinery that's already corrupting
-    something would make debugging harder, not easier.
+    doc's staging) is the natural next phase** — the T2 blocker that
+    used to gate it is fixed; see the notes doc's own updated staging.
   - Everything param-abi already deferred (bare-`EIntr` arg release gap,
     `KArr` param ABI, `toBytes` name-only guard) is untouched by this
     phase, still open.
 
-  **T2 (`scripts/test-merge.sh`): RED, blocked on the regression above.**
-  T1 body, full `internal/selfhost` (incl. `TestSnapshotFixedPoint`), and
-  `CLARUS_BAKE_FULL=1 go test ./internal/bake -run TestBakeFullCorpus`
-  are all green; the gated native `internal/mactest` emulator lane fails
-  on `TestToolboxSuiteOn68k` as detailed above. **Not merge-ready.**
+  **T2 (`scripts/test-merge.sh`): GREEN at `3bdbb3b`, 232s** (T1 body
+  11s, `internal/selfhost` 92s, gated native `internal/mactest` lane
+  124s, `CLARUS_BAKE_FULL` bake corpus 5s). **Merge-ready from a testing
+  standpoint** (merge itself remains Andrew's call, per standing
+  convention).
 
 ## Small open items (not yet scheduled)
 

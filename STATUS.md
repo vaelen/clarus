@@ -1,47 +1,51 @@
-# Session status — 2026-08-13 (runtime-ir-bake T2-blocked)
+# Session status — 2026-08-13 (runtime-ir-bake DONE, T2 green)
 
 Handoff summary for the next session. Current branch: `runtime-ir-bake`
 (stacked on unmerged `param-abi` → `memory-leak-fix` →
 `layer1-compiler-perf` → `datetime-instrumentation` → `map-hashtable` →
 `mac-resident-clarusc`, **not merged** — merge is Andrew's call).
 
-## 0. START HERE next session: fix the T2 blocker before anything else
+## 0. START HERE next session: stage 3.5 (object code + linker) is next
 
-`runtime-ir-bake`'s Tasks 1-6 and Task 7 Steps 0-3 (housekeeping,
-snapshot regen, perf, docs) are DONE and committed. **Task 7 Step 4 (the
-phase's first full `scripts/test-merge.sh` run, including the gated
-native-emulator lane) found a real, pre-existing regression** —
-`CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
-TestToolboxSuiteOn68k` crashes with an empty-message native panic
-(`nat_CorePanic("")`, exit 3) the instant `cases_popuptable.cla`'s first
-table-widget `select` event fires. Full writeup, evidence, and the
-leading (unconfirmed) hypothesis: the ROADMAP `runtime-ir-bake` entry's
-"T2 blocker" subsection. Short version:
+`runtime-ir-bake` is DONE, full `scripts/test-merge.sh` GREEN (232s at
+commit `3bdbb3b`) — see section 5 below for the close-out. Task 7's own
+first full T2 run found a real, pre-existing regression (two independent
+latent bugs, neither introduced by this phase); it was root-caused and
+fixed the same day, in a follow-up session, with a regression test added
+after. Short version (full writeup: ROADMAP `runtime-ir-bake` entry's
+"T2 blocker" subsection, and
+`.superpowers/sdd/2026-08-12-runtime-ir-bake/t2-blocker-fix-report.md`):
 
-- **Confirmed via git-worktree bisection** (rebuild the exact toolbox
-  suite native binary at each commit, boot in the emulator): passes at
-  `322765a`/`d5e1ed7`/`4248ddd`/`b3d205e`, **fails starting at `e72b92a`**
-  (Task 5 fix round 1) and every commit after, including current HEAD.
-  Not caused by Task 7's own work.
-- **A dedicated ~100-minute, 543K-token investigation could not root-cause
-  it** — ruled out PC-relative displacement overflow and insufficient
-  stack reserve; found the crash's presence is sensitive to almost ANY
-  unrelated structural change (segment budget, `--nopeep`, one unused
-  `const` in an unrelated file), the classic signature of layout-sensitive
-  undefined behavior, not a locatable logic bug. Leading hypothesis: a
-  decl-chain reordering in `drive.cla`'s `driveManifestSplice`
-  (`earlySpliceDone` branch) corrupts an A5-relative jump-table offset
-  that table-widget event dispatch depends on. **Needs real 68k
-  register/memory-level tracing to pin down — not available in this
-  environment.**
-- Repro (fast, ~40s, 100% deterministic): `CLARUS_MAC_TESTS=1 go test
-  ./internal/mactest -run TestToolboxSuiteOn68k -v -timeout 5m`.
-- **Do not start precompiled-artifacts stage 3.5** (object code +
-  linker) until this is fixed — see the notes doc's own 2026-08-13
-  update.
-- Tree is clean at `ac423b0` (verified) — no partial/speculative fixes
-  were committed. `git worktree list` should show only the main
-  worktree; scratch investigation worktrees were removed.
+- **Bug 1 (the crash):** `rtUiTableRelayout` and four sibling functions
+  (`runtime/clarus/{uitable,uitext,ui,uiwidgets}.cla`) wrote through a
+  List/TE Manager master pointer captured BEFORE an intervening
+  `UiNewPtr` call, which can relocate the unlocked handle during heap
+  compaction — a stale write that left `PopupTableWin`'s table view rect
+  zeroed, so a scripted click computed an out-of-range row index. All
+  five sites now re-derive the master pointer immediately before use.
+- **Bug 2 (why the panic message was empty, hiding bug 1 for a whole
+  session):** `cgEmitPanic` (`clarusc/cg68k.cla`) still used the
+  pre-param-abi by-value `Str255` push for `rtPanic(msg)`; the param-abi
+  phase's by-address `KStr` ABI made every param slot hold a pointer
+  instead, so `rtPanic` read the panic literal's own first 4 bytes as an
+  address — every native list-bounds panic printed an empty message,
+  compiler-wide, not just for this crash. Fixed to push the address.
+- **`e72b92a`'s Task 5 splice reorder never caused this** — the prior
+  session's leading hypothesis was disproven, not confirmed: a
+  code-independent flip (changing only a `--bake` resource NAME's byte
+  length, not the compiled code) reproduced the crash with byte-identical
+  emitted segments, ruling out every code-layout theory. Both bugs are
+  genuinely pre-existing; any earlier PASS of `TestToolboxSuiteOn68k` was
+  heap-layout luck.
+- **Regression test added** (Task 7 finisher, same day):
+  `testdata/runerr/listindex.cla`/`.err`/`.behavior`, exercising
+  `cgEmitPanic`'s inline list-bounds path specifically (as opposed to
+  `oob.cla`'s ordinary fixed-array path) in `TestRunErrOn68k` — asserts
+  the real panic TEXT on a booted native binary, so this bug class can't
+  hide silently again.
+- Tree is clean; `git worktree list` shows only the main worktree
+  (scratch investigation worktrees from the earlier session were
+  removed).
 
 Design context (unchanged): **Spec (normative):**
 `docs/superpowers/specs/2026-08-12-runtime-ir-bake-design.md` (now
@@ -241,7 +245,7 @@ that prerequisite is now satisfied, so a future session can pick that doc
 back up and plan the bake/object-code/artifact-cache work on a frozen
 param ABI.
 
-## 5. runtime-ir-bake phase (2026-08-12/13, branch `runtime-ir-bake`) — T2-BLOCKED, not merge-ready
+## 5. runtime-ir-bake phase (2026-08-12/13, branch `runtime-ir-bake`) — DONE, T2 GREEN
 
 Implements precompiled-artifacts item 3 at IR depth: bakes the runtime's
 post-`lowerProgram` IR (unconditional superset, all 17 68k-lane modules)
@@ -249,23 +253,21 @@ into a stamped `'CLIR'` resource; `ClarusC.APPL` consumes it by default,
 the host CLI opts in via `--rtbake FILE`. check#2 and every manifest
 splice conditional are retired. See the ROADMAP's `runtime-ir-bake` entry
 for the full task ledger, latent-bug finds, design-claim narrowing, perf
-table, deferred items, AND the T2 blocker writeup — summary here.
+table, deferred items, AND the T2-blocker root-cause/fix writeup —
+summary here.
 
-- **7 tasks, commits `322765a..c99d95a`, plus this session's Task 7
-  close-out wave (`c99d95a..ac423b0`).** Task 1 (probe, no tree commits)
-  found the naive superset splice breaks 26/28 non-UI native fixtures
-  (dispatcher-synthesis gate bug) and narrowed the check#2 assumption.
-  Task 2 fixed the dispatcher bug + made the from-source splice
-  unconditional superset. Task 3 built the `'CLIR'` serializer. Task 4
-  built the loader (`--rtbake`) + leak-gate bake-path twin. Task 5 closed
-  the full-corpus byte-identity gap both lanes (3 fix rounds, Opus
-  review) — **and, per Task 7's own bisection, ALSO introduced the T2
-  blocker below in fix round 1 (`e72b92a`), undetected until now because
-  the byte-identity oracle only checks bake==from-source, never
-  correctness.** Task 6 wired `ClarusC.APPL`'s bake-by-default path and
-  root-caused a real cg68k `fromBytes`/`toBytes` stride-2 codegen bug
-  the bake path exposed (2 fix rounds), then proved byte-identity on
-  real Snow hardware (3 Snow runs). Full ledger:
+- **7 tasks, commits `322765a..c99d95a`, a Task 7 close-out wave
+  (`c99d95a..ac423b0`), then the T2-blocker fix (`3bdbb3b`).** Task 1
+  (probe, no tree commits) found the naive superset splice breaks 26/28
+  non-UI native fixtures (dispatcher-synthesis gate bug) and narrowed
+  the check#2 assumption. Task 2 fixed the dispatcher bug + made the
+  from-source splice unconditional superset. Task 3 built the `'CLIR'`
+  serializer. Task 4 built the loader (`--rtbake`) + leak-gate bake-path
+  twin. Task 5 closed the full-corpus byte-identity gap both lanes (3
+  fix rounds, Opus review). Task 6 wired `ClarusC.APPL`'s bake-by-default
+  path and root-caused a real cg68k `fromBytes`/`toBytes` stride-2
+  codegen bug the bake path exposed (2 fix rounds), then proved
+  byte-identity on real Snow hardware (3 Snow runs). Full ledger:
   `.superpowers/sdd/2026-08-12-runtime-ir-bake/progress.md`.
 - **Task 7, Step 0 (housekeeping, commit `a5d23fd`):** fixed three
   deferred review minors — stale doc comments describing retired
@@ -302,23 +304,36 @@ table, deferred items, AND the T2 blocker writeup — summary here.
   a controlled pair (different sessions/settle windows/baselines).
 - **Step 3 (docs):** ROADMAP `runtime-ir-bake` phase entry (task ledger,
   latent-bug finds, design-claim narrowing, perf table, deferred items,
-  T2 blocker writeup); this STATUS section; precompiled-artifacts notes
-  doc's Staging section marked stages 1+2 implemented-but-T2-blocked;
-  the design doc annotated at the three claims Tasks 1/4/5 narrowed.
-- **Step 4, T2: RED.** `scripts/test-merge.sh`'s T1 body, full
-  `internal/selfhost`, and the bake full-corpus identity gate are all
-  green; the gated native `internal/mactest` emulator lane fails on
-  `TestToolboxSuiteOn68k` — see section 0 above for the full writeup.
-  **Not merge-ready.** A dedicated fix subagent (~100 min, 543K tokens)
-  could not root-cause it within this session; it needs 68k-level
-  debugger tracing this environment doesn't have.
+  T2-blocker root-cause/fix writeup); this STATUS section;
+  precompiled-artifacts notes doc's Staging section marked stages 1+2
+  implemented; the design doc annotated at the three claims Tasks 1/4/5
+  narrowed.
+- **Step 4, T2 first run: found a real, pre-existing regression** (two
+  independent latent bugs — a stale List/TE Manager master pointer
+  across heap-compacting `NewPtr` calls in 5 sites across
+  `uitable`/`uitext`/`ui`/`uiwidgets.cla`, and `cgEmitPanic`'s
+  pre-param-abi by-value string push, which made every native
+  list-bounds panic print an EMPTY message and hid bug 1's own
+  diagnostic for a full session). Root-caused and fixed same day,
+  commit `3bdbb3b` — see section 0 above and the ROADMAP entry's "T2
+  blocker" subsection for the full narrative. The prior session's
+  leading hypothesis (Task 5's splice reorder, `e72b92a`) was disproven
+  by a code-independent repro flip, not confirmed.
+- **Step 4 finisher (regression test, same day):** added
+  `testdata/runerr/listindex.cla`/`.err`/`.behavior` to
+  `TestRunErrOn68k`, exercising `cgEmitPanic`'s inline list-bounds path
+  specifically (host-side `behavior_test.go` also auto-picks it up via
+  its glob, T2 not T1).
+- **T2: GREEN at `3bdbb3b`, 232s** (T1 body 11s, `internal/selfhost`
+  92s, gated native `internal/mactest` lane 124s, `CLARUS_BAKE_FULL`
+  bake corpus 5s). **Merge-ready from a testing standpoint.**
 
-**Deferred / phase debt (full detail in ROADMAP entry):** the T2 blocker
-above (top priority — blocks everything else in this phase and stage
-3.5); include-dedup fallback trigger is broad (correct but slower,
-narrowing direction recorded); object code + linker (stage 3.5) is next
-but blocked on the T2 fix landing first; everything param-abi already
-deferred remains open.
+**Deferred / phase debt (full detail in ROADMAP entry):** `rtUiTableClick`'s
+row math still has no upper clamp against the live row count (deliberate
+— a clamp would mask a recurrence of the same bug class); include-dedup
+fallback trigger is broad (correct but slower, narrowing direction
+recorded); object code + linker (stage 3.5) is next, no longer blocked;
+everything param-abi already deferred remains open.
 
 ## Recommended next steps (in order)
 
@@ -402,13 +417,13 @@ deferred remains open.
    order. `param-abi`'s full `scripts/test-merge.sh` ran GREEN at
    `5e44fd3` (2026-08-12, 225s total incl. the native emulator lane) —
    fully gated and merge-ready. **`runtime-ir-bake`'s full
-   `scripts/test-merge.sh` is RED** (see section 0/5 above) —
-   **NOT merge-ready until the T2 blocker is fixed.**
-7. **TOP PRIORITY next session: fix the runtime-ir-bake T2 blocker**
-   (section 0 above) before touching anything else on this stack —
-   precompiled-artifacts stage 3.5 (object code + linker) is otherwise
-   next in line (the param-ABI prerequisite landed in the param-abi
-   phase, and the IR-bake serializer/loader is the reusable foundation
-   3.5 builds on — see the notes doc), but starting it on top of an
-   unresolved decl-chain/position-sensitive corruption bug would be a
-   mistake per that doc's own 2026-08-13 update.
+   `scripts/test-merge.sh` is ALSO GREEN**, at `3bdbb3b` (232s) — fully
+   gated and merge-ready from a testing standpoint. None of the six
+   stacked, unmerged phases have been merged yet.
+7. **Next session: precompiled-artifacts stage 3.5 (object code +
+   linker)** is next in line — the param-ABI prerequisite landed in the
+   param-abi phase, the runtime-ir-bake phase's T2 blocker that would
+   have made starting 3.5 premature is now fixed, and the IR-bake
+   serializer/loader is the reusable foundation 3.5 builds on (see the
+   notes doc's own staging). No spec/plan exists yet for 3.5 — first job
+   is speccing it, same as runtime-ir-bake specced item 3.
