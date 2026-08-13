@@ -511,6 +511,34 @@ func UiTestVerb(x: int): bool {
 // bake path (no "falling back" note at all) and stays byte-identical to
 // a plain from-source compile of the same fixture, same as before, just
 // without the extra recompile.
+//
+// Two subtests (fallback-trigger-narrowing Task 3, Step 2): "CoreCla" is
+// the original fixture, a top-level runtime module with real
+// funcs/globals/strlits. "ToolboxFiles" is a nested-include catalog file
+// (toolbox/files.cla, reached only via runtime/clarus/uidialogs.cla's own
+// `include`) -- Task 1's own probe fixture (task-1-report.md Step 1),
+// calling PBGetFInfoSync. toolbox/files.cla is pure extern/record
+// declarations (no func/var bodies), so this exercises a check-only
+// include shape CoreCla's own funcs/globals/strlits don't: a collision
+// target with a real call site but zero lowered bodies of its own. Both
+// subtests must stay byte-identical to from-source with no fallback note.
+var rtbakeIncludeCheckOnlyFixtures = []struct {
+	name string
+	file string
+	src  string
+}{
+	{
+		name: "CoreCla",
+		file: "checkonly_fixture_core.cla",
+		src:  "include \"runtime/clarus/core.cla\"\n\nfunc main() {\n    log(\"hello from the dedup fallback fixture\")\n}\n",
+	},
+	{
+		name: "ToolboxFiles",
+		file: "checkonly_fixture_toolbox_files.cla",
+		src:  "include \"toolbox/files.cla\"\n\nfunc main() {\n    var pb: ptr\n    var r: int\n    r = PBGetFInfoSync(pb)\n}\n",
+	},
+}
+
 func TestRtbakeIncludeCheckOnly(t *testing.T) {
 	exe := claruscboot.CurrentExe(t)
 	root := RepoRoot(t)
@@ -518,23 +546,301 @@ func TestRtbakeIncludeCheckOnly(t *testing.T) {
 	bakePath := filepath.Join(dir, "rt68k.clir")
 	RunBakeIR(t, exe, "68k", bakePath)
 
-	// The include path is repo-root-relative (cmd.Dir = root, matching
-	// every other fixture in this file), so the fixture itself must also
-	// live at the repo root for the relative include to resolve exactly
-	// the way an ordinary user file's own would.
-	fixtureName := "dedup_fallback_fixture_task5.cla"
+	for _, fx := range rtbakeIncludeCheckOnlyFixtures {
+		fx := fx
+		t.Run(fx.name, func(t *testing.T) {
+			// The include path is repo-root-relative (cmd.Dir = root,
+			// matching every other fixture in this file), so the fixture
+			// itself must also live at the repo root for the relative
+			// include to resolve exactly the way an ordinary user file's
+			// own would.
+			fixturePath := filepath.Join(root, fx.file)
+			if err := os.WriteFile(fixturePath, []byte(fx.src), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.Remove(fixturePath) })
+
+			// Same basename in separate subdirectories -- NOT distinct
+			// basenames in one dir: the MacBinary wrap embeds the OUTPUT
+			// FILENAME in its header, so two differently-named forks of
+			// identical code differ byte-for-byte in that field alone
+			// (TestBakePathByteIdentity's own doc comment already flags
+			// this exact false alarm).
+			srcDir := filepath.Join(dir, "src-"+fx.name)
+			bakeDir := filepath.Join(dir, "bake-"+fx.name)
+			if err := os.MkdirAll(srcDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(bakeDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			srcOut := filepath.Join(srcDir, "dedup.bin")
+			bakeOut := filepath.Join(bakeDir, "dedup.bin")
+
+			srcCmd := exec.Command(exe, "emit68k", "-o", srcOut, fx.file)
+			srcCmd.Dir = root
+			if out, err := srcCmd.CombinedOutput(); err != nil {
+				t.Fatalf("from-source compile of %s failed: %v\n%s", fx.file, err, out)
+			}
+
+			bakeCmd := exec.Command(exe, "emit68k", "--rtbake", bakePath, "-o", bakeOut, fx.file)
+			bakeCmd.Dir = root
+			bakeOutput, err := bakeCmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("--rtbake compile of %s failed: %v\n%s", fx.file, err, bakeOutput)
+			}
+			if bytes.Contains(bakeOutput, []byte("falling back")) {
+				t.Fatalf("--rtbake compile of %s: unexpectedly fell back to from-source (Task 2's check-only include should have kept the real bake path):\n%s", fx.file, bakeOutput)
+			}
+
+			srcData, err := os.ReadFile(srcOut)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bakeData, err := os.ReadFile(bakeOut)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(srcData, bakeData) {
+				t.Fatalf("--rtbake compile (%d bytes) != from-source compile (%d bytes) of %s", len(bakeData), len(srcData), fx.file)
+			}
+		})
+	}
+}
+
+// TestRtbakeIncludeCheckOnlyUndefinedExternNegative (fallback-trigger-
+// narrowing Task 3, Step 2's own negative twin): a fixture that includes
+// toolbox/files.cla (a real manifest collision, hash-equal, check-only
+// include) but calls an extern that ISN'T declared anywhere in that file
+// must still error identically on both paths -- proving the check-only
+// include doesn't accidentally widen visibility (or silently swallow an
+// undefined-name error) beyond what the included file itself declares.
+func TestRtbakeIncludeCheckOnlyUndefinedExternNegative(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	root := RepoRoot(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+
+	fixtureName := "checkonly_undefined_extern_fixture.cla"
 	fixturePath := filepath.Join(root, fixtureName)
-	src := "include \"runtime/clarus/core.cla\"\n\nfunc main() {\n    log(\"hello from the dedup fallback fixture\")\n}\n"
+	src := "include \"toolbox/files.cla\"\n\nfunc main() {\n    var pb: ptr\n    var r: int\n    r = PBFakeSyncNotInCatalog(pb)\n}\n"
 	if err := os.WriteFile(fixturePath, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Remove(fixturePath) })
 
-	// Same basename in separate subdirectories -- NOT distinct basenames
-	// in one dir: the MacBinary wrap embeds the OUTPUT FILENAME in its
-	// header, so two differently-named forks of identical code differ
-	// byte-for-byte in that field alone (TestBakePathByteIdentity's own
-	// doc comment already flags this exact false alarm).
+	srcCmd := exec.Command(exe, "emit68k", "-o", filepath.Join(dir, "src.bin"), fixtureName)
+	srcCmd.Dir = root
+	srcOut, srcErr := srcCmd.CombinedOutput()
+	if srcErr == nil {
+		t.Fatalf("from-source: calling an extern not declared in toolbox/files.cla: expected failure, got success\n%s", srcOut)
+	}
+
+	bakeCmd := exec.Command(exe, "emit68k", "--rtbake", bakePath, "-o", filepath.Join(dir, "bake.bin"), fixtureName)
+	bakeCmd.Dir = root
+	bakeOut, bakeErr := bakeCmd.CombinedOutput()
+	if bakeErr == nil {
+		t.Fatalf("--rtbake: calling an extern not declared in toolbox/files.cla: expected failure, got success\n%s", bakeOut)
+	}
+
+	const want = "undefined: PBFakeSyncNotInCatalog"
+	if !bytes.Contains(srcOut, []byte(want)) {
+		t.Fatalf("from-source diagnostic missing %q:\n%s", want, srcOut)
+	}
+	if !bytes.Contains(bakeOut, []byte(want)) {
+		t.Fatalf("--rtbake diagnostic missing %q:\n%s", want, bakeOut)
+	}
+}
+
+// copyTree recursively copies src (a directory) to dst, creating dst and
+// any needed subdirectories -- used by TestRtbakeDriftFallback to build a
+// private, mutable copy of runtime/clarus + toolbox so its drift mutation
+// never touches anything git tracks.
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+	if err != nil {
+		t.Fatalf("copyTree(%s, %s): %v", src, dst, err)
+	}
+}
+
+// TestRtbakeDriftFallback (fallback-trigger-narrowing Task 3, Step 3):
+// proves the drift guard itself -- when the on-disk copy of a manifest
+// path no longer matches the hash baked into the CLIR artifact, --rtbake
+// falls back to a from-source compile for that ONE compile, naming the
+// drifted file in its own log line (drive.cla's haveRtbake branch; design
+// doc's "Drift guard" section). Bakes from a PRIVATE temp copy of
+// runtime/clarus/ + toolbox/ (via --rtdir at bake time) so the mutation
+// never touches anything git tracks. No --rtdir override is needed at
+// COMPILE time: toolbox/files.cla is a NESTED include (reached only via
+// runtime/clarus/uidialogs.cla's own `include`), so its manifest-path
+// identity comes from the baked declFileTab's own VERBATIM bake-time
+// string (bkComputeManifestPaths' second loop, bake.cla) -- not a
+// compile-time rtDir recomputation -- and the drift fixture's own
+// `include "toolbox/files.cla"` resolves to that exact same string
+// because the fixture itself is placed at the SAME tmpRoot the bake's own
+// --rtdir pointed into.
+func TestRtbakeDriftFallback(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	root := RepoRoot(t)
+	tmpRoot := t.TempDir()
+
+	copyTree(t, filepath.Join(root, "runtime", "clarus"), filepath.Join(tmpRoot, "runtime", "clarus"))
+	copyTree(t, filepath.Join(root, "toolbox"), filepath.Join(tmpRoot, "toolbox"))
+
+	rtDir := filepath.Join(tmpRoot, "runtime", "clarus")
+	bakePath := filepath.Join(tmpRoot, "rt68k.clir")
+	bakeIrCmd := exec.Command(exe, "--bake-ir", "--lane", "68k", "-o", bakePath, "--rtdir", rtDir)
+	bakeIrCmd.Dir = root
+	if out, err := bakeIrCmd.CombinedOutput(); err != nil {
+		t.Fatalf("--bake-ir --rtdir %s: %v\n%s", rtDir, err, out)
+	}
+
+	// Append a comment byte AFTER baking -- the baked hash reflects the
+	// pre-mutation bytes, so this is genuine drift.
+	toolboxFilesPath := filepath.Join(tmpRoot, "toolbox", "files.cla")
+	f, err := os.OpenFile(toolboxFilesPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("// drift marker (Task 3 fixture)\n"); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	fixturePath := filepath.Join(tmpRoot, "drift_fixture.cla")
+	src := "include \"toolbox/files.cla\"\n\nfunc main() {\n    var pb: ptr\n    var r: int\n    r = PBGetFInfoSync(pb)\n}\n"
+	if err := os.WriteFile(fixturePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wantLog := "clarusc --rtbake: " + toolboxFilesPath + " differs from the baked copy; falling back to a from-source compile"
+
+	bakeDir := filepath.Join(tmpRoot, "bake-out")
+	srcOutDir := filepath.Join(tmpRoot, "src-out")
+	if err := os.MkdirAll(bakeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(srcOutDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bakeOut := filepath.Join(bakeDir, "drift.bin")
+	srcOut := filepath.Join(srcOutDir, "drift.bin")
+
+	bakeCmd := exec.Command(exe, "emit68k", "--rtbake", bakePath, "-o", bakeOut, fixturePath)
+	bakeCmd.Dir = root
+	bakeOutput, err := bakeCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("--rtbake compile of the drifted fixture failed: %v\n%s", err, bakeOutput)
+	}
+	if !bytes.Contains(bakeOutput, []byte(wantLog)) {
+		t.Fatalf("expected the drift log line\n  %s\ngot:\n%s", wantLog, bakeOutput)
+	}
+
+	srcCmd := exec.Command(exe, "emit68k", "-o", srcOut, fixturePath)
+	srcCmd.Dir = root
+	if out, err := srcCmd.CombinedOutput(); err != nil {
+		t.Fatalf("plain from-source compile of the drifted tree failed: %v\n%s", err, out)
+	}
+
+	bakeData, err := os.ReadFile(bakeOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srcData, err := os.ReadFile(srcOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(bakeData, srcData) {
+		t.Fatalf("--rtbake fallback compile (%d bytes) != plain from-source compile (%d bytes) of the same drifted tree", len(bakeData), len(srcData))
+	}
+}
+
+// testapiIncludeParityFixtureSrc (fallback-trigger-narrowing Task 3, Step
+// 4): a --testapi UI program that directly `include`s toolbox/files.cla --
+// early-visible for EVERY testapi UI build (uidialogs.cla, one of the 13
+// early-spliced modules, itself `include`s toolbox/files.cla -- see
+// bake.cla's own bkComputeManifestPaths doc comment) -- and calls one of
+// its externs. Under Task 2's mechanism this is case (b): hash-equal +
+// early-visible -> full dedup, matching from-source's own post-dedup
+// state, so this must compile clean and byte-identical on both paths, NOT
+// produce Task 1's own verbatim "redeclaration of ..." diagnostic block
+// (task-1-report.md Step 4). That block is what an UNFIXED testapi build
+// would have shown (Task 1's own probe hack disabled the real dedup to
+// prove it was necessary); with Task 2's fix in place, a hash-matched +
+// early-visible collision is structurally routed around checkPhase1
+// entirely (drive.cla's earlySkip / driveRebuildChainSkipping), so there
+// is no organically-reachable trigger for that diagnostic here -- the
+// same conclusion TestRtbakeTestapiCollisionParity's own doc comment
+// already reached for the analogous uitest.cla case.
+const testapiIncludeParityFixtureSrc = `include "toolbox/files.cla"
+
+app TestapiIncludeParity {
+    name: "TestapiIncludeParity"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "fallback-trigger-narrowing Task 3 testapi include-collision parity fixture."
+    id: "TIPF"
+}
+
+window Probe {
+    title: "TestapiIncludeParity"
+    size: 300, 120
+}
+
+on App.launch {
+    open Probe
+}
+
+extend Probe {
+    on opened {
+        var pb: ptr
+        var r: int
+        r = PBGetFInfoSync(pb)
+    }
+}
+`
+
+func TestRtbakeTestapiIncludeParity(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	root := RepoRoot(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+
+	// Repo-root-relative `include "toolbox/files.cla"` -- the fixture
+	// itself must live at the repo root for that relative include to
+	// resolve, same reasoning as TestRtbakeIncludeCheckOnly's own
+	// fixtures above (dir+incName joins against the FIXTURE's own
+	// location, not cmd.Dir).
+	fixtureName := "testapi_include_parity_fixture.cla"
+	fixture := filepath.Join(root, fixtureName)
+	if err := os.WriteFile(fixture, []byte(testapiIncludeParityFixtureSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(fixture) })
+
 	srcDir := filepath.Join(dir, "src")
 	bakeDir := filepath.Join(dir, "bake")
 	if err := os.MkdirAll(srcDir, 0o755); err != nil {
@@ -543,23 +849,24 @@ func TestRtbakeIncludeCheckOnly(t *testing.T) {
 	if err := os.MkdirAll(bakeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	srcOut := filepath.Join(srcDir, "dedup.bin")
-	bakeOut := filepath.Join(bakeDir, "dedup.bin")
+	srcOut := filepath.Join(srcDir, "parity.bin")
+	bakeOut := filepath.Join(bakeDir, "parity.bin")
 
-	srcCmd := exec.Command(exe, "emit68k", "-o", srcOut, fixtureName)
+	srcCmd := exec.Command(exe, "emit68k", "--testapi", "-o", srcOut, fixtureName)
 	srcCmd.Dir = root
-	if out, err := srcCmd.CombinedOutput(); err != nil {
-		t.Fatalf("from-source compile of the dedup fixture failed: %v\n%s", err, out)
+	srcOutput, err := srcCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("from-source --testapi build of the include-collision fixture failed: %v\n%s", err, srcOutput)
 	}
 
-	bakeCmd := exec.Command(exe, "emit68k", "--rtbake", bakePath, "-o", bakeOut, fixtureName)
+	bakeCmd := exec.Command(exe, "emit68k", "--testapi", "--rtbake", bakePath, "-o", bakeOut, fixtureName)
 	bakeCmd.Dir = root
 	bakeOutput, err := bakeCmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("--rtbake compile of the dedup fixture failed: %v\n%s", err, bakeOutput)
+		t.Fatalf("--rtbake --testapi build of the include-collision fixture failed: %v\n%s", err, bakeOutput)
 	}
 	if bytes.Contains(bakeOutput, []byte("falling back")) {
-		t.Fatalf("--rtbake compile of the dedup fixture: unexpectedly fell back to from-source (Task 2's check-only include should have kept the real bake path):\n%s", bakeOutput)
+		t.Fatalf("--rtbake --testapi include-collision fixture: unexpectedly fell back to from-source (case (b) full dedup should have kept the real bake path):\n%s", bakeOutput)
 	}
 
 	srcData, err := os.ReadFile(srcOut)
@@ -571,7 +878,114 @@ func TestRtbakeIncludeCheckOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(srcData, bakeData) {
-		t.Fatalf("--rtbake compile (%d bytes) != from-source compile (%d bytes) of the same fixture", len(bakeData), len(srcData))
+		t.Fatalf("--rtbake --testapi include-collision fork (%d bytes) != from-source fork (%d bytes)", len(bakeData), len(srcData))
+	}
+}
+
+// testapiManifestOnlyParityFixtureSrc (deferred minor from Task 2's own
+// review, added per the fallback-trigger-narrowing Task 3 brief's ledger
+// note): a --testapi UI program that directly `include`s a MANIFEST-ONLY
+// module (runtime/clarus/sortedmap.cla -- one of the four modules
+// driveManifestSplice only ever splices for check#2, never for check#1's
+// own testapi preload; see TestRtbakeTestapiManifestOnlyNegative above)
+// is a genuinely new combination: every OTHER manifest-collision fixture
+// in this file either collides on an EARLY-VISIBLE path (case (b), full
+// dedup -- TestBakeFullCorpusSuiteToolbox, TestRtbakeTestapiIncludeParity
+// above) or is non-testapi (case (a), check-only include --
+// TestRtbakeIncludeCheckOnly above). This is case (a) UNDER testapi:
+// bkManifestEarlyVisible["runtime/clarus/sortedmap.cla"] is false (past
+// bkGenEarlyVisibleAsmHeadsBoundary), so the collision stays check-only
+// regardless of --testapi -- which exercises, for the first time, the
+// field-info install boundary Task 2's own report flagged as a deferred
+// minor (bkInstallFieldInfo installs recFieldsHeadByName for ALL baked
+// records, manifest-only ones included, with no visibility gate):
+// sortedmap.cla declares its own record (RtSortedMap) whose fields get
+// installed wholesale BEFORE checkPhase1 runs, then the user's own
+// check-only copy declares the SAME record again during checkPhase1. Must
+// stay clean and byte-identical to from-source on both paths, same as any
+// other case-(a) collision.
+const testapiManifestOnlyParityFixtureSrc = `include "runtime/clarus/sortedmap.cla"
+
+app ManifestIncludeParity {
+    name: "ManifestIncludeParity"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "fallback-trigger-narrowing Task 3 testapi manifest-only include parity fixture."
+    id: "MIPF"
+}
+
+window Probe {
+    title: "ManifestIncludeParity"
+    size: 300, 120
+}
+
+on App.launch {
+    open Probe
+}
+
+extend Probe {
+    on opened {
+        var m: ptr
+        sortedmapKeySlot(m, 0)
+    }
+}
+`
+
+func TestRtbakeTestapiManifestOnlyIncludeParity(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	root := RepoRoot(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+
+	// Repo-root-relative `include "runtime/clarus/sortedmap.cla"` -- same
+	// repo-root placement requirement as TestRtbakeTestapiIncludeParity
+	// above.
+	fixtureName := "manifest_include_parity_fixture.cla"
+	fixture := filepath.Join(root, fixtureName)
+	if err := os.WriteFile(fixture, []byte(testapiManifestOnlyParityFixtureSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(fixture) })
+
+	srcDir := filepath.Join(dir, "src")
+	bakeDir := filepath.Join(dir, "bake")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(bakeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	srcOut := filepath.Join(srcDir, "parity.bin")
+	bakeOut := filepath.Join(bakeDir, "parity.bin")
+
+	srcCmd := exec.Command(exe, "emit68k", "--testapi", "-o", srcOut, fixtureName)
+	srcCmd.Dir = root
+	srcOutput, err := srcCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("from-source --testapi build of the manifest-only include fixture failed: %v\n%s", err, srcOutput)
+	}
+
+	bakeCmd := exec.Command(exe, "emit68k", "--testapi", "--rtbake", bakePath, "-o", bakeOut, fixtureName)
+	bakeCmd.Dir = root
+	bakeOutput, err := bakeCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("--rtbake --testapi build of the manifest-only include fixture failed: %v\n%s", err, bakeOutput)
+	}
+	if bytes.Contains(bakeOutput, []byte("falling back")) {
+		t.Fatalf("--rtbake --testapi manifest-only include fixture: unexpectedly fell back to from-source (case (a) check-only include should have kept the real bake path):\n%s", bakeOutput)
+	}
+
+	srcData, err := os.ReadFile(srcOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bakeData, err := os.ReadFile(bakeOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(srcData, bakeData) {
+		t.Fatalf("--rtbake --testapi manifest-only include fork (%d bytes) != from-source fork (%d bytes)", len(bakeData), len(srcData))
 	}
 }
 
