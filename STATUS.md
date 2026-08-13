@@ -37,7 +37,7 @@ Snow rerun (`TestClarusCBakePathOnSnow`, ~1h) since `bake.cla`/
 After this phase, stage 3.5 (object code + linker) per
 `docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`.
 
-## 1. runtime-ir-bake close-out (DONE, merged)
+## 0b. runtime-ir-bake close-out recap (DONE, merged to main)
 
 `runtime-ir-bake` is DONE, full `scripts/test-merge.sh` GREEN (232s at
 commit `3bdbb3b`, re-confirmed 233s at tip `b16e8f0`). Task 7's own
