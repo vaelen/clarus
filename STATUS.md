@@ -656,12 +656,10 @@ boots it.
    `precompiled-artifacts` (this session's `object-code-linker` phase,
    section 0a above) stacks on top, unmerged, its own T2 GREEN and Snow
    PENDING. Merge remains Andrew's call.
-7. **DONE — merged as part of the stack above.** Precompiled-artifacts
-   stage 3.5 (object code + linker) was speced, planned, and
-   implemented — see section 0a above and the ROADMAP's
-   `object-code-linker` entry.
-8. **DONE — see section 0 above.** Stage 3.5 (object code + linker,
-   item 7) is complete, T2 GREEN, Snow PENDING at the true tip. Stage 4
+7. **DONE (spec/plan/implementation) — see section 0/0a above.**
+   Precompiled-artifacts stage 3.5 (object code + linker) was speced,
+   planned, and implemented on branch `precompiled-artifacts` — T2
+   GREEN, Snow PENDING at the true tip, **not yet merged**. Stage 4
    (the user-module artifact cache) is next in the precompiled-artifacts
    notes doc's own staging, once Snow lands and merge decisions are
    made.
