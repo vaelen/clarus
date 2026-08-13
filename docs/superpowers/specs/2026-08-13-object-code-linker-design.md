@@ -80,6 +80,26 @@ with no relocation entry**. The remaining kinds:
    branches are self-contained (the function's internal layout is
    fixed) and are NOT relocs.
 
+> **[Task 1 annotation, 2026-08-13 — Amendment A1, blocking]** Kinds 1
+> and 3 above (JT-slot displacement vs PC-relative same-segment call)
+> are wrong as a BAKE-TIME distinction — the probe's cross-universe diff
+> found 1481 flips of the same runtime call site between the two shapes
+> across 15 program pairs. `cgCallFunc` (cg68k.cla:2161-2167) picks
+> `BSR.W <label>` vs `JSR d16(A5)` from `cgFuncSegment[fi] ==
+> cgCurFuncSegment` — a COMPILE-TIME property (which segment each
+> function packs into), not something the bake can know. Both shapes are
+> 4 bytes, but the OPCODE WORD differs, not merely the displacement —
+> so a bake that recorded "JT-slot displacement, patch the extension
+> word" would emit a stray `JSR` where a from-source compile emits
+> `BSR`, on the very first mixed-segment program. Implemented instead as
+> ONE call reloc, `{offset, targetFuncIdx}`, 4 bytes wide: the link pass
+> re-emits via `cgCallFunc(targetFuncIdx)` verbatim and lets it choose
+> the opcode from THIS compile's own live segment assignment. Kind 3
+> survives only as the non-call PC-relative kind (glue labels, RC-walk
+> labels) whose shape doesn't vary. Full taxonomy and the amendment's
+> own reasoning: `.superpowers/sdd/2026-08-13-object-code-linker/
+> task-1-report.md`, "Amendment A1."
+
 Nothing else in a function's bytes depends on placement
 (scout-verified: no per-function alignment padding — the only
 `a68Align` calls are pool-table emission, cg68k.cla:11385/11448/11467;
@@ -90,6 +110,35 @@ Also serialized once, not per function: the Measure-time fixed-cost
 buckets (`cgSeg1ExtraSize`/`cgGlueBundleSize`/`cgPoolSize`) and
 per-pool-entry sizes (`cgStrLitSize`-family, cg68k.cla:1135-1148), so
 compile-time Measure needs no runtime-side emission at all.
+
+> **[Task 3 annotation, 2026-08-13 — the fixed-bucket PLAN DEFECT]**
+> "So compile-time Measure needs no runtime-side emission at all" is
+> WRONG for this one paragraph's own scalars, and Task 3 deliberately
+> did not implement the substitution this sentence implies.
+> `cgEmitInitGlobalsStub`/`cgEmitFreeGlobalsStub`/`cgEmitRcWalks`/
+> `cgEmitPoolsBody` (the routines that produce `cgSeg1ExtraSize`/
+> `cgGlueBundleSize`/`cgPoolSize` and the per-pool-entry size tables)
+> all measure the CURRENT PROGRAM's full `irGlobals`/`irRecords`/pool
+> state — the runtime-baked prefix PLUS whatever this program's own
+> user globals/records/literals append — while the artifact only ever
+> captured a bare runtime-only baseline with zero user code
+> (`cgObjCaptureRuntime`'s own doc comment). Substituting the baked
+> scalar would silently UNDER-measure `cgPackProgram`'s own per-segment
+> budget for any program with even one user `var`/`record`/literal —
+> i.e. nearly every real program — risking a segment-packing decision
+> that diverges from what a from-source compile would choose: byte-
+> identity breaks on segment LAYOUT, not on any one function's own
+> bytes, exactly the failure shape that shows up on some fixtures and
+> not others. These eight scalars stay real-measured every compile,
+> unconditionally, regardless of baking; only the ~500 per-function
+> `cgEmitFunc` calls are skipped, which is where the actual payoff
+> lives anyway (these routines are cheap — proportional to
+> `irGlobals.count`/`irRecords.count`/pool bytes, never to the runtime's
+> own function count). Review confirmed this explicitly: "fixed-bucket
+> deviation confirmed a PLAN DEFECT, implementer right." Full reasoning:
+> `.superpowers/sdd/2026-08-13-object-code-linker/task-3-report.md`,
+> "Deviation from the brief," and cg68k.cla's own
+> `cgObjPasteEligible` section header (~cg68k.cla:13040-13063).
 
 ### Bake-time generation (`--bake-ir --lane 68k`)
 
@@ -103,6 +152,33 @@ compiler already proves about itself: peephole determinism between the
 Measure and real passes (peep68k.cla:9-11), and Measure/emit size
 identity (displacement widths do not vary with final layout — if they
 did, today's Measure sizes would already be wrong).
+
+> **[Task 2 annotation, 2026-08-13 — two unplanned mechanisms]** "Run
+> the existing `cgEmitFunc` per runtime function in the runtime-only
+> universe" undersold what capturing EVERY runtime function
+> unconditionally reachable (vs. Task 1's probe, which only ever
+> exercised organically-reachable functions in six real programs)
+> actually requires. Two previously-latent gaps surfaced immediately:
+> (1) **callback-glue trampolines** (`cg68SynthCbGlue`'s
+> `clar_cb_<name>` functions) don't exist until codegen synthesizes
+> them, yet the capture's own unconditional `cgEmitStartup` call reaches
+> a reference to one before any exist — fixed by calling
+> `cg68SynthCbGlue()` inside the capture and adding a fourth hole kind,
+> `cgHoleCbGlueAddr`, resolved by `irCbGlueNames` position (its
+> `irFuncs` index isn't bake-stable, the same instability class as
+> Amendment A2's panic literal); (2) **reverse-waist UI dispatchers**
+> (`clar_ui_fire_winevent` and seven siblings) are deliberately never
+> part of the baked IR at all, so a reference to one is structurally
+> unresolvable at bake time — an exclude-before-rooting approach was
+> tried and rejected (`shakeProgram`'s transitive BFS defeats it), fixed
+> instead with a taint-and-discard mechanism: the referencing function's
+> capture is marked incomplete and simply isn't baked, falling back to
+> ordinary `cgEmitFunc` at real compile time (a missed optimization for
+> those specific functions, not a correctness gap). Neither mechanism
+> is in this design's own reloc-kind or capture-representation
+> sections. Full writeup:
+> `.superpowers/sdd/2026-08-13-object-code-linker/task-2-report.md`,
+> "Two correctness gaps beyond Task 1's own probe."
 
 ### Compile-time consumption
 

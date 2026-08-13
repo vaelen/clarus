@@ -1,30 +1,142 @@
-# Session status — 2026-08-13 (fallback-trigger-narrowing DONE, T2 GREEN, Snow PASS at tip)
+# Session status — 2026-08-13 (object-code-linker DONE, T2 GREEN, Snow PENDING at tip)
 
 Handoff summary for the next session. Current branch:
-`fallback-trigger-narrowing` (created from `main` after the
-runtime-ir-bake merge, `b16e8f0`). Not yet merged. `runtime-ir-bake`
-itself was MERGED to `main` (fast-forward `322765a..b16e8f0`, 2026-08-13
-09:56 JST) and pushed to origin earlier this same day — the six-phase
-stack plus runtime-ir-bake are all on `origin/main`; `fallback-trigger-
-narrowing` stacks on top, unmerged.
+`precompiled-artifacts` (created from `fallback-trigger-narrowing`/`main`
+at `e143af1`). Not yet merged — `fallback-trigger-narrowing` (and
+everything under it, the six-phase stack plus `runtime-ir-bake`) are all
+on `origin/main` already; `precompiled-artifacts` (this session's
+`object-code-linker` phase) stacks on top, unmerged.
 
-## 0. START HERE next session: precompiled-artifacts stage 3.5 (object code + linker)
+## 0. START HERE next session
 
-`fallback-trigger-narrowing` is DONE (section 0b below), and its
-prerequisite Snow rerun PASSED at the true tip `7642deb` (2026-08-13
-14:00 JST: `TestClarusCBakePathOnSnow`, `CLARUS_SNOW_TESTS=1`, 55m
-settle, exit 0, zero "differs from the baked copy" lines — log:
-`.superpowers/sdd/2026-08-13-fallback-trigger-narrowing/snow-rerun.log`).
-The phase is fully gated. Stage 3.5 (object
-code + linker) — the next item in
-`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`'s
-own staging — is next in line. No spec/plan exists yet for 3.5; first job
-is speccing it, same process as runtime-ir-bake and fallback-trigger-
-narrowing before it. Merge decisions for the whole unmerged stack
-(`fallback-trigger-narrowing` on top of the six phases already on
-`origin/main`) remain Andrew's call.
+The `object-code-linker` phase (section 0a below) is DONE and T2 GREEN,
+but its Snow proof is **PENDING** — the standing rule
+(`TestClarusCBakePathOnSnow`, `CLARUS_SNOW_TESTS=1`) must be re-run
+manually before merge, since this phase touched `clarusc/bake.cla` and
+`clarusc/cg68k.cla`. That run is explicitly NOT this session's job (the
+controller runs it post-final-review, at the true tip) — check whether
+it has landed; if not, that is the next action, and it doubles as this
+phase's own headline on-hardware measurement (compare the on-Mac
+Measure + emit wall-clock against the runtime-ir-bake phase's ~55m
+post-leak-fix `TickProbe` reference).
 
-## 0b. fallback-trigger-narrowing close-out (DONE, this session)
+Once Snow is green, the precompiled-artifacts notes doc's own staging
+(`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`)
+has one item left: **stage 4, the user-module artifact cache**
+(standalone object files + keying, generalizing this phase's
+runtime-only object sections to arbitrary user modules — falls out of
+the machinery this phase and `runtime-ir-bake` already built). Smart
+linking / IR-body removal from the 68k lane and link-time layout
+improvements (better packing, pool dedup) remain explicitly out of
+scope, gated behind a future oracle-relaxation decision (today's
+byte-identity oracle requires reproducing the exact from-source layout;
+relaxing that is a separate, not-yet-made call). No spec/plan exists yet
+for stage 4 — first job is speccing it, same process as the three prior
+phases. Merge decisions for the whole unmerged stack remain Andrew's
+call.
+
+## 0a. object-code-linker close-out (DONE, this session)
+
+Branch `precompiled-artifacts`. Design
+`docs/superpowers/specs/2026-08-13-object-code-linker-design.md` (now
+annotated at the A1 call-reloc amendment, the fixed-bucket PLAN DEFECT,
+and the two unplanned v6 capture mechanisms). Plan:
+`docs/superpowers/plans/2026-08-13-object-code-linker.md`. Full ledger:
+`.superpowers/sdd/2026-08-13-object-code-linker/progress.md`. Full
+detail: ROADMAP's `object-code-linker` entry — summary here.
+
+Implements the precompiled-artifacts notes' stage 3.5: runtime function
+BYTES now ship in the CLIR artifact (68k lane, format v6) instead of
+being code-generated twice per compile (once to measure sizes for
+segment packing, once for real). A `--rtbake` compile's Measure pass
+skips `cgEmitFunc` for every reachable runtime function (filling
+size/frame/pool-ref data from the artifact instead) and the per-segment
+emit pass pastes the captured bytes with fixups rather than
+regenerating them.
+
+- **Task 1 (probe, no commits):** all three load-bearing assumptions
+  PASS (3886 cross-universe byte comparisons, 0 diffs; 2923 pasted
+  function bodies, byte-identical). Six amendments to Tasks 2-3, two
+  blocking: **A1** — the spec's separate JT-slot vs same-segment-call
+  reloc kinds are wrong at bake time (`cgCallFunc`'s `BSR`-vs-`JSR`
+  choice is compile-time-only, 1481 flips observed); collapsed to one
+  call reloc, the link pass re-emits via `cgCallFunc` itself. **A2** —
+  the codegen-synthesized panic literal (`cgListOobMsgIdx`) needs a
+  symbolic reloc, not a numeric index (its bake-time position isn't
+  compile-time-stable).
+- **Task 2 (`440fa83`, fix round 1 `0047d6d`):** CLIR v6 (`bkSecObjCode`/
+  `bkSecObjMeta`), bake-time capture (`cgObjCaptureRuntime`), loader
+  staging (`bkLd*`). Two unplanned mechanisms found mid-implementation
+  (both consequences of forcing every runtime function reachable, which
+  no real compile ever does): callback-glue trampolines needed a fourth
+  hole kind (`cgHoleCbGlueAddr`); reverse-waist UI dispatchers needed a
+  taint-and-discard fallback (structurally unbakeable, not just
+  index-unstable). Growth: 68k lane +14.8% (+160,859 bytes, almost
+  entirely the captured object data itself), lane c +52 bytes (empty
+  framing only). Self-compile segment-budget crisis (found via
+  `TestSelfEmit68k`) fixed by flattening three nested-list staging
+  globals to nine flat ones.
+- **Task 3 (`a02fa25`):** Measure skip + paste-with-fixups link pass.
+  Four bugs found via the full-corpus gate (all in the Measure-skip's
+  reconstructed metadata, not the paste mechanic — that worked first
+  try): a strlit-count double-count, a strlit-order loss, a missed
+  `cgMul32Used`-class glue-usage side effect, and a stale staging global
+  surviving an in-process bake→from-source fallback. **The fixed-bucket
+  PLAN DEFECT:** the brief said to substitute the once-per-artifact size
+  buckets from the artifact; the implementer read the actual measuring
+  routines first and refused to, correctly — they measure the CURRENT
+  program's universe (runtime prefix + user globals/records/literals),
+  not the bake-time runtime-only baseline, so substituting would
+  silently under-measure segment packing for any program with user
+  state. Review confirmed explicitly: plan text wrong, deviation right.
+  Perf (host, 10-pair medians, pre-regen — illustrative not SLA):
+  `macgui.cla` emit68k **-41%**, self-compile emit68k **-35%**.
+- **Task 4 (this session, commits `c07882d`/`6dcf8aa` + docs/T2):**
+  close-out. Step 0 fixed two stale doc comments (Task 3 review) and
+  added "deliberately unconsumed" comments to eleven staged-but-unread
+  wire fields, naming the hazard (a future reader wiring them into
+  `cg68Measure` as a shortcut). Step 0c ran a broader corpus (35
+  compiles: 28 `cg68k` fixtures, self-compile, testapi variants, three
+  `examples/`, both suite compositions) under local, reverted
+  instrumentation, closing Task 3's own recorded coverage gap: **489
+  baked functions, 478 pasted at least once, 11 never pasted by any
+  corpus program** (`rtStrIndexOfChar`, `rtTextStoreText`,
+  `rtTextIndexOfChar`, and eight UI-descriptor-blob accessors —
+  `uidWinHandlerMask`, `uidWidgetEventMask`, `uidMenuNameOff`,
+  `uidMenuName`, `uidItemNameOff`, `uidItemName`,
+  `uidMenuHandlerHandlerIdx`, `uidLayoutNFields`). Step 1 regenerated
+  `clarusc/clarusc.c` to a Go-free fixed point in **1 round**
+  (4,322,988 bytes); `go test ./internal/selfhost -count=1 -timeout 30m`
+  green, 93s. Step 2 wrote this entry + the ROADMAP entry + spec
+  annotations + the precompiled-artifacts notes doc's Staging update.
+
+**T2 (`scripts/test-merge.sh`): GREEN, 228s** (T1 body 18s,
+`internal/selfhost` 78s, gated native `internal/mactest` lane 126s,
+`CLARUS_BAKE_FULL` bake corpus 6s). Log:
+`.superpowers/sdd/2026-08-13-object-code-linker/task4-t2.log`.
+
+**Snow: PENDING** — the standing rule applies (`bake.cla`/`cg68k.cla`
+both touched); this session did not run it (explicitly the controller's
+job, post-final-review, at the true tip, per the task brief). Do not
+report merge-readiness as complete until that run lands PASS.
+
+**Deferred / phase debt (full detail in ROADMAP entry and each task's
+own report):** taint-and-discard is silent/uncounted; `bkGetBytes`
+unbounded read (no length cap); `bkObjRelocSymValid` doesn't validate
+`kind` range; the ~484-byte segment-margin figure is illustrative, not
+independently verified; `srcSlot` derivation is over-broad;
+capture-side vs load-side globals are half-shared (a footgun for a
+future reader); `bkRuntimeFuncBoundary` is still never reset per
+compile (now correctly documented as not the bake predicate, but the
+underlying behavior is unchanged); `--listing` + `--rtbake` loses
+runtime function annotations; two hole-list walks with no early exit
+(do not optimize without measuring); the perf snapshot has no maxrss;
+everything fallback-trigger-narrowing/runtime-ir-bake/param-abi already
+deferred remains open. Out of scope by design: smart linking/IR-body
+removal, link-time layout improvements, stage 4's cache, the
+pre-existing call-lowering debt class, the stamp-proxy-global gap.
+
+## 0b. fallback-trigger-narrowing close-out (DONE, prior session)
 
 Design `docs/superpowers/specs/2026-08-13-fallback-trigger-narrowing-design.md`
 (now annotated where Task 2 narrowed a claim). Plan (4 tasks)
@@ -539,13 +651,17 @@ boots it.
    `param-abi`, and `runtime-ir-bake` (the six-phase stack plus
    runtime-ir-bake) were all merged to `main` 2026-08-13 09:56 JST
    (fast-forward `322765a..b16e8f0`) and pushed to `origin/main` — see
-   the top of this document. `fallback-trigger-narrowing` is now the one
-   unmerged phase, stacked on top of that merged `main`; its own T2 is
-   GREEN (section 0b above) and its Snow rerun is pending. Merge remains
-   Andrew's call.
-7. **DONE — see section 0 above.** Precompiled-artifacts stage 3.5
-   (object code + linker) is next in line, now that
-   `fallback-trigger-narrowing` (which this item originally preceded) is
-   also DONE. No spec/plan exists yet for 3.5 — first job is speccing it,
-   same process as runtime-ir-bake and fallback-trigger-narrowing before
-   it.
+   the top of this document. `fallback-trigger-narrowing` is now on
+   `origin/main` too (its own Snow rerun PASSED, section 0b above);
+   `precompiled-artifacts` (this session's `object-code-linker` phase,
+   section 0a above) stacks on top, unmerged, its own T2 GREEN and Snow
+   PENDING. Merge remains Andrew's call.
+7. **DONE — merged as part of the stack above.** Precompiled-artifacts
+   stage 3.5 (object code + linker) was speced, planned, and
+   implemented — see section 0a above and the ROADMAP's
+   `object-code-linker` entry.
+8. **DONE — see section 0 above.** Stage 3.5 (object code + linker,
+   item 7) is complete, T2 GREEN, Snow PENDING at the true tip. Stage 4
+   (the user-module artifact cache) is next in the precompiled-artifacts
+   notes doc's own staging, once Snow lands and merge decisions are
+   made.

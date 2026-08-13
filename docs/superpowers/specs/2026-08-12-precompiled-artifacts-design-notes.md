@@ -156,10 +156,26 @@ string push, which hid the first bug's own panic message for a session)
 — root-caused and fixed same day (commit `3bdbb3b`; see the ROADMAP
 `runtime-ir-bake` entry's "T2 blocker" subsection for the full writeup).
 Neither bug was caused by this phase's own decl-chain/splice-ordering
-work, which turned out to be exonerated once isolated. **Stage 3.5
-(object code + linker, item 5 below) is no longer blocked** and is the
-natural next phase. Original staging kept for the
-record:
+work, which turned out to be exonerated once isolated.
+
+**UPDATE 2026-08-13: stage 3.5 (object code + linker, item 5 below) is
+DONE** — branch `precompiled-artifacts`, design
+`docs/superpowers/specs/2026-08-13-object-code-linker-design.md`, ledger
+`.superpowers/sdd/2026-08-13-object-code-linker/progress.md`, full
+`scripts/test-merge.sh` GREEN (228s). Runtime function bytes now ship in
+the CLIR v6 artifact (68k lane only): a `--rtbake` compile's Measure pass
+skips `cgEmitFunc` for every reachable runtime function (filling
+size/frame/pool-ref data from the artifact instead) and the per-segment
+emit pass pastes the captured bytes with fixups rather than
+regenerating them, cutting the double-codegen cost item 5's own §1.7
+identified. Full detail: the ROADMAP `object-code-linker` phase entry
+(task ledger, the probe's amendments, two unplanned capture mechanisms,
+four gate-caught bugs, the fixed-bucket PLAN DEFECT, perf table, growth
+numbers, and the never-pasted coverage number). Snow's own on-hardware
+proof is pending as of this update (standing rule, controller's job
+post-final-review). Stage 4 (cache keying for user modules, item 6
+below) is next in this staging list, not yet started. Original staging
+kept for the record:
 
 1. Bake post-parse AST (item 3 v1) — smallest step; proves serialization,
    version stamping, base-0 loading; kills Mac lex/parse.

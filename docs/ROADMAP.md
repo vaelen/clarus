@@ -1277,8 +1277,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     robustness hole for a future instance of the same stale-master-
     pointer bug class to hide behind again. Not clamped on purpose.
   - **Object code + linker (item 3.5, the precompiled-artifacts notes
-    doc's staging) is the natural next phase** — the T2 blocker that
-    used to gate it is fixed; see the notes doc's own updated staging.
+    doc's staging) — RESOLVED (object-code-linker phase, below).** The
+    T2 blocker that used to gate it was already fixed; the phase itself
+    landed the object sections + Measure-skip + paste link pass.
   - Everything param-abi already deferred (bare-`EIntr` arg release gap,
     `KArr` param ABI, `toBytes` name-only guard) is untouched by this
     phase, still open.
@@ -1595,6 +1596,360 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   settle, 3302s, zero drift-fallback lines). **Fully gated and
   merge-ready from a testing standpoint** (merge itself remains
   Andrew's call).
+
+- **object-code-linker (branch `precompiled-artifacts`, 2026-08-13,
+  based on `fallback-trigger-narrowing`/`main` at `e143af1`): DONE, T2
+  GREEN, Snow PENDING (controller runs post-final-review, at the true
+  tip — not this session's job).**
+  Implements the precompiled-artifacts notes doc's item 5 / stage 3.5:
+  runtime function BYTES ship in the artifact on the 68k lane, so a
+  `--rtbake` compile's Measure pass and per-segment emit pass both skip
+  `cgEmitFunc` for every reachable runtime function, pasting its captured
+  bytes with fixups instead. Design
+  `docs/superpowers/specs/2026-08-13-object-code-linker-design.md` (now
+  annotated where Task 1's probe amended it and where Task 3's
+  fixed-bucket deviation narrowed it). Plan (4 tasks, though the plan
+  numbers the close-out task "4" and folds the probe into "1" — see the
+  plan doc). Full ledger:
+  `.superpowers/sdd/2026-08-13-object-code-linker/progress.md`.
+
+  **Task 1 (probe wave, commits nothing — the established
+  runtime-ir-bake-era pattern):** verified all three load-bearing
+  assumptions PASS against a from-scratch two-stage boot with a hacked,
+  reverted `cg68ProgramFork` — 3886 cross-universe baked-function byte
+  comparisons (0 masked-byte diffs, 0 size diffs, 0 A5-global-
+  displacement diffs across 2179 sites) and 2923 pasted function bodies
+  across 9 builds, every segment byte-identical. Six amendments to Tasks
+  2-3, two of them **blocking** (implementing the spec as literally
+  written would have broken byte-identity or crashed):
+  - **A1 (blocking):** the spec's separate `bkRelocJt`/call-flavored
+    `bkRelocSameSeg` kinds are wrong at BAKE time — `cgCallFunc` picks
+    `BSR.W` vs `JSR d16(A5)` from a compile-time segment assignment the
+    bake can't know, so the same runtime call site is one shape in one
+    program and the other shape in another (1481 flips observed). One
+    call reloc, `{offset, targetFuncIdx}`; the link pass re-emits via
+    `cgCallFunc` verbatim and lets IT choose the opcode.
+  - **A2 (blocking):** `cgReservePanicMsgs`' synthesized "list index out
+    of range" literal (`cgListOobMsgIdx`) is appended to `irStrLits`
+    AFTER the runtime prefix, so its bake-time numeric index is not
+    valid at compile time — needs a symbolic reloc, resolved from the
+    live global, never a stored index. Caught the hard way: the paste
+    probe crashed (`UNRESERVED strlit 132`) before this was recognized.
+  - A3: reloc symbol classes must cover all five pool families
+    (strLit/enumTable/serdesc/uiBlob/uiEvents), the four glue labels
+    (mul32/div32/mod32/freeGlobals), and the per-record RC retain/
+    release walk labels — structurally reachable from runtime code even
+    though none appeared in a *baked* function in the six-program probe
+    corpus.
+  - A4: capture representation — byte runs + typed hole records carrying
+    the a68 item shape (op/size/modes/regs/other-operand value), not
+    bare `{offset,kind,symbol}` (fails A1) and not full a68-item replay
+    (10x artifact blow-up for zero fidelity gain, holes are under 6% of
+    instruction-equivalents).
+  - A5 (informational): `cg68Measure` produces sizes only, never bytes
+    (`a68Finish` is never called on its stream) — Task 3's Measure skip
+    is "fill the tables from the artifact," not "suppress byte
+    production."
+  - A6 (informational): the spec's "baked object set covers the testapi
+    extras" claim is backwards-compatible-but-imprecise — capture all
+    510 IRFuncs, truncate to `bkLdBaseIrFuncsCount` in `bkInstallObjCode`
+    alongside the IR's own truncation; no separate testapi capture path
+    is needed.
+
+  Complete empirical hole taxonomy (14,134 sites across the corpus, every
+  site exactly 4 bytes): `JT` cross-segment call (6892), `FUNCPC`
+  same-segment call (3904), `POOLSTR` string-pool ref (2377), `GLUEPC`
+  glue-routine ref (728), `POOLUIBLOB` UI descriptor blob (164),
+  `RCRELEASE` per-record release walk (41), `POOLUIEVT` `--events` blob
+  (16), `RCRETAIN` per-record retain walk (6), `POOLSER` serdesc-table
+  ref (4), `POOLENUM` enum value-table ref (2) — no hole ever fell into
+  an "OTHER" bucket in any run, so the taxonomy is closed over the
+  corpus. 431 of 493 baked runtime functions were cross-universe
+  compared in this probe (62 never reachable in the six-program corpus —
+  Task 4's own broader full-corpus measurement, below, narrows this
+  further).
+
+  **Task 2 (`440fa83`, fix round 1 `0047d6d`): artifact v6, bake-time
+  capture, loader.** CLIR `bkFormatVersion` 5→6, `bkSectionCount` 44→46,
+  two new sections: `bkSecObjCode` (id 48, per-function byte runs
+  interleaved with typed hole records) and `bkSecObjMeta` (id 49, sizes/
+  frame sizes/pool-ref sets/once-per-artifact fixed buckets). Bake-time
+  capture (`cgObjCaptureRuntime`, hooked into `cg68ProgramFork`'s real
+  per-segment pass, gated `cgBakeCapture`, zero behavior change for
+  ordinary compiles) forces every runtime function reachable and runs
+  the real emit once; the loader stages `bkLd*` fields, `bkInstallObjCode`
+  installs post-acceptance, truncating to `bkRuntimeFuncBoundary`
+  alongside `bkInstallArenas`' own IR truncation. **Two unplanned
+  mechanisms**, both direct consequences of Amendment A6's own
+  "force everything reachable" instruction (which no real compile, and
+  therefore none of Task 1's organically-rooted probe corpus, ever
+  exercises):
+  - **Callback-glue trampolines** (`cg68SynthCbGlue`'s `clar_cb_<name>`
+    functions) don't exist until codegen synthesizes them, yet
+    `cg68Measure`'s own unconditional `cgEmitStartup` call reaches a
+    reference to one before any exist. Fixed by calling
+    `cg68SynthCbGlue()` inside the capture (matching what a real compile
+    always does) and adding a fourth hole kind, `cgHoleCbGlueAddr`,
+    resolved symbolically by `irCbGlueNames` position rather than a
+    numeric `irFuncs` index (which would dangle once the transient
+    entries are trimmed back out before serialization).
+  - **Reverse-waist UI dispatchers** (`clar_ui_fire_winevent` and seven
+    siblings) are deliberately never part of the baked IR at all — a
+    reference to one is structurally unresolvable at bake time, not just
+    index-unstable. An exclude-before-rooting approach was tried and
+    rejected (`shakeProgram`'s own transitive BFS defeats it — any OTHER
+    rooted function calling the excluded one pulls it back in anyway).
+    Fixed with taint-and-discard: the two `cgCallExtUi*` functions set a
+    taint flag and return instead of `quit 1` under capture;
+    `cgObjDumpSegment` leaves the tainted function's `cgObjValid` false
+    instead of recording incomplete bytes — it simply isn't baked, a
+    missed optimization for those specific functions, not a correctness
+    gap.
+
+  Growth (v5→v6, worktree-compared at the same commit both ways): lane
+  68k **+160,859 bytes (+14.8%)**, decomposing almost exactly into the
+  two new sections' own payloads (148,127 + 12,720 = 160,847 of the
+  160,859, the remaining 12 being section header words) — essentially no
+  incidental framing waste. Lane c **+52 bytes (+0.005%)**, exactly the
+  two sections' own empty framing, confirming the "written empty on lane
+  c" design held. Object-code section contents (this build): 489 of 510
+  runtime `irFuncs` entries captured, 21 discarded via taint-and-skip,
+  1,869 hole records, 2,358 byte runs, 96,976 bytes of raw run payload.
+  Estimated resident-side cost of installing the whole flat run/hole
+  payload unconditionally on a `--rtbake` load: **~180-260 KB** (order of
+  magnitude, dominated by the 97 KB of run bytes plus per-value/
+  per-record overhead) — not alarming for a host build; relevant to
+  `ClarusC.APPL`'s own `SIZE(-1)` partition budget (mac-resident-clarusc
+  phase entry).
+
+  Self-compile segment-budget crisis (found via `TestSelfEmit68k`,
+  fixed before commit): clarusc is self-hosted, so this task's own new
+  top-level `var`s became more `irGlobals` entries when self-compiling
+  clarusc itself, duplicated into every segment's glue bundle
+  (`cgEmitRcWalks`), pushing an unrelated `cprint.cla` function
+  (`cpEmitRelease`) over its 32KB single-function ceiling. Fixed by
+  flattening three `list of list of int` staging globals to nine flat
+  `list of int` fields, moving per-segment scratch from globals to
+  locals/params, and reusing cg68k.cla's own capture-side
+  `cgObjRuns`/`cgObjHoles` globals for the loader's payload instead of a
+  separate pair — a live deviation from the brief's literal field
+  naming, documented in-line (`bkLdObjValid`'s own doc comment).
+
+  Fix round 1 (4 Important findings, all addressed): dormant bake-time
+  invariant checks (`cgRelClsUnknown`, `cgObjDumpSegment` fails loudly
+  and propagates rather than silently mis-serializing — all four
+  provably unreachable on the current corpus, guarding a future emitter
+  change); `bkReadObjMeta`'s trailing fixed-bucket reads moved off
+  live-global writes mid-parse into locals, matching the rest of the
+  file's own staging convention; wire `cls` zeroed for kinds 1/2/4 (was
+  contradicting the doc table, changed zero validation behavior); the
+  growth/resident-cost measurement above (I4).
+
+  **Task 3 (`a02fa25`): Measure skip + paste-with-fixups link pass.**
+  `cg68Measure`'s per-function loop skips `cgEmitFunc` for any
+  `cgObjPasteEligible` function, filling size/frame/pool-ref tables from
+  the artifact; `cg68ProgramFork`'s segment loop pastes the same
+  functions' captured bytes instead of regenerating them. Four bugs
+  found via the full-corpus gate (not by inspection), all in the
+  Measure-skip's own reconstructed metadata, not the paste mechanic
+  itself (which worked correctly on the first try):
+  1. StrLit reconstruction appended `cgListOobMsgIdx` once per HOLE
+     instead of once per function (a function can have several panic
+     holes sharing one deduped pool entry — `nat_UiSFGetFile` has four).
+  2. Fixing (1) got the count right but not the ORDER — the wire array
+     has the panic entry filtered OUT (Amendment A2), so re-appending it
+     at the end doesn't reproduce a real Measure's chronological dedup
+     order, which `cgPackProgram`'s segment pool need-set accumulation
+     depends on. Fixed by rebuilding a baked function's strlit set
+     entirely from its own hole list, in stored order, never touching
+     the wire array at all.
+  3. `cgMul32Used`/`cgDiv32Used`/`cgMod32Used` (lazy program-wide flags,
+     normally set as a side effect of `cgEmitFunc`) never got set for a
+     baked-only user of 32-bit multiply/divide/modulo, silently dropping
+     the glue routine's bytes and leaving a pasted call hole dangling.
+     Fixed with `cgObjApplyGlueUsage`, replaying the side effect from the
+     hole list.
+  4. A stale `bkLdObjValid` surviving an in-process bake→from-source drift
+     fallback (`TestRtbakeDriftFallback` crashed with an out-of-range
+     index) — the recursive from-source recompile never re-ran
+     `bkInstallObjCode`, so it read the aborted attempt's stale staging
+     against a different `irFuncs` index space. Fixed with one line in
+     `driveReset()`.
+
+  **The fixed-bucket PLAN DEFECT:** the brief's own Measure-skip bullet
+  said to substitute the once-per-artifact fixed buckets
+  (`cgSeg1ExtraSize`/`cgGlueBundleSize`/`cgPoolSize`) and per-pool-entry
+  size tables from the artifact. The implementer read the actual
+  routines that produce them first and did NOT do this, on purpose:
+  `cgEmitInitGlobalsStub`/`cgEmitFreeGlobalsStub`/`cgEmitRcWalks`/
+  `cgEmitPoolsBody` all measure the CURRENT PROGRAM's full
+  `irGlobals`/`irRecords`/pool state — the runtime-baked prefix PLUS
+  this program's own appended user globals/records/literals — while the
+  artifact only ever captured a bare runtime-only baseline with zero
+  user code. Substituting the baked scalar would silently UNDER-measure
+  `cgPackProgram`'s own per-segment budget for any program with even one
+  user `var`/`record`/literal (i.e. nearly every real program), risking
+  a segment-packing decision that diverges from a from-source compile —
+  breaking byte-identity on segment LAYOUT, not on any one function's
+  bytes, exactly the kind of failure that shows up on some fixtures and
+  not others. **The plan text was wrong; the deviation was right** —
+  review confirmed this explicitly (Approved, no Critical/Important
+  findings): "fixed-bucket deviation confirmed a PLAN DEFECT, implementer
+  right." The per-function skip is where the real payoff lives anyway
+  (these routines are cheap, proportional to `irGlobals.count`/
+  `irRecords.count`/pool bytes, never to the ~500-function runtime).
+
+  **Task 4 (this session, commits `c07882d`/`6dcf8aa` plus this entry):
+  close-out.**
+  - **Step 0 (housekeeping):** fixed the two stale doc comments Task 3's
+    review deferred (`bkRuntimeFuncBoundary`'s own comment wrongly
+    implied it was Task 3's baked-index predicate — it is not;
+    `cgObjPasteEligible` reads `bkLdObjValid[i]` only, and
+    `bkRuntimeFuncBoundary`'s sole consumer is `bkInstallObjCode`'s own
+    truncation. The `bkLdObj*` section header overstated staging
+    readership — the StrLit `First`/`Count`/`Flat` triple and the eight
+    once-per-artifact size-bucket scalars are staged/truncated but
+    deliberately never read by Task 3's Measure-skip). Added
+    "deliberately unconsumed" comments to all eleven affected fields
+    explaining the hazard plainly: a future reader must not wire the
+    size buckets into `cg68Measure` as a shortcut, because they measure
+    the bake-time runtime-only baseline, not the current program's
+    universe. Comment-only, `go test ./internal/bake/... -count=1` green
+    (`c07882d`).
+  - **Step 0c (never-pasted coverage number):** local, uncommitted
+    instrumentation (two `log()` calls — one dumping every baked/valid
+    index+name once per compile, one on every real paste hit — reverted
+    before commit, verified absent from a fresh emit afterward) run
+    against a broader corpus than Task 1's probe: all 28
+    `testdata/cg68k/*.cla` fixtures, the self-compile, `arith.cla`
+    `--testapi`, the three `examples/` programs (plus `texteditor.cla`
+    `--testapi`), and both suite compositions (`core`/`toolbox` `gui.cla`,
+    `--testapi`) — 35 compiles, zero fallbacks, zero nonzero exits.
+    **489 baked functions, 478 pasted at least once, 11 never pasted by
+    any corpus program**: `rtStrIndexOfChar`, `rtTextStoreText`,
+    `rtTextIndexOfChar` (string/text runtime entry points no fixture's
+    code path happens to call), and eight UI-descriptor-blob accessors
+    (`uidWinHandlerMask`, `uidWidgetEventMask`, `uidMenuNameOff`,
+    `uidMenuName`, `uidItemNameOff`, `uidItemName`,
+    `uidMenuHandlerHandlerIdx`, `uidLayoutNFields`). The 489/510 baked
+    count matches Task 2's own fix-round-1 measurement exactly,
+    corroborating the instrumentation. This closes Task 3's own recorded
+    coverage gap ("never-pasted baked-function set unmeasured").
+  - **Step 1 (snapshot regen):** `clarusc/clarusc.c` regenerated to a
+    Go-free fixed point in **1 round** (cc → emit gen1 → cc → emit gen2 →
+    `cmp`: identical, 4,322,988 bytes) — carries Tasks 2-3's CLIR v6
+    sections and the Measure-skip/paste link pass. `go test
+    ./internal/selfhost -count=1 -timeout 30m` green, **93s**, including
+    `TestSnapshotFixedPoint` (`6dcf8aa`).
+  - **Step 2 (docs, this entry):** this ROADMAP entry; `STATUS.md`
+    rewritten as a phase close-out; the design spec annotated at the A1
+    call-reloc amendment, the fixed-bucket deviation, and the two
+    unplanned v6 mechanisms; the precompiled-artifacts notes doc's
+    Staging section marked stage 3.5 implemented.
+  - **Step 3 (T2):** `scripts/test-merge.sh`, foreground, **PASS in
+    228s** (T1 body 18s, `internal/selfhost` 78s, gated native
+    `internal/mactest` lane 126s, `CLARUS_BAKE_FULL` bake corpus 6s).
+    Full log: `.superpowers/sdd/2026-08-13-object-code-linker/task4-t2.log`.
+  - **Step 4 (Snow) is explicitly NOT this task's job** — the controller
+    runs `TestClarusCBakePathOnSnow` post-final-review, at the true tip,
+    per the standing rule (this phase touched `clarusc/bake.cla` and
+    `clarusc/cg68k.cla`). **Pending as of this entry.**
+
+  **Perf (Task 3's own host measurement, 10-pair interleaved medians,
+  `/usr/bin/time -l`, this session's two-stage-boot host binary — NOTE:
+  measured BEFORE Task 4's snapshot regen, treat as illustrative, not a
+  committed SLA; a shared/loaded CI host could shift the magnitude, but
+  the ~40% relative reduction should hold since it's driven by skipping
+  a fixed fraction of `cgEmitFunc` calls):**
+
+  | Fixture | from-source | `--rtbake` | Speedup |
+  |---|---:|---:|---:|
+  | `clarusc/macgui.cla` (emit68k) | 0.27s | 0.16s | **-41%** (1.69x) |
+  | `clarusc/main.cla` self-compile (emit68k) | 0.285s | 0.185s | **-35%** (1.54x) |
+
+  Matches the design's own expectation ("Measure is ~half of codegen and
+  codegen dominates") — roughly 2/5 of wall time cut, entirely from
+  skipping ~500 runtime functions' worth of `cgEmitFunc` in both Measure
+  and the real per-segment pass, with zero change to the fixed-bucket/
+  pool-size measurement (the PLAN DEFECT correction above).
+
+  **Deferred / phase debt (full detail in each task's own report,
+  `.superpowers/sdd/2026-08-13-object-code-linker/task-{2,3}-report.md`):**
+  - **RESOLVED this task:** the two stale doc-comment minors (Task 3
+    review) and the never-pasted coverage gap (Task 3's own "coverage
+    gap (named)" ledger entry) — see Step 0/0c above.
+  - **Taint-and-discard is silent/uncounted** (`cg68k.cla`,
+    `cgObjDumpSegment` area) — a log line ("captured N of M, D
+    discarded") or floor assertion would surface silent baked-set
+    shrinkage; not added.
+  - **`bkGetBytes` unbounded read** (`bake.cla`, ~1914-1927) — should cap
+    run length against remaining section length; the attacker-artifact
+    threat model is already named in `bkObjRelocSymValid`'s own comment.
+  - **`bkObjRelocSymValid` never validates `kind` range** — `kind=99`
+    falls through the class switch as `Label` (`bake.cla`, ~2887-2906).
+  - **~484-byte segment-margin figure (Task 2's self-compile fix) is
+    illustrative, not independently verified** from evidence — the
+    mitigation mechanism is sound, the arithmetic isn't reproducible from
+    what was measured.
+  - **`srcSlot` derivation over-broad** (`cg68k.cla` ~12734) —
+    `sm==AmDisp16 and sr==5` claims any A5-relative source is the hole,
+    when it should be exactly the slot `cgObjHoleOf` classified.
+  - **Capture-side vs load-side globals half-shared** — `cgObjRuns`/
+    `cgObjHoles` stay live and correct across both capture and load, but
+    `cgObjValid`/`RunFirst`/`HoleFirst`/`NHoles` are stale (capture-side
+    values) after a load — a live footgun for a future reader who
+    assumes symmetry; must read `bkLdObj*` for the latter.
+  - **`bkRuntimeFuncBoundary` is never reset per compile** — now
+    correctly documented (Step 0) as NOT the bake-compile predicate,
+    but the underlying "stays whatever the last install left it, forever"
+    behavior is unchanged and still worth a future reader's caution.
+  - **The refusal test doesn't pin the staging discipline itself** —
+    acceptable for now, noted for a future task in this area.
+  - **`--listing` + `--rtbake` loses runtime function annotations**
+    (bare `a68CommentMarker` vs `cgEmitFunc`'s func/param/local comments,
+    zero byte impact) — worth a docs line, not written.
+  - **Two independent hole-list walks + no early exit in the dedup scan**
+    (`cgObjBuildFuncStrLits`/`cgObjApplyGlueUsage`) — do not "optimize"
+    without measuring; both are per-function, over holes, cheap in
+    practice.
+  - **Perf snapshot used `/usr/bin/time real` only, no maxrss** — the
+    memory story needs a fresh measurement if docs ever want to state
+    one; not attempted this task.
+  - **`cgObjFuncForJtSlot`'s linear scan** (Task 2, replacing an
+    eliminated inverse map to save global footprint) is bake-time-only —
+    a future reverse-lookup need at real COMPILE time should not reuse
+    it as-is without reconsidering the cost tradeoff.
+  - **`bkCorruptObjCodeTestOnly`/`--corrupt-objcode-testonly`** is a
+    small, permanent, precedented (`--seglimit`) test-only hook, not
+    dead code to clean up.
+  - **A future fourth lazily-set program-wide codegen flag** (analogous
+    to `cgMul32Used`/`cgDiv32Used`/`cgMod32Used`) would need the same
+    `cgObjApplyGlueUsage`-style treatment or it will silently reproduce
+    Task 3's bug 3.
+  - Everything fallback-trigger-narrowing/runtime-ir-bake/param-abi
+    already deferred (bare-`EIntr` arg release gap, `KArr` param ABI,
+    `rtUiTableClick`'s unclamped row math, the stamp-proxy gap, etc.) is
+    untouched by this phase, still open.
+  - **Out of scope (design's own boundary, unchanged):** smart linking /
+    IR-body removal from the 68k lane and link-time layout improvements
+    (both gated behind a future oracle-relaxation decision); stage 4's
+    user-module artifact cache; the pre-existing call-lowering debt class
+    (address pushed across a later-evaluated allocating argument);
+    the stamp-proxy-global gap.
+  - **Standing rule still applies**: this phase touched
+    `clarusc/bake.cla` and `clarusc/cg68k.cla` (not `macgui.cla` this
+    time, but `bake.cla` alone is enough to trigger the rule), so
+    `TestClarusCBakePathOnSnow` (`CLARUS_SNOW_TESTS=1`) must be re-run
+    manually before merge — **pending as of this entry**; the controller
+    runs it separately, after final review, at the true tip, and the run
+    doubles as this phase's own headline on-hardware measurement
+    (compare against the runtime-ir-bake phase's ~55m post-leak-fix
+    `TickProbe` reference).
+
+  **T2 (`scripts/test-merge.sh`): GREEN, 228s** (T1 body 18s,
+  `internal/selfhost` 78s, gated native `internal/mactest` lane 126s,
+  `CLARUS_BAKE_FULL` bake corpus 6s). **Snow PENDING** (standing rule,
+  controller's job post-final-review). Merge remains Andrew's call.
 
 ## Small open items (not yet scheduled)
 
