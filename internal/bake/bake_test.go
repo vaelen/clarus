@@ -54,8 +54,8 @@ func TestBakeHeaderSanity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseHeader: %v", err)
 			}
-			if hdr.FormatVersion != 5 {
-				t.Errorf("FormatVersion = %d, want 5 (fallback-trigger-narrowing Task 2: bkSecManifestHashes + bkSecFieldInfo added)", hdr.FormatVersion)
+			if hdr.FormatVersion != 6 {
+				t.Errorf("FormatVersion = %d, want 6 (object-code-linker Task 2: bkSecObjCode + bkSecObjMeta added)", hdr.FormatVersion)
 			}
 			if hdr.Lane != wantLaneTag[lane] {
 				t.Errorf("Lane = %d, want %d", hdr.Lane, wantLaneTag[lane])
@@ -66,8 +66,8 @@ func TestBakeHeaderSanity(t *testing.T) {
 			if len(hdr.Modules) != wantModuleCounts[lane] {
 				t.Errorf("len(Modules) = %d, want %d\nmodules: %v", len(hdr.Modules), wantModuleCounts[lane], hdr.Modules)
 			}
-			if len(hdr.Sections) != 44 {
-				t.Errorf("len(Sections) = %d, want 44 (bkSectionCount, fallback-trigger-narrowing Task 2: +bkSecManifestHashes +bkSecFieldInfo)", len(hdr.Sections))
+			if len(hdr.Sections) != 46 {
+				t.Errorf("len(Sections) = %d, want 46 (bkSectionCount, object-code-linker Task 2: +bkSecObjCode +bkSecObjMeta)", len(hdr.Sections))
 			}
 			// Every module key follows rtModuleKey's "runtime/clarus/NAME"
 			// scheme (drive.cla:532), and native.cla is present iff 68k.

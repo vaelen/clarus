@@ -174,6 +174,33 @@ func TestRtbakeCorruptBodyRefused(t *testing.T) {
 	}
 }
 
+// TestRtbakeCorruptObjCodeRefused proves the loader refuses a
+// STRUCTURALLY-VALID bake whose object-code section (bkSecObjCode,
+// object-code-linker Task 2) carries an out-of-range reloc symbol: clear
+// diagnostic, nonzero exit -- Task 2's own new bkObjRelocSymValid check,
+// not the pre-existing v4 body-hash check (CorruptObjCodeFixture
+// recomputes the body hash after corrupting, deliberately, so this test
+// cannot pass vacuously via TestRtbakeCorruptBodyRefused's own generic
+// mismatch path).
+func TestRtbakeCorruptObjCodeRefused(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	dir := t.TempDir()
+	corruptPath := CorruptObjCodeFixture(t, exe, dir)
+
+	cmd := exec.Command(exe, "emit68k", "--rtbake", corruptPath, "-o", filepath.Join(dir, "out.bin"), filepath.Join(RepoRoot(t), "testdata", "cg68k", "arith.cla"))
+	cmd.Dir = RepoRoot(t)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("clarusc emit68k --rtbake <corrupt-objcode>: expected nonzero exit, got success\n%s", out)
+	}
+	if bytes.Contains(out, []byte("body hash mismatch")) {
+		t.Fatalf("refused via the generic body-hash check, not the reloc-symbol check -- CorruptObjCodeFixture's own hash recompute did not take effect:\n%s", out)
+	}
+	if !bytes.Contains(out, []byte("object-code section")) || !bytes.Contains(out, []byte("out of range")) {
+		t.Fatalf("expected a clear object-code reloc-symbol-out-of-range diagnostic, got:\n%s", out)
+	}
+}
+
 // TestRtbakeLaneMismatchRefused proves the loader refuses a bake built
 // for the wrong lane (a c-lane bake fed to emit68k) -- the controller's
 // own resolution ("wrong lane = refused-stamp-class error with a clear

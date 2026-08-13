@@ -2014,6 +2014,13 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         // for a non-UI --testapi bake install to keep that a plain
         // truncated (non-testapi-shaped) install wouldn't already match.
         bkInstallArenas(testapi and isUiProg)
+        // object-code-linker Task 2: install the object-code staging
+        // (bkLdObjValid/RunFirst/HoleFirst/NHoles, truncated to the SAME
+        // boundary bkInstallArenas just set irFuncs.count to) right
+        // after bkInstallArenas -- post-acceptance, before any lowering
+        // runs, same call-site contract. A no-op on lane c / a bake with
+        // no object sections (bkLdObjValid stays at its empty default).
+        bkInstallObjCode()
         // fallback-trigger-narrowing Task 2: sever EVERY check-only
         // collision (bkManifestCollidedIdx, both case (a) and any case
         // (b) already excised from `combined` above) out of the chain

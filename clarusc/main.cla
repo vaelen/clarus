@@ -357,6 +357,24 @@ on App.startCLI(args: list of string) {
             }
             laneFlag = args[i]
             haveLaneFlag = true
+        } else if bakeIrMode and args[i] == "--corrupt-objcode-testonly" {
+            // object-code-linker Task 2: deliberately UNDOCUMENTED, same
+            // convention as emit68k's own `--seglimit` above -- exists so
+            // internal/bake's own corrupt-object-section refusal test can
+            // produce a bake whose bkSecObjCode carries a structurally-
+            // valid-but-out-of-range reloc symbol WITHOUT hand-patching
+            // bytes and reimplementing bkHashText in Go (fragile: any
+            // divergence between a from-scratch Go FNV reimplementation
+            // and the real compiled arithmetic, e.g. from a difference in
+            // how a specific optimizer build folds a wrapping multiply,
+            // produces a bake whose body hash the loader ALSO refuses --
+            // for the WRONG reason, silently defeating the test's own
+            // purpose). Corrupting via the real bakeWriteFile call
+            // instead means the real bkHashText computes the (now
+            // genuinely valid) hash over the corrupted body itself, no
+            // reimplementation possible to get wrong. See
+            // bkWriteObjCode's own doc comment for what this sets.
+            bkCorruptObjCodeTestOnly = true
         } else if (emitMode or emitMode68k or appinfoMode) and args[i] == "--testapi" {
             // ui-scenario-retirement Task 2: opts a UI program into an
             // early splice of the UI runtime set + uitest.cla (below, "Early

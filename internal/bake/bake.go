@@ -244,3 +244,30 @@ func CorruptBodyFixture(t *testing.T, exe, lane, dir string) string {
 	}
 	return corruptPath
 }
+
+// CorruptObjCodeFixture bakes a 68k-lane artifact via clarusc's own
+// undocumented `--bake-ir --corrupt-objcode-testonly` flag
+// (clarusc/main.cla; same convention as emit68k's own `--seglimit`):
+// bkWriteObjCode (clarusc/bake.cla) overwrites the first call-kind
+// hole's reloc symbol with an impossibly large value BEFORE the real
+// bkHashText computes the body hash, so the result is a structurally-
+// valid bake whose body hash is genuinely correct for its own
+// (corrupted) content -- unlike CorruptBodyFixture/CorruptStampFixture,
+// which patch bytes in an already-written file. A Go-side byte patch
+// plus a from-scratch FNV reimplementation was tried first and
+// discarded: it could not be made to agree with the real compiled hash
+// arithmetic reliably enough to trust as a test fixture, and disagreeing
+// would make this test refuse via the WRONG check (body hash mismatch)
+// instead of the one it exists to prove (bkObjRelocSymValid). Letting
+// the real compiler compute its own hash removes that whole class of
+// risk. Returns the written path.
+func CorruptObjCodeFixture(t *testing.T, exe, dir string) string {
+	t.Helper()
+	outPath := filepath.Join(dir, "corrupt-objcode-68k.clir")
+	cmd := exec.Command(exe, "--bake-ir", "--lane", "68k", "--corrupt-objcode-testonly", "-o", outPath)
+	cmd.Dir = RepoRoot(t)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("clarusc --bake-ir --lane 68k --corrupt-objcode-testonly: %v\n%s", err, out)
+	}
+	return outPath
+}

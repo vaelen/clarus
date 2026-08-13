@@ -1598,6 +1598,26 @@ func cgCbGlueBodyFor(f: int): int {
     return -1
 }
 
+// cgCbGlueSlotIdx (object-code-linker Task 2) is cgCbGlueBodyFor's own
+// twin: given f, a synthesized GLUE func's own irFuncs index, returns
+// its position within cgCbGlueFuncIdx/irCbGlueNames (built in lockstep
+// by cg68SynthCbGlue, one entry per name), or -1 if f is not one. See
+// cgHoleCbGlueAddr's own doc comment for why this position -- stable
+// across bake/compile universes -- is what a captured hole stores
+// instead of f itself.
+func cgCbGlueSlotIdx(f: int): int {
+    var i: int
+
+    i = 0
+    while i < cgCbGlueFuncIdx.count {
+        if cgCbGlueFuncIdx[i] == f {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
 // ================================================================
 // Small local copies of cprint.cla helpers this file also needs -- kept
 // local rather than depending on cprint.cla (see the file header: the two
@@ -9771,6 +9791,23 @@ func cgCallExtUiSynth(e: int, synthName: int) {
 
     fi = findIRFuncIdxByName(synthName)
     if fi == -1 or not shakeReachable(fi) {
+        // object-code-linker Task 2: the eight reverse-waist UI
+        // dispatchers are DELIBERATELY never part of the baked IR
+        // (bkInstallArenas' own doc comment) -- a runtime-only capture
+        // universe can therefore reach a CALLER of one via an ordinary
+        // transitive call edge (shakeProgram's own BFS) even when that
+        // caller itself was never explicitly rooted for exactly this
+        // reason (cgObjHasUiDispatchCall's own doc comment explains why
+        // "don't root it" alone cannot prevent this). Taint instead of
+        // crashing: the containing function's whole capture gets
+        // discarded (cgObjDumpSegment leaves cgObjValid false for it),
+        // so the missing call site's bytes never matter -- a future
+        // compile (Task 3) just runs cgEmitFunc for it fresh, same as
+        // any other never-baked function.
+        if cgBakeCapture {
+            cgObjCaptureTainted = true
+            return
+        }
         log("cg68k: UI dispatcher " + poolGet(synthName) + " not found/reachable")
         quit 1
     }
@@ -9810,6 +9847,15 @@ func cgCallExtUiGlueAddr(glueFnName: string) {
 
     fi = findIRFuncIdxByName(intern(glueFnName))
     if fi == -1 or not shakeReachable(fi) {
+        // object-code-linker Task 2: defensive twin of
+        // cgCallExtUiSynth's own taint guard, above -- cgObjCaptureRuntime
+        // always runs cg68SynthCbGlue before capture, so this should not
+        // actually fire, but a genuinely unresolvable target here must
+        // still never crash the bake.
+        if cgBakeCapture {
+            cgObjCaptureTainted = true
+            return
+        }
         log("cg68k: UI glue stub " + glueFnName + " not found/reachable")
         quit 1
     }
@@ -12343,6 +12389,541 @@ func cgPackProgram(): bool {
     return true
 }
 
+// ================================================================
+// object-code-linker Task 2: bake-time object capture.
+//
+// cgBakeCapture gates a small set of hooks inside cg68ProgramFork below
+// (function-loop item-range recording, a per-segment post-a68Finish
+// run/hole dump, and skipping the real cg68BuildFork write) -- set only
+// by cgObjCaptureRuntime, this section's own top-level entry point,
+// which bake.cla's bakeWriteFile calls once, for the 68k lane only,
+// AFTER the runtime-only chain has been checked+lowered (never by an
+// ordinary compile).
+//
+// WHY THIS WORKS WITHOUT TOUCHING asm68k.cla (Task 1's own probe
+// finding): a68 binds every label's ADDRESS immediately (a68Bind) and
+// defers only ENCODING to a68Finish, and every item's addr/len is fixed
+// at push time (a68PushInstr) -- so by the time a segment's own
+// a68Finish succeeds, every captured item's byte range is already known;
+// only the ENCODED BYTES (a68Bytes()) needed Finish to run. Walking
+// a68Items[start..end) per function, post-Finish, is therefore both
+// necessary and sufficient.
+//
+// CAPTURE REPRESENTATION (Task 1's chosen shape): per function, an
+// alternating sequence run[0],hole[0],run[1],...,hole[n-1],run[n] --
+// each run a raw post-peephole byte blob, each hole the a68 item shape
+// (op/size/sm/sr/sv/dm/dr/dv) MINUS the hole-side operand's own value
+// (overwritten at paste/link time from kind+sym, never meaningfully
+// captured -- stored 0) plus a kind/class/symbol triple:
+//
+//   kind (cgHoleCall/cgHoleJtAddr/cgHoleLabel): what the link pass DOES
+//   with the hole -- cgHoleCall re-emits via cgCallFunc(sym) verbatim
+//   (Amendment A1: the opcode word, BSR.W vs JSR d16(A5), is universe-
+//   dependent, so a call is captured as ONE hole regardless of which
+//   form bake time happened to pick, never a displacement patch);
+//   cgHoleJtAddr re-emits the SAME captured op/size/modes but
+//   recomputes the JT-slot address (cgJtDisp(cgJtSlot(sym))) for a
+//   callback UPP's `LEA d16(A5),An`; cgHoleLabel re-emits the captured
+//   op/size/modes with a resolved label id substituted into whichever
+//   operand slot was the hole.
+//
+//   cls (cgRelCls*, meaningful only for cgHoleLabel): which of Amendment
+//   A3's families `sym` indexes into -- five pool families
+//   (str/enum/serdesc/uiBlob/uiEvents), the four glue labels (folded
+//   into ONE class, symbolized 1..4), the two per-record RC-walk label
+//   families, and Amendment A2's synthesized panic-message literal
+//   (cgRelClsPanicMsg -- resolved from the live cgListOobMsgIdx global
+//   at link time, never a numeric strlit index baked in at capture
+//   time, since that index differs bake-vs-compile). cgRelClsFuncLabel/
+//   cgRelClsJt are two DEFENSIVE class values that never actually
+//   survive into a stored hole (cgObjRecordHole promotes both to
+//   cgHoleCall, or cgHoleJtAddr for the JT/Lea case) -- kept as real
+//   class ids anyway, not folded away, so a hole in either shape a
+//   future emitter change might produce still round-trips instead of
+//   silently misclassifying.
+// ================================================================
+
+// cgBakeCapture: see this section's own header comment.
+var cgBakeCapture: bool
+
+const cgHoleCall: int = 1
+const cgHoleJtAddr: int = 2
+const cgHoleLabel: int = 3
+// cgHoleCbGlueAddr (discovered running this section's own capture over a
+// forced-fully-reachable runtime-only universe, beyond anything Task 1's
+// probe corpus exercised -- see cgObjRecordHole's own doc comment): an
+// LEA d16(A5),An materializing a `callback func` Pascal-glue trampoline's
+// address (cgCallExtUiGlueAddr, e.g. ui.cla's nat_UiLaunchReal handing
+// AEInstallEventHandler the `aeQuitHandler` UPP) is shaped exactly like
+// cgHoleJtAddr, but its TARGET is not a stable baked function: the
+// trampoline is synthesized fresh by cg68SynthCbGlue on EVERY compile
+// (never baked, --rtbake included -- Task 3's own Measure-skip only ever
+// applies to indices below bkRuntimeFuncBoundary), so its numeric index
+// varies compile to compile the same way Amendment A2's panic-message
+// strlit index does. sym is therefore NOT a target func index here -- it
+// is an index into irCbGlueNames (ir.cla, already a stable, truncation-
+// symmetric baked section), resolved at link time as
+// cgCbGlueFuncIdx[sym] AFTER a fresh cg68SynthCbGlue() call.
+const cgHoleCbGlueAddr: int = 4
+
+const cgRelClsPoolStr: int = 1
+const cgRelClsPoolEnum: int = 2
+const cgRelClsPoolSer: int = 3
+const cgRelClsPoolUiBlob: int = 4
+const cgRelClsPoolUiEvt: int = 5
+const cgRelClsFuncLabel: int = 6
+const cgRelClsGlue: int = 7
+const cgRelClsRcRetain: int = 8
+const cgRelClsRcRelease: int = 9
+const cgRelClsPanicMsg: int = 10
+const cgRelClsJt: int = 11
+
+// CgObjHole is one captured hole record -- the a68 item shape a paste
+// (Task 3) re-emits from, minus the hole-side operand's own value. See
+// this section's own header comment for the kind/cls/sym contract.
+record CgObjHole {
+    kind: int
+    cls: int
+    sym: int
+    op: int
+    size: int
+    sm: int
+    sr: int
+    sv: int
+    dm: int
+    dr: int
+    dv: int
+    srcSlot: bool
+}
+
+// cgObjValid[i]/cgObjRunFirst[i]/cgObjHoleFirst[i]/cgObjNHoles[i]:
+// irFuncs index i's own captured object (sized to irFuncs.count by
+// cg68ProgramFork right before its segment loop, when cgBakeCapture).
+// RunFirst/HoleFirst index into the two FLAT, whole-capture-run arrays
+// below; NHoles run/hole pairs alternate run[0],hole[0],...,hole[n-1],
+// run[n] -- n+1 runs total for n holes, matching bake.cla's own
+// bkWriteObjCode framing exactly (see that function's own doc comment).
+var cgObjValid: list of bool
+var cgObjRunFirst: list of int
+var cgObjHoleFirst: list of int
+var cgObjNHoles: list of int
+
+// cgObjRuns: flat, one entry per captured byte run across the WHOLE
+// capture (every segment cg68ProgramFork packs this call), in the order
+// cgObjDumpSegment appends them.
+var cgObjRuns: list of text
+
+// cgObjHoles: flat, one entry per captured hole, same ordering
+// convention as cgObjRuns.
+var cgObjHoles: list of CgObjHole
+
+// cgObjHoleSymOut: cgObjHoleOf's own out-parameter (Clarus functions
+// return one value) -- the classified symbol for whatever hole class it
+// just returned, or -1 when the return was cgHoleClsNone (not a hole).
+var cgObjHoleSymOut: int
+const cgHoleClsNone: int = 0
+
+// cgObjDumpSegment's own segFuncIdx/segItemStart/segItemEnd/segTainted
+// PARAMETERS (not globals -- deliberately: self-compiling clarusc came
+// within a few hundred bytes of tipping an unrelated, already-near-the-
+// 32KB-ceiling cprint.cla function over its own single-function segment
+// limit, and every program-level `var` this section adds is one more
+// release call cg_free_globals must carry, duplicated into EVERY
+// segment's own glue bundle; these four are pure per-segment scratch
+// with exactly one producer (cg68ProgramFork's own function loop) and
+// one consumer (cgObjDumpSegment, called right after), so they cost
+// nothing as locals) hold which function occupies which [start,end)
+// a68Items.count range in the CURRENT segment's own item stream
+// (segFuncIdx/segItemStart/segItemEnd), and whether that function's own
+// emission hit an unresolvable-at-bake-time reference (segTainted[k] --
+// cgCallExtUiSynth/cgCallExtUiGlueAddr's own cgObjCaptureTainted set,
+// checked and reset around each cgEmitFunc call) -- cgObjDumpSegment
+// leaves cgObjValid false for a tainted function instead of recording
+// its incomplete/wrong bytes.
+
+// cgObjCaptureTainted: see cgCallExtUiSynth's own doc comment.
+var cgObjCaptureTainted: bool
+
+// cgObjSetLbl records label l's own (class, symbol) into lblCls/lblSym
+// (cgObjBuildLabelMaps' own locals, threaded through as params -- see
+// that function's own doc comment for why), guarded the same "-1
+// sentinel, don't index what was never allocated" way cgRecRetainLbls'
+// own doc comment establishes (a record with no handle field, an unused
+// glue routine, ...).
+func cgObjSetLbl(lblCls: list of int, lblSym: list of int, l: int, cls: int, sym: int) {
+    if l < 0 {
+        return
+    }
+    if l >= lblCls.count {
+        return
+    }
+    lblCls[l] = cls
+    lblSym[l] = sym
+}
+
+// cgObjBuildLabelMaps fills lblCls[l]/lblSym[l] -- label id l's own
+// (class, symbol) -- for the CURRENT segment's own a68 label-id space.
+// Params, not globals (cgObjDumpSegment's own doc comment explains the
+// tradeoff): rebuilt every segment regardless (a68 label ids are only
+// valid within the segment that allocated them, a68Reset wipes
+// a68LabelAddr per segment), so there is nothing to preserve across
+// calls that a fresh local wouldn't already provide. Mirrors
+// cg68ProgramFork's own per-segment label-reservation calls
+// (cgReserveStrLitLabels and friends) reverse-mapped: those calls hand
+// out label ids forward (pool entry -> label), this walks the SAME
+// arrays backward (label -> pool entry).
+func cgObjBuildLabelMaps(lblCls: list of int, lblSym: list of int) {
+    var i: int
+
+    i = 0
+    while i < lblCls.count {
+        lblCls[i] = cgHoleClsNone
+        lblSym[i] = -1
+        i = i + 1
+    }
+    i = 0
+    while i < cgStrLitLabels.count {
+        cgObjSetLbl(lblCls, lblSym, cgStrLitLabels[i], cgRelClsPoolStr, i)
+        i = i + 1
+    }
+    i = 0
+    while i < cgEnumTableLabels.count {
+        cgObjSetLbl(lblCls, lblSym, cgEnumTableLabels[i], cgRelClsPoolEnum, i)
+        i = i + 1
+    }
+    i = 0
+    while i < cgSerdescLabels.count {
+        cgObjSetLbl(lblCls, lblSym, cgSerdescLabels[i], cgRelClsPoolSer, i)
+        i = i + 1
+    }
+    cgObjSetLbl(lblCls, lblSym, cgUiBlobLabel, cgRelClsPoolUiBlob, 0)
+    cgObjSetLbl(lblCls, lblSym, cgUiEventsLabel, cgRelClsPoolUiEvt, 0)
+    i = 0
+    while i < cgRecRetainLbls.count {
+        cgObjSetLbl(lblCls, lblSym, cgRecRetainLbls[i], cgRelClsRcRetain, i)
+        i = i + 1
+    }
+    i = 0
+    while i < cgRecReleaseLbls.count {
+        cgObjSetLbl(lblCls, lblSym, cgRecReleaseLbls[i], cgRelClsRcRelease, i)
+        i = i + 1
+    }
+    if cgMul32Used {
+        cgObjSetLbl(lblCls, lblSym, cgMul32Lbl, cgRelClsGlue, 1)
+    }
+    if cgDiv32Used {
+        cgObjSetLbl(lblCls, lblSym, cgDiv32Lbl, cgRelClsGlue, 2)
+    }
+    if cgMod32Used {
+        cgObjSetLbl(lblCls, lblSym, cgMod32Lbl, cgRelClsGlue, 3)
+    }
+    cgObjSetLbl(lblCls, lblSym, cgFreeGlobalsLbl, cgRelClsGlue, 4)
+    i = 0
+    while i < cgFuncLabels.count {
+        cgObjSetLbl(lblCls, lblSym, cgFuncLabels[i], cgRelClsFuncLabel, i)
+        i = i + 1
+    }
+}
+
+// cgObjFuncForJtSlot answers which irFuncs index owns JT slot `slot`, or
+// -1 -- a plain linear scan rather than a precomputed inverse map
+// (cgObjHoleOf's only caller): kept off the global list deliberately
+// (self-compiling clarusc came within a few hundred bytes of tipping an
+// unrelated, already-near-the-32KB-ceiling cprint.cla function over its
+// own single-function segment limit -- see cgObjDumpSegment's own param
+// doc comment for the same tradeoff made for its four scratch lists).
+// Bake-time-only cost (never runs in a compiled Clarus program), and
+// cgTotalJtSlots/irFuncs.count are small enough (low thousands) that a
+// scan per hole is not remotely a bottleneck.
+func cgObjFuncForJtSlot(slot: int): int {
+    var i: int
+
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) and cgJtSlots[i] == slot {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// cgObjHoleOf classifies a68 item idx (belonging to the function
+// occupying byte range [a0, a1)) as a hole -- position-dependent content
+// the artifact cannot bake verbatim -- or cgHoleClsNone if it is
+// ordinary self-contained code. Mirrors Task 1's own empirically-proven
+// rule: a KindInstr item is a hole iff it carries a POSITIVE d16(A5)
+// displacement (a JT slot -- globals are always negative,
+// cgAssignGlobalOffsets being a downward prefix-sum) or an AmPCLabel
+// operand whose bound label address falls OUTSIDE [a0, a1) (an
+// intra-function branch stays a plain byte, correctly). Sets
+// cgObjHoleSymOut as this function's own out-parameter. lblCls/lblSym
+// are cgObjBuildLabelMaps' own output for the CURRENT segment (passed
+// through, not read off a global -- see that function's own doc
+// comment).
+func cgObjHoleOf(idx: int, a0: int, a1: int, lblCls: list of int, lblSym: list of int): int {
+    var lbl: int
+    var slot: int
+
+    cgObjHoleSymOut = -1
+    if a68Items[idx].kind != KindInstr {
+        return cgHoleClsNone
+    }
+    if a68Items[idx].dm == AmDisp16 and a68Items[idx].dr == 5 and a68Items[idx].dv >= 32 {
+        slot = (a68Items[idx].dv - 34) / 8
+        cgObjHoleSymOut = cgObjFuncForJtSlot(slot)
+        return cgRelClsJt
+    }
+    if a68Items[idx].sm == AmDisp16 and a68Items[idx].sr == 5 and a68Items[idx].sv >= 32 {
+        slot = (a68Items[idx].sv - 34) / 8
+        cgObjHoleSymOut = cgObjFuncForJtSlot(slot)
+        return cgRelClsJt
+    }
+    lbl = -1
+    if a68Items[idx].sm == AmPCLabel {
+        lbl = a68Items[idx].sv
+    }
+    if a68Items[idx].dm == AmPCLabel {
+        lbl = a68Items[idx].dv
+    }
+    if lbl < 0 {
+        return cgHoleClsNone
+    }
+    if a68LabelAddr[lbl] >= a0 and a68LabelAddr[lbl] < a1 {
+        return cgHoleClsNone
+    }
+    cgObjHoleSymOut = lblSym[lbl]
+    return lblCls[lbl]
+}
+
+// cgObjRecordHole appends one hole record for a68 item idx, classified
+// cls with symbol sym (cgObjHoleOf's own output) -- Amendment A1 (a
+// JT-slot or same-segment-Bsr function reference collapses to
+// cgHoleCall, an LEA-shaped JT reference to cgHoleJtAddr, everything
+// else stays cgHoleLabel), Amendment A2 (a cgRelClsPoolStr hole whose
+// symbol equals the live cgListOobMsgIdx becomes cgRelClsPanicMsg
+// instead of a numeric strlit index), and the cgHoleCbGlueAddr case (an
+// LEA-shaped JT reference whose target is a cg68SynthCbGlue-synthesized
+// trampoline, not a stable baked function -- cgCbGlueSlotIdx's own
+// non -1 result redirects sym from a transient func index to a stable
+// irCbGlueNames position) are all applied here, once, so every other
+// caller (cgObjDumpSegment) stays a plain classify-then-record loop.
+func cgObjRecordHole(idx: int, cls: int, sym: int) {
+    var h: CgObjHole
+    var c: int
+    var s: int
+    var cbSlot: int
+
+    c = cls
+    s = sym
+    if c == cgRelClsPoolStr and s == cgListOobMsgIdx {
+        c = cgRelClsPanicMsg
+    }
+    h.kind = cgHoleLabel
+    if c == cgRelClsJt or (c == cgRelClsFuncLabel and a68Items[idx].op == OpBsr) {
+        h.kind = cgHoleCall
+    }
+    if c == cgRelClsJt and a68Items[idx].op == OpLea {
+        h.kind = cgHoleJtAddr
+        cbSlot = cgCbGlueSlotIdx(s)
+        if cbSlot >= 0 {
+            h.kind = cgHoleCbGlueAddr
+            s = cbSlot
+        }
+    }
+    h.cls = c
+    h.sym = s
+    h.op = int(a68Items[idx].op)
+    h.size = a68Items[idx].size
+    h.sm = int(a68Items[idx].sm)
+    h.sr = a68Items[idx].sr
+    h.dm = int(a68Items[idx].dm)
+    h.dr = a68Items[idx].dr
+    if a68Items[idx].sm == AmPCLabel or (a68Items[idx].sm == AmDisp16 and a68Items[idx].sr == 5) {
+        h.srcSlot = true
+        h.sv = 0
+        h.dv = a68Items[idx].dv
+    } else {
+        h.srcSlot = false
+        h.sv = a68Items[idx].sv
+        h.dv = 0
+    }
+    cgObjHoles.add(h)
+}
+
+// cgObjSlice returns b[start, start+n) as its own copy -- text has no
+// slice operator, so this is a plain byte-by-byte append, mirroring
+// every other per-byte text-building loop in this file.
+func cgObjSlice(b: text, start: int, n: int): text {
+    var t: text
+    var i: int
+
+    t = ""
+    i = 0
+    while i < n {
+        t.append(b[start + i])
+        i = i + 1
+    }
+    return t
+}
+
+// cgObjDumpSegment (called once per segment, right after that segment's
+// own a68Finish succeeds) walks every function captured this segment
+// (segFuncIdx/segItemStart/segItemEnd -- cg68ProgramFork's own local
+// scratch, populated by its function loop and passed straight through,
+// see that block's own doc comment for why these are params, not
+// globals) and appends its byte runs + hole records into the flat,
+// whole-capture cgObjRuns/cgObjHoles arrays.
+func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segItemEnd: list of int, segTainted: list of bool) {
+    var k: int
+    var i: int
+    var st: int
+    var en: int
+    var a0: int
+    var a1: int
+    var cls: int
+    var b: text
+    var f: int
+    var nh: int
+    var runStart: int
+    var lblCls: list of int
+    var lblSym: list of int
+
+    lblCls = cgFreshIntListSized(a68LabelAddr.count)
+    lblSym = cgFreshIntListSized(a68LabelAddr.count)
+    cgObjBuildLabelMaps(lblCls, lblSym)
+    b = a68Bytes()
+    k = 0
+    while k < segFuncIdx.count {
+        // object-code-linker Task 2: a tainted function's own emission
+        // hit an unresolvable-at-bake-time reference (cgCallExtUiSynth's
+        // own doc comment) -- its bytes are incomplete/wrong by
+        // construction; leave cgObjValid false for it (its irFuncs
+        // index's own default) rather than recording anything.
+        if not segTainted[k] {
+            f = segFuncIdx[k]
+            st = segItemStart[k]
+            en = segItemEnd[k]
+            a0 = a68Items[st].addr
+            if en < a68Items.count {
+                a1 = a68Items[en].addr
+            } else {
+                a1 = a68Pc
+            }
+
+            cgObjValid[f] = true
+            cgObjRunFirst[f] = cgObjRuns.count
+            cgObjHoleFirst[f] = cgObjHoles.count
+            nh = 0
+            runStart = 0
+            i = st
+            while i < en {
+                cls = cgObjHoleOf(i, a0, a1, lblCls, lblSym)
+                if cls != cgHoleClsNone {
+                    nh = nh + 1
+                    cgObjRuns.add(cgObjSlice(b, a0 + runStart, (a68Items[i].addr - a0) - runStart))
+                    cgObjRecordHole(i, cls, cgObjHoleSymOut)
+                    runStart = (a68Items[i].addr - a0) + a68Items[i].len
+                }
+                i = i + 1
+            }
+            cgObjRuns.add(cgObjSlice(b, a0 + runStart, (a1 - a0) - runStart))
+            cgObjNHoles[f] = nh
+        }
+        k = k + 1
+    }
+}
+
+// cgObjCaptureRuntime is bake.cla's own entry point (called once, from
+// bakeWriteFile, for the 68k lane only, after every OTHER section has
+// already been serialized -- see that call site's own doc comment for
+// why): synthesize callback-glue trampolines (cg68SynthCbGlue -- an
+// ordinary compile always calls this before shaking, and skipping it
+// here crashes cg68Measure itself the first time it reaches a runtime
+// function that materializes one's address, e.g. ui.cla's
+// nat_UiLaunchReal handing AEInstallEventHandler the `aeQuitHandler`
+// UPP: cgCallExtUiGlueAddr's own "not found/reachable" `quit 1` fires
+// with no glue synthesized yet -- found running this exact capture over
+// a runtime-only universe, which Task 1's own probe corpus never did),
+// force EVERY irFuncs entry reachable (the runtime-only universe has no
+// real App entry point for shakeProgram's ordinary BFS to root from --
+// Amendment A6, capture the whole baked set unconditionally, truncate to
+// the testapi boundary later, at install time, alongside the IR), then
+// run the real per-segment emission pipeline once (cg68ProgramFork,
+// cgBakeCapture set) to populate cgObjRuns/cgObjHoles/cgFuncSize-family
+// via its own capture hooks.
+//
+// cg68SynthCbGlue's own irFuncs growth (newIRFunc, one per
+// irCbGlueNames entry) is undone before returning: a glue trampoline is
+// re-synthesized fresh on EVERY real compile (never baked -- Task 3's
+// own Measure-skip only ever applies below bkRuntimeFuncBoundary), so
+// leaving it in irFuncs would grow bkSecIrFuncs with entries a real
+// compile re-creates anyway. Any HOLE that referenced one of these
+// (cgObjRecordHole's own cgHoleCbGlueAddr redirect, above) already
+// captured it symbolically -- an irCbGlueNames position, not the
+// transient index being dropped here -- so the truncation is safe by
+// construction, not just convenient. irFuncIdxByName is rebuilt from
+// the truncated irFuncs rather than restored by assignment (matching
+// bkInstallArenas' own `filteredIdx` rebuild, not a snapshot/restore, to
+// stay independent of whatever value-vs-reference semantics `intmap`
+// assignment turns out to have).
+//
+// A function whose OWN body references one of the eight reverse-waist
+// UI dispatchers (lower.cla's lowUiSynthExternName -- deliberately
+// absent from the baked IR at all, bkInstallArenas' own doc comment) is
+// rooted here just like everything else: excluding it up front cannot
+// actually prevent it from becoming reachable (an ordinary rooted
+// caller elsewhere may reach it transitively via a plain function-call
+// edge regardless), so the SAFE fix lives one layer down instead --
+// cgCallExtUiSynth/cgCallExtUiGlueAddr TAINT (cgObjCaptureTainted)
+// rather than crash when cgBakeCapture is set, and cgObjDumpSegment
+// leaves cgObjValid false for a tainted function's own capture attempt.
+//
+// Deliberately does NOT call cg68AddRoots (native-only console-shim
+// roots, irrelevant once every irFuncs entry is already rooted below).
+func cgObjCaptureRuntime(): bool {
+    var i: int
+    var ok: bool
+    var preSynthCount: int
+    var truncFuncs: list of IRFunc
+    var freshIdx: intmap of int
+    var nm: int
+
+    preSynthCount = irFuncs.count
+    cg68SynthCbGlue()
+
+    i = 0
+    while i < irFuncs.count {
+        shakeAddRoot(irFuncName(i))
+        i = i + 1
+    }
+    shakeProgram()
+
+    cgBakeCapture = true
+    peepDisabled = false
+    a68ListingOn = false
+    ok = cg68ProgramFork("<bake-object-capture>", false, 0)
+    cgBakeCapture = false
+
+    i = 0
+    while i < preSynthCount {
+        truncFuncs.add(irFuncs[i])
+        i = i + 1
+    }
+    irFuncs = truncFuncs
+    i = 0
+    while i < irFuncs.count {
+        nm = irFuncs[i].name
+        if not freshIdx.has(nm) {
+            freshIdx[nm] = i
+        }
+        i = i + 1
+    }
+    irFuncIdxByName = freshIdx
+
+    return ok
+}
+
 // cg68ProgramFork (Task 9, mac-resident-clarusc -- renamed from the old
 // cg68Program, which this function now sits under) is the top-level
 // emit68k driver up through building the raw resource fork: measure the
@@ -12379,6 +12960,10 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     var segNumStr: string
     var progressLine: string
     var stageLine: string
+    var objSegFuncIdx: list of int
+    var objSegItemStart: list of int
+    var objSegItemEnd: list of int
+    var objSegTainted: list of bool
 
     // Findings 1.4 (Task 13): fill every rn* pre-interned runtime-call
     // name BEFORE cg68Measure's own first cgEmitFunc call can need one --
@@ -12417,6 +13002,20 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     }
     segBytes = cgFreshTextList()
     base = cgSegBase(outPath)
+
+    // object-code-linker Task 2: reset the whole-capture accumulators
+    // once per cg68ProgramFork call, not per segment -- cgObjRuns/
+    // cgObjHoles are FLAT across every segment this call packs, indexed
+    // per-function via cgObjRunFirst/cgObjHoleFirst/cgObjNHoles (see
+    // this file's own capture-globals doc comment, above).
+    if cgBakeCapture {
+        cgObjValid = cgFreshBoolListSized(irFuncs.count)
+        cgObjRunFirst = cgFreshIntListSized(irFuncs.count)
+        cgObjHoleFirst = cgFreshIntListSized(irFuncs.count)
+        cgObjNHoles = cgFreshIntListSized(irFuncs.count)
+        cgObjRuns.clear()
+        cgObjHoles.clear()
+    }
 
     s = 1
     while s <= cgSegCount {
@@ -12471,10 +13070,31 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
             cgEmitInitGlobalsStub(initGlobalsLbl)
         }
 
+        // object-code-linker Task 2: per-segment capture scratch (which
+        // function occupies which a68Items.count range THIS segment) --
+        // cgObjDumpSegment consumes it right after this segment's own
+        // a68Finish, below. Plain locals, fresh each segment (see the
+        // param declaration's own doc comment for why these aren't
+        // globals).
+        if cgBakeCapture {
+            objSegFuncIdx = cgFreshIntList()
+            objSegItemStart = cgFreshIntList()
+            objSegItemEnd = cgFreshIntList()
+            objSegTainted = cgFreshBoolList()
+        }
         i = 0
         while i < irFuncs.count {
             if shakeReachable(i) and cgFuncSegment[i] == s {
-                cgEmitFunc(i)
+                if cgBakeCapture {
+                    cgObjCaptureTainted = false
+                    objSegFuncIdx.add(i)
+                    objSegItemStart.add(a68Items.count)
+                    cgEmitFunc(i)
+                    objSegItemEnd.add(a68Items.count)
+                    objSegTainted.add(cgObjCaptureTainted)
+                } else {
+                    cgEmitFunc(i)
+                }
             }
             driveProgressTick()
             i = i + 1
@@ -12498,6 +13118,13 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
         if not ok {
             log("cg68ProgramFork: unresolved label " + numToStr(a68UnresolvedLabel()) + " (segment " + numToStr(s) + ")")
             return false
+        }
+
+        // object-code-linker Task 2: this segment's own bytes are final
+        // now (a68Finish just succeeded) -- dump every function this
+        // segment captured into the flat cgObjRuns/cgObjHoles arrays.
+        if cgBakeCapture {
+            cgObjDumpSegment(objSegFuncIdx, objSegItemStart, objSegItemEnd, objSegTainted)
         }
 
         if s == 1 {
@@ -12547,6 +13174,14 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
         s = s + 1
     }
 
+    if cgBakeCapture {
+        // object-code-linker Task 2: bake-time capture needs no real
+        // fork built -- every byte/hole this call was for is already in
+        // cgObjRuns/cgObjHoles (cgObjDumpSegment, above); skip building
+        // and writing an unused fork (also avoids needing a meaningful
+        // outPath -- cgObjCaptureRuntime passes a placeholder).
+        return true
+    }
     driveProgressStage("Building Fork")
     if not cg68BuildFork(jtEntries, jtSegNums, segBytes) {
         return false

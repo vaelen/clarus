@@ -43,7 +43,20 @@ include "drive.cla"
 // ================================================================
 
 const bkMagic: string = "CLIR"
-// bkFormatVersion 5 (fallback-trigger-narrowing Task 2): added
+// bkFormatVersion 6 (object-code-linker Task 2): added bkSecObjCode/
+// bkSecObjMeta -- per reachable runtime function (68k lane only; lane c
+// writes both sections empty, count 0, keeping the header's
+// bkSectionCount round-trip check lane-uniform), the function's captured
+// post-peephole byte runs interleaved with typed hole records
+// (bkSecObjCode) plus its Measure-time size/frame-size/pool-ref-set/
+// once-per-artifact metadata (bkSecObjMeta) -- see cg68k.cla's own
+// cgObjCaptureRuntime/cgObjDumpSegment doc comments for the capture
+// mechanics and bkWriteObjCode/bkWriteObjMeta below for the exact wire
+// shape. Lets a future compile (Task 3) skip runtime codegen entirely:
+// Measure fills its per-function tables from the artifact instead of
+// running cgEmitFunc, and the per-segment emit pass PASTES a baked
+// function's bytes (re-registering each hole as an a68 fixup) instead of
+// regenerating them. Version 5 (fallback-trigger-narrowing Task 2): added
 // bkSecManifestHashes -- one FNV hash (bkHashText) plus an
 // early-visibility flag per manifest-path source file (the same universe
 // bkComputeManifestPaths' own bkManifestPaths covers, top-level runtime
@@ -65,7 +78,7 @@ const bkMagic: string = "CLIR"
 // (the base/uitest IR-arena boundary counts). Pre-release format; the
 // loader refuses any other version outright (no compat shim), per this
 // phase's own controller resolution.
-const bkFormatVersion: int = 5
+const bkFormatVersion: int = 6
 
 // bkClirResourceName/bkStampResourceName (runtime-ir-bake Task 6, Mac
 // integration): reserved 'CLFS' resource names ClarusC.APPL's own build
@@ -197,7 +210,20 @@ const bkSecManifestHashes: int = 46
 // bkWriteFieldInfo/bkReadFieldInfo/bkInstallFieldInfo.
 const bkSecFieldInfo: int = 47
 
-const bkSectionCount: int = 44
+// bkSecObjCode/bkSecObjMeta (format version 6, object-code-linker Task
+// 2): the per-reachable-runtime-function captured object -- byte runs +
+// typed hole records (bkSecObjCode, cg68k.cla's own cgObjRuns/
+// cgObjHoles) and Measure-time metadata (bkSecObjMeta, cg68k.cla's own
+// cgFuncSize/cgFuncFrameSizes/cgFuncStrLits-family plus the once-per-
+// artifact fixed-cost buckets and per-pool-entry size tables). 68k lane
+// only; written empty (count 0) on lane c so bkSectionCount's own
+// round-trip check stays lane-uniform. See bkWriteObjCode/bkWriteObjMeta
+// for the exact wire shape and bkReadObjCode/bkInstallObjCode for the
+// loader/install split.
+const bkSecObjCode: int = 48
+const bkSecObjMeta: int = 49
+
+const bkSectionCount: int = 46
 
 // ================================================================
 // Byte-buffer primitives -- explicit one-byte-at-a-time big-endian
@@ -256,6 +282,16 @@ func bkPutStrShort(out: text, s: string) {
         out.append(s[i])
         i = i + 1
     }
+}
+
+// bkPutBytes (object-code-linker Task 2): 4-byte BE length + raw bytes,
+// verbatim -- the same framing bkEmitSection itself uses for a whole
+// section's payload, reused here per OBJECT-CODE byte run (a captured
+// function's own post-peephole machine code), which unlike a pool string
+// can exceed the 255-byte cap bkPutStr's own `string` parameter carries.
+func bkPutBytes(out: text, data: text) {
+    bkPutU32(out, data.length)
+    out.append(data)
 }
 
 // bkEmitSection frames one section's already-built payload into out:
@@ -1429,6 +1465,205 @@ func bkWriteManifestHashes(): text {
     return sec
 }
 
+// bkCorruptObjCodeTestOnly (object-code-linker Task 2): set by main.cla's
+// own undocumented `--bake-ir --corrupt-objcode-testonly` flag --
+// bkWriteObjCode, when true, overwrites the FIRST call-kind hole's own
+// reloc symbol with an impossibly large value, so internal/bake's
+// corrupt-object-section refusal test gets a structurally-valid bake
+// whose reloc symbol is genuinely out of range, with a genuinely correct
+// body hash (computed over the real, corrupted body by the real
+// bkHashText) -- never used outside that one test. See main.cla's own
+// flag-parsing doc comment for why this exists instead of a Go-side
+// byte patch.
+var bkCorruptObjCodeTestOnly: bool
+
+// bkWriteObjCode (format v6, object-code-linker Task 2): bkSecObjCode --
+// per irFuncs-index function, its captured post-peephole byte runs
+// interleaved with typed hole records (run[0],hole[0],...,hole[n-1],
+// run[n], n+1 runs for n holes -- Task 1's own chosen capture
+// representation; see cg68k.cla's own capture-globals doc comment,
+// above cg68ProgramFork, for the hole kind/class/symbol encoding this
+// mirrors field-for-field). Reads cg68k.cla's live cgObj* globals
+// directly, the same "bake.cla's writer reads another module's live
+// global verbatim" pattern bkWriteFieldInfo already uses for check.cla's
+// fieldInfos -- valid here because bakeWriteFile calls this AFTER its
+// own capture step (cgObjCaptureRuntime) has already run for lane 68k;
+// lane c (or a 68k bake that somehow never captured -- defensive) writes
+// count 0, since cgObjValid stays at its empty default otherwise.
+func bkWriteObjCode(lane: int): text {
+    var sec: text
+    var count: int
+    var i: int
+    var k: int
+    var h: CgObjHole
+    var corruptedOne: bool
+    var sym: int
+
+    // Bound by irFuncs.count, not cgObjValid.count directly: cg68Measure/
+    // cg68ProgramFork run AFTER cg68SynthCbGlue inside cgObjCaptureRuntime,
+    // so cgObjValid was sized to a LARGER, transient irFuncs.count that
+    // briefly included synthesized callback-glue trampolines --
+    // cgObjCaptureRuntime restores irFuncs (and irFuncIdxByName) back to
+    // its pre-synthesis size before returning, but leaves cgObjValid/
+    // cgFuncSize-family at their larger capture-time size. Every
+    // reference INTO a trampoline was already captured symbolically
+    // (cgHoleCbGlueAddr, never a raw index into that dropped tail), so
+    // truncating the OUTER per-function count here is enough -- see
+    // cgObjRecordHole's own doc comment.
+    count = 0
+    if lane == bkLane68k {
+        count = irFuncs.count
+    }
+    sec = ""
+    bkPutU32(sec, count)
+    i = 0
+    while i < count {
+        bkPutBool(sec, cgObjValid[i])
+        if cgObjValid[i] {
+            bkPutU32(sec, cgObjNHoles[i])
+            k = 0
+            while k <= cgObjNHoles[i] {
+                bkPutBytes(sec, cgObjRuns[cgObjRunFirst[i] + k])
+                if k < cgObjNHoles[i] {
+                    h = cgObjHoles[cgObjHoleFirst[i] + k]
+                    bkPutByte(sec, h.kind)
+                    bkPutByte(sec, h.cls)
+                    sym = h.sym
+                    if bkCorruptObjCodeTestOnly and not corruptedOne and h.kind == cgHoleCall {
+                        sym = 999999999
+                        corruptedOne = true
+                    }
+                    bkPutU32(sec, sym)
+                    bkPutByte(sec, h.op)
+                    bkPutByte(sec, h.size)
+                    bkPutByte(sec, h.sm)
+                    bkPutByte(sec, h.sr)
+                    bkPutU32(sec, h.sv)
+                    bkPutByte(sec, h.dm)
+                    bkPutByte(sec, h.dr)
+                    bkPutU32(sec, h.dv)
+                    bkPutBool(sec, h.srcSlot)
+                }
+                k = k + 1
+            }
+        }
+        i = i + 1
+    }
+    return sec
+}
+
+// bkWriteObjMeta (format v6, object-code-linker Task 2): bkSecObjMeta --
+// what cg68Measure computes for the runtime-only universe, captured for
+// every irFuncs index by the SAME cgObjCaptureRuntime call
+// bkWriteObjCode reads from (its own internal cg68ProgramFork call runs
+// cg68Measure as its first step): per-function size/frame-size/pool-ref
+// sets/UI-pool flags, plus the three once-per-artifact fixed-cost
+// buckets and the five per-pool-entry size tables cgPackProgram needs so
+// a future compile's own Measure pass can skip re-deriving them from a
+// baked function at all (Task 3). Reads cg68k.cla's live globals
+// directly; lane c writes count 0 plus zeroed fixed buckets/empty
+// per-pool-entry tables (never meaningful on that lane).
+func bkWriteObjMeta(lane: int): text {
+    var sec: text
+    var count: int
+    var i: int
+    var k: int
+    var strLits: list of int
+
+    // See bkWriteObjCode's own comment for why this is irFuncs.count,
+    // not cgFuncSize.count directly.
+    count = 0
+    if lane == bkLane68k {
+        count = irFuncs.count
+    }
+    sec = ""
+    bkPutU32(sec, count)
+    i = 0
+    while i < count {
+        bkPutU32(sec, cgFuncSize[i])
+        bkPutU32(sec, cgFuncFrameSizes[i])
+        // Amendment A2 (also load-bearing here, not just for the hole
+        // table, bkWriteObjCode): cgReservePanicMsgs appends
+        // cgListOobMsgIdx to the LIVE irStrLits AFTER bkSecIrStrLits was
+        // already serialized (bakeWriteFile's own capture-runs-last
+        // ordering), so it is not a valid index into the INSTALLED
+        // irStrLits at compile time either -- a function needing the
+        // panic message (nat_UiSFGetFile in the corpus) must not name it
+        // here by its bake-time-only numeric index, same reasoning as
+        // the reloc hole's own cgRelClsPanicMsg substitution. Silently
+        // dropped rather than reloc'd: this list only drives
+        // cgPackProgram's own per-segment pool NEED-set (which entries
+        // to duplicate where), and the panic message is a fixed,
+        // always-available runtime literal a future link pass can
+        // simply always include, needing no per-function bookkeeping.
+        strLits = driveFreshIntList()
+        k = 0
+        while k < cgFuncStrLits[i].count {
+            if cgFuncStrLits[i][k] != cgListOobMsgIdx {
+                strLits.add(cgFuncStrLits[i][k])
+            }
+            k = k + 1
+        }
+        bkPutU32(sec, strLits.count)
+        k = 0
+        while k < strLits.count {
+            bkPutU32(sec, strLits[k])
+            k = k + 1
+        }
+        bkPutU32(sec, cgFuncEnumTables[i].count)
+        k = 0
+        while k < cgFuncEnumTables[i].count {
+            bkPutU32(sec, cgFuncEnumTables[i][k])
+            k = k + 1
+        }
+        bkPutU32(sec, cgFuncSerdescs[i].count)
+        k = 0
+        while k < cgFuncSerdescs[i].count {
+            bkPutU32(sec, cgFuncSerdescs[i][k])
+            k = k + 1
+        }
+        bkPutBool(sec, cgFuncUsesUiBlob[i])
+        bkPutBool(sec, cgFuncUsesUiEvents[i])
+        i = i + 1
+    }
+
+    if lane == bkLane68k {
+        bkPutU32(sec, cgSeg1ExtraSize)
+        bkPutU32(sec, cgGlueBundleSize)
+        bkPutU32(sec, cgPoolSize)
+        bkPutU32(sec, cgStrLitSize.count)
+        k = 0
+        while k < cgStrLitSize.count {
+            bkPutU32(sec, cgStrLitSize[k])
+            k = k + 1
+        }
+        bkPutU32(sec, cgEnumTableSize.count)
+        k = 0
+        while k < cgEnumTableSize.count {
+            bkPutU32(sec, cgEnumTableSize[k])
+            k = k + 1
+        }
+        bkPutU32(sec, cgSerdescSize.count)
+        k = 0
+        while k < cgSerdescSize.count {
+            bkPutU32(sec, cgSerdescSize[k])
+            k = k + 1
+        }
+        bkPutU32(sec, cgUiBlobSize)
+        bkPutU32(sec, cgUiEventsSize)
+    } else {
+        bkPutU32(sec, 0)
+        bkPutU32(sec, 0)
+        bkPutU32(sec, 0)
+        bkPutU32(sec, 0)
+        bkPutU32(sec, 0)
+        bkPutU32(sec, 0)
+        bkPutU32(sec, 0)
+        bkPutU32(sec, 0)
+    }
+    return sec
+}
+
 // ================================================================
 // Top-level orchestrator
 // ================================================================
@@ -1514,6 +1749,29 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     bkEmitSection(body, bkSecUitestBounds, bkWriteUitestBounds())
     bkEmitSection(body, bkSecCheckerVisibility, bkWriteCheckerVisibility())
     bkEmitSection(body, bkSecManifestHashes, bkWriteManifestHashes())
+
+    // object-code-linker Task 2: bake-time object capture runs HERE,
+    // after every OTHER section has already been copied into `body` as
+    // fixed bytes -- not any earlier. cg68Measure (run internally by
+    // cgObjCaptureRuntime's own cg68ProgramFork call) calls
+    // cgReservePanicMsgs, which unconditionally APPENDS a synthesized
+    // string literal to the LIVE irStrLits global (Amendment A2's own
+    // root cause), and codegen internals intern() their own strings into
+    // the shared pool besides (cg68SynthCbGlue's own "clar_cb_<name>"
+    // glue names, notably -- see cgObjCaptureRuntime's own doc comment
+    // for why that call is unavoidable). None of that may leak into
+    // bkSecIrStrLits/bkSecStrPool/bkSecIrFuncs, which is exactly what
+    // placing the capture call after those sections' own bkEmitSection
+    // calls (all of them, above) guarantees for free: the bytes are
+    // already frozen into `body` by the time any of this runs.
+    if lane == bkLane68k {
+        if not cgObjCaptureRuntime() {
+            log("clarusc --bake-ir: object-code capture failed")
+            return false
+        }
+    }
+    bkEmitSection(body, bkSecObjCode, bkWriteObjCode(lane))
+    bkEmitSection(body, bkSecObjMeta, bkWriteObjMeta(lane))
 
     bodyHash = bkHashText(body)
 
@@ -1647,6 +1905,25 @@ func bkGetStr(): string {
     }
     s.fromBytes(buf, n)
     return s
+}
+
+// bkGetBytes (object-code-linker Task 2) mirrors bkPutBytes: a 4-byte BE
+// length followed by that many raw bytes, read one at a time through
+// bkGetByte (not a bulk slice) so the SAME overrun guard every other
+// reader already relies on (bkLoadOverrun) covers this path too.
+func bkGetBytes(): text {
+    var n: int
+    var t: text
+    var i: int
+
+    n = bkGetU32()
+    t = ""
+    i = 0
+    while i < n {
+        t.append(char(bkGetByte()))
+        i = i + 1
+    }
+    return t
 }
 
 func bkGetStrShort(): string {
@@ -1819,6 +2096,84 @@ var bkLdBaseIrStrLitsCount: int
 // bkSecCheckerVisibility's own doc comment.
 var bkLdEarlyFuncSigsCount: int
 var bkLdEarlySymbolsCount: int
+
+// bkLdObj* (format version 6, object-code-linker Task 2): the
+// bkSecObjCode/bkSecObjMeta staging -- parsed by bkReadObjCode/
+// bkReadObjMeta into these globals (never a live global write MID-PARSE
+// -- the timing guarantee the staging convention exists for -- every
+// field below is built into a fully-local `lXxx` first and assigned
+// here only once, at the very end of a successful parse), truncated to
+// the runtime/testapi boundary by bkInstallObjCode alongside
+// bkInstallArenas' own irFuncs truncation, then read by a future
+// compile's own Measure-skip/paste link pass (Task 3). See
+// bkWriteObjCode/bkWriteObjMeta for the exact field-for-field shape.
+//
+// The flat run/hole payload itself (bkReadObjCode's own lRuns/lHoles)
+// is assigned straight into cg68k.cla's OWN cgObjRuns/cgObjHoles below,
+// not a separate bkLdObjRuns/bkLdObjHoles pair: those two are the
+// largest, most release-expensive fields in this whole section (a `list
+// of text` and a `list of CgObjHole` each need their own per-element
+// walk in cg_free_globals, duplicated into EVERY segment's own glue
+// bundle -- cgEmitRcWalks), and cgObjRuns/cgObjHoles already exist as
+// program-level globals for the CAPTURE side of this exact same format
+// (cg68k.cla's own capture-globals doc comment). The two sides never
+// run in the same process at the same time (one is --bake-ir, the other
+// is a later --rtbake compile reading what --bake-ir wrote), so sharing
+// the storage costs nothing and avoids two more `var`s of exactly the
+// two priciest shapes in this file -- found the hard way running
+// TestSelfEmit68k: this section's own additions, unreviewed, tipped an
+// unrelated, already-near-the-32KB-ceiling cprint.cla function
+// (cpEmitRelease) over its own single-function segment limit when
+// self-compiling clarusc. The TIMING guarantee is identical either way
+// (assigned once, after the whole parse succeeds); only the field NAME
+// differs from the brief's own "bkLdObj*" literal spelling.
+var bkLdObjValid: list of bool
+var bkLdObjRunFirst: list of int
+var bkLdObjHoleFirst: list of int
+var bkLdObjNHoles: list of int
+
+var bkLdObjFuncSize: list of int
+var bkLdObjFuncFrameSize: list of int
+// bkLdObjFuncStrLits/EnumTables/Serdescs (per function, a pool-ref index
+// SET) are stored FLAT -- First/Count into one shared per-pool array --
+// rather than as `list of list of int`: a nested list needs a per-
+// element release WALK (cprint.cla's own cpEmitRelease, KRec/KList
+// element arms), duplicated into cgGlueBundleSize (cgEmitRcWalks runs
+// once per SEGMENT); a flat `list of int` releases in O(1), the same
+// shape cgObjRunFirst/cgObjHoleFirst above already uses for exactly this
+// reason. Self-compiling clarusc (TestSelfEmit68k) is close enough to
+// the 32KB single-function ceiling that three nested-list globals here
+// tipped an unrelated, already-near-the-edge cprint.cla function over
+// it; this is not a stylistic preference.
+var bkLdObjFuncStrLitFirst: list of int
+var bkLdObjFuncStrLitCount: list of int
+var bkLdObjFuncStrLitFlat: list of int
+var bkLdObjFuncEnumTableFirst: list of int
+var bkLdObjFuncEnumTableCount: list of int
+var bkLdObjFuncEnumTableFlat: list of int
+var bkLdObjFuncSerdescFirst: list of int
+var bkLdObjFuncSerdescCount: list of int
+var bkLdObjFuncSerdescFlat: list of int
+var bkLdObjFuncUsesUiBlob: list of bool
+var bkLdObjFuncUsesUiEvents: list of bool
+
+var bkLdObjSeg1ExtraSize: int
+var bkLdObjGlueBundleSize: int
+var bkLdObjPoolSize: int
+var bkLdObjStrLitSize: list of int
+var bkLdObjEnumTableSize: list of int
+var bkLdObjSerdescSize: list of int
+var bkLdObjUiBlobSize: int
+var bkLdObjUiEventsSize: int
+
+// bkRuntimeFuncBoundary (object-code-linker Task 2): the installed
+// runtime function count -- set in bkInstallArenas, right after irFuncs
+// itself is assigned (== irFuncs.count at that point, respecting the
+// SAME non-testapi truncation irFuncs just went through). A future
+// compile's own link pass (Task 3) uses this as "which irFuncs indices
+// are baked object, not freshly codegen'd" -- 0 until bkInstallArenas
+// first runs, meaningless (and never consulted) on any non-bake compile.
+var bkRuntimeFuncBoundary: int
 
 // bkLoadedModules (Task 5, deliverable (b)): the bake header's own
 // module-key manifest, retained rather than discarded (Task 4's own
@@ -2519,6 +2874,285 @@ func bkReadManifestHashes() {
     bkManifestEarlyVisible = early
 }
 
+// bkObjRelocSymValid (object-code-linker Task 2) is bkReadObjCode's own
+// corruption gate: a structurally-valid-but-corrupt bake (a flipped
+// symIdx byte, say) must be refused HERE, before a future link pass
+// (Task 3) ever hands an attacker- or bit-rot-controlled index to
+// cgCallFunc/cgJtDisp/cgStrLitLabels and friends. kind/cls per this
+// file's own bkSecObjCode doc comment (cg68k.cla's cgHole*/cgRelCls*
+// constants, visible here the same whole-program way every other
+// cg68k.cla symbol already is from bake.cla). cgRelClsPanicMsg carries
+// no numeric index at all (Amendment A2 -- resolved from the live
+// cgListOobMsgIdx global at link time), so any sym is valid there.
+func bkObjRelocSymValid(kind: int, cls: int, sym: int): bool {
+    if kind == cgHoleCall or kind == cgHoleJtAddr {
+        return sym >= 0 and sym < bkLdIrFuncs.count
+    }
+    if kind == cgHoleCbGlueAddr {
+        return sym >= 0 and sym < bkLdIrCbGlueNames.count
+    }
+    // kind == cgHoleLabel
+    if cls == cgRelClsPoolStr {
+        return sym >= 0 and sym < bkLdIrStrLits.count
+    }
+    if cls == cgRelClsPoolEnum {
+        return sym >= 0 and sym < bkLdIrEnums.count
+    }
+    if cls == cgRelClsPoolSer or cls == cgRelClsRcRetain or cls == cgRelClsRcRelease {
+        return sym >= 0 and sym < bkLdIrRecords.count
+    }
+    if cls == cgRelClsPoolUiBlob or cls == cgRelClsPoolUiEvt {
+        return sym == 0
+    }
+    if cls == cgRelClsGlue {
+        return sym >= 1 and sym <= 4
+    }
+    if cls == cgRelClsFuncLabel {
+        return sym >= 0 and sym < bkLdIrFuncs.count
+    }
+    if cls == cgRelClsPanicMsg {
+        return true
+    }
+    return false
+}
+
+// bkReadObjCode (format v6, object-code-linker Task 2) mirrors
+// bkWriteObjCode field-for-field into bkLdObj* staging. Returns false
+// the moment a hole's own symIdx fails bkObjRelocSymValid -- the
+// dispatcher (bkLoadSections, below) turns that into the same
+// emitDiag-then-refuse message path every other structural check here
+// already uses, never a crash or a half-installed object set.
+func bkReadObjCode(): bool {
+    var count: int
+    var i: int
+    var k: int
+    var nHoles: int
+    var valid: bool
+    var kind: int
+    var cls: int
+    var sym: int
+    var h: CgObjHole
+    var lValid: list of bool
+    var lRunFirst: list of int
+    var lHoleFirst: list of int
+    var lNHoles: list of int
+    var lRuns: list of text
+    var lHoles: list of CgObjHole
+
+    count = bkGetU32()
+    lValid = driveFreshBoolList()
+    lRunFirst = driveFreshIntList()
+    lHoleFirst = driveFreshIntList()
+    lNHoles = driveFreshIntList()
+    lRuns = cgFreshTextList()
+    i = 0
+    while i < count {
+        valid = bkGetBool()
+        lValid.add(valid)
+        lRunFirst.add(lRuns.count)
+        lHoleFirst.add(lHoles.count)
+        nHoles = 0
+        if valid {
+            nHoles = bkGetU32()
+            k = 0
+            while k <= nHoles {
+                lRuns.add(bkGetBytes())
+                if k < nHoles {
+                    kind = bkGetByte()
+                    cls = bkGetByte()
+                    sym = bkGetU32()
+                    h.kind = kind
+                    h.cls = cls
+                    h.sym = sym
+                    h.op = bkGetByte()
+                    h.size = bkGetByte()
+                    h.sm = bkGetByte()
+                    h.sr = bkGetByte()
+                    h.sv = bkGetU32()
+                    h.dm = bkGetByte()
+                    h.dr = bkGetByte()
+                    h.dv = bkGetU32()
+                    h.srcSlot = bkGetBool()
+                    if not bkObjRelocSymValid(kind, cls, sym) {
+                        emitDiag(1, 1, "--rtbake: object-code section: reloc symbol " + numToStr(sym) + " out of range (kind " + numToStr(kind) + ", class " + numToStr(cls) + ")")
+                        return false
+                    }
+                    lHoles.add(h)
+                }
+                k = k + 1
+            }
+        }
+        lNHoles.add(nHoles)
+        i = i + 1
+    }
+    bkLdObjValid = lValid
+    bkLdObjRunFirst = lRunFirst
+    bkLdObjHoleFirst = lHoleFirst
+    bkLdObjNHoles = lNHoles
+    // See bkLdObjValid's own doc comment: the flat run/hole payload
+    // reuses cg68k.cla's own capture-side globals instead of a separate
+    // bkLdObjRuns/bkLdObjHoles pair.
+    cgObjRuns = lRuns
+    cgObjHoles = lHoles
+    return true
+}
+
+// bkObjPoolIdxValid (object-code-linker Task 2): bkReadObjMeta's own
+// lighter-weight defense-in-depth check, symmetric with
+// bkObjRelocSymValid but over ONE function's own flat pool-ref index
+// slice (bkLdObjFuncStrLitFlat[first, first+count) and friends -- see
+// that field's own doc comment for why flat, not `list of list of int`)
+// -- never a call target, so no kind/cls switch is needed, just "is this
+// index inside the corresponding pool arena".
+func bkObjPoolIdxValid(flat: list of int, first: int, count: int, bound: int): bool {
+    var i: int
+    var v: int
+
+    i = 0
+    while i < count {
+        v = flat[first + i]
+        if v < 0 or v >= bound {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// bkReadObjMeta (format v6, object-code-linker Task 2) mirrors
+// bkWriteObjMeta field-for-field into bkLdObj* staging, refusing (same
+// message path as bkReadObjCode) the moment a function's own pool-ref
+// index list names something outside that pool's own installed range.
+// The wire shape is UNCHANGED (still count-then-elements per pool per
+// function, matching bkWriteObjMeta exactly, which reads straight off
+// cg68k.cla's own `list of list of int` cgFuncStrLits/etc) -- only the
+// STAGING shape flattens (bkLdObjFuncStrLitFirst/Count into one shared
+// bkLdObjFuncStrLitFlat, per pool).
+func bkReadObjMeta(): bool {
+    var count: int
+    var i: int
+    var k: int
+    var n: int
+    var lSize: list of int
+    var lFrame: list of int
+    var lStrLitFirst: list of int
+    var lStrLitCount: list of int
+    var lStrLitFlat: list of int
+    var lEnumTableFirst: list of int
+    var lEnumTableCount: list of int
+    var lEnumTableFlat: list of int
+    var lSerdescFirst: list of int
+    var lSerdescCount: list of int
+    var lSerdescFlat: list of int
+    var lUsesUiBlob: list of bool
+    var lUsesUiEvents: list of bool
+
+    count = bkGetU32()
+    lSize = driveFreshIntList()
+    lFrame = driveFreshIntList()
+    lStrLitFirst = driveFreshIntList()
+    lStrLitCount = driveFreshIntList()
+    lStrLitFlat = driveFreshIntList()
+    lEnumTableFirst = driveFreshIntList()
+    lEnumTableCount = driveFreshIntList()
+    lEnumTableFlat = driveFreshIntList()
+    lSerdescFirst = driveFreshIntList()
+    lSerdescCount = driveFreshIntList()
+    lSerdescFlat = driveFreshIntList()
+    lUsesUiBlob = driveFreshBoolList()
+    lUsesUiEvents = driveFreshBoolList()
+    i = 0
+    while i < count {
+        lSize.add(bkGetU32())
+        lFrame.add(bkGetU32())
+
+        n = bkGetU32()
+        lStrLitFirst.add(lStrLitFlat.count)
+        lStrLitCount.add(n)
+        k = 0
+        while k < n {
+            lStrLitFlat.add(bkGetU32())
+            k = k + 1
+        }
+        if not bkObjPoolIdxValid(lStrLitFlat, lStrLitFirst[i], n, bkLdIrStrLits.count) {
+            emitDiag(1, 1, "--rtbake: object-meta section: pool-ref index out of range for function " + numToStr(i))
+            return false
+        }
+
+        n = bkGetU32()
+        lEnumTableFirst.add(lEnumTableFlat.count)
+        lEnumTableCount.add(n)
+        k = 0
+        while k < n {
+            lEnumTableFlat.add(bkGetU32())
+            k = k + 1
+        }
+        if not bkObjPoolIdxValid(lEnumTableFlat, lEnumTableFirst[i], n, bkLdIrEnums.count) {
+            emitDiag(1, 1, "--rtbake: object-meta section: pool-ref index out of range for function " + numToStr(i))
+            return false
+        }
+
+        n = bkGetU32()
+        lSerdescFirst.add(lSerdescFlat.count)
+        lSerdescCount.add(n)
+        k = 0
+        while k < n {
+            lSerdescFlat.add(bkGetU32())
+            k = k + 1
+        }
+        if not bkObjPoolIdxValid(lSerdescFlat, lSerdescFirst[i], n, bkLdIrRecords.count) {
+            emitDiag(1, 1, "--rtbake: object-meta section: pool-ref index out of range for function " + numToStr(i))
+            return false
+        }
+
+        lUsesUiBlob.add(bkGetBool())
+        lUsesUiEvents.add(bkGetBool())
+        i = i + 1
+    }
+    bkLdObjFuncSize = lSize
+    bkLdObjFuncFrameSize = lFrame
+    bkLdObjFuncStrLitFirst = lStrLitFirst
+    bkLdObjFuncStrLitCount = lStrLitCount
+    bkLdObjFuncStrLitFlat = lStrLitFlat
+    bkLdObjFuncEnumTableFirst = lEnumTableFirst
+    bkLdObjFuncEnumTableCount = lEnumTableCount
+    bkLdObjFuncEnumTableFlat = lEnumTableFlat
+    bkLdObjFuncSerdescFirst = lSerdescFirst
+    bkLdObjFuncSerdescCount = lSerdescCount
+    bkLdObjFuncSerdescFlat = lSerdescFlat
+    bkLdObjFuncUsesUiBlob = lUsesUiBlob
+    bkLdObjFuncUsesUiEvents = lUsesUiEvents
+
+    bkLdObjSeg1ExtraSize = bkGetU32()
+    bkLdObjGlueBundleSize = bkGetU32()
+    bkLdObjPoolSize = bkGetU32()
+
+    n = bkGetU32()
+    bkLdObjStrLitSize = driveFreshIntList()
+    k = 0
+    while k < n {
+        bkLdObjStrLitSize.add(bkGetU32())
+        k = k + 1
+    }
+    n = bkGetU32()
+    bkLdObjEnumTableSize = driveFreshIntList()
+    k = 0
+    while k < n {
+        bkLdObjEnumTableSize.add(bkGetU32())
+        k = k + 1
+    }
+    n = bkGetU32()
+    bkLdObjSerdescSize = driveFreshIntList()
+    k = 0
+    while k < n {
+        bkLdObjSerdescSize.add(bkGetU32())
+        k = k + 1
+    }
+    bkLdObjUiBlobSize = bkGetU32()
+    bkLdObjUiEventsSize = bkGetU32()
+    return true
+}
+
 // bkLoadSections reads the section table (sectionCount, then that many
 // `id(2) len(4) payload(len)` frames) and dispatches each to its own
 // reader by id -- section ORDER in the file always matches bkWriteFile's
@@ -2634,6 +3268,17 @@ func bkLoadSections(): bool {
             bkReadCheckerVisibility()
         } else if id == bkSecManifestHashes {
             bkReadManifestHashes()
+        } else if id == bkSecObjCode {
+            // object-code-linker Task 2: bkReadObjCode already emitDiag's
+            // its own specific reloc-symIdx message before returning
+            // false -- propagate straight through, no second diagnostic.
+            if not bkReadObjCode() {
+                return false
+            }
+        } else if id == bkSecObjMeta {
+            if not bkReadObjMeta() {
+                return false
+            }
         } else {
             emitDiag(1, 1, "--rtbake: unknown section id " + numToStr(id))
             return false
@@ -3041,6 +3686,12 @@ func bkInstallArenas(testapi: bool) {
     // truncation drops entries the loaded map's own indices would still
     // reference.
     irFuncs = srcFuncs
+    // object-code-linker Task 2: the object-code boundary global, set
+    // here (not bkInstallObjCode) so it exists for a future compile's
+    // own link pass regardless of whether the artifact carries any
+    // object sections at all (lane c, or a pre-Task-2 bake -- format
+    // refused outright by version, but defensive regardless).
+    bkRuntimeFuncBoundary = irFuncs.count
     i = 0
     while i < irFuncs.count {
         nm = irFuncs[i].name
@@ -3114,6 +3765,51 @@ func bkInstallArenas(testapi: bool) {
     lowStoreTempN = bkLdLowStoreTempN
     lowRetTempN = bkLdLowRetTempN
     lowStrIdx = bkLdLowStrIdx
+}
+
+// bkInstallObjCode (object-code-linker Task 2): truncates the per-
+// function object staging (bkLdObjValid/RunFirst/HoleFirst/NHoles) down
+// to bkRuntimeFuncBoundary -- the SAME boundary bkInstallArenas (above)
+// just set irFuncs.count to -- so a future consumer (Task 3) can safely
+// use bkLdObjValid.count as its own iteration bound without separately
+// re-deriving the testapi split. The two FLAT arrays (cgObjRuns/
+// cgObjHoles -- bkLdObjValid's own doc comment explains why these are
+// cg68k.cla's capture-side globals, reused, not a separate bkLdObjRuns/
+// bkLdObjHoles pair) are deliberately NOT truncated: a dropped
+// function's own run/hole indices simply become unreachable once its
+// own RunFirst/HoleFirst/NHoles entry is gone (wasted but harmless, the
+// same argument bkInstallArenas' own srcStrLits truncation already makes
+// for not compacting bkLdIrStrLits's tail). Called by drive.cla
+// immediately after bkInstallArenas -- still before checkPhase1/
+// lowerProgram ever
+// run, i.e. post-acceptance, with nothing before this point able to have
+// half-installed object code the caller would then need to unwind.
+func bkInstallObjCode() {
+    var truncValid: list of bool
+    var truncRunFirst: list of int
+    var truncHoleFirst: list of int
+    var truncNHoles: list of int
+    var i: int
+
+    if bkLdObjValid.count <= bkRuntimeFuncBoundary {
+        return
+    }
+    truncValid = driveFreshBoolList()
+    truncRunFirst = driveFreshIntList()
+    truncHoleFirst = driveFreshIntList()
+    truncNHoles = driveFreshIntList()
+    i = 0
+    while i < bkRuntimeFuncBoundary {
+        truncValid.add(bkLdObjValid[i])
+        truncRunFirst.add(bkLdObjRunFirst[i])
+        truncHoleFirst.add(bkLdObjHoleFirst[i])
+        truncNHoles.add(bkLdObjNHoles[i])
+        i = i + 1
+    }
+    bkLdObjValid = truncValid
+    bkLdObjRunFirst = truncRunFirst
+    bkLdObjHoleFirst = truncHoleFirst
+    bkLdObjNHoles = truncNHoles
 }
 
 // ================================================================
