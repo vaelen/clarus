@@ -1597,10 +1597,10 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   merge-ready from a testing standpoint** (merge itself remains
   Andrew's call).
 
-- **object-code-linker (branch `precompiled-artifacts`, 2026-08-13,
+- **object-code-linker (branch `precompiled-artifacts`, 2026-08-13/14,
   based on `fallback-trigger-narrowing`/`main` at `e143af1`): DONE, T2
-  GREEN, Snow PENDING (controller runs post-final-review, at the true
-  tip — not this session's job).**
+  GREEN, Snow PASS at tip `6bf4f6e` (2026-08-14, after the C-lane UB
+  fix wave — first Snow run's FAIL and its RCA are recorded below).**
   Implements the precompiled-artifacts notes doc's item 5 / stage 3.5:
   runtime function BYTES ship in the artifact on the 68k lane, so a
   `--rtbake` compile's Measure pass and per-segment emit pass both skip
@@ -2007,9 +2007,12 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   (expected: `cg68k.cla`'s native codegen never had this bug — only the
   C lane's printer did). Full gate results, per-operator reasoning, and
   before/after evidence: `fixwave-report.md` in this workspace. T2
-  GREEN again post-fix. **Snow re-run is still PENDING** — this fix
-  wave has not been proven on real hardware; that remains the
-  controller's job, same standing rule as before.
+  GREEN again post-fix. **Snow re-run PASSED at tip `6bf4f6e`**
+  (2026-08-14, 55m settle, exit 0, zero fallback/drift lines): the v6
+  artifact was accepted on the Mac, both on-Mac compiles took the bake
+  path, and the produced forks byte-matched the host oracles — the fix
+  wave is hardware-proven and the phase's standing-rule obligation is
+  satisfied.
 
 ## Small open items (not yet scheduled)
 

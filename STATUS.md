@@ -1,4 +1,4 @@
-# Session status — 2026-08-13 (object-code-linker DONE, T2 GREEN, Snow PENDING at tip)
+# Session status — 2026-08-14 (object-code-linker DONE, T2 GREEN, Snow PASS at tip)
 
 Handoff summary for the next session. Current branch:
 `precompiled-artifacts` (created from `fallback-trigger-narrowing`/`main`
@@ -20,17 +20,19 @@ host-written CLIR header carried an unmasked hash the real 68k `AND.L`
 never produces. Full RCA: `.superpowers/sdd/2026-08-13-object-code-linker/
 snow-failure-rca.md`; the fix + verification + gates:
 `.superpowers/sdd/2026-08-13-object-code-linker/fixwave-report.md`. T2
-is GREEN again post-fix. **The Snow RE-RUN is now PENDING** — the
-standing rule (`TestClarusCBakePathOnSnow`, `CLARUS_SNOW_TESTS=1`)
-still applies (this phase touched `clarusc/bake.cla` and
-`clarusc/cg68k.cla`, and the fix wave touched `clarusc/cprint.cla` +
-regenerated the `clarusc/clarusc.c` snapshot besides). That run is
-explicitly NOT this session's job (the controller runs it
-post-final-review, at the true tip) — check whether it has landed; if
-not, that is the next action, and it doubles as this phase's own
-headline on-hardware measurement (compare the on-Mac Measure + emit
-wall-clock against the runtime-ir-bake phase's ~55m post-leak-fix
-`TickProbe` reference).
+is GREEN again post-fix. **The Snow RE-RUN PASSED at the true tip
+`6bf4f6e`** (2026-08-14 01:37 JST: `TestClarusCBakePathOnSnow`,
+`CLARUS_SNOW_TESTS=1`, 55m settle, exit 0, ZERO `CLFS-source fallback`
+or drift lines — the v6 artifact was accepted, the bake path ran both
+on-Mac compiles, and the Mac-produced TickProbe/CatProbe forks
+byte-matched the host from-source oracles; log:
+`.superpowers/sdd/2026-08-13-object-code-linker/snow-rerun2.log`). The
+phase is fully gated. One informational item still open: the PASS log
+is terse (per-phase `TickCount()` trace only dumps on failure), so the
+on-Mac Measure/load-phase timing comparison against the
+runtime-ir-bake ~55m `TickProbe` reference was not captured by that
+run; a verbose re-run is optional, informational-only, and does not
+gate the merge.
 
 Once Snow is green, the precompiled-artifacts notes doc's own staging
 (`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`)
@@ -127,10 +129,11 @@ regenerating them.
 `CLARUS_BAKE_FULL` bake corpus 6s). Log:
 `.superpowers/sdd/2026-08-13-object-code-linker/task4-t2.log`.
 
-**Snow: PENDING** — the standing rule applies (`bake.cla`/`cg68k.cla`
-both touched); this session did not run it (explicitly the controller's
-job, post-final-review, at the true tip, per the task brief). Do not
-report merge-readiness as complete until that run lands PASS.
+**Snow: PASS** (first run FAILED on the C-lane UB hash bug — see
+section 0 — the fix wave landed, and the re-run at tip `6bf4f6e`
+PASSED 2026-08-14, zero fallback lines, forks byte-identical). The
+standing-rule obligation for this phase is satisfied; merge-ready from
+a testing standpoint.
 
 **Deferred / phase debt (full detail in ROADMAP entry and each task's
 own report):** taint-and-discard is silent/uncounted; `bkGetBytes`
