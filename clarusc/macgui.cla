@@ -469,6 +469,20 @@ func gcLog(w: Log, line: string) {
 // is now refused HERE too, not just inside driveCompile's own later full
 // parse, so this claim now holds for section-level corruption as well
 // as the header fields it always covered.
+//
+// A fourth reason exists but is NOT decided here: fallback-trigger-
+// narrowing's per-module source hash (format v5, bkManifestHashes) can
+// still trigger a from-source fallback for an otherwise-accepted bake,
+// when a user `include` collides with a manifest module whose on-disk
+// bytes have drifted from what the bake carries. That check runs per
+// include, inside driveCompile itself (drive.cla's own expand()/
+// driveCompile), well after this function has already returned "bake
+// path" -- it logs its own line ("clarusc --rtbake: <path> differs from
+// the baked copy; falling back to a from-source compile") through the
+// same feProgress() seam gcCompile's bakeMsg uses below, so a drifted
+// compile shows both lines in the Log window: this function's initial
+// "bake path" verdict, then drive.cla's own drift line once the
+// collision is actually reached.
 func gcResolveBakePath(): string {
     var clirBuf: text
 
@@ -482,7 +496,7 @@ func gcResolveBakePath(): string {
     }
     if not bkCheckRtbakeHeader(clirBuf, bkLane68k) {
         resetDiags()
-        return "clarusc: CLFS-source fallback (CLIR resource refused -- format/version/lane/stamp mismatch)"
+        return "clarusc: CLFS-source fallback (CLIR resource refused -- format/version/lane/stamp/body-hash mismatch)"
     }
     resetDiags()
     haveRtbake = true
