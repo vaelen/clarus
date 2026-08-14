@@ -441,7 +441,10 @@ func lowInternStr(s: string): int {
 // node (a stray -1 return that a caller ignores) or crashing later with an
 // opaque arena-index error (a stray -1 dereferenced as an index). `lower`
 // has no diagnostic-accumulation path of its own, so this reuses the same
-// log+quit machinery main.cla's own error paths use.
+// abort() machinery clarusc's own pipeline fatal sites use (attempt-abort
+// phase Task 6: this used to be a bare `log(msg); quit 1` before that
+// conversion -- the observable non-UI-default behavior is unchanged, see
+// design doc %3.5, but the mechanism is no longer a direct process exit).
 func lowUnsupported(what: string) {
     abort("clarusc emit: unsupported construct: " + what + " (not yet implemented)")
 }
@@ -6752,7 +6755,280 @@ func lowerProgram(declHead: int): int {
             lowUiPortAddRoots()
         }
     }
+    // attempt-abort phase Task 6b: every IRFunc this compile will ever
+    // build (including the clar_ui_fire_* dispatchers just synthesized
+    // above) now exists -- the right, and only, point to run the
+    // whole-program canAbort fixpoint. Gated on lowUsesAbort (already
+    // final by now, set during checking -- see its own doc comment,
+    // check.cla): a no-feature program has no IAbort anywhere, so this
+    // would be a real whole-program O(V+E) walk for a guaranteed-empty
+    // answer -- skip it entirely, see lowComputeCanAbort's own doc
+    // comment for the full rationale.
+    if lowUsesAbort {
+        lowComputeCanAbort()
+    }
     return 0
+}
+
+// lowAbortRevHead/lowAbortRevTail/lowAbortRevNext/lowAbortRevFrom: the
+// direct call graph's REVERSE adjacency (keyed by CALLEE, listing its
+// callers), built fresh by every lowComputeCanAbort call -- same head/
+// next/tail linked-list-in-arrays shape cg68k.cla's own cgAdjHead/
+// cgAdjNext/cgAdjTo/cgAdjTail already establishes for the analogous
+// forward adjacency over shake's edges (see that file's own doc comment
+// for why this shape: O(1) append, O(out-degree) walk, no recursion).
+// lowAbortQueue is the worklist; lowAbortCurFunc/lowAbortSeeded are
+// lowComputeCanAbort's own per-function walk state (mirrors shake.cla's
+// shakeCurFunc).
+var lowAbortRevHead: list of int
+var lowAbortRevTail: list of int
+var lowAbortRevNext: list of int
+var lowAbortRevFrom: list of int
+var lowAbortQueue: list of int
+var lowAbortCurFunc: int
+var lowAbortSeeded: bool
+
+// lowComputeCanAbort (attempt-abort phase Task 6b, design doc %8's own
+// deferred "only if the perf snapshot shows the naive scheme actually
+// hurts" item -- task-6-report.md's own +26.3%/+6.8% measured exactly
+// that): whole-program interprocedural "can this function's own
+// execution leave abort()'s flag set for ITS caller to see" analysis.
+// Both backends' post-call check predicate (cgAbortCheckAfterCall,
+// cprint.cla's own fpCallFn call-site) narrows from "callee is
+// non-runtime-origin" to "callee canAbort" using the result, shrinking
+// the checked-call-site count for the overwhelming majority of an
+// abort-enabled program's calls (most functions never abort and never
+// call anything that does).
+//
+// Deliberately LANE-INDEPENDENT: runs once, here, inside lowering,
+// before either backend's own shakeProgram call exists (main.cla's own
+// C-lane call; drive.cla's driveEmit68kFork call for the 68k lane) --
+// each shake pass has DIFFERENT extra roots (shakeAddRoot's nat_*/
+// rtEnumCheck/pascal-glue names, 68k-only), so reusing either one's own
+// post-shake call graph would make a shared function's canAbort verdict
+// depend on WHICH lane compiled it -- breaking the full-corpus
+// byte-identity gate (from-source vs --rtbake, and C-lane vs 68k-lane
+// checked-call-site counts must both be reproducible from the SAME IR).
+// This walk instead covers the WHOLE program unconditionally, reachable
+// or not by either lane's own shake -- an edge recorded from a function
+// that later shakes away in one lane only is harmless (it can only ever
+// ADD a canAbort=true nobody reads, never remove one that matters), so
+// both backends always agree.
+//
+// Design: exactly design doc %8's own wording -- "seed = every function
+// whose lowered body contains an IAbort; propagate caller-ward over the
+// direct call graph ... until fixed point." "Contains an IAbort" is
+// checked over the function's ENTIRE body, including inside an
+// attempt's own body/handler sub-chains -- this does NOT try to prove a
+// same-function attempt always catches its own abort (that would need
+// its own reachability-through-the-handler analysis); a function whose
+// only abort is caught by its own enclosing attempt and never re-raised
+// is seeded anyway, a deliberate, sound over-approximation (removes
+// fewer checks than a maximally precise analysis could, never removes
+// one that isn't safe to remove). Clarus has no user-level indirect
+// calls (whole-program compilation, every ECallFn names its callee
+// directly) and a callback's Toolbox-invoked body is never reached via
+// an ECallFn edge at all (its address is taken via ECbAddr, never
+// called directly from Clarus code -- ir.cla's own ECbAddr doc comment),
+// so the direct call graph this walk builds is complete and exact -- no
+// unknown-callee conservatism is ever needed.
+//
+// Runtime-origin functions are skipped entirely by the loop below --
+// never seeded, never walked for their own call-outs. Design doc %3.4
+// forbids attempt/abort in runtime modules, and runtime code never
+// calls user functions anyway (shake.cla's own file-header comment), so
+// this is belt-and-suspenders (defense against a future convention
+// violation), not load-bearing.
+//
+// Iteration bound: standard BFS worklist over a DAG-or-cyclic call graph
+// with at most irFuncs.count nodes -- each node is enqueued at most
+// once (the `not irFuncCanAbort` guard before every enqueue), so the
+// outer while loop below runs at most irFuncs.count times and the total
+// work across all of it (building the reverse adjacency once, plus one
+// pass over each node's own caller-edge list when it's popped) is
+// O(V+E), not an unbounded or exponential fixpoint.
+func lowComputeCanAbort() {
+    var n: int
+    var i: int
+    var qi: int
+    var f: int
+    var edge: int
+    var caller: int
+    var freshRevHead: list of int
+    var freshRevTail: list of int
+    var freshRevNext: list of int
+    var freshRevFrom: list of int
+    var freshQueue: list of int
+
+    n = irFuncs.count
+    lowAbortRevHead = freshRevHead
+    lowAbortRevTail = freshRevTail
+    lowAbortRevNext = freshRevNext
+    lowAbortRevFrom = freshRevFrom
+    lowAbortQueue = freshQueue
+
+    i = 0
+    while i < n {
+        lowAbortRevHead.add(-1)
+        lowAbortRevTail.add(-1)
+        i = i + 1
+    }
+
+    i = 0
+    while i < n {
+        if not irFuncIsRuntimeOrigin(i) {
+            lowAbortCurFunc = i
+            lowAbortSeeded = false
+            lowAbortWalkStmts(irFuncBodyHead(i))
+            if lowAbortSeeded and not irFuncCanAbort(i) {
+                irFuncMarkCanAbort(i)
+                lowAbortQueue.add(i)
+            }
+        }
+        i = i + 1
+    }
+
+    // ---- worklist: propagate every newly-true function to its callers ----
+    qi = 0
+    while qi < lowAbortQueue.count {
+        f = lowAbortQueue[qi]
+        edge = lowAbortRevHead[f]
+        while edge != -1 {
+            caller = lowAbortRevFrom[edge]
+            if not irFuncCanAbort(caller) {
+                irFuncMarkCanAbort(caller)
+                lowAbortQueue.add(caller)
+            }
+            edge = lowAbortRevNext[edge]
+        }
+        qi = qi + 1
+    }
+}
+
+// lowAbortAddRevEdge records a callee->[callers] reverse edge (caller =
+// lowAbortCurFunc, the function whose body is currently being walked) --
+// see lowAbortRevHead's own doc comment for the shape.
+func lowAbortAddRevEdge(callee: int) {
+    var e: int
+
+    lowAbortRevFrom.add(lowAbortCurFunc)
+    lowAbortRevNext.add(-1)
+    e = lowAbortRevFrom.count - 1
+    if lowAbortRevHead[callee] == -1 {
+        lowAbortRevHead[callee] = e
+    } else {
+        lowAbortRevNext[lowAbortRevTail[callee]] = e
+    }
+    lowAbortRevTail[callee] = e
+}
+
+// lowAbortWalkStmts/lowAbortWalkStmt/lowAbortWalkExprList/lowAbortWalkExpr
+// mirror shake.cla's shakeWalkStmts/shakeWalkStmt/shakeWalkExprList/
+// shakeWalkExpr exactly in SHAPE (same statement/expression kinds
+// recursed into, for the same reason: finding every embedded call site),
+// but answer a different question -- shake asks "is this reachable and
+// what does it call, by NAME, for runtime-redirect rooting purposes";
+// this asks "does lowAbortCurFunc's body contain an IAbort, and which
+// OTHER real IRFuncs does it call" -- so this does not need shake's own
+// runtime-redirect table (shakeWalkIntr) or root bookkeeping at all, just
+// the plain structural recursion.
+func lowAbortWalkStmts(head: int) {
+    var s: int
+
+    s = head
+    while s != -1 {
+        lowAbortWalkStmt(s)
+        s = irStmtNext(s)
+    }
+}
+
+func lowAbortWalkStmt(s: int) {
+    var k: IRStmtKind
+
+    k = irStmtKind(s)
+    if k == SAssign {
+        lowAbortWalkExpr(irAssignDst(s))
+        lowAbortWalkExpr(irAssignSrc(s))
+    } else if k == SStoreStr {
+        lowAbortWalkExpr(irStoreStrDst(s))
+        lowAbortWalkExpr(irStoreStrSrc(s))
+    } else if k == SExprStmt {
+        lowAbortWalkExpr(irExprStmtX(s))
+    } else if k == SIf {
+        lowAbortWalkExpr(irIfCond(s))
+        lowAbortWalkStmts(irIfThen(s))
+        lowAbortWalkStmts(irIfElse(s))
+    } else if k == SWhile {
+        lowAbortWalkExpr(irWhileCond(s))
+        lowAbortWalkStmts(irWhileBody(s))
+    } else if k == SForRange {
+        lowAbortWalkExpr(irForRangeFrom(s))
+        lowAbortWalkExpr(irForRangeTo(s))
+        lowAbortWalkStmts(irForRangeBody(s))
+    } else if k == SForList {
+        lowAbortWalkExpr(irForListListV(s))
+        lowAbortWalkStmts(irForListBody(s))
+    } else if k == SForMap {
+        lowAbortWalkExpr(irForMapMapV(s))
+        lowAbortWalkStmts(irForMapBody(s))
+    } else if k == SReturn {
+        lowAbortWalkExpr(irReturnX(s))
+    } else if k == SAttempt {
+        lowAbortWalkStmts(irAttemptBody(s))
+        lowAbortWalkStmts(irAttemptHandler(s))
+    }
+    // SBreak/SContinue: no fields to walk.
+}
+
+func lowAbortWalkExprList(head: int) {
+    var e: int
+
+    e = head
+    while e != -1 {
+        lowAbortWalkExpr(e)
+        e = irExprNext(e)
+    }
+}
+
+func lowAbortWalkExpr(x: int) {
+    var k: IRExprKind
+    var callee: int
+
+    if x == -1 {
+        return
+    }
+    k = irExprKind(x)
+    if k == EFieldRef {
+        lowAbortWalkExpr(irFieldRefX(x))
+    } else if k == EIndexRef {
+        lowAbortWalkExpr(irIndexRefX(x))
+        lowAbortWalkExpr(irIndexRefI(x))
+    } else if k == EBin {
+        lowAbortWalkExpr(irBinX(x))
+        lowAbortWalkExpr(irBinY(x))
+    } else if k == EUn {
+        lowAbortWalkExpr(irUnX(x))
+    } else if k == EConv {
+        lowAbortWalkExpr(irConvX(x))
+    } else if k == ECallFn {
+        callee = findIRFuncIdxByName(irCallFnName(x))
+        if callee != -1 {
+            lowAbortAddRevEdge(callee)
+        }
+        lowAbortWalkExprList(irCallFnArgsHead(x))
+    } else if k == ECallExt {
+        lowAbortWalkExprList(irCallExtArgsHead(x))
+    } else if k == EIntr {
+        if irIntrName(x) == IAbort() {
+            lowAbortSeeded = true
+        }
+        lowAbortWalkExprList(irIntrArgsHead(x))
+    }
+    // ECbAddr: taking a callback's address is not a call (mirrors
+    // shake.cla's own reasoning) -- the callback's own body is walked
+    // separately by lowComputeCanAbort's outer loop, as an ordinary
+    // irFuncs entry in its own right; EIntConst/EStrConst/EVarRef/
+    // ENewRec/EXRecAddr carry no child expressions.
 }
 
 // lowUiPortAddRoots (Task 7 Step 6, native-5e): registers every ported

@@ -378,6 +378,25 @@ record IRFunc {
     // default for every OTHER function (synthesized dispatchers, handler
     // bodies, and ordinary user functions are never runtime-origin).
     fromRuntimeModule: bool
+    // canAbort (attempt-abort phase Task 6b, design doc %8's own deferred-
+    // if-perf-hurts item -- the perf snapshot DID hurt, task-6-report.md's
+    // +26.3%/+6.8%): true iff this function's own lowered body directly
+    // contains an IAbort, OR it (transitively, over the direct call graph)
+    // calls some function for which this is true. lowComputeCanAbort
+    // (lower.cla) computes this once per compile, whole-program, right
+    // after lowerProgram's own per-decl walk finishes -- see its own doc
+    // comment for the fixpoint. Both backends' post-call check predicate
+    // (cgAbortCheckAfterCall/fpCallFn) narrows from "callee is non-runtime-
+    // origin" to "callee canAbort" using this field, shrinking the checked-
+    // call-site count for the overwhelming majority of an abort-enabled
+    // program's calls (most functions never abort and never call anything
+    // that does). Plain bool zero-value (false) is the correct default:
+    // a runtime-origin function is never seeded and never propagated into
+    // (see lowComputeCanAbort), and a program with no `attempt`/`abort` at
+    // all skips the analysis entirely (lowUsesAbort false), leaving every
+    // function's canAbort at its default false -- inert, matching every
+    // other field this phase added.
+    canAbort: bool
 }
 
 record IRGlobal {
@@ -2187,6 +2206,19 @@ func irFuncIsRuntimeOrigin(i: int): bool {
 
 func irFuncMarkRuntimeOrigin(i: int) {
     irFuncs[i].fromRuntimeModule = true
+}
+
+// irFuncCanAbort/irFuncMarkCanAbort (attempt-abort phase Task 6b): see
+// IRFunc.canAbort's own doc comment above. Mark-only, same convention as
+// irFuncMarkRuntimeOrigin -- false is already the correct default and
+// lowComputeCanAbort's fixpoint only ever transitions a function from
+// false to true, never back.
+func irFuncCanAbort(i: int): bool {
+    return irFuncs[i].canAbort
+}
+
+func irFuncMarkCanAbort(i: int) {
+    irFuncs[i].canAbort = true
 }
 
 // findIRFuncIdxByName returns irFuncs' arena index for the func whose name

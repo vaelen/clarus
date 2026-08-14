@@ -2389,6 +2389,20 @@ func bkReadIrFuncs(): list of IRFunc {
         // program the moment codegen starts reading the tag.
         e.bailHead = -1
         e.fromRuntimeModule = true
+        // attempt-abort phase Task 6b: canAbort is ALSO not part of the
+        // serialized format (same reason as bailHead/fromRuntimeModule
+        // above -- added after this function already existed), following
+        // the exact same fix pattern. Unlike those two, false already IS
+        // the correct default for a restored/baked entry (a runtime
+        // function can never abort -- design doc %3.4, and
+        // lowComputeCanAbort/lower.cla never seeds or propagates into a
+        // runtime-origin one either), so this line is defensively
+        // explicit rather than load-bearing: `var e: IRFunc` above is
+        // reused across every loop iteration, and every OTHER field gets
+        // a fresh explicit assignment each time, so leaving this one
+        // field to "just happen to already be false from construction"
+        // would be the odd one out, not a correctness gap.
+        e.canAbort = false
         l.add(e)
         i = i + 1
     }
