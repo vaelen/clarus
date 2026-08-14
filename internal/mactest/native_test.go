@@ -20,6 +20,7 @@
 package mactest
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -452,7 +453,28 @@ func TestAbortOn68k(t *testing.T) {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			wrapper := filepath.Join(repoRoot(t), "testdata", "run", name+".cla")
-			wantOut, err := os.ReadFile(filepath.Join(repoRoot(t), "testdata", "run", name+".out"))
+			// Task 9's dual-write panic trace (native.cla's nat_CorePanic)
+			// writes the "runtime error: ..." line to `out` IMMEDIATELY via
+			// natAlert, ahead of natQuit's buffered-log trailer -- so on
+			// this lane only, an aborting fixture's `out` capture ends with
+			// that trace line, which the shared testdata/run/<name>.out
+			// golden must NOT contain (internal/selfhost's
+			// TestBehaviorGoldens checks the same golden against host
+			// stdout, where a panic goes to stderr, not stdout; the
+			// demoted cprint-Mac lane in mac_test.go's TestAbortAppsOnMac
+			// also shares that golden and predates Task 9's runtime
+			// change). Rather than fork the golden for every lane, an
+			// optional <name>.out68k carries the native lane's own
+			// expectation (the .out content plus the trailing panic
+			// line) when a fixture's golden differs here; fixtures with
+			// no lane-specific difference have no .out68k and just fall
+			// back to the shared .out.
+			outGolden := filepath.Join(repoRoot(t), "testdata", "run", name+".out68k")
+			wantOut, err := os.ReadFile(outGolden)
+			if errors.Is(err, os.ErrNotExist) {
+				outGolden = filepath.Join(repoRoot(t), "testdata", "run", name+".out")
+				wantOut, err = os.ReadFile(outGolden)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
