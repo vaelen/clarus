@@ -258,10 +258,26 @@ func TestBehaviorGoldens(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			// attempt-abort phase Task 3: every pre-existing runerr fixture
+			// is an rt_panic (list bounds, etc.), which always exits 3 --
+			// but the new uncaught-abort default (design doc %3.5) exits 1
+			// instead (byte-identical to today's `log(msg)` + `quit 1`).
+			// An optional <base>.exit golden (same convention testdata/run
+			// fixtures already use, above) overrides the historical
+			// hardcoded 3; no existing runerr fixture carries one, so this
+			// is a pure addition, not a behavior change for any of them.
+			wantExit := 3
+			if b, err := os.ReadFile(base + ".exit"); err == nil {
+				wantExit, err = strconv.Atoi(strings.TrimSpace(string(b)))
+				if err != nil {
+					t.Fatalf("bad .exit: %v", err)
+				}
+			}
+
 			exit, stdout, stderr, _ := runBehaviorFixture(t, exe, root, f, nil, false)
 
-			if exit != 3 {
-				t.Errorf("exit: got %d want 3 (stderr: %s)", exit, stderr)
+			if exit != wantExit {
+				t.Errorf("exit: got %d want %d (stderr: %s)", exit, wantExit, stderr)
 			}
 			if !strings.Contains(string(stderr), strings.TrimSpace(string(wantErr))) {
 				t.Errorf("stderr %q missing %q", stderr, wantErr)

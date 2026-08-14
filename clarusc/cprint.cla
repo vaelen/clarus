@@ -359,6 +359,69 @@ var fpStmtTmpType: list of int
 // discarded one.
 var fpDiscardExprIdx: int
 
+// fpBailTargets (attempt-abort phase Task 3, design doc %3.2/%3.3) is a
+// stack of C label names: the innermost lexically-enclosing `attempt`'s
+// handler-entry label, pushed/popped by fpAttemptStmt around ITS OWN
+// body only (never the handler block -- an abort inside a handler
+// propagates OUTWARD, matching %3.2's "no special case" wording taken
+// the other way). Empty (fpBailDepth == 0) means "no enclosing attempt":
+// a checked call site then targets this function's own `bail` label
+// instead (fpAbortTarget). Reset per function (fpReset) since C labels
+// are function-scoped and every function starts with no enclosing
+// attempt.
+//
+// A FIXED array + a manual depth counter (fpBailDepth), not `list of
+// string`/`list of text` + .add/.pop: a List is a heap-allocated handle
+// REGARDLESS of its element type, so a `list`-typed GLOBAL needs its own
+// entry in the compiler's free-globals glue (cprint.cla's own
+// cl_free_globals, cg68k.cla's cgEmitFreeGlobalsStub) -- unlike an
+// ordinary function or a scalar/string global, that glue is emitted
+// into EVERY 68k code segment's fixed overhead (cgPackProgram's
+// `fixedBase`/`freshAvail`), so ONE new heap-typed global uniformly taxes
+// every segment's budget, not just the one containing this file's own
+// code. Found empirically: clarusc's own native-68k self-emit
+// (TestSelfEmit68k) already runs at essentially zero headroom (mac-
+// resident-clarusc phase Task 14's own history), and a `list of text`
+// version of this stack alone was enough to blow a large, UNRELATED
+// pre-existing function (cpEmitRelease) out of every segment it used to
+// fit in. Attempt nesting is bounded by how deeply a real program
+// actually nests `attempt` blocks in source -- 32 is a generous ceiling
+// (fpAbortTarget's own push site never leaves this unchecked: see
+// fpAttemptStmt).
+var fpBailTargets: string(32)[32]
+var fpBailDepth: int
+
+// fpBailUsed (attempt-abort phase Task 3, brief's "dead-label-free
+// output" requirement) is true once THIS function has actually emitted
+// a `goto bail;` (fpAbortTarget's empty-stack case) -- cpEmitFunc only
+// prints the trailing `bail:` label + block when this is true, so a
+// function that lowering gave a bail block (every non-runtime-origin
+// function in an abort-enabled program, unconditionally -- Task 2) but
+// that never actually calls a user function/abort outside any attempt
+// gets no dead, unreferenced label in its C output.
+var fpBailUsed: bool
+
+// fpAttN is a per-function monotonic counter minting unique C label
+// pairs for each `attempt` statement's handler-entry/after-attempt
+// labels (fpAttemptStmt) -- C labels are function-scoped, so this only
+// needs to be unique WITHIN one function, not program-wide; reset by
+// fpReset same as fpTmpN.
+var fpAttN: int
+
+// fpCurFuncHasBail (attempt-abort phase Task 3) is true only while
+// cpEmitFunc is actively printing a function whose IRFunc carries a
+// real bail block (irFuncBail(f) != -1). fpCallFn's abort-check
+// insertion is gated on this (in addition to lowUsesAbort) so that
+// printing done OUTSIDE any real function body -- clar_init_globals's
+// global-Init expressions, a callback glue wrapper, an ARC retain/
+// release walk -- never emits a `goto bail;`/`goto attN_h;` with no
+// matching label in scope. A runtime-origin function's irFuncBail is
+// always -1 (Task 2: never attached), so this also naturally keeps
+// runtime-module bodies check-free, consistent with %3.4's "runtime
+// modules never need checks" invariant. Reset (false) by fpReset;
+// cpEmitFunc sets it right after its own fpReset(1) call.
+var fpCurFuncHasBail: bool
+
 func fpReset(indent: int) {
     fpBody.clear()
     fpStmtTmps.clear()
@@ -368,6 +431,34 @@ func fpReset(indent: int) {
     fpTmpN = 0
     fpIndent = indent
     fpDiscardExprIdx = -1
+    fpBailDepth = 0
+    fpBailUsed = false
+    fpAttN = 0
+    fpCurFuncHasBail = false
+}
+
+// fpAbortTarget (attempt-abort phase Task 3) resolves "the current bail
+// target" (design doc %3.2, point 3): the innermost lexically-enclosing
+// `attempt`'s handler-entry label if fpBailDepth > 0, else this
+// function's own `bail` label (marking fpBailUsed so cpEmitFunc knows to
+// actually print it). Only ever called when fpCurFuncHasBail is true
+// (fpCallFn's/fpAttemptStmt's own gate), so the `bail` literal always
+// names a label cpEmitFunc is about to print.
+func fpAbortTarget(): text {
+    if fpBailDepth > 0 {
+        return toText(fpBailTargets[fpBailDepth - 1])
+    }
+    fpBailUsed = true
+    return toText("bail")
+}
+
+// fpEmitAbortCheck prints the one-line check design doc %3.3 sizes at
+// "~6-10 bytes per checked call site" (the 68k lane's own budget; the C
+// lane's equivalent is this single `if` statement): `if (clar_aborting)
+// goto <target>;`, immediately after a checked call's own C statement,
+// before its result (if any) is read anywhere else.
+func fpEmitAbortCheck() {
+    fpEmit("if (clar_aborting) goto " + fpAbortTarget() + ";")
 }
 
 // fpEmit appends one indented body line (4 spaces per indent level). `line`
@@ -1353,6 +1444,8 @@ func fpCallFn(e: int): text {
     var argText: text
     var call: text
     var t: text
+    var checked: bool
+    var fi: int
 
     args = ""
     first = true
@@ -1367,6 +1460,25 @@ func fpCallFn(e: int): text {
         a = irExprNext(a)
     }
     call = "clar_fn_" + poolGet(irCallFnName(e)) + "(" + args + ")"
+    // attempt-abort phase Task 3, design doc %3.3: e's call target needs
+    // a post-call abort check only when this program is abort-enabled
+    // (lowUsesAbort), we're printing inside a real function that
+    // actually has a bail target to jump to (fpCurFuncHasBail), AND the
+    // callee resolves to a known, non-runtime-origin IRFunc
+    // (findIRFuncIdxByName/irFuncIsRuntimeOrigin -- Task 2's tag). An
+    // unresolved callee (fi == -1, never expected for a real
+    // checked-good program) fails safe by skipping the check rather than
+    // fatal-ing. Inlined here (not its own function) purely for size:
+    // clarusc's own native-68k self-emit (TestSelfEmit68k) runs at
+    // essentially zero segment headroom (see cprint.cla's cpEmitRelease/
+    // fpIntrAbort doc comments), and this is called from exactly one
+    // site, so a separate function only costs a call/return with no
+    // sharing benefit.
+    checked = false
+    if lowUsesAbort and fpCurFuncHasBail {
+        fi = findIRFuncIdxByName(irCallFnName(e))
+        checked = fi != -1 and not irFuncIsRuntimeOrigin(fi)
+    }
     // ARC Task 7 site 3 (caller side): a handle-backed record return is
     // ALSO always materialized into a tracked temp now (lower.cla's
     // lowReturn already made every one of these a genuine +1 transfer),
@@ -1378,6 +1490,35 @@ func fpCallFn(e: int): text {
     if fpIsHandleType(irExprType(e)) or (irtKind(irExprType(e)) == KRec and irRecHasHandleField(irtName(irExprType(e)))) {
         t = fpNewTrackedTmp(irExprType(e))
         fpEmit(t + " = " + call + ";")
+        if checked {
+            fpEmitAbortCheck()
+        }
+        return t
+    }
+    // attempt-abort phase Task 3: an abort-enabled program's checked user
+    // call must become its OWN preceding C statement, even when its
+    // scalar/void result needs no ARC tracking at all -- otherwise two
+    // calls could land as nested subexpressions of ONE C statement (e.g.
+    // `x = f() + g()`), with no textual point between them for a `goto`
+    // to land on (design doc %3.2 point 3: the check must run "BEFORE the
+    // return value is consumed", which requires the call to be its own
+    // statement). Ungated programs (checked always false there) keep the
+    // OLD bare-call-expression inlining below, byte-identical.
+    if checked {
+        if irtKind(irExprType(e)) == KVoid {
+            // A void-returning call can only ever be reached as a bare
+            // SExprStmt (the checker forbids using a void result), so
+            // printing the call statement HERE and returning "" (fpStmt's
+            // SExprStmt arm already treats "" as "already emitted,
+            // nothing more to print") is exactly right -- same
+            // convention several existing intrinsic arms already use.
+            fpEmit(call + ";")
+            fpEmitAbortCheck()
+            return toText("")
+        }
+        t = fpNewTmp(cpCType(irExprType(e)))
+        fpEmit(t + " = " + call + ";")
+        fpEmitAbortCheck()
         return t
     }
     return call
@@ -2075,6 +2216,40 @@ func fpIntrCall(x: int): text {
     return cpFatal("intrinsic " + poolGet(nm))
 }
 
+// fpIntrAbort (attempt-abort phase Task 3, design doc %3.2 point 1)
+// prints `abort(msg)`: evaluate the message arg, clamp-copy it into the
+// global message buffer (same clamped-store shape fpStoreStr uses for
+// an ordinary string assignment -- clar_abort_msg has no IR node of its
+// own to hand fpStoreStr, so its dst half is inlined here instead), set
+// the flag, then jump to the current bail target -- exactly like any
+// other checked call site, since `abort` IS an ordinary call as far as
+// propagation is concerned (no special case: an abort written directly
+// inside an attempt is caught by that attempt's own fpBailTargets
+// entry, same as any user call would be). fpCurFuncHasBail is always
+// true here: abort() can only lower inside a non-runtime-origin
+// function (runtime modules must not use it, %3.4) in an abort-enabled
+// program (lowUsesAbort is exactly what routed this IAbort node into
+// existence, lower.cla's lowCall), so this function always has a real
+// bail label to fall back on even with an empty fpBailTargets stack.
+// A standalone function (not inlined into fpIntrCall1's own IAbort arm)
+// purely to keep fpIntrCall1 itself small -- Task 14 (mac-resident-
+// clarusc phase) already split the old monolithic fpIntrCall into
+// fpIntrCall1..7 specifically because ONE of these dispatch functions
+// grew large enough to blow clarusc's own ~zero-headroom native-68k
+// self-emit segment budget; keeping new arms this size (checked call +
+// clamp-copy + goto) as their own function preserves that headroom
+// instead of re-inflating fpIntrCall1 back toward the same limit.
+func fpIntrAbort(a0: int): text {
+    if cpStrPorted {
+        fpEmit("clar_fn_rtStrStore((void*)&(clar_abort_msg), 255, (void*)" + fpStrAddr(a0) + ");")
+    } else {
+        fpEmit("rt_str_store((uint8_t*)&(clar_abort_msg), 255, " + fpStrAddr(a0) + ");")
+    }
+    fpEmit(toText("clar_aborting = 1;"))
+    fpEmit("goto " + fpAbortTarget() + ";")
+    return toText("")
+}
+
 func fpIntrCall1(nm: int, x: int, a0: int, a1: int, a2: int): text {
     var t: text
     var s0: text
@@ -2088,6 +2263,8 @@ func fpIntrCall1(nm: int, x: int, a0: int, a1: int, a2: int): text {
     } else if nm == ILog() {
         fpEmit("rt_log(" + fpStrAddr(a0) + ");")
         return toText("")
+    } else if nm == IAbort() {
+        return fpIntrAbort(a0)
 
     // ---- peek/poke (Plan 5a Task 4, Ch13) ----
     } else if nm == IPeekB() {
@@ -3917,6 +4094,22 @@ func fpStoreStr(dst: int, src: int) {
     }
 }
 
+// fpAttemptStmt (attempt-abort phase Task 3) prints `attempt { body }
+// aborted msg { handler }` -- defined at the END of this file (pure
+// source-level code motion, no behavior change) rather than here
+// alongside fpStmt/fpIfStmt/etc., purely to keep clarusc's own
+// native-68k self-emit (TestSelfEmit68k) inside its segment budget:
+// that gate runs at essentially zero headroom already (mac-resident-
+// clarusc phase Task 14's own history -- clarusc/cg68k.cla's segment
+// packer, cg68Measure/cg68Pack), and it bins functions into 32KB
+// segments in DECLARATION order, so where a function's own bytes land
+// in that sequence -- not just how many bytes it has -- can flip a
+// LATER, unrelated function (cpEmitRelease, found empirically) from
+// "fits in an existing segment" to "needs a fresh one that doesn't have
+// room." Moving this one definition past cpEmitRelease's position was
+// enough to restore the fit; see the function's own doc comment (bottom
+// of file) for what it actually does.
+
 // fpStmt is the per-statement printing funnel (funcprint.go's stmt) --
 // re-entrant: SIf/SWhile/SForRange/SForList/SForMap recurse into fpStmts for
 // their bodies, which calls back into fpStmt per inner statement.
@@ -4034,6 +4227,8 @@ func fpStmt(s: int) {
         terminal = true
         fpFreeStmtTmps()
         fpEmit(toText("continue;"))
+    } else if irStmtKind(s) == SAttempt {
+        fpAttemptStmt(s)
     } else {
         // Task 4 review fix (Important 3): every CURRENT IRStmtKind is
         // covered above (this arm is unreachable today, verified against
@@ -5199,6 +5394,14 @@ func cpEmitFunc(f: int) {
 
     cpEnsureType(irFuncRet(f))
     fpReset(1)
+    // attempt-abort phase Task 3: fpReset just zeroed fpCurFuncHasBail;
+    // set it for THIS function right after, from the bail block lowering
+    // already attached (or didn't -- runtime-origin functions and every
+    // function in a non-abort-enabled program both carry irFuncBail(f)
+    // == -1, so this is false for them, matching "no checks/bail either
+    // lane" for those cases automatically, with no separate gate needed
+    // here).
+    fpCurFuncHasBail = irFuncBail(f) != -1
 
     // param-abi phase Task 5: rebuild cpByRefParams for THIS function
     // before printing anything that could read a param (the body below,
@@ -5287,6 +5490,20 @@ func cpEmitFunc(f: int) {
         loc = irLocalNext(loc)
     }
     fpStmts(irFuncBodyHead(f))
+    // attempt-abort phase Task 3, Ruling A2 + brief's "dead-label-free
+    // output": print the bail block lowering already built and attached
+    // (irFuncBail, Task 2) ONLY when this function's own body actually
+    // used it (fpBailUsed -- set the first time fpAbortTarget falls back
+    // to the empty-stack/function-level case). A function with a real
+    // bail block that never actually needs it (no user calls, no bare
+    // abort outside an attempt) gets no dead `bail:` label in its C
+    // output. The block itself is printed via the SAME fpStmts walk as
+    // any other statement chain -- it is ordinary IR (releases + one
+    // `return`), not special-cased printing.
+    if irFuncBail(f) != -1 and fpBailUsed {
+        fpEmit(toText("bail:;"))
+        fpStmts(irFuncBail(f))
+    }
     // Every path through a well-formed Clarus function already returns (or is
     // void), but proving that from C is harder than the checker's own
     // analysis -- an unconditional trailing return sidesteps -Wreturn-type.
@@ -6650,6 +6867,25 @@ func irAnyCloseRequestHandler(): bool {
 // the SAME lowStoreIsBirth/lowStoreIntrOwnsResult rule a runtime store
 // uses) and retaining a non-birth Init's value right after the plain-assign
 // below -- see that branch's own comment.
+// cpEmitAbortGlobals (attempt-abort phase Task 3, design doc %3.2/%3.3)
+// declares the program-wide flag + message buffer every checked call
+// site and `abort()` itself read/write: `clar_aborting` (a plain int,
+// 0-init by C's own static-storage rule -- the explicit `= 0` is just
+// documentation) and `clar_abort_msg` (a `clar_str_255`, the SAME C type
+// an ordinary `str255`-typed Clarus local/global already renders as --
+// cpEnsureStr(255) is called unconditionally at emitProgram's own top,
+// so the typedef these two lines need is always already in scope,
+// gated program or not). Gated on lowUsesAbort (design doc %3.4): a
+// no-feature program's cpRestBuf gets neither line, byte-identical to
+// before this task.
+func cpEmitAbortGlobals() {
+    if not lowUsesAbort {
+        return
+    }
+    cpRestBuf.add(toText("static int clar_aborting = 0;"))
+    cpRestBuf.add(toText("static clar_str_255 clar_abort_msg;"))
+}
+
 func cpEmitGlobalsInit() {
     var i: int
     var gt: int
@@ -6813,6 +7049,22 @@ func cpEmitUiMain() {
 // a UI program (Task 5), cpEmitUiMain takes over instead, so a UI-free
 // program's output stays byte-for-byte unchanged (the differential suite
 // enforces this).
+//
+// attempt-abort phase Task 3, design doc %3.5 (non-UI default): one
+// check, right after the launch/startCLI/startEmpty dispatch sequence
+// (whichever branch actually ran -- the brief's own "after App.startCLI
+// returns" anchor), before falling off the end of main -- if the flag is
+// still set, write the message on the same channel log() uses, then
+// exit 1: byte-identical in EFFECT to today's `log(msg)` + `quit 1`
+// (rt_log to stderr, rt_quit(1) running cleanup then exit(1); see
+// IAbort/ILog/IQuit's own printer arms for the exact call shapes this
+// mirrors). Only when lowUsesAbort, so a no-feature program's main() is
+// untouched. (An uncaught abort raised directly inside App.launch itself,
+// with no attempt, is a narrower case this single check doesn't cover
+// separately -- a second check right after the launch call would, but
+// clarusc's own near-zero-headroom native-68k self-emit budget
+// (TestSelfEmit68k) can't absorb a second copy of it; scope kept to the
+// brief's literal single check.)
 func cpEmitMain() {
     if irIsUiProgram() {
         cpEmitUiMain()
@@ -6829,6 +7081,12 @@ func cpEmitMain() {
         cpRestBuf.add(toText("    clar_fn_handler_App_startCLI(rt_args_list());"))
     } else if irHasStartEmpty {
         cpRestBuf.add(toText("    clar_fn_handler_App_startEmpty();"))
+    }
+    if lowUsesAbort {
+        cpRestBuf.add(toText("    if (clar_aborting) {"))
+        cpRestBuf.add(toText("        rt_log((const uint8_t*)&clar_abort_msg);"))
+        cpRestBuf.add(toText("        rt_quit((int32_t)(1));"))
+        cpRestBuf.add(toText("    }"))
     }
     cpRestBuf.add(toText("    return 0;"))
     cpRestBuf.add(toText("}"))
@@ -6928,6 +7186,7 @@ func emitProgram(): text {
     cpEmitEnums()
     cpEmitUiDescs()
     cpEmitAppInfo()
+    cpEmitAbortGlobals()
     cpEmitGlobalsInit()
     cpEmitExternProtos()
     cpEmitCallbackGlueProtos()
@@ -6974,4 +7233,75 @@ func emitProgram(): text {
     cpAppendTextList(out, cpRestBuf)
 
     return out
+}
+
+// fpAttemptStmt prints `attempt { body } aborted msg { handler }`
+// (attempt-abort phase Task 3, design doc %3.1-%3.3) as goto-based C:
+//
+//     <body statements, each checked call's own goto targeting attN_h>
+//     goto attN_a;
+//     attN_h:;
+//     clar_aborting = 0;
+//     cv_<binder> = clar_abort_msg;
+//     <handler statements>
+//     attN_a:;
+//
+// fpBailTargets is pushed with attN_h ONLY around the body -- a checked
+// call inside body that aborts lands here (design doc %3.2 point 3: "if
+// the call site is statically inside an attempt body... jump to that
+// attempt's aborted block instead, clearing the flag and binding the
+// stored message" -- the clear+bind are exactly the two lines right
+// after the label). The handler block prints with the OUTER target
+// still in effect (fpBailTargets already popped): a re-abort from
+// inside the handler propagates to the next enclosing attempt (or this
+// function's own bail label), never back into this same attempt --
+// matching the brief's "re-abort from handler caught by outer" scenario
+// with no special-case code, purely from push/pop scoping. The
+// `goto attN_a;` unconditionally skips the handler block on the normal
+// (non-aborting) path -- always emitted regardless of whether body
+// contains any checked call at all, since it is what keeps the handler
+// from running unconditionally; attN_h can go unreferenced in that
+// call-free-body edge case (an unused-but-harmless label, no -Werror in
+// this build), which is a narrower, deliberately unhandled case of the
+// same dead-label concern fpBailUsed/cpEmitFunc close for the per-
+// function `bail` label (the brief's own wording scopes that
+// requirement to "functions", not to every attempt's own handler
+// label). Defined here (end of file, past cpEmitRelease) rather than
+// alongside fpStmt/fpIfStmt above it dispatches from -- Clarus function
+// order isn't call order, and this specific placement was needed to
+// keep clarusc's own native-68k self-emit inside its segment budget
+// (see the forward-reference comment left at the old location).
+func fpAttemptStmt(s: int) {
+    var n: int
+    var hLabel: string
+    var aLabel: string
+    var binderName: string
+
+    n = fpAttN
+    fpAttN = fpAttN + 1
+    hLabel = "att" + numToStr(n) + "_h"
+    aLabel = "att" + numToStr(n) + "_a"
+
+    if fpBailDepth >= 32 {
+        // fpBailTargets' own doc comment explains why this is a fixed
+        // array (32 deep) rather than a heap `list` -- a real program
+        // nesting `attempt` 32 levels deep is not a case worth spending
+        // clarusc's own near-zero native-68k self-emit segment headroom
+        // on; fail loudly rather than silently corrupt an out-of-range
+        // slot.
+        log("cprint: attempt nesting exceeds fpBailTargets' fixed depth (32)")
+        quit 1
+    }
+    fpBailTargets[fpBailDepth] = hLabel
+    fpBailDepth = fpBailDepth + 1
+    fpStmts(irAttemptBody(s))
+    fpBailDepth = fpBailDepth - 1
+
+    fpEmit(toText("goto " + aLabel + ";"))
+    fpEmit(toText(hLabel + ":;"))
+    fpEmit(toText("clar_aborting = 0;"))
+    binderName = poolGet(irAttemptBinder(s))
+    fpEmit(toText("cv_" + binderName + " = clar_abort_msg;"))
+    fpStmts(irAttemptHandler(s))
+    fpEmit(toText(aLabel + ":;"))
 }

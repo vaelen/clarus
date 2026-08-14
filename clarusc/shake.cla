@@ -434,6 +434,23 @@ func shakeWalkStmt(s: int) {
         shakeWalkStmts(irForMapBody(s))
     } else if k == SReturn {
         shakeWalkExpr(irReturnX(s))
+    } else if k == SAttempt {
+        // attempt-abort phase Task 3 (found while wiring cprint.cla: a
+        // call made ONLY from inside an attempt's body or handler was
+        // being pruned as unreachable, producing generated C that called
+        // an undeclared/unprinted function -- a hard compile error, not
+        // just a missed-shake correctness gap). Task 2 added SAttempt to
+        // ir.cla/lower.cla but never touched this file; walking both
+        // sub-chains here closes that gap for whichever backend runs
+        // shakeProgram (this pass is shared, not cprint-specific). No
+        // runtime call needs explicit rooting the way SStoreStr/SForList/
+        // SForMap's own arms above do: fpAttemptStmt's own generated C
+        // (cprint.cla) never calls a clar_fn_ helper directly outside of
+        // ordinary statements this same walk already covers, and IAbort's
+        // one direct runtime call (rtStrStore) is already in the
+        // always-rooted core above.
+        shakeWalkStmts(irAttemptBody(s))
+        shakeWalkStmts(irAttemptHandler(s))
     }
     // SBreak/SContinue: no fields to walk.
 }

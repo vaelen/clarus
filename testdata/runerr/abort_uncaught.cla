@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+func helper() {
+    abort("boom")
+}
+
+on App.startCLI(args: list of string) {
+    helper()
+    log("unreachable")
+}
