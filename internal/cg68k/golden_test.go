@@ -42,8 +42,10 @@ func buildClarusc(t *testing.T) string {
 }
 
 // segCount returns how many out.segN.s listings emit68k wrote to runDir
-// (1 for every single-segment fixture; smoke.cla/bounce.cla are the only
-// multi-segment ones as of this writing -- 2 and 4 respectively).
+// (1 for every single-segment fixture; smoke.cla/bounce.cla/tickprobe.cla
+// are the multi-segment ones as of this writing -- 2, 4, and 4
+// respectively; bounce.cla and tickprobe.cla both grew a 4th segment when
+// natInit's own code size grew, attempt-abort Task 7's `out` FInfo stamp).
 func segCount(t *testing.T, runDir string) int {
 	t.Helper()
 	matches, err := filepath.Glob(filepath.Join(runDir, "out.seg*.s"))

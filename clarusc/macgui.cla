@@ -499,9 +499,25 @@ func gcResolveBakePath(): string {
         return "clarusc: CLFS-source fallback (no CLIR resource baked into this app)"
     }
     clirBuf = ""
+    // Pre-compile feedback (attempt-abort Task 7, spec %5): the resource
+    // read and the header check are the two slow steps that can precede
+    // driveCompile's own first progress line, so both get a Status-bar
+    // step (step 0 of drvFixedSteps -- driveCompile resets the stage
+    // counter at its own top, drive.cla:1799, so this borrowed step
+    // number never collides) plus a timestamped log line, in the SAME
+    // format driveProgress itself uses. Reached directly via
+    // feProgressStep/feProgress (not driveProgress/driveProgressStage --
+    // those live in drive.cla and gate on want68k, which gcCompile now
+    // arms before calling this function, but this function is itself
+    // part of the macgui.cla front end that DEFINES those seams, so
+    // calling them straight is the least-indirect path).
+    feProgressStep(0, 10, "Loading Baked Runtime")
+    feProgress("[" + dateTimeStr(now()) + "] Loading Baked Runtime")
     if not file.readResource(bkClirResourceName, clirBuf) {
         return "clarusc: CLFS-source fallback (CLIR resource present but unreadable: " + lastError.message + ")"
     }
+    feProgressStep(0, 10, "Verifying Baked Runtime")
+    feProgress("[" + dateTimeStr(now()) + "] Verifying Baked Runtime")
     if not bkCheckRtbakeHeader(clirBuf, bkLane68k) {
         resetDiags()
         return "clarusc: CLFS-source fallback (CLIR resource refused -- format/version/lane/stamp/body-hash mismatch)"
@@ -527,11 +543,30 @@ func gcCompile(w: Log, p: string) {
     resetDiags()
     astReset()
 
+    // Live-progress arming (attempt-abort Task 7, spec %5) moves ABOVE
+    // gcResolveBakePath() so its own pre-compile Status-bar/log messages
+    // (feProgressStep/feProgress gate on gcLiveActive; driveProgress-style
+    // helpers elsewhere gate on want68k) actually paint instead of being
+    // silent no-ops -- previously this arming ran AFTER gcResolveBakePath
+    // returned, so the CLIR-resource read/header-check stretch (the
+    // biggest silent gap before driveCompile's own first progress line)
+    // showed nothing on screen. gcBaseLog is captured here from
+    // w.Output.text BEFORE bakeMsg exists; bakeMsg's own line is appended
+    // to it separately, right after gcResolveBakePath returns, below --
+    // this keeps bakeMsg's two channels (log() and the gcBaseLog append)
+    // in the same relative order as before this reorder.
+    gcProgressBuf = ""
+    gcBaseLog = w.Output.text
+    gcTickerRing.clear()
+    gcLiveActive = true
+    hostPaths = false
+    wantEmit = true
+    want68k = true
+
     // bakeMsg records WHICH path ran, and why, on two channels: log()
     // (natLog, flushed into RunMac's own captured "log" stream at quit --
     // the channel an automated test can actually read) and gcBaseLog
     // (the on-screen Log window a real user sees) -- both written BEFORE
-    // gcBaseLog is captured/the ticker starts, below, since
     // gcFlushProgress later REPLACES w.Output.text wholesale from
     // gcBaseLog + accumulated progress (gcLog's own append-in-place idiom
     // would otherwise be silently discarded the moment this compile
@@ -540,16 +575,8 @@ func gcCompile(w: Log, p: string) {
     // this new call site).
     bakeMsg = gcResolveBakePath()
     log(bakeMsg)
-
-    gcProgressBuf = ""
-    gcBaseLog = w.Output.text
     gcBaseLog.append(bakeMsg)
     gcBaseLog.append("\n")
-    gcTickerRing.clear()
-    gcLiveActive = true
-    hostPaths = false
-    wantEmit = true
-    want68k = true
 
     entries.add(p)
 

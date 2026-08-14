@@ -1,0 +1,30 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// iconmissing.cla: attempt-abort Task 7 fixture (spec %6) -- an `app`
+// section declaring an icon path that does not exist on disk. Exercises
+// cg68ResourceParitySet's warn-and-fallback path (cg68k.cla): `clarusc
+// emit68k` must SUCCEED, print a "warning: cannot read app icon ...; using
+// default icon" line, and produce a fork byte-identical to this same
+// fixture with the `icon:` line removed -- see
+// internal/mactest/resparity_test.go's TestApp68kIconMissingWarns.
+// Mirrors testdata/ui/appres.cla's shape (an `app` section WITH an icon)
+// so the "strip the icon: line" comparison is meaningful.
+
+app IconMissingProbe {
+    name: "Icon Missing Probe"
+    version: "1.0"
+    author: "Probe Author"
+    about: "Icon-missing probe."
+    icon: "no-such-file.pbm"
+    id: "PRIM"
+}
+
+window Main {
+    title: "Main"
+    size: 200, 100
+}
+
+on App.launch {
+    open Main
+}

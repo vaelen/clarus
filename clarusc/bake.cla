@@ -339,6 +339,16 @@ func bkHashTextFrom(data: text, start: int): int {
         h = h ^ b
         h = h * bkFnvPrime
         h = h & 0x7FFFFFFF
+        // Liveness pulse (attempt-abort Task 7, spec %5): this loop can
+        // run for up to ~1.1MB with no other progress signal, so the
+        // Status bar's spinner (macgui's feProgressTick, throttled by
+        // TickCount there -- this call costs one trap every 32KB, cheap
+        // even in the hot per-byte path) and the host CLI's own spinner
+        // both stay visibly alive. driveProgressTick is itself a no-op
+        // unless want68k, so emit/check-only/appinfo stay byte-silent.
+        if (i & 0x7FFF) == 0 {
+            driveProgressTick()
+        }
         i = i + 1
     }
     return h

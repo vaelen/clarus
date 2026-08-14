@@ -388,6 +388,41 @@ func natInit() {
     // rt_mac.c's own comment on this exact call.
     NatCreate(natPb)
 
+    // `out` FInfo stamp (attempt-abort Task 7, spec %6b): TEXT/ttxt via
+    // the SAME direct-PBSetFInfoSync-only pattern natFileWriteText uses
+    // below (no PBGetFInfoSync first -- that exact call class hung solid
+    // on real hardware under a busy heap, see that function's own doc
+    // comment; natInit runs at startup with a quiet heap, but the
+    // direct-set shape is the proven one and is kept regardless). Two
+    // deliberate differences from that site:
+    //   - UNCONDITIONAL, not gated on Create's own ioResult: `out` is the
+    //     runtime's own capture file, not a user file whose overwrite
+    //     must preserve an existing FInfo, so it's stamped every launch
+    //     even when NatCreate returned dupFNErr (LaunchAPPL pre-creates
+    //     it) or any other result.
+    //   - explicitly zeroes ioFDirIndex (get-by-name, not get-by-index --
+    //     required before any FInfo PB call) and the full 16-byte FInfo
+    //     region (fdType/fdCreator plus the fdFlags/fdLocation/fdFldr
+    //     bytes after them, aliased here by IOParam's own ioActCount@40/
+    //     ioPosMode@44) before poking type/creator, rather than relying
+    //     on natPb's own allocator to have already cleared them --
+    //     natFilePb's site can lean on NewPtrCLEAR because nothing
+    //     touches its FInfo-region bytes between that alloc and its own
+    //     stamp; natPb is reused for the WHOLE program's natAlert/natLog
+    //     traffic after natInit returns (those calls poke natIoBuffer@32/
+    //     natIoReqCount@36, the SAME bytes as fdType/fdCreator), so this
+    //     stamp does not depend on any particular allocator behavior.
+    //     natPbSize (64 bytes) already covers this region -- FileParam's
+    //     16-byte FInfo block ends at offset 47, still inside IOParam's
+    //     own 50-byte span (toolbox/files.cla's FileParam catalog entry),
+    //     so no growth was needed here.
+    pokew(natPb + natIoFDirIndex, 0)
+    pokel(natPb + natIoActCount, 0)
+    pokel(natPb + natIoPosMode, 0)
+    pokel(natPb + natIoFdType, (int('T') << 24) | (int('E') << 16) | (int('X') << 8) | int('T'))
+    pokel(natPb + natIoFdCreator, (int('t') << 24) | (int('t') << 16) | (int('x') << 8) | int('t'))
+    NatSetFInfo(natPb)
+
     // The success gate is ioResult (the PB's own 16-bit result field,
     // which every SYNCHRONOUS File Manager call sets), NOT the trap's D0
     // return: these are OS traps returning OSErr in D0's LOW WORD only

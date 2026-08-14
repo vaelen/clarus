@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -246,4 +247,96 @@ func TestApp68kResourceParity(t *testing.T) {
 			t.Errorf("SIZE flags = %#04x, want 0x00C0 (is32BitCompatible|isHighLevelEventAware)", flags)
 		}
 	})
+}
+
+// TestApp68kIconMissingWarns is attempt-abort Task 7's own host-side gate
+// (spec %6): cg68ResourceParitySet's icon block used to `quit 1` on a
+// missing/malformed icon file; it now warns on both channels and falls
+// back to hasIcon=false, exactly the path an icon-less program already
+// takes. No emulator, no Retro68 -- `clarusc emit68k` plus a plain byte
+// compare, same no-emulator discipline as TestApp68kResourceParity above
+// (the least-novel home for this check: this file already builds+parses
+// icon-related emit68k output for the two adjacent fixtures).
+func TestApp68kIconMissingWarns(t *testing.T) {
+	root := repoRoot(t)
+	exe := buildNativeClarusc(t)
+	rtDir := filepath.Join(root, "runtime", "clarus")
+	fixture := filepath.Join(root, "testdata", "ui", "iconmissing.cla")
+
+	src, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatalf("reading %s: %v", fixture, err)
+	}
+
+	// Compile the fixture as-is (declares a nonexistent icon path) and its
+	// icon-stripped twin (every `icon:` line removed) into SEPARATELY
+	// named work dirs sharing the SAME -o basename ("out.bin") -- the
+	// MacBinary header's own filename field mirrors -o's basename, so two
+	// different -o names would make an otherwise byte-identical fork
+	// differ at byte 2 for a reason that has nothing to do with the icon
+	// fallback (confirmed empirically while writing this test).
+	withIconDir := t.TempDir()
+	strippedDir := t.TempDir()
+	withIconSrc := filepath.Join(withIconDir, "iconmissing.cla")
+	strippedSrc := filepath.Join(strippedDir, "iconmissing.cla")
+	if err := os.WriteFile(withIconSrc, src, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stripped []byte
+	for _, line := range strings.Split(string(src), "\n") {
+		if strings.Contains(line, "icon:") {
+			continue
+		}
+		stripped = append(stripped, []byte(line+"\n")...)
+	}
+	if err := os.WriteFile(strippedSrc, stripped, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	withIconBin := filepath.Join(withIconDir, "out.bin")
+	cmd := exec.Command(exe, "emit68k", "-o", withIconBin, "--rtdir", rtDir, withIconSrc)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("clarusc emit68k (icon missing) failed (want success): %v\n%s", err, out)
+	}
+	wantWarn := "warning: cannot read app icon " + filepath.Join(withIconDir, "no-such-file.pbm") + ": "
+	wantSuffix := "; using default icon"
+	if !strings.Contains(string(out), wantWarn) || !strings.Contains(string(out), wantSuffix) {
+		t.Errorf("clarusc emit68k stderr/log missing icon warning\n want substring %q ... %q\n got: %s", wantWarn, wantSuffix, out)
+	}
+
+	strippedBin := filepath.Join(strippedDir, "out.bin")
+	cmd = exec.Command(exe, "emit68k", "-o", strippedBin, "--rtdir", rtDir, strippedSrc)
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("clarusc emit68k (icon stripped) failed: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "warning:") {
+		t.Errorf("icon-stripped fixture unexpectedly warned: %s", out)
+	}
+
+	gotWithIcon, err := os.ReadFile(withIconBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotStripped, err := os.ReadFile(strippedBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotWithIcon, gotStripped) {
+		t.Errorf("icon-missing fork (%d bytes) not byte-identical to icon-stripped fork (%d bytes)", len(gotWithIcon), len(gotStripped))
+	}
+
+	// Icon-PRESENT regression check: examples/mandelbrot.cla's own pbm
+	// resolves, so its compile must still succeed with no warning at all.
+	mandel := filepath.Join(root, "examples", "mandelbrot.cla")
+	mandelBin := filepath.Join(t.TempDir(), "mandel.bin")
+	cmd = exec.Command(exe, "emit68k", "-o", mandelBin, "--rtdir", rtDir, mandel)
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("clarusc emit68k %s failed: %v\n%s", mandel, err, out)
+	}
+	if strings.Contains(string(out), "warning:") {
+		t.Errorf("examples/mandelbrot.cla (icon present, resolves) unexpectedly warned: %s", out)
+	}
 }

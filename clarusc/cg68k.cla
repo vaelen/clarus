@@ -12091,11 +12091,17 @@ func cgAppName(outPath: string): string(31) {
 //     nat_UiLaunchReal) are unconditional for every UI program, `app`
 //     section or not, so the SIZE flag that makes the Process Manager
 //     WILLING to send them AppleEvents in the first place must match.
-// Fails closed (log + quit 1) if a declared icon path can't be read or
-// isn't a well-formed 32x32 PBM -- the check.cla/main.cla layer never
-// validates the file itself (build-time-only per ir.cla's header
-// comment), so this is the first point anything actually opens it for a
-// native build.
+// A declared icon path that can't be read, or isn't a well-formed 32x32
+// PBM, no longer fails the compile (attempt-abort Task 7, spec %6 --
+// deliberately excluded from Task 6's abort()-conversion sweep of this
+// module's other fatal sites, since this pair gets a warning + fallback
+// instead): it logs a warning on both channels (log() and
+// driveProgress()) and proceeds with hasIcon = false, exactly the path
+// every icon-less app already takes -- byte-identical fork to compiling
+// the same source with no `icon:` property at all. check.cla/main.cla
+// never validates the file itself (build-time-only per ir.cla's header
+// comment), so this is still the first point anything actually opens it
+// for a native build; it just no longer treats that failure as fatal.
 func cg68ResourceParitySet(extraTypes: list of string, extraIds: list of int, extraDatas: list of text) {
     var hasIcon: bool
     var pbmRaw: text
@@ -12126,13 +12132,17 @@ func cg68ResourceParitySet(extraTypes: list of string, extraIds: list of int, ex
     if hasIcon {
         pbmRaw = ""
         if not file.readText(cgAppIconPath, pbmRaw) {
-            log("cg68Program: cannot read app icon " + cgAppIconPath + ": " + lastError.message)
-            quit 1
-        }
-        icnBytes = ""
-        if not app68BuildIcnFamily(pbmRaw, iconBytes, icnBytes) {
-            log("cg68Program: app icon " + cgAppIconPath + " is not a well-formed 32x32 P1/P4 PBM")
-            quit 1
+            log("warning: cannot read app icon " + cgAppIconPath + ": " + lastError.message + "; using default icon")
+            driveProgress("warning: cannot read app icon " + cgAppIconPath + ": " + lastError.message + "; using default icon")
+            hasIcon = false
+        } else {
+            icnBytes = ""
+            if not app68BuildIcnFamily(pbmRaw, iconBytes, icnBytes) {
+                log("warning: app icon " + cgAppIconPath + " is not a well-formed 32x32 P1/P4 PBM; using default icon")
+                driveProgress("warning: app icon " + cgAppIconPath + " is not a well-formed 32x32 P1/P4 PBM; using default icon")
+                hasIcon = false
+                iconBytes = ""
+            }
         }
     }
 
