@@ -1642,8 +1642,7 @@ func cg68SynthCbGlue() {
         nameIdx = irCbGlueNeededName(i)
         bodyFi = findIRFuncIdxByName(nameIdx)
         if bodyFi == -1 {
-            log("cg68k: callback " + poolGet(nameIdx) + " has no matching irFuncs entry")
-            quit 1
+            abort("cg68k: callback " + poolGet(nameIdx) + " has no matching irFuncs entry")
         }
         glueName = intern("clar_cb_" + poolGet(nameIdx))
         glueFi = newIRFunc(glueName, -1, irVoidT, -1, -1)
@@ -3298,8 +3297,7 @@ func cgDefaultInitStrAt(reg: int, off: int, t: int, strDefaultIdx: int) {
     }
     fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtStrStore not found/reachable")
-        quit 1
+        abort("cg68k: rtStrStore not found/reachable")
     }
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
@@ -3440,8 +3438,7 @@ func cgRecordCtorAt(reg: int, off: int, recNameIdx: int) {
 
     ri = cgFindRecordByName(recNameIdx)
     if ri == -1 {
-        log("cg68k: unknown record type " + poolGet(recNameIdx))
-        quit 1
+        abort("cg68k: unknown record type " + poolGet(recNameIdx))
     }
     cgWalkStashBase(reg)
     cur = 0
@@ -3558,8 +3555,7 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
 
     newFi = findIRFuncIdxByName(rnTextNew)
     if newFi == -1 or not shakeReachable(newFi) {
-        log("cg68k: rtTextNew not found/reachable")
-        quit 1
+        abort("cg68k: rtTextNew not found/reachable")
     }
     a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
@@ -3571,8 +3567,7 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
     }
     storeFi = findIRFuncIdxByName(rnTextStore)
     if storeFi == -1 or not shakeReachable(storeFi) {
-        log("cg68k: rtTextStore not found/reachable")
-        quit 1
+        abort("cg68k: rtTextStore not found/reachable")
     }
     // D0 still holds the freshly-birthed ptr (the store just above reads
     // D0 as its SOURCE, never clobbers it) -- reuse it directly as
@@ -3599,8 +3594,7 @@ func cgEmitContainerBirthCall(nameIdx: int, sizeArg: int, reg: int, off: int) {
 
     fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
-        quit 1
+        abort("cg68k: " + poolGet(nameIdx) + " not found/reachable")
     }
     // Dest address pushed BEFORE the real argument (deeper on the stack,
     // further from the return address JSR pushes next) so the callee's
@@ -3632,8 +3626,7 @@ func cgEmitPtrRcCall(nameIdx: int, reg: int, off: int) {
 
     fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
-        quit 1
+        abort("cg68k: " + poolGet(nameIdx) + " not found/reachable")
     }
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
@@ -3664,8 +3657,7 @@ func cgEmitRecWalkCall(isRetain: bool, reg: int, off: int, recNameIdx: int) {
     }
     ri = cgFindRecordByName(recNameIdx)
     if ri == -1 {
-        log("cg68k: unknown record type " + poolGet(recNameIdx))
-        quit 1
+        abort("cg68k: unknown record type " + poolGet(recNameIdx))
     }
     if isRetain {
         lbl = cgRecRetainLbls[ri]
@@ -3981,12 +3973,10 @@ func cgEmitPanic(msgLitIdx: int) {
     storeFi = findIRFuncIdxByName(rnStrStore)
     panicFi = findIRFuncIdxByName(rnPanic)
     if storeFi == -1 or not shakeReachable(storeFi) {
-        log("cg68k: rtStrStore not found/reachable")
-        quit 1
+        abort("cg68k: rtStrStore not found/reachable")
     }
     if panicFi == -1 or not shakeReachable(panicFi) {
-        log("cg68k: rtPanic not found/reachable")
-        quit 1
+        abort("cg68k: rtPanic not found/reachable")
     }
     a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
     a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
@@ -4018,8 +4008,7 @@ func cgAllocTmpOff(t: int): int {
         return cgAllocBigTmpOff(t)
     }
     if cgStmtTmpNext >= cgTmpSlots {
-        log("cg68k: too many tracked temps in one statement (Task 13 pool exhausted -- bump cgTmpSlots)")
-        quit 1
+        abort("cg68k: too many tracked temps in one statement (Task 13 pool exhausted -- bump cgTmpSlots)")
     }
     off = cgTmpBaseOffs[cgStmtTmpNext]
     cgStmtTmpNext = cgStmtTmpNext + 1
@@ -4036,12 +4025,10 @@ func cgAllocBigTmpOff(t: int): int {
     var off: int
 
     if cgSizeOf(t) > cgBigTmpSize {
-        log("cg68k: str/rec temp >" + numToStr(cgBigTmpSize) + " bytes not supported by this backend's scratch pool")
-        quit 1
+        abort("cg68k: str/rec temp >" + numToStr(cgBigTmpSize) + " bytes not supported by this backend's scratch pool")
     }
     if cgStmtBigTmpNext >= cgBigTmpSlots {
-        log("cg68k: too many str/rec temps needed in one statement -- bump cgBigTmpSlots")
-        quit 1
+        abort("cg68k: too many str/rec temps needed in one statement -- bump cgBigTmpSlots")
     }
     off = cgBigTmpBaseOffs[cgStmtBigTmpNext]
     cgStmtBigTmpNext = cgStmtBigTmpNext + 1
@@ -4158,8 +4145,7 @@ func cgEmitAtCall(nameIdx: int, ptrOff: int, idxOff: int) {
 
     fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
-        quit 1
+        abort("cg68k: " + poolGet(nameIdx) + " not found/reachable")
     }
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDisp16, 6, ptrOff, AmDn, 0, 0)
@@ -4211,8 +4197,7 @@ func cgEmitMapValAtCall(nameIdx: int, ptrOff: int, idxOff: int, valOff: int) {
 
     fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
-        quit 1
+        abort("cg68k: " + poolGet(nameIdx) + " not found/reachable")
     }
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDisp16, 6, ptrOff, AmDn, 0, 0)
@@ -4258,8 +4243,7 @@ func cgDeepReleaseContainer(reg: int, off: int, t: int, depth: int) {
     var afterLbl: int
 
     if depth >= cgDeepLevels {
-        log("cg68k: container nesting too deep (Task 13 scope, max " + numToStr(cgDeepLevels) + " levels)")
-        quit 1
+        abort("cg68k: container nesting too deep (Task 13 scope, max " + numToStr(cgDeepLevels) + " levels)")
     }
     ptrOff = cgDeepPtrOffs[depth]
     // Findings 1.4 (Task 13): lastrefFn/relFn were `string` literals,
@@ -4605,8 +4589,7 @@ func cgBuildSerdescInts(recNameIdx: int): list of int {
     out = cgFreshIntList()
     ri = cgFindRecordByName(recNameIdx)
     if ri == -1 {
-        log("cg68k: serdesc: unknown record " + poolGet(recNameIdx))
-        quit 1
+        abort("cg68k: serdesc: unknown record " + poolGet(recNameIdx))
     }
     nFields = 0
     f = irRecordLayoutFieldsHead(ri)
@@ -4714,8 +4697,7 @@ func cgEmitEnumCheckCall() {
 
     fi = findIRFuncIdxByName(rnEnumCheck)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtEnumCheck not found/reachable")
-        quit 1
+        abort("cg68k: rtEnumCheck not found/reachable")
     }
     if a68ListingOn {
         a68Comment("enum conversion miss -> rtEnumCheck(v, false, <name arg unused>) panics")
@@ -4748,8 +4730,7 @@ func cgEmitEnumConv(enumNameIdx: int) {
 
     ei = cgFindEnumByName(enumNameIdx)
     if ei == -1 {
-        log("cg68k: unknown enum type " + poolGet(enumNameIdx))
-        quit 1
+        abort("cg68k: unknown enum type " + poolGet(enumNameIdx))
     }
     count = cgEnumMemberCount(ei)
     doneLbl = a68NewLabel()
@@ -5026,8 +5007,7 @@ func cgEmitFunc(f: int) {
         nm = poolGet(irLocalName(loc))
         if declared.has(nm) {
             if not cg68TypeEqual(declared.get(nm, -1), irLocalType(loc)) {
-                log("cg68k: local " + nm + " redeclared with a different type in func " + poolGet(irFuncName(f)) + " (unsupported: same name, different type, in sibling scopes)")
-                quit 1
+                abort("cg68k: local " + nm + " redeclared with a different type in func " + poolGet(irFuncName(f)) + " (unsupported: same name, different type, in sibling scopes)")
             }
         } else {
             declared[nm] = irLocalType(loc)
@@ -5223,8 +5203,7 @@ func cgCbPascalWidth(t: int): int {
         return 4
     }
     }
-    log("cg68k: cgCbPascalWidth: unhandled callback kind " + numToStr(int(irtKind(t))))
-    quit 1
+    abort("cg68k: cgCbPascalWidth: unhandled callback kind " + numToStr(int(irtKind(t))))
     return 0
 }
 
@@ -5300,8 +5279,7 @@ func cgEmitCallbackGlue(glueFi: int, bodyFi: int) {
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0)
 
     if not shakeReachable(bodyFi) {
-        log("cg68k: callback body " + poolGet(irFuncName(bodyFi)) + " not reachable (clar_cb_" + poolGet(irFuncName(bodyFi)) + ")")
-        quit 1
+        abort("cg68k: callback body " + poolGet(irFuncName(bodyFi)) + " not reachable (clar_cb_" + poolGet(irFuncName(bodyFi)) + ")")
     }
 
     params = cgFreshIntList()
@@ -5468,8 +5446,7 @@ func cgVarOff(e: int): int {
         off = cgFindFrameOffset(nameIdx)
     }
     if off == cgUnresolved {
-        log("cg68k: unresolved variable " + poolGet(nameIdx))
-        quit 1
+        abort("cg68k: unresolved variable " + poolGet(nameIdx))
     }
     return off
 }
@@ -5504,8 +5481,7 @@ func cgXRecAddrDisp(e: int): int {
         off = cgFindFrameOffset(nameIdx)
     }
     if off == cgUnresolved {
-        log("cg68k: unresolved xrec variable " + poolGet(nameIdx))
-        quit 1
+        abort("cg68k: unresolved xrec variable " + poolGet(nameIdx))
     }
     return off + irXRecAddrOffset(e)
 }
@@ -5719,13 +5695,11 @@ func cgFieldRefAddr(e: int) {
         // primitives reused verbatim).
         winIdx = cpFindWindowIndex(poolGet(irtName(baseT)))
         if winIdx == -1 {
-            log("cg68k: unknown window " + poolGet(irtName(baseT)))
-            quit 1
+            abort("cg68k: unknown window " + poolGet(irtName(baseT)))
         }
         off = cgUiStateFieldOffset(winIdx, irFieldRefName(e))
         if off == -1 {
-            log("cg68k: unknown state field " + poolGet(irFieldRefName(e)) + " on " + poolGet(irtName(baseT)))
-            quit 1
+            abort("cg68k: unknown state field " + poolGet(irFieldRefName(e)) + " on " + poolGet(irtName(baseT)))
         }
         a68Emit(OpLea, 0, AmDisp16, 0, off, AmAn, 0, 0)
         return
@@ -5746,8 +5720,7 @@ func cgFieldRefAddr(e: int) {
         } else if fieldName == "message" {
             off = cgErrMsgOff()
         } else {
-            log("cg68k: unknown field " + fieldName + " on error")
-            quit 1
+            abort("cg68k: unknown field " + fieldName + " on error")
         }
         a68Emit(OpLea, 0, AmDisp16, 0, off, AmAn, 0, 0)
         return
@@ -5755,8 +5728,7 @@ func cgFieldRefAddr(e: int) {
     recNameIdx = irtName(baseT)
     off = cgFieldOffset(recNameIdx, irFieldRefName(e))
     if off == -1 {
-        log("cg68k: unknown field " + poolGet(irFieldRefName(e)) + " on " + poolGet(recNameIdx))
-        quit 1
+        abort("cg68k: unknown field " + poolGet(irFieldRefName(e)) + " on " + poolGet(recNameIdx))
     }
     a68Emit(OpLea, 0, AmDisp16, 0, off, AmAn, 0, 0)
 }
@@ -5809,8 +5781,7 @@ func cgIndexRefAddr(e: int) {
     } else if irtKind(xt) == KList {
         cgListElemAddr(e)
     } else {
-        log("cg68k: cgIndexRefAddr: EIndexRef on non-Arr/List type")
-        quit 1
+        abort("cg68k: cgIndexRefAddr: EIndexRef on non-Arr/List type")
     }
 }
 
@@ -5839,7 +5810,7 @@ func cgArrElemAddr(e: int, xt: int) {
     addrs.add(false)
     addrs.add(false)
     if not cgCallRuntime(rnArrCheck, args, addrs) {
-        quit 1
+        abort("cg68k: cgArrElemAddr: rtArrCheck call failed")
     }
     a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
     a68Emit(OpMove, 4, AmImm, 0, cgArrElemStride(elemT), AmDn, 0, 0)
@@ -6075,8 +6046,7 @@ func cgEmitStoreRec(dst: int, src: int) {
             cgCopyScratchToDst(cgIntrIntMapGetDv(src, nm == "intmap_get_dv_birth"), dst, cgSizeOf(irExprType(dst)))
             return
         }
-        log("cg68k: cgEmitStoreRec: intrinsic " + nm + " unsupported in store context")
-        quit 1
+        abort("cg68k: cgEmitStoreRec: intrinsic " + nm + " unsupported in store context")
     }
     sz = cgSizeOf(irExprType(dst))
     cgExprAddr(src)
@@ -6109,13 +6079,11 @@ func cgEmitStoreErr(dst: int, src: int) {
     if sk == EIntr and irIntrName(src) == ILastErr() {
         codeFi = findIRFuncIdxByName(rnLastErrCode)
         if codeFi == -1 or not shakeReachable(codeFi) {
-            log("cg68k: natLastErrCode not found/reachable")
-            quit 1
+            abort("cg68k: natLastErrCode not found/reachable")
         }
         msgFi = findIRFuncIdxByName(rnLastErrMsg)
         if msgFi == -1 or not shakeReachable(msgFi) {
-            log("cg68k: natLastErrMsg not found/reachable")
-            quit 1
+            abort("cg68k: natLastErrMsg not found/reachable")
         }
         cgExprAddr(dst)
         a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
@@ -6415,8 +6383,7 @@ func cgConv(e: int) {
         // Task 4 review fix (Important 3): every OTHER IRConvOp is covered
         // above -- hard-fail default here, matching Task 14.7's own "no
         // silent-zero degrade" rule elsewhere in this file.
-        log("cg68k: cgConv: conv op " + numToStr(int(op)) + " unsupported")
-        quit 1
+        abort("cg68k: cgConv: conv op " + numToStr(int(op)) + " unsupported")
     }
 }
 
@@ -6499,7 +6466,7 @@ func cgIntr1(e: int, nameIdx: int, addr0: bool) {
     addrs = cgFreshBoolList()
     addrs.add(addr0)
     if not cgCallRuntime(nameIdx, args, addrs) {
-        quit 1
+        abort("cg68k: cgIntr1: runtime call failed")
     }
 }
 
@@ -6518,7 +6485,7 @@ func cgIntr2(e: int, nameIdx: int, addr0: bool, addr1: bool) {
     addrs.add(addr0)
     addrs.add(addr1)
     if not cgCallRuntime(nameIdx, args, addrs) {
-        quit 1
+        abort("cg68k: cgIntr2: runtime call failed")
     }
 }
 
@@ -6541,7 +6508,7 @@ func cgIntr3(e: int, nameIdx: int, addr0: bool, addr1: bool, addr2: bool) {
     addrs.add(addr1)
     addrs.add(addr2)
     if not cgCallRuntime(nameIdx, args, addrs) {
-        quit 1
+        abort("cg68k: cgIntr3: runtime call failed")
     }
 }
 
@@ -6571,7 +6538,7 @@ func cgIntr4(e: int, nameIdx: int, addr0: bool, addr1: bool, addr2: bool, addr3:
     addrs.add(addr2)
     addrs.add(addr3)
     if not cgCallRuntime(nameIdx, args, addrs) {
-        quit 1
+        abort("cg68k: cgIntr4: runtime call failed")
     }
 }
 
@@ -6782,7 +6749,7 @@ func cgIntrTextCmp(e: int) {
         addrs.add(false)
         addrs.add(false)
         if not cgCallRuntime(rnTextCmp, args, addrs) {
-            quit 1
+            abort("cg68k: cgIntrTextCmp: rtTextCmp call failed")
         }
         return
     }
@@ -6794,7 +6761,7 @@ func cgIntrTextCmp(e: int) {
         addrs.add(false)
         addrs.add(true)
         if not cgCallRuntime(rnTextCmpStr, args, addrs) {
-            quit 1
+            abort("cg68k: cgIntrTextCmp: rtTextCmpStr call failed")
         }
         return
     }
@@ -6805,7 +6772,7 @@ func cgIntrTextCmp(e: int) {
     addrs.add(false)
     addrs.add(true)
     if not cgCallRuntime(rnTextCmpStr, args, addrs) {
-        quit 1
+        abort("cg68k: cgIntrTextCmp: rtTextCmpStr call failed")
     }
     a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 0, 0)
 }
@@ -7698,8 +7665,7 @@ func cgIntrFileSaveLoad(e: int, nameIdx: int) {
     }
     descLbl = cgFindSerdescLabel(recNameIdx)
     if descLbl == -1 {
-        log("cg68k: " + poolGet(nameIdx) + ": no serdesc reserved for record " + poolGet(recNameIdx))
-        quit 1
+        abort("cg68k: " + poolGet(nameIdx) + ": no serdesc reserved for record " + poolGet(recNameIdx))
     }
 
     cgExprAddr(a0)
@@ -7765,7 +7731,7 @@ func cgIntr(e: int) {
         addrs.add(true)
         addrs.add(true)
         if not cgCallRuntime(rnStrCmp, args, addrs) {
-            quit 1
+            abort("cg68k: cgIntr: rtStrCmp call failed")
         }
         return
     }
@@ -7814,11 +7780,11 @@ func cgIntr(e: int) {
         addrs.add(true)
         if irIsUiProgram() {
             if not cgCallRuntime(intern("rtUiAlertMsg"), args, addrs) {
-                quit 1
+                abort("cg68k: cgIntr: rtUiAlertMsg call failed")
             }
         } else {
             if not cgCallRuntime(rnAlert, args, addrs) {
-                quit 1
+                abort("cg68k: cgIntr: rtAlert call failed")
             }
         }
         return
@@ -7830,7 +7796,7 @@ func cgIntr(e: int) {
         addrs = cgFreshBoolList()
         addrs.add(true)
         if not cgCallRuntime(rnLog, args, addrs) {
-            quit 1
+            abort("cg68k: cgIntr: rtLog call failed")
         }
         return
     }
@@ -7842,7 +7808,7 @@ func cgIntr(e: int) {
         addrs = cgFreshBoolList()
         addrs.add(false)
         if not cgCallRuntime(rnQuit, args, addrs) {
-            quit 1
+            abort("cg68k: cgIntr: rtQuit call failed")
         }
         return
     }
@@ -7881,7 +7847,7 @@ func cgIntr(e: int) {
         addrs.add(false)
         addrs.add(true)
         if not cgCallRuntime(rnStrStore, args, addrs) {
-            quit 1
+            abort("cg68k: cgIntr: rtStrStore call failed")
         }
         return
     }
@@ -7901,7 +7867,7 @@ func cgIntr(e: int) {
         args = cgFreshIntList()
         addrs = cgFreshBoolList()
         if not cgCallRuntime(rnLastErrCode, args, addrs) {
-            quit 1
+            abort("cg68k: cgIntr: rtLastErrCode call failed")
         }
         return
     }
@@ -8274,8 +8240,7 @@ func cgIntr(e: int) {
         return
     }
     if nm == IFileName() {
-        log("cg68k: cgIntr: file_name reached in scalar/value context (str-returning, only valid as a store/return target)")
-        quit 1
+        abort("cg68k: cgIntr: file_name reached in scalar/value context (str-returning, only valid as a store/return target)")
     }
     if nm == IFileSave() {
         cgIntrFileSaveLoad(e, rnFileSave)
@@ -8491,8 +8456,7 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
     }
     // Fail-closed (5d's own lesson): any shape outside the checked/lowered
     // 4 kinds stops the build loudly rather than silently mis-marshaling.
-    log("cg68k: ui_edit: unsupported kind " + numToStr(kind) + " (must be 0-3)")
-    quit 1
+    abort("cg68k: ui_edit: unsupported kind " + numToStr(kind) + " (must be 0-3)")
 }
 
 // cgIntrAbort (attempt-abort phase Task 4, design doc %3.2 point 1)
@@ -8520,8 +8484,7 @@ func cgIntrAbort(e: int) {
     a0e = irIntrArgsHead(e)
     fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtStrStore not found/reachable")
-        quit 1
+        abort("cg68k: rtStrStore not found/reachable")
     }
     a68Emit(OpLea, 0, AmDisp16, 5, cgAbortMsgOff, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0) // push dst (&clar_abort_msg)
@@ -8778,8 +8741,7 @@ func cgIntrUi(e: int, nm: int) {
         // ECallFn/EIntr source dispatch would need its own arm for this
         // -- deferred, same as GetTitle/GetFieldText/GetTextviewText,
         // above: no golden scenario this task gates on exercises it).
-        log("cg68k: ui_value_at_ptr: str/rec result materialization not wired this task")
-        quit 1
+        abort("cg68k: ui_value_at_ptr: str/rec result materialization not wired this task")
     }
     if nm == IUiAddrOfGlobal() {
         // LEA d16(A5),D0 -- a0 is always a bare EVarRef(global) (ir.cla's
@@ -8796,8 +8758,7 @@ func cgIntrUi(e: int, nm: int) {
         // here would mean some OTHER src context fed a KStr EIntr straight
         // to cgExpr, the exact hazard that function's own header comment
         // fails loud on.
-        log("cg68k: " + poolGet(nm) + ": KStr materialization reached cgExpr value context -- bind/store it instead (cgEmitStoreStr's own arm)")
-        quit 1
+        abort("cg68k: " + poolGet(nm) + ": KStr materialization reached cgExpr value context -- bind/store it instead (cgEmitStoreStr's own arm)")
     }
     if nm == IUiGetTextviewText() {
         // Task 14 (native-5e gate, textwidgets.cla): `textview.text` read
@@ -8814,8 +8775,7 @@ func cgIntrUi(e: int, nm: int) {
         // the final result.
         fi = findIRFuncIdxByName(rnTextNew)
         if fi == -1 or not shakeReachable(fi) {
-            log("cg68k: rtTextNew not found/reachable")
-            quit 1
+            abort("cg68k: rtTextNew not found/reachable")
         }
         cgCallFunc(fi)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
@@ -8848,8 +8808,7 @@ func cgIntrUi(e: int, nm: int) {
             // arg just below.
             fi = findIRFuncIdxByName(rnUiAskOpen)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtUiAskOpen not found/reachable")
-                quit 1
+                abort("cg68k: rtUiAskOpen not found/reachable")
             }
             cgExprAddr(a0)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
@@ -8860,8 +8819,7 @@ func cgIntrUi(e: int, nm: int) {
         } else if nm == IUiAskSave() {
             fi = findIRFuncIdxByName(rnUiAskSave)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtUiAskSave not found/reachable")
-                quit 1
+                abort("cg68k: rtUiAskSave not found/reachable")
             }
             cgExprAddr(a0)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
@@ -8872,8 +8830,7 @@ func cgIntrUi(e: int, nm: int) {
         } else if nm == IUiAskSaveChanges() {
             fi = findIRFuncIdxByName(rnUiAskSaveChanges)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtUiAskSaveChanges not found/reachable")
-                quit 1
+                abort("cg68k: rtUiAskSaveChanges not found/reachable")
             }
             cgExprAddr(a0)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
@@ -8882,8 +8839,7 @@ func cgIntrUi(e: int, nm: int) {
         } else {
             fi = findIRFuncIdxByName(rnUiFormIsNew)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtUiFormIsNew not found/reachable")
-                quit 1
+                abort("cg68k: rtUiFormIsNew not found/reachable")
             }
             cgCallFunc(fi)
         }
@@ -8894,8 +8850,7 @@ func cgIntrUi(e: int, nm: int) {
         return
     }
 
-    log("cg68k: cgIntrUi: unsupported UI intrinsic " + poolGet(nm))
-    quit 1
+    abort("cg68k: cgIntrUi: unsupported UI intrinsic " + poolGet(nm))
 }
 
 // cgIntrUiForward is the common shape for every UI canvas-draw intrinsic
@@ -8971,8 +8926,7 @@ func cgIntrUiStateDefaults(e: int, a0: int, winName: string) {
 
     winIdx = cpFindWindowIndex(winName)
     if winIdx == -1 {
-        log("cg68k: ui_state_defaults: unknown window " + winName)
-        quit 1
+        abort("cg68k: ui_state_defaults: unknown window " + winName)
     }
     f = irWindowDescStateFieldsHead(winIdx)
     off = 0
@@ -9035,15 +8989,13 @@ func cgExpr(e: int) {
             // SStoreStr/SAssign/SReturn dispatchers instead; reaching
             // here means some caller fed a non-scalar expr to cgExpr
             // directly -- fail loud so it's found and fixed there.
-            log("cg68k: cgExpr: EVarRef non-scalar (str/rec/arr) reached in value context -- bind/store it instead of reading its value directly")
-            quit 1
+            abort("cg68k: cgExpr: EVarRef non-scalar (str/rec/arr) reached in value context -- bind/store it instead of reading its value directly")
         }
     } else if k == EFieldRef {
         if cgIsScalarKind(irtKind(irExprType(e))) {
             cgLoadFieldScalar(e)
         } else {
-            log("cg68k: cgExpr: EFieldRef non-scalar (str/rec/arr) reached in value context -- bind/store it instead of reading its value directly")
-            quit 1
+            abort("cg68k: cgExpr: EFieldRef non-scalar (str/rec/arr) reached in value context -- bind/store it instead of reading its value directly")
         }
     } else if k == EIndexRef {
         // Task 13: a bare `arr[i]`/`list[i]` READ is a non-owning BORROW
@@ -9058,8 +9010,7 @@ func cgExpr(e: int) {
         if cgIsScalarKind(irtKind(irExprType(e))) {
             cgLoadFieldScalar(e)
         } else {
-            log("cg68k: cgExpr: EIndexRef non-scalar (str/rec) element reached in value context -- bind/store it instead of reading its value directly")
-            quit 1
+            abort("cg68k: cgExpr: EIndexRef non-scalar (str/rec) element reached in value context -- bind/store it instead of reading its value directly")
         }
     } else if k == EXRecAddr {
         // Task 6 (toolbox-integration Feature B): an EXRecAddr's own VALUE
@@ -9102,8 +9053,7 @@ func cgExpr(e: int) {
         // never legally reached in bare value context). Task 14.7: no
         // silent-zero degrade -- fail loud naming the kind, matching every
         // other "should never happen" arm in this file.
-        log("cg68k: cgExpr: expr kind " + numToStr(int(k)) + " has no value-context representation (str/rec construct -- bind/store it instead)")
-        quit 1
+        abort("cg68k: cgExpr: expr kind " + numToStr(int(k)) + " has no value-context representation (str/rec construct -- bind/store it instead)")
     }
 }
 
@@ -9424,8 +9374,7 @@ func cgCallFnScalar(e: int) {
 
     fi = findIRFuncIdxByName(irCallFnName(e))
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(e)))
-        quit 1
+        abort("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(e)))
     }
     if cgRetNeedsHidden(irFuncRet(fi)) {
         // Task 14.7 fix (review round 2: cgRetNeedsHidden, the single
@@ -9458,8 +9407,7 @@ func cgCallFnScalar(e: int) {
             }
             return
         }
-        log("cg68k: cgCallFnScalar used for str/rec-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
-        quit 1
+        abort("cg68k: cgCallFnScalar used for str/rec-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
     }
     // param-abi phase, Task 6: cgSaveArgReleases/cgFlushArgReleases bracket
     // the push+call+cleanup span -- see cgPendingArgReleases' own doc
@@ -9488,8 +9436,7 @@ func cgCallFnInto(e: int, dst: int) {
 
     fi = findIRFuncIdxByName(irCallFnName(e))
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(e)))
-        quit 1
+        abort("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(e)))
     }
     // param-abi phase, Task 6: same save/flush bracket as cgCallFnScalar --
     // this is ALSO the reentry point cgPushArgs' own materialize branch
@@ -9600,11 +9547,11 @@ func cgEmitAbortDefaultCheck(ui: bool) {
         a68Emit(OpMove, 2, AmImm, 0, 30, AmPreDec, 7, 0)
         a68EmitTrap(0xA9C8, "_SysBeep")
         if not cgCallRuntime1(intern("rtUiAlertMsg"), 5, cgAbortMsgOff) {
-            quit 1
+            abort("cg68k: cgEmitAbortDefaultCheck: rtUiAlertMsg call failed")
         }
     } else {
         if not cgCallRuntime1(rnLog, 5, cgAbortMsgOff) {
-            quit 1
+            abort("cg68k: cgEmitAbortDefaultCheck: rtLog call failed")
         }
     }
     a68EmitBr(OpBsr, 0, cgFreeGlobalsLbl)
@@ -10123,8 +10070,7 @@ func cgCallExtNatFallback(e: int) {
     natName = intern("nat_" + poolGet(irCallExtName(e)))
     fi = findIRFuncIdxByName(natName)
     if fi == -1 {
-        log("extern " + poolGet(irCallExtName(e)) + " has no trap clause and no nat_ fallback")
-        quit 1
+        abort("extern " + poolGet(irCallExtName(e)) + " has no trap clause and no nat_ fallback")
     }
     savedReleases = cgSaveArgReleases()
     total = cgPushArgs(irCallExtArgsHead(e))
@@ -10186,8 +10132,7 @@ func cgCallExt(e: int) {
 
     xi = cgExternIdxByName(nm)
     if xi == -1 {
-        log("cg68k: call to unregistered extern " + poolGet(nm))
-        quit 1
+        abort("cg68k: call to unregistered extern " + poolGet(nm))
     }
     conv = irExternConv(xi)
     if conv == 2 or conv == 7 {
@@ -10237,8 +10182,7 @@ func cgCallExtUiSynth(e: int, synthName: int) {
             cgObjCaptureTainted = true
             return
         }
-        log("cg68k: UI dispatcher " + poolGet(synthName) + " not found/reachable")
-        quit 1
+        abort("cg68k: UI dispatcher " + poolGet(synthName) + " not found/reachable")
     }
     savedReleases = cgSaveArgReleases()
     total = cgPushArgs(irCallExtArgsHead(e))
@@ -10285,8 +10229,7 @@ func cgCallExtUiGlueAddr(glueFnName: string) {
             cgObjCaptureTainted = true
             return
         }
-        log("cg68k: UI glue stub " + glueFnName + " not found/reachable")
-        quit 1
+        abort("cg68k: UI glue stub " + glueFnName + " not found/reachable")
     }
     a68Emit(OpLea, 0, AmDisp16, 5, cgJtDisp(cgJtSlot(fi)), AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
@@ -10366,8 +10309,7 @@ func cgStrBuilderIntoTemp(nameIdx: int, argExprs: list of int, argIsAddr: list o
 
     fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
-        quit 1
+        abort("cg68k: " + poolGet(nameIdx) + " not found/reachable")
     }
     a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
     a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
@@ -10406,8 +10348,7 @@ func cgFlushA1TempToDst(dst: int) {
     cap = irtN(irExprType(dst))
     fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtStrStore not found/reachable")
-        quit 1
+        abort("cg68k: rtStrStore not found/reachable")
     }
     cgExprAddr(dst)
     a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
@@ -10430,8 +10371,7 @@ func cgFlushA1TempToRetPtr() {
     cap = irtN(cgCurRetType)
     fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtStrStore not found/reachable")
-        quit 1
+        abort("cg68k: rtStrStore not found/reachable")
     }
     a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
     a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
@@ -10552,7 +10492,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             addrs.add(false)
             addrs.add(true)
             if not cgCallRuntime(rnStrStore, args, addrs) {
-                quit 1
+                abort("cg68k: cgEmitStoreStr: rtStrStore call failed (xrec_str_read)")
             }
             return
         }
@@ -10563,8 +10503,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // EIntr node, not the ECallFn shape cgCallFnInto expects.
             fi = findIRFuncIdxByName(rnLastErrMsg)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: natLastErrMsg not found/reachable")
-                quit 1
+                abort("cg68k: natLastErrMsg not found/reachable")
             }
             cgExprAddr(dst)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
@@ -10586,8 +10525,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             a0e = irIntrArgsHead(src2)
             fi = findIRFuncIdxByName(rnFileName)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: natFileName not found/reachable")
-                quit 1
+                abort("cg68k: natFileName not found/reachable")
             }
             cgExprAddr(dst)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
@@ -10655,8 +10593,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             a1e = irExprNext(a0e)
             fi = findIRFuncIdxByName(rnUiWidgetGetStr)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtUiWidgetGetStr not found/reachable")
-                quit 1
+                abort("cg68k: rtUiWidgetGetStr not found/reachable")
             }
             cgExpr(a0e)
             a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
@@ -10676,8 +10613,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             a0e = irIntrArgsHead(src2)
             fi = findIRFuncIdxByName(rnUiGetTitle)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtUiGetTitle not found/reachable")
-                quit 1
+                abort("cg68k: rtUiGetTitle not found/reachable")
             }
             cgExpr(a0e)
             a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
@@ -10687,8 +10623,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             cgCleanupStack(8)
             return
         } else {
-            log("cg68k: cgEmitStoreStr: intrinsic " + nm + " unsupported in store context")
-            quit 1
+            abort("cg68k: cgEmitStoreStr: intrinsic " + nm + " unsupported in store context")
         }
     }
 
@@ -10710,7 +10645,7 @@ func cgEmitStoreStr(dst: int, src: int) {
     addrs.add(false)
     addrs.add(true)
     if not cgCallRuntime(rnStrStore, args, addrs) {
-        quit 1
+        abort("cg68k: cgEmitStoreStr: rtStrStore call failed")
     }
 }
 
@@ -10824,8 +10759,7 @@ func cgEmitReturnStr(src: int) {
             // function's own generic tail below already uses.
             fi = findIRFuncIdxByName(rnLastErrMsg)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: natLastErrMsg not found/reachable")
-                quit 1
+                abort("cg68k: natLastErrMsg not found/reachable")
             }
             a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
             cgCallFunc(fi)
@@ -10842,8 +10776,7 @@ func cgEmitReturnStr(src: int) {
             a0e = irIntrArgsHead(src2)
             fi = findIRFuncIdxByName(rnFileName)
             if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: natFileName not found/reachable")
-                quit 1
+                abort("cg68k: natFileName not found/reachable")
             }
             a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
             cgExprAddr(a0e)
@@ -10861,16 +10794,14 @@ func cgEmitReturnStr(src: int) {
             // target, by lowCoerceStr's own construction).
             src2 = irIntrArgsHead(src2)
         } else {
-            log("cg68k: cgEmitReturnStr: intrinsic " + nm + " unsupported in return context")
-            quit 1
+            abort("cg68k: cgEmitReturnStr: intrinsic " + nm + " unsupported in return context")
         }
     }
 
     cap = irtN(cgCurRetType)
     fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtStrStore not found/reachable")
-        quit 1
+        abort("cg68k: rtStrStore not found/reachable")
     }
     a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
@@ -10976,8 +10907,7 @@ func cgForRangeStmt(s: int) {
     reg = 6
     off = cgFindFrameOffset(irForRangeV(s))
     if off == cgUnresolved {
-        log("cg68k: unresolved for-range variable " + vName)
-        quit 1
+        abort("cg68k: unresolved for-range variable " + vName)
     }
 
     cgExpr(irForRangeFrom(s))
@@ -11024,8 +10954,7 @@ func cgJsrByName(nameIdx: int) {
 
     fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
-        quit 1
+        abort("cg68k: " + poolGet(nameIdx) + " not found/reachable")
     }
     cgCallFunc(fi)
 }
@@ -11198,8 +11127,7 @@ func cgForListStmt(s: int) {
 
     vOff = cgFindFrameOffset(irForListV(s))
     if vOff == cgUnresolved {
-        log("cg68k: unresolved for-list variable " + poolGet(irForListV(s)))
-        quit 1
+        abort("cg68k: unresolved for-list variable " + poolGet(irForListV(s)))
     }
     elemT = irtElem(irExprType(irForListListV(s)))
 
@@ -11283,15 +11211,13 @@ func cgForMapStmt(s: int) {
 
     kOff = cgFindFrameOffset(irForMapK(s))
     if kOff == cgUnresolved {
-        log("cg68k: unresolved for-map key variable " + poolGet(irForMapK(s)))
-        quit 1
+        abort("cg68k: unresolved for-map key variable " + poolGet(irForMapK(s)))
     }
     vOff = cgUnresolved
     if irForMapV(s) != -1 {
         vOff = cgFindFrameOffset(irForMapV(s))
         if vOff == cgUnresolved {
-            log("cg68k: unresolved for-map value variable " + poolGet(irForMapV(s)))
-            quit 1
+            abort("cg68k: unresolved for-map value variable " + poolGet(irForMapV(s)))
         }
     }
 
@@ -11411,8 +11337,7 @@ func cgReturnStmt(s: int) {
 
 func cgBreakStmt() {
     if cgLoopBreakLabels.count == 0 {
-        log("cg68k: break outside loop")
-        quit 1
+        abort("cg68k: break outside loop")
     }
     cgFreeStmtTmps()
     a68EmitBr(OpBra, 0, cgLoopBreakLabels[cgLoopBreakLabels.count - 1])
@@ -11420,8 +11345,7 @@ func cgBreakStmt() {
 
 func cgContinueStmt() {
     if cgLoopContinueLabels.count == 0 {
-        log("cg68k: continue outside loop")
-        quit 1
+        abort("cg68k: continue outside loop")
     }
     cgFreeStmtTmps()
     a68EmitBr(OpBra, 0, cgLoopContinueLabels[cgLoopContinueLabels.count - 1])
@@ -11527,8 +11451,7 @@ func cgStmt(s: int) {
             // (mirroring cgRetainAt/cgReleaseAt's own KArr loop) -- a
             // future task, not this one.
             if cgNeedsRelease(irExprType(dst)) {
-                log("cg68k: cgStmt: SAssign: whole-array assignment of handle-bearing elements unsupported natively -- assign element-wise")
-                quit 1
+                abort("cg68k: cgStmt: SAssign: whole-array assignment of handle-bearing elements unsupported natively -- assign element-wise")
             }
             cgEmitStoreArr(dst, irAssignSrc(s))
         } else {
@@ -11537,8 +11460,7 @@ func cgStmt(s: int) {
             // than silently dropping the store (Task 14.7's own lesson --
             // a plausible-looking wrong value is strictly worse than a
             // build error).
-            log("cg68k: cgStmt: SAssign dst kind " + numToStr(int(dstK)) + " kind " + numToStr(int(dstKind)) + " unsupported natively")
-            quit 1
+            abort("cg68k: cgStmt: SAssign dst kind " + numToStr(int(dstK)) + " kind " + numToStr(int(dstKind)) + " unsupported natively")
         }
     } else if k == SStoreStr {
         cgEmitStoreStr(irStoreStrDst(s), irStoreStrSrc(s))
@@ -11567,8 +11489,7 @@ func cgStmt(s: int) {
         // own lesson, cited throughout this file) applied to the one
         // dispatcher in cg68k.cla that didn't already have a hard-fail
         // fallback of its own.
-        log("cg68k: cgStmt: stmt kind " + numToStr(int(k)) + " unsupported")
-        quit 1
+        abort("cg68k: cgStmt: stmt kind " + numToStr(int(k)) + " unsupported")
     }
 
     if k != SReturn and k != SBreak and k != SContinue {
@@ -11622,8 +11543,7 @@ func cgAttemptStmt(s: int) {
         // clarusc's own near-zero native-68k self-emit segment headroom
         // on; fail loudly rather than silently corrupt an out-of-range
         // slot.
-        log("cg68k: attempt nesting exceeds cgBailTargets' fixed depth (32)")
-        quit 1
+        abort("cg68k: attempt nesting exceeds cgBailTargets' fixed depth (32)")
     }
     hLabel = a68NewLabel()
     aLabel = a68NewLabel()
@@ -13757,8 +13677,7 @@ func cgObjResolveLabel(cls: int, sym: int): int {
         }
         return cgFreeGlobalsLbl
     }
-    log("cg68k: paste: unresolvable hole class " + numToStr(cls))
-    quit 1
+    abort("cg68k: paste: unresolvable hole class " + numToStr(cls))
     return -1
 }
 
