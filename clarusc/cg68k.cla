@@ -104,8 +104,10 @@
 // (name, same type) exactly like cpEmitFunc (cprint.cla) does for its C
 // hoist -- two sibling for-range loops sharing a bound-variable name is
 // legal Clarus and gets ONE frame slot, reused; a genuine same-name/
-// different-type collision is a hard error (log + quit 1), mirroring
-// cpEmitFunc's identical guard.
+// different-type collision is a hard error (abort() -- attempt-abort
+// phase Task 6 converted this from `log(msg); quit 1`, non-UI-default
+// observable behavior unchanged, design doc %3.5), mirroring cpEmitFunc's
+// identical guard.
 //
 // JT SLOTS. Slot 0 is reserved for the synthesized startup routine (the
 // first function emitted into the stream, per the brief) -- every
@@ -905,8 +907,10 @@ var cgCurEpilogueLabel: int
 // overhead (cgEmitFreeGlobalsStub's glue bundle, Task 3's own
 // segment-budget regression writeup), regardless of which function
 // "owns" it. 32 levels of `attempt` nesting is far beyond any real
-// program; cgAttemptStmt fails loudly (log + quit 1) past that rather
-// than silently corrupt an out-of-range slot.
+// program; cgAttemptStmt fails loudly (abort() -- attempt-abort phase
+// Task 6 converted this from `log(msg); quit 1`, non-UI-default
+// observable behavior unchanged, design doc %3.5) past that rather than
+// silently corrupt an out-of-range slot.
 var cgBailTargets: int[32]
 var cgBailDepth: int
 
@@ -9579,20 +9583,28 @@ func cgEmitAbortDefaultCheck(ui: bool) {
 //
 // Two shapes, depending on what the CALLING function (the one currently
 // being emitted, cg68k's own module state) actually is:
-//   - an ordinary function with its own bail chain (cgCurFuncHasBail,
-//     i.e. irFuncBail(f) != -1): TST.B flag / BNE to cgAbortTarget() --
-//     ordinary propagation, design doc %3.2 point 3.
 //   - a lowering-synthesized UI event dispatcher (the `clar_ui_fire_*`
 //     family, cgCurFuncIsUiDispatcher -- built by lower.cla's
 //     lowSynthUiDispatchers via newIRFunc directly, NEVER through
 //     lowFuncBody, so irFuncBail is always -1 for these: they can never
 //     have a propagating bail chain of their own): the §3.5 UI default
-//     fires IN PLACE instead. This is "the check after each handler
-//     call in the synthesized UI dispatcher" (P4(b)'s own site) with NO
-//     lower.cla/cprint.cla-style special casing needed at the call-site
-//     level -- these dispatchers call the user's `on` handler through an
-//     ordinary ECallFn, the exact same cgCallFnScalar/cgCallFnInto
-//     chokepoint every other user call already goes through.
+//     fires IN PLACE, UNCONDITIONALLY (never narrowed by fi's own
+//     irFuncCanAbort -- design doc %8/Task 6b ruling: a dispatcher calls
+//     its user `on` handler dynamically by event, not by a fixed call
+//     site an interprocedural analysis can usefully narrow, so it keeps
+//     its full-strength check regardless). This is "the check after
+//     each handler call in the synthesized UI dispatcher" (P4(b)'s own
+//     site) with NO lower.cla/cprint.cla-style special casing needed at
+//     the call-site level -- these dispatchers call the user's `on`
+//     handler through an ordinary ECallFn, the exact same
+//     cgCallFnScalar/cgCallFnInto chokepoint every other user call
+//     already goes through.
+//   - an ordinary function with its own bail chain (cgCurFuncHasBail,
+//     i.e. irFuncBail(f) != -1): TST.B flag / BNE to cgAbortTarget() --
+//     ordinary propagation, design doc %3.2 point 3 -- but ONLY when the
+//     Task 6b interprocedural analysis (irFuncCanAbort, lower.cla's
+//     lowComputeCanAbort) actually proved fi can abort; a callee that
+//     can't needs no check at all, the whole point of Task 6b.
 //   - anything else (a runtime-origin caller -- never happens, runtime
 //     code never calls user functions; or a non-dispatcher function with
 //     no bail chain -- never happens either, since lowFuncBody gives
@@ -9603,10 +9615,10 @@ func cgAbortCheckAfterCall(fi: int) {
     if not lowUsesAbort or irFuncIsRuntimeOrigin(fi) {
         return
     }
-    if cgCurFuncHasBail {
-        cgEmitAbortCheck()
-    } else if cgCurFuncIsUiDispatcher {
+    if cgCurFuncIsUiDispatcher {
         cgEmitAbortDefaultCheck(true)
+    } else if cgCurFuncHasBail and irFuncCanAbort(fi) {
+        cgEmitAbortCheck()
     }
 }
 

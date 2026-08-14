@@ -222,8 +222,11 @@ func toText(s: string): text {
 // loudly: `clarusc emit` exited 0 while producing C that doesn't compile
 // (confirmed empirically during Task 4's own development: an EXRecAddr
 // argument printed as nothing, `rt_pokew(, 5)`). Mirrors lowUnsupported's
-// own log+quit shape; called only from a dispatcher's unmatched-case tail,
-// so it never fires on any construct these printers already handle.
+// own abort() shape (attempt-abort phase Task 6 converted both from a
+// bare `log(msg); quit 1` -- the non-UI-default observable behavior is
+// unchanged, design doc %3.5); called only from a dispatcher's
+// unmatched-case tail, so it never fires on any construct these printers
+// already handle.
 func cpFatal(what: string): text {
     abort("cprint: unhandled " + what)
     return toText("")
@@ -1503,20 +1506,23 @@ func fpCallFn(e: int): text {
     // a post-call abort check only when this program is abort-enabled
     // (lowUsesAbort), we're printing inside a real function that
     // actually has a bail target to jump to (fpCurFuncHasBail), AND the
-    // callee resolves to a known, non-runtime-origin IRFunc
-    // (findIRFuncIdxByName/irFuncIsRuntimeOrigin -- Task 2's tag). An
-    // unresolved callee (fi == -1, never expected for a real
-    // checked-good program) fails safe by skipping the check rather than
-    // fatal-ing. Inlined here (not its own function) purely for size:
-    // clarusc's own native-68k self-emit (TestSelfEmit68k) runs at
-    // essentially zero segment headroom (see cprint.cla's cpEmitRelease/
-    // fpIntrAbort doc comments), and this is called from exactly one
-    // site, so a separate function only costs a call/return with no
-    // sharing benefit.
+    // callee resolves to a known IRFunc that the Task 6b interprocedural
+    // analysis (lowComputeCanAbort, lower.cla) actually proved CAN
+    // abort (irFuncCanAbort -- narrower than, and superseding, the
+    // original "any non-runtime-origin callee" rule: every runtime
+    // function already has canAbort permanently false, so this one
+    // predicate alone is both necessary and sufficient). An unresolved
+    // callee (fi == -1, never expected for a real checked-good program)
+    // fails safe by skipping the check rather than fatal-ing. Inlined
+    // here (not its own function) purely for size: clarusc's own
+    // native-68k self-emit (TestSelfEmit68k) runs at essentially zero
+    // segment headroom (see cprint.cla's cpEmitRelease/fpIntrAbort doc
+    // comments), and this is called from exactly one site, so a separate
+    // function only costs a call/return with no sharing benefit.
     checked = false
     if lowUsesAbort and fpCurFuncHasBail {
         fi = findIRFuncIdxByName(irCallFnName(e))
-        checked = fi != -1 and not irFuncIsRuntimeOrigin(fi)
+        checked = fi != -1 and irFuncCanAbort(fi)
     }
     // ARC Task 7 site 3 (caller side): a handle-backed record return is
     // ALSO always materialized into a tracked temp now (lower.cla's
