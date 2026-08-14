@@ -609,7 +609,14 @@ func rtTextSlice(out: ptr, t: ptr, start: int, len: int) {
 // single TextBlockMoveData) rather than re-deriving per byte -- that
 // hoisting is the whole point, collapsing per-byte runtime-call
 // overhead. STRICT bounds throughout, same "text index out of range"
-// message rtTextIndex/rtTextSlice already use.
+// message rtTextIndex/rtTextSlice already use -- and the SAME
+// overflow-safe subtraction form rtTextSlice's own bounds check
+// (:594-599 above) already uses deliberately: `pos > rt.len - n`, never
+// `pos + n > rt.len` -- the addition form wraps (CLAR_ADD32 is modular),
+// so a huge pos/n can pass the guard and read wild memory instead of
+// panicking (review round 1 fix: proven with a real compiled binary,
+// `u32At(2147483647)` on a 2-byte text used to return a value instead
+// of panicking).
 
 // rtTextHashStep: rolling 31-bit shift-add hash (djb2 shape, matching
 // bake.cla's own body-hash convention) over bytes [pos, pos+n). n == 0
@@ -624,7 +631,7 @@ func rtTextHashStep(t: ptr, h: int, pos: int, n: int): int {
     var acc: int
 
     rt = RtText(t)
-    if pos < 0 or n < 0 or pos + n > rt.len {
+    if pos < 0 or n < 0 or pos > rt.len - n {
         rtPanic("text index out of range")
     }
     mp = TextHandleDeref(rt.h)
@@ -644,7 +651,7 @@ func rtTextU32At(t: ptr, pos: int): int {
     var mp: ptr
 
     rt = RtText(t)
-    if pos < 0 or pos + 4 > rt.len {
+    if pos < 0 or pos > rt.len - 4 {
         rtPanic("text index out of range")
     }
     mp = TextHandleDeref(rt.h)
@@ -671,15 +678,15 @@ func rtTextStringAt(t: ptr, pos: int): string {
     var s: string
 
     rt = RtText(t)
-    if pos < 0 or pos + 4 > rt.len {
+    if pos < 0 or pos > rt.len - 4 {
         rtPanic("text index out of range")
     }
     mp = TextHandleDeref(rt.h)
     l = (peekb(mp + pos) << 24) | (peekb(mp + pos + 1) << 16) | (peekb(mp + pos + 2) << 8) | peekb(mp + pos + 3)
-    if l > 255 {
+    if l < 0 or l > 255 {
         rtPanic("string too long")
     }
-    if pos + 4 + l > rt.len {
+    if pos > rt.len - 4 - l {
         rtPanic("text index out of range")
     }
     i = 0
@@ -710,7 +717,7 @@ func rtTextTextAt(dst: ptr, t: ptr, pos: int, n: int) {
     var dstmp: ptr
 
     rt = RtText(t)
-    if pos < 0 or n < 0 or pos + n > rt.len {
+    if pos < 0 or n < 0 or pos > rt.len - n {
         rtPanic("text index out of range")
     }
     rtTextGrow(dst, n)

@@ -1,0 +1,23 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// stringat_negative.cla (clir-load-perf Task 2, review round 1 fix):
+// stringAt's length-cap check must also catch a negative composed
+// length. A 0xFFFFFFFF BE length prefix composes to l = -1, which
+// previously passed BOTH the `l > 255` cap check and the STRICT range
+// check, silently returning "" instead of panicking -- proven with a
+// real compiled binary before the fix (rtTextStringAt now checks
+// `l < 0 or l > 255`). Sibling to stringat_cap.cla (which covers the
+// positive-overflow 256 case); this one covers the negative case.
+// Host-only fixture, same precedent as textrange_oor.cla.
+on App.launch {
+    var t: text
+    var s: string
+
+    t.append(char(255))
+    t.append(char(255))
+    t.append(char(255))
+    t.append(char(255))
+    s = t.stringAt(0)
+    alert("unreachable")
+}
