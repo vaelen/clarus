@@ -890,6 +890,62 @@ var cgCurFrameIsRef: list of bool
 // UNLK/RTS inline -- one shared epilogue per function, naive but uniform.
 var cgCurEpilogueLabel: int
 
+// ================================================================
+// attempt-abort phase Task 4 (design doc %3.2/%3.3): per-function bail
+// tracking, mirroring cprint.cla's fpBailTargets/fpBailDepth/fpBailUsed/
+// fpCurFuncHasBail family exactly (see that file's own doc comments for
+// the full design rationale) -- the two backends deliberately carry the
+// SAME state shape, just with a68 label ids (int) standing in for
+// cprint's C label text.
+//
+// cgBailTargets/cgBailDepth: a FIXED array + manual depth counter (not
+// `list of int`), same reasoning as cprint's own fpBailTargets doc
+// comment -- a NEW heap-typed GLOBAL in clarusc's own source costs every
+// one of clarusc's native-68k self-emit segments a slice of fixed
+// overhead (cgEmitFreeGlobalsStub's glue bundle, Task 3's own
+// segment-budget regression writeup), regardless of which function
+// "owns" it. 32 levels of `attempt` nesting is far beyond any real
+// program; cgAttemptStmt fails loudly (log + quit 1) past that rather
+// than silently corrupt an out-of-range slot.
+var cgBailTargets: int[32]
+var cgBailDepth: int
+
+// cgBailUsed/cgBailLbl (attempt-abort phase Task 4): the function's own
+// bail label, allocated LAZILY on first actual use (cgFuncBailLabel,
+// below) -- mirrors this file's own cgMul32Label/cgDiv32Label idiom, and
+// is REQUIRED here (not just an optimization): a68Finish fails the whole
+// assembly if ANY a68NewLabel() id is never a68Bind()'d (asm68k.cla's own
+// doc comment at cg68k.cla:1213), so a per-function bail label can only
+// ever be allocated when cgEmitFunc is also going to bind it -- eager
+// unconditional allocation (mirroring cgCurEpilogueLabel) is not an
+// option the way it is for cprint's own C source (an unreferenced C
+// label is harmless; an unbound a68 label is a hard assembly failure).
+// Reset to false/-1 at the top of every cgEmitFunc, exactly where
+// cgCurEpilogueLabel itself is (re-)established.
+var cgBailUsed: bool
+var cgBailLbl: int
+
+// cgCurFuncHasBail (attempt-abort phase Task 4) is true only while
+// emitting a function whose own irFuncBail(f) != -1 -- mirrors cprint's
+// fpCurFuncHasBail exactly. The post-call check (cgCallFnScalar/
+// cgCallFnInto) consults this before ever calling cgAbortTarget(),
+// which is what makes cgFuncBailLabel's lazy allocation safe: it is only
+// ever invoked from a context that already knows a real bail chain
+// (irFuncBail(f)) exists for THIS function to fall through into.
+var cgCurFuncHasBail: bool
+
+// cgCurFuncIsUiDispatcher (attempt-abort phase Task 4) is true only
+// while emitting one of the `clar_ui_fire_*` lowering-synthesized UI
+// event dispatchers (cgSeveredFamily's own existing family-1
+// classification, reused rather than re-derived) -- see
+// cgAbortCheckAfterCall's own doc comment for why these need the §3.5
+// UI default instead of an ordinary bail-target branch: they are built
+// via newIRFunc directly (lowSynthUiDispatchers), never through
+// lowFuncBody, so they never get a real bail chain of their own
+// (irFuncBail is always -1 for them) even in an abort-enabled program.
+var cgCurFuncIsUiDispatcher: bool
+// ================================================================
+
 // cgCurHiddenOffset is 8 (the hidden result pointer's fixed param offset
 // -- see the file header's "FRAME MODEL, WORKED EXAMPLE") when the
 // current function's own return type needs one (cgSizeOf > 4), else -1.
@@ -1526,6 +1582,23 @@ func cg68AddRoots() {
         i = i + 1
     }
     shakeAddRoot(intern("rtEnumCheck"))
+    // attempt-abort phase Task 4 (A4): rtUiAlertMsg (runtime/clarus/
+    // uidialogs.cla) is reached ONLY by name from cg68k.cla -- both the
+    // IAlert intrinsic arm (every `alert(...)` call in a UI program, not
+    // gated on lowUsesAbort at all) and cgEmitAbortDefaultCheck's own
+    // UI default (gated on lowUsesAbort) -- same "reached only by name"
+    // shape as the nat* family above, so it needs the same explicit
+    // root. Gated on irIsUiProgram() alone: a non-UI program never
+    // reaches EITHER call site (natAlert covers non-UI alert() calls
+    // unchanged, and cgEmitAbortDefaultCheck's non-UI branch never
+    // passes ui=true), so it pays nothing extra either way -- and
+    // rooting must NOT additionally require lowUsesAbort, or a
+    // no-feature UI program's own ordinary `alert(...)` calls (routed
+    // through the IAlert arm regardless of the abort feature) would hit
+    // an unreachable-callee hard failure at cgCallRuntime.
+    if irIsUiProgram() {
+        shakeAddRoot(intern("rtUiAlertMsg"))
+    }
 }
 
 // cg68SynthCbGlue (Task 8, toolbox-integration Feature C: `callback
@@ -2186,6 +2259,51 @@ func cgCallFunc(fi: int) {
     }
 }
 
+// cgFuncBailLabel (attempt-abort phase Task 4) lazily mints the CURRENT
+// function's own bail label -- same idiom as this file's own
+// cgMul32Label/cgDiv32Label ("allocate on first real use, remember
+// after"), and REQUIRED here rather than merely convenient: see
+// cgBailUsed's own doc comment for why an a68 label can never be
+// allocated unless it is also going to be bound.
+func cgFuncBailLabel(): int {
+    if not cgBailUsed {
+        cgBailUsed = true
+        cgBailLbl = a68NewLabel()
+    }
+    return cgBailLbl
+}
+
+// cgAbortTarget (attempt-abort phase Task 4, design doc %3.2 point 3)
+// resolves "the current bail target": the innermost enclosing
+// `attempt`'s own handler-entry label when cgBailDepth > 0 (pushed/
+// popped by cgAttemptStmt around the body only, never the handler --
+// exactly cprint's own fpAbortTarget/fpBailTargets discipline, restated
+// with a68 label ids), else this function's own (lazily minted) bail
+// label. Only ever called from a context that already knows
+// cgCurFuncHasBail is true (cgCallFnScalar/cgCallFnInto/cgIntrAbort/
+// cgAttemptStmt's own gates) -- the function-bail fallback always has a
+// real chain to fall into.
+func cgAbortTarget(): int {
+    if cgBailDepth > 0 {
+        return cgBailTargets[cgBailDepth - 1]
+    }
+    return cgFuncBailLabel()
+}
+
+// cgEmitAbortCheck (attempt-abort phase Task 4, design doc %3.3: "~6-10
+// bytes per checked call site") prints the one check every checked call
+// site shares: `TST.B <flag>` + `BNE <target>`. Reads cgAbortFlagOff
+// directly (not an EVarRef -- the flag has no IR node, same as
+// cprint.cla's `clar_aborting`) via A5-relative addressing, same as any
+// ordinary global.
+func cgEmitAbortCheck() {
+    var target: int
+
+    target = cgAbortTarget()
+    a68Emit(OpTst, 1, AmNone, 0, 0, AmDisp16, 5, cgAbortFlagOff)
+    a68EmitBr(OpBcc, 6, target) // BNE: aborting -> bail/handler target
+}
+
 // ================================================================
 // Globals / A5
 // ================================================================
@@ -2219,6 +2337,23 @@ func cgAssignGlobalOffsets() {
         cgUiCurCancelOff = running
     } else {
         cgUiCurCancelOff = 0
+    }
+
+    // attempt-abort phase Task 4 (design doc %3.2/%3.4): the abort flag
+    // + message globals, reserved ONLY when this program actually uses
+    // the feature -- a no-feature program reserves zero extra below-A5
+    // bytes here, keeping its output byte-identical to today's. 2 bytes
+    // for the flag (padded, same cgSlotSizeOf-style even-rounding every
+    // other contribution here already follows) + 256 for the Str255
+    // message (already even).
+    if lowUsesAbort {
+        running = running - 2
+        cgAbortFlagOff = running
+        running = running - 256
+        cgAbortMsgOff = running
+    } else {
+        cgAbortFlagOff = 0
+        cgAbortMsgOff = 0
     }
     cgGlobalsBelowA5Size = 0 - running
 }
@@ -2953,6 +3088,18 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
         }
         cgEmitStartupCallIfPresent("rtUiStartup", true)
         cgEmitStartupCallIfPresent("handler_App_launch", irHasLaunch)
+        // attempt-abort phase Task 4 (design doc %3.5; Ruling: native UI
+        // top-level default is FULL-STRENGTH). This is the "other
+        // synthesized entry that runs user code" the ruling calls out
+        // beyond the per-dispatch checks (cgAbortCheckAfterCall) --
+        // App.launch runs before rtUiRun's own event loop (which never
+        // returns natively, unlike the C lane's own rtUiRun) ever starts,
+        // so an uncaught abort here needs its own explicit check, gated
+        // on irHasLaunch exactly like the non-UI branch below (nothing to
+        // check if there's no App.launch handler at all).
+        if lowUsesAbort and irHasLaunch {
+            cgEmitAbortDefaultCheck(true)
+        }
         cgEmitStartupCallIfPresent("rtUiLaunch", true)
         cgEmitStartupCallIfPresent("rtUiRun", true)
     } else {
@@ -2962,9 +3109,24 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
             a68CommentMarker()
         }
         cgEmitStartupCallIfPresent("handler_App_launch", irHasLaunch)
+        // attempt-abort phase Task 4 (design doc %3.5): a check after
+        // App.launch specifically, mirroring the C lane's own review-
+        // driven fix (task-3 fix round 1, C1) -- an uncaught abort in
+        // App.launch must not leak into startEmpty/startCLI/
+        // openDocument's own dynamic scope.
+        if lowUsesAbort and irHasLaunch {
+            cgEmitAbortDefaultCheck(false)
+        }
         cgEmitStartupCallIfPresent("handler_App_startEmpty", irHasStartEmpty)
         cgEmitStartupCallIfPresent("handler_App_startCLI", irHasStartCLI)
         cgEmitStartupCallIfPresent("handler_App_openDocument", irHasOpenDocument)
+        // design doc %3.5's own non-UI default: one more check after the
+        // rest of the entry-handler dispatch, before the free-globals/
+        // quit tail -- byte-identical (in OBSERVABLE behavior, log+quit
+        // 1) to today's hand-written `log(msg); quit 1`.
+        if lowUsesAbort {
+            cgEmitAbortDefaultCheck(false)
+        }
     }
 
     a68EmitBr(OpBsr, 0, freeGlobalsLbl)
@@ -4947,6 +5109,24 @@ func cgEmitFunc(f: int) {
     cgLoopContinueLabels = cgFreshIntList()
     cgCurEpilogueLabel = a68NewLabel()
 
+    // attempt-abort phase Task 4 (design doc %3.2/%3.3): per-function
+    // bail state, reset here alongside cgCurEpilogueLabel -- mirrors
+    // cprint.cla's own fpReset (called once per function too).
+    // cgCurFuncHasBail mirrors fpCurFuncHasBail exactly: true only when
+    // lowering (Task 2) actually built a real bail chain for f. Never
+    // true for a runtime-origin function (lowFuncBody only builds one for
+    // non-runtime-origin functions) and never true for a lowering-
+    // synthesized UI dispatcher either (those are built via newIRFunc
+    // directly, never through lowFuncBody -- see cgAbortCheckAfterCall's
+    // own doc comment for how that case is handled instead).
+    // cgCurFuncIsUiDispatcher reuses cgSeveredFamily's own existing
+    // by-name classification (family 1, "the reverse-waist UI dispatcher
+    // family") rather than re-deriving a second name-prefix test.
+    cgBailDepth = 0
+    cgBailUsed = false
+    cgCurFuncHasBail = irFuncBail(f) != -1
+    cgCurFuncIsUiDispatcher = cgSeveredFamily(poolGet(irFuncName(f))) == 1
+
     a68Bind(cgFuncLabels[f])
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     i = 0
@@ -4959,6 +5139,28 @@ func cgEmitFunc(f: int) {
         i = i + 1
     }
     cgStmts(irFuncBodyHead(f))
+    // attempt-abort phase Task 4 (Ruling): the bail block comes from
+    // lowering (irFuncBail(f)) -- emitted here, once, as a label whose
+    // body is the block's own releases + default return, immediately
+    // before the ordinary epilogue. Bound ONLY when cgBailUsed is true
+    // (cgFuncBailLabel's lazy allocation -- see its own doc comment for
+    // why an a68 label can never be allocated unless it will also be
+    // bound): a function whose OWN body never actually needed to bail
+    // (no checked call, no bare abort()) gets zero extra bytes here,
+    // even though lowering built the chain unconditionally for every
+    // non-runtime-origin function once lowUsesAbort. The chain's own
+    // final statement is an ordinary `return <default>`, which
+    // cgReturnStmt lowers via the SAME BRA-to-cgCurEpilogueLabel every
+    // other return already uses -- no separate "null the result
+    // register" step is needed here: a checked call's own BNE always
+    // diverts control away before any result register is ever consumed
+    // (see cgAbortCheckAfterCall), and this return statement sets
+    // whatever default value the function's own return convention
+    // expects, exactly like any hand-written return would.
+    if cgBailUsed {
+        a68Bind(cgBailLbl)
+        cgStmts(irFuncBail(f))
+    }
     a68Bind(cgCurEpilogueLabel)
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
@@ -7561,13 +7763,29 @@ func cgIntr(e: int) {
     // reached anywhere else in a handler body) -- natQuit's own code
     // argument is a plain int, passed BY VALUE (addrs=false).
     if nm == IAlert() {
+        // attempt-abort phase Task 4 (A4 scope addition, design doc %3.5;
+        // task-1-report P4(d)'s own finding): natAlert is headless (a
+        // trace write, no Toolbox trap) on EVERY native build today, in
+        // tension with the language reference's documented "shows a
+        // standard alert" behavior. A UI program (irIsUiProgram(), same
+        // predicate lowQuit's own IUiQuit split already uses) now routes
+        // through rtUiAlertMsg (runtime/clarus/uidialogs.cla, A4) instead
+        // -- ALWAYS the same natAlert-format trace line, PLUS a real
+        // dialog when not scripted. A non-UI program keeps natAlert,
+        // unchanged.
         a0e = irIntrArgsHead(e)
         args = cgFreshIntList()
         args.add(a0e)
         addrs = cgFreshBoolList()
         addrs.add(true)
-        if not cgCallRuntime(rnAlert, args, addrs) {
-            quit 1
+        if irIsUiProgram() {
+            if not cgCallRuntime(intern("rtUiAlertMsg"), args, addrs) {
+                quit 1
+            }
+        } else {
+            if not cgCallRuntime(rnAlert, args, addrs) {
+                quit 1
+            }
         }
         return
     }
@@ -7592,6 +7810,10 @@ func cgIntr(e: int) {
         if not cgCallRuntime(rnQuit, args, addrs) {
             quit 1
         }
+        return
+    }
+    if nm == IAbort() {
+        cgIntrAbort(e)
         return
     }
     if nm == IPeekB() or nm == IPeekW() or nm == IPeekL() {
@@ -8239,6 +8461,45 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
     quit 1
 }
 
+// cgIntrAbort (attempt-abort phase Task 4, design doc %3.2 point 1)
+// implements `abort(msg)`: evaluate msg's address, clamp-store it into
+// clar_abort_msg via the existing rtStrStore machinery (the exact same
+// push shape cgDefaultInitStrAt already uses for a fixed A5-relative
+// destination -- dst, dstcap, src, in that declaration order), set the
+// flag, then branch to the current bail target. An `abort` written
+// directly inside an `attempt` body needs no special case: cgAbortTarget
+// already resolves to that attempt's own handler entry, exactly as any
+// checked call's own check would (design doc %3.2's own "no special
+// case" framing).
+//
+// Always reachable with cgCurFuncHasBail true: checkAttemptStmt/
+// checkIdentCall's own cnAbort arm set lowUsesAbort during CHECKING,
+// which always fully completes before lowering starts a single function
+// (task-2-report's own ordering argument) -- so any function containing
+// a real `abort(...)` call is, by construction, a non-runtime-origin
+// function in an already abort-enabled program, exactly the condition
+// lowFuncBody always builds a real bail chain for.
+func cgIntrAbort(e: int) {
+    var fi: int
+    var a0e: int
+
+    a0e = irIntrArgsHead(e)
+    fi = findIRFuncIdxByName(rnStrStore)
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtStrStore not found/reachable")
+        quit 1
+    }
+    a68Emit(OpLea, 0, AmDisp16, 5, cgAbortMsgOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0) // push dst (&clar_abort_msg)
+    a68Emit(OpMove, 4, AmImm, 0, 255, AmPreDec, 7, 0) // push dstcap
+    cgExprAddr(a0e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0) // push src (&msg)
+    cgCallFunc(fi)
+    cgCleanupStack(12)
+    a68Emit(OpMove, 1, AmImm, 0, 1, AmDisp16, 5, cgAbortFlagOff) // flag = true
+    a68EmitBr(OpBra, 0, cgAbortTarget())
+}
+
 func cgIntrUi(e: int, nm: int) {
     var a0: int
     var a1: int
@@ -8707,6 +8968,21 @@ func cgIntrUiStateDefaults(e: int, a0: int, winName: string) {
 // doc comment), zeroed for free by the startup zero-loop.
 var cgUiCurCancelOff: int = 0
 
+// cgAbortFlagOff/cgAbortMsgOff (attempt-abort phase Task 4, design doc
+// %3.2/%3.3): the two synthesized below-A5 globals `abort(msg)`/the
+// post-call check read and write -- a 1-byte (2-byte-padded, so the
+// below-A5 block stays even, cgAssignGlobalOffsets' own even-sum
+// invariant) flag and a Str255 (256 bytes) message buffer. Same
+// mechanism cgUiCurCancelOff above already establishes (an extra
+// below-A5 cell reserved by cgAssignGlobalOffsets, zeroed for free by
+// the startup zero-loop) -- gated on `lowUsesAbort` (check.cla) rather
+// than unconditional, since a no-feature program must reserve zero extra
+// bytes here (design doc %3.4's byte-identity requirement). Mirrors
+// cprint.cla's own `clar_aborting`/`clar_abort_msg` file-scope globals
+// exactly, one A5 cell each instead of one C static each.
+var cgAbortFlagOff: int = 0
+var cgAbortMsgOff: int = 0
+
 func cgExpr(e: int) {
     var k: IRExprKind
 
@@ -9158,6 +9434,7 @@ func cgCallFnScalar(e: int) {
     total = cgPushArgs(irCallFnArgsHead(e))
     cgCallFunc(fi)
     cgCleanupStack(total)
+    cgAbortCheckAfterCall(fi)
     cgFlushArgReleases(savedReleases)
     retType = irFuncRet(fi)
     if e == cgDiscardExprIdx and cgNeedsRelease(retType) {
@@ -9191,6 +9468,7 @@ func cgCallFnInto(e: int, dst: int) {
     total = total + 4
     cgCallFunc(fi)
     cgCleanupStack(total)
+    cgAbortCheckAfterCall(fi)
     cgFlushArgReleases(savedReleases)
 }
 
@@ -9232,6 +9510,123 @@ func cgCallRuntime(nameIdx: int, argExprs: list of int, argIsAddr: list of bool)
     cgCallFunc(fi)
     cgCleanupStack(total)
     return true
+}
+
+// cgCallRuntime1 (attempt-abort phase Task 4) is cgCallRuntime's own
+// single-address-arg specialization for a synthesized global with no IR
+// node of its own (cgAbortMsgOff) -- cgCallRuntime's general API takes
+// IR expr indices for every arg, which a raw A5-relative offset isn't.
+// Pushes &<reg,off>, calls nameIdx by name, cleans up 4 bytes; returns
+// false (having already logged, same contract as cgCallRuntime) if
+// nameIdx isn't a reachable IRFunc.
+func cgCallRuntime1(nameIdx: int, reg: int, off: int): bool {
+    var fi: int
+
+    fi = findIRFuncIdxByName(nameIdx)
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: runtime function " + poolGet(nameIdx) + " not found/reachable")
+        return false
+    }
+    a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgCallFunc(fi)
+    cgCleanupStack(4)
+    return true
+}
+
+// cgEmitAbortDefaultCheck (attempt-abort phase Task 4, design doc %3.5;
+// Ruling: the native UI top-level default is FULL-STRENGTH, not the C
+// lane's own disclosed narrowing) prints the shared top-level
+// uncaught-abort default as a branch-OVER-skip (always a short, local,
+// forward branch -- never a jump to some other function's label, unlike
+// cgEmitAbortCheck): `if (flag) { <default>; quit 1 }`.
+//
+// ui=false: log(msg) then quit 1 -- the SAME observable behavior as
+// today's hand-written `log(msg); quit 1` (design doc %3.5's non-UI
+// default; this is why the ~150-site clarusc conversion needs no error-
+// golden churn).
+// ui=true: SysBeep(30) (inline trap 0xA9C8, word operand -- the brief's
+// own literal spelling) + rtUiAlertMsg(msg) (A4's new runtime function:
+// ALWAYS the natAlert-shaped trace line, PLUS a real dialog when not
+// scripted) + quit 1 (design doc %3.5's UI default).
+//
+// Shared by every site that needs it (cgEmitStartup's own post-launch
+// check for a UI program, and cgAbortCheckAfterCall's UI-dispatcher
+// fallback below) -- one BSR per call site, not a duplicated block,
+// mirroring the C lane's own review-driven cpEmitAbortDefaultCheck
+// (task-3 fix round 1, C1+I1).
+func cgEmitAbortDefaultCheck(ui: bool) {
+    var skipLbl: int
+    var fi: int
+
+    skipLbl = a68NewLabel()
+    a68Emit(OpTst, 1, AmNone, 0, 0, AmDisp16, 5, cgAbortFlagOff)
+    a68EmitBr(OpBcc, 7, skipLbl) // BEQ: not aborting -> skip the default
+    if ui {
+        a68Emit(OpMove, 2, AmImm, 0, 30, AmPreDec, 7, 0)
+        a68EmitTrap(0xA9C8, "_SysBeep")
+        if not cgCallRuntime1(intern("rtUiAlertMsg"), 5, cgAbortMsgOff) {
+            quit 1
+        }
+    } else {
+        if not cgCallRuntime1(rnLog, 5, cgAbortMsgOff) {
+            quit 1
+        }
+    }
+    a68EmitBr(OpBsr, 0, cgFreeGlobalsLbl)
+    a68Emit(OpMove, 4, AmImm, 0, 1, AmPreDec, 7, 0)
+    fi = findIRFuncIdxByName(rnQuit)
+    if fi != -1 and shakeReachable(fi) {
+        cgCallFunc(fi)
+    } else {
+        if a68ListingOn {
+            a68Comment("natQuit not present -- wired in Task 11")
+        } else {
+            a68CommentMarker()
+        }
+    }
+    a68Bind(skipLbl)
+}
+
+// cgAbortCheckAfterCall (attempt-abort phase Task 4, design doc %3.2/
+// %3.3, Ruling A1) is cgCallFnScalar/cgCallFnInto's own shared post-call
+// abort-check insertion point, called immediately after their own
+// cgCleanupStack -- SP is already at the LINK-baseline level there
+// (task-1-report P1), so no stack-pointer math is ever needed here or at
+// any bail/handler-entry/default target this can reach. fi is already
+// known reachable (both callers guard fi == -1 before this point).
+//
+// Two shapes, depending on what the CALLING function (the one currently
+// being emitted, cg68k's own module state) actually is:
+//   - an ordinary function with its own bail chain (cgCurFuncHasBail,
+//     i.e. irFuncBail(f) != -1): TST.B flag / BNE to cgAbortTarget() --
+//     ordinary propagation, design doc %3.2 point 3.
+//   - a lowering-synthesized UI event dispatcher (the `clar_ui_fire_*`
+//     family, cgCurFuncIsUiDispatcher -- built by lower.cla's
+//     lowSynthUiDispatchers via newIRFunc directly, NEVER through
+//     lowFuncBody, so irFuncBail is always -1 for these: they can never
+//     have a propagating bail chain of their own): the §3.5 UI default
+//     fires IN PLACE instead. This is "the check after each handler
+//     call in the synthesized UI dispatcher" (P4(b)'s own site) with NO
+//     lower.cla/cprint.cla-style special casing needed at the call-site
+//     level -- these dispatchers call the user's `on` handler through an
+//     ordinary ECallFn, the exact same cgCallFnScalar/cgCallFnInto
+//     chokepoint every other user call already goes through.
+//   - anything else (a runtime-origin caller -- never happens, runtime
+//     code never calls user functions; or a non-dispatcher function with
+//     no bail chain -- never happens either, since lowFuncBody gives
+//     EVERY non-runtime-origin function a real one whenever lowUsesAbort):
+//     no check at all, fail-safe rather than fatal, mirroring cprint's
+//     own `fi == -1` fail-safe philosophy for speculative plumbing.
+func cgAbortCheckAfterCall(fi: int) {
+    if not lowUsesAbort or irFuncIsRuntimeOrigin(fi) {
+        return
+    }
+    if cgCurFuncHasBail {
+        cgEmitAbortCheck()
+    } else if cgCurFuncIsUiDispatcher {
+        cgEmitAbortDefaultCheck(true)
+    }
 }
 
 // ================================================================
@@ -11129,6 +11524,8 @@ func cgStmt(s: int) {
         cgBreakStmt()
     } else if k == SContinue {
         cgContinueStmt()
+    } else if k == SAttempt {
+        cgAttemptStmt(s)
     } else {
         // Task 4 review fix (Important 3): every CURRENT IRStmtKind is
         // covered above (this arm is unreachable today, verified against
@@ -11147,6 +11544,69 @@ func cgStmt(s: int) {
     cgStmtTmpType = savedType
     cgStmtTmpNext = savedNext
     cgStmtBigTmpNext = savedBigNext
+}
+
+// cgAttemptStmt (attempt-abort phase Task 4, design doc %3.1-%3.3) emits
+// `attempt { body } aborted msg { handler }`, mirroring cprint.cla's own
+// fpAttemptStmt shape exactly, with a68 label ids standing in for C goto
+// labels:
+//
+//     <body -- each checked call's own BNE targets hLabel>
+//     BRA aLabel
+//     hLabel:
+//     flag = 0
+//     binder = clar_abort_msg   (256-byte block copy, Str255 == Str255)
+//     <handler>
+//     aLabel:
+//
+// cgBailTargets is pushed with hLabel ONLY around the body (design doc
+// %3.2 point 3's "statically enclosing" resolution) -- the handler
+// itself prints with the OUTER target already back in effect (popped
+// before cgStmts(irAttemptHandler(s)) runs), so a re-abort from inside
+// the handler propagates to the next enclosing attempt (or this
+// function's own bail label), never back into this same attempt --
+// falls out of the push/pop scoping alone, no special-case code needed
+// (matches the brief's "re-abort from handler caught by outer"
+// scenario). The `BRA aLabel` unconditionally skips the handler on the
+// normal (non-aborting) path, always emitted regardless of whether body
+// contains any checked call at all.
+//
+// Per Ruling A1/task-1-report P1: SP is already at the LINK-baseline
+// level at every check site (immediately after cgCleanupStack), so
+// entering hLabel needs NO stack-pointer restoration -- no LEA-SP-restore
+// appears anywhere in this function, matching cgEmitFunc's own bail
+// label (below).
+func cgAttemptStmt(s: int) {
+    var hLabel: int
+    var aLabel: int
+    var binderOff: int
+
+    if cgBailDepth >= 32 {
+        // cgBailTargets' own doc comment explains why this is a fixed
+        // array (32 deep), not a heap `list` -- a real program nesting
+        // `attempt` 32 levels deep is not a case worth spending
+        // clarusc's own near-zero native-68k self-emit segment headroom
+        // on; fail loudly rather than silently corrupt an out-of-range
+        // slot.
+        log("cg68k: attempt nesting exceeds cgBailTargets' fixed depth (32)")
+        quit 1
+    }
+    hLabel = a68NewLabel()
+    aLabel = a68NewLabel()
+    cgBailTargets[cgBailDepth] = hLabel
+    cgBailDepth = cgBailDepth + 1
+    cgStmts(irAttemptBody(s))
+    cgBailDepth = cgBailDepth - 1
+
+    a68EmitBr(OpBra, 0, aLabel)
+    a68Bind(hLabel)
+    a68Emit(OpMove, 1, AmImm, 0, 0, AmDisp16, 5, cgAbortFlagOff) // flag = false
+    binderOff = cgFindFrameOffset(irAttemptBinder(s))
+    a68Emit(OpLea, 0, AmDisp16, 6, binderOff, AmAn, 1, 0) // A1 = &binder (dst)
+    a68Emit(OpLea, 0, AmDisp16, 5, cgAbortMsgOff, AmAn, 0, 0) // A0 = &clar_abort_msg (src)
+    cgBlockCopy(256)
+    cgStmts(irAttemptHandler(s))
+    a68Bind(aLabel)
 }
 
 // ================================================================

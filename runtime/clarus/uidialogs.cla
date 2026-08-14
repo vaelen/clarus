@@ -925,3 +925,69 @@ func rtUiAskSaveChanges(name: ptr): int {
     item = UiAlert(130, ptr(0))
     return item - 1
 }
+
+// rtUiAlertMsg (attempt-abort phase Task 4, A4 scope addition, design doc
+// %3.5): the native lane's own UI top-level abort default calls this with
+// msg BY ADDRESS (ptr, str.cla-style -- cg68k.cla's own cgCallRuntime1
+// pushes clar_abort_msg's raw A5 offset directly, "reached only by name"
+// exactly like native.cla's natAlert/natLog/natQuit, never an ordinary
+// Clarus call site -- cg68AddRoots roots it explicitly for that reason).
+//
+// This file is spliced UNCONDITIONALLY into every program on BOTH lanes
+// (runtime-ir-bake Task 2's own "full lane superset" splice), while
+// native.cla's natInit/natCrLf/natWriteBytes/natFlush are want68k-gated
+// (drive.cla) -- calling any of them directly from here would fail the
+// CHECKER for every program compiled via the C lane (verified
+// empirically against a from-source `clarusc emit` compile of a plain
+// UI fixture: "undefined: natInit"), since checking validates every
+// declared function's body regardless of reachability. Ch13 also has no
+// address-of operator for an ordinary Clarus value, so there is no way
+// to hand this file's own local `string` storage to str.cla's ptr-taking
+// helpers either -- ruling out a `natAlert`-shaped reimplementation here
+// even in principle.
+//
+// Reconciliation: reconstruct msg's payload into a genuine Clarus
+// `string(255)` (peekb byte-by-byte into a char[255] buffer -- both
+// lane-agnostic core builtins -- then `.fromBytes`), then call the
+// ORDINARY `log(...)` builtin. `log` lowers to ILog on every lane, and
+// on the 68k lane specifically it reaches natLog, which calls the SAME
+// natCrLf(s, natBuf) conversion natAlert itself calls -- so the rendered
+// trace-LINE bytes (CR->LF + trailing LF) are exactly "natAlert-format,"
+// byte for byte, reusing natCrLf's own logic indirectly rather than
+// duplicating it. Known, deliberate gap: natLog BUFFERS (flushed only at
+// natQuit's own trailer) where natAlert writes+flushes IMMEDIATELY
+// (task-1-report P4(c)'s own finding) -- immaterial at this function's
+// own only call site (cg68k.cla's cgEmitAbortDefaultCheck, which ALWAYS
+// runs the quit-1 path -- and its own trailer flush -- immediately
+// after), but a real gap if a future caller needs a mid-program
+// flush-on-alert guarantee; closing it for real needs either native.cla's
+// own want68k gate lifted or a new lane-agnostic flush primitive,
+// neither authorized by this task's file list (runtime/clarus/ may ONLY
+// gain this one function).
+//
+// The real-dialog half mirrors rtUiAskSaveChanges's own precedent
+// exactly (UiParamText + UiAlert(130, ptr(0))), gated on NOT rtUiScripted
+// so a scripted/golden run never pops a real dialog -- msg itself (the
+// original ptr, already a valid Str255-shaped blob) passes straight to
+// UiParamText with no conversion needed.
+func rtUiAlertMsg(msg: ptr) {
+    var len: int
+    var buf: char[255]
+    var i: int
+    var m: string(255)
+    var empty: ptr
+
+    len = peekb(msg)
+    i = 0
+    while i < len {
+        buf[i] = char(peekb(msg + 1 + i))
+        i = i + 1
+    }
+    m.fromBytes(buf, len)
+    log(m)
+    if not rtUiScripted {
+        empty = rtUiEmptyPStrGet()
+        UiParamText(msg, empty, empty, empty)
+        UiAlert(130, ptr(0))
+    }
+}

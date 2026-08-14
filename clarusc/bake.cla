@@ -2375,6 +2375,22 @@ func bkReadIrFuncs(): list of IRFunc {
         e.ret = bkGetU32()
         e.localsHead = bkGetU32()
         e.bodyHead = bkGetU32()
+        // attempt-abort phase Task 4 (REQUIRED fix, carried from Task 2's
+        // review Important 2): bailHead/fromRuntimeModule are NOT part of
+        // the serialized CLIR object-code format (added to IRFunc after
+        // bkWriteIrFuncs/bkReadIrFuncs already existed) -- a restored entry
+        // must get bailHead's own -1 sentinel (newIRFunc's own convention;
+        // the record's plain zero-value default, 0, is a real, wrong arena
+        // index) and fromRuntimeModule = true (every baked function is, by
+        // construction, runtime-origin -- task-1-report P2's paste-path-
+        // safety argument: a bake image is built from a runtime-only
+        // universe). Without this, cg68k's/cprint's callee predicate
+        // (irFuncIsRuntimeOrigin) would misclassify every restored
+        // function as a checkable user function on a --rtbake compile,
+        // breaking bake-vs-from-source byte-identity for any abort-enabled
+        // program the moment codegen starts reading the tag.
+        e.bailHead = -1
+        e.fromRuntimeModule = true
         l.add(e)
         i = i + 1
     }
