@@ -240,6 +240,22 @@ param-abi fix, native panics display their real message before exiting.
 Routing panics through the nearest `attempt` is recorded as a possible
 future extension, deliberately not in this phase.
 
+**Task 9 addendum (2026-08-14, Andrew-requested addition, field test):**
+this deferral stands — panics are still never caught by `attempt` — but
+the original requirement's own fallback clause ("any remaining exit
+should beep and display an alert before exiting") applies to a native
+panic exit too, same as it already does to an uncaught `abort` (§3.5).
+`nat_CorePanic` (`runtime/clarus/native.cla`) now writes its trace line
+immediately (flushed at panic time, not buffered to quit) and, ONLY
+when a UI is up and the run is not scripted, shows a plain-OK alert
+with the message before exiting — a non-UI program, or a panic firing
+before the UI is initialized, or any scripted/golden boot, keeps
+today's exact headless behavior (load-bearing: scripted runerr fixtures
+and every scripted suite boot assert panic text via trace and would
+hang on a modal dialog). This landed entirely inside native.cla; it
+does not touch `clarusc`'s own source, the C lane, or this spec's own
+scope boundary above.
+
 ### 3.8 Reference & docs
 
 `docs/clarus-language-reference.md` gains the feature's normative entry

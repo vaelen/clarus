@@ -2144,24 +2144,44 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     fallback behaved exactly as designed on hardware.
 
   - **Native runtime panics are still SILENT app exits (field test,
-    2026-08-14 — Important, open):** a real mid-segment-write OOM at a
-    12MB partition quit ClarusC.APPL with no beep and no alert.
-    `nat_CorePanic` (`runtime/clarus/native.cla:547-553`) logs
-    "runtime error: <msg>" on the BUFFERED channel and calls
-    `natQuit(3)` — the message reaches `out` only at quit's flush.
-    Spec §3.7 deliberately keeps panics outside `attempt`, but the
-    original requirement's fallback clause ("any remaining exit should
-    beep and display an alert before exiting") was dropped between
-    requirement and spec — §3.5's beep+alert default covers uncaught
-    ABORTS only. Fix direction: `nat_CorePanic` should write the trace
-    line IMMEDIATELY (natAlert-style, not buffered) and, when a UI is
-    up and NOT `rtUiScripted`, SysBeep + show the plain-OK ALRT 128
-    before exiting — guarded so non-UI programs (no ALRT resources) and
-    scripted boots (runerr goldens assert panic text via trace;
-    a modal dialog would hang them) keep today's exact behavior.
-    Needs a "UI initialized" flag native.cla can see (layering: it
-    cannot name uidialogs functions, and non-UI programs don't splice
-    them). Not yet scheduled.
+    2026-08-14 — FIXED this phase, Task 9):** a real mid-segment-write
+    OOM at a 12MB partition quit ClarusC.APPL with no beep and no
+    alert. `nat_CorePanic` (`runtime/clarus/native.cla`) used to log
+    "runtime error: <msg>" on the BUFFERED channel and call
+    `natQuit(3)` — the message reached `out` only at quit's flush.
+    Spec §3.7 deliberately keeps panics outside `attempt` (unchanged —
+    see its own Task 9 annotation), but the original requirement's
+    fallback clause ("any remaining exit should beep and display an
+    alert before exiting") was dropped between requirement and spec —
+    §3.5's beep+alert default only ever covered uncaught ABORTS.
+    Landed fix: `nat_CorePanic` now writes the trace line IMMEDIATELY
+    (hand-copies `full`'s bytes into a preallocated Str255 scratch
+    buffer via ordinary `string` indexing, then calls `natAlert` —
+    same CR->LF + trailing-LF rendering as before, just flushed at
+    panic time instead of buffered to quit) and, when a UI is up and
+    NOT scripted, SysBeep(30) + ParamText + the plain-OK ALRT 128
+    (`runtime/mac/alert.r`) showing the message, then `natQuit(3)` as
+    before. The "UI initialized, and not scripted" gate reads two
+    already-existing signals instead of inventing new cross-module
+    machinery: `natQdInited` (native.cla's own global, set once
+    `nat_UiMacInitToolbox` has run — never true for a non-UI program or
+    for a panic before that point) AND `peekb(UiTestScript()) == 0`
+    (ui.cla's own "not scripted" test, called directly — ui.cla turned
+    out to already be spliced into every native build regardless of
+    program shape, the runtime-ir-bake "full lane superset" splice
+    applying on this lane too, so native.cla calling it needs no new
+    plumbing). Deliberately NOT routed through `alert(...)`/
+    `rtUiAlertMsg` (that path allocates a `text` to build its trace
+    copy — unsafe on a path that must survive an out-of-memory panic
+    without touching the Clarus allocator again); the beep+alert
+    sequence uses only preallocated, NewPtrCLEAR'd scratch. `clarusc`'s
+    own source is untouched by this fix — it lives entirely in
+    `runtime/clarus/native.cla`. Scripted boots and non-UI programs
+    keep today's exact headless behavior (verified: `internal/selfhost`
+    and every host-only gate stay green with the native-lane cg68k
+    goldens reblessed for native.cla's own byte growth). Visual
+    on-hardware confirmation of the dialog itself is still an emulator
+    item — added to `deferred-gates.md`.
 
   **Field-test data (Andrew, Snow, 2026-08-14 21:53 JST, ClarusC at
   `a0c94dc`):** all five example programs compiled on-Mac; pre-compile

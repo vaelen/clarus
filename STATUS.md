@@ -20,19 +20,31 @@ checklist to run the moment the display frees, not run this phase.
 status lines and the icon warning confirmed working.** Three field
 findings, all recorded in the ROADMAP entry:
 
-- **Native runtime panics are still SILENT app exits (Important, open):**
+- **Native runtime panics are still SILENT app exits (FIXED, Task 9):**
   a real mid-segment-write OOM at a 12MB partition quit the app with no
-  beep and no alert — `nat_CorePanic` (`native.cla:547-553`) writes
-  "runtime error: <msg>" through the BUFFERED `log()` channel and calls
-  `natQuit(3)`; the message reached `out` only via quit's flush (Andrew
-  diagnosed from the file — the TEXT stamp earning its keep). This is
-  the panic path, deliberately outside `attempt` (spec §3.7), but
-  Andrew's original requirement's fallback clause ("any remaining exit
-  should beep and display an alert before exiting") was LOST between the
-  requirement and the spec — §3.5 covers uncaught aborts only. An
-  earlier STATUS/ROADMAP wording claimed this OOM proved abort-survival;
-  that was WRONG and has been corrected. Fix direction sketched in the
-  ROADMAP debt entry; not yet scheduled.
+  beep and no alert — `nat_CorePanic` used to write "runtime error:
+  <msg>" through the BUFFERED `log()` channel and call `natQuit(3)`;
+  the message reached `out` only via quit's flush (Andrew diagnosed
+  from the file — the TEXT stamp earning its keep). This is the panic
+  path, deliberately outside `attempt` (spec §3.7, now Task-9-annotated
+  there too), but Andrew's original requirement's fallback clause ("any
+  remaining exit should beep and display an alert before exiting") was
+  LOST between the requirement and the spec — §3.5 covers uncaught
+  aborts only. An earlier STATUS/ROADMAP wording claimed this OOM
+  proved abort-survival; that was WRONG and has been corrected.
+  **Task 9 landed the fix**, entirely in `runtime/clarus/native.cla`
+  (no `clarusc` source change): the trace line now writes+flushes
+  immediately (`natAlert`, not buffered `log`), and when a UI is up
+  (`natQdInited`) and not scripted (`peekb(UiTestScript()) == 0`,
+  called directly — ui.cla turns out to be spliced into every native
+  build, UI or not), SysBeep + the plain-OK ALRT 128 shows the message
+  before `natQuit(3)` as before. No allocation on the panic path
+  (preallocated scratch, `natInit`-time). All host-only gates green,
+  including a `CLARUS_CG68K_BLESS` rebless (native.cla's own byte
+  growth, expected); `internal/selfhost`/`TestSnapshotFixedPoint` stay
+  green with no regen since `clarusc` itself is untouched. Visual
+  on-hardware confirmation of the dialog is still an emulator item
+  (`deferred-gates.md`).
 - bookmarks.cla's partition floor is between 12MB (OOM) and 16MB (clean;
   Measure 5m52s vs 9m14s under 12MB heap pressure).
 - The example `.pbm` icons are rejected as malformed on the Mac — likely
