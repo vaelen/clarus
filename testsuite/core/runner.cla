@@ -68,15 +68,17 @@
 // comment).
 //
 // AbortCatch/AbortDeep/AbortNested/AbortReabort/AbortRelease
-// (cases_abort.cla, attempt-abort phase Task 5) are the 62nd-66th real
-// cases: catch-one-frame-down, 3-frame propagation, nesting, re-abort
-// from a handler, and release-on-unwind of a retained local, for the new
+// (cases_abort.cla, attempt-abort phase Task 5) are the 64th-68th real
+// cases (corrected from an earlier off-by-two "62nd-66th"): catch-one-
+// frame-down, 3-frame propagation, nesting, re-abort from a handler, and
+// release-on-unwind of a retained local, for the new
 // `attempt`/`aborted`/`abort(msg)` feature. Adding this file makes the
 // WHOLE core suite abort-enabled (see cases_abort.cla's own doc comment).
 //
 // TextRange (cases_textrange.cla, clir-load-perf phase Task 2) is the
-// 67th real case: known-answer + edge-case coverage for the four new
-// bulk text range-read methods (hashStep/u32At/stringAt/textAt).
+// 69th real case (corrected from an earlier off-by-two "67th"): known-
+// answer + edge-case coverage for the four new bulk text range-read
+// methods (hashStep/u32At/stringAt/textAt).
 
 enum CoreTest {
     All

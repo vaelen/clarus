@@ -1980,6 +1980,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   68k lane's real `AND.L` always applies the mask; the two agree only
   when bit 31 of the raw FNV happens to be 0 (a per-artifact coin
   flip — v5 landed heads and PASSED, v6 landed tails and FAILED).
+  (superseded by clir-load-perf: the FNV-1a multiply and `bkFnvPrime`
+  cited above were replaced by a djb2-shape shift-add hash — `h = ((h
+  << 5) + h + b) & 0x7FFFFFFF` — in the clir-load-perf phase; this RCA's
+  own fix, the `& 0x7FFFFFFF` mask, survives unchanged, since the new
+  arithmetic routes the same shape through `CLAR_SHL32`/`CLAR_ADD32`.)
   Structurally invisible to every existing host-side oracle, because the
   same UB-affected binary both writes and re-checks its own hash.
   **Latent twin, also cured:** the same bug affects
@@ -2271,7 +2276,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     `bkFormatVersion` 6→7 (byte layout unchanged, hash meaning
     changed).
 
-  **Task ledger** (commits `11cf5d6..5db9e1a` before this docs task):
+  **Task ledger** (12 implementation commits in `42c7265..5db9e1a` — the
+  branch's own off-`main` point through Task 8's snapshot regen; NOT
+  `11cf5d6..5db9e1a`, which excludes `11cf5d6` itself, listed as Task 1's
+  own commit below — plus this phase's docs close-out commits, `2ca3d48`/
+  `889d637` and this sweep):
   1. `11cf5d6` — design A (`bkHeaderVerified` skip).
   2. `058d6f2`/`2b5a1a7`/`01c853d` — the four bulk `text` methods, host
      lane + runtime + core-suite cases + reference; fix rounds closed an

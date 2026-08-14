@@ -321,6 +321,9 @@ func bkEmitSection(out: text, id: int, payload: text) {
 // and two adds instead.
 // ================================================================
 
+// Name is historical (FNV-era); 5381 is djb2's seed. Kept as-is on
+// purpose -- renaming a used const would churn the snapshot for zero
+// behavior change.
 const bkFnvSeed: int = 5381
 
 func bkHashText(data: text): int {
