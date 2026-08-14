@@ -4378,6 +4378,7 @@ static rt_text * cv_bkLoadBuf;
 static int32_t cv_bkLoadPos;
 static int32_t cv_bkLoadOverrun;
 static int32_t cv_bkHeaderVerified;
+static int32_t cv_bkParsedValid;
 static rt_list * cv_bkLdIrTypes;
 static rt_list * cv_bkLdIrStmts;
 static rt_list * cv_bkLdIrExprs;
@@ -5598,6 +5599,7 @@ static void clar_init_globals(void) {
     cv_bkLoadPos = 0;
     cv_bkLoadOverrun = 0;
     cv_bkHeaderVerified = 0;
+    cv_bkParsedValid = 0;
     cv_bkLdIrTypes = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRType));
     cv_bkLdIrStmts = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRStmt));
     cv_bkLdIrExprs = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRExpr));
@@ -8025,13 +8027,43 @@ static int32_t clar_fn_bkObjPoolIdxValid(rt_list * cv_flat, int32_t cv_first, in
 static int32_t clar_fn_bkReadObjMeta(void);
 static int32_t clar_fn_bkLoadSections(void);
 static int32_t clar_fn_bkCheckRtbakeHeader(rt_text * cv_buf, int32_t cv_wantLane);
+static int32_t clar_fn_bkCheckRtbakeHeaderBody(rt_text * cv_buf, int32_t cv_wantLane);
 static int32_t clar_fn_bkLoadRtbake(rt_text * cv_buf, int32_t cv_wantLane);
+static rt_list * clar_fn_bkCopyListIRType(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRStmt(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRExpr(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRLocal(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRFunc(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRGlobal(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRFieldSlot(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRRecordLayout(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIREnumMember(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIREnumLayout(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRWidgetDesc(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRColumnDesc(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRBindDesc(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRWindowDesc(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRMenuItemDesc(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRMenuDesc(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRWinHandlers(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRWidgetHandlerEntry(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIRMenuHandlerEntry(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListIREveryEntry(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListTypeInfo(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListEnumMemberInfo(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListFieldInfo(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListFuncSig(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListSymbol(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListInt(rt_list * cv_src);
+static rt_list * clar_fn_bkCopyListString(rt_list * cv_src);
+static rt_intmap * clar_fn_bkCopyIntmapInt(rt_intmap * cv_src);
+static rt_map * clar_fn_bkCopyMapInt(rt_map * cv_src);
+static rt_list * clar_fn_bkCopyListScope(rt_list * cv_src);
 static void clar_fn_bkInstallPool(void);
 static void clar_fn_bkInstallTypeArenaPrefix(void);
 static void clar_fn_bkInstallFieldInfo(void);
 static void clar_fn_bkComputeManifestPaths(void);
 static void clar_fn_bkInstallArenas(int32_t cv_testapi);
-static void clar_fn_bkInstallObjCode(void);
 static void clar_fn_bkInstallCheckerSymbolsForTestapi(void);
 static int32_t clar_fn_feReadSource(const clar_str_255 *cv_path, const clar_str_255 *cv_key, rt_text * cv_out);
 static int32_t clar_fn_feHasKey(const clar_str_255 *cv_key);
@@ -78204,7 +78236,7 @@ static int32_t clar_fn_cgObjPasteEligible(int32_t cv_i) {
     if (clar_fn_rtListCount((void*)cv_bkLdObjValid) == 0) {
         return 0;
     }
-    if ((cv_i < 0) || (cv_i >= clar_fn_rtListCount((void*)cv_bkLdObjValid))) {
+    if (((cv_i < 0) || (cv_i >= cv_bkRuntimeFuncBoundary)) || (cv_i >= clar_fn_rtListCount((void*)cv_bkLdObjValid))) {
         return 0;
     }
     return (*(int32_t*)rt_list_at(cv_bkLdObjValid, (int32_t)(cv_i)));
@@ -80753,8 +80785,6 @@ static void clar_fn_driveReset(void) {
     cv___store530 = NULL;
     rt_list * cv___store531;
     cv___store531 = NULL;
-    rt_list * cv___store532;
-    cv___store532 = NULL;
     clar_fn_libReset();
     cv_rnInited = 0;
         clar_fn_rtMapRelease((void*)cv___store525);
@@ -80828,15 +80858,7 @@ static void clar_fn_driveReset(void) {
 
     cv_bkManifestCollidedEarly = cv___store531;
     cv___store531 = 0;
-        clar_fn_rtListRelease((void*)cv___store532);
-
-    rt_list * t8 = NULL;
-    t8 = clar_fn_driveFreshBoolList();
-    cv___store532 = t8;
-        clar_fn_rtListRelease((void*)cv_bkLdObjValid);
-
-    cv_bkLdObjValid = cv___store532;
-    cv___store532 = 0;
+    cv_bkRuntimeFuncBoundary = 0;
     cv_bkHeaderVerified = 0;
     return;
 }
@@ -80852,8 +80874,8 @@ static clar_str_255 clar_fn_findRtDir(const clar_str_255 *cv_probeFile) {
     cv_probe = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_ok;
     cv_ok = 0;
-    rt_text * cv___store533;
-    cv___store533 = NULL;
+    rt_text * cv___store532;
+    cv___store532 = NULL;
     clar_str_255 cv___ret1280;
     cv___ret1280 = (clar_str_255){0};
     clar_fn_rtStrStore((void*)&(cv_prefix), 255, (void*)(const uint8_t*)&(clar_lit_92));
@@ -80863,14 +80885,14 @@ static clar_str_255 clar_fn_findRtDir(const clar_str_255 *cv_probeFile) {
         clar_str_255 t1;
         clar_fn_rtStrConcat((void*)&t1, (void*)(const uint8_t*)&(cv_prefix), (void*)(const uint8_t*)&(clar_lit_900));
         clar_fn_rtStrStore((void*)&(cv_candidate), 255, (void*)(const uint8_t*)&(t1));
-        clar_fn_rtTextRelease((void*)cv___store533);
+        clar_fn_rtTextRelease((void*)cv___store532);
         rt_text * t2 = NULL;
         t2 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_92));
-        cv___store533 = t2;
+        cv___store532 = t2;
         clar_fn_rtTextRelease((void*)cv_probe);
-        cv_probe = cv___store533;
-        cv___store533 = 0;
+        cv_probe = cv___store532;
+        cv___store532 = 0;
         clar_str_255 t3;
         clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(cv_candidate), (void*)(const uint8_t*)&((*cv_probeFile)));
         cv_ok = rt_file_read_text((const uint8_t*)&(t3), cv_probe);
@@ -81071,14 +81093,14 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
     cv_manifestCollision = 0;
     int32_t cv_manifestCollisionEarly;
     cv_manifestCollisionEarly = 0;
+    rt_text * cv___store533;
+    cv___store533 = NULL;
     rt_text * cv___store534;
     cv___store534 = NULL;
-    rt_text * cv___store535;
-    cv___store535 = NULL;
     int32_t cv___ret1283;
     cv___ret1283 = 0;
-    rt_text * cv___store536;
-    cv___store536 = NULL;
+    rt_text * cv___store535;
+    cv___store535 = NULL;
     clar_fn_rtStrStore((void*)&(cv_key2), 255, (void*)(const uint8_t*)&((*cv_key)));
     clar_fn_rtStrStore((void*)&(cv_altPath), 255, (void*)(const uint8_t*)&(clar_lit_92));
     if (cv_hostPaths) {
@@ -81105,14 +81127,14 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
             clar_fn_rtStrStore((void*)&(cv_path), 255, (void*)(const uint8_t*)&(cv_readPath));
         } else {
             clar_fn_rtStrStore((void*)&(cv_readPath), 255, (void*)(const uint8_t*)&((*cv_rawPath)));
-            clar_fn_rtTextRelease((void*)cv___store534);
+            clar_fn_rtTextRelease((void*)cv___store533);
             rt_text * t5 = NULL;
             t5 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextStore((void*)t5, (void*)(const uint8_t*)&(clar_lit_92));
-            cv___store534 = t5;
+            cv___store533 = t5;
             clar_fn_rtTextRelease((void*)cv_diskProbe);
-            cv_diskProbe = cv___store534;
-            cv___store534 = 0;
+            cv_diskProbe = cv___store533;
+            cv___store533 = 0;
             if (rt_file_read_text((const uint8_t*)&(cv_readPath), cv_diskProbe)) {
                 clar_fn_rtStrStore((void*)&(cv_path), 255, (void*)(const uint8_t*)&(cv_readPath));
                 clar_fn_rtStrStore((void*)&(cv_altPath), 255, (void*)(const uint8_t*)&(cv_key2));
@@ -81121,14 +81143,14 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
             }
         }
     }
-    clar_fn_rtTextRelease((void*)cv___store535);
+    clar_fn_rtTextRelease((void*)cv___store534);
     rt_text * t6 = NULL;
     t6 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t6, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store535 = t6;
+    cv___store534 = t6;
     clar_fn_rtTextRelease((void*)cv_diskSrc);
-    cv_diskSrc = cv___store535;
-    cv___store535 = 0;
+    cv_diskSrc = cv___store534;
+    cv___store534 = 0;
     cv_haveDiskSrc = 0;
     cv_manifestCollision = 0;
     cv_manifestCollisionEarly = 0;
@@ -81205,14 +81227,14 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
         t16 = 0;
         clar_fn_rtMapSet((void*)cv_seenPaths, (void*)(const uint8_t*)&(cv_altPath), (void*)&(t16));
     }
-    clar_fn_rtTextRelease((void*)cv___store536);
+    clar_fn_rtTextRelease((void*)cv___store535);
     rt_text * t17 = NULL;
     t17 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t17, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store536 = t17;
+    cv___store535 = t17;
     clar_fn_rtTextRelease((void*)cv_src);
-    cv_src = cv___store536;
-    cv___store536 = 0;
+    cv_src = cv___store535;
+    cv___store535 = 0;
     if (cv_haveDiskSrc) {
         clar_fn_rtTextRetain((void*)cv_diskSrc);
         clar_fn_rtTextRelease((void*)cv_src);
@@ -81453,32 +81475,32 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
     cv_freshIntList1 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_freshIntList2;
     cv_freshIntList2 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+    rt_list * cv___store536;
+    cv___store536 = NULL;
     rt_list * cv___store537;
     cv___store537 = NULL;
-    rt_list * cv___store538;
-    cv___store538 = NULL;
     int32_t cv___ret1287;
     cv___ret1287 = 0;
-    rt_list * cv___store539;
-    cv___store539 = NULL;
-        clar_fn_rtListRelease((void*)cv___store537);
+    rt_list * cv___store538;
+    cv___store538 = NULL;
+        clar_fn_rtListRelease((void*)cv___store536);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_driveFreshIntList();
-    cv___store537 = t1;
+    cv___store536 = t1;
         clar_fn_rtListRelease((void*)cv_freshIntList1);
 
-    cv_freshIntList1 = cv___store537;
-    cv___store537 = 0;
-        clar_fn_rtListRelease((void*)cv___store538);
+    cv_freshIntList1 = cv___store536;
+    cv___store536 = 0;
+        clar_fn_rtListRelease((void*)cv___store537);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_driveFreshIntList();
-    cv___store538 = t2;
+    cv___store537 = t2;
         clar_fn_rtListRelease((void*)cv_freshIntList2);
 
-    cv_freshIntList2 = cv___store538;
-    cv___store538 = 0;
+    cv_freshIntList2 = cv___store537;
+    cv___store537 = 0;
         clar_fn_rtListRetain((void*)cv_freshIntList1);
 
         clar_fn_rtListRelease((void*)cv_drvEarlyRtHeadsNoUitest);
@@ -81612,15 +81634,15 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
                 goto bail;
             }
         }
-            clar_fn_rtListRelease((void*)cv___store539);
+            clar_fn_rtListRelease((void*)cv___store538);
 
         rt_list * t29 = NULL;
         t29 = clar_fn_hoistDedups(cv_beforeHits);
-        cv___store539 = t29;
+        cv___store538 = t29;
             clar_fn_rtListRelease((void*)cv_hoists);
 
-        cv_hoists = cv___store539;
-        cv___store539 = 0;
+        cv_hoists = cv___store538;
+        cv___store538 = 0;
         cv_j = 0;
         while (1) {
             if (!((cv_j < clar_fn_rtListCount((void*)cv_hoists)))) break;
@@ -81835,8 +81857,8 @@ static int32_t clar_fn_driveManifestSplice(rt_list * cv_entries, int32_t cv_earl
     cv_userChainRebuilt = 0;
     int32_t cv_userChainRebuiltTail;
     cv_userChainRebuiltTail = 0;
-    rt_list * cv___store540;
-    cv___store540 = NULL;
+    rt_list * cv___store539;
+    cv___store539 = NULL;
     int32_t cv___ret1288;
     cv___ret1288 = 0;
     if (cv_want68k) {
@@ -81996,15 +82018,15 @@ static int32_t clar_fn_driveManifestSplice(rt_list * cv_entries, int32_t cv_earl
                     goto bail;
                 }
             }
-                clar_fn_rtListRelease((void*)cv___store540);
+                clar_fn_rtListRelease((void*)cv___store539);
 
             rt_list * t32 = NULL;
             t32 = clar_fn_hoistDedups(cv_beforeHits);
-            cv___store540 = t32;
+            cv___store539 = t32;
                 clar_fn_rtListRelease((void*)cv_hoists);
 
-            cv_hoists = cv___store540;
-            cv___store540 = 0;
+            cv_hoists = cv___store539;
+            cv___store539 = 0;
             cv_j = 0;
             while (1) {
                 if (!((cv_j < clar_fn_rtListCount((void*)cv_hoists)))) break;
@@ -82163,45 +82185,48 @@ static int32_t clar_fn_driveCompile(rt_list * cv_entries, int32_t cv_testapi) {
     cv_earlySkip = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv___ret1289;
     cv___ret1289 = 0;
+    rt_list * cv___store540;
+    cv___store540 = NULL;
     rt_list * cv___store541;
     cv___store541 = NULL;
     rt_list * cv___store542;
     cv___store542 = NULL;
-    rt_list * cv___store543;
-    cv___store543 = NULL;
     clar_fn_cgResetCodegenState();
     if (cv_haveRtbake) {
         cv_wantLane = 1;
         if (cv_want68k) {
             cv_wantLane = 0;
         }
-        if (!(clar_fn_bkLoadRtbake(cv_rtbakeBytes, cv_wantLane))) {
-            cv___ret1289 = 0;
-                clar_fn_rtListRelease((void*)cv_earlySkip);
+        if (!(cv_bkParsedValid)) {
+            if (!(clar_fn_bkLoadRtbake(cv_rtbakeBytes, cv_wantLane))) {
+                cv___ret1289 = 0;
+                    clar_fn_rtListRelease((void*)cv_earlySkip);
 
-            return cv___ret1289;
+                return cv___ret1289;
+            }
+            cv_bkParsedValid = 1;
         }
         clar_fn_bkInstallPool();
         clar_fn_bkComputeManifestPaths();
         clar_fn_rtStrStore((void*)&(cv_bkManifestDriftPath), 255, (void*)(const uint8_t*)&(clar_lit_92));
-            clar_fn_rtListRelease((void*)cv___store541);
+            clar_fn_rtListRelease((void*)cv___store540);
 
         rt_list * t1 = NULL;
         t1 = clar_fn_driveFreshIntList();
-        cv___store541 = t1;
+        cv___store540 = t1;
             clar_fn_rtListRelease((void*)cv_bkManifestCollidedIdx);
 
-        cv_bkManifestCollidedIdx = cv___store541;
-        cv___store541 = 0;
-            clar_fn_rtListRelease((void*)cv___store542);
+        cv_bkManifestCollidedIdx = cv___store540;
+        cv___store540 = 0;
+            clar_fn_rtListRelease((void*)cv___store541);
 
         rt_list * t2 = NULL;
         t2 = clar_fn_driveFreshBoolList();
-        cv___store542 = t2;
+        cv___store541 = t2;
             clar_fn_rtListRelease((void*)cv_bkManifestCollidedEarly);
 
-        cv_bkManifestCollidedEarly = cv___store542;
-        cv___store542 = 0;
+        cv_bkManifestCollidedEarly = cv___store541;
+        cv___store541 = 0;
     }
     cv_drvStartTicks = rt_ext_TickCount();
     cv_drvPhaseTicks = cv_drvStartTicks;
@@ -82234,6 +82259,7 @@ static int32_t clar_fn_driveCompile(rt_list * cv_entries, int32_t cv_testapi) {
         clar_fn_rtStrConcat((void*)&t5, (void*)(const uint8_t*)&(t4), (void*)(const uint8_t*)&(clar_lit_2094));
         rt_log((const uint8_t*)&(t5));
         cv_haveRtbake = 0;
+        cv_bkParsedValid = 0;
         clar_fn_rtStrStore((void*)&(cv_bkManifestDriftPath), 255, (void*)(const uint8_t*)&(clar_lit_92));
         clar_fn_driveReset();
         clar_fn_resetDiags();
@@ -82284,15 +82310,15 @@ static int32_t clar_fn_driveCompile(rt_list * cv_entries, int32_t cv_testapi) {
     cv_isUiProg = ((cv_combined != CLAR_NEG32(1)) && clar_fn_driveIsUiProgram(cv_combined));
     clar_fn_driveProgressStage(&(clar_lit_2097));
     if ((cv_haveRtbake && cv_testapi) && cv_isUiProg) {
-            clar_fn_rtListRelease((void*)cv___store543);
+            clar_fn_rtListRelease((void*)cv___store542);
 
         rt_list * t8 = NULL;
         t8 = clar_fn_driveFreshIntList();
-        cv___store543 = t8;
+        cv___store542 = t8;
             clar_fn_rtListRelease((void*)cv_earlySkip);
 
-        cv_earlySkip = cv___store543;
-        cv___store543 = 0;
+        cv_earlySkip = cv___store542;
+        cv___store542 = 0;
         cv_i = 0;
         while (1) {
             if (!((cv_i < clar_fn_rtListCount((void*)cv_bkManifestCollidedIdx)))) break;
@@ -82356,7 +82382,6 @@ static int32_t clar_fn_driveCompile(rt_list * cv_entries, int32_t cv_testapi) {
         clar_fn_driveProgress(&(clar_lit_2100));
         clar_fn_irReset();
         clar_fn_bkInstallArenas((cv_testapi && cv_isUiProg));
-        clar_fn_bkInstallObjCode();
         cv_combined2 = cv_combined;
         if (clar_fn_rtListCount((void*)cv_bkManifestCollidedIdx) > 0) {
             cv_combined2 = clar_fn_driveRebuildChainSkipping(cv_bkManifestCollidedIdx);
@@ -82707,19 +82732,19 @@ static int32_t clar_fn_bakeGenerateChain(int32_t cv_lane) {
     cv_savedNextAfterUitest = 0;
     int32_t cv_manifestOnlyHead;
     cv_manifestOnlyHead = 0;
-    rt_list * cv___store544;
-    cv___store544 = NULL;
+    rt_list * cv___store543;
+    cv___store543 = NULL;
     int32_t cv___ret1300;
     cv___ret1300 = 0;
-        clar_fn_rtListRelease((void*)cv___store544);
+        clar_fn_rtListRelease((void*)cv___store543);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_bakeModuleList(cv_lane);
-    cv___store544 = t1;
+    cv___store543 = t1;
         clar_fn_rtListRelease((void*)cv_mods);
 
-    cv_mods = cv___store544;
-    cv___store544 = 0;
+    cv_mods = cv___store543;
+    cv___store543 = 0;
     if (!(cv_haveRtDir)) {
         clar_str_255 t2;
         t2 = (*(clar_str_255*)rt_list_at(cv_mods, (int32_t)(0)));
@@ -83745,8 +83770,8 @@ static rt_text * clar_fn_bkWriteCheckerSymbols(void) {
     cv_k = 0;
     int32_t cv_v;
     cv_v = 0;
-    rt_intmap * cv___store545;
-    cv___store545 = NULL;
+    rt_intmap * cv___store544;
+    cv___store544 = NULL;
     rt_text * cv___ret1330;
     cv___ret1330 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_bkPutU32(cv_sec, clar_fn_rtListCount((void*)cv_funcSigs));
@@ -83787,15 +83812,15 @@ static rt_text * clar_fn_bkWriteCheckerSymbols(void) {
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_scopes)))) break;
         clar_fn_bkPutU32(cv_sec, ((*(clar_rec_Scope*)rt_list_at(cv_scopes, (int32_t)(cv_i)))).cv_parent);
-            clar_fn_rtIntMapRelease((void*)cv___store545);
+            clar_fn_rtIntMapRelease((void*)cv___store544);
 
-        cv___store545 = ((*(clar_rec_Scope*)rt_list_at(cv_scopes, (int32_t)(cv_i)))).cv_names;
-            clar_fn_rtIntMapRetain((void*)cv___store545);
+        cv___store544 = ((*(clar_rec_Scope*)rt_list_at(cv_scopes, (int32_t)(cv_i)))).cv_names;
+            clar_fn_rtIntMapRetain((void*)cv___store544);
 
             clar_fn_rtIntMapRelease((void*)cv_names);
 
-        cv_names = cv___store545;
-        cv___store545 = 0;
+        cv_names = cv___store544;
+        cv___store544 = 0;
         clar_fn_bkPutU32(cv_sec, clar_fn_rtIntMapCount((void*)cv_names));
         rt_intmap * t1;
         t1 = cv_names;
@@ -83946,22 +83971,22 @@ static rt_text * clar_fn_bkWriteManifestHashes(void) {
     cv_src = (rt_text *)clar_fn_rtTextNew();
     rt_map * cv_seen;
     cv_seen = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
+    rt_text * cv___store545;
+    cv___store545 = NULL;
     rt_text * cv___store546;
     cv___store546 = NULL;
     rt_text * cv___store547;
     cv___store547 = NULL;
-    rt_text * cv___store548;
-    cv___store548 = NULL;
     rt_text * cv___ret1335;
     cv___ret1335 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___store546);
+    clar_fn_rtTextRelease((void*)cv___store545);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store546 = t1;
+    cv___store545 = t1;
     clar_fn_rtTextRelease((void*)cv_entries);
-    cv_entries = cv___store546;
-    cv___store546 = 0;
+    cv_entries = cv___store545;
+    cv___store545 = 0;
     cv_count = 0;
     cv_i = 0;
     while (1) {
@@ -83974,14 +83999,14 @@ static rt_text * clar_fn_bkWriteManifestHashes(void) {
                 int32_t t3;
                 t3 = 1;
                 clar_fn_rtMapSet((void*)cv_seen, (void*)(const uint8_t*)&(cv_p), (void*)&(t3));
-                clar_fn_rtTextRelease((void*)cv___store547);
+                clar_fn_rtTextRelease((void*)cv___store546);
                 rt_text * t4 = NULL;
                 t4 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextStore((void*)t4, (void*)(const uint8_t*)&(clar_lit_92));
-                cv___store547 = t4;
+                cv___store546 = t4;
                 clar_fn_rtTextRelease((void*)cv_src);
-                cv_src = cv___store547;
-                cv___store547 = 0;
+                cv_src = cv___store546;
+                cv___store546 = 0;
                 if (rt_file_read_text((const uint8_t*)&(cv_p), cv_src)) {
                     clar_fn_bkPutStrShort(cv_entries, &(cv_p));
                     clar_fn_bkPutU32(cv_entries, clar_fn_bkHashText(cv_src));
@@ -83992,14 +84017,14 @@ static rt_text * clar_fn_bkWriteManifestHashes(void) {
         }
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-    clar_fn_rtTextRelease((void*)cv___store548);
+    clar_fn_rtTextRelease((void*)cv___store547);
     rt_text * t5 = NULL;
     t5 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t5, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store548 = t5;
+    cv___store547 = t5;
     clar_fn_rtTextRelease((void*)cv_sec);
-    cv_sec = cv___store548;
-    cv___store548 = 0;
+    cv_sec = cv___store547;
+    cv___store547 = 0;
     clar_fn_bkPutU32(cv_sec, cv_count);
     clar_fn_rtTextAppendText((void*)cv_sec, (void*)cv_entries);
     clar_fn_rtTextRelease((void*)cv___ret1335);
@@ -84029,22 +84054,22 @@ static rt_text * clar_fn_bkWriteObjCode(int32_t cv_lane) {
     cv_corruptedOne = 0;
     int32_t cv_sym;
     cv_sym = 0;
-    rt_text * cv___store549;
-    cv___store549 = NULL;
+    rt_text * cv___store548;
+    cv___store548 = NULL;
     rt_text * cv___ret1336;
     cv___ret1336 = (rt_text *)clar_fn_rtTextNew();
     cv_count = 0;
     if (cv_lane == 0) {
         cv_count = clar_fn_rtListCount((void*)cv_irFuncs);
     }
-    clar_fn_rtTextRelease((void*)cv___store549);
+    clar_fn_rtTextRelease((void*)cv___store548);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store549 = t1;
+    cv___store548 = t1;
     clar_fn_rtTextRelease((void*)cv_sec);
-    cv_sec = cv___store549;
-    cv___store549 = 0;
+    cv_sec = cv___store548;
+    cv___store548 = 0;
     clar_fn_bkPutU32(cv_sec, cv_count);
     cv_i = 0;
     while (1) {
@@ -84100,39 +84125,39 @@ static rt_text * clar_fn_bkWriteObjMeta(int32_t cv_lane) {
     cv_k = 0;
     rt_list * cv_strLits;
     cv_strLits = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_text * cv___store550;
+    rt_text * cv___store549;
+    cv___store549 = NULL;
+    rt_list * cv___store550;
     cv___store550 = NULL;
-    rt_list * cv___store551;
-    cv___store551 = NULL;
     rt_text * cv___ret1337;
     cv___ret1337 = (rt_text *)clar_fn_rtTextNew();
     cv_count = 0;
     if (cv_lane == 0) {
         cv_count = clar_fn_rtListCount((void*)cv_irFuncs);
     }
-    clar_fn_rtTextRelease((void*)cv___store550);
+    clar_fn_rtTextRelease((void*)cv___store549);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store550 = t1;
+    cv___store549 = t1;
     clar_fn_rtTextRelease((void*)cv_sec);
-    cv_sec = cv___store550;
-    cv___store550 = 0;
+    cv_sec = cv___store549;
+    cv___store549 = 0;
     clar_fn_bkPutU32(cv_sec, cv_count);
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_count))) break;
         clar_fn_bkPutU32(cv_sec, (*(int32_t*)rt_list_at(cv_cgFuncSize, (int32_t)(cv_i))));
         clar_fn_bkPutU32(cv_sec, (*(int32_t*)rt_list_at(cv_cgFuncFrameSizes, (int32_t)(cv_i))));
-            clar_fn_rtListRelease((void*)cv___store551);
+            clar_fn_rtListRelease((void*)cv___store550);
 
         rt_list * t2 = NULL;
         t2 = clar_fn_driveFreshIntList();
-        cv___store551 = t2;
+        cv___store550 = t2;
             clar_fn_rtListRelease((void*)cv_strLits);
 
-        cv_strLits = cv___store551;
-        cv___store551 = 0;
+        cv_strLits = cv___store550;
+        cv___store550 = 0;
         cv_k = 0;
         while (1) {
             if (!((cv_k < clar_fn_rtListCount((void*)(*(rt_list **)rt_list_at(cv_cgFuncStrLits, (int32_t)(cv_i))))))) break;
@@ -84232,7 +84257,9 @@ static int32_t clar_fn_bakeWriteFile(int32_t cv_lane, const clar_str_255 *cv_out
     cv_bodyHash = 0;
     int32_t cv___ret1338;
     cv___ret1338 = 0;
-    rt_list * cv___store552;
+    rt_list * cv___store551;
+    cv___store551 = NULL;
+    rt_text * cv___store552;
     cv___store552 = NULL;
     rt_text * cv___store553;
     cv___store553 = NULL;
@@ -84240,8 +84267,6 @@ static int32_t clar_fn_bakeWriteFile(int32_t cv_lane, const clar_str_255 *cv_out
     cv___store554 = NULL;
     rt_text * cv___store555;
     cv___store555 = NULL;
-    rt_text * cv___store556;
-    cv___store556 = NULL;
     int32_t t1;
     t1 = clar_fn_bakeGenerateChain(cv_lane);
     if (clar_aborting) goto bail;
@@ -84255,23 +84280,23 @@ static int32_t clar_fn_bakeWriteFile(int32_t cv_lane, const clar_str_255 *cv_out
         clar_fn_rtTextRelease((void*)cv_compilerSrc);
         return cv___ret1338;
     }
-        clar_fn_rtListRelease((void*)cv___store552);
+        clar_fn_rtListRelease((void*)cv___store551);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_bakeModuleList(cv_lane);
-    cv___store552 = t2;
+    cv___store551 = t2;
         clar_fn_rtListRelease((void*)cv_mods);
 
-    cv_mods = cv___store552;
-    cv___store552 = 0;
-    clar_fn_rtTextRelease((void*)cv___store553);
+    cv_mods = cv___store551;
+    cv___store551 = 0;
+    clar_fn_rtTextRelease((void*)cv___store552);
     rt_text * t3 = NULL;
     t3 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t3, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store553 = t3;
+    cv___store552 = t3;
     clar_fn_rtTextRelease((void*)cv_body);
-    cv_body = cv___store553;
-    cv___store553 = 0;
+    cv_body = cv___store552;
+    cv___store552 = 0;
     clar_fn_bkPutU16(cv_body, clar_fn_rtListCount((void*)cv_mods));
     cv_i = 0;
     while (1) {
@@ -84485,33 +84510,33 @@ static int32_t clar_fn_bakeWriteFile(int32_t cv_lane, const clar_str_255 *cv_out
     clar_fn_bkEmitSection(cv_body, 49, t52);
     clar_fn_rtTextRelease(t52);
     cv_bodyHash = clar_fn_bkHashText(cv_body);
-    clar_fn_rtTextRelease((void*)cv___store554);
+    clar_fn_rtTextRelease((void*)cv___store553);
     rt_text * t53 = NULL;
     t53 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t53, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store554 = t53;
+    cv___store553 = t53;
     clar_fn_rtTextRelease((void*)cv_out);
-    cv_out = cv___store554;
-    cv___store554 = 0;
+    cv_out = cv___store553;
+    cv___store553 = 0;
     clar_fn_rtTextAppendStr((void*)cv_out, (void*)(const uint8_t*)&(clar_lit_2112));
     clar_fn_bkPutU32(cv_out, 7);
     clar_fn_bkPutByte(cv_out, cv_lane);
-    clar_fn_rtTextRelease((void*)cv___store555);
+    clar_fn_rtTextRelease((void*)cv___store554);
     rt_text * t54 = NULL;
     t54 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t54, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store555 = t54;
+    cv___store554 = t54;
     clar_fn_rtTextRelease((void*)cv_compilerSrc);
-    cv_compilerSrc = cv___store555;
-    cv___store555 = 0;
-    clar_fn_rtTextRelease((void*)cv___store556);
+    cv_compilerSrc = cv___store554;
+    cv___store554 = 0;
+    clar_fn_rtTextRelease((void*)cv___store555);
     rt_text * t55 = NULL;
     t55 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t55, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store556 = t55;
+    cv___store555 = t55;
     clar_fn_rtTextRelease((void*)cv_stamp);
-    cv_stamp = cv___store556;
-    cv___store556 = 0;
+    cv_stamp = cv___store555;
+    cv___store555 = 0;
     if (clar_fn_bkFindClarusC(cv_compilerSrc)) {
         cv_bkLastStamp = clar_fn_bkHashText(cv_compilerSrc);
     } else {
@@ -84644,8 +84669,8 @@ static rt_text * clar_fn_bkGetBytes(void) {
     cv_t = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___ret1344;
     cv___ret1344 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store557;
-    cv___store557 = NULL;
+    rt_text * cv___store556;
+    cv___store556 = NULL;
     if (CLAR_ADD32(cv_bkLoadPos, 4) > clar_fn_rtTextLen((void*)cv_bkLoadBuf)) {
         cv_bkLoadOverrun = 1;
         cv_bkLoadPos = clar_fn_rtTextLen((void*)cv_bkLoadBuf);
@@ -84658,7 +84683,7 @@ static rt_text * clar_fn_bkGetBytes(void) {
         return cv___ret1344;
     }
     cv_n = clar_fn_rtTextU32At((void*)cv_bkLoadBuf, (int32_t)(cv_bkLoadPos));
-    if ((cv_n < 0) || (CLAR_ADD32(CLAR_ADD32(cv_bkLoadPos, 4), cv_n) > clar_fn_rtTextLen((void*)cv_bkLoadBuf))) {
+    if ((cv_n < 0) || (cv_n > CLAR_SUB32(CLAR_SUB32(clar_fn_rtTextLen((void*)cv_bkLoadBuf), cv_bkLoadPos), 4))) {
         cv_bkLoadOverrun = 1;
         cv_bkLoadPos = clar_fn_rtTextLen((void*)cv_bkLoadBuf);
         clar_fn_rtTextRelease((void*)cv___ret1344);
@@ -84669,14 +84694,14 @@ static rt_text * clar_fn_bkGetBytes(void) {
         clar_fn_rtTextRelease((void*)cv_t);
         return cv___ret1344;
     }
-    clar_fn_rtTextRelease((void*)cv___store557);
+    clar_fn_rtTextRelease((void*)cv___store556);
     rt_text * t3 = NULL;
     t3 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextTextAt((void*)t3, (void*)cv_bkLoadBuf, (int32_t)(CLAR_ADD32(cv_bkLoadPos, 4)), (int32_t)(cv_n));
-    cv___store557 = t3;
+    cv___store556 = t3;
     clar_fn_rtTextRelease((void*)cv_t);
-    cv_t = cv___store557;
-    cv___store557 = 0;
+    cv_t = cv___store556;
+    cv___store556 = 0;
     cv_bkLoadPos = CLAR_ADD32(CLAR_ADD32(cv_bkLoadPos, 4), cv_n);
     clar_fn_rtTextRelease((void*)cv___ret1344);
     cv___ret1344 = cv_t;
@@ -85666,24 +85691,24 @@ static void clar_fn_bkReadCheckerSymbols(void) {
     cv_em = clar_new_EnumMemberInfo();
     rt_list * cv_lEnumMembers;
     cv_lEnumMembers = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_EnumMemberInfo));
-    rt_list * cv___store558;
+    rt_list * cv___store557;
+    cv___store557 = NULL;
+    rt_intmap * cv___store558;
     cv___store558 = NULL;
-    rt_intmap * cv___store559;
-    cv___store559 = NULL;
     cv_n = clar_fn_bkGetU32();
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_n))) break;
         cv_pn = clar_fn_bkGetU32();
-            clar_fn_rtListRelease((void*)cv___store558);
+            clar_fn_rtListRelease((void*)cv___store557);
 
         rt_list * t1 = NULL;
         t1 = clar_fn_driveFreshIntList();
-        cv___store558 = t1;
+        cv___store557 = t1;
             clar_fn_rtListRelease((void*)cv_params);
 
-        cv_params = cv___store558;
-        cv___store558 = 0;
+        cv_params = cv___store557;
+        cv___store557 = 0;
         cv_j = 0;
         while (1) {
             if (!((cv_j < cv_pn))) break;
@@ -85742,15 +85767,15 @@ static void clar_fn_bkReadCheckerSymbols(void) {
     while (1) {
         if (!((cv_i < cv_n))) break;
         (cv_scope).cv_parent = clar_fn_bkGetU32();
-            clar_fn_rtIntMapRelease((void*)cv___store559);
+            clar_fn_rtIntMapRelease((void*)cv___store558);
 
         rt_intmap * t5 = NULL;
         t5 = clar_fn_bkReadIntIntMap();
-        cv___store559 = t5;
+        cv___store558 = t5;
             clar_fn_rtIntMapRelease((void*)(cv_scope).cv_names);
 
-        (cv_scope).cv_names = cv___store559;
-        cv___store559 = 0;
+        (cv_scope).cv_names = cv___store558;
+        cv___store558 = 0;
         clar_rec_Scope t6;
         t6 = cv_scope;
         clar_retain_Scope(&(t6));
@@ -85826,8 +85851,8 @@ static void clar_fn_bkReadFieldInfo(void) {
     cv_fi = clar_new_FieldInfo();
     rt_list * cv_lFieldInfos;
     cv_lFieldInfos = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_FieldInfo));
-    rt_intmap * cv___store560;
-    cv___store560 = NULL;
+    rt_intmap * cv___store559;
+    cv___store559 = NULL;
     cv_n = clar_fn_bkGetU32();
     cv_i = 0;
     while (1) {
@@ -85845,15 +85870,15 @@ static void clar_fn_bkReadFieldInfo(void) {
         clar_fn_rtListRelease((void*)cv_bkLoadedFieldInfos);
 
     cv_bkLoadedFieldInfos = cv_lFieldInfos;
-        clar_fn_rtIntMapRelease((void*)cv___store560);
+        clar_fn_rtIntMapRelease((void*)cv___store559);
 
     rt_intmap * t2 = NULL;
     t2 = clar_fn_bkReadIntIntMap();
-    cv___store560 = t2;
+    cv___store559 = t2;
         clar_fn_rtIntMapRelease((void*)cv_bkLoadedRecFieldsHeadByName);
 
-    cv_bkLoadedRecFieldsHeadByName = cv___store560;
-    cv___store560 = 0;
+    cv_bkLoadedRecFieldsHeadByName = cv___store559;
+    cv___store559 = 0;
         clar_fn_rtListRelease((void*)cv_lFieldInfos);
 
     return;
@@ -85979,6 +86004,8 @@ static int32_t clar_fn_bkReadObjCode(void) {
     cv_lRuns = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
     rt_list * cv_lHoles;
     cv_lHoles = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_CgObjHole));
+    rt_list * cv___store560;
+    cv___store560 = NULL;
     rt_list * cv___store561;
     cv___store561 = NULL;
     rt_list * cv___store562;
@@ -85987,58 +86014,56 @@ static int32_t clar_fn_bkReadObjCode(void) {
     cv___store563 = NULL;
     rt_list * cv___store564;
     cv___store564 = NULL;
-    rt_list * cv___store565;
-    cv___store565 = NULL;
     int32_t cv___ret1371;
     cv___ret1371 = 0;
     cv_count = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store561);
+        clar_fn_rtListRelease((void*)cv___store560);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_driveFreshBoolList();
-    cv___store561 = t1;
+    cv___store560 = t1;
         clar_fn_rtListRelease((void*)cv_lValid);
 
-    cv_lValid = cv___store561;
-    cv___store561 = 0;
-        clar_fn_rtListRelease((void*)cv___store562);
+    cv_lValid = cv___store560;
+    cv___store560 = 0;
+        clar_fn_rtListRelease((void*)cv___store561);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_driveFreshIntList();
-    cv___store562 = t2;
+    cv___store561 = t2;
         clar_fn_rtListRelease((void*)cv_lRunFirst);
 
-    cv_lRunFirst = cv___store562;
-    cv___store562 = 0;
-        clar_fn_rtListRelease((void*)cv___store563);
+    cv_lRunFirst = cv___store561;
+    cv___store561 = 0;
+        clar_fn_rtListRelease((void*)cv___store562);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_driveFreshIntList();
-    cv___store563 = t3;
+    cv___store562 = t3;
         clar_fn_rtListRelease((void*)cv_lHoleFirst);
 
-    cv_lHoleFirst = cv___store563;
-    cv___store563 = 0;
-        clar_fn_rtListRelease((void*)cv___store564);
+    cv_lHoleFirst = cv___store562;
+    cv___store562 = 0;
+        clar_fn_rtListRelease((void*)cv___store563);
 
     rt_list * t4 = NULL;
     t4 = clar_fn_driveFreshIntList();
-    cv___store564 = t4;
+    cv___store563 = t4;
         clar_fn_rtListRelease((void*)cv_lNHoles);
 
-    cv_lNHoles = cv___store564;
-    cv___store564 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store565)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store565); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store565, i)); }
-    clar_fn_rtListRelease((void*)cv___store565);
+    cv_lNHoles = cv___store563;
+    cv___store563 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store564)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store564); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store564, i)); }
+    clar_fn_rtListRelease((void*)cv___store564);
 
     rt_list * t5 = NULL;
     t5 = clar_fn_cgFreshTextList();
-    cv___store565 = t5;
+    cv___store564 = t5;
         if (clar_fn_rtListLastref((void*)cv_lRuns)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_lRuns); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_lRuns, i)); }
     clar_fn_rtListRelease((void*)cv_lRuns);
 
-    cv_lRuns = cv___store565;
-    cv___store565 = 0;
+    cv_lRuns = cv___store564;
+    cv___store564 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_count))) break;
@@ -86247,6 +86272,8 @@ static int32_t clar_fn_bkReadObjMeta(void) {
     cv_lUiBlobSize = 0;
     int32_t cv_lUiEventsSize;
     cv_lUiEventsSize = 0;
+    rt_list * cv___store565;
+    cv___store565 = NULL;
     rt_list * cv___store566;
     cv___store566 = NULL;
     rt_list * cv___store567;
@@ -86271,134 +86298,132 @@ static int32_t clar_fn_bkReadObjMeta(void) {
     cv___store576 = NULL;
     rt_list * cv___store577;
     cv___store577 = NULL;
-    rt_list * cv___store578;
-    cv___store578 = NULL;
     int32_t cv___ret1373;
     cv___ret1373 = 0;
+    rt_list * cv___store578;
+    cv___store578 = NULL;
     rt_list * cv___store579;
     cv___store579 = NULL;
     rt_list * cv___store580;
     cv___store580 = NULL;
-    rt_list * cv___store581;
-    cv___store581 = NULL;
     cv_count = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store566);
+        clar_fn_rtListRelease((void*)cv___store565);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_driveFreshIntList();
-    cv___store566 = t1;
+    cv___store565 = t1;
         clar_fn_rtListRelease((void*)cv_lSize);
 
-    cv_lSize = cv___store566;
-    cv___store566 = 0;
-        clar_fn_rtListRelease((void*)cv___store567);
+    cv_lSize = cv___store565;
+    cv___store565 = 0;
+        clar_fn_rtListRelease((void*)cv___store566);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_driveFreshIntList();
-    cv___store567 = t2;
+    cv___store566 = t2;
         clar_fn_rtListRelease((void*)cv_lFrame);
 
-    cv_lFrame = cv___store567;
-    cv___store567 = 0;
-        clar_fn_rtListRelease((void*)cv___store568);
+    cv_lFrame = cv___store566;
+    cv___store566 = 0;
+        clar_fn_rtListRelease((void*)cv___store567);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_driveFreshIntList();
-    cv___store568 = t3;
+    cv___store567 = t3;
         clar_fn_rtListRelease((void*)cv_lStrLitFirst);
 
-    cv_lStrLitFirst = cv___store568;
-    cv___store568 = 0;
-        clar_fn_rtListRelease((void*)cv___store569);
+    cv_lStrLitFirst = cv___store567;
+    cv___store567 = 0;
+        clar_fn_rtListRelease((void*)cv___store568);
 
     rt_list * t4 = NULL;
     t4 = clar_fn_driveFreshIntList();
-    cv___store569 = t4;
+    cv___store568 = t4;
         clar_fn_rtListRelease((void*)cv_lStrLitCount);
 
-    cv_lStrLitCount = cv___store569;
-    cv___store569 = 0;
-        clar_fn_rtListRelease((void*)cv___store570);
+    cv_lStrLitCount = cv___store568;
+    cv___store568 = 0;
+        clar_fn_rtListRelease((void*)cv___store569);
 
     rt_list * t5 = NULL;
     t5 = clar_fn_driveFreshIntList();
-    cv___store570 = t5;
+    cv___store569 = t5;
         clar_fn_rtListRelease((void*)cv_lStrLitFlat);
 
-    cv_lStrLitFlat = cv___store570;
-    cv___store570 = 0;
-        clar_fn_rtListRelease((void*)cv___store571);
+    cv_lStrLitFlat = cv___store569;
+    cv___store569 = 0;
+        clar_fn_rtListRelease((void*)cv___store570);
 
     rt_list * t6 = NULL;
     t6 = clar_fn_driveFreshIntList();
-    cv___store571 = t6;
+    cv___store570 = t6;
         clar_fn_rtListRelease((void*)cv_lEnumTableFirst);
 
-    cv_lEnumTableFirst = cv___store571;
-    cv___store571 = 0;
-        clar_fn_rtListRelease((void*)cv___store572);
+    cv_lEnumTableFirst = cv___store570;
+    cv___store570 = 0;
+        clar_fn_rtListRelease((void*)cv___store571);
 
     rt_list * t7 = NULL;
     t7 = clar_fn_driveFreshIntList();
-    cv___store572 = t7;
+    cv___store571 = t7;
         clar_fn_rtListRelease((void*)cv_lEnumTableCount);
 
-    cv_lEnumTableCount = cv___store572;
-    cv___store572 = 0;
-        clar_fn_rtListRelease((void*)cv___store573);
+    cv_lEnumTableCount = cv___store571;
+    cv___store571 = 0;
+        clar_fn_rtListRelease((void*)cv___store572);
 
     rt_list * t8 = NULL;
     t8 = clar_fn_driveFreshIntList();
-    cv___store573 = t8;
+    cv___store572 = t8;
         clar_fn_rtListRelease((void*)cv_lEnumTableFlat);
 
-    cv_lEnumTableFlat = cv___store573;
-    cv___store573 = 0;
-        clar_fn_rtListRelease((void*)cv___store574);
+    cv_lEnumTableFlat = cv___store572;
+    cv___store572 = 0;
+        clar_fn_rtListRelease((void*)cv___store573);
 
     rt_list * t9 = NULL;
     t9 = clar_fn_driveFreshIntList();
-    cv___store574 = t9;
+    cv___store573 = t9;
         clar_fn_rtListRelease((void*)cv_lSerdescFirst);
 
-    cv_lSerdescFirst = cv___store574;
-    cv___store574 = 0;
-        clar_fn_rtListRelease((void*)cv___store575);
+    cv_lSerdescFirst = cv___store573;
+    cv___store573 = 0;
+        clar_fn_rtListRelease((void*)cv___store574);
 
     rt_list * t10 = NULL;
     t10 = clar_fn_driveFreshIntList();
-    cv___store575 = t10;
+    cv___store574 = t10;
         clar_fn_rtListRelease((void*)cv_lSerdescCount);
 
-    cv_lSerdescCount = cv___store575;
-    cv___store575 = 0;
-        clar_fn_rtListRelease((void*)cv___store576);
+    cv_lSerdescCount = cv___store574;
+    cv___store574 = 0;
+        clar_fn_rtListRelease((void*)cv___store575);
 
     rt_list * t11 = NULL;
     t11 = clar_fn_driveFreshIntList();
-    cv___store576 = t11;
+    cv___store575 = t11;
         clar_fn_rtListRelease((void*)cv_lSerdescFlat);
 
-    cv_lSerdescFlat = cv___store576;
-    cv___store576 = 0;
-        clar_fn_rtListRelease((void*)cv___store577);
+    cv_lSerdescFlat = cv___store575;
+    cv___store575 = 0;
+        clar_fn_rtListRelease((void*)cv___store576);
 
     rt_list * t12 = NULL;
     t12 = clar_fn_driveFreshBoolList();
-    cv___store577 = t12;
+    cv___store576 = t12;
         clar_fn_rtListRelease((void*)cv_lUsesUiBlob);
 
-    cv_lUsesUiBlob = cv___store577;
-    cv___store577 = 0;
-        clar_fn_rtListRelease((void*)cv___store578);
+    cv_lUsesUiBlob = cv___store576;
+    cv___store576 = 0;
+        clar_fn_rtListRelease((void*)cv___store577);
 
     rt_list * t13 = NULL;
     t13 = clar_fn_driveFreshBoolList();
-    cv___store578 = t13;
+    cv___store577 = t13;
         clar_fn_rtListRelease((void*)cv_lUsesUiEvents);
 
-    cv_lUsesUiEvents = cv___store578;
-    cv___store578 = 0;
+    cv_lUsesUiEvents = cv___store577;
+    cv___store577 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_count))) break;
@@ -86588,15 +86613,15 @@ static int32_t clar_fn_bkReadObjMeta(void) {
     cv_lGlueBundleSize = clar_fn_bkGetU32();
     cv_lPoolSize = clar_fn_bkGetU32();
     cv_n = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store579);
+        clar_fn_rtListRelease((void*)cv___store578);
 
     rt_list * t33 = NULL;
     t33 = clar_fn_driveFreshIntList();
-    cv___store579 = t33;
+    cv___store578 = t33;
         clar_fn_rtListRelease((void*)cv_lStrLitSize);
 
-    cv_lStrLitSize = cv___store579;
-    cv___store579 = 0;
+    cv_lStrLitSize = cv___store578;
+    cv___store578 = 0;
     cv_k = 0;
     while (1) {
         if (!((cv_k < cv_n))) break;
@@ -86606,15 +86631,15 @@ static int32_t clar_fn_bkReadObjMeta(void) {
         cv_k = CLAR_ADD32(cv_k, 1);
     }
     cv_n = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store580);
+        clar_fn_rtListRelease((void*)cv___store579);
 
     rt_list * t35 = NULL;
     t35 = clar_fn_driveFreshIntList();
-    cv___store580 = t35;
+    cv___store579 = t35;
         clar_fn_rtListRelease((void*)cv_lEnumTableSize);
 
-    cv_lEnumTableSize = cv___store580;
-    cv___store580 = 0;
+    cv_lEnumTableSize = cv___store579;
+    cv___store579 = 0;
     cv_k = 0;
     while (1) {
         if (!((cv_k < cv_n))) break;
@@ -86624,15 +86649,15 @@ static int32_t clar_fn_bkReadObjMeta(void) {
         cv_k = CLAR_ADD32(cv_k, 1);
     }
     cv_n = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store581);
+        clar_fn_rtListRelease((void*)cv___store580);
 
     rt_list * t37 = NULL;
     t37 = clar_fn_driveFreshIntList();
-    cv___store581 = t37;
+    cv___store580 = t37;
         clar_fn_rtListRelease((void*)cv_lSerdescSize);
 
-    cv_lSerdescSize = cv___store581;
-    cv___store581 = 0;
+    cv_lSerdescSize = cv___store580;
+    cv___store580 = 0;
     cv_k = 0;
     while (1) {
         if (!((cv_k < cv_n))) break;
@@ -86776,6 +86801,8 @@ static int32_t clar_fn_bkLoadSections(void) {
     cv_len = 0;
     int32_t cv_expectedPos;
     cv_expectedPos = 0;
+    rt_list * cv___store581;
+    cv___store581 = NULL;
     rt_list * cv___store582;
     cv___store582 = NULL;
     rt_list * cv___store583;
@@ -86784,9 +86811,9 @@ static int32_t clar_fn_bkLoadSections(void) {
     cv___store584 = NULL;
     rt_list * cv___store585;
     cv___store585 = NULL;
-    rt_list * cv___store586;
+    rt_intmap * cv___store586;
     cv___store586 = NULL;
-    rt_intmap * cv___store587;
+    rt_list * cv___store587;
     cv___store587 = NULL;
     rt_list * cv___store588;
     cv___store588 = NULL;
@@ -86840,16 +86867,14 @@ static int32_t clar_fn_bkLoadSections(void) {
     cv___store612 = NULL;
     rt_list * cv___store613;
     cv___store613 = NULL;
-    rt_list * cv___store614;
+    rt_intmap * cv___store614;
     cv___store614 = NULL;
     rt_intmap * cv___store615;
     cv___store615 = NULL;
-    rt_intmap * cv___store616;
+    rt_list * cv___store616;
     cv___store616 = NULL;
     rt_list * cv___store617;
     cv___store617 = NULL;
-    rt_list * cv___store618;
-    cv___store618 = NULL;
     int32_t cv___ret1374;
     cv___ret1374 = 0;
     cv_n = clar_fn_bkGetU16();
@@ -86876,403 +86901,403 @@ static int32_t clar_fn_bkLoadSections(void) {
         cv_len = clar_fn_bkGetU32();
         cv_expectedPos = CLAR_ADD32(cv_bkLoadPos, cv_len);
         if (cv_id == 1) {
-                clar_fn_rtListRelease((void*)cv___store582);
+                clar_fn_rtListRelease((void*)cv___store581);
 
             rt_list * t7 = NULL;
             t7 = clar_fn_bkReadIrTypes();
-            cv___store582 = t7;
+            cv___store581 = t7;
                 clar_fn_rtListRelease((void*)cv_bkLdIrTypes);
 
-            cv_bkLdIrTypes = cv___store582;
-            cv___store582 = 0;
+            cv_bkLdIrTypes = cv___store581;
+            cv___store581 = 0;
         } else {
             if (cv_id == 2) {
-                    clar_fn_rtListRelease((void*)cv___store583);
+                    clar_fn_rtListRelease((void*)cv___store582);
 
                 rt_list * t8 = NULL;
                 t8 = clar_fn_bkReadIrStmts();
-                cv___store583 = t8;
+                cv___store582 = t8;
                     clar_fn_rtListRelease((void*)cv_bkLdIrStmts);
 
-                cv_bkLdIrStmts = cv___store583;
-                cv___store583 = 0;
+                cv_bkLdIrStmts = cv___store582;
+                cv___store582 = 0;
             } else {
                 if (cv_id == 3) {
-                        clar_fn_rtListRelease((void*)cv___store584);
+                        clar_fn_rtListRelease((void*)cv___store583);
 
                     rt_list * t9 = NULL;
                     t9 = clar_fn_bkReadIrExprs();
-                    cv___store584 = t9;
+                    cv___store583 = t9;
                         clar_fn_rtListRelease((void*)cv_bkLdIrExprs);
 
-                    cv_bkLdIrExprs = cv___store584;
-                    cv___store584 = 0;
+                    cv_bkLdIrExprs = cv___store583;
+                    cv___store583 = 0;
                 } else {
                     if (cv_id == 4) {
-                            clar_fn_rtListRelease((void*)cv___store585);
+                            clar_fn_rtListRelease((void*)cv___store584);
 
                         rt_list * t10 = NULL;
                         t10 = clar_fn_bkReadIrLocals();
-                        cv___store585 = t10;
+                        cv___store584 = t10;
                             clar_fn_rtListRelease((void*)cv_bkLdIrLocals);
 
-                        cv_bkLdIrLocals = cv___store585;
-                        cv___store585 = 0;
+                        cv_bkLdIrLocals = cv___store584;
+                        cv___store584 = 0;
                     } else {
                         if (cv_id == 5) {
-                                clar_fn_rtListRelease((void*)cv___store586);
+                                clar_fn_rtListRelease((void*)cv___store585);
 
                             rt_list * t11 = NULL;
                             t11 = clar_fn_bkReadIrFuncs();
-                            cv___store586 = t11;
+                            cv___store585 = t11;
                                 clar_fn_rtListRelease((void*)cv_bkLdIrFuncs);
 
-                            cv_bkLdIrFuncs = cv___store586;
-                            cv___store586 = 0;
+                            cv_bkLdIrFuncs = cv___store585;
+                            cv___store585 = 0;
                         } else {
                             if (cv_id == 6) {
-                                    clar_fn_rtIntMapRelease((void*)cv___store587);
+                                    clar_fn_rtIntMapRelease((void*)cv___store586);
 
                                 rt_intmap * t12 = NULL;
                                 t12 = clar_fn_bkReadIntIntMap();
-                                cv___store587 = t12;
+                                cv___store586 = t12;
                                     clar_fn_rtIntMapRelease((void*)cv_bkLdIrFuncIdxByName);
 
-                                cv_bkLdIrFuncIdxByName = cv___store587;
-                                cv___store587 = 0;
+                                cv_bkLdIrFuncIdxByName = cv___store586;
+                                cv___store586 = 0;
                             } else {
                                 if (cv_id == 7) {
-                                        clar_fn_rtListRelease((void*)cv___store588);
+                                        clar_fn_rtListRelease((void*)cv___store587);
 
                                     rt_list * t13 = NULL;
                                     t13 = clar_fn_bkReadIntList();
-                                    cv___store588 = t13;
+                                    cv___store587 = t13;
                                         clar_fn_rtListRelease((void*)cv_bkLdIrCbGlueNames);
 
-                                    cv_bkLdIrCbGlueNames = cv___store588;
-                                    cv___store588 = 0;
+                                    cv_bkLdIrCbGlueNames = cv___store587;
+                                    cv___store587 = 0;
                                 } else {
                                     if (cv_id == 8) {
-                                            clar_fn_rtListRelease((void*)cv___store589);
+                                            clar_fn_rtListRelease((void*)cv___store588);
 
                                         rt_list * t14 = NULL;
                                         t14 = clar_fn_bkReadIrGlobals();
-                                        cv___store589 = t14;
+                                        cv___store588 = t14;
                                             clar_fn_rtListRelease((void*)cv_bkLdIrGlobals);
 
-                                        cv_bkLdIrGlobals = cv___store589;
-                                        cv___store589 = 0;
+                                        cv_bkLdIrGlobals = cv___store588;
+                                        cv___store588 = 0;
                                     } else {
                                         if (cv_id == 9) {
-                                                clar_fn_rtListRelease((void*)cv___store590);
+                                                clar_fn_rtListRelease((void*)cv___store589);
 
                                             rt_list * t15 = NULL;
                                             t15 = clar_fn_bkReadIrFieldSlots();
-                                            cv___store590 = t15;
+                                            cv___store589 = t15;
                                                 clar_fn_rtListRelease((void*)cv_bkLdIrFieldSlots);
 
-                                            cv_bkLdIrFieldSlots = cv___store590;
-                                            cv___store590 = 0;
+                                            cv_bkLdIrFieldSlots = cv___store589;
+                                            cv___store589 = 0;
                                         } else {
                                             if (cv_id == 10) {
-                                                    clar_fn_rtListRelease((void*)cv___store591);
+                                                    clar_fn_rtListRelease((void*)cv___store590);
 
                                                 rt_list * t16 = NULL;
                                                 t16 = clar_fn_bkReadIrRecords();
-                                                cv___store591 = t16;
+                                                cv___store590 = t16;
                                                     clar_fn_rtListRelease((void*)cv_bkLdIrRecords);
 
-                                                cv_bkLdIrRecords = cv___store591;
-                                                cv___store591 = 0;
+                                                cv_bkLdIrRecords = cv___store590;
+                                                cv___store590 = 0;
                                             } else {
                                                 if (cv_id == 11) {
-                                                        clar_fn_rtListRelease((void*)cv___store592);
+                                                        clar_fn_rtListRelease((void*)cv___store591);
 
                                                     rt_list * t17 = NULL;
                                                     t17 = clar_fn_bkReadIrEnumMembers();
-                                                    cv___store592 = t17;
+                                                    cv___store591 = t17;
                                                         clar_fn_rtListRelease((void*)cv_bkLdIrEnumMembers);
 
-                                                    cv_bkLdIrEnumMembers = cv___store592;
-                                                    cv___store592 = 0;
+                                                    cv_bkLdIrEnumMembers = cv___store591;
+                                                    cv___store591 = 0;
                                                 } else {
                                                     if (cv_id == 12) {
-                                                            clar_fn_rtListRelease((void*)cv___store593);
+                                                            clar_fn_rtListRelease((void*)cv___store592);
 
                                                         rt_list * t18 = NULL;
                                                         t18 = clar_fn_bkReadIrEnums();
-                                                        cv___store593 = t18;
+                                                        cv___store592 = t18;
                                                             clar_fn_rtListRelease((void*)cv_bkLdIrEnums);
 
-                                                        cv_bkLdIrEnums = cv___store593;
-                                                        cv___store593 = 0;
+                                                        cv_bkLdIrEnums = cv___store592;
+                                                        cv___store592 = 0;
                                                     } else {
                                                         if (cv_id == 13) {
-                                                                clar_fn_rtListRelease((void*)cv___store594);
+                                                                clar_fn_rtListRelease((void*)cv___store593);
 
                                                             rt_list * t19 = NULL;
                                                             t19 = clar_fn_bkReadIrWidgetDescs();
-                                                            cv___store594 = t19;
+                                                            cv___store593 = t19;
                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrWidgetDescs);
 
-                                                            cv_bkLdIrWidgetDescs = cv___store594;
-                                                            cv___store594 = 0;
+                                                            cv_bkLdIrWidgetDescs = cv___store593;
+                                                            cv___store593 = 0;
                                                         } else {
                                                             if (cv_id == 14) {
-                                                                    clar_fn_rtListRelease((void*)cv___store595);
+                                                                    clar_fn_rtListRelease((void*)cv___store594);
 
                                                                 rt_list * t20 = NULL;
                                                                 t20 = clar_fn_bkReadIrColumnDescs();
-                                                                cv___store595 = t20;
+                                                                cv___store594 = t20;
                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrColumnDescs);
 
-                                                                cv_bkLdIrColumnDescs = cv___store595;
-                                                                cv___store595 = 0;
+                                                                cv_bkLdIrColumnDescs = cv___store594;
+                                                                cv___store594 = 0;
                                                             } else {
                                                                 if (cv_id == 15) {
-                                                                        clar_fn_rtListRelease((void*)cv___store596);
+                                                                        clar_fn_rtListRelease((void*)cv___store595);
 
                                                                     rt_list * t21 = NULL;
                                                                     t21 = clar_fn_bkReadIrBindDescs();
-                                                                    cv___store596 = t21;
+                                                                    cv___store595 = t21;
                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrBindDescs);
 
-                                                                    cv_bkLdIrBindDescs = cv___store596;
-                                                                    cv___store596 = 0;
+                                                                    cv_bkLdIrBindDescs = cv___store595;
+                                                                    cv___store595 = 0;
                                                                 } else {
                                                                     if (cv_id == 16) {
-                                                                            clar_fn_rtListRelease((void*)cv___store597);
+                                                                            clar_fn_rtListRelease((void*)cv___store596);
 
                                                                         rt_list * t22 = NULL;
                                                                         t22 = clar_fn_bkReadIrWindowDescs();
-                                                                        cv___store597 = t22;
+                                                                        cv___store596 = t22;
                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrWindowDescs);
 
-                                                                        cv_bkLdIrWindowDescs = cv___store597;
-                                                                        cv___store597 = 0;
+                                                                        cv_bkLdIrWindowDescs = cv___store596;
+                                                                        cv___store596 = 0;
                                                                     } else {
                                                                         if (cv_id == 17) {
-                                                                                clar_fn_rtListRelease((void*)cv___store598);
+                                                                                clar_fn_rtListRelease((void*)cv___store597);
 
                                                                             rt_list * t23 = NULL;
                                                                             t23 = clar_fn_bkReadIrMenuItemDescs();
-                                                                            cv___store598 = t23;
+                                                                            cv___store597 = t23;
                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrMenuItemDescs);
 
-                                                                            cv_bkLdIrMenuItemDescs = cv___store598;
-                                                                            cv___store598 = 0;
+                                                                            cv_bkLdIrMenuItemDescs = cv___store597;
+                                                                            cv___store597 = 0;
                                                                         } else {
                                                                             if (cv_id == 18) {
-                                                                                    clar_fn_rtListRelease((void*)cv___store599);
+                                                                                    clar_fn_rtListRelease((void*)cv___store598);
 
                                                                                 rt_list * t24 = NULL;
                                                                                 t24 = clar_fn_bkReadIrMenuDescs();
-                                                                                cv___store599 = t24;
+                                                                                cv___store598 = t24;
                                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrMenuDescs);
 
-                                                                                cv_bkLdIrMenuDescs = cv___store599;
-                                                                                cv___store599 = 0;
+                                                                                cv_bkLdIrMenuDescs = cv___store598;
+                                                                                cv___store598 = 0;
                                                                             } else {
                                                                                 if (cv_id == 19) {
-                                                                                        clar_fn_rtListRelease((void*)cv___store600);
+                                                                                        clar_fn_rtListRelease((void*)cv___store599);
 
                                                                                     rt_list * t25 = NULL;
                                                                                     t25 = clar_fn_bkReadIrWinHandlers();
-                                                                                    cv___store600 = t25;
+                                                                                    cv___store599 = t25;
                                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrWinHandlers);
 
-                                                                                    cv_bkLdIrWinHandlers = cv___store600;
-                                                                                    cv___store600 = 0;
+                                                                                    cv_bkLdIrWinHandlers = cv___store599;
+                                                                                    cv___store599 = 0;
                                                                                 } else {
                                                                                     if (cv_id == 20) {
-                                                                                            clar_fn_rtListRelease((void*)cv___store601);
+                                                                                            clar_fn_rtListRelease((void*)cv___store600);
 
                                                                                         rt_list * t26 = NULL;
                                                                                         t26 = clar_fn_bkReadIrWidgetHandlerEntries();
-                                                                                        cv___store601 = t26;
+                                                                                        cv___store600 = t26;
                                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrWidgetHandlerEntries);
 
-                                                                                        cv_bkLdIrWidgetHandlerEntries = cv___store601;
-                                                                                        cv___store601 = 0;
+                                                                                        cv_bkLdIrWidgetHandlerEntries = cv___store600;
+                                                                                        cv___store600 = 0;
                                                                                     } else {
                                                                                         if (cv_id == 21) {
-                                                                                                clar_fn_rtListRelease((void*)cv___store602);
+                                                                                                clar_fn_rtListRelease((void*)cv___store601);
 
                                                                                             rt_list * t27 = NULL;
                                                                                             t27 = clar_fn_bkReadIrMenuHandlerEntries();
-                                                                                            cv___store602 = t27;
+                                                                                            cv___store601 = t27;
                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrMenuHandlerEntries);
 
-                                                                                            cv_bkLdIrMenuHandlerEntries = cv___store602;
-                                                                                            cv___store602 = 0;
+                                                                                            cv_bkLdIrMenuHandlerEntries = cv___store601;
+                                                                                            cv___store601 = 0;
                                                                                         } else {
                                                                                             if (cv_id == 22) {
-                                                                                                    clar_fn_rtListRelease((void*)cv___store603);
+                                                                                                    clar_fn_rtListRelease((void*)cv___store602);
 
                                                                                                 rt_list * t28 = NULL;
                                                                                                 t28 = clar_fn_bkReadIrEveryEntries();
-                                                                                                cv___store603 = t28;
+                                                                                                cv___store602 = t28;
                                                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrEveryEntries);
 
-                                                                                                cv_bkLdIrEveryEntries = cv___store603;
-                                                                                                cv___store603 = 0;
+                                                                                                cv_bkLdIrEveryEntries = cv___store602;
+                                                                                                cv___store602 = 0;
                                                                                             } else {
                                                                                                 if (cv_id == 23) {
-                                                                                                        clar_fn_rtListRelease((void*)cv___store604);
+                                                                                                        clar_fn_rtListRelease((void*)cv___store603);
 
                                                                                                     rt_list * t29 = NULL;
                                                                                                     t29 = clar_fn_bkReadIntList();
-                                                                                                    cv___store604 = t29;
+                                                                                                    cv___store603 = t29;
                                                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrStrLits);
 
-                                                                                                    cv_bkLdIrStrLits = cv___store604;
-                                                                                                    cv___store604 = 0;
+                                                                                                    cv_bkLdIrStrLits = cv___store603;
+                                                                                                    cv___store603 = 0;
                                                                                                 } else {
                                                                                                     if (cv_id == 24) {
-                                                                                                            clar_fn_rtListRelease((void*)cv___store605);
+                                                                                                            clar_fn_rtListRelease((void*)cv___store604);
 
                                                                                                         rt_list * t30 = NULL;
                                                                                                         t30 = clar_fn_bkReadIntList();
-                                                                                                        cv___store605 = t30;
+                                                                                                        cv___store604 = t30;
                                                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrExternNames);
 
-                                                                                                        cv_bkLdIrExternNames = cv___store605;
-                                                                                                        cv___store605 = 0;
+                                                                                                        cv_bkLdIrExternNames = cv___store604;
+                                                                                                        cv___store604 = 0;
                                                                                                     } else {
                                                                                                         if (cv_id == 25) {
-                                                                                                                clar_fn_rtListRelease((void*)cv___store606);
+                                                                                                                clar_fn_rtListRelease((void*)cv___store605);
 
                                                                                                             rt_list * t31 = NULL;
                                                                                                             t31 = clar_fn_bkReadIntList();
-                                                                                                            cv___store606 = t31;
+                                                                                                            cv___store605 = t31;
                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrExternRetTys);
 
-                                                                                                            cv_bkLdIrExternRetTys = cv___store606;
-                                                                                                            cv___store606 = 0;
+                                                                                                            cv_bkLdIrExternRetTys = cv___store605;
+                                                                                                            cv___store605 = 0;
                                                                                                         } else {
                                                                                                             if (cv_id == 26) {
-                                                                                                                    clar_fn_rtListRelease((void*)cv___store607);
+                                                                                                                    clar_fn_rtListRelease((void*)cv___store606);
 
                                                                                                                 rt_list * t32 = NULL;
                                                                                                                 t32 = clar_fn_bkReadIntList();
-                                                                                                                cv___store607 = t32;
+                                                                                                                cv___store606 = t32;
                                                                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrExternParamStart);
 
-                                                                                                                cv_bkLdIrExternParamStart = cv___store607;
-                                                                                                                cv___store607 = 0;
+                                                                                                                cv_bkLdIrExternParamStart = cv___store606;
+                                                                                                                cv___store606 = 0;
                                                                                                             } else {
                                                                                                                 if (cv_id == 27) {
-                                                                                                                        clar_fn_rtListRelease((void*)cv___store608);
+                                                                                                                        clar_fn_rtListRelease((void*)cv___store607);
 
                                                                                                                     rt_list * t33 = NULL;
                                                                                                                     t33 = clar_fn_bkReadIntList();
-                                                                                                                    cv___store608 = t33;
+                                                                                                                    cv___store607 = t33;
                                                                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrExternParamCountArr);
 
-                                                                                                                    cv_bkLdIrExternParamCountArr = cv___store608;
-                                                                                                                    cv___store608 = 0;
+                                                                                                                    cv_bkLdIrExternParamCountArr = cv___store607;
+                                                                                                                    cv___store607 = 0;
                                                                                                                 } else {
                                                                                                                     if (cv_id == 28) {
-                                                                                                                            clar_fn_rtListRelease((void*)cv___store609);
+                                                                                                                            clar_fn_rtListRelease((void*)cv___store608);
 
                                                                                                                         rt_list * t34 = NULL;
                                                                                                                         t34 = clar_fn_bkReadIntList();
-                                                                                                                        cv___store609 = t34;
+                                                                                                                        cv___store608 = t34;
                                                                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrExternParamTys);
 
-                                                                                                                        cv_bkLdIrExternParamTys = cv___store609;
-                                                                                                                        cv___store609 = 0;
+                                                                                                                        cv_bkLdIrExternParamTys = cv___store608;
+                                                                                                                        cv___store608 = 0;
                                                                                                                     } else {
                                                                                                                         if (cv_id == 29) {
-                                                                                                                                clar_fn_rtListRelease((void*)cv___store610);
+                                                                                                                                clar_fn_rtListRelease((void*)cv___store609);
 
                                                                                                                             rt_list * t35 = NULL;
                                                                                                                             t35 = clar_fn_bkReadIntList();
-                                                                                                                            cv___store610 = t35;
+                                                                                                                            cv___store609 = t35;
                                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrExternTrapWords);
 
-                                                                                                                            cv_bkLdIrExternTrapWords = cv___store610;
-                                                                                                                            cv___store610 = 0;
+                                                                                                                            cv_bkLdIrExternTrapWords = cv___store609;
+                                                                                                                            cv___store609 = 0;
                                                                                                                         } else {
                                                                                                                             if (cv_id == 30) {
-                                                                                                                                    clar_fn_rtListRelease((void*)cv___store611);
+                                                                                                                                    clar_fn_rtListRelease((void*)cv___store610);
 
                                                                                                                                 rt_list * t36 = NULL;
                                                                                                                                 t36 = clar_fn_bkReadIntList();
-                                                                                                                                cv___store611 = t36;
+                                                                                                                                cv___store610 = t36;
                                                                                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrExternConvs);
 
-                                                                                                                                cv_bkLdIrExternConvs = cv___store611;
-                                                                                                                                cv___store611 = 0;
+                                                                                                                                cv_bkLdIrExternConvs = cv___store610;
+                                                                                                                                cv___store610 = 0;
                                                                                                                             } else {
                                                                                                                                 if (cv_id == 31) {
-                                                                                                                                        clar_fn_rtListRelease((void*)cv___store612);
+                                                                                                                                        clar_fn_rtListRelease((void*)cv___store611);
 
                                                                                                                                     rt_list * t37 = NULL;
                                                                                                                                     t37 = clar_fn_bkReadIntList();
-                                                                                                                                    cv___store612 = t37;
+                                                                                                                                    cv___store611 = t37;
                                                                                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrExternSels);
 
-                                                                                                                                    cv_bkLdIrExternSels = cv___store612;
-                                                                                                                                    cv___store612 = 0;
+                                                                                                                                    cv_bkLdIrExternSels = cv___store611;
+                                                                                                                                    cv___store611 = 0;
                                                                                                                                 } else {
                                                                                                                                     if (cv_id == 32) {
-                                                                                                                                            clar_fn_rtListRelease((void*)cv___store613);
+                                                                                                                                            clar_fn_rtListRelease((void*)cv___store612);
 
                                                                                                                                         rt_list * t38 = NULL;
                                                                                                                                         t38 = clar_fn_bkReadIntList();
-                                                                                                                                        cv___store613 = t38;
+                                                                                                                                        cv___store612 = t38;
                                                                                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrExternParamRegs);
 
-                                                                                                                                        cv_bkLdIrExternParamRegs = cv___store613;
-                                                                                                                                        cv___store613 = 0;
+                                                                                                                                        cv_bkLdIrExternParamRegs = cv___store612;
+                                                                                                                                        cv___store612 = 0;
                                                                                                                                     } else {
                                                                                                                                         if (cv_id == 33) {
-                                                                                                                                                clar_fn_rtListRelease((void*)cv___store614);
+                                                                                                                                                clar_fn_rtListRelease((void*)cv___store613);
 
                                                                                                                                             rt_list * t39 = NULL;
                                                                                                                                             t39 = clar_fn_bkReadIntList();
-                                                                                                                                            cv___store614 = t39;
+                                                                                                                                            cv___store613 = t39;
                                                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrExternRetRegs);
 
-                                                                                                                                            cv_bkLdIrExternRetRegs = cv___store614;
-                                                                                                                                            cv___store614 = 0;
+                                                                                                                                            cv_bkLdIrExternRetRegs = cv___store613;
+                                                                                                                                            cv___store613 = 0;
                                                                                                                                         } else {
                                                                                                                                             if (cv_id == 34) {
-                                                                                                                                                    clar_fn_rtIntMapRelease((void*)cv___store615);
+                                                                                                                                                    clar_fn_rtIntMapRelease((void*)cv___store614);
 
                                                                                                                                                 rt_intmap * t40 = NULL;
                                                                                                                                                 t40 = clar_fn_bkReadIntIntMap();
-                                                                                                                                                cv___store615 = t40;
+                                                                                                                                                cv___store614 = t40;
                                                                                                                                                     clar_fn_rtIntMapRelease((void*)cv_bkLdIrLayoutNeededByName);
 
-                                                                                                                                                cv_bkLdIrLayoutNeededByName = cv___store615;
-                                                                                                                                                cv___store615 = 0;
+                                                                                                                                                cv_bkLdIrLayoutNeededByName = cv___store614;
+                                                                                                                                                cv___store614 = 0;
                                                                                                                                             } else {
                                                                                                                                                 if (cv_id == 35) {
-                                                                                                                                                        clar_fn_rtIntMapRelease((void*)cv___store616);
+                                                                                                                                                        clar_fn_rtIntMapRelease((void*)cv___store615);
 
                                                                                                                                                     rt_intmap * t41 = NULL;
                                                                                                                                                     t41 = clar_fn_bkReadIntIntMap();
-                                                                                                                                                    cv___store616 = t41;
+                                                                                                                                                    cv___store615 = t41;
                                                                                                                                                         clar_fn_rtIntMapRelease((void*)cv_bkLdIrRcWalkNeededByName);
 
-                                                                                                                                                    cv_bkLdIrRcWalkNeededByName = cv___store616;
-                                                                                                                                                    cv___store616 = 0;
+                                                                                                                                                    cv_bkLdIrRcWalkNeededByName = cv___store615;
+                                                                                                                                                    cv___store615 = 0;
                                                                                                                                                 } else {
                                                                                                                                                     if (cv_id == 36) {
                                                                                                                                                         clar_fn_bkReadIrScalars();
                                                                                                                                                     } else {
                                                                                                                                                         if (cv_id == 40) {
-                                                                                                                                                                clar_fn_rtListRelease((void*)cv___store617);
+                                                                                                                                                                clar_fn_rtListRelease((void*)cv___store616);
 
                                                                                                                                                             rt_list * t42 = NULL;
                                                                                                                                                             t42 = clar_fn_bkReadStrPool();
-                                                                                                                                                            cv___store617 = t42;
+                                                                                                                                                            cv___store616 = t42;
                                                                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdStrPool);
 
-                                                                                                                                                            cv_bkLdStrPool = cv___store617;
-                                                                                                                                                            cv___store617 = 0;
+                                                                                                                                                            cv_bkLdStrPool = cv___store616;
+                                                                                                                                                            cv___store616 = 0;
                                                                                                                                                         } else {
                                                                                                                                                             if (cv_id == 41) {
                                                                                                                                                                 clar_fn_bkReadLowCounters();
@@ -87284,15 +87309,15 @@ static int32_t clar_fn_bkLoadSections(void) {
                                                                                                                                                                         clar_fn_bkReadFieldInfo();
                                                                                                                                                                     } else {
                                                                                                                                                                         if (cv_id == 43) {
-                                                                                                                                                                                clar_fn_rtListRelease((void*)cv___store618);
+                                                                                                                                                                                clar_fn_rtListRelease((void*)cv___store617);
 
                                                                                                                                                                             rt_list * t43 = NULL;
                                                                                                                                                                             t43 = clar_fn_bkReadIntList();
-                                                                                                                                                                            cv___store618 = t43;
+                                                                                                                                                                            cv___store617 = t43;
                                                                                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLoadedDeclFileTab);
 
-                                                                                                                                                                            cv_bkLoadedDeclFileTab = cv___store618;
-                                                                                                                                                                            cv___store618 = 0;
+                                                                                                                                                                            cv_bkLoadedDeclFileTab = cv___store617;
+                                                                                                                                                                            cv___store617 = 0;
                                                                                                                                                                         } else {
                                                                                                                                                                             if (cv_id == 44) {
                                                                                                                                                                                 clar_fn_bkReadUitestBounds();
@@ -87396,6 +87421,26 @@ static int32_t clar_fn_bkLoadSections(void) {
 }
 
 static int32_t clar_fn_bkCheckRtbakeHeader(rt_text * cv_buf, int32_t cv_wantLane) {
+    rt_text * cv___store618;
+    cv___store618 = NULL;
+    int32_t cv___ret1375;
+    cv___ret1375 = 0;
+    if (clar_fn_bkCheckRtbakeHeaderBody(cv_buf, cv_wantLane)) {
+        return 1;
+    }
+    clar_fn_rtTextRelease((void*)cv___store618);
+    rt_text * t1 = NULL;
+    t1 = (rt_text *)clar_fn_rtTextNew();
+    clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_92));
+    cv___store618 = t1;
+    clar_fn_rtTextRelease((void*)cv_bkLoadBuf);
+    cv_bkLoadBuf = cv___store618;
+    cv___store618 = 0;
+    return 0;
+    return 0;
+}
+
+static int32_t clar_fn_bkCheckRtbakeHeaderBody(rt_text * cv_buf, int32_t cv_wantLane) {
     clar_str_255 cv_magic;
     cv_magic = (clar_str_255){0};
     int32_t cv_version;
@@ -87416,8 +87461,8 @@ static int32_t clar_fn_bkCheckRtbakeHeader(rt_text * cv_buf, int32_t cv_wantLane
     cv_i = 0;
     int32_t cv_n;
     cv_n = 0;
-    int32_t cv___ret1375;
-    cv___ret1375 = 0;
+    int32_t cv___ret1376;
+    cv___ret1376 = 0;
     cv_bkLoadOverrun = 0;
     if (clar_fn_rtTextLen((void*)cv_buf) < 19) {
         clar_fn_emitDiag(1, 1, &(clar_lit_2127));
@@ -87523,8 +87568,12 @@ static int32_t clar_fn_bkLoadRtbake(rt_text * cv_buf, int32_t cv_wantLane) {
     cv_n = 0;
     rt_list * cv_loadedMods;
     cv_loadedMods = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
-    int32_t cv___ret1376;
-    cv___ret1376 = 0;
+    int32_t cv_parsed;
+    cv_parsed = 0;
+    int32_t cv___ret1377;
+    cv___ret1377 = 0;
+    rt_text * cv___store619;
+    cv___store619 = NULL;
     if (cv_bkHeaderVerified) {
         cv_bkHeaderVerified = 0;
         cv_bkLoadOverrun = 0;
@@ -87534,10 +87583,10 @@ static int32_t clar_fn_bkLoadRtbake(rt_text * cv_buf, int32_t cv_wantLane) {
         cv_bkLoadPos = 19;
     } else {
         if (!(clar_fn_bkCheckRtbakeHeader(cv_buf, cv_wantLane))) {
-            cv___ret1376 = 0;
+            cv___ret1377 = 0;
                 clar_fn_rtListRelease((void*)cv_loadedMods);
 
-            return cv___ret1376;
+            return cv___ret1377;
         }
     }
     cv_n = clar_fn_bkGetU16();
@@ -87554,11 +87603,842 @@ static int32_t clar_fn_bkLoadRtbake(rt_text * cv_buf, int32_t cv_wantLane) {
         clar_fn_rtListRelease((void*)cv_bkLoadedModules);
 
     cv_bkLoadedModules = cv_loadedMods;
-    cv___ret1376 = clar_fn_bkLoadSections();
+    cv_parsed = clar_fn_bkLoadSections();
+    clar_fn_rtTextRelease((void*)cv___store619);
+    rt_text * t2 = NULL;
+    t2 = (rt_text *)clar_fn_rtTextNew();
+    clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_92));
+    cv___store619 = t2;
+    clar_fn_rtTextRelease((void*)cv_bkLoadBuf);
+    cv_bkLoadBuf = cv___store619;
+    cv___store619 = 0;
+    cv___ret1377 = cv_parsed;
         clar_fn_rtListRelease((void*)cv_loadedMods);
 
-    return cv___ret1376;
+    return cv___ret1377;
     return 0;
+}
+
+static rt_list * clar_fn_bkCopyListIRType(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRType));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1378;
+    cv___ret1378 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRType));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRType t1;
+        t1 = (*(clar_rec_IRType*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1378);
+
+    cv___ret1378 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1378);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1378;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRStmt(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRStmt));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1379;
+    cv___ret1379 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRStmt));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRStmt t1;
+        t1 = (*(clar_rec_IRStmt*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1379);
+
+    cv___ret1379 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1379);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1379;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRExpr(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRExpr));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1380;
+    cv___ret1380 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRExpr));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRExpr t1;
+        t1 = (*(clar_rec_IRExpr*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1380);
+
+    cv___ret1380 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1380);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1380;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRLocal(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRLocal));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1381;
+    cv___ret1381 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRLocal));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRLocal t1;
+        t1 = (*(clar_rec_IRLocal*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1381);
+
+    cv___ret1381 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1381);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1381;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRFunc(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRFunc));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1382;
+    cv___ret1382 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRFunc));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRFunc t1;
+        t1 = (*(clar_rec_IRFunc*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1382);
+
+    cv___ret1382 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1382);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1382;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRGlobal(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRGlobal));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1383;
+    cv___ret1383 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRGlobal));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRGlobal t1;
+        t1 = (*(clar_rec_IRGlobal*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1383);
+
+    cv___ret1383 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1383);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1383;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRFieldSlot(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRFieldSlot));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1384;
+    cv___ret1384 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRFieldSlot));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRFieldSlot t1;
+        t1 = (*(clar_rec_IRFieldSlot*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1384);
+
+    cv___ret1384 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1384);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1384;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRRecordLayout(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRRecordLayout));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1385;
+    cv___ret1385 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRRecordLayout));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRRecordLayout t1;
+        t1 = (*(clar_rec_IRRecordLayout*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1385);
+
+    cv___ret1385 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1385);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1385;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIREnumMember(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IREnumMember));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1386;
+    cv___ret1386 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IREnumMember));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IREnumMember t1;
+        t1 = (*(clar_rec_IREnumMember*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1386);
+
+    cv___ret1386 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1386);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1386;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIREnumLayout(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IREnumLayout));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1387;
+    cv___ret1387 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IREnumLayout));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IREnumLayout t1;
+        t1 = (*(clar_rec_IREnumLayout*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1387);
+
+    cv___ret1387 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1387);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1387;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRWidgetDesc(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWidgetDesc));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1388;
+    cv___ret1388 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWidgetDesc));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRWidgetDesc t1;
+        t1 = (*(clar_rec_IRWidgetDesc*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1388);
+
+    cv___ret1388 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1388);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1388;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRColumnDesc(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRColumnDesc));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1389;
+    cv___ret1389 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRColumnDesc));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRColumnDesc t1;
+        t1 = (*(clar_rec_IRColumnDesc*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1389);
+
+    cv___ret1389 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1389);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1389;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRBindDesc(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRBindDesc));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1390;
+    cv___ret1390 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRBindDesc));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRBindDesc t1;
+        t1 = (*(clar_rec_IRBindDesc*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1390);
+
+    cv___ret1390 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1390);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1390;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRWindowDesc(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWindowDesc));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1391;
+    cv___ret1391 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWindowDesc));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRWindowDesc t1;
+        t1 = (*(clar_rec_IRWindowDesc*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1391);
+
+    cv___ret1391 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1391);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1391;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRMenuItemDesc(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRMenuItemDesc));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1392;
+    cv___ret1392 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRMenuItemDesc));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRMenuItemDesc t1;
+        t1 = (*(clar_rec_IRMenuItemDesc*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1392);
+
+    cv___ret1392 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1392);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1392;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRMenuDesc(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRMenuDesc));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1393;
+    cv___ret1393 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRMenuDesc));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRMenuDesc t1;
+        t1 = (*(clar_rec_IRMenuDesc*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1393);
+
+    cv___ret1393 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1393);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1393;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRWinHandlers(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWinHandlers));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1394;
+    cv___ret1394 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWinHandlers));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRWinHandlers t1;
+        t1 = (*(clar_rec_IRWinHandlers*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1394);
+
+    cv___ret1394 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1394);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1394;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRWidgetHandlerEntry(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWidgetHandlerEntry));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1395;
+    cv___ret1395 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWidgetHandlerEntry));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRWidgetHandlerEntry t1;
+        t1 = (*(clar_rec_IRWidgetHandlerEntry*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1395);
+
+    cv___ret1395 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1395);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1395;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIRMenuHandlerEntry(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRMenuHandlerEntry));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1396;
+    cv___ret1396 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRMenuHandlerEntry));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IRMenuHandlerEntry t1;
+        t1 = (*(clar_rec_IRMenuHandlerEntry*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1396);
+
+    cv___ret1396 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1396);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1396;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListIREveryEntry(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IREveryEntry));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1397;
+    cv___ret1397 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IREveryEntry));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_IREveryEntry t1;
+        t1 = (*(clar_rec_IREveryEntry*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1397);
+
+    cv___ret1397 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1397);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1397;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListTypeInfo(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_TypeInfo));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1398;
+    cv___ret1398 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_TypeInfo));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_TypeInfo t1;
+        t1 = (*(clar_rec_TypeInfo*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1398);
+
+    cv___ret1398 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1398);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1398;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListEnumMemberInfo(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_EnumMemberInfo));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1399;
+    cv___ret1399 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_EnumMemberInfo));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_EnumMemberInfo t1;
+        t1 = (*(clar_rec_EnumMemberInfo*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1399);
+
+    cv___ret1399 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1399);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1399;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListFieldInfo(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_FieldInfo));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1400;
+    cv___ret1400 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_FieldInfo));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_FieldInfo t1;
+        t1 = (*(clar_rec_FieldInfo*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1400);
+
+    cv___ret1400 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1400);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1400;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListFuncSig(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_FuncSig));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1401;
+    cv___ret1401 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_FuncSig));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_FuncSig t1;
+        t1 = (*(clar_rec_FuncSig*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_retain_FuncSig(&(t1));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        if (clar_fn_rtListLastref((void*)cv___ret1401)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___ret1401); i++) clar_release_FuncSig((clar_rec_FuncSig *)clar_fn_rtListAt((void*)cv___ret1401, i)); }
+    clar_fn_rtListRelease((void*)cv___ret1401);
+
+    cv___ret1401 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1401);
+
+        if (clar_fn_rtListLastref((void*)cv_dst)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_dst); i++) clar_release_FuncSig((clar_rec_FuncSig *)clar_fn_rtListAt((void*)cv_dst, i)); }
+    clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1401;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListSymbol(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_Symbol));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1402;
+    cv___ret1402 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_Symbol));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_rec_Symbol t1;
+        t1 = (*(clar_rec_Symbol*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1402);
+
+    cv___ret1402 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1402);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1402;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListInt(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1403;
+    cv___ret1403 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        int32_t t1;
+        t1 = (*(int32_t*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1403);
+
+    cv___ret1403 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1403);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1403;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListString(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv___ret1404;
+    cv___ret1404 = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_str_255 t1;
+        t1 = (*(clar_str_255*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t1));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        clar_fn_rtListRelease((void*)cv___ret1404);
+
+    cv___ret1404 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1404);
+
+        clar_fn_rtListRelease((void*)cv_dst);
+
+    return cv___ret1404;
+    return NULL;
+}
+
+static rt_intmap * clar_fn_bkCopyIntmapInt(rt_intmap * cv_src) {
+    rt_intmap * cv_dst;
+    cv_dst = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
+    int32_t cv_k;
+    cv_k = 0;
+    int32_t cv_v;
+    cv_v = 0;
+    rt_intmap * cv___ret1405;
+    cv___ret1405 = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
+    rt_intmap * t1;
+    t1 = cv_src;
+    int32_t t2;
+    t2 = clar_fn_rtIntMapCount((void*)t1);
+    int32_t t3;
+    for (t3 = 0; t3 < t2; t3++) {
+        cv_k = clar_fn_rtIntMapKeyAt((void*)t1, t3);
+        clar_fn_rtIntMapValAt((void*)t1, t3, (void*)&cv_v);
+        int32_t t4;
+        t4 = cv_k;
+        int32_t t5;
+        t5 = cv_v;
+        clar_fn_rtIntMapSet((void*)cv_dst, t4, (void*)&(t5));
+    }
+        clar_fn_rtIntMapRelease((void*)cv___ret1405);
+
+    cv___ret1405 = cv_dst;
+        clar_fn_rtIntMapRetain((void*)cv___ret1405);
+
+        clar_fn_rtIntMapRelease((void*)cv_dst);
+
+    return cv___ret1405;
+    return NULL;
+}
+
+static rt_map * clar_fn_bkCopyMapInt(rt_map * cv_src) {
+    rt_map * cv_dst;
+    cv_dst = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
+    clar_str_255 cv_k;
+    cv_k = (clar_str_255){0};
+    int32_t cv_v;
+    cv_v = 0;
+    rt_map * cv___ret1406;
+    cv___ret1406 = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
+    rt_map * t1;
+    t1 = cv_src;
+    int32_t t2;
+    t2 = clar_fn_rtMapCount((void*)t1);
+    int32_t t3;
+    for (t3 = 0; t3 < t2; t3++) {
+        clar_fn_rtMapKeyAt((void*)t1, t3, (void*)&cv_k);
+        clar_fn_rtMapValAt((void*)t1, t3, (void*)&cv_v);
+        int32_t t4;
+        t4 = cv_v;
+        clar_fn_rtMapSet((void*)cv_dst, (void*)(const uint8_t*)&(cv_k), (void*)&(t4));
+    }
+        clar_fn_rtMapRelease((void*)cv___ret1406);
+
+    cv___ret1406 = cv_dst;
+        clar_fn_rtMapRetain((void*)cv___ret1406);
+
+        clar_fn_rtMapRelease((void*)cv_dst);
+
+    return cv___ret1406;
+    return NULL;
+}
+
+static rt_list * clar_fn_bkCopyListScope(rt_list * cv_src) {
+    rt_list * cv_dst;
+    cv_dst = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_Scope));
+    clar_rec_Scope cv_s;
+    cv_s = clar_new_Scope();
+    int32_t cv_i;
+    cv_i = 0;
+    clar_rec_Scope cv___store620;
+    cv___store620 = (clar_rec_Scope){0};
+    rt_intmap * cv___store621;
+    cv___store621 = NULL;
+    rt_list * cv___ret1407;
+    cv___ret1407 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_Scope));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
+        clar_release_Scope(&(cv___store620));
+        cv___store620 = (*(clar_rec_Scope*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_retain_Scope(&(cv___store620));
+        clar_release_Scope(&(cv_s));
+        cv_s = cv___store620;
+        (cv___store620).cv_names = 0;
+            clar_fn_rtIntMapRelease((void*)cv___store621);
+
+        rt_intmap * t1 = NULL;
+        t1 = clar_fn_bkCopyIntmapInt(((*(clar_rec_Scope*)rt_list_at(cv_src, (int32_t)(cv_i)))).cv_names);
+        cv___store621 = t1;
+            clar_fn_rtIntMapRelease((void*)(cv_s).cv_names);
+
+        (cv_s).cv_names = cv___store621;
+        cv___store621 = 0;
+        clar_rec_Scope t2;
+        t2 = cv_s;
+        clar_retain_Scope(&(t2));
+        clar_fn_rtListPush((void*)cv_dst, (void*)&(t2));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+        if (clar_fn_rtListLastref((void*)cv___ret1407)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___ret1407); i++) clar_release_Scope((clar_rec_Scope *)clar_fn_rtListAt((void*)cv___ret1407, i)); }
+    clar_fn_rtListRelease((void*)cv___ret1407);
+
+    cv___ret1407 = cv_dst;
+        clar_fn_rtListRetain((void*)cv___ret1407);
+
+        if (clar_fn_rtListLastref((void*)cv_dst)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_dst); i++) clar_release_Scope((clar_rec_Scope *)clar_fn_rtListAt((void*)cv_dst, i)); }
+    clar_fn_rtListRelease((void*)cv_dst);
+
+    clar_release_Scope(&(cv_s));
+    return cv___ret1407;
+    return NULL;
 }
 
 static void clar_fn_bkInstallPool(void) {
@@ -87566,22 +88446,28 @@ static void clar_fn_bkInstallPool(void) {
     cv_freshIndex = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
     int32_t cv_i;
     cv_i = 0;
-    rt_map * cv___store619;
-    cv___store619 = NULL;
-        clar_fn_rtListRetain((void*)cv_bkLdStrPool);
+    rt_list * cv___store622;
+    cv___store622 = NULL;
+    rt_map * cv___store623;
+    cv___store623 = NULL;
+        clar_fn_rtListRelease((void*)cv___store622);
 
+    rt_list * t1 = NULL;
+    t1 = clar_fn_bkCopyListString(cv_bkLdStrPool);
+    cv___store622 = t1;
         clar_fn_rtListRelease((void*)cv_strPool);
 
-    cv_strPool = cv_bkLdStrPool;
-        clar_fn_rtMapRelease((void*)cv___store619);
+    cv_strPool = cv___store622;
+    cv___store622 = 0;
+        clar_fn_rtMapRelease((void*)cv___store623);
 
-    rt_map * t1 = NULL;
-    t1 = clar_fn_driveFreshIntMap();
-    cv___store619 = t1;
+    rt_map * t2 = NULL;
+    t2 = clar_fn_driveFreshIntMap();
+    cv___store623 = t2;
         clar_fn_rtMapRelease((void*)cv_freshIndex);
 
-    cv_freshIndex = cv___store619;
-    cv___store619 = 0;
+    cv_freshIndex = cv___store623;
+    cv___store623 = 0;
         clar_fn_rtMapRetain((void*)cv_freshIndex);
 
         clar_fn_rtMapRelease((void*)cv_strIndex);
@@ -87590,9 +88476,9 @@ static void clar_fn_bkInstallPool(void) {
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_strPool)))) break;
-        int32_t t2;
-        t2 = cv_i;
-        clar_fn_rtMapSet((void*)cv_strIndex, (void*)(const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_strPool, (int32_t)(cv_i)))), (void*)&(t2));
+        int32_t t3;
+        t3 = cv_i;
+        clar_fn_rtMapSet((void*)cv_strIndex, (void*)(const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_strPool, (int32_t)(cv_i)))), (void*)&(t3));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
         clar_fn_rtMapRelease((void*)cv_freshIndex);
@@ -87601,30 +88487,54 @@ static void clar_fn_bkInstallPool(void) {
 }
 
 static void clar_fn_bkInstallTypeArenaPrefix(void) {
-        clar_fn_rtListRetain((void*)cv_bkLoadedTypeArena);
+    rt_list * cv___store624;
+    cv___store624 = NULL;
+    rt_list * cv___store625;
+    cv___store625 = NULL;
+        clar_fn_rtListRelease((void*)cv___store624);
 
+    rt_list * t1 = NULL;
+    t1 = clar_fn_bkCopyListTypeInfo(cv_bkLoadedTypeArena);
+    cv___store624 = t1;
         clar_fn_rtListRelease((void*)cv_typeArena);
 
-    cv_typeArena = cv_bkLoadedTypeArena;
-        clar_fn_rtListRetain((void*)cv_bkLoadedEnumMembers);
+    cv_typeArena = cv___store624;
+    cv___store624 = 0;
+        clar_fn_rtListRelease((void*)cv___store625);
 
+    rt_list * t2 = NULL;
+    t2 = clar_fn_bkCopyListEnumMemberInfo(cv_bkLoadedEnumMembers);
+    cv___store625 = t2;
         clar_fn_rtListRelease((void*)cv_enumMembers);
 
-    cv_enumMembers = cv_bkLoadedEnumMembers;
+    cv_enumMembers = cv___store625;
+    cv___store625 = 0;
     return;
 }
 
 static void clar_fn_bkInstallFieldInfo(void) {
-        clar_fn_rtListRetain((void*)cv_bkLoadedFieldInfos);
+    rt_list * cv___store626;
+    cv___store626 = NULL;
+    rt_intmap * cv___store627;
+    cv___store627 = NULL;
+        clar_fn_rtListRelease((void*)cv___store626);
 
+    rt_list * t1 = NULL;
+    t1 = clar_fn_bkCopyListFieldInfo(cv_bkLoadedFieldInfos);
+    cv___store626 = t1;
         clar_fn_rtListRelease((void*)cv_fieldInfos);
 
-    cv_fieldInfos = cv_bkLoadedFieldInfos;
-        clar_fn_rtIntMapRetain((void*)cv_bkLoadedRecFieldsHeadByName);
+    cv_fieldInfos = cv___store626;
+    cv___store626 = 0;
+        clar_fn_rtIntMapRelease((void*)cv___store627);
 
+    rt_intmap * t2 = NULL;
+    t2 = clar_fn_bkCopyIntmapInt(cv_bkLoadedRecFieldsHeadByName);
+    cv___store627 = t2;
         clar_fn_rtIntMapRelease((void*)cv_recFieldsHeadByName);
 
-    cv_recFieldsHeadByName = cv_bkLoadedRecFieldsHeadByName;
+    cv_recFieldsHeadByName = cv___store627;
+    cv___store627 = 0;
     return;
 }
 
@@ -87706,43 +88616,138 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
     cv_truncFuncs = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRFunc));
     rt_list * cv_truncStrLits;
     cv_truncStrLits = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRetain((void*)cv_bkLdIrTypes);
+    rt_list * cv___store628;
+    cv___store628 = NULL;
+    rt_list * cv___store629;
+    cv___store629 = NULL;
+    rt_list * cv___store630;
+    cv___store630 = NULL;
+    rt_list * cv___store631;
+    cv___store631 = NULL;
+    rt_list * cv___store632;
+    cv___store632 = NULL;
+    rt_list * cv___store633;
+    cv___store633 = NULL;
+    rt_list * cv___store634;
+    cv___store634 = NULL;
+    rt_list * cv___store635;
+    cv___store635 = NULL;
+    rt_list * cv___store636;
+    cv___store636 = NULL;
+    rt_list * cv___store637;
+    cv___store637 = NULL;
+    rt_list * cv___store638;
+    cv___store638 = NULL;
+    rt_list * cv___store639;
+    cv___store639 = NULL;
+    rt_list * cv___store640;
+    cv___store640 = NULL;
+    rt_list * cv___store641;
+    cv___store641 = NULL;
+    rt_list * cv___store642;
+    cv___store642 = NULL;
+    rt_list * cv___store643;
+    cv___store643 = NULL;
+    rt_list * cv___store644;
+    cv___store644 = NULL;
+    rt_list * cv___store645;
+    cv___store645 = NULL;
+    rt_list * cv___store646;
+    cv___store646 = NULL;
+    rt_list * cv___store647;
+    cv___store647 = NULL;
+    rt_list * cv___store648;
+    cv___store648 = NULL;
+    rt_list * cv___store649;
+    cv___store649 = NULL;
+    rt_list * cv___store650;
+    cv___store650 = NULL;
+    rt_list * cv___store651;
+    cv___store651 = NULL;
+    rt_list * cv___store652;
+    cv___store652 = NULL;
+    rt_list * cv___store653;
+    cv___store653 = NULL;
+    rt_list * cv___store654;
+    cv___store654 = NULL;
+    rt_list * cv___store655;
+    cv___store655 = NULL;
+    rt_list * cv___store656;
+    cv___store656 = NULL;
+    rt_list * cv___store657;
+    cv___store657 = NULL;
+    rt_list * cv___store658;
+    cv___store658 = NULL;
+    rt_list * cv___store659;
+    cv___store659 = NULL;
+    rt_intmap * cv___store660;
+    cv___store660 = NULL;
+    rt_intmap * cv___store661;
+    cv___store661 = NULL;
+    rt_map * cv___store662;
+    cv___store662 = NULL;
+        clar_fn_rtListRelease((void*)cv___store628);
 
+    rt_list * t1 = NULL;
+    t1 = clar_fn_bkCopyListIRType(cv_bkLdIrTypes);
+    cv___store628 = t1;
         clar_fn_rtListRelease((void*)cv_irTypes);
 
-    cv_irTypes = cv_bkLdIrTypes;
-        clar_fn_rtListRetain((void*)cv_bkLdIrStmts);
+    cv_irTypes = cv___store628;
+    cv___store628 = 0;
+        clar_fn_rtListRelease((void*)cv___store629);
 
+    rt_list * t2 = NULL;
+    t2 = clar_fn_bkCopyListIRStmt(cv_bkLdIrStmts);
+    cv___store629 = t2;
         clar_fn_rtListRelease((void*)cv_irStmts);
 
-    cv_irStmts = cv_bkLdIrStmts;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExprs);
+    cv_irStmts = cv___store629;
+    cv___store629 = 0;
+        clar_fn_rtListRelease((void*)cv___store630);
 
+    rt_list * t3 = NULL;
+    t3 = clar_fn_bkCopyListIRExpr(cv_bkLdIrExprs);
+    cv___store630 = t3;
         clar_fn_rtListRelease((void*)cv_irExprs);
 
-    cv_irExprs = cv_bkLdIrExprs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrLocals);
+    cv_irExprs = cv___store630;
+    cv___store630 = 0;
+        clar_fn_rtListRelease((void*)cv___store631);
 
+    rt_list * t4 = NULL;
+    t4 = clar_fn_bkCopyListIRLocal(cv_bkLdIrLocals);
+    cv___store631 = t4;
         clar_fn_rtListRelease((void*)cv_irLocals);
 
-    cv_irLocals = cv_bkLdIrLocals;
-        clar_fn_rtListRetain((void*)cv_bkLdIrFuncs);
+    cv_irLocals = cv___store631;
+    cv___store631 = 0;
+    if (cv_testapi) {
+            clar_fn_rtListRelease((void*)cv___store632);
 
-        clar_fn_rtListRelease((void*)cv_srcFuncs);
+        rt_list * t5 = NULL;
+        t5 = clar_fn_bkCopyListIRFunc(cv_bkLdIrFuncs);
+        cv___store632 = t5;
+            clar_fn_rtListRelease((void*)cv_srcFuncs);
 
-    cv_srcFuncs = cv_bkLdIrFuncs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrStrLits);
+        cv_srcFuncs = cv___store632;
+        cv___store632 = 0;
+            clar_fn_rtListRelease((void*)cv___store633);
 
-        clar_fn_rtListRelease((void*)cv_srcStrLits);
+        rt_list * t6 = NULL;
+        t6 = clar_fn_bkCopyListInt(cv_bkLdIrStrLits);
+        cv___store633 = t6;
+            clar_fn_rtListRelease((void*)cv_srcStrLits);
 
-    cv_srcStrLits = cv_bkLdIrStrLits;
-    if (!(cv_testapi)) {
+        cv_srcStrLits = cv___store633;
+        cv___store633 = 0;
+    } else {
         cv_i = 0;
         while (1) {
             if (!(((cv_i < clar_fn_rtListCount((void*)cv_bkLdIrFuncs)) && (cv_i < cv_bkLdBaseIrFuncsCount)))) break;
-            clar_rec_IRFunc t1;
-            t1 = (*(clar_rec_IRFunc*)rt_list_at(cv_bkLdIrFuncs, (int32_t)(cv_i)));
-            clar_fn_rtListPush((void*)cv_truncFuncs, (void*)&(t1));
+            clar_rec_IRFunc t7;
+            t7 = (*(clar_rec_IRFunc*)rt_list_at(cv_bkLdIrFuncs, (int32_t)(cv_i)));
+            clar_fn_rtListPush((void*)cv_truncFuncs, (void*)&(t7));
             cv_i = CLAR_ADD32(cv_i, 1);
         }
             clar_fn_rtListRetain((void*)cv_truncFuncs);
@@ -87753,9 +88758,9 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
         cv_i = 0;
         while (1) {
             if (!(((cv_i < clar_fn_rtListCount((void*)cv_bkLdIrStrLits)) && (cv_i < cv_bkLdBaseIrStrLitsCount)))) break;
-            int32_t t2;
-            t2 = (*(int32_t*)rt_list_at(cv_bkLdIrStrLits, (int32_t)(cv_i)));
-            clar_fn_rtListPush((void*)cv_truncStrLits, (void*)&(t2));
+            int32_t t8;
+            t8 = (*(int32_t*)rt_list_at(cv_bkLdIrStrLits, (int32_t)(cv_i)));
+            clar_fn_rtListPush((void*)cv_truncStrLits, (void*)&(t8));
             cv_i = CLAR_ADD32(cv_i, 1);
         }
             clar_fn_rtListRetain((void*)cv_truncStrLits);
@@ -87775,11 +88780,11 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
         cv_nm = ((*(clar_rec_IRFunc*)rt_list_at(cv_irFuncs, (int32_t)(cv_i)))).cv_name;
         if (!(clar_fn_rtIntMapHas((void*)cv_filteredIdx, cv_nm))) {
-            int32_t t3;
-            t3 = cv_nm;
-            int32_t t4;
-            t4 = cv_i;
-            clar_fn_rtIntMapSet((void*)cv_filteredIdx, t3, (void*)&(t4));
+            int32_t t9;
+            t9 = cv_nm;
+            int32_t t10;
+            t10 = cv_i;
+            clar_fn_rtIntMapSet((void*)cv_filteredIdx, t9, (void*)&(t10));
         }
         cv_i = CLAR_ADD32(cv_i, 1);
     }
@@ -87788,151 +88793,263 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
         clar_fn_rtIntMapRelease((void*)cv_irFuncIdxByName);
 
     cv_irFuncIdxByName = cv_filteredIdx;
-        clar_fn_rtListRetain((void*)cv_bkLdIrCbGlueNames);
+        clar_fn_rtListRelease((void*)cv___store634);
 
+    rt_list * t11 = NULL;
+    t11 = clar_fn_bkCopyListInt(cv_bkLdIrCbGlueNames);
+    cv___store634 = t11;
         clar_fn_rtListRelease((void*)cv_irCbGlueNames);
 
-    cv_irCbGlueNames = cv_bkLdIrCbGlueNames;
-        clar_fn_rtListRetain((void*)cv_bkLdIrGlobals);
+    cv_irCbGlueNames = cv___store634;
+    cv___store634 = 0;
+        clar_fn_rtListRelease((void*)cv___store635);
 
+    rt_list * t12 = NULL;
+    t12 = clar_fn_bkCopyListIRGlobal(cv_bkLdIrGlobals);
+    cv___store635 = t12;
         clar_fn_rtListRelease((void*)cv_irGlobals);
 
-    cv_irGlobals = cv_bkLdIrGlobals;
-        clar_fn_rtListRetain((void*)cv_bkLdIrFieldSlots);
+    cv_irGlobals = cv___store635;
+    cv___store635 = 0;
+        clar_fn_rtListRelease((void*)cv___store636);
 
+    rt_list * t13 = NULL;
+    t13 = clar_fn_bkCopyListIRFieldSlot(cv_bkLdIrFieldSlots);
+    cv___store636 = t13;
         clar_fn_rtListRelease((void*)cv_irFieldSlots);
 
-    cv_irFieldSlots = cv_bkLdIrFieldSlots;
-        clar_fn_rtListRetain((void*)cv_bkLdIrRecords);
+    cv_irFieldSlots = cv___store636;
+    cv___store636 = 0;
+        clar_fn_rtListRelease((void*)cv___store637);
 
+    rt_list * t14 = NULL;
+    t14 = clar_fn_bkCopyListIRRecordLayout(cv_bkLdIrRecords);
+    cv___store637 = t14;
         clar_fn_rtListRelease((void*)cv_irRecords);
 
-    cv_irRecords = cv_bkLdIrRecords;
-        clar_fn_rtListRetain((void*)cv_bkLdIrEnumMembers);
+    cv_irRecords = cv___store637;
+    cv___store637 = 0;
+        clar_fn_rtListRelease((void*)cv___store638);
 
+    rt_list * t15 = NULL;
+    t15 = clar_fn_bkCopyListIREnumMember(cv_bkLdIrEnumMembers);
+    cv___store638 = t15;
         clar_fn_rtListRelease((void*)cv_irEnumMembers);
 
-    cv_irEnumMembers = cv_bkLdIrEnumMembers;
-        clar_fn_rtListRetain((void*)cv_bkLdIrEnums);
+    cv_irEnumMembers = cv___store638;
+    cv___store638 = 0;
+        clar_fn_rtListRelease((void*)cv___store639);
 
+    rt_list * t16 = NULL;
+    t16 = clar_fn_bkCopyListIREnumLayout(cv_bkLdIrEnums);
+    cv___store639 = t16;
         clar_fn_rtListRelease((void*)cv_irEnums);
 
-    cv_irEnums = cv_bkLdIrEnums;
-        clar_fn_rtListRetain((void*)cv_bkLdIrWidgetDescs);
+    cv_irEnums = cv___store639;
+    cv___store639 = 0;
+        clar_fn_rtListRelease((void*)cv___store640);
 
+    rt_list * t17 = NULL;
+    t17 = clar_fn_bkCopyListIRWidgetDesc(cv_bkLdIrWidgetDescs);
+    cv___store640 = t17;
         clar_fn_rtListRelease((void*)cv_irWidgetDescs);
 
-    cv_irWidgetDescs = cv_bkLdIrWidgetDescs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrColumnDescs);
+    cv_irWidgetDescs = cv___store640;
+    cv___store640 = 0;
+        clar_fn_rtListRelease((void*)cv___store641);
 
+    rt_list * t18 = NULL;
+    t18 = clar_fn_bkCopyListIRColumnDesc(cv_bkLdIrColumnDescs);
+    cv___store641 = t18;
         clar_fn_rtListRelease((void*)cv_irColumnDescs);
 
-    cv_irColumnDescs = cv_bkLdIrColumnDescs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrBindDescs);
+    cv_irColumnDescs = cv___store641;
+    cv___store641 = 0;
+        clar_fn_rtListRelease((void*)cv___store642);
 
+    rt_list * t19 = NULL;
+    t19 = clar_fn_bkCopyListIRBindDesc(cv_bkLdIrBindDescs);
+    cv___store642 = t19;
         clar_fn_rtListRelease((void*)cv_irBindDescs);
 
-    cv_irBindDescs = cv_bkLdIrBindDescs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrWindowDescs);
+    cv_irBindDescs = cv___store642;
+    cv___store642 = 0;
+        clar_fn_rtListRelease((void*)cv___store643);
 
+    rt_list * t20 = NULL;
+    t20 = clar_fn_bkCopyListIRWindowDesc(cv_bkLdIrWindowDescs);
+    cv___store643 = t20;
         clar_fn_rtListRelease((void*)cv_irWindowDescs);
 
-    cv_irWindowDescs = cv_bkLdIrWindowDescs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrMenuItemDescs);
+    cv_irWindowDescs = cv___store643;
+    cv___store643 = 0;
+        clar_fn_rtListRelease((void*)cv___store644);
 
+    rt_list * t21 = NULL;
+    t21 = clar_fn_bkCopyListIRMenuItemDesc(cv_bkLdIrMenuItemDescs);
+    cv___store644 = t21;
         clar_fn_rtListRelease((void*)cv_irMenuItemDescs);
 
-    cv_irMenuItemDescs = cv_bkLdIrMenuItemDescs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrMenuDescs);
+    cv_irMenuItemDescs = cv___store644;
+    cv___store644 = 0;
+        clar_fn_rtListRelease((void*)cv___store645);
 
+    rt_list * t22 = NULL;
+    t22 = clar_fn_bkCopyListIRMenuDesc(cv_bkLdIrMenuDescs);
+    cv___store645 = t22;
         clar_fn_rtListRelease((void*)cv_irMenuDescs);
 
-    cv_irMenuDescs = cv_bkLdIrMenuDescs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrWinHandlers);
+    cv_irMenuDescs = cv___store645;
+    cv___store645 = 0;
+        clar_fn_rtListRelease((void*)cv___store646);
 
+    rt_list * t23 = NULL;
+    t23 = clar_fn_bkCopyListIRWinHandlers(cv_bkLdIrWinHandlers);
+    cv___store646 = t23;
         clar_fn_rtListRelease((void*)cv_irWinHandlers);
 
-    cv_irWinHandlers = cv_bkLdIrWinHandlers;
-        clar_fn_rtListRetain((void*)cv_bkLdIrWidgetHandlerEntries);
+    cv_irWinHandlers = cv___store646;
+    cv___store646 = 0;
+        clar_fn_rtListRelease((void*)cv___store647);
 
+    rt_list * t24 = NULL;
+    t24 = clar_fn_bkCopyListIRWidgetHandlerEntry(cv_bkLdIrWidgetHandlerEntries);
+    cv___store647 = t24;
         clar_fn_rtListRelease((void*)cv_irWidgetHandlerEntries);
 
-    cv_irWidgetHandlerEntries = cv_bkLdIrWidgetHandlerEntries;
-        clar_fn_rtListRetain((void*)cv_bkLdIrMenuHandlerEntries);
+    cv_irWidgetHandlerEntries = cv___store647;
+    cv___store647 = 0;
+        clar_fn_rtListRelease((void*)cv___store648);
 
+    rt_list * t25 = NULL;
+    t25 = clar_fn_bkCopyListIRMenuHandlerEntry(cv_bkLdIrMenuHandlerEntries);
+    cv___store648 = t25;
         clar_fn_rtListRelease((void*)cv_irMenuHandlerEntries);
 
-    cv_irMenuHandlerEntries = cv_bkLdIrMenuHandlerEntries;
-        clar_fn_rtListRetain((void*)cv_bkLdIrEveryEntries);
+    cv_irMenuHandlerEntries = cv___store648;
+    cv___store648 = 0;
+        clar_fn_rtListRelease((void*)cv___store649);
 
+    rt_list * t26 = NULL;
+    t26 = clar_fn_bkCopyListIREveryEntry(cv_bkLdIrEveryEntries);
+    cv___store649 = t26;
         clar_fn_rtListRelease((void*)cv_irEveryEntries);
 
-    cv_irEveryEntries = cv_bkLdIrEveryEntries;
+    cv_irEveryEntries = cv___store649;
+    cv___store649 = 0;
         clar_fn_rtListRetain((void*)cv_srcStrLits);
 
         clar_fn_rtListRelease((void*)cv_irStrLits);
 
     cv_irStrLits = cv_srcStrLits;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternNames);
+        clar_fn_rtListRelease((void*)cv___store650);
 
+    rt_list * t27 = NULL;
+    t27 = clar_fn_bkCopyListInt(cv_bkLdIrExternNames);
+    cv___store650 = t27;
         clar_fn_rtListRelease((void*)cv_irExternNames);
 
-    cv_irExternNames = cv_bkLdIrExternNames;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternRetTys);
+    cv_irExternNames = cv___store650;
+    cv___store650 = 0;
+        clar_fn_rtListRelease((void*)cv___store651);
 
+    rt_list * t28 = NULL;
+    t28 = clar_fn_bkCopyListInt(cv_bkLdIrExternRetTys);
+    cv___store651 = t28;
         clar_fn_rtListRelease((void*)cv_irExternRetTys);
 
-    cv_irExternRetTys = cv_bkLdIrExternRetTys;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternParamStart);
+    cv_irExternRetTys = cv___store651;
+    cv___store651 = 0;
+        clar_fn_rtListRelease((void*)cv___store652);
 
+    rt_list * t29 = NULL;
+    t29 = clar_fn_bkCopyListInt(cv_bkLdIrExternParamStart);
+    cv___store652 = t29;
         clar_fn_rtListRelease((void*)cv_irExternParamStart);
 
-    cv_irExternParamStart = cv_bkLdIrExternParamStart;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternParamCountArr);
+    cv_irExternParamStart = cv___store652;
+    cv___store652 = 0;
+        clar_fn_rtListRelease((void*)cv___store653);
 
+    rt_list * t30 = NULL;
+    t30 = clar_fn_bkCopyListInt(cv_bkLdIrExternParamCountArr);
+    cv___store653 = t30;
         clar_fn_rtListRelease((void*)cv_irExternParamCountArr);
 
-    cv_irExternParamCountArr = cv_bkLdIrExternParamCountArr;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternParamTys);
+    cv_irExternParamCountArr = cv___store653;
+    cv___store653 = 0;
+        clar_fn_rtListRelease((void*)cv___store654);
 
+    rt_list * t31 = NULL;
+    t31 = clar_fn_bkCopyListInt(cv_bkLdIrExternParamTys);
+    cv___store654 = t31;
         clar_fn_rtListRelease((void*)cv_irExternParamTys);
 
-    cv_irExternParamTys = cv_bkLdIrExternParamTys;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternTrapWords);
+    cv_irExternParamTys = cv___store654;
+    cv___store654 = 0;
+        clar_fn_rtListRelease((void*)cv___store655);
 
+    rt_list * t32 = NULL;
+    t32 = clar_fn_bkCopyListInt(cv_bkLdIrExternTrapWords);
+    cv___store655 = t32;
         clar_fn_rtListRelease((void*)cv_irExternTrapWords);
 
-    cv_irExternTrapWords = cv_bkLdIrExternTrapWords;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternConvs);
+    cv_irExternTrapWords = cv___store655;
+    cv___store655 = 0;
+        clar_fn_rtListRelease((void*)cv___store656);
 
+    rt_list * t33 = NULL;
+    t33 = clar_fn_bkCopyListInt(cv_bkLdIrExternConvs);
+    cv___store656 = t33;
         clar_fn_rtListRelease((void*)cv_irExternConvs);
 
-    cv_irExternConvs = cv_bkLdIrExternConvs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternSels);
+    cv_irExternConvs = cv___store656;
+    cv___store656 = 0;
+        clar_fn_rtListRelease((void*)cv___store657);
 
+    rt_list * t34 = NULL;
+    t34 = clar_fn_bkCopyListInt(cv_bkLdIrExternSels);
+    cv___store657 = t34;
         clar_fn_rtListRelease((void*)cv_irExternSels);
 
-    cv_irExternSels = cv_bkLdIrExternSels;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternParamRegs);
+    cv_irExternSels = cv___store657;
+    cv___store657 = 0;
+        clar_fn_rtListRelease((void*)cv___store658);
 
+    rt_list * t35 = NULL;
+    t35 = clar_fn_bkCopyListInt(cv_bkLdIrExternParamRegs);
+    cv___store658 = t35;
         clar_fn_rtListRelease((void*)cv_irExternParamRegs);
 
-    cv_irExternParamRegs = cv_bkLdIrExternParamRegs;
-        clar_fn_rtListRetain((void*)cv_bkLdIrExternRetRegs);
+    cv_irExternParamRegs = cv___store658;
+    cv___store658 = 0;
+        clar_fn_rtListRelease((void*)cv___store659);
 
+    rt_list * t36 = NULL;
+    t36 = clar_fn_bkCopyListInt(cv_bkLdIrExternRetRegs);
+    cv___store659 = t36;
         clar_fn_rtListRelease((void*)cv_irExternRetRegs);
 
-    cv_irExternRetRegs = cv_bkLdIrExternRetRegs;
-        clar_fn_rtIntMapRetain((void*)cv_bkLdIrLayoutNeededByName);
+    cv_irExternRetRegs = cv___store659;
+    cv___store659 = 0;
+        clar_fn_rtIntMapRelease((void*)cv___store660);
 
+    rt_intmap * t37 = NULL;
+    t37 = clar_fn_bkCopyIntmapInt(cv_bkLdIrLayoutNeededByName);
+    cv___store660 = t37;
         clar_fn_rtIntMapRelease((void*)cv_irLayoutNeededByName);
 
-    cv_irLayoutNeededByName = cv_bkLdIrLayoutNeededByName;
-        clar_fn_rtIntMapRetain((void*)cv_bkLdIrRcWalkNeededByName);
+    cv_irLayoutNeededByName = cv___store660;
+    cv___store660 = 0;
+        clar_fn_rtIntMapRelease((void*)cv___store661);
 
+    rt_intmap * t38 = NULL;
+    t38 = clar_fn_bkCopyIntmapInt(cv_bkLdIrRcWalkNeededByName);
+    cv___store661 = t38;
         clar_fn_rtIntMapRelease((void*)cv_irRcWalkNeededByName);
 
-    cv_irRcWalkNeededByName = cv_bkLdIrRcWalkNeededByName;
+    cv_irRcWalkNeededByName = cv___store661;
+    cv___store661 = 0;
     cv_irHasLaunch = cv_bkLdIrHasLaunch;
     cv_irHasStartEmpty = cv_bkLdIrHasStartEmpty;
     cv_irHasStartCLI = cv_bkLdIrHasStartCLI;
@@ -87964,11 +89081,15 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
     cv_uiMenuCount = cv_bkLdUiMenuCount;
     cv_lowStoreTempN = cv_bkLdLowStoreTempN;
     cv_lowRetTempN = cv_bkLdLowRetTempN;
-        clar_fn_rtMapRetain((void*)cv_bkLdLowStrIdx);
+        clar_fn_rtMapRelease((void*)cv___store662);
 
+    rt_map * t39 = NULL;
+    t39 = clar_fn_bkCopyMapInt(cv_bkLdLowStrIdx);
+    cv___store662 = t39;
         clar_fn_rtMapRelease((void*)cv_lowStrIdx);
 
-    cv_lowStrIdx = cv_bkLdLowStrIdx;
+    cv_lowStrIdx = cv___store662;
+    cv___store662 = 0;
         clar_fn_rtIntMapRelease((void*)cv_filteredIdx);
 
         clar_fn_rtListRelease((void*)cv_srcFuncs);
@@ -87982,120 +89103,6 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
     return;
 }
 
-static void clar_fn_bkInstallObjCode(void) {
-    rt_list * cv_truncValid;
-    cv_truncValid = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv_truncRunFirst;
-    cv_truncRunFirst = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv_truncHoleFirst;
-    cv_truncHoleFirst = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv_truncNHoles;
-    cv_truncNHoles = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    int32_t cv_i;
-    cv_i = 0;
-    rt_list * cv___store620;
-    cv___store620 = NULL;
-    rt_list * cv___store621;
-    cv___store621 = NULL;
-    rt_list * cv___store622;
-    cv___store622 = NULL;
-    rt_list * cv___store623;
-    cv___store623 = NULL;
-    if (clar_fn_rtListCount((void*)cv_bkLdObjValid) <= cv_bkRuntimeFuncBoundary) {
-            clar_fn_rtListRelease((void*)cv_truncValid);
-
-            clar_fn_rtListRelease((void*)cv_truncRunFirst);
-
-            clar_fn_rtListRelease((void*)cv_truncHoleFirst);
-
-            clar_fn_rtListRelease((void*)cv_truncNHoles);
-
-        return;
-    }
-        clar_fn_rtListRelease((void*)cv___store620);
-
-    rt_list * t1 = NULL;
-    t1 = clar_fn_driveFreshBoolList();
-    cv___store620 = t1;
-        clar_fn_rtListRelease((void*)cv_truncValid);
-
-    cv_truncValid = cv___store620;
-    cv___store620 = 0;
-        clar_fn_rtListRelease((void*)cv___store621);
-
-    rt_list * t2 = NULL;
-    t2 = clar_fn_driveFreshIntList();
-    cv___store621 = t2;
-        clar_fn_rtListRelease((void*)cv_truncRunFirst);
-
-    cv_truncRunFirst = cv___store621;
-    cv___store621 = 0;
-        clar_fn_rtListRelease((void*)cv___store622);
-
-    rt_list * t3 = NULL;
-    t3 = clar_fn_driveFreshIntList();
-    cv___store622 = t3;
-        clar_fn_rtListRelease((void*)cv_truncHoleFirst);
-
-    cv_truncHoleFirst = cv___store622;
-    cv___store622 = 0;
-        clar_fn_rtListRelease((void*)cv___store623);
-
-    rt_list * t4 = NULL;
-    t4 = clar_fn_driveFreshIntList();
-    cv___store623 = t4;
-        clar_fn_rtListRelease((void*)cv_truncNHoles);
-
-    cv_truncNHoles = cv___store623;
-    cv___store623 = 0;
-    cv_i = 0;
-    while (1) {
-        if (!((cv_i < cv_bkRuntimeFuncBoundary))) break;
-        int32_t t5;
-        t5 = (*(int32_t*)rt_list_at(cv_bkLdObjValid, (int32_t)(cv_i)));
-        clar_fn_rtListPush((void*)cv_truncValid, (void*)&(t5));
-        int32_t t6;
-        t6 = (*(int32_t*)rt_list_at(cv_bkLdObjRunFirst, (int32_t)(cv_i)));
-        clar_fn_rtListPush((void*)cv_truncRunFirst, (void*)&(t6));
-        int32_t t7;
-        t7 = (*(int32_t*)rt_list_at(cv_bkLdObjHoleFirst, (int32_t)(cv_i)));
-        clar_fn_rtListPush((void*)cv_truncHoleFirst, (void*)&(t7));
-        int32_t t8;
-        t8 = (*(int32_t*)rt_list_at(cv_bkLdObjNHoles, (int32_t)(cv_i)));
-        clar_fn_rtListPush((void*)cv_truncNHoles, (void*)&(t8));
-        cv_i = CLAR_ADD32(cv_i, 1);
-    }
-        clar_fn_rtListRetain((void*)cv_truncValid);
-
-        clar_fn_rtListRelease((void*)cv_bkLdObjValid);
-
-    cv_bkLdObjValid = cv_truncValid;
-        clar_fn_rtListRetain((void*)cv_truncRunFirst);
-
-        clar_fn_rtListRelease((void*)cv_bkLdObjRunFirst);
-
-    cv_bkLdObjRunFirst = cv_truncRunFirst;
-        clar_fn_rtListRetain((void*)cv_truncHoleFirst);
-
-        clar_fn_rtListRelease((void*)cv_bkLdObjHoleFirst);
-
-    cv_bkLdObjHoleFirst = cv_truncHoleFirst;
-        clar_fn_rtListRetain((void*)cv_truncNHoles);
-
-        clar_fn_rtListRelease((void*)cv_bkLdObjNHoles);
-
-    cv_bkLdObjNHoles = cv_truncNHoles;
-        clar_fn_rtListRelease((void*)cv_truncValid);
-
-        clar_fn_rtListRelease((void*)cv_truncRunFirst);
-
-        clar_fn_rtListRelease((void*)cv_truncHoleFirst);
-
-        clar_fn_rtListRelease((void*)cv_truncNHoles);
-
-    return;
-}
-
 static void clar_fn_bkInstallCheckerSymbolsForTestapi(void) {
     rt_intmap * cv_filteredTopNames;
     cv_filteredTopNames = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
@@ -88105,25 +89112,45 @@ static void clar_fn_bkInstallCheckerSymbolsForTestapi(void) {
     cv_v = 0;
     rt_intmap * cv_srcNames;
     cv_srcNames = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
-    rt_intmap * cv___store624;
-    cv___store624 = NULL;
-        clar_fn_rtListRetain((void*)cv_bkLoadedFuncSigs);
+    rt_list * cv___store663;
+    cv___store663 = NULL;
+    rt_list * cv___store664;
+    cv___store664 = NULL;
+    rt_list * cv___store665;
+    cv___store665 = NULL;
+    rt_intmap * cv___store666;
+    cv___store666 = NULL;
+        if (clar_fn_rtListLastref((void*)cv___store663)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store663); i++) clar_release_FuncSig((clar_rec_FuncSig *)clar_fn_rtListAt((void*)cv___store663, i)); }
+    clar_fn_rtListRelease((void*)cv___store663);
 
+    rt_list * t1 = NULL;
+    t1 = clar_fn_bkCopyListFuncSig(cv_bkLoadedFuncSigs);
+    cv___store663 = t1;
         if (clar_fn_rtListLastref((void*)cv_funcSigs)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_funcSigs); i++) clar_release_FuncSig((clar_rec_FuncSig *)clar_fn_rtListAt((void*)cv_funcSigs, i)); }
     clar_fn_rtListRelease((void*)cv_funcSigs);
 
-    cv_funcSigs = cv_bkLoadedFuncSigs;
-        clar_fn_rtListRetain((void*)cv_bkLoadedSymbols);
+    cv_funcSigs = cv___store663;
+    cv___store663 = 0;
+        clar_fn_rtListRelease((void*)cv___store664);
 
+    rt_list * t2 = NULL;
+    t2 = clar_fn_bkCopyListSymbol(cv_bkLoadedSymbols);
+    cv___store664 = t2;
         clar_fn_rtListRelease((void*)cv_symbols);
 
-    cv_symbols = cv_bkLoadedSymbols;
-        clar_fn_rtListRetain((void*)cv_bkLoadedScopes);
+    cv_symbols = cv___store664;
+    cv___store664 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store665)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store665); i++) clar_release_Scope((clar_rec_Scope *)clar_fn_rtListAt((void*)cv___store665, i)); }
+    clar_fn_rtListRelease((void*)cv___store665);
 
+    rt_list * t3 = NULL;
+    t3 = clar_fn_bkCopyListScope(cv_bkLoadedScopes);
+    cv___store665 = t3;
         if (clar_fn_rtListLastref((void*)cv_scopes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_scopes); i++) clar_release_Scope((clar_rec_Scope *)clar_fn_rtListAt((void*)cv_scopes, i)); }
     clar_fn_rtListRelease((void*)cv_scopes);
 
-    cv_scopes = cv_bkLoadedScopes;
+    cv_scopes = cv___store665;
+    cv___store665 = 0;
     if (clar_fn_rtListCount((void*)cv_bkLoadedScopes) <= cv_topScope) {
             clar_fn_rtIntMapRelease((void*)cv_filteredTopNames);
 
@@ -88131,29 +89158,29 @@ static void clar_fn_bkInstallCheckerSymbolsForTestapi(void) {
 
         return;
     }
-        clar_fn_rtIntMapRelease((void*)cv___store624);
+        clar_fn_rtIntMapRelease((void*)cv___store666);
 
-    cv___store624 = ((*(clar_rec_Scope*)rt_list_at(cv_bkLoadedScopes, (int32_t)(cv_topScope)))).cv_names;
-        clar_fn_rtIntMapRetain((void*)cv___store624);
+    cv___store666 = ((*(clar_rec_Scope*)rt_list_at(cv_bkLoadedScopes, (int32_t)(cv_topScope)))).cv_names;
+        clar_fn_rtIntMapRetain((void*)cv___store666);
 
         clar_fn_rtIntMapRelease((void*)cv_srcNames);
 
-    cv_srcNames = cv___store624;
-    cv___store624 = 0;
-    rt_intmap * t1;
-    t1 = cv_srcNames;
-    int32_t t2;
-    t2 = clar_fn_rtIntMapCount((void*)t1);
-    int32_t t3;
-    for (t3 = 0; t3 < t2; t3++) {
-        cv_k = clar_fn_rtIntMapKeyAt((void*)t1, t3);
-        clar_fn_rtIntMapValAt((void*)t1, t3, (void*)&cv_v);
+    cv_srcNames = cv___store666;
+    cv___store666 = 0;
+    rt_intmap * t4;
+    t4 = cv_srcNames;
+    int32_t t5;
+    t5 = clar_fn_rtIntMapCount((void*)t4);
+    int32_t t6;
+    for (t6 = 0; t6 < t5; t6++) {
+        cv_k = clar_fn_rtIntMapKeyAt((void*)t4, t6);
+        clar_fn_rtIntMapValAt((void*)t4, t6, (void*)&cv_v);
         if (cv_v < cv_bkLdEarlySymbolsCount) {
-            int32_t t4;
-            t4 = cv_k;
-            int32_t t5;
-            t5 = cv_v;
-            clar_fn_rtIntMapSet((void*)cv_filteredTopNames, t4, (void*)&(t5));
+            int32_t t7;
+            t7 = cv_k;
+            int32_t t8;
+            t8 = cv_v;
+            clar_fn_rtIntMapSet((void*)cv_filteredTopNames, t7, (void*)&(t8));
         }
     }
         clar_fn_rtIntMapRetain((void*)cv_filteredTopNames);
@@ -88169,15 +89196,15 @@ static void clar_fn_bkInstallCheckerSymbolsForTestapi(void) {
 }
 
 static int32_t clar_fn_feReadSource(const clar_str_255 *cv_path, const clar_str_255 *cv_key, rt_text * cv_out) {
-    int32_t cv___ret1377;
-    cv___ret1377 = 0;
+    int32_t cv___ret1408;
+    cv___ret1408 = 0;
     return rt_file_read_text((const uint8_t*)&((*cv_path)), cv_out);
     return 0;
 }
 
 static int32_t clar_fn_feHasKey(const clar_str_255 *cv_key) {
-    int32_t cv___ret1378;
-    cv___ret1378 = 0;
+    int32_t cv___ret1409;
+    cv___ret1409 = 0;
     return 0;
     return 0;
 }
@@ -88198,26 +89225,26 @@ static void clar_fn_feProgressTick(void) {
 static int32_t clar_fn_feExpectedStamp(void) {
     rt_text * cv_compilerSrc;
     cv_compilerSrc = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store625;
-    cv___store625 = NULL;
-    int32_t cv___ret1379;
-    cv___ret1379 = 0;
-    clar_fn_rtTextRelease((void*)cv___store625);
+    rt_text * cv___store667;
+    cv___store667 = NULL;
+    int32_t cv___ret1410;
+    cv___ret1410 = 0;
+    clar_fn_rtTextRelease((void*)cv___store667);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store625 = t1;
+    cv___store667 = t1;
     clar_fn_rtTextRelease((void*)cv_compilerSrc);
-    cv_compilerSrc = cv___store625;
-    cv___store625 = 0;
+    cv_compilerSrc = cv___store667;
+    cv___store667 = 0;
     if (clar_fn_bkFindClarusC(cv_compilerSrc)) {
-        cv___ret1379 = clar_fn_bkHashText(cv_compilerSrc);
+        cv___ret1410 = clar_fn_bkHashText(cv_compilerSrc);
         clar_fn_rtTextRelease((void*)cv_compilerSrc);
-        return cv___ret1379;
+        return cv___ret1410;
     }
-    cv___ret1379 = 0;
+    cv___ret1410 = 0;
     clar_fn_rtTextRelease((void*)cv_compilerSrc);
-    return cv___ret1379;
+    return cv___ret1410;
     return 0;
 }
 
@@ -88228,43 +89255,43 @@ static void clar_fn_cliResolveBake(rt_list * cv_bakePaths) {
     cv_bj = 0;
     rt_text * cv_bakeBytes;
     cv_bakeBytes = (rt_text *)clar_fn_rtTextNew();
-    rt_list * cv___store626;
-    cv___store626 = NULL;
-    rt_list * cv___store627;
-    cv___store627 = NULL;
-    rt_list * cv___store628;
-    cv___store628 = NULL;
-    rt_text * cv___store629;
-    cv___store629 = NULL;
-        clar_fn_rtListRelease((void*)cv___store626);
+    rt_list * cv___store668;
+    cv___store668 = NULL;
+    rt_list * cv___store669;
+    cv___store669 = NULL;
+    rt_list * cv___store670;
+    cv___store670 = NULL;
+    rt_text * cv___store671;
+    cv___store671 = NULL;
+        clar_fn_rtListRelease((void*)cv___store668);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshStringList();
-    cv___store626 = t1;
+    cv___store668 = t1;
         clar_fn_rtListRelease((void*)cv_cgBakeNames);
 
-    cv_cgBakeNames = cv___store626;
-    cv___store626 = 0;
-        clar_fn_rtListRelease((void*)cv___store627);
+    cv_cgBakeNames = cv___store668;
+    cv___store668 = 0;
+        clar_fn_rtListRelease((void*)cv___store669);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_cgFreshStringList();
-    cv___store627 = t2;
+    cv___store669 = t2;
         clar_fn_rtListRelease((void*)cv_cgBakeTypes);
 
-    cv_cgBakeTypes = cv___store627;
-    cv___store627 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store628)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store628); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store628, i)); }
-    clar_fn_rtListRelease((void*)cv___store628);
+    cv_cgBakeTypes = cv___store669;
+    cv___store669 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store670)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store670); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store670, i)); }
+    clar_fn_rtListRelease((void*)cv___store670);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_cgFreshTextList();
-    cv___store628 = t3;
+    cv___store670 = t3;
         if (clar_fn_rtListLastref((void*)cv_cgBakeDatas)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_cgBakeDatas); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_cgBakeDatas, i)); }
     clar_fn_rtListRelease((void*)cv_cgBakeDatas);
 
-    cv_cgBakeDatas = cv___store628;
-    cv___store628 = 0;
+    cv_cgBakeDatas = cv___store670;
+    cv___store670 = 0;
     cv_bi = 0;
     while (1) {
         if (!((cv_bi < clar_fn_rtListCount((void*)cv_bakePaths)))) break;
@@ -88293,14 +89320,14 @@ static void clar_fn_cliResolveBake(rt_list * cv_bakePaths) {
             }
             cv_bj = CLAR_ADD32(cv_bj, 1);
         }
-        clar_fn_rtTextRelease((void*)cv___store629);
+        clar_fn_rtTextRelease((void*)cv___store671);
         rt_text * t9 = NULL;
         t9 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t9, (void*)(const uint8_t*)&(clar_lit_92));
-        cv___store629 = t9;
+        cv___store671 = t9;
         clar_fn_rtTextRelease((void*)cv_bakeBytes);
-        cv_bakeBytes = cv___store629;
-        cv___store629 = 0;
+        cv_bakeBytes = cv___store671;
+        cv___store671 = 0;
         if (!(rt_file_read_text((const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_bakePaths, (int32_t)(cv_bi)))), cv_bakeBytes))) {
             clar_str_255 t10;
             clar_fn_rtStrConcat((void*)&t10, (void*)(const uint8_t*)&(clar_lit_2141), (void*)(const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_bakePaths, (int32_t)(cv_bi)))));
@@ -88337,10 +89364,10 @@ static void clar_fn_cliResolveBakeIr(const clar_str_255 *cv_clirPath) {
     cv_stampPath = (clar_str_255){0};
     int32_t cv_bi;
     cv_bi = 0;
-    rt_text * cv___store630;
-    cv___store630 = NULL;
-    rt_text * cv___store631;
-    cv___store631 = NULL;
+    rt_text * cv___store672;
+    cv___store672 = NULL;
+    rt_text * cv___store673;
+    cv___store673 = NULL;
     cv_bi = 0;
     while (1) {
         if (!((cv_bi < clar_fn_rtListCount((void*)cv_cgBakeNames)))) break;
@@ -88353,14 +89380,14 @@ static void clar_fn_cliResolveBakeIr(const clar_str_255 *cv_clirPath) {
         }
         cv_bi = CLAR_ADD32(cv_bi, 1);
     }
-    clar_fn_rtTextRelease((void*)cv___store630);
+    clar_fn_rtTextRelease((void*)cv___store672);
     rt_text * t2 = NULL;
     t2 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store630 = t2;
+    cv___store672 = t2;
     clar_fn_rtTextRelease((void*)cv_bytes);
-    cv_bytes = cv___store630;
-    cv___store630 = 0;
+    cv_bytes = cv___store672;
+    cv___store672 = 0;
     if (!(rt_file_read_text((const uint8_t*)&((*cv_clirPath)), cv_bytes))) {
         clar_str_255 t3;
         clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(clar_lit_2146), (void*)(const uint8_t*)&((*cv_clirPath)));
@@ -88387,14 +89414,14 @@ static void clar_fn_cliResolveBakeIr(const clar_str_255 *cv_clirPath) {
     clar_str_255 t10;
     clar_fn_rtStrConcat((void*)&t10, (void*)(const uint8_t*)&((*cv_clirPath)), (void*)(const uint8_t*)&(clar_lit_2147));
     clar_fn_rtStrStore((void*)&(cv_stampPath), 255, (void*)(const uint8_t*)&(t10));
-    clar_fn_rtTextRelease((void*)cv___store631);
+    clar_fn_rtTextRelease((void*)cv___store673);
     rt_text * t11 = NULL;
     t11 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t11, (void*)(const uint8_t*)&(clar_lit_92));
-    cv___store631 = t11;
+    cv___store673 = t11;
     clar_fn_rtTextRelease((void*)cv_bytes);
-    cv_bytes = cv___store631;
-    cv___store631 = 0;
+    cv_bytes = cv___store673;
+    cv___store673 = 0;
     if (!(rt_file_read_text((const uint8_t*)&(cv_stampPath), cv_bytes))) {
         clar_str_255 t12;
         clar_fn_rtStrConcat((void*)&t12, (void*)(const uint8_t*)&(clar_lit_2146), (void*)(const uint8_t*)&(cv_stampPath));
@@ -88503,16 +89530,16 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     cv_haveBakeIrEmbed = 0;
     rt_text * cv_stampBytes;
     cv_stampBytes = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store632;
-    cv___store632 = NULL;
-    rt_text * cv___store633;
-    cv___store633 = NULL;
-    rt_text * cv___store634;
-    cv___store634 = NULL;
-    rt_text * cv___store635;
-    cv___store635 = NULL;
-    rt_text * cv___store636;
-    cv___store636 = NULL;
+    rt_text * cv___store674;
+    cv___store674 = NULL;
+    rt_text * cv___store675;
+    cv___store675 = NULL;
+    rt_text * cv___store676;
+    cv___store676 = NULL;
+    rt_text * cv___store677;
+    cv___store677 = NULL;
+    rt_text * cv___store678;
+    cv___store678 = NULL;
     clar_fn_resetDiags();
     clar_fn_astReset();
     cv_hostPaths = 1;
@@ -88913,14 +89940,14 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
             clar_fn_rtTextRelease((void*)cv_stampBytes);
             rt_quit((int32_t)(1));
         }
-        clar_fn_rtTextRelease((void*)cv___store632);
+        clar_fn_rtTextRelease((void*)cv___store674);
         rt_text * t12 = NULL;
         t12 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t12, (void*)(const uint8_t*)&(clar_lit_92));
-        cv___store632 = t12;
+        cv___store674 = t12;
         clar_fn_rtTextRelease((void*)cv_stampBytes);
-        cv_stampBytes = cv___store632;
-        cv___store632 = 0;
+        cv_stampBytes = cv___store674;
+        cv___store674 = 0;
         clar_fn_bkPutU32(cv_stampBytes, cv_bkLastStamp);
         clar_str_255 t13;
         clar_fn_rtStrConcat((void*)&t13, (void*)(const uint8_t*)&(cv_outPath), (void*)(const uint8_t*)&(clar_lit_2147));
@@ -88953,14 +89980,14 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
         rt_quit((int32_t)(0));
     }
     if (cv_haveRtbakeFlag) {
-        clar_fn_rtTextRelease((void*)cv___store633);
+        clar_fn_rtTextRelease((void*)cv___store675);
         rt_text * t18 = NULL;
         t18 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t18, (void*)(const uint8_t*)&(clar_lit_92));
-        cv___store633 = t18;
+        cv___store675 = t18;
         clar_fn_rtTextRelease((void*)cv_rtbakeBytes);
-        cv_rtbakeBytes = cv___store633;
-        cv___store633 = 0;
+        cv_rtbakeBytes = cv___store675;
+        cv___store675 = 0;
         if (!(rt_file_read_text((const uint8_t*)&(cv_rtbakePath), cv_rtbakeBytes))) {
             clar_str_255 t19;
             clar_fn_rtStrConcat((void*)&t19, (void*)(const uint8_t*)&(clar_lit_2182), (void*)(const uint8_t*)&(cv_rtbakePath));
@@ -89117,17 +90144,17 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     }
     if (cv_emitMode) {
         clar_fn_shakeProgram();
-        clar_fn_rtTextRelease((void*)cv___store634);
+        clar_fn_rtTextRelease((void*)cv___store676);
         rt_text * t42 = NULL;
         t42 = clar_fn_emitProgram();
         if (clar_aborting) {
             clar_fn_rtTextRelease(t42);
             goto bail;
         }
-        cv___store634 = t42;
+        cv___store676 = t42;
         clar_fn_rtTextRelease((void*)cv_cSrc);
-        cv_cSrc = cv___store634;
-        cv___store634 = 0;
+        cv_cSrc = cv___store676;
+        cv___store676 = 0;
         cv_wrote = rt_file_write_text((const uint8_t*)&(cv_outPath), cv_cSrc, (const uint8_t*)&(clar_lit_513), (const uint8_t*)&(clar_lit_865));
         if (!(cv_wrote)) {
             clar_str_255 t43;
@@ -89151,14 +90178,14 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     } else {
         if (cv_emitMode68k) {
             if (cv_haveEvents) {
-                clar_fn_rtTextRelease((void*)cv___store635);
+                clar_fn_rtTextRelease((void*)cv___store677);
                 rt_text * t47 = NULL;
                 t47 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextStore((void*)t47, (void*)(const uint8_t*)&(clar_lit_92));
-                cv___store635 = t47;
+                cv___store677 = t47;
                 clar_fn_rtTextRelease((void*)cv_eventsBytes);
-                cv_eventsBytes = cv___store635;
-                cv___store635 = 0;
+                cv_eventsBytes = cv___store677;
+                cv___store677 = 0;
                 if (!(rt_file_read_text((const uint8_t*)&(cv_eventsPath), cv_eventsBytes))) {
                     clar_str_255 t48;
                     clar_fn_rtStrConcat((void*)&t48, (void*)(const uint8_t*)&(clar_lit_2141), (void*)(const uint8_t*)&(cv_eventsPath));
@@ -89182,14 +90209,14 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
                 clar_fn_rtTextRelease((void*)cv_cgEventsBytes);
                 cv_cgEventsBytes = cv_eventsBytes;
             } else {
-                clar_fn_rtTextRelease((void*)cv___store636);
+                clar_fn_rtTextRelease((void*)cv___store678);
                 rt_text * t52 = NULL;
                 t52 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextStore((void*)t52, (void*)(const uint8_t*)&(clar_lit_92));
-                cv___store636 = t52;
+                cv___store678 = t52;
                 clar_fn_rtTextRelease((void*)cv_cgEventsBytes);
-                cv_cgEventsBytes = cv___store636;
-                cv___store636 = 0;
+                cv_cgEventsBytes = cv___store678;
+                cv___store678 = 0;
             }
             clar_fn_cliResolveBake(cv_bakePaths);
             if (cv_haveBakeIrEmbed) {
@@ -89812,193 +90839,193 @@ static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         if (cv_rowsIdx == 875) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_drvEarlyUitestHeads));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 887) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 888) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdIrTypes));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 888) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 889) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdIrStmts));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 889) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 890) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdIrExprs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 890) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 891) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdIrLocals));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 891) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 892) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdIrFuncs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 893) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 894) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdIrCbGlueNames));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 894) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 895) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdIrGlobals));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 895) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 896) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdIrFieldSlots));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 896) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 897) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdIrRecords));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 897) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 898) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdIrEnumMembers));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 898) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 899) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdIrEnums));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 899) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 900) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdIrWidgetDescs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 900) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 901) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdIrColumnDescs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 901) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 902) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdIrBindDescs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 902) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 903) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdIrWindowDescs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 903) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 904) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdIrMenuItemDescs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 904) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 905) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdIrMenuDescs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 905) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 906) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdIrWinHandlers));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 906) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 907) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdIrWidgetHandlerEntries));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 907) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 908) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdIrMenuHandlerEntries));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 908) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 909) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdIrEveryEntries));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 909) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 910) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdIrStrLits));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 910) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 911) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdIrExternNames));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 911) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 912) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdIrExternRetTys));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 912) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 913) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdIrExternParamStart));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 913) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 914) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdIrExternParamCountArr));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 914) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 915) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdIrExternParamTys));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 915) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 916) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdIrExternTrapWords));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 916) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 917) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdIrExternConvs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 917) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 918) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdIrExternSels));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 918) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 919) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdIrExternParamRegs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 919) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 920) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdIrExternRetRegs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 949) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 950) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdStrPool));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 955) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 956) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLoadedFuncSigs));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 956) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 957) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLoadedSymbols));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 957) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 958) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLoadedScopes));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 958) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 959) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLoadedTypeArena));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 959) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 960) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLoadedEnumMembers));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 960) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 961) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLoadedDeclFileTab));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 961) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 962) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLoadedFieldInfos));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 967) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 968) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdObjValid));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 968) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 969) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdObjRunFirst));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 969) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 970) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdObjHoleFirst));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 970) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 971) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdObjNHoles));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 971) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 972) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdObjFuncSize));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 972) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 973) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdObjFuncFrameSize));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 973) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 974) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdObjFuncStrLitFirst));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 974) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 975) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdObjFuncStrLitCount));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 975) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 976) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdObjFuncStrLitFlat));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 976) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 977) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdObjFuncEnumTableFirst));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 977) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 978) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdObjFuncEnumTableCount));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 978) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 979) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdObjFuncEnumTableFlat));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 979) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 980) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdObjFuncSerdescFirst));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 980) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 981) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdObjFuncSerdescCount));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 981) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 982) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdObjFuncSerdescFlat));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 982) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 983) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdObjFuncUsesUiBlob));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 983) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 984) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLdObjFuncUsesUiEvents));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 987) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 988) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkLdObjStrLitSize));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 988) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 989) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkLdObjEnumTableSize));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 989) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (cv_rowsIdx == 990) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             return ((void*)&(cv_bkLdObjSerdescSize));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 993) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (cv_rowsIdx == 994) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return ((void*)&(cv_bkLoadedModules));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 998) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (cv_rowsIdx == 999) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     return ((void*)&(cv_bkManifestCollidedIdx));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 999) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (cv_rowsIdx == 1000) {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return ((void*)&(cv_bkManifestCollidedEarly));
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         rt_log((const uint8_t*)&(clar_lit_2195));

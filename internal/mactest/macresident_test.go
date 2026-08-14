@@ -462,6 +462,23 @@ func TestMacResidentFailedCompileStaysAliveOnSnow(t *testing.T) {
 		t.Errorf("app out missing the clean exit trailer (##CLARUS-EXIT## 0) from the script's own final quit:\n%s", appOut)
 	}
 
+	// clir-load-perf Task 7/8 (design B): the CLIR resource is read,
+	// verified, and parsed at most once per app session (bkParsedValid,
+	// set inside driveCompile's own haveRtbake install block -- drive.cla
+	// -- BEFORE any user-source parsing/codegen runs). Compile #1's abort
+	// (badAbortMessage, above) fires deep in cg68k's native backend during
+	// driveEmit68kFork, well after bkParsedValid is already true, so
+	// compile #2's gcResolveBakePath takes the `if bkParsedValid` early
+	// return (macgui.cla) and skips the resource read/verify/parse
+	// entirely. "Loading Baked Runtime" (gcResolveBakePath's own
+	// pre-parse progress line) must therefore appear exactly once across
+	// the whole two-compile session -- a second occurrence would mean
+	// compile #2 re-read/re-verified/re-parsed the resource, exactly the
+	// per-compile cost design B exists to eliminate.
+	if n := strings.Count(appOut, "Loading Baked Runtime"); n != 1 {
+		t.Errorf("app out has %d \"Loading Baked Runtime\" lines, want exactly 1 (compile #2 should skip the reload via bkParsedValid):\n%s", n, appOut)
+	}
+
 	// The second, successful compile in the SAME session must have
 	// produced a real, byte-correct app -- not just "the app didn't
 	// crash." Reuses TestMacResidentClaruscOnSnow's own byte-identity
