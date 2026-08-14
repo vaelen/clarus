@@ -1960,12 +1960,17 @@ func bkGetStr(): string {
 // shape as bkGetStr's own rewrite above: pre-check 1 (4 bytes for the
 // length prefix) makes the u32At read panic-unreachable; pre-check 2
 // mirrors textAt's own STRICT bounds (rtTextTextAt, text.cla: `n < 0` and
-// `pos > rt.len - n`, i.e. `bkLoadPos + 4 + n > bkLoadBuf.length` in the
-// addition form every other reader here uses) -- `n < 0` has to be
-// checked explicitly since a huge negative n can satisfy the addition
-// check while still failing textAt's own bound, so leaving it out would
-// make the "panic unreachable" argument false. Overrun/refusal returns
-// "" (empty text), matching the current empty-start behavior.
+// `pos > rt.len - n`) -- checked as `n > bkLoadBuf.length - bkLoadPos - 4`
+// rather than the addition form `bkLoadPos + 4 + n > bkLoadBuf.length`:
+// CLAR_ADD32 wraps, so a huge n (e.g. a corrupt length field near
+// 0x7FFFFFFx) can make that sum overflow back under length and pass the
+// guard, reaching textAt's STRICT panic. The subtraction form's RHS is
+// never negative here (pre-check 1 already established
+// `bkLoadPos + 4 <= bkLoadBuf.length`), so it can't wrap the same way.
+// `n < 0` is still checked explicitly, since a huge negative n would
+// otherwise satisfy the subtraction check while still failing textAt's
+// own `n < 0` bound. Overrun/refusal returns "" (empty text), matching
+// the current empty-start behavior.
 func bkGetBytes(): text {
     var n: int
     var t: text
@@ -1976,7 +1981,7 @@ func bkGetBytes(): text {
         return ""
     }
     n = bkLoadBuf.u32At(bkLoadPos)
-    if n < 0 or bkLoadPos + 4 + n > bkLoadBuf.length {
+    if n < 0 or n > bkLoadBuf.length - bkLoadPos - 4 {
         bkLoadOverrun = true
         bkLoadPos = bkLoadBuf.length
         return ""
