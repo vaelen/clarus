@@ -443,8 +443,7 @@ func lowInternStr(s: string): int {
 // has no diagnostic-accumulation path of its own, so this reuses the same
 // log+quit machinery main.cla's own error paths use.
 func lowUnsupported(what: string) {
-    log("clarusc emit: unsupported construct: " + what + " (not yet implemented)")
-    quit 1
+    abort("clarusc emit: unsupported construct: " + what + " (not yet implemented)")
 }
 
 // ================================================================
@@ -4798,8 +4797,7 @@ func lowBuiltinSaveChoiceLayout() {
 // rather than silently reading a wrong/garbage value.
 func lowRequireIntLit(e: int): int {
     if exprKind(e) != ExIntLit {
-        log("clarusc emit: window property requires an integer literal")
-        quit 1
+        abort("clarusc emit: window property requires an integer literal")
     }
     return intLitVal(e)
 }

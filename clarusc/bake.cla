@@ -506,11 +506,10 @@ func bakeGenerateChain(lane: int): bool {
         rtPath = joinPath(rtDir, mods[i])
         if expand(rtPath, true, rtModuleKey(mods[i])) {
             if haveRtDir {
-                log("clarusc --bake-ir: runtime module " + mods[i] + " not found (searched " + rtDir + "); use --rtdir")
+                abort("clarusc --bake-ir: runtime module " + mods[i] + " not found (searched " + rtDir + "); use --rtdir")
             } else {
-                log("clarusc --bake-ir: runtime module " + mods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
+                abort("clarusc --bake-ir: runtime module " + mods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
             }
-            quit 1
         }
         // runtime-ir-bake Task 5, fix round 2: uitest.cla is always the
         // last of the THIRTEEN "testapi early-visible" modules in
@@ -532,8 +531,7 @@ func bakeGenerateChain(lane: int): bool {
     // re-deriving the split.
     bkGenEarlyVisibleAsmHeadsBoundary = earlyVisibleAsmHeadsBoundary
     if entryFailed {
-        log("clarusc --bake-ir: cannot open a runtime module")
-        quit 1
+        abort("clarusc --bake-ir: cannot open a runtime module")
     }
 
     // Same post-order assembly driveCompile's own Phase A loop does

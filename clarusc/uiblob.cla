@@ -275,8 +275,7 @@ func uibWidgetKindNum(kindIdx: int): int {
     if kind == "table" {
         return 7
     }
-    log("uiblob: unknown widget kind " + kind)
-    quit 1
+    abort("uiblob: unknown widget kind " + kind)
     return -1
 }
 
@@ -299,8 +298,7 @@ func uibFieldTypeNum(k: IRKind): int {
     if k == KEnum {
         return 5
     }
-    log("uiblob: unsupported form/table row field type")
-    quit 1
+    abort("uiblob: unsupported form/table row field type")
     return -1
 }
 
@@ -324,8 +322,7 @@ func uibFindWinIndex(nameIdx: int): int {
         }
         i = i + 1
     }
-    log("uiblob: unknown window " + poolGet(nameIdx))
-    quit 1
+    abort("uiblob: unknown window " + poolGet(nameIdx))
     return -1
 }
 
@@ -344,8 +341,7 @@ func uibFindEnumIdx(nameIdx: int): int {
         }
         i = i + 1
     }
-    log("uiblob: unknown enum " + poolGet(nameIdx))
-    quit 1
+    abort("uiblob: unknown enum " + poolGet(nameIdx))
     return -1
 }
 
@@ -362,8 +358,7 @@ func uibGlobalIndex(nameIdx: int): int {
         }
         i = i + 1
     }
-    log("uiblob: unknown global " + poolGet(nameIdx))
-    quit 1
+    abort("uiblob: unknown global " + poolGet(nameIdx))
     return -1
 }
 
@@ -584,8 +579,7 @@ func uibEmitLayout(recNameIdx: int): int {
 
     ri = cgFindRecordByName(recNameIdx)
     if ri == -1 {
-        log("uiblob: unknown record " + poolGet(recNameIdx))
-        quit 1
+        abort("uiblob: unknown record " + poolGet(recNameIdx))
     }
 
     nFields = 0
@@ -695,8 +689,7 @@ func uibSizeLayoutFor(recNameIdx: int) {
 
     ri = cgFindRecordByName(recNameIdx)
     if ri == -1 {
-        log("uiblob: unknown record " + poolGet(recNameIdx))
-        quit 1
+        abort("uiblob: unknown record " + poolGet(recNameIdx))
     }
     nFields = 0
     f = irRecordLayoutFieldsHead(ri)

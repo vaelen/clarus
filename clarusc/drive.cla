@@ -1253,11 +1253,10 @@ func driveEarlySplice(testapi: bool): bool {
         // entirely rather than merely detecting it after the fact.
         if expand(rtPath, true, rtModuleKey(earlyMods[i])) {
             if haveRtDir {
-                log("runtime module " + earlyMods[i] + " not found (searched " + rtDir + "); use --rtdir")
+                abort("runtime module " + earlyMods[i] + " not found (searched " + rtDir + "); use --rtdir")
             } else {
-                log("runtime module " + earlyMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
+                abort("runtime module " + earlyMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
             }
-            quit 1
         }
         hoists = hoistDedups(beforeHits)
         j = 0
@@ -1565,11 +1564,10 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             // source of truth.
             if expand(rtPath, true, rtModuleKey(neededMods[i])) {
                 if haveRtDir {
-                    log("runtime module " + neededMods[i] + " not found (searched " + rtDir + "); use --rtdir")
+                    abort("runtime module " + neededMods[i] + " not found (searched " + rtDir + "); use --rtdir")
                 } else {
-                    log("runtime module " + neededMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
+                    abort("runtime module " + neededMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
                 }
-                quit 1
             }
             hoists = hoistDedups(beforeHits)
             j = 0
