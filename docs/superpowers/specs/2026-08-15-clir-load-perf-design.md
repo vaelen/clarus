@@ -176,19 +176,19 @@ loops).
 ### 5.1 New Chapter-3 `text` methods
 
 Four **stateless range reads** (no reader object, no hidden cursor —
-callers advance their own position; `strAt`'s consumed length is
+callers advance their own position; `stringAt`'s consumed length is
 recoverable from the result):
 
 | method | semantics |
 |---|---|
 | `t.hashStep(h, pos, n): int` | rolling body-hash step over `n` bytes starting at `pos`, returns updated `h` |
 | `t.u32At(pos): int` | big-endian U32 at `pos` |
-| `t.strAt(pos): string` | 4-byte BE length prefix + bytes at `pos`; caller advances `4 + result.length` |
+| `t.stringAt(pos): string` | 4-byte BE length prefix + bytes at `pos`; caller advances `4 + result.length` |
 | `t.textAt(pos, n): text` | fresh `text` holding bytes `[pos, pos+n)` |
 
 Contracts: STRICT out-of-range panic, same as `t[i]`
 (`rtTextIndex`'s documented convention) — a read that would run past
-`t.length` panics; `strAt` additionally panics if the decoded length
+`t.length` panics; `stringAt` additionally panics if the decoded length
 exceeds 255 (`string` cap). These are general-purpose binary-format
 reads (public, documented in the reference), not compiler-private —
 e.g. the deferred PBM-parser fix and any user file-format reader can
@@ -252,7 +252,7 @@ regen, `TestSnapshotFixedPoint`, golden churn expected ~zero
   `bkLoadPos + 4 <= bkLoadBuf.length`, else set `bkLoadOverrun` and
   return 0 (soft-fail preserved; the STRICT method panic is never
   reached on the load path).
-- `bkGetStr` → `strAt` + advance, same pre-check shape (soft-fail,
+- `bkGetStr` → `stringAt` + advance, same pre-check shape (soft-fail,
   including the >255 case: overrun, not panic).
 - `bkGetBytes` → `textAt` + advance, same pre-check shape.
 - `bkGetByte`/`bkGetU16`/`bkGetStrShort` stay as-is (cold: header
@@ -275,7 +275,7 @@ chunked hash pass + one bulk parse; repeat compiles ≈ install only.
 - **T1 throughout**; snapshot fixed-point regen at the phase's own
   cadence (`TestSnapshotFixedPoint` prints the procedure).
 - **New core-suite cases** (host + native lanes) for the four methods:
-  known-answer values, bounds panics, `strAt` >255 refusal, empty
+  known-answer values, bounds panics, `stringAt` >255 refusal, empty
   ranges, `textAt` zero-length, and a hashStep-vs-reference-loop
   equivalence case.
 - **Format v7:** existing refusal tests (corrupt/truncated/stale-stamp/
