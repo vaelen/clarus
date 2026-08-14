@@ -4500,18 +4500,38 @@ func lowBuildAbortBailBlock(ret: int): int {
     return head
 }
 
-// declIsRuntimeOrigin (attempt-abort phase Task 2, Ruling A3) reports
-// whether decl d was parsed from a file under the runtime/clarus/ source
-// prefix -- task-1-report P2's chosen mechanism (getDeclFile + a literal
-// path-prefix check) for the "never check after this callee" tag Tasks
-// 3/4 consume via irFuncIsRuntimeOrigin. A plain prefix match, NOT
-// bkPathIsUitest's basename-suffix trick (bake.cla) -- ruled explicitly,
-// not this task's call to revisit: breaks under a --rtdir override that
-// relocates the runtime source directory elsewhere on disk, since the
-// recorded path then no longer STARTS WITH "runtime/clarus/" (P2's own
-// text calls this "a small, one-time, one-place change", not a general
-// solution -- a --rtdir compile that also uses attempt/abort would need
-// a real fix, deferred).
+// declIsRuntimeOrigin (attempt-abort phase Task 2, Ruling A3; widened
+// Task 8 close-out -- see below) reports whether decl d was parsed from
+// a file under a "runtime/clarus/" source directory -- task-1-report
+// P2's chosen mechanism (getDeclFile + a path check) for the "never
+// check after this callee" tag Tasks 3/4 consume via
+// irFuncIsRuntimeOrigin. NOT bkPathIsUitest's basename-suffix trick
+// (bake.cla) -- ruled explicitly, not Task 2's call to revisit.
+//
+// Task 8 finding: the ORIGINAL check was a literal path-PREFIX match
+// (path[0, want.length] == "runtime/clarus/"), which broke for the
+// default (no --rtdir) rtDir resolution itself, not just a --rtdir
+// override -- findRtDir (drive.cla) walks UPWARD from the working
+// directory, prepending one "../" per level, so a compile launched from
+// any directory other than the repo root records paths like
+// "../../runtime/clarus/core.cla", which does not START WITH the literal
+// prefix at all. Found via TestSnapshotFixedPoint's own freshness check
+// (internal/selfhost, which emits from its own package directory,
+// several levels below the repo root, with no --rtdir): every runtime
+// function was misclassified as non-runtime-origin, so it wrongly grew
+// a bail block, producing a real (~3.8KB), silently-wrong emission
+// divergence purely from which directory `clarusc emit` happened to run
+// from -- not from anything about the SOURCE. Same underlying fragility
+// P2's own doc comment already flagged for a --rtdir override; this is
+// the SAME bug's more common trigger (an ordinary relative-path launch
+// from a subdirectory), not a new one.
+//
+// Fix: search for "runtime/clarus/" as a substring anywhere in path,
+// not only at position 0 -- correct for the repo-root case (match at
+// index 0), the upward-search case (match after N "../" segments), and
+// unchanged (still broken, still explicitly deferred, see P2's own
+// note) for a real --rtdir override pointing somewhere that doesn't
+// contain that substring at all.
 func declIsRuntimeOrigin(d: int): bool {
     var p: int
     var path: string
@@ -4523,7 +4543,7 @@ func declIsRuntimeOrigin(d: int): bool {
     }
     path = poolGet(p)
     want = "runtime/clarus/"
-    return path.length >= want.length and path[0, want.length] == want
+    return path.indexOf(want) != -1
 }
 
 // lowFuncDecl lowers a user `func` declaration into an ir.Func (stmt.go's
