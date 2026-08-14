@@ -225,8 +225,7 @@ func toText(s: string): text {
 // own log+quit shape; called only from a dispatcher's unmatched-case tail,
 // so it never fires on any construct these printers already handle.
 func cpFatal(what: string): text {
-    log("cprint: unhandled " + what)
-    quit 1
+    abort("cprint: unhandled " + what)
     return toText("")
 }
 
@@ -1958,8 +1957,7 @@ func cpEnumCount(nameIdx: int): int {
         }
         i = i + 1
     }
-    log("cprint: unknown enum " + poolGet(nameIdx))
-    quit 1
+    abort("cprint: unknown enum " + poolGet(nameIdx))
     return 0
 }
 
@@ -2247,6 +2245,21 @@ func fpIntrCall(x: int): text {
     }
     fpIntrMatched = true
     t = fpIntrCall9(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall10(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall11(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall12(nm, x, a0, a1, a2)
     if fpIntrMatched {
         return t
     }
@@ -3067,7 +3080,6 @@ func fpIntrCall5(nm: int, x: int, a0: int, a1: int, a2: int): text {
     var m: text
     var k: text
     var dv: text
-    var freeVarBuf: text
 
     if nm == IMapSet() or nm == IMapSetRetain() {
         // v goes through fpCopyToTemp, not fpAddrable, for the same reason
@@ -3276,7 +3288,30 @@ func fpIntrCall5(nm: int, x: int, a0: int, a1: int, a2: int): text {
             }
         }
         return t
-    } else if nm == IMapHas() {
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+// fpIntrCall10 (attempt-abort phase Task 6) is fpIntrCall5's own second
+// half, split out for the SAME reason fpIntrAbort's own doc comment
+// gives (Task 14 already split the old monolithic fpIntrCall into
+// fpIntrCall1..7 once one of them blew clarusc's near-zero-headroom
+// native-68k self-emit segment budget): converting clarusc's own ~150
+// fatal `quit 1` sites to `abort(msg)` makes clarusc itself abort-
+// enabled, so every checked call site in its own source (including
+// every helper call inside fpIntrCall5's body) now carries a bail
+// check, which pushed fpIntrCall5 back over budget. IMapHas through
+// IMapFreeVar (the map-intrinsic arms that don't need fpIntrCall5's own
+// v/dv/t locals) move here verbatim; fpIntrCall's dispatcher below
+// chains through this the same way it chains through every other
+// fpIntrCallN.
+func fpIntrCall10(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var m: text
+    var k: text
+    var freeVarBuf: text
+
+    if nm == IMapHas() {
         // Plan 5b Task 11: cpMapPorted redirects this entire intrinsic.
         if cpMapPorted {
             return "clar_fn_rtMapHas((void*)" + fpExpr(a0) + ", (void*)" + fpStrAddr(a1) + ")"
@@ -3564,7 +3599,21 @@ func fpIntrCall7(nm: int, x: int, a0: int, a1: int, a2: int): text {
         // needed here, unlike IUiSetText's Str-shaped a2.
         fpEmit("clar_fn_rtUiWidgetSetText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
         return toText("")
-    } else if nm == IUiGetChecked() {
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+// fpIntrCall11 (attempt-abort phase Task 6) is fpIntrCall7's own second
+// half -- same split rationale as fpIntrCall10's own doc comment just
+// above (converting clarusc's own fatal quit sites to abort(msg) made
+// clarusc itself abort-enabled, pushing fpIntrCall7 back over the
+// native-68k self-emit segment budget). IUiGetChecked through
+// IUiAddrOfGlobal move here verbatim; none of them touch fpIntrCall7's
+// own t/winName/inst/fld locals, so this function needs no locals of
+// its own.
+func fpIntrCall11(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    if nm == IUiGetChecked() {
         return "clar_fn_rtUiWidgetGetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED)"
     } else if nm == IUiSetChecked() {
         fpEmit("clar_fn_rtUiWidgetSetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED, (int32_t)(" + fpExpr(a2) + "));")
@@ -3618,7 +3667,19 @@ func fpIntrCall7(nm: int, x: int, a0: int, a1: int, a2: int): text {
         // raw saveChoice enum word (0/1/2), embedded directly like
         // IUiGetWidth/IUiGetHeight's `short` results just below.
         return "clar_fn_rtUiAskSaveChanges(" + fpStrAddr(a0) + ")"
-    } else if nm == IUiCanvasClear() {
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+// fpIntrCall12 (attempt-abort phase Task 6) is fpIntrCall11's own second
+// half -- same split rationale as fpIntrCall10/fpIntrCall11's own doc
+// comments above; fpIntrCall11 alone was still ~2KB over budget after
+// the first fpIntrCall7 split. IUiCanvasClear through IUiAddrOfGlobal
+// move here verbatim; none of them touch any local var, so this
+// function needs no locals of its own, same as fpIntrCall11.
+func fpIntrCall12(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    if nm == IUiCanvasClear() {
         fpEmit("clar_fn_rtUiCanvasClear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         return toText("")
     } else if nm == IUiCanvasLine() {
@@ -4906,6 +4967,61 @@ func cpEmitElemReleaseWalk(dst: text, cexpr: string, t: int) {
 // release walk precisely mirrors what init built); every other kind emits
 // nothing. A reusable helper -- called here for globals, and again by
 // later tasks for function-local and record-field disposal.
+
+// cpEmitReleaseIntMap (attempt-abort phase Task 6) is cpEmitRelease's own
+// KIntMap arm, split out into its own function for the same reason
+// fpIntrCall10/11/12's own doc comments give (converting clarusc's ~150
+// fatal quit sites to abort(msg) made clarusc itself abort-enabled,
+// pushing cpEmitRelease slightly over the native-68k self-emit segment
+// budget). IntMap's release walk is SortedMap's twin (still inlined in
+// cpEmitRelease below), key-shape differences aside -- always calls the
+// Clarus-ported rtIntMap* family directly (no raw C fallback);
+// cpIntMapPorted is a defensive exhaustiveness guard (cpFatal), never
+// expected to actually fire (drive.cla sets it unconditionally).
+func cpEmitReleaseIntMap(dst: text, cexpr: string, t: int) {
+    var et: int
+    var recName: string
+    var lastrefCall: string
+    var countCall: string
+    var valAtFn: string
+    var mArg: string
+    var outCast: string
+    var ix: string
+
+    if not cpIntMapPorted {
+        cpFatal("intmap release without cpIntMapPorted")
+    }
+    et = irtElem(t)
+    lastrefCall = "clar_fn_rtIntMapLastref((void*)" + cexpr + ")"
+    countCall = "clar_fn_rtIntMapCount((void*)" + cexpr + ")"
+    valAtFn = "clar_fn_rtIntMapValAt"
+    mArg = "(void*)" + cexpr
+    outCast = "(void*)"
+    if irtKind(et) == KText {
+        if cpTextArcPorted {
+            cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; rt_text *v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_fn_rtTextRelease((void*)v); } }")
+        } else {
+            cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; rt_text *v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); rt_text_release(v); } }")
+        }
+    } else if irtKind(et) == KRec and irRecHasHandleField(irtName(et)) {
+        recName = poolGet(irtName(et))
+        irMarkRcWalkNeeded(irtName(et))
+        cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_release_" + recName + "(&v); } }")
+    } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap or (irtKind(et) == KArr and irtNeedsCtor(irtElem(et))) {
+        cpLoopN = cpLoopN + 1
+        ix = "ix" + numToStr(cpLoopN)
+        cpAppendLine(dst, "    if (" + lastrefCall + ") {")
+        cpAppendLine(dst, "    { int32_t " + ix + "; " + cpCType(et) + " v" + numToStr(cpLoopN) + ";")
+        cpAppendLine(dst, "    for (" + ix + " = 0; " + ix + " < " + countCall + "; " + ix + "++) {")
+        cpAppendLine(dst, "    " + valAtFn + "(" + mArg + ", " + ix + ", " + outCast + "&v" + numToStr(cpLoopN) + ");")
+        cpEmitRelease(dst, "v" + numToStr(cpLoopN), et)
+        cpAppendLine(dst, "    }")
+        cpAppendLine(dst, "    }")
+        cpAppendLine(dst, "    }")
+    }
+    cpAppendLine(dst, "    clar_fn_rtIntMapRelease((void*)" + cexpr + ");")
+}
+
 func cpEmitRelease(dst: text, cexpr: string, t: int) {
     var k: IRKind
     var et: int
@@ -5154,45 +5270,7 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
         }
         cpAppendLine(dst, "    clar_fn_rtSortedMapRelease((void*)" + cexpr + ");")
     } else if k == KIntMap {
-        // map-hashtable phase Task 7: IntMap's release walk is
-        // SortedMap's twin directly above, key-shape differences aside (the
-        // walk itself only touches VALUES, which are the same fixed-size
-        // shape regardless of key type) -- always calls the Clarus-ported
-        // rtIntMap* family directly (no raw C fallback). cpIntMapPorted is
-        // a defensive exhaustiveness guard (cpFatal); see cpIntMapPorted's
-        // own doc comment for why it should never actually fire.
-        if not cpIntMapPorted {
-            cpFatal("intmap release without cpIntMapPorted")
-        }
-        et = irtElem(t)
-        lastrefCall = "clar_fn_rtIntMapLastref((void*)" + cexpr + ")"
-        countCall = "clar_fn_rtIntMapCount((void*)" + cexpr + ")"
-        valAtFn = "clar_fn_rtIntMapValAt"
-        mArg = "(void*)" + cexpr
-        outCast = "(void*)"
-        if irtKind(et) == KText {
-            if cpTextArcPorted {
-                cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; rt_text *v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_fn_rtTextRelease((void*)v); } }")
-            } else {
-                cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; rt_text *v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); rt_text_release(v); } }")
-            }
-        } else if irtKind(et) == KRec and irRecHasHandleField(irtName(et)) {
-            recName = poolGet(irtName(et))
-            irMarkRcWalkNeeded(irtName(et))
-            cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_release_" + recName + "(&v); } }")
-        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap or (irtKind(et) == KArr and irtNeedsCtor(irtElem(et))) {
-            cpLoopN = cpLoopN + 1
-            ix = "ix" + numToStr(cpLoopN)
-            cpAppendLine(dst, "    if (" + lastrefCall + ") {")
-            cpAppendLine(dst, "    { int32_t " + ix + "; " + cpCType(et) + " v" + numToStr(cpLoopN) + ";")
-            cpAppendLine(dst, "    for (" + ix + " = 0; " + ix + " < " + countCall + "; " + ix + "++) {")
-            cpAppendLine(dst, "    " + valAtFn + "(" + mArg + ", " + ix + ", " + outCast + "&v" + numToStr(cpLoopN) + ");")
-            cpEmitRelease(dst, "v" + numToStr(cpLoopN), et)
-            cpAppendLine(dst, "    }")
-            cpAppendLine(dst, "    }")
-            cpAppendLine(dst, "    }")
-        }
-        cpAppendLine(dst, "    clar_fn_rtIntMapRelease((void*)" + cexpr + ");")
+        cpEmitReleaseIntMap(dst, cexpr, t)
     } else if k == KArr {
         et = irtElem(t)
         if irtNeedsCtor(et) {
@@ -5472,8 +5550,7 @@ func cpEmitFunc(f: int) {
         nm = poolGet(irLocalName(loc))
         if declared.has(nm) {
             if not cpTypeEqual(declared.get(nm, -1), irLocalType(loc)) {
-                log("cprint: local " + nm + " redeclared with a different type in func " + poolGet(irFuncName(f)) + " (unsupported: same name, different type, in sibling scopes)")
-                quit 1
+                abort("cprint: local " + nm + " redeclared with a different type in func " + poolGet(irFuncName(f)) + " (unsupported: same name, different type, in sibling scopes)")
             }
         } else {
             declared[nm] = irLocalType(loc)
@@ -5696,8 +5773,7 @@ func cpCbWireType(t: int): string {
         return "void *"
     }
     }
-    log("cprint: unhandled callback wire kind " + numToStr(int(irtKind(t))))
-    quit 1
+    abort("cprint: unhandled callback wire kind " + numToStr(int(irtKind(t))))
     return ""
 }
 
@@ -6185,8 +6261,7 @@ func cpEmitEnumArraysOnce(enumNameIdx: int) {
         }
         i = i + 1
     }
-    log("cprint: unknown enum " + name)
-    quit 1
+    abort("cprint: unknown enum " + name)
 }
 
 // cpFieldDescRow renders one clar_fields_NAME[] entry (an rt_field_desc
@@ -6304,8 +6379,7 @@ func cpSerEnumValsInline(nameIdx: int): text {
         }
         i = i + 1
     }
-    log("cprint: unknown enum " + poolGet(nameIdx))
-    quit 1
+    abort("cprint: unknown enum " + poolGet(nameIdx))
     return out
 }
 
@@ -6717,8 +6791,7 @@ func cpFindGlobalRecName(globalNameIdx: int): int {
         }
         i = i + 1
     }
-    log("cprint: unknown table rows global " + poolGet(globalNameIdx))
-    quit 1
+    abort("cprint: unknown table rows global " + poolGet(globalNameIdx))
     return -1
 }
 
@@ -7376,8 +7449,7 @@ func fpAttemptStmt(s: int) {
         // clarusc's own near-zero native-68k self-emit segment headroom
         // on; fail loudly rather than silently corrupt an out-of-range
         // slot.
-        log("cprint: attempt nesting exceeds fpBailTargets' fixed depth (32)")
-        quit 1
+        abort("cprint: attempt nesting exceeds fpBailTargets' fixed depth (32)")
     }
     fpBailTargets[fpBailDepth] = hLabel
     fpBailDepth = fpBailDepth + 1
