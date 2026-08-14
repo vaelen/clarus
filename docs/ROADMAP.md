@@ -2414,6 +2414,20 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   - **`bkReadObjCode`'s `nHoles` spin** (Task 5 minor, pre-existing):
     the loop spins on a corrupt hole count before the framing check
     fires — not new to this phase, not fixed by it.
+  - **Task 2/3 test- and doc-comment minors (deferred):**
+    `testsuite/core/runner.cla`'s header comment (~line 78) miscounts
+    `TextRange`'s ordinal ("67th real case"; actually 69th, inheriting a
+    pre-existing off-by-two from the cases above it); the reference's
+    `u32At` entry says "unsigned" — Clarus `int` is signed 32-bit, so a
+    value ≥ 2^31 reads back negative, needs one clause; the core case
+    for `textAt` never pins its freshness contract (mutate the returned
+    copy, assert the source `text` is unchanged); `stringAt`/`textAt`'s
+    `EIntr` arms skip `cgAbortCheckAfterCall` like every sibling arm —
+    correct today (panic-based errors, no releasable args), worth a
+    half-line comment if attempt-able runtime text calls ever appear;
+    `internal/mactest/coresuite_test.go` carries the 70-case count as
+    two separate literals, a `const` would make the next phase's bump
+    one edit instead of two.
   - **Truncate-on-reuse recorded, not chosen** (design B's own
     alternative, spec §4): cheaper per compile (no copy) but needs a
     list-truncation primitive plus a proof no pass mutates prefix
