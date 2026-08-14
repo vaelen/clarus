@@ -33,14 +33,26 @@ findings, all recorded in the ROADMAP entry:
   aborts only. An earlier STATUS/ROADMAP wording claimed this OOM
   proved abort-survival; that was WRONG and has been corrected.
   **Task 9 landed the fix**, entirely in `runtime/clarus/native.cla`
-  (no `clarusc` source change): the trace line now writes+flushes
-  immediately (`natAlert`, not buffered `log`), and when a UI is up
-  (`natQdInited`) and not scripted (`peekb(UiTestScript()) == 0`,
-  called directly — ui.cla turns out to be spliced into every native
-  build, UI or not), SysBeep + the plain-OK ALRT 128 shows the message
-  before `natQuit(3)` as before. No allocation on the panic path
-  (preallocated scratch, `natInit`-time). All host-only gates green,
-  including a `CLARUS_CG68K_BLESS` rebless (native.cla's own byte
+  (no `clarusc` source change): the trace line now ALSO writes+flushes
+  immediately via `natAlert` (crash-survival copy in `out`), in
+  addition to — not instead of — the pre-existing buffered `natLog`
+  write (still lands in `log` at quit's own flush, same field
+  `TestRunErrOn68k` already asserted against — fix round 1 caught that
+  dropping the buffered write moves the message to the wrong captured
+  field and breaks that exact test; now dual-written and reverified
+  actually PASSING under `CLARUS_MAC_TESTS=1`, not just traced). When a
+  UI is up (`natQdInited`, now set only after `NatInitDialogs` has run —
+  fix round 1 also tightened this) and not scripted
+  (`peekb(UiTestScript()) == 0`, called directly — ui.cla turns out to
+  be spliced into every native build, UI or not), SysBeep + `ui.cla`'s
+  own `UiParamText`/`UiAlert` (called directly, no local trap
+  duplicates) show the plain-OK ALRT 128 with the message before
+  `natQuit(3)` as before. No allocation on the panic path (preallocated
+  scratch, `natInit`-time). All host-only gates green, plus
+  `TestRunErrOn68k` (`CLARUS_MAC_TESTS=1`, controller-authorized this
+  round) confirmed PASS — the scripted `oob`/`listindex` runerr
+  fixtures correctly show no dialog and their panic text still lands in
+  `log`. Including a `CLARUS_CG68K_BLESS` rebless (native.cla's own byte
   growth, expected); `internal/selfhost`/`TestSnapshotFixedPoint` stay
   green with no regen since `clarusc` itself is untouched. Visual
   on-hardware confirmation of the dialog is still an emulator item

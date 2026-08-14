@@ -2154,23 +2154,37 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     fallback clause ("any remaining exit should beep and display an
     alert before exiting") was dropped between requirement and spec —
     §3.5's beep+alert default only ever covered uncaught ABORTS.
-    Landed fix: `nat_CorePanic` now writes the trace line IMMEDIATELY
-    (hand-copies `full`'s bytes into a preallocated Str255 scratch
-    buffer via ordinary `string` indexing, then calls `natAlert` —
-    same CR->LF + trailing-LF rendering as before, just flushed at
-    panic time instead of buffered to quit) and, when a UI is up and
-    NOT scripted, SysBeep(30) + ParamText + the plain-OK ALRT 128
-    (`runtime/mac/alert.r`) showing the message, then `natQuit(3)` as
-    before. The "UI initialized, and not scripted" gate reads two
-    already-existing signals instead of inventing new cross-module
-    machinery: `natQdInited` (native.cla's own global, set once
-    `nat_UiMacInitToolbox` has run — never true for a non-UI program or
-    for a panic before that point) AND `peekb(UiTestScript()) == 0`
-    (ui.cla's own "not scripted" test, called directly — ui.cla turned
-    out to already be spliced into every native build regardless of
-    program shape, the runtime-ir-bake "full lane superset" splice
-    applying on this lane too, so native.cla calling it needs no new
-    plumbing). Deliberately NOT routed through `alert(...)`/
+    Landed fix: `nat_CorePanic` now ALSO writes the trace line
+    IMMEDIATELY (hand-copies `full`'s bytes into a preallocated Str255
+    scratch buffer via ordinary `string` indexing, then calls
+    `natAlert` — same CR->LF + trailing-LF rendering as before, just
+    flushed at panic time) IN ADDITION TO the pre-existing buffered
+    `natLog` write, not instead of it — fix round 1 (review C1) found
+    that dropping the buffered write moves the panic message from the
+    `log` field to the `out` field of the native capture protocol
+    (`internal/mactest`'s `parseCapture` splits on `natQuit`'s own exit
+    markers, and the immediate write lands before them), breaking
+    `TestRunErrOn68k` (which asserts against `log`); dual-writing keeps
+    that test's own field expectation intact while still getting the
+    crash-survival copy into `out`. Reverified: `CLARUS_MAC_TESTS=1 go
+    test ./internal/mactest -run TestRunErrOn68k` PASS. Then, when a UI
+    is up and NOT scripted, SysBeep(30) + `ui.cla`'s own
+    `UiParamText`/`UiAlert` (called directly, no local trap duplicates)
+    show the plain-OK ALRT 128 (`runtime/mac/alert.r`) with the
+    message, then `natQuit(3)` as before. The "UI initialized, and not
+    scripted" gate reads two already-existing signals instead of
+    inventing new cross-module machinery: `natQdInited` (native.cla's
+    own global, set once `nat_UiMacInitToolbox` has run ALL its Toolbox
+    manager init calls including `NatInitDialogs` — fix round 1 (review
+    M1) moved the flag from the top of that function to right after
+    `NatInitDialogs`, so it can never read true before Alert() is
+    actually safe to call; never true for a non-UI program either) AND
+    `peekb(UiTestScript()) == 0` (ui.cla's own "not scripted" test,
+    called directly — ui.cla turned out to already be spliced into
+    every native build regardless of program shape, the runtime-ir-bake
+    "full lane superset" splice applying on this lane too, so
+    native.cla calling it, or calling `UiParamText`/`UiAlert` directly,
+    needs no new plumbing). Deliberately NOT routed through `alert(...)`/
     `rtUiAlertMsg` (that path allocates a `text` to build its trace
     copy — unsafe on a path that must survive an out-of-memory panic
     without touching the Clarus allocator again); the beep+alert
