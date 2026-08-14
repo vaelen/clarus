@@ -3572,7 +3572,31 @@ func bkLoadSections(): bool {
 // is regenerated at every phase close (CLAUDE.md), keeping drift bounded
 // to "mid-phase, uncommitted .cla edits" -- exactly the same caveat any
 // other snapshot-bootstrapped tool in this repo already carries.
+// bkCheckRtbakeHeader is a thin refusal-path wrapper around
+// bkCheckRtbakeHeaderBody (below), added by clir-load-perf Task 7's own
+// fix round: the body assigns bkLoadBuf = buf partway through (it needs
+// the cursor for bkGetU32/bkGetByte) and then has five `return false`
+// exits after that point, every one of which used to leave the loader
+// holding a reference to the caller's ~1.3MB buffer for the rest of the
+// session -- `text` is a reference type, so a refused CLIR pinned the
+// exact memory design B exists to reclaim, for a whole ClarusC.APPL
+// session running on CLFS-source fallback. Clearing here rather than at
+// each of those five returns means a sixth one cannot reintroduce the
+// leak, and it covers BOTH callers (bkLoadRtbake and macgui.cla's
+// gcResolveBakePath, which checks the header directly).
+//
+// The SUCCESS path deliberately leaves bkLoadBuf/bkLoadPos exactly as
+// the body left them (buffer set, cursor at 19): bkLoadRtbake parses
+// straight on from there.
 func bkCheckRtbakeHeader(buf: text, wantLane: int): bool {
+    if bkCheckRtbakeHeaderBody(buf, wantLane) {
+        return true
+    }
+    bkLoadBuf = ""
+    return false
+}
+
+func bkCheckRtbakeHeaderBody(buf: text, wantLane: int): bool {
     var magic: string
     var version: int
     var lane: int
@@ -3702,8 +3726,10 @@ func bkLoadRtbake(buf: text, wantLane: int): bool {
     // Nothing reads bkLoadBuf outside a parse, and macgui.cla's
     // gcCompile frees its rtbakeBytes copy right after driveCompile
     // returns -- but a text is a REFERENCE, so that free reclaims the
-    // ~1.3MB only if this reference is gone too. Cleared on failure as
-    // well: a refused parse has no more use for it either.
+    // ~1.3MB only if this reference is gone too. Covers a failed SECTION
+    // parse too (bkLoadSections returning false lands here); a refused
+    // HEADER never reaches this line, and is cleared by
+    // bkCheckRtbakeHeader's own wrapper instead -- see its doc comment.
     bkLoadBuf = ""
     return parsed
 }
