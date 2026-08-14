@@ -194,6 +194,14 @@ enum IRStmtKind {
     SReturn
     SBreak
     SContinue
+
+    // SAttempt (attempt-abort phase Task 2, design doc %3.1/%3.3): the
+    // structured `attempt { } aborted IDENT { }` node -- mirrors SIf's
+    // own shape (irAttemptBody/irAttemptHandler are irIfThen/irIfElse's
+    // twins; see newIRAttempt below). Both backends currently reject this
+    // kind LOUDLY (their own cgStmt/fpStmt unmatched-case fallbacks) until
+    // Tasks 3/4 land real codegen for it.
+    SAttempt
 }
 
 enum IRExprKind {
@@ -345,6 +353,31 @@ record IRFunc {
     ret: int
     localsHead: int
     bodyHead: int
+    // bailHead (attempt-abort phase Task 2, Ruling A2): this function's
+    // shared bail-block statement chain -- release every scope-exit
+    // candidate (lowBuildScopeExitFrees, same machinery lowAppendTrailing
+    // Frees/lowReturn already use), then return ret's default/zero value
+    // -- or -1 if none was built (a no-feature program, or this function
+    // is runtime-origin: see fromRuntimeModule). newIRFunc's own
+    // constructor sets this to -1 explicitly (NOT the record's plain
+    // zero-value default, which would be 0 -- a real, ambiguous arena
+    // index); irFuncSetBail overwrites it after construction, matching
+    // irFuncSetBodyHead/irFuncSetLocalsHead's own "setter after
+    // construction" convention (the bail block is built once the
+    // function's own body has fully finished lowering). Both backends
+    // (Tasks 3/4) branch here as a target; this task only builds and
+    // attaches it.
+    bailHead: int
+    // fromRuntimeModule (attempt-abort phase Task 2, Ruling A3): true iff
+    // this function's `func`/`callback func` decl was parsed from a file
+    // under the runtime/clarus/ source prefix (declIsRuntimeOrigin,
+    // lower.cla) -- backends' "never check after this callee" predicate.
+    // bkRuntimeFuncBoundary must NOT be used for this (task-1-report P2:
+    // stale/0 outside a --rtbake compile, and not a clean index boundary
+    // even within one). Plain bool zero-value (false) is the correct
+    // default for every OTHER function (synthesized dispatchers, handler
+    // bodies, and ordinary user functions are never runtime-origin).
+    fromRuntimeModule: bool
 }
 
 record IRGlobal {
@@ -1209,6 +1242,7 @@ func irReset() {
     iAlertIdx = -1
     iQuitIdx = -1
     iLogIdx = -1
+    iAbortIdx = -1
     iPeekBIdx = -1
     iPeekWIdx = -1
     iPeekLIdx = -1
@@ -1540,6 +1574,38 @@ func irForRangeTo(i: int): int {
 
 func irForRangeBody(i: int): int {
     return irStmts[i].c
+}
+
+// newIRAttempt/irAttemptBody/irAttemptBinder/irAttemptHandler
+// (attempt-abort phase Task 2, design doc %3.1/%3.3): mirrors
+// newIRIf/irIfCond/irIfThen/irIfElse's own shape exactly -- a=bodyHead
+// (SIf's thenHead twin), b=handlerHead (SIf's elseHead twin), nameIdx=the
+// `aborted` binder's name (same slot SForRange's own loop-var name rides,
+// irForRangeV above). Tasks 3/4 own how a checked call site inside body
+// actually branches to handler on abort; this only carries the
+// structural body/binder/handler triple both backends will walk.
+func newIRAttempt(bodyHead: int, binderNameIdx: int, handlerHead: int): int {
+    var n: IRStmt
+
+    n.kind = SAttempt
+    n.a = bodyHead
+    n.b = handlerHead
+    n.nameIdx = binderNameIdx
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irAttemptBody(i: int): int {
+    return irStmts[i].a
+}
+
+func irAttemptBinder(i: int): int {
+    return irStmts[i].nameIdx
+}
+
+func irAttemptHandler(i: int): int {
+    return irStmts[i].b
 }
 
 func newIRForList(vName: int, listV: int, bodyHead: int): int {
@@ -2046,6 +2112,11 @@ func newIRFunc(name: int, paramsHead: int, ret: int, localsHead: int, bodyHead: 
     n.ret = ret
     n.localsHead = localsHead
     n.bodyHead = bodyHead
+    // bailHead's "-1 means none" sentinel needs an explicit set here --
+    // unlike every other -1-sentinel child slot in this file, a record's
+    // plain zero-value default for an int field is 0, a real arena index,
+    // not -1 (see bailHead's own doc comment on the IRFunc record above).
+    n.bailHead = -1
     irFuncs.add(n)
     if not irFuncIdxByName.has(name) {
         irFuncIdxByName[name] = irFuncs.count - 1
@@ -2094,6 +2165,28 @@ func irFuncSetBodyHead(i: int, bodyHead: int) {
 // above.
 func irFuncSetLocalsHead(i: int, localsHead: int) {
     irFuncs[i].localsHead = localsHead
+}
+
+// irFuncBail/irFuncSetBail (attempt-abort phase Task 2, Ruling A2): see
+// IRFunc.bailHead's own doc comment above.
+func irFuncBail(i: int): int {
+    return irFuncs[i].bailHead
+}
+
+func irFuncSetBail(i: int, bailHead: int) {
+    irFuncs[i].bailHead = bailHead
+}
+
+// irFuncIsRuntimeOrigin/irFuncMarkRuntimeOrigin (attempt-abort phase
+// Task 2, Ruling A3): see IRFunc.fromRuntimeModule's own doc comment
+// above. Mark-only (like irLocalMarkNoBirth/irArgMarkCopy) -- never
+// explicitly cleared, since false is already the correct default.
+func irFuncIsRuntimeOrigin(i: int): bool {
+    return irFuncs[i].fromRuntimeModule
+}
+
+func irFuncMarkRuntimeOrigin(i: int) {
+    irFuncs[i].fromRuntimeModule = true
 }
 
 // findIRFuncIdxByName returns irFuncs' arena index for the func whose name
@@ -3943,6 +4036,22 @@ func ILog(): int {
         iLogIdx = intern("log")
     }
     return iLogIdx
+}
+
+// IAbort (attempt-abort phase Task 2, design doc %3.1/%3.3) is
+// `abort(msg)`'s intrinsic, following the IAlert/IQuit/ILog pattern
+// exactly just above. Both backends' existing unknown-intrinsic
+// catch-alls (cg68k.cla's cgIntrUi tail, cprint.cla's fpIntrCall tail)
+// already reject this LOUDLY, naming it by poolGet(nm), until Tasks 3/4
+// add real codegen -- verified by hand-run, not just by this comment
+// (see the task report).
+var iAbortIdx: int = -1
+
+func IAbort(): int {
+    if iAbortIdx == -1 {
+        iAbortIdx = intern("abort")
+    }
+    return iAbortIdx
 }
 
 // -- peek/poke (Plan 5a Task 4, Ch13) --

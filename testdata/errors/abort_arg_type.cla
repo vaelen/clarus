@@ -1,0 +1,9 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// attempt-abort phase, Task 2: `abort(expr)` requires expr to be
+// string-typed (same coercion set as alert's own argument) -- an int
+// argument is a checker error.
+func f() {
+    abort(42)
+}

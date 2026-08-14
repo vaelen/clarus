@@ -3,12 +3,12 @@
 
 include "lib.cla"
 
-// tok.cla: token kinds and the Token record Ñ a port of
+// tok.cla: token kinds and the Token record ï¿½ a port of
 // internal/token/token.go. Enum member order matches token.go's Kind
 // constants exactly: the operator members (TkAssign..TkTilde) MUST stay
 // contiguous and last, because lex.cla's isOperatorKind relies on a single
 // int(k) range test over that span (mirroring token.go's
-// `k >= token.ASSIGN && k <= token.TILDE`) Ñ Clarus enums only support ==/!=
+// `k >= token.ASSIGN && k <= token.TILDE`) ï¿½ Clarus enums only support ==/!=
 // directly, so the range test goes through int(k).
 enum TokKind {
     TkEOF
@@ -54,6 +54,14 @@ enum TokKind {
     TkBreak
     TkContinue
 
+    // TkAttempt/TkAborted (attempt-abort phase, Task 2, design doc %3.1):
+    // the two new reserved keywords `attempt { } aborted IDENT { }`.
+    // Appended after TkContinue, still safely inside the keyword span and
+    // still strictly before the operator members -- isOperatorKind's own
+    // int(k) range test (TkAssign..TkTilde) is untouched either way.
+    TkAttempt
+    TkAborted
+
     TkLParen
     TkRParen
     TkLBrace
@@ -87,7 +95,7 @@ enum TokKind {
 // interned identifier/string/char text (IDENT, STRINGLIT, CHARLIT); intVal
 // holds INT's and CHARLIT's numeric value; fixVal holds FIXEDLIT's raw
 // 16.16 value; line/col replace Go's lazily-computed source.Pos (the
-// Clarus lexer tracks line/col incrementally as it scans Ñ see lex.cla).
+// Clarus lexer tracks line/col incrementally as it scans ï¿½ see lex.cla).
 // Fields unused by a given kind are left at zero.
 record Token {
     kind: TokKind
@@ -147,8 +155,10 @@ var kwSwitch: int
 var kwCase: int
 var kwBreak: int
 var kwContinue: int
+var kwAttempt: int
+var kwAborted: int
 
-// kwInit interns all 33 keyword names exactly once, on keywordKind's
+// kwInit interns all 35 keyword names exactly once, on keywordKind's
 // first call. Idempotent (kwInited guards re-entry).
 func kwInit() {
     if kwInited { return }
@@ -186,10 +196,12 @@ func kwInit() {
     kwCase = intern("case")
     kwBreak = intern("break")
     kwContinue = intern("continue")
+    kwAttempt = intern("attempt")
+    kwAborted = intern("aborted")
 }
 
 // keywordKind maps nameIdx (the interned index of an identifier's text) to
-// its keyword TokKind, or TkIdent Ñ the sentinel meaning "not a keyword,
+// its keyword TokKind, or TkIdent ï¿½ the sentinel meaning "not a keyword,
 // this is an ordinary identifier". Mirrors token.Keywords.
 func keywordKind(nameIdx: int): TokKind {
     kwInit()
@@ -226,12 +238,14 @@ func keywordKind(nameIdx: int): TokKind {
     if nameIdx == kwCase { return TkCase }
     if nameIdx == kwBreak { return TkBreak }
     if nameIdx == kwContinue { return TkContinue }
+    if nameIdx == kwAttempt { return TkAttempt }
+    if nameIdx == kwAborted { return TkAborted }
     return TkIdent
 }
 
 // tokKindName renders a short debug name for k, e.g. for lex_test.cla's
 // golden output. This is a display helper for clarusc's own tests, NOT a
-// port of Go's Kind.String() Ñ that table's quoted diagnostic forms
+// port of Go's Kind.String() ï¿½ that table's quoted diagnostic forms
 // ("'if'", "identifier", "';'", ...) belong to the parser's error messages
 // (Task 7) and are deferred to that task.
 func tokKindName(k: TokKind): string {
@@ -277,6 +291,8 @@ func tokKindName(k: TokKind): string {
     case TkCase { return "KwCase" }
     case TkBreak { return "KwBreak" }
     case TkContinue { return "KwContinue" }
+    case TkAttempt { return "KwAttempt" }
+    case TkAborted { return "KwAborted" }
     case TkLParen { return "LPAREN" }
     case TkRParen { return "RPAREN" }
     case TkLBrace { return "LBRACE" }

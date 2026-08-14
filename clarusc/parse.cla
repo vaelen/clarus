@@ -269,6 +269,8 @@ func tokKindQuoted(k: TokKind): string {
     case TkCase { return "'case'" }
     case TkBreak { return "'break'" }
     case TkContinue { return "'continue'" }
+    case TkAttempt { return "'attempt'" }
+    case TkAborted { return "'aborted'" }
     case TkLParen { return "'('" }
     case TkRParen { return "')'" }
     case TkLBrace { return "'{'" }
@@ -851,6 +853,7 @@ func parseStmt(): int {
     if curKind() == TkIf { return parseIfStmt() }
     if curKind() == TkWhile { return parseWhileStmt() }
     if curKind() == TkFor { return parseForStmt() }
+    if curKind() == TkAttempt { return parseAttemptStmt() }
     if curKind() == TkReturn { return parseReturnStmt() }
     if curKind() == TkQuit { return parseQuitStmt() }
     if curKind() == TkCancel {
@@ -1001,6 +1004,35 @@ func parseForStmt(): int {
     }
     body = parseBlock()
     return newFor(v1.nameIdx, v2NameIdx, seq, toExpr, body, line, col)
+}
+
+// parseAttemptStmt parses `"attempt" block "aborted" IDENT block`
+// (attempt-abort phase Task 2, design doc %3.1). The `aborted` clause is
+// REQUIRED -- unlike parseIfStmt's optional `else`, there is no `curKind()
+// == TkAborted` probe here: `expect(TkAborted)` unconditionally, so a bare
+// `attempt { }` with nothing after its closing brace fails with the
+// ordinary "expected 'aborted', found X" parity message (same mechanism
+// as any other `expect` call in this file), matching the language rule
+// that `attempt` without `aborted` is a parse error, not a checker one.
+// Same same-line-as-the-preceding-`}` convention as `if`/`else`
+// (parseIfStmt never skipNewlines() before checking for `else` either):
+// `aborted` must appear on the SAME source line as attempt's own closing
+// `}`, K&R-style.
+func parseAttemptStmt(): int {
+    var line: int
+    var col: int
+    var body: int
+    var binder: Token
+    var handler: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'attempt'
+    body = parseBlock()
+    expect(TkAborted)
+    binder = expect(TkIdent)
+    handler = parseBlock()
+    return newAttempt(body, binder.nameIdx, handler, line, col)
 }
 
 // parseReturnStmt parses `"return" [ expr ]`. A return with no value is

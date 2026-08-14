@@ -1121,6 +1121,14 @@ func lowCall(e: int): int {
         ty = lowMustType(e)
         if name == "alert" {
             return newIRIntr(IAlert(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "abort" {
+            // abort(msg) (attempt-abort phase Task 2, design doc %3.1) --
+            // handled exactly like alert just above. lowUsesAbort is set
+            // defensively here too (checkIdentCall's cnAbort arm already
+            // set it during checking -- see that flag's own doc comment,
+            // check.cla).
+            lowUsesAbort = true
+            return newIRIntr(IAbort(), lowArgs(callArgsHead(e)), ty)
         } else if name == "log" {
             return newIRIntr(ILog(), lowArgs(callArgsHead(e)), ty)
         } else if name == "peekb" {
@@ -2898,9 +2906,46 @@ func lowStmt(s: int): int {
     case StEdit {
         return lowEditStmt(s)
     }
+    case StAttempt {
+        return lowAttempt(s)
+    }
     }
     lowUnsupported("statement kind " + numToStr(int(stmtKind(s))))
     return -1
+}
+
+// lowAttempt lowers `attempt { body } aborted msg { handler }`
+// (attempt-abort phase Task 2, design doc %3.1/%3.3) into the structured
+// SAttempt IR node -- mirroring lowIf's own shape (irAttemptBody/
+// irAttemptHandler are irIfThen/irIfElse's twins). The binder is a
+// fresh, ordinary `string` local (Str255 value type, not one of
+// lowEscapeTrackableKind's counted kinds, so it needs no scope-exit
+// release -- unlike a for-loop's List/Map element borrow), scoped to the
+// HANDLER block only, matching lowFor's own "push a scope, add+declare
+// the loop var, lower the body, pop" shape (lowFor, above).
+//
+// Sets lowUsesAbort defensively (checkAttemptStmt already set it during
+// checking -- see that flag's own doc comment for why it must be known
+// before ANY function starts lowering, which is why this isn't the
+// flag's only setter). Task 3/4 own how a checked call site inside
+// `body` actually branches to `handler` on abort; this only emits the
+// structural node both backends will walk to find body/handler -- their
+// own cgStmt/fpStmt unmatched-case fallbacks reject SAttempt LOUDLY until
+// then (verified by hand-run, see the task report).
+func lowAttempt(s: int): int {
+    var bodyHead: int
+    var handlerHead: int
+    var binderNameIdx: int
+
+    lowUsesAbort = true
+    bodyHead = lowBlock(attemptBody(s))
+    binderNameIdx = attemptBinder(s)
+    lowPushScope()
+    lowAddLocal(binderNameIdx, irStrType(255))
+    lowDeclareLocal(binderNameIdx)
+    handlerHead = lowBlock(attemptHandler(s))
+    lowPopScope()
+    return newIRAttempt(bodyHead, binderNameIdx, handlerHead)
 }
 
 // lowEditEmit builds the IUiEdit Intr call (ir.cla's IUiEdit doc comment
@@ -4226,7 +4271,7 @@ func lowBlock(blk: int): int {
 // copy a compile error, so the callee's own aliased copy is simply never
 // written through and never released -- ownership stays with the caller,
 // balanced without any retain.
-func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int {
+func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int, runtimeOrigin: bool): int {
     var paramsHead: int
     var paramsTail: int
     var p: int
@@ -4260,8 +4305,103 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int 
     lowCurFuncRet = savedRet
 
     fn = newIRFunc(nameIdx, paramsHead, ret, lowLocalsHead, bodyHead)
+    // attempt-abort phase Task 2, Ruling A2/A3: a runtime-origin function
+    // gets tagged (never gets a bail block -- runtime code is
+    // conventionally forbidden from using attempt/abort, design doc %3.4,
+    // so it never needs one); otherwise, in an abort-enabled program
+    // (lowUsesAbort, already known-final by now -- see its own doc
+    // comment, check.cla), build+attach this function's shared bail
+    // block using lowFreeNames/lowFreeTypes' STILL-VALID snapshot for
+    // THIS function (lowRunEscapePrepass above set it, lowBuildScopeExit
+    // Frees below reads it, and it isn't reset again until the NEXT
+    // function's own lowRunEscapePrepass call) -- must happen here, not
+    // in a later pass, or the exact release list this function's own
+    // trailing-frees already used would no longer be available.
+    if runtimeOrigin {
+        irFuncMarkRuntimeOrigin(fn)
+    } else if lowUsesAbort {
+        irFuncSetBail(fn, lowBuildAbortBailBlock(ret))
+    }
     lowPopScope()
     return fn
+}
+
+// lowBuildAbortBailBlock (attempt-abort phase Task 2, Ruling A2) builds
+// the CURRENT function's shared bail block: release every scope-exit
+// candidate still tracked in lowFreeNames/lowFreeTypes -- the EXACT same
+// walk lowAppendTrailingFrees/lowReturn already use via
+// lowBuildScopeExitFrees (not duplicated by hand, per the ruling) --
+// then return ret's default/zero value. The zero value doubles as the
+// null representation for a handle-typed return too: the CALLER nulls
+// its own copy of a handle-typed result at the check site (Task 4)
+// rather than ever reading this one, so there is nothing to actually
+// construct here, only a bit pattern the caller will discard. Called
+// once per (non-runtime-origin) function, from lowFuncBody, right after
+// that function's own body finishes lowering; attached to the IRFunc via
+// irFuncSetBail. Both backends' Task 3/4 own how to actually branch here
+// as a target -- this only builds and attaches the IR.
+//
+// Known open question for Task 3/4/5 (flagged, not fixed here per the
+// ruling's own "do not duplicate lowBuildScopeExitFrees' logic by hand"):
+// lowFreeNames deliberately excludes lowReturn's own synthetic
+// return-value temp (lowNewReturnTemp's __retN, see its doc comment) --
+// on ordinary execution that's fine (exactly one return site's own
+// inline release/store sequence consumes it, always, since the checker
+// requires every path to return). An abort that bails BEFORE any return
+// statement executes skips that inline release too, so a function with a
+// heap/rec-typed return that reaches this bail block leaves __retN's
+// own prologue-birthed container unreleased -- a possible leak class
+// specific to the abort path, structurally identical in shape to (not
+// introduced by) this same exclusion in lowAppendTrailingFrees' existing
+// fall-off-the-end case. Task 5's leak-gate fixture is the right place
+// to prove whether this actually manifests once Tasks 3/4 wire real
+// branches to this block.
+func lowBuildAbortBailBlock(ret: int): int {
+    var head: int
+    var tail: int
+    var retStmt: int
+
+    head = lowBuildScopeExitFrees()
+    if ret == irVoidT {
+        retStmt = newIRReturn(-1)
+    } else {
+        retStmt = newIRReturn(newIRIntConst(0, ret))
+    }
+    if head == -1 {
+        return retStmt
+    }
+    tail = head
+    while irStmtNext(tail) != -1 {
+        tail = irStmtNext(tail)
+    }
+    irStmtListAppend(tail, retStmt)
+    return head
+}
+
+// declIsRuntimeOrigin (attempt-abort phase Task 2, Ruling A3) reports
+// whether decl d was parsed from a file under the runtime/clarus/ source
+// prefix -- task-1-report P2's chosen mechanism (getDeclFile + a literal
+// path-prefix check) for the "never check after this callee" tag Tasks
+// 3/4 consume via irFuncIsRuntimeOrigin. A plain prefix match, NOT
+// bkPathIsUitest's basename-suffix trick (bake.cla) -- ruled explicitly,
+// not this task's call to revisit: breaks under a --rtdir override that
+// relocates the runtime source directory elsewhere on disk, since the
+// recorded path then no longer STARTS WITH "runtime/clarus/" (P2's own
+// text calls this "a small, one-time, one-place change", not a general
+// solution -- a --rtdir compile that also uses attempt/abort would need
+// a real fix, deferred).
+func declIsRuntimeOrigin(d: int): bool {
+    var p: int
+    var path: string
+    var want: string
+
+    p = getDeclFile(d)
+    if p == -1 {
+        return false
+    }
+    path = poolGet(p)
+    want = "runtime/clarus/"
+    return path.length >= want.length and path[0, want.length] == want
 }
 
 // lowFuncDecl lowers a user `func` declaration into an ir.Func (stmt.go's
@@ -4275,7 +4415,7 @@ func lowFuncDecl(d: int) {
     } else {
         ret = irVoidT
     }
-    lowFuncBody(funcDeclName(d), funcDeclParamsHead(d), ret, funcDeclBody(d))
+    lowFuncBody(funcDeclName(d), funcDeclParamsHead(d), ret, funcDeclBody(d), declIsRuntimeOrigin(d))
 }
 
 // lowTopHandler lowers a top-level `on App.launch`/`startEmpty`/`startCLI`
@@ -4286,16 +4426,16 @@ func lowTopHandler(d: int) {
 
     path = poolGet(handlerDeclPath(d))
     if path == "App.launch" {
-        lowFuncBody(intern("handler_App_launch"), -1, irVoidT, handlerDeclBody(d))
+        lowFuncBody(intern("handler_App_launch"), -1, irVoidT, handlerDeclBody(d), false)
         irHasLaunch = true
     } else if path == "App.startEmpty" {
-        lowFuncBody(intern("handler_App_startEmpty"), -1, irVoidT, handlerDeclBody(d))
+        lowFuncBody(intern("handler_App_startEmpty"), -1, irVoidT, handlerDeclBody(d), false)
         irHasStartEmpty = true
     } else if path == "App.startCLI" {
-        lowFuncBody(intern("handler_App_startCLI"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d))
+        lowFuncBody(intern("handler_App_startCLI"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
         irHasStartCLI = true
     } else if path == "App.openDocument" {
-        lowFuncBody(intern("handler_App_openDocument"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d))
+        lowFuncBody(intern("handler_App_openDocument"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
         irHasOpenDocument = true
     } else {
         // Task 4+: resource handlers are unsupported.

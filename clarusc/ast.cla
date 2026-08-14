@@ -94,7 +94,12 @@
 //   StEdit       nameIdx=form window name; intVal=isNew flag (0/1);
 //                a=target expr (meaningful iff isNew==0); b=new-type name
 //                (meaningful iff isNew==1)
+//   StAttempt    (attempt-abort phase Task 2, design doc %3.1) a=body
+//                StBlock; b=handler StBlock; nameIdx=binder name (the
+//                `aborted IDENT` local, a fresh `string` scoped to the
+//                handler block only) -- `attempt { a } aborted msg { b }`
 //
+
 // ---- DeclKind (decls arena) ----
 // -- top-level declarations (a File's Decls, chained via DeclNode.next) --
 //   DkInclude    nameIdx=path string
@@ -222,6 +227,13 @@ enum StmtKind {
     StOpen
     StClose
     StEdit
+
+    // StAttempt (attempt-abort phase Task 2) is `attempt { } aborted
+    // IDENT { }` -- see this enum's own header comment above for the
+    // field layout. Appended last; ordering among the other kinds is not
+    // load-bearing (matches TxSortedMap/TxIntMap's own "appended last"
+    // precedent on TypeExprKind below).
+    StAttempt
 }
 
 enum DeclKind {
@@ -1134,6 +1146,37 @@ func editIsNew(i: int): bool {
 }
 
 func editNewType(i: int): int {
+    return stmts[i].b
+}
+
+// newAttempt/attemptBody/attemptBinder/attemptHandler (attempt-abort
+// phase Task 2, design doc %3.1): `attempt { body } aborted binder {
+// handler }`. Same shape as newFor/forV1 for the bound name (nameIdx),
+// and same two-block shape as newIf's then/else (a/b) -- see this file's
+// own StmtKind header comment for the full field layout.
+func newAttempt(body: int, binderNameIdx: int, handler: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StAttempt
+    n.a = body
+    n.b = handler
+    n.nameIdx = binderNameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func attemptBody(i: int): int {
+    return stmts[i].a
+}
+
+func attemptBinder(i: int): int {
+    return stmts[i].nameIdx
+}
+
+func attemptHandler(i: int): int {
     return stmts[i].b
 }
 

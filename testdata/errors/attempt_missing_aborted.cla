@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// attempt-abort phase, Task 2: `attempt` REQUIRES an `aborted` clause
+// (design doc's own %3.1) -- a bare attempt block with nothing after its
+// closing brace is a parse error, not a checker one.
+func f() {
+    attempt {
+        log("hi")
+    }
+}

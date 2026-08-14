@@ -1,0 +1,1 @@
+../../testdata/errors/abort_arg_type.cla:8:11: cannot use int where string is expected
