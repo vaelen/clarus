@@ -3418,6 +3418,50 @@ func lowAppendTrailingFrees(bodyHead: int): int {
     return bodyHead
 }
 
+// lowEnsureTrailingReturn (attempt-abort phase Task 5 fix) guarantees
+// bodyHead's own top-level statement chain ends in a real SReturn --
+// a no-op if it already does (lowReturn's own inline release-before-
+// return, or a previous call already fixed this up). Called only for a
+// function that is about to get a bail block appended right after its
+// own body (see lowFuncBody's own call site doc comment for the full
+// rationale/repro: without this, normal execution can fall straight
+// through into the bail block instead of actually returning, silently
+// double-releasing this function's own scope-exit locals). When a real
+// trailing return is missing, appends one: a bare `return` for a void
+// function, or `return __retN` (lowRetTempIdx -- already minted and
+// declared by lowFuncBody's own caller-side step, for ANY non-void ret,
+// before this runs) otherwise -- exactly lowBuildAbortBailBlock's own
+// return-value shape, safe here for the identical reason: this appended
+// return is either the function's own genuine implicit exit (void, no
+// prior explicit return) or provably unreachable dead code (a non-void
+// function whose real paths already all returned -- lowAppendTrailingFrees'
+// own documented case), never a path that actually needs a MEANINGFUL
+// value.
+func lowEnsureTrailingReturn(bodyHead: int, ret: int): int {
+    var tail: int
+    var retStmt: int
+
+    if bodyHead != -1 {
+        tail = bodyHead
+        while irStmtNext(tail) != -1 {
+            tail = irStmtNext(tail)
+        }
+        if irStmtKind(tail) == SReturn {
+            return bodyHead
+        }
+    }
+    if ret == irVoidT {
+        retStmt = newIRReturn(-1)
+    } else {
+        retStmt = newIRReturn(newIRVarRef(lowRetTempIdx, false, ret))
+    }
+    if bodyHead == -1 {
+        return retStmt
+    }
+    irStmtListAppend(tail, retStmt)
+    return bodyHead
+}
+
 // lowReturn lowers `return` / `return expr` -- stmt.go's Return case. A
 // value clamps through lowCoerceStr against the enclosing function's
 // declared return type (lowCurFuncRet), exactly like a plain `var`
@@ -4304,6 +4348,54 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int, runti
     bodyHead = lowAppendTrailingFrees(bodyHead)
     lowCurFuncRet = savedRet
 
+    if not runtimeOrigin and lowUsesAbort and ret != irVoidT {
+        // attempt-abort phase Task 5 fix: the bail block's own return
+        // statement hands back lowNewReturnTemp's __retN (see
+        // lowBuildAbortBailBlock's own doc comment) -- it must be minted
+        // and DECLARED (lowAddLocal) HERE, before newIRFunc below freezes
+        // lowLocalsHead into the IRFunc record, not inside
+        // lowBuildAbortBailBlock itself (which runs AFTER newIRFunc): a
+        // function whose body declares no locals of its own and never
+        // needed __retN during its own ordinary return-statement lowering
+        // (no `var`s, one `return <simple expr>`) reaches this point with
+        // lowLocalsHead still -1 -- adding a local afterward only updates
+        // the module-level lowLocalsHead/lowLocalsTail bookkeeping
+        // variables, never the value already COPIED into the IRFunc
+        // record's own localsHead field (a plain int, not a live
+        // reference), silently orphaning it. Reproduced compiling
+        // testsuite/core once cases_abort.cla made it abort-enabled:
+        // `use of undeclared identifier 'cv___retN'` -- most core-suite
+        // cases return a small all-scalar TestResult with no local vars
+        // of their own.
+        lowAddLocal(lowNewReturnTemp(), ret)
+    }
+    if not runtimeOrigin and lowUsesAbort {
+        // attempt-abort phase Task 5 fix (found compiling testsuite/core
+        // once cases_abort.cla made it abort-enabled -- `rt_rc:
+        // over-release` on a plain, unrelated case like StrConcatClamp):
+        // a bail block is printed TEXTUALLY right after this function's
+        // own ordinary body (cpEmitFunc/cgEmitFunc), reached ONLY via an
+        // explicit `goto`/branch -- never by falling off the end of the
+        // ordinary body. But a function whose own body doesn't end in a
+        // real SReturn -- a void function with no explicit trailing
+        // `return` (legal; C's own implicit end-of-function return
+        // normally covers it) or a non-void function whose tail is an
+        // exhaustive if/else where every branch already returns
+        // internally (lowAppendTrailingFrees' own documented "dead code"
+        // case) -- has NOTHING stopping normal execution from falling
+        // STRAIGHT THROUGH into the bail block once one exists,
+        // double-releasing this function's own scope-exit locals a
+        // SECOND time. Reproduced exactly this way:
+        // `coreCliRunAndReport` (testsuite/core/runner.cla) is void with
+        // no trailing `return`; its own `cv_coreResults` list got
+        // released once by its normal trailing frees, then again by
+        // falling through into `bail:`'s own release. Fix: whenever this
+        // function is getting a bail block, guarantee its body ends in a
+        // real SReturn first (lowEnsureTrailingReturn is a no-op if it
+        // already does).
+        bodyHead = lowEnsureTrailingReturn(bodyHead, ret)
+    }
+
     fn = newIRFunc(nameIdx, paramsHead, ret, lowLocalsHead, bodyHead)
     // attempt-abort phase Task 2, Ruling A2/A3: a runtime-origin function
     // gets tagged (never gets a bail block -- runtime code is
@@ -4331,31 +4423,59 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int, runti
 // candidate still tracked in lowFreeNames/lowFreeTypes -- the EXACT same
 // walk lowAppendTrailingFrees/lowReturn already use via
 // lowBuildScopeExitFrees (not duplicated by hand, per the ruling) --
-// then return ret's default/zero value. The zero value doubles as the
-// null representation for a handle-typed return too: the CALLER nulls
-// its own copy of a handle-typed result at the check site (Task 4)
-// rather than ever reading this one, so there is nothing to actually
-// construct here, only a bit pattern the caller will discard. Called
-// once per (non-runtime-origin) function, from lowFuncBody, right after
-// that function's own body finishes lowering; attached to the IRFunc via
-// irFuncSetBail. Both backends' Task 3/4 own how to actually branch here
-// as a target -- this only builds and attaches the IR.
+// then return ret's default/zero value. Called once per (non-runtime-
+// origin) function, from lowFuncBody, right after that function's own
+// body finishes lowering; attached to the IRFunc via irFuncSetBail. Both
+// backends' Task 3/4 own how to actually branch here as a target -- this
+// only builds and attaches the IR.
 //
-// Known open question for Task 3/4/5 (flagged, not fixed here per the
-// ruling's own "do not duplicate lowBuildScopeExitFrees' logic by hand"):
-// lowFreeNames deliberately excludes lowReturn's own synthetic
-// return-value temp (lowNewReturnTemp's __retN, see its doc comment) --
-// on ordinary execution that's fine (exactly one return site's own
-// inline release/store sequence consumes it, always, since the checker
-// requires every path to return). An abort that bails BEFORE any return
-// statement executes skips that inline release too, so a function with a
-// heap/rec-typed return that reaches this bail block leaves __retN's
-// own prologue-birthed container unreleased -- a possible leak class
-// specific to the abort path, structurally identical in shape to (not
-// introduced by) this same exclusion in lowAppendTrailingFrees' existing
-// fall-off-the-end case. Task 5's leak-gate fixture is the right place
-// to prove whether this actually manifests once Tasks 3/4 wire real
-// branches to this block.
+// Task 5 fix (task-1-report P5 probe (a) -- __retN leak -- AND a second,
+// independently-found bug: `newIRReturn(newIRIntConst(0, ret))` is only
+// valid C/68k for a SCALAR or heap-pointer (Text/List/Map/SortedMap/
+// IntMap -- 0 == NULL) return type. For any STRUCT-shaped return type --
+// KRec, KArr, or a bounded KStr (`string(N)`) -- a bare `0` is not a
+// value of that type at all; this broke as soon as a real abort-enabled
+// program contained a record/string-returning function (testsuite/core's
+// OWN convention: every `caseXxx(): TestResult` -- surfaced immediately
+// by Task 5's own cases_abort.cla, `returning 'int' from a function with
+// incompatible result type 'clar_rec_TestResult'`).
+//
+// Both bugs share one fix: instead of synthesizing a fresh literal value,
+// reuse (or, if this function never needed one, mint) the SAME synthetic
+// return-value local `lowReturn` itself uses (lowNewReturnTemp's __retN)
+// and return THAT, by ordinary value/handoff -- not a release. This
+// works uniformly for every return kind because __retN is an ordinary
+// declared IRLocal: both backends' existing function-prologue default-
+// init (cpDefaultInit / cg68k's own per-local init) already knows how to
+// zero-construct ANY type correctly (struct compound-literal, NULL
+// pointer, zeroed scalar), and both backends' existing `return <a named
+// local>` machinery (cgEmitReturnRec/cgEmitReturnStr's generic
+// address-and-copy tail, cprint's plain `return cv_name;`) already knows
+// how to hand one back correctly, for every kind, since ordinary
+// user-written `return` statements naming a local do this constantly.
+// No new per-kind dispatch is needed (unlike the original release-based
+// draft of this fix, reverted -- see git history), and no double-
+// release/UAF risk: bail and a real `return` site's own store into
+// __retN are mutually exclusive within one call activation, so whenever
+// this block runs, __retN still holds exactly its function-prologue
+// default-init value, and handing that off (not releasing it) is exactly
+// what an ordinary `return` of a fresh value already does.
+//
+// This also fully closes the __retN-leak class probe (a) flagged,
+// WITHOUT a dedicated release step here: a heap/rec-typed __retN handed
+// off this way becomes an ordinary tracked call result at the FIRST
+// caller/checked-call-site above this frame (fpNewTrackedTmp/
+// cgNewTrackedTmp, exactly as any other checked call's return value is),
+// where it is released like any other pending statement-scoped temp on
+// the aborting branch -- the SAME machinery cgEmitAbortCheck/
+// fpEmitAbortCheck's own Task 5 fix (probe (b)) already added. Verified
+// empirically (task-5-report.md): probe (a)'s fixture goes from
+// live=4000 (2000 iters, unfixed) to live=0.
+//
+// lowRetTempIdx is ALREADY minted and declared by the time this runs
+// (lowFuncBody's own pre-newIRFunc step, for exactly this reason -- see
+// its own doc comment) whenever ret != irVoidT, so this reads it
+// directly rather than calling lowNewReturnTemp/lowAddLocal again.
 func lowBuildAbortBailBlock(ret: int): int {
     var head: int
     var tail: int
@@ -4365,7 +4485,7 @@ func lowBuildAbortBailBlock(ret: int): int {
     if ret == irVoidT {
         retStmt = newIRReturn(-1)
     } else {
-        retStmt = newIRReturn(newIRIntConst(0, ret))
+        retStmt = newIRReturn(newIRVarRef(lowRetTempIdx, false, ret))
     }
     if head == -1 {
         return retStmt

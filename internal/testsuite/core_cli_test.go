@@ -74,6 +74,7 @@ func buildCoreCLI(t *testing.T) string {
 		filepath.Join(root, "testsuite", "core", "cases_xrec.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_datetime.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_param.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_abort.cla"),
 		filepath.Join(root, "testsuite", "core", "cli.cla"),
 	}
 	args := append([]string{"emit", "--rtdir", rtDir, "-o", outC}, files...)
@@ -202,6 +203,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"DurationStrShapes", "DateTimeStrVectors", "NowSanity",
 			"ClearBasics",
 			"ParamAliasGlobal", "ParamAliasHandle", "ParamBorrowChain", "ParamNestedCallArg", "ParamContainerElemArg",
+			"AbortCatch", "AbortDeep", "AbortNested", "AbortReabort", "AbortRelease",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

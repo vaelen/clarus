@@ -58,6 +58,34 @@ func TestLeakGate(t *testing.T) {
 	})
 }
 
+// TestAbortLeakBaseline pins the attempt-abort phase's own leak
+// guarantee (design doc %7's "Leak proof": no runtime mark stack, no
+// setjmp -- release happens via ordinary ARC as the abort propagates
+// frame by frame, so it must be exactly as leak-free as a normal
+// return). testdata/leakgate/abortbaseline.cla loops three shapes 500
+// times each: the brief's own "AbortRelease" shape (a retained `text`
+// local in a middle frame the abort unwinds through), plus the two
+// leak-gap classes task-1-report's P5 probe specifically flagged and
+// this task's own probing confirmed as REAL (task-5-report.md):
+//
+//   - probe (a): a heap-typed function return whose synthetic return
+//     temp (lowNewReturnTemp's __retN) is prologue-birthed but never
+//     released when the function aborts before its own `return`
+//     executes -- was live=4000 for 2000 iters before the fix
+//     (lower.cla's lowFuncBody/lowBuildAbortBailBlock), live=0 after.
+//   - probe (b): a mid-statement transient temp (e.g. `x = makeText() +
+//     f()`, `f` aborts) that the abort check's `goto` abandons before
+//     the ordinary end-of-statement flush ever runs -- fixed in both
+//     backends' abort-check emission (cg68k.cla's cgEmitAbortCheck,
+//     cprint.cla's fpEmitAbortCheck).
+//
+// Host-lane only (CLARUS_MEM_STRICT), same as every other TestLeakGate
+// case -- the native lane's own leak behavior is covered by the
+// (emulator-gated, deferred per this task's brief) suite boots.
+func TestAbortLeakBaseline(t *testing.T) {
+	runLeakFixture(t, "../../testdata/leakgate/abortbaseline.cla")
+}
+
 // parseLiveCount reads a CLARUS_MEM_REPORT file and returns the
 // "##CLARUS-MEM## live=N" total, plus up to the first 20 "rt_mem: leak"
 // lines (for a failing assertion's diagnostic dump).

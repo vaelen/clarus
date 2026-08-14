@@ -1,0 +1,90 @@
+// abortbaseline.cla: attempt-abort phase Task 5 leak baseline
+// (internal/mactest's TestAbortLeakBaseline). Loops three shapes N
+// times each iteration and expects zero live-block growth under
+// CLARUS_MEM_STRICT:
+//
+//   1. AbortRelease shape (the brief's own ask): a middle frame holds a
+//      retained `text` local when the abort unwinds through it.
+//   2. task-1-report P5 probe (a): a function with a heap-typed RETURN
+//      VALUE that aborts BEFORE any `return` statement executes (the
+//      synthetic return temp, lowNewReturnTemp's __retN, is excluded
+//      from the bail block's own release list -- task-2-report's own
+//      flagged open question).
+//   3. task-1-report P5 probe (b): a mid-statement transient temp born
+//      before a checked call that itself aborts (`x = makeText() +
+//      f()` where `f` aborts -- task-3-report's own flagged concern).
+//
+// Both (a) and (b) were confirmed as REAL leaks (task-5-report.md) and
+// fixed in lower.cla (lowFuncBody/lowBuildAbortBailBlock) and both
+// backends' abort-check emission (cg68k.cla's cgEmitAbortCheck,
+// cprint.cla's fpEmitAbortCheck) -- this fixture is the standing
+// regression guard for all three.
+
+func abReleaseInner() {
+    abort("release-boom")
+}
+
+func abReleaseMiddle() {
+    var keep: text
+    keep = "middle-local"
+    abReleaseInner()
+}
+
+func abRetHelper() {
+    abort("ret-boom")
+}
+
+// abRetLeaky has a heap-typed (text) return value and a real `return t`
+// statement (so lowReturn mints __retN for this function), but aborts
+// via abRetHelper() before ever reaching that statement.
+func abRetLeaky(): text {
+    var t: text
+    t = "leaky"
+    abRetHelper()
+    return t
+}
+
+func abMidMakeText(): text {
+    var t: text
+    t = "prefix-"
+    return t
+}
+
+func abMidAborter(): text {
+    abort("mid-boom")
+    return ""
+}
+
+// abMidCombine's makeText() result is a pending, un-consumed tracked
+// statement temp when abMidAborter() (the SAME statement's other
+// operand) aborts.
+func abMidCombine() {
+    var x: text
+    x = abMidMakeText() + abMidAborter()
+}
+
+func run() {
+    var i: int
+
+    i = 0
+    while i < 500 {
+        attempt {
+            abReleaseMiddle()
+        } aborted msg {
+        }
+        attempt {
+            abRetLeaky()
+        } aborted msg {
+        }
+        attempt {
+            abMidCombine()
+        } aborted msg {
+        }
+        i = i + 1
+    }
+}
+
+on App.startCLI(args: list of string) {
+    run()
+    quit 0
+}

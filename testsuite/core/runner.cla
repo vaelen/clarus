@@ -66,6 +66,13 @@
 // with the callee removing that key mid-call -- the use-after-free the
 // whole-branch final review found (see cases_param.cla's own doc
 // comment).
+//
+// AbortCatch/AbortDeep/AbortNested/AbortReabort/AbortRelease
+// (cases_abort.cla, attempt-abort phase Task 5) are the 62nd-66th real
+// cases: catch-one-frame-down, 3-frame propagation, nesting, re-abort
+// from a handler, and release-on-unwind of a retained local, for the new
+// `attempt`/`aborted`/`abort(msg)` feature. Adding this file makes the
+// WHOLE core suite abort-enabled (see cases_abort.cla's own doc comment).
 
 enum CoreTest {
     All
@@ -132,16 +139,21 @@ enum CoreTest {
     ParamBorrowChain
     ParamNestedCallArg
     ParamContainerElemArg
+    AbortCatch
+    AbortDeep
+    AbortNested
+    AbortReabort
+    AbortRelease
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 63 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 68 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 64
+const nCoreCases: int = 69
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -339,6 +351,21 @@ func coreCaseName(t: CoreTest): string {
     case ParamContainerElemArg {
         return "ParamContainerElemArg"
     }
+    case AbortCatch {
+        return "AbortCatch"
+    }
+    case AbortDeep {
+        return "AbortDeep"
+    }
+    case AbortNested {
+        return "AbortNested"
+    }
+    case AbortReabort {
+        return "AbortReabort"
+    }
+    case AbortRelease {
+        return "AbortRelease"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -422,6 +449,11 @@ func coreAllCases(): list of CoreTest {
     l.add(ParamBorrowChain)
     l.add(ParamNestedCallArg)
     l.add(ParamContainerElemArg)
+    l.add(AbortCatch)
+    l.add(AbortDeep)
+    l.add(AbortNested)
+    l.add(AbortReabort)
+    l.add(AbortRelease)
     l.add(SelfCheck)
     return l
 }
@@ -710,6 +742,26 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, ParamContainerElemArg) {
         results.add(caseParamContainerElemArg())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, AbortCatch) {
+        results.add(caseAbortCatch())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, AbortDeep) {
+        results.add(caseAbortDeep())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, AbortNested) {
+        results.add(caseAbortNested())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, AbortReabort) {
+        results.add(caseAbortReabort())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, AbortRelease) {
+        results.add(caseAbortRelease())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

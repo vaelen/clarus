@@ -2296,12 +2296,46 @@ func cgAbortTarget(): int {
 // directly (not an EVarRef -- the flag has no IR node, same as
 // cprint.cla's `clar_aborting`) via A5-relative addressing, same as any
 // ordinary global.
+//
+// attempt-abort phase Task 5 fix (task-1-report P5 probe (b), mirrors
+// cprint.cla's fpEmitAbortCheck fix): a pending statement-scoped tracked
+// temp (cgStmtTmpOffs/cgStmtTmpType -- cgNewTrackedTmp's own scratch-pool
+// slots, born earlier in the SAME statement, e.g. `x = makeText() + f()`'s
+// `makeText()` result, still un-consumed when `f()` aborts) is invisible
+// to the callee's bail block (named scope-exit locals only) AND never
+// reaches the ordinary end-of-statement cgFreeStmtTmps() flush (the
+// BNE/BRA abandons the rest of the statement outright). When
+// cgStmtTmpOffs is non-empty at the check point, widen the plain
+// TST/BNE into TST/BEQ-skip + release-each-slot + BRA target + skip:, so
+// every pending slot is released (via cgReleaseAt, cgFreeStmtTmps' own
+// per-slot call) before jumping away -- non-destructively: the tracking
+// lists are NOT cleared, so the real cgFreeStmtTmps() still runs, once,
+// on the non-aborting fallthrough. A just-tracked call result that is
+// itself the abort source is naturally a null/zero handle (the callee's
+// own bail returns 0 -- cgReleaseAt on a null handle is the same
+// proven-safe no-op the C lane relies on), so no exclusion is needed. The
+// common case (no pending temps -- one call per statement, the vast
+// majority) is byte-identical to before: still the bare TST.B/BNE pair.
 func cgEmitAbortCheck() {
     var target: int
+    var skipLbl: int
+    var i: int
 
     target = cgAbortTarget()
     a68Emit(OpTst, 1, AmNone, 0, 0, AmDisp16, 5, cgAbortFlagOff)
-    a68EmitBr(OpBcc, 6, target) // BNE: aborting -> bail/handler target
+    if cgStmtTmpOffs.count == 0 {
+        a68EmitBr(OpBcc, 6, target) // BNE: aborting -> bail/handler target
+        return
+    }
+    skipLbl = a68NewLabel()
+    a68EmitBr(OpBcc, 7, skipLbl) // BEQ: not aborting -> skip release+branch
+    i = 0
+    while i < cgStmtTmpOffs.count {
+        cgReleaseAt(6, cgStmtTmpOffs[i], cgStmtTmpType[i])
+        i = i + 1
+    }
+    a68EmitBr(OpBra, 0, target)
+    a68Bind(skipLbl)
 }
 
 // ================================================================

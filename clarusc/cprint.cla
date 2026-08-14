@@ -457,8 +457,48 @@ func fpAbortTarget(): text {
 // lane's equivalent is this single `if` statement): `if (clar_aborting)
 // goto <target>;`, immediately after a checked call's own C statement,
 // before its result (if any) is read anywhere else.
+//
+// attempt-abort phase Task 5 fix (task-1-report P5 probe (b)): when a
+// checked call's own abort fires, any STATEMENT-scoped tracked temp born
+// earlier in the SAME statement (e.g. `x = makeText() + f()`'s `makeText()`
+// result, still un-consumed when `f()` aborts) is not covered by the
+// destination function's bail block -- that block only releases NAMED
+// scope-exit locals (lowFreeNames), never fpStmtTmps, which is a
+// printer-only, statement-scoped concept invisible to lower.cla. The
+// ordinary end-of-statement fpFreeStmtTmps() flush never runs either: the
+// `goto` abandons the rest of the statement outright. Fix: when
+// fpStmtTmps is non-empty at the check point, widen the one-liner into a
+// block that releases every still-pending tracked temp (fpEmitTmpRelease,
+// the same per-slot printer fpFreeStmtTmps itself uses) BEFORE the goto --
+// non-destructively (the lists are NOT cleared here), so the real
+// end-of-statement fpFreeStmtTmps() still fires, correctly, on the
+// NON-aborting continuation. The just-materialized result of the checked
+// call itself is already among these tracked temps (fpCallFn tracks it
+// before calling here) and is naturally NULL when propagating from a
+// deeper abort (the callee's own bail returns 0) -- releasing a NULL
+// handle is a proven no-op (rt_text_release(NULL) etc.), so no special
+// exclusion is needed. The common case (no pending temps -- the vast
+// majority of checked call sites, one call per statement) is unchanged:
+// still the single `if (clar_aborting) goto <target>;` line.
 func fpEmitAbortCheck() {
-    fpEmit("if (clar_aborting) goto " + fpAbortTarget() + ";")
+    var target: text
+    var i: int
+
+    target = fpAbortTarget()
+    if fpStmtTmps.count == 0 {
+        fpEmit("if (clar_aborting) goto " + target + ";")
+        return
+    }
+    fpEmit("if (clar_aborting) {")
+    fpIndent = fpIndent + 1
+    i = 0
+    while i < fpStmtTmps.count {
+        fpEmitTmpRelease(i)
+        i = i + 1
+    }
+    fpEmit("goto " + target + ";")
+    fpIndent = fpIndent - 1
+    fpEmit("}")
 }
 
 // fpEmit appends one indented body line (4 spaces per indent level). `line`

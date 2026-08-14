@@ -1,0 +1,193 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_abort.cla: attempt/abort core-suite cases (attempt-abort phase,
+// Task 5). Host-lane only for now, per the task's own ruling -- the
+// native suite boot (testsuite/toolbox or a native core CLI front end)
+// is deferred, emulator-gated (Task 8 checklist).
+//
+// Adding this file makes the WHOLE core suite abort-enabled
+// (lowUsesAbort, check.cla) -- every function in the compiled program,
+// including every pre-existing case, now gets a bail block and every
+// user call gets a post-call check. That is by design (this is the
+// feature's own real-world proving ground, same role clarusc's own
+// eventual Task 6 conversion plays) and changes no existing case's
+// observable behavior (the flag never sets outside these five cases'
+// own attempts).
+//
+// Case -> what it proves:
+//   AbortCatch    <- a helper aborts; the caller's attempt catches; the
+//                     caught message equals the aborted string; the
+//                     helper's own code AFTER abort() did not run (a
+//                     side global set only after abort() stays unset).
+//   AbortDeep     <- abort 3 frames down; every intermediate frame's own
+//                     post-call code is provably skipped (one side
+//                     global PER frame, set only after that frame's own
+//                     call returns -- all three must stay unset).
+//   AbortNested   <- an inner attempt catches; the outer attempt's own
+//                     handler is never entered; normal flow resumes
+//                     after the inner attempt statement.
+//   AbortReabort  <- the aborted handler itself calls abort() again
+//                     (re-abort); the OUTER attempt catches the new
+//                     message, not the original one.
+//   AbortRelease  <- a middle frame holds a retained `text` local
+//                     (assigned into a global before the frame's own
+//                     callee aborts) when the abort unwinds through it;
+//                     passes if execution continues correctly and the
+//                     global's own reference is still readable
+//                     afterward -- the NUMERIC leak assertion for this
+//                     exact shape lives in the Go leak-gate test
+//                     (TestAbortLeakBaseline, internal/mactest), which
+//                     can actually count allocations; this case only
+//                     proves functional correctness under the release.
+
+var abCatchAfter: bool
+
+func abCatchHelper() {
+    abort("boom")
+    abCatchAfter = true
+}
+
+func caseAbortCatch(): TestResult {
+    var caught: string
+
+    abCatchAfter = false
+    caught = ""
+    attempt {
+        abCatchHelper()
+    } aborted msg {
+        caught = msg
+    }
+    if caught != "boom" {
+        return tkFail("AbortCatch", "wrong message: " + caught)
+    }
+    if abCatchAfter {
+        return tkFail("AbortCatch", "code after abort() in helper ran")
+    }
+    return tkPass("AbortCatch")
+}
+
+var abDeep1After: bool
+var abDeep2After: bool
+var abDeep3After: bool
+
+func abDeep3() {
+    abort("deep")
+    abDeep3After = true
+}
+
+func abDeep2() {
+    abDeep3()
+    abDeep2After = true
+}
+
+func abDeep1() {
+    abDeep2()
+    abDeep1After = true
+}
+
+func caseAbortDeep(): TestResult {
+    var caught: string
+
+    abDeep1After = false
+    abDeep2After = false
+    abDeep3After = false
+    caught = ""
+    attempt {
+        abDeep1()
+    } aborted msg {
+        caught = msg
+    }
+    if caught != "deep" {
+        return tkFail("AbortDeep", "wrong message: " + caught)
+    }
+    if abDeep1After or abDeep2After or abDeep3After {
+        return tkFail("AbortDeep", "an intermediate frame's post-call code ran")
+    }
+    return tkPass("AbortDeep")
+}
+
+func abNestedInnerAbort() {
+    abort("inner-boom")
+}
+
+func caseAbortNested(): TestResult {
+    var innerCaught: string
+    var outerEntered: bool
+    var afterInner: bool
+
+    innerCaught = ""
+    outerEntered = false
+    afterInner = false
+    attempt {
+        attempt {
+            abNestedInnerAbort()
+        } aborted msg {
+            innerCaught = msg
+        }
+        afterInner = true
+    } aborted msg2 {
+        outerEntered = true
+    }
+    if innerCaught != "inner-boom" {
+        return tkFail("AbortNested", "inner attempt didn't catch: " + innerCaught)
+    }
+    if outerEntered {
+        return tkFail("AbortNested", "outer handler wrongly entered")
+    }
+    if not afterInner {
+        return tkFail("AbortNested", "normal flow didn't resume after inner attempt")
+    }
+    return tkPass("AbortNested")
+}
+
+func caseAbortReabort(): TestResult {
+    var outerCaught: string
+
+    outerCaught = ""
+    attempt {
+        attempt {
+            abort("first")
+        } aborted msg {
+            abort("second-" + msg)
+        }
+    } aborted msg2 {
+        outerCaught = msg2
+    }
+    if outerCaught != "second-first" {
+        return tkFail("AbortReabort", "wrong re-abort message: " + outerCaught)
+    }
+    return tkPass("AbortReabort")
+}
+
+var abReleaseMiddleKept: text
+
+func abReleaseInner() {
+    abort("release-boom")
+}
+
+func abReleaseMiddle() {
+    var keep: text
+    keep = "middle-local"
+    abReleaseMiddleKept = keep
+    abReleaseInner()
+}
+
+func caseAbortRelease(): TestResult {
+    var caught: string
+
+    abReleaseMiddleKept = ""
+    caught = ""
+    attempt {
+        abReleaseMiddle()
+    } aborted msg {
+        caught = msg
+    }
+    if caught != "release-boom" {
+        return tkFail("AbortRelease", "wrong message: " + caught)
+    }
+    if abReleaseMiddleKept != "middle-local" {
+        return tkFail("AbortRelease", "middle frame's retained local corrupted on unwind")
+    }
+    return tkPass("AbortRelease")
+}
