@@ -1654,7 +1654,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     extras" claim is backwards-compatible-but-imprecise — capture all
     510 IRFuncs, truncate to `bkLdBaseIrFuncsCount` in `bkInstallObjCode`
     alongside the IR's own truncation; no separate testapi capture path
-    is needed.
+    is needed. (superseded by clir-load-perf: Task 7 deleted
+    `bkInstallObjCode` outright — the truncation this bullet describes is
+    now a live bounds check, `cgObjPasteEligible` against
+    `bkRuntimeFuncBoundary`, recomputed every compile rather than staged
+    once.)
 
   Complete empirical hole taxonomy (14,134 sites across the corpus, every
   site exactly 4 bytes): `JT` cross-segment call (6892), `FUNCPC`
@@ -1679,7 +1683,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   ordinary compiles) forces every runtime function reachable and runs
   the real emit once; the loader stages `bkLd*` fields, `bkInstallObjCode`
   installs post-acceptance, truncating to `bkRuntimeFuncBoundary`
-  alongside `bkInstallArenas`' own IR truncation. **Two unplanned
+  alongside `bkInstallArenas`' own IR truncation. (superseded by
+  clir-load-perf: `bkInstallObjCode` is gone — Task 7's design B needed
+  the pending arenas to survive un-truncated across compiles, so the
+  boundary is now enforced at read time by `cgObjPasteEligible` instead
+  of at install time by this function.) **Two unplanned
   mechanisms**, both direct consequences of Amendment A6's own
   "force everything reachable" instruction (which no real compile, and
   therefore none of Task 1's organically-rooted probe corpus, ever
@@ -1774,7 +1782,10 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      index) — the recursive from-source recompile never re-ran
      `bkInstallObjCode`, so it read the aborted attempt's stale staging
      against a different `irFuncs` index space. Fixed with one line in
-     `driveReset()`.
+     `driveReset()`. (superseded by clir-load-perf: `bkInstallObjCode` no
+     longer exists — `driveReset()`'s one-line fix cited here now resets
+     the live `bkRuntimeFuncBoundary` global instead of the removed
+     function's staging.)
 
   **The fixed-bucket PLAN DEFECT:** the brief's own Measure-skip bullet
   said to substitute the once-per-artifact fixed buckets
@@ -1806,7 +1817,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     implied it was Task 3's baked-index predicate — it is not;
     `cgObjPasteEligible` reads `bkLdObjValid[i]` only, and
     `bkRuntimeFuncBoundary`'s sole consumer is `bkInstallObjCode`'s own
-    truncation. The `bkLdObj*` section header overstated staging
+    truncation. (superseded by clir-load-perf: `bkInstallObjCode` is
+    deleted — `bkRuntimeFuncBoundary`'s sole consumer as of Task 7 is
+    `cgObjPasteEligible`'s own bounds check, a live per-compile global
+    rather than staged/truncated install-time state.) The `bkLdObj*`
+    section header overstated staging
     readership — the StrLit `First`/`Count`/`Flat` triple and the eight
     once-per-artifact size-bucket scalars are staged/truncated but
     deliberately never read by Task 3's Measure-skip). Added
@@ -2211,6 +2226,219 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   degradation analysis. 16MB is a practical floor for small/medium
   programs; the 48MB default keeps its headroom rationale for
   self-compile-scale inputs.
+
+- **clir-load-perf (branch `clir-load-perf`, 2026-08-15, off `main` at
+  `42c7265`): Tasks 1-10 DONE, host T1 GREEN throughout — T2, the two
+  Snow gates, and merge are DEFERRED to a phase-close session on
+  Andrew's go-ahead; branch not yet merged.** Cuts the CLIR (baked-IR)
+  load path's byte-by-byte hash-verify + parse cost that made a Snow
+  field session clock **10m 2s** between "Verifying Baked Runtime" and
+  `driveCompile`'s "Starting" line for a 1,255,314-byte artifact (spec
+  §1) — three full per-byte passes over the buffer (two redundant
+  header-hash *verifies*, not a write pass — `gcResolveBakePath`'s own
+  `bkCheckRtbakeHeader` call and `bkLoadRtbake`'s immediate re-check of
+  the identical buffer, both load-time — plus one per-byte
+  `bkGetByte`/`bkGetU32` section parse), repeated on **every** compile
+  in a session though the resource can't change between compiles.
+  Design `docs/superpowers/specs/2026-08-15-clir-load-perf-design.md`.
+  Plan (10 tasks): `docs/superpowers/plans/2026-08-15-clir-load-perf.md`.
+  Full ledger: `.superpowers/sdd/2026-08-15-clir-load-perf/progress.md`.
+
+  Three independently-landable designs, landed in dependency order (A
+  first/smallest, then C's format bump, then B's more delicate
+  correctness work on top of C's simpler world):
+  - **A — drop the redundant verify:** `bkHeaderVerified` flag,
+    consume-once; `gcResolveBakePath` sets it, `bkLoadRtbake` skips its
+    own re-verify when set. Host path unchanged — nothing on host ever
+    sets the flag, so the host's single verify inside `bkLoadRtbake`
+    still runs every process (fine: host load is already fast and one
+    compile is one process).
+  - **B — parse once per app session:** `bkParsedValid` memo skips
+    `bkLoadRtbake` entirely on compile #2+. The load-bearing risk was
+    `bkInstallArenas`' reference-assignment aliasing (pending lists
+    installed as live compiler state by reference; a live compile would
+    then append user IR straight into the pending arrays through that
+    alias) — fixed by copy-on-install: every reference-assigned arena
+    becomes a fresh `.add`-loop copy (`record` elements are value
+    types, so this is a structural fix, not a patch).
+  - **C — bulk `text` range reads + CLIR v7:** four new stateless
+    `text` methods (`hashStep`/`u32At`/`stringAt`/`textAt`, Chapter 3),
+    the CLIR body/stamp/manifest hash swapped from FNV-mul to a
+    shift-add djb2 step (the multiply was noise per the motivating
+    probe; inside a per-call loop it would have become the dominant
+    term), and `bake.cla`'s load path rewritten onto the four bulk
+    reads behind the existing overrun soft-fail guard.
+    `bkFormatVersion` 6→7 (byte layout unchanged, hash meaning
+    changed).
+
+  **Task ledger** (commits `11cf5d6..5db9e1a` before this docs task):
+  1. `11cf5d6` — design A (`bkHeaderVerified` skip).
+  2. `058d6f2`/`2b5a1a7`/`01c853d` — the four bulk `text` methods, host
+     lane + runtime + core-suite cases + reference; fix rounds closed an
+     overflow-wrapping bounds-check hole (all four range checks used a
+     `pos + n > rt.len` form CLAR_ADD32 can wrap) and a negative-length
+     `stringAt` hole (a `0xFFFFFFFF`-prefixed length silently returned
+     `""` instead of panicking), both hardware-provable.
+  3. `f57d601`/`8acf38f` — native `cg68k` arms for the four methods
+     (hidden-result-pointer ABI independently re-traced by review, not
+     copied from a same-shape arm).
+  4. `2786a68` — CLIR v7: hash swapped to the djb2 shift-add shape.
+  5. `6dc7c06`/`10d5a0d` — load-path rewrite onto the bulk reads
+     (`bkGetU32`/`bkGetStr`/`bkGetBytes`), one more overflow-form
+     bounds-check fix in `bkGetBytes`'s payload pre-check (plus a real
+     pre-existing stack smash in `bkGetStr` closed as a side effect of
+     its rewrite).
+  6. Audit-only (opus, no commits): all 43 reference-assigned arenas
+     confirmed MUST-COPY (root cause: `irReset`/`checkReset` clear the
+     live arenas the pending lists would otherwise alias), 1 impure
+     reader recorded not fixed (`bkReadObjCode` — memoization proven
+     safe there by inspection), two HIGH findings (F1/F2, addressed
+     below) and two spec-defect corrections (F8: the spec's "no
+     truncation primitive" blocker claim was false — `list.pop` exists;
+     F9: the spec's copy-cost estimate was wrong — real cost is ~31k
+     copies / ~1.2MB, not what the design doc guessed).
+  7. `aac55a5`/`3b44259` — design B landed: F1 (repeat compiles would
+     silently disable object-code paste after compile #1) and F2
+     (`bkInstallObjCode`'s destructive truncate of *pending* state) both
+     solved by **deleting `bkInstallObjCode`** outright rather than
+     patching it (Ruling, below); fix round closed a header-refusal
+     path that pinned ~1.3MB (`bkLoadBuf`) for the session.
+  8. `5db9e1a` — snapshot regen to a verified Go-free fixed point, plus
+     a session-log assertion that a session loads the baked runtime
+     exactly once (proves B end to end).
+  9. Perf measurement (emulator, no commits — see Measured results).
+  10. This entry, `STATUS.md`, and reconciling the stale
+      `bkInstallObjCode` cross-references this phase orphaned (below).
+
+  **Measured results** (Mini vMac / Mac Plus, 8MHz 68000, 60.15 guest
+  ticks/s, N=65536-byte probe buffer;
+  `.superpowers/sdd/2026-08-15-clir-load-perf/task-9-report.md`):
+
+  | pass | old (µs/byte) | new (µs/byte) | speedup |
+  |---|---:|---:|---:|
+  | body hash | 153.98 (`hash-exact`, per-byte) | 60.63 (`bulk-hash-chunked`, shipped 32KB-chunk shape) | **2.54x** |
+  | U32 section-field walk | 200.91 (`getbyte-walk`) | 55.05 (`bulk-u32`) | **3.65x** |
+  | bulk byte-range copy | 182.14 (`append-build`, per-byte `t.append`) | 0.51 (`bulk-textAt`, one call) | **359x** (dominated by one `TextBlockMoveData` call vs. 65536 single-char appends) |
+
+  Projected onto the real 1,255,314-byte CLIR, Mac-Plus-equivalent
+  guest-tick scale (old modeled as **two** load-time header-hash
+  verifies — `gcResolveBakePath`'s own check plus `bkLoadRtbake`'s
+  redundant re-check of the *same* buffer, both verify passes, not a
+  write pass — plus one per-byte parse pass; new modeled as one
+  chunked-hash pass plus one `bulk-u32`-rate parse pass, `bulk-u32`
+  chosen over `bulk-textAt`'s rate as the more representative proxy for
+  real field-by-field CLIR parsing): **638.8s (~10.6 min) → 145.2s
+  (~2.4 min), ~4.4x.** Repeat compiles in the same session: skip verify
+  and parse entirely (install only, ~2s) — design B's own target is
+  smashed. All figures are Mac-Plus-scale guest ticks, extrapolated
+  linearly (justified: no cache, uniform per-byte memory-access cost on
+  this hardware); **no Mac II (Snow-class) boot lane exists in this
+  harness to measure directly, so treat the seconds as an upper bound
+  and the ~4.4x ratio — not the absolute time — as the portable
+  takeaway.**
+
+  **Honesty check against the spec's own target (§2):** the spec set
+  "first-compile load window ~600s → target ≤60s, stretch ≤30s,
+  Snow-class hardware, measured not promised." At Mac-Plus-equivalent
+  scale the measured/projected figure is **145.2s**; even allowing for
+  a Mac II's real (faster, uncorrected-for-here) hardware, the ≤60s
+  target is **likely MISSED**, projected at roughly **2-2.5 minutes on
+  Snow**. The **repeat-compile** target (skip verify+parse, ~2s install
+  only) is met outright. **Real Snow numbers are pending the
+  phase-close Snow runs** (below) — everything above is extrapolation
+  from an 8MHz Mac Plus probe, not a measured Snow boot.
+
+  **Rulings that shaped the phase:**
+  - **Golden-family rebless distinction** (Task 2): the 41 churned
+    compiler-output goldens (22 `cg68k` `.s` + 19 `emitui`) were
+    reblessed after the implementer's own normalization diff proved the
+    churn was pure literal-pool renumbering (plus one dead literal) —
+    satisfies the plan's "no churn" constraint, which meant
+    behavior-level goldens, not literal-numbering-stable ones.
+  - **Early snapshot regen** (Task 5): forced ahead of the plan's own
+    schedule — `bake.cla` started calling the new bulk methods and the
+    old snapshot's checker rejects unrecognized syntax, so bootstrap
+    breaks without a regen; proven safe via fixed-point + a full
+    `internal/selfhost` PASS (which incidentally also exercised Task 2's
+    new runerr goldens for the first time). Task 8's regen became a
+    re-verify-after-6/7 rather than a fresh forcing event.
+  - **Copy-on-install upheld over truncate-on-reuse** (Task 6, after
+    F8/F9 disproved the spec's own blocker/cost claims): still ruled to
+    stand, because it composes with the existing reset flow, where
+    truncate-on-reuse would need reset-flow restructuring — corrected
+    cost accepted (~31k copies, ~1.2MB, ~seconds/compile).
+  - **F1/F2 solved by deleting `bkInstallObjCode`** (Task 7): rather
+    than patch the function to stop clearing pending `bkLdObjValid`
+    (F1) or stop destructively truncating pending state (F2), the
+    implementer removed it outright — `cgObjPasteEligible` now
+    bounds-checks the live `bkRuntimeFuncBoundary` global directly at
+    read time, and `driveReset` resets that live boundary instead of
+    resetting pending install-time staging.
+
+  **Deferred / phase debt:**
+  - **Runtime loop-body residual**: the bulk `text` methods still cost
+    ~480 cycles/byte on Mac Plus guest ticks (`bulk-hash-chunked`'s
+    60.63 µs/byte at 8MHz), roughly **10x** a straight-line
+    `move.b`/`TextBlockMoveData`-class theoretical floor — future lever
+    if this matters again: hand-emitted asm helpers (à la `cg_mul32`)
+    or a tighter loop-codegen shape; not attempted this phase.
+  - **Memo lane-tag gap** (Task 7 minor): `bkParsedValid`'s doc comment
+    should say explicitly "lane cannot change mid-session," even though
+    that's unreachable today.
+  - **testapi single-compile coverage gap** (Task 7 minor): the
+    `--testapi` install arms only ever get single-compile coverage,
+    inherent to how front ends drive a compile — recorded as a phase
+    fact, not a defect.
+  - **`stringAt` hardware-consumption-shapes watch item** (Task 3): the
+    return-arm + materialize consumption shapes are read-verified but
+    not hardware-exercised; add one assertion if this corner is touched
+    again.
+  - **`ser.cla` still reads per-byte** (`file.save`/`file.load`) —
+    deliberate spec non-goal (§2), not adopted onto the new bulk reads.
+  - **`drive.cla:1854`'s "rtbakeBytes still held" parenthetical** is now
+    wrong for the memoized-compile drift-interleaving case (Task 7
+    minor) — stale comment, not a behavior bug.
+  - **Comment-drift minors** (Task 5): `bkLoadOverrun`'s doc names only
+    `bkGetByte` as a setter (four setters exist now); `rtTextStringAt`
+    cites a `bkGetStr` idiom that moved to `bkGetStrShort`;
+    `bkCheckRtbakeHeader`'s header doc still names `bkHashTextFrom` for
+    the body walk (now chunked `hashStep`).
+  - **New panic fixtures are host-only** (`testdata/runerr/
+    stringat_cap`, `stringat_negative`, `textrange_overflow`,
+    `textrange_oor`): pinned by `internal/selfhost/behavior_test.go`'s
+    `.behavior` goldens (T1, both lanes' semantics proven equivalent by
+    construction) but, unlike `oob`/`listindex`, never booted natively
+    by `TestRunErrOn68k` — the same "host-pinned, no per-lane boot"
+    convention test-consolidation established for panic fixtures whose
+    semantic coverage doesn't need a hardware boot.
+  - **`bkReadObjCode`'s `nHoles` spin** (Task 5 minor, pre-existing):
+    the loop spins on a corrupt hole count before the framing check
+    fires — not new to this phase, not fixed by it.
+  - **Truncate-on-reuse recorded, not chosen** (design B's own
+    alternative, spec §4): cheaper per compile (no copy) but needs a
+    list-truncation primitive plus a proof no pass mutates prefix
+    entries in place; revisit only if copy-on-install's cost is ever
+    unacceptable.
+  - **Host `--rtbake` path still verifies once per process** (design
+    A, by design): the host never sets `bkHeaderVerified`, so its own
+    single verify inside `bkLoadRtbake` always runs; fine, since host
+    load is already fast and one compile is one process.
+  - **Probe files deleted, numbers preserved above**: Task 9's
+    `testdata/cg68k/hashprobe.cla` +
+    `internal/mactest/hashprobe_test.go` (both throwaway, never
+    committed at any point) were deleted after measurement; the working
+    tree is clean.
+
+  **Stale cross-references fixed this task:** the object-code-linker
+  entry above (Task 1 Amendment A6, Task 2, Task 3 finding 4, Task 4
+  Step 0) still described `bkInstallObjCode`, which Task 7 above
+  deleted — each site now carries a `(superseded by clir-load-perf: …)`
+  parenthetical in place, in line with this file's existing convention
+  for superseded claims. `clarusc/ir.cla:375`'s `fromRuntimeModule`
+  warning comment (about a different global, `bkRuntimeFuncBoundary`,
+  still correct as written) gained one reconciling sentence noting that
+  global is now also a live, per-compile-recomputed paste-bound global
+  rather than staged-once install state — see `cgObjPasteEligible`.
 
 ## Small open items (not yet scheduled)
 

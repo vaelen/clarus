@@ -1,128 +1,147 @@
-# Session status — 2026-08-15 (attempt-abort DONE + MERGED to origin/main, all gates green)
+# Session status — 2026-08-15 (clir-load-perf: 10/10 tasks DONE, host T1 green; T2 + Snow gates + merge PENDING, branch unmerged)
 
-Handoff summary for the next session. **The `attempt-abort` phase is
-COMPLETE, fully gated (host + emulator + Snow), field-tested by Andrew
-on Snow, and MERGED to `main` (fast-forward `97d043c..d299b72`,
-Andrew's instruction, 2026-08-15 01:34 JST) and pushed to origin**
-(plus docs commits `3d141a9`+). The local checkout is on `main`; the
-`attempt-abort` branch pointer equals it. Everything through this phase
-is on `origin/main`.
+Handoff summary for the next session. **The `clir-load-perf` phase's
+implementation is COMPLETE (Tasks 1-10, host-gated throughout) but the
+branch is NOT merged.** Three phase-close gates are outstanding and
+need to run before any merge decision: T2 (`scripts/test-merge.sh`),
+and two Snow-hardware runs required by the standing rule because
+`bake.cla`/`macgui.cla` both changed this phase. The local checkout is
+on `main` (this phase works directly on the `main` checkout per this
+project's no-worktree-for-toolchain-symlinks convention, same as every
+prior phase); `clir-load-perf`'s own commits are ahead of `main` at
+`42c7265` and not yet fast-forwarded in.
 
 ## 0. START HERE next session
 
-Nothing is unmerged and nothing is owed on `attempt-abort`. The next
-phase per the roadmap is **stage 4 of the precompiled-artifacts
-staging: the user-module artifact cache** (standalone object files +
-keying, generalizing the object-code-linker phase's runtime-only object
-sections to arbitrary user modules —
-`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`'s
-own Staging section). **No spec or plan exists yet — the first job is
-speccing it**, same design-first process as the prior phases. After
-stage 4, the 5f decomposition's last sub-phase is Retro68 retirement.
+**What Andrew needs to decide/run, in order:**
 
-Smaller candidate items (not scheduled, Andrew's call on priority; all
-recorded in the ROADMAP attempt-abort entry's debt list):
+1. **Run T2** (`scripts/test-merge.sh` — includes `internal/selfhost`
+   at 30m timeout and the native `mactest` lane). Not yet run this
+   phase.
+2. **Run the two Snow gates** (`CLARUS_SNOW_TESTS=1`):
+   `TestClarusCBakePathOnSnow` AND
+   `TestMacResidentFailedCompileStaysAliveOnSnow` — the standing rule
+   fires because `bake.cla`/`macgui.cla` both changed this phase (see
+   0b's "Standing rules"). Use the 20m-settle/fast-forward procedure
+   the attempt-abort phase established (0b below), not the old 55m
+   figure. **Capture the Log-window "Verifying Baked Runtime" →
+   `driveCompile` "Starting" timestamps** — this is the real Snow
+   before/after; everything in the ROADMAP entry's Measured Results
+   table is a Mac-Plus-scale emulator projection (~4.4x, ~145.2s
+   Plus-equivalent), not a Snow measurement.
+3. **Read the honesty caveat before deciding anything**: the spec's
+   own ≤60s first-compile target is **likely MISSED** — projected
+   ~2-2.5 minutes on Snow, not ≤60s. The **repeat-compile** target
+   (skip verify+parse entirely, ~2s install only) IS met. Whether
+   ~2-2.5min-down-from-~10min is good enough to ship as-is, or whether
+   it's worth a follow-up phase against the debt list's "runtime
+   loop-body residual" lever (hand-emitted hash/copy helpers, ~10x off
+   a theoretical floor), is Andrew's call — full numbers and reasoning
+   in the ROADMAP `clir-load-perf` entry.
+4. **Merge only on Andrew's request**, after 1-2 are green (or after
+   an explicit decision to accept a red/skipped Snow gate — that's
+   also Andrew's call, not a default).
 
-- **PBM icon parser rejects CR line endings on the Mac** (field find,
-  deferred per Andrew — "worry about that later"): both example icons
-  warn "not a well-formed 32x32 P1/P4 PBM" on-Mac while parsing fine on
-  host; `app68BuildIcnFamily`'s P1 parser likely splits on LF only,
-  and Mac-side files (or anything staged via `hcopy -t`) have CR
-  endings. Give it the lexer's own CR/CRLF/LF treatment.
-- **`rt_ext_UiValidRect` Retro68 link gap** (surfaced during Task 10):
-  a real `scripts/build-mac.sh --test` rebuild fails to link
-  (`uiwidgets.cla` references it; no C shim exists) — blocks any fresh
-  Retro68/cprint-lane rebuild, including Rez re-extraction of the
-  resparity goldens. Pre-existing, unrelated to attempt-abort.
-- **cprint-lane UI dispatcher abort-default gap** (parked by ruling):
-  the C lane's synthesized UI dispatch has no per-handler abort check
-  (native lane does, full-strength). Acceptable on the demoted
-  diagnostic lane; becomes relevant only if that lane is ever
-  re-promoted (it is slated for retirement instead).
+Full task ledger, measured numbers, rulings, and the complete debt
+list: ROADMAP's `clir-load-perf` entry. Ledger + reports:
+`.superpowers/sdd/2026-08-15-clir-load-perf/` (progress.md is the
+authoritative per-task record; task-9-report.md has the raw emulator
+probe numbers this phase's perf table is built from).
 
-## 0a. attempt-abort close-out (DONE, MERGED — this session)
+## 0a. clir-load-perf close-out (IMPLEMENTATION DONE — gates pending)
 
-Full detail: ROADMAP's `attempt-abort` entry (task ledger, rulings,
-perf, debt). Design:
-`docs/superpowers/specs/2026-08-14-attempt-abort-design.md` (annotated
-where the landed design differs). Plan:
-`docs/superpowers/plans/2026-08-14-attempt-abort.md`. Ledger + reports:
-`.superpowers/sdd/2026-08-14-attempt-abort/` (retained, incl.
-`deferred-gates.md` — every item now marked run/green). Reference:
-`docs/clarus-language-reference.md` Ch5 ("Attempt and Abort"), Ch12,
-Ch13.
+**What it is:** cuts the CLIR (baked-IR) load path's cost — the stretch
+that clocked 10m 2s on Snow between "Verifying Baked Runtime" and
+`driveCompile`'s "Starting" line for a 1.3MB artifact. Three designs,
+all landed: **A** drops a redundant load-time header-hash re-verify
+(`bkHeaderVerified` consume-once flag); **B** parses the CLIR once per
+app session instead of every compile (`bkParsedValid` memo +
+copy-on-install fix for a reference-aliasing hazard `bkInstallArenas`
+would otherwise have hit); **C** adds four bulk `text` range-read
+methods (`hashStep`/`u32At`/`stringAt`/`textAt`) plus a cheaper djb2
+hash shape, bumping `bkFormatVersion` 6→7, and rewrites `bake.cla`'s
+load path onto them.
 
-**What it is:** `attempt { } aborted msg { }` + `abort(msg)` —
-cooperative flag-propagated unwinding on both lanes (no mark stack, no
-setjmp; per-function bail blocks synthesized in LOWERING run every
-frame's ARC releases — leak-proven; interprocedural `canAbort`
-analysis keeps the happy path fast). clarusc's ~121 fatal
-`log+quit 1` pipeline sites became `abort(msg)`; `ClarusC.APPL`'s
-`gcCompile` catches with beep + real alert + return-to-idle, Log
-window preserved. `alert()` and runtime panics are now actually
-user-visible on the native lane (both were headless trace writes —
-panics additionally got the beep+alert-before-exit treatment, Task 9,
-after Andrew field-diagnosed a silent OOM exit from the `out` file).
-Plus: pre-compile progress ("Loading/Verifying Baked Runtime" + hash
-spinner ticks), missing-icon warn+default fallback, `out` stamped
-`TEXT`/`ttxt`, ALRT 128's OK button inset fixed (first-ever render
-exposed a flush-edge DITL rect).
+**Scale:** 10 tasks, 11 commits (`11cf5d6..5db9e1a`), one opus-run
+audit task (no commits — proved B's copy-on-install safe across 43
+arenas), one measurement-only task (no commits — the emulator perf
+probe), each task subagent-implemented and independently reviewed
+(opus for the two load-bearing tasks: the audit and design B's own
+implementation).
 
-**Scale:** 11 tasks (8 planned + ruled-in 6b perf follow-up, 9 panic
-fix, 10 dialog geometry, 11 golden split), ~36 commits, 2 snapshot
-regens, every task subagent-implemented and independently reviewed;
-the final whole-branch opus review caught a wrong-dialog-ID Critical
-(ALRT 130 vs 128) no scripted gate could ever see.
+**Numbers that matter (Mac-Plus-scale emulator probe, real-CLIR
+projection):** body hash 153.98→60.63 µs/byte (2.54x); U32 parse walk
+200.91→55.05 µs/byte (3.65x); bulk byte-range copy 182.14→0.51 µs/byte
+(359x). Projected real-CLIR (1,255,314 bytes) load-path window:
+638.8s→145.2s (~4.4x). **Spec's ≤60s first-compile target: likely
+MISSED (~2-2.5min projected on Snow).** Repeat-compile target (install
+only, ~2s): met. See ROADMAP entry for the full methodology and
+honesty caveats — these are Mac Plus (8MHz, no-cache) guest-tick
+numbers extrapolated linearly; no Mac II boot lane exists to measure
+Snow directly yet.
 
-**Numbers that matter:** host self-compile **−11.5% vs pre-feature**
-(the naive scheme's +26.3% was recovered net-positive by the `canAbort`
-fixpoint); native emit68k ~0%; `TestSelfEmit68k` 51→54 segments; two
-real unwind leak classes found by probe and fixed (4000→0, 12000→0
-blocks, pinned by `TestAbortLeakBaseline`); site audit 84
-internal-invariant / 40 user-reachable; core suite 64→69 cases.
+**Gates status:**
+- **T1: GREEN throughout** (every task; `--smoke` where `runtime/`/
+  `clarusc/` were touched).
+- **T2: NOT YET RUN this phase.**
+- **`CLARUS_SNOW_TESTS=1` `TestClarusCBakePathOnSnow`: NOT YET RUN**
+  this phase (standing rule fires — `bake.cla`/`macgui.cla` changed).
+- **`CLARUS_SNOW_TESTS=1`
+  `TestMacResidentFailedCompileStaysAliveOnSnow`: NOT YET RUN** this
+  phase (same standing rule; also proves design B via the Task 8
+  session-log assertion).
+- **Merge: NOT DONE.** `clir-load-perf` branch sits ahead of `main` at
+  `42c7265`; fast-forward is a merge-time decision, not automatic.
 
-**Gates, all green:** T1 throughout; full T2 **PASS 249s** (native
-lane incl. suite 69/69, `TestAbortOn68k` with Task 11's lane-specific
-`.out68k` expectation); **`TestClarusCBakePathOnSnow` PASS 1201s**
-(standing rule satisfied for this phase's `bake.cla`/`macgui.cla`
-changes; zero fallback/drift lines, forks byte-identical);
-**`TestMacResidentFailedCompileStaysAliveOnSnow` PASS 1201s** (NEW —
-the phase's own field defect regression-gated: failed compile alerts,
-app survives, second compile in the same session builds and
-byte-verifies); scenario-golden rebless proved UNNECESSARY (zero churn
-— behavior-level goldens); `out` FInfo `TEXT/ttxt` + both alert-dialog
-visuals field-confirmed by Andrew (screenshots, 2026-08-14/15); merged
-result re-verified with T1 before push.
-
-**Operational note that changed the economics:** both Snow tests ran at
-a **20m settle under toolbar fast-forward (~7x)** — Andrew's sizing —
-instead of the historical 55m. Procedure: boot at 1x, click the
-toolbar ▶▶ AFTER the app is up (never `start_fastforward` at boot),
-keep a move-only CGEvent nudger running against the display idle-lock.
-
-**Field-test data (Andrew, Snow):** all five example programs compiled
-on-Mac; a real mid-segment-write OOM at a 12MB partition first exposed
-the silent-panic gap (fixed, Task 9, then field-confirmed with the
-dialog); bookmarks.cla's partition floor is 12-16MB (Measure 5m52s at
-16MB vs 9m14s at 12MB — compaction-thrash signature); 48MB default
-partition keeps its headroom rationale.
-
-**Debt carried (full list in the ROADMAP entry):** the three items in
-section 0 above, plus: no automated dispatcher-default test on either
-lane; `declIsRuntimeOrigin`'s symlink-equivalence residual (shared,
-pre-existing); native non-UI stub lacks inter-entry abort checks
-(behavior still correct); `__retN` overhead in abort-enabled programs
-(ordering-forced); duplicated lowering idioms; host `--rtbake` path
-lacks the pre-compile progress messages; `TestRunErrOn68k` can't boot
-`App.startCLI`-shaped fixtures (pre-existing native-compat gap — the
-two new abort runerr fixtures are host-covered only).
+**Debt carried (full list with citations in the ROADMAP entry):**
+runtime loop-body residual (~480 cycles/byte, ~10x theoretical —
+future lever: hand-emitted helpers or loop-codegen work); memo
+lane-tag gap; testapi single-compile coverage gap; `stringAt`
+hardware-consumption-shapes watch item; `ser.cla` still per-byte
+(deliberate non-goal); `drive.cla:1854` stale parenthetical;
+`bkLoadOverrun`/`rtTextStringAt`/`bkCheckRtbakeHeader` comment-drift
+minors; four new panic fixtures (`stringat_cap`/`stringat_negative`/
+`textrange_overflow`/`textrange_oor`) are host-only (pinned by
+`internal/selfhost/behavior_test.go`, never booted natively, matching
+the established convention for fixtures whose semantics don't need
+hardware); `bkReadObjCode`'s pre-existing `nHoles` spin; truncate-on-
+reuse recorded as an alternative to B's copy-on-install, not chosen;
+host `--rtbake` path still verifies once per process (fine, by
+design). Also fixed this task: four stale ROADMAP cross-references to
+the now-deleted `bkInstallObjCode` (Task 7 of this phase deleted it),
+each reconciled in place with a superseded-claim parenthetical, plus
+one reconciling sentence in `clarusc/ir.cla:375`.
 
 ## 0b. Prior phases (all merged; recap pointers only)
 
+- **attempt-abort** (`attempt { } aborted msg { }` + `abort(msg)`,
+  cooperative unwinding, both lanes) — merged 2026-08-15 (fast-forward
+  `97d043c..d299b72`), pushed to `origin/main`. host self-compile
+  −11.5% vs pre-feature after the Task 6b `canAbort` fixpoint;
+  `ClarusC.APPL` panics and uncaught aborts are now user-visible
+  (beep+alert) instead of silent exits; two real unwind leak classes
+  found and fixed. Full detail: ROADMAP's `attempt-abort` entry.
+  Ledger: `.superpowers/sdd/2026-08-14-attempt-abort/` (retained, incl.
+  `deferred-gates.md` — every item marked run/green). Reference:
+  `docs/clarus-language-reference.md` Ch5 ("Attempt and Abort"), Ch12,
+  Ch13. Debt carried forward from this phase (still open, not
+  clir-load-perf's concern): PBM icon parser rejects CR line endings on
+  the Mac (deferred per Andrew, "worry about that later"); a
+  `rt_ext_UiValidRect` Retro68 link gap blocks fresh Retro68/cprint-lane
+  rebuilds (pre-existing, unrelated); cprint-lane UI dispatcher has no
+  abort-default check (acceptable — that lane is slated for
+  retirement); no automated dispatcher-default test on either lane;
+  `declIsRuntimeOrigin`'s symlink-equivalence residual;
+  `TestRunErrOn68k` can't boot `App.startCLI`-shaped fixtures.
 - **object-code-linker** (stage 3.5, CLIR v6 baked object code,
   −41%/−35% emit68k) — merged 2026-08-14 (`e143af1..6009c65`). Its
   Snow saga (C-lane signed-overflow UB hash bug, CLAR_*32 fix, re-run
-  PASS) is recorded in ROADMAP; debt list in its entry.
+  PASS) is recorded in ROADMAP; debt list in its entry. Note:
+  clir-load-perf's Task 7 deleted this phase's `bkInstallObjCode`
+  function outright (design B needed the pending arenas it truncated
+  to survive un-truncated across compiles) — the object-code-linker
+  ROADMAP entry's own references to that function now carry
+  superseded-claim parentheticals pointing here.
 - **fallback-trigger-narrowing** (CLIR v5 per-module source hash,
   include-dedup by construction) — merged 2026-08-13.
 - **runtime-ir-bake / param-abi / memory-leak-fix /
@@ -130,14 +149,16 @@ two new abort runerr fixtures are host-covered only).
   mac-resident-clarusc** — the 2026-08-12/13 stack, all merged
   (`322765a..b16e8f0`). Highlights that remain operationally relevant:
   the leak fix made per-compile growth 0 and compile #2 ≈ compile #1
-  on hardware; `cgEmitPanic`'s empty-message bug is fixed and
-  regression-tested (`TestRunErrOn68k`); the ~5x compiler speedup and
-  hashtable maps underlie current perf.
+  on hardware (later superseded in kind, not premise, by
+  clir-load-perf's design B, which now skips compile #2's parse
+  entirely rather than merely making it cheap); `cgEmitPanic`'s
+  empty-message bug is fixed and regression-tested
+  (`TestRunErrOn68k`); the ~5x compiler speedup and hashtable maps
+  underlie current perf.
 
 **Standing rules (unchanged):** re-run `TestClarusCBakePathOnSnow`
 (`CLARUS_SNOW_TESTS=1`) after ANY change to `clarusc/bake.cla` or
 `clarusc/macgui.cla` — it is the only proof of the `ClarusC.APPL`
-default bake path (satisfied for attempt-abort; 20m settle suffices
-with fast-forward, see 0a). `internal/selfhost` always gets
-`-count=1 -timeout 30m`. Merge only on Andrew's request; main stays
-green.
+default bake path (fires for clir-load-perf; NOT yet satisfied — see
+0/0a above). `internal/selfhost` always gets `-count=1 -timeout 30m`.
+Merge only on Andrew's request; main stays green.

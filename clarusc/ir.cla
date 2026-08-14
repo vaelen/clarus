@@ -374,7 +374,11 @@ record IRFunc {
     // lower.cla) -- backends' "never check after this callee" predicate.
     // bkRuntimeFuncBoundary must NOT be used for this (task-1-report P2:
     // stale/0 outside a --rtbake compile, and not a clean index boundary
-    // even within one). Plain bool zero-value (false) is the correct
+    // even within one). (clir-load-perf Task 7: bkRuntimeFuncBoundary is
+    // now also a live, per-compile-recomputed paste-bound global rather
+    // than staged-once install state -- see cgObjPasteEligible -- which
+    // does not change this field's own advice.) Plain bool zero-value
+    // (false) is the correct
     // default for every OTHER function (synthesized dispatchers, handler
     // bodies, and ordinary user functions are never runtime-origin).
     fromRuntimeModule: bool
