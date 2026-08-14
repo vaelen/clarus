@@ -8544,7 +8544,7 @@ LBL_661:
         MOVE.L D0,-(A7)
         DC.W $A98B  ; UiParamText
         CLR.W -(A7)
-        MOVE.L #130,D0
+        MOVE.L #128,D0
         MOVE.W D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)

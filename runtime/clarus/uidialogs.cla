@@ -979,11 +979,22 @@ func rtUiAskSaveChanges(name: ptr): int {
 // (empty, embedded CR, already-LF, max-length 255) -- see
 // task-4-report.md's fix-round-1 section for the transcript.
 //
-// The real-dialog half is unchanged, mirroring rtUiAskSaveChanges's own
-// precedent exactly (UiParamText + UiAlert(130, ptr(0))), gated on NOT
-// rtUiScripted so a scripted/golden run never pops a real dialog -- msg
-// itself (the original ptr, already a valid Str255-shaped blob) passes
-// straight to UiParamText with no conversion needed.
+// The real-dialog half borrows rtUiAskSaveChanges's own UiParamText
+// convention but NOT its alert ID: it calls UiAlert(128, ptr(0)), the
+// plain OK alert (app68BuildDitl128 / alert.r ALRT 128, single "^0" text
+// slot, one OK button) -- gated on NOT rtUiScripted so a scripted/golden
+// run never pops a real dialog. msg itself (the original ptr, already a
+// valid Str255-shaped blob) passes straight to UiParamText with no
+// conversion needed.
+//
+// Fix round 2 (final whole-branch review, Critical C1): this call
+// literally copied rtUiAskSaveChanges's UiAlert(130, ...) call including
+// its alert ID, so every native alert()/uncaught-abort default showed
+// askSaveChanges's three-button "Save changes to ...?" dialog instead of
+// a plain OK alert with the actual message. UiParamText(msg, ...) still
+// fills DITL 128's only text item ("^0") the same way; ALRT/DITL 128 is
+// emitted unconditionally for every UI program (cg68k.cla's app-resource
+// pass), so no new emission is needed -- only the ID changes.
 func rtUiAlertMsg(msg: ptr) {
     var len: int
     var i: int
@@ -1006,6 +1017,6 @@ func rtUiAlertMsg(msg: ptr) {
     if not rtUiScripted {
         empty = rtUiEmptyPStrGet()
         UiParamText(msg, empty, empty, empty)
-        UiAlert(130, ptr(0))
+        UiAlert(128, ptr(0))
     }
 }
