@@ -13386,7 +13386,7 @@ func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segIte
 // here crashes cg68Measure itself the first time it reaches a runtime
 // function that materializes one's address, e.g. ui.cla's
 // nat_UiLaunchReal handing AEInstallEventHandler the `aeQuitHandler`
-// UPP: cgCallExtUiGlueAddr's own "not found/reachable" `quit 1` fires
+// UPP: cgCallExtUiGlueAddr's own "not found/reachable" `abort(...)` fires
 // with no glue synthesized yet -- found running this exact capture over
 // a runtime-only universe, which Task 1's own probe corpus never did),
 // force EVERY irFuncs entry reachable (the runtime-only universe has no

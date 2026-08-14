@@ -197,6 +197,21 @@ now, recorded here). This keeps baked runtime function bodies (CLIR v6
 object code) valid unmodified: no checks are ever needed inside runtime
 code.
 
+> **Final whole-branch review annotation (I5):** this section's
+> byte-identity claim held for the abort-machinery gating itself
+> (`not lowUsesAbort` keeps offsets at 0; full-corpus byte-identity gate
+> and existing goldens green throughout). But the SAME phase's separate
+> Task 4 (A4) fix made `rtUiAlertMsg` an unconditionally-rooted function
+> for every UI program regardless of `lowUsesAbort`
+> (`clarusc/cg68k.cla:1603-1605`) — an unrelated change (native `alert()`
+> trace-liveness, not attempt/abort gating) that nonetheless shifted JT
+> slots on every UI program and forced 2 `internal/cg68k` goldens plus 4
+> frozen native scenario goldens onto the bless list. The gating claim
+> this section actually makes (no-feature programs pay nothing for
+> attempt/abort) still holds and is still proven by the named corpus; the
+> reblessed goldens are a side effect of a different, unrelated fix
+> landing in the same phase, not a gap in this claim.
+
 ### 3.5 Top-level default (uncaught abort)
 
 - Non-UI program (host CLI shape): write the message on the same channel

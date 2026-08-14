@@ -2069,10 +2069,69 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   under the DEFAULT (no `--rtdir`) rtDir resolution whenever `clarusc`
   ran from anywhere but the repo root (every Go test package included),
   silently misclassifying every runtime function as non-runtime-origin
-  and giving it needless bail-block machinery — fixed with a substring
-  search instead of a prefix match; one golden reblessed
+  and giving it needless bail-block machinery — fixed, after two
+  superseded rounds (an initial substring search widened the dangerous
+  misclassification direction; a raw-`rtDir` prefix compare re-broke
+  under a `./`-prefixed `--rtdir`), by normalizing `rtDir` through the
+  same `normalizePath` the decl path itself already went through, then
+  directory-prefix-comparing against that; one golden reblessed
   (`testdata/cg68k/abort_bake.s`, net −327 lines of erroneous
   scaffolding removed).
+
+  **Deferred / phase debt (final whole-branch review,
+  `.superpowers/sdd/2026-08-14-attempt-abort/final-review.md`):**
+  - **C-lane UI dispatcher has no abort-default check at all** (Task 3/
+    Task 6b review, parked): `cprint.cla`'s synthesized UI dispatch loop
+    (`runtime/clarus/ui.cla`) never emits a per-dispatch abort-default
+    check, only the native 68k lane does. Fine-as-parked — the demoted
+    opt-in diagnostic lane (`CLARUS_CPRINT_MAC_TESTS=1`) is not where the
+    phase's shipped UI+abort consumer (`ClarusC.APPL`) builds — but
+    tracked here per this review's triage rather than left
+    `deferred-gates.md`-only.
+  - **No automated dispatcher-default test on either lane** (Task 6b
+    review M1): neither the native per-handler-dispatch abort default
+    nor the C lane's narrower per-launch/per-event-loop-return default
+    has a dedicated regression test; both are only exercised
+    incidentally by whatever real UI+abort fixtures happen to hit them.
+    The native case is realistically only emulator-testable.
+  - **`declIsRuntimeOrigin`'s symlink-equivalence residual** (Task 8
+    close-out): two `--rtdir` spellings that resolve to the same real
+    directory only via a symlink (not lexical normalization) can still
+    be misclassified — a pre-existing, shared limitation of `expand()`'s
+    own key comparison, not new debt from this phase's fix rounds.
+  - **`TestRunErrOn68k` can't boot the two new native-runerr fixtures**
+    (Task 8 finding; cross-referenced in `deferred-gates.md` item 2):
+    both `abort_uncaught`/`abort_launch_uncaught` fixtures declare `on
+    App.startCLI`, which hangs cg68k's native non-UI startup stub (it
+    calls every declared handler unconditionally, including `startCLI`
+    with a never-marshaled `args` list) — an open design question with
+    two named resolutions (native-safe `App.launch`-only twins, or
+    accepting the host-side `behavior_test.go` coverage as sufficient),
+    neither adopted yet.
+  - **Final-review minors, left as-is (none change end behavior):** M1 —
+    native non-UI startup stub has no abort check *between*
+    startEmpty/startCLI/openDocument (only after the group), so an abort
+    in one degenerates the next into a no-op unwind rather than skipping
+    it outright; observable behavior is still correct per §3.5, and the
+    path can't boot natively today regardless (same `App.startCLI` gap
+    above). M3 — one unreferenced `attN_h` C label (`cprint.cla`'s
+    per-function bail-label scoping is deliberately narrower than the
+    dead-label check), harmless, repo doesn't build with
+    `-Wunused-label`. M4 — every non-runtime function in an abort-enabled
+    program pays a `__retN` local + synthetic trailing return even when
+    `canAbort` is false everywhere (`lowComputeCanAbort` runs after
+    `lowFuncBody`, ordering-forced); bounded by `TestSelfEmit68k`'s
+    segment budget. M5 — `lowEnsureTrailingReturn` and
+    `lowBuildAbortBailBlock` (`clarusc/lower.cla`) duplicate the same
+    "void → `newIRReturn(-1)`, else wrap the return temp" + "walk to
+    tail, append" idiom verbatim; a three-line shared helper would remove
+    both. M7 — spec §5's "the CLFS-source fallback path and host
+    `--rtbake` path get the same messages for free (same seams)" claim
+    isn't satisfied: the landed progress ticks are `macgui.cla`-only,
+    after `gcResolveBakePath`'s early return, so the CLFS-fallback and
+    `--rtbake` paths get nothing; cosmetic only, on a CLI that already
+    prints progress, and the load-bearing half (ClarusC.APPL's own silent
+    gap) is delivered.
 
 ## Small open items (not yet scheduled)
 

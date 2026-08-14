@@ -168,11 +168,16 @@ failing the compile, and the native `out` trace file is stamped
   one) records runtime-module paths like `"../../runtime/clarus/core.cla"`,
   which never matches the literal prefix. Every runtime function was
   silently misclassified as non-runtime-origin whenever `clarusc` ran
-  this way, giving it incorrect bail-block/check machinery. Fixed:
-  substring search (`path.indexOf("runtime/clarus/") != -1`) instead of
-  a prefix-only match — correct for both the repo-root and
-  upward-search cases; the separately-known, already-accepted
-  `--rtdir`-override limitation is unchanged, not made worse.
+  this way, giving it incorrect bail-block/check machinery. Fixed (after
+  two superseded rounds — an initial substring search widened the
+  dangerous misclassification direction, and a raw-`rtDir` prefix
+  compare re-broke under a `./`-prefixed `--rtdir`): normalize `rtDir`
+  through the same `normalizePath` the decl path itself already went
+  through, then directory-prefix-compare against that — correct for
+  the default upward-search case, the canonical `--rtdir
+  runtime/clarus/` case, and any other `--rtdir` spelling denoting the
+  same real directory; the separately-known, already-accepted
+  symlink-equivalence limitation is unchanged, not made worse.
   `testdata/cg68k/abort_bake.s` reblessed as a result (net −327 lines —
   erroneous scaffolding removed from ~10 misclassified runtime
   functions; the fixture's own real `inner`/`outer`/`run` abort
