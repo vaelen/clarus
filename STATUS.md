@@ -1,4 +1,4 @@
-# Session status — 2026-08-14 (attempt-abort Task 8 close-out DONE, host gates GREEN, emulator checklist deferred)
+# Session status — 2026-08-15 (attempt-abort DONE, ALL gates GREEN, MERGED to origin/main)
 
 Handoff summary for the next session. **`attempt-abort` (branch
 `attempt-abort`, off `main` at `97d043c`) is feature-complete and
@@ -75,8 +75,11 @@ compile in the same session built + byte-verified: the phase's own field
 defect is now regression-gated on hardware); the predicted scenario-golden
 rebless proved UNNECESSARY (zero churn — behavior-level goldens, scripted
 traces byte-identical); `out` FInfo + both alert-dialog visuals
-field-confirmed by Andrew. **The branch is merge-ready; merging is
-Andrew's call.** Original checklist below, kept for the record:
+field-confirmed by Andrew. **MERGED to `main` (fast-forward `97d043c..d299b72`, Andrew's
+instruction, 2026-08-15 01:34 JST) and PUSHED to origin** — T1 re-verified
+green on the merged result. The `attempt-abort` branch pointer equals
+`main`. Next phase per the roadmap: stage 4 (user-module artifact cache),
+spec-first. Original checklist below, kept for the record:
 
 The `attempt-abort` phase (section 0a below) is DONE from a host-testing
 standpoint; the deferred emulator checklist (NOW COMPLETE, see above) was:
