@@ -63,9 +63,23 @@ findings, all recorded in the ROADMAP entry:
   CR-line-ending intolerance in `app68BuildIcnFamily`'s P1 parser
   (staged via `hcopy -t`), deferred per Andrew.
 
+**THE DEFERRED EMULATOR CHECKLIST IS NOW FULLY RUN AND GREEN (2026-08-15
+01:24 JST):** full T2 PASS (249s, native lane incl. the suite gates at
+69/69 and `TestAbortOn68k` with Task 11's lane-specific expectation);
+`TestClarusCBakePathOnSnow` PASS (1201s at a 20m settle under toolbar
+fast-forward ~7.1x — Andrew's own sizing — zero fallback/drift lines,
+forks byte-identical; the standing rule is satisfied for this phase's
+`bake.cla`/`macgui.cla` changes); `TestMacResidentFailedCompileStaysAliveOnSnow`
+PASS (1201s — the failed compile alerted, the app survived, and a second
+compile in the same session built + byte-verified: the phase's own field
+defect is now regression-gated on hardware); the predicted scenario-golden
+rebless proved UNNECESSARY (zero churn — behavior-level goldens, scripted
+traces byte-identical); `out` FInfo + both alert-dialog visuals
+field-confirmed by Andrew. **The branch is merge-ready; merging is
+Andrew's call.** Original checklist below, kept for the record:
+
 The `attempt-abort` phase (section 0a below) is DONE from a host-testing
-standpoint; **the deferred emulator checklist is the very next thing to
-run**, before any merge decision:
+standpoint; the deferred emulator checklist (NOW COMPLETE, see above) was:
 `.superpowers/sdd/2026-08-14-attempt-abort/deferred-gates.md`. Highlights
 (full detail in that file):
 
