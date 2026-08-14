@@ -260,6 +260,33 @@ Both lanes, same behavior. A compile with a missing icon now succeeds
 and writes its output; byte-wise its fork is identical to compiling the
 same source with no `icon:` property.
 
+## 6b. `out` trace file stamped `TEXT`/`ttxt` (Andrew addition, 2026-08-14)
+
+`natInit` (`runtime/clarus/native.cla:364-409`) creates the native trace
+capture file `out` with a bare `PBCreateSync` — blank type/creator, so
+TeachText can't open it on the Mac. Stamp it `fdType='TEXT'`,
+`fdCreator='ttxt'` after open, following the file's own proven direct-
+`PBSetFInfoSync` pattern (`native.cla:658-696`) with two deliberate
+differences from that site:
+
+- stamp UNCONDITIONALLY (also on `dupFNErr` — LaunchAPPL pre-creates
+  `out`; it is ours, not a user file whose FInfo an overwrite must
+  preserve);
+- `natPb` is NOT `NewPtrCLEAR`'d (unlike `natFilePb`), so the stamp must
+  explicitly zero `ioFDirIndex` and the full 16-byte FInfo region
+  (`fdFlags`/`fdLocation`/`fdFldr` included) before setting
+  type/creator — and `natPbSize` must actually cover the FileParam
+  variant's field offsets (grow it if it only covers IOParam today).
+
+Never a `PBGetFInfoSync` first — that exact call class hung solid on
+real hardware under a busy heap (documented at `native.cla:679-690`);
+natInit runs at startup where the heap is quiet, but the direct-set
+shape is the proven one and is kept.
+
+The host lanes have no FInfo, so the assertion is emulator-lane only:
+checking `out`'s type/creator via hfsutils after a native boot joins the
+deferred checklist.
+
 ## 7. Testing & gates
 
 - **Feature tests (core suite, host + native):** new `CoreTest` cases —
