@@ -4500,38 +4500,69 @@ func lowBuildAbortBailBlock(ret: int): int {
     return head
 }
 
-// declIsRuntimeOrigin (attempt-abort phase Task 2, Ruling A3; widened
-// Task 8 close-out -- see below) reports whether decl d was parsed from
-// a file under a "runtime/clarus/" source directory -- task-1-report
-// P2's chosen mechanism (getDeclFile + a path check) for the "never
-// check after this callee" tag Tasks 3/4 consume via
-// irFuncIsRuntimeOrigin. NOT bkPathIsUitest's basename-suffix trick
-// (bake.cla) -- ruled explicitly, not Task 2's call to revisit.
+// declIsRuntimeOrigin (attempt-abort phase Task 2, Ruling A3; fixed
+// twice at Task 8 close-out -- see below) reports whether decl d was
+// parsed from a runtime-module source file -- task-1-report P2's chosen
+// mechanism (getDeclFile + a path check) for the "never check after
+// this callee" tag Tasks 3/4 consume via irFuncIsRuntimeOrigin. NOT
+// bkPathIsUitest's basename-suffix trick (bake.cla) -- ruled explicitly,
+// not Task 2's call to revisit.
 //
-// Task 8 finding: the ORIGINAL check was a literal path-PREFIX match
-// (path[0, want.length] == "runtime/clarus/"), which broke for the
-// default (no --rtdir) rtDir resolution itself, not just a --rtdir
-// override -- findRtDir (drive.cla) walks UPWARD from the working
-// directory, prepending one "../" per level, so a compile launched from
-// any directory other than the repo root records paths like
-// "../../runtime/clarus/core.cla", which does not START WITH the literal
-// prefix at all. Found via TestSnapshotFixedPoint's own freshness check
-// (internal/selfhost, which emits from its own package directory,
-// several levels below the repo root, with no --rtdir): every runtime
-// function was misclassified as non-runtime-origin, so it wrongly grew
-// a bail block, producing a real (~3.8KB), silently-wrong emission
-// divergence purely from which directory `clarusc emit` happened to run
-// from -- not from anything about the SOURCE. Same underlying fragility
-// P2's own doc comment already flagged for a --rtdir override; this is
-// the SAME bug's more common trigger (an ordinary relative-path launch
-// from a subdirectory), not a new one.
+// Task 8 close-out, fix round 1: the ORIGINAL check was a literal
+// path-PREFIX match (path[0, want.length] == "runtime/clarus/"), which
+// broke for the default (no --rtdir) rtDir resolution itself, not just
+// a --rtdir override -- findRtDir (drive.cla) walks UPWARD from the
+// working directory, prepending one "../" per level, so a compile
+// launched from any directory other than the repo root (every Go test
+// package in this tree) records paths like
+// "../../runtime/clarus/core.cla", which does not START WITH the
+// literal prefix at all. Found via TestSnapshotFixedPoint's own
+// freshness check. First fix attempt: search for "runtime/clarus/" as a
+// SUBSTRING anywhere in path -- repaired the upward-search case, but
+// review (fix round 1) correctly flagged that this widens the OTHER,
+// dangerous failure direction: a USER file whose own path happens to
+// CONTAIN "runtime/clarus/" anywhere (not just as its actual root)
+// would be misclassified as runtime-origin, silently DROPPING its
+// abort-propagation check -- lost propagation, the worst failure mode
+// this feature has. Not reachable by anything in this tree today (no
+// fixture/example lives at such a path, and the Mac lane's colon-form
+// disk paths can't spell the '/'-form substring at all -- see below),
+// but a real, wider risk surface than the original bug, and not
+// something a compiler meant to gain outside users should ship.
 //
-// Fix: search for "runtime/clarus/" as a substring anywhere in path,
-// not only at position 0 -- correct for the repo-root case (match at
-// index 0), the upward-search case (match after N "../" segments), and
-// unchanged (still broken, still explicitly deferred, see P2's own
-// note) for a real --rtdir override pointing somewhere that doesn't
-// contain that substring at all.
+// Task 8 close-out, fix round 2 (this fix): replaced the substring
+// heuristic with the TIGHT predicate the review specified -- a decl is
+// runtime-origin iff its recorded path is under the ACTUAL RESOLVED
+// runtime directory for THIS compile, not a literal or a substring
+// search. This requires two different comparisons, matching how the
+// two lanes actually record a runtime-module decl's path (read from
+// expand()/driveKeyResolve in drive.cla before choosing either):
+//
+//   - Host lane (hostPaths true): expand()'s own host branch already
+//     performs exactly this comparison for an unrelated purpose (feeding
+//     driveKeyResolve's key2), reusing the SAME resolved `rtDir` global
+//     (drive.cla) that findRtDir's search or an explicit --rtdir sets --
+//     `readPath[0, rtDir.length] == rtDir`. declIsRuntimeOrigin mirrors
+//     that exact comparison rather than reinventing it: a decl's path is
+//     runtime-origin only if it falls under the SAME directory this
+//     compile actually resolved runtime modules from, whatever that
+//     directory's own spelling happens to be (default upward-search,
+//     or an explicit --rtdir). A user file would need to sit inside
+//     THAT EXACT directory to collide -- i.e., it would genuinely BE a
+//     runtime module for this compile, not a false positive.
+//   - Mac lane (hostPaths false): `rtDir` is never populated on this
+//     lane -- runtime-module identity there is always the baked-resource
+//     KEY string (rtModuleKey/driveKeyResolve), a '/'-separated
+//     "runtime/clarus/<file>" form, stored verbatim via setDeclFile
+//     (expand()'s `path = ... key2 ...`/`path = key2` arms) -- distinct
+//     BY CONSTRUCTION from ordinary Mac disk paths, which drivePathJoin/
+//     driveMacDirOf always spell in HFS colon form (":Volume:Dir:file.cla")
+//     and can therefore never contain a '/' at all, let alone this exact
+//     substring. A literal prefix match against the key-space constant
+//     is exactly right here, and was ALREADY correct before either Task
+//     8 fix -- the substring-widening risk (fix round 1's own gap) never
+//     applied to this lane, since no real Mac disk path can spell the
+//     collision.
 func declIsRuntimeOrigin(d: int): bool {
     var p: int
     var path: string
@@ -4542,8 +4573,14 @@ func declIsRuntimeOrigin(d: int): bool {
         return false
     }
     path = poolGet(p)
+    if hostPaths {
+        if rtDir == "" {
+            return false
+        }
+        return path.length >= rtDir.length and path[0, rtDir.length] == rtDir
+    }
     want = "runtime/clarus/"
-    return path.indexOf(want) != -1
+    return path.length >= want.length and path[0, want.length] == want
 }
 
 // lowFuncDecl lowers a user `func` declaration into an ir.Func (stmt.go's

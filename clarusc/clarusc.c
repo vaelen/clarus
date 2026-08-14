@@ -6059,7 +6059,6 @@ static int32_t clar_fn_rtStrLen(void * cv_s);
 static int32_t clar_fn_rtStrIndex(void * cv_s, int32_t cv_i);
 static void clar_fn_rtStrFromBytes(void * cv_dst, int32_t cv_dstcap, void * cv_buf, int32_t cv_bufcap, int32_t cv_count);
 static void clar_fn_rtStrSlice(void * cv_out, void * cv_s, int32_t cv_start, int32_t cv_len);
-static int32_t clar_fn_rtStrIndexOfStr(void * cv_s, void * cv_needle);
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need);
 static void * clar_fn_rtTextNew(void);
 static void clar_fn_rtTextRetain(void * cv_t);
@@ -8216,47 +8215,6 @@ static void clar_fn_rtStrSlice(void * cv_out, void * cv_s, int32_t cv_start, int
     }
     rt_ext_StrBlockMoveData((void *)((char *)((void *)((char *)(cv_s) + (1))) + (cv_start)), (void *)((char *)(cv_out) + (1)), cv_len);
     rt_pokeb(cv_out, cv_len);
-}
-
-static int32_t clar_fn_rtStrIndexOfStr(void * cv_s, void * cv_needle) {
-    int32_t cv_slen;
-    cv_slen = 0;
-    int32_t cv_nlen;
-    cv_nlen = 0;
-    int32_t cv_i;
-    cv_i = 0;
-    int32_t cv_j;
-    cv_j = 0;
-    int32_t cv_match;
-    cv_match = 0;
-    cv_slen = rt_peekb(cv_s);
-    cv_nlen = rt_peekb(cv_needle);
-    if (cv_nlen == 0) {
-        return 0;
-    }
-    if (cv_nlen > cv_slen) {
-        return CLAR_NEG32(1);
-    }
-    cv_i = 0;
-    while (1) {
-        if (!((cv_i <= CLAR_SUB32(cv_slen, cv_nlen)))) break;
-        cv_match = 1;
-        cv_j = 0;
-        while (1) {
-            if (!((cv_j < cv_nlen))) break;
-            if (rt_peekb((void *)((char *)((void *)((char *)((void *)((char *)(cv_s) + (1))) + (cv_i))) + (cv_j))) != rt_peekb((void *)((char *)((void *)((char *)(cv_needle) + (1))) + (cv_j)))) {
-                cv_match = 0;
-                break;
-            }
-            cv_j = CLAR_ADD32(cv_j, 1);
-        }
-        if (cv_match) {
-            return cv_i;
-        }
-        cv_i = CLAR_ADD32(cv_i, 1);
-    }
-    return CLAR_NEG32(1);
-    return 0;
 }
 
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need) {
@@ -32202,8 +32160,28 @@ static int32_t clar_fn_declIsRuntimeOrigin(int32_t cv_d) {
     clar_str_255 t1;
     t1 = clar_fn_poolGet(cv_p);
     clar_fn_rtStrStore((void*)&(cv_path), 255, (void*)(const uint8_t*)&(t1));
+    if (cv_hostPaths) {
+        if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_rtDir), (void*)(const uint8_t*)&(clar_lit_91)) == 0) {
+            return 0;
+        }
+        int32_t t3;
+        t3 = (clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_path)) >= clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_rtDir)));
+        if (t3) {
+            clar_str_255 t2;
+            clar_fn_rtStrSlice((void*)&t2, (void*)(const uint8_t*)&(cv_path), (int32_t)(0), (int32_t)(clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_rtDir))));
+            t3 = (clar_fn_rtStrCmp((void*)(const uint8_t*)&(t2), (void*)(const uint8_t*)&(cv_rtDir)) == 0);
+        }
+        return t3;
+    }
     clar_fn_rtStrStore((void*)&(cv_want), 255, (void*)(const uint8_t*)&(clar_lit_891));
-    return (clar_fn_rtStrIndexOfStr((void*)(const uint8_t*)&(cv_path), (void*)(const uint8_t*)&(cv_want)) != CLAR_NEG32(1));
+    int32_t t5;
+    t5 = (clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_path)) >= clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_want)));
+    if (t5) {
+        clar_str_255 t4;
+        clar_fn_rtStrSlice((void*)&t4, (void*)(const uint8_t*)&(cv_path), (int32_t)(0), (int32_t)(clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_want))));
+        t5 = (clar_fn_rtStrCmp((void*)(const uint8_t*)&(t4), (void*)(const uint8_t*)&(cv_want)) == 0);
+    }
+    return t5;
     return 0;
 }
 
