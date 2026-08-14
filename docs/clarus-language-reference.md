@@ -784,12 +784,14 @@ func run() {
 
 **What actually unwinds.** There is no exception object, no stack of active handlers, and no runtime bookkeeping beyond one pending-message value: an aborting function returns through its own ordinary epilogue (every local it owns is released, exactly as on a normal return), and each caller up the chain checks once, after the call returns, whether an abort is pending — if so, it also returns through its own epilogue (releasing its own locals) unless the call site is lexically inside an `attempt` body, in which case control instead enters that `attempt`'s `aborted` block. This is why `attempt`/`abort` never leaks memory the way an unchecked jump out of scope would: every frame it passes through cleans up on the way. "Nearest enclosing attempt" is a purely compile-time question — the compiler resolves it from where the call site sits in the source, not from any runtime search.
 
-**Uncaught abort (top-level default).** An `abort` that no `attempt` catches — including one raised directly in a top-level event handler — reaches a runtime default:
+**Uncaught abort (top-level default).** An `abort` that no `attempt` catches reaches a runtime default:
 
 - **Command-line programs:** the message is written to the diagnostic stream (the same channel `log` uses), and the program exits with code 1 — identical to a bare `log(msg)` followed by `quit 1`.
 - **GUI (Macintosh) programs:** the system beeps, the message is shown in a standard alert (the same presentation `alert(msg)` uses), and the program then quits with code 1.
 
 Either way, this is the *only* place `attempt`/`abort` ever terminates the program — an `abort` caught by some `attempt`, anywhere in the chain, never does.
+
+The GUI default's own timing depends on which Mac build path produced the program. Built via the native 68k path (`scripts/build-68k.sh`, `clarusc emit68k`), the default is checked after *every* individual event-handler dispatch, so an uncaught abort surfaces immediately, no matter which handler raised it — including one raised directly in a top-level event handler. Built via the C/Retro68 path (`scripts/build-mac.sh`), the default is checked only after `App.launch` returns and after the event loop itself returns — an abort raised inside an ordinary event handler is detected only once the whole app is shutting down, not at the moment it happens.
 
 **Interaction with runtime errors.** `attempt`/`abort` is unrelated to the runtime errors listed under Runtime Errors (Chapter 3) and Errors (Chapter 12) — an out-of-range index, a `nil` window dereference, and the like are not `abort`s and are not caught by an `attempt`; they follow their own existing reporting rules. `attempt`/`abort` exists purely for a program's *own* code to signal and recover from a failure it defines itself.
 
