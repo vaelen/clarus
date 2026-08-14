@@ -339,6 +339,140 @@ func TestMacResidentClaruscOnSnow(t *testing.T) {
 	}
 }
 
+// badAbortMessage is the exact abort() message cg68k.cla's own
+// cgAttemptStmt emits (cg68k.cla:11561) when an abort-enabled program
+// nests `attempt` statements past cgBailTargets' fixed 32-deep
+// bookkeeping array -- see testdata/mac-resident/badabort.cla's own doc
+// comment for why this abort site was chosen over the design doc %7's
+// "missing include, e.g." wording (a missing include is an ordinary
+// check-time diagnostic in this compiler, not a codegen abort() site).
+const badAbortMessage = "cg68k: attempt nesting exceeds cgBailTargets' fixed depth (32)"
+
+// TestMacResidentFailedCompileStaysAliveOnSnow is the attempt-abort
+// phase's own field-defect regression (design doc %1/%7, spec §7's
+// "failing compile leaves ClarusC.APPL alive" obligation; gated
+// CLARUS_SNOW_TESTS=1, same macresident harness as
+// TestMacResidentClaruscOnSnow above). Before this phase, ANY of the
+// ~150 `log(msg); quit 1` pipeline sites reached during a live
+// ClarusC.APPL session killed the whole app with no visible error
+// (ExitToShell) -- spec §1's exact motivating field defect. This test
+// proves the fix end to end, on real (emulated) hardware, in one Snow
+// session:
+//
+//  1. Scripted Compile #1 targets badabort.cla (testdata/mac-resident/
+//     badabort.cla), which deterministically trips a REAL, USER-REACHABLE
+//     abort() site inside cg68k.cla's own native backend during
+//     driveEmit68kFork -- gcCompile's own `attempt { driveCompile(...);
+//     driveEmit68kFork(...); ... } aborted msg { ... }` wrap (Task 6)
+//     must catch it: alert text visible in the trace (rtUiAlertMsg writes
+//     msg verbatim, uidialogs.cla:1005), the app must NOT quit (no
+//     ExitToShell), and the Log window's own progress state must reset
+//     to idle so a second compile can proceed.
+//  2. Scripted Compile #2, in the SAME app session (no relaunch), targets
+//     tickprobe.cla (testdata/cg68k/tickprobe.cla, already a known-good
+//     fixture -- reused rather than duplicated, same fixture
+//     TestMacResidentClaruscOnSnow's own byte-identity oracle already
+//     covers) -- proves the app is not just "not crashed" but genuinely
+//     alive and able to do real, correct work afterward: the produced
+//     TickProbe.APPL is extracted and byte-compared against the current-
+//     source HOST compiler's own output for the identical fixture, the
+//     same oracle technique TestMacResidentClaruscOnSnow uses.
+//  3. The script's own single, explicit `quit` (after both compiles) is
+//     the ONLY exit from the app for the whole session -- the trace must
+//     show exactly one ##CLARUS-EXIT## trailer, and it must be a clean
+//     exit (0), never appearing right after the failed compile.
+func TestMacResidentFailedCompileStaysAliveOnSnow(t *testing.T) {
+	requireSnow(t)
+
+	root := repoRoot(t)
+	badFixture := filepath.Join(root, "testdata", "mac-resident", "badabort.cla")
+	tickFixture := filepath.Join(root, "testdata", "cg68k", "tickprobe.cla")
+	events := filepath.Join(root, "testdata", "mac-resident", "badabort.events")
+
+	// Host oracle for the SECOND (successful) compile only -- the first
+	// compile is expected to fail on-Mac too (deterministically, by
+	// construction of badabort.cla), so there is no successful oracle
+	// fork to compare it against.
+	tickOracle := buildHostOracleFork(t, tickFixture)
+
+	buildCmd := exec.Command(filepath.Join(root, "scripts", "build-clarusc-mac.sh"), "--events", events)
+	buildCmd.Dir = root
+	buildStart := time.Now()
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("build-clarusc-mac.sh --events %s: %v\n%s", events, err, out)
+	}
+	t.Logf("ClarusC.APPL build: %s", time.Since(buildStart))
+	clarusCBin := filepath.Join(root, "build-68k", "ClarusC", "ClarusC.bin")
+
+	d := newSnowDisk(t)
+	d.putMacBinary(t, clarusCBin, "ClarusC")
+	d.putText(t, "badabort.cla", mustReadFile(t, badFixture))
+	d.putText(t, "tickprobe.cla", mustReadFile(t, tickFixture))
+
+	// Same cost class as TestMacResidentClaruscOnSnow's own two-compile
+	// scenario (both compiles pay the same runtime-splice cost; the
+	// failing one fails only at the very end of codegen, after the same
+	// lex/parse/check/lower/shake work the successful one also does), so
+	// reuse the same conservative settle budget/override knob.
+	settle := macResidentSettle(t)
+	runSnowTimeout := settle + 20*time.Minute
+	bootStart := time.Now()
+	doneMarker := os.Getenv("CLARUS_MACRESIDENT_DONE")
+	runSnow(t, d, runSnowTimeout, func() bool {
+		if time.Since(bootStart) >= settle {
+			return true
+		}
+		if doneMarker == "" {
+			return false
+		}
+		_, err := os.Stat(doneMarker)
+		return err == nil
+	})
+	t.Logf("on-Mac fail-then-succeed boot: %s wall clock (settle=%s)", time.Since(bootStart), settle)
+
+	appOut := string(d.get(t, ":System Folder:Startup Items:out"))
+	t.Logf("app out (%d bytes):\n%s", len(appOut), appOut)
+
+	// Both scripted compiles must have actually dispatched.
+	fireCount := strings.Count(appOut, "T FIRE File.Compile.select")
+	askOpenCount := strings.Count(appOut, "T ASKOPEN :::")
+	if fireCount != 2 || askOpenCount != 2 {
+		t.Fatalf("want 2 Compile.select dispatches + 2 real askOpen answers, got %d/%d:\n%s", fireCount, askOpenCount, appOut)
+	}
+
+	// The core assertion: the abort's own message reached the trace via
+	// gcCompile's `aborted msg` handler + rtUiAlertMsg -- proof the
+	// abort was CAUGHT, not left to the synthesized top-level default
+	// (which would also alert, per §3.5's UI default, but would then
+	// quit the whole app -- exactly the pre-fix field defect).
+	if !strings.Contains(appOut, badAbortMessage) {
+		t.Errorf("app out missing the caught abort's own alert text (%q) -- gcCompile's aborted-block may not have fired:\n%s", badAbortMessage, appOut)
+	}
+
+	// Exactly one clean exit trailer, from the script's own final `quit`
+	// -- never one appearing right after the failed compile (that would
+	// mean gcCompile's attempt wrap did NOT catch the abort and the
+	// synthesized top-level UI default killed the app instead, the exact
+	// pre-fix behavior this test exists to catch).
+	exitCount := strings.Count(appOut, "##CLARUS-EXIT##")
+	if exitCount != 1 {
+		t.Errorf("app out has %d ##CLARUS-EXIT## trailers, want exactly 1 (a premature one would mean the failed compile killed the app):\n%s", exitCount, appOut)
+	}
+	if !strings.Contains(appOut, "##CLARUS-EXIT## 0") {
+		t.Errorf("app out missing the clean exit trailer (##CLARUS-EXIT## 0) from the script's own final quit:\n%s", appOut)
+	}
+
+	// The second, successful compile in the SAME session must have
+	// produced a real, byte-correct app -- not just "the app didn't
+	// crash." Reuses TestMacResidentClaruscOnSnow's own byte-identity
+	// technique against the same known-good tickprobe.cla fixture.
+	tickBin := macResidentExtractApp(t, d, "TickProbe")
+	tickFork := readForkFromMacBinaryBytes(t, tickBin)
+	if !bytes.Equal(normalizeForkReserved(tickFork), normalizeForkReserved(tickOracle)) {
+		dumpForkMismatch(t, "TickProbe", tickFork, tickOracle)
+	}
+}
+
 // macResidentExtractApp extracts name (a bare app name written by
 // file.writeRes -- see the doc comment at its call site for why the
 // landing directory is not a sure thing) trying, in order, the volume

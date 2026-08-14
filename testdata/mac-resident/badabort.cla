@@ -1,0 +1,192 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// badabort.cla: attempt-abort phase Task 8 fixture for
+// TestMacResidentFailedCompileStaysAliveOnSnow -- deliberately trips a
+// REAL abort() site inside cg68k.cla's own native backend (not merely an
+// ordinary check-time diagnostic, which ClarusC.APPL already alerted on
+// before this phase): 40 syntactically nested `attempt` statements exceed
+// cgBailTargets' fixed 32-deep nesting bookkeeping array
+// (cg68k.cla:11561's own "cg68k: attempt nesting exceeds cgBailTargets'
+// fixed depth (32)" abort site -- site-classification.md row 123,
+// USER-REACHABLE: a checker-clean program can legally nest this deep;
+// only a finite backend scratch array stops it).
+//
+// Design doc %7's own wording names "missing include, e.g." as the
+// illustrative failure mode for this test. A missing `include` in this
+// repo is a plain check-time diagnostic (drive.cla's emitDiag "cannot
+// open included file"), not a codegen abort() site -- ClarusC.APPL's
+// gcCompile already alerted on that failure class before this phase
+// existed (its pre-existing `if not ok { ...; alert(...) }` branch,
+// untouched by this phase), so it would not exercise the NEW
+// attempt/abort machinery this test exists to prove. This fixture
+// instead deterministically reaches a real abort() site -- generated
+// programmatically rather than hand-typed (40 levels).
+
+func deepAbort() {
+    attempt {
+        attempt {
+            attempt {
+                attempt {
+                    attempt {
+                        attempt {
+                            attempt {
+                                attempt {
+                                    attempt {
+                                        attempt {
+                                            attempt {
+                                                attempt {
+                                                    attempt {
+                                                        attempt {
+                                                            attempt {
+                                                                attempt {
+                                                                    attempt {
+                                                                        attempt {
+                                                                            attempt {
+                                                                                attempt {
+                                                                                    attempt {
+                                                                                        attempt {
+                                                                                            attempt {
+                                                                                                attempt {
+                                                                                                    attempt {
+                                                                                                        attempt {
+                                                                                                            attempt {
+                                                                                                                attempt {
+                                                                                                                    attempt {
+                                                                                                                        attempt {
+                                                                                                                            attempt {
+                                                                                                                                attempt {
+                                                                                                                                    attempt {
+                                                                                                                                        attempt {
+                                                                                                                                            attempt {
+                                                                                                                                                attempt {
+                                                                                                                                                    attempt {
+                                                                                                                                                        attempt {
+                                                                                                                                                            attempt {
+                                                                                                                                                                attempt {
+                                                                                                                                                                    abort("deep")
+                                                                                                                                                                } aborted msg39 {
+                                                                                                                                                                    log("handler 39: " + msg39)
+                                                                                                                                                                }
+                                                                                                                                                            } aborted msg38 {
+                                                                                                                                                                log("handler 38: " + msg38)
+                                                                                                                                                            }
+                                                                                                                                                        } aborted msg37 {
+                                                                                                                                                            log("handler 37: " + msg37)
+                                                                                                                                                        }
+                                                                                                                                                    } aborted msg36 {
+                                                                                                                                                        log("handler 36: " + msg36)
+                                                                                                                                                    }
+                                                                                                                                                } aborted msg35 {
+                                                                                                                                                    log("handler 35: " + msg35)
+                                                                                                                                                }
+                                                                                                                                            } aborted msg34 {
+                                                                                                                                                log("handler 34: " + msg34)
+                                                                                                                                            }
+                                                                                                                                        } aborted msg33 {
+                                                                                                                                            log("handler 33: " + msg33)
+                                                                                                                                        }
+                                                                                                                                    } aborted msg32 {
+                                                                                                                                        log("handler 32: " + msg32)
+                                                                                                                                    }
+                                                                                                                                } aborted msg31 {
+                                                                                                                                    log("handler 31: " + msg31)
+                                                                                                                                }
+                                                                                                                            } aborted msg30 {
+                                                                                                                                log("handler 30: " + msg30)
+                                                                                                                            }
+                                                                                                                        } aborted msg29 {
+                                                                                                                            log("handler 29: " + msg29)
+                                                                                                                        }
+                                                                                                                    } aborted msg28 {
+                                                                                                                        log("handler 28: " + msg28)
+                                                                                                                    }
+                                                                                                                } aborted msg27 {
+                                                                                                                    log("handler 27: " + msg27)
+                                                                                                                }
+                                                                                                            } aborted msg26 {
+                                                                                                                log("handler 26: " + msg26)
+                                                                                                            }
+                                                                                                        } aborted msg25 {
+                                                                                                            log("handler 25: " + msg25)
+                                                                                                        }
+                                                                                                    } aborted msg24 {
+                                                                                                        log("handler 24: " + msg24)
+                                                                                                    }
+                                                                                                } aborted msg23 {
+                                                                                                    log("handler 23: " + msg23)
+                                                                                                }
+                                                                                            } aborted msg22 {
+                                                                                                log("handler 22: " + msg22)
+                                                                                            }
+                                                                                        } aborted msg21 {
+                                                                                            log("handler 21: " + msg21)
+                                                                                        }
+                                                                                    } aborted msg20 {
+                                                                                        log("handler 20: " + msg20)
+                                                                                    }
+                                                                                } aborted msg19 {
+                                                                                    log("handler 19: " + msg19)
+                                                                                }
+                                                                            } aborted msg18 {
+                                                                                log("handler 18: " + msg18)
+                                                                            }
+                                                                        } aborted msg17 {
+                                                                            log("handler 17: " + msg17)
+                                                                        }
+                                                                    } aborted msg16 {
+                                                                        log("handler 16: " + msg16)
+                                                                    }
+                                                                } aborted msg15 {
+                                                                    log("handler 15: " + msg15)
+                                                                }
+                                                            } aborted msg14 {
+                                                                log("handler 14: " + msg14)
+                                                            }
+                                                        } aborted msg13 {
+                                                            log("handler 13: " + msg13)
+                                                        }
+                                                    } aborted msg12 {
+                                                        log("handler 12: " + msg12)
+                                                    }
+                                                } aborted msg11 {
+                                                    log("handler 11: " + msg11)
+                                                }
+                                            } aborted msg10 {
+                                                log("handler 10: " + msg10)
+                                            }
+                                        } aborted msg9 {
+                                            log("handler 9: " + msg9)
+                                        }
+                                    } aborted msg8 {
+                                        log("handler 8: " + msg8)
+                                    }
+                                } aborted msg7 {
+                                    log("handler 7: " + msg7)
+                                }
+                            } aborted msg6 {
+                                log("handler 6: " + msg6)
+                            }
+                        } aborted msg5 {
+                            log("handler 5: " + msg5)
+                        }
+                    } aborted msg4 {
+                        log("handler 4: " + msg4)
+                    }
+                } aborted msg3 {
+                    log("handler 3: " + msg3)
+                }
+            } aborted msg2 {
+                log("handler 2: " + msg2)
+            }
+        } aborted msg1 {
+            log("handler 1: " + msg1)
+        }
+    } aborted msg0 {
+        log("handler 0: " + msg0)
+    }
+}
+
+on App.launch {
+    deepAbort()
+}
