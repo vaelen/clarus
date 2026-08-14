@@ -7021,6 +7021,57 @@ func cpEmitStrLits() {
     }
 }
 
+// cpEmitAbortDefaultCheck (attempt-abort phase Task 3 fix round 1, C1+I1)
+// appends the synthesized top-level default (design doc %3.5): if
+// clar_aborting is still set, write the message on the log channel
+// (rt_log -- byte-identical in EFFECT to today's `log(msg)`, see
+// ILog's own printer arm), then (UI lane only) show it via the lane's
+// own alert mechanism (rt_alert -- the SAME call IAlert's printer arm
+// already emits; its Mac-target implementation, runtime/mac/rt_mac.c,
+// already does the right thing per lane: a real NoteAlert dialog in a
+// normal build, capture into the `out` trace file in an RT_MAC_TEST
+// build -- reused as-is, no new runtime plumbing), then exit 1
+// (rt_quit -- running cleanup first, same as `quit 1`). A SHARED
+// function (not inlined at each call site): called from multiple
+// entry-return points below, and clarusc's own native-68k self-emit
+// (TestSelfEmit68k) runs at essentially zero segment headroom (see
+// fpBailTargets' own doc comment) -- sharing keeps each call site down
+// to a single BSR instead of duplicating this whole block.
+//
+// C1 fix (task-3-review.md): called after EVERY synthesized top-level
+// entry-point call that can run user code (App.launch, then
+// App.startCLI/startEmpty, or -- UI lane -- App.launch then
+// rtUiRun's own event loop), not just the LAST one. Before this fix, an
+// uncaught abort in App.launch left clar_aborting/clar_abort_msg set
+// across the launch -> startCLI boundary, where the first unrelated
+// `attempt` in App.startCLI would spuriously "catch" the stale message
+// and the program would exit 0 -- a fatal abort silently reported as
+// success. Checking right after EACH entry-point call means a launch-
+// time abort is defaulted (logged + exit 1) before App.startCLI (or the
+// UI event loop) ever starts, so it can never leak into unrelated code.
+//
+// I1 fix (task-3-review.md): the UI lane (cpEmitUiMain) previously had
+// NO abort check anywhere -- an uncaught abort left clar_aborting set
+// forever with no beep/alert/exit while rtUiRun's event loop kept
+// running. `ui` gates the extra rt_alert line; checked once after
+// App.launch and once after rtUiRun returns (whether that's a normal
+// quit or an abort that unwound all the way out of the currently
+// dispatching handler) -- a per-HANDLER check inside the event loop's
+// own dispatch would be the fully spec-accurate version (design doc
+// %3.3's "synthesized UI event dispatcher... after each handler call"),
+// but that dispatch loop lives in runtime/clarus/ui.cla, not in
+// anything cprint.cla emits directly -- out of this bounded fix's
+// scope, and this lane is already a demoted diagnostic (CLAUDE.md).
+func cpEmitAbortDefaultCheck(ui: bool) {
+    cpRestBuf.add(toText("    if (clar_aborting) {"))
+    cpRestBuf.add(toText("        rt_log((const uint8_t*)&clar_abort_msg);"))
+    if ui {
+        cpRestBuf.add(toText("        rt_alert((const uint8_t*)&clar_abort_msg);"))
+    }
+    cpRestBuf.add(toText("        rt_quit((int32_t)(1));"))
+    cpRestBuf.add(toText("    }"))
+}
+
 // cpEmitUiMain prints main() for a program declaring any window/menu/every:
 // clar_init_globals/rt_args_init, then the PORTED rtUiStartup/rtUiLaunch/
 // rtUiRun -- all three zero-arg (every count/table the runtime needs comes
@@ -7037,9 +7088,15 @@ func cpEmitUiMain() {
     cpRestBuf.add(toText("    clar_fn_rtUiStartup();"))
     if irHasLaunch {
         cpRestBuf.add(toText("    clar_fn_handler_App_launch();"))
+        if lowUsesAbort {
+            cpEmitAbortDefaultCheck(true)
+        }
     }
     cpRestBuf.add(toText("    clar_fn_rtUiLaunch();"))
     cpRestBuf.add(toText("    clar_fn_rtUiRun();"))
+    if lowUsesAbort {
+        cpEmitAbortDefaultCheck(true)
+    }
     cpRestBuf.add(toText("    return 0;"))
     cpRestBuf.add(toText("}"))
 }
@@ -7050,21 +7107,11 @@ func cpEmitUiMain() {
 // program's output stays byte-for-byte unchanged (the differential suite
 // enforces this).
 //
-// attempt-abort phase Task 3, design doc %3.5 (non-UI default): one
-// check, right after the launch/startCLI/startEmpty dispatch sequence
-// (whichever branch actually ran -- the brief's own "after App.startCLI
-// returns" anchor), before falling off the end of main -- if the flag is
-// still set, write the message on the same channel log() uses, then
-// exit 1: byte-identical in EFFECT to today's `log(msg)` + `quit 1`
-// (rt_log to stderr, rt_quit(1) running cleanup then exit(1); see
-// IAbort/ILog/IQuit's own printer arms for the exact call shapes this
-// mirrors). Only when lowUsesAbort, so a no-feature program's main() is
-// untouched. (An uncaught abort raised directly inside App.launch itself,
-// with no attempt, is a narrower case this single check doesn't cover
-// separately -- a second check right after the launch call would, but
-// clarusc's own near-zero-headroom native-68k self-emit budget
-// (TestSelfEmit68k) can't absorb a second copy of it; scope kept to the
-// brief's literal single check.)
+// attempt-abort phase Task 3, design doc %3.5 (non-UI default): a check
+// after EACH top-level entry-point call that can run user code (see
+// cpEmitAbortDefaultCheck's own doc comment for why both, not just the
+// last one -- C1 fix). Only when lowUsesAbort, so a no-feature program's
+// main() is untouched.
 func cpEmitMain() {
     if irIsUiProgram() {
         cpEmitUiMain()
@@ -7076,6 +7123,9 @@ func cpEmitMain() {
     cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
     if irHasLaunch {
         cpRestBuf.add(toText("    clar_fn_handler_App_launch();"))
+        if lowUsesAbort {
+            cpEmitAbortDefaultCheck(false)
+        }
     }
     if irHasStartCLI {
         cpRestBuf.add(toText("    clar_fn_handler_App_startCLI(rt_args_list());"))
@@ -7083,10 +7133,7 @@ func cpEmitMain() {
         cpRestBuf.add(toText("    clar_fn_handler_App_startEmpty();"))
     }
     if lowUsesAbort {
-        cpRestBuf.add(toText("    if (clar_aborting) {"))
-        cpRestBuf.add(toText("        rt_log((const uint8_t*)&clar_abort_msg);"))
-        cpRestBuf.add(toText("        rt_quit((int32_t)(1));"))
-        cpRestBuf.add(toText("    }"))
+        cpEmitAbortDefaultCheck(false)
     }
     cpRestBuf.add(toText("    return 0;"))
     cpRestBuf.add(toText("}"))

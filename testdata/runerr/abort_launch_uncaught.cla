@@ -1,0 +1,27 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression pin for task-3-review.md's C1: an uncaught abort in
+// App.launch must hit the non-UI top-level default (log + exit 1)
+// immediately, not leak clar_aborting/clar_abort_msg into App.startCLI
+// where an unrelated attempt could spuriously "catch" it and exit 0.
+
+func doWork(): int {
+    return 1
+}
+
+on App.launch() {
+    abort("launch-boom")
+}
+
+on App.startCLI(args: list of string) {
+    var x: int
+    log("startCLI: began (should this even run?)")
+    attempt {
+        x = doWork()
+        log("unrelated work result logged")
+    } aborted msg {
+        log("SPURIOUS CATCH: " + msg)
+    }
+    log("done")
+}
