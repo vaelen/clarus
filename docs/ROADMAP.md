@@ -2014,6 +2014,66 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   wave is hardware-proven and the phase's standing-rule obligation is
   satisfied.
 
+- **attempt-abort (branch `attempt-abort`, 2026-08-14, off `main` at
+  `97d043c`): Tasks 1-8 (+ unplanned 6b) DONE, host gates GREEN,
+  emulator verification DEFERRED — branch not yet merged.** Adds the
+  language's first recoverable-error mechanism: `attempt { } aborted msg
+  { }` + `abort(msg)`, cooperative flag-propagated unwinding on both
+  lanes with no runtime mark stack and no `setjmp` — every frame's own
+  ARC releases run on the way out via a per-function bail block
+  synthesized in LOWERING (not codegen). Motivated by Andrew's own
+  field session with `ClarusC.APPL` on Snow (spec §1): any of ~150
+  `log(msg); quit 1` pipeline sites reachable inside a live compile
+  killed the whole app with no visible error (ExitToShell) — all ~150
+  are now `abort(msg)`, and `gcCompile` wraps its pipeline in
+  `attempt`/`aborted` (beep + alert + return-to-idle, prior Log window
+  content preserved). Also ships, same phase: pre-compile progress/
+  liveness feedback in `ClarusC.APPL`, a missing app icon now warns +
+  falls back to the default icon instead of failing the compile, and
+  the native `out` trace file is stamped `TEXT`/`ttxt`. Design
+  `docs/superpowers/specs/2026-08-14-attempt-abort-design.md` (annotated
+  by Task 8 where the landed design differs from the naive spec —
+  bail-block placement, the Task 6b `canAbort` narrowing, and a
+  self-contradictory §6b FInfo-placement note). Plan:
+  `docs/superpowers/plans/2026-08-14-attempt-abort.md`. Full ledger:
+  `.superpowers/sdd/2026-08-14-attempt-abort/progress.md`. Reference
+  entry: `docs/clarus-language-reference.md` Chapter 5 ("Attempt and
+  Abort"), Chapter 12 (Errors' fifth category), Chapter 13 (callback
+  boundary note). **Full summary: `STATUS.md` section 0a.** Deferred
+  emulator checklist (run before any merge decision):
+  `.superpowers/sdd/2026-08-14-attempt-abort/deferred-gates.md`.
+
+  Headline findings, all resolved within the phase: a naive "check after
+  every user call" scheme regressed clarusc's own host self-compile
+  +26.3% / native `emit68k` +6.8% (10-pair medians), tripping the spec's
+  own §8 deferred-item trigger; an unplanned Task 6b (interprocedural
+  `canAbort` fixpoint analysis, narrowing checks from 273 to 5 in a
+  sample fixture) brought both numbers to **−11.5%** host (faster than
+  the pre-feature baseline outright) / **~0%** native. Two real leak
+  classes were found (Task 1's own probe) and fixed, not just documented
+  (a synthetic return-temp and a mid-statement transient temp, both
+  abandoned on the abort path before this phase's fix — 4000→0 and
+  12000→0 leaked blocks in their respective 2000-iteration probes,
+  `TestAbortLeakBaseline` pins both at zero permanently). Site
+  classification of all 124 real converted `abort()` sites: 84
+  INTERNAL-INVARIANT / 40 USER-REACHABLE
+  (`.superpowers/sdd/2026-08-14-attempt-abort/site-classification.md`).
+  `TestSelfEmit68k` segment count: 51 (pre-feature) → 61 (Task 6,
+  clarusc itself now abort-enabled) → 54 (Task 6b, after narrowing).
+  Snapshot regenerated twice (regen #1 mid-phase, Task 5, to unblock
+  clarusc's own source from using the new syntax; regen #2 at close-out,
+  Task 8) — both to a verified Go-free fixed point, full
+  `internal/selfhost` green including `TestSnapshotFixedPoint` both
+  times. Task 8's regen #2 also found and fixed a real, previously
+  latent bug: `declIsRuntimeOrigin`'s literal path-prefix check broke
+  under the DEFAULT (no `--rtdir`) rtDir resolution whenever `clarusc`
+  ran from anywhere but the repo root (every Go test package included),
+  silently misclassifying every runtime function as non-runtime-origin
+  and giving it needless bail-block machinery — fixed with a substring
+  search instead of a prefix match; one golden reblessed
+  (`testdata/cg68k/abort_bake.s`, net −327 lines of erroneous
+  scaffolding removed).
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

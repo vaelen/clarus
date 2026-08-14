@@ -9594,11 +9594,21 @@ func cgEmitAbortDefaultCheck(ui: bool) {
 //     site an interprocedural analysis can usefully narrow, so it keeps
 //     its full-strength check regardless). This is "the check after
 //     each handler call in the synthesized UI dispatcher" (P4(b)'s own
-//     site) with NO lower.cla/cprint.cla-style special casing needed at
-//     the call-site level -- these dispatchers call the user's `on`
-//     handler through an ordinary ECallFn, the exact same
-//     cgCallFnScalar/cgCallFnInto chokepoint every other user call
-//     already goes through.
+//     site), and it comes for free at the call-site level -- these
+//     dispatchers call the user's `on` handler through an ordinary
+//     ECallFn, the exact same cgCallFnScalar/cgCallFnInto chokepoint
+//     every other user call already goes through, so no per-dispatcher
+//     special casing is needed HERE. This is a real lane asymmetry, not
+//     just a wording nicety: cprint.cla (the C lane) has NO equivalent
+//     per-dispatch check at all -- its own UI top-level default
+//     (cpEmitAbortDefaultCheck) only fires after App.launch and after
+//     the event loop's own return (task-3-report.md's I1), never after
+//     an individual handler dispatch, because the C lane's synthesized
+//     UI dispatch loop lives in runtime/clarus/ui.cla, outside
+//     cprint.cla's own reach. Parked as phase debt on the demoted
+//     opt-in diagnostic lane (Task 6b review, reviewer I1) rather than
+//     fixed -- the only shipped UI+abort consumer (ClarusC.APPL) builds
+//     native, where this full-strength check is real.
 //   - an ordinary function with its own bail chain (cgCurFuncHasBail,
 //     i.e. irFuncBail(f) != -1): TST.B flag / BNE to cgAbortTarget() --
 //     ordinary propagation, design doc %3.2 point 3 -- but ONLY when the

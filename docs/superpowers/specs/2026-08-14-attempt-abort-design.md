@@ -140,6 +140,48 @@ exactly the dynamically innermost mark).
   each handler call) get one check each, implementing the §3.5 defaults.
   Both are per-program synthesized code, so this is gateable (§3.4).
 
+> **Task 8 annotation — where §3.2/§3.3 differ from the landed design
+> (all controller-ruled during implementation, see
+> `.superpowers/sdd/2026-08-14-attempt-abort/progress.md`):**
+>
+> - **Bail-block synthesis moved into LOWERING, not codegen** (Ruling
+>   A2, Task 2 scope). §3.3's "nulls handle-typed result regs, falls
+>   into the epilogue" wording describes a codegen-time action; the
+>   shipped design instead has `lower.cla` synthesize ONE shared
+>   per-function bail block (release every handle local at that point —
+>   safe at any depth thanks to null-default init — then hand off the
+>   function's own `__retN` return-value slot, valid for every return
+>   kind including records/arrays/bounded strings) and attach it to
+>   `IRFunc.bailHead`; both backends only emit a label plus branches to
+>   it. No handle-typed result register is ever explicitly nulled —
+>   control diverts to the bail chain before any consumption code runs
+>   (Ruling A1), so there is nothing to null.
+> - **Check placement is AFTER `cgCleanupStack`, not simply "after the
+>   call"** (Ruling A1, native lane): the stack pointer is already back
+>   at the `LINK` baseline at that point, so no `LEA SP` restore is ever
+>   needed at a check, bail label, or attempt-handler entry — confirmed
+>   in every codegen listing task-4-report.md captures.
+> - **An interprocedural `canAbort` analysis was added (Task 6b),
+>   narrowing check emission below what §3.3 describes as unconditional
+>   "after every user call."** This is exactly §8's own deferred-item
+>   trigger firing: Task 6's naive "check after every non-runtime-origin
+>   call" scheme measured **+26.3%** host self-compile / **+6.8%**
+>   native `emit68k` (10-pair medians, clarusc's own self-compile) —
+>   well above this spec's "low single digits" expectation — so Task 6b
+>   implemented the whole-program fixpoint §8 anticipated (seed:
+>   functions containing `abort`; propagate caller-ward over the direct
+>   call graph; runtime/extern callees never abort) and narrowed
+>   post-call checks to `irFuncCanAbort(callee)`. Result: **−11.5%**
+>   host self-compile / **~0%** native `emit68k` (same 10-pair-median
+>   methodology) — faster than the pre-feature baseline outright on the
+>   host lane, at parity on the native lane. UI-dispatcher and
+>   startup-stub top-level defaults (§3.5) stay full-strength and
+>   unconditional either way — they call user code dynamically by event/
+>   entry point, not through a call site the analysis can narrow.
+>   Semantics are unchanged by this analysis; it only removes checks
+>   that are provably dead (a callee that can never abort needs no
+>   check after it).
+
 ### 3.4 Emission gating and byte-identity
 
 If the post-expansion program contains no `attempt` and no `abort`,
@@ -286,6 +328,33 @@ shape is the proven one and is kept.
 The host lanes have no FInfo, so the assertion is emulator-lane only:
 checking `out`'s type/creator via hfsutils after a native boot joins the
 deferred checklist.
+
+> **Task 8 annotation (self-contradiction found by Task 7's review,
+> resolved in favor of the landed code):** the "after open" wording two
+> paragraphs up is self-contradictory with the very pattern it cites —
+> `natFileWriteText` (`native.cla:658-696`) itself stamps right after
+> `Create` and BEFORE `Open`, not after. The landed code follows the
+> concrete pattern (stamp immediately after `NatCreate(natPb)`, before
+> `NatOpen`), not the literal "after open" phrase; Task 7's review
+> verified this is functionally safe (`PBSetFInfoSync` is path-based and
+> needs no open file reference; the pad bytes the stamp zeroes are
+> unconditionally overwritten by `natWriteBytes` before any real write;
+> `NatOpen`'s own required fields are untouched by the stamp). This
+> prose is corrected in place of a rewrite: read "after open" above as
+> "after `NatCreate`, before `NatOpen`" — the shipped behavior, matching
+> `natFileWriteText`'s own site.
+>
+> **Second annotation (premise correction, also Task 7):** the "`natPb`
+> is NOT `NewPtrCLEAR`'d (unlike `natFilePb`)" premise above is WRONG.
+> `NatNewPtr` (`native.cla:139-153`) is declared `trap 0xA31E`
+> (`_NewPtrClear`) — the exact same clearing allocator `natFilePb` uses.
+> `natPb` **is** cleared at allocation. Task 7 implemented the explicit
+> zero-then-stamp sequence anyway (cheap, one-time, at startup, and
+> removes any future dependence on `NatNewPtr` staying the clearing
+> variant — `natPb` is reused for the whole program's later natAlert/
+> natLog traffic, unlike `natFilePb`'s site, which stamps immediately
+> after its own fresh allocation) — so the *code* this section asked for
+> was still worth writing, just not for the reason originally stated.
 
 ## 7. Testing & gates
 

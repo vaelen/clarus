@@ -110,6 +110,7 @@ if else while for in to return
 and or not true false nil
 open close edit new quit cancel
 switch case break continue
+attempt aborted
 ```
 
 Note: `window` is both the declaration keyword and, inside a window's handlers, the expression naming the firing instance (Chapter 8). The parser distinguishes by position.
@@ -730,6 +731,72 @@ else {
 
 `else` is optional; with no match and no `else`, the statement does nothing. `break` is not used with `switch` (it has no fallthrough to break out of); a `break` inside a case body belongs to the enclosing loop, if any.
 
+### Attempt and Abort
+
+`attempt { } aborted msg { }` is cooperative, non-local error propagation: the body runs; if `abort(expr)` fires anywhere during it — directly, or arbitrarily many calls deep — control jumps to the `aborted` block with `msg` bound to the aborted message, skipping the rest of the body. `attempt` always requires an `aborted` block; there is no bare `attempt`.
+
+```rust
+func loadConfig(path: string): text {
+    var t: text
+    if not file.readText(path, t) {
+        abort("cannot read " + path)
+    }
+    return t
+}
+
+func startup() {
+    var cfg: text
+    attempt {
+        cfg = loadConfig("prefs.dat")
+        log("config loaded")
+    } aborted msg {
+        log("startup failed: " + msg)
+    }
+}
+```
+
+`abort(expr)` is itself an ordinary statement, valid anywhere a statement is — inside a function body, an event handler, or an `aborted` block itself (a **re-abort**, below). `expr` must be `string`-typed, with the same coercions `alert` accepts. `abort` does not exit the program; it unwinds the call chain looking for the nearest enclosing `attempt`.
+
+**Binder scope.** `msg` (the identifier after `aborted`) is a fresh `string` local, scoped to the `aborted` block only; ordinary shadowing rules apply.
+
+**Nesting and re-abort.** `attempt` blocks nest freely. The dynamically innermost `attempt` whose body is currently running catches an abort raised inside it — an abort deep in a call chain is caught by whichever `attempt` statically encloses the *call site* that (transitively) led to the `abort`, not by an `attempt` merely active higher up an unrelated call path. Calling `abort` again from inside an `aborted` block (a re-abort) propagates to the *next* enclosing `attempt` — never back into the same one — or to the top-level default (below) if there is none:
+
+```rust
+func riskyStep() {
+    abort("step failed")
+}
+
+func run() {
+    attempt {
+        attempt {
+            riskyStep()
+        } aborted inner {
+            log("inner saw: " + inner)
+            abort("re-raised: " + inner)      // propagates OUTWARD, not back into this block
+        }
+    } aborted outer {
+        log("outer caught: " + outer)          // runs; "re-raised: step failed"
+    }
+}
+```
+
+**`return` inside `attempt` is ordinary.** A `return` statement anywhere inside an `attempt` body (or an `aborted` block) exits the enclosing function exactly as it would anywhere else — it is not intercepted by the `attempt` it happens to be inside.
+
+**What actually unwinds.** There is no exception object, no stack of active handlers, and no runtime bookkeeping beyond one pending-message value: an aborting function returns through its own ordinary epilogue (every local it owns is released, exactly as on a normal return), and each caller up the chain checks once, after the call returns, whether an abort is pending — if so, it also returns through its own epilogue (releasing its own locals) unless the call site is lexically inside an `attempt` body, in which case control instead enters that `attempt`'s `aborted` block. This is why `attempt`/`abort` never leaks memory the way an unchecked jump out of scope would: every frame it passes through cleans up on the way. "Nearest enclosing attempt" is a purely compile-time question — the compiler resolves it from where the call site sits in the source, not from any runtime search.
+
+**Uncaught abort (top-level default).** An `abort` that no `attempt` catches — including one raised directly in a top-level event handler — reaches a runtime default:
+
+- **Command-line programs:** the message is written to the diagnostic stream (the same channel `log` uses), and the program exits with code 1 — identical to a bare `log(msg)` followed by `quit 1`.
+- **GUI (Macintosh) programs:** the system beeps, the message is shown in a standard alert (the same presentation `alert(msg)` uses), and the program then quits with code 1.
+
+Either way, this is the *only* place `attempt`/`abort` ever terminates the program — an `abort` caught by some `attempt`, anywhere in the chain, never does.
+
+**Interaction with runtime errors.** `attempt`/`abort` is unrelated to the runtime errors listed under Runtime Errors (Chapter 3) and Errors (Chapter 12) — an out-of-range index, a `nil` window dereference, and the like are not `abort`s and are not caught by an `attempt`; they follow their own existing reporting rules. `attempt`/`abort` exists purely for a program's *own* code to signal and recover from a failure it defines itself.
+
+**Interaction with `callback func`.** If `abort` fires while control is inside a `callback func` invoked BY the Toolbox (Chapter 13) — the callback is executing because a Toolbox trap called back into it, not because ordinary Clarus code called it — propagation cannot continue past that boundary the normal way: the callback returns a default value to the Toolbox as if it had returned normally, and the Toolbox completes whatever call it was in the middle of. The pending abort then resumes propagating from the first ordinary checked call site *after* that original external call returns, exactly as if the callback itself had been the site where the abort occurred. A callback's own body needs no special code to arrange this — it is a property of where callback glue sits, not something a callback author writes.
+
+**Not for use in the bundled runtime library.** Clarus ships with a runtime library (the `list`, `map`, `text`, and similar built-in types' own implementations, plus the machinery behind `open`/`close`/the dialogs in Chapter 12) written in Clarus itself. That library's own source does not use `attempt`/`abort` internally — it is a convention the library's authors follow, not a restriction this compiler enforces on ordinary application code. Nothing about writing your own program is affected by it; it is mentioned here only because it means a runtime-provided call (`t.toBytes(...)`, `askOpen(...)`, and the like) never itself raises an `abort` your code would need to catch.
+
 ## Chapter 6: Functions
 
 ### Declaration
@@ -1330,7 +1397,7 @@ Every field of the record — transitively, for a `list of` or `map of` payload 
 
 Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 notes, these fill the string arguments passed to them using a runtime calling convention available only to built-ins, not to user-declared functions:
 
-- `alert(msg: string)` — shows `msg` in a standard alert with an OK button.
+- `alert(msg: string)` — shows `msg` in a standard alert with an OK button. On the Macintosh, this always shows a real dialog now (the attempt-abort phase closed a native-lane bug where `alert` had been silently headless — no dialog, message dropped — since `alert` needed a real, immediately-flushed alert path to make the top-level abort default's own beep-then-alert-then-quit sequence actually visible; fixing that also fixed every other `alert(...)` call site on that lane, not just abort-triggered ones).
 - `askOpen(path: string, types: string): bool` — Standard File "Open" dialog; fills `path` and returns `true`, or returns `false` on Cancel. `types` is a comma-separated list of up to four four-character type codes (`"TEXT,PICT"`), or `"*"` for every file regardless of type — the idiomatic single-type call is `askOpen(p, app.doctype)`. The same padding/length rule as `writeText`'s `type`/`creator` applies to each code; a *literal* filter with more than four entries, or a literal entry longer than four characters, is a build-time error, and a non-literal filter that breaks the same rule fails the call outright (`false` + `lastError`, dialog never opens).
 - `askSave(path: string, suggested: string): bool` — Standard File "Save" dialog, pre-filled with `suggested`; fills `path` and returns `true`, or returns `false` on Cancel.
 - `askSaveChanges(name: string): saveChoice` — the standard three-way "Save changes to “name”?" dialog; returns `Save`, `Discard`, or `Cancel` (Chapter 3).
@@ -1353,12 +1420,13 @@ The difference between two datetimes is plain subtraction — `b - a` is the spa
 
 An `error` (Chapter 3) is the record `{ code: int, message: string }`. The global `lastError: error` holds the detail behind the most recent soft failure: a `false` return from a `file` function, or a clamped string store or byte copy (Chapters 3 and 4).
 
-Clarus reports failures in four ways, depending on where they occur:
+Clarus reports failures in five ways, depending on where they occur:
 
 - **Async failures** — a `connection`, `listener`, or `serviceBrowser` operation that fails after it's already underway — are delivered as a `failed(err: error)` event on that resource (above).
-- **Synchronous fallible operations** — the `file` functions return `bool`; on `false`, inspect `lastError`. String stores and byte copies that must truncate (Chapters 3 and 4) clamp safely, set `lastError`, and continue. There are no exceptions and no unwinding machinery.
+- **Synchronous fallible operations** — the `file` functions return `bool`; on `false`, inspect `lastError`. String stores and byte copies that must truncate (Chapters 3 and 4) clamp safely, set `lastError`, and continue.
 - **Out of memory** shows a clean alert and quits, rather than continuing on a corrupted heap.
-- **Runtime errors** — dereferencing a `nil` window reference, indexing or slicing a string, text, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion with no matching member, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
+- **Runtime errors** — dereferencing a `nil` window reference, indexing or slicing a string, text, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion with no matching member, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't. These are unrelated to `attempt`/`abort` (below) and are never caught by an `attempt`.
+- **Program-defined failures** — `attempt { } aborted msg { }` and `abort(expr)` (Chapter 5) are a program's own cooperative, non-local error signal: a function calls `abort` with a message, and the nearest lexically enclosing `attempt` (anywhere up the call chain) catches it, with every intervening frame's locals released on the way — no exceptions object and no runtime handler stack, just one pending-message value and a compile-time-resolved unwind target. An `abort` with no enclosing `attempt` reaches a top-level default: a command-line program logs the message and exits 1 (identical to a bare `log`+`quit 1`); a GUI program beeps, shows the message in a standard alert, and quits 1.
 
 ## Chapter 13: Low-Level Memory Access
 
@@ -1586,6 +1654,8 @@ A callback whose address is never taken (no decay anywhere in the program) and w
 
 Interrupt-time completion routines (VBL tasks, asynchronous completion procedures, Time Manager tasks) are out of scope: the A5-world and allocation restrictions those contexts impose are not something this language can make safe yet. A `callback func` should only be handed to a Toolbox routine that invokes it at ordinary application-level call time (an LDEF, an action procedure, a dialog filter, and the like), never one that fires from an interrupt.
 
+**Interaction with `attempt`/`abort`.** See Chapter 5's own note on this: an `abort` that fires while control is inside a callback the Toolbox itself invoked cannot propagate past that boundary the normal way. The callback returns a default value to the Toolbox as if nothing happened, the Toolbox's own call completes normally, and the pending abort resumes propagating from the next ordinary checked call site after that external call returns. No code in the callback's own body needs to account for this.
+
 ### Trap and Inline Clauses
 
 An `external func` declaration may end with a clause tying it to a specific Toolbox entry point, instead of leaving name resolution to the toolchain:
@@ -1750,10 +1820,13 @@ everyDecl   = "every" INT "ticks" block ;
 
 block       = "{" { stmt } "}" ;
 stmt        = varDecl | assign | callStmt | ifStmt | whileStmt
-            | forStmt | switchStmt | returnStmt
+            | forStmt | switchStmt | returnStmt | attemptStmt
             | "quit" [ expr ] | "cancel" | "break" | "continue"
             | "open" IDENT | "close" expr
             | "edit" IDENT "," ( lvalue | "new" IDENT ) ;
+attemptStmt = "attempt" block "aborted" IDENT block ;
+            // "abort" itself is an ordinary callStmt (a builtin function,
+            // not a keyword) -- see Chapter 5's own "Attempt and Abort".
 assign      = lvalue "=" expr ;
 lvalue      = IDENT { "." memberName | "[" expr "]" } ;
 callStmt    = lvalue "(" [ args ] ")" ;

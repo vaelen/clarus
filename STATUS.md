@@ -1,55 +1,193 @@
-# Session status — 2026-08-14 (object-code-linker DONE, T2 GREEN, Snow PASS at tip)
+# Session status — 2026-08-14 (attempt-abort Task 8 close-out DONE, host gates GREEN, emulator checklist deferred)
 
-Handoff summary for the next session. **`precompiled-artifacts` (the
-`object-code-linker` phase) was MERGED to `main` (fast-forward
-`e143af1..6009c65`, Andrew's instruction, 2026-08-14 01:42 JST) and
-pushed to origin** — everything through stage 3.5 is now on
-`origin/main`. The local checkout sits on the `precompiled-artifacts`
-branch pointer, which equals `main`.
+Handoff summary for the next session. **`attempt-abort` (branch
+`attempt-abort`, off `main` at `97d043c`) is feature-complete and
+close-out is DONE — all 8 tasks (plus unplanned Task 6b) implemented,
+reviewed, and closed out.** Every HOST-side gate is green, including a
+second snapshot regen to a Go-free fixed point. The branch is **NOT
+merged** — merge is Andrew's call, per usual — and the phase's own
+emulator-dependent verification (native `attempt`/`abort` behavior on
+real/emulated 68k hardware) is explicitly **DEFERRED**: Snow was
+occupied by Andrew's own manual `ClarusC.APPL` testing for this whole
+phase (that session's field observations are this phase's own
+motivation, spec §1), so every emulator-gated item is written up as a
+checklist to run the moment the display frees, not run this phase.
 
 ## 0. START HERE next session
 
-The `object-code-linker` phase (section 0a below) is DONE and T2 GREEN.
-Its Snow proof DID run and **FAILED** (three `CLFS-source fallback`
-lines — artifact-acceptance refusal, not a codegen bug). Root cause
-found and FIXED this session (the Snow bake-path fix wave,
-2026-08-13): `bkHashTextFrom`'s FNV multiply was signed-`int32_t` C
-arithmetic (`cprint.cla`'s `fpBin`), which is signed-overflow UB that
-clang -O1+ used to delete the masking `&` that follows it, so a
-host-written CLIR header carried an unmasked hash the real 68k `AND.L`
-never produces. Full RCA: `.superpowers/sdd/2026-08-13-object-code-linker/
-snow-failure-rca.md`; the fix + verification + gates:
-`.superpowers/sdd/2026-08-13-object-code-linker/fixwave-report.md`. T2
-is GREEN again post-fix. **The Snow RE-RUN PASSED at the true tip
-`6bf4f6e`** (2026-08-14 01:37 JST: `TestClarusCBakePathOnSnow`,
-`CLARUS_SNOW_TESTS=1`, 55m settle, exit 0, ZERO `CLFS-source fallback`
-or drift lines — the v6 artifact was accepted, the bake path ran both
-on-Mac compiles, and the Mac-produced TickProbe/CatProbe forks
-byte-matched the host from-source oracles; log:
-`.superpowers/sdd/2026-08-13-object-code-linker/snow-rerun2.log`). The
-phase is fully gated. One informational item still open: the PASS log
-is terse (per-phase `TickCount()` trace only dumps on failure), so the
-on-Mac Measure/load-phase timing comparison against the
-runtime-ir-bake ~55m `TickProbe` reference was not captured by that
-run; a verbose re-run is optional, informational-only, and does not
-gate the merge.
+The `attempt-abort` phase (section 0a below) is DONE from a host-testing
+standpoint; **the deferred emulator checklist is the very next thing to
+run**, before any merge decision:
+`.superpowers/sdd/2026-08-14-attempt-abort/deferred-gates.md`. Highlights
+(full detail in that file):
 
-With Snow green and the phase MERGED (see the top of this document),
-the precompiled-artifacts notes doc's own staging
-(`docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`)
-has one item left: **stage 4, the user-module artifact cache**
-(standalone object files + keying, generalizing this phase's
-runtime-only object sections to arbitrary user modules — falls out of
-the machinery this phase and `runtime-ir-bake` already built). Smart
-linking / IR-body removal from the 68k lane and link-time layout
-improvements (better packing, pool dedup) remain explicitly out of
-scope, gated behind a future oracle-relaxation decision (today's
-byte-identity oracle requires reproducing the exact from-source layout;
-relaxing that is a separate, not-yet-made call). No spec/plan exists yet
-for stage 4 — first job is speccing it, same process as the three prior
-phases. Nothing is left unmerged.
+1. `scripts/test-task.sh --smoke` (Mini vMac smoke pair) — expect clean,
+   feature-independent.
+2. Full `scripts/test-merge.sh` (T2, native `internal/mactest` lane) —
+   `TestCoreSuiteGUIOn68k` should show 69/69 PASS including the 5 new
+   `Abort*` cases (Task 8 wired `cases_abort.cla` + bumped the hardcoded
+   count, compile-verified host-side, never booted). **Open design
+   question found while preparing the checklist:** `TestRunErrOn68k`
+   was expected to also cover the new `abort_uncaught`/
+   `abort_launch_uncaught` fixtures, but neither is actually wired in,
+   and both use `on App.startCLI`, which **hangs** the native non-UI
+   boot path outright (a pre-existing, documented native-compat gap,
+   not new to this phase) — resolve this (new native-safe fixture
+   variants, or drop the sub-item with rationale) before relying on that
+   part of T2.
+3. `TestClarusCBakePathOnSnow` (`CLARUS_SNOW_TESTS=1`, ~55m) —
+   MANDATORY per the standing rule (`bake.cla`/`macgui.cla` changed).
+4. **NEW**: `TestMacResidentFailedCompileStaysAliveOnSnow`
+   (`internal/mactest/macresident_test.go`) — written and host-compile-
+   verified this session, never booted. Proves the phase's own field
+   defect is fixed: a failing on-Mac compile (a fixture that
+   deterministically trips a real `abort()` site) no longer
+   ExitToShells the whole `ClarusC.APPL` session — it alerts, returns to
+   idle, and a SECOND compile in the same session still succeeds.
+5. `CLARUS_MAC_BLESS=1` regen of the 4 frozen scenario goldens + JT-slot
+   shift from `rtUiAlertMsg` becoming always-rooted (Task 4's A4 fix) —
+   EXPECTED churn, not a regression.
+6. `out`'s on-disk `TEXT`/`ttxt` FInfo stamp (Task 7, spec §6b) — verify
+   via hfsutils after any native boot above.
 
-## 0a. object-code-linker close-out (DONE, this session)
+With that checklist run and any findings folded in, `attempt-abort` is
+ready for a merge decision. Nothing else is outstanding on this branch.
+
+The prior phase, `object-code-linker` (section 0b below), remains
+MERGED to `main` as of the previous session (fast-forward
+`e143af1..6009c65`) and pushed to origin. `attempt-abort` branches off
+`main` at `97d043c` (a couple of docs-only commits past `6009c65`).
+
+## 0a. attempt-abort close-out (DONE, this session; branch NOT merged)
+
+Branch `attempt-abort`, off `main` at `97d043c`. Design
+`docs/superpowers/specs/2026-08-14-attempt-abort-design.md` (now
+annotated where Task 7's review found the spec's own §6b wording
+self-contradictory, and where §3.2/§3.3's landed design differs from the
+naive scheme originally specced). Plan:
+`docs/superpowers/plans/2026-08-14-attempt-abort.md`. Full ledger:
+`.superpowers/sdd/2026-08-14-attempt-abort/progress.md`. Reference entry:
+`docs/clarus-language-reference.md`, Chapter 5 ("Attempt and Abort") +
+Chapter 12 (Errors, fifth failure category) + Chapter 13 (callback
+boundary note). Deferred emulator checklist:
+`.superpowers/sdd/2026-08-14-attempt-abort/deferred-gates.md` (see
+section 0 above).
+
+Adds `attempt { } aborted msg { }` + `abort(msg)`: cooperative,
+flag-propagated unwinding on both lanes (no runtime mark stack, no
+setjmp — every frame's own ARC releases run on the way out, via a
+per-function bail block synthesized in LOWERING, not codegen). Fixes the
+field defect that motivated it (spec §1): any of ~150 `log(msg); quit 1`
+pipeline sites inside `ClarusC.APPL` used to kill the whole app with no
+visible error; all ~150 are now `abort(msg)`, and `gcCompile` wraps its
+pipeline in `attempt`/`aborted` (beep + alert + return-to-idle, prior Log
+window content preserved). Also: pre-compile progress/liveness feedback,
+a missing app icon now warns + falls back to the default icon instead of
+failing the compile, and the native `out` trace file is stamped
+`TEXT`/`ttxt` so TeachText can open it.
+
+- **Tasks 1-8 (+ unplanned 6b) all DONE, reviewed clean.** Front end
+  (lexer/parser/checker/IR/lowering, Task 2); C-lane codegen (Task 3);
+  68k-lane codegen + the native UI top-level default made FULL-STRENGTH
+  per-dispatch, stronger than the C lane's own narrower default (Task
+  4); core-suite cases + two REAL leak classes found and fixed + snapshot
+  regen #1 (Task 5); the ~150-site clarusc conversion + `gcCompile` catch
+  (Task 6); an unplanned interprocedural `canAbort` analysis, triggered
+  by Task 6's own perf snapshot (Task 6b); `ClarusC.APPL` feedback +
+  icon warning + `out` FInfo stamp (Task 7); this close-out (Task 8).
+- **Site classification** (all ~150 converted `abort()` sites,
+  `.superpowers/sdd/2026-08-14-attempt-abort/site-classification.md`):
+  124 real sites, **84 INTERNAL-INVARIANT / 40 USER-REACHABLE** (Task 6's
+  own report summary said 72/52 — wrong; the classification file's own
+  footer, 84/40, is the correct, audited total).
+- **Perf: a naive scheme regressed clarusc's own self-compile, an
+  authorized follow-up fixed it net-positive.** Task 6's "check after
+  every non-runtime-origin user call" scheme measured **+26.3%** host
+  self-compile / **+6.8%** native `emit68k` (10-pair medians) — well
+  above the spec's own "low single digits" expectation, tripping §8's
+  own deferred-item trigger. Task 6b's interprocedural `canAbort`
+  fixpoint (seed: functions containing `abort`; propagate caller-ward
+  over the direct call graph) narrowed checks from 273 to 5 in the
+  `abort_bake.cla` sample and brought the numbers to **−11.5%** host
+  self-compile (faster than the pre-feature baseline outright,
+  reproduced across 3 independent 10-pair batches) / **~0%** native
+  `emit68k`.
+- **`TestSelfEmit68k` segment count:** 51 (pre-feature baseline) → 61
+  (Task 6, after the ~150-site conversion made clarusc itself
+  abort-enabled) → 54 (Task 6b, after the `canAbort` narrowing recovered
+  most but not all of the growth — some is permanent source growth, not
+  check-count-driven).
+- **Two real leak classes found (Task 1's own P5 probe) and fixed (Task
+  5), not just documented:** (a) a heap-typed function return whose
+  synthetic `__retN` return-temp was never released when a function
+  aborted before its own `return` executed — 4000 leaked blocks over
+  2000 iterations before the fix, 0 after (fixed by handing `__retN`
+  itself off through the bail block, which also fixed a separate
+  struct-shaped-return compile break as a side effect); (b) a
+  mid-statement transient temp (`x = makeText() + f()`, `f` aborts) the
+  abort check's `goto` abandoned before the end-of-statement release
+  flush ran — 12000 leaked blocks before the fix (compounded with class
+  (a) in the same probe fixture), 0 after. `TestAbortLeakBaseline`
+  (host-only, `CLARUS_MEM_STRICT`) pins both at zero permanently.
+- **Core suite grown 64 → 69 cases**
+  (`testsuite/core/cases_abort.cla`: `AbortCatch`/`AbortDeep`/
+  `AbortNested`/`AbortReabort`/`AbortRelease`) — proven via the host CLI
+  (`TOTAL 69 PASS 69 FAIL 0`); the native/GUI suite boot itself is on the
+  deferred checklist (Task 8 wired the file-list/case-count changes so
+  that boot doesn't fail on a stale composition the moment it's tried).
+- **Golden churn**, per-task review-corrected counts: Task 4's A4
+  `alert()`-native fix reblessed 2 pre-existing `internal/cg68k` goldens
+  (`bounce.cla`/`tickprobe.cla`, net "one new function, no new
+  dependencies, no removals" after its own fix round 1, corrected from
+  an initial "three new functions" mid-review reading); Task 7's `out`
+  FInfo stamp reblessed **34 modified + 2 added `testdata/cg68k/*.s`
+  files** (36 total — Task 7's own report claimed 39+2=41, corrected by
+  its review's Finding 2 against the actual `git diff --name-status`).
+  The 4 frozen native-lane scenario goldens + 2 suite-boot goldens are
+  EXPECTED to need `CLARUS_MAC_BLESS=1` regen once the emulator runs
+  (JT-slot shift from `rtUiAlertMsg` becoming always-rooted, plus its
+  trace line moving from buffered to immediate) — not done this phase,
+  on the deferred checklist.
+- **Doc corrections made this close-out:** the design spec's §6b
+  "after the successful NatOpen" wording was self-contradictory with its
+  own cited reference pattern (which is itself before-Open) — annotated
+  to match the landed, functionally-verified-safe before-Open placement;
+  its "`natPb` is NOT `NewPtrCLEAR`'d" premise was wrong (it is) —
+  annotated; a misleading `clarusc/cg68k.cla` doc comment implying
+  `cprint.cla` has special-case handling for the native UI dispatcher's
+  abort default was corrected to state the real, parked phase debt (the
+  C lane's own UI dispatch loop has NO per-handler-dispatch abort check
+  at all, only the native lane does).
+- **Real bug found and fixed while regenerating the snapshot** (not just
+  a doc issue): `declIsRuntimeOrigin` (`clarusc/lower.cla`, Task 2's own
+  Ruling A3) used a literal path-PREFIX check ("starts with
+  `runtime/clarus/`"), which silently broke under the DEFAULT (no
+  `--rtdir`) rtDir resolution itself — `findRtDir` prepends one `../` per
+  directory level walked upward, so any compile launched from somewhere
+  other than the repo root (every Go test package in this tree, for
+  one) records runtime-module paths like `"../../runtime/clarus/core.cla"`,
+  which never matches the literal prefix. Every runtime function was
+  silently misclassified as non-runtime-origin whenever `clarusc` ran
+  this way, giving it incorrect bail-block/check machinery. Fixed:
+  substring search (`path.indexOf("runtime/clarus/") != -1`) instead of
+  a prefix-only match — correct for both the repo-root and
+  upward-search cases; the separately-known, already-accepted
+  `--rtdir`-override limitation is unchanged, not made worse.
+  `testdata/cg68k/abort_bake.s` reblessed as a result (net −327 lines —
+  erroneous scaffolding removed from ~10 misclassified runtime
+  functions; the fixture's own real `inner`/`outer`/`run` abort
+  machinery is unaffected, spot-checked).
+- **Snapshot regen #2**: `clarusc/clarusc.c` regenerated to a fresh
+  Go-free fixed point at the end of this close-out (after every other
+  code change, including the bug fix above); full `go test
+  ./internal/selfhost -count=1 -timeout 30m` GREEN including
+  `TestSnapshotFixedPoint`.
+- **Not run this phase (by design):** every emulator-gated item — see
+  section 0's checklist above / `deferred-gates.md` in full. Nothing
+  else is outstanding; the branch is ready for the deferred checklist,
+  then a merge decision.
+
+## 0b. object-code-linker close-out (DONE, prior session)
 
 Branch `precompiled-artifacts`. Design
 `docs/superpowers/specs/2026-08-13-object-code-linker-design.md` (now
@@ -151,7 +289,7 @@ deferred remains open. Out of scope by design: smart linking/IR-body
 removal, link-time layout improvements, stage 4's cache, the
 pre-existing call-lowering debt class, the stamp-proxy-global gap.
 
-## 0b. fallback-trigger-narrowing close-out (DONE, prior session)
+## 0c. fallback-trigger-narrowing close-out (DONE, prior session)
 
 Design `docs/superpowers/specs/2026-08-13-fallback-trigger-narrowing-design.md`
 (now annotated where Task 2 narrowed a claim). Plan (4 tasks)
@@ -237,7 +375,7 @@ drift only, logging the drifted path.
   default bake path is proven on hardware with this phase's
   `bake.cla`/`macgui.cla`/`cg68k.cla` changes in place.
 
-## 0c. runtime-ir-bake close-out recap (DONE, merged to main)
+## 0d. runtime-ir-bake close-out recap (DONE, merged to main)
 
 `runtime-ir-bake` is DONE, full `scripts/test-merge.sh` GREEN (232s at
 commit `3bdbb3b`, re-confirmed 233s at tip `b16e8f0`). Task 7's own
@@ -555,7 +693,7 @@ summary here.
   pre-param-abi by-value string push, which made every native
   list-bounds panic print an EMPTY message and hid bug 1's own
   diagnostic for a full session). Root-caused and fixed same day,
-  commit `3bdbb3b` — see section 0c above and the ROADMAP entry's "T2
+  commit `3bdbb3b` — see section 0d above and the ROADMAP entry's "T2
   blocker" subsection for the full narrative. The prior session's
   leading hypothesis (Task 5's splice reorder, `e72b92a`) was disproven
   by a code-independent repro flip, not confirmed.
@@ -667,11 +805,11 @@ boots it.
    runtime-ir-bake) were all merged to `main` 2026-08-13 09:56 JST
    (fast-forward `322765a..b16e8f0`) and pushed to `origin/main` — see
    the top of this document. `fallback-trigger-narrowing` is now on
-   `origin/main` too (its own Snow rerun PASSED, section 0b above);
-   `precompiled-artifacts` (this session's `object-code-linker` phase,
-   section 0a above) was merged and pushed too (2026-08-14, after its
+   `origin/main` too (its own Snow rerun PASSED, section 0c above);
+   `precompiled-artifacts` (the `object-code-linker` phase,
+   section 0b above) was merged and pushed too (2026-08-14, after its
    Snow re-run PASSED) — see the top of this document.
-7. **DONE and MERGED — see section 0/0a above.** Precompiled-artifacts
+7. **DONE and MERGED — see section 0b above.** Precompiled-artifacts
    stage 3.5 (object code + linker) was speced, planned, implemented,
    fully gated (T2 GREEN, Snow PASS at `6bf4f6e`), and merged to
    `origin/main` (`e143af1..6009c65`, 2026-08-14). Stage 4 (the
