@@ -548,6 +548,12 @@ func driveReset() {
     // that would legitimately repopulate it for the compile about to
     // start.
     bkLdObjValid = driveFreshBoolList()
+    // clir-load-perf Task 1: defensive reset, same rationale as the
+    // resets above -- bkHeaderVerified is consume-once inside
+    // bkLoadRtbake, so this is a no-op on the ordinary sequence; it
+    // exists so a future aborted/reordered front-end path can never
+    // leave a stale "verified" blessing for a buffer that was not.
+    bkHeaderVerified = false
 }
 
 // findRtDir resolves the default --rtdir when the flag is omitted: it walks

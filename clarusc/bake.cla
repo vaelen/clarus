@@ -1856,6 +1856,16 @@ var bkLoadPos: int
 // flag forward.
 var bkLoadOverrun: bool
 
+// bkHeaderVerified (clir-load-perf Task 1, design A): set by a front
+// end (macgui's gcResolveBakePath) immediately after ITS successful
+// bkCheckRtbakeHeader on the exact buffer it then hands to
+// driveCompile as rtbakeBytes -- bkLoadRtbake consumes it (read +
+// reset) to skip re-hashing ~1.3MB it verified seconds earlier.
+// Consume-once: never survives past one bkLoadRtbake call, so a stale
+// value can never bless a different buffer. Host front ends never set
+// it, so the host's single verify (inside bkLoadRtbake) is unchanged.
+var bkHeaderVerified: bool
+
 func bkGetByte(): int {
     var b: int
     if bkLoadPos >= bkLoadBuf.length {
@@ -3549,8 +3559,19 @@ func bkLoadRtbake(buf: text, wantLane: int): bool {
     var n: int
     var loadedMods: list of string
 
-    if not bkCheckRtbakeHeader(buf, wantLane) {
-        return false
+    if bkHeaderVerified {
+        // Design A: the front end already verified THIS buffer.
+        // Re-establish the parse preconditions bkCheckRtbakeHeader
+        // normally leaves behind (cursor past the 19-byte header,
+        // overrun flag clear), without the ~1.3MB body re-hash.
+        bkHeaderVerified = false
+        bkLoadOverrun = false
+        bkLoadBuf = buf
+        bkLoadPos = 19
+    } else {
+        if not bkCheckRtbakeHeader(buf, wantLane) {
+            return false
+        }
     }
 
     // runtime-ir-bake Task 5 (b): retained (not discarded) into

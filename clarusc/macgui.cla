@@ -524,6 +524,7 @@ func gcResolveBakePath(): string {
     }
     resetDiags()
     haveRtbake = true
+    bkHeaderVerified = true
     rtbakeBytes = clirBuf
     return "clarusc: bake path (CLIR resource)"
 }
