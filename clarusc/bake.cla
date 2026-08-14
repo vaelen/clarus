@@ -1888,16 +1888,24 @@ func bkGetU16(): int {
     return (b0 << 8) | b1
 }
 
+// bkGetU32 (clir-load-perf Task 5, design C): one bulk t.u32At call
+// behind a soft pre-check, instead of four bkGetByte calls -- the
+// pre-check (`bkLoadPos + 4 > bkLoadBuf.length`) is the exact STRICT
+// bound u32At itself re-checks (`pos < 0 or pos > rt.len - 4`, text.cla),
+// so u32At's own panic is never reachable from here: bkLoadPos is never
+// negative (every advance is by a non-negative amount from 0), so the
+// only way to fail u32At's bound is the same overrun this pre-check
+// already catches.
 func bkGetU32(): int {
-    var b0: int
-    var b1: int
-    var b2: int
-    var b3: int
-    b0 = bkGetByte()
-    b1 = bkGetByte()
-    b2 = bkGetByte()
-    b3 = bkGetByte()
-    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+    var v: int
+    if bkLoadPos + 4 > bkLoadBuf.length {
+        bkLoadOverrun = true
+        bkLoadPos = bkLoadBuf.length
+        return 0
+    }
+    v = bkLoadBuf.u32At(bkLoadPos)
+    bkLoadPos = bkLoadPos + 4
+    return v
 }
 
 func bkGetBool(): bool {
@@ -1906,44 +1914,75 @@ func bkGetBool(): bool {
 
 // bkGetStr/bkGetStrShort mirror bkPutStr/bkPutStrShort's own two length-
 // prefix conventions (4-byte BE for pool strings, 1-byte for the
-// header's module keys) -- both build through a char[255] buffer +
-// fromBytes, the same byte-copy idiom lib.cla's internText already uses,
-// since every string this format carries (pool entries, module keys) is
-// well under the string type's own 255-byte cap by construction (the
-// writer could never have produced a longer one -- see bake.cla's own
-// header doc comment).
+// header's module keys) -- every string this format carries (pool
+// entries, module keys) is well under the string type's own 255-byte cap
+// by construction (the writer could never have produced a longer one --
+// see bake.cla's own header doc comment).
+//
+// clir-load-perf Task 5 (design C): one bulk t.stringAt call behind two
+// soft pre-checks, instead of a per-byte bkGetByte loop through a
+// char[255] buffer. Pre-check 1 (4 bytes for the length prefix) makes
+// the u32At read below panic-unreachable, same argument as bkGetU32's
+// own rewrite. Pre-check 2 mirrors BOTH of stringAt's own STRICT bounds
+// (text.cla's rtTextStringAt): `n <= 255` (its "string too long" panic)
+// and `bkLoadPos + 4 + n <= bkLoadBuf.length` (its "text index out of
+// range" panic on the payload) -- once both hold, stringAt's own
+// re-read of the length prefix is redundant work (one extra u32At is
+// nothing) but never a reachable panic. The `n > 255` refusal is NEW
+// defensive behavior for a corrupt bake: the old char[255] loop just
+// copied `n` bytes with no cap, so a hand-crafted length > 255 would
+// have overrun the stack buffer; here it soft-refuses instead.
 func bkGetStr(): string {
     var n: int
-    var buf: char[255]
-    var i: int
     var s: string
 
-    n = bkGetU32()
-    i = 0
-    while i < n {
-        buf[i] = char(bkGetByte())
-        i = i + 1
+    if bkLoadPos + 4 > bkLoadBuf.length {
+        bkLoadOverrun = true
+        bkLoadPos = bkLoadBuf.length
+        return ""
     }
-    s.fromBytes(buf, n)
+    n = bkLoadBuf.u32At(bkLoadPos)
+    if n < 0 or n > 255 or bkLoadPos + 4 + n > bkLoadBuf.length {
+        bkLoadOverrun = true
+        bkLoadPos = bkLoadBuf.length
+        return ""
+    }
+    s = bkLoadBuf.stringAt(bkLoadPos)
+    bkLoadPos = bkLoadPos + 4 + n
     return s
 }
 
 // bkGetBytes (object-code-linker Task 2) mirrors bkPutBytes: a 4-byte BE
-// length followed by that many raw bytes, read one at a time through
-// bkGetByte (not a bulk slice) so the SAME overrun guard every other
-// reader already relies on (bkLoadOverrun) covers this path too.
+// length followed by that many raw bytes.
+//
+// clir-load-perf Task 5 (design C): one bulk t.textAt call behind two
+// soft pre-checks, instead of a per-byte bkGetByte + append loop. Same
+// shape as bkGetStr's own rewrite above: pre-check 1 (4 bytes for the
+// length prefix) makes the u32At read panic-unreachable; pre-check 2
+// mirrors textAt's own STRICT bounds (rtTextTextAt, text.cla: `n < 0` and
+// `pos > rt.len - n`, i.e. `bkLoadPos + 4 + n > bkLoadBuf.length` in the
+// addition form every other reader here uses) -- `n < 0` has to be
+// checked explicitly since a huge negative n can satisfy the addition
+// check while still failing textAt's own bound, so leaving it out would
+// make the "panic unreachable" argument false. Overrun/refusal returns
+// "" (empty text), matching the current empty-start behavior.
 func bkGetBytes(): text {
     var n: int
     var t: text
-    var i: int
 
-    n = bkGetU32()
-    t = ""
-    i = 0
-    while i < n {
-        t.append(char(bkGetByte()))
-        i = i + 1
+    if bkLoadPos + 4 > bkLoadBuf.length {
+        bkLoadOverrun = true
+        bkLoadPos = bkLoadBuf.length
+        return ""
     }
+    n = bkLoadBuf.u32At(bkLoadPos)
+    if n < 0 or bkLoadPos + 4 + n > bkLoadBuf.length {
+        bkLoadOverrun = true
+        bkLoadPos = bkLoadBuf.length
+        return ""
+    }
+    t = bkLoadBuf.textAt(bkLoadPos + 4, n)
+    bkLoadPos = bkLoadPos + 4 + n
     return t
 }
 
@@ -3497,6 +3536,8 @@ func bkCheckRtbakeHeader(buf: text, wantLane: int): bool {
     var expectStamp: int
     var bodyHash: int
     var actualBodyHash: int
+    var i: int
+    var n: int
 
     bkLoadOverrun = false
 
@@ -3540,10 +3581,28 @@ func bkCheckRtbakeHeader(buf: text, wantLane: int): bool {
 
     bodyHash = bkGetU32()
     // Everything from here (bkLoadPos) to buf.length is "the body" --
-    // exactly what bakeWriteFile hashed before writing the header. Walk
-    // it by index (bkHashTextFrom), never as a slice -- a `string` slice
-    // is capped at 255 bytes (Chapter 3) and this body is ~1.1MB.
-    actualBodyHash = bkHashTextFrom(buf, bkLoadPos)
+    // exactly what bakeWriteFile hashed before writing the header.
+    // clir-load-perf Task 5 (design C): walk it in ~32KB chunks through
+    // the bulk t.hashStep method instead of bkHashTextFrom's per-byte
+    // loop -- same djb2-shape seed/step, so this is bit-identical to
+    // bkHashTextFrom(buf, bkLoadPos) (proven by Task 2's core-suite
+    // "hashStep split" case); bkHashTextFrom itself stays untouched as
+    // the reference implementation and the cold-path form the
+    // manifest/stamp callers still use.
+    actualBodyHash = bkFnvSeed
+    i = bkLoadPos
+    while i < buf.length {
+        n = 32768
+        if i + n > buf.length {
+            n = buf.length - i
+        }
+        actualBodyHash = buf.hashStep(actualBodyHash, i, n)
+        // Liveness pulse (attempt-abort Task 7 contract): one tick per
+        // 32KB chunk, same cadence the per-byte loop's (i & 0x7FFF)
+        // gate produced.
+        driveProgressTick()
+        i = i + n
+    }
     if actualBodyHash != bodyHash {
         emitDiag(1, 1, "--rtbake: body hash mismatch (corrupt or truncated bake); regenerate with --bake-ir")
         return false
