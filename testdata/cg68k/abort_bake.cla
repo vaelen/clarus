@@ -1,0 +1,33 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// abort_bake.cla: attempt-abort phase Task 4 fix round 1 (review I1) --
+// a small attempt/abort fixture propagating an abort through two frames
+// (inner -> outer -> the attempt in run), kept in testdata/cg68k/ so the
+// automated bake corpus (cg68kAllFixtures, CLARUS_BAKE_FULL=1) proves
+// the callee-origin predicate (irFuncIsRuntimeOrigin) and the
+// bake-loader fix (bkReadIrFuncs's bailHead/fromRuntimeModule) stay
+// correct on a --rtbake compile continuously, not just via the
+// implementer's one-off manual run (task-4-report.md's own bake-loader
+// proof).
+
+func inner(): int {
+    abort("boom")
+    return 0
+}
+
+func outer(): int {
+    return inner()
+}
+
+func run() {
+    attempt {
+        outer()
+    } aborted msg {
+        log("caught: " + msg)
+    }
+}
+
+on App.launch {
+    run()
+}

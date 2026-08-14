@@ -935,56 +935,74 @@ func rtUiAskSaveChanges(name: ptr): int {
 //
 // This file is spliced UNCONDITIONALLY into every program on BOTH lanes
 // (runtime-ir-bake Task 2's own "full lane superset" splice), while
-// native.cla's natInit/natCrLf/natWriteBytes/natFlush are want68k-gated
-// (drive.cla) -- calling any of them directly from here would fail the
-// CHECKER for every program compiled via the C lane (verified
-// empirically against a from-source `clarusc emit` compile of a plain
-// UI fixture: "undefined: natInit"), since checking validates every
-// declared function's body regardless of reachability. Ch13 also has no
-// address-of operator for an ordinary Clarus value, so there is no way
-// to hand this file's own local `string` storage to str.cla's ptr-taking
-// helpers either -- ruling out a `natAlert`-shaped reimplementation here
-// even in principle.
+// native.cla's natInit/natCrLf/natAlert/natLog/natWriteBytes/natFlush are
+// want68k-gated (drive.cla) -- calling any of them directly from here
+// would fail the CHECKER for every program compiled via the C lane
+// (verified empirically against a from-source `clarusc emit` compile of
+// a plain UI fixture: "undefined: natInit"), since checking validates
+// every declared function's body regardless of reachability.
 //
-// Reconciliation: reconstruct msg's payload into a genuine Clarus
-// `string(255)` (peekb byte-by-byte into a char[255] buffer -- both
-// lane-agnostic core builtins -- then `.fromBytes`), then call the
-// ORDINARY `log(...)` builtin. `log` lowers to ILog on every lane, and
-// on the 68k lane specifically it reaches natLog, which calls the SAME
-// natCrLf(s, natBuf) conversion natAlert itself calls -- so the rendered
-// trace-LINE bytes (CR->LF + trailing LF) are exactly "natAlert-format,"
-// byte for byte, reusing natCrLf's own logic indirectly rather than
-// duplicating it. Known, deliberate gap: natLog BUFFERS (flushed only at
-// natQuit's own trailer) where natAlert writes+flushes IMMEDIATELY
-// (task-1-report P4(c)'s own finding) -- immaterial at this function's
-// own only call site (cg68k.cla's cgEmitAbortDefaultCheck, which ALWAYS
-// runs the quit-1 path -- and its own trailer flush -- immediately
-// after), but a real gap if a future caller needs a mid-program
-// flush-on-alert guarantee; closing it for real needs either native.cla's
-// own want68k gate lifted or a new lane-agnostic flush primitive,
-// neither authorized by this task's file list (runtime/clarus/ may ONLY
-// gain this one function).
+// Fix round 1 (review Critical C1): an earlier version of this function
+// routed the trace line through the ordinary `log(...)` builtin, which
+// on the 68k lane reaches natLog -- BUFFERED (flushed only at natQuit's
+// own trailer), unlike natAlert's own immediate write+flush. That
+// silently changed the trace-capture liveness guarantee for EVERY
+// pre-existing `alert(...)` call in a UI program (not gated on
+// lowUsesAbort at all -- e.g. ClarusC.APPL's own gcCompile error path,
+// macgui.cla:555,566,574,592), defeating exactly the field property this
+// whole phase exists to harden: `out` as a live witness when the app
+// dies before quitting.
 //
-// The real-dialog half mirrors rtUiAskSaveChanges's own precedent
-// exactly (UiParamText + UiAlert(130, ptr(0))), gated on NOT rtUiScripted
-// so a scripted/golden run never pops a real dialog -- msg itself (the
-// original ptr, already a valid Str255-shaped blob) passes straight to
-// UiParamText with no conversion needed.
+// Fix: use `UiTestEmit` (uiscript.cla's own external func, the reverse-
+// waist scripted-trace capture hook `rtUiEmitLine` already calls --
+// uiscript.cla:250-253, the SAME machinery rtUiAskSaveChanges's own
+// scripted path uses just above) instead of `log`. `UiTestEmit` is
+// lane-agnostic BY CONSTRUCTION (an `external func`, resolved to a real
+// C function on the C lane, `nat_UiTestEmit` by name on the 68k lane --
+// never a plain Clarus call to anything native.cla-private), so it
+// carries no splice-gating problem at all. `nat_UiTestEmit`
+// (native.cla) writes+flushes IMMEDIATELY on every call (its own doc
+// comment: "mirrors rt_mac.c's rt_test_emit -> rt_test_write, which
+// FlushVol's after EVERY write... so trace/snap output survives a
+// mid-run crash on real hardware exactly like the cprint lane's capture
+// file does") -- exactly natAlert's own guarantee, not natLog's.
+//
+// Format: build a fresh `text` (`rtTextNew()`) and append msg's own
+// bytes one at a time (`rtTextAppendChar`, CR(13)->LF(10) converted
+// inline -- both lane-agnostic, `peekb`/text.cla primitives), THEN call
+// `rtUiEmitLine(t)` (releases t after emitting). `nat_UiTestEmit`
+// appends exactly one more trailing LF unconditionally, same as
+// `natCrLf` does -- so the final byte sequence is [msg's own bytes,
+// CR->LF converted] + [one trailing LF], IDENTICAL to what a literal
+// `natAlert(msg)` call would have written. Verified by direct
+// byte-for-byte simulation of both algorithms against several inputs
+// (empty, embedded CR, already-LF, max-length 255) -- see
+// task-4-report.md's fix-round-1 section for the transcript.
+//
+// The real-dialog half is unchanged, mirroring rtUiAskSaveChanges's own
+// precedent exactly (UiParamText + UiAlert(130, ptr(0))), gated on NOT
+// rtUiScripted so a scripted/golden run never pops a real dialog -- msg
+// itself (the original ptr, already a valid Str255-shaped blob) passes
+// straight to UiParamText with no conversion needed.
 func rtUiAlertMsg(msg: ptr) {
     var len: int
-    var buf: char[255]
     var i: int
-    var m: string(255)
+    var c: int
+    var t: ptr
     var empty: ptr
 
+    t = rtTextNew()
     len = peekb(msg)
     i = 0
     while i < len {
-        buf[i] = char(peekb(msg + 1 + i))
+        c = peekb(msg + 1 + i)
+        if c == 13 {
+            c = 10
+        }
+        rtTextAppendChar(t, c)
         i = i + 1
     }
-    m.fromBytes(buf, len)
-    log(m)
+    rtUiEmitLine(t)
     if not rtUiScripted {
         empty = rtUiEmptyPStrGet()
         UiParamText(msg, empty, empty, empty)

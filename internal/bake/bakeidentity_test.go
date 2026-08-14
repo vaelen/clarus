@@ -1051,7 +1051,7 @@ func TestRtbakeTestapiManifestOnlyIncludeParity(t *testing.T) {
 // oriented order). There is no allowlist any more: every fixture below
 // is asserted to match, full stop -- a clean oracle needs no exceptions.
 var cg68kAllFixtures = []string{
-	"arc.cla", "argmat_intr.cla", "argmat_nested.cla", "arith.cla", "arr_whole_assign.cla",
+	"abort_bake.cla", "arc.cla", "argmat_intr.cla", "argmat_nested.cla", "arith.cla", "arr_whole_assign.cla",
 	"bigtmp_ceiling.cla", "bounce.cla", "callback.cla", "calls.cla", "clear_deep.cla",
 	"control.cla", "enums.cla", "gapclose3.cla", "globals.cla", "inline_a5.cla", "mutrec.cla",
 	"peep_clr.cla", "peep_pushpop.cla", "peep_quick.cla", "peep_shuffle.cla", "recs.cla",

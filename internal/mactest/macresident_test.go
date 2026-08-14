@@ -174,8 +174,17 @@ const macResidentLaunchSettle = 30 * time.Second
 //     gcCompile's own gcLog, which only ever reaches the ON-SCREEN Log
 //     textview -- confirmed by reading its source: it assigns
 //     `w.Output.text` and calls nothing else) writes live into this
-//     SAME captured stream (native.cla's natAlert doc comment: "written
-//     immediately and flushed"). So an alert-free trace is real
+//     SAME captured stream. ClarusC.APPL (macgui.cla) is a UI program,
+//     so its alert() calls route through rtUiAlertMsg (attempt-abort
+//     phase Task 4, A4; runtime/clarus/uidialogs.cla), which writes and
+//     flushes IMMEDIATELY via UiTestEmit/nat_UiTestEmit -- the same
+//     "survives a mid-run crash" guarantee native.cla's own natAlert
+//     doc comment describes ("written immediately and flushed"), just
+//     reached through rtUiAlertMsg now rather than a direct natAlert
+//     call (fix round 1, review C1: an earlier rtUiAlertMsg routed
+//     through the BUFFERED natLog path instead, which would have made
+//     this comment's own assertion false for a still-running session --
+//     fixed before merge). So an alert-free trace is real
 //     evidence neither compile hit an error path -- discovered THIS
 //     task, when a first automated run's "assert BUILT " check (the
 //     brief's own Step 4 wording) turned out structurally unsatisfiable
