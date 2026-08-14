@@ -366,6 +366,23 @@ func bakeRt68k(t *testing.T, outPath string) string {
 // clarusc/clarusc.c the same "up to 10 parent levels" way.
 func runDblcompileBakeOnce(t *testing.T, exe, bakePath, workDir string, entries []string) int {
 	t.Helper()
+	live, _ := runDblcompileBakeOnceState(t, exe, bakePath, workDir, entries)
+	return live
+}
+
+// bakeState is one BAKESTATE line from dblcompile_bake.cla -- the
+// design-B (clir-load-perf Task 7) observables for one compile.
+type bakeState struct {
+	parsedBefore int // 1 iff the CLIR parse was already memoized when this compile started
+	objValid     int // bkLdObjValid.count -- the PENDING object staging, which must stay full-length
+	boundary     int // bkRuntimeFuncBoundary -- this compile's own installed runtime function count
+	eligible     int // functions cgObjPasteEligible accepts, i.e. object-code paste actually armed
+}
+
+// runDblcompileBakeOnceState is runDblcompileBakeOnce plus the parsed
+// BAKESTATE lines, one per compile, in order.
+func runDblcompileBakeOnceState(t *testing.T, exe, bakePath, workDir string, entries []string) (int, []bakeState) {
+	t.Helper()
 	reportPath := filepath.Join(workDir, "report.txt")
 	argv := append([]string{bakePath}, entries...)
 	cmd := exec.Command(exe, argv...)
@@ -380,17 +397,118 @@ func runDblcompileBakeOnce(t *testing.T, exe, bakePath, workDir string, entries 
 		t.Fatalf("run dblcompile_bake %v: %v\nstdout: %s\nstderr: %s", argv, err, stdout.String(), stderr.String())
 	}
 	live, _ := parseLiveCount(t, reportPath)
-	return live
+	return live, parseBakeStates(t, stderr.String(), len(entries))
+}
+
+// parseBakeStates pulls the "BAKESTATE <i> k=v ..." lines out of the
+// harness's log stream (feProgress -> log() -> stderr on the host lane).
+func parseBakeStates(t *testing.T, out string, want int) []bakeState {
+	t.Helper()
+	var states []bakeState
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) == 0 || fields[0] != "BAKESTATE" {
+			continue
+		}
+		var st bakeState
+		for _, f := range fields[2:] {
+			k, v, ok := strings.Cut(f, "=")
+			if !ok {
+				t.Fatalf("malformed BAKESTATE field %q in line %q", f, line)
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				t.Fatalf("malformed BAKESTATE value %q in line %q: %v", f, line, err)
+			}
+			switch k {
+			case "parsedBefore":
+				st.parsedBefore = n
+			case "objvalid":
+				st.objValid = n
+			case "boundary":
+				st.boundary = n
+			case "eligible":
+				st.eligible = n
+			default:
+				t.Fatalf("unknown BAKESTATE key %q in line %q", k, line)
+			}
+		}
+		states = append(states, st)
+	}
+	if len(states) != want {
+		t.Fatalf("got %d BAKESTATE lines, want %d\n%s", len(states), want, out)
+	}
+	return states
+}
+
+// checkDesignBStates asserts the clir-load-perf Task 7 (design B)
+// contract over one harness run's BAKESTATE lines:
+//
+//	(ii) the CLIR is parsed ONCE per process -- compile #1 arrives with
+//	     no memo, every later compile arrives with one. (The harness
+//	     also frees rtbakeBytes after the first compile, exactly as
+//	     macgui.cla does, so a re-parse would fail the run outright
+//	     rather than merely fail this assertion.)
+//	(iii) the object-code paste stays armed on EVERY compile -- audit
+//	     finding F1's regression: driveReset() used to empty
+//	     bkLdObjValid every compile, which under memoization (nothing
+//	     re-parses it) would silently disable stage 3.5's -41% emit68k
+//	     win from compile #2 onward with byte-identical output and no
+//	     test going red. Pending state must also stay FULL-LENGTH
+//	     (objValid >= boundary): finding F2's in-place truncation is
+//	     gone, so a shrinking count means someone reintroduced it.
+func checkDesignBStates(t *testing.T, states []bakeState) {
+	t.Helper()
+	for i, st := range states {
+		want := 1
+		if i == 0 {
+			want = 0
+		}
+		if st.parsedBefore != want {
+			t.Fatalf("compile #%d: parsedBefore=%d, want %d (design B parses the CLIR exactly once per process)", i, st.parsedBefore, want)
+		}
+		if st.boundary <= 0 {
+			t.Fatalf("compile #%d: bkRuntimeFuncBoundary=%d, want > 0 (no baked runtime installed?)", i, st.boundary)
+		}
+		if st.eligible <= 0 {
+			t.Fatalf("compile #%d: %d paste-eligible functions, want > 0 -- the object-code paste is silently off (audit finding F1)", i, st.eligible)
+		}
+		if st.objValid < st.boundary {
+			t.Fatalf("compile #%d: pending bkLdObjValid.count=%d < boundary=%d -- pending object staging was truncated in place (audit finding F2)", i, st.objValid, st.boundary)
+		}
+		if st.eligible != states[0].eligible || st.boundary != states[0].boundary || st.objValid != states[0].objValid {
+			t.Fatalf("compile #%d state %+v differs from compile #0 %+v -- the install is not reproducing the same baked runtime every compile", i, st, states[0])
+		}
+	}
 }
 
 // runDoubleCompileGateBake is runDoubleCompileGate's own --rtbake twin:
 // proves the bake-path install (clarusc/bake.cla's bkLoadRtbake/
 // bkInstallPool/bkInstallArenas, runtime-ir-bake Task 4) doesn't retain
 // heap blocks across repeated in-process compiles either, and that
-// re-installing the SAME baked image fresh every compile doesn't leak
-// stale state into a later, DIFFERENT entry's compile (the same
+// re-installing the SAME baked image every compile doesn't leak stale
+// state into a later, DIFFERENT entry's compile (the same
 // alternating-fixture byte-identity oracle runDoubleCompileGate itself
 // uses, here over the --rtbake fork instead of the from-source one).
+//
+// clir-load-perf Task 7 (design B) promoted this from a leak gate to the
+// phase's primary behavioral proof, since it is the only host front end
+// that compiles twice in one process. The three design-B claims and
+// where each is asserted:
+//
+//	(i)   compile #2+ produces byte-identical output to compile #1 for
+//	      the same input -- the fork0/fork2 comparisons below, which now
+//	      prove copy-on-install (a compile whose live arenas aliased the
+//	      memoized parse would install its predecessor's user IR).
+//	(ii)  compile #2+ does not re-parse the CLIR, and
+//	(iii) the object-code paste stays eligible on compile #2+
+//	      -- both via checkDesignBStates over the harness's BAKESTATE
+//	      lines; see its own doc comment.
+//
+// The pre-existing live-block growth assertions keep their old meaning
+// AND acquire a new one: copy-on-install allocates a fresh copy of every
+// baked arena per compile, so a copy that outlives its compile shows up
+// here as growth.
 func runDoubleCompileGateBake(t *testing.T) {
 	t.Helper()
 	root := repoRoot(t)
@@ -414,14 +532,16 @@ func runDoubleCompileGateBake(t *testing.T) {
 		t.Fatalf("mkdtemp: %v", err)
 	}
 	defer os.RemoveAll(work1)
-	live1 := runDblcompileBakeOnce(t, exe, bakePath, work1, []string{tickprobe})
+	live1, states1 := runDblcompileBakeOnceState(t, exe, bakePath, work1, []string{tickprobe})
+	checkDesignBStates(t, states1)
 
 	work3, err := os.MkdirTemp(scratchRoot, "leakgate-bake-3x-")
 	if err != nil {
 		t.Fatalf("mkdtemp: %v", err)
 	}
 	defer os.RemoveAll(work3)
-	live3 := runDblcompileBakeOnce(t, exe, bakePath, work3, []string{tickprobe, tickprobe, tickprobe})
+	live3, states3 := runDblcompileBakeOnceState(t, exe, bakePath, work3, []string{tickprobe, tickprobe, tickprobe})
+	checkDesignBStates(t, states3)
 
 	growthPerCompile := (live3 - live1) / 2
 	if growthPerCompile > 64 {
@@ -448,7 +568,8 @@ func runDoubleCompileGateBake(t *testing.T) {
 		t.Fatalf("mkdtemp: %v", err)
 	}
 	defer os.RemoveAll(workAlt)
-	liveAlt := runDblcompileBakeOnce(t, exe, bakePath, workAlt, []string{tickprobe, catprobe, tickprobe})
+	liveAlt, statesAlt := runDblcompileBakeOnceState(t, exe, bakePath, workAlt, []string{tickprobe, catprobe, tickprobe})
+	checkDesignBStates(t, statesAlt)
 
 	growthPerCompileAlt := (liveAlt - live1) / 2
 	if growthPerCompileAlt > 64 {

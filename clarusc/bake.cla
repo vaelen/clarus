@@ -219,8 +219,9 @@ const bkSecFieldInfo: int = 47
 // artifact fixed-cost buckets and per-pool-entry size tables). 68k lane
 // only; written empty (count 0) on lane c so bkSectionCount's own
 // round-trip check stays lane-uniform. See bkWriteObjCode/bkWriteObjMeta
-// for the exact wire shape and bkReadObjCode/bkInstallObjCode for the
-// loader/install split.
+// for the exact wire shape and bkReadObjCode for the loader side (there
+// is no install step any more -- clir-load-perf Task 7 replaced
+// bkInstallObjCode's truncation with cgObjPasteEligible's bounds check).
 const bkSecObjCode: int = 48
 const bkSecObjMeta: int = 49
 
@@ -1869,6 +1870,22 @@ var bkLoadOverrun: bool
 // it, so the host's single verify (inside bkLoadRtbake) is unchanged.
 var bkHeaderVerified: bool
 
+// bkParsedValid (clir-load-perf Task 7, design B): true iff the bkLd*/
+// bkLoaded* pending state below holds a COMPLETE, PRISTINE parse of
+// this session's bake -- i.e. drive.cla may install from it without
+// re-parsing the bytes. Deliberately NOT reset by driveReset(): surviving
+// across compiles is its entire purpose (ClarusC.APPL re-compiles in one
+// process and the CLIR resource cannot change under it). Reset on parse
+// failure and by the manifest-drift from-source fallback (drive.cla),
+// the two paths where the pending state must not be trusted again.
+//
+// What makes the memo safe is copy-on-install: every bkInstall* function
+// below now COPIES the pending containers into the live compiler globals
+// instead of aliasing them (Task 6's audit table -- 43 rows), so a
+// compile's own appends/element-mutations/.clear()s can never reach the
+// pending parse this flag blesses.
+var bkParsedValid: bool
+
 func bkGetByte(): int {
     var b: int
     if bkLoadPos >= bkLoadBuf.length {
@@ -2167,13 +2184,15 @@ var bkLdEarlySymbolsCount: int
 // bkReadObjMeta into these globals (never a live global write MID-PARSE
 // -- the timing guarantee the staging convention exists for -- every
 // field below is built into a fully-local `lXxx` first and assigned
-// here only once, at the very end of a successful parse), truncated to
-// the runtime/testapi boundary by bkInstallObjCode alongside
-// bkInstallArenas' own irFuncs truncation. MOST of these fields are then
-// read by a future compile's own Measure-skip/paste link pass (Task 3)
-// -- but not all: the per-function StrLit First/Count/Flat triple and
-// the eight once-per-artifact size-bucket scalars below are staged and
-// truncated same as everything else, then deliberately left unconsumed
+// here only once, at the very end of a successful parse), and left
+// PRISTINE from there on (clir-load-perf Task 7, design B: they are
+// pending state a memoized parse must be able to replay from -- the
+// runtime/testapi boundary they used to be truncated to is applied as a
+// bounds check by cgObjPasteEligible instead). MOST of these fields are
+// then read by a future compile's own Measure-skip/paste link pass (Task
+// 3) -- but not all: the per-function StrLit First/Count/Flat triple and
+// the eight once-per-artifact size-bucket scalars below are staged the
+// same as everything else, then deliberately left unconsumed
 // -- see each field's own doc comment for why. See bkWriteObjCode/
 // bkWriteObjMeta for the exact field-for-field wire shape.
 //
@@ -2273,16 +2292,23 @@ var bkLdObjUiEventsSize: int
 // bkRuntimeFuncBoundary (object-code-linker Task 2): the installed
 // runtime function count -- set in bkInstallArenas, right after irFuncs
 // itself is assigned (== irFuncs.count at that point, respecting the
-// SAME non-testapi truncation irFuncs just went through). Its ONLY
-// consumer is bkInstallObjCode's own truncation of the four per-function
-// objcode index arrays (bkLdObjValid/RunFirst/HoleFirst/NHoles) to this
-// same boundary, right after bkInstallArenas returns. It is deliberately
-// NOT Task 3's own baked-index predicate -- cgObjPasteEligible (cg68k.cla)
-// answers "is index i baked" purely from bkLdObjValid[i], never from this
-// field, and never resets across compiles (stays whatever the last bake
-// install left it), so a future reader must not treat `bkRuntimeFuncBoundary
-// != 0` as "this is a bake compile." 0 until bkInstallArenas first runs,
-// stale-but-harmless (unread) after that on any non-bake compile.
+// SAME non-testapi truncation irFuncs just went through).
+//
+// clir-load-perf Task 7 (design B) PROMOTED it: it is now exactly the
+// baked-index predicate cgObjPasteEligible (cg68k.cla) tests against,
+// replacing bkInstallObjCode's own in-place truncation of the four
+// per-function objcode index arrays (which design B cannot afford --
+// that truncation destroyed pending state a memoized parse must replay
+// from; audit findings F1/F2). Two consequences a future reader must
+// keep true:
+//   - driveReset() now RESETS it to 0 every compile (drive.cla), so it
+//     means "this compile installed a baked runtime prefix of N
+//     functions", never "the last bake install did." A stale nonzero
+//     value on a from-source compile would make cgObjPasteEligible
+//     paste baked bytes over user functions.
+//   - It must stay <= bkLdObjValid.count for the compiles that set it
+//     (bkInstallArenas installs at most the baked function set);
+//     cgObjPasteEligible bounds-checks both ways regardless.
 var bkRuntimeFuncBoundary: int
 
 // bkLoadedModules (Task 5, deliverable (b)): the bake header's own
@@ -3132,6 +3158,20 @@ func bkReadObjCode(): bool {
     // See bkLdObjValid's own doc comment: the flat run/hole payload
     // reuses cg68k.cla's own capture-side globals instead of a separate
     // bkLdObjRuns/bkLdObjHoles pair.
+    //
+    // These two are the ONE place a reader writes LIVE state instead of
+    // pending state (Task 6 audit finding F3), and design B (bkParsedValid,
+    // above) leans on their WRITE-ONCE property: cgObjRuns/cgObjHoles are
+    // .clear()ed/.add()ed only under `if cgBakeCapture` (cg68k.cla's
+    // cgObjDumpSegment and the fork-side reset), which only the --bake-ir
+    // generator ever sets -- never during a --rtbake compile -- and nothing
+    // resets them in driveReset or anywhere else. So a memoized parse
+    // leaves them populated and correct for every later compile in the
+    // session. Deliberately NOT moved to the install path: the obvious
+    // bkLdObjRuns/bkLdObjHoles pair is exactly what tipped cpEmitRelease
+    // over the 32KB single-function segment ceiling once before (see
+    // bkLdObjValid's own doc comment). If that write-once property ever
+    // changes, design B's memo breaks with it.
     cgObjRuns = lRuns
     cgObjHoles = lHoles
     return true
@@ -3625,6 +3665,7 @@ func bkLoadRtbake(buf: text, wantLane: int): bool {
     var i: int
     var n: int
     var loadedMods: list of string
+    var parsed: bool
 
     if bkHeaderVerified {
         // Design A: the front end already verified THIS buffer.
@@ -3655,7 +3696,412 @@ func bkLoadRtbake(buf: text, wantLane: int): bool {
     }
     bkLoadedModules = loadedMods
 
-    return bkLoadSections()
+    parsed = bkLoadSections()
+    // clir-load-perf Task 7 (design B): drop the loader cursor's own
+    // reference to the caller's buffer the moment the parse is over.
+    // Nothing reads bkLoadBuf outside a parse, and macgui.cla's
+    // gcCompile frees its rtbakeBytes copy right after driveCompile
+    // returns -- but a text is a REFERENCE, so that free reclaims the
+    // ~1.3MB only if this reference is gone too. Cleared on failure as
+    // well: a refused parse has no more use for it either.
+    bkLoadBuf = ""
+    return parsed
+}
+
+// ================================================================
+// Copy-on-install helpers (clir-load-perf Task 7, design B)
+// ================================================================
+//
+// One boring helper per element type -- Clarus has no generics, so this
+// is deliberately 26 near-identical `while` + `.add` loops rather than
+// anything clever. Every bkInstall* function below runs its pending
+// container through one of these instead of assigning it straight into
+// the live global: `text`/`list`/`map`/`intmap` are REFERENCE types
+// (the language reference's own Value and Reference Semantics section),
+// so the old `irExprs = bkLdIrExprs` shape aliased the two -- fine while
+// every compile re-parsed the bake from bytes, fatal
+// once bkParsedValid memoizes the parse (compile #1's user IR would be
+// appended into the pending arenas through the alias, and compile #2's
+// own irReset() would .clear() them outright before the install could
+// read them -- a total loss, not a subtle corruption).
+//
+// `dst.add(src[i])` copies a record BY VALUE (same section; verified
+// empirically by Task 6's audit probe), which is deep enough for every
+// arena here: all 25 record types below are int/bool/enum-field-only
+// EXCEPT Scope, whose `names: intmap of int` is a reference field and
+// gets its own deep copy (bkCopyListScope). FuncSig.params (`list of
+// int`) is deliberately NOT deep-copied -- it is built fresh at
+// construction (types.cla's newFuncSig, bake.cla's own loader) and no
+// `funcSigs[i].params` mutation site exists anywhere in clarusc/*.cla
+// (Task 6 audit, Step 3); a future writer of that field must revisit
+// this decision.
+
+func bkCopyListIRType(src: list of IRType): list of IRType {
+    var dst: list of IRType
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRStmt(src: list of IRStmt): list of IRStmt {
+    var dst: list of IRStmt
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRExpr(src: list of IRExpr): list of IRExpr {
+    var dst: list of IRExpr
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRLocal(src: list of IRLocal): list of IRLocal {
+    var dst: list of IRLocal
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRFunc(src: list of IRFunc): list of IRFunc {
+    var dst: list of IRFunc
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRGlobal(src: list of IRGlobal): list of IRGlobal {
+    var dst: list of IRGlobal
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRFieldSlot(src: list of IRFieldSlot): list of IRFieldSlot {
+    var dst: list of IRFieldSlot
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRRecordLayout(src: list of IRRecordLayout): list of IRRecordLayout {
+    var dst: list of IRRecordLayout
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIREnumMember(src: list of IREnumMember): list of IREnumMember {
+    var dst: list of IREnumMember
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIREnumLayout(src: list of IREnumLayout): list of IREnumLayout {
+    var dst: list of IREnumLayout
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRWidgetDesc(src: list of IRWidgetDesc): list of IRWidgetDesc {
+    var dst: list of IRWidgetDesc
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRColumnDesc(src: list of IRColumnDesc): list of IRColumnDesc {
+    var dst: list of IRColumnDesc
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRBindDesc(src: list of IRBindDesc): list of IRBindDesc {
+    var dst: list of IRBindDesc
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRWindowDesc(src: list of IRWindowDesc): list of IRWindowDesc {
+    var dst: list of IRWindowDesc
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRMenuItemDesc(src: list of IRMenuItemDesc): list of IRMenuItemDesc {
+    var dst: list of IRMenuItemDesc
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRMenuDesc(src: list of IRMenuDesc): list of IRMenuDesc {
+    var dst: list of IRMenuDesc
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRWinHandlers(src: list of IRWinHandlers): list of IRWinHandlers {
+    var dst: list of IRWinHandlers
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRWidgetHandlerEntry(src: list of IRWidgetHandlerEntry): list of IRWidgetHandlerEntry {
+    var dst: list of IRWidgetHandlerEntry
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIRMenuHandlerEntry(src: list of IRMenuHandlerEntry): list of IRMenuHandlerEntry {
+    var dst: list of IRMenuHandlerEntry
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListIREveryEntry(src: list of IREveryEntry): list of IREveryEntry {
+    var dst: list of IREveryEntry
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListTypeInfo(src: list of TypeInfo): list of TypeInfo {
+    var dst: list of TypeInfo
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListEnumMemberInfo(src: list of EnumMemberInfo): list of EnumMemberInfo {
+    var dst: list of EnumMemberInfo
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListFieldInfo(src: list of FieldInfo): list of FieldInfo {
+    var dst: list of FieldInfo
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListFuncSig(src: list of FuncSig): list of FuncSig {
+    var dst: list of FuncSig
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListSymbol(src: list of Symbol): list of Symbol {
+    var dst: list of Symbol
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListInt(src: list of int): list of int {
+    var dst: list of int
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyListString(src: list of string): list of string {
+    var dst: list of string
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+    return dst
+}
+
+func bkCopyIntmapInt(src: intmap of int): intmap of int {
+    var dst: intmap of int
+    var k: int
+    var v: int
+
+    for k, v in src {
+        dst[k] = v
+    }
+    return dst
+}
+
+func bkCopyMapInt(src: map of int): map of int {
+    var dst: map of int
+    var k: string
+    var v: int
+
+    for k, v in src {
+        dst[k] = v
+    }
+    return dst
+}
+
+// bkCopyListScope is the one deep copy: Scope.names is an `intmap of
+// int`, i.e. a REFERENCE field that a plain `.add` would share with the
+// pending parse -- and types.cla's scopeDeclare writes
+// `scopes[scope].names[key] = idx` on every top-level declaration a
+// user program makes, which without this would land inside the pending
+// scope and stay visible to every later compile in the session (Task 6
+// audit finding F4).
+func bkCopyListScope(src: list of Scope): list of Scope {
+    var dst: list of Scope
+    var s: Scope
+    var i: int
+
+    i = 0
+    while i < src.count {
+        s = src[i]
+        s.names = bkCopyIntmapInt(src[i].names)
+        dst.add(s)
+        i = i + 1
+    }
+    return dst
 }
 
 // bkInstallPool copies the intern-pool prefix into live strPool/strIndex
@@ -3674,7 +4120,12 @@ func bkInstallPool() {
     var freshIndex: map of int
     var i: int
 
-    strPool = bkLdStrPool
+    // Copy, not alias (Task 7, design B): lib.cla's intern() appends
+    // every new user identifier/literal to the LIVE strPool all compile
+    // long, and libReset() rebinds rather than clears -- so an alias
+    // would pollute the pending pool with one compile's user strings at
+    // a time, unboundedly, across a ClarusC.APPL session.
+    strPool = bkCopyListString(bkLdStrPool)
     freshIndex = driveFreshIntMap()
     strIndex = freshIndex
     i = 0
@@ -3725,8 +4176,11 @@ func bkInstallPool() {
 // mismatch. enumMembers travels the same way (seedSaveChoice, called
 // from the SAME typesInit(), is equally deterministic).
 func bkInstallTypeArenaPrefix() {
-    typeArena = bkLoadedTypeArena
-    enumMembers = bkLoadedEnumMembers
+    // Copies (Task 7, design B): types.cla appends to both arenas all
+    // check long AND typesReset() .clear()s them at the top of the next
+    // compile -- through an alias that would empty the pending parse.
+    typeArena = bkCopyListTypeInfo(bkLoadedTypeArena)
+    enumMembers = bkCopyListEnumMemberInfo(bkLoadedEnumMembers)
 }
 
 // bkInstallFieldInfo (fallback-trigger-narrowing Task 2): the same
@@ -3745,8 +4199,11 @@ func bkInstallTypeArenaPrefix() {
 // but not `.fieldName` on it -- see bkSecFieldInfo's own doc comment for
 // how this was found.
 func bkInstallFieldInfo() {
-    fieldInfos = bkLoadedFieldInfos
-    recFieldsHeadByName = bkLoadedRecFieldsHeadByName
+    // Copies (Task 7, design B): check.cla appends to fieldInfos (and
+    // mutates fieldInfos[tail].next) plus writes recFieldsHeadByName on
+    // every user record decl; checkReset() .clear()s fieldInfos.
+    fieldInfos = bkCopyListFieldInfo(bkLoadedFieldInfos)
+    recFieldsHeadByName = bkCopyIntmapInt(bkLoadedRecFieldsHeadByName)
 }
 
 // bkComputeManifestPaths (Task 5, deliverable (b)) builds bkManifestPaths
@@ -3853,14 +4310,24 @@ func bkInstallArenas(testapi: bool) {
     var truncFuncs: list of IRFunc
     var truncStrLits: list of int
 
-    irTypes = bkLdIrTypes
-    irStmts = bkLdIrStmts
-    irExprs = bkLdIrExprs
-    irLocals = bkLdIrLocals
+    // Every assignment in this function COPIES its pending container
+    // (clir-load-perf Task 7, design B -- see the bkCopyList* helpers
+    // above and bkParsedValid's own doc comment): ir.cla appends to,
+    // element-mutates, and finally .clear()s each of these arenas every
+    // compile, so aliasing them to the memoized parse would destroy it.
+    irTypes = bkCopyListIRType(bkLdIrTypes)
+    irStmts = bkCopyListIRStmt(bkLdIrStmts)
+    irExprs = bkCopyListIRExpr(bkLdIrExprs)
+    irLocals = bkCopyListIRLocal(bkLdIrLocals)
 
-    srcFuncs = bkLdIrFuncs
-    srcStrLits = bkLdIrStrLits
-    if not testapi {
+    // The non-testapi truncation loops already build FRESH lists (that
+    // is what truncFuncs/truncStrLits are), so only the testapi arm
+    // needs an explicit copy -- the two paths now agree that srcFuncs/
+    // srcStrLits never alias bkLdIrFuncs/bkLdIrStrLits.
+    if testapi {
+        srcFuncs = bkCopyListIRFunc(bkLdIrFuncs)
+        srcStrLits = bkCopyListInt(bkLdIrStrLits)
+    } else {
         i = 0
         while i < bkLdIrFuncs.count and i < bkLdBaseIrFuncsCount {
             truncFuncs.add(bkLdIrFuncs[i])
@@ -3883,10 +4350,11 @@ func bkInstallArenas(testapi: bool) {
     // reference.
     irFuncs = srcFuncs
     // object-code-linker Task 2: the object-code boundary global, set
-    // here (not bkInstallObjCode) so it exists for a future compile's
-    // own link pass regardless of whether the artifact carries any
-    // object sections at all (lane c, or a pre-Task-2 bake -- format
-    // refused outright by version, but defensive regardless).
+    // here so it exists for a future compile's own link pass regardless
+    // of whether the artifact carries any object sections at all (lane
+    // c, or a pre-Task-2 bake -- format refused outright by version, but
+    // defensive regardless). clir-load-perf Task 7: this is now also the
+    // paste-eligibility bound itself (see its own doc comment).
     bkRuntimeFuncBoundary = irFuncs.count
     i = 0
     while i < irFuncs.count {
@@ -3898,35 +4366,35 @@ func bkInstallArenas(testapi: bool) {
     }
     irFuncIdxByName = filteredIdx
 
-    irCbGlueNames = bkLdIrCbGlueNames
-    irGlobals = bkLdIrGlobals
-    irFieldSlots = bkLdIrFieldSlots
-    irRecords = bkLdIrRecords
-    irEnumMembers = bkLdIrEnumMembers
-    irEnums = bkLdIrEnums
-    irWidgetDescs = bkLdIrWidgetDescs
-    irColumnDescs = bkLdIrColumnDescs
-    irBindDescs = bkLdIrBindDescs
-    irWindowDescs = bkLdIrWindowDescs
-    irMenuItemDescs = bkLdIrMenuItemDescs
-    irMenuDescs = bkLdIrMenuDescs
-    irWinHandlers = bkLdIrWinHandlers
-    irWidgetHandlerEntries = bkLdIrWidgetHandlerEntries
-    irMenuHandlerEntries = bkLdIrMenuHandlerEntries
-    irEveryEntries = bkLdIrEveryEntries
+    irCbGlueNames = bkCopyListInt(bkLdIrCbGlueNames)
+    irGlobals = bkCopyListIRGlobal(bkLdIrGlobals)
+    irFieldSlots = bkCopyListIRFieldSlot(bkLdIrFieldSlots)
+    irRecords = bkCopyListIRRecordLayout(bkLdIrRecords)
+    irEnumMembers = bkCopyListIREnumMember(bkLdIrEnumMembers)
+    irEnums = bkCopyListIREnumLayout(bkLdIrEnums)
+    irWidgetDescs = bkCopyListIRWidgetDesc(bkLdIrWidgetDescs)
+    irColumnDescs = bkCopyListIRColumnDesc(bkLdIrColumnDescs)
+    irBindDescs = bkCopyListIRBindDesc(bkLdIrBindDescs)
+    irWindowDescs = bkCopyListIRWindowDesc(bkLdIrWindowDescs)
+    irMenuItemDescs = bkCopyListIRMenuItemDesc(bkLdIrMenuItemDescs)
+    irMenuDescs = bkCopyListIRMenuDesc(bkLdIrMenuDescs)
+    irWinHandlers = bkCopyListIRWinHandlers(bkLdIrWinHandlers)
+    irWidgetHandlerEntries = bkCopyListIRWidgetHandlerEntry(bkLdIrWidgetHandlerEntries)
+    irMenuHandlerEntries = bkCopyListIRMenuHandlerEntry(bkLdIrMenuHandlerEntries)
+    irEveryEntries = bkCopyListIREveryEntry(bkLdIrEveryEntries)
     irStrLits = srcStrLits
-    irExternNames = bkLdIrExternNames
-    irExternRetTys = bkLdIrExternRetTys
-    irExternParamStart = bkLdIrExternParamStart
-    irExternParamCountArr = bkLdIrExternParamCountArr
-    irExternParamTys = bkLdIrExternParamTys
-    irExternTrapWords = bkLdIrExternTrapWords
-    irExternConvs = bkLdIrExternConvs
-    irExternSels = bkLdIrExternSels
-    irExternParamRegs = bkLdIrExternParamRegs
-    irExternRetRegs = bkLdIrExternRetRegs
-    irLayoutNeededByName = bkLdIrLayoutNeededByName
-    irRcWalkNeededByName = bkLdIrRcWalkNeededByName
+    irExternNames = bkCopyListInt(bkLdIrExternNames)
+    irExternRetTys = bkCopyListInt(bkLdIrExternRetTys)
+    irExternParamStart = bkCopyListInt(bkLdIrExternParamStart)
+    irExternParamCountArr = bkCopyListInt(bkLdIrExternParamCountArr)
+    irExternParamTys = bkCopyListInt(bkLdIrExternParamTys)
+    irExternTrapWords = bkCopyListInt(bkLdIrExternTrapWords)
+    irExternConvs = bkCopyListInt(bkLdIrExternConvs)
+    irExternSels = bkCopyListInt(bkLdIrExternSels)
+    irExternParamRegs = bkCopyListInt(bkLdIrExternParamRegs)
+    irExternRetRegs = bkCopyListInt(bkLdIrExternRetRegs)
+    irLayoutNeededByName = bkCopyIntmapInt(bkLdIrLayoutNeededByName)
+    irRcWalkNeededByName = bkCopyIntmapInt(bkLdIrRcWalkNeededByName)
 
     irHasLaunch = bkLdIrHasLaunch
     irHasStartEmpty = bkLdIrHasStartEmpty
@@ -3960,53 +4428,22 @@ func bkInstallArenas(testapi: bool) {
     uiMenuCount = bkLdUiMenuCount
     lowStoreTempN = bkLdLowStoreTempN
     lowRetTempN = bkLdLowRetTempN
-    lowStrIdx = bkLdLowStrIdx
+    lowStrIdx = bkCopyMapInt(bkLdLowStrIdx)
 }
 
-// bkInstallObjCode (object-code-linker Task 2): truncates the per-
-// function object staging (bkLdObjValid/RunFirst/HoleFirst/NHoles) down
-// to bkRuntimeFuncBoundary -- the SAME boundary bkInstallArenas (above)
-// just set irFuncs.count to -- so a future consumer (Task 3) can safely
-// use bkLdObjValid.count as its own iteration bound without separately
-// re-deriving the testapi split. The two FLAT arrays (cgObjRuns/
-// cgObjHoles -- bkLdObjValid's own doc comment explains why these are
-// cg68k.cla's capture-side globals, reused, not a separate bkLdObjRuns/
-// bkLdObjHoles pair) are deliberately NOT truncated: a dropped
-// function's own run/hole indices simply become unreachable once its
-// own RunFirst/HoleFirst/NHoles entry is gone (wasted but harmless, the
-// same argument bkInstallArenas' own srcStrLits truncation already makes
-// for not compacting bkLdIrStrLits's tail). Called by drive.cla
-// immediately after bkInstallArenas -- still before checkPhase1/
-// lowerProgram ever
-// run, i.e. post-acceptance, with nothing before this point able to have
-// half-installed object code the caller would then need to unwind.
-func bkInstallObjCode() {
-    var truncValid: list of bool
-    var truncRunFirst: list of int
-    var truncHoleFirst: list of int
-    var truncNHoles: list of int
-    var i: int
-
-    if bkLdObjValid.count <= bkRuntimeFuncBoundary {
-        return
-    }
-    truncValid = driveFreshBoolList()
-    truncRunFirst = driveFreshIntList()
-    truncHoleFirst = driveFreshIntList()
-    truncNHoles = driveFreshIntList()
-    i = 0
-    while i < bkRuntimeFuncBoundary {
-        truncValid.add(bkLdObjValid[i])
-        truncRunFirst.add(bkLdObjRunFirst[i])
-        truncHoleFirst.add(bkLdObjHoleFirst[i])
-        truncNHoles.add(bkLdObjNHoles[i])
-        i = i + 1
-    }
-    bkLdObjValid = truncValid
-    bkLdObjRunFirst = truncRunFirst
-    bkLdObjHoleFirst = truncHoleFirst
-    bkLdObjNHoles = truncNHoles
-}
+// bkInstallObjCode is GONE (clir-load-perf Task 7, design B). It used to
+// truncate the four per-function object-staging arrays (bkLdObjValid/
+// RunFirst/HoleFirst/NHoles) down to bkRuntimeFuncBoundary IN PLACE,
+// which is exactly the destructive-consume-of-pending-state design B
+// cannot have (Task 6 audit findings F1/F2): under memoization there is
+// no re-parse to rebuild what the truncation ate, and a session mixing a
+// non-testapi compile with a later --testapi one would permanently lose
+// the uitest functions' own paste eligibility. The truncation is now a
+// BOUNDS CHECK instead -- cgObjPasteEligible (cg68k.cla) rejects any
+// index at or past bkRuntimeFuncBoundary, which is recomputed by
+// bkInstallArenas on every compile from that compile's OWN testapi
+// split, so the pending arrays stay pristine and full-length forever.
+// Cheaper too: four copy loops per compile became one comparison.
 
 // ================================================================
 // --testapi checker-symbol preload (Task 5, deliverables (a)/(c))
@@ -4068,9 +4505,14 @@ func bkInstallCheckerSymbolsForTestapi() {
     var v: int
     var srcNames: intmap of int
 
-    funcSigs = bkLoadedFuncSigs
-    symbols = bkLoadedSymbols
-    scopes = bkLoadedScopes
+    // Copies (Task 7, design B): all three are append-only arenas the
+    // user's own checkPhase1 keeps growing, types.cla .clear()s/.pop()s
+    // all three at the next checkReset(), and scopeDeclare writes
+    // straight into scopes[topScope].names -- see bkCopyListScope for
+    // why that one needs the deep copy (audit finding F4).
+    funcSigs = bkCopyListFuncSig(bkLoadedFuncSigs)
+    symbols = bkCopyListSymbol(bkLoadedSymbols)
+    scopes = bkCopyListScope(bkLoadedScopes)
     if bkLoadedScopes.count <= topScope {
         return
     }

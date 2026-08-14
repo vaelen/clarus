@@ -13628,14 +13628,28 @@ func cgObjCaptureRuntime(): bool {
 // cgObjPasteEligible: is irFuncs index i a valid, loaded, in-bounds
 // baked object this compile can paste instead of re-generating? False
 // on every non-bake compile (bkLdObjValid stays at its empty default,
-// never touched by bkInstallObjCode -- drive.cla only calls that inside
-// `if haveRtbake`) and false for any index bkInstallObjCode's own
-// truncation dropped or Amendment A6's taint-and-discard left invalid.
+// only ever written by bkReadObjCode, which only a --rtbake parse
+// reaches) and false for any index past THIS compile's own runtime
+// function boundary or that Amendment A6's taint-and-discard left
+// invalid.
+//
+// clir-load-perf Task 7 (design B) added the bkRuntimeFuncBoundary test
+// and, with it, deleted bkInstallObjCode: the boundary used to be
+// enforced by truncating bkLdObjValid & friends IN PLACE at install
+// time, which destroyed pending state the memoized parse must replay
+// from (audit findings F1/F2). Testing the boundary here instead keeps
+// the pending arrays pristine and full-length, and is what makes a
+// session that mixes a non-testapi compile with a --testapi one correct:
+// bkInstallArenas recomputes bkRuntimeFuncBoundary from THAT compile's
+// own testapi split, and driveReset() zeroes it for a from-source
+// compile that installs nothing (without which a stale boundary would
+// paste baked bytes over a from-source compile's own, differently
+// numbered, irFuncs).
 func cgObjPasteEligible(i: int): bool {
     if bkLdObjValid.count == 0 {
         return false
     }
-    if i < 0 or i >= bkLdObjValid.count {
+    if i < 0 or i >= bkRuntimeFuncBoundary or i >= bkLdObjValid.count {
         return false
     }
     return bkLdObjValid[i]

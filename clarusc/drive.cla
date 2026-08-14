@@ -527,27 +527,36 @@ func driveReset() {
     bkManifestCollidedEarly = driveFreshBoolList()
     // object-code-linker Task 3: defensive reset, found the hard way (not
     // added preemptively) -- TestRtbakeDriftFallback crashed with "list
-    // index out of range" until this line existed. bkLdObjValid is
-    // populated by bkLoadRtbake (called from driveCompile's own
-    // `if haveRtbake` block, BEFORE Phase A) and stays populated with THAT
-    // attempt's own per-function data even when the SAME driveCompile call
-    // later detects manifest drift and falls back to a from-source
-    // recompile (haveRtbake set false, driveReset() called, THEN a
-    // recursive driveCompile() with bkInstallObjCode never called again --
-    // haveRtbake is false this time). Without this reset, cg68Measure's
-    // own cgObjPasteEligible(i) kept reading the ABORTED bake attempt's
-    // stale bkLdObjValid/irFuncs-index-space data against the fallback
-    // compile's OWN, differently-numbered irFuncs -- an out-of-bounds (or
-    // silently wrong) index. Resetting bkLdObjValid alone is sufficient:
-    // every other bkLdObj* field is only ever read from behind a
-    // cgObjPasteEligible(i) check, which is false the instant this list is
-    // empty (see its own doc comment, cg68k.cla). Safe at BOTH of this
-    // function's call sites (the fallback point, right before the
-    // recursive driveCompile; macgui.cla's gcCompile, right before ITS OWN
+    // index out of range" until a reset of this kind existed. A bake
+    // attempt's own per-function object staging stays populated even when
+    // the SAME driveCompile call later detects manifest drift and falls
+    // back to a from-source recompile (haveRtbake set false, driveReset()
+    // called, THEN a recursive driveCompile() that installs no baked
+    // arenas at all). Without a reset, cg68Measure's own
+    // cgObjPasteEligible(i) kept reading the ABORTED bake attempt's stale
+    // per-function data against the fallback compile's OWN, differently-
+    // numbered irFuncs -- an out-of-bounds (or silently wrong) index.
+    //
+    // clir-load-perf Task 7 (design B) MOVED which global this resets:
+    // it used to be `bkLdObjValid = driveFreshBoolList()`, but under
+    // memoization bkLdObjValid is pending state -- the parse that filled
+    // it is not re-run on compile #2, so emptying it here would silently
+    // switch the whole object-code paste (stage 3.5's -41% emit68k win)
+    // off from the second compile of every app session onward, with no
+    // test going red (output stays byte-identical, just slower; audit
+    // finding F1). bkRuntimeFuncBoundary is the LIVE per-compile half of
+    // the same predicate (cgObjPasteEligible tests both), it is set by
+    // bkInstallArenas on every compile that installs a baked runtime, and
+    // zero here means "nothing baked is eligible" just as emphatically as
+    // an empty bkLdObjValid did -- while leaving the pending parse
+    // pristine. Still sufficient for the same reason as before: every
+    // other bkLdObj* field is only ever read from behind a
+    // cgObjPasteEligible(i) check. Safe at BOTH of this function's call
+    // sites (the drift-fallback point, right before the recursive
+    // driveCompile; macgui.cla's gcCompile, right before ITS OWN
     // driveCompile) -- both run strictly before any `if haveRtbake` block
-    // that would legitimately repopulate it for the compile about to
-    // start.
-    bkLdObjValid = driveFreshBoolList()
+    // that would legitimately re-install for the compile about to start.
+    bkRuntimeFuncBoundary = 0
     // clir-load-perf Task 1: defensive reset, same rationale as the
     // resets above -- bkHeaderVerified is consume-once inside
     // bkLoadRtbake, so this is a no-op on the ordinary sequence; it
@@ -1785,8 +1794,18 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         if want68k {
             wantLane = bkLane68k
         }
-        if not bkLoadRtbake(rtbakeBytes, wantLane) {
-            return false
+        // clir-load-perf Task 7 (design B): parse the CLIR ONCE per
+        // process. bkParsedValid stays true across compiles (driveReset
+        // deliberately does not clear it) because the pending bkLd*/
+        // bkLoaded* state is now COPIED into the live globals by every
+        // bkInstall* call below, never aliased -- so a compile cannot
+        // reach back and corrupt the parse it was installed from. The
+        // installs themselves still run every compile, unchanged.
+        if not bkParsedValid {
+            if not bkLoadRtbake(rtbakeBytes, wantLane) {
+                return false
+            }
+            bkParsedValid = true
         }
         bkInstallPool()
         bkComputeManifestPaths()
@@ -1828,6 +1847,15 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     if haveRtbake and bkManifestDriftPath != "" {
         log("clarusc --rtbake: " + bkManifestDriftPath + " differs from the baked copy; falling back to a from-source compile")
         haveRtbake = false
+        // clir-load-perf Task 7 (design B): a drifted session must
+        // RE-PARSE if the bake becomes usable again -- the pending state
+        // describes a runtime whose sources have since changed on disk,
+        // so nothing may be installed from it again without a fresh
+        // parse (and rtbakeBytes is deliberately still held: macgui only
+        // frees the buffer while bkParsedValid holds, so the next
+        // compile's gcResolveBakePath re-reads the resource and this
+        // one's own re-parse has bytes to work from).
+        bkParsedValid = false
         bkManifestDriftPath = ""
         driveReset()
         resetDiags()
@@ -2041,13 +2069,14 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         // for a non-UI --testapi bake install to keep that a plain
         // truncated (non-testapi-shaped) install wouldn't already match.
         bkInstallArenas(testapi and isUiProg)
-        // object-code-linker Task 2: install the object-code staging
-        // (bkLdObjValid/RunFirst/HoleFirst/NHoles, truncated to the SAME
-        // boundary bkInstallArenas just set irFuncs.count to) right
-        // after bkInstallArenas -- post-acceptance, before any lowering
-        // runs, same call-site contract. A no-op on lane c / a bake with
-        // no object sections (bkLdObjValid stays at its empty default).
-        bkInstallObjCode()
+        // object-code-linker Task 2 used to call bkInstallObjCode() here,
+        // truncating the per-function object staging to the boundary
+        // bkInstallArenas just set irFuncs.count to. clir-load-perf Task
+        // 7 (design B) deleted that step: the boundary is applied as a
+        // bounds check by cgObjPasteEligible (cg68k.cla) instead, so the
+        // parsed staging stays pristine for the next compile in this
+        // session. bkInstallArenas' own bkRuntimeFuncBoundary assignment,
+        // just above, is all the install this needs now.
         // fallback-trigger-narrowing Task 2: sever EVERY check-only
         // collision (bkManifestCollidedIdx, both case (a) and any case
         // (b) already excised from `combined` above) out of the chain

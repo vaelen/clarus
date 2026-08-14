@@ -495,6 +495,20 @@ func gcResolveBakePath(): string {
     var clirBuf: text
 
     haveRtbake = false
+    // clir-load-perf Task 7 (design B): this session already parsed the
+    // CLIR, and the resource cannot change under a running app -- so arm
+    // drive.cla's `if haveRtbake` install gate and skip the resource
+    // read, the ~1.3MB body hash, and (via drive.cla's own
+    // `if not bkParsedValid`) the whole section parse. rtbakeBytes was
+    // freed by gcCompile after that first parse; bkLoadRtbake is
+    // unreachable while bkParsedValid holds, so the freed buffer is never
+    // read. bkHeaderVerified deliberately stays FALSE here: nothing will
+    // consume it, and leaving it clear keeps design A's consume-once
+    // invariant trivially true.
+    if bkParsedValid {
+        haveRtbake = true
+        return "clarusc: bake path (CLIR resource, parsed earlier this session)"
+    }
     if not feHasKey(bkClirResourceName) {
         return "clarusc: CLFS-source fallback (no CLIR resource baked into this app)"
     }
@@ -594,6 +608,29 @@ func gcCompile(w: Log, p: string) {
     // log+alert+return shape unchanged.
     attempt {
         ok = driveCompile(entries, false)
+
+        // clir-load-perf Task 7 (design B): the parse is memoized, so
+        // the raw CLIR bytes are dead weight -- ~1.3MB of a 12MB
+        // partition. Freed HERE, right after driveCompile returns,
+        // because that is the one point every bake-path compile that
+        // RETURNS crosses whatever it decides (success, user diagnostics,
+        // or an unreadable entry file) -- the four early returns below all
+        // sit after it. A compile that ABORTS instead skips this and
+        // holds the buffer until the session's next successful compile
+        // frees it, which is exactly the pre-Task-7 status quo (the
+        // buffer used to be held for the whole session unconditionally),
+        // so no regression. Guarded on bkParsedValid rather than on `ok`
+        // for the
+        // same reason it is the flag drive.cla's parse gate reads: the
+        // manifest-drift fallback clears it (its from-source recompile
+        // means the pending parse is no longer trustworthy), and the
+        // buffer must survive for the re-read/re-parse that follows.
+        // gcResolveBakePath reads the resource again from scratch on any
+        // compile where bkParsedValid is false, so a freed buffer is
+        // never a buffer some later compile still needs.
+        if bkParsedValid {
+            rtbakeBytes = ""
+        }
 
         // entryFailed (an unreadable entry file) is checked BEFORE diags,
         // exactly like main.cla's own startCLI -- driveCompile leaves diags
