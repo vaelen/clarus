@@ -263,118 +263,119 @@ static const clar_str_255 clar_lit_4 = {25, {115, 116, 114, 105, 110, 103, 32, 1
 static const clar_str_255 clar_lit_5 = {18, {115, 108, 105, 99, 101, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 static const clar_str_255 clar_lit_6 = {13, {111, 117, 116, 32, 111, 102, 32, 109, 101, 109, 111, 114, 121}};
 static const clar_str_255 clar_lit_7 = {23, {116, 101, 120, 116, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_8 = {23, {108, 105, 115, 116, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_9 = {17, {112, 111, 112, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
-static const clar_str_255 clar_lit_10 = {19, {115, 104, 105, 102, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
-static const clar_str_255 clar_lit_11 = {19, {102, 105, 114, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
-static const clar_str_255 clar_lit_12 = {18, {108, 97, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
-static const clar_str_255 clar_lit_13 = {17, {109, 97, 112, 32, 107, 101, 121, 32, 110, 111, 116, 32, 102, 111, 117, 110, 100}};
-static const clar_str_255 clar_lit_14 = {6, {99, 108, 111, 115, 101, 100}};
-static const clar_str_255 clar_lit_15 = {12, {99, 108, 111, 115, 101, 82, 101, 113, 117, 101, 115, 116}};
-static const clar_str_255 clar_lit_16 = {1, {45}};
-static const clar_str_255 clar_lit_17 = {24, {65, 98, 111, 117, 116, 32, 84, 104, 105, 115, 32, 65, 112, 112, 108, 105, 99, 97, 116, 105, 111, 110, 59, 45}};
-static const clar_str_255 clar_lit_18 = {6, {85, 110, 100, 111, 47, 90}};
-static const clar_str_255 clar_lit_19 = {5, {67, 117, 116, 47, 88}};
-static const clar_str_255 clar_lit_20 = {6, {67, 111, 112, 121, 47, 67}};
-static const clar_str_255 clar_lit_21 = {7, {80, 97, 115, 116, 101, 47, 86}};
-static const clar_str_255 clar_lit_22 = {5, {67, 108, 101, 97, 114}};
-static const clar_str_255 clar_lit_23 = {7, {114, 101, 115, 105, 122, 101, 100}};
-static const clar_str_255 clar_lit_24 = {6, {99, 104, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_25 = {5, {99, 108, 105, 99, 107}};
-static const clar_str_255 clar_lit_26 = {4, {100, 114, 97, 103}};
-static const clar_str_255 clar_lit_27 = {5, {101, 110, 116, 101, 114}};
-static const clar_str_255 clar_lit_28 = {3, {107, 101, 121}};
-static const clar_str_255 clar_lit_29 = {32, {117, 105, 112, 111, 114, 116, 58, 32, 117, 110, 114, 101, 99, 111, 103, 110, 105, 122, 101, 100, 32, 119, 105, 100, 103, 101, 116, 32, 107, 105, 110, 100}};
-static const clar_str_255 clar_lit_30 = {1, {120}};
-static const clar_str_255 clar_lit_31 = {1, {63}};
-static const clar_str_255 clar_lit_32 = {6, {115, 101, 108, 101, 99, 116}};
-static const clar_str_255 clar_lit_33 = {11, {100, 111, 117, 98, 108, 101, 67, 108, 105, 99, 107}};
-static const clar_str_255 clar_lit_34 = {120, {112, 111, 112, 117, 112, 58, 32, 71, 101, 116, 77, 101, 110, 117, 72, 97, 110, 100, 108, 101, 32, 102, 111, 117, 110, 100, 32, 110, 111, 32, 109, 101, 110, 117, 32, 105, 110, 32, 116, 104, 101, 32, 109, 101, 110, 117, 32, 108, 105, 115, 116, 32, 102, 111, 114, 32, 116, 104, 105, 115, 32, 119, 105, 100, 103, 101, 116, 32, 40, 99, 108, 111, 115, 101, 47, 114, 101, 111, 112, 101, 110, 32, 108, 101, 102, 116, 32, 105, 116, 32, 117, 110, 100, 101, 108, 101, 116, 101, 100, 32, 111, 114, 32, 110, 101, 118, 101, 114, 32, 114, 101, 105, 110, 115, 101, 114, 116, 101, 100, 41}};
-static const clar_str_255 clar_lit_35 = {113, {112, 111, 112, 117, 112, 58, 32, 71, 101, 116, 77, 101, 110, 117, 72, 97, 110, 100, 108, 101, 32, 114, 101, 116, 117, 114, 110, 101, 100, 32, 97, 32, 109, 101, 110, 117, 32, 104, 97, 110, 100, 108, 101, 32, 116, 104, 97, 116, 32, 105, 115, 110, 39, 116, 32, 116, 104, 105, 115, 32, 105, 110, 115, 116, 97, 110, 99, 101, 39, 115, 32, 111, 119, 110, 32, 40, 115, 116, 97, 108, 101, 47, 108, 101, 97, 107, 101, 100, 32, 101, 110, 116, 114, 121, 32, 117, 110, 100, 101, 114, 32, 116, 104, 101, 32, 115, 97, 109, 101, 32, 73, 68, 41}};
-static const clar_str_255 clar_lit_36 = {87, {112, 111, 112, 117, 112, 58, 32, 109, 101, 110, 117, 32, 105, 116, 101, 109, 32, 99, 111, 117, 110, 116, 32, 100, 111, 101, 115, 110, 39, 116, 32, 109, 97, 116, 99, 104, 32, 116, 104, 101, 32, 98, 111, 117, 110, 100, 32, 101, 110, 117, 109, 32, 40, 114, 101, 98, 117, 105, 108, 116, 32, 119, 105, 116, 104, 32, 115, 116, 97, 108, 101, 47, 108, 101, 102, 116, 111, 118, 101, 114, 32, 105, 116, 101, 109, 115, 41}};
-static const clar_str_255 clar_lit_37 = {36, {112, 111, 112, 117, 112, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
-static const clar_str_255 clar_lit_38 = {37, {115, 99, 114, 105, 112, 116, 101, 100, 32, 100, 105, 97, 108, 111, 103, 32, 97, 110, 115, 119, 101, 114, 32, 113, 117, 101, 117, 101, 32, 111, 118, 101, 114, 102, 108, 111, 119}};
-static const clar_str_255 clar_lit_39 = {37, {115, 99, 114, 105, 112, 116, 101, 100, 32, 100, 105, 97, 108, 111, 103, 32, 119, 105, 116, 104, 32, 110, 111, 32, 113, 117, 101, 117, 101, 100, 32, 97, 110, 115, 119, 101, 114}};
-static const clar_str_255 clar_lit_40 = {7, {84, 32, 79, 80, 69, 78, 32}};
-static const clar_str_255 clar_lit_41 = {1, {32}};
-static const clar_str_255 clar_lit_42 = {8, {84, 32, 67, 76, 79, 83, 69, 32}};
-static const clar_str_255 clar_lit_43 = {7, {84, 32, 70, 73, 82, 69, 32}};
-static const clar_str_255 clar_lit_44 = {1, {46}};
-static const clar_str_255 clar_lit_45 = {7, {46, 115, 101, 108, 101, 99, 116}};
-static const clar_str_255 clar_lit_46 = {13, {84, 32, 70, 73, 82, 69, 32, 101, 118, 101, 114, 121, 46}};
-static const clar_str_255 clar_lit_47 = {6, {84, 32, 68, 73, 77, 32}};
-static const clar_str_255 clar_lit_48 = {5, {46, 67, 117, 116, 32}};
-static const clar_str_255 clar_lit_49 = {6, {46, 67, 111, 112, 121, 32}};
-static const clar_str_255 clar_lit_50 = {7, {46, 80, 97, 115, 116, 101, 32}};
-static const clar_str_255 clar_lit_51 = {7, {46, 67, 108, 101, 97, 114, 32}};
-static const clar_str_255 clar_lit_52 = {8, {84, 32, 70, 82, 79, 78, 84, 32}};
-static const clar_str_255 clar_lit_53 = {8, {84, 32, 65, 66, 79, 85, 84, 32}};
-static const clar_str_255 clar_lit_54 = {1, {124}};
-static const clar_str_255 clar_lit_55 = {7, {99, 97, 112, 116, 105, 111, 110}};
-static const clar_str_255 clar_lit_56 = {4, {116, 101, 120, 116}};
-static const clar_str_255 clar_lit_57 = {7, {101, 110, 97, 98, 108, 101, 100}};
-static const clar_str_255 clar_lit_58 = {7, {99, 104, 101, 99, 107, 101, 100}};
-static const clar_str_255 clar_lit_59 = {8, {115, 101, 108, 101, 99, 116, 101, 100}};
-static const clar_str_255 clar_lit_60 = {5, {119, 105, 100, 116, 104}};
-static const clar_str_255 clar_lit_61 = {6, {104, 101, 105, 103, 104, 116}};
-static const clar_str_255 clar_lit_62 = {6, {84, 32, 83, 69, 84, 32}};
-static const clar_str_255 clar_lit_63 = {9, {46, 105, 110, 118, 97, 108, 105, 100, 46}};
-static const clar_str_255 clar_lit_64 = {2, {84, 32}};
-static const clar_str_255 clar_lit_65 = {10, {84, 32, 79, 80, 69, 78, 68, 79, 67, 32}};
-static const clar_str_255 clar_lit_66 = {4, {115, 97, 118, 101}};
-static const clar_str_255 clar_lit_67 = {7, {100, 105, 115, 99, 97, 114, 100}};
-static const clar_str_255 clar_lit_68 = {6, {99, 97, 110, 99, 101, 108}};
-static const clar_str_255 clar_lit_69 = {55, {97, 110, 115, 119, 101, 114, 45, 99, 104, 97, 110, 103, 101, 115, 58, 32, 98, 97, 100, 32, 97, 114, 103, 117, 109, 101, 110, 116, 32, 40, 119, 97, 110, 116, 32, 115, 97, 118, 101, 124, 100, 105, 115, 99, 97, 114, 100, 124, 99, 97, 110, 99, 101, 108, 41}};
-static const clar_str_255 clar_lit_70 = {35, {115, 110, 97, 112, 58, 32, 115, 99, 114, 101, 101, 110, 66, 105, 116, 115, 46, 114, 111, 119, 66, 121, 116, 101, 115, 32, 105, 115, 32, 110, 111, 116, 32, 54, 52}};
-static const clar_str_255 clar_lit_71 = {16, {35, 35, 67, 76, 65, 82, 85, 83, 45, 83, 78, 65, 80, 35, 35, 32}};
-static const clar_str_255 clar_lit_72 = {19, {35, 35, 67, 76, 65, 82, 85, 83, 45, 83, 78, 65, 80, 45, 69, 78, 68, 35, 35}};
-static const clar_str_255 clar_lit_73 = {44, {117, 105, 112, 111, 114, 116, 58, 32, 117, 110, 107, 110, 111, 119, 110, 32, 111, 114, 32, 117, 110, 115, 117, 112, 112, 111, 114, 116, 101, 100, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 118, 101, 114, 98}};
-static const clar_str_255 clar_lit_74 = {8, {100, 98, 108, 99, 108, 105, 99, 107}};
-static const clar_str_255 clar_lit_75 = {4, {116, 121, 112, 101}};
-static const clar_str_255 clar_lit_76 = {4, {109, 101, 110, 117}};
-static const clar_str_255 clar_lit_77 = {5, {99, 108, 111, 115, 101}};
-static const clar_str_255 clar_lit_78 = {6, {114, 101, 115, 105, 122, 101}};
-static const clar_str_255 clar_lit_79 = {4, {122, 111, 111, 109}};
-static const clar_str_255 clar_lit_80 = {4, {116, 105, 99, 107}};
-static const clar_str_255 clar_lit_81 = {4, {115, 110, 97, 112}};
-static const clar_str_255 clar_lit_82 = {4, {113, 117, 105, 116}};
-static const clar_str_255 clar_lit_83 = {9, {108, 97, 117, 110, 99, 104, 100, 111, 99}};
-static const clar_str_255 clar_lit_84 = {12, {97, 110, 115, 119, 101, 114, 45, 112, 111, 112, 117, 112}};
-static const clar_str_255 clar_lit_85 = {11, {97, 110, 115, 119, 101, 114, 45, 111, 112, 101, 110}};
-static const clar_str_255 clar_lit_86 = {11, {97, 110, 115, 119, 101, 114, 45, 115, 97, 118, 101}};
-static const clar_str_255 clar_lit_87 = {14, {97, 110, 115, 119, 101, 114, 45, 99, 104, 97, 110, 103, 101, 115}};
-static const clar_str_255 clar_lit_88 = {13, {97, 110, 115, 119, 101, 114, 45, 99, 97, 110, 99, 101, 108}};
-static const clar_str_255 clar_lit_89 = {42, {97, 115, 107, 79, 112, 101, 110, 32, 102, 105, 108, 116, 101, 114, 32, 109, 117, 115, 116, 32, 104, 97, 118, 101, 32, 97, 116, 32, 109, 111, 115, 116, 32, 52, 32, 101, 110, 116, 114, 105, 101, 115}};
-static const clar_str_255 clar_lit_90 = {49, {97, 115, 107, 79, 112, 101, 110, 32, 102, 105, 108, 116, 101, 114, 32, 101, 110, 116, 114, 121, 32, 109, 117, 115, 116, 32, 98, 101, 32, 97, 116, 32, 109, 111, 115, 116, 32, 52, 32, 99, 104, 97, 114, 97, 99, 116, 101, 114, 115}};
-static const clar_str_255 clar_lit_91 = {0, {}};
-static const clar_str_255 clar_lit_92 = {8, {83, 97, 118, 101, 32, 97, 115, 58}};
-static const clar_str_255 clar_lit_93 = {8, {97, 99, 99, 101, 112, 116, 101, 100}};
-static const clar_str_255 clar_lit_94 = {9, {99, 97, 110, 99, 101, 108, 108, 101, 100}};
-static const clar_str_255 clar_lit_95 = {33, {101, 100, 105, 116, 32, 119, 104, 105, 108, 101, 32, 97, 32, 102, 111, 114, 109, 32, 105, 115, 32, 97, 108, 114, 101, 97, 100, 121, 32, 111, 112, 101, 110}};
-static const clar_str_255 clar_lit_96 = {24, {101, 100, 105, 116, 58, 32, 119, 105, 110, 100, 111, 119, 32, 104, 97, 115, 32, 110, 111, 32, 102, 111, 114, 109}};
-static const clar_str_255 clar_lit_97 = {16, {84, 32, 65, 83, 75, 79, 80, 69, 78, 32, 99, 97, 110, 99, 101, 108}};
-static const clar_str_255 clar_lit_98 = {38, {97, 115, 107, 79, 112, 101, 110, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
-static const clar_str_255 clar_lit_99 = {7, {65, 83, 75, 79, 80, 69, 78}};
-static const clar_str_255 clar_lit_100 = {16, {84, 32, 65, 83, 75, 83, 65, 86, 69, 32, 99, 97, 110, 99, 101, 108}};
-static const clar_str_255 clar_lit_101 = {38, {97, 115, 107, 83, 97, 118, 101, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
-static const clar_str_255 clar_lit_102 = {7, {65, 83, 75, 83, 65, 86, 69}};
-static const clar_str_255 clar_lit_103 = {45, {97, 115, 107, 83, 97, 118, 101, 67, 104, 97, 110, 103, 101, 115, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
-static const clar_str_255 clar_lit_104 = {13, {84, 32, 65, 83, 75, 67, 72, 65, 78, 71, 69, 83, 32}};
-static const clar_str_255 clar_lit_105 = {1, {58}};
-static const clar_str_255 clar_lit_106 = {2, {104, 32}};
-static const clar_str_255 clar_lit_107 = {2, {109, 32}};
-static const clar_str_255 clar_lit_108 = {1, {115}};
-static const clar_str_255 clar_lit_109 = {31, {114, 101, 99, 111, 114, 100, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 102, 111, 114, 32, 115, 101, 114, 105, 97, 108, 105, 122, 101, 114}};
-static const clar_str_255 clar_lit_110 = {20, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 119, 114, 105, 116, 101, 32, 102, 105, 108, 101}};
-static const clar_str_255 clar_lit_111 = {15, {98, 97, 100, 32, 102, 105, 108, 101, 32, 102, 111, 114, 109, 97, 116}};
-static const clar_str_255 clar_lit_112 = {19, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 97, 100, 32, 102, 105, 108, 101}};
-static const clar_str_255 clar_lit_113 = {10, {83, 97, 118, 101, 100, 32, 210, 111, 107, 211}};
-static const clar_str_255 clar_lit_114 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_115 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_116 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_117 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_118 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_119 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_8 = {15, {115, 116, 114, 105, 110, 103, 32, 116, 111, 111, 32, 108, 111, 110, 103}};
+static const clar_str_255 clar_lit_9 = {23, {108, 105, 115, 116, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_10 = {17, {112, 111, 112, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
+static const clar_str_255 clar_lit_11 = {19, {115, 104, 105, 102, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
+static const clar_str_255 clar_lit_12 = {19, {102, 105, 114, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
+static const clar_str_255 clar_lit_13 = {18, {108, 97, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
+static const clar_str_255 clar_lit_14 = {17, {109, 97, 112, 32, 107, 101, 121, 32, 110, 111, 116, 32, 102, 111, 117, 110, 100}};
+static const clar_str_255 clar_lit_15 = {6, {99, 108, 111, 115, 101, 100}};
+static const clar_str_255 clar_lit_16 = {12, {99, 108, 111, 115, 101, 82, 101, 113, 117, 101, 115, 116}};
+static const clar_str_255 clar_lit_17 = {1, {45}};
+static const clar_str_255 clar_lit_18 = {24, {65, 98, 111, 117, 116, 32, 84, 104, 105, 115, 32, 65, 112, 112, 108, 105, 99, 97, 116, 105, 111, 110, 59, 45}};
+static const clar_str_255 clar_lit_19 = {6, {85, 110, 100, 111, 47, 90}};
+static const clar_str_255 clar_lit_20 = {5, {67, 117, 116, 47, 88}};
+static const clar_str_255 clar_lit_21 = {6, {67, 111, 112, 121, 47, 67}};
+static const clar_str_255 clar_lit_22 = {7, {80, 97, 115, 116, 101, 47, 86}};
+static const clar_str_255 clar_lit_23 = {5, {67, 108, 101, 97, 114}};
+static const clar_str_255 clar_lit_24 = {7, {114, 101, 115, 105, 122, 101, 100}};
+static const clar_str_255 clar_lit_25 = {6, {99, 104, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_26 = {5, {99, 108, 105, 99, 107}};
+static const clar_str_255 clar_lit_27 = {4, {100, 114, 97, 103}};
+static const clar_str_255 clar_lit_28 = {5, {101, 110, 116, 101, 114}};
+static const clar_str_255 clar_lit_29 = {3, {107, 101, 121}};
+static const clar_str_255 clar_lit_30 = {32, {117, 105, 112, 111, 114, 116, 58, 32, 117, 110, 114, 101, 99, 111, 103, 110, 105, 122, 101, 100, 32, 119, 105, 100, 103, 101, 116, 32, 107, 105, 110, 100}};
+static const clar_str_255 clar_lit_31 = {1, {120}};
+static const clar_str_255 clar_lit_32 = {1, {63}};
+static const clar_str_255 clar_lit_33 = {6, {115, 101, 108, 101, 99, 116}};
+static const clar_str_255 clar_lit_34 = {11, {100, 111, 117, 98, 108, 101, 67, 108, 105, 99, 107}};
+static const clar_str_255 clar_lit_35 = {120, {112, 111, 112, 117, 112, 58, 32, 71, 101, 116, 77, 101, 110, 117, 72, 97, 110, 100, 108, 101, 32, 102, 111, 117, 110, 100, 32, 110, 111, 32, 109, 101, 110, 117, 32, 105, 110, 32, 116, 104, 101, 32, 109, 101, 110, 117, 32, 108, 105, 115, 116, 32, 102, 111, 114, 32, 116, 104, 105, 115, 32, 119, 105, 100, 103, 101, 116, 32, 40, 99, 108, 111, 115, 101, 47, 114, 101, 111, 112, 101, 110, 32, 108, 101, 102, 116, 32, 105, 116, 32, 117, 110, 100, 101, 108, 101, 116, 101, 100, 32, 111, 114, 32, 110, 101, 118, 101, 114, 32, 114, 101, 105, 110, 115, 101, 114, 116, 101, 100, 41}};
+static const clar_str_255 clar_lit_36 = {113, {112, 111, 112, 117, 112, 58, 32, 71, 101, 116, 77, 101, 110, 117, 72, 97, 110, 100, 108, 101, 32, 114, 101, 116, 117, 114, 110, 101, 100, 32, 97, 32, 109, 101, 110, 117, 32, 104, 97, 110, 100, 108, 101, 32, 116, 104, 97, 116, 32, 105, 115, 110, 39, 116, 32, 116, 104, 105, 115, 32, 105, 110, 115, 116, 97, 110, 99, 101, 39, 115, 32, 111, 119, 110, 32, 40, 115, 116, 97, 108, 101, 47, 108, 101, 97, 107, 101, 100, 32, 101, 110, 116, 114, 121, 32, 117, 110, 100, 101, 114, 32, 116, 104, 101, 32, 115, 97, 109, 101, 32, 73, 68, 41}};
+static const clar_str_255 clar_lit_37 = {87, {112, 111, 112, 117, 112, 58, 32, 109, 101, 110, 117, 32, 105, 116, 101, 109, 32, 99, 111, 117, 110, 116, 32, 100, 111, 101, 115, 110, 39, 116, 32, 109, 97, 116, 99, 104, 32, 116, 104, 101, 32, 98, 111, 117, 110, 100, 32, 101, 110, 117, 109, 32, 40, 114, 101, 98, 117, 105, 108, 116, 32, 119, 105, 116, 104, 32, 115, 116, 97, 108, 101, 47, 108, 101, 102, 116, 111, 118, 101, 114, 32, 105, 116, 101, 109, 115, 41}};
+static const clar_str_255 clar_lit_38 = {36, {112, 111, 112, 117, 112, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
+static const clar_str_255 clar_lit_39 = {37, {115, 99, 114, 105, 112, 116, 101, 100, 32, 100, 105, 97, 108, 111, 103, 32, 97, 110, 115, 119, 101, 114, 32, 113, 117, 101, 117, 101, 32, 111, 118, 101, 114, 102, 108, 111, 119}};
+static const clar_str_255 clar_lit_40 = {37, {115, 99, 114, 105, 112, 116, 101, 100, 32, 100, 105, 97, 108, 111, 103, 32, 119, 105, 116, 104, 32, 110, 111, 32, 113, 117, 101, 117, 101, 100, 32, 97, 110, 115, 119, 101, 114}};
+static const clar_str_255 clar_lit_41 = {7, {84, 32, 79, 80, 69, 78, 32}};
+static const clar_str_255 clar_lit_42 = {1, {32}};
+static const clar_str_255 clar_lit_43 = {8, {84, 32, 67, 76, 79, 83, 69, 32}};
+static const clar_str_255 clar_lit_44 = {7, {84, 32, 70, 73, 82, 69, 32}};
+static const clar_str_255 clar_lit_45 = {1, {46}};
+static const clar_str_255 clar_lit_46 = {7, {46, 115, 101, 108, 101, 99, 116}};
+static const clar_str_255 clar_lit_47 = {13, {84, 32, 70, 73, 82, 69, 32, 101, 118, 101, 114, 121, 46}};
+static const clar_str_255 clar_lit_48 = {6, {84, 32, 68, 73, 77, 32}};
+static const clar_str_255 clar_lit_49 = {5, {46, 67, 117, 116, 32}};
+static const clar_str_255 clar_lit_50 = {6, {46, 67, 111, 112, 121, 32}};
+static const clar_str_255 clar_lit_51 = {7, {46, 80, 97, 115, 116, 101, 32}};
+static const clar_str_255 clar_lit_52 = {7, {46, 67, 108, 101, 97, 114, 32}};
+static const clar_str_255 clar_lit_53 = {8, {84, 32, 70, 82, 79, 78, 84, 32}};
+static const clar_str_255 clar_lit_54 = {8, {84, 32, 65, 66, 79, 85, 84, 32}};
+static const clar_str_255 clar_lit_55 = {1, {124}};
+static const clar_str_255 clar_lit_56 = {7, {99, 97, 112, 116, 105, 111, 110}};
+static const clar_str_255 clar_lit_57 = {4, {116, 101, 120, 116}};
+static const clar_str_255 clar_lit_58 = {7, {101, 110, 97, 98, 108, 101, 100}};
+static const clar_str_255 clar_lit_59 = {7, {99, 104, 101, 99, 107, 101, 100}};
+static const clar_str_255 clar_lit_60 = {8, {115, 101, 108, 101, 99, 116, 101, 100}};
+static const clar_str_255 clar_lit_61 = {5, {119, 105, 100, 116, 104}};
+static const clar_str_255 clar_lit_62 = {6, {104, 101, 105, 103, 104, 116}};
+static const clar_str_255 clar_lit_63 = {6, {84, 32, 83, 69, 84, 32}};
+static const clar_str_255 clar_lit_64 = {9, {46, 105, 110, 118, 97, 108, 105, 100, 46}};
+static const clar_str_255 clar_lit_65 = {2, {84, 32}};
+static const clar_str_255 clar_lit_66 = {10, {84, 32, 79, 80, 69, 78, 68, 79, 67, 32}};
+static const clar_str_255 clar_lit_67 = {4, {115, 97, 118, 101}};
+static const clar_str_255 clar_lit_68 = {7, {100, 105, 115, 99, 97, 114, 100}};
+static const clar_str_255 clar_lit_69 = {6, {99, 97, 110, 99, 101, 108}};
+static const clar_str_255 clar_lit_70 = {55, {97, 110, 115, 119, 101, 114, 45, 99, 104, 97, 110, 103, 101, 115, 58, 32, 98, 97, 100, 32, 97, 114, 103, 117, 109, 101, 110, 116, 32, 40, 119, 97, 110, 116, 32, 115, 97, 118, 101, 124, 100, 105, 115, 99, 97, 114, 100, 124, 99, 97, 110, 99, 101, 108, 41}};
+static const clar_str_255 clar_lit_71 = {35, {115, 110, 97, 112, 58, 32, 115, 99, 114, 101, 101, 110, 66, 105, 116, 115, 46, 114, 111, 119, 66, 121, 116, 101, 115, 32, 105, 115, 32, 110, 111, 116, 32, 54, 52}};
+static const clar_str_255 clar_lit_72 = {16, {35, 35, 67, 76, 65, 82, 85, 83, 45, 83, 78, 65, 80, 35, 35, 32}};
+static const clar_str_255 clar_lit_73 = {19, {35, 35, 67, 76, 65, 82, 85, 83, 45, 83, 78, 65, 80, 45, 69, 78, 68, 35, 35}};
+static const clar_str_255 clar_lit_74 = {44, {117, 105, 112, 111, 114, 116, 58, 32, 117, 110, 107, 110, 111, 119, 110, 32, 111, 114, 32, 117, 110, 115, 117, 112, 112, 111, 114, 116, 101, 100, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 118, 101, 114, 98}};
+static const clar_str_255 clar_lit_75 = {8, {100, 98, 108, 99, 108, 105, 99, 107}};
+static const clar_str_255 clar_lit_76 = {4, {116, 121, 112, 101}};
+static const clar_str_255 clar_lit_77 = {4, {109, 101, 110, 117}};
+static const clar_str_255 clar_lit_78 = {5, {99, 108, 111, 115, 101}};
+static const clar_str_255 clar_lit_79 = {6, {114, 101, 115, 105, 122, 101}};
+static const clar_str_255 clar_lit_80 = {4, {122, 111, 111, 109}};
+static const clar_str_255 clar_lit_81 = {4, {116, 105, 99, 107}};
+static const clar_str_255 clar_lit_82 = {4, {115, 110, 97, 112}};
+static const clar_str_255 clar_lit_83 = {4, {113, 117, 105, 116}};
+static const clar_str_255 clar_lit_84 = {9, {108, 97, 117, 110, 99, 104, 100, 111, 99}};
+static const clar_str_255 clar_lit_85 = {12, {97, 110, 115, 119, 101, 114, 45, 112, 111, 112, 117, 112}};
+static const clar_str_255 clar_lit_86 = {11, {97, 110, 115, 119, 101, 114, 45, 111, 112, 101, 110}};
+static const clar_str_255 clar_lit_87 = {11, {97, 110, 115, 119, 101, 114, 45, 115, 97, 118, 101}};
+static const clar_str_255 clar_lit_88 = {14, {97, 110, 115, 119, 101, 114, 45, 99, 104, 97, 110, 103, 101, 115}};
+static const clar_str_255 clar_lit_89 = {13, {97, 110, 115, 119, 101, 114, 45, 99, 97, 110, 99, 101, 108}};
+static const clar_str_255 clar_lit_90 = {42, {97, 115, 107, 79, 112, 101, 110, 32, 102, 105, 108, 116, 101, 114, 32, 109, 117, 115, 116, 32, 104, 97, 118, 101, 32, 97, 116, 32, 109, 111, 115, 116, 32, 52, 32, 101, 110, 116, 114, 105, 101, 115}};
+static const clar_str_255 clar_lit_91 = {49, {97, 115, 107, 79, 112, 101, 110, 32, 102, 105, 108, 116, 101, 114, 32, 101, 110, 116, 114, 121, 32, 109, 117, 115, 116, 32, 98, 101, 32, 97, 116, 32, 109, 111, 115, 116, 32, 52, 32, 99, 104, 97, 114, 97, 99, 116, 101, 114, 115}};
+static const clar_str_255 clar_lit_92 = {0, {}};
+static const clar_str_255 clar_lit_93 = {8, {83, 97, 118, 101, 32, 97, 115, 58}};
+static const clar_str_255 clar_lit_94 = {8, {97, 99, 99, 101, 112, 116, 101, 100}};
+static const clar_str_255 clar_lit_95 = {9, {99, 97, 110, 99, 101, 108, 108, 101, 100}};
+static const clar_str_255 clar_lit_96 = {33, {101, 100, 105, 116, 32, 119, 104, 105, 108, 101, 32, 97, 32, 102, 111, 114, 109, 32, 105, 115, 32, 97, 108, 114, 101, 97, 100, 121, 32, 111, 112, 101, 110}};
+static const clar_str_255 clar_lit_97 = {24, {101, 100, 105, 116, 58, 32, 119, 105, 110, 100, 111, 119, 32, 104, 97, 115, 32, 110, 111, 32, 102, 111, 114, 109}};
+static const clar_str_255 clar_lit_98 = {16, {84, 32, 65, 83, 75, 79, 80, 69, 78, 32, 99, 97, 110, 99, 101, 108}};
+static const clar_str_255 clar_lit_99 = {38, {97, 115, 107, 79, 112, 101, 110, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
+static const clar_str_255 clar_lit_100 = {7, {65, 83, 75, 79, 80, 69, 78}};
+static const clar_str_255 clar_lit_101 = {16, {84, 32, 65, 83, 75, 83, 65, 86, 69, 32, 99, 97, 110, 99, 101, 108}};
+static const clar_str_255 clar_lit_102 = {38, {97, 115, 107, 83, 97, 118, 101, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
+static const clar_str_255 clar_lit_103 = {7, {65, 83, 75, 83, 65, 86, 69}};
+static const clar_str_255 clar_lit_104 = {45, {97, 115, 107, 83, 97, 118, 101, 67, 104, 97, 110, 103, 101, 115, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
+static const clar_str_255 clar_lit_105 = {13, {84, 32, 65, 83, 75, 67, 72, 65, 78, 71, 69, 83, 32}};
+static const clar_str_255 clar_lit_106 = {1, {58}};
+static const clar_str_255 clar_lit_107 = {2, {104, 32}};
+static const clar_str_255 clar_lit_108 = {2, {109, 32}};
+static const clar_str_255 clar_lit_109 = {1, {115}};
+static const clar_str_255 clar_lit_110 = {31, {114, 101, 99, 111, 114, 100, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 102, 111, 114, 32, 115, 101, 114, 105, 97, 108, 105, 122, 101, 114}};
+static const clar_str_255 clar_lit_111 = {20, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 119, 114, 105, 116, 101, 32, 102, 105, 108, 101}};
+static const clar_str_255 clar_lit_112 = {15, {98, 97, 100, 32, 102, 105, 108, 101, 32, 102, 111, 114, 109, 97, 116}};
+static const clar_str_255 clar_lit_113 = {19, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 97, 100, 32, 102, 105, 108, 101}};
+static const clar_str_255 clar_lit_114 = {10, {83, 97, 118, 101, 100, 32, 210, 111, 107, 211}};
+static const clar_str_255 clar_lit_115 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_116 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_117 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_118 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_119 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_120 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -1282,7 +1283,7 @@ static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i) {
     cv_off = 0;
     cv_rl = ((clar_rec_RtList *)(cv_l));
     if ((cv_i < 0) || (cv_i >= (cv_rl)->cv_count)) {
-        clar_fn_rtPanic(&(clar_lit_8));
+        clar_fn_rtPanic(&(clar_lit_9));
     }
     cv_mp = rt_ext_ListHandleDeref((cv_rl)->cv_data);
     cv_off = CLAR_MUL32(cv_i, (cv_rl)->cv_elemsize);
@@ -1756,7 +1757,7 @@ static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
     cv_rm = 0;
     cv_rm = ((clar_rec_RtMap *)(cv_m));
     if ((cv_i < 0) || (cv_i >= (cv_rm)->cv_count)) {
-        clar_fn_rtPanic(&(clar_lit_13));
+        clar_fn_rtPanic(&(clar_lit_14));
     }
     rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_i), cv_out, (cv_rm)->cv_valsize);
 }
@@ -2692,7 +2693,7 @@ static void clar_fn_rtUiTeardownWindow(void * cv_inst) {
     rt_ext_UiDisposeWindow((cv_w)->cv_wp);
     clar_fn_rtUiTraceClose(cv_winIdx, cv_inst);
     clar_fn_rtUiAfterFrontChange();
-    clar_fn_rtUiTraceFire1(clar_fn_uidWinName(cv_winIdx), &(clar_lit_14));
+    clar_fn_rtUiTraceFire1(clar_fn_uidWinName(cv_winIdx), &(clar_lit_15));
     clar_fn_clar_ui_fire_winevent(cv_winIdx, cv_inst, 2, 0, 0);
     if ((cv_w)->cv_state != (void *)(intptr_t)(0)) {
         clar_fn_clar_ui_fire_releasevars(cv_winIdx, cv_inst);
@@ -2741,7 +2742,7 @@ static int32_t clar_fn_rtUiCloseInternal(void * cv_inst) {
     }
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     cv_winIdx = (cv_w)->cv_winIdx;
-    clar_fn_rtUiTraceFire1(clar_fn_uidWinName(cv_winIdx), &(clar_lit_15));
+    clar_fn_rtUiTraceFire1(clar_fn_uidWinName(cv_winIdx), &(clar_lit_16));
     cv_cancelSlot = rt_ext_UiNewPtr(4);
     rt_pokel(cv_cancelSlot, 0);
     clar_fn_clar_ui_fire_winevent(cv_winIdx, cv_inst, 1, ((int32_t)(intptr_t)(cv_cancelSlot)), 0);
@@ -2876,9 +2877,9 @@ static void clar_fn_rtUiBuildAppleMenu(void) {
         rt_pokeb(cv_buf, CLAR_ADD32(cv_n, 1));
         rt_ext_UiAppendMenu(cv_rtUiAppleMenuHandle, cv_buf);
         rt_ext_UiDisposePtr(cv_buf);
-        rt_ext_UiAppendMenuStr(cv_rtUiAppleMenuHandle, (const uint8_t*)&(clar_lit_16));
-    } else {
         rt_ext_UiAppendMenuStr(cv_rtUiAppleMenuHandle, (const uint8_t*)&(clar_lit_17));
+    } else {
+        rt_ext_UiAppendMenuStr(cv_rtUiAppleMenuHandle, (const uint8_t*)&(clar_lit_18));
     }
     rt_ext_UiAppendResMenu(cv_rtUiAppleMenuHandle, 1146246738);
     rt_ext_UiInsertMenu(cv_rtUiAppleMenuHandle, 0);
@@ -2934,12 +2935,12 @@ static void clar_fn_rtUiBuildMenus(void) {
         if (!((cv_i < cv_nMenus))) break;
         cv_mh = rt_ext_UiNewMenu(CLAR_ADD32(2, cv_i), clar_fn_uidMenuTitle(cv_i));
         if (clar_fn_uidMenuIsStandardEdit(cv_i)) {
-            rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_18));
-            rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_16));
             rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_19));
+            rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_17));
             rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_20));
             rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_21));
             rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_22));
+            rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_23));
             rt_ext_UiDisableItem(cv_mh, 1);
             if (cv_rtUiStdEditMenuIdx < 0) {
                 cv_rtUiStdEditMenuIdx = cv_i;
@@ -2950,7 +2951,7 @@ static void clar_fn_rtUiBuildMenus(void) {
             while (1) {
                 if (!((cv_j < cv_nItems))) break;
                 if (clar_fn_uidItemSeparator(cv_i, cv_j)) {
-                    rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_16));
+                    rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_17));
                 } else {
                     cv_buf = rt_ext_UiNewPtr(258);
                     clar_fn_rtUiPstrcpy(cv_buf, clar_fn_uidItemLabel(cv_i, cv_j));
@@ -3538,7 +3539,7 @@ static void clar_fn_rtUiApplyResize(void * cv_wp, void * cv_inst, int32_t cv_new
     rt_ext_UiSetPort(cv_savedPort);
     clar_fn_rtUiLayout(cv_inst);
     clar_fn_rtUiCanvasReallocAll(cv_inst);
-    clar_fn_rtUiTraceFire1(clar_fn_uidWinName((cv_w)->cv_winIdx), &(clar_lit_23));
+    clar_fn_rtUiTraceFire1(clar_fn_uidWinName((cv_w)->cv_winIdx), &(clar_lit_24));
     clar_fn_clar_ui_fire_winevent((cv_w)->cv_winIdx, cv_inst, 3, 0, 0);
 }
 
@@ -3703,7 +3704,7 @@ static void clar_fn_rtUiFireWidget(void * cv_inst, int32_t cv_wIdx) {
             cv_newVal = 1;
         }
         rt_ext_UiSetControlValue(cv_ctrl, cv_newVal);
-        clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_24));
+        clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_25));
         clar_fn_clar_ui_fire_widget((cv_w)->cv_winIdx, cv_inst, cv_wIdx, 1, cv_newVal, 0);
     } else {
         if (cv_kind == 0) {
@@ -3714,7 +3715,7 @@ static void clar_fn_rtUiFireWidget(void * cv_inst, int32_t cv_wIdx) {
                 if (cv_wasModalInst && ((cv_flags & 2) != 0)) {
                     clar_fn_rtUiFormCancel(cv_inst);
                 } else {
-                    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_25));
+                    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_26));
                     clar_fn_clar_ui_fire_widget((cv_w)->cv_winIdx, cv_inst, cv_wIdx, 0, 0, 0);
                 }
             }
@@ -3794,9 +3795,9 @@ static void clar_fn_rtUiFireCanvasXY(void * cv_inst, int32_t cv_wIdx, int32_t cv
     cv_localV = clar_fn_rtUiHiWord(cv_localPt);
     cv_localH = clar_fn_rtUiLoWord(cv_localPt);
     if (cv_event == 0) {
-        clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_25));
-    } else {
         clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_26));
+    } else {
+        clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_27));
     }
     clar_fn_clar_ui_fire_widget((cv_w)->cv_winIdx, cv_inst, cv_wIdx, cv_event, CLAR_SUB32(cv_localH, cv_rLeft), CLAR_SUB32(cv_localV, cv_rTop));
 }
@@ -4070,7 +4071,7 @@ static void clar_fn_rtUiHandleKey(void * cv_ev) {
     cv_winIdx = (cv_w)->cv_winIdx;
     if ((cv_w)->cv_focusIdx >= 0) {
         if ((clar_fn_uidWidgetKind(cv_winIdx, (cv_w)->cv_focusIdx) == 4) && ((cv_ch == 13) || (cv_ch == 3))) {
-            clar_fn_rtUiTraceFire2(clar_fn_uidWinName(cv_winIdx), clar_fn_uidWidgetName(cv_winIdx, (cv_w)->cv_focusIdx), &(clar_lit_27));
+            clar_fn_rtUiTraceFire2(clar_fn_uidWinName(cv_winIdx), clar_fn_uidWidgetName(cv_winIdx, (cv_w)->cv_focusIdx), &(clar_lit_28));
             clar_fn_clar_ui_fire_widget(cv_winIdx, cv_inst, (cv_w)->cv_focusIdx, 3, 0, 0);
             return;
         }
@@ -4111,7 +4112,7 @@ static void clar_fn_rtUiHandleKey(void * cv_ev) {
         return;
     }
     rt_ext_UiDisposePtr(cv_wIdxSlot);
-    clar_fn_rtUiTraceFire1(clar_fn_uidWinName(cv_winIdx), &(clar_lit_28));
+    clar_fn_rtUiTraceFire1(clar_fn_uidWinName(cv_winIdx), &(clar_lit_29));
     clar_fn_clar_ui_fire_winevent(cv_winIdx, cv_inst, 4, cv_ch, 0);
 }
 
@@ -4676,7 +4677,7 @@ static void clar_fn_rtUiMakeWidgets(void * cv_inst) {
                                     cv_b = 0;
                                     while (1) {
                                         if (!((cv_b < cv_enumCount))) break;
-                                        rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_30));
+                                        rt_ext_UiAppendMenuStr(cv_mh, (const uint8_t*)&(clar_lit_31));
                                         rt_ext_UiSetMenuItemText(cv_mh, CLAR_ADD32(cv_b, 1), clar_fn_uidEnumLabel(cv_enumLabelsOff, cv_b));
                                         cv_b = CLAR_ADD32(cv_b, 1);
                                     }
@@ -4703,7 +4704,7 @@ static void clar_fn_rtUiMakeWidgets(void * cv_inst) {
                                     rt_pokel((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (64)), ((int32_t)(intptr_t)(cv_stubH)));
                                     rt_ext_UiLSetDrawingMode(1, cv_lh);
                                 } else {
-                                    rt_log((const uint8_t*)&(clar_lit_29));
+                                    rt_log((const uint8_t*)&(clar_lit_30));
                                     rt_quit((int32_t)(1));
                                 }
                             }
@@ -5653,7 +5654,7 @@ static void clar_fn_rtUiTeMutated(void * cv_inst, int32_t cv_wIdx, int32_t cv_us
     if (!(cv_userEdit)) {
         return;
     }
-    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_24));
+    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_25));
     clar_fn_clar_ui_fire_widget((cv_w)->cv_winIdx, cv_inst, cv_wIdx, 1, 0, 0);
 }
 
@@ -6287,7 +6288,7 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
                                 }
                             }
                             if (!(cv_found)) {
-                                cv_lbl = rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_31));
+                                cv_lbl = rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_32));
                                 rt_ext_UiDrawText((void *)((char *)(cv_lbl) + (1)), 0, rt_peekb(cv_lbl));
                             }
                         }
@@ -6549,7 +6550,7 @@ static void clar_fn_rtUiTableFireSelect(void * cv_inst, int32_t cv_wIdx, int32_t
     clar_rec_RtUiWinst * cv_w;
     cv_w = 0;
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
-    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_32));
+    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_33));
     clar_fn_clar_ui_fire_widget((cv_w)->cv_winIdx, cv_inst, cv_wIdx, 4, cv_row, 0);
 }
 
@@ -6557,7 +6558,7 @@ static void clar_fn_rtUiTableFireDblclick(void * cv_inst, int32_t cv_wIdx, int32
     clar_rec_RtUiWinst * cv_w;
     cv_w = 0;
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
-    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_33));
+    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_34));
     clar_fn_clar_ui_fire_widget((cv_w)->cv_winIdx, cv_inst, cv_wIdx, 5, cv_row, 0);
 }
 
@@ -6710,10 +6711,10 @@ static void clar_fn_rtUiPopupAssertAlive(void * cv_inst, int32_t cv_wIdx) {
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     cv_mh = rt_ext_UiGetMenuHandle(CLAR_ADD32(1000, cv_wIdx));
     if (cv_mh == (void *)(intptr_t)(0)) {
-        clar_fn_rtPanic(&(clar_lit_34));
+        clar_fn_rtPanic(&(clar_lit_35));
     }
     if (cv_mh != clar_fn_rtUiPopupAt(cv_w, cv_wIdx)) {
-        clar_fn_rtPanic(&(clar_lit_35));
+        clar_fn_rtPanic(&(clar_lit_36));
     }
     cv_formOff = clar_fn_uidWinFormOff((cv_w)->cv_winIdx);
     cv_expect = 0;
@@ -6724,7 +6725,7 @@ static void clar_fn_rtUiPopupAssertAlive(void * cv_inst, int32_t cv_wIdx) {
         }
     }
     if (rt_ext_UiCountMItems(cv_mh) != cv_expect) {
-        clar_fn_rtPanic(&(clar_lit_36));
+        clar_fn_rtPanic(&(clar_lit_37));
     }
 }
 
@@ -6737,7 +6738,7 @@ static void clar_fn_rtUiPopupPick(void * cv_inst, int32_t cv_wIdx, int32_t cv_ne
     }
     clar_fn_rtUiSetPopupSelAt(cv_w, cv_wIdx, cv_newIndex);
     rt_ext_UiInvalRect(clar_fn_rtUiRectAt(cv_w, cv_wIdx));
-    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_24));
+    clar_fn_rtUiTraceFire2(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), &(clar_lit_25));
     clar_fn_clar_ui_fire_widget((cv_w)->cv_winIdx, cv_inst, cv_wIdx, 1, cv_newIndex, 0);
 }
 
@@ -6762,7 +6763,7 @@ static void clar_fn_rtUiPopupClick(void * cv_inst, int32_t cv_pIdx) {
         cv_valSlot = rt_ext_UiNewPtr(4);
         clar_fn_rtUiAnswerPop(cv_kindSlot, cv_valSlot);
         if (rt_peekl(cv_kindSlot) != 4) {
-            clar_fn_rtPanic(&(clar_lit_37));
+            clar_fn_rtPanic(&(clar_lit_38));
         }
         clar_fn_rtUiPopupPick(cv_inst, cv_pIdx, rt_peekl(cv_valSlot));
         rt_ext_UiDisposePtr(cv_kindSlot);
@@ -6796,7 +6797,7 @@ static void clar_fn_rtUiAnswerInit(void) {
 static void clar_fn_rtUiAnswerCheckRoom(void) {
     clar_fn_rtUiAnswerInit();
     if ((CLAR_ADD32(cv_rtUiAnswerTail, 1) % 8) == cv_rtUiAnswerHead) {
-        clar_fn_rtPanic(&(clar_lit_38));
+        clar_fn_rtPanic(&(clar_lit_39));
     }
 }
 
@@ -6840,7 +6841,7 @@ static int32_t clar_fn_rtUiAnswerPopIdx(void) {
     cv_idx = 0;
     clar_fn_rtUiAnswerInit();
     if (cv_rtUiAnswerHead == cv_rtUiAnswerTail) {
-        clar_fn_rtPanic(&(clar_lit_39));
+        clar_fn_rtPanic(&(clar_lit_40));
     }
     cv_idx = cv_rtUiAnswerHead;
     cv_rtUiAnswerHead = (CLAR_ADD32(cv_rtUiAnswerHead, 1) % 8);
@@ -6966,9 +6967,9 @@ static void clar_fn_rtUiTraceOpen(int32_t cv_winIdx, void * cv_inst) {
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     (cv_w)->cv_traceId = cv_id;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_40)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidWinName(cv_winIdx));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_41)));
+    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidWinName(cv_winIdx));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_42)));
     clar_fn_rtUiTextAppendInt(cv_t, cv_id);
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -6977,9 +6978,9 @@ static void clar_fn_rtUiTraceClose(int32_t cv_winIdx, void * cv_inst) {
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_42)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_43)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidWinName(cv_winIdx));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_41)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_42)));
     clar_fn_rtUiTextAppendInt(cv_t, (((clar_rec_RtUiWinst *)(cv_inst)))->cv_traceId);
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -6988,9 +6989,9 @@ static void clar_fn_rtUiTraceFire1(void * cv_namePtr, const clar_str_255 *cv_eve
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_43)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+    clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&((*cv_event))));
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -6999,11 +7000,11 @@ static void clar_fn_rtUiTraceFire2(void * cv_namePtr, void * cv_wnamePtr, const 
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_43)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_wnamePtr);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&((*cv_event))));
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -7012,11 +7013,11 @@ static void clar_fn_rtUiTraceMenuSelectFor(int32_t cv_k) {
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_43)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuHandlerMenuName(cv_k));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuHandlerItemName(cv_k));
+    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuHandlerMenuName(cv_k));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
+    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuHandlerItemName(cv_k));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_46)));
     clar_fn_rtUiEmitLine(cv_t);
 }
 
@@ -7024,7 +7025,7 @@ static void clar_fn_rtUiTraceEveryFire(int32_t cv_n) {
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_46)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_47)));
     clar_fn_rtUiTextAppendInt(cv_t, cv_n);
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -7047,11 +7048,11 @@ static void clar_fn_rtUiTraceDimCheck(int32_t cv_k, int32_t cv_enable) {
     cv_prev = rt_peekb((void *)((char *)(cv_rtUiDimPrevArr) + (cv_k)));
     if ((!(cv_rtUiDimFirst)) && (cv_prev != cv_enableInt)) {
         cv_t = clar_fn_rtTextNew();
-        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_47)));
+        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_48)));
         clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuHandlerMenuName(cv_k));
-        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
         clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuHandlerItemName(cv_k));
-        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_41)));
+        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_42)));
         clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
         clar_fn_rtUiEmitLine(cv_t);
     }
@@ -7073,27 +7074,27 @@ static void clar_fn_rtUiTraceStdEditDim(int32_t cv_enable) {
         return;
     }
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_47)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_48)));
-    clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
-    clar_fn_rtUiEmitLine(cv_t);
-    cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_47)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_49)));
     clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
     clar_fn_rtUiEmitLine(cv_t);
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_47)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_48)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_50)));
     clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
     clar_fn_rtUiEmitLine(cv_t);
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_47)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_48)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_51)));
+    clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
+    clar_fn_rtUiEmitLine(cv_t);
+    cv_t = clar_fn_rtTextNew();
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_48)));
+    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_52)));
     clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
     clar_fn_rtUiEmitLine(cv_t);
     cv_rtUiStdEditDimPrev = cv_enable;
@@ -7122,9 +7123,9 @@ static void clar_fn_rtUiTraceFrontCheck(void) {
     cv_rtUiTraceLastFront = cv_cur;
     if (cv_cur != (void *)(intptr_t)(0)) {
         cv_t = clar_fn_rtTextNew();
-        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_52)));
+        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_53)));
         clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidWinName((((clar_rec_RtUiWinst *)(cv_cur)))->cv_winIdx));
-        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_41)));
+        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_42)));
         clar_fn_rtUiTextAppendInt(cv_t, (((clar_rec_RtUiWinst *)(cv_cur)))->cv_traceId);
         clar_fn_rtUiEmitLine(cv_t);
     }
@@ -7134,40 +7135,40 @@ static void clar_fn_rtUiTraceAbout(void) {
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_53)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidAppName());
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_55)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidAppVersion());
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_55)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidAppAuthor());
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_55)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidAppAbout());
     clar_fn_rtUiEmitLine(cv_t);
 }
 
 static void * clar_fn_rtUiPropNamePtr(int32_t cv_prop) {
     if (cv_prop == 0) {
-        return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_55));
-    }
-    if (cv_prop == 1) {
         return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_56));
     }
-    if (cv_prop == 2) {
+    if (cv_prop == 1) {
         return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_57));
     }
-    if (cv_prop == 3) {
+    if (cv_prop == 2) {
         return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_58));
     }
-    if (cv_prop == 4) {
+    if (cv_prop == 3) {
         return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_59));
     }
-    if (cv_prop == 5) {
+    if (cv_prop == 4) {
         return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_60));
     }
-    if (cv_prop == 6) {
+    if (cv_prop == 5) {
         return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_61));
     }
-    return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_31));
+    if (cv_prop == 6) {
+        return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_62));
+    }
+    return rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_32));
     return 0;
 }
 
@@ -7175,13 +7176,13 @@ static void clar_fn_rtUiTraceSetStr(void * cv_namePtr, void * cv_wnamePtr, int32
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_62)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_63)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_wnamePtr);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
     clar_fn_rtTextAppendStr(cv_t, clar_fn_rtUiPropNamePtr(cv_prop));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_41)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_42)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_s);
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -7197,13 +7198,13 @@ static void clar_fn_rtUiTraceSetBool(void * cv_namePtr, void * cv_wnamePtr, int3
         cv_vi = 0;
     }
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_62)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_63)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_wnamePtr);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
     clar_fn_rtTextAppendStr(cv_t, clar_fn_rtUiPropNamePtr(cv_prop));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_41)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_42)));
     clar_fn_rtUiTextAppendInt(cv_t, cv_vi);
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -7212,13 +7213,13 @@ static void clar_fn_rtUiTraceSetInt(void * cv_namePtr, void * cv_wnamePtr, int32
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_62)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_63)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_wnamePtr);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_45)));
     clar_fn_rtTextAppendStr(cv_t, clar_fn_rtUiPropNamePtr(cv_prop));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_41)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_42)));
     clar_fn_rtUiTextAppendInt(cv_t, cv_v);
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -7227,9 +7228,9 @@ static void clar_fn_rtUiTraceInvalid(void * cv_namePtr, void * cv_wnamePtr) {
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_43)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_44)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_63)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_64)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_wnamePtr);
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -7238,9 +7239,9 @@ static void clar_fn_rtUiTraceAskPath(const clar_str_255 *cv_verb, void * cv_path
     void * cv_t;
     cv_t = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_64)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_65)));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&((*cv_verb))));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_41)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_42)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_pathPStr);
     clar_fn_rtUiEmitLine(cv_t);
 }
@@ -7251,7 +7252,7 @@ static void clar_fn_rtUiTraceOpenDoc(void * cv_pathPtr, int32_t cv_pathLen) {
     void * cv_pathText;
     cv_pathText = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_65)));
+    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_66)));
     cv_pathText = clar_fn_rtTextNew();
     clar_fn_rtTextFromBytes(cv_pathText, cv_pathPtr, cv_pathLen, cv_pathLen);
     clar_fn_rtTextAppendText(cv_t, cv_pathText);
@@ -7549,16 +7550,16 @@ static void * clar_fn_rtUiScriptRestOfLine(int32_t cv_verbLen) {
 static void clar_fn_rtUiScriptAnswerChanges(void) {
     int32_t cv_v;
     cv_v = 0;
-    if (clar_fn_rtUiStrEq(cv_rtUiArg1Buf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_66)))) {
+    if (clar_fn_rtUiStrEq(cv_rtUiArg1Buf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_67)))) {
         cv_v = 0;
     } else {
-        if (clar_fn_rtUiStrEq(cv_rtUiArg1Buf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_67)))) {
+        if (clar_fn_rtUiStrEq(cv_rtUiArg1Buf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_68)))) {
             cv_v = 1;
         } else {
-            if (clar_fn_rtUiStrEq(cv_rtUiArg1Buf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_68)))) {
+            if (clar_fn_rtUiStrEq(cv_rtUiArg1Buf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_69)))) {
                 cv_v = 2;
             } else {
-                clar_fn_rtPanic(&(clar_lit_69));
+                clar_fn_rtPanic(&(clar_lit_70));
                 cv_v = 0;
             }
         }
@@ -7760,7 +7761,7 @@ static void clar_fn_rtUiTestSnap(void * cv_namePtr) {
     cv_baseAddr = (void *)(intptr_t)(rt_peekl(cv_baseAddrSlot));
     cv_rowBytes = rt_peekl(cv_rowBytesSlot);
     if (cv_rowBytes != 64) {
-        clar_fn_rtPanic(&(clar_lit_70));
+        clar_fn_rtPanic(&(clar_lit_71));
     }
     cv_rows = CLAR_SUB32(rt_peekw((void *)((char *)(cv_boundsSlot) + (4))), rt_peekw((void *)((char *)(cv_boundsSlot) + (0))));
     rt_ext_UiDisposePtr(cv_baseAddrSlot);
@@ -7768,7 +7769,7 @@ static void clar_fn_rtUiTestSnap(void * cv_namePtr) {
     rt_ext_UiDisposePtr(cv_boundsSlot);
     cv_total = CLAR_MUL32(cv_rows, cv_rowBytes);
     cv_hdr = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_hdr, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_71)));
+    clar_fn_rtTextAppendStr(cv_hdr, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_72)));
     clar_fn_rtUiTextAppendCStr(cv_hdr, cv_namePtr);
     clar_fn_rtUiEmitLine(cv_hdr);
     cv_off = 0;
@@ -7777,7 +7778,7 @@ static void clar_fn_rtUiTestSnap(void * cv_namePtr) {
         clar_fn_rtUiEmitLine(clar_fn_rtUiHexLineText((void *)((char *)(cv_baseAddr) + (cv_off))));
         cv_off = CLAR_ADD32(cv_off, 64);
     }
-    clar_fn_rtUiEmitLine(clar_fn_rtUiLitLine(&(clar_lit_72)));
+    clar_fn_rtUiEmitLine(clar_fn_rtUiLitLine(&(clar_lit_73)));
 }
 
 static void * clar_fn_rtUiLitLine(const clar_str_255 *cv_s) {
@@ -7800,7 +7801,7 @@ static void clar_fn_rtUiRunScripted(void) {
         }
         clar_fn_rtUiScriptTokenize();
         if (!(clar_fn_rtUiScriptDispatchLine())) {
-            rt_log((const uint8_t*)&(clar_lit_73));
+            rt_log((const uint8_t*)&(clar_lit_74));
             rt_quit((int32_t)(1));
         }
         clar_fn_rtUiPumpPassive();
@@ -7808,57 +7809,57 @@ static void clar_fn_rtUiRunScripted(void) {
 }
 
 static int32_t clar_fn_rtUiScriptDispatchLine(void) {
-    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_25)))) {
+    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_26)))) {
         clar_fn_rtUiScriptClick(clar_fn_rtUiAtoi(cv_rtUiArg1Buf), clar_fn_rtUiAtoi(cv_rtUiArg2Buf), 0);
     } else {
-        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_74)))) {
+        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_75)))) {
             clar_fn_rtUiScriptClick(clar_fn_rtUiAtoi(cv_rtUiArg1Buf), clar_fn_rtUiAtoi(cv_rtUiArg2Buf), 1);
         } else {
-            if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_26)))) {
+            if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_27)))) {
                 clar_fn_rtUiScriptDrag(clar_fn_rtUiAtoi(cv_rtUiArg1Buf), clar_fn_rtUiAtoi(cv_rtUiArg2Buf));
             } else {
-                if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_28)))) {
+                if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_29)))) {
                     clar_fn_rtUiScriptKey(clar_fn_rtUiScriptKeyArg(cv_rtUiArg1Buf));
                 } else {
-                    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_75)))) {
+                    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_76)))) {
                         clar_fn_rtUiScriptType();
                     } else {
-                        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_76)))) {
+                        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_77)))) {
                             clar_fn_rtUiScriptMenu(clar_fn_rtUiAtoi(cv_rtUiArg1Buf), clar_fn_rtUiAtoi(cv_rtUiArg2Buf));
                         } else {
-                            if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_77)))) {
+                            if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_78)))) {
                                 clar_fn_rtUiScriptClose();
                             } else {
-                                if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_78)))) {
+                                if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_79)))) {
                                     clar_fn_rtUiScriptResize(clar_fn_rtUiAtoi(cv_rtUiArg1Buf), clar_fn_rtUiAtoi(cv_rtUiArg2Buf));
                                 } else {
-                                    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_79)))) {
+                                    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_80)))) {
                                         clar_fn_rtUiScriptZoom();
                                     } else {
-                                        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_80)))) {
+                                        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_81)))) {
                                             clar_fn_rtUiScriptTick(clar_fn_rtUiAtoi(cv_rtUiArg1Buf));
                                         } else {
-                                            if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_81)))) {
+                                            if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_82)))) {
                                                 clar_fn_rtUiTestSnap(cv_rtUiArg1Buf);
                                             } else {
-                                                if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_82)))) {
+                                                if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_83)))) {
                                                     clar_fn_rtUiQuit();
                                                 } else {
-                                                    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_83)))) {
+                                                    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_84)))) {
                                                     } else {
-                                                        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_84)))) {
+                                                        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_85)))) {
                                                             clar_fn_rtUiAnswerPushVal(4, clar_fn_rtUiAtoi(cv_rtUiArg1Buf));
                                                         } else {
-                                                            if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_85)))) {
+                                                            if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_86)))) {
                                                                 clar_fn_rtUiAnswerPushPath(0, clar_fn_rtUiScriptRestOfLine(11));
                                                             } else {
-                                                                if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_86)))) {
+                                                                if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_87)))) {
                                                                     clar_fn_rtUiAnswerPushPath(1, clar_fn_rtUiScriptRestOfLine(11));
                                                                 } else {
-                                                                    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_87)))) {
+                                                                    if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_88)))) {
                                                                         clar_fn_rtUiScriptAnswerChanges();
                                                                     } else {
-                                                                        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_88)))) {
+                                                                        if (clar_fn_rtUiStrEq(cv_rtUiVerbBuf, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_89)))) {
                                                                             clar_fn_rtUiAnswerPushVal(3, 0);
                                                                         } else {
                                                                             if (rt_peekb(cv_rtUiVerbBuf) == 0) {
@@ -8371,7 +8372,7 @@ static void clar_fn_rtUiFormAccept(void * cv_inst) {
             }
         }
     }
-    clar_fn_rtUiTraceFire1(clar_fn_uidWinName(cv_winIdx), &(clar_lit_93));
+    clar_fn_rtUiTraceFire1(clar_fn_uidWinName(cv_winIdx), &(clar_lit_94));
     clar_fn_clar_ui_fire_winevent(cv_winIdx, cv_inst, 5, ((int32_t)(intptr_t)(cv_rtUiModalBuf)), 0);
     clar_fn_rtUiFormTeardown(cv_inst);
 }
@@ -8390,7 +8391,7 @@ static void clar_fn_rtUiFormCancel(void * cv_inst) {
     clar_rec_RtUiWinst * cv_w;
     cv_w = 0;
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
-    clar_fn_rtUiTraceFire1(clar_fn_uidWinName((cv_w)->cv_winIdx), &(clar_lit_94));
+    clar_fn_rtUiTraceFire1(clar_fn_uidWinName((cv_w)->cv_winIdx), &(clar_lit_95));
     clar_fn_clar_ui_fire_winevent((cv_w)->cv_winIdx, cv_inst, 6, 0, 0);
     clar_fn_rtUiFormTeardown(cv_inst);
 }
@@ -8411,11 +8412,11 @@ static void clar_fn_rtUiEdit(int32_t cv_winIdx, void * cv_src, int32_t cv_isNew,
     int32_t cv_klen;
     cv_klen = 0;
     if (cv_rtUiModalActive) {
-        clar_fn_rtPanic(&(clar_lit_95));
+        clar_fn_rtPanic(&(clar_lit_96));
     }
     cv_formOff = clar_fn_uidWinFormOff(cv_winIdx);
     if (cv_formOff == CLAR_NEG32(1)) {
-        clar_fn_rtPanic(&(clar_lit_96));
+        clar_fn_rtPanic(&(clar_lit_97));
     }
     cv_layoutOff = clar_fn_uidFormLayoutOff(cv_formOff);
     cv_recSize = clar_fn_uidLayoutRecSize(cv_layoutOff);
@@ -8469,15 +8470,15 @@ static int32_t clar_fn_rtUiAskOpen(void * cv_path255, void * cv_filter) {
         cv_idx = clar_fn_rtUiAnswerPopIdx();
         cv_kind = rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_idx, 4))));
         if (cv_kind == 3) {
-            clar_fn_rtUiEmitLine(clar_fn_rtUiLitLine(&(clar_lit_97)));
+            clar_fn_rtUiEmitLine(clar_fn_rtUiLitLine(&(clar_lit_98)));
             return 0;
         }
         if (cv_kind != 0) {
-            clar_fn_rtPanic(&(clar_lit_98));
+            clar_fn_rtPanic(&(clar_lit_99));
             return 0;
         }
         clar_fn_rtUiPstrcpy(cv_path255, (void *)((char *)(cv_rtUiAnswerStrs) + (CLAR_MUL32(cv_idx, 256))));
-        clar_fn_rtUiTraceAskPath(&(clar_lit_99), cv_path255);
+        clar_fn_rtUiTraceAskPath(&(clar_lit_100), cv_path255);
         return 1;
     }
     return rt_ext_UiSFGetFile(cv_path255, cv_filter);
@@ -8493,15 +8494,15 @@ static int32_t clar_fn_rtUiAskSave(void * cv_path255, void * cv_suggested) {
         cv_idx = clar_fn_rtUiAnswerPopIdx();
         cv_kind = rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_idx, 4))));
         if (cv_kind == 3) {
-            clar_fn_rtUiEmitLine(clar_fn_rtUiLitLine(&(clar_lit_100)));
+            clar_fn_rtUiEmitLine(clar_fn_rtUiLitLine(&(clar_lit_101)));
             return 0;
         }
         if (cv_kind != 1) {
-            clar_fn_rtPanic(&(clar_lit_101));
+            clar_fn_rtPanic(&(clar_lit_102));
             return 0;
         }
         clar_fn_rtUiPstrcpy(cv_path255, (void *)((char *)(cv_rtUiAnswerStrs) + (CLAR_MUL32(cv_idx, 256))));
-        clar_fn_rtUiTraceAskPath(&(clar_lit_102), cv_path255);
+        clar_fn_rtUiTraceAskPath(&(clar_lit_103), cv_path255);
         return 1;
     }
     return rt_ext_UiSFPutFile(cv_suggested, cv_path255);
@@ -8525,19 +8526,19 @@ static int32_t clar_fn_rtUiAskSaveChanges(void * cv_name) {
         cv_idx = clar_fn_rtUiAnswerPopIdx();
         cv_kind = rt_peekl((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_idx, 4))));
         if (cv_kind != 2) {
-            clar_fn_rtPanic(&(clar_lit_103));
+            clar_fn_rtPanic(&(clar_lit_104));
             return 0;
         }
         cv_v = rt_peekl((void *)((char *)(cv_rtUiAnswerVals) + (CLAR_MUL32(cv_idx, 4))));
         cv_t = clar_fn_rtTextNew();
-        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_104)));
+        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_105)));
         if (cv_v == 0) {
-            clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_66)));
+            clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_67)));
         } else {
             if (cv_v == 1) {
-                clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_67)));
-            } else {
                 clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_68)));
+            } else {
+                clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_69)));
             }
         }
         clar_fn_rtUiEmitLine(cv_t);
@@ -8622,42 +8623,42 @@ static int32_t clar_fn_rtSortedMapCount(void * cv_m) {
 
 static void clar_fn_rtSortedMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
     if ((cv_i < 0) || (cv_i >= (((clar_rec_RtSortedMap *)(cv_m)))->cv_count)) {
-        clar_fn_rtPanic(&(clar_lit_13));
+        clar_fn_rtPanic(&(clar_lit_14));
     }
     rt_ext_SortedMapBlockMoveData(clar_fn_sortedmapValSlot(cv_m, cv_i), cv_out, (((clar_rec_RtSortedMap *)(cv_m)))->cv_valsize);
 }
 
 static void clar_fn_handler_App_launch(void) {
-    rt_alert((const uint8_t*)&(clar_lit_113));
+    rt_alert((const uint8_t*)&(clar_lit_114));
 }
 
 static void clar_fn_clar_ui_fire_winevent(int32_t cv_winIdx, void * cv_inst, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
-    rt_log((const uint8_t*)&(clar_lit_114));
-    rt_quit((int32_t)(1));
-}
-
-static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
     rt_log((const uint8_t*)&(clar_lit_115));
     rt_quit((int32_t)(1));
 }
 
-static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil) {
+static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
     rt_log((const uint8_t*)&(clar_lit_116));
     rt_quit((int32_t)(1));
 }
 
-static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
+static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil) {
     rt_log((const uint8_t*)&(clar_lit_117));
     rt_quit((int32_t)(1));
 }
 
-static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) {
+static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
     rt_log((const uint8_t*)&(clar_lit_118));
     rt_quit((int32_t)(1));
 }
 
-static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
+static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) {
     rt_log((const uint8_t*)&(clar_lit_119));
+    rt_quit((int32_t)(1));
+}
+
+static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
+    rt_log((const uint8_t*)&(clar_lit_120));
     rt_quit((int32_t)(1));
     return 0;
     return 0;
