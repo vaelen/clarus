@@ -32151,6 +32151,8 @@ static int32_t clar_fn_declIsRuntimeOrigin(int32_t cv_d) {
     cv_path = (clar_str_255){0};
     clar_str_255 cv_want;
     cv_want = (clar_str_255){0};
+    clar_str_255 cv_normRtDir;
+    cv_normRtDir = (clar_str_255){0};
     int32_t cv___ret964;
     cv___ret964 = 0;
     cv_p = clar_fn_getDeclFile(cv_d);
@@ -32164,24 +32166,34 @@ static int32_t clar_fn_declIsRuntimeOrigin(int32_t cv_d) {
         if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_rtDir), (void*)(const uint8_t*)&(clar_lit_91)) == 0) {
             return 0;
         }
-        int32_t t3;
-        t3 = (clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_path)) >= clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_rtDir)));
-        if (t3) {
-            clar_str_255 t2;
-            clar_fn_rtStrSlice((void*)&t2, (void*)(const uint8_t*)&(cv_path), (int32_t)(0), (int32_t)(clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_rtDir))));
-            t3 = (clar_fn_rtStrCmp((void*)(const uint8_t*)&(t2), (void*)(const uint8_t*)&(cv_rtDir)) == 0);
+        clar_str_255 t2;
+        t2 = cv_rtDir;
+        clar_str_255 t3;
+        t3 = clar_fn_normalizePath(&(t2));
+        clar_fn_rtStrStore((void*)&(cv_normRtDir), 255, (void*)(const uint8_t*)&(t3));
+        if ((clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_normRtDir), (void*)(const uint8_t*)&(clar_lit_91)) == 0) || (clar_fn_rtStrIndex((void*)(const uint8_t*)&(cv_normRtDir), (int32_t)(CLAR_SUB32(clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_normRtDir)), 1))) != 47)) {
+            clar_str_255 t4;
+            clar_fn_rtStrConcat((void*)&t4, (void*)(const uint8_t*)&(cv_normRtDir), (void*)(const uint8_t*)&(clar_lit_235));
+            clar_fn_rtStrStore((void*)&(cv_normRtDir), 255, (void*)(const uint8_t*)&(t4));
         }
-        return t3;
+        int32_t t6;
+        t6 = (clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_path)) >= clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_normRtDir)));
+        if (t6) {
+            clar_str_255 t5;
+            clar_fn_rtStrSlice((void*)&t5, (void*)(const uint8_t*)&(cv_path), (int32_t)(0), (int32_t)(clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_normRtDir))));
+            t6 = (clar_fn_rtStrCmp((void*)(const uint8_t*)&(t5), (void*)(const uint8_t*)&(cv_normRtDir)) == 0);
+        }
+        return t6;
     }
     clar_fn_rtStrStore((void*)&(cv_want), 255, (void*)(const uint8_t*)&(clar_lit_891));
-    int32_t t5;
-    t5 = (clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_path)) >= clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_want)));
-    if (t5) {
-        clar_str_255 t4;
-        clar_fn_rtStrSlice((void*)&t4, (void*)(const uint8_t*)&(cv_path), (int32_t)(0), (int32_t)(clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_want))));
-        t5 = (clar_fn_rtStrCmp((void*)(const uint8_t*)&(t4), (void*)(const uint8_t*)&(cv_want)) == 0);
+    int32_t t8;
+    t8 = (clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_path)) >= clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_want)));
+    if (t8) {
+        clar_str_255 t7;
+        clar_fn_rtStrSlice((void*)&t7, (void*)(const uint8_t*)&(cv_path), (int32_t)(0), (int32_t)(clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_want))));
+        t8 = (clar_fn_rtStrCmp((void*)(const uint8_t*)&(t7), (void*)(const uint8_t*)&(cv_want)) == 0);
     }
-    return t5;
+    return t8;
     return 0;
 }
 

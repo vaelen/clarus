@@ -4530,25 +4530,57 @@ func lowBuildAbortBailBlock(ret: int): int {
 // but a real, wider risk surface than the original bug, and not
 // something a compiler meant to gain outside users should ship.
 //
-// Task 8 close-out, fix round 2 (this fix): replaced the substring
-// heuristic with the TIGHT predicate the review specified -- a decl is
-// runtime-origin iff its recorded path is under the ACTUAL RESOLVED
-// runtime directory for THIS compile, not a literal or a substring
-// search. This requires two different comparisons, matching how the
-// two lanes actually record a runtime-module decl's path (read from
-// expand()/driveKeyResolve in drive.cla before choosing either):
+// Task 8 close-out, fix round 2 (superseded by fix round 3 below --
+// history kept, not condensed): replaced the substring heuristic with a
+// predicate comparing against the RAW `rtDir` global directly (`readPath[0,
+// rtDir.length] == rtDir`, mirroring expand()'s own unrelated key2 check).
+// This closed fix round 1's dangerous direction (a decl path merely
+// CONTAINING "runtime/clarus/" anywhere was misclassified as
+// runtime-origin) but re-review found it reopened the ORIGINAL,
+// safe-direction bug for one class of input: `rtDir` is compared RAW,
+// while every recorded decl path is `normalizePath`'d (drive.cla's
+// `expand`, host branch: `readPath = normalizePath(rawPath)`) before
+// storage. Any `--rtdir` spelling containing a lexically-cancelable
+// segment -- a leading `./` is the natural case -- collapses in the
+// stored decl path but NOT in the raw `rtDir` used for comparison, so
+// the prefix match fails and real runtime functions are misclassified
+// as non-runtime-origin again (spurious bail-block/`__retN` scaffolding
+// -- reproduced on `rtSetLastErr`/`rtArrCheck` under `--rtdir
+// ./runtime/clarus/`). Not reachable via any committed gate (all of
+// which use either the default search or the canonical
+// `--rtdir runtime/clarus/`, no leading dot), but the fix's own doc
+// comment (this one) had claimed correctness "whatever [rtDir's] own
+// spelling happens to be" -- which was false for this case.
 //
-//   - Host lane (hostPaths true): expand()'s own host branch already
-//     performs exactly this comparison for an unrelated purpose (feeding
-//     driveKeyResolve's key2), reusing the SAME resolved `rtDir` global
-//     (drive.cla) that findRtDir's search or an explicit --rtdir sets --
-//     `readPath[0, rtDir.length] == rtDir`. declIsRuntimeOrigin mirrors
-//     that exact comparison rather than reinventing it: a decl's path is
-//     runtime-origin only if it falls under the SAME directory this
-//     compile actually resolved runtime modules from, whatever that
-//     directory's own spelling happens to be (default upward-search,
-//     or an explicit --rtdir). A user file would need to sit inside
-//     THAT EXACT directory to collide -- i.e., it would genuinely BE a
+// Task 8 close-out, fix round 3 (this fix): normalize `rtDir` through
+// the exact SAME `normalizePath` function the decl path itself went
+// through, at the one point they're compared -- not a second, ad-hoc
+// cleanup routine, and not a fix scattered across every place `rtDir`
+// happens to get assigned (main.cla's `--rtdir` parsing, findRtDir's
+// two call sites) which would need auditing again every time a future
+// caller sets `rtDir` a new way. `normalizePath` strips trailing
+// separators as a side effect of rebuilding from '/'-joined segments
+// (e.g. `normalizePath("./runtime/clarus/")` == `"runtime/clarus"`, no
+// trailing slash) -- a bare prefix match against that WOULD reopen a
+// narrower boundary gap of its own (a decl path
+// `"runtime/clarusFOO/evil.cla"` would wrongly match a 14-char prefix
+// `"runtime/clarus"` with no separator to rule it out), so a single
+// trailing `/` is restored after normalizing before comparing, matching
+// the directory-prefix shape `rtDir` always denotes.
+//
+// Two comparisons remain, matching how the two lanes actually record a
+// runtime-module decl's path (read from expand()/driveKeyResolve in
+// drive.cla before choosing either):
+//
+//   - Host lane (hostPaths true): normalize `rtDir` (findRtDir's search
+//     result or an explicit --rtdir, whatever its own spelling), restore
+//     the trailing '/' normalizePath dropped, and prefix-match the decl
+//     path against THAT -- correct for every `--rtdir` spelling that
+//     denotes the same real directory (with or without `./`, with or
+//     without a trailing slash), and still correct for the default
+//     upward-search case (already lexically clean, so normalizing is a
+//     no-op there). A user file would need to sit inside that EXACT
+//     resolved directory to collide -- i.e., it would genuinely BE a
 //     runtime module for this compile, not a false positive.
 //   - Mac lane (hostPaths false): `rtDir` is never populated on this
 //     lane -- runtime-module identity there is always the baked-resource
@@ -4559,14 +4591,14 @@ func lowBuildAbortBailBlock(ret: int): int {
 //     driveMacDirOf always spell in HFS colon form (":Volume:Dir:file.cla")
 //     and can therefore never contain a '/' at all, let alone this exact
 //     substring. A literal prefix match against the key-space constant
-//     is exactly right here, and was ALREADY correct before either Task
-//     8 fix -- the substring-widening risk (fix round 1's own gap) never
-//     applied to this lane, since no real Mac disk path can spell the
-//     collision.
+//     is exactly right here, and was ALREADY correct before any Task 8
+//     fix round -- neither the substring-widening risk (fix round 1) nor
+//     the raw-vs-normalized gap (fix round 2) ever applied to this lane.
 func declIsRuntimeOrigin(d: int): bool {
     var p: int
     var path: string
     var want: string
+    var normRtDir: string
 
     p = getDeclFile(d)
     if p == -1 {
@@ -4577,7 +4609,11 @@ func declIsRuntimeOrigin(d: int): bool {
         if rtDir == "" {
             return false
         }
-        return path.length >= rtDir.length and path[0, rtDir.length] == rtDir
+        normRtDir = normalizePath(rtDir)
+        if normRtDir == "" or normRtDir[normRtDir.length - 1] != '/' {
+            normRtDir = normRtDir + "/"
+        }
+        return path.length >= normRtDir.length and path[0, normRtDir.length] == normRtDir
     }
     want = "runtime/clarus/"
     return path.length >= want.length and path[0, want.length] == want
