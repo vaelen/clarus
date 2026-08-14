@@ -301,6 +301,7 @@ var rnTextCmpStr: int
 var rnTextConcat: int
 var rnTextConcatSl: int
 var rnTextFromBytes: int
+var rnTextHashStep: int
 var rnTextIndex: int
 var rnTextIndexOfChar: int
 var rnTextIndexOfStr: int
@@ -311,7 +312,10 @@ var rnTextRetain: int
 var rnTextSetIndex: int
 var rnTextSlice: int
 var rnTextStore: int
+var rnTextStringAt: int
+var rnTextTextAt: int
 var rnTextToBytes: int
+var rnTextU32At: int
 var rnUiAskOpen: int
 var rnUiAskSave: int
 var rnUiAskSaveChanges: int
@@ -435,6 +439,7 @@ func rnInit() {
     rnTextConcat = intern("rtTextConcat")
     rnTextConcatSl = intern("rtTextConcatSl")
     rnTextFromBytes = intern("rtTextFromBytes")
+    rnTextHashStep = intern("rtTextHashStep")
     rnTextIndex = intern("rtTextIndex")
     rnTextIndexOfChar = intern("rtTextIndexOfChar")
     rnTextIndexOfStr = intern("rtTextIndexOfStr")
@@ -445,7 +450,10 @@ func rnInit() {
     rnTextSetIndex = intern("rtTextSetIndex")
     rnTextSlice = intern("rtTextSlice")
     rnTextStore = intern("rtTextStore")
+    rnTextStringAt = intern("rtTextStringAt")
+    rnTextTextAt = intern("rtTextTextAt")
     rnTextToBytes = intern("rtTextToBytes")
+    rnTextU32At = intern("rtTextU32At")
     rnUiAskOpen = intern("rtUiAskOpen")
     rnUiAskSave = intern("rtUiAskSave")
     rnUiAskSaveChanges = intern("rtUiAskSaveChanges")
@@ -6864,6 +6872,42 @@ func cgIntrTextOfStr(e: int) {
     a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
 }
 
+// cgIntrTextTextAt (clir-load-perf Task 3) mirrors cgIntrTextConcat/
+// cgIntrTextConcatSl's own dst-allocation dance -- rtTextTextAt(dst: ptr,
+// t: ptr, pos: int, n: int) is a VOID function (Task 2's corrected
+// signature) that fills a caller-allocated dst in place, the same
+// dst-out-param convention rtTextConcat uses, NOT a `: string`-shaped
+// hidden-pointer return (that's ITextStringAt's own shape, wired at
+// cgEmitStoreStr/cgEmitReturnStr instead). All four args (dst, t, pos, n)
+// push BY VALUE, in declaration order -- no addr/KStr branching needed,
+// unlike cgIntrTextConcat's Str-vs-Text operand split.
+func cgIntrTextTextAt(e: int) {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var off: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    off = cgNewTrackedTmp(irTextT)
+    cgJsrByName(rnTextNew)
+    cgStoreD0At(6, off, irTextT)
+
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a1e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a2e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName(rnTextTextAt)
+    cgCleanupStack(16)
+    cgLastTrackedOff = off
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+}
+
 // cgIntrLoadScratch loads off(A6)'s value into D0, zero-extending a 1-byte
 // bool/char slot exactly like cgLoadVar -- the common tail every List/Map
 // value-returning arm below ends with (cgExpr's own "leaves the value in
@@ -7989,6 +8033,24 @@ func cgIntr(e: int) {
     }
     if nm == ITextOfStr() {
         cgIntrTextOfStr(e)
+        return
+    }
+    // clir-load-perf Task 3: hashStep/u32At return plain int scalars (no
+    // hidden pointer, no tracked temp -- reachable from this value-context
+    // dispatch same as ITextIndex above); textAt returns a fresh Text
+    // HANDLE (4 bytes, fits in D0 like ITextConcat/ITextConcatSl/
+    // ITextOfStr above), so it also belongs here, NOT in the KStr-only
+    // cgEmitStoreStr/cgEmitReturnStr family stringAt uses.
+    if nm == ITextHashStep() {
+        cgIntr4(e, rnTextHashStep, false, false, false, false)
+        return
+    }
+    if nm == ITextU32At() {
+        cgIntr2(e, rnTextU32At, false, false)
+        return
+    }
+    if nm == ITextTextAt() {
+        cgIntrTextTextAt(e)
         return
     }
     if nm == ITextFreeVar() {
@@ -10495,6 +10557,38 @@ func cgEmitStoreStr(dst: int, src: int) {
             cgFlushA1TempToDst(dst)
             return
         }
+        if nm == "text_string_at" {
+            // clir-load-perf Task 3: rtTextStringAt(t: ptr, pos: int):
+            // string is a TRUE `: string`-returning ordinary Clarus
+            // function (Task 2's corrected doc comment, text.cla), NOT an
+            // rtStrSlice/rtTextSlice-shaped void/explicit-out-param
+            // primitive -- so it does NOT fit cgStrBuilderIntoTemp's
+            // "out pushed first" convention. It uses the SAME hidden-
+            // result-pointer ABI cgEmitFunc gives every KStr-returning
+            // function (cgRetNeedsHidden, cgCallFnInto's own generic
+            // ECallFn path) -- declared args (t, pos) push BY VALUE in
+            // declaration order, hidden ptr (dst's own address) pushes
+            // LAST, mirroring this function's own "lasterr_msg" arm
+            // below (a zero-arg instance of the exact same convention)
+            // with two real args prepended. Not reachable via the
+            // generic ECallFn/cgCallFnInto path because stringAt lowers
+            // through newIRIntr (EIntr), not a plain call.
+            a0e = irIntrArgsHead(src2)
+            a1e = irExprNext(a0e)
+            fi = findIRFuncIdxByName(rnTextStringAt)
+            if fi == -1 or not shakeReachable(fi) {
+                abort("cg68k: rtTextStringAt not found/reachable")
+            }
+            cgExpr(a0e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgExpr(a1e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(dst)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgCallFunc(fi)
+            cgCleanupStack(12)
+            return
+        }
         if nm == "xrec_str_read" {
             // Task 6 (toolbox-integration Feature B): `s = ev.fName` -- an
             // extern-record str[N] field READ (`IXRecStrRead`, a KStr-
@@ -10772,6 +10866,28 @@ func cgEmitReturnStr(src: int) {
             addrs.add(false)
             cgStrBuilderIntoTemp(rnTextSlice, args, addrs)
             cgFlushA1TempToRetPtr()
+            return
+        }
+        if nm == "text_string_at" {
+            // Mirrors cgEmitStoreStr's own "text_string_at" arm -- the
+            // destination is the hidden pointer's VALUE at 8(A6) (pushed
+            // directly, not LEA'd, same convention this function's own
+            // "lasterr_msg" arm below uses), pushed LAST after the two
+            // real args (t, pos), matching cgRetNeedsHidden's fixed
+            // offset-8 convention exactly.
+            a0e = irIntrArgsHead(src2)
+            a1e = irExprNext(a0e)
+            fi = findIRFuncIdxByName(rnTextStringAt)
+            if fi == -1 or not shakeReachable(fi) {
+                abort("cg68k: rtTextStringAt not found/reachable")
+            }
+            cgExpr(a0e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgExpr(a1e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
+            cgCallFunc(fi)
+            cgCleanupStack(12)
             return
         }
         if nm == "lasterr_msg" {
