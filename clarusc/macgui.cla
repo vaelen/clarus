@@ -77,6 +77,14 @@ include "bake.cla"
 // all, so there's no name collision between the two.
 external func gcGet1NamedResource(theType: int, name: string): ptr = trap 0xA820
 
+// SysBeep (attempt/abort phase Task 6): declared verbatim from
+// toolbox/osutils.cla:96 -- same "own local external func" rationale as
+// gcGet1NamedResource just above (this file's top-level code checks
+// standalone, before any catalog/runtime module is spliced in, so a
+// catalog include isn't reachable here). Used by gcCompile's `aborted`
+// handler to beep before showing the alert (design doc %4/%3.5).
+external func SysBeep(duration: word) = trap 0xA9C8
+
 // gcClfsType packs 'CLFS' big-endian (C=0x43 L=0x4C F=0x46 S=0x53) --
 // the same resource type file.readResource's native implementation
 // (runtime/clarus/native.cla's natReadResource) looks up, under its own
@@ -544,58 +552,78 @@ func gcCompile(w: Log, p: string) {
     want68k = true
 
     entries.add(p)
-    ok = driveCompile(entries, false)
 
-    // entryFailed (an unreadable entry file) is checked BEFORE diags,
-    // exactly like main.cla's own startCLI -- driveCompile leaves diags
-    // empty in this case.
-    if entryFailed {
-        gcFlushProgress(w)
-        gcLog(w, "cannot open entry file: " + p)
-        alert("cannot open entry file: " + p)
-        return
-    }
+    // attempt/abort phase Task 6: the whole compile pipeline (driveCompile
+    // through driveEmit68kFork through file.writeRes) now runs inside an
+    // `attempt`, catching any abort() that fires from the ~150 converted
+    // pipeline fatal sites in cg68k.cla/cprint.cla/uiblob.cla/bake.cla/
+    // drive.cla/lower.cla. Without this, one of those internal-invariant
+    // aborts would hit the synthesized top-level UI default (design doc
+    // %3.5) and quit the whole app -- exactly the "silent ExitToShell"
+    // defect (spec %1) this phase exists to fix. The existing ok/
+    // entryFailed/built/wrote failure branches below are unrelated,
+    // ordinary compile failures (not aborts) and keep their own
+    // log+alert+return shape unchanged.
+    attempt {
+        ok = driveCompile(entries, false)
 
-    if not ok {
-        gcFlushProgress(w)
-        i = 0
-        while i < diags.count {
-            gcLog(w, formatDiag(poolGet(diagPaths[i]), diags[i]))
-            i = i + 1
+        // entryFailed (an unreadable entry file) is checked BEFORE diags,
+        // exactly like main.cla's own startCLI -- driveCompile leaves diags
+        // empty in this case.
+        if entryFailed {
+            gcFlushProgress(w)
+            gcLog(w, "cannot open entry file: " + p)
+            alert("cannot open entry file: " + p)
+            return
         }
-        alert(formatDiag(poolGet(diagPaths[0]), diags[0]))
-        return
-    }
 
-    built = driveEmit68kFork("", false, 0, false)
-    if not built {
+        if not ok {
+            gcFlushProgress(w)
+            i = 0
+            while i < diags.count {
+                gcLog(w, formatDiag(poolGet(diagPaths[i]), diags[i]))
+                i = i + 1
+            }
+            alert(formatDiag(poolGet(diagPaths[0]), diags[0]))
+            return
+        }
+
+        built = driveEmit68kFork("", false, 0, false)
+        if not built {
+            gcFlushProgress(w)
+            gcLog(w, "emit68k failed")
+            alert("emit68k failed")
+            return
+        }
+
+        // Read driveLastFork/driveLastAppName/driveLastCreator IMMEDIATELY
+        // after a successful driveEmit68kFork -- their own documented
+        // validity window (drive.cla) is "until the NEXT driveEmit68kFork
+        // call", and capturing all three into locals right away is the
+        // simplest way to honor that even though nothing else in this
+        // function calls driveEmit68kFork again before they're used.
+        appName = driveLastAppName()
+        creator = driveLastCreator()
+        fork = driveLastFork()
+
+        wrote = file.writeRes(appName, fork, "APPL", creator)
+        if not wrote {
+            gcFlushProgress(w)
+            gcLog(w, "write failed: " + lastError.message)
+            alert("write failed: " + lastError.message)
+            return
+        }
+
+        driveProgressDone()
         gcFlushProgress(w)
-        gcLog(w, "emit68k failed")
-        alert("emit68k failed")
-        return
-    }
-
-    // Read driveLastFork/driveLastAppName/driveLastCreator IMMEDIATELY
-    // after a successful driveEmit68kFork -- their own documented
-    // validity window (drive.cla) is "until the NEXT driveEmit68kFork
-    // call", and capturing all three into locals right away is the
-    // simplest way to honor that even though nothing else in this
-    // function calls driveEmit68kFork again before they're used.
-    appName = driveLastAppName()
-    creator = driveLastCreator()
-    fork = driveLastFork()
-
-    wrote = file.writeRes(appName, fork, "APPL", creator)
-    if not wrote {
+        gcLog(w, "BUILT " + appName + " " + numToStr(fork.length) + " bytes")
+    } aborted msg {
         gcFlushProgress(w)
-        gcLog(w, "write failed: " + lastError.message)
-        alert("write failed: " + lastError.message)
-        return
+        gcLog(w, msg)
+        SysBeep(30)
+        alert(msg)
+        gcLiveActive = false
     }
-
-    driveProgressDone()
-    gcFlushProgress(w)
-    gcLog(w, "BUILT " + appName + " " + numToStr(fork.length) + " bytes")
 }
 
 on App.startEmpty {
