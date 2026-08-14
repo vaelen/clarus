@@ -15,6 +15,17 @@ checklist to run the moment the display frees, not run this phase.
 
 ## 0. START HERE next session
 
+**Field-tested by Andrew on Snow (2026-08-14 21:53 JST, ClarusC.APPL at
+`a0c94dc`): all five example programs compiled on-Mac; pre-compile
+status lines, icon warning, and abort-survival (a real mid-segment-write
+OOM at a 12MB partition left the app alive) all confirmed working.**
+Two field findings, both recorded in the ROADMAP entry: bookmarks.cla's
+partition floor is between 12MB (OOM) and 16MB (clean; Measure 5m52s vs
+9m14s under 12MB heap pressure), and the example `.pbm` icons are
+rejected as malformed on the Mac — likely CR-line-ending intolerance in
+`app68BuildIcnFamily`'s P1 parser (staged via `hcopy -t`), deferred per
+Andrew.
+
 The `attempt-abort` phase (section 0a below) is DONE from a host-testing
 standpoint; **the deferred emulator checklist is the very next thing to
 run**, before any merge decision:

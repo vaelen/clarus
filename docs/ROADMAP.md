@@ -2132,6 +2132,30 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     `--rtbake` paths get nothing; cosmetic only, on a CLI that already
     prints progress, and the load-bearing half (ClarusC.APPL's own silent
     gap) is delivered.
+  - **PBM app icons rejected as malformed ON THE MAC (field test,
+    2026-08-14):** Andrew's Snow session hit the icon warning ("not a
+    well-formed 32x32 P1/P4 PBM") for both example icons that parse fine
+    on the host. Likely cause: CR line endings — the files were staged
+    via `hcopy -t` (LF→CR translation), and `app68BuildIcnFamily`'s P1
+    parser presumably splits on LF only; a Mac-authored PBM would have CR
+    endings too, so the parser should accept CR/CRLF/LF, the same
+    treatment the lexer's own CR-byte fix got (macroman/lexer phase).
+    Deferred per Andrew ("worry about that later"); the warn-and-continue
+    fallback behaved exactly as designed on hardware.
+
+  **Field-test data (Andrew, Snow, 2026-08-14 21:53 JST, ClarusC at
+  `a0c94dc`):** all five example programs compiled on-Mac; pre-compile
+  status lines, icon warning, and abort-survival all confirmed live —
+  including a REAL mid-segment-write out-of-memory abort at a 12MB
+  `SIZE` partition that left the app running (the exact scenario that
+  was a silent ExitToShell before this phase). bookmarks.cla needs
+  between 12MB (OOM at segment 2) and 16MB (clean, 11m44s total);
+  working set sits ~4MB until segment write/fork build peaks it.
+  Heap-pressure signature confirmed: Measure took 9m14s at 12MB vs
+  5m52s at 16MB (compaction thrash) — consistent with the
+  memory-leak-fix phase's degradation analysis. 16MB is a practical
+  floor for small/medium programs; the 48MB default keeps its headroom
+  rationale for self-compile-scale inputs.
 
 ## Small open items (not yet scheduled)
 
