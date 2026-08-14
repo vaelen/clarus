@@ -102,6 +102,7 @@ var coreCLIFiles = []string{
 	filepath.Join("testsuite", "core", "cases_xrec.cla"),
 	filepath.Join("testsuite", "core", "cases_datetime.cla"),
 	filepath.Join("testsuite", "core", "cases_param.cla"),
+	filepath.Join("testsuite", "core", "cases_abort.cla"),
 }
 
 // coreCLIHostFiles/absFiles/BuildCoreCLIHost/RunCoreCLIHost (coreCLIFiles +
