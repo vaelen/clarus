@@ -56,6 +56,9 @@ func TestLeakGate(t *testing.T) {
 	t.Run("DoubleCompileBake", func(t *testing.T) {
 		runDoubleCompileGateBake(t)
 	})
+	t.Run("DoubleCompileAbortRecovery", func(t *testing.T) {
+		runDoubleCompileAbortGate(t)
+	})
 }
 
 // TestAbortLeakBaseline pins the attempt-abort phase's own leak
@@ -264,6 +267,69 @@ func runDoubleCompileGate(t *testing.T) {
 	}
 	if !bytes.Equal(forkAlt0, forkAlt2) {
 		t.Fatalf("alternating run: leakfork_0.bin (%d bytes) != leakfork_2.bin (%d bytes): stale state leaked across a different-fixture compile", len(forkAlt0), len(forkAlt2))
+	}
+}
+
+// runDoubleCompileAbortGate is final-review I3's own oracle: proves an
+// abort() firing INSIDE one compile leaves no abort-state global stale
+// for the NEXT compile in the same process -- the host-side, seconds-
+// not-hours twin of the deferred TestMacResidentFailedCompileStaysAliveOnSnow.
+// dblcompile.cla now wraps its own per-entry driveCompile/driveEmit68kFork
+// call in `attempt`/`aborted` (mirroring macgui.cla's real gcCompile),
+// so [tickprobe, badabort, tickprobe] compiles tickprobe, then hits
+// badabort's deterministic "attempt nesting exceeds cgBailTargets' fixed
+// depth (32)" abort (cg68k.cla, during driveEmit68kFork's own codegen),
+// catches it, logs, and moves on to the third entry instead of quitting
+// the whole harness. Asserts the harness exits 0 (the abort was caught,
+// not left uncaught to hit dblcompile's own top-level default), the
+// expected ABORTED line reached stdout, and leakfork_0.bin (tickprobe
+// #1) is byte-identical to leakfork_2.bin (tickprobe #2, compiled
+// immediately after the aborted compile).
+func runDoubleCompileAbortGate(t *testing.T) {
+	t.Helper()
+	root := repoRoot(t)
+	exe := buildDblcompile(t)
+	tickprobe := filepath.Join(root, "testdata", "cg68k", "tickprobe.cla")
+	badabort := filepath.Join(root, "testdata", "mac-resident", "badabort.cla")
+
+	scratchRoot := filepath.Join(root, "build-run")
+	if err := os.MkdirAll(scratchRoot, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", scratchRoot, err)
+	}
+	work, err := os.MkdirTemp(scratchRoot, "leakgate-abort-")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	defer os.RemoveAll(work)
+
+	reportPath := filepath.Join(work, "report.txt")
+	cmd := exec.Command(exe, tickprobe, badabort, tickprobe)
+	cmd.Dir = work
+	cmd.Env = append(os.Environ(),
+		"CLARUS_MEM_STRICT=1",
+		"CLARUS_MEM_REPORT="+reportPath)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run dblcompile [tickprobe, badabort, tickprobe]: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	const wantMsg = "ABORTED: cg68k: attempt nesting exceeds cgBailTargets' fixed depth (32)"
+	if !strings.Contains(stderr.String(), wantMsg) {
+		t.Fatalf("expected badabort's caught-abort line in dblcompile's log output, got:\n%s", stderr.String())
+	}
+
+	fork0, err := os.ReadFile(filepath.Join(work, "leakfork_0.bin"))
+	if err != nil {
+		t.Fatalf("read leakfork_0.bin: %v", err)
+	}
+	fork2, err := os.ReadFile(filepath.Join(work, "leakfork_2.bin"))
+	if err != nil {
+		t.Fatalf("read leakfork_2.bin: %v", err)
+	}
+	if !bytes.Equal(fork0, fork2) {
+		t.Fatalf("leakfork_0.bin (%d bytes) != leakfork_2.bin (%d bytes): abort-state leaked into the post-abort compile", len(fork0), len(fork2))
 	}
 }
 

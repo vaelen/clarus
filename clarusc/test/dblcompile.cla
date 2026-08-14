@@ -96,33 +96,51 @@ on App.startCLI(args: list of string) {
         want68k = true
         entries = cgFreshStringList()
         entries.add(args[i])
-        ok = driveCompile(entries, false)
-        if entryFailed {
-            log("dblcompile: cannot open entry file: " + args[i])
-            quit 2
-        }
-        if not ok {
-            log("dblcompile: compile FAILED: " + args[i])
-            di = 0
-            while di < diags.count {
-                log(formatDiag(poolGet(diagPaths[di]), diags[di]))
-                di = di + 1
+
+        // attempt-abort phase, final-review I3: the compile pipeline can
+        // itself call abort() (e.g. cg68k.cla's own "attempt nesting
+        // exceeds cgBailTargets' fixed depth" site, testdata/mac-resident/
+        // badabort.cla). Without this attempt, an uncaught abort here
+        // would hit dblcompile's own top-level non-UI default (log + quit
+        // 1) and kill the WHOLE harness, never reaching the next entry --
+        // exactly the process-level version of the field defect this
+        // phase fixes. Mirrors macgui.cla's real gcCompile wrapping: log
+        // and move on to the next entry instead of quitting, which is
+        // what lets a 3-entry run of [good, aborting, good] prove no
+        // abort-state global leaks into the THIRD compile's fork, on the
+        // host lane, in seconds -- the host-side twin of the deferred,
+        // multi-hour TestMacResidentFailedCompileStaysAliveOnSnow.
+        attempt {
+            ok = driveCompile(entries, false)
+            if entryFailed {
+                log("dblcompile: cannot open entry file: " + args[i])
+                quit 2
             }
-            quit 1
+            if not ok {
+                log("dblcompile: compile FAILED: " + args[i])
+                di = 0
+                while di < diags.count {
+                    log(formatDiag(poolGet(diagPaths[di]), diags[di]))
+                    di = di + 1
+                }
+                quit 1
+            }
+            built = driveEmit68kFork("", false, 0, false)
+            if not built {
+                log("dblcompile: emit68k failed: " + args[i])
+                quit 1
+            }
+            fork = driveLastFork()
+            wrote = file.writeText("leakfork_" + numToStr(i) + ".bin", fork, fileTypeText, "????")
+            if not wrote {
+                log("dblcompile: fork write failed")
+                quit 1
+            }
+            t1 = TickCount()
+            log("COMPILE " + numToStr(i) + " " + args[i] + " ticks=" + numToStr(t1 - t0) + " fork=" + numToStr(fork.length))
+        } aborted msg {
+            log("COMPILE " + numToStr(i) + " " + args[i] + " ABORTED: " + msg)
         }
-        built = driveEmit68kFork("", false, 0, false)
-        if not built {
-            log("dblcompile: emit68k failed: " + args[i])
-            quit 1
-        }
-        fork = driveLastFork()
-        wrote = file.writeText("leakfork_" + numToStr(i) + ".bin", fork, fileTypeText, "????")
-        if not wrote {
-            log("dblcompile: fork write failed")
-            quit 1
-        }
-        t1 = TickCount()
-        log("COMPILE " + numToStr(i) + " " + args[i] + " ticks=" + numToStr(t1 - t0) + " fork=" + numToStr(fork.length))
         i = i + 1
     }
     quit 0
