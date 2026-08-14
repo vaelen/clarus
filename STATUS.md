@@ -17,14 +17,27 @@ checklist to run the moment the display frees, not run this phase.
 
 **Field-tested by Andrew on Snow (2026-08-14 21:53 JST, ClarusC.APPL at
 `a0c94dc`): all five example programs compiled on-Mac; pre-compile
-status lines, icon warning, and abort-survival (a real mid-segment-write
-OOM at a 12MB partition left the app alive) all confirmed working.**
-Two field findings, both recorded in the ROADMAP entry: bookmarks.cla's
-partition floor is between 12MB (OOM) and 16MB (clean; Measure 5m52s vs
-9m14s under 12MB heap pressure), and the example `.pbm` icons are
-rejected as malformed on the Mac — likely CR-line-ending intolerance in
-`app68BuildIcnFamily`'s P1 parser (staged via `hcopy -t`), deferred per
-Andrew.
+status lines and the icon warning confirmed working.** Three field
+findings, all recorded in the ROADMAP entry:
+
+- **Native runtime panics are still SILENT app exits (Important, open):**
+  a real mid-segment-write OOM at a 12MB partition quit the app with no
+  beep and no alert — `nat_CorePanic` (`native.cla:547-553`) writes
+  "runtime error: <msg>" through the BUFFERED `log()` channel and calls
+  `natQuit(3)`; the message reached `out` only via quit's flush (Andrew
+  diagnosed from the file — the TEXT stamp earning its keep). This is
+  the panic path, deliberately outside `attempt` (spec §3.7), but
+  Andrew's original requirement's fallback clause ("any remaining exit
+  should beep and display an alert before exiting") was LOST between the
+  requirement and the spec — §3.5 covers uncaught aborts only. An
+  earlier STATUS/ROADMAP wording claimed this OOM proved abort-survival;
+  that was WRONG and has been corrected. Fix direction sketched in the
+  ROADMAP debt entry; not yet scheduled.
+- bookmarks.cla's partition floor is between 12MB (OOM) and 16MB (clean;
+  Measure 5m52s vs 9m14s under 12MB heap pressure).
+- The example `.pbm` icons are rejected as malformed on the Mac — likely
+  CR-line-ending intolerance in `app68BuildIcnFamily`'s P1 parser
+  (staged via `hcopy -t`), deferred per Andrew.
 
 The `attempt-abort` phase (section 0a below) is DONE from a host-testing
 standpoint; **the deferred emulator checklist is the very next thing to

@@ -2143,19 +2143,40 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     Deferred per Andrew ("worry about that later"); the warn-and-continue
     fallback behaved exactly as designed on hardware.
 
+  - **Native runtime panics are still SILENT app exits (field test,
+    2026-08-14 — Important, open):** a real mid-segment-write OOM at a
+    12MB partition quit ClarusC.APPL with no beep and no alert.
+    `nat_CorePanic` (`runtime/clarus/native.cla:547-553`) logs
+    "runtime error: <msg>" on the BUFFERED channel and calls
+    `natQuit(3)` — the message reaches `out` only at quit's flush.
+    Spec §3.7 deliberately keeps panics outside `attempt`, but the
+    original requirement's fallback clause ("any remaining exit should
+    beep and display an alert before exiting") was dropped between
+    requirement and spec — §3.5's beep+alert default covers uncaught
+    ABORTS only. Fix direction: `nat_CorePanic` should write the trace
+    line IMMEDIATELY (natAlert-style, not buffered) and, when a UI is
+    up and NOT `rtUiScripted`, SysBeep + show the plain-OK ALRT 128
+    before exiting — guarded so non-UI programs (no ALRT resources) and
+    scripted boots (runerr goldens assert panic text via trace;
+    a modal dialog would hang them) keep today's exact behavior.
+    Needs a "UI initialized" flag native.cla can see (layering: it
+    cannot name uidialogs functions, and non-UI programs don't splice
+    them). Not yet scheduled.
+
   **Field-test data (Andrew, Snow, 2026-08-14 21:53 JST, ClarusC at
   `a0c94dc`):** all five example programs compiled on-Mac; pre-compile
-  status lines, icon warning, and abort-survival all confirmed live —
-  including a REAL mid-segment-write out-of-memory abort at a 12MB
-  `SIZE` partition that left the app running (the exact scenario that
-  was a silent ExitToShell before this phase). bookmarks.cla needs
-  between 12MB (OOM at segment 2) and 16MB (clean, 11m44s total);
-  working set sits ~4MB until segment write/fork build peaks it.
-  Heap-pressure signature confirmed: Measure took 9m14s at 12MB vs
-  5m52s at 16MB (compaction thrash) — consistent with the
-  memory-leak-fix phase's degradation analysis. 16MB is a practical
-  floor for small/medium programs; the 48MB default keeps its headroom
-  rationale for self-compile-scale inputs.
+  status lines and icon warning confirmed live. The OOM at 12MB was a
+  PANIC-path silent exit (previous wording here wrongly claimed it as
+  abort-survival — corrected; the abort path's own field confirmation
+  is still outstanding, covered by the deferred Snow
+  failed-compile-stays-alive test). bookmarks.cla needs between 12MB
+  (OOM at segment 2) and 16MB (clean, 11m44s total); working set sits
+  ~4MB until segment write/fork build peaks it. Heap-pressure
+  signature confirmed: Measure took 9m14s at 12MB vs 5m52s at 16MB
+  (compaction thrash) — consistent with the memory-leak-fix phase's
+  degradation analysis. 16MB is a practical floor for small/medium
+  programs; the 48MB default keeps its headroom rationale for
+  self-compile-scale inputs.
 
 ## Small open items (not yet scheduled)
 
