@@ -54,8 +54,8 @@ func TestBakeHeaderSanity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseHeader: %v", err)
 			}
-			if hdr.FormatVersion != 6 {
-				t.Errorf("FormatVersion = %d, want 6 (object-code-linker Task 2: bkSecObjCode + bkSecObjMeta added)", hdr.FormatVersion)
+			if hdr.FormatVersion != 7 {
+				t.Errorf("FormatVersion = %d, want 7 (clir-load-perf Task 4: hash swapped FNV-mul -> shift-add)", hdr.FormatVersion)
 			}
 			if hdr.Lane != wantLaneTag[lane] {
 				t.Errorf("Lane = %d, want %d", hdr.Lane, wantLaneTag[lane])

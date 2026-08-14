@@ -78,7 +78,8 @@ const bkMagic: string = "CLIR"
 // (the base/uitest IR-arena boundary counts). Pre-release format; the
 // loader refuses any other version outright (no compat shim), per this
 // phase's own controller resolution.
-const bkFormatVersion: int = 6
+// v7: body/stamp/manifest hash switched from FNV-mul to shift-add -- layout unchanged.
+const bkFormatVersion: int = 7
 
 // bkClirResourceName/bkStampResourceName (runtime-ir-bake Task 6, Mac
 // integration): reserved 'CLFS' resource names ClarusC.APPL's own build
@@ -303,19 +304,23 @@ func bkEmitSection(out: text, id: int, payload: text) {
 }
 
 // ================================================================
-// Stamp: a deterministic FNV-1a-style rolling hash (masked to 31 bits
-// after every step, mirroring map.cla's own mapHash convention, so the
-// arithmetic never depends on unspecified 32-bit signed overflow
+// Stamp: a deterministic djb2-shape shift-add rolling hash (masked to
+// 31 bits after every step, mirroring map.cla's own mapHash convention,
+// so the arithmetic never depends on unspecified 32-bit signed overflow
 // behavior) over clarusc/clarusc.c's own bytes -- "the generating
 // compiler (the clarusc.c snapshot identity)" per the design spec's own
 // header description. A loader built from a DIFFERENT clarusc.c snapshot
 // (a different compiler identity, e.g. after a codegen/IR-shape change)
 // hashes to a different stamp and can refuse to load a stale bake
-// (Task 4's own job -- this task only computes and writes it).
+// (Task 4's own job -- this task only computes and writes it). Swapped
+// from an FNV-1a-style multiply (clir-load-perf design C, spec %5.3):
+// this hash is about to run in a tight per-call loop
+// (rtTextHashStep/hashStep), where a native 68000 per-byte multiply
+// (cg_mul32, ~3x MULU + JSR) would dominate; shift-add costs one shift
+// and two adds instead.
 // ================================================================
 
 const bkFnvSeed: int = 5381
-const bkFnvPrime: int = 16777619
 
 func bkHashText(data: text): int {
     return bkHashTextFrom(data, 0)
@@ -336,9 +341,7 @@ func bkHashTextFrom(data: text, start: int): int {
     i = start
     while i < data.length {
         b = int(data[i])
-        h = h ^ b
-        h = h * bkFnvPrime
-        h = h & 0x7FFFFFFF
+        h = ((h << 5) + h + b) & 0x7FFFFFFF
         // Liveness pulse (attempt-abort Task 7, spec %5): this loop can
         // run for up to ~1.1MB with no other progress signal, so the
         // Status bar's spinner (macgui's feProgressTick, throttled by
