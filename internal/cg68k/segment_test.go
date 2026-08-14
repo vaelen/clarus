@@ -74,6 +74,19 @@ func segmentationFixture(root string) []string {
 		filepath.Join("testsuite", "core", "cases_datetime.cla"),
 		filepath.Join("testsuite", "core", "cases_param.cla"),
 		filepath.Join("testsuite", "core", "cases_abort.cla"),
+		// clir-load-perf Task 2 (design C): cases_textrange.cla MUST be
+		// here -- runner.cla (above) unconditionally calls caseTextRange(),
+		// so any composition that includes runner.cla but omits this file
+		// fails to CHECK at all ("undefined: caseTextRange"), which is
+		// worse than the alternative below. Known consequence: cg68k.cla
+		// has no arms yet for the new text_hash_step/text_u32_at/
+		// text_string_at/text_text_at intrinsics (clir-load-perf Task 3's
+		// job, deliberately out of THIS task's scope -- see its own doc
+		// comment), so TestSegmentationMultiSegment fails with "cg68k:
+		// cgIntrUi: unsupported UI intrinsic text_u32_at" until Task 3
+		// lands. Accepted/expected per the task brief; not a regression to
+		// paper over by leaving this file out.
+		filepath.Join("testsuite", "core", "cases_textrange.cla"),
 		filepath.Join("testsuite", "core", "cli_mac.cla"),
 	}
 	abs := make([]string, len(rel))

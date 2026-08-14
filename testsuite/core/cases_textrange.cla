@@ -1,0 +1,69 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_textrange.cla: Chapter 3 bulk range reads (clir-load-perf
+// Task 2): hashStep/u32At/stringAt/textAt known-answer + edge cases.
+// kit.cla has no tkExpectInt/tkExpectStr helpers (checked before
+// writing this) -- follows the ordinary caseX(): TestResult + tkFail/
+// tkPass shape every other cases_*.cla file uses (e.g.
+// cases_datetime.cla).
+
+func caseTextRange(): TestResult {
+    var t: text
+    var h: int
+    var i: int
+    var s: string
+    var sub: text
+
+    t = ""
+    t.append(char(1))
+    t.append(char(2))
+    t.append(char(3))
+    t.append(char(4))
+    // u32At: BE compose (0x01020304)
+    if t.u32At(0) != 16909060 {
+        return tkFail("TextRange", "u32At wrong")
+    }
+    // hashStep vs hand loop, split across a chunk boundary
+    h = 5381
+    i = 0
+    while i < t.length {
+        h = ((h << 5) + h + int(t[i])) & 0x7FFFFFFF
+        i = i + 1
+    }
+    if t.hashStep(5381, 0, 4) != h {
+        return tkFail("TextRange", "hashStep whole wrong")
+    }
+    if t.hashStep(t.hashStep(5381, 0, 2), 2, 2) != h {
+        return tkFail("TextRange", "hashStep split wrong")
+    }
+    // hashStep n=0 is identity
+    if t.hashStep(99, 1, 0) != 99 {
+        return tkFail("TextRange", "hashStep empty wrong")
+    }
+    // stringAt: 4-byte BE length prefix + payload
+    t = ""
+    t.append(char(0))
+    t.append(char(0))
+    t.append(char(0))
+    t.append(char(2))
+    t.append('h')
+    t.append('i')
+    s = t.stringAt(0)
+    if s != "hi" {
+        return tkFail("TextRange", "stringAt wrong")
+    }
+    // textAt: fresh copy, zero-length allowed
+    sub = t.textAt(4, 2)
+    if sub.length != 2 {
+        return tkFail("TextRange", "textAt len wrong")
+    }
+    if int(sub[0]) != int('h') {
+        return tkFail("TextRange", "textAt b0 wrong")
+    }
+    sub = t.textAt(6, 0)
+    if sub.length != 0 {
+        return tkFail("TextRange", "textAt empty wrong")
+    }
+    return tkPass("TextRange")
+}

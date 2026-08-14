@@ -602,6 +602,126 @@ func rtTextSlice(out: ptr, t: ptr, start: int, len: int) {
     pokeb(out, len)
 }
 
+// rtTextHashStep/rtTextU32At/rtTextStringAt/rtTextTextAt (clir-load-perf
+// Task 2): bulk range reads for a hot loader path -- no rt_core.inc
+// legacy equivalent (brand new to the ported runtime). Each hoists
+// rt.len and the master pointer ONCE and loops over peekb (or does a
+// single TextBlockMoveData) rather than re-deriving per byte -- that
+// hoisting is the whole point, collapsing per-byte runtime-call
+// overhead. STRICT bounds throughout, same "text index out of range"
+// message rtTextIndex/rtTextSlice already use.
+
+// rtTextHashStep: rolling 31-bit shift-add hash (djb2 shape, matching
+// bake.cla's own body-hash convention) over bytes [pos, pos+n). n == 0
+// is a no-op identity (returns h unchanged). Allocates nothing, so
+// holding mp across the loop is safe (relocation discipline, module
+// header comment above).
+func rtTextHashStep(t: ptr, h: int, pos: int, n: int): int {
+    var rt: RtText
+    var mp: ptr
+    var i: int
+    var b: int
+    var acc: int
+
+    rt = RtText(t)
+    if pos < 0 or n < 0 or pos + n > rt.len {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    acc = h
+    i = 0
+    while i < n {
+        b = peekb(mp + pos + i)
+        acc = ((acc << 5) + acc + b) & 0x7FFFFFFF
+        i = i + 1
+    }
+    return acc
+}
+
+// rtTextU32At: big-endian U32 read at pos -- one deref, four peekb.
+func rtTextU32At(t: ptr, pos: int): int {
+    var rt: RtText
+    var mp: ptr
+
+    rt = RtText(t)
+    if pos < 0 or pos + 4 > rt.len {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    return (peekb(mp + pos) << 24) | (peekb(mp + pos + 1) << 16) | (peekb(mp + pos + 2) << 8) | peekb(mp + pos + 3)
+}
+
+// rtTextStringAt: reads a 4-byte BE length prefix at pos, then that
+// many bytes. Str255 is a plain value type (no ARC birth needed), so
+// this is an ordinary Clarus function returning `string` by value --
+// the bkGetStr idiom (bake.cla): copy through a char[255] buffer, then
+// s.fromBytes -- rather than rtTextSlice's raw out-ptr convention
+// (which exists only because that function is itself an ARC-adjacent
+// waist primitive; a plain by-value return is simpler here and the
+// generated C already returns clar_str_255 by value for any function
+// declared `: string`, so cprint.cla's ITextStringAt arm below needs no
+// out-param dance either). Panics "string too long" if the length
+// exceeds Str255's own 255-byte cap; STRICT bounds otherwise.
+func rtTextStringAt(t: ptr, pos: int): string {
+    var rt: RtText
+    var mp: ptr
+    var l: int
+    var buf: char[255]
+    var i: int
+    var s: string
+
+    rt = RtText(t)
+    if pos < 0 or pos + 4 > rt.len {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    l = (peekb(mp + pos) << 24) | (peekb(mp + pos + 1) << 16) | (peekb(mp + pos + 2) << 8) | peekb(mp + pos + 3)
+    if l > 255 {
+        rtPanic("string too long")
+    }
+    if pos + 4 + l > rt.len {
+        rtPanic("text index out of range")
+    }
+    i = 0
+    while i < l {
+        buf[i] = char(peekb(mp + pos + 4 + i))
+        i = i + 1
+    }
+    s.fromBytes(buf, l)
+    return s
+}
+
+// rtTextTextAt: a fresh `text` copy of bytes [pos, pos+n) -- text is a
+// reference type (handle + rc), so unlike stringAt this needs the same
+// dst-out-param ARC convention rtTextConcat/rtTextAppendText use: dst
+// is grown to hold n bytes, BOTH master pointers are re-derived AFTER
+// the grow (relocation discipline -- growing dst's own handle can move
+// ANY relocatable block, including t's), then one bulk
+// TextBlockMoveData (never a per-byte append loop -- that's the whole
+// point of this method existing). cprint.cla's ITextTextAt arm mirrors
+// fpTextConcat/ITextConcatSL's own dst-allocation dance (rtTextNew()
+// first, then this call) -- copy that convention exactly, not
+// improvised: dst is caller-allocated, this function never calls
+// rtTextNew itself, same shape rtTextConcat/rtTextConcatSl declare.
+func rtTextTextAt(dst: ptr, t: ptr, pos: int, n: int) {
+    var rt: RtText
+    var rd: RtText
+    var srcmp: ptr
+    var dstmp: ptr
+
+    rt = RtText(t)
+    if pos < 0 or n < 0 or pos + n > rt.len {
+        rtPanic("text index out of range")
+    }
+    rtTextGrow(dst, n)
+    rt = RtText(t)
+    rd = RtText(dst)
+    srcmp = TextHandleDeref(rt.h)
+    dstmp = TextHandleDeref(rd.h)
+    TextBlockMoveData(srcmp + pos, dstmp, n)
+    rd.len = n
+}
+
 // rtTextIndexOfStr (rt_core.inc:405-419): empty needle convention (Ch3) --
 // an empty needle is found at index 0, same as rtStrIndexOfStr.
 func rtTextIndexOfStr(t: ptr, needle: ptr): int {

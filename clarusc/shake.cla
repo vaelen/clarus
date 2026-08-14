@@ -609,6 +609,15 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtTextStore"))
     } else if nm == ITextFreeVar() {
         shakeMarkAndEnqueue(intern("rtTextRelease"))
+    } else if nm == ITextHashStep() {
+        shakeMarkAndEnqueue(intern("rtTextHashStep"))
+    } else if nm == ITextU32At() {
+        shakeMarkAndEnqueue(intern("rtTextU32At"))
+    } else if nm == ITextStringAt() {
+        shakeMarkAndEnqueue(intern("rtTextStringAt"))
+    } else if nm == ITextTextAt() {
+        shakeMarkAndEnqueue(intern("rtTextNew"))
+        shakeMarkAndEnqueue(intern("rtTextTextAt"))
 
     // ---- list ----
     } else if nm == IListPush() or nm == IListPushRetain() {

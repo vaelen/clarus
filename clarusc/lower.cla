@@ -1669,6 +1669,22 @@ func lowMethodArgs3(recvIR: int, a0Ast: int, a1Ast: int): int {
     return recvIR
 }
 
+// lowMethodArgs4 is lowMethodArgs3 for a 3-argument method call (hashStep,
+// clir-load-perf Task 2).
+func lowMethodArgs4(recvIR: int, a0Ast: int, a1Ast: int, a2Ast: int): int {
+    var a: int
+    var b: int
+    var c: int
+
+    a = lowExpr(a0Ast)
+    b = lowExpr(a1Ast)
+    c = lowExpr(a2Ast)
+    irExprListAppend(recvIR, a)
+    irExprListAppend(a, b)
+    irExprListAppend(b, c)
+    return recvIR
+}
+
 // lowStringTextMethod lowers `.fromBytes`/`.toBytes`/`.indexOf`/`.append` on
 // a String or Text receiver (expr.go's lowerStringTextMethod).
 func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: int): int {
@@ -1676,6 +1692,7 @@ func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: i
     var name: int
     var arg0: int
     var arg1: int
+    var arg2: int
 
     nm = poolGet(selectName(sel))
     arg0 = argsHead
@@ -1698,6 +1715,19 @@ func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: i
         // textOnlyMethods (check.cla) only reaches here for a text
         // receiver -- isText is always true.
         return lowAppend(recv, arg0, ty)
+    } else if nm == "hashStep" {
+        // textOnlyMethods (check.cla) only reaches here for a text
+        // receiver -- isText is always true, same as append above.
+        arg1 = exprNext(arg0)
+        arg2 = exprNext(arg1)
+        return newIRIntr(ITextHashStep(), lowMethodArgs4(recv, arg0, arg1, arg2), ty)
+    } else if nm == "u32At" {
+        return newIRIntr(ITextU32At(), lowMethodArgs2(recv, arg0), ty)
+    } else if nm == "stringAt" {
+        return newIRIntr(ITextStringAt(), lowMethodArgs2(recv, arg0), ty)
+    } else if nm == "textAt" {
+        arg1 = exprNext(arg0)
+        return newIRIntr(ITextTextAt(), lowMethodArgs3(recv, arg0, arg1), ty)
     }
     lowUnsupported("string/text method " + nm)
     return -1

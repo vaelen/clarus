@@ -1,0 +1,19 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// textrange_oor.cla (clir-load-perf Task 2): u32At's STRICT bounds
+// panic, same "text index out of range" message rtTextIndex/rtTextSlice
+// already use. Host-only fixture (App.launch, same shape every other
+// testdata/runerr/*.cla uses) -- not one of TestRunErrOn68k's own
+// representative set (that suite reduced to a single oob.cla case, see
+// mac_test.go's TestRunErrOnMac doc comment), same precedent every other
+// runerr fixture past oob.cla already follows.
+on App.launch {
+    var t: text
+    var v: int
+
+    t.append('h')
+    t.append('i')
+    v = t.u32At(t.length - 2)
+    alert("unreachable")
+}

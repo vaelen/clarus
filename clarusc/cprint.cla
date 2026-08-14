@@ -2744,6 +2744,34 @@ func fpIntrCall3(nm: int, x: int, a0: int, a1: int, a2: int): text {
             fpEmit("rt_text_append_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         }
         return toText("")
+
+    // clir-load-perf Task 2: hashStep/u32At/stringAt/textAt have no
+    // rt_core.inc legacy equivalent (brand new methods), so -- unlike
+    // every ported-vs-legacy pair above -- these route unconditionally
+    // to clar_fn_rtText*, no raw-C fallback branch. hashStep needs a
+    // 4th IR arg past the a0/a1/a2 prelude (fpArgAt, the same mechanism
+    // the UI canvas intrinsics use). stringAt returns a clar_str_255 BY
+    // VALUE (rtTextStringAt is an ordinary Clarus function, not a
+    // dst-out-param waist primitive), but still needs the SAME
+    // fpNewTmp("clar_str_255") capture IStrSlice/ITextSlice use above --
+    // callers take its address (fpStrAddr), which a bare C call
+    // expression (an rvalue) can't provide, only a named temp can. textAt
+    // births a fresh rt_text handle first, mirroring fpTextConcat/
+    // ITextConcatSL's own dst-allocation dance (text is a reference
+    // type); hashStep/u32At return plain int values, no temp needed.
+    } else if nm == ITextHashStep() {
+        return "clar_fn_rtTextHashStep((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "), (int32_t)(" + fpExpr(fpArgAt(a0, 3)) + "))"
+    } else if nm == ITextU32At() {
+        return "clar_fn_rtTextU32At((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+    } else if nm == ITextStringAt() {
+        t = fpNewTmp("clar_str_255")
+        fpEmit(t + " = clar_fn_rtTextStringAt((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "));")
+        return t
+    } else if nm == ITextTextAt() {
+        t = fpNewTmp("rt_text *")
+        fpEmit(t + " = (rt_text *)clar_fn_rtTextNew();")
+        fpEmit("clar_fn_rtTextTextAt((void*)" + t + ", (void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "));")
+        return t
     } else if nm == ITextOfStr() {
         // Materializes a0 (a Str value) into a fresh rt_text handle --
         // lowCoerceStr's Text-target/Str-source case (lower.cla). The fresh

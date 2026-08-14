@@ -1300,6 +1300,15 @@ var coreSuiteGUIFiles = []string{
 	filepath.Join("testsuite", "core", "cases_datetime.cla"),
 	filepath.Join("testsuite", "core", "cases_param.cla"),
 	filepath.Join("testsuite", "core", "cases_abort.cla"),
+	// clir-load-perf Task 2 (design C): cases_textrange.cla MUST be here --
+	// runner.cla (above) unconditionally calls caseTextRange(), so any
+	// composition that includes runner.cla but omits this file fails to
+	// CHECK at all. Known consequence: this list drives a native emit68k
+	// build (runSuiteEmit68k below), and cg68k.cla has no arms yet for the
+	// new bulk-range-read intrinsics -- clir-load-perf Task 3's job,
+	// deliberately out of THIS task's scope. Accepted/expected until Task
+	// 3 lands cg68k support.
+	filepath.Join("testsuite", "core", "cases_textrange.cla"),
 	filepath.Join("testsuite", "core", "gui.cla"),
 }
 

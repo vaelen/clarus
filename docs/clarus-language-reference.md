@@ -394,6 +394,10 @@ A `text` is an unbounded, resizable buffer of characters. A `string` value may b
 - `t.length` — length of the buffer (returns `int`)
 - Comparison: `t == "hello"` (byte-wise)
 - `t.fromBytes(buf, count)` / `t.toBytes(buf)` — byte copies to and from a `char` array, with the same clamping rules as their `string` counterparts (above). A `text` has no fixed capacity, so `fromBytes` resizes the text and never truncates; `toBytes` still clamps to the array's capacity and sets `lastError` if bytes were dropped.
+- `t.hashStep(h, pos, n)` — folds bytes `[pos, pos+n)` into rolling hash `h` (per byte: `h = ((h << 5) + h + b) & 0x7FFFFFFF`) and returns the updated value; `n == 0` returns `h` unchanged. Out-of-range `pos`/`n` raises a runtime error. For incrementally hashing a large buffer in chunks without an intermediate copy.
+- `t.u32At(pos)` — the 4-byte big-endian unsigned integer at `pos`. Out-of-range `pos` raises a runtime error. For reading binary formats with a fixed-width length or offset field.
+- `t.stringAt(pos)` — reads a 4-byte big-endian length `L` at `pos`, then `L` bytes, returning them as a `string`; the caller advances by `4 + result.length`. Raises a runtime error if `L` exceeds `string`'s 255-byte cap, or if the range is out of bounds. For reading length-prefixed binary formats.
+- `t.textAt(pos, n)` — a fresh `text` holding a copy of bytes `[pos, pos+n)`; `n == 0` is legal and yields an empty `text`. Out-of-range `pos`/`n` raises a runtime error. For extracting a binary-format sub-range without hand-copying byte by byte.
 
 Out-of-range indexing raises a runtime error. Indexing and byte copies make `text` usable directly for binary protocol work — data arriving in `on conn.received(data: text)` (Chapter 12) can be scanned byte by byte without an intermediate copy.
 

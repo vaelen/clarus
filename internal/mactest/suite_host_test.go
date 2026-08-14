@@ -103,6 +103,18 @@ var coreCLIFiles = []string{
 	filepath.Join("testsuite", "core", "cases_datetime.cla"),
 	filepath.Join("testsuite", "core", "cases_param.cla"),
 	filepath.Join("testsuite", "core", "cases_abort.cla"),
+	// clir-load-perf Task 2 (design C): cases_textrange.cla MUST be here --
+	// runner.cla (above) unconditionally calls caseTextRange(). This list
+	// also feeds coreGUIFiles' native emit68k lane (TestCoreSuiteGUIOn68k/
+	// OnMac, coresuite_test.go); cg68k.cla has no arms yet for the new
+	// bulk-range-read intrinsics (clir-load-perf Task 3's job, out of this
+	// task's scope), so those two gated (CLARUS_MAC_TESTS=1) native-boot
+	// tests fail until Task 3 lands. Accepted/expected -- and, unlike a
+	// missing-file "undefined: caseTextRange" checker error, at least
+	// fails with the real, specific gap ("unsupported UI intrinsic
+	// text_u32_at"). Same story in internal/cg68k/segment_test.go and
+	// internal/bake/bakeidentity_test.go's own core-suite file lists.
+	filepath.Join("testsuite", "core", "cases_textrange.cla"),
 }
 
 // coreCLIHostFiles/absFiles/BuildCoreCLIHost/RunCoreCLIHost (coreCLIFiles +
