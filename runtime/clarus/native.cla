@@ -244,36 +244,29 @@ const natClfsType: int = 0x434C4653
 // language reference.
 external func NatExitToShell() = trap 0xA9F4
 
-// ---- attempt-abort phase Task 9: nat_CorePanic's own beep+alert traps.
-// This module cannot `include`/name uidialogs.cla's rtUiAlertMsg or
-// ui.cla's UiParamText/UiAlert (this file's own header: native.cla is
-// reached only by name from cg68k.cla and never composes with any other
-// runtime module), so it declares its own local copies -- same standing
-// rule NatSetFInfo/NatHLock/NatHUnlock above already follow for the File/
-// Memory Manager. Trap words verified against the SAME sources
-// toolbox/osutils.cla and runtime/clarus/ui.cla already cite:
-//   NatSysBeep   toolbox/osutils.cla:96's own `external func
-//                SysBeep(duration: word) = trap 0xA9C8` (Sound.h,
-//                ONEWORDINLINE(0xA9C8), no `#pragma parameter` -> bit 11
-//                SET (0xA9C8 & 0x0800 != 0) -> pascal, stack arg, no
-//                `reg`), copied verbatim.
-//   NatParamText runtime/clarus/ui.cla:331's own `external func
-//                UiParamText(param0, param1, param2, param3: ptr) = trap
-//                0xA98B` (Dialogs.h, ONEWORDINLINE(0xA98B), bit 11 SET ->
-//                pascal, four stack args, no `reg`), copied verbatim.
-//   NatUiAlert   runtime/clarus/ui.cla:333's own `external func
-//                UiAlert(alertId: word, modalFilter: ptr): word = trap
-//                0xA985` (Dialogs.h, ONEWORDINLINE(0xA985), bit 11 SET ->
-//                pascal, two stack args, word result), copied verbatim.
-// Named `NatUiAlert` rather than `NatAlert` to avoid a same-spelling,
-// different-case clash against this file's own `natAlert` function just
-// below (still the established Nat-prefix-for-traps/nat-prefix-for-
-// functions split every other trap here already follows, just a more
-// distinct spelling given how close the two functions' roles already
-// are).
+// ---- attempt-abort phase Task 9: nat_CorePanic's own beep trap.
+// SysBeep is declared locally (NatSysBeep) rather than pulled in from
+// elsewhere: toolbox/osutils.cla (which declares it, line 96) is a
+// catalog file, only ever spliced when some program or runtime module
+// explicitly `include`s it -- unlike ui.cla/uidialogs.cla, which
+// runtime-ir-bake Task 2 made an UNCONDITIONAL manifest entry for every
+// native build (clarusc/drive.cla, `neededMods.add("ui.cla")` outside
+// any program-shape check), so there is no guarantee osutils.cla is
+// present to name. ParamText/Alert (below, in nat_CorePanic) are called
+// as ui.cla's OWN `UiParamText`/`UiAlert` directly, NOT duplicated here
+// -- ui.cla IS one of those unconditionally-spliced modules (confirmed:
+// even a plainly non-UI fixture like testdata/cg68k/smoke.cla still
+// includes it), so native.cla naming its externs is exactly as safe as
+// this same function already naming ui.cla's `UiTestScript()` a few
+// lines below -- no cross-module risk, and no reason to hand-duplicate
+// two more trap declarations verbatim.
+// Trap word verified against the SAME source toolbox/osutils.cla
+// already cites: NatSysBeep matches toolbox/osutils.cla:96's own
+// `external func SysBeep(duration: word) = trap 0xA9C8` (Sound.h,
+// ONEWORDINLINE(0xA9C8), no `#pragma parameter` -> bit 11 SET
+// (0xA9C8 & 0x0800 != 0) -> pascal, stack arg, no `reg`), copied
+// verbatim.
 external func NatSysBeep(duration: word) = trap 0xA9C8
-external func NatParamText(param0: ptr, param1: ptr, param2: ptr, param3: ptr) = trap 0xA98B
-external func NatUiAlert(alertId: word, modalFilter: ptr): word = trap 0xA985
 
 // ---- module state (all below-A5 globals -- zeroed by startup's own
 // zero loop before natInit ever runs, so natOpened/natDone/natRef/
@@ -596,32 +589,48 @@ func natQuit(code: int) {
 // natQuit's own buffered-log trailer, which a crash between panic and
 // quit never gets to run). Two independent fixes, both below:
 //
-//   1. The trace line now goes out IMMEDIATELY, via natAlert, not
-//      buffered via `log`/natLog. Byte rendering is unchanged (natAlert
-//      shares natCrLf's own CR->LF + trailing-LF renderer with natLog --
-//      only the buffered-vs-immediate timing differs) -- the string-
-//      >ptr plumbing `log(full)` used to get for free (cg68k.cla's ILog
-//      arm marshals a `string` argument BY ADDRESS) isn't available for
-//      natAlert (a plain intra-module function call, not a builtin), so
-//      this hand-copies `full`'s bytes into natPanicBuf (a preallocated
-//      Str255-shaped scratch block, natInit) via ordinary `string`
-//      indexing (`full[i]`/`full.length` -- no address-of needed, no
-//      allocation: reads `docs/clarus-language-reference.md`'s own
-//      "Strings" section) before calling `natAlert(natPanicBuf)`. This
-//      is a deliberate departure from `log(full)`'s own zero-copy path,
-//      not a novel one: rtUiAlertMsg (uidialogs.cla) already builds its
-//      own trace copy the same char-by-char way, just from a `ptr`
-//      source instead of a `string` one.
+//   1. The trace line now ALSO goes out IMMEDIATELY, via natAlert, in
+//      ADDITION TO (not instead of) the pre-existing buffered `natLog`
+//      write. Fix round 1 (review C1): an earlier version of this
+//      function replaced the natLog call outright, which moved the
+//      message from the `log` field to the `out` field of the capture
+//      protocol `internal/mactest/mac_test.go`'s parseCapture splits at
+//      natQuit's own "##CLARUS-EXIT##"/"##CLARUS-LOG##" markers --
+//      `natAlert` writes+flushes BEFORE those markers exist (`out`),
+//      while `natLog`'s buffer is only flushed by natQuit AFTER them
+//      (`log`). `TestRunErrOn68k` (internal/mactest/native_test.go)
+//      asserts the panic text against `log`, matching the ORIGINAL
+//      buffered-only behavior; dropping the natLog call broke it
+//      (reproduced: "log \"\" missing \"array index out of range\"").
+//      Dual-writing keeps `log`'s own content byte-identical to before
+//      (same natCrLf rendering, same final bytes, just still buffered)
+//      while ALSO getting the crash-survival copy into `out` this task
+//      exists for -- the small duplication (the line appears twice in
+//      the total capture, once immediate/once buffered) is the accepted
+//      cost of not touching the test/goldens' own field expectations.
+//      Byte rendering is unchanged either way (natAlert and natLog
+//      share natCrLf's own CR->LF + trailing-LF renderer) -- the
+//      string->ptr plumbing `log(full)` used to get for free
+//      (cg68k.cla's ILog arm marshals a `string` argument BY ADDRESS)
+//      isn't available for natAlert (a plain intra-module function
+//      call, not a builtin), so this hand-copies `full`'s bytes into
+//      natPanicBuf (a preallocated Str255-shaped scratch block,
+//      natInit) via ordinary `string` indexing (`full[i]`/`full.length`
+//      -- no address-of needed, no allocation: reads
+//      `docs/clarus-language-reference.md`'s own "Strings" section)
+//      once, then feeds the SAME natPanicBuf to both natAlert (immediate)
+//      and natLog (buffered).
 //   2. When a UI is up and this run is NOT scripted, SysBeep + a
 //      plain-OK ALRT 128 (runtime/mac/alert.r) showing the same
 //      message, THEN natQuit as before. The gate reads TWO already-
 //      existing signals rather than inventing a new one:
 //        - natQdInited (this file's own global, set by
-//          nat_UiMacInitToolbox below -- true only once a UI program's
-//          own rtUiStartup has actually run InitWindows/InitMenus/
-//          InitDialogs/etc; never true for a non-UI program, since
-//          rtUiStartup is only ever called for one, and never true for
-//          a panic that fires before that call, e.g. during natInit).
+//          nat_UiMacInitToolbox below once EVERY Toolbox manager
+//          UiAlert/UiParamText depend on has actually initialized --
+//          never true for a non-UI program, since rtUiStartup is only
+//          ever called for one, and never true for a panic that fires
+//          before that point, e.g. during natInit or earlier in
+//          rtUiStartup itself).
 //        - `peekb(UiTestScript()) == 0` -- ui.cla's own "not a scripted
 //          build" test (ui.cla:1437/2550's own identical check), called
 //          directly: ui.cla is spliced into EVERY native build now
@@ -630,15 +639,16 @@ func natQuit(code: int) {
 //          non-UI fixture like testdata/cg68k/smoke.cla still includes
 //          runtime/clarus/ui.cla), so this is an ordinary, always-
 //          resolvable call from native.cla, no new cross-module
-//          machinery needed.
-//      Deliberately NOT routed through `alert(...)`/rtUiAlertMsg (see
-//      NatSysBeep/NatParamText/NatUiAlert's own trap-declaration
-//      comment above for why): that path allocates a `text`
-//      (rtTextNew) to build its trace copy -- unsafe on a path that
-//      must survive an out-of-memory panic without touching the Clarus
-//      allocator again. natPanicBuf/natEmptyStr (natInit) are
-//      NewPtrCLEAR'd once, long before any panic, so nothing in this
-//      whole function allocates.
+//          machinery needed. The SAME reasoning lets this function call
+//          ui.cla's own `UiParamText`/`UiAlert` directly a few lines
+//          below, instead of hand-duplicating trap declarations for
+//          them (see NatSysBeep's own trap-declaration comment above).
+//      Deliberately NOT routed through `alert(...)`/rtUiAlertMsg: that
+//      path allocates a `text` (rtTextNew) to build its trace copy --
+//      unsafe on a path that must survive an out-of-memory panic
+//      without touching the Clarus allocator again. natPanicBuf/
+//      natEmptyStr (natInit) are NewPtrCLEAR'd once, long before any
+//      panic, so nothing in this whole function allocates.
 func nat_CorePanic(msg: string) {
     var full: string
     var n: int
@@ -654,10 +664,11 @@ func nat_CorePanic(msg: string) {
         i = i + 1
     }
     natAlert(natPanicBuf)
+    natLog(natPanicBuf)
     if natQdInited and peekb(UiTestScript()) == 0 {
         NatSysBeep(30)
-        NatParamText(natPanicBuf, natEmptyStr, natEmptyStr, natEmptyStr)
-        NatUiAlert(128, ptr(0))
+        UiParamText(natPanicBuf, natEmptyStr, natEmptyStr, natEmptyStr)
+        UiAlert(128, ptr(0))
     }
     natQuit(3)
 }
@@ -1393,11 +1404,19 @@ external func NatMoreMasters() = trap 0xA036
 // own next checkpoint -- consistent with a master-pointer exhaustion
 // stall/hang deep inside the Menu Manager's own region allocation, not a
 // codegen/calling-convention bug.
+// natQdInited (attempt-abort Task 9, fix round 1: review M1) is set TRUE
+// only after NatInitDialogs -- not on entry -- so nat_CorePanic's own
+// beep+alert gate (native.cla, above) can never read it as true before
+// the Dialog Manager (which UiParamText/UiAlert need) has actually
+// initialized. The `if natQdInited { return }` guard above
+// still reads it as the ordinary once-only idempotency check (this
+// function has exactly one caller, rtUiStartup, so re-entrancy mid-init
+// never happens in practice); NatInitCursor runs after the flag flips
+// since cursor state has no bearing on Alert()'s own safety.
 func nat_UiMacInitToolbox() {
     if natQdInited {
         return
     }
-    natQdInited = true
     natQdGlobals = NatNewPtr(206)
     NatInitGraf(natQdGlobals + 202)
     NatInitFonts()
@@ -1408,6 +1427,7 @@ func nat_UiMacInitToolbox() {
     NatMoreMasters()
     NatTEInit()
     NatInitDialogs(ptr(0))
+    natQdInited = true
     NatInitCursor()
 }
 

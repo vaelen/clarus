@@ -5130,7 +5130,7 @@ LBL_105:
         MOVE.L D0,-(A7)
         MOVE.L #1903520116,D0
         MOVE.L D0,-(A7)
-        LEA 1514(A5),A0
+        LEA 1570(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -5148,7 +5148,7 @@ LBL_105:
         MOVE.L D0,-(A7)
         MOVE.L #1868656752,D0
         MOVE.L D0,-(A7)
-        LEA 1570(A5),A0
+        LEA 1578(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -11126,6 +11126,10 @@ LBL_729:
         MOVE.L D0,-(A7)
         BSR.W LBL_158
         ADDQ.L #4,A7
+        MOVE.L -190(A5),D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_159
+        ADDQ.L #4,A7
         CLR.L D0
         MOVE.B -466(A5),D0
         TST.L D0
@@ -11157,13 +11161,13 @@ LBL_731:
         MOVE.L D0,-(A7)
         MOVE.L -194(A5),D0
         MOVE.L D0,-(A7)
-        DC.W $A98B  ; NatParamText
+        DC.W $A98B  ; UiParamText
         CLR.W -(A7)
         MOVE.L #128,D0
         MOVE.W D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        DC.W $A985  ; NatUiAlert
+        DC.W $A985  ; UiAlert
         MOVE.W (A7)+,D0
         EXT.L D0
 LBL_732:
@@ -12244,8 +12248,6 @@ LBL_176:
         BEQ.W LBL_780
         BRA.W LBL_779
 LBL_780:
-        MOVEQ #1,D0
-        MOVE.B D0,-466(A5)
         MOVE.L #206,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
@@ -12267,6 +12269,8 @@ LBL_780:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
         DC.W $A97B  ; NatInitDialogs
+        MOVEQ #1,D0
+        MOVE.B D0,-466(A5)
         DC.W $A850  ; NatInitCursor
 LBL_779:
         UNLK A6
@@ -12430,21 +12434,20 @@ LBL_183:
 LBL_788:
         UNLK A6
         RTS
-        ; func clar_cb_aeQuitHandler (JT slot 185) -- pascal callback glue for aeQuitHandler
+        ; func clar_cb_rtUiScrollbarAction (JT slot 185) -- pascal callback glue for rtUiScrollbarAction
 LBL_184:
         LINK A6,#0
-        ;   theAppleEvent : 16(A6)  pascal size 4
-        MOVE.L 16(A6),-(A7)
-        ;   reply : 12(A6)  pascal size 4
-        MOVE.L 12(A6),-(A7)
-        ;   handlerRefcon : 8(A6)  pascal size 4
-        MOVE.L 8(A6),-(A7)
-        BSR.W LBL_103
-        ADDA.W #12,A7
-        MOVE.W D0,20(A6)
+        ;   ctrl : 10(A6)  pascal size 4
+        MOVE.L 10(A6),-(A7)
+        ;   part : 8(A6)  pascal size 2
+        MOVE.W 8(A6),D0
+        EXT.L D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_124
+        ADDQ.L #8,A7
         UNLK A6
         MOVE.L (A7)+,A0
-        ADDA.W #12,A7
+        ADDQ.L #6,A7
         JMP (A0)
 LBL_222:
         ; cg_mul32: D1=left * D0=right -> D0 (32x32->32, MULU partial products)

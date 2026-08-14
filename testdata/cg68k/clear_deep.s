@@ -75,7 +75,7 @@ LBL_225:
         BSR.W LBL_224
         BSR.W LBL_179
         ; entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)
-        JSR 1674(A5)
+        JSR 1682(A5)
         BSR.W LBL_222
         CLR.L -(A7)
         BSR.W LBL_182
@@ -5952,7 +5952,7 @@ LBL_502:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1682(A5)
+        JSR 1690(A5)
         ADDA.W #20,A7
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
@@ -5969,7 +5969,7 @@ LBL_502:
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1714(A5)
+        JSR 1722(A5)
         ADDQ.L #8,A7
 LBL_504:
         MOVEQ #0,D0
@@ -6220,7 +6220,7 @@ LBL_513:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1682(A5)
+        JSR 1690(A5)
         ADDA.W #20,A7
         MOVE.L -12(A6),D0
         MOVEA.L D0,A0
@@ -6309,7 +6309,7 @@ LBL_518:
 LBL_517:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        BSR.W LBL_190
+        JSR 1634(A5)
         ADDQ.L #4,A7
 LBL_515:
         UNLK A6
@@ -8119,7 +8119,7 @@ LBL_143:
         DC.W $A8A3  ; UiEraseRect
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1722(A5)
+        JSR 1730(A5)
         ADDQ.L #4,A7
         MOVE.L D0,-28(A6)
         MOVE.L -28(A6),D0
@@ -10262,7 +10262,7 @@ LBL_157:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1682(A5)
+        JSR 1690(A5)
         ADDA.W #20,A7
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
@@ -12342,6 +12342,10 @@ LBL_781:
         MOVE.L D0,-(A7)
         BSR.W LBL_180
         ADDQ.L #4,A7
+        MOVE.L -190(A5),D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_181
+        ADDQ.L #4,A7
         CLR.L D0
         MOVE.B -466(A5),D0
         TST.L D0
@@ -12373,13 +12377,13 @@ LBL_783:
         MOVE.L D0,-(A7)
         MOVE.L -194(A5),D0
         MOVE.L D0,-(A7)
-        DC.W $A98B  ; NatParamText
+        DC.W $A98B  ; UiParamText
         CLR.W -(A7)
         MOVE.L #128,D0
         MOVE.W D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        DC.W $A985  ; NatUiAlert
+        DC.W $A985  ; UiAlert
         MOVE.W (A7)+,D0
         EXT.L D0
 LBL_784:
@@ -12509,14 +12513,10 @@ LBL_189:
 LBL_792:
         UNLK A6
         RTS
-        ; func nat_UiRtQuit  (JT slot 191)
-        ;   param code : 8(A6)  size 4
+        ; func clar_ui_fire_launchdoc  (JT slot 191)
+        ;   param path : 8(A6)  size 4
 LBL_190:
         LINK A6,#-8296
-        MOVE.L 8(A6),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_182
-        ADDQ.L #4,A7
 LBL_793:
         UNLK A6
         RTS

@@ -9306,6 +9306,10 @@ LBL_713:
         MOVE.L D0,-(A7)
         BSR.W LBL_133
         ADDQ.L #4,A7
+        MOVE.L -190(A5),D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_134
+        ADDQ.L #4,A7
         CLR.L D0
         MOVE.B -466(A5),D0
         TST.L D0
@@ -9337,13 +9341,13 @@ LBL_715:
         MOVE.L D0,-(A7)
         MOVE.L -194(A5),D0
         MOVE.L D0,-(A7)
-        DC.W $A98B  ; NatParamText
+        DC.W $A98B  ; UiParamText
         CLR.W -(A7)
         MOVE.L #128,D0
         MOVE.W D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        DC.W $A985  ; NatUiAlert
+        DC.W $A985  ; UiAlert
         MOVE.W (A7)+,D0
         EXT.L D0
 LBL_716:
@@ -10761,8 +10765,6 @@ LBL_152:
         BEQ.W LBL_774
         BRA.W LBL_773
 LBL_774:
-        MOVEQ #1,D0
-        MOVE.B D0,-466(A5)
         MOVE.L #206,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
@@ -10784,6 +10786,8 @@ LBL_774:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
         DC.W $A97B  ; NatInitDialogs
+        MOVEQ #1,D0
+        MOVE.B D0,-466(A5)
         DC.W $A850  ; NatInitCursor
 LBL_773:
         UNLK A6
