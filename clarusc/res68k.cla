@@ -77,12 +77,20 @@ func app68DitlItem(out: text, top: int, left: int, bottom: int, right: int, type
 // alert, "^0" ParamText slot) and ALRT 130 (askSaveChanges's three-way
 // Save/Don't Save/Cancel confirmation) DITLs -- byte-for-byte, rects and
 // all, transcribed straight from alert.r's own resource declarations.
+//
+// DITL 128's OK button rect was {120,360,140,420} (attempt-abort Task 10,
+// field-reported 2026-08-14): ALRT 128's inner frame ({40,40,190,460}) is
+// 420x150, so right=420 sat flush on the frame's own right edge, and the
+// Dialog Manager's default-button ring (drawn ~4px OUTSIDE the item rect)
+// ran off the dialog. Moved to {117,347,137,407} -- a 13px inset from both
+// the right (420) and bottom (150) inner edges, standard 20-tall x60-wide
+// button -- so the ring (411/141) stays inside.
 func app68BuildDitl128(): text {
     var out: text
 
     out = ""
     app68PutWord(out, 1) // 2 items - 1
-    app68DitlItem(out, 120, 360, 140, 420, app68DitlTypeButton, toText("OK"))
+    app68DitlItem(out, 117, 347, 137, 407, app68DitlTypeButton, toText("OK"))
     app68DitlItem(out, 10, 20, 110, 420, app68DitlTypeStaticText | app68DitlDisabled, toText("^0"))
     return out
 }

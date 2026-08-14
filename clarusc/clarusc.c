@@ -38880,7 +38880,7 @@ static rt_text * clar_fn_app68BuildDitl128(void) {
     clar_fn_app68PutWord(cv_out, 1);
     rt_text * t2 = NULL;
     t2 = clar_fn_toText(&(clar_lit_1160));
-    clar_fn_app68DitlItem(cv_out, 120, 360, 140, 420, 4, t2);
+    clar_fn_app68DitlItem(cv_out, 117, 347, 137, 407, 4, t2);
     clar_fn_rtTextRelease(t2);
     rt_text * t3 = NULL;
     t3 = clar_fn_toText(&(clar_lit_1161));

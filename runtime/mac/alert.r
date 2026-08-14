@@ -7,9 +7,16 @@ resource 'ALRT' (128, purgeable) {
     alertPositionMainScreen
 };
 
+/* DITL 128's OK button rect was {120,360,140,420} (attempt-abort Task 10,
+   field-reported 2026-08-14): ALRT 128's inner frame above is 420x150
+   ({40,40,190,460}), so right=420 sat flush on the frame's own right edge,
+   and the Dialog Manager's default-button ring (drawn ~4px OUTSIDE the item
+   rect) ran off the dialog. Moved to {117,347,137,407} -- a 13px inset from
+   both the right (420) and bottom (150) inner edges, standard 20-tall x
+   60-wide button -- so the ring (411/141) stays inside. */
 resource 'DITL' (128, purgeable) {
     {
-        {120, 360, 140, 420}, Button { enabled, "OK" },
+        {117, 347, 137, 407}, Button { enabled, "OK" },
         {10, 20, 110, 420},  StaticText { disabled, "^0" }
     }
 };
