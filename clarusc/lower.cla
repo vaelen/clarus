@@ -6844,12 +6844,25 @@ func lowSynthUiDispatchers() {
 //     synthesis (lowerProgram's tail), so the interprocedural analysis
 //     sees the handler edge and narrows correctly.
 //
-// ponytail: an abort() that escapes the HANDLER BODY leaves the guard
-// set, so the handler stops firing for the rest of the run (the
-// persistent channel is unaffected -- it is written before the guard is
-// ever touched). Conservative, and the program is already unwinding when
-// it happens. Upgrade path if it ever bites: clear the guard from the
-// attempt-handler/top-level-default entry alongside the abort flag.
+// The guard needs no unwind-safe clear, and this is worth spelling out
+// because the obvious reading ("an abort escaping the handler skips
+// `infire = 0`, so the handler goes dormant") is WRONG here. This
+// dispatcher is built by newIRFunc, so its irFuncBail is -1 -- and BOTH
+// backends gate the post-call abort check on the CURRENT function having
+// a bail chain (cprint.cla's `if lowUsesAbort and fpCurFuncHasBail`,
+// cg68k.cla's `else if cgCurFuncHasBail and irFuncCanAbort(fi)` in
+// cgAbortCheckAfterCall). No check is emitted after the
+// handler_App_log(line) call above, so control ALWAYS falls through to
+// the clear; the abort is picked up one frame out, at the log() call
+// site's own check in the caller (which does have a bail chain).
+// Verified with a host probe: a handler that aborts on its 2nd
+// invocation still fires on the 3rd and 4th, guard clear, exit 0.
+//
+// Side effect worth knowing (semantically intended, not a defect): a
+// handler that can abort() marks this dispatcher canAbort, and through
+// it every function that calls log(), so lowComputeCanAbort's Task 6b
+// narrowing stops suppressing post-call checks in a diagnostics-heavy
+// program. Keep handlers abort-free where that check density matters.
 func lowSynthAppLog() {
     var guardName: int
     var lineT: int

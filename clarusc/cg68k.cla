@@ -12299,19 +12299,28 @@ func cg68ResourceParitySet(extraTypes: list of string, extraIds: list of int, ex
         extraDatas.add(app68BuildDitl130())
     }
 
+    // Both warning sites below use a BARE log(), no driveProgress twin
+    // (onlog phase): they used to write both, so a GUI front end saw the
+    // line on screen as well as on the persistent channel. Since
+    // `on App.log` exists, log() reaches both by itself -- macgui.cla's
+    // handler routes it into the Log window -- and driveProgress is
+    // itself just feProgress, i.e. log() again, so keeping the twin
+    // duplicated the line on BOTH channels. Same double-append class
+    // gcCompile's own bakeMsg fix removed. On the host CLI both calls
+    // already landed on stderr, so dropping one only removes a
+    // pre-existing duplicate there too; resparity_test.go's
+    // Contains-based assertion is satisfied by the surviving line.
     hasIcon = cgAppIconPath != ""
     iconBytes = ""
     if hasIcon {
         pbmRaw = ""
         if not file.readText(cgAppIconPath, pbmRaw) {
             log("warning: cannot read app icon " + cgAppIconPath + ": " + lastError.message + "; using default icon")
-            driveProgress("warning: cannot read app icon " + cgAppIconPath + ": " + lastError.message + "; using default icon")
             hasIcon = false
         } else {
             icnBytes = ""
             if not app68BuildIcnFamily(pbmRaw, iconBytes, icnBytes) {
                 log("warning: app icon " + cgAppIconPath + " is not a well-formed 32x32 P1/P4 PBM; using default icon")
-                driveProgress("warning: app icon " + cgAppIconPath + " is not a well-formed 32x32 P1/P4 PBM; using default icon")
                 hasIcon = false
                 iconBytes = ""
             }

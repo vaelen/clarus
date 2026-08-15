@@ -876,7 +876,7 @@ A Clarus program responds to application-level events through top-level event ha
 3. **It does not re-enter.** A `log(...)` called from inside the handler — directly or through anything the handler calls — still reaches the persistent channel, but does *not* fire the handler again. Nesting is impossible by construction, so a handler may log freely.
 4. **Only your own `log(...)` calls reach it.** The runtime's own writes to the same stream — the crash report a panic emits, the message an uncaught `abort` prints (Chapter 5), the Macintosh UI trace — never fire the handler. Neither does an unwinding program: no `log(...)` statement runs while an abort is propagating.
 
-An `abort(...)` raised inside the handler propagates out of the `log(...)` call site like an abort raised by any other call, and can be caught by an enclosing `attempt` (Chapter 5); an abort that escapes the handler that way leaves the subscription dormant for the rest of the run, though the persistent channel keeps every line regardless.
+An `abort(...)` raised inside the handler propagates out of the `log(...)` call site like an abort raised by any other call, and can be caught by an enclosing `attempt` (Chapter 5). The subscription survives it: later `log(...)` calls fire the handler as usual.
 
 The handler is how a program puts its own diagnostics somewhere a user can see them — a log window's `textview`, a file, a status line — without touching a single `log(...)` call site.
 
