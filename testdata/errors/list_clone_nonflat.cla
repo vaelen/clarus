@@ -1,0 +1,14 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// clir-load-perf phase (field-measured follow-on): list.clone() is
+// checker-restricted to a flat (no text/list/map anywhere) element type
+// -- the runtime side does one bulk BlockMoveData with no per-element
+// retain, which is only sound for a flat element. This fixture exercises
+// the rejection with a `list of text` receiver (checkListMethod's own
+// "clone" arm, clarusc/check.cla).
+func f() {
+    var l: list of text
+    var c: list of text
+    c = l.clone()
+}

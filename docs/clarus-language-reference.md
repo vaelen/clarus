@@ -328,6 +328,7 @@ A `list of T` is a growable sequence. List operations are:
 - `l[i]` — access element at index `i` (returns `T`)
 - `l.count` — number of elements (returns `int`)
 - `l.clear()` — remove all elements; `count` becomes 0, capacity is retained. `.clear()` releases the elements it discards. It is O(1) for scalar element types and O(n) for reference-bearing element types (the elements are released first)
+- `l.clone()` — return a new `list of T`, independent of `l`, holding a copy of every element (mutating the clone never affects `l`, and vice versa). Only legal when `T` is a *flat* type — no `text`, `list of`, or `map of` anywhere in it, recursively through record fields and fixed arrays (`int`/`bool`/`char`/`fixed`/enum/`string(n)`/`char[n]`/a record built only from those is fine). Cloning a non-flat element type is a check-time error: the clone is a single bulk copy of the backing store, which would alias a reference-typed element instead of copying it
 - `for x in l { … }` — iterate (see Chapter 5)
 
 Out-of-range indexing raises a runtime error, and so do `pop`, `shift`, `first`, and `last` on an empty list.

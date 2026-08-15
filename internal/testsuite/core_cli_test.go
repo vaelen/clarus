@@ -206,6 +206,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"ParamAliasGlobal", "ParamAliasHandle", "ParamBorrowChain", "ParamNestedCallArg", "ParamContainerElemArg",
 			"AbortCatch", "AbortDeep", "AbortNested", "AbortReabort", "AbortRelease",
 			"TextRange",
+			"ListClone",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

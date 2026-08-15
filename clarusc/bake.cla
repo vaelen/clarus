@@ -3764,269 +3764,38 @@ func bkLoadRtbake(buf: text, wantLane: int): bool {
 // Copy-on-install helpers (clir-load-perf Task 7, design B)
 // ================================================================
 //
-// One boring helper per element type -- Clarus has no generics, so this
-// is deliberately 26 near-identical `while` + `.add` loops rather than
-// anything clever. Every bkInstall* function below runs its pending
-// container through one of these instead of assigning it straight into
-// the live global: `text`/`list`/`map`/`intmap` are REFERENCE types
-// (the language reference's own Value and Reference Semantics section),
-// so the old `irExprs = bkLdIrExprs` shape aliased the two -- fine while
-// every compile re-parsed the bake from bytes, fatal
-// once bkParsedValid memoizes the parse (compile #1's user IR would be
-// appended into the pending arenas through the alias, and compile #2's
-// own irReset() would .clear() them outright before the install could
-// read them -- a total loss, not a subtle corruption).
+// One boring helper per element type that ISN'T a flat record -- Clarus
+// has no generics, so each of these remaining few is a small hand-rolled
+// deep copy rather than anything clever. Every bkInstall* function below
+// runs its pending container through one of these (or, for the flat-
+// record arenas `bkInstallArenas` itself installs, straight through the
+// list method `.clone()` -- clir-load-perf Task 13, below) instead of
+// assigning it straight into the live global: `text`/`list`/`map`/
+// `intmap` are REFERENCE types (the language reference's own Value and
+// Reference Semantics section), so the old `irExprs = bkLdIrExprs` shape
+// aliased the two -- fine while every compile re-parsed the bake from
+// bytes, fatal once bkParsedValid memoizes the parse (compile #1's user
+// IR would be appended into the pending arenas through the alias, and
+// compile #2's own irReset() would .clear() them outright before the
+// install could read them -- a total loss, not a subtle corruption).
 //
-// `dst.add(src[i])` copies a record BY VALUE (same section; verified
-// empirically by Task 6's audit probe), which is deep enough for every
-// arena here: all 25 record types below are int/bool/enum-field-only
-// EXCEPT Scope, whose `names: intmap of int` is a reference field and
-// gets its own deep copy (bkCopyListScope). FuncSig.params (`list of
-// int`) is deliberately NOT deep-copied -- it is built fresh at
-// construction (types.cla's newFuncSig, bake.cla's own loader) and no
-// `funcSigs[i].params` mutation site exists anywhere in clarusc/*.cla
-// (Task 6 audit, Step 3); a future writer of that field must revisit
-// this decision.
-
-func bkCopyListIRType(src: list of IRType): list of IRType {
-    var dst: list of IRType
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRStmt(src: list of IRStmt): list of IRStmt {
-    var dst: list of IRStmt
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRExpr(src: list of IRExpr): list of IRExpr {
-    var dst: list of IRExpr
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRLocal(src: list of IRLocal): list of IRLocal {
-    var dst: list of IRLocal
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRFunc(src: list of IRFunc): list of IRFunc {
-    var dst: list of IRFunc
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRGlobal(src: list of IRGlobal): list of IRGlobal {
-    var dst: list of IRGlobal
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRFieldSlot(src: list of IRFieldSlot): list of IRFieldSlot {
-    var dst: list of IRFieldSlot
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRRecordLayout(src: list of IRRecordLayout): list of IRRecordLayout {
-    var dst: list of IRRecordLayout
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIREnumMember(src: list of IREnumMember): list of IREnumMember {
-    var dst: list of IREnumMember
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIREnumLayout(src: list of IREnumLayout): list of IREnumLayout {
-    var dst: list of IREnumLayout
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRWidgetDesc(src: list of IRWidgetDesc): list of IRWidgetDesc {
-    var dst: list of IRWidgetDesc
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRColumnDesc(src: list of IRColumnDesc): list of IRColumnDesc {
-    var dst: list of IRColumnDesc
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRBindDesc(src: list of IRBindDesc): list of IRBindDesc {
-    var dst: list of IRBindDesc
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRWindowDesc(src: list of IRWindowDesc): list of IRWindowDesc {
-    var dst: list of IRWindowDesc
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRMenuItemDesc(src: list of IRMenuItemDesc): list of IRMenuItemDesc {
-    var dst: list of IRMenuItemDesc
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRMenuDesc(src: list of IRMenuDesc): list of IRMenuDesc {
-    var dst: list of IRMenuDesc
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRWinHandlers(src: list of IRWinHandlers): list of IRWinHandlers {
-    var dst: list of IRWinHandlers
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRWidgetHandlerEntry(src: list of IRWidgetHandlerEntry): list of IRWidgetHandlerEntry {
-    var dst: list of IRWidgetHandlerEntry
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIRMenuHandlerEntry(src: list of IRMenuHandlerEntry): list of IRMenuHandlerEntry {
-    var dst: list of IRMenuHandlerEntry
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListIREveryEntry(src: list of IREveryEntry): list of IREveryEntry {
-    var dst: list of IREveryEntry
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
+// Every record type in this file's arenas is int/bool/enum-field-only
+// (a flat, byte-copyable record -- verified empirically by Task 6's
+// audit probe) EXCEPT Scope, whose `names: intmap of int` is a
+// reference field and gets its own deep copy (bkCopyListScope) below,
+// and FuncSig, whose `params: list of int` is deliberately NOT
+// deep-copied -- it is built fresh at construction (types.cla's
+// newFuncSig, bake.cla's own loader) and no `funcSigs[i].params`
+// mutation site exists anywhere in clarusc/*.cla (Task 6 audit, Step
+// 3); a future writer of that field must revisit this decision. Both
+// stay hand-rolled loops -- checker-barred from `.clone()` by design
+// (Task 13's own "clone" arm, check.cla, restricts it to a flat element
+// type; a reference-typed field disqualifies both). Every OTHER record
+// arena that flowed through a `dst.add(src[i])` loop here used to live
+// in this file too, until Task 13 replaced each with a direct
+// `bkLdX.clone()` call at its own `bkInstallArenas` call site (field-
+// measured 4m21s/15706-guest-tick per-compile cost on real Mac II
+// hardware) and deleted the now-dead wrapper.
 
 func bkCopyListTypeInfo(src: list of TypeInfo): list of TypeInfo {
     var dst: list of TypeInfo
@@ -4078,18 +3847,6 @@ func bkCopyListFuncSig(src: list of FuncSig): list of FuncSig {
 
 func bkCopyListSymbol(src: list of Symbol): list of Symbol {
     var dst: list of Symbol
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListInt(src: list of int): list of int {
-    var dst: list of int
     var i: int
 
     i = 0
@@ -4363,22 +4120,37 @@ func bkInstallArenas(testapi: bool) {
     var truncStrLits: list of int
 
     // Every assignment in this function COPIES its pending container
-    // (clir-load-perf Task 7, design B -- see the bkCopyList* helpers
-    // above and bkParsedValid's own doc comment): ir.cla appends to,
-    // element-mutates, and finally .clear()s each of these arenas every
-    // compile, so aliasing them to the memoized parse would destroy it.
-    irTypes = bkCopyListIRType(bkLdIrTypes)
-    irStmts = bkCopyListIRStmt(bkLdIrStmts)
-    irExprs = bkCopyListIRExpr(bkLdIrExprs)
-    irLocals = bkCopyListIRLocal(bkLdIrLocals)
+    // (clir-load-perf Task 7, design B -- see bkParsedValid's own doc
+    // comment): ir.cla appends to, element-mutates, and finally
+    // .clear()s each of these arenas every compile, so aliasing them to
+    // the memoized parse would destroy it. Field measurement on real
+    // emulated Mac II hardware (post-Task-10 phase debt) clocked the
+    // per-element `.add()` loops this used to route through at 4m21s
+    // (15706 guest ticks) per compile -- every arena below is a FLAT
+    // record type (int/bool/enum fields only, ir.cla's own record
+    // definitions), so `.clone()`'s one-`BlockMoveData` bulk copy
+    // (list.cla) is exactly the fix, same as this phase's own C design's
+    // `textAt` replacing a per-byte append loop. `Scope`/`FuncSig` (each
+    // has a reference-typed field of their own -- `names`/`params`) and
+    // the two `intmap of int` pending maps just below keep their
+    // existing loop/deep-copy helpers -- `clone()` is checker-barred for
+    // a non-flat element type by design (see check.cla's own "clone"
+    // arm), and neither Scope nor FuncSig is installed by this function
+    // anyway (they're bkInstallCheckerSymbolsForTestapi's own arenas).
+    irTypes = bkLdIrTypes.clone()
+    irStmts = bkLdIrStmts.clone()
+    irExprs = bkLdIrExprs.clone()
+    irLocals = bkLdIrLocals.clone()
 
     // The non-testapi truncation loops already build FRESH lists (that
-    // is what truncFuncs/truncStrLits are), so only the testapi arm
-    // needs an explicit copy -- the two paths now agree that srcFuncs/
+    // is what truncFuncs/truncStrLits are) by copying only a PREFIX of
+    // the source -- not the whole-list copy `.clone()` does -- so they
+    // keep their own loops unchanged; only the testapi arm (a whole-list
+    // copy) becomes `.clone()`. The two paths still agree that srcFuncs/
     // srcStrLits never alias bkLdIrFuncs/bkLdIrStrLits.
     if testapi {
-        srcFuncs = bkCopyListIRFunc(bkLdIrFuncs)
-        srcStrLits = bkCopyListInt(bkLdIrStrLits)
+        srcFuncs = bkLdIrFuncs.clone()
+        srcStrLits = bkLdIrStrLits.clone()
     } else {
         i = 0
         while i < bkLdIrFuncs.count and i < bkLdBaseIrFuncsCount {
@@ -4418,33 +4190,36 @@ func bkInstallArenas(testapi: bool) {
     }
     irFuncIdxByName = filteredIdx
 
-    irCbGlueNames = bkCopyListInt(bkLdIrCbGlueNames)
-    irGlobals = bkCopyListIRGlobal(bkLdIrGlobals)
-    irFieldSlots = bkCopyListIRFieldSlot(bkLdIrFieldSlots)
-    irRecords = bkCopyListIRRecordLayout(bkLdIrRecords)
-    irEnumMembers = bkCopyListIREnumMember(bkLdIrEnumMembers)
-    irEnums = bkCopyListIREnumLayout(bkLdIrEnums)
-    irWidgetDescs = bkCopyListIRWidgetDesc(bkLdIrWidgetDescs)
-    irColumnDescs = bkCopyListIRColumnDesc(bkLdIrColumnDescs)
-    irBindDescs = bkCopyListIRBindDesc(bkLdIrBindDescs)
-    irWindowDescs = bkCopyListIRWindowDesc(bkLdIrWindowDescs)
-    irMenuItemDescs = bkCopyListIRMenuItemDesc(bkLdIrMenuItemDescs)
-    irMenuDescs = bkCopyListIRMenuDesc(bkLdIrMenuDescs)
-    irWinHandlers = bkCopyListIRWinHandlers(bkLdIrWinHandlers)
-    irWidgetHandlerEntries = bkCopyListIRWidgetHandlerEntry(bkLdIrWidgetHandlerEntries)
-    irMenuHandlerEntries = bkCopyListIRMenuHandlerEntry(bkLdIrMenuHandlerEntries)
-    irEveryEntries = bkCopyListIREveryEntry(bkLdIrEveryEntries)
+    irCbGlueNames = bkLdIrCbGlueNames.clone()
+    irGlobals = bkLdIrGlobals.clone()
+    irFieldSlots = bkLdIrFieldSlots.clone()
+    irRecords = bkLdIrRecords.clone()
+    irEnumMembers = bkLdIrEnumMembers.clone()
+    irEnums = bkLdIrEnums.clone()
+    irWidgetDescs = bkLdIrWidgetDescs.clone()
+    irColumnDescs = bkLdIrColumnDescs.clone()
+    irBindDescs = bkLdIrBindDescs.clone()
+    irWindowDescs = bkLdIrWindowDescs.clone()
+    irMenuItemDescs = bkLdIrMenuItemDescs.clone()
+    irMenuDescs = bkLdIrMenuDescs.clone()
+    irWinHandlers = bkLdIrWinHandlers.clone()
+    irWidgetHandlerEntries = bkLdIrWidgetHandlerEntries.clone()
+    irMenuHandlerEntries = bkLdIrMenuHandlerEntries.clone()
+    irEveryEntries = bkLdIrEveryEntries.clone()
     irStrLits = srcStrLits
-    irExternNames = bkCopyListInt(bkLdIrExternNames)
-    irExternRetTys = bkCopyListInt(bkLdIrExternRetTys)
-    irExternParamStart = bkCopyListInt(bkLdIrExternParamStart)
-    irExternParamCountArr = bkCopyListInt(bkLdIrExternParamCountArr)
-    irExternParamTys = bkCopyListInt(bkLdIrExternParamTys)
-    irExternTrapWords = bkCopyListInt(bkLdIrExternTrapWords)
-    irExternConvs = bkCopyListInt(bkLdIrExternConvs)
-    irExternSels = bkCopyListInt(bkLdIrExternSels)
-    irExternParamRegs = bkCopyListInt(bkLdIrExternParamRegs)
-    irExternRetRegs = bkCopyListInt(bkLdIrExternRetRegs)
+    irExternNames = bkLdIrExternNames.clone()
+    irExternRetTys = bkLdIrExternRetTys.clone()
+    irExternParamStart = bkLdIrExternParamStart.clone()
+    irExternParamCountArr = bkLdIrExternParamCountArr.clone()
+    irExternParamTys = bkLdIrExternParamTys.clone()
+    irExternTrapWords = bkLdIrExternTrapWords.clone()
+    irExternConvs = bkLdIrExternConvs.clone()
+    irExternSels = bkLdIrExternSels.clone()
+    irExternParamRegs = bkLdIrExternParamRegs.clone()
+    irExternRetRegs = bkLdIrExternRetRegs.clone()
+    // Unchanged: `intmap of int`, not a `list of T` -- clone() is a list
+    // method, so these two pending maps keep their existing deep-copy
+    // helper (out of this task's scope by design, see comment above).
     irLayoutNeededByName = bkCopyIntmapInt(bkLdIrLayoutNeededByName)
     irRcWalkNeededByName = bkCopyIntmapInt(bkLdIrRcWalkNeededByName)
 

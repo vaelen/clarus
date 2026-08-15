@@ -3104,6 +3104,22 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
         cpEmitRelease(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))
         fpEmit(freeVarBuf)
         return toText("")
+    } else if nm == IListClone() {
+        // clir-load-perf: no rt_core.inc legacy equivalent (brand new
+        // method, same as hashStep/intAt/stringAt/textAt above) -- routes
+        // unconditionally to clar_fn_rtListClone, no raw-C fallback branch.
+        // Mirrors ITextTextAt's own dst-allocation dance (births a fresh
+        // handle first, then the bulk-copy call) adapted to List: the
+        // element size (cpCType/sizeof) is the same constant
+        // cpDefaultInit's own KList arm already uses to birth a List.
+        // Legal with no per-element retain/release walk only because
+        // check.cla's own "clone" arm restricts this to a flat (no text/
+        // list/map anywhere) element type.
+        elemT = irtElem(irExprType(x))
+        t = fpNewTmp("rt_list *")
+        fpEmit(t + " = (rt_list *)clar_fn_rtListNew(sizeof(" + cpCType(elemT) + "));")
+        fpEmit("clar_fn_rtListClone((void*)" + t + ", (void*)" + fpExpr(a0) + ", sizeof(" + cpCType(elemT) + "));")
+        return t
 
     // ---- map ----
     }

@@ -1229,6 +1229,7 @@ func irReset() {
     iListClearIdx = -1
     iListClearDeepIdx = -1
     iListFreeVarIdx = -1
+    iListCloneIdx = -1
     iMapSetIdx = -1
     iMapSetRetainIdx = -1
     iMapGetIdx = -1
@@ -3688,6 +3689,20 @@ func IListFreeVar(): int {
         iListFreeVarIdx = intern("list_free_var")
     }
     return iListFreeVarIdx
+}
+
+// IListClone (clir-load-perf): `l.clone()` -- a fresh whole-list copy via
+// ONE bulk BlockMoveData, legal only for a flat (no text/list/map anywhere,
+// checker-enforced) element type -- see rtListClone's own doc comment,
+// runtime/clarus/list.cla. Same memoized-intern shape as every other list
+// intrinsic accessor above.
+var iListCloneIdx: int = -1
+
+func IListClone(): int {
+    if iListCloneIdx == -1 {
+        iListCloneIdx = intern("list_clone")
+    }
+    return iListCloneIdx
 }
 
 // -- map (string keys; value size known at creation) --

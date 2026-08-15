@@ -1,0 +1,1 @@
+../../testdata/errors/list_clone_nonflat.cla:13:10: clone: element type has reference fields; copy element-by-element instead

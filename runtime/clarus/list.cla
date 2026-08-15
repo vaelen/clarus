@@ -445,3 +445,46 @@ func rtListClear(l: ptr) {
     rl = RtList(l)
     rl.count = 0
 }
+
+// rtListClone (clir-load-perf: `l.clone()`, IListClone intrinsic) -- a
+// fresh whole-list copy of src's elements as ONE ListBlockMoveData, legal
+// precisely because the checker (check.cla's own "clone" arm,
+// formForFieldIsByValue) restricts clone() to a flat (no text/list/map
+// anywhere) element type: no element can own a handle, so no per-element
+// retain is ever needed here, unlike every other List call in this file
+// that touches a whole population (rtListRelease's element-release walk
+// callers, IListClearDeep). Mirrors rtTextTextAt's own dst-out-param ARC
+// convention exactly (text.cla): dst is caller-allocated (a fresh empty
+// list from rtListNew, cprint.cla's/cg68k's own clone arms), grown to
+// hold src's count elements, BOTH master pointers re-derived AFTER the
+// grow (relocation discipline, module header comment above -- growing
+// dst's own handle can move ANY relocatable block, including src's).
+// elemSize is passed explicitly by the caller (rather than read back off
+// src.elemsize/dst.elemsize, both already correct at this point) --
+// same "the call site already knows this constant" convention
+// rtTextTextAt's own `n` argument uses. Empty src does no copy at all
+// (dst.count set to 0 and returns immediately) -- rtListGrow(dst, 0)
+// would be a no-op anyway, but this skips the ListBlockMoveData call
+// entirely rather than moving zero bytes.
+func rtListClone(dst: ptr, src: ptr, elemSize: int) {
+    var rs: RtList
+    var rd: RtList
+    var n: int
+    var srcmp: ptr
+    var dstmp: ptr
+
+    rs = RtList(src)
+    n = rs.count
+    if n == 0 {
+        rd = RtList(dst)
+        rd.count = 0
+        return
+    }
+    rtListGrow(dst, n)
+    rs = RtList(src)
+    rd = RtList(dst)
+    srcmp = ListHandleDeref(rs.data)
+    dstmp = ListHandleDeref(rd.data)
+    ListBlockMoveData(srcmp, dstmp, n * elemSize)
+    rd.count = n
+}

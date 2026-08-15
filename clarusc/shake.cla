@@ -649,6 +649,9 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtListClear"))
     } else if nm == IListFreeVar() {
         shakeMarkAndEnqueue(intern("rtListRelease"))
+    } else if nm == IListClone() {
+        shakeMarkAndEnqueue(intern("rtListNew"))
+        shakeMarkAndEnqueue(intern("rtListClone"))
     // IListSet/IListSetRetain: no clar_fn_ call of their own (a raw
     // rt_list_at write plus fpRetainVal/fpReleaseVal on the old/new
     // element) -- fully covered by the always-rooted core above.

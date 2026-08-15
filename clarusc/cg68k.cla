@@ -241,6 +241,7 @@ var rnIntMapSet: int
 var rnIntMapValAt: int
 var rnListAt: int
 var rnListClear: int
+var rnListClone: int
 var rnListCount: int
 var rnListFirst: int
 var rnListLast: int
@@ -379,6 +380,7 @@ func rnInit() {
     rnIntMapValAt = intern("rtIntMapValAt")
     rnListAt = intern("rtListAt")
     rnListClear = intern("rtListClear")
+    rnListClone = intern("rtListClone")
     rnListCount = intern("rtListCount")
     rnListFirst = intern("rtListFirst")
     rnListLast = intern("rtListLast")
@@ -7208,6 +7210,44 @@ func cgIntrListSet(e: int, retainVariant: bool) {
     cgCopyElemFrom(6, vOff, elemT)
 }
 
+// cgIntrListClone (clir-load-perf) mirrors cgIntrTextTextAt's own
+// dst-allocation dance exactly, adapted to List's own two-argument birth
+// (rtListNew needs an elemsize, unlike rtTextNew's zero-arg form -- same
+// elemsize constant cgDefaultInitAt's own KList arm computes via
+// cgSizeOf(irtElem(t)), the backend's single source of truth for a
+// container's element storage size, THE layout-consistency rule this
+// file's own header note establishes between birth and addressing). e's
+// own result type IS the receiver's list type (check.cla's "clone" arm
+// returns the receiver's own type unchanged), so no separate result-type
+// lookup is needed. Legal with no per-element retain/release here only
+// because check.cla's own "clone" arm already restricted this to a flat
+// (no text/list/map anywhere) element type.
+func cgIntrListClone(e: int) {
+    var a0e: int
+    var t: int
+    var elemSize: int
+    var off: int
+
+    a0e = irIntrArgsHead(e)
+    t = irExprType(e)
+    elemSize = cgSizeOf(irtElem(t))
+    off = cgNewTrackedTmp(t)
+    a68Emit(OpMove, 4, AmImm, 0, elemSize, AmPreDec, 7, 0)
+    cgJsrByName(rnListNew)
+    cgCleanupStack(4)
+    cgStoreD0At(6, off, t)
+
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, elemSize, AmPreDec, 7, 0)
+    cgJsrByName(rnListClone)
+    cgCleanupStack(12)
+    cgLastTrackedOff = off
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+}
+
 // cgIntrMapSet mirrors fpIntrCall's IMapSet/IMapSetRetain arm
 // (cprint.cla:2120-2163): the upsert guard (cgMapReleaseGuard) releases
 // whatever k currently holds BEFORE the new value is written; the new
@@ -8107,6 +8147,10 @@ func cgIntr(e: int) {
     }
     if nm == IListFreeVar() {
         cgReleaseExpr(irIntrArgsHead(e))
+        return
+    }
+    if nm == IListClone() {
+        cgIntrListClone(e)
         return
     }
 

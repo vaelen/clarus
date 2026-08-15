@@ -2338,6 +2338,32 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
       fixtures, now dead concepts at the method level) were deleted and
       replaced by one `stringat_oor` fixture pinning the 1-byte
       payload-overrun panic.
+  13. Field measurement on real emulated Mac II hardware (post-phase,
+      same session): `bkInstallArenas`' remaining per-element `.add()`
+      copy loops (installing the memoized-parse CLIR arenas into live
+      compiler state every compile, design B's own copy-on-install fix,
+      Task 7 above) cost **4m21s (15706 guest ticks)** per compile — a
+      hot spot this phase's own bulk-`text`-method work never touched
+      (design C target was the byte-*parse*, not the post-parse
+      *install*). Fixed by a fifth bulk method through the identical
+      pipeline, `list of T`'s own `l.clone()` (Chapter 3): one
+      `BlockMoveData` bulk copy, checker-restricted to flat (no `text`/
+      `list`/`map` anywhere) element types since it does no per-element
+      retain, reusing `formForFieldIsByValue` (check.cla, the existing
+      `form for T` flat-copy predicate) rather than a new type-walk.
+      Every flat IR arena `bkInstallArenas` installs (`irTypes`,
+      `irStmts`, `irExprs`, `irLocals`, `irFuncs`(testapi)/`irStrLits`
+      (testapi), `irCbGlueNames`, `irGlobals`, `irFieldSlots`,
+      `irRecords`, `irEnumMembers`, `irEnums`, the ten UI-desc/handler
+      arenas, and the ten extern-registry `list of int` parallel
+      arrays) switched to `.clone()`; the `Scope`/`FuncSig` lists (each
+      has a reference-typed field — `names`/`params`) and the two
+      `intmap of int` pending-state maps (`irLayoutNeededByName`/
+      `irRcWalkNeededByName`) keep their existing loop/deep-copy
+      helpers, checker-barred from `clone()` by design. `bkInstallPool`/
+      `bkInstallTypeArenaPrefix`/`bkInstallFieldInfo`/
+      `bkInstallCheckerSymbolsForTestapi`'s own analogous loops are OUT
+      OF SCOPE for this task (not `bkInstallArenas`) and untouched.
 
   **Measured results** (Mini vMac / Mac Plus, 8MHz 68000, 60.15 guest
   ticks/s, N=65536-byte probe buffer;

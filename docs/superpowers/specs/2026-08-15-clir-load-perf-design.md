@@ -186,6 +186,16 @@ recoverable from the result):
 | `t.stringAt(pos): string` | 4-byte BE length prefix + bytes at `pos`; caller advances `4 + result.length` (landed as a 1-byte Pascal-style prefix — post-review convention alignment, matching `string`'s own Str255 layout; caller advances `1 + result.length`; the CLIR pool's own 4-byte BE wire field is unchanged, `bake.cla`'s `bkGetStr` adapts via `stringAt(pos + 3)`) |
 | `t.textAt(pos, n): text` | fresh `text` holding bytes `[pos, pos+n)` |
 
+Follow-on (same phase, field-measured after this design shipped):
+`list.clone()` — a fifth bulk method, `list of T`-side rather than
+`text`-side, through this exact same pipeline. `bkInstallArenas`'
+per-element `.add()` copy loops (installing the parsed CLIR's IR arenas
+into the live compiler state every compile) measured at 4m21s/15706
+guest ticks on real Mac II hardware; `l.clone()` replaces them with one
+`BlockMoveData`, restricted by the checker to flat (no `text`/`list`/
+`map` anywhere) element types since it does no per-element retain. See
+ROADMAP's clir-load-perf task ledger for the landed task number.
+
 Contracts: STRICT out-of-range panic, same as `t[i]`
 (`rtTextIndex`'s documented convention) — a read that would run past
 `t.length` panics; `stringAt` additionally panics if the decoded length

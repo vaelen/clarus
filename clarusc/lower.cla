@@ -1539,6 +1539,12 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
             return newIRIntr(IListClearDeep(), recv, ty)
         }
         return newIRIntr(IListClear(), recv, ty)
+    } else if nm == "clone" {
+        // clir-load-perf: arity 0, same shape as count/clear above --
+        // check.cla's own "clone" arm already restricted the element type
+        // to flat (no text/list/map anywhere), so no birth/retain
+        // classification is needed here the way push/unshift/clear need.
+        return newIRIntr(IListClone(), recv, ty)
     }
     lowUnsupported("list method " + nm)
     return -1

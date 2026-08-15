@@ -1741,6 +1741,26 @@ func checkListMethod(lt: int, sel: int, argsHead: int): int {
         }
         return VoidT
     }
+    if name == "clone" {
+        // clir-load-perf: legal only for a flat element type (no text/
+        // list/map anywhere, recursively through record fields/fixed
+        // arrays) -- the runtime side (rtListClone, list.cla) copies the
+        // whole backing store with ONE BlockMoveData and does no
+        // per-element retain, which is only sound when no element (or
+        // nested field) is itself a reference type. Reuses
+        // formForFieldIsByValue (below, Ch10's `form for T` byte-copy
+        // restriction) rather than a fresh type-walk -- exactly the same
+        // question ("can this type be copied as flat bytes"), already
+        // answered once and kept in sync with the checker's own record-
+        // field layout.
+        if argCount != 0 {
+            emitDiag(exprLine(sel), exprCol(sel), "clone takes no arguments")
+        }
+        if not formForFieldIsByValue(elem) {
+            emitDiag(exprLine(sel), exprCol(sel), "clone: element type has reference fields; copy element-by-element instead")
+        }
+        return lt
+    }
     emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
     return InvalidT
 }
@@ -2945,7 +2965,10 @@ func checkFuncBody(d: int) {
 // map, or a nested record/array containing one) would alias instead of
 // copy. Recurses into TyArr (element) and TyRec (fields, via
 // recordFieldsHead) to catch a nested handle anywhere in the type;
-// everything else (int/bool/fixed/char/enum/str) is by-value.
+// everything else (int/bool/fixed/char/enum/str) is by-value. Also reused
+// by checkListMethod's own "clone" arm above (clir-load-perf): the exact
+// same question ("can this type be copied as flat bytes"), just asked of
+// a list's element type instead of a form record's field type.
 func formForFieldIsByValue(t: int): bool {
     var fh: int
 

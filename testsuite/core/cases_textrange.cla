@@ -7,6 +7,11 @@
 // writing this) -- follows the ordinary caseX(): TestResult + tkFail/
 // tkPass shape every other cases_*.cla file uses (e.g.
 // cases_datetime.cla).
+//
+// caseListClone (added later, same phase): `list of T`'s own bulk method,
+// `l.clone()` -- through this exact same intrinsic pipeline, so it lives
+// here too rather than in a new file (avoids the runner/coresuite-count
+// file-list churn a new cases_*.cla file would need).
 
 func caseTextRange(): TestResult {
     var t: text
@@ -78,4 +83,80 @@ func caseTextRange(): TestResult {
         return tkFail("TextRange", "textAt empty wrong")
     }
     return tkPass("TextRange")
+}
+
+// caseListClone (clir-load-perf, list.clone() field-measured follow-on):
+// bulk block-copy `list of T`, restricted by the checker to flat element
+// types -- exercises a `list of int`, an empty list, and a `list of`
+// caseRecPerson (cases_rec.cla, a flat nested record: string(31)/int/
+// enum/nested-record-of-string(31)+int, no text/list/map anywhere) to
+// prove the checker's flatness gate accepts a record element, not just a
+// scalar one.
+func caseListClone(): TestResult {
+    var src: list of int
+    var dst: list of int
+    var empty: list of int
+    var emptyClone: list of int
+    var people: list of caseRecPerson
+    var peopleClone: list of caseRecPerson
+    var p: caseRecPerson
+
+    // list of int: values equal, then independence (mutating the clone
+    // must not touch the source, and vice versa).
+    src.add(10)
+    src.add(20)
+    src.add(30)
+    dst = src.clone()
+    if dst.count != 3 {
+        return tkFail("ListClone", "int clone count wrong")
+    }
+    if dst[0] != 10 or dst[1] != 20 or dst[2] != 30 {
+        return tkFail("ListClone", "int clone values wrong")
+    }
+    dst[0] = 999
+    dst.add(40)
+    if src.count != 3 or src[0] != 10 {
+        return tkFail("ListClone", "int clone not independent from source")
+    }
+    if dst.count != 4 or dst[0] != 999 {
+        return tkFail("ListClone", "int clone mutation didn't take")
+    }
+
+    // Empty list: clone is empty, no crash on the zero-count path.
+    emptyClone = empty.clone()
+    if emptyClone.count != 0 {
+        return tkFail("ListClone", "empty clone count wrong")
+    }
+
+    // list of a flat record type.
+    p.name = "Ada"
+    p.age = 36
+    p.status = caseRecActive
+    p.home.city = "London"
+    p.home.zip = 1
+    people.add(p)
+    p.name = "Grace"
+    p.age = 39
+    p.status = caseRecDone
+    p.home.city = "New York"
+    p.home.zip = 2
+    people.add(p)
+    peopleClone = people.clone()
+    if peopleClone.count != 2 {
+        return tkFail("ListClone", "record clone count wrong")
+    }
+    if peopleClone[0].name != "Ada" or peopleClone[0].age != 36 or peopleClone[0].home.zip != 1 {
+        return tkFail("ListClone", "record clone[0] wrong")
+    }
+    if peopleClone[1].name != "Grace" or peopleClone[1].status != caseRecDone or peopleClone[1].home.city != "New York" {
+        return tkFail("ListClone", "record clone[1] wrong")
+    }
+    p = peopleClone[0]
+    p.name = "Changed"
+    peopleClone[0] = p
+    if people[0].name != "Ada" {
+        return tkFail("ListClone", "record clone not independent from source")
+    }
+
+    return tkPass("ListClone")
 }
