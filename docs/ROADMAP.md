@@ -2389,6 +2389,29 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     resetting pending install-time staging.
 
   **Deferred / phase debt:**
+  - **Reciprocal packers for the range-readers** (Andrew, 2026-08-15,
+    post-phase): the phase added the READ half only — any program
+    producing the packed forms `intAt`/`stringAt` consume still
+    hand-rolls byte appends (the write half, `bkPutU32`/`bkPutStr`, is
+    compiler-internal). Future language surface, sketch: helpers like
+    `packedInt(i: int): string(4)` (4-byte BE) and
+    `packedString(s: string)` for the 4-byte-BE length-prefixed pool
+    convention, appendable via `t.append`. Design notes recorded now so
+    the future spec inherits them: (a) a max-payload packed string
+    overflows the `string` cap under BOTH prefix conventions
+    (4+255=259, 1+255=256), so `packedString` must either return `text`
+    or take the mutator shape `t.appendPackedString(s)`/
+    `t.appendPackedInt(i)` — the mutator also skips the intermediate
+    copy; (b) `stringAt` reads the CLIR's 4-byte-BE pool convention;
+    the format's 1-byte Pascal-style convention (`bkGetStrShort`,
+    module keys — and Str255 resource interop generally) has no surface
+    method, so a `pstringAt`/`appendPstring` sibling pair is the
+    natural companion if Mac interop wants it; (c) the 4-byte framing
+    is deliberately wider than `string` needs (lengths are always
+    0-255 today; three high bytes zero on the wire) — kept for
+    uniformity with the format's section/blob framing, and it means
+    the wire format already accommodates >255 payloads if pool entries
+    ever become `text` (only a `textAt`-style reader would be needed).
   - **Runtime loop-body residual**: the bulk `text` methods still cost
     ~480 cycles/byte on Mac Plus guest ticks (`bulk-hash-chunked`'s
     60.63 µs/byte at 8MHz), roughly **10x** a straight-line
