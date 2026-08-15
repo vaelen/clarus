@@ -112,7 +112,8 @@ var coreCLIFiles = []string{
 	// tests fail until Task 3 lands. Accepted/expected -- and, unlike a
 	// missing-file "undefined: caseTextRange" checker error, at least
 	// fails with the real, specific gap ("unsupported UI intrinsic
-	// text_u32_at"). Same story in internal/cg68k/segment_test.go and
+	// text_int_at" -- text_u32_at before the post-review u32At->intAt
+	// rename). Same story in internal/cg68k/segment_test.go and
 	// internal/bake/bakeidentity_test.go's own core-suite file lists.
 	filepath.Join("testsuite", "core", "cases_textrange.cla"),
 }

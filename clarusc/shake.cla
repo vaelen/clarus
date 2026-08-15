@@ -611,8 +611,8 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtTextRelease"))
     } else if nm == ITextHashStep() {
         shakeMarkAndEnqueue(intern("rtTextHashStep"))
-    } else if nm == ITextU32At() {
-        shakeMarkAndEnqueue(intern("rtTextU32At"))
+    } else if nm == ITextIntAt() {
+        shakeMarkAndEnqueue(intern("rtTextIntAt"))
     } else if nm == ITextStringAt() {
         shakeMarkAndEnqueue(intern("rtTextStringAt"))
     } else if nm == ITextTextAt() {

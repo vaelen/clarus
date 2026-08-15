@@ -78,7 +78,7 @@
 // TextRange (cases_textrange.cla, clir-load-perf phase Task 2) is the
 // 69th real case (corrected from an earlier off-by-two "67th"): known-
 // answer + edge-case coverage for the four new bulk text range-read
-// methods (hashStep/u32At/stringAt/textAt).
+// methods (hashStep/intAt/stringAt/textAt).
 
 enum CoreTest {
     All

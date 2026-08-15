@@ -2745,7 +2745,7 @@ func fpIntrCall3(nm: int, x: int, a0: int, a1: int, a2: int): text {
         }
         return toText("")
 
-    // clir-load-perf Task 2: hashStep/u32At/stringAt/textAt have no
+    // clir-load-perf Task 2: hashStep/intAt/stringAt/textAt have no
     // rt_core.inc legacy equivalent (brand new methods), so -- unlike
     // every ported-vs-legacy pair above -- these route unconditionally
     // to clar_fn_rtText*, no raw-C fallback branch. hashStep needs a
@@ -2758,11 +2758,14 @@ func fpIntrCall3(nm: int, x: int, a0: int, a1: int, a2: int): text {
     // expression (an rvalue) can't provide, only a named temp can. textAt
     // births a fresh rt_text handle first, mirroring fpTextConcat/
     // ITextConcatSL's own dst-allocation dance (text is a reference
-    // type); hashStep/u32At return plain int values, no temp needed.
+    // type); hashStep/intAt return plain int values, no temp needed.
+    // (intAt renamed post-review from u32At -- one signed int type, so
+    // the u32 name misdescribed the return; clar_fn_rtTextIntAt follows
+    // the runtime function name, rtTextIntAt, below.)
     } else if nm == ITextHashStep() {
         return "clar_fn_rtTextHashStep((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "), (int32_t)(" + fpExpr(fpArgAt(a0, 3)) + "))"
-    } else if nm == ITextU32At() {
-        return "clar_fn_rtTextU32At((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+    } else if nm == ITextIntAt() {
+        return "clar_fn_rtTextIntAt((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
     } else if nm == ITextStringAt() {
         t = fpNewTmp("clar_str_255")
         fpEmit(t + " = clar_fn_rtTextStringAt((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "));")

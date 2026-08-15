@@ -1448,10 +1448,12 @@ func buildMethodTables() {
     sigAdd(psOneOf3(TyStr, TyChar, TyText))
     textOnlyMethods["append"] = sigEnd(-1)
 
-    // hashStep/u32At/stringAt/textAt (clir-load-perf Task 2): bulk
-    // range-read methods for a hot loader path -- text-receiver only
-    // (textOnlyMethods, not stringTextMethods), matching append's own
-    // table placement just above.
+    // hashStep/intAt/stringAt/textAt (clir-load-perf Task 2, intAt
+    // renamed post-review from u32At -- one signed int type, so the u32
+    // name misdescribed the return): bulk range-read methods for a hot
+    // loader path -- text-receiver only (textOnlyMethods, not
+    // stringTextMethods), matching append's own table placement just
+    // above.
     sigStart()
     sigAdd(psPlain(IntT))
     sigAdd(psPlain(IntT))
@@ -1460,7 +1462,7 @@ func buildMethodTables() {
 
     sigStart()
     sigAdd(psPlain(IntT))
-    textOnlyMethods["u32At"] = sigEnd(IntT)
+    textOnlyMethods["intAt"] = sigEnd(IntT)
 
     sigStart()
     sigAdd(psPlain(IntT))

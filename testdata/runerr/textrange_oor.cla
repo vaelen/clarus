@@ -1,7 +1,7 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// textrange_oor.cla (clir-load-perf Task 2): u32At's STRICT bounds
+// textrange_oor.cla (clir-load-perf Task 2): intAt's STRICT bounds
 // panic, same "text index out of range" message rtTextIndex/rtTextSlice
 // already use. Host-only fixture (App.launch, same shape every other
 // testdata/runerr/*.cla uses) -- not one of TestRunErrOn68k's own
@@ -14,6 +14,6 @@ on App.launch {
 
     t.append('h')
     t.append('i')
-    v = t.u32At(t.length - 2)
+    v = t.intAt(t.length - 2)
     alert("unreachable")
 }

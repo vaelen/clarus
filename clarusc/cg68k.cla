@@ -315,7 +315,7 @@ var rnTextStore: int
 var rnTextStringAt: int
 var rnTextTextAt: int
 var rnTextToBytes: int
-var rnTextU32At: int
+var rnTextIntAt: int
 var rnUiAskOpen: int
 var rnUiAskSave: int
 var rnUiAskSaveChanges: int
@@ -453,7 +453,7 @@ func rnInit() {
     rnTextStringAt = intern("rtTextStringAt")
     rnTextTextAt = intern("rtTextTextAt")
     rnTextToBytes = intern("rtTextToBytes")
-    rnTextU32At = intern("rtTextU32At")
+    rnTextIntAt = intern("rtTextIntAt")
     rnUiAskOpen = intern("rtUiAskOpen")
     rnUiAskSave = intern("rtUiAskSave")
     rnUiAskSaveChanges = intern("rtUiAskSaveChanges")
@@ -8035,18 +8035,20 @@ func cgIntr(e: int) {
         cgIntrTextOfStr(e)
         return
     }
-    // clir-load-perf Task 3: hashStep/u32At return plain int scalars (no
+    // clir-load-perf Task 3: hashStep/intAt return plain int scalars (no
     // hidden pointer, no tracked temp -- reachable from this value-context
     // dispatch same as ITextIndex above); textAt returns a fresh Text
     // HANDLE (4 bytes, fits in D0 like ITextConcat/ITextConcatSl/
     // ITextOfStr above), so it also belongs here, NOT in the KStr-only
-    // cgEmitStoreStr/cgEmitReturnStr family stringAt uses.
+    // cgEmitStoreStr/cgEmitReturnStr family stringAt uses. (intAt renamed
+    // post-review from u32At -- one signed int type, so the u32 name
+    // misdescribed the return.)
     if nm == ITextHashStep() {
         cgIntr4(e, rnTextHashStep, false, false, false, false)
         return
     }
-    if nm == ITextU32At() {
-        cgIntr2(e, rnTextU32At, false, false)
+    if nm == ITextIntAt() {
+        cgIntr2(e, rnTextIntAt, false, false)
         return
     }
     if nm == ITextTextAt() {

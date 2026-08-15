@@ -2267,7 +2267,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     becomes a fresh `.add`-loop copy (`record` elements are value
     types, so this is a structural fix, not a patch).
   - **C — bulk `text` range reads + CLIR v7:** four new stateless
-    `text` methods (`hashStep`/`u32At`/`stringAt`/`textAt`, Chapter 3),
+    `text` methods (`hashStep`/`intAt`/`stringAt`/`textAt`, Chapter 3),
     the CLIR body/stamp/manifest hash swapped from FNV-mul to a
     shift-add djb2 step (the multiply was noise per the motivating
     probe; inside a per-call loop it would have become the dominant
@@ -2318,6 +2318,10 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   9. Perf measurement (emulator, no commits — see Measured results).
   10. This entry, `STATUS.md`, and reconciling the stale
       `bkInstallObjCode` cross-references this phase orphaned (below).
+  11. Post-review rename: `u32At` → `intAt` (one signed `int` type, so
+      the u32 name misdescribed the return) across check/lower/ir/
+      cprint/cg68k/shake/text.cla, the core-suite case, both runerr
+      fixtures, and the reference, plus a snapshot regen.
 
   **Measured results** (Mini vMac / Mac Plus, 8MHz 68000, 60.15 guest
   ticks/s, N=65536-byte probe buffer;
@@ -2326,7 +2330,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   | pass | old (µs/byte) | new (µs/byte) | speedup |
   |---|---:|---:|---:|
   | body hash | 153.98 (`hash-exact`, per-byte) | 60.63 (`bulk-hash-chunked`, shipped 32KB-chunk shape) | **2.54x** |
-  | U32 section-field walk | 200.91 (`getbyte-walk`) | 55.05 (`bulk-u32`) | **3.65x** |
+  | int section-field walk (`intAt`, née `u32At`) | 200.91 (`getbyte-walk`) | 55.05 (`bulk-u32`) | **3.65x** |
   | bulk byte-range copy | 182.14 (`append-build`, per-byte `t.append`) | 0.51 (`bulk-textAt`, one call) | **359x** (dominated by one `TextBlockMoveData` call vs. 65536 single-char appends) |
 
   Projected onto the real 1,255,314-byte CLIR, Mac-Plus-equivalent
@@ -2426,9 +2430,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   - **Task 2/3 test- and doc-comment minors (deferred):**
     `testsuite/core/runner.cla`'s header comment (~line 78) miscounts
     `TextRange`'s ordinal ("67th real case"; actually 69th, inheriting a
-    pre-existing off-by-two from the cases above it); the reference's
-    `u32At` entry says "unsigned" — Clarus `int` is signed 32-bit, so a
-    value ≥ 2^31 reads back negative, needs one clause; the core case
+    pre-existing off-by-two from the cases above it); the core case
     for `textAt` never pins its freshness contract (mutate the returned
     copy, assert the source `text` is unchanged); `stringAt`/`textAt`'s
     `EIntr` arms skip `cgAbortCheckAfterCall` like every sibling arm —

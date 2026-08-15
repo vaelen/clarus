@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 // textrange_overflow.cla (clir-load-perf Task 2, review round 1 fix):
-// u32At's STRICT bounds check must be overflow-safe. The naive
+// intAt's STRICT bounds check must be overflow-safe. The naive
 // `pos + n > rt.len` form wraps (CLAR_ADD32 is modular arithmetic), so
 // a huge pos previously passed the guard and read wild memory instead
 // of panicking -- proven with a real compiled binary before the fix
-// (runtime/clarus/text.cla's rtTextU32At now uses the same
+// (runtime/clarus/text.cla's rtTextIntAt now uses the same
 // overflow-safe subtraction form rtTextSlice already used). This is
-// the exact reproduction: u32At(2147483647) on a 2-byte text must
+// the exact reproduction: intAt(2147483647) on a 2-byte text must
 // still panic "text index out of range". Host-only fixture, same
 // precedent as textrange_oor.cla.
 on App.launch {
@@ -17,6 +17,6 @@ on App.launch {
 
     t.append('h')
     t.append('i')
-    v = t.u32At(2147483647)
+    v = t.intAt(2147483647)
     alert("unreachable")
 }

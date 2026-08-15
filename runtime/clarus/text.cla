@@ -602,21 +602,25 @@ func rtTextSlice(out: ptr, t: ptr, start: int, len: int) {
     pokeb(out, len)
 }
 
-// rtTextHashStep/rtTextU32At/rtTextStringAt/rtTextTextAt (clir-load-perf
-// Task 2): bulk range reads for a hot loader path -- no rt_core.inc
-// legacy equivalent (brand new to the ported runtime). Each hoists
-// rt.len and the master pointer ONCE and loops over peekb (or does a
-// single TextBlockMoveData) rather than re-deriving per byte -- that
-// hoisting is the whole point, collapsing per-byte runtime-call
-// overhead. STRICT bounds throughout, same "text index out of range"
-// message rtTextIndex/rtTextSlice already use -- and the SAME
-// overflow-safe subtraction form rtTextSlice's own bounds check
-// (:594-599 above) already uses deliberately: `pos > rt.len - n`, never
-// `pos + n > rt.len` -- the addition form wraps (CLAR_ADD32 is modular),
-// so a huge pos/n can pass the guard and read wild memory instead of
-// panicking (review round 1 fix: proven with a real compiled binary,
-// `u32At(2147483647)` on a 2-byte text used to return a value instead
-// of panicking).
+// rtTextHashStep/rtTextIntAt/rtTextStringAt/rtTextTextAt (clir-load-perf
+// Task 2; rtTextIntAt renamed post-review from rtTextU32At -- Clarus has
+// one integer type, signed 32-bit `int`; "u32" claimed a width
+// distinction the type system doesn't have and an unsignedness that's
+// false for the returned value, so intAt names what it returns, with the
+// 4-byte big-endian layout staying documented in prose below): bulk
+// range reads for a hot loader path -- no rt_core.inc legacy equivalent
+// (brand new to the ported runtime). Each hoists rt.len and the master
+// pointer ONCE and loops over peekb (or does a single TextBlockMoveData)
+// rather than re-deriving per byte -- that hoisting is the whole point,
+// collapsing per-byte runtime-call overhead. STRICT bounds throughout,
+// same "text index out of range" message rtTextIndex/rtTextSlice already
+// use -- and the SAME overflow-safe subtraction form rtTextSlice's own
+// bounds check (:594-599 above) already uses deliberately: `pos > rt.len
+// - n`, never `pos + n > rt.len` -- the addition form wraps (CLAR_ADD32
+// is modular), so a huge pos/n can pass the guard and read wild memory
+// instead of panicking (review round 1 fix: proven with a real compiled
+// binary, `intAt(2147483647)` on a 2-byte text used to return a value
+// instead of panicking).
 
 // rtTextHashStep: rolling 31-bit shift-add hash (djb2 shape, matching
 // bake.cla's own body-hash convention) over bytes [pos, pos+n). n == 0
@@ -645,8 +649,10 @@ func rtTextHashStep(t: ptr, h: int, pos: int, n: int): int {
     return acc
 }
 
-// rtTextU32At: big-endian U32 read at pos -- one deref, four peekb.
-func rtTextU32At(t: ptr, pos: int): int {
+// rtTextIntAt: reads the 4-byte big-endian field at pos and returns it
+// as the `int` whose bits those are (values with the top bit set are
+// negative) -- one deref, four peekb.
+func rtTextIntAt(t: ptr, pos: int): int {
     var rt: RtText
     var mp: ptr
 

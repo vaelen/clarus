@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // cases_textrange.cla: Chapter 3 bulk range reads (clir-load-perf
-// Task 2): hashStep/u32At/stringAt/textAt known-answer + edge cases.
+// Task 2): hashStep/intAt/stringAt/textAt known-answer + edge cases.
 // kit.cla has no tkExpectInt/tkExpectStr helpers (checked before
 // writing this) -- follows the ordinary caseX(): TestResult + tkFail/
 // tkPass shape every other cases_*.cla file uses (e.g.
@@ -20,9 +20,9 @@ func caseTextRange(): TestResult {
     t.append(char(2))
     t.append(char(3))
     t.append(char(4))
-    // u32At: BE compose (0x01020304)
-    if t.u32At(0) != 16909060 {
-        return tkFail("TextRange", "u32At wrong")
+    // intAt: BE compose (0x01020304)
+    if t.intAt(0) != 16909060 {
+        return tkFail("TextRange", "intAt wrong")
     }
     // hashStep vs hand loop, split across a chunk boundary
     h = 5381

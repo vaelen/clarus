@@ -182,7 +182,7 @@ recoverable from the result):
 | method | semantics |
 |---|---|
 | `t.hashStep(h, pos, n): int` | rolling body-hash step over `n` bytes starting at `pos`, returns updated `h` |
-| `t.u32At(pos): int` | big-endian U32 at `pos` |
+| `t.u32At(pos): int` | big-endian U32 at `pos` (landed as `intAt` — renamed before merge; one signed int type, so the u32 name misdescribed the return) |
 | `t.stringAt(pos): string` | 4-byte BE length prefix + bytes at `pos`; caller advances `4 + result.length` |
 | `t.textAt(pos, n): text` | fresh `text` holding bytes `[pos, pos+n)` |
 

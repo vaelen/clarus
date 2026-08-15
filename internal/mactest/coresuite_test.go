@@ -53,12 +53,13 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // attempt-abort phase's own cases_abort.cla family -- AbortCatch/
 // AbortDeep/AbortNested/AbortReabort/AbortRelease, task-5-report.md --
 // wired into coreCLIFiles/this file by Task 8 close-out; then 70 by the
-// clir-load-perf phase's own TextRange case (Task 2, hashStep/u32At/
+// clir-load-perf phase's own TextRange case (Task 2, hashStep/intAt/
 // stringAt/textAt bulk range-read coverage). Task 2 bumped runner.cla's
 // nCoreCases and internal/testsuite's own wantCases, but this file's
 // hardcoded count was explicitly out of Task 2's host-lane-only scope
 // (cg68k.cla off limits, no cg68k arms yet to boot natively past
-// "unsupported UI intrinsic text_u32_at") -- Task 3's cg68k arms are what
+// "unsupported UI intrinsic text_int_at" -- text_u32_at before the
+// post-review u32At->intAt rename) -- Task 3's cg68k arms are what
 // first let this gate reach the per-case capture below at all, so the
 // count bump lands together with them here. Requires all 70 real cases
 // PASS in this ONE boot, plus the matching TOTAL line -- success

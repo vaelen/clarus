@@ -58,7 +58,7 @@ all landed: **A** drops a redundant load-time header-hash re-verify
 app session instead of every compile (`bkParsedValid` memo +
 copy-on-install fix for a reference-aliasing hazard `bkInstallArenas`
 would otherwise have hit); **C** adds four bulk `text` range-read
-methods (`hashStep`/`u32At`/`stringAt`/`textAt`) plus a cheaper djb2
+methods (`hashStep`/`intAt`/`stringAt`/`textAt`) plus a cheaper djb2
 hash shape, bumping `bkFormatVersion` 6→7, and rewrites `bake.cla`'s
 load path onto them.
 

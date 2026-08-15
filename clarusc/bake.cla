@@ -1908,14 +1908,16 @@ func bkGetU16(): int {
     return (b0 << 8) | b1
 }
 
-// bkGetU32 (clir-load-perf Task 5, design C): one bulk t.u32At call
+// bkGetU32 (clir-load-perf Task 5, design C): one bulk t.intAt call
 // behind a soft pre-check, instead of four bkGetByte calls -- the
 // pre-check (`bkLoadPos + 4 > bkLoadBuf.length`) is the exact STRICT
-// bound u32At itself re-checks (`pos < 0 or pos > rt.len - 4`, text.cla),
-// so u32At's own panic is never reachable from here: bkLoadPos is never
+// bound intAt itself re-checks (`pos < 0 or pos > rt.len - 4`, text.cla),
+// so intAt's own panic is never reachable from here: bkLoadPos is never
 // negative (every advance is by a non-negative amount from 0), so the
-// only way to fail u32At's bound is the same overrun this pre-check
-// already catches.
+// only way to fail intAt's bound is the same overrun this pre-check
+// already catches. (intAt renamed post-review from u32At -- bkGetU32
+// itself keeps its name, it reads the format's u32 field; only the text
+// METHOD it calls was renamed.)
 func bkGetU32(): int {
     var v: int
     if bkLoadPos + 4 > bkLoadBuf.length {
@@ -1923,7 +1925,7 @@ func bkGetU32(): int {
         bkLoadPos = bkLoadBuf.length
         return 0
     }
-    v = bkLoadBuf.u32At(bkLoadPos)
+    v = bkLoadBuf.intAt(bkLoadPos)
     bkLoadPos = bkLoadPos + 4
     return v
 }
@@ -1942,12 +1944,12 @@ func bkGetBool(): bool {
 // clir-load-perf Task 5 (design C): one bulk t.stringAt call behind two
 // soft pre-checks, instead of a per-byte bkGetByte loop through a
 // char[255] buffer. Pre-check 1 (4 bytes for the length prefix) makes
-// the u32At read below panic-unreachable, same argument as bkGetU32's
+// the intAt read below panic-unreachable, same argument as bkGetU32's
 // own rewrite. Pre-check 2 mirrors BOTH of stringAt's own STRICT bounds
 // (text.cla's rtTextStringAt): `n <= 255` (its "string too long" panic)
 // and `bkLoadPos + 4 + n <= bkLoadBuf.length` (its "text index out of
 // range" panic on the payload) -- once both hold, stringAt's own
-// re-read of the length prefix is redundant work (one extra u32At is
+// re-read of the length prefix is redundant work (one extra intAt is
 // nothing) but never a reachable panic. The `n > 255` refusal is NEW
 // defensive behavior for a corrupt bake: the old char[255] loop just
 // copied `n` bytes with no cap, so a hand-crafted length > 255 would
@@ -1961,7 +1963,7 @@ func bkGetStr(): string {
         bkLoadPos = bkLoadBuf.length
         return ""
     }
-    n = bkLoadBuf.u32At(bkLoadPos)
+    n = bkLoadBuf.intAt(bkLoadPos)
     if n < 0 or n > 255 or bkLoadPos + 4 + n > bkLoadBuf.length {
         bkLoadOverrun = true
         bkLoadPos = bkLoadBuf.length
@@ -1978,7 +1980,7 @@ func bkGetStr(): string {
 // clir-load-perf Task 5 (design C): one bulk t.textAt call behind two
 // soft pre-checks, instead of a per-byte bkGetByte + append loop. Same
 // shape as bkGetStr's own rewrite above: pre-check 1 (4 bytes for the
-// length prefix) makes the u32At read panic-unreachable; pre-check 2
+// length prefix) makes the intAt read panic-unreachable; pre-check 2
 // mirrors textAt's own STRICT bounds (rtTextTextAt, text.cla: `n < 0` and
 // `pos > rt.len - n`) -- checked as `n > bkLoadBuf.length - bkLoadPos - 4`
 // rather than the addition form `bkLoadPos + 4 + n > bkLoadBuf.length`:
@@ -2000,7 +2002,7 @@ func bkGetBytes(): text {
         bkLoadPos = bkLoadBuf.length
         return ""
     }
-    n = bkLoadBuf.u32At(bkLoadPos)
+    n = bkLoadBuf.intAt(bkLoadPos)
     if n < 0 or n > bkLoadBuf.length - bkLoadPos - 4 {
         bkLoadOverrun = true
         bkLoadPos = bkLoadBuf.length

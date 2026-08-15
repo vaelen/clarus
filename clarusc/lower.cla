@@ -1721,8 +1721,8 @@ func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: i
         arg1 = exprNext(arg0)
         arg2 = exprNext(arg1)
         return newIRIntr(ITextHashStep(), lowMethodArgs4(recv, arg0, arg1, arg2), ty)
-    } else if nm == "u32At" {
-        return newIRIntr(ITextU32At(), lowMethodArgs2(recv, arg0), ty)
+    } else if nm == "intAt" {
+        return newIRIntr(ITextIntAt(), lowMethodArgs2(recv, arg0), ty)
     } else if nm == "stringAt" {
         return newIRIntr(ITextStringAt(), lowMethodArgs2(recv, arg0), ty)
     } else if nm == "textAt" {

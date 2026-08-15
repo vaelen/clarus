@@ -79,11 +79,12 @@ func segmentationFixture(root string) []string {
 		// so any composition that includes runner.cla but omits this file
 		// fails to CHECK at all ("undefined: caseTextRange"), which is
 		// worse than the alternative below. Known consequence: cg68k.cla
-		// has no arms yet for the new text_hash_step/text_u32_at/
+		// has no arms yet for the new text_hash_step/text_int_at/
 		// text_string_at/text_text_at intrinsics (clir-load-perf Task 3's
 		// job, deliberately out of THIS task's scope -- see its own doc
 		// comment), so TestSegmentationMultiSegment fails with "cg68k:
-		// cgIntrUi: unsupported UI intrinsic text_u32_at" until Task 3
+		// cgIntrUi: unsupported UI intrinsic text_int_at" (text_u32_at
+		// before the post-review u32At->intAt rename) until Task 3
 		// lands. Accepted/expected per the task brief; not a regression to
 		// paper over by leaving this file out.
 		filepath.Join("testsuite", "core", "cases_textrange.cla"),

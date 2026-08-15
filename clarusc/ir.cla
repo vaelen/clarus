@@ -1211,7 +1211,7 @@ func irReset() {
     iTextOfStrIdx = -1
     iTextFreeVarIdx = -1
     iTextHashStepIdx = -1
-    iTextU32AtIdx = -1
+    iTextIntAtIdx = -1
     iTextStringAtIdx = -1
     iTextTextAtIdx = -1
     iListPushIdx = -1
@@ -3459,10 +3459,11 @@ func ITextAppendText(): int {
     return iTextAppendTextIdx
 }
 
-// ITextHashStep/ITextU32At/ITextStringAt/ITextTextAt (clir-load-perf
-// Task 2): bulk range-read methods -- mirrors ITextIndex's memoized-
-// intern shape exactly. Task 3's native cg68k arms match on these same
-// intrinsic names.
+// ITextHashStep/ITextIntAt/ITextStringAt/ITextTextAt (clir-load-perf
+// Task 2; ITextIntAt renamed post-review from ITextU32At -- one signed
+// int type, so the u32 name misdescribed the return): bulk range-read
+// methods -- mirrors ITextIndex's memoized-intern shape exactly. Task 3's
+// native cg68k arms match on these same intrinsic names.
 var iTextHashStepIdx: int = -1
 
 func ITextHashStep(): int {
@@ -3472,13 +3473,13 @@ func ITextHashStep(): int {
     return iTextHashStepIdx
 }
 
-var iTextU32AtIdx: int = -1
+var iTextIntAtIdx: int = -1
 
-func ITextU32At(): int {
-    if iTextU32AtIdx == -1 {
-        iTextU32AtIdx = intern("text_u32_at")
+func ITextIntAt(): int {
+    if iTextIntAtIdx == -1 {
+        iTextIntAtIdx = intern("text_int_at")
     }
-    return iTextU32AtIdx
+    return iTextIntAtIdx
 }
 
 var iTextStringAtIdx: int = -1
