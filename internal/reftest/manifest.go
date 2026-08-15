@@ -76,17 +76,17 @@ package reftest
 // top-level declarations (same fragment/prose-reference classes as above,
 // just from the ptr/peek-poke/overlay-record/extern-record section added
 // after the fence set below was first drafted):
-// 64 (line 1330): peek/poke — bare pokeb/pokel call statements after the
+// 65 (line 1330): peek/poke — bare pokeb/pokel call statements after the
 // var decls, not a valid top-level form (same bare-statement-fragment
 // class as indices 4/5/8/16/19/21 above).
-// 66 (line 1363): overlay records — func f's body interleaves var decls
+// 67 (line 1363): overlay records — func f's body interleaves var decls
 // with statements (var n; h.rc = 5; h.data = p; var back; var same) for
 // expository clarity, genuinely violating "local variables ... are
 // declared at the top of the body before any statement" (see the
 // reference's variable-scoping prose) — a real check-time error, not a
 // missing-context fragment. Reordering the example to check clean is a
 // content change out of scope here.
-// 69 (line 1447): extern record — waitClick usage example calls
+// 70 (line 1447): extern record — waitClick usage example calls
 // UiWaitNextEvent/nilPtr/handleAt, none declared in the fence itself
 // (same "references a name declared only in surrounding prose" class as
 // 12-15, 20, 28, 29, 40, 41, 43, 50, 51, 53, 55 above).
@@ -134,24 +134,34 @@ package reftest
 // phase (2026-08-05) removed the only reason for a second manifest, and
 // were merged into CheckClean here (all indices except the three fragment
 // exclusions documented above).
-// 62 (line 1300): ptr basics — conversion, arithmetic, comparison
-// 63 (line 1310): ptr container restriction (list of ptr, commented)
-// 65 (line 1346): external func
-// 67 (line 1387): overlay records restrictions (container/field, commented)
-// 68 (line 1398): extern record — Point/EventRecord/SFReply declarations (Task 4, toolbox-integration Feature B)
-// 70 (line 1457): extern record restrictions (assign/field/container, commented) (Task 4, toolbox-integration Feature B)
-// 71 (line 1467): callback func — declaration + decay + direct-call worked example (Task 7, toolbox-integration Feature C)
-// 72 (line 1484): callback func restrictions (decay-misuse/direct-call, commented) (Task 7, toolbox-integration Feature C)
-// 73 (line 1503): trap/inline clauses — trap pascal (TickCount)
-// 74 (line 1513): trap/inline clauses — trap reg (BlockMove)
-// 75 (line 1519): trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
-// 76 (line 1525): trap/inline clauses — trap reg(...) named form (PostEvent) (Task 1, toolbox-integration Feature A)
-// 77 (line 1534): trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
-// 78 (line 1540): trap/inline clauses — inline deref (HandleToPtr)
-// 79 (line 1546): trap/inline clauses — inline nop (DebugBreak)
-// 80 (line 1552): trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
-// 81 (line 1558): extern dedup — repeated identical TickCount declaration (Task 3, toolbox-integration)
-// 82 (line 1576): word extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
+// 63 (line 1300): ptr basics — conversion, arithmetic, comparison
+// 64 (line 1310): ptr container restriction (list of ptr, commented)
+// 66 (line 1346): external func
+// 68 (line 1387): overlay records restrictions (container/field, commented)
+// 69 (line 1398): extern record — Point/EventRecord/SFReply declarations (Task 4, toolbox-integration Feature B)
+// 71 (line 1457): extern record restrictions (assign/field/container, commented) (Task 4, toolbox-integration Feature B)
+// 72 (line 1467): callback func — declaration + decay + direct-call worked example (Task 7, toolbox-integration Feature C)
+// 73 (line 1484): callback func restrictions (decay-misuse/direct-call, commented) (Task 7, toolbox-integration Feature C)
+// 74 (line 1503): trap/inline clauses — trap pascal (TickCount)
+// 75 (line 1513): trap/inline clauses — trap reg (BlockMove)
+// 76 (line 1519): trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
+// 77 (line 1525): trap/inline clauses — trap reg(...) named form (PostEvent) (Task 1, toolbox-integration Feature A)
+// 78 (line 1534): trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
+// 79 (line 1540): trap/inline clauses — inline deref (HandleToPtr)
+// 80 (line 1546): trap/inline clauses — inline nop (DebugBreak)
+// 81 (line 1552): trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
+// 82 (line 1558): extern dedup — repeated identical TickCount declaration (Task 3, toolbox-integration)
+// 83 (line 1576): word extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
+//
+// serial-connection phase, Task 3 (2026-08-15) inserted one new fence --
+// a complete, self-contained `App.startCLI`/`received`/`quit` serial-echo
+// worked example -- right after the existing Chapter 12 Connections
+// example (old index 59) and before Listeners, as the new index 60. Every
+// fence at old index 60 or higher shifted by +1 as a result (confirmed by
+// content-matching every pre-existing fence body against the post-edit
+// document, same verification discipline as the attempt-abort phase's own
+// shift above). This shifted the two Appendix C programs a final time,
+// from 83/84 to 84/85.
 var CheckClean = []int{
 	0, 2, 3, 6, 7, 9, 10, 11, 17, 18,
 	33, 34, // Ch5 quit-code / App.startCLI + log example
@@ -159,14 +169,14 @@ var CheckClean = []int{
 	42,
 	44, 45, 46, 47, 48, 49,
 	58, // Chapter 11 bounce example
-	59, 60, 61,
-	62, 63, // Chapter 13 ptr basics / container restriction
-	65,             // Chapter 13 external func
-	67,             // Chapter 13 overlay records restrictions
-	68, 70, 71, 72, // Chapter 13 extern record / callback func
-	73, 74, 75, 76, 77, 78, 79, 80, // Chapter 13 trap/inline clauses
-	81, // Chapter 13 extern dedup
-	82, // Chapter 13 word extern type
-	83, // Appendix C bookmark manager
-	84, // Appendix C text editor
+	59, 60, 61, 62, // Chapter 12 connection / serial / listener / serviceBrowser examples (serial-connection phase, Task 3, added 60)
+	63, 64, // Chapter 13 ptr basics / container restriction
+	66,             // Chapter 13 external func
+	68,             // Chapter 13 overlay records restrictions
+	69, 71, 72, 73, // Chapter 13 extern record / callback func
+	74, 75, 76, 77, 78, 79, 80, 81, // Chapter 13 trap/inline clauses
+	82, // Chapter 13 extern dedup
+	83, // Chapter 13 word extern type
+	84, // Appendix C bookmark manager
+	85, // Appendix C text editor
 }

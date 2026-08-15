@@ -1,0 +1,1 @@
+../../testdata/errors/conn_serial_badarg.cla:10:14: serial is only valid on connection.open with a single string argument

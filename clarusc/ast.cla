@@ -49,7 +49,8 @@
 //   ExUnary      intVal=UnOp code (OpNeg/OpNot/OpBNot); a=operand expr
 //   ExBinary     intVal=BinOp code (OpAdd..OpOr); a=left expr; b=right expr
 //   ExCall       a=fn expr; b=args list head expr (-1 if none, each arg
-//                chained via its own .next); intVal=appletalk flag (0/1)
+//                chained via its own .next); intVal=transport tag (0=none,
+//                1=appletalk, 2=serial)
 //   ExIndex      a=base expr (X); b=index expr (I)
 //   ExSlice      a=base expr (X); b=start expr; c=len expr
 //   ExSelect     a=base expr (X); nameIdx=selected field/property name
@@ -387,9 +388,10 @@ func astReset() {
 }
 
 // boolToInt/intToBool convert between Clarus bool and the 0/1 ints stored
-// in intVal for kinds whose Go field is a bool (BoolLit.Val, Call.AppleTalk,
+// in intVal for kinds whose Go field is a bool (BoolLit.Val,
 // EnumMember.HasValue, Column.WidthFill, EditStmt.IsNew, MenuEntry's three
-// flags).
+// flags). ExCall.intVal is NOT one of these -- it's a genuine 0/1/2
+// transport tag (serial-connection phase, Task 3), not a bool.
 func boolToInt(b: bool): int {
     if b {
         return 1
@@ -659,13 +661,13 @@ func binRight(i: int): int {
     return exprs[i].b
 }
 
-func newCall(fn: int, argsHead: int, appleTalk: bool, line: int, col: int): int {
+func newCall(fn: int, argsHead: int, transport: int, line: int, col: int): int {
     var n: ExprNode
 
     n.kind = ExCall
     n.a = fn
     n.b = argsHead
-    n.intVal = boolToInt(appleTalk)
+    n.intVal = transport
     n.next = -1
     n.line = line
     n.col = col
@@ -681,8 +683,10 @@ func callArgsHead(i: int): int {
     return exprs[i].b
 }
 
-func callAppleTalk(i: int): bool {
-    return intToBool(exprs[i].intVal)
+// callTransport returns the call's transport tag: 0 (none), 1 (`appletalk`
+// prefix), or 2 (`serial` prefix) -- see parse.cla's parseArgsTransport.
+func callTransport(i: int): int {
+    return exprs[i].intVal
 }
 
 func newIndex(x: int, idx: int, line: int, col: int): int {

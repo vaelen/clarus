@@ -1315,7 +1315,7 @@ A `connection` (Chapter 3) is a single reliable byte-stream abstraction over bot
 
 | Member | Form |
 |---|---|
-| `open` | `c.open("host:port")` — MacTCP, DNS inside; `c.open(appletalk "Name:Type")` — ADSP, NBP inside; `c.open(addr)` — from a browser `address` |
+| `open` | `c.open("host:port")` — MacTCP, DNS inside; `c.open(appletalk "Name:Type")` — ADSP, NBP inside; `c.open(serial "modem:9600")` — a Mac serial port, `"modem"` or `"printer"`, baud after the colon; `c.open(addr)` — from a browser `address` |
 | `send` | `c.send(t: text)` (also accepts string) |
 | `close` | `c.close()` |
 | events | `opened`, `received(data: text)`, `closed`, `failed(err: error)` |
@@ -1341,6 +1341,36 @@ on conn.closed { }
 
 on conn.failed(err: error) {
     alert(err.message)
+}
+```
+
+### Serial
+
+`c.open(serial "modem:9600")` opens a Macintosh serial port directly, with no AppleTalk or TCP involved: `"modem"` is the modem port (SCC channel A), `"printer"` is the printer port (channel B), and the baud rate follows the colon. The rate must be one of the Serial Driver's standard values — 300, 600, 1200, 1800, 2400, 3600, 4800, 7200, 9600, 19200, or 57600. Framing is fixed at 8 data bits, no parity, one stop bit, no handshake; any other configuration is out of scope for `connection` and goes through the `toolbox/` catalog instead, the same escape hatch every other 80/20 abstraction in this reference falls back to.
+
+A serial connection's events follow `connection`'s ordinary shape, with these transport-specific rules:
+
+- `opened` fires on the event loop's next pass after a successful open, never synchronously inside `open` itself.
+- `received(data: text)` fires once per pass when bytes are waiting; `data` is freshly allocated and binary-safe — no CR/LF translation, every byte value 0-255 passes through unchanged.
+- `closed` fires only when the underlying channel itself goes away. A raw Mac serial line has no carrier-detect signal in this release, so `closed` never fires for a serial connection — a transport property, not a missing feature. A local `c.close()` never fires `closed`, on any transport.
+- `send` on a connection that was never opened, or has since closed, is a runtime error — a program bug, not an environmental failure. Environmental failures (a bad port spec, a driver I/O error) arrive as `failed(err: error)` instead.
+
+On a command-line host, two environment variables map the ports to TCP for development instead of real hardware: `CLARUS_SERIAL_MODEM` and `CLARUS_SERIAL_PRINTER`, each either `listen:PORT` (open becomes a listening accept) or `connect:HOST:PORT` (open dials out); the baud rate is accepted but ignored. An unset variable makes `open` fail with `failed`, not a crash. This host lane is also where the command-line lifetime rule matters: after `App.startCLI` returns, the program stays alive while any connection remains open or an event is pending, pumping them, and only exits once neither is true — `quit` still works at any point regardless.
+
+Servicing a connection is cooperative: the runtime only drains waiting bytes between event-loop passes, so a handler that runs long starves every open connection's pump, not just its own. The driver's receive buffer is grown to 8KB at open to absorb a burst while a handler runs, but that is headroom, not immunity — a handler blocked for long enough can still overrun it and lose data.
+
+```rust
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    conn.open(serial "modem:9600")
+}
+
+on conn.received(data: text) {
+    if data.length > 0 and data[0] == 'Q' {
+        quit
+    }
+    conn.send(data)
 }
 ```
 

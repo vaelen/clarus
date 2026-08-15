@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// serial-connection phase, Task 3: the `serial`/`appletalk` transport
+// prefixes are legal only on `connection.open` with a single string
+// argument -- here `serial` is misused on `.send`.
+var conn: connection
+
+on App.launch {
+    conn.send(serial "oops")
+}
