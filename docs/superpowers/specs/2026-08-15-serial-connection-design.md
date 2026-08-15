@@ -182,6 +182,13 @@ post-`startCLI` service loop (alive while open-or-pending, per §3).
   `--serial-bridge-a tcp:<port>`, connect from Go, sweep bytes both
   directions byte-exact, send a QUIT command over the wire, assert
   clean exit. Plus the standing-rule `TestClarusCBakePathOnSnow` rerun.
+  (Environment note, 2026-08-15: Andrew's `snow/MacII.snoww` workspace
+  is preconfigured for the networking arc — TCP:1984 convention on the
+  modem port, AppleTalk-over-UDP on the printer port, DaynaPORT SCSI
+  Ethernet with NATted MacTCP at 10.0.0.2/gw 10.0.0.1. The serial test
+  can keep using the scratch-clone harness with `--serial-bridge-a`;
+  the preconfigured image matters from the AppleTalk phase on. Manual
+  live checks can use port 1984 to match Andrew's own setup.)
 - **Acceptance app** `examples/serialecho.cla`: small UI app (status
   window, byte counters) opening `modem:9600` and echoing; subject of
   the scripted test AND Andrew's manual live check (connect a real
