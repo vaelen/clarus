@@ -100,8 +100,8 @@ lane-tag gap; testapi single-compile coverage gap; `stringAt`
 hardware-consumption-shapes watch item; `ser.cla` still per-byte
 (deliberate non-goal); `drive.cla:1854` stale parenthetical;
 `bkLoadOverrun`/`rtTextStringAt`/`bkCheckRtbakeHeader` comment-drift
-minors; four new panic fixtures (`stringat_cap`/`stringat_negative`/
-`textrange_overflow`/`textrange_oor`) are host-only (pinned by
+minors; three new panic fixtures (`stringat_oor`/`textrange_overflow`/
+`textrange_oor`) are host-only (pinned by
 `internal/selfhost/behavior_test.go`, never booted natively, matching
 the established convention for fixtures whose semantics don't need
 hardware); `bkReadObjCode`'s pre-existing `nHoles` spin; truncate-on-
