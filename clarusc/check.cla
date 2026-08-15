@@ -718,6 +718,20 @@ var usesSortedMap: bool
 // retired that gate, so this flag is now set-but-unread by the splice.
 var usesDateTime: bool
 
+// usesConn is true once the program under check has declared a global
+// `var` of type `connection` (checkTopDeclPhase1's DkVar arm sets it,
+// right after delegating to checkVarDecl -- see that call site's own
+// comment for why the check lives THERE and not inside checkVarDecl
+// itself, which is also called for ordinary local var decls). UNLIKE
+// usesSortedMap/usesDateTime/usesFileSaveLoad above, this flag is still
+// READ: drive.cla's manifest splice (2026-08-15 serial-connection spec,
+// Task 4) gates conn.cla + conn_c.cla on it, on the host lane only --
+// the one runtime family that stays usage-gated rather than joining the
+// unconditional full-superset splice, specifically so every existing
+// (non-conn) program's manifest, and thus its IR indices and goldens,
+// stays byte-identical. Reset alongside its siblings in checkReset().
+var usesConn: bool
+
 // lowUsesAbort (attempt-abort phase Task 2, design doc %3.1/%3.3;
 // Ruling A2/A3): true once the program under check contains an `attempt`
 // statement or a call to the `abort` builtin ANYWHERE -- set here, during
@@ -5615,6 +5629,7 @@ func checkReset() {
     usesFileSaveLoad = false
     usesSortedMap = false
     usesDateTime = false
+    usesConn = false
     lowUsesAbort = false
     progGen = progGen + 1
 
@@ -5639,6 +5654,8 @@ func checkReset() {
 // phase 2, so they can target any window/menu/function regardless of source
 // order (Ch6: Scope).
 func checkTopDeclPhase1(d: int) {
+    var symIdx: int
+
     switch declKind(d) {
     case DkRecord {
         checkRecordDecl(d)
@@ -5648,6 +5665,20 @@ func checkTopDeclPhase1(d: int) {
     }
     case DkVar {
         checkVarDecl(d)
+        // usesConn (2026-08-15 serial-connection spec, Task 4): only a
+        // GLOBAL var decl reaches here -- checkBlock's own local-var loop
+        // calls checkVarDecl directly, never through this top-level
+        // switch -- matching spec %3.3's "global connection vars only"
+        // receiver scope exactly. Reads the type back off the symbol
+        // checkVarDecl just declared (scopeLookup, not a second
+        // resolveType call): resolveType emits its own "undefined: NAME"
+        // diagnostic on an unresolvable type expr, so calling it again
+        // here would double that diagnostic for every global var with a
+        // bad type -- scopeLookup is a plain, side-effect-free read.
+        symIdx = scopeLookup(curScope, varDeclName(d))
+        if symIdx != -1 and symbols[symIdx].typeIdx == connectionT {
+            usesConn = true
+        }
     }
     case DkConst {
         checkConstDecl(d)

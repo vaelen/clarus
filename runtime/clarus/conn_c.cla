@@ -1,0 +1,54 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// conn_c.cla: the C-lane rtConnDev* waist (2026-08-15 serial-connection
+// spec, Task 4). Six thin wrappers over seven `ConnH`-prefixed externs
+// (the family-prefix convention ser.cla's own header comment explains --
+// a plain name here would risk colliding with a user program's own
+// `external func` of the same short name once merged into one translation
+// unit) rendering as rt_ext_ConnH* in runtime/host/rt_serial.inc, the
+// host's own SCC stand-in: a real TCP socket per slot instead of a Serial
+// Driver channel. conn_68k.cla (Task 6) is this file's native twin, same
+// six function names, real Device Manager calls instead.
+//
+// Never spliced onto the native lane (drive.cla adds this module only for
+// non-68k builds), so it can freely assume a host TCP-backed slot; portIdx
+// 0/1 map to CLARUS_SERIAL_MODEM/CLARUS_SERIAL_PRINTER exactly as the spec
+// says. Port-spec string parsing ("modem"/"printer" + baud) is NOT this
+// module's job -- conn.cla owns that and passes down only the already-
+// validated portIdx/baud pair.
+
+external func ConnHOpen(slot: int, portIdx: int): int
+external func ConnHAvail(slot: int): int
+external func ConnHReadByte(slot: int): int
+external func ConnHWrite(slot: int, p: ptr, n: int): int
+external func ConnHClose(slot: int)
+external func ConnHGone(slot: int): bool
+external func ConnHIdle(ms: int)
+
+// rtConnDevOpen: baud is accepted (conn.cla always passes the validated
+// rate through) but never reaches the glue -- TCP has no baud rate, and
+// the spec says the host lane ignores it outright.
+func rtConnDevOpen(slot: int, portIdx: int, baud: int): int {
+    return ConnHOpen(slot, portIdx)
+}
+
+func rtConnDevAvail(slot: int): int {
+    return ConnHAvail(slot)
+}
+
+func rtConnDevReadByte(slot: int): int {
+    return ConnHReadByte(slot)
+}
+
+func rtConnDevWrite(slot: int, p: ptr, n: int): int {
+    return ConnHWrite(slot, p, n)
+}
+
+func rtConnDevClose(slot: int) {
+    ConnHClose(slot)
+}
+
+func rtConnDevGone(slot: int): bool {
+    return ConnHGone(slot)
+}

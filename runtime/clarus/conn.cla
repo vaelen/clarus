@@ -1,0 +1,315 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// conn.cla: the shared `connection` runtime (2026-08-15 serial-connection
+// spec, Task 4 -- docs/superpowers/specs/2026-08-15-serial-connection-design.md).
+// A small fixed connection-slot table (rtConnMax slots -- one per global
+// `connection` var the checker's usesConn/connectionT machinery admits;
+// spec %3.3 restricts the language surface to global connection vars
+// only, this phase), a per-slot open/closed state machine, and
+// rtConnPump()'s deferred-event drain. Lane-neutral: every device-facing
+// operation goes through the six rtConnDev* functions below (conn_c.cla
+// now, conn_68k.cla in Task 6 -- same names, one file spliced per lane,
+// exactly the rtNow/datetime_c.cla-datetime_68k.cla precedent), so this
+// file never touches a socket or a Device Manager trap directly.
+//
+// DORMANT this task: lowering (Task 5) is what actually routes
+// `conn.open`/`send`/`close` calls and the `opened`/`received`/`closed`/
+// `failed` event dispatch here -- nothing in the tree calls any function
+// below yet. Spliced only when usesConn (drive.cla), after core/str/text
+// (rtPanic/rtSetLastErr, text values) and after ser.cla (reuses its
+// already-declared SerNewPtr/SerBlockMoveData/SerDisposePtr scratch-buffer
+// externs for SendText's byte marshaling -- see ser.cla's own header
+// comment for why a plain intra-Clarus call to another module's already-
+// spliced extern is the right move instead of re-declaring a duplicate
+// one under a new prefix).
+//
+// Error principle (spec %3, "Semantics"): contract violations (send on a
+// non-open slot, reopening an open slot) are runtime errors/`failed`
+// events as the spec itself distinguishes -- NOT interchangeable. Send on
+// a non-open slot panics (a bug); every OPEN failure (bad spec, device
+// error, already-open) is a `failed` event (weather), never a panic.
+
+const rtConnMax: int = 4
+
+// rtConnTransportSerial is the only transport tag rtConnOpen ever
+// actually sees this phase: parse.cla's callTransport tags a
+// `serial "..."` prefix 2, `appletalk "..."` 1, and no prefix 0 -- but
+// appletalk stays a lowering-time not-yet-implemented diagnostic (spec
+// %3.3) and no-prefix `open(...)` isn't a transport-open at all, so tags
+// 0/1 are structurally unreachable at THIS call site, this phase. Kept as
+// a real parameter (not asserted against) purely for interface stability
+// ahead of the MacTCP phase, which will give rtConnOpen a second live tag
+// to switch on.
+const rtConnTransportSerial: int = 2
+
+const stClosed: int = 0
+const stOpen: int = 1
+
+// Pending-open-result error codes for the two failures that never reach
+// a real device (so there's no OSErr/errno to report): kept negative so
+// they can never collide with a real rtConnDevOpen error code (an OSErr
+// or errno is always a small POSITIVE number on both lanes).
+const rtConnErrAlreadyOpen: int = -1
+const rtConnErrInvalidSpec: int = -2
+
+// ---- Reverse-waist synthesized dispatchers (Task 5 synthesizes their C
+// bodies). Bare externs, literal `clar_conn_fire_*` names -- these are
+// the fixed cross-Task interface names (Task 4 brief), not routed through
+// a name-mapping table the way ui.cla's own UiFireWinEvent-family externs
+// resolve to their clar_ui_fire_* C symbols (see that module's own
+// "Reverse-waist synthesized dispatchers" comment for the pattern this
+// mirrors). Unreferenced by anything this task -- no program in the tree
+// declares a `connection` global yet -- so tree-shaking drops all four
+// before codegen ever sees them; nothing links against them on any lane
+// until Task 5 adds both the call sites and the C-side synthesis. ----
+external func clar_conn_fire_opened(slot: int)
+external func clar_conn_fire_received(slot: int, data: text)
+external func clar_conn_fire_closed(slot: int)
+external func clar_conn_fire_failed(slot: int, code: int, msg: string)
+
+// Per-slot state. Parallel fixed arrays (literal 4, matching rtConnMax --
+// parseType's array-size grammar requires an int LITERAL, not a named
+// const) rather than an array of records: no array-of-record global
+// exists anywhere else in the runtime to follow as precedent, and four
+// short parallel arrays read exactly as plainly. All zero/false/""
+// initialized (every global's default), which is already the correct
+// rest state -- closed, nothing pending.
+var rtConnState: int[4]
+var rtConnPendOpened: bool[4]
+// rtConnPendFailedCode doubles as its own presence flag: 0 means "no
+// failed event pending" (a real OSErr/errno is always positive, and
+// rtConnErrAlreadyOpen/InvalidSpec above are both negative -- 0 is never
+// a valid failure code from any source), so no separate bool is needed
+// alongside it. At most one open result (opened OR failed) is ever
+// pending per slot -- rtConnOpen and rtConnPump's own drain both
+// preserve that invariant, never setting both for the same slot.
+var rtConnPendFailedCode: int[4]
+var rtConnPendFailedMsg: string[4]
+
+// rtConnParsePortIdx/rtConnParseBaud are rtConnParseSpec's own out-param
+// pair -- Clarus has no int-by-reference parameters (Ch6), same module-
+// global-scratch idiom ser.cla's own rtSerPos/rtSerBad use for the same
+// reason (see that module's header comment). Valid only immediately after
+// a rtConnParseSpec call that returned true.
+var rtConnParsePortIdx: int
+var rtConnParseBaud: int
+
+// rtConnParseSpec parses spec ("modem:9600" / "printer:9600") into the
+// scratch pair above. false on any failure: unknown port name, missing
+// colon, non-numeric baud, or a baud outside the eleven-rate set -- the
+// scratch pair is left however far parsing got and must not be read.
+func rtConnParseSpec(spec: string): bool {
+    var colonIdx: int
+    var name: string
+    var baudStr: string
+    var baud: int
+
+    colonIdx = spec.indexOf(':')
+    if colonIdx < 0 {
+        return false
+    }
+    name = spec[0, colonIdx]
+    baudStr = spec[colonIdx + 1, spec.length - colonIdx - 1]
+
+    if name == "modem" {
+        rtConnParsePortIdx = 0
+    } else if name == "printer" {
+        rtConnParsePortIdx = 1
+    } else {
+        return false
+    }
+
+    baud = rtConnParseInt(baudStr)
+    if not rtConnValidBaud(baud) {
+        return false
+    }
+    rtConnParseBaud = baud
+    return true
+}
+
+// rtConnParseInt: plain non-negative decimal parse (no sign, no
+// fraction -- baud rates are never either). -1 for an empty string or any
+// non-digit byte, a sentinel that can never equal a real baud rate, so
+// rtConnValidBaud alone is enough to reject a malformed baudStr too.
+func rtConnParseInt(s: string): int {
+    var i: int
+    var v: int
+    var c: char
+
+    if s.length == 0 {
+        return -1
+    }
+    v = 0
+    i = 0
+    while i < s.length {
+        c = s[i]
+        if c < '0' or c > '9' {
+            return -1
+        }
+        v = v * 10 + (int(c) - int('0'))
+        i = i + 1
+    }
+    return v
+}
+
+// rtConnValidBaud: the Serial Driver's standard eleven-rate set (spec
+// %3, "Language surface").
+func rtConnValidBaud(b: int): bool {
+    return b == 300 or b == 600 or b == 1200 or b == 1800 or b == 2400 or b == 3600 or b == 4800 or b == 7200 or b == 9600 or b == 19200 or b == 57600
+}
+
+// rtConnSetFailed stages a pending `failed` event and clears any pending
+// `opened` for the same slot (the two are mutually exclusive per-slot --
+// see rtConnPendFailedCode's own comment above).
+func rtConnSetFailed(slot: int, code: int, msg: string) {
+    rtConnPendOpened[slot] = false
+    rtConnPendFailedCode[slot] = code
+    rtConnPendFailedMsg[slot] = msg
+}
+
+// rtConnOpen: parse-or-validation failure and device-open failure both
+// stage a pending `failed` (never a panic -- "environmental failures are
+// events", spec %3). Reopening an already-open slot is ALSO a pending
+// `failed`, not a panic (spec %3, "Reopening an already-open connection
+// var => failed") -- the one contract violation in this function that
+// still isn't a bug-grade error, unlike send/close below. On success,
+// state flips to open immediately but `opened` itself only fires on the
+// next rtConnPump pass (spec: "not inside open itself"), via
+// rtConnPendOpened.
+func rtConnOpen(slot: int, transport: int, spec: string) {
+    var devErr: int
+
+    if rtConnState[slot] == stOpen {
+        rtConnSetFailed(slot, rtConnErrAlreadyOpen, "connection already open")
+        return
+    }
+    if not rtConnParseSpec(spec) {
+        rtConnSetFailed(slot, rtConnErrInvalidSpec, "invalid connection spec")
+        return
+    }
+    devErr = rtConnDevOpen(slot, rtConnParsePortIdx, rtConnParseBaud)
+    if devErr != 0 {
+        rtConnSetFailed(slot, devErr, "could not open connection")
+        return
+    }
+    rtConnState[slot] = stOpen
+    rtConnPendOpened[slot] = true
+    // Clears any STALE pending failure left over from an earlier open()
+    // call on this same slot that pump() never got to drain (e.g. two
+    // open() calls back to back before any pump pass) -- without this,
+    // rtConnPump's `if pendOpened ... else if pendFailedCode != 0`
+    // ordering would let this success's pendOpened win the branch
+    // forever, leaving the stale nonzero code stuck permanently (and
+    // rtConnAlive() wrongly reporting a pending event forever with it).
+    rtConnPendFailedCode[slot] = 0
+}
+
+// rtConnSendText: send is a contract-checked operation, unlike open above
+// -- a non-open slot is a bug, not weather (spec %3), so this panics
+// rather than staging a `failed`. The byte marshal borrows ser.cla's own
+// NewPtr/BlockMoveData-adjacent scratch idiom (see this file's header
+// comment): one exact-size SerNewPtr per call is plain and correct at
+// serial/BBS data rates -- a persistent reusable scratch buffer would
+// only start mattering if send() ever became a hot path.
+func rtConnSendText(slot: int, t: text) {
+    var scratch: ptr
+    var n: int
+    var i: int
+    var junk: int
+
+    if rtConnState[slot] != stOpen {
+        rtPanic("connection not open")
+    }
+    n = t.length
+    if n == 0 {
+        return
+    }
+    scratch = SerNewPtr(n)
+    i = 0
+    while i < n {
+        pokeb(scratch + i, int(t[i]))
+        i = i + 1
+    }
+    junk = rtConnDevWrite(slot, scratch, n)
+    SerDisposePtr(scratch)
+}
+
+// rtConnSendStr: `string` is implicitly convertible to `text` at a call
+// argument (Ch3, "A string value may be used wherever a text is
+// expected"), so the string form is exactly the text form with no
+// separate byte-marshal path to maintain.
+func rtConnSendStr(slot: int, s: string) {
+    rtConnSendText(slot, s)
+}
+
+// rtConnClose: idempotent by construction -- rtConnDevClose itself is
+// idempotent (closing an already-closed device slot is a no-op on both
+// lanes), so no "already closed" guard is needed here. Never fires
+// `closed` (spec %3: "A local c.close() does NOT fire it").
+func rtConnClose(slot: int) {
+    rtConnDevClose(slot)
+    rtConnState[slot] = stClosed
+}
+
+// rtConnPump: one event-loop pass over every slot. Drains any pending
+// open result FIRST (opened or failed -- mutually exclusive per slot),
+// then -- independently, so a slot that just became open THIS pass is
+// still eligible -- services an open slot: device-gone closes it and
+// fires `closed`; otherwise drains everything currently available into
+// ONE fresh `text` and fires `received` once.
+func rtConnPump() {
+    var i: int
+    var t: text
+    var code: int
+
+    i = 0
+    while i < rtConnMax {
+        if rtConnPendOpened[i] {
+            rtConnPendOpened[i] = false
+            clar_conn_fire_opened(i)
+        } else if rtConnPendFailedCode[i] != 0 {
+            code = rtConnPendFailedCode[i]
+            rtConnPendFailedCode[i] = 0
+            clar_conn_fire_failed(i, code, rtConnPendFailedMsg[i])
+            rtConnPendFailedMsg[i] = ""
+        }
+
+        if rtConnState[i] == stOpen {
+            if rtConnDevGone(i) {
+                rtConnDevClose(i)
+                rtConnState[i] = stClosed
+                clar_conn_fire_closed(i)
+            } else if rtConnDevAvail(i) > 0 {
+                t = ""
+                // ponytail: per-byte append -- plain and correct at
+                // serial rates. If a future fast bulk transport ever
+                // makes this a bottleneck, the lever is a batched
+                // rtConnDevReadInto(slot, buf, n) added to the per-lane
+                // waist instead of this byte-at-a-time loop.
+                while rtConnDevAvail(i) > 0 {
+                    t.append(char(rtConnDevReadByte(i)))
+                }
+                clar_conn_fire_received(i, t)
+            }
+        }
+        i = i + 1
+    }
+}
+
+// rtConnAlive: true while any slot is open, or any slot has an open
+// result (opened/failed) still waiting to be drained -- the host CLI
+// pump-loop condition (spec %3, "Program lifetime": "stays alive while
+// any connection is open or an event is pending").
+func rtConnAlive(): bool {
+    var i: int
+
+    i = 0
+    while i < rtConnMax {
+        if rtConnState[i] == stOpen or rtConnPendOpened[i] or rtConnPendFailedCode[i] != 0 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}

@@ -208,3 +208,12 @@ static int rt_file_write_data(const uint8_t *path, const rt_text *t, const uint8
 }
 
 #include "rt_ser.inc"
+
+/* Serial connection glue (2026-08-15 serial-connection spec, Task 4): host
+ * TCP stand-in for the SCC, only spliced into a build that actually calls
+ * it (conn.cla + conn_c.cla, usage-gated by drive.cla) -- unconditionally
+ * included here regardless, same as rt_ser.inc above: it's cheap dead
+ * weight in an unused build and every rt_ext_ConnH* symbol only gets
+ * referenced (and thus only gets linked) when the Clarus side actually
+ * calls it. */
+#include "rt_serial.inc"
