@@ -250,7 +250,50 @@ func gcTickerAdd(line: string) {
     w.Output.text = t
 }
 
+// feProgress (onlog phase) is now a one-liner on BOTH front ends:
+// main.cla's host CLI already routed drive.cla's compile-progress seam
+// through log() (stderr), and this one now does too. The Log-window work
+// this function used to do in-line moved, verbatim, into the `on App.log`
+// handler below.
+//
+// The point is the persistent channel: log() writes the line to natLog's
+// buffer FIRST (flushed as the ##CLARUS-LOG## trailer at quit) and only
+// then fires the handler, so ClarusC.APPL's captured `out` finally
+// carries the whole timestamped stage log -- the durable, human-readable
+// compile log -- instead of just gcCompile's one bake-path verdict line.
+// Previously every progress line existed ONLY as on-screen textview
+// state, which nothing ever writes down.
+//
+// ponytail: natLogCap is 4096 bytes (runtime/clarus/native.cla) and
+// natLog silently truncates past it, so a very long compile's trailer is
+// clipped at the tail. Left alone deliberately -- raising the constant
+// re-blesses every native golden for a ceiling no committed gate is
+// anywhere near. Raise natLogCap if a real session ever loses lines that
+// matter.
 func feProgress(line: string) {
+    log(line)
+}
+
+// The Log-window half of the progress seam (onlog phase), moved here
+// verbatim from feProgress's old body -- gcProgressBuf accumulation
+// (restored by gcFlushProgress at every gcCompile exit) plus the rolling
+// ticker repaint (gcTickerAdd, which owns its own gcLiveActive gate and
+// the runtime's sync-paint behavior). Unchanged in every respect except
+// where it is called from.
+//
+// Reaching it through `on App.log` rather than through feProgress
+// directly widens the set of lines the window shows by exactly the set
+// of lines that were ALREADY going to the persistent channel and nowhere
+// else: gcCompile's own bakeMsg log() (see its call site -- its separate
+// gcBaseLog append is gone now, since this handler already routes it into
+// gcProgressBuf) and any log() one of clarusc's own pipeline modules
+// emits mid-compile (cg68k/bake diagnostics). Both are compile output a
+// user watching the Log window wants; neither could reach it before.
+// Runtime-internal writes never arrive here at all -- the panic path and
+// the abort default call natLog directly, and a runtime module's own
+// log() keeps lowering to the raw intrinsic (lower.cla's
+// lowCurFnRuntimeOrigin).
+on App.log(line: string) {
     gcProgressBuf.append(line)
     gcProgressBuf.append("\n")
     gcTickerAdd(line)
@@ -578,10 +621,9 @@ func gcCompile(w: Log, p: string) {
     // returned, so the CLIR-resource read/header-check stretch (the
     // biggest silent gap before driveCompile's own first progress line)
     // showed nothing on screen. gcBaseLog is captured here from
-    // w.Output.text BEFORE bakeMsg exists; bakeMsg's own line is appended
-    // to it separately, right after gcResolveBakePath returns, below --
-    // this keeps bakeMsg's two channels (log() and the gcBaseLog append)
-    // in the same relative order as before this reorder.
+    // w.Output.text BEFORE anything this compile produces -- it is now
+    // PURELY the prior window contents (onlog phase: bakeMsg's own
+    // separate append into it is gone, see its call site below).
     gcProgressBuf = ""
     gcBaseLog = w.Output.text
     gcTickerRing.clear()
@@ -590,20 +632,30 @@ func gcCompile(w: Log, p: string) {
     wantEmit = true
     want68k = true
 
-    // bakeMsg records WHICH path ran, and why, on two channels: log()
-    // (natLog, flushed into RunMac's own captured "log" stream at quit --
-    // the channel an automated test can actually read) and gcBaseLog
-    // (the on-screen Log window a real user sees) -- both written BEFORE
-    // gcFlushProgress later REPLACES w.Output.text wholesale from
-    // gcBaseLog + accumulated progress (gcLog's own append-in-place idiom
-    // would otherwise be silently discarded the moment this compile
-    // finishes -- macresident_test.go's own doc comment on gcLog's
-    // never-trace-visible behavior is the same reason, restated here for
-    // this new call site).
+    // bakeMsg records WHICH path ran, and why, on two channels: the
+    // persistent one (natLog, flushed into RunMac's own captured stream
+    // at quit -- the channel an automated test can actually read) and the
+    // on-screen Log window a real user sees. Both still happen, and both
+    // still land BEFORE gcFlushProgress later REPLACES w.Output.text
+    // wholesale from gcBaseLog + accumulated progress (gcLog's own
+    // append-in-place idiom would otherwise be silently discarded the
+    // moment this compile finishes -- macresident_test.go's own doc
+    // comment on gcLog's never-trace-visible behavior is the same reason,
+    // restated here for this call site).
     bakeMsg = gcResolveBakePath()
+    // onlog phase: ONE call, still two channels -- log() writes the
+    // persistent channel (natLog, the ##CLARUS-LOG## trailer an automated
+    // test reads) and then fires `on App.log`, which appends the line to
+    // gcProgressBuf for the on-screen Log window. The explicit
+    // `gcBaseLog.append(bakeMsg)` pair that used to supply the second
+    // channel is GONE: keeping it would print the line twice, since
+    // gcFlushProgress rebuilds w.Output.text as gcBaseLog + gcProgressBuf
+    // and gcProgressBuf now carries it. Net effect on the window: the
+    // same line, exactly once, but now in chronological position (after
+    // gcResolveBakePath's own two "Loading/Verifying Baked Runtime"
+    // progress lines, which physically precede it) instead of ahead of
+    // them. Nothing is lost.
     log(bakeMsg)
-    gcBaseLog.append(bakeMsg)
-    gcBaseLog.append("\n")
 
     entries.add(p)
 

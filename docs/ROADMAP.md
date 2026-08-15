@@ -2364,6 +2364,39 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
       `bkInstallTypeArenaPrefix`/`bkInstallFieldInfo`/
       `bkInstallCheckerSymbolsForTestapi`'s own analogous loops are OUT
       OF SCOPE for this task (not `bkInstallArenas`) and untouched.
+  14. `on App.log(line: string)` (Andrew's design, post-phase, same
+      branch): a generic per-line log subscriber — the optional
+      top-level handler that fires once per `log(...)` call with that
+      call's formatted line, after the line has already reached the
+      persistent channel (host stderr / the native `##CLARUS-LOG##`
+      trailer), so no handler behavior can lose it. Re-entrancy is
+      guarded (a `log()` from inside the handler still persists but does
+      not re-fire); runtime-internal writes never reach it (the panic
+      path and both backends' uncaught-abort defaults call `natLog`/
+      `rt_log` directly, and a runtime module's own `log()` keeps
+      lowering to the raw intrinsic); an abort raised by the handler
+      propagates out of the `log()` call site like any other callee's.
+      Deliberately NOT built on the reverse-waist dispatcher family
+      (`lowSynthUiDispatchers`): those are reached from the runtime
+      through a bare `external func`, which is unconditional by
+      construction, and this feature's hard constraint was **zero golden
+      churn for handler-less programs**. Instead `lower.cla`'s
+      `lowSynthAppLog` mints one ordinary `IRFunc`
+      (`clar_app_fire_log`) plus one guard global, only when the handler
+      is declared, and `lowCall`'s own `log` arm routes user call sites
+      to it — so **both backends needed no change at all**, and
+      handler-less output is byte-identical on both lanes (verified by
+      old-vs-new `emit`/`emit68k` compare before the snapshot regen).
+      `ClarusC.APPL` adopts it: `feProgress` is now just `log(line)` and
+      the Log-window ticker/buffer work moved verbatim into the handler,
+      which makes the captured `out` trailer the real, durable,
+      timestamped compile log instead of one bake-path verdict line.
+      Core-suite case `OnLog` (72nd, `cases_misc.cla`) pins ordering +
+      the guard on both lanes; `TestMacResidentFailedCompileStaysAlive
+      OnSnow`'s "Loading Baked Runtime" design-B count now names the
+      `T SET`-rendered Status-bar stage line specifically (`"Loading
+      Baked Runtime (Step"`), since the same words now also appear once
+      in the trailer — same one-LOAD-per-session meaning, one source.
 
   **Measured results** (Mini vMac / Mac Plus, 8MHz 68000, 60.15 guest
   ticks/s, N=65536-byte probe buffer;
@@ -2508,6 +2541,15 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     `internal/mactest/coresuite_test.go` carries the 70-case count as
     two separate literals, a `const` would make the next phase's bump
     one edit instead of two.
+  - **`natLogCap` is 4096 bytes** (onlog phase, item 14 above):
+    `natLog` silently truncates past it, so a multi-compile
+    `ClarusC.APPL` session's `##CLARUS-LOG##` trailer clips at the tail
+    (one from-source compile's own progress log measures ~1.9KB).
+    Deliberately not raised this task: the constant is emitted as a
+    `MOVE.L #4096,D0` immediate inside `natInit`, which every native
+    `.s` golden carries, so bumping it reblesses ~40 goldens for a
+    ceiling no committed gate is near. Raise it (and rebless) if a real
+    session ever loses lines that matter.
   - **Truncate-on-reuse recorded, not chosen** (design B's own
     alternative, spec §4): cheaper per compile (no copy) but needs a
     list-truncation primitive plus a proof no pass mutates prefix

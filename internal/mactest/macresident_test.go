@@ -470,13 +470,34 @@ func TestMacResidentFailedCompileStaysAliveOnSnow(t *testing.T) {
 	// driveEmit68kFork, well after bkParsedValid is already true, so
 	// compile #2's gcResolveBakePath takes the `if bkParsedValid` early
 	// return (macgui.cla) and skips the resource read/verify/parse
-	// entirely. "Loading Baked Runtime" (gcResolveBakePath's own
-	// pre-parse progress line) must therefore appear exactly once across
-	// the whole two-compile session -- a second occurrence would mean
-	// compile #2 re-read/re-verified/re-parsed the resource, exactly the
-	// per-compile cost design B exists to eliminate.
-	if n := strings.Count(appOut, "Loading Baked Runtime"); n != 1 {
-		t.Errorf("app out has %d \"Loading Baked Runtime\" lines, want exactly 1 (compile #2 should skip the reload via bkParsedValid):\n%s", n, appOut)
+	// entirely. gcResolveBakePath's own pre-parse announcement must
+	// therefore appear exactly once across the whole two-compile session
+	// -- a second occurrence would mean compile #2 re-read/re-verified/
+	// re-parsed the resource, exactly the per-compile cost design B exists
+	// to eliminate.
+	//
+	// onlog phase: the bare substring "Loading Baked Runtime" now has TWO
+	// independent sources in this capture, so counting it plainly would
+	// read 2 for a correct single load. gcResolveBakePath announces the
+	// step on both of its seams, back to back:
+	//   - feProgressStep -> the Log window's Status label, which the UI
+	//     trace records immediately as
+	//     `T SET Log.Status.text [...] Loading Baked Runtime (Step 0/10)`;
+	//   - feProgress -> log(), which since the onlog phase reaches natLog
+	//     and lands in the ##CLARUS-LOG## trailer as a timestamped
+	//     `[<stamp>] Loading Baked Runtime` line (before the onlog phase
+	//     this line existed only as on-screen textview state, which emits
+	//     no trace at all -- hence the historical count of 1).
+	// appOut is the RAW capture file, trailer included, so both are in
+	// scope here. Counting the Status-bar line specifically (the "(Step"
+	// suffix is unique to feProgressStep's rendering) keeps the assertion's
+	// design-B meaning exactly as written -- one LOAD per session -- while
+	// naming a single source. The Status line is the better of the two to
+	// pin: it is written immediately, whereas natLog's buffer is capped
+	// (natLogCap, runtime/clarus/native.cla) and a long enough session
+	// could truncate the trailer copy away.
+	if n := strings.Count(appOut, "Loading Baked Runtime (Step"); n != 1 {
+		t.Errorf("app out has %d \"Loading Baked Runtime\" stage lines, want exactly 1 (compile #2 should skip the reload via bkParsedValid):\n%s", n, appOut)
 	}
 
 	// The second, successful compile in the SAME session must have
