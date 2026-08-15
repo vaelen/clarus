@@ -3,7 +3,8 @@
 Clarus is a compiled, event-driven language for System 6/7 68k Macs.
 Read `docs/ROADMAP.md` first — it is the authoritative record of sequencing
 and strategy; completed (merged-to-main) phases are archived verbatim in
-`docs/HISTORY.md`. `docs/clarus-language-reference.md` is the normative
+`docs/HISTORY.md`, and recorded-but-unscheduled follow-ups live in
+`docs/TODO.md`. `docs/clarus-language-reference.md` is the normative
 language spec; where any other doc disagrees, the reference wins.
 `docs/clarus-toolbox-cookbook.md` is a how-to companion for transcribing
 Inside Macintosh declarations into Clarus `extern`/`callback` forms.
@@ -203,7 +204,7 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   catalog in the app's own resource fork, so it needs no
   `runtime/clarus/` directory on the Mac disk; `--partition N` overrides
   the SIZE(-1) resource's partition (ClarusC.APPL itself needs more than
-  the ordinary 2MB default — see `docs/ROADMAP.md`'s mac-resident-clarusc
+  the ordinary 2MB default — see `docs/HISTORY.md`'s mac-resident-clarusc
   phase entry). `file.readResource(name, out)`/`file.writeRes(path,
   fork, doctype, creator)` are the underlying resource-fork intrinsics
   (Mac-only; a host build's `readResource` always returns `false`) — see

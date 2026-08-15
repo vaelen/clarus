@@ -3,7 +3,7 @@
 
 // arc_ported_list.cla: adversarial `list of` matrix (Plan 5b Task 12) --
 // list-of-text and list-of-record variants of the ARC-era blind spots
-// recorded in ROADMAP Done item 11 and pinned by arc_fixwave_containers.cla/
+// recorded in HISTORY Done item 11 and pinned by arc_fixwave_containers.cla/
 // arc_global_alias.cla (testdata/run/lib), re-run here over the PORTED
 // runtime (runtime/clarus/list.cla + friends, Tasks 1-11) via the
 // internal/lowlevel harness -- clarusc-emitted C, host cc against rt.c, run

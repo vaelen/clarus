@@ -583,7 +583,7 @@ func natQuit(code: int) {
 // NOT natQuit's normal cg_free_globals-first path: this calls natQuit
 // directly, matching the host's rt_panic (panic skips cleanup).
 //
-// attempt-abort phase Task 9 rewrite (ROADMAP debt entry, field test
+// attempt-abort phase Task 9 rewrite (HISTORY attempt-abort debt entry, field test
 // 2026-08-14): a real mid-segment-write OOM quit ClarusC.APPL with no
 // beep, no alert, and the trace line lost (it only reached `out` via
 // natQuit's own buffered-log trailer, which a crash between panic and

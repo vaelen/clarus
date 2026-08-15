@@ -6609,7 +6609,7 @@ func cgIntr4(e: int, nameIdx: int, addr0: bool, addr1: bool, addr2: bool, addr3:
 // `buf = cgExprAddr(a1e)` taken before the call can go stale by the time
 // TextBlockMoveData uses it -- the exact stale-pointer-across-compaction
 // bug class the runtime-ir-bake phase's own T2 blocker found FIVE
-// separate live instances of (ROADMAP `runtime-ir-bake` entry, "T2
+// separate live instances of (HISTORY `runtime-ir-bake` entry, "T2
 // blocker" subsection); a comment-only fix was rejected as
 // under-defending against a repeat. The A6-relative scratch buffer this
 // function fills BEFORE the call is not itself relocatable (ordinary

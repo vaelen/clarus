@@ -25,7 +25,7 @@
 // downstream draw/hit/click/dispose site here keys on that, exactly like
 // the oracle's own `!inst->ctrls[wIdx]` guards), not the dead CDEF branch
 // itself. Flip only once clarusc/build-mac.sh emit a real per-popup 'MENU'
-// resource (docs/ROADMAP.md's small-open-items list).
+// resource (docs/TODO.md).
 //
 // Table row values are drawn straight from the bound record's own memory
 // (ftype/offset/strCap/enumCount/enumLabels/enumValues, all read via

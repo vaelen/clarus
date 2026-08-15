@@ -38,7 +38,7 @@ list's "runtime loop-body residual" lever is the starting point;
 M3).
 
 Full task ledger, measured numbers, rulings, and the complete debt
-list: ROADMAP's `clir-load-perf` entry. Ledger + reports:
+list: HISTORY's `clir-load-perf` entry. Ledger + reports:
 `.superpowers/sdd/2026-08-15-clir-load-perf/` (progress.md is the
 authoritative per-task record; task-9-report.md has the raw emulator
 probe numbers this phase's perf table is built from).
@@ -70,7 +70,7 @@ projection):** body hash 153.98→60.63 µs/byte (2.54x); U32 parse walk
 (359x). Projected real-CLIR (1,255,314 bytes) load-path window:
 638.8s→145.2s (~4.4x). **Spec's ≤60s first-compile target: likely
 MISSED (~2-2.5min projected on Snow).** Repeat-compile target (install
-only, ~2s): met. See ROADMAP entry for the full methodology and
+only, ~2s): met. See HISTORY's clir-load-perf entry for the full methodology and
 honesty caveats — these are Mac Plus (8MHz, no-cache) guest-tick
 numbers extrapolated linearly; no Mac II boot lane exists to measure
 Snow directly yet.
@@ -88,7 +88,7 @@ Snow directly yet.
 - **Merge: NOT DONE.** `clir-load-perf` branch sits ahead of `main` at
   `42c7265`; fast-forward is a merge-time decision, not automatic.
 
-**Debt carried (full list with citations in the ROADMAP entry):**
+**Debt carried (full list with citations in the HISTORY entry):**
 runtime loop-body residual (~480 cycles/byte, ~10x theoretical —
 future lever: hand-emitted helpers or loop-codegen work); memo
 lane-tag gap; testapi single-compile coverage gap; `stringAt`
@@ -115,7 +115,7 @@ one reconciling sentence in `clarusc/ir.cla:375`.
   −11.5% vs pre-feature after the Task 6b `canAbort` fixpoint;
   `ClarusC.APPL` panics and uncaught aborts are now user-visible
   (beep+alert) instead of silent exits; two real unwind leak classes
-  found and fixed. Full detail: ROADMAP's `attempt-abort` entry.
+  found and fixed. Full detail: HISTORY's `attempt-abort` entry.
   Ledger: `.superpowers/sdd/2026-08-14-attempt-abort/` (retained, incl.
   `deferred-gates.md` — every item marked run/green). Reference:
   `docs/clarus-language-reference.md` Ch5 ("Attempt and Abort"), Ch12,
@@ -131,11 +131,11 @@ one reconciling sentence in `clarusc/ir.cla:375`.
 - **object-code-linker** (stage 3.5, CLIR v6 baked object code,
   −41%/−35% emit68k) — merged 2026-08-14 (`e143af1..6009c65`). Its
   Snow saga (C-lane signed-overflow UB hash bug, CLAR_*32 fix, re-run
-  PASS) is recorded in ROADMAP; debt list in its entry. Note:
+  PASS) is recorded in HISTORY; debt list in its entry. Note:
   clir-load-perf's Task 7 deleted this phase's `bkInstallObjCode`
   function outright (design B needed the pending arenas it truncated
   to survive un-truncated across compiles) — the object-code-linker
-  ROADMAP entry's own references to that function now carry
+  HISTORY entry's own references to that function now carry
   superseded-claim parentheticals pointing here.
 - **fallback-trigger-narrowing** (CLIR v5 per-module source hash,
   include-dedup by construction) — merged 2026-08-13.

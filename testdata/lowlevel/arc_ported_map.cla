@@ -3,7 +3,7 @@
 
 // arc_ported_map.cla: adversarial `map of` matrix (Plan 5b Task 12) --
 // map-of-text and map-of-record variants of the ARC-era blind spots
-// (ROADMAP Done item 11, arc_fixwave_containers.cla/arc_global_alias.cla),
+// (HISTORY Done item 11, arc_fixwave_containers.cla/arc_global_alias.cla),
 // re-run over the PORTED runtime (runtime/clarus/map.cla + friends) via
 // the internal/lowlevel harness. List's analogous scenarios live in
 // arc_ported_list.cla; file.load-over-populated lives in
