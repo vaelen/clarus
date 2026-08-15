@@ -26,6 +26,10 @@
 //                              observable here)
 //   MiscWideProtoSumBoxMetrics <- emit_wideproto.cla (18-param prototype,
 //                              sums all args)
+//   OnLog                   <- onlog phase: the `on App.log(line: string)`
+//                              handler + its re-entrancy guard, both
+//                              lanes (see the case's own header below for
+//                              why it lives in this family)
 //   MiscLongCondChain       <- emit_longline.cla (long and-chain / long
 //                              arith chain; shortened -- the ORIGINAL
 //                              41/60-term one-line chains stress clarusc's
@@ -230,4 +234,69 @@ func caseMiscLongCondChain(): TestResult {
         return tkFail("MiscLongCondChain", "long arith chain wrong")
     }
     return tkPass("MiscLongCondChain")
+}
+
+// ---- OnLog (onlog phase): `on App.log(line: string)` ----------------
+//
+// The suite's ONE program-level log subscriber, deliberately parked in
+// this catch-all family rather than a new cases_onlog.cla: a new case
+// FILE would have to be added to four separate Go-side file lists
+// (internal/mactest/suite_host_test.go's coreCLIFiles, internal/testsuite
+// /core_cli_test.go, internal/cg68k/segment_test.go, internal/bake/
+// bakeidentity_test.go), all for one 30-line case.
+//
+// Runs on BOTH lanes (host CLI and the native GUI boot), which is the
+// point: the dispatcher clarusc synthesizes for this handler
+// (clar_app_fire_log, lower.cla's lowSynthAppLog) is an ordinary IRFunc,
+// so cprint and cg68k compile it through their ordinary function paths
+// with no backend-specific arm -- and this case is what proves that on
+// real 68k hardware.
+//
+// Nothing else in the suite calls log(), so these two globals see only
+// what caseOnLog itself logs.
+var clOnLogSeen: list of string
+var clOnLogDepth: int
+
+on App.log(line: string) {
+    clOnLogSeen.add(line)
+    clOnLogDepth = clOnLogDepth + 1
+    // Re-entrancy probe: this log() reaches the persistent channel
+    // (host stderr / the native ##CLARUS-LOG## trailer) but must NOT
+    // re-enter this handler. Gated on the first call only, so a BROKEN
+    // guard fails the count assertion below instead of recursing
+    // forever -- a hang would be a far worse failure mode than a FAIL
+    // line, especially on the emulator lane.
+    if clOnLogDepth == 1 {
+        log("onlog-inner")
+    }
+}
+
+func caseOnLog(): TestResult {
+    clOnLogSeen.clear()
+    clOnLogDepth = 0
+
+    log("onlog-a")
+    log("onlog-b")
+
+    // Exactly the two OUTER lines, in call order. "onlog-inner" is
+    // absent: it was logged from inside the handler, so the guard
+    // suppressed the nested dispatch (it still reached the persistent
+    // channel, which no in-process assertion can observe -- the
+    // persist-before-dispatch ordering is structural, the dispatcher's
+    // first statement, see lowSynthAppLog).
+    if clOnLogSeen.count != 2 {
+        return tkFail("OnLog", "handler saw " + tkIntToStr(clOnLogSeen.count) + " lines, want 2 (a nested log() must not re-fire the handler)")
+    }
+    if clOnLogSeen[0] != "onlog-a" {
+        return tkFail("OnLog", "line 0 is " + clOnLogSeen[0] + ", want onlog-a")
+    }
+    if clOnLogSeen[1] != "onlog-b" {
+        return tkFail("OnLog", "line 1 is " + clOnLogSeen[1] + ", want onlog-b")
+    }
+    // Three dispatch attempts happened (a, inner, b); only two got
+    // through -- so depth counts the two that did.
+    if clOnLogDepth != 2 {
+        return tkFail("OnLog", "handler fired " + tkIntToStr(clOnLogDepth) + " times, want 2")
+    }
+    return tkPass("OnLog")
 }

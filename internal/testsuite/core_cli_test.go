@@ -207,6 +207,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"AbortCatch", "AbortDeep", "AbortNested", "AbortReabort", "AbortRelease",
 			"TextRange",
 			"ListClone",
+			"OnLog",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

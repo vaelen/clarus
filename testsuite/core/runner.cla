@@ -85,6 +85,12 @@
 // `list of T` method through the same intrinsic pipeline -- a `list of
 // int` (values + independence), an empty list, and a `list of` flat
 // record type.
+//
+// OnLog (cases_misc.cla, onlog phase) is the 71st real case: the
+// `on App.log(line: string)` handler -- ordering, the re-entrancy guard,
+// and (by running on both lanes) the fact that the dispatcher clarusc
+// synthesizes for it needs no backend-specific arm. Its handler is the
+// suite's only `on App.log`, and nothing else in the suite calls log().
 
 enum CoreTest {
     All
@@ -158,16 +164,17 @@ enum CoreTest {
     AbortRelease
     TextRange
     ListClone
+    OnLog
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 70 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 71 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 71
+const nCoreCases: int = 72
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -386,6 +393,9 @@ func coreCaseName(t: CoreTest): string {
     case ListClone {
         return "ListClone"
     }
+    case OnLog {
+        return "OnLog"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -476,6 +486,7 @@ func coreAllCases(): list of CoreTest {
     l.add(AbortRelease)
     l.add(TextRange)
     l.add(ListClone)
+    l.add(OnLog)
     l.add(SelfCheck)
     return l
 }
@@ -792,6 +803,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, ListClone) {
         results.add(caseListClone())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, OnLog) {
+        results.add(caseOnLog())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

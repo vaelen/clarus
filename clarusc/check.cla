@@ -963,6 +963,16 @@ func buildEventsTable() {
     addEvent("app.startEmpty", -1, 0)
     addEvent("app.openDocument", newEventParam(intern("path"), strT(255), -1), 1)
     addEvent("app.startCLI", newEventParam(intern("args"), listT(strT(255)), -1), 1)
+    // `on App.log(line: string)` (onlog phase): the generic per-line log
+    // subscriber -- fires once per `log()` call, AFTER the line has
+    // already reached the persistent channel (host stderr / the native
+    // ##CLARUS-LOG## trailer). Duplicate declarations follow the SAME
+    // (non-)rule every other App handler already follows here: the table
+    // only fixes the signature, and lowTopHandler's last-wins
+    // registration is what a second `on App.x` gets -- no special
+    // duplicate diagnostic exists for App.launch/startEmpty/startCLI/
+    // openDocument either, so none is invented for this one.
+    addEvent("app.log", newEventParam(intern("line"), strT(255), -1), 1)
 
     addEvent("window.opened", -1, 0)
     addEvent("window.closeRequest", -1, 0)

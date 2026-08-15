@@ -40,7 +40,7 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // `FAIL <name>: <detail>` line per case plus a final `TOTAL n PASS p
 // FAIL f` line -- exactly the log RunMac's capture protocol already
 // surfaces as `out` for any other native boot. This test parses that
-// capture for all 71 real CoreTest cases (70 + SelfCheck, runner.cla's
+// capture for all 72 real CoreTest cases (71 + SelfCheck, runner.cla's
 // own nCoreCases -- grown from 42 by the map-hashtable phase's
 // sortedmap/hashtable-map/intmap case families, then 57 by the
 // datetime-instrumentation phase's own case family, then 58 by the
@@ -56,14 +56,16 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // clir-load-perf phase's own TextRange case (Task 2, hashStep/intAt/
 // stringAt/textAt bulk range-read coverage), then 71 by that same
 // phase's own field-measured follow-on ListClone case (`list.clone()`,
-// the bulk copy-on-install fix). Task 2 bumped runner.cla's
+// the bulk copy-on-install fix), then 72 by the onlog phase's own OnLog
+// case (`on App.log(line: string)` -- ordering + re-entrancy guard,
+// cases_misc.cla). Task 2 bumped runner.cla's
 // nCoreCases and internal/testsuite's own wantCases, but this file's
 // hardcoded count was explicitly out of Task 2's host-lane-only scope
 // (cg68k.cla off limits, no cg68k arms yet to boot natively past
 // "unsupported UI intrinsic text_int_at" -- text_u32_at before the
 // post-review u32At->intAt rename) -- Task 3's cg68k arms are what
 // first let this gate reach the per-case capture below at all, so the
-// count bump lands together with them here. Requires all 71 real cases
+// count bump lands together with them here. Requires all 72 real cases
 // PASS in this ONE boot, plus the matching TOTAL line -- success
 // criterion 2's native/GUI half (the host/CLI half is
 // internal/testsuite's TestCoreSuiteCLI; the Mac/native CLI half, once
@@ -108,9 +110,10 @@ func TestCoreSuiteGUIOnMac(t *testing.T) {
 // XRecFieldsRoundtrip, then 46/50/54 via that phase's sortedmap/
 // hashtable-map/intmap case additions, then 70 by the clir-load-perf
 // phase's own TextRange case, then 71 by that same phase's own
-// ListClone case, see TestCoreSuiteGUIOn68k's own doc
+// ListClone case, then 72 by the onlog phase's own OnLog case, see
+// TestCoreSuiteGUIOn68k's own doc
 // comment above): parses the PASS/FAIL/TOTAL lines kit.cla's tkReport
-// funnels every case through, requiring all 71 real CoreTest cases (70 +
+// funnels every case through, requiring all 72 real CoreTest cases (71 +
 // SelfCheck) PASS and the matching TOTAL line, regardless of which lane
 // produced the capture.
 func checkCoreSuiteCapture(t *testing.T, out string) {
@@ -128,13 +131,13 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 			total = line
 		}
 	}
-	if passes != 71 {
-		t.Errorf("PASS lines: got %d, want 71\ncapture:\n%s", passes, out)
+	if passes != 72 {
+		t.Errorf("PASS lines: got %d, want 72\ncapture:\n%s", passes, out)
 	}
 	if fails != 0 {
 		t.Errorf("FAIL lines: got %d, want 0", fails)
 	}
-	if want := "TOTAL 71 PASS 71 FAIL 0"; total != want {
+	if want := "TOTAL 72 PASS 72 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

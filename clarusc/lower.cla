@@ -80,6 +80,33 @@ var lowResumeFromBake: bool
 // wave".
 var lowSkipUiDispatchers: bool
 
+// ---- `on App.log(line: string)` (onlog phase) ----
+//
+// lowHasAppLog is set by lowerProgram's own pre-pass (a scan of the
+// top-level decl chain for an `on App.log` handler) BEFORE any function
+// body is lowered -- a pre-pass, not lowTopHandler's own side effect,
+// because a `log()` call site lowered EARLIER in the same chain has to
+// route the same way as one lowered after the handler's own decl (the
+// same reason the extern pre-pass right above the main walk exists).
+//
+// lowCurFnRuntimeOrigin mirrors lowFuncBody's own `runtimeOrigin`
+// argument for the duration of that body's lowering, so the `log()` arm
+// of lowCall can tell a USER `log()` statement from a runtime module's
+// own (runtime/clarus/uiscript.cla and uiwidgets.cla each carry one
+// "uiport: ..." diagnostic). Only the user-facing statement is routed
+// through the handler; a runtime module's stays the raw ILog intrinsic.
+// Two reasons, both load-bearing:
+//   - the feature's own contract (only the user-facing `log()` path
+//     fires the handler; runtime-internal writes never do), and
+//   - baked-vs-from-source parity: under a runtime-IR bake the runtime
+//     chain was lowered in a SEPARATE lowerProgram pass (bake.cla's
+//     bakeGenerateChain), where no user handler exists and where these
+//     two calls were therefore already frozen as raw ILog. Gating on
+//     runtime origin makes the from-source lane agree with the baked
+//     lane instead of diverging on exactly those two lines.
+var lowHasAppLog: bool
+var lowCurFnRuntimeOrigin: bool
+
 // lowCurFuncRet is the enclosing function's declared return IR type index,
 // for the Return-statement coercion Task 4 adds (lower.go's curFuncRet).
 var lowCurFuncRet: int
@@ -1132,6 +1159,21 @@ func lowCall(e: int): int {
             lowUsesAbort = true
             return newIRIntr(IAbort(), lowArgs(callArgsHead(e)), ty)
         } else if name == "log" {
+            // onlog phase: with an `on App.log` handler declared, a USER
+            // `log(x)` lowers to a plain call to the synthesized
+            // clar_app_fire_log dispatcher (lowSynthAppLog, below), which
+            // does the raw persist FIRST and then fires the handler.
+            // Everything else -- a runtime module's own `log()`, the
+            // fail-closed lowSynthPanic tail below, cg68k/cprint's own
+            // hand-emitted abort-default rt_log/natLog writes, and
+            // nat_CorePanic's direct natLog call -- keeps building/emitting
+            // the bare ILog intrinsic, so none of them can re-enter user
+            // code. A program with no handler is byte-identical to before
+            // this phase: same intrinsic, no extra function, no extra
+            // global.
+            if lowHasAppLog and not lowCurFnRuntimeOrigin {
+                return newIRCallFn(intern("clar_app_fire_log"), lowArgs(callArgsHead(e)), ty)
+            }
             return newIRIntr(ILog(), lowArgs(callArgsHead(e)), ty)
         } else if name == "peekb" {
             return newIRIntr(IPeekB(), lowArgs(callArgsHead(e)), ty)
@@ -4359,10 +4401,19 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int, runti
     var p: int
     var loc: int
     var savedRet: int
+    var savedRtOrigin: bool
     var bodyHead: int
     var fn: int
 
     lowPushScope()
+
+    // onlog phase: mirror `runtimeOrigin` into module state for the
+    // duration of THIS body's lowering (saved/restored in the same shape
+    // as savedRet just below, so a future nested caller cannot leak it),
+    // so lowCall's `log()` arm can tell a user statement from a runtime
+    // module's own -- see lowCurFnRuntimeOrigin's own doc comment.
+    savedRtOrigin = lowCurFnRuntimeOrigin
+    lowCurFnRuntimeOrigin = runtimeOrigin
 
     paramsHead = -1
     paramsTail = -1
@@ -4452,6 +4503,7 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int, runti
     } else if lowUsesAbort {
         irFuncSetBail(fn, lowBuildAbortBailBlock(ret))
     }
+    lowCurFnRuntimeOrigin = savedRtOrigin
     lowPopScope()
     return fn
 }
@@ -4688,6 +4740,17 @@ func lowTopHandler(d: int) {
     } else if path == "App.openDocument" {
         lowFuncBody(intern("handler_App_openDocument"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
         irHasOpenDocument = true
+    } else if path == "App.log" {
+        // onlog phase. No `irHasLog` program flag: unlike every handler
+        // above, nothing in either backend's startup emission needs to
+        // know -- the only consumer is lowerProgram's own pre-pass
+        // (lowHasAppLog, already set before this point) and the
+        // synthesized dispatcher it drives, both of which live entirely
+        // in this file. Keeping it out of ir.cla also keeps it out of
+        // bake.cla's bkWriteIrScalars, which would otherwise be a CLIR
+        // format-version bump for a value the runtime bake can never
+        // carry anyway (a runtime module never declares this handler).
+        lowFuncBody(intern("handler_App_log"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
     } else {
         // Task 4+: resource handlers are unsupported.
         lowUnsupported("handler " + path)
@@ -6719,6 +6782,124 @@ func lowSynthUiDispatchers() {
     lowSynthStartEmpty()
 }
 
+// ================================================================
+// `on App.log` dispatcher synthesis (onlog phase)
+// ================================================================
+//
+// lowSynthAppLog builds ONE extra IRFunc (plus one int global) when --
+// and only when -- the program declares `on App.log(line: string)`:
+//
+//     func clar_app_log(line: string) {          // clar_app_fire_log
+//         log(line)                              // raw ILog: persist FIRST
+//         if clar_app_log_infire == 0 {
+//             clar_app_log_infire = 1
+//             handler_App_log(line)
+//             clar_app_log_infire = 0
+//         }
+//     }
+//
+// and lowCall's own `log` arm (above) routes every user `log(x)` here
+// instead of emitting the ILog intrinsic inline. Why this shape:
+//
+//   - ZERO churn for a handler-less program. Neither the function nor
+//     the global nor the reroute exists unless the handler is declared,
+//     so every existing golden/snapshot stays byte-identical. This is
+//     why the reverse-waist pattern (lowSynthUiDispatchers, above) is
+//     NOT reused: those are built unconditionally and reached from the
+//     runtime through a bare `external func` declared in ui.cla -- an
+//     extern is unconditional by construction, so a runtime-side hook
+//     would add an always-present empty stub to every program.
+//
+//   - Persist-before-dispatch is structural, not a convention: the raw
+//     ILog is the dispatcher's FIRST statement, so no handler behavior
+//     (including an abort or a panic) can lose the line from the
+//     persistent channel (host stderr / the native ##CLARUS-LOG##
+//     trailer).
+//
+//   - Abort interplay needs no explicit flag test here. Every write on
+//     the runtime log path that happens WHILE the abort flag is raised
+//     bypasses this dispatcher by construction, verified site by site:
+//     cprint's cpEmitAbortDefaultCheck emits a literal `rt_log(...)`
+//     line; cg68k's cgEmitAbortDefaultCheck calls natLog by name
+//     (cgCallRuntime1); native.cla's nat_CorePanic calls natLog/natAlert
+//     as ordinary intra-module functions; lowSynthPanic (above) builds
+//     its ILog node directly rather than through the `log` NAME arm; and
+//     the UI trace machinery goes through alert()/rtUiAlertMsg, not log
+//     at all. An `attempt` handler body, meanwhile, runs with the flag
+//     ALREADY cleared (cprint's `clar_aborting = 0` on handler entry, and
+//     cg68k's own equivalent), so a `log()` there is ordinary user code
+//     and SHOULD fire. There is therefore no reachable `log()` statement
+//     that executes with the abort flag raised, and nothing to guard.
+//
+//   - Abort PROPAGATION is the ordinary call-site kind, deliberately not
+//     the UI-dispatcher kind: cgAbortCheckAfterCall gives the
+//     `clar_ui_fire_*` family the in-place %3.5 default because those are
+//     called from the runtime's event loop, where an abort has no Clarus
+//     caller to unwind into. This dispatcher is called from ordinary user
+//     code that already HAS a bail chain, so an abort raised by the
+//     handler propagates out of the `log()` call site exactly like an
+//     abort raised by any other callee -- which is why the name is
+//     `clar_app_fire_log`, deliberately NOT matching cgSeveredFamily's
+//     `clar_ui_fire_` prefix. lowComputeCanAbort runs AFTER this
+//     synthesis (lowerProgram's tail), so the interprocedural analysis
+//     sees the handler edge and narrows correctly.
+//
+// ponytail: an abort() that escapes the HANDLER BODY leaves the guard
+// set, so the handler stops firing for the rest of the run (the
+// persistent channel is unaffected -- it is written before the guard is
+// ever touched). Conservative, and the program is already unwinding when
+// it happens. Upgrade path if it ever bites: clear the guard from the
+// attempt-handler/top-level-default entry alongside the abort flag.
+func lowSynthAppLog() {
+    var guardName: int
+    var lineT: int
+    var persist: int
+    var setFlag: int
+    var call: int
+    var clrFlag: int
+    var guardTest: int
+    var body: int
+    var param: int
+    var fnNameIdx: int
+
+    if not lowHasAppLog {
+        return
+    }
+    // Appended AFTER every user/runtime global this compile lowered, so
+    // no existing global's ORDINAL moves -- uiblob's own rowsGlobalIdx
+    // (and clar_ui_fire_staterows' index dispatch) are positional, and
+    // native.cla's/ui.cla's own header comments record what inserting a
+    // global anywhere earlier costs.
+    guardName = intern("clar_app_log_infire")
+    newIRGlobal(guardName, irIntT, -1, false)
+
+    lineT = irStrType(255)
+    persist = newIRExprStmt(newIRIntr(ILog(), newIRVarRef(intern("line"), false, lineT), irVoidT))
+
+    setFlag = newIRAssign(newIRVarRef(guardName, true, irIntT), newIRIntConst(1, irIntT))
+    call = newIRExprStmt(newIRCallFn(intern("handler_App_log"), newIRVarRef(intern("line"), false, lineT), irVoidT))
+    clrFlag = newIRAssign(newIRVarRef(guardName, true, irIntT), newIRIntConst(0, irIntT))
+    irStmtListAppend(setFlag, call)
+    irStmtListAppend(call, clrFlag)
+
+    // `guard == 0`, mirroring lowSynthEqInt's own newIRBin(intern("=="))
+    // spelling (the op is an interned STRING, not ast.cla's numeric OpEq).
+    guardTest = newIRBin(intern("=="), newIRVarRef(guardName, true, irIntT), newIRIntConst(0, irIntT), irBoolT)
+    body = newIRIf(guardTest, setFlag, -1)
+    irStmtListAppend(persist, body)
+
+    // This body mints no locals of its own (every node above is
+    // hand-built, nothing routes through lowExpr/lowAddLocal), so the
+    // IRFunc's localsHead is a literal -1; the reset is only so the last
+    // real function's chain can't leak into whatever synthesis runs
+    // next, matching lowSynthesizeMissingOpenedHandlers' own discipline.
+    lowLocalsHead = -1
+    lowLocalsTail = -1
+    param = newIRLocal(intern("line"), lineT)
+    fnNameIdx = intern("clar_app_fire_log")
+    newIRFunc(fnNameIdx, param, irVoidT, -1, persist)
+}
+
 // lowUiSynthExternName maps a reverse-waist extern's OWN declared Clarus
 // name (as ui.cla, Task 7+, will spell it) to the interned C name of the
 // IRFunc lowSynthUiDispatchers built for it above -- the ONE place (per
@@ -6846,12 +7027,36 @@ func lowerProgram(declHead: int): int {
         }
         d = declNext(d)
     }
+    // `on App.log` pre-pass (onlog phase), same reason the extern
+    // pre-pass just above exists: lowCall's own `log` arm has to route
+    // identically for a `log()` call site lowered BEFORE the handler's
+    // decl is reached and one lowered after, and the top-level decl
+    // chain has no required order. Always recomputed, never resumed from
+    // a bake (a runtime module can't declare this handler, so the flag's
+    // baked value would always be false anyway).
+    lowHasAppLog = false
+    lowCurFnRuntimeOrigin = false
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkHandler and poolGet(handlerDeclPath(d)) == "App.log" {
+            lowHasAppLog = true
+        }
+        d = declNext(d)
+    }
     d = declHead
     while d != -1 {
         lowDecl(d)
         d = declNext(d)
     }
     lowSynthesizeMissingOpenedHandlers()
+    // `on App.log` dispatcher (onlog phase) -- a no-op unless this
+    // program declared the handler, so a handler-less program's IR (and
+    // therefore both backends' output) is untouched. Deliberately NOT
+    // inside the lowSkipUiDispatchers guard below: that flag exists to
+    // stop the BAKE GENERATOR from building the reverse-waist stubs, and
+    // the bake generator lowers the runtime chain alone, where
+    // lowHasAppLog is false regardless.
+    lowSynthAppLog()
     // Reverse-waist dispatcher synthesis (runtime-ir-bake Task 2: made
     // UNCONDITIONAL -- was gated on irIsUiProgram()'s own condition,
     // duplicated here rather than calling across the layering boundary).

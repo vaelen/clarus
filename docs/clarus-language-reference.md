@@ -865,6 +865,20 @@ A Clarus program responds to application-level events through top-level event ha
 | `App.openDocument` | `on App.openDocument(path: string) { }` | Once per document the Finder launched the app with, or dropped on it while running. |
 | `App.startEmpty` | `on App.startEmpty { }` | After `launch`, only when the app was started with **no** documents. |
 | `App.startCLI` | `on App.startCLI(args: list of string) { }` | After `launch`, only on a command-line host, carrying the argument list. Never fires on the Macintosh. |
+| `App.log` | `on App.log(line: string) { }` | Once per `log(...)` call, at any point in the program's life, carrying that call's line. |
+
+#### `App.log`
+
+`on App.log(line: string)` subscribes to the program's own diagnostic stream: every `log(...)` call (Chapter 12) fires it once, with that call's line. It is optional, and only one is meaningful: as with the other `App` handlers, a second declaration of the same event silently replaces the first. Four rules define it:
+
+1. **The persistent channel comes first.** The line reaches the platform's diagnostic stream (standard error on a command-line host; the log the Macintosh runtime writes at exit) *before* the handler runs. A handler that aborts or crashes cannot cost the line.
+2. **The handler runs synchronously**, inside the `log(...)` call, before that statement completes.
+3. **It does not re-enter.** A `log(...)` called from inside the handler — directly or through anything the handler calls — still reaches the persistent channel, but does *not* fire the handler again. Nesting is impossible by construction, so a handler may log freely.
+4. **Only your own `log(...)` calls reach it.** The runtime's own writes to the same stream — the crash report a panic emits, the message an uncaught `abort` prints (Chapter 5), the Macintosh UI trace — never fire the handler. Neither does an unwinding program: no `log(...)` statement runs while an abort is propagating.
+
+An `abort(...)` raised inside the handler propagates out of the `log(...)` call site like an abort raised by any other call, and can be caught by an enclosing `attempt` (Chapter 5); an abort that escapes the handler that way leaves the subscription dormant for the rest of the run, though the persistent channel keeps every line regardless.
+
+The handler is how a program puts its own diagnostics somewhere a user can see them — a log window's `textview`, a file, a status line — without touching a single `log(...)` call site.
 
 ### Nothing Opens Implicitly
 
@@ -1412,6 +1426,8 @@ Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 n
 ### Logging
 
 `log(msg: string)` writes a diagnostic line to the platform's diagnostic stream: on a command-line host, standard error; on the Macintosh, a destination reserved for a later release (a log file or debugging window) — programs use it identically either way. Diagnostics belong in `log`; user-facing output belongs in `alert` or files.
+
+A program that declares `on App.log(line: string)` (Chapter 7) also receives every one of these lines as an event, after it has reached the stream — the way to put a program's own diagnostics on screen, into a file, or anywhere else, without changing a single `log(...)` call site.
 
 ### Date and Time
 
