@@ -1,46 +1,41 @@
-# Session status — 2026-08-15 (clir-load-perf: 10/10 tasks DONE, host T1 green; T2 + Snow gates + merge PENDING, branch unmerged)
+# Session status — 2026-08-15 (clir-load-perf COMPLETE: all gates GREEN on tip 1d88846; merge on Andrew's word)
 
-Handoff summary for the next session. **The `clir-load-perf` phase's
-implementation is COMPLETE (Tasks 1-10, host-gated throughout) but the
-branch is NOT merged.** Three phase-close gates are outstanding and
-need to run before any merge decision: T2 (`scripts/test-merge.sh`),
-and two Snow-hardware runs required by the standing rule because
-`bake.cla`/`macgui.cla` both changed this phase. The local checkout is
-on `main` (this phase works directly on the `main` checkout per this
-project's no-worktree-for-toolchain-symlinks convention, same as every
-prior phase); `clir-load-perf`'s own commits are ahead of `main` at
-`42c7265` and not yet fast-forwarded in.
+Handoff summary. **The `clir-load-perf` phase is COMPLETE and fully
+gated — T1 throughout, T2 PASS (261s, pre-follow-on tip; every
+follow-on task re-ran the gate set incl. both native suite boots), and
+BOTH Snow-hardware gates PASS on the final tip `1d88846`
+(`TestClarusCBakePathOnSnow` 1206s; `TestMacResidentFailedCompileStaysAliveOnSnow`
+1201s, 20m settle + toolbar fast-forward procedure). The branch is NOT
+merged — merge is Andrew's call.** The local checkout works on `main`
+directly (no-worktree convention); `clir-load-perf` is ahead of `main`
+at `42c7265`.
+
+Post-Task-10 follow-ons on the branch (each subagent-implemented +
+independently reviewed, ledger in `.superpowers/sdd/2026-08-15-clir-load-perf/`):
+`u32At`→`intAt` rename; `stringAt` switched to a 1-byte Pascal prefix
+(CLIR format unchanged — loader hops the 3 zero bytes);
+**`list.clone()`** (flat-element bulk copy, fixed the field-measured
+4m21s copy-on-install regression to 9s); progress-bar repaints removed
+from the uitest trace; **`on App.log(line: string)`** handler +
+ClarusC adoption (the captured `out` trailer is now the persistent
+timestamped compile log).
+
+**Field-proven numbers (Snow guest time, final tip):** compile #1 load
+window ~4m55s–5m23s (baseline 10m02s) + install 4–9s; **compile #2
+skips load entirely** ("parsed earlier this session" memo line) —
+**install-only ~5s vs ~10m baseline (~120x on the repeat-compile
+path)**. The spec's ≤60s first-compile target remains missed (~5min);
+the residual lever (runtime loop-body ~10x off theoretical floor) is
+recorded debt.
 
 ## 0. START HERE next session
 
-**What Andrew needs to decide/run, in order:**
-
-1. **Run T2** (`scripts/test-merge.sh` — includes `internal/selfhost`
-   at 30m timeout and the native `mactest` lane). Not yet run this
-   phase.
-2. **Run the two Snow gates** (`CLARUS_SNOW_TESTS=1`):
-   `TestClarusCBakePathOnSnow` AND
-   `TestMacResidentFailedCompileStaysAliveOnSnow` — the standing rule
-   fires because `bake.cla`/`macgui.cla` both changed this phase (see
-   0b's "Standing rules"). Use the 20m-settle/fast-forward procedure
-   the attempt-abort phase established (0b below), not the old 55m
-   figure. **Capture the Log-window "Verifying Baked Runtime" →
-   `driveCompile` "Starting" timestamps** — this is the real Snow
-   before/after; everything in the ROADMAP entry's Measured Results
-   table is a Mac-Plus-scale emulator projection (~4.4x, ~145.2s
-   Plus-equivalent), not a Snow measurement.
-3. **Read the honesty caveat before deciding anything**: the spec's
-   own ≤60s first-compile target is **likely MISSED** — projected
-   ~2-2.5 minutes on Snow, not ≤60s. The **repeat-compile** target
-   (skip verify+parse entirely, ~2s install only) IS met. Whether
-   ~2-2.5min-down-from-~10min is good enough to ship as-is, or whether
-   it's worth a follow-up phase against the debt list's "runtime
-   loop-body residual" lever (hand-emitted hash/copy helpers, ~10x off
-   a theoretical floor), is Andrew's call — full numbers and reasoning
-   in the ROADMAP `clir-load-perf` entry.
-4. **Merge only on Andrew's request**, after 1-2 are green (or after
-   an explicit decision to accept a red/skipped Snow gate — that's
-   also Andrew's call, not a default).
+**Remaining: merge.** All gates are green on `1d88846`; merge to
+`main` happens only on Andrew's explicit request (fast-forward). If a
+follow-up perf phase is wanted for the ~5min first compile, the debt
+list's "runtime loop-body residual" lever is the starting point;
+`strPool`'s install loop is now `clone()`-eligible too (clone review
+M3).
 
 Full task ledger, measured numbers, rulings, and the complete debt
 list: ROADMAP's `clir-load-perf` entry. Ledger + reports:
