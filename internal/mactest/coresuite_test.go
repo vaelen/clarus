@@ -220,6 +220,14 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // `file.readResource`/`file.writeRes` intrinsics; toolbox/resources.cla
 // joins the other five toolbox/ catalog files in the same grouped block,
 // cases_resources.cla joins the other cases_*.cla files ahead of gui.cla.
+// toolbox/devices.cla + toolbox/serial.cla + cases_serial.cla
+// (SerialOpenWrite) were added by the serial-connection phase's Task 2 --
+// hardware-proves the new Device Manager/Serial Driver catalog by
+// opening the real .AOut/.AIn drivers, configuring 9600-8N1, exercising
+// the load-bearing SerSetBuf call, writing 5 bytes, and reading a real
+// SerGetBuf count; devices.cla/serial.cla join the other toolbox/
+// catalog files in the same grouped block, cases_serial.cla joins the
+// other cases_*.cla files ahead of gui.cla.
 
 // toolboxResourceBakeName MUST match testsuite/toolbox/cases_resources.cla's
 // own tbResBakeName constant, character for character: Get1NamedResource
@@ -237,6 +245,8 @@ var toolboxFiles = []string{
 	filepath.Join("toolbox", "scrap.cla"),
 	filepath.Join("toolbox", "files.cla"),
 	filepath.Join("toolbox", "resources.cla"),
+	filepath.Join("toolbox", "devices.cla"),
+	filepath.Join("toolbox", "serial.cla"),
 	filepath.Join("testsuite", "toolbox", "runner.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_events.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_draw.cla"),
@@ -263,6 +273,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_finfo.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_resources.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_datetime.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_serial.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -359,8 +370,9 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // addition (the language reference's live `string(n)` typing clamp, the
 // pin for that task's cgStackHeuristic fix), then to 29 by
 // datetime-instrumentation Task 7's own DateTimeRoundTrip addition, then
-// to 30 by the live-log phase's own Task 1 LivePaint addition: parses
-// each of the 30 result lines (29 real cases +
+// to 30 by the live-log phase's own Task 1 LivePaint addition, then to 31
+// by the serial-connection phase's own Task 2 SerialOpenWrite addition:
+// parses each of the 31 result lines (30 real cases +
 // SelfCheck) into its own t.Run subtest -- per-case CI reporting -- plus
 // the aggregate TOTAL line, regardless of which lane produced the
 // capture.
@@ -386,8 +398,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 30 {
-		t.Errorf("result lines: got %d, want 30\ncapture:\n%s", len(results), out)
+	if len(results) != 31 {
+		t.Errorf("result lines: got %d, want 31\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -397,7 +409,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 30 PASS 30 FAIL 0"; total != want {
+	if want := "TOTAL 31 PASS 31 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

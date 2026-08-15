@@ -1,0 +1,136 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_serial.cla: SerialOpenWrite (serial-connection phase Task 2) --
+// hardware-proves the shipped toolbox/devices.cla + toolbox/serial.cla
+// Device Manager/Serial Driver catalog against real ROM, in-process, the
+// same "the catalog files supply the externs, this case only calls them"
+// discipline cases_catalog.cla's own header comment establishes. Opens
+// the real `.AOut`/`.AIn` serial drivers, configures 9600-8N1, proves the
+// load-bearing SerSetBuf call (Task 1's probe wave, task-1-report.md
+// Amendment 2 -- without it a receive burst past ~63 bytes silently
+// drops with no error surfaced), writes 5 bytes out, and reads back a
+// real SerGetBuf count before closing the input driver only.
+//
+// serPName is this file's own worked example of toolbox/devices.cla's
+// documented NewPtr+pokeb Pascal-string pattern for `ioNamePtr` (that
+// file's own header comment) -- deliberately NOT the runtime's own
+// `UiStrAddr` (uiscript.cla, already used by cases_finfo.cla in this same
+// suite): the toolbox/ catalog itself must work in a plain non-UI
+// program with no runtime spliced in (Task 1's own probe program had no
+// `app`/`window` block at all), so this case proves the catalog-level
+// technique the catalog's doc comment actually promises, not a runtime
+// convenience shortcut.
+func serPName(s: string): ptr {
+    var p: ptr
+    var i: int
+    p = NewPtr(s.length + 1)
+    pokeb(p, s.length)
+    i = 0
+    while i < s.length {
+        pokeb(p + 1 + i, int(s[i]))
+        i = i + 1
+    }
+    return p
+}
+
+func caseSerialOpenWrite(): TestResult {
+    var outPb: IOParam
+    var inPb: IOParam
+    var setBufPb: CntrlSetBuf
+    var resetPb: CntrlReset
+    var countPb: CntrlCount
+    var buf: ptr
+    var data: ptr
+    var err: int
+    var detail: string
+
+    // -- Open .AOut, then .AIn. ioPermssn (folded into IOParam's own
+    // pad[2], per files.cla's header comment -- not a named field there)
+    // stays 0 by construction: IOParam is zero-initialized on
+    // declaration (language reference, "extern record") and nothing here
+    // ever writes into that pad range.
+    outPb.ioNamePtr = serPName(".AOut")
+    err = PBOpenSync(outPb)
+    if err != 0 {
+        detail = "open .AOut err " + tkIntToStr(err)
+        return tkFail("SerialOpenWrite", detail)
+    }
+
+    inPb.ioNamePtr = serPName(".AIn")
+    err = PBOpenSync(inPb)
+    if err != 0 {
+        detail = "open .AIn err " + tkIntToStr(err)
+        return tkFail("SerialOpenWrite", detail)
+    }
+
+    // -- SerSetBuf (csCode 9, kSERDInputBuffer) on .AIn, right after
+    // opening it -- LOAD-BEARING (toolbox/serial.cla's own header
+    // comment), not defensive hygiene: without this call a receive burst
+    // past ~63 bytes silently drops with no error anywhere in the
+    // ordinary Control/Status polling contract.
+    buf = NewPtr(4096)
+    setBufPb.ioCRefNum = inPb.ioRefNum
+    setBufPb.csCode = kSERDInputBuffer
+    setBufPb.serBPtr = buf
+    setBufPb.serBLen = 4096
+    err = PBControlSync(setBufPb)
+    if err != 0 {
+        detail = "serSetBuf err " + tkIntToStr(err)
+        return tkFail("SerialOpenWrite", detail)
+    }
+
+    // -- SerReset (csCode 8, kSERDConfiguration) the OUTPUT driver with
+    // the 9600-8N1 config word (toolbox/serial.cla's own worked example:
+    // baud9600 + data8 + noParity + stop10 = 19466).
+    resetPb.ioCRefNum = outPb.ioRefNum
+    resetPb.csCode = kSERDConfiguration
+    resetPb.csParam0 = baud9600 + data8 + noParity + stop10
+    err = PBControlSync(resetPb)
+    if err != 0 {
+        detail = "serReset err " + tkIntToStr(err)
+        return tkFail("SerialOpenWrite", detail)
+    }
+
+    // -- Write 5 bytes ("HELLO") to .AOut.
+    data = NewPtr(5)
+    pokeb(data, int('H'))
+    pokeb(data + 1, int('E'))
+    pokeb(data + 2, int('L'))
+    pokeb(data + 3, int('L'))
+    pokeb(data + 4, int('O'))
+    outPb.ioBuffer = data
+    outPb.ioReqCount = 5
+    outPb.ioActCount = 0
+    err = PBWriteSync(outPb)
+    if err != 0 or outPb.ioActCount != 5 {
+        detail = "write err " + tkIntToStr(err)
+        detail = detail + " actCount " + tkIntToStr(outPb.ioActCount)
+        return tkFail("SerialOpenWrite", detail)
+    }
+
+    // -- SerGetBuf (Status, csCode 2, kSERDInputCount) on .AIn: nothing
+    // is attached to the port in this suite boot, so 0 bytes waiting.
+    countPb.ioCRefNum = inPb.ioRefNum
+    countPb.csCode = kSERDInputCount
+    err = PBStatusSync(countPb)
+    if err != 0 or countPb.csCount != 0 {
+        detail = "serGetBuf err " + tkIntToStr(err)
+        detail = detail + " count " + tkIntToStr(countPb.csCount)
+        return tkFail("SerialOpenWrite", detail)
+    }
+
+    // -- Close .AIn only. Inside Macintosh II's own Serial Driver
+    // discussion documents closing the INPUT driver as the port's
+    // disable step; the output driver need not be (and classically is
+    // not) closed separately, so .AOut is left open for the rest of this
+    // suite boot -- same discipline Task 6's runtime `rtConnDevClose`
+    // will follow (see that task's own brief).
+    err = PBCloseSync(inPb)
+    if err != 0 {
+        detail = "close .AIn err " + tkIntToStr(err)
+        return tkFail("SerialOpenWrite", detail)
+    }
+
+    return tkPass("SerialOpenWrite")
+}

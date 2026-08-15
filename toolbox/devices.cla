@@ -1,0 +1,159 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/devices.cla: curated Device Manager (Inside Macintosh II ch6
+// "The Device Manager") synchronous PB routines, serial-connection phase
+// Task 2. Companion to toolbox/serial.cla's Serial Driver csCode/config
+// constants -- SerReset/SerSetBuf/SerGetBuf are ordinary Control/Status
+// calls through PBControlSync/PBStatusSync below against one of the four
+// named serial drivers (toolbox/serial.cla's own header comment), not
+// separate traps of their own. Declares only the SYNC PB forms (no
+// async this phase, per the design spec).
+//
+// Every trap word below is confirmed directly against Apple's own
+// Universal Interfaces 3.4 (Retro68/InterfacesAndLibraries/Interfaces/
+// CIncludes/Devices.h), read via `LC_ALL=C tr '\r' '\n' < Devices.h`
+// (the header's own CR-only line endings with ISO-8859 bytes -- plain
+// `grep -n` silently reports nothing against it, no error, same trap
+// task-1-report.md's probe wave hit first). Line numbers below are from
+// that reflow, matching the header's own native numbering 1:1.
+//
+// ---- Composition with toolbox/files.cla (avoiding the dedup hazard) ----
+//
+// toolbox/files.cla already declares `IOParam` (the exact ParmBlkPtr
+// layout every one of these routines needs) and two of the seven
+// PBxxxSync traps (`PBWriteSync` 0xA003, `PBCloseSync` 0xA001 -- its own
+// header comment notes both moved out of Files.h into Devices.h, the
+// same header this file transcribes from). `irRegisterExtern` does NO
+// cross-declaration dedup (runtime/clarus/ser.cla's own header comment
+// spells out the same hazard for runtime modules) -- two declarations of
+// the same extern name in one build is a real risk, not a cosmetic one.
+// Since a serial program needs BOTH files.cla (PBWriteSync/PBCloseSync)
+// AND this file (PBOpenSync/PBReadSync/PBControlSync/PBStatusSync/
+// PBKillIOSync) in the same build, this file declares ONLY the five
+// PB routines files.cla does not already export, and reuses files.cla's
+// `IOParam` record as-is for PBOpenSync/PBReadSync's paramBlock argument
+// (IOParam already has the exact fields a serial open/read/write/close
+// needs -- ioNamePtr/ioRefNum/ioBuffer/ioReqCount/ioActCount -- see that
+// file's own header comment for the field-by-field derivation). No new
+// IOParam-shaped record is declared here.
+//
+// `CntrlParam` (`CIncludes/Files.h:496-509`, struct starts line 496) is
+// NOT declared as one record either: `extern record` has no array field
+// type, so a single record can't name `csParam[11]`'s 11 real `short`
+// slots at their own offsets (language reference, "extern record" /
+// Field Palette). Task 1's probe wave (task-1-report.md Amendment 5)
+// found the fix: one CntrlParam-shaped variant per csCode's actual
+// payload shape, the same FileParam/VolumeParam/IOParam split
+// files.cla's own header comment already establishes as this catalog's
+// house style. Three variants below cover every csCode toolbox/
+// serial.cla's constants name: `CntrlReset` (csCode 8, kSERDConfiguration
+// -- a single word config value), `CntrlCount` (csCode 2,
+// kSERDInputCount -- a long count, also used for the Status-side
+// kSERDInputCount read), `CntrlSetBuf` (csCode 9, kSERDInputBuffer -- a
+// pointer + word length, the load-bearing SerSetBuf call, see below).
+// Each pads out to CntrlParam's real 50-byte size (same discipline
+// files.cla's VolumeParam/FileParam pad to their own real struct sizes)
+// even though only the payload actually used is named, so a local var
+// of one of these types is never smaller than what the real Device
+// Manager ParamBlockRec union expects.
+//
+// Common prefix (all three, `CIncludes/Files.h:496-506`): qLink@0(4)
+// qType@4(2) ioTrap@6(2) ioCmdAddr@8(4) ioCompletion@12(4) ioResult@16(2)
+// ioNamePtr@18(4) ioVRefNum@22(2) ioCRefNum@24(2) csCode@26(2) -- field
+// names transcribed verbatim from the header (`ioCRefNum`, not
+// `ioRefNum` -- CntrlParam's own field name differs from IOParam's,
+// same offset/role: the driver refNum a prior PBOpenSync returned).
+
+extern record CntrlReset {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    ioCRefNum: word
+    csCode: word
+    csParam0: word
+    pad[20]
+}
+
+extern record CntrlCount {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    ioCRefNum: word
+    csCode: word
+    csCount: int
+    pad[18]
+}
+
+extern record CntrlSetBuf {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    ioCRefNum: word
+    csCode: word
+    serBPtr: ptr
+    serBLen: word
+    pad[16]
+}
+
+// ---- The NewPtr+pokeb Pascal-string pattern for ioNamePtr ----
+//
+// `extern record` has no general address-of operator -- decay (the one
+// way to take an extern record's address) fires ONLY at an `external
+// func` call site (language reference, "extern record"), which does not
+// help here: `ioNamePtr` is a FIELD of another struct (IOParam/
+// CntrlReset/etc.) that must hold a driver name's address BEFORE
+// PBOpenSync is ever called, and no call site exists at the point that
+// field gets written. Task 1's probe wave (task-1-report.md SS2) worked
+// out the pattern every named-driver open (not just serial) needs:
+// `NewPtr` a small raw buffer, hand-build a Pascal string in it with
+// `pokeb` (length byte at offset 0, then each character's `int(s[i])` at
+// offset 1+i), and assign the buffer's OWN `ptr` (already a `ptr` from
+// `NewPtr`, no decay needed) straight into the target struct's
+// `ioNamePtr` field. testsuite/toolbox/cases_serial.cla's `serPName`
+// helper is the worked, hardware-proved example.
+//
+//   PBOpenSync    Devices.h:867-870 (pragma 867, trap 870):
+//                 `#pragma parameter __D0 PBOpenSync(__A0)` ...
+//                 `EXTERN_API( OSErr ) PBOpenSync(ParmBlkPtr
+//                 paramBlock) ONEWORDINLINE(0xA000);` -- pb in A0, OSErr
+//                 in D0, bit 11 clear (0xA000 & 0x0800 == 0) --> OS/
+//                 register convention, bare `reg`, same shape as
+//                 files.cla's own PBxxxSync declarations.
+//   PBReadSync    Devices.h:962-965 (pragma 962, trap 965): same shape,
+//                 `ONEWORDINLINE(0xA002)`.
+//   PBControlSync Devices.h:1292-1295 (pragma 1292, trap 1295): same
+//                 shape, `ONEWORDINLINE(0xA004)`. Dispatches on the
+//                 paramBlock's own `csCode` field (CntrlReset/
+//                 CntrlSetBuf above) -- one trap serves every Control
+//                 csCode.
+//   PBStatusSync  Devices.h:1337-1340 (pragma 1337, trap 1340): same
+//                 shape, `ONEWORDINLINE(0xA005)`. Dispatches on csCode
+//                 the same way (CntrlCount above, kSERDInputCount).
+//   PBKillIOSync  Devices.h:1382-1385 (pragma 1382, trap 1385): same
+//                 shape, `ONEWORDINLINE(0xA006)`. Aborts a pending async
+//                 I/O request on the given refNum -- declared for
+//                 catalog completeness (the Device Manager's full sync
+//                 PB family) though nothing in this phase calls it, since
+//                 the design spec is sync-only.
+
+external func PBOpenSync(paramBlock: ptr): int = trap 0xA000 reg
+external func PBReadSync(paramBlock: ptr): int = trap 0xA002 reg
+external func PBControlSync(paramBlock: ptr): int = trap 0xA004 reg
+external func PBStatusSync(paramBlock: ptr): int = trap 0xA005 reg
+external func PBKillIOSync(paramBlock: ptr): int = trap 0xA006 reg

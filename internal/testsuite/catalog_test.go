@@ -26,6 +26,8 @@ var catalogFiles = []string{
 	filepath.Join("toolbox", "files.cla"),
 	filepath.Join("toolbox", "resources.cla"),
 	filepath.Join("toolbox", "appleevents.cla"),
+	filepath.Join("toolbox", "devices.cla"),
+	filepath.Join("toolbox", "serial.cla"),
 }
 
 // catalogDriver references >=1 symbol per catalog file: TickCount/
@@ -38,7 +40,13 @@ var catalogFiles = []string{
 // ReleaseResource (resources, Task 7, mac-resident-clarusc phase),
 // kCoreEventClass/kAEQuitApplication/AEInstallEventHandler/
 // AEProcessAppleEvent (appleevents, Task 12, mac-resident-clarusc phase --
-// also exercises the `seld0` extern clause this same task adds).
+// also exercises the `seld0` extern clause this same task adds),
+// PBOpenSync/PBReadSync/PBControlSync/PBStatusSync/PBKillIOSync/
+// CntrlReset/CntrlCount/CntrlSetBuf (devices, serial-connection phase
+// Task 2 -- reuses `iop`/`IOParam` from files.cla rather than redeclaring
+// it, per that file's own composition-with-files.cla header comment),
+// kSERDConfiguration/kSERDInputBuffer/kSERDSerHShake/kSERDInputCount/
+// kSERDStatus/baud9600/data8/noParity/stop10 (serial, same Task 2).
 const catalogDriver = `on App.startCLI(args: list of string) {
     var ev: EventRecord
     var t0: int
@@ -51,6 +59,9 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     var fp: FileParam
     var iop: IOParam
     var rh: ptr
+    var cr: CntrlReset
+    var cc: CntrlCount
+    var cb: CntrlSetBuf
 
     t0 = TickCount()
     p = NewPtr(4)
@@ -100,6 +111,18 @@ const catalogDriver = `on App.startCLI(args: list of string) {
 
     err = AEInstallEventHandler(kCoreEventClass, kAEQuitApplication, ptr(0), 0, false)
     err = AEProcessAppleEvent(ptr(0))
+
+    err = PBOpenSync(iop)
+    err = PBReadSync(iop)
+    cr.csCode = kSERDConfiguration
+    cr.csParam0 = baud9600 + data8 + noParity + stop10
+    err = PBControlSync(cr)
+    cc.csCode = kSERDInputCount
+    err = PBStatusSync(cc)
+    cb.csCode = kSERDInputBuffer
+    err = PBControlSync(cb)
+    err = PBKillIOSync(iop)
+    t0 = t0 + kSERDSerHShake + kSERDStatus + cc.csCount
 }
 `
 

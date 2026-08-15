@@ -1,0 +1,109 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/serial.cla: curated Serial Driver (Inside Macintosh II ch6
+// "The Serial Driver") csCode + config-word constants, serial-connection
+// phase Task 2. Companion to toolbox/devices.cla's Device Manager PB
+// routines -- SerReset/SerSetBuf/SerGetBuf are ordinary Control/Status
+// calls through PBControlSync/PBStatusSync (devices.cla) against one of
+// the four named serial drivers (below), not separate traps of their
+// own; devices.cla's CntrlReset/CntrlCount/CntrlSetBuf extern records are
+// this file's own natural pairing (one per csCode payload shape used
+// here).
+//
+// Every constant below is transcribed directly from Apple's own
+// Universal Interfaces 3.4 (Retro68/InterfacesAndLibraries/Interfaces/
+// CIncludes/Serial.h), read via `LC_ALL=C tr '\r' '\n' < Serial.h` (the
+// header's own CR-only line endings -- see toolbox/devices.cla's header
+// comment for why plain grep silently misses this file). Line numbers
+// below are from that reflow, matching the header's own native
+// numbering 1:1. Confirmed on real Mini vMac hardware by Task 1's probe
+// wave (task-1-report.md).
+
+// ---- csCodes, named after the CURRENT `kSERDxxx` spelling ----
+//
+// The brief's `serdReset`/`serdSetBuf`/`serdHShake`/`serdGetBuf`/
+// `serdStatus` spelling is the DEPRECATED alias set (Serial.h:216-243,
+// guarded by `#if OLDROUTINENAMES`), mapped straight to these same
+// values -- one spelling per constant is enough, and this catalog uses
+// the current one. Control-set and Status-set csCodes are independent
+// numbering spaces dispatched by which trap you call (PBControlSync vs
+// PBStatusSync, toolbox/devices.cla) -- kSERDConfiguration and
+// kSERDStatus both happen to equal 8, and that's not a collision.
+const kSERDConfiguration: int = 8   // Serial.h:142 -- Control: SerReset (speed/bits/parity/stop)
+const kSERDInputBuffer: int = 9     // Serial.h:143 -- Control: SerSetBuf -- LOAD-BEARING, see below
+const kSERDSerHShake: int = 10      // Serial.h:144 -- Control: SerHShake (largely obsolete per the header's own comment)
+const kSERDInputCount: int = 2      // Serial.h:173 -- Status: SerGetBuf (characters waiting)
+const kSERDStatus: int = 8          // Serial.h:174 -- Status: SerStatus
+
+// kSERDInputBuffer (SerSetBuf, csCode 9) is NOT optional hygiene. Task
+// 1's probe wave (task-1-report.md SS3a, Amendment 2) found the driver's
+// default receive queue silently drops everything past ~63 bytes once a
+// burst arrives faster than the poll loop drains it -- reproduced twice,
+// with NO error surfaced through any PBControlSync/PBStatusSync/
+// PBReadSync call. Every serial-connection runtime open MUST issue one
+// `CntrlSetBuf`-shaped PBControlSync (csCode 9) with an app-owned buffer
+// (a few KB or more) before the first read; this catalog's own
+// SerialOpenWrite suite case (testsuite/toolbox/cases_serial.cla)
+// hardware-proves exactly that call.
+
+// ---- Baud rate config words (Serial.h:47-62) ----
+//
+// Full table, all fifteen rates Serial.h's own enum declares.
+const baud150: int = 763
+const baud300: int = 380
+const baud600: int = 189
+const baud1200: int = 94
+const baud1800: int = 62
+const baud2400: int = 46
+const baud3600: int = 30
+const baud4800: int = 22
+const baud7200: int = 14
+const baud9600: int = 10
+const baud14400: int = 6
+const baud19200: int = 4
+const baud28800: int = 2
+const baud38400: int = 1
+const baud57600: int = 0
+
+// ---- Data bits / parity / stop bits config words ----
+//
+// stop15/stop20 (Serial.h:67-68: `stop15 = -32768L`, `stop20 = -16384`)
+// are DELIBERATELY OMITTED: both are C `int` values with bit 15 set, and
+// Clarus's `word` extern field type sign-extends on read -- correctly
+// using either needs an unsigned/bit-pattern reinterpretation this
+// catalog has no real caller for today (nothing in the serial-connection
+// design needs 1.5 or 2 stop bits; 8N1's `stop10` below is the only
+// value any task in this phase uses). Add on demand per Task 1's own
+// recommendation, the same "no unrequested abstractions" discipline this
+// whole catalog follows.
+const stop10: int = 16384      // Serial.h:66
+const noParity: int = 0        // Serial.h:72 -- the ORIGINAL brief text said 8192; the header disproves that (Task 1 Amendment 1) -- 0 is correct
+const oddParity: int = 4096    // Serial.h:73
+const evenParity: int = 12288  // Serial.h:74
+const data5: int = 0           // Serial.h:78
+const data6: int = 2048        // Serial.h:79
+const data7: int = 1024        // Serial.h:80
+const data8: int = 3072        // Serial.h:81
+
+// Worked example, composing a full SerReset config word (also the exact
+// word testsuite/toolbox/cases_serial.cla's SerialOpenWrite case proves
+// against real hardware): 9600 baud, 8 data bits, no parity, 1 stop bit
+// ("9600-8N1") is
+//
+//     baud9600 + data8 + noParity + stop10 = 10 + 3072 + 0 + 16384 = 19466
+
+// ---- The four named serial drivers (Serial.h:105-109) ----
+//
+// The header only names the refNum CONSTANTS (`ainRefNum`/`aoutRefNum`/
+// `binRefNum`/`boutRefNum`) -- the ".AIn"/".AOut"/".BIn"/".BOut" string
+// literals themselves are Inside Macintosh prose convention, not a
+// header symbol, so no `const string` is declared for them here (a
+// caller opens by NAME via PBOpenSync -- toolbox/devices.cla's own
+// header comment documents the NewPtr+pokeb pattern that takes -- then
+// reads the OS-assigned refNum back out of the paramBlock). Recorded for
+// reference, not redeclared as Clarus values: `.AIn` (ainRefNum, -6,
+// Serial.h:106), `.AOut` (aoutRefNum, -7, Serial.h:107), `.BIn`
+// (binRefNum, -8, Serial.h:108), `.BOut` (boutRefNum, -9, Serial.h:109).
+// Task 1's probe wave confirmed the OS hands back exactly -6/-7 for
+// `.AIn`/`.AOut` on real hardware.
