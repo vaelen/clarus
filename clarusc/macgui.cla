@@ -348,7 +348,19 @@ func feProgressTick() {
     line = gcStatusBase
     line = line + " "
     line = line + glyph
+    // Same-stage repaint, not a stage transition -- suppress the trace
+    // (rtUiTraceSuppressed, runtime/clarus/uiscript.cla) around this ONE
+    // set so the spinner pulse doesn't flood the captured session log
+    // with near-identical "T SET Log.Status.text" lines (Andrew's
+    // request, clir-load-perf trace-noise phase). feProgressStep's own
+    // stage-announce set (above) is untouched -- it stays traced, one
+    // line per stage change, which TestMacResidentFailedCompileStaysAliveOnSnow
+    // (internal/mactest/macresident_test.go) counts on. Nothing else runs
+    // between the two assignments below, so the suppression window can
+    // never swallow an unrelated trace line.
+    rtUiTraceSuppressed = true
     w.Status.text = line
+    rtUiTraceSuppressed = false
 }
 
 app ClarusC {

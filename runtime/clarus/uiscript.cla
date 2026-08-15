@@ -247,8 +247,43 @@ func rtUiTextAppendInt(t: ptr, v: int) {
     rtTextRelease(nt)
 }
 
+// rtUiTraceSuppressed (clir-load-perf trace-noise phase): every "T ..."
+// trace helper in this file funnels through rtUiEmitLine, so gating here
+// is the one choke point that covers all of them. Default false (normal
+// tracing, unchanged for every existing caller); a --testapi program may
+// name this var directly (whole-program visibility, main.cla's early
+// splice) to bracket a call it wants painted but NOT captured -- e.g.
+// ClarusC.APPL's own Status-bar spinner/bar-growth repaints
+// (clarusc/macgui.cla's feProgressTick), which repeat the SAME stage's
+// widget-set path (rtUiWidgetSetStr, unconditionally traced) many times a
+// second and would otherwise flood the trace with near-identical lines.
+// Still releases `t` when suppressed -- only the emit call is skipped, so
+// nothing leaks.
+//
+// WARNING for the next person adding a runtime-module global: this file
+// (and every runtime/clarus/*.cla module) is always spliced BEFORE user
+// code in the whole program's declaration order, so ANY new top-level
+// `var` here shifts the declaration-order index of every global declared
+// after it -- including every user program's own globals. clarusc/
+// uiblob.cla's uibGlobalIndex bakes exactly that index into a `table`
+// widget's Table.rowsIdx blob field, so a new runtime global here
+// silently renumbers Table.rowsIdx for EVERY UI program with a table
+// bound to a global (proven when this var was added: it shifted
+// testdata/emitui/uiblob_probe.blob.golden by one byte at offset 959,
+// 43->44, and renumbered ~250 `cv_rowsIdx == N` dispatch arms in
+// clarusc/clarusc.c's own self-hosted snapshot -- see
+// .superpowers/sdd/2026-08-15-clir-load-perf/trace-noise-report.md's
+// "Where it breaks" section for the full bisect). The renumbering itself
+// is harmless (encode and decode both walk the same irGlobals order, so
+// the shifted index still resolves to the right global) but it DOES
+// churn any golden that pins raw blob/emitted-C bytes -- rebless
+// deliberately, don't be surprised by it.
+var rtUiTraceSuppressed: bool = false
+
 func rtUiEmitLine(t: ptr) {
-    UiTestEmit(t)
+    if not rtUiTraceSuppressed {
+        UiTestEmit(t)
+    }
     rtTextRelease(t)
 }
 

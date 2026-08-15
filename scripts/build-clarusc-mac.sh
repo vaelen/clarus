@@ -88,7 +88,16 @@ fi
 #    comfortably covering the estimate with the 127MB now actually
 #    available. See clarusc/cg68k.cla's cgSizePartitionBytes doc comment
 #    for the same note.
+# --testapi (trace-noise phase, clir-load-perf): macgui.cla itself never
+# calls a UiTest* verb, so this is a no-op on the emitted binary (proven
+# byte-identical against a no-flag build of unmodified macgui.cla) --
+# it's here solely so macgui.cla can NAME one runtime/clarus symbol
+# directly (whole-program-visibility early splice, main.cla's own doc
+# comment): rtUiTraceSuppressed (runtime/clarus/uiscript.cla), which
+# feProgressTick brackets around its own spinner repaint so it doesn't
+# flood the captured trace. Without --testapi, ordinary programs cannot
+# name ANY runtime/clarus symbol at all (see this repo's CLAUDE.md).
 mkdir -p build-68k/ClarusC
-"$CLARUSC" emit68k --rtdir runtime/clarus/ -o build-68k/ClarusC/ClarusC.bin \
+"$CLARUSC" emit68k --testapi --rtdir runtime/clarus/ -o build-68k/ClarusC/ClarusC.bin \
     $BAKES $EVENTS_ARG $BAKE_IR_ARG --partition 50331648 clarusc/macgui.cla
 echo "built: build-68k/ClarusC/ClarusC.bin"
