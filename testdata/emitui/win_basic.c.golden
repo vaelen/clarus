@@ -525,6 +525,7 @@ static void * cv_rtUiAnswerVals;
 static void * cv_rtUiAnswerStrs;
 static int32_t cv_rtUiAnswerHead;
 static int32_t cv_rtUiAnswerTail;
+static int32_t cv_rtUiTraceSuppressed;
 static void * cv_rtUiTraceWinCounts;
 static void * cv_rtUiTraceLastFront;
 static void * cv_rtUiDimPrevArr;
@@ -586,6 +587,8 @@ static void clar_init_globals(void) {
     cv_rtUiAnswerHead = 0;
     cv_rtUiAnswerTail = 0;
     cv_rtUiAnswerTail = 0;
+    cv_rtUiTraceSuppressed = 0;
+    cv_rtUiTraceSuppressed = 0;
     cv_rtUiTraceWinCounts = 0;
     cv_rtUiTraceWinCounts = (void *)(intptr_t)(0);
     cv_rtUiTraceLastFront = 0;
@@ -6942,7 +6945,9 @@ static void clar_fn_rtUiTextAppendInt(void * cv_t, int32_t cv_v) {
 }
 
 static void clar_fn_rtUiEmitLine(void * cv_t) {
-    rt_ext_UiTestEmit(cv_t);
+    if (!(cv_rtUiTraceSuppressed)) {
+        rt_ext_UiTestEmit(cv_t);
+    }
     clar_fn_rtTextRelease(cv_t);
 }
 

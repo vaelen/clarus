@@ -519,7 +519,7 @@ static const unsigned char clar_ui_blob[] = {
     0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48,
     0, 0, 0, 196, 0, 0, 0, 3, 0, 0, 1, 103, 0, 0, 1, 110, 0, 0, 0, 1,
     0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 43,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 44,
     0, 0, 1, 4, 0, 0, 0, 3, 0, 0, 0, 212, 0, 0, 1, 84, 0, 0, 0, 140,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 89, 0, 0, 0, 0, 0, 0, 0, 1,
     0, 0, 0, 1, 0, 0, 1, 93, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 2,
@@ -553,6 +553,7 @@ static void * cv_rtUiAnswerVals;
 static void * cv_rtUiAnswerStrs;
 static int32_t cv_rtUiAnswerHead;
 static int32_t cv_rtUiAnswerTail;
+static int32_t cv_rtUiTraceSuppressed;
 static void * cv_rtUiTraceWinCounts;
 static void * cv_rtUiTraceLastFront;
 static void * cv_rtUiDimPrevArr;
@@ -615,6 +616,8 @@ static void clar_init_globals(void) {
     cv_rtUiAnswerHead = 0;
     cv_rtUiAnswerTail = 0;
     cv_rtUiAnswerTail = 0;
+    cv_rtUiTraceSuppressed = 0;
+    cv_rtUiTraceSuppressed = 0;
     cv_rtUiTraceWinCounts = 0;
     cv_rtUiTraceWinCounts = (void *)(intptr_t)(0);
     cv_rtUiTraceLastFront = 0;
@@ -6975,7 +6978,9 @@ static void clar_fn_rtUiTextAppendInt(void * cv_t, int32_t cv_v) {
 }
 
 static void clar_fn_rtUiEmitLine(void * cv_t) {
-    rt_ext_UiTestEmit(cv_t);
+    if (!(cv_rtUiTraceSuppressed)) {
+        rt_ext_UiTestEmit(cv_t);
+    }
     clar_fn_rtTextRelease(cv_t);
 }
 
@@ -8749,7 +8754,7 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
 }
 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
-    if (cv_rowsIdx == 43) {
+    if (cv_rowsIdx == 44) {
         return ((void*)&(cv_bookmarks));
     } else {
         rt_log((const uint8_t*)&(clar_lit_120));

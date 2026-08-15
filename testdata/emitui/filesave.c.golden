@@ -543,6 +543,7 @@ static void * cv_rtUiAnswerVals;
 static void * cv_rtUiAnswerStrs;
 static int32_t cv_rtUiAnswerHead;
 static int32_t cv_rtUiAnswerTail;
+static int32_t cv_rtUiTraceSuppressed;
 static void * cv_rtUiTraceWinCounts;
 static void * cv_rtUiTraceLastFront;
 static void * cv_rtUiDimPrevArr;
@@ -607,6 +608,8 @@ static void clar_init_globals(void) {
     cv_rtUiAnswerHead = 0;
     cv_rtUiAnswerTail = 0;
     cv_rtUiAnswerTail = 0;
+    cv_rtUiTraceSuppressed = 0;
+    cv_rtUiTraceSuppressed = 0;
     cv_rtUiTraceWinCounts = 0;
     cv_rtUiTraceWinCounts = (void *)(intptr_t)(0);
     cv_rtUiTraceLastFront = 0;
@@ -2199,7 +2202,7 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
 }
 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
-    if (cv_rowsIdx == 44) {
+    if (cv_rowsIdx == 45) {
         return ((void*)&(cv_many));
     } else {
         rt_log((const uint8_t*)&(clar_lit_126));
