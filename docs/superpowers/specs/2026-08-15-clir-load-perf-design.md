@@ -183,7 +183,7 @@ recoverable from the result):
 |---|---|
 | `t.hashStep(h, pos, n): int` | rolling body-hash step over `n` bytes starting at `pos`, returns updated `h` |
 | `t.u32At(pos): int` | big-endian U32 at `pos` (landed as `intAt` — renamed before merge; one signed int type, so the u32 name misdescribed the return) |
-| `t.stringAt(pos): string` | 4-byte BE length prefix + bytes at `pos`; caller advances `4 + result.length` |
+| `t.stringAt(pos): string` | 4-byte BE length prefix + bytes at `pos`; caller advances `4 + result.length` (landed as a 1-byte Pascal-style prefix — post-review convention alignment, matching `string`'s own Str255 layout; caller advances `1 + result.length`; the CLIR pool's own 4-byte BE wire field is unchanged, `bake.cla`'s `bkGetStr` adapts via `stringAt(pos + 3)`) |
 | `t.textAt(pos, n): text` | fresh `text` holding bytes `[pos, pos+n)` |
 
 Contracts: STRICT out-of-range panic, same as `t[i]`

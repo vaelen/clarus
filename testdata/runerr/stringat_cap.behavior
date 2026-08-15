@@ -1,4 +1,0 @@
-exit=3
---- stdout ---
---- stderr ---
-runtime error: string too long

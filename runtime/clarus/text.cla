@@ -664,17 +664,21 @@ func rtTextIntAt(t: ptr, pos: int): int {
     return (peekb(mp + pos) << 24) | (peekb(mp + pos + 1) << 16) | (peekb(mp + pos + 2) << 8) | peekb(mp + pos + 3)
 }
 
-// rtTextStringAt: reads a 4-byte BE length prefix at pos, then that
-// many bytes. Str255 is a plain value type (no ARC birth needed), so
-// this is an ordinary Clarus function returning `string` by value --
-// the bkGetStr idiom (bake.cla): copy through a char[255] buffer, then
-// s.fromBytes -- rather than rtTextSlice's raw out-ptr convention
-// (which exists only because that function is itself an ARC-adjacent
-// waist primitive; a plain by-value return is simpler here and the
-// generated C already returns clar_str_255 by value for any function
-// declared `: string`, so cprint.cla's ITextStringAt arm below needs no
-// out-param dance either). Panics "string too long" if the length
-// exceeds Str255's own 255-byte cap; STRICT bounds otherwise.
+// rtTextStringAt: reads a 1-byte Pascal-style length prefix at pos (the
+// same Str255 shape `string` itself uses -- length byte then payload),
+// then that many bytes. Str255 is a plain value type (no ARC birth
+// needed), so this is an ordinary Clarus function returning `string` by
+// value -- copy through a char[255] buffer, then s.fromBytes -- rather
+// than rtTextSlice's raw out-ptr convention (which exists only because
+// that function is itself an ARC-adjacent waist primitive; a plain
+// by-value return is simpler here and the generated C already returns
+// clar_str_255 by value for any function declared `: string`, so
+// cprint.cla's ITextStringAt arm below needs no out-param dance
+// either). The length byte is 0-255 by construction (peekb's own
+// range), so the old `l < 0 or l > 255` cap check and its "string too
+// long" panic are impossible-by-construction and have been removed --
+// STRICT bounds are the only checks left. Caller advances by
+// `1 + result.length`.
 func rtTextStringAt(t: ptr, pos: int): string {
     var rt: RtText
     var mp: ptr
@@ -684,20 +688,20 @@ func rtTextStringAt(t: ptr, pos: int): string {
     var s: string
 
     rt = RtText(t)
-    if pos < 0 or pos > rt.len - 4 {
+    if pos < 0 or pos > rt.len - 1 {
         rtPanic("text index out of range")
     }
     mp = TextHandleDeref(rt.h)
-    l = (peekb(mp + pos) << 24) | (peekb(mp + pos + 1) << 16) | (peekb(mp + pos + 2) << 8) | peekb(mp + pos + 3)
-    if l < 0 or l > 255 {
-        rtPanic("string too long")
-    }
-    if pos > rt.len - 4 - l {
+    l = peekb(mp + pos)
+    // l is 0..255 by construction (peekb's own range) -- no negative-
+    // length or >255-cap case is reachable here, unlike the old 4-byte
+    // BE-composed length, so only the payload bound needs checking.
+    if pos > rt.len - 1 - l {
         rtPanic("text index out of range")
     }
     i = 0
     while i < l {
-        buf[i] = char(peekb(mp + pos + 4 + i))
+        buf[i] = char(peekb(mp + pos + 1 + i))
         i = i + 1
     }
     s.fromBytes(buf, l)

@@ -1,0 +1,23 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// stringat_oor.cla (clir-load-perf, post-review convention alignment):
+// stringAt's STRICT payload bound -- a 1-byte Pascal-style length
+// prefix of 5 with only 2 payload bytes actually present must panic
+// "text index out of range", not silently read past the buffer.
+// Replaces stringat_cap.cla/stringat_negative.cla (deleted): those
+// pinned the OLD 4-byte-BE length's "string too long" panic and
+// negative-composed-length hole, both impossible-by-construction now
+// that the prefix is a single peekb byte (0-255 by construction -- no
+// negative value, no >255 cap to exceed). Host-only fixture, same
+// precedent as textrange_oor.cla.
+on App.launch {
+    var t: text
+    var s: string
+
+    t.append(char(5))
+    t.append('h')
+    t.append('i')
+    s = t.stringAt(0)
+    alert("unreachable")
+}

@@ -2322,6 +2322,22 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
       the u32 name misdescribed the return) across check/lower/ir/
       cprint/cg68k/shake/text.cla, the core-suite case, both runerr
       fixtures, and the reference, plus a snapshot regen.
+  12. Post-review convention alignment: `stringAt` switched from a
+      4-byte BE length prefix to a 1-byte Pascal-style prefix (matching
+      `string`'s own Str255 layout and how the Toolbox world reads
+      strings). The CLIR bake format itself is UNCHANGED — pool strings
+      still carry a 4-byte BE length field on disk (lengths are always
+      ≤255, so the high three bytes are always zero) — `bake.cla`'s
+      `bkGetStr` adapts by calling `stringAt(pos + 3)`, landing on the
+      real length byte. `text.cla`'s old `l < 0 or l > 255` cap check
+      and "string too long" panic are impossible-by-construction now
+      (a `peekb`'d byte can't exceed 255) and were deleted; deleting
+      that literal reblessed the same 22 `cg68k`/19 `emitui` goldens
+      this phase already reblessed twice, same class, same mechanism.
+      `stringat_cap`/`stringat_negative` (the old 4-byte->255/negative
+      fixtures, now dead concepts at the method level) were deleted and
+      replaced by one `stringat_oor` fixture pinning the 1-byte
+      payload-overrun panic.
 
   **Measured results** (Mini vMac / Mac Plus, 8MHz 68000, 60.15 guest
   ticks/s, N=65536-byte probe buffer;
@@ -2402,16 +2418,19 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     (4+255=259, 1+255=256), so `packedString` must either return `text`
     or take the mutator shape `t.appendPackedString(s)`/
     `t.appendPackedInt(i)` — the mutator also skips the intermediate
-    copy; (b) `stringAt` reads the CLIR's 4-byte-BE pool convention;
-    the format's 1-byte Pascal-style convention (`bkGetStrShort`,
-    module keys — and Str255 resource interop generally) has no surface
-    method, so a `pstringAt`/`appendPstring` sibling pair is the
-    natural companion if Mac interop wants it; (c) the 4-byte framing
-    is deliberately wider than `string` needs (lengths are always
-    0-255 today; three high bytes zero on the wire) — kept for
-    uniformity with the format's section/blob framing, and it means
-    the wire format already accommodates >255 payloads if pool entries
-    ever become `text` (only a `textAt`-style reader would be needed).
+    copy; (b) `stringAt` is now 1-byte Pascal-style (post-review
+    convention alignment, task 12 below) — it reads the SAME layout
+    `string` itself uses and the Toolbox world's Str255 convention
+    (`bkGetStrShort`, module keys, Str255 resource interop generally),
+    so no separate `pstringAt`/`appendPstring` sibling is needed for
+    that case anymore; the CLIR pool's own 4-byte-BE wire field is read
+    via `bake.cla`'s `bkGetStr` calling `stringAt(pos + 3)` (the wire
+    field's high three bytes are provably zero for lengths ≤255, so
+    `pos+3` lands on the real Pascal length byte) — a future
+    `packedString` targeting the pool's wire convention would still
+    produce the 4-byte-BE shape, not `stringAt`'s own 1-byte shape; (c)
+    the mutator-shape recommendation from (a) stands unchanged by this
+    — `stringAt`'s own 1+255=256 case was already the binding one.
   - **Runtime loop-body residual**: the bulk `text` methods still cost
     ~480 cycles/byte on Mac Plus guest ticks (`bulk-hash-chunked`'s
     60.63 µs/byte at 8MHz), roughly **10x** a straight-line
@@ -2440,7 +2459,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     `bkCheckRtbakeHeader`'s header doc still names `bkHashTextFrom` for
     the body walk (now chunked `hashStep`).
   - **New panic fixtures are host-only** (`testdata/runerr/
-    stringat_cap`, `stringat_negative`, `textrange_overflow`,
+    stringat_oor` — replaces the deleted `stringat_cap`/
+    `stringat_negative`, task 12 above — `textrange_overflow`,
     `textrange_oor`): pinned by `internal/selfhost/behavior_test.go`'s
     `.behavior` goldens (T1, both lanes' semantics proven equivalent by
     construction) but, unlike `oob`/`listindex`, never booted natively

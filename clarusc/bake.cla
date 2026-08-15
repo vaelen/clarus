@@ -1939,21 +1939,42 @@ func bkGetBool(): bool {
 // header's module keys) -- every string this format carries (pool
 // entries, module keys) is well under the string type's own 255-byte cap
 // by construction (the writer could never have produced a longer one --
-// see bake.cla's own header doc comment).
+// see bake.cla's own header doc comment). The CLIR wire format itself is
+// UNCHANGED here -- pool strings still carry a 4-byte BE length field on
+// disk -- only `text.stringAt`'s own prefix shape changed (post-review
+// convention alignment, clir-load-perf: 1-byte Pascal-style, matching
+// `string`'s own Str255 layout); this function's `+3` hop below is the
+// adapter between the two.
 //
 // clir-load-perf Task 5 (design C): one bulk t.stringAt call behind two
 // soft pre-checks, instead of a per-byte bkGetByte loop through a
 // char[255] buffer. Pre-check 1 (4 bytes for the length prefix) makes
 // the intAt read below panic-unreachable, same argument as bkGetU32's
-// own rewrite. Pre-check 2 mirrors BOTH of stringAt's own STRICT bounds
-// (text.cla's rtTextStringAt): `n <= 255` (its "string too long" panic)
-// and `bkLoadPos + 4 + n <= bkLoadBuf.length` (its "text index out of
-// range" panic on the payload) -- once both hold, stringAt's own
-// re-read of the length prefix is redundant work (one extra intAt is
-// nothing) but never a reachable panic. The `n > 255` refusal is NEW
-// defensive behavior for a corrupt bake: the old char[255] loop just
-// copied `n` bytes with no cap, so a hand-crafted length > 255 would
-// have overrun the stack buffer; here it soft-refuses instead.
+// own rewrite. Pre-check 2's `n > 255` refusal is now the ONLY guard
+// against a corrupt >255-length wire field -- stringAt itself can no
+// longer see it (its own length byte is 0-255 by construction, peekb's
+// own range), so this soft-refusal is load-bearing, not redundant, for
+// that case. The `n > 255` refusal is defensive behavior for a corrupt
+// bake: the old char[255] loop just copied `n` bytes with no cap, so a
+// hand-crafted length > 255 would have overrun the stack buffer; here it
+// soft-refuses instead.
+//
+// The payload read is `bkLoadBuf.stringAt(bkLoadPos + 3)`, not
+// `bkLoadPos` -- the wire field is 4 bytes BE, but pre-check 2 already
+// requires `n <= 255`, so the field's high three bytes are provably
+// zero and byte `bkLoadPos + 3` IS the Pascal-style length byte stringAt
+// now expects (see bkGetU32's own note: bkLoadPos is never negative, so
+// this is well-defined). Domination: pre-check 2 establishes
+// `bkLoadPos + 4 + n <= bkLoadBuf.length` with `0 <= n <= 255`; letting
+// `pos = bkLoadPos + 3`, stringAt's length-byte bound
+// (`pos > rt.len - 1`, i.e. `bkLoadPos + 4 > rt.len`) is already false
+// since `bkLoadPos + 4 <= bkLoadPos + 4 + n <= rt.len`, and its payload
+// bound (`pos > rt.len - 1 - l`, i.e. `bkLoadPos + 4 + l > rt.len` --
+// and `l == n` here, since the byte at `pos` is exactly the wire
+// field's low byte when the high three are zero) is false for the same
+// reason. So pre-check 2 fully dominates stringAt's own STRICT checks
+// after the `+3` shift; stringAt's own bounds panics are unreachable
+// from here, same as before the prefix-shape change.
 func bkGetStr(): string {
     var n: int
     var s: string
@@ -1969,7 +1990,7 @@ func bkGetStr(): string {
         bkLoadPos = bkLoadBuf.length
         return ""
     }
-    s = bkLoadBuf.stringAt(bkLoadPos)
+    s = bkLoadBuf.stringAt(bkLoadPos + 3)
     bkLoadPos = bkLoadPos + 4 + n
     return s
 }
