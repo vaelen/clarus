@@ -3,9 +3,12 @@
 
 // conntest_test.go: the serial-connection phase's own host end-to-end
 // proof (Task 5, design spec §5 "Host end-to-end echo"). Builds
-// testdata/echo.cla (and its listen-mode sibling, testdata/echo_listen.cla
-// -- see that file's own doc comment for why it exists separately) with a
-// CURRENT-source clarusc (claruscboot.CurrentExe, the two-stage
+// testdata/echo.cla (both connect- and listen-mode subtests use the SAME
+// fixture, different env var / binName -- fix round, minor 1: a separate
+// echo_listen.cla used to exist purely to omit `on conn.opened`, working
+// around a since-fixed host-glue bug, see TestListenMode's own comment)
+// and testdata/echo_abort.cla with a CURRENT-source clarusc
+// (claruscboot.CurrentExe, the two-stage
 // snapshot-emits-current-source-then-cc-compiles-it bootstrap): the
 // COMMITTED clarusc/clarusc.c snapshot cannot parse the `serial` keyword
 // at all (Task 8 regenerates it), so scripts/clarus-run.sh's cached
@@ -213,19 +216,28 @@ func TestConnectMode(t *testing.T) {
 }
 
 // TestListenMode proves the listen: transport path (bind, deferred
-// accept, byte-exact echo, the same close-driven lifetime rule) using
-// echo_listen.cla -- which, per the controller's fix-round ruling, now
-// carries the SAME `on conn.opened { conn.send("READY\n") }` greeting
-// echo.cla's connect-mode fixture has (rt_ext_ConnHWrite no longer fails
-// a write to a still-listening slot; it discards and reports success,
-// mirroring an unattached serial line). This test deliberately dials
-// AFTER giving the child time to have already fired `opened` and
-// discarded that greeting (see the sleep below) -- proving the discard
-// path is harmless to LATER real traffic, not just that it doesn't
-// crash: the post-peer sweep still round-trips byte-exact, with no
-// leftover "READY\n" bytes ahead of it in the stream.
+// accept, byte-exact echo, the same close-driven lifetime rule) using the
+// SAME echo.cla fixture TestConnectMode does (fix round, minor 1: the
+// standalone echo_listen.cla this used to point at was a byte-duplicate
+// modulo comments -- deleted).
+//
+// echo.cla's `on conn.opened { conn.send("READY\n") }` greeting may or
+// may not survive to reach this test's peer: `rt_ext_ConnHWrite`
+// discards (rather than fails) a write to a still-listening slot,
+// mirroring an unattached serial line, so the greeting is silently
+// dropped unless a peer happened to already be accepted by the time
+// `opened` fires. Rather than a fixed sleep to force one outcome or the
+// other (fix round, minor 4: a flake surface under load either way),
+// this test dials immediately and treats the greeting as OPTIONAL,
+// data-driven: if it's ever going to arrive at all, it's the first bytes
+// this connection ever sends (echo.cla's own `App.startCLI` opens
+// exactly once, and `opened` fires exactly once), so peeking the first
+// len("READY\r") bytes right after writing the sweep -- and only
+// treating them as the greeting if they actually match it -- is
+// order-independent with no added latency in the (expected) common case
+// where nothing is waiting to peek at all.
 func TestListenMode(t *testing.T) {
-	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "echo_listen.cla"), "echo_listen")
+	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "echo.cla"), "echo_listen")
 
 	port := pickFreePort(t)
 	cmd := exec.Command(exe)
@@ -235,15 +247,6 @@ func TestListenMode(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-
-	// Give the child a head start past its own first pump pass (no idle
-	// wait at all before that first pass -- see cpEmitMain's pump loop),
-	// so `opened`'s greeting has already been sent-and-discarded into the
-	// pre-peer void before we ever dial -- otherwise a peer that connects
-	// mid-greeting could actually RECEIVE "READY\n" ahead of the echo
-	// stream this test reads, which is a real (if equally valid) racing
-	// outcome this test isn't set up to also assert on.
-	time.Sleep(50 * time.Millisecond)
 
 	// The program's own bind+listen happens synchronously inside
 	// `conn.open` (App.startCLI), before main() ever reaches the pump
@@ -266,11 +269,23 @@ func TestListenMode(t *testing.T) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
+	greeting := []byte("READY\r")
 	sweep := sweepBytes()
 	if _, err := conn.Write(sweep); err != nil {
 		t.Fatalf("write sweep: %v", err)
 	}
-	got := readExact(t, conn, len(sweep))
+	head := readExact(t, conn, len(greeting))
+	var got []byte
+	if bytes.Equal(head, greeting) {
+		// The greeting survived (a peer already accepted before `opened`
+		// fired) -- the echoed sweep is still to come, in full.
+		got = readExact(t, conn, len(sweep))
+	} else {
+		// No greeting arrived -- `head` IS the first len(greeting) bytes
+		// of the echoed sweep itself (sweepBytes()'s own leading bytes,
+		// 0x00..0x05, can never collide with "READY\r"'s).
+		got = append(append([]byte{}, head...), readExact(t, conn, len(sweep)-len(greeting))...)
+	}
 	if !bytes.Equal(got, sweep) {
 		t.Fatalf("sweep echo mismatch")
 	}
@@ -325,5 +340,68 @@ func TestEnvUnsetFailedPath(t *testing.T) {
 	}
 	if !bytes.Contains(stderr.Bytes(), []byte("failed:")) {
 		t.Errorf("stderr missing %q: got %q", "failed:", stderr.String())
+	}
+}
+
+// TestAbortDuringPump pins the fix-round Important finding:
+// cpEmitMain's host pump loop must test `!clar_aborting`, not just
+// `rtConnAlive()`. echo_abort.cla opens a connection then aborts
+// uncaught, in the SAME `App.startCLI` call, before the pump loop is
+// ever entered -- without the fix, `rtConnAlive()` alone would stay true
+// forever (this test's peer never disconnects, never sends, never
+// closes), so the old loop shape would spin serving events indefinitely
+// instead of falling into the existing post-loop abort check. Env
+// connect-mode (per the finding): the process must exit 1 PROMPTLY, on
+// the abort alone, never depending on the peer.
+func TestAbortDuringPump(t *testing.T) {
+	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "echo_abort.cla"), "echo_abort")
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	cmd := exec.Command(exe)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("CLARUS_SERIAL_MODEM=connect:127.0.0.1:%d", port))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	// Accept so connect-mode's blocking connect() succeeds -- but never
+	// read, write, or close from this side. If the process only exits
+	// because of THIS peer going away, waitExit's own deadline below
+	// catches it (it never will, deliberately) rather than this test
+	// silently passing for the wrong reason.
+	ln.(*net.TCPListener).SetDeadline(time.Now().Add(5 * time.Second))
+	conn, err := ln.Accept()
+	if err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	defer conn.Close()
+
+	start := time.Now()
+	runErr := waitExit(t, cmd, 3*time.Second)
+	elapsed := time.Since(start)
+
+	exitErr, ok := runErr.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected the program to exit nonzero via *exec.ExitError, got: %v (stderr: %s)", runErr, stderr.String())
+	}
+	if got := exitErr.ExitCode(); got != 1 {
+		t.Errorf("exit code: got %d want 1 (stderr: %s)", got, stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("boom")) {
+		t.Errorf("stderr missing abort message %q: got %q", "boom", stderr.String())
+	}
+	// Prompt: the fixed loop condition short-circuits on `clar_aborting`
+	// before ever calling rtConnPump/ConnHIdle, so this should be near-
+	// instant -- generous bound to stay non-flaky under load while still
+	// being far tighter than "wait for a peer that never disconnects".
+	if elapsed > 2*time.Second {
+		t.Errorf("abort exit took %v, expected prompt (not peer-disconnect-dependent)", elapsed)
 	}
 }

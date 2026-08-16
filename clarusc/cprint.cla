@@ -7293,6 +7293,8 @@ func cpEmitUiMain() {
 // last one -- C1 fix). Only when lowUsesAbort, so a no-feature program's
 // main() is untouched.
 func cpEmitMain() {
+    var pumpCond: string
+
     if irIsUiProgram() {
         cpEmitUiMain()
         return
@@ -7321,8 +7323,24 @@ func cpEmitMain() {
     // -- a plain busy-wait when none are (that function's own doc
     // comment). UI-lane's own pump (cpEmitUiMain) is untouched -- native/
     // UI is Task 6.
+    //
+    // Fix round (task review, Important finding): the loop condition ALSO
+    // tests `!clar_aborting` when lowUsesAbort -- without it, an abort
+    // raised inside startCLI (or any handler the pump later calls) never
+    // stops the loop on its own; the existing post-loop
+    // cpEmitAbortDefaultCheck below would only ever run once rtConnAlive()
+    // happens to go false some other way (e.g. the peer disconnects),
+    // which could be never. `clar_aborting` itself is only ever DECLARED
+    // when lowUsesAbort (cpEmitAbortGlobals), so this must stay gated
+    // exactly like cpEmitAbortDefaultCheck's own calls just above/below --
+    // referencing it unconditionally would be an undeclared-identifier
+    // compile error for a no-abort program.
     if irUsesConn {
-        cpRestBuf.add(toText("    while (clar_fn_rtConnAlive()) {"))
+        pumpCond = "clar_fn_rtConnAlive()"
+        if lowUsesAbort {
+            pumpCond = "!clar_aborting && " + pumpCond
+        }
+        cpRestBuf.add(toText("    while (" + pumpCond + ") {"))
         cpRestBuf.add(toText("        clar_fn_rtConnPump();"))
         cpRestBuf.add(toText("        rt_ext_ConnHIdle(20);"))
         cpRestBuf.add(toText("    }"))

@@ -1,0 +1,14 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// serial-connection phase, Task 5 fix round: pins cpEmitMain's pump-loop
+// `!clar_aborting` check. Opens a connection (so rtConnAlive() would stay
+// true forever without the fix -- nothing here ever closes it or lets
+// the peer go away) then aborts uncaught. The process must exit 1
+// promptly on the abort alone, never waiting for the peer.
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    conn.open(serial "modem:9600")
+    abort("boom")
+}
