@@ -36,6 +36,14 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   handle-backed map values, printing, color QuickDraw, labeled break,
   const arithmetic, `switch` on text, substring/indexOf as library code.
 
+### Serial/connection phase (2026-08-16)
+
+- **No carrier detect** — `rtConnDevGone` (`runtime/clarus/conn_68k.cla:253`)
+  always returns false; `closed` never fires for a native serial
+  connection (deliberate, spec-out-of-scope this phase). Revisit with
+  real modem control lines (RING/carrier) if a future BBS-target phase
+  needs it.
+
 ## Compiler correctness / diagnostics
 
 - **Lexer diagnostic quality** (decided 2026-07-23): a bad escape in a
@@ -74,6 +82,28 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 - **Parameter-escape-summary precision upgrade** (4e follow-on): only if
   leak analysis ever proves noisy in practice.
 
+### Serial/connection phase (2026-08-16)
+
+- **`transportName(tag)` falls through any non-1 tag to `"serial"`**
+  (`clarusc/check.cla`, Task 3) — an explicit `tag == 2` branch would be
+  safer for a future third transport tag.
+- **Transport-misuse diagnostic column points at the call's `(`**
+  (`clarusc/check.cla`, Task 3), not the `serial`/`appletalk` token
+  itself — existing `ExCall` convention, just noted as a future
+  precision upgrade.
+- **Three connection-dispatcher builders share ~25 near-identical
+  lines** (Task 5) — folding the `Opened`/`Closed` builders into one
+  helper alongside `Received`/`Failed` was deferred; same file as
+  `lowSynthConnFireFailed` below.
+- **`lowSynthConnFireFailed` declares an `err` local even when no
+  `failed` handler exists** (Task 5) — unused C var under `-Wall`,
+  harmless but sloppy.
+- **`cgRetNeedsHidden` is `KStr`/`KRec`-only** (pre-existing, surfaced
+  by Task 7's `KErr` callee-ABI review) — a user function *returning*
+  `error` would hit the same one-sided hidden-return-slot ABI mismatch
+  Task 7 fixed for `error` parameters; no such function exists in-tree
+  today, so unreproduced, but the gap is real (`clarusc/cg68k.cla`).
+
 ## ABI / performance
 
 - **`KArr` param ABI** still copies arrays by value at call sites
@@ -109,6 +139,18 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   session's `##CLARUS-LOG##` trailer clips at the tail. Raising it
   reblesses ~40 native goldens (`MOVE.L #4096,D0` in every `.s`); do it
   when a real session loses lines that matter.
+
+### Serial/connection phase (2026-08-16)
+
+- **Per-byte read path ceiling, both lanes** — `rtConnPump`'s
+  byte-at-a-time `text.append` loop (`runtime/clarus/conn.cla:322`) and
+  `rtConnDevReadByte`'s one-`PBReadSync`-per-byte native read
+  (`runtime/clarus/conn_68k.cla:198`) are both already `ponytail`-
+  commented in place: correct and plenty fast at serial rates (even
+  57600 baud is ~170µs/byte, nowhere near per-call overhead), with the
+  named upgrade lever being a batched `rtConnDevReadInto(slot, buf, n)`
+  added to the per-lane waist if a future fast bulk transport ever makes
+  it a bottleneck.
 
 ## Runtime / Toolbox robustness
 
@@ -153,6 +195,26 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 - **Reference erratum**: Appendix C Bookmark Manager's `Remove.click`
   doesn't guard `Marks.selected == -1` — fix reference-side in a docs
   pass (the example is normative and shipped verbatim).
+
+### Serial/connection phase (2026-08-16)
+
+- **`rt_ext_ConnHOpen` overwrites an already-open slot's fd without
+  closing it** (`runtime/host/rt_serial.inc`, Task 4) — unreachable
+  today because `rtConnOpen`'s own gate never opens an already-open
+  slot, but latent if that invariant ever loosens.
+- **Host `every`-timer gap in the CLI pump** (design doc
+  `docs/superpowers/specs/2026-08-15-serial-connection-design.md` §6/§7)
+  — `every` machinery is UI-runtime-entangled today; the host CLI pump
+  services open connections only, not `every` timers. Deliberately not
+  promised this phase.
+- **Task 7 leftover minors, all deferred**: `serial_snow_test.go`'s
+  `done()` blocks ~34s inside `runSnow`'s poll loop, suspending
+  died-mid-run detection for that window; `internal/conntest`'s
+  `TestListenMode` has a stolen-port edge case; `examples/serialecho.cla`'s
+  quit-in-loop keeps scanning the rest of a chunk after the 3rd `Q`
+  instead of returning immediately; `runtime/host/rt_serial_test.c` has
+  three stale/contradictory comments (alarm numbers, a retry-loop
+  reference, and `set_recv_timeout`'s stated rationale).
 
 ## Bake / CLIR artifact machinery
 
@@ -252,3 +314,23 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 - **`/tmp/l1src` frozen-source byte-identity procedure is stale**
   (predates param-abi's immutable-params rule); any future phase using
   it needs a fresh re-freeze.
+
+### Serial/connection phase (2026-08-16)
+
+- **Toolbox-suite compose file list duplicated across `internal/bake`
+  and `internal/mactest`** — `internal/bake/bakeidentity_test.go`'s
+  `toolboxSuiteGUIFiles` and `internal/mactest/coresuite_test.go`'s
+  `toolboxFiles` are hand-maintained twins with a "keep in sync"
+  comment as the only enforcement; Task 2 updated one and missed the
+  other, undetected until this task's T2 run (see `STATUS.md` §3, fix
+  commit `0907364`). A shared source (one list, imported by both) or a
+  T1-level consistency check would prevent the next miss.
+- **No committed emit-time fixture pinning the unchanged
+  `lowUnsupported` rejection for `appletalk`/local-receiver shapes**
+  (Task 5) — those shapes still reject the same way pre-phase; nothing
+  regresses that specifically today.
+- **`TestEnvUnsetFailedPath` rebuilds `echo.cla` instead of reusing
+  `TestConnectMode`'s binary** (`internal/conntest`, Task 5) — T1
+  hot-path cost, harmless but avoidable.
+- **No coverage for the >4-connections build error** (Task 5) — the
+  cap exists and is enforced, just untested.

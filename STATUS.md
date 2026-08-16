@@ -1,159 +1,194 @@
-# Session status — 2026-08-15 (clir-load-perf COMPLETE: all gates GREEN on tip 1d88846; merge on Andrew's word)
+# Session status — 2026-08-16 (serial-connection: all gates GREEN on tip 0907364; two Snow finals pending; merge on Andrew's word)
 
-Handoff summary. **The `clir-load-perf` phase is COMPLETE and fully
-gated — T1 throughout, T2 PASS (261s, pre-follow-on tip; every
-follow-on task re-ran the gate set incl. both native suite boots), and
-BOTH Snow-hardware gates PASS on the final tip `1d88846`
-(`TestClarusCBakePathOnSnow` 1206s; `TestMacResidentFailedCompileStaysAliveOnSnow`
-1201s, 20m settle + toolbar fast-forward procedure). The branch is NOT
-merged — merge is Andrew's call.** The local checkout works on `main`
-directly (no-worktree convention); `clir-load-perf` is ahead of `main`
-at `42c7265`.
-
-Post-Task-10 follow-ons on the branch (each subagent-implemented +
-independently reviewed, ledger in `.superpowers/sdd/2026-08-15-clir-load-perf/`):
-`u32At`→`intAt` rename; `stringAt` switched to a 1-byte Pascal prefix
-(CLIR format unchanged — loader hops the 3 zero bytes);
-**`list.clone()`** (flat-element bulk copy, fixed the field-measured
-4m21s copy-on-install regression to 9s); progress-bar repaints removed
-from the uitest trace; **`on App.log(line: string)`** handler +
-ClarusC adoption (the captured `out` trailer is now the persistent
-timestamped compile log).
-
-**Field-proven numbers (Snow guest time, final tip):** compile #1 load
-window ~4m55s–5m23s (baseline 10m02s) + install 4–9s; **compile #2
-skips load entirely** ("parsed earlier this session" memo line) —
-**install-only ~5s vs ~10m baseline (~120x on the repeat-compile
-path)**. The spec's ≤60s first-compile target remains missed (~5min);
-the residual lever (runtime loop-body ~10x off theoretical floor) is
-recorded debt.
+Handoff summary. **The `serial-connection` phase is IMPLEMENTATION DONE
+and gated — T1 throughout every task, T2 PASS end-to-end (268s) on the
+branch tip, and the echo acceptance app has PASSED on Snow hardware 4
+times across development. The branch is NOT merged — merge is Andrew's
+call, and two hardware finals still need the controller to run them
+post-final-review (see §2).** The local checkout works on `serial-connection`
+directly (no-worktree convention), 16 commits ahead of `main` at `f8c15a1`.
 
 ## 0. START HERE next session
 
-**Remaining: merge.** All gates are green on `1d88846`; merge to
-`main` happens only on Andrew's explicit request (fast-forward). If a
-follow-up perf phase is wanted for the ~5min first compile, the debt
-list's "runtime loop-body residual" lever is the starting point;
-`strPool`'s install loop is now `clone()`-eligible too (clone review
-M3).
+**Remaining before merge-eligible:**
+1. Controller runs the two Snow finals (§2) — not this phase's task-8
+   job by design.
+2. Andrew's word to merge (fast-forward `f8c15a1..0907364`).
 
-Full task ledger, measured numbers, rulings, and the complete debt
-list: HISTORY's `clir-load-perf` entry. Ledger + reports:
-`.superpowers/sdd/2026-08-15-clir-load-perf/` (progress.md is the
-authoritative per-task record; task-9-report.md has the raw emulator
-probe numbers this phase's perf table is built from).
+No further implementation work is expected. If Andrew wants the next
+roadmap item picked up, it's AppleTalk (`docs/ROADMAP.md`'s "Next:
+language usability" list, item 3 — serial is now marked done).
 
-## 0a. clir-load-perf close-out (IMPLEMENTATION DONE — gates pending)
+## 1. What landed
 
-**What it is:** cuts the CLIR (baked-IR) load path's cost — the stretch
-that clocked 10m 2s on Snow between "Verifying Baked Runtime" and
-`driveCompile`'s "Starting" line for a 1.3MB artifact. Three designs,
-all landed: **A** drops a redundant load-time header-hash re-verify
-(`bkHeaderVerified` consume-once flag); **B** parses the CLIR once per
-app session instead of every compile (`bkParsedValid` memo +
-copy-on-install fix for a reference-aliasing hazard `bkInstallArenas`
-would otherwise have hit); **C** adds four bulk `text` range-read
-methods (`hashStep`/`intAt`/`stringAt`/`textAt`) plus a cheaper djb2
-hash shape, bumping `bkFormatVersion` 6→7, and rewrites `bake.cla`'s
-load path onto them.
+The reference's fenced `connection` type is real end to end, with the
+Macintosh serial ports as its first working transport
+(`conn.open(serial "modem:9600")`), event-driven (`opened`/`received`/
+`closed`/`failed`), on both lanes:
 
-**Scale:** 10 tasks, 11 commits (`11cf5d6..5db9e1a`), one opus-run
-audit task (no commits — proved B's copy-on-install safe across 43
-arenas), one measurement-only task (no commits — the emulator perf
-probe), each task subagent-implemented and independently reviewed
-(opus for the two load-bearing tasks: the audit and design B's own
-implementation).
+- **Toolbox catalog**: `toolbox/devices.cla` + `toolbox/serial.cla` —
+  Device Manager + Serial Driver, hardware-proved by the toolbox suite's
+  `SerialOpenWrite` case (opens `.AOut`/`.AIn`, configures 9600-8N1,
+  exercises the load-bearing `SerSetBuf` call, writes/reads real bytes).
+- **Language surface**: `serial "modem:9600"` / `"printer:9600"` parses
+  and checks; `docs/clarus-language-reference.md`'s "Connections" +
+  "Serial" sections (Ch12) are normative and verified this task to still
+  match shipped behavior exactly (baud table, env var names/shapes, 8KB
+  buffer, closed-never-fires — no drift, no edit needed).
+- **Runtime**: a shared `conn.cla` dispatch layer + host TCP glue
+  (`conn_c.cla`, dev-lane substitute for real hardware via
+  `CLARUS_SERIAL_MODEM`/`CLARUS_SERIAL_PRINTER` env vars) and a native
+  SCC/Serial-Driver lane (`conn_68k.cla`), both reachable through the
+  same `connection` methods and events.
+- **Acceptance**: `examples/serialecho.cla` — a small UI program that
+  opens the modem port at 9600 baud, echoes every byte back, and quits
+  on three consecutive `Q` bytes — passed on real Snow (Mac II) hardware
+  4 times across the phase (most recent 3 consecutive clean runs:
+  dial ~253ms, READY ~26.7s, QQQ ~28.88s, total ~34.1s wall clock,
+  remarkably consistent run to run).
 
-**Numbers that matter (Mac-Plus-scale emulator probe, real-CLIR
-projection):** body hash 153.98→60.63 µs/byte (2.54x); U32 parse walk
-200.91→55.05 µs/byte (3.65x); bulk byte-range copy 182.14→0.51 µs/byte
-(359x). Projected real-CLIR (1,255,314 bytes) load-path window:
-638.8s→145.2s (~4.4x). **Spec's ≤60s first-compile target: likely
-MISSED (~2-2.5min projected on Snow).** Repeat-compile target (install
-only, ~2s): met. See HISTORY's clir-load-perf entry for the full methodology and
-honesty caveats — these are Mac Plus (8MHz, no-cache) guest-tick
-numbers extrapolated linearly; no Mac II boot lane exists to measure
-Snow directly yet.
+**Controller rulings this phase (reflected here, not re-litigated):**
+- **Opened-at-bind semantics**: `opened` fires on open success, which
+  for a pre-peer TCP-listen slot means bind succeeded, not that a peer
+  has connected — correct by spec, because a raw serial line has no
+  peer-arrival signal either (carrier detect is out of scope). The
+  companion fix: a write to a still-listening slot with no accepted peer
+  succeeds and discards, mirroring an unattached physical serial line
+  rather than failing.
+- **Contract-vs-environment error split**: `send` on a never-opened or
+  already-closed connection is a runtime error (program bug); a bad port
+  spec or driver I/O error arrives as `failed(err)` (environmental).
+- **UiConnPump lane seam**: verdicted sound+discoverable — the cprint/
+  Retro68 Mac lane's no-op pump stub fails loud (a link error) in every
+  reachable bad configuration, never silently; that lane never actually
+  needs connection support (suite/scenario programs don't use them), so
+  no real stub implementation was required by construction.
 
-**Gates status:**
-- **T1: GREEN throughout** (every task; `--smoke` where `runtime/`/
-  `clarusc/` were touched).
-- **T2: NOT YET RUN this phase.**
-- **`CLARUS_SNOW_TESTS=1` `TestClarusCBakePathOnSnow`: NOT YET RUN**
-  this phase (standing rule fires — `bake.cla`/`macgui.cla` changed).
-- **`CLARUS_SNOW_TESTS=1`
-  `TestMacResidentFailedCompileStaysAliveOnSnow`: NOT YET RUN** this
-  phase (same standing rule; also proves design B via the Task 8
-  session-log assertion).
-- **Merge: NOT DONE.** `clir-load-perf` branch sits ahead of `main` at
-  `42c7265`; fast-forward is a merge-time decision, not automatic.
+**Notable bugs found and fixed by review** (none reachable by any gate
+before a human/opus review caught them — recorded so the next serial/
+network phase knows where to look first):
+- **SIGPIPE crash risk** (Task 4 review): a peer hangup mid-write to the
+  host TCP glue killed the process (no `SIG_IGN`/`SO_NOSIGPIPE`
+  anywhere). Fixed: ignore SIGPIPE, surface write failures as
+  `failed(err)` instead of a process death.
+- **`KErr` callee-side ABI gap** (Task 7 review, Critical): `cgPushArgs`/
+  `cgArgSlotSize` had been widened for by-address `error` params, but
+  `frameIsRef` at cg68k.cla:5030 hadn't — a native `on conn.failed(err:
+  error)` handler read stack garbage for `err.message`. Unexercised by
+  every existing gate (nothing called a native `failed(err)` handler);
+  fixed with a real native test that fires `failed(err)` and asserts the
+  message text (`TestConnFailedHandlerOn68k`).
+- **Listen-mode write semantics** (Task 5 review): `rt_ext_ConnHWrite`
+  failed outright when listening with no accepted peer yet, instead of
+  accepting-and-discarding like a real unattached serial line — see the
+  opened-at-bind ruling above.
+- **Pump abort-awareness** (Task 5 review, Important): the emitted host
+  pump loop never tested `clar_aborting`, so an uncaught abort while a
+  connection was open was silently swallowed instead of following
+  Ch5's default (log+exit 1). Fixed: the loop condition became
+  `while (!clar_aborting && clar_fn_rtConnAlive())`.
 
-**Debt carried (full list with citations in the HISTORY entry):**
-runtime loop-body residual (~480 cycles/byte, ~10x theoretical —
-future lever: hand-emitted helpers or loop-codegen work); memo
-lane-tag gap; testapi single-compile coverage gap; `stringAt`
-hardware-consumption-shapes watch item; `ser.cla` still per-byte
-(deliberate non-goal); `drive.cla:1854` stale parenthetical;
-`bkLoadOverrun`/`rtTextStringAt`/`bkCheckRtbakeHeader` comment-drift
-minors; three new panic fixtures (`stringat_oor`/`textrange_overflow`/
-`textrange_oor`) are host-only (pinned by
-`internal/selfhost/behavior_test.go`, never booted natively, matching
-the established convention for fixtures whose semantics don't need
-hardware); `bkReadObjCode`'s pre-existing `nHoles` spin; truncate-on-
-reuse recorded as an alternative to B's copy-on-install, not chosen;
-host `--rtbake` path still verifies once per process (fine, by
-design). Also fixed this task: four stale ROADMAP cross-references to
-the now-deleted `bkInstallObjCode` (Task 7 of this phase deleted it),
-each reconciled in place with a superseded-claim parenthetical, plus
-one reconciling sentence in `clarusc/ir.cla:375`.
+## 2. Two controller-run finals — NOT run by this task, by design
 
-## 0b. Prior phases (all merged; recap pointers only)
+- **`TestClarusCBakePathOnSnow`** (`CLARUS_SNOW_TESTS=1`, ~55m, standing
+  rule) — the runtime source manifest changed this phase (new `conn*.cla`
+  + `toolbox/{devices,serial}.cla` modules are now part of every native
+  build's include set), so the standing rule fires: re-run it after any
+  change reachable from `ClarusC.APPL`'s own bake path. Last known-PASS
+  predates this phase.
+- **A final `TestSerialEchoOnSnow`** at the true branch tip (`0907364`,
+  post snapshot-regen + bake-fix) — every prior Snow PASS in this phase
+  was against an earlier commit; the tip has moved since (the snapshot
+  regen and the bake file-list fix, neither of which touch runtime or
+  native codegen, but the standing discipline is a fresh run at the true
+  tip before merge-eligible).
 
+Both are the controller's to run post-final-review; then the phase is
+merge-eligible on Andrew's word.
+
+## 3. Gate results (this task, tip `0907364`)
+
+- **Snapshot regen** (`clarusc/clarusc.c`, Go-free per
+  `internal/selfhost/fixedpoint_test.go`'s own instructions): converged
+  and re-verified twice — 4,742,723 bytes (+30,924 over the prior
+  snapshot), byte-identical across three independent stage-1/stage-2
+  builds. Makes `serial` syntax parseable by the committed snapshot for
+  the first time. Commit `5203368`.
+- **`go test ./internal/selfhost -count=1 -timeout 30m`**: PASS, 117.4s.
+  Includes `TestSnapshotFixedPoint`, `TestClarusModules` (8/8),
+  `TestErrorGoldens` (17/17, incl. `conn_serial_badarg.cla`),
+  `TestBehaviorGoldens`/`TestCrossGenDifferential` (incl.
+  `conn_send_closed.cla`, the expected red→green flip — the golden file
+  itself was never edited, only its runtime status changed once `serial`
+  became parseable), `TestSnapshotBuilds` (3/3).
+- **`scripts/test-merge.sh` (T2)** — run TWICE this task, honestly:
+  - **Run 1 (tip `5203368`, before the bake fix): RED.** Everything
+    through the native-lane Mac gate passed clean (T1 body 24s,
+    `internal/selfhost` 88s, `CLARUS_MAC_TESTS=1 go test ./internal/mactest`
+    133s — all 4 frozen golden scenarios, codegen tests, event-loop tick
+    test, and both suites' native GUI boots including
+    `TestToolboxSuiteOn68k`). T2's last leg failed:
+    `CLARUS_BAKE_FULL=1 go test ./internal/bake` —
+    `TestBakeFullCorpusSuiteToolbox` couldn't compile
+    (`testsuite/toolbox/runner.cla:452:40: undefined: caseSerialOpenWrite`).
+    Root cause: `internal/bake/bakeidentity_test.go`'s
+    `toolboxSuiteGUIFiles` file list (a hand-maintained twin of
+    `internal/mactest/coresuite_test.go`'s `toolboxFiles`) was never
+    updated when Task 2 added `toolbox/devices.cla`/`toolbox/serial.cla`/
+    `testsuite/toolbox/cases_serial.cla` — undetected until now because
+    `CLARUS_BAKE_FULL=1` isn't part of T1, only T2's last leg, and this
+    was the first T2 run on the branch since Task 2 landed. Full log:
+    `.superpowers/sdd/2026-08-15-serial-connection/task8-t2-run1-red.log`.
+  - **Fix**: commit `0907364` adds the same 3 entries at the same
+    relative positions to `toolboxSuiteGUIFiles`, making the two lists
+    identical in content and order.
+  - **Run 2 (tip `0907364`, after the fix): CLEAN.** `test-merge.sh:
+    PASS in 268s` — T1 body 24s, `internal/selfhost` 105s, native-lane
+    `internal/mactest` 133s, `internal/bake` full-corpus gate 6s. Zero
+    FAILs. Log: `.superpowers/sdd/2026-08-15-serial-connection/task8-t2.log`.
+- **Manual-demo sanity check**: `scripts/build-68k.sh SerialEcho
+  examples/serialecho.cla` builds clean (`build-68k/SerialEcho/SerialEcho.bin`,
+  114KB) — confirms both `scripts/build-68k.sh` and (transitively)
+  `scripts/clarus-run.sh` can build serial programs directly now that the
+  snapshot parses `serial` syntax.
+
+## 4. Manual-demo recipe (Andrew's own convention, port 1984)
+
+```sh
+scripts/build-68k.sh SerialEcho examples/serialecho.cla
+snow/Snow snow/Clarus.snoww --serial-bridge-a tcp:1984
+```
+
+Then, once Snow has booted and `SerialEcho.bin` is running on the guest
+(drag/launch as usual on the Snow disk image): connect a terminal —
+`nc localhost 1984` — and type at it. Every byte typed echoes back
+(binary-safe, no CR/LF translation); typing `QQQ` (three consecutive `Q`
+bytes, can be split across sends) quits the guest app.
+
+## 5. Prior phases (all merged; recap pointers only)
+
+- **clir-load-perf** (CLIR load-path perf: header re-verify skip, once-
+  per-session parse memo, bulk `text` range-read methods) — merged
+  2026-08-15/16 (`42c7265` → `main` at `f8c15a1`, via the same
+  fast-forward-on-request convention this phase now waits on). Both
+  Snow gates (`TestClarusCBakePathOnSnow` 1206s,
+  `TestMacResidentFailedCompileStaysAliveOnSnow` 1201s) PASSED on final
+  tip `1d88846`. Full detail: HISTORY's `clir-load-perf` entry.
 - **attempt-abort** (`attempt { } aborted msg { }` + `abort(msg)`,
-  cooperative unwinding, both lanes) — merged 2026-08-15 (fast-forward
-  `97d043c..d299b72`), pushed to `origin/main`. host self-compile
-  −11.5% vs pre-feature after the Task 6b `canAbort` fixpoint;
-  `ClarusC.APPL` panics and uncaught aborts are now user-visible
-  (beep+alert) instead of silent exits; two real unwind leak classes
-  found and fixed. Full detail: HISTORY's `attempt-abort` entry.
-  Ledger: `.superpowers/sdd/2026-08-14-attempt-abort/` (retained, incl.
-  `deferred-gates.md` — every item marked run/green). Reference:
-  `docs/clarus-language-reference.md` Ch5 ("Attempt and Abort"), Ch12,
-  Ch13. Debt carried forward from this phase (still open, not
-  clir-load-perf's concern): PBM icon parser rejects CR line endings on
-  the Mac (deferred per Andrew, "worry about that later"); a
-  `rt_ext_UiValidRect` Retro68 link gap blocks fresh Retro68/cprint-lane
-  rebuilds (pre-existing, unrelated); cprint-lane UI dispatcher has no
-  abort-default check (acceptable — that lane is slated for
-  retirement); no automated dispatcher-default test on either lane;
-  `declIsRuntimeOrigin`'s symlink-equivalence residual;
-  `TestRunErrOn68k` can't boot `App.startCLI`-shaped fixtures.
-- **object-code-linker** (stage 3.5, CLIR v6 baked object code,
-  −41%/−35% emit68k) — merged 2026-08-14 (`e143af1..6009c65`). Its
-  Snow saga (C-lane signed-overflow UB hash bug, CLAR_*32 fix, re-run
-  PASS) is recorded in HISTORY; debt list in its entry. Note:
-  clir-load-perf's Task 7 deleted this phase's `bkInstallObjCode`
-  function outright (design B needed the pending arenas it truncated
-  to survive un-truncated across compiles) — the object-code-linker
-  HISTORY entry's own references to that function now carry
-  superseded-claim parentheticals pointing here.
-- **fallback-trigger-narrowing** (CLIR v5 per-module source hash,
-  include-dedup by construction) — merged 2026-08-13.
-- **runtime-ir-bake / param-abi / memory-leak-fix /
-  layer1-compiler-perf / datetime-instrumentation / map-hashtable /
-  mac-resident-clarusc** — the 2026-08-12/13 stack, all merged
-  (`322765a..b16e8f0`). Highlights that remain operationally relevant:
-  the leak fix made per-compile growth 0 and compile #2 ≈ compile #1
-  on hardware (later superseded in kind, not premise, by
-  clir-load-perf's design B, which now skips compile #2's parse
-  entirely rather than merely making it cheap); `cgEmitPanic`'s
-  empty-message bug is fixed and regression-tested
-  (`TestRunErrOn68k`); the ~5x compiler speedup and hashtable maps
-  underlie current perf.
+  cooperative unwinding, both lanes) — merged 2026-08-15. Full detail:
+  HISTORY's `attempt-abort` entry.
+- **object-code-linker** (stage 3.5, CLIR v6 baked object code) — merged
+  2026-08-14.
+- **fallback-trigger-narrowing / runtime-ir-bake / param-abi /
+  memory-leak-fix / layer1-compiler-perf / datetime-instrumentation /
+  map-hashtable / mac-resident-clarusc** — the 2026-08-12/13 stack, all
+  merged. Recap pointers only; see HISTORY.
 
 **Standing rules (unchanged):** re-run `TestClarusCBakePathOnSnow`
-(`CLARUS_SNOW_TESTS=1`) after ANY change to `clarusc/bake.cla` or
-`clarusc/macgui.cla` — it is the only proof of the `ClarusC.APPL`
-default bake path (fires for clir-load-perf; NOT yet satisfied — see
-0/0a above). `internal/selfhost` always gets `-count=1 -timeout 30m`.
-Merge only on Andrew's request; main stays green.
+(`CLARUS_SNOW_TESTS=1`) after ANY change to `clarusc/bake.cla`,
+`clarusc/macgui.cla`, OR (as of this phase) the native runtime source
+manifest (new `.cla` modules that join every native build's include set)
+— it is the only proof of the `ClarusC.APPL` default bake path (fires
+for serial-connection; NOT yet satisfied — see §2 above).
+`internal/selfhost` always gets `-count=1 -timeout 30m`. Merge only on
+Andrew's request; main stays green.

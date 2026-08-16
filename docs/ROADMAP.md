@@ -75,6 +75,10 @@ In order:
 1. **Binary streams and files** — proper reading and writing of binary
    data, filling the gaps in the existing support.
 2. **Serial ports** — controlling the ports and sending/receiving data.
+   DONE (`serial-connection` phase, 2026-08-16): the fenced `connection`
+   type is real end to end, serial as its first transport, both lanes
+   (native SCC/Serial Driver + host TCP dev-lane substitute), acceptance-
+   proved on Snow hardware. Not yet merged to `main` — see `STATUS.md`.
 3. **AppleTalk.**
 4. **MacTCP.**
 
