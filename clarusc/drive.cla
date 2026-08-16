@@ -1500,21 +1500,29 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     }
     cpSerPorted = true
     neededMods.add("ser.cla")
-    // connection (2026-08-15 serial-connection spec, Task 4): shared
+    // connection (2026-08-15 serial-connection spec, Task 4/6): shared
     // conn.cla + exactly one per-lane rtConnDev* waist, same lane-split
-    // shape as datetime above -- but STILL usage-gated (usesConn), unlike
-    // every module above this point, because nothing calls it yet (Task
-    // 5 does the lowering that would). Gating -- rather than joining the
-    // unconditional full-superset splice like sortedmap/datetime/ser did
-    // -- is what keeps every EXISTING (non-conn) program's manifest, and
-    // therefore its IR indices and goldens, byte-identical. conn.cla
-    // itself must come after core/str/text (rtPanic/rtSetLastErr, text
-    // values) and after ser.cla (reuses its SerNewPtr/SerDisposePtr
-    // scratch externs) -- both already spliced above unconditionally, so
-    // simply appending here satisfies both. The 68k superset does NOT
-    // change here at all (Task 6's conn_68k.cla): a want68k build gets
-    // neither module yet, even when usesConn.
-    if usesConn and not want68k {
+    // shape as datetime above. Host lane STAYS usage-gated (usesConn),
+    // exactly as Task 4 landed it -- nothing calls rtConnOpen/etc. from a
+    // conn-less program, so gating (rather than joining the unconditional
+    // full-superset splice like sortedmap/datetime/ser) keeps every
+    // EXISTING (non-conn) host program's manifest, and therefore its IR
+    // indices and goldens, byte-identical. The 68k lane (Task 6) DOES
+    // join the unconditional full-superset splice now, matching ui*.cla's
+    // own precedent: lower.cla's dispatcher synthesis (lowSynthConnDispatchers)
+    // runs unconditionally under want68k too, so conn.cla's own
+    // `clar_conn_fire_*` externs must always resolve on this lane,
+    // dormant program or not -- conn_68k.cla is what answers conn.cla's
+    // rtConnDev* calls once it's there. conn.cla itself must come after
+    // core/str/text (rtPanic/rtSetLastErr, text values) and after ser.cla
+    // (reuses its SerNewPtr/SerDisposePtr scratch externs) -- both
+    // already spliced above unconditionally on every lane, so simply
+    // appending here satisfies both regardless of which branch below is
+    // taken.
+    if want68k {
+        neededMods.add("conn.cla")
+        neededMods.add("conn_68k.cla")
+    } else if usesConn {
         neededMods.add("conn.cla")
         neededMods.add("conn_c.cla")
     }

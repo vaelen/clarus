@@ -1325,6 +1325,7 @@ func rtUiRunScripted() {
             quit 1
         }
         rtUiPumpPassive()
+        UiConnPump()
     }
 }
 

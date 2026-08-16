@@ -422,6 +422,15 @@ func bakeModuleList(lane: int): list of string {
     }
     mods.add("ser.cla")
     if lane == bkLane68k {
+        // connection (serial-connection phase, Task 6): conn.cla +
+        // conn_68k.cla join the 68k lane's full superset unconditionally
+        // now, mirroring driveManifestSplice's own `if want68k` splice
+        // (drive.cla) -- the host lane's conn.cla+conn_c.cla pair stays
+        // usesConn-gated (drive.cla's own header comment) and so is
+        // deliberately absent from bkLaneC's own module list here, same
+        // as it always has been.
+        mods.add("conn.cla")
+        mods.add("conn_68k.cla")
         // native.cla is native-only (Toolbox-trap glue, no C runtime
         // under it at all -- see its own doc comment); driveManifestSplice
         // only ever splices it under want68k, and the bake generator

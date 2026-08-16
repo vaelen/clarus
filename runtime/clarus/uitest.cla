@@ -248,6 +248,7 @@ func UiTestTick(n: int): bool {
             cur = UiTickCount()
         }
         rtUiEveryPump()
+        UiConnPump()
         rtUiTeIdleFront()
         rtUiFlushAllBuffered()
         rtUiTablesSync()

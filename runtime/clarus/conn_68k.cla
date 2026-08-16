@@ -1,0 +1,240 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// conn_68k.cla: the native-68k rtConnDev* waist (2026-08-15 serial-
+// connection spec, Task 6) -- conn_c.cla's twin, same six function names,
+// real Device Manager/Serial Driver calls instead of a host TCP socket.
+// Spliced (with conn.cla) into EVERY want68k build now, unconditionally --
+// the same full-lane-superset treatment ui*.cla/datetime.cla/ser.cla
+// already have (drive.cla's own header comment on this splice site), NOT
+// usesConn-gated the way the host lane's conn.cla+conn_c.cla pair still
+// is: conn.cla's `clar_conn_fire_*` externs must resolve in every native
+// build once lowSynthConnDispatchers runs unconditionally under want68k
+// (lower.cla), so conn_68k.cla must always be there to answer conn.cla's
+// own rtConnDev* calls, dormant or not.
+//
+// Pulls the real Device Manager/Serial Driver declarations from
+// toolbox/devices.cla + toolbox/serial.cla + toolbox/files.cla (IOParam,
+// PBWriteSync/PBCloseSync) -- the same "runtime modules include toolbox
+// catalog files" idiom runtime/clarus/uidialogs.cla already establishes
+// for toolbox/standardfile.cla + toolbox/files.cla (Task 1's normalized
+// include-once identity dedups a positionally-composed program that also
+// names one of these files directly; the bake manifest hashes nested
+// includes automatically). No collision to resolve: devices.cla's own
+// header comment already documents why it deliberately declares only the
+// five PB routines files.cla doesn't (PBOpenSync/PBReadSync/
+// PBControlSync/PBStatusSync/PBKillIOSync vs files.cla's IOParam/
+// PBWriteSync/PBCloseSync) -- composing all three here is exactly the
+// shape that split was designed for.
+include "../../toolbox/devices.cla"
+include "../../toolbox/serial.cla"
+include "../../toolbox/files.cla"
+
+// Per-slot refNums, parallel to conn.cla's own rtConnState/rtConnPend*
+// arrays -- literal 4, matching rtConnMax (parseType's array-size grammar
+// needs a literal, not the named const; see conn.cla's own header
+// comment for the same constraint). `IOParam`/`CntrlReset`/`CntrlSetBuf`
+// are `extern record`s and so can never be array elements or globals
+// themselves (language reference, "extern record": "never ... a
+// container element") -- only the plain-int refNum each open() call
+// reads back out of one survives past that call, exactly the shape
+// testsuite/toolbox/cases_serial.cla's own local `outPb`/`inPb` already
+// prove works.
+var rtConnOutRef: int[4]
+var rtConnInRef: int[4]
+
+// rtConnReadBuf: the one persistent 1-byte scratch PBReadSync targets --
+// lazily NewPtr'd on first use, reused by every rtConnDevReadByte call on
+// every slot (never freed; a single 1-byte block is not worth the
+// bookkeeping a slot-indexed pool would add). See rtConnDevReadByte's own
+// comment for why per-byte PBReadSync itself, not this buffer's size, is
+// the actual throughput ceiling.
+var rtConnReadBuf: ptr = ptr(0)
+
+// rtConn68kName: the NewPtr+pokeb Pascal-string pattern toolbox/
+// devices.cla's own header comment documents for `ioNamePtr` (worked
+// example: testsuite/toolbox/cases_serial.cla's `serPName`) -- reuses
+// ser.cla's already-spliced SerNewPtr (ser.cla is always spliced ahead of
+// this module, see conn.cla's own header comment for the identical
+// SerNewPtr/SerDisposePtr reuse) rather than declaring a redundant
+// unprefixed `NewPtr` extern of its own.
+func rtConn68kName(s: string): ptr {
+    var p: ptr
+    var i: int
+
+    p = SerNewPtr(s.length + 1)
+    pokeb(p, s.length)
+    i = 0
+    while i < s.length {
+        pokeb(p + 1 + i, int(s[i]))
+        i = i + 1
+    }
+    return p
+}
+
+// rtConn68kBaudWord maps a validated baud rate (conn.cla's
+// rtConnValidBaud eleven-rate set -- the only values that ever reach
+// here) to its Serial.h config-word constant.
+func rtConn68kBaudWord(baud: int): int {
+    if baud == 300 { return baud300 }
+    if baud == 600 { return baud600 }
+    if baud == 1200 { return baud1200 }
+    if baud == 1800 { return baud1800 }
+    if baud == 2400 { return baud2400 }
+    if baud == 3600 { return baud3600 }
+    if baud == 4800 { return baud4800 }
+    if baud == 7200 { return baud7200 }
+    if baud == 9600 { return baud9600 }
+    if baud == 19200 { return baud19200 }
+    // baud == 57600, the eleventh and last rate rtConnValidBaud admits.
+    return baud57600
+}
+
+// rtConnDevOpen: PBOpenSync `.AOut` then `.AIn` (portIdx 0, the modem
+// port) / `.BOut` then `.BIn` (portIdx 1, the printer port), stash both
+// refNums, SerSetBuf an 8KB buffer on the INPUT driver (LOAD-BEARING --
+// toolbox/serial.cla's own header comment: the driver's default receive
+// queue silently drops a burst past ~63 bytes with no error anywhere in
+// the ordinary polling contract), then SerReset the OUTPUT driver alone
+// with the 9600-8N1-shaped config word. Resetting only the output
+// refNum, not both, follows testsuite/toolbox/cases_serial.cla's own
+// hardware-proved SerialOpenWrite case (Task 2) -- Serial.h itself has no
+// comment either way, and this repo's own proven-on-hardware precedent is
+// the stronger source: the two named drivers share one physical UART per
+// port, so configuring it via either refNum configures both directions.
+// Returns the first nonzero OSErr encountered, 0 on full success --
+// conn.cla's rtConnOpen stages a `failed` event either way (never a
+// panic, spec %3).
+func rtConnDevOpen(slot: int, portIdx: int, baud: int): int {
+    var outName: string
+    var inName: string
+    var outPb: IOParam
+    var inPb: IOParam
+    var setBufPb: CntrlSetBuf
+    var resetPb: CntrlReset
+    var err: int
+
+    if portIdx == 0 {
+        outName = ".AOut"
+        inName = ".AIn"
+    } else {
+        outName = ".BOut"
+        inName = ".BIn"
+    }
+
+    outPb.ioNamePtr = rtConn68kName(outName)
+    err = PBOpenSync(outPb)
+    if err != 0 {
+        return err
+    }
+    rtConnOutRef[slot] = outPb.ioRefNum
+
+    // A failure here leaves the just-opened OUTPUT driver open with no
+    // slot ever marking it for cleanup (conn.cla's rtConnOpen never calls
+    // rtConnDevClose on an open failure -- only a later close() on an
+    // eventually-succeeding open does). Not observed on real hardware
+    // (Task 1's probe wave, task-1-report.md): the two named drivers for
+    // one port either both open or both fail together. Ponytail: if a
+    // real device someday fails ONLY the input half, the fix is closing
+    // outPb here before returning.
+    inPb.ioNamePtr = rtConn68kName(inName)
+    err = PBOpenSync(inPb)
+    if err != 0 {
+        return err
+    }
+    rtConnInRef[slot] = inPb.ioRefNum
+
+    setBufPb.ioCRefNum = inPb.ioRefNum
+    setBufPb.csCode = kSERDInputBuffer
+    setBufPb.serBPtr = SerNewPtr(8192)
+    setBufPb.serBLen = 8192
+    err = PBControlSync(setBufPb)
+    if err != 0 {
+        return err
+    }
+
+    resetPb.ioCRefNum = outPb.ioRefNum
+    resetPb.csCode = kSERDConfiguration
+    resetPb.csParam0 = rtConn68kBaudWord(baud) + data8 + noParity + stop10
+    return PBControlSync(resetPb)
+}
+
+// rtConnDevAvail: SerGetBuf (Status, csCode 2, kSERDInputCount) on the
+// input refNum -- 0 on any Status call error, same "nothing waiting"
+// answer a real empty buffer would give, rather than propagating an
+// OSErr through a function whose whole contract is a byte count.
+func rtConnDevAvail(slot: int): int {
+    var countPb: CntrlCount
+    var err: int
+
+    countPb.ioCRefNum = rtConnInRef[slot]
+    countPb.csCode = kSERDInputCount
+    err = PBStatusSync(countPb)
+    if err != 0 {
+        return 0
+    }
+    return countPb.csCount
+}
+
+// rtConnDevReadByte: only ever called after rtConnDevAvail() > 0
+// (conn.cla's rtConnPump pump discipline, its own doc comment) -- one
+// PBReadSync (ioReqCount 1) per byte into the shared scratch buffer
+// above. ponytail: a Device Manager trap per received byte is plain and
+// correct at serial rates -- even 57600 baud is ~5760 bytes/sec, one call
+// every ~170us, nowhere near PBReadSync's own overhead -- and the pump
+// discipline means this never blocks waiting for data that isn't there
+// yet. If a future fast bulk transport ever makes this a bottleneck, the
+// lever is a batched rtConnDevReadInto(slot, buf, n) added to the
+// per-lane waist, the same escape hatch conn.cla's own rtConnPump doc
+// comment names for its byte-at-a-time text-building loop on the other
+// side of this same call. A read error (never observed after a
+// positive Avail on real hardware) returns 0 rather than propagating an
+// OSErr through a function whose contract is a byte value.
+func rtConnDevReadByte(slot: int): int {
+    var pb: IOParam
+    var err: int
+
+    if rtConnReadBuf == ptr(0) {
+        rtConnReadBuf = SerNewPtr(1)
+    }
+    pb.ioRefNum = rtConnInRef[slot]
+    pb.ioBuffer = rtConnReadBuf
+    pb.ioReqCount = 1
+    err = PBReadSync(pb)
+    if err != 0 {
+        return 0
+    }
+    return peekb(rtConnReadBuf)
+}
+
+// rtConnDevWrite: PBWriteSync the OUTPUT driver. Returns the OSErr
+// (0 success) straight through -- conn.cla's rtConnSendText stages a
+// pending `failed` on any nonzero result.
+func rtConnDevWrite(slot: int, p: ptr, n: int): int {
+    var pb: IOParam
+
+    pb.ioRefNum = rtConnOutRef[slot]
+    pb.ioBuffer = p
+    pb.ioReqCount = n
+    return PBWriteSync(pb)
+}
+
+// rtConnDevClose: PBCloseSync the INPUT driver only (Task 2's discipline,
+// hardware-proved by cases_serial.cla's own SerialOpenWrite case -- the
+// input driver's close is the port's disable step; the output driver is
+// classically left open). Idempotent on a slot that was never opened or
+// already closed: rtConnInRef[slot] still holds whatever refNum (or 0)
+// it last had, and PBCloseSync on an already-closed refNum is itself a
+// harmless no-op-shaped error the caller (conn.cla's rtConnClose, itself
+// unconditional/idempotent by construction) never inspects.
+func rtConnDevClose(slot: int) {
+    var pb: IOParam
+
+    pb.ioRefNum = rtConnInRef[slot]
+    PBCloseSync(pb)
+}
+
+// rtConnDevGone: no carrier detect on this lane -- spec %3. Always false.
+func rtConnDevGone(slot: int): bool {
+    return false
+}

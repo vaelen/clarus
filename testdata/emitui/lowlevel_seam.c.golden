@@ -120,6 +120,7 @@ extern void rt_ext_UiParamText(void *, void *, void *, void *);
 extern short rt_ext_UiNoteAlert(short, void *);
 extern short rt_ext_UiAlert(short, void *);
 extern void rt_ext_UiMacInitToolbox(void);
+extern void rt_ext_UiConnPump(void);
 extern void rt_ext_UiRtQuit(int32_t);
 extern void * rt_ext_UiTestScript(void);
 extern void rt_ext_UiLaunchReal(void);

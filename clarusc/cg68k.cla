@@ -948,13 +948,15 @@ var cgBailLbl: int
 // (irFuncBail(f)) exists for THIS function to fall through into.
 var cgCurFuncHasBail: bool
 
-// cgCurFuncIsUiDispatcher (attempt-abort phase Task 4) is true only
-// while emitting one of the `clar_ui_fire_*` lowering-synthesized UI
-// event dispatchers (cgSeveredFamily's own existing family-1
-// classification, reused rather than re-derived) -- see
-// cgAbortCheckAfterCall's own doc comment for why these need the §3.5
-// UI default instead of an ordinary bail-target branch: they are built
-// via newIRFunc directly (lowSynthUiDispatchers), never through
+// cgCurFuncIsUiDispatcher (attempt-abort phase Task 4; serial-connection
+// phase Task 6 folds the `clar_conn_fire_*` family in too) is true only
+// while emitting one of the lowering-synthesized reverse-waist event
+// dispatchers -- UI (`clar_ui_fire_*`) or connection (`clar_conn_fire_*`)
+// -- (cgSeveredFamily's own existing family-1 classification, reused
+// rather than re-derived) -- see cgAbortCheckAfterCall's own doc comment
+// for why these need the §3.5 in-place default instead of an ordinary
+// bail-target branch: they are built via newIRFunc directly
+// (lowSynthUiDispatchers/lowSynthConnDispatchers), never through
 // lowFuncBody, so they never get a real bail chain of their own
 // (irFuncBail is always -1 for them) even in an abort-enabled program.
 var cgCurFuncIsUiDispatcher: bool
@@ -2756,23 +2758,36 @@ func cgNameHasPrefix(nm: string, pre: string): bool {
 
 // cgSeveredFamily classifies irFuncs name `nm` as the TARGET of a call
 // the shake call graph cannot see -- an ECallExt-mediated call: 1 for the
-// reverse-waist UI dispatcher family, 2 for the `nat*` native-helper
-// family, 0 for anything else. shake.cla's own ECallExt arm walks the
-// argument list and stops ("`external func` -- resolves straight to
-// rt_ext_NAME, never an irFuncs entry"), which is true on the C lane but
-// NOT on this one: cgCallExt resolves both of these families back to a
-// real, called Clarus IRFunc, and neither produces a shakeEdgesFrom/To
-// entry --
-//   - family 1, the reverse-waist UI dispatchers (cgCallExtUiSynth /
+// reverse-waist dispatcher family (UI + connection), 2 for the `nat*`
+// native-helper family, 0 for anything else. shake.cla's own ECallExt arm
+// walks the argument list and stops ("`external func` -- resolves
+// straight to rt_ext_NAME, never an irFuncs entry"), which is true on the
+// C lane but NOT on this one: cgCallExt resolves both of these families
+// back to a real, called Clarus IRFunc, and neither produces a
+// shakeEdgesFrom/To entry --
+//   - family 1, the reverse-waist dispatchers (cgCallExtUiSynth /
 //     lower.cla's lowUiSynthExternName): every `clar_ui_fire_*` function,
 //     the ONLY route from the runtime's own event loop into a user `on`
 //     handler (and from there into `open`/`edit`, i.e. straight back down
-//     into the runtime again);
+//     into the runtime again) -- PLUS, as of serial-connection phase Task
+//     6, every `clar_conn_fire_*` function, conn.cla's rtConnPump's own
+//     identically-shaped route into a user `on <var>.<event>` handler
+//     (lower.cla's lowSynthConnDispatchers, Task 5). Both sub-families are
+//     built via newIRFunc directly (never lowFuncBody), so both need the
+//     SAME two downstream treatments this classification feeds: the
+//     %3.5 in-place abort default (cgCurFuncIsUiDispatcher, below) and
+//     the stack-depth heuristic's severed-family term (cgHeurLongest's
+//     sevExtra, ~cgSeveredFamily's own callers) -- an abort raised inside
+//     a connection handler needs the identical in-place default a UI
+//     handler's own abort already gets.
 //   - family 2, the `nat*` native helpers (cgCallExtNatFallback), which
 //     every file/console/Toolbox-adjacent extern lands on.
-// Both families are kept REACHABLE by cg68AddRoots' name-based roots, so
-// they are emitted correctly -- but a root is not an edge, so
-// cgHeurLongest sees them as the starts of their own disconnected
+// Both families are kept REACHABLE by cg68AddRoots' name-based roots (the
+// `nat*` family) or their own self-registered shakeAddRoot call (every
+// `clar_ui_fire_*`/`clar_conn_fire_*` dispatcher roots itself the moment
+// lower.cla synthesizes it -- see lowSynthConnDispatchers' own doc
+// comment), so they are emitted correctly -- but a root is not an edge,
+// so cgHeurLongest sees them as the starts of their own disconnected
 // fragments instead of as the continuation of whatever chain called them.
 // Same name-prefix conventions cg68AddRoots and lowUiSynthExternName
 // already establish; matching by prefix rather than re-deriving the
@@ -2783,6 +2798,9 @@ func cgNameHasPrefix(nm: string, pre: string): bool {
 // is a slightly larger stack reserve, the safe direction.
 func cgSeveredFamily(nm: string): int {
     if cgNameHasPrefix(nm, "clar_ui_fire_") {
+        return 1
+    }
+    if cgNameHasPrefix(nm, "clar_conn_fire_") {
         return 1
     }
     if cgNameHasPrefix(nm, "nat") {

@@ -122,6 +122,7 @@ extern void rt_ext_UiParamText(void *, void *, void *, void *);
 extern short rt_ext_UiNoteAlert(short, void *);
 extern short rt_ext_UiAlert(short, void *);
 extern void rt_ext_UiMacInitToolbox(void);
+extern void rt_ext_UiConnPump(void);
 extern void rt_ext_UiRtQuit(int32_t);
 extern void * rt_ext_UiTestScript(void);
 extern void rt_ext_UiLaunchReal(void);
@@ -4175,6 +4176,7 @@ static void clar_fn_rtUiRun(void) {
             }
         }
         clar_fn_rtUiEveryPump();
+        rt_ext_UiConnPump();
         clar_fn_rtUiTeIdleFront();
         clar_fn_rtUiFlushAllBuffered();
         clar_fn_rtUiTablesSync();
@@ -7820,6 +7822,7 @@ static void clar_fn_rtUiRunScripted(void) {
             rt_quit((int32_t)(1));
         }
         clar_fn_rtUiPumpPassive();
+        rt_ext_UiConnPump();
     }
 }
 

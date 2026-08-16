@@ -349,6 +349,35 @@ external func UiAlert(alertId: word, modalFilter: ptr): word = trap 0xA985
 // wrapper per non-reverse-waist entry below. ----
 external func UiMacInitToolbox()
 
+// UiConnPump (serial-connection phase, Task 6): the UI event loop's own
+// hook for draining connection events -- called once per pass, right
+// beside rtUiEveryPump(), everywhere a pump-style function is (see the
+// three call sites: rtUiRun below, rtUiRunScripted in uiscript.cla,
+// UiTestTick in uitest.cla). Deliberately an EXTERN, not a plain call to
+// conn.cla's own rtConnPump(): ui.cla is spliced into EVERY program on
+// EVERY lane unconditionally (runtime-ir-bake Task 2), so a plain call to
+// rtConnPump would have to resolve to a real Clarus symbol for EVERY
+// program the checker ever compiles, on BOTH lanes -- but conn.cla stays
+// usesConn-gated on the host/C lane (drive.cla's own header comment on
+// its splice site), so most host UI programs never get it spliced at
+// all. Routing through a bare extern (same "clauses are irrelevant to
+// cprint" convention as UiMacInitToolbox just above) sidesteps that
+// entirely: cg68k's existing clause-less-extern fallback
+// (cgCallExtNatFallback) resolves this to native.cla's own
+// `nat_UiConnPump` (which forwards to the always-present-on-68k
+// rtConnPump, conn.cla+conn_68k.cla now being unconditionally spliced
+// under want68k) -- pure native-lane wiring, exactly this task's own
+// scope ("native/UI is Task 6", cprint.cla's cpEmitMain doc comment on
+// its own separate, non-UI, usesConn-gated host pump loop). cprint's own
+// default (no synthesized-name match in lowUiSynthExternName) renders it
+// as an ordinary `rt_ext_UiConnPump()` call; its host-lane C wrapper
+// (rt_ext_mac.inc, the Retro68/cprint-Mac lane's own link target) is a
+// permanent no-op, matching the same scope note -- host/Mac-cprint UI+
+// connection integration is not wired by this task and stays a
+// documented gap, exactly like UiMacInitToolbox's own rt_ext_host.inc
+// omission (no plain non-Mac host build ever really links a UI program).
+external func UiConnPump()
+
 // nat_UiMacInitToolbox's own nat_ fallback body -- and the natQdGlobals
 // state it and UiScreenBounds/UiScreenBits (below) share -- lives in
 // native.cla, NOT here (Task 12, native-5e review fix): ui.cla is spliced
@@ -2574,6 +2603,7 @@ func rtUiRun() {
             UiAEProcessEvent(evBuf)
         }
         rtUiEveryPump()
+        UiConnPump()
         rtUiTeIdleFront()
         rtUiFlushAllBuffered() // "returns control to the event loop" point, Ch11
         rtUiTablesSync() // re-sync every table's LM row count before the next UiWaitNextEvent (Task 9, rt_ui.c:4515)

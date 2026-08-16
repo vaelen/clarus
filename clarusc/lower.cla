@@ -1343,16 +1343,13 @@ func lowConnCoerceArg(fnName: string, paramIdx: int, argAst: int): int {
 // just not implemented yet) -- falls through to the exact SAME generic
 // not-yet-implemented diagnostic lowMethodCall's own fallback produces
 // for an unhandled receiver kind (brief: "EXACTLY as today"), since
-// xk == TyConnection either way. ALSO gated on `not want68k`: this
-// task's runtime (conn.cla/conn_c.cla) is spliced host-lane-only
-// (drive.cla: `if usesConn and not want68k`, Task 4) -- rtConnOpen/etc.
-// simply don't exist as declared symbols for a want68k compile, so
-// taking this path there would either scopeLookup a -1 symIdx (a
-// compiler crash, not a diagnostic) or emit a call to a function cg68k
-// can never find. A 68k build hits the exact same rejection every other
-// unimplemented connection shape does -- matches "no native/68k work"
-// (this task's own discipline) and pre-Task-5 behavior for that lane
-// unchanged; Task 6 lifts this gate alongside conn_68k.cla.
+// xk == TyConnection either way. Task 6 lifts the `not want68k` gate
+// this function used to carry (Task 4/5: rtConnOpen/etc. were host-lane-
+// only symbols, drive.cla's own `if usesConn and not want68k`) --
+// drive.cla now splices conn.cla + conn_68k.cla unconditionally under
+// want68k, so rtConnOpen/rtConnSendText/rtConnSendStr/rtConnClose exist
+// as declared symbols on every native build too, and this method-call
+// lowering runs identically on both lanes now.
 func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
     var recvExpr: int
     var name: string
@@ -1363,7 +1360,7 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
 
     recvExpr = selectX(fn)
     slot = -1
-    if not want68k and exprKind(recvExpr) == ExIdent {
+    if exprKind(recvExpr) == ExIdent {
         slot = lowConnSlotOf.get(poolGet(identName(recvExpr)), -1)
     }
     name = poolGet(selectName(fn))
@@ -7096,17 +7093,17 @@ func lowSynthAppLog() {
 // valid, empty arm -- per the brief's own rule ("a slot with no handler
 // for an event is a no-op").
 //
-// Called ONLY when usesConn (lowerProgram's own tail, right after
-// lowSynthAppLog) -- UNLIKE lowSynthUiDispatchers just below in this
-// file (made unconditional by runtime-ir-bake Task 2, for the 68k
-// superset splice's sake), this stays usage-gated: this phase's host
-// lane splices conn.cla only when usesConn (drive.cla, Task 4), so an
-// unconditional synthesis here would call rtConnOpen/etc. by name from
-// dead code in every OTHER program, breaking the "zero churn for a
-// conn-less program" constraint this task is held to. Task 6, which
-// gives conn_68k.cla the same unconditional-superset treatment
-// lowSynthUiDispatchers already has, will need to revisit this gate the
-// same way -- carried forward in this task's own report.
+// Called when `usesConn or want68k` (lowerProgram's own tail, right
+// after lowSynthAppLog). Host lane: still usage-gated exactly as Task 5
+// landed it -- the host lane splices conn.cla only when usesConn
+// (drive.cla, Task 4), so an unconditional synthesis there would call
+// rtConnOpen/etc. by name from dead code in every OTHER host program,
+// breaking the "zero churn for a conn-less program" constraint that task
+// was held to. 68k lane (Task 6): unconditional now, the same full-
+// superset treatment lowSynthUiDispatchers just below already has --
+// drive.cla splices conn.cla + conn_68k.cla into every want68k build
+// regardless of usesConn, so these four dispatchers must always exist
+// there too (see lowerProgram's own call site for the full reasoning).
 //
 // Each dispatcher self-roots via shakeAddRoot: nothing calls any of
 // these four by an ECallFn node -- conn.cla's rtConnPump reaches them
@@ -7501,15 +7498,26 @@ func lowerProgram(declHead: int): int {
     // the bake generator lowers the runtime chain alone, where
     // lowHasAppLog is false regardless.
     lowSynthAppLog()
-    // Connection dispatcher synthesis (serial-connection phase, Task 5):
-    // gated on usesConn -- UNLIKE lowSynthUiDispatchers just below (made
-    // unconditional by runtime-ir-bake Task 2, see that call's own doc
-    // comment), this stays usage-gated on purpose, so a conn-less
-    // program's IR (and therefore every existing golden) stays byte-
-    // identical. Task 6's 68k superset splice will need to revisit this
-    // gate the same way it revisited lowSynthUiDispatchers' own -- see
-    // this section's own header comment, above lowSynthConnFireOpened.
-    if usesConn {
+    // Connection dispatcher synthesis (serial-connection phase, Task 5/6):
+    // gated on `usesConn or want68k` now -- the host lane keeps the
+    // original usesConn-only gate exactly as Task 5 landed it (so a
+    // conn-less HOST program's IR, and therefore every existing host
+    // golden, stays byte-identical), but the 68k lane synthesizes these
+    // four dispatchers UNCONDITIONALLY, the same full-superset treatment
+    // lowSynthUiDispatchers just below already has (made unconditional by
+    // runtime-ir-bake Task 2). Required because drive.cla now splices
+    // conn.cla + conn_68k.cla into EVERY want68k build (Task 6's own
+    // splice change): conn.cla's rtConnPump calls clar_conn_fire_* by
+    // name (ECallExt) regardless of whether the program declares any
+    // `connection` global, so those four IRFuncs must exist and be
+    // reachable on every native build or cg68k's cgCallExtUiSynth aborts
+    // with "... not found/reachable" the moment shake reaches rtConnPump.
+    // A conn-less want68k program still gets four real, all-empty-arm
+    // dispatchers (lowConnHandlerFn is empty when usesConn is false,
+    // regardless of want68k -- see this function's own pre-pass above),
+    // harmless no-ops exactly like lowSynthUiDispatchers' own degrade-to-
+    // no-op-body behavior its doc comment already describes.
+    if usesConn or want68k {
         lowSynthConnDispatchers()
     }
     // Reverse-waist dispatcher synthesis (runtime-ir-bake Task 2: made

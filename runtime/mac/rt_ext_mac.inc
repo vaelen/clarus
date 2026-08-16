@@ -597,6 +597,16 @@ void rt_ext_UiTestEmit(void *s) { (void)s; }
 __attribute__((weak)) const char rt_ui_test_script[] = "";
 
 void rt_ext_UiMacInitToolbox(void) { rt_mac_init_toolbox(); }
+/* rt_ext_UiConnPump: ui.cla's `external func UiConnPump()` -- the
+ * Retro68/cprint-Mac lane's own resolution (serial-connection phase Task
+ * 6). Permanent no-op: this task wires the connection pump into the UI
+ * event loop for the NATIVE (emit68k) lane only (see UiConnPump's own
+ * doc comment, runtime/clarus/ui.cla) -- host/Mac-cprint UI+connection
+ * integration stays an unwired, documented gap, the same as
+ * rt_ext_UiMacInitToolbox above having no plain-host (non-Mac)
+ * counterpart in rt_ext_host.inc: this lane's own conn.cla splice stays
+ * usesConn-gated and untouched by this task either way. */
+void rt_ext_UiConnPump(void) { }
 void rt_ext_UiRtQuit(int32_t code) { rt_quit(code); }
 void *rt_ext_UiTestScript(void) { return (void *)rt_ui_test_script; }
 void rt_ext_UiScreenBounds(void *out) { *(Rect *)out = qd.screenBits.bounds; }

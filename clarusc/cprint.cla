@@ -7321,8 +7321,14 @@ func cpEmitMain() {
     // per iteration (rtConnPump) and idling between passes on whatever
     // fds are actually open (rt_ext_ConnHIdle, runtime/host/rt_serial.inc)
     // -- a plain busy-wait when none are (that function's own doc
-    // comment). UI-lane's own pump (cpEmitUiMain) is untouched -- native/
-    // UI is Task 6.
+    // comment). UI-lane's own pump (cpEmitUiMain) stays untouched here,
+    // permanently by design: Task 6 wired the connection pump into the UI
+    // event loop for the NATIVE (emit68k) lane only (ui.cla's own
+    // `external func UiConnPump()`, resolved on this C lane as an
+    // always-present, permanently no-op `rt_ext_UiConnPump` -- see that
+    // extern's own doc comment, runtime/clarus/ui.cla, for the full
+    // reasoning). Host/Mac-cprint UI+connection integration is a
+    // documented gap this phase never closes.
     //
     // Fix round (task review, Important finding): the loop condition ALSO
     // tests `!clar_aborting` when lowUsesAbort -- without it, an abort
