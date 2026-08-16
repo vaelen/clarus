@@ -1,4 +1,4 @@
-# Session status — 2026-08-16 (serial-connection: all gates GREEN on the branch tip, post final-review fix wave; two Snow finals pending; merge on Andrew's word)
+# Session status — 2026-08-16 (serial-connection: ALL gates GREEN incl. both Snow finals at tip fad4e9e; merge on Andrew's word)
 
 Handoff summary. **The `serial-connection` phase is IMPLEMENTATION DONE
 and gated — T1 throughout every task, T2 PASS end-to-end on the
@@ -13,9 +13,12 @@ convention), 19 commits ahead of `main` at `f8c15a1`.
 ## 0. START HERE next session
 
 **Remaining before merge-eligible:**
-1. Controller runs the two Snow finals (§2) — not this phase's task-8
-   job by design.
-2. Andrew's word to merge (fast-forward `f8c15a1..<branch tip>`).
+1. ~~Controller runs the two Snow finals (§2)~~ **DONE, both PASS at tip
+   `fad4e9e` (2026-08-16 controller session):** `TestSerialEchoOnSnow`
+   33.6s; `TestClarusCBakePathOnSnow` 3307s, on-Mac bake-path TickProbe
+   compile 11m05s, zero fallback/drift lines — the new conn modules'
+   native size growth is a partition non-event.
+2. Andrew's word to merge (fast-forward `f8c15a1..fad4e9e`).
 
 No further implementation work is expected. If Andrew wants the next
 roadmap item picked up, it's AppleTalk (`docs/ROADMAP.md`'s "Next:
