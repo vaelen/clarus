@@ -239,32 +239,50 @@ func TestConnectMode(t *testing.T) {
 func TestListenMode(t *testing.T) {
 	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "echo.cla"), "echo_listen")
 
-	port := pickFreePort(t)
-	cmd := exec.Command(exe)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("CLARUS_SERIAL_MODEM=listen:%d", port))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-
-	// The program's own bind+listen happens synchronously inside
-	// `conn.open` (App.startCLI), before main() ever reaches the pump
-	// loop, but that's still some (small, unbounded from here) amount of
-	// process-startup time after Start() returns -- retry the dial with a
-	// bounded deadline rather than a fixed sleep.
+	// pickFreePort's own probe-close-reopen gap (its own doc comment)
+	// is a real race under a parallel `go test` run -- another package
+	// (e.g. internal/hostrt's TestSerialC) can grab the very port this
+	// picked between the probe closing and the subprocess's own bind
+	// inside conn.open. Root-caused as this test's historical flake
+	// surface, same task as runtime/host/rt_serial_test.c's identical
+	// fix (open_listen_retrying there). Retrying the whole
+	// pick-port+spawn+dial sequence with a freshly re-probed port on a
+	// lost race makes it self-heal instead of failing outright.
 	var conn net.Conn
-	deadline := time.Now().Add(5 * time.Second)
-	var dialErr error
-	for time.Now().Before(deadline) {
-		conn, dialErr = net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond)
-		if dialErr == nil {
-			break
+	var cmd *exec.Cmd
+	var stderr bytes.Buffer
+	var port int
+	for attempt := 0; attempt < 5 && conn == nil; attempt++ {
+		port = pickFreePort(t)
+		cmd = exec.Command(exe)
+		cmd.Env = append(os.Environ(), fmt.Sprintf("CLARUS_SERIAL_MODEM=listen:%d", port))
+		stderr.Reset()
+		cmd.Stderr = &stderr
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start: %v", err)
 		}
-		time.Sleep(20 * time.Millisecond)
+
+		// The program's own bind+listen happens synchronously inside
+		// `conn.open` (App.startCLI), before main() ever reaches the pump
+		// loop, but that's still some (small, unbounded from here) amount
+		// of process-startup time after Start() returns -- retry the dial
+		// with a bounded deadline rather than a fixed sleep.
+		deadline := time.Now().Add(5 * time.Second)
+		var dialErr error
+		for time.Now().Before(deadline) {
+			conn, dialErr = net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond)
+			if dialErr == nil {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if dialErr != nil {
+			cmd.Process.Kill()
+			cmd.Wait()
+		}
 	}
-	if dialErr != nil {
-		t.Fatalf("dial listen:%d: %v", port, dialErr)
+	if conn == nil {
+		t.Fatalf("dial listen:%d: exhausted retries", port)
 	}
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(5 * time.Second))

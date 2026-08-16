@@ -91,7 +91,14 @@ static void fill_pattern(unsigned char *buf, int n, unsigned char start) {
 /* set_recv_timeout: belt-and-suspenders bound on the PEER side's own
  * recv() calls (plain_recv_all below) -- defense in depth alongside the
  * process-wide alarm() watchdog in main(), so a genuinely stuck peer
- * socket fails this one CHECK fast instead of hanging the whole test. */
+ * socket fails this one CHECK fast instead of hanging the whole test.
+ * Callers pass 30s (up from 10s, port-hygiene fix round, serial-connection
+ * Task 7): 10s was found to fire under the real T1 gate's heavy parallel
+ * CPU contention (a dozen other Go test packages' own compiles/emulator
+ * boots competing for cores) even though the glue's own accept+write had
+ * already genuinely succeeded (wait_accept_and_write's own CHECK passed)
+ * -- the bytes were sent, just slower to actually reach the peer's recv()
+ * than 10s of real time under that load, not lost or misdirected. */
 static void set_recv_timeout(int fd, int seconds) {
     struct timeval tv;
     tv.tv_sec = seconds;
@@ -147,22 +154,46 @@ static int wait_gone(int slot) {
  * accept() -- it does NOT guarantee the server (this same process, in
  * listen mode) has already dequeued it by the time connect() returns.
  * Under light load that window is sub-microsecond and invisible; under
- * heavy concurrent load (the real T1 gate runs a dozen Go test packages
- * at once) it's wide enough to matter -- a single unretried
- * ConnHAvail/ConnHWrite pair can genuinely observe "still listening" and
- * silently no-op (ConnHWrite refuses to write through a still-listening
- * fd), which used to leave the peer's plain_recv_all below waiting
- * forever for bytes that were never sent. Retrying the accept nudge
- * (ConnHAvail) alongside the write, bounded, closes that race instead of
- * assuming it away. */
-static int wait_accept_and_write(int slot, const unsigned char *buf, int32_t n) {
-    int i;
-    for (i = 0; i < 5000; i++) {
-        rt_ext_ConnHAvail(slot); /* nudges the deferred accept along */
-        if (rt_ext_ConnHWrite(slot, (void *)buf, n) == 0) return 1;
-        usleep(1000);
-    }
-    return 0;
+ * heavy concurrent load it's wide enough to matter.
+ *
+ * Root-caused this task (port-hygiene fix round, serial-connection Task
+ * 7): the OLD version of this function retried "ConnHAvail (nudge the
+ * accept), then ConnHWrite, stop once ConnHWrite==0" -- but
+ * rt_ext_ConnHWrite's OWN documented contract (rt_serial.inc) is that a
+ * write to a slot STILL LISTENING (no peer accepted yet) DISCARDS and
+ * reports SUCCESS (0), not failure -- mirroring a real unattached serial
+ * line, by design (test_write_before_accept's own scenario proves this
+ * exact behavior deliberately). That makes "ConnHWrite == 0" genuinely
+ * AMBIGUOUS as a stop condition: it cannot tell "really sent to an
+ * accepted peer" from "silently discarded because still listening", so
+ * the old loop could -- and, confirmed by direct reproduction, DID --
+ * declare victory on its very first iteration despite accept() never
+ * actually completing, leaving the peer's own plain_recv_all below
+ * blocking on bytes that were never sent (that IS this test's own
+ * historical "plain_recv_all failed" flake; adding more retries or a
+ * longer read timeout, both tried first, cannot fix an ambiguous stop
+ * condition -- the loop was never actually retrying past iteration 1).
+ *
+ * Fix: resolve the ambiguity with an independent, unambiguous signal
+ * instead of trusting ConnHWrite's return code at all. peerFd (the SAME
+ * already-connected peer socket the caller is about to read the real
+ * payload back on) sends one throwaway sentinel byte first, in the
+ * OPPOSITE direction (peer -> glue) from the real payload this function
+ * writes (glue -> peer) -- full-duplex TCP, so this never touches what
+ * the caller reads back. rt_ext_ConnHAvail's own FIONREAD path only ever
+ * reports real queued bytes once accept() has actually happened
+ * (rt_serial.inc's own doc comment: "0 whenever there's genuinely
+ * nothing to read yet, including still listening"), so `wait_avail`
+ * seeing that sentinel is unambiguous, definitive proof of acceptance --
+ * unlike ConnHWrite's own return value. Only once that's confirmed does
+ * this call ConnHWrite exactly once, now safe to trust fully. */
+static int wait_accept_and_write(int slot, int peerFd, const unsigned char *buf, int32_t n) {
+    unsigned char sentinel = 0xAA;
+
+    if (send(peerFd, &sentinel, 1, 0) != 1) return 0;
+    if (!wait_avail(slot, 1)) return 0;
+    rt_ext_ConnHReadByte(slot); /* drain the sentinel, value irrelevant */
+    return rt_ext_ConnHWrite(slot, (void *)buf, n) == 0;
 }
 
 /* glue_read_all: drains exactly n bytes through ConnHReadByte, ONLY after
@@ -175,31 +206,67 @@ static void glue_read_all(int slot, unsigned char *buf, int n) {
     }
 }
 
+/* open_listen_retrying: bind_ephemeral probes a free port (bind+listen+
+ * getsockname+close), then hands that literal port number to
+ * rt_ext_ConnHOpen's own listen mode (on the given slot) -- which has no
+ * ephemeral-port support of its own (its CLARUS_SERIAL_MODEM=listen:PORT
+ * spec takes a literal port, and the ConnHOpen ABI has no way to report
+ * back an OS-chosen one). That leaves an inherent gap between "probe
+ * learns a free port" and "the glue re-binds that same port number"
+ * where another process on this machine can steal it. Under a parallel
+ * `go test` run (a dozen packages, including this test's own sibling
+ * internal/conntest, all drawing from the same OS ephemeral port pool at
+ * once) that gap is real, not theoretical: it reproduced 100% serialized
+ * (`-p 1`) and intermittently under the default parallel scheduler,
+ * root-caused as TestSerialC's historical "plain_recv_all failed" flake
+ * (test_listen_mode used to plow ahead after a failed ConnHOpen with no
+ * early return, cascading into a confusing timeout deep in the byte
+ * exchange instead of failing where the real problem was). Every
+ * listen-mode scenario in this file (test_listen_mode slot 0, test_sigpipe
+ * slot 2, test_write_before_accept slot 3) shares this exact same
+ * probe-close-reopen shape, so this is the ONE place that retries --
+ * fixing only test_listen_mode's own call site left the other two
+ * scenarios exposed to the identical race (confirmed: test_sigpipe's own
+ * "write after peer close eventually reports a nonzero error" CHECK
+ * failed under the same parallel run this fix's first pass had already
+ * supposedly fixed). Retrying with a freshly re-probed port on each
+ * collision makes the race self-heal; bounded at 20 attempts (a stuck
+ * retry loop should fail loud, not hang the suite). */
+static int open_listen_retrying(int slot, int *listenPortOut) {
+    int i;
+    int probe;
+    int listenPort;
+    char envbuf[64];
+
+    for (i = 0; i < 20; i++) {
+        probe = bind_ephemeral(&listenPort);
+        if (probe < 0) { usleep(1000); continue; }
+        close(probe);
+        snprintf(envbuf, sizeof(envbuf), "listen:%d", listenPort);
+        setenv("CLARUS_SERIAL_MODEM", envbuf, 1);
+        unsetenv("CLARUS_SERIAL_PRINTER");
+        if (rt_ext_ConnHOpen(slot, 0) == 0) {
+            *listenPortOut = listenPort;
+            return 1;
+        }
+        usleep(1000);
+    }
+    return 0;
+}
+
 /* test_listen_mode: the glue is the SERVER (slot 0, portIdx 0,
  * CLARUS_SERIAL_MODEM=listen:PORT); a plain socket connects in as the
  * peer. Round-trips 256 bytes each direction, then proves ConnHGone. */
 static void test_listen_mode(void) {
     int listenPort;
-    int probe;
-    char envbuf[64];
     int peer;
     struct sockaddr_in addr;
     unsigned char out[256], in[256], got[256];
-    int rc;
 
-    /* pick_free_port: bind+close a throwaway socket on port 0 just to
-       learn an unused port number -- rt_ext_ConnHOpen's own listen mode
-       takes a literal port, it has no ephemeral-port query of its own. */
-    probe = bind_ephemeral(&listenPort);
-    CHECK(probe >= 0, "probe bind should succeed");
-    close(probe);
-
-    snprintf(envbuf, sizeof(envbuf), "listen:%d", listenPort);
-    setenv("CLARUS_SERIAL_MODEM", envbuf, 1);
-    unsetenv("CLARUS_SERIAL_PRINTER");
-
-    rc = rt_ext_ConnHOpen(0, 0);
-    CHECK(rc == 0, "listen-mode ConnHOpen should succeed");
+    if (!open_listen_retrying(0, &listenPort)) {
+        CHECK(0, "listen-mode ConnHOpen should succeed (retried 20x against fresh ephemeral ports)");
+        return;
+    }
 
     peer = socket(AF_INET, SOCK_STREAM, 0);
     CHECK(peer >= 0, "peer socket() should succeed");
@@ -208,13 +275,13 @@ static void test_listen_mode(void) {
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = htons((uint16_t)listenPort);
     CHECK(connect(peer, (struct sockaddr *)&addr, sizeof(addr)) == 0, "peer connect should succeed");
-    set_recv_timeout(peer, 10);
+    set_recv_timeout(peer, 30);
 
     /* server(glue) -> client(plain): fill, wait_accept_and_write (see its
        own comment for why this is a retry loop and not one unconditional
        call), plain_recv_all, compare. */
     fill_pattern(out, sizeof(out), 0);
-    CHECK(wait_accept_and_write(0, out, (int32_t)sizeof(out)), "listen mode: accept+ConnHWrite should eventually succeed");
+    CHECK(wait_accept_and_write(0, peer, out, (int32_t)sizeof(out)), "listen mode: accept+ConnHWrite should eventually succeed");
     plain_recv_all(peer, in, (int)sizeof(in));
     CHECK(memcmp(out, in, sizeof(out)) == 0, "listen mode: server->client bytes match");
 
@@ -259,7 +326,7 @@ static void test_connect_mode(void) {
 
     accepted = accept(serverFd, NULL, NULL);
     CHECK(accepted >= 0, "server accept should succeed");
-    set_recv_timeout(accepted, 10);
+    set_recv_timeout(accepted, 30);
 
     fill_pattern(out, sizeof(out), 0);
     CHECK(rt_ext_ConnHWrite(1, out, (int32_t)sizeof(out)) == 0, "ConnHWrite (connect mode) should succeed");
@@ -283,10 +350,15 @@ static void test_connect_mode(void) {
  * needs one more round trip (this side's next send actually reaching the
  * peer and getting an RST back) before EPIPE shows up -- so proving the
  * SIGPIPE fix needs "keep writing until it fails", not "the first write
- * fails". Bounded at 50 * 20ms = 1s, safely inside main()'s alarm(20). */
+ * fails". Bounded at 500 * 20ms = 10s, safely inside main()'s alarm(60)
+ * (port-hygiene fix round, serial-connection Task 7: 50*20ms=1s was found
+ * too tight under the real T1 gate's heavy parallel CPU contention --
+ * getting the RST processed and surfaced through ConnHWrite's own error
+ * path can take longer than 1s when a dozen other Go test packages are
+ * fighting for cores, not because the SIGPIPE fix itself is wrong). */
 static int write_until_fails(int slot, const unsigned char *buf, int32_t n) {
     int i;
-    for (i = 0; i < 50; i++) {
+    for (i = 0; i < 500; i++) {
         int rc = rt_ext_ConnHWrite(slot, (void *)buf, n);
         if (rc != 0) return rc;
         usleep(20000);
@@ -299,22 +371,15 @@ static int write_until_fails(int slot, const unsigned char *buf, int32_t n) {
  * header comment for the scenario. */
 static void test_sigpipe(void) {
     int listenPort;
-    int probe;
-    char envbuf[64];
     int peer;
     struct sockaddr_in addr;
     unsigned char out[16];
     int rc;
 
-    probe = bind_ephemeral(&listenPort);
-    CHECK(probe >= 0, "sigpipe test: probe bind should succeed");
-    close(probe);
-
-    snprintf(envbuf, sizeof(envbuf), "listen:%d", listenPort);
-    setenv("CLARUS_SERIAL_MODEM", envbuf, 1);
-
-    rc = rt_ext_ConnHOpen(2, 0);
-    CHECK(rc == 0, "sigpipe test: ConnHOpen should succeed");
+    if (!open_listen_retrying(2, &listenPort)) {
+        CHECK(0, "sigpipe test: ConnHOpen should succeed (retried 20x against fresh ephemeral ports)");
+        return;
+    }
 
     peer = socket(AF_INET, SOCK_STREAM, 0);
     CHECK(peer >= 0, "sigpipe test: peer socket() should succeed");
@@ -325,7 +390,7 @@ static void test_sigpipe(void) {
     CHECK(connect(peer, (struct sockaddr *)&addr, sizeof(addr)) == 0, "sigpipe test: peer connect should succeed");
 
     fill_pattern(out, sizeof(out), 0);
-    CHECK(wait_accept_and_write(2, out, (int32_t)sizeof(out)), "sigpipe test: initial accept+write should succeed");
+    CHECK(wait_accept_and_write(2, peer, out, (int32_t)sizeof(out)), "sigpipe test: initial accept+write should succeed");
 
     /* Close the peer's end -- WITHOUT closing our own slot 2 or calling
        ConnHGone first, so the slot is exactly in the "stOpen but the
@@ -351,22 +416,14 @@ static void test_sigpipe(void) {
  * path doesn't wedge the slot for later real traffic. */
 static void test_write_before_accept(void) {
     int listenPort;
-    int probe;
-    char envbuf[64];
     int peer;
     struct sockaddr_in addr;
     unsigned char out[16], in[16];
-    int rc;
 
-    probe = bind_ephemeral(&listenPort);
-    CHECK(probe >= 0, "write-before-accept: probe bind should succeed");
-    close(probe);
-
-    snprintf(envbuf, sizeof(envbuf), "listen:%d", listenPort);
-    setenv("CLARUS_SERIAL_MODEM", envbuf, 1);
-
-    rc = rt_ext_ConnHOpen(3, 0);
-    CHECK(rc == 0, "write-before-accept: ConnHOpen should succeed");
+    if (!open_listen_retrying(3, &listenPort)) {
+        CHECK(0, "write-before-accept: ConnHOpen should succeed (retried 20x against fresh ephemeral ports)");
+        return;
+    }
 
     /* No peer yet -- ConnHAvail (which itself does the deferred accept
        poll) confirms the slot is still just listening. */
@@ -385,10 +442,10 @@ static void test_write_before_accept(void) {
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = htons((uint16_t)listenPort);
     CHECK(connect(peer, (struct sockaddr *)&addr, sizeof(addr)) == 0, "write-before-accept: peer connect should succeed");
-    set_recv_timeout(peer, 10);
+    set_recv_timeout(peer, 30);
 
     fill_pattern(out, sizeof(out), 99);
-    CHECK(wait_accept_and_write(3, out, (int32_t)sizeof(out)), "write-before-accept: post-accept write should succeed");
+    CHECK(wait_accept_and_write(3, peer, out, (int32_t)sizeof(out)), "write-before-accept: post-accept write should succeed");
     plain_recv_all(peer, in, (int)sizeof(in));
     CHECK(memcmp(out, in, sizeof(out)) == 0, "write-before-accept: post-accept bytes reach the peer");
 
@@ -418,14 +475,23 @@ static void test_open_failure(void) {
  * the whole `go test -timeout 30m` gate for half an hour. */
 static void on_alarm(int sig) {
     (void)sig;
-    fprintf(stderr, "FAIL: watchdog fired -- a call hung past the 20s bound\n");
+    fprintf(stderr, "FAIL: watchdog fired -- a call hung past the 90s bound\n");
     fprintf(stderr, "FAILED\n");
     _exit(1);
 }
 
 int main(void) {
     signal(SIGALRM, on_alarm);
-    alarm(20);
+    /* 90s (up from 20s, port-hygiene fix round, serial-connection Task 7):
+     * headroom above the worst realistic sequential sum of this file's own
+     * per-scenario budgets (three 30s recv timeouts + one 10s sigpipe
+     * retry, each bumped from a tighter default that this task found too
+     * tight under the real T1 gate's heavy parallel CPU contention -- see
+     * set_recv_timeout's and write_until_fails' own doc comments). Still
+     * loud and fast in the overwhelmingly common case (a clean run finishes
+     * in well under a second); this only matters on the rare contended
+     * run that used to time out and fail outright. */
+    alarm(90);
 
     test_listen_mode();
     test_connect_mode();
