@@ -1,19 +1,21 @@
-# Session status — 2026-08-16 (serial-connection: all gates GREEN on tip 0907364; two Snow finals pending; merge on Andrew's word)
+# Session status — 2026-08-16 (serial-connection: all gates GREEN on the branch tip, post final-review fix wave; two Snow finals pending; merge on Andrew's word)
 
 Handoff summary. **The `serial-connection` phase is IMPLEMENTATION DONE
-and gated — T1 throughout every task, T2 PASS end-to-end (268s) on the
-branch tip, and the echo acceptance app has PASSED on Snow hardware 4
+and gated — T1 throughout every task, T2 PASS end-to-end on the
+branch tip (both Task 8's own run and the final-review fix wave's own
+re-run, §3/§3b), and the echo acceptance app has PASSED on Snow hardware 4
 times across development. The branch is NOT merged — merge is Andrew's
 call, and two hardware finals still need the controller to run them
-post-final-review (see §2).** The local checkout works on `serial-connection`
-directly (no-worktree convention), 16 commits ahead of `main` at `f8c15a1`.
+post-final-review (see §2), now against the fix wave's own tip.** The
+local checkout works on `serial-connection` directly (no-worktree
+convention), 19 commits ahead of `main` at `f8c15a1`.
 
 ## 0. START HERE next session
 
 **Remaining before merge-eligible:**
 1. Controller runs the two Snow finals (§2) — not this phase's task-8
    job by design.
-2. Andrew's word to merge (fast-forward `f8c15a1..0907364`).
+2. Andrew's word to merge (fast-forward `f8c15a1..<branch tip>`).
 
 No further implementation work is expected. If Andrew wants the next
 roadmap item picked up, it's AppleTalk (`docs/ROADMAP.md`'s "Next:
@@ -87,6 +89,40 @@ network phase knows where to look first):
   connection was open was silently swallowed instead of following
   Ch5's default (log+exit 1). Fixed: the loop condition became
   `while (!clar_aborting && clar_fn_rtConnAlive())`.
+- **Unbounded pump drain / livelock** (final whole-branch review,
+  Important 1): `rtConnPump`'s received-drain loop re-queried
+  `rtConnDevAvail(i)` every iteration, so a sender producing bytes at
+  least as fast as the drain (2 traps/byte natively) never let it exit —
+  livelock of the whole event loop at the reference's own documented top
+  rates. Fixed: snapshot the count once (`n = rtConnDevAvail(i)`) before
+  the drain loop; bytes arriving during the drain wait for the next pass,
+  matching "fires once per event-loop pass" exactly.
+- **Name-keyed connection slot lookup** (final whole-branch review,
+  Important 2): `lowConnSlotOf` was keyed by the receiver's source NAME;
+  a local `var conn: connection` shadowing a same-named global silently
+  operated the GLOBAL's slot instead of hitting the spec-mandated
+  not-yet-implemented rejection. The straightforward-looking fix
+  (`scopeLookup`-based symbol resolution, as `lowTopHandler` already
+  uses) turned out NOT to work: `curScope` is pinned at the program's
+  TOP scope for the whole lowering pass (check.cla's block/function
+  scopes are pushed and popped during CHECKING only, and don't survive
+  into lowering — see `lowConnSlotOf`'s own doc comment), so a
+  `scopeLookup` from inside a function body can never see that
+  function's own locals and just re-resolves to the global every time,
+  reproducing the exact same bug through a different path. The real fix
+  uses `lowIsLocal` (lowering's own local-scope tracker, the same
+  mechanism `isBareWindowTitleIdent`/`lowIdent` already use for this
+  exact kind of shadow guard): a receiver identifier that `lowIsLocal`
+  reports as locally shadowed is excluded from the connection-slot
+  lookup regardless of the name collision. Regression pin:
+  `internal/conntest`'s `TestConnShadowedLocalRejected`
+  (`testdata/conn_shadow_local.cla`).
+- **Unguarded `SerNewPtr` in `rtConnSendText`** (final whole-branch
+  review, Fix 5 — same treatment as Task 6's `SerSetBuf` guard): a null
+  return from the per-send scratch-buffer allocation sent the pokeb
+  marshal loop writing at low memory. Fixed: null → stage the slot's
+  pending-`failed` with `-108` (keep-first, matching the write-error
+  path's own discipline) and return without writing.
 
 ## 2. Two controller-run finals — NOT run by this task, by design
 
@@ -96,17 +132,18 @@ network phase knows where to look first):
   build's include set), so the standing rule fires: re-run it after any
   change reachable from `ClarusC.APPL`'s own bake path. Last known-PASS
   predates this phase.
-- **A final `TestSerialEchoOnSnow`** at the true branch tip (`0907364`,
-  post snapshot-regen + bake-fix) — every prior Snow PASS in this phase
-  was against an earlier commit; the tip has moved since (the snapshot
-  regen and the bake file-list fix, neither of which touch runtime or
-  native codegen, but the standing discipline is a fresh run at the true
-  tip before merge-eligible).
+- **A final `TestSerialEchoOnSnow`** at the true branch tip — every prior
+  Snow PASS in this phase was against an earlier commit, and the tip has
+  moved twice since: Task 8's own snapshot-regen + bake-fix (tip
+  `0907364`), and now the final-review fix wave (§3b) on top of that
+  (`rtConnPump`'s drain loop and `rtConnSendText`'s guard DO touch
+  runtime/native codegen this time, unlike Task 8's own docs-only move —
+  a fresh run at the true tip is not optional this round).
 
 Both are the controller's to run post-final-review; then the phase is
 merge-eligible on Andrew's word.
 
-## 3. Gate results (this task, tip `0907364`)
+## 3. Gate results (Task 8, tip `0907364` — historical)
 
 - **Snapshot regen** (`clarusc/clarusc.c`, Go-free per
   `internal/selfhost/fixedpoint_test.go`'s own instructions): converged
@@ -151,6 +188,70 @@ merge-eligible on Andrew's word.
   114KB) — confirms both `scripts/build-68k.sh` and (transitively)
   `scripts/clarus-run.sh` can build serial programs directly now that the
   snapshot parses `serial` syntax.
+
+## 3b. Final fix-wave gate re-run (this wave, branch tip)
+
+The final whole-branch review returned "merge with fixes" (2 Important +
+STATUS numeric slips + 3 rt_serial_test.c comment checks + an unguarded
+`SerNewPtr` consistency fix + a `func f(): error` failure-mode probe +
+2 TODO additions). All landed in one wave; full detail:
+`.superpowers/sdd/2026-08-15-serial-connection/final-fixwave-report.md`.
+
+- **Code fixes**: `rtConnPump`'s drain-loop snapshot (Important 1),
+  `lowConnMethod`'s `lowIsLocal`-guarded receiver lookup (Important 2,
+  plus the `TestConnShadowedLocalRejected` regression pin closing Task 5's
+  own deferred fixture gap), `rtConnSendText`'s `SerNewPtr` null guard
+  (Fix 5) — see §1's "Notable bugs found and fixed by review" above for
+  the full account of each, including the `scopeLookup`-doesn't-work
+  structural surprise Important 2's fix uncovered.
+- **`go test ./internal/conntest -count=1 -v -timeout 5m`**: PASS, all 5
+  subtests (`TestConnectMode`, `TestListenMode`, `TestEnvUnsetFailedPath`,
+  `TestAbortDuringPump`, `TestConnShadowedLocalRejected`) — the echo
+  suite's burst semantics survive Fix 1's drain-loop change intact.
+- **`testdata/cg68k/*.s` rebless** (`CLARUS_CG68K_BLESS=1`): 52 golden
+  files churn (every native fixture carries `rtConnPump` unconditionally
+  — the very TODO item this wave also records, §7 below). Normalization
+  proof: label/A5-offset/A6-offset renumbering stripped from both old and
+  new `arith.s`, then `arithDemo` (a pure user-code function, nothing to
+  do with connections) extracted and diffed in isolation — byte-identical
+  except the `(JT slot N)` comment number, same taxonomy Task 6's own
+  rebless proof used. Smaller fixtures' full diffs (e.g.
+  `arr_whole_assign.s`) are, in their entirety, exactly the two new `n`/
+  `j` locals and the snapshot-based loop shape — nothing else.
+- **Snapshot regen** (`clarusc/clarusc.c`, Go-free): converged and
+  re-verified twice, 4,742,784 bytes (+61 over Task 8's 4,742,723 —
+  `lowConnMethod`'s doc-comment/guard growth), byte-identical across two
+  independent stage-1/stage-2 builds; `TestSnapshotFixedPoint` itself
+  also reports gen1 == gen2 and matches the committed snapshot.
+- **`go test ./internal/selfhost -count=1 -timeout 30m`**: PASS, 104s.
+- **`CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
+  'TestToolboxSuiteOn68k|TestConnFailedHandlerOn68k|TestSmokeBounceOn68k'
+  -count=1 -timeout 20m`**: PASS, 52.7s — all 30 toolbox-suite cases
+  (incl. `SerialOpenWrite`/`SelfCheck`), the native `failed(err)`
+  regression pin, and the bounce smoke scenario.
+- **`scripts/test-merge.sh`**: PASS, 265s — T1 body 22s, `internal/selfhost`
+  104s, native-lane `internal/mactest` (full, no `-run` filter) 133s,
+  `internal/bake` full-corpus gate (`CLARUS_BAKE_FULL=1`) 6s. Zero FAILs.
+  (An earlier attempt was killed mid-`mactest` by an operator `pkill`
+  while investigating a tool-harness auto-background edge case, not a
+  test failure; the clean rerun immediately after is the one recorded
+  here — foreground throughout, no backgrounding used deliberately.)
+- **Probe 6** (`func f(): error` failure mode, `docs/TODO.md`'s
+  `cgRetNeedsHidden` entry): LOUD, not silent. Native lane
+  (`clarusc emit68k`) aborts at codegen time (`cg68k: cgExpr: EVarRef
+  non-scalar (str/rec/arr) reached in value context`, exit 1) the moment
+  a `return e`-shaped body is lowered; host lane (`clarusc emit` + `cc`)
+  is unaffected (`cgRetNeedsHidden` is `cg68k.cla`-only — the C printer
+  lane returns a plain C struct with no analogous hidden-pointer
+  bookkeeping). No code change (loud beats silent, per the probe's own
+  brief); `docs/TODO.md` updated with the reproduction; throwaway
+  fixture discarded (kept only in scratch, not committed).
+- **TODO additions**: the native-binary size-growth lever
+  (`cg68AddRoots`'s unconditional `nat*` rooting keeps the conn runtime
+  in every native binary; narrowing lever recorded) and the missing
+  host-lane emitted-C golden for `cpEmitMain`'s abort-aware pump loop
+  (behaviorally covered by `TestAbortDuringPump`, no byte-level
+  tripwire).
 
 ## 4. Manual-demo recipe (Andrew's own convention, port 1984)
 

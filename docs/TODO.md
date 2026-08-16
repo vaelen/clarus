@@ -103,6 +103,47 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   `error` would hit the same one-sided hidden-return-slot ABI mismatch
   Task 7 fixed for `error` parameters; no such function exists in-tree
   today, so unreproduced, but the gap is real (`clarusc/cg68k.cla`).
+  Final fix-wave Probe 6 reproduced this directly with a throwaway
+  `func makeError(): error { var e: error; return e }` fixture: the
+  NATIVE lane (`clarusc emit68k`) fails LOUD, not silently — `cg68k:
+  cgExpr: EVarRef non-scalar (str/rec/arr) reached in value context --
+  bind/store it instead of reading its value directly`, exit 1, at the
+  `return e` statement (cgIsScalarKind correctly refuses to load a
+  non-scalar `KErr` value into D0, but cgRetNeedsHidden never routed the
+  function into the hidden-pointer convention that would have made that
+  load unnecessary). The HOST lane (`clarusc emit` + `cc`) is unaffected
+  — `cgRetNeedsHidden` is `cg68k.cla`-only; the C printer lane returns a
+  plain C struct and the host C compiler's own ABI handles it correctly
+  with no analogous hidden-pointer bookkeeping. No code change made
+  (loud beats silent); still an open gap for `cg68k.cla` to close if a
+  real `func f(): error` ever needs to compile.
+- **Every native binary carries the conn runtime, `connection` or not**
+  (final review, Important 3, confirmed as PLANNED, not a bug) —
+  `cg68AddRoots` (`clarusc/cg68k.cla`) roots every `nat*`-named function
+  unconditionally, no `irUsesConn` gate; `nat_UiConnPump`
+  (`runtime/clarus/native.cla`) matches that prefix, so it (and
+  everything it pulls in transitively via shake.cla's reachability walk)
+  ships in every native build's `.s` output, not just conn-using ones —
+  the final review measured +5-7% `.s` lines. The narrowing lever, if
+  size ever matters: gate `cg68AddRoots`'s conn-specific roots on
+  `irUsesConn` the same way other conn-only surfaces are gated, while
+  keeping the EMPTY dispatcher stubs (the no-op seam Task 6's review
+  verdicted SOUND+DISCOVERABLE — a bad config fails at link time, not
+  silently) unconditional so a non-conn program that somehow still
+  references a conn symbol still gets a loud link error instead of an
+  unreachable-callee crash.
+- **No host-lane emitted-C golden for `cpEmitMain`'s pump loop**
+  (final review, noted alongside Important 3) — the abort-aware
+  `while (!clar_aborting && clar_fn_rtConnAlive())` loop shape
+  (`clarusc/cprint.cla`'s `cpEmitMain`) is behaviorally covered by
+  `internal/conntest`'s `TestAbortDuringPump` (drives the real compiled
+  binary through an abort mid-pump and asserts prompt exit), but there is
+  no byte-level golden pinning the emitted C text itself — a future
+  cprint.cla refactor could silently change the loop's shape (e.g. drop
+  the `clar_aborting` short-circuit) and every existing gate would still
+  pass as long as the behavior it happens to exercise still works. A
+  golden (or a narrower text-contains assertion) over the emitted C
+  around `cpEmitMain`'s pump loop would close that tripwire gap.
 
 ## ABI / performance
 
