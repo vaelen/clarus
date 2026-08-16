@@ -1,0 +1,26 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// conn_shadow_local.cla: final fix-wave regression fixture (Fix 2). A
+// local `var conn: connection` SHADOWS the global `conn` of the same
+// name; the method call below must resolve to the LOCAL (a receiver
+// shape lowConnMethod does not implement) and hit the spec-mandated
+// not-yet-implemented rejection, never silently reuse the global's slot.
+// Before the fix, lowConnMethod's receiver lookup was a plain name-string
+// probe into lowConnSlotOf, so this shape silently lowered to a real
+// rtConnSendText call against the GLOBAL's slot instead.
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    conn.open(serial "modem:9600")
+    useLocal()
+}
+
+// useLocal must stay reachable from a real entry point -- shake.cla's
+// whole-program reachability pass over the IR arena strips any function
+// never called, and a dead useLocal would never exercise lowConnMethod at
+// all (a silent false-pass for this fixture, not a real regression pin).
+func useLocal() {
+    var conn: connection
+    conn.send("shadowed")
+}

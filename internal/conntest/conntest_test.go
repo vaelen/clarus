@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -421,5 +422,43 @@ func TestAbortDuringPump(t *testing.T) {
 	// being far tighter than "wait for a peer that never disconnects".
 	if elapsed > 2*time.Second {
 		t.Errorf("abort exit took %v, expected prompt (not peer-disconnect-dependent)", elapsed)
+	}
+}
+
+// TestConnShadowedLocalRejected is the final-review Fix 2 regression pin
+// (also closing Task 5's own deferred coverage gap, ledger minor 3):
+// testdata/conn_shadow_local.cla declares a local `var conn: connection`
+// that shadows a global of the same name and calls a method on it.
+// lowConnMethod must resolve the receiver through the call's own scope
+// (scopeLookup), see that the shadowing local's symbol was never added to
+// lowConnSlotOf (only globals are), and fall through to the same
+// not-yet-implemented diagnostic every other unsupported connection
+// receiver shape gets -- never silently reuse the global's slot. This is
+// an EMIT-time (lowering) rejection, not a checker one (the shape checks
+// clean per spec %3.3 -- see lowConnMethod's own doc comment), so this
+// runs `clarusc emit` directly and asserts nonzero exit + stderr text,
+// the same pattern internal/emitui's TestEmitUiTablePopupGuards uses for
+// its own lowUnsupported-driven guards.
+func TestConnShadowedLocalRejected(t *testing.T) {
+	root := repoRoot(t)
+	claruscExe := claruscboot.CurrentExe(t)
+	claPath := filepath.Join(root, "internal", "conntest", "testdata", "conn_shadow_local.cla")
+	rtDir := filepath.Join(root, "runtime", "clarus") + string(filepath.Separator)
+
+	cmd := exec.Command(claruscExe, "emit", "--rtdir", rtDir, "-o", filepath.Join(t.TempDir(), "out.c"), claPath)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	if err == nil {
+		t.Fatalf("clarusc emit %s: want nonzero exit (shadowed-local receiver must be rejected), got success (output: %s)", claPath, out.String())
+	}
+	const want = "method call on receiver kind"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("output %q missing %q", out.String(), want)
+	}
+	const wantSuffix = "(not yet implemented)"
+	if !strings.Contains(out.String(), wantSuffix) {
+		t.Errorf("output %q missing %q", out.String(), wantSuffix)
 	}
 }
