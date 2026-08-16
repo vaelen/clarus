@@ -1,0 +1,105 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// serialecho.cla: the serial-connection phase's acceptance app (Task 7).
+// A small UI program that opens the Mac's modem port (SCC channel A) at
+// 9600 baud via docs/clarus-language-reference.md's "### Serial" section,
+// says hello, echoes every byte it receives back out, and quits after
+// three consecutive 'Q' bytes. The status window's two labels (bytes
+// in/bytes out) give a live, at-a-glance signal that the connection is
+// actually flowing -- useful both for the gated Snow test
+// (internal/mactest/serial_snow_test.go, TestSerialEchoOnSnow) and for
+// Andrew's own manual demo: build for real Mac hardware, or run the host
+// dev lane with CLARUS_SERIAL_MODEM=listen:1984 (his own convention
+// port) and connect a terminal with `nc localhost 1984`.
+//
+// Kept Appendix-C-plain, matching examples/menu-demo.cla's own minimal
+// style: no `app` section (not needed for a double-clickable demo), just
+// one window, one menu, the connection, and the echo logic itself.
+
+window Echo {
+    title: "Serial Echo"
+    size: 260, 100
+
+    label InCount  { at: 10, 10; text: "Bytes in: 0" }
+    label OutCount { at: 10, 40; text: "Bytes out: 0" }
+}
+
+menu File {
+    item Quit "Quit" key "Q"
+}
+
+var conn: connection
+var bytesIn: int = 0
+var bytesOut: int = 0
+var qRun: int = 0
+
+// intStr renders a non-negative int as a decimal string -- the language
+// has no built-in numeric-to-string conversion (Ch3's "Numeric
+// Conversions" only covers int/fixed/char), so the two counter labels
+// build their own digit string here, low digit first via `mod`/`/`, then
+// prepend each new digit (char + string prepends, Ch3's "String
+// Concatenation").
+func intStr(n: int): string {
+    var v: int = n
+    var s: string = ""
+    var d: int = 0
+    if v == 0 { return "0" }
+    while v > 0 {
+        d = v mod 10
+        s = char(int('0') + d) + s
+        v = v / 10
+    }
+    return s
+}
+
+on App.launch {
+    open Echo
+    conn.open(serial "modem:9600")
+}
+
+on conn.opened {
+    conn.send("READY\n")
+}
+
+on conn.received(data: text) {
+    var w: Echo = Echo.front
+    var i: int = 0
+    var inMsg: string = ""
+    var outMsg: string = ""
+
+    bytesIn = bytesIn + data.length
+    conn.send(data)
+    bytesOut = bytesOut + data.length
+
+    if w != nil {
+        // cg68k can't store a computed string expression straight into a
+        // widget property (cgEmitStoreStr's ui_value_at_ptr store-context
+        // gap) -- build the message in a local first, then assign that.
+        inMsg = "Bytes in: " + intStr(bytesIn)
+        outMsg = "Bytes out: " + intStr(bytesOut)
+        w.InCount.text = inMsg
+        w.OutCount.text = outMsg
+    }
+
+    // Three consecutive 'Q' bytes quits, even split across separate
+    // `received` passes -- qRun is a global, so it carries state across
+    // calls instead of only looking within one delivered chunk.
+    while i < data.length {
+        if data[i] == 'Q' {
+            qRun = qRun + 1
+            if qRun >= 3 { quit }
+        } else {
+            qRun = 0
+        }
+        i = i + 1
+    }
+}
+
+on conn.failed(err: error) {
+    alert(err.message)
+}
+
+extend File {
+    on Quit.select { quit }
+}

@@ -5560,7 +5560,11 @@ func cgRetNeedsHidden(retTy: int): bool {
 // the value itself" for -- record-field layout, local/global reservation,
 // array-element stride, none of which changed this task).
 func cgArgSlotSize(t: int): int {
-    if irtKind(t) == KStr or irtKind(t) == KRec {
+    // KErr joins KStr/KRec here for the same reason as cgPushArgs' own
+    // gate (serial-connection Task 7 gap fix, see its doc comment) -- a
+    // by-address arg always pushes one 4-byte pointer, regardless of the
+    // pointee's real size.
+    if irtKind(t) == KStr or irtKind(t) == KRec or irtKind(t) == KErr {
         return 4
     }
     return cgSlotSizeOf(t)
@@ -9396,7 +9400,19 @@ func cgPushArgs(argsHead: int): int {
     a = argsHead
     while a != -1 {
         t = irExprType(a)
-        if irtKind(t) == KStr or irtKind(t) == KRec {
+        // serial-connection Task 7 gap fix: KErr (`error`, a builtin
+        // fixed-layout 260-byte struct -- cgSizeOfUncached's own KErr
+        // case) is by-address like KStr/KRec, not a 4-byte scalar that
+        // fits cgExpr's D0 value path. Unexercised until this task's
+        // acceptance app declared the first `on X.failed(err: error)`
+        // connection handler -- clar_conn_fire_failed (lower.cla) calls
+        // the user's handler with `err` as a real argument, which used to
+        // reach cgExpr(EVarRef) in bare value context and abort ("EVarRef
+        // non-scalar reached in value context"). `err` here is always a
+        // plain addressable local (EVarRef), so this reuses the exact
+        // same cgExprAddr push cgIsAddressableArgShape's EVarRef arm
+        // already grants KStr/KRec.
+        if irtKind(t) == KStr or irtKind(t) == KRec or irtKind(t) == KErr {
             sz = cgArgSlotSize(t)
             if cgIsAddressableArgShape(a, irtKind(t)) and not irArgNeedsCopy(a) {
                 cgExprAddr(a)
@@ -10757,6 +10773,17 @@ func cgEmitStoreStr(dst: int, src: int) {
             // inner expr (now itself materializes via cgExprAddr's own
             // Task 14.7 fallback if the inner expr isn't addressable).
             src2 = irIntrArgsHead(src2)
+        } else if nm == "ui_value_at_ptr" {
+            // serial-connection Task 7 gap fix: lowSynthConnFireFailed
+            // (lower.cla) builds `err.message = ui_value_at_ptr(msgPtr,
+            // string(255))` for any user program with an `on X.failed(err:
+            // error)` connection handler -- unexercised until this task's
+            // acceptance app declared the first one. cgExprAddr already
+            // knows this exact intrinsic's address directly (a raw pointer
+            // dereference -- see cgExprAddr's own EIntr/IUiValueAtPtr arm
+            // above), so src2 is left unchanged and falls through to the
+            // generic addressable-source tail below, same as a plain
+            // EVarRef/EStrConst source.
         } else if nm == "ui_get_field_text" or nm == "ui_get_label_text" {
             // Task 14 (native-5e gate, textwidgets.cla): `field.text` read
             // -- fills dst IN PLACE via rtUiWidgetGetStr(instV, wIdx,

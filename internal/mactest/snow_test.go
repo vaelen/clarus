@@ -330,11 +330,17 @@ const snowQuitGrace = 20 * time.Second
 //     writes only flush to the host-visible file on a clean Snow process
 //     exit (see the file header) -- so proceeding to extract from it
 //     would silently assert against a possibly-corrupt image.
-func runSnow(t *testing.T, d *snowDisk, timeout time.Duration, done func() bool) {
+// extraArgs (serial-connection Task 7) is a variadic tail appended to the
+// launch argv after the workspace path -- e.g. "--serial-bridge-a",
+// "tcp:PORT" to enable the SCC channel A TCP bridge, per `snow/Snow
+// --help`. Every existing caller passes none, so this is source-compatible
+// with every call site that predates it.
+func runSnow(t *testing.T, d *snowDisk, timeout time.Duration, done func() bool, extraArgs ...string) {
 	t.Helper()
 	start := time.Now()
 	snowBin := filepath.Join(repoRoot(t), "snow", "Snow")
-	cmd := exec.Command(snowBin, d.workspace)
+	args := append([]string{d.workspace}, extraArgs...)
+	cmd := exec.Command(snowBin, args...)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("launch Snow: %v", err)
 	}
