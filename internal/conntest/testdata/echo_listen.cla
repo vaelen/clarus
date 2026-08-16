@@ -1,38 +1,35 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// serial-connection phase, Task 5: a listen-mode-only variant of echo.cla,
-// deliberately WITHOUT an `on conn.opened` handler.
+// serial-connection phase, Task 5: a listen-mode-only variant of echo.cla.
 //
-// Finding (recorded in task-5-report.md, "Concerns"): conn.cla's
-// rtConnPump (Task 4, already landed -- not this task's file) fires
-// `opened` for a `listen:` slot as soon as `rt_ext_ConnHOpen`'s bind+
-// listen() succeeds, BEFORE any peer has been accepted -- `opened` does
-// not mean "a peer is present" for listen mode, only "the socket is
-// bound". echo.cla's own `on conn.opened { conn.send("READY\n") }`
-// therefore always calls rtConnSendText against a still-listening (no
-// peer, ConnHWrite's own `listening` guard) slot on the very FIRST pump
-// pass, staging a "write failed" `failed` event that fires unconditionally
-// on the NEXT pump pass regardless of whether a peer connects in between
-// -- confirmed via direct measurement (an aggressive from-t=0 connect
-// retry loop still lost) that this is a deterministic sequencing bug, not
-// a race a faster/slower test dial could ever win. Fixing it needs a new
-// lane-neutral "has a peer" query threaded through conn.cla + conn_c.cla
-// + Task 6's not-yet-written conn_68k.cla -- a real interface change, out
-// of this task's scope (lower.cla/cprint.cla only) and this task's Files
-// list, so NOT fixed here.
+// Controller ruling (task-5-report.md's fix-round writeup has the full
+// text): `opened` firing at successful bind IS correct -- open success is
+// transport-invisible, and a raw serial line has no peer-arrival signal
+// either (carrier detect is out of scope this phase; the future MacTCP
+// `listener.accepted(c)` is the real peer signal). The ORIGINAL defect
+// this file's own history flagged was host-glue-only: `rt_ext_ConnHWrite`
+// (runtime/host/rt_serial.inc) used to FAIL a write to a still-listening
+// slot; it now mirrors an unattached real serial line instead (discard
+// the bytes, report success) -- so `on conn.opened { conn.send(...) }` is
+// safe again, exactly like echo.cla's own connect-mode fixture.
 //
-// This fixture sidesteps the exact broken combination (no `on opened`
-// handler at all -- lowSynthConnFireOpened's arm for this slot is a
-// plain no-op, matching the brief's own "a slot with no handler for an
-// event is a no-op" rule) while still exercising everything Task 5 IS
-// responsible for on the listen: transport path: lowering, the host pump
-// loop, byte-exact received/send round-tripping, and the close-driven
-// lifetime rule.
+// The `on conn.opened` handler is restored below. Its "READY\n" greeting
+// is sent (and, in listen mode, silently discarded) BEFORE any peer has
+// connected -- by design, same as a real serial greeting sent down an
+// unplugged cable. This fixture's own test (TestListenMode,
+// conntest_test.go) deliberately does NOT assert on that discarded
+// greeting; it dials AFTER the greeting has already gone out, then
+// proves the discard was harmless -- the post-peer sweep still
+// round-trips byte-exact.
 var conn: connection
 
 on App.startCLI(args: list of string) {
     conn.open(serial "modem:9600")
+}
+
+on conn.opened {
+    conn.send("READY\n")
 }
 
 on conn.received(data: text) {

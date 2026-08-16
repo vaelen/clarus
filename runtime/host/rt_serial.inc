@@ -219,14 +219,27 @@ int32_t rt_ext_ConnHReadByte(int32_t slot) {
  * SIGPIPE is neutralized process-wide by rt_conn_ignore_sigpipe (called
  * from ConnHOpen, guaranteed to have run before this can) -- a send() to
  * an already-closed peer fails with EPIPE here, `k <= 0`, same as any
- * other write failure, instead of killing the process. */
+ * other write failure, instead of killing the process.
+ *
+ * A slot still LISTENING (bind+listen succeeded, no client accepted yet)
+ * mirrors an unattached real serial line, per the controller's ruling on
+ * Task 5's own review: `opened` firing at successful bind is correct
+ * (open success is transport-invisible; a raw serial cable has no
+ * peer-arrival signal either -- carrier detect is out of scope this
+ * phase), so a write in that window is not an error -- physical bytes
+ * sent into an unplugged cable just go nowhere. Discard and report
+ * success (0), exactly as a real SCC write would; once a peer IS
+ * accepted (rt_conn_slots[slot].listening flips false, ConnHAvail's own
+ * accept step), writes flow normally through the branch below,
+ * unchanged. */
 int32_t rt_ext_ConnHWrite(int32_t slot, void *p, int32_t n) {
     const unsigned char *buf;
     int32_t sent;
     ssize_t k;
 
     if (!rt_conn_slot_ok(slot)) return 1;
-    if (rt_conn_slots[slot].fd < 0 || rt_conn_slots[slot].listening) return 1;
+    if (rt_conn_slots[slot].fd < 0) return 1;
+    if (rt_conn_slots[slot].listening) return 0;
     buf = (const unsigned char *)p;
     sent = 0;
     while (sent < n) {

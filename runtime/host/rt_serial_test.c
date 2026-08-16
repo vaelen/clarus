@@ -342,6 +342,60 @@ static void test_sigpipe(void) {
     rt_ext_ConnHClose(2);
 }
 
+/* test_write_before_accept: a slot still LISTENING (bound, no peer
+ * accepted yet) must not fail ConnHWrite -- controller ruling on Task 5's
+ * own review: it mirrors an unattached real serial line, bytes sent into
+ * an unplugged cable go nowhere but that's not an error. Slot 3. Writes
+ * BEFORE any peer connects, asserting 0 (discarded, success); then a real
+ * peer connects and a SUBSEQUENT write reaches them, proving the discard
+ * path doesn't wedge the slot for later real traffic. */
+static void test_write_before_accept(void) {
+    int listenPort;
+    int probe;
+    char envbuf[64];
+    int peer;
+    struct sockaddr_in addr;
+    unsigned char out[16], in[16];
+    int rc;
+
+    probe = bind_ephemeral(&listenPort);
+    CHECK(probe >= 0, "write-before-accept: probe bind should succeed");
+    close(probe);
+
+    snprintf(envbuf, sizeof(envbuf), "listen:%d", listenPort);
+    setenv("CLARUS_SERIAL_MODEM", envbuf, 1);
+
+    rc = rt_ext_ConnHOpen(3, 0);
+    CHECK(rc == 0, "write-before-accept: ConnHOpen should succeed");
+
+    /* No peer yet -- ConnHAvail (which itself does the deferred accept
+       poll) confirms the slot is still just listening. */
+    CHECK(rt_ext_ConnHAvail(3) == 0, "write-before-accept: nothing available before any peer connects");
+
+    fill_pattern(out, sizeof(out), 7);
+    CHECK(rt_ext_ConnHWrite(3, out, (int32_t)sizeof(out)) == 0,
+        "write-before-accept: write to a still-listening slot discards and reports success, not failure");
+
+    /* Now connect a real peer and prove writes reach them normally -- the
+       discard above must not have wedged the slot for later traffic. */
+    peer = socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(peer >= 0, "write-before-accept: peer socket() should succeed");
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons((uint16_t)listenPort);
+    CHECK(connect(peer, (struct sockaddr *)&addr, sizeof(addr)) == 0, "write-before-accept: peer connect should succeed");
+    set_recv_timeout(peer, 10);
+
+    fill_pattern(out, sizeof(out), 99);
+    CHECK(wait_accept_and_write(3, out, (int32_t)sizeof(out)), "write-before-accept: post-accept write should succeed");
+    plain_recv_all(peer, in, (int)sizeof(in));
+    CHECK(memcmp(out, in, sizeof(out)) == 0, "write-before-accept: post-accept bytes reach the peer");
+
+    close(peer);
+    rt_ext_ConnHClose(3);
+}
+
 /* test_open_failure: unset env var / garbled spec both report a nonzero
  * code, never crash -- the two environmental-failure paths conn.cla's own
  * rtConnOpen turns into a `failed` event rather than a panic. */
@@ -376,6 +430,7 @@ int main(void) {
     test_listen_mode();
     test_connect_mode();
     test_sigpipe();
+    test_write_before_accept();
     test_open_failure();
     /* ConnHIdle: just prove it returns promptly with nothing open (all
        slots were closed by their own tests above) rather than hanging --

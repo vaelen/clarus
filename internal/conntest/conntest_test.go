@@ -214,9 +214,16 @@ func TestConnectMode(t *testing.T) {
 
 // TestListenMode proves the listen: transport path (bind, deferred
 // accept, byte-exact echo, the same close-driven lifetime rule) using
-// echo_listen.cla -- see that fixture's own doc comment for why it omits
-// `on conn.opened` (a real, already-landed conn.cla sequencing gap that
-// this task does not fix; recorded in task-5-report.md).
+// echo_listen.cla -- which, per the controller's fix-round ruling, now
+// carries the SAME `on conn.opened { conn.send("READY\n") }` greeting
+// echo.cla's connect-mode fixture has (rt_ext_ConnHWrite no longer fails
+// a write to a still-listening slot; it discards and reports success,
+// mirroring an unattached serial line). This test deliberately dials
+// AFTER giving the child time to have already fired `opened` and
+// discarded that greeting (see the sleep below) -- proving the discard
+// path is harmless to LATER real traffic, not just that it doesn't
+// crash: the post-peer sweep still round-trips byte-exact, with no
+// leftover "READY\n" bytes ahead of it in the stream.
 func TestListenMode(t *testing.T) {
 	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "echo_listen.cla"), "echo_listen")
 
@@ -228,6 +235,15 @@ func TestListenMode(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
+
+	// Give the child a head start past its own first pump pass (no idle
+	// wait at all before that first pass -- see cpEmitMain's pump loop),
+	// so `opened`'s greeting has already been sent-and-discarded into the
+	// pre-peer void before we ever dial -- otherwise a peer that connects
+	// mid-greeting could actually RECEIVE "READY\n" ahead of the echo
+	// stream this test reads, which is a real (if equally valid) racing
+	// outcome this test isn't set up to also assert on.
+	time.Sleep(50 * time.Millisecond)
 
 	// The program's own bind+listen happens synchronously inside
 	// `conn.open` (App.startCLI), before main() ever reaches the pump
