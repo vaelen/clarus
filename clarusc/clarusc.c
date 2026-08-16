@@ -29620,7 +29620,7 @@ static int32_t clar_fn_lowConnMethod(int32_t cv_e, int32_t cv_fn, int32_t cv_ty,
     cv___ret906 = 0;
     cv_recvExpr = clar_fn_selectX(cv_fn);
     cv_slot = CLAR_NEG32(1);
-    if (clar_fn_exprKind(cv_recvExpr) == 0) {
+    if ((clar_fn_exprKind(cv_recvExpr) == 0) && (!(clar_fn_lowIsLocal(clar_fn_identName(cv_recvExpr))))) {
         clar_str_255 t1;
         t1 = clar_fn_poolGet(clar_fn_identName(cv_recvExpr));
         int32_t t2;
