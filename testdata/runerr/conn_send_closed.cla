@@ -1,0 +1,24 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// serial-connection phase, Task 5: `conn.send` on a never-opened
+// connection is a contract violation (a bug, not weather -- see
+// conn.cla's own header comment and the design spec's "Error principle"),
+// so rtConnSendText panics "connection not open" rather than staging a
+// `failed` event.
+//
+// Host-only pinning, same layout convention as stringat_oor.cla (.cla +
+// .err + .behavior; discovered by internal/selfhost/behavior_test.go's
+// testdata/runerr glob). NOT yet exercised by T1 (behavior_test.go lives
+// in internal/selfhost, which scripts/test-task.sh explicitly excludes)
+// and NOT yet green under T2 either: TestBehaviorGoldens bootstraps from
+// the COMMITTED clarusc/clarusc.c snapshot (claruscboot.SnapshotExe),
+// which predates this task's whole `connection` lowering surface and
+// cannot lower `conn.send` at all until Task 8 regenerates it -- see
+// task-5-report.md for the goldens' provenance (computed against a
+// CURRENT-source two-stage build) and this gap's own writeup.
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    conn.send("x")
+}

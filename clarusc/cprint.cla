@@ -1589,22 +1589,6 @@ func fpCallExt(e: int): text {
     var t: text
     var synthName: int
 
-    args = ""
-    first = true
-    a = irCallExtArgsHead(e)
-    while a != -1 {
-        if not first {
-            args = args + ", "
-        }
-        first = false
-        if irtKind(irExprType(a)) == KStr {
-            argText = fpStrAddr(a)
-        } else {
-            argText = fpExpr(a)
-        }
-        args = args + argText
-        a = irExprNext(a)
-    }
     // ui.cla's reverse-waist externs (Task 7+) resolve to lower.cla's
     // synthesized clar_ui_fire_* IRFuncs (called directly, no rt_ext_ shim
     // exists for them) rather than the ordinary host-symbol path below --
@@ -1617,16 +1601,46 @@ func fpCallExt(e: int): text {
     // the exact same way: an ordinary function, called by its ordinary
     // name). UiProgDesc is a special case (not a synthesized FUNCTION at
     // all -- see ir.cla's own doc comment on why): it resolves straight to
-    // the blob's own address, never a call.
+    // the blob's own address, never a call. Computed BEFORE the arg loop
+    // below (serial-connection phase, Task 5) so a KStr arg can tell
+    // whether it's headed for a real rt_ext_ shim (whose own prototype
+    // wants `const uint8_t *`, cpEmitExternProtos) or a synthesized
+    // clar_fn_ target (an ORDINARY function, whose own KStr-ish params --
+    // clar_conn_fire_failed's `msg`, the first reverse-waist dispatcher to
+    // carry one -- are typed plain `ptr`/`void *`, per lowSynthConnFire
+    // Failed's own doc comment): a bare `(const uint8_t*)&(...)` passed to
+    // a `void *` param discards its const qualifier, a real (if harmless)
+    // compiler warning this wrap avoids.
+    synthName = -1
+    if poolGet(irCallExtName(e)) != "UiProgDesc" {
+        synthName = lowUiSynthExternName(irCallExtName(e))
+    }
+
+    args = ""
+    first = true
+    a = irCallExtArgsHead(e)
+    while a != -1 {
+        if not first {
+            args = args + ", "
+        }
+        first = false
+        if irtKind(irExprType(a)) == KStr {
+            argText = fpStrAddr(a)
+            if synthName != -1 {
+                argText = toText("(void*)") + argText
+            }
+        } else {
+            argText = fpExpr(a)
+        }
+        args = args + argText
+        a = irExprNext(a)
+    }
     if poolGet(irCallExtName(e)) == "UiProgDesc" {
         call = "(&clar_ui_blob[0])"
+    } else if synthName != -1 {
+        call = "clar_fn_" + poolGet(synthName) + "(" + args + ")"
     } else {
-        synthName = lowUiSynthExternName(irCallExtName(e))
-        if synthName != -1 {
-            call = "clar_fn_" + poolGet(synthName) + "(" + args + ")"
-        } else {
-            call = "rt_ext_" + poolGet(irCallExtName(e)) + "(" + args + ")"
-        }
+        call = "rt_ext_" + poolGet(irCallExtName(e)) + "(" + args + ")"
     }
     if fpIsHandleType(irExprType(e)) or (irtKind(irExprType(e)) == KRec and irRecHasHandleField(irtName(irExprType(e)))) {
         t = fpNewTrackedTmp(irExprType(e))
@@ -7297,6 +7311,21 @@ func cpEmitMain() {
         cpRestBuf.add(toText("    clar_fn_handler_App_startCLI(rt_args_list());"))
     } else if irHasStartEmpty {
         cpRestBuf.add(toText("    clar_fn_handler_App_startEmpty();"))
+    }
+    // Host pump loop (serial-connection phase, Task 5): irUsesConn-gated
+    // so a conn-less program's main() is byte-for-byte unchanged (this
+    // task's own zero-churn constraint). Stays alive while any connection
+    // is open or has an event pending (rtConnAlive), draining one pass
+    // per iteration (rtConnPump) and idling between passes on whatever
+    // fds are actually open (rt_ext_ConnHIdle, runtime/host/rt_serial.inc)
+    // -- a plain busy-wait when none are (that function's own doc
+    // comment). UI-lane's own pump (cpEmitUiMain) is untouched -- native/
+    // UI is Task 6.
+    if irUsesConn {
+        cpRestBuf.add(toText("    while (clar_fn_rtConnAlive()) {"))
+        cpRestBuf.add(toText("        clar_fn_rtConnPump();"))
+        cpRestBuf.add(toText("        rt_ext_ConnHIdle(20);"))
+        cpRestBuf.add(toText("    }"))
     }
     if lowUsesAbort {
         cpEmitAbortDefaultCheck(false)

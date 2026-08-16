@@ -107,6 +107,34 @@ var lowSkipUiDispatchers: bool
 var lowHasAppLog: bool
 var lowCurFnRuntimeOrigin: bool
 
+// ---- connection lowering state (serial-connection phase, Task 5) ----
+//
+// lowConnSlotOf maps a global `connection` var's own name to its slot
+// index (0..3), assigned by lowerProgram's own pre-pass in declaration
+// order (spec %3.3: "global connection vars only" -- the same GLOBAL-only
+// scope check.cla's usesConn already enforces). Built ONLY when usesConn
+// (check.cla), before the main decl walk, so lowTopHandler/lowConnMethod
+// (below) can resolve a slot for a handler/method reached in ANY source
+// order relative to the var's own decl -- same reason the extern and
+// `on App.log` pre-passes above exist. Never reset from a bake (a runtime
+// module can never declare a `connection` global, so this is always
+// empty during a bake pass regardless).
+//
+// 4 (not a named const): matches conn.cla's own `const rtConnMax: int =
+// 4` -- clarusc's own source (this file) and a user program's runtime
+// modules (conn.cla) are different compilation units with no shared
+// namespace, so there is no single symbol both sides could reference;
+// keep the two literal 4s in sync by hand if that ever changes.
+var lowConnSlotOf: map of int
+
+// lowConnHandlerFn maps "<slot>|<event>" (event one of opened/received/
+// closed/failed) to the interned C name of that slot's minted handler
+// IRFunc -- absent (map default -1) when no `on <var>.<event>` handler
+// was declared for that slot, which lowSynthConnFireOpened/Received/
+// Closed/Failed (below) read as "no-op arm", per the brief's own rule
+// ("a slot with no handler for an event is a no-op").
+var lowConnHandlerFn: map of int
+
 // lowCurFuncRet is the enclosing function's declared return IR type index,
 // for the Return-statement coercion Task 4 adds (lower.go's curFuncRet).
 var lowCurFuncRet: int
@@ -1262,6 +1290,15 @@ func lowMethodCall(e: int, fn: int): int {
         // property read, so recv is never computed generically here.
         return lowCanvasMethod(e, fn, ty)
     }
+    if xk == TyConnection {
+        // Connection methods (serial-connection phase, Task 5): the
+        // receiver is never lowered to a real IR value (see
+        // lowGlobalVarDecl's own comment) -- lowConnMethod resolves it
+        // straight to a compile-time slot number instead, so this must
+        // return BEFORE the generic `recv = lowExpr(...)` line below ever
+        // runs, exactly like the TyWidget case just above.
+        return lowConnMethod(e, fn, ty, xk)
+    }
     recv = lowExpr(selectX(fn))
     if xk == TyStr or xk == TyText {
         return lowStringTextMethod(recv, xk == TyText, fn, callArgsHead(e), ty)
@@ -1274,6 +1311,86 @@ func lowMethodCall(e: int, fn: int): int {
     } else if xk == TyIntMap {
         return lowMapMethod(recv, fn, callArgsHead(e), ty, false, true)
     }
+    lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
+    return -1
+}
+
+// lowConnCoerceArg reads target Clarus function fnName's own DECLARED
+// param type back off its checker-registered signature (scopeLookup +
+// sigIdx -- the same source lowCallArgs' own per-arg loop reads) and
+// coerces argAst's lowered value against it via lowCoerceStr -- the same
+// per-arg treatment an ordinary user call gets, just indexed by hand
+// since a connection call's real arg list is a compile-time slot number
+// (or two) PREPENDED ahead of the one AST argument the user actually
+// wrote, not a straight lowering of callArgsHead(e).
+func lowConnCoerceArg(fnName: string, paramIdx: int, argAst: int): int {
+    var symIdx: int
+
+    symIdx = scopeLookup(curScope, intern(fnName))
+    return lowCoerceStr(lowType(funcSigParam(symbols[symIdx].sigIdx, paramIdx)), lowExpr(argAst))
+}
+
+// lowConnMethod dispatches `connVar.open/send/close(...)` (serial-
+// connection phase, Task 5) to the matching rtConn* runtime call, slot
+// number substituted for the receiver. Only a BARE global connection-var
+// receiver (its name present in lowConnSlotOf, built by lowerProgram's
+// own pre-pass) reaches a real lowering here; and for `open`, only the
+// `serial` transport tag (callTransport(e) == 2) does. Every other shape
+// this method-call node can take on a checker-clean program -- a local/
+// field/array-element connection receiver (never added to lowConnSlotOf),
+// `open` with no transport prefix, the `appletalk` prefix, or a resolved
+// `address` argument (all legal per connectionMethods' own signature,
+// just not implemented yet) -- falls through to the exact SAME generic
+// not-yet-implemented diagnostic lowMethodCall's own fallback produces
+// for an unhandled receiver kind (brief: "EXACTLY as today"), since
+// xk == TyConnection either way. ALSO gated on `not want68k`: this
+// task's runtime (conn.cla/conn_c.cla) is spliced host-lane-only
+// (drive.cla: `if usesConn and not want68k`, Task 4) -- rtConnOpen/etc.
+// simply don't exist as declared symbols for a want68k compile, so
+// taking this path there would either scopeLookup a -1 symIdx (a
+// compiler crash, not a diagnostic) or emit a call to a function cg68k
+// can never find. A 68k build hits the exact same rejection every other
+// unimplemented connection shape does -- matches "no native/68k work"
+// (this task's own discipline) and pre-Task-5 behavior for that lane
+// unchanged; Task 6 lifts this gate alongside conn_68k.cla.
+func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
+    var recvExpr: int
+    var name: string
+    var slot: int
+    var argsHead: int
+    var args: int
+    var tail: int
+
+    recvExpr = selectX(fn)
+    slot = -1
+    if not want68k and exprKind(recvExpr) == ExIdent {
+        slot = lowConnSlotOf.get(poolGet(identName(recvExpr)), -1)
+    }
+    name = poolGet(selectName(fn))
+    argsHead = callArgsHead(e)
+
+    if slot != -1 and name == "open" and callTransport(e) == 2 {
+        args = newIRIntConst(slot, irIntT)
+        tail = irExprListAppend(args, newIRIntConst(2, irIntT))
+        irExprListAppend(tail, lowConnCoerceArg("rtConnOpen", 2, argsHead))
+        return newIRCallFn(intern("rtConnOpen"), args, irVoidT)
+    }
+    if slot != -1 and name == "send" {
+        args = newIRIntConst(slot, irIntT)
+        if typeKind(exprTypeGet(argsHead)) == TyText {
+            irExprListAppend(args, lowConnCoerceArg("rtConnSendText", 1, argsHead))
+            return newIRCallFn(intern("rtConnSendText"), args, irVoidT)
+        }
+        irExprListAppend(args, lowConnCoerceArg("rtConnSendStr", 1, argsHead))
+        return newIRCallFn(intern("rtConnSendStr"), args, irVoidT)
+    }
+    if slot != -1 and name == "close" {
+        return newIRCallFn(intern("rtConnClose"), newIRIntConst(slot, irIntT), irVoidT)
+    }
+    // xk (this function's own 4th param, the caller's already-computed
+    // receiver kind) is what lowMethodCall's own fallback reports for
+    // every OTHER unhandled receiver kind -- ty is the CALL's result
+    // type, not the receiver's, and must not be substituted here.
     lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
     return -1
 }
@@ -4726,6 +4843,12 @@ func lowFuncDecl(d: int) {
 // lowerTopHandlerDecl). Any other handler event is host-unsupported (Task 4+).
 func lowTopHandler(d: int) {
     var path: string
+    var parts: list of string
+    var root: string
+    var event: string
+    var symIdx: int
+    var slot: int
+    var fnNameIdx: int
 
     path = poolGet(handlerDeclPath(d))
     if path == "App.launch" {
@@ -4752,8 +4875,35 @@ func lowTopHandler(d: int) {
         // carry anyway (a runtime module never declares this handler).
         lowFuncBody(intern("handler_App_log"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
     } else {
-        // Task 4+: resource handlers are unsupported.
-        lowUnsupported("handler " + path)
+        // Connection-var handlers (serial-connection phase, Task 5): `on
+        // <connvar>.<event>` for a GLOBAL `connection` var -- checkTop-
+        // HandlerDecl (check.cla) already proved root resolves to a
+        // TyConnection symbol and event is one of opened/received/
+        // closed/failed before this ever checks clean, so no re-
+        // validation is needed here, only the same root/event split.
+        // Every other path (App.* names not matched above, listener/
+        // serviceBrowser vars, or any other target) still falls to the
+        // generic diagnostic below -- Task 4+ territory, untouched.
+        parts = splitDots(path)
+        root = parts[0]
+        event = parts[1]
+        symIdx = scopeLookup(curScope, intern(root))
+        if symIdx != -1 and symbols[symIdx].typeIdx == connectionT {
+            // lowConnSlotOf is guaranteed to already carry `root`:
+            // lowerProgram's own pre-pass (usesConn-gated, same as this
+            // whole branch's premise -- symbols[symIdx].typeIdx ==
+            // connectionT can only hold true when usesConn is true) walks
+            // every global connection var BEFORE the main decl walk that
+            // reaches this function ever starts.
+            slot = lowConnSlotOf.get(root, -1)
+            fnNameIdx = intern("handler_" + root + "_" + event)
+            lowFuncBody(fnNameIdx, handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
+            lowConnHandlerFn[numToStr(slot) + "|" + event] = fnNameIdx
+        } else {
+            // Task 4+: resource handlers (listener/serviceBrowser) are
+            // unsupported.
+            lowUnsupported("handler " + path)
+        }
     }
 }
 
@@ -4946,6 +5096,21 @@ func lowGlobalVarDecl(d: int) {
     var init: int
     var initAst: int
     var isBirth: bool
+
+    // Connection globals (serial-connection phase, Task 5) get NO IR
+    // global at all: a `connection` value has no runtime storage of its
+    // own -- every slot's real state lives in conn.cla's own rtConn*
+    // arrays, indexed by a compile-time SLOT number (lowConnSlotOf), not
+    // by a C variable. Every reference to this var resolves straight to
+    // its slot constant (lowConnMethod, lowTopHandler) -- nothing ever
+    // reads it as a plain rvalue (spec %3.3: exclusively a method/handler
+    // receiver). There is also nothing meaningful to lower it TO:
+    // lowTypeAt has no TyConnection case, by design. lowConnSlotOf is
+    // only ever populated for connection-typed globals (lowerProgram's
+    // own pre-pass), so membership alone is the right test.
+    if lowConnSlotOf.has(poolGet(varDeclName(d))) {
+        return
+    }
 
     t = lowResolveType(varDeclType(d))
     init = -1
@@ -6913,6 +7078,227 @@ func lowSynthAppLog() {
     newIRFunc(fnNameIdx, param, irVoidT, -1, persist)
 }
 
+// ================================================================
+// Connection dispatcher synthesis (serial-connection phase, Task 5)
+// ================================================================
+//
+// The four lowSynthConnFireXxx functions below build clar_conn_fire_
+// opened/received/closed/failed -- the exact extern names conn.cla
+// already declares (Task 4) and rtConnPump calls -- as ordinary IRFuncs,
+// following lowSynthFireWinEvent's own if-chain-over-index shape
+// (lower.cla, above): one arm per SLOT (0..3, matching conn.cla's own
+// `rtConnMax`), calling that slot's minted handler (lowConnHandlerFn,
+// populated by lowTopHandler) when one was declared for the event, an
+// empty/no-op arm otherwise -- unlike lowSynthFireWinEvent's own
+// fail-closed panic default, there is no invalid slot value to guard
+// against here (rtConnPump's own `while i < rtConnMax` loop is the only
+// caller, always in range), so a slot with no handler is simply a real,
+// valid, empty arm -- per the brief's own rule ("a slot with no handler
+// for an event is a no-op").
+//
+// Called ONLY when usesConn (lowerProgram's own tail, right after
+// lowSynthAppLog) -- UNLIKE lowSynthUiDispatchers just below in this
+// file (made unconditional by runtime-ir-bake Task 2, for the 68k
+// superset splice's sake), this stays usage-gated: this phase's host
+// lane splices conn.cla only when usesConn (drive.cla, Task 4), so an
+// unconditional synthesis here would call rtConnOpen/etc. by name from
+// dead code in every OTHER program, breaking the "zero churn for a
+// conn-less program" constraint this task is held to. Task 6, which
+// gives conn_68k.cla the same unconditional-superset treatment
+// lowSynthUiDispatchers already has, will need to revisit this gate the
+// same way -- carried forward in this task's own report.
+//
+// Each dispatcher self-roots via shakeAddRoot: nothing calls any of
+// these four by an ECallFn node -- conn.cla's rtConnPump reaches them
+// only as `external func` (ECallExt) calls, and shakeWalkExpr's own
+// ECallExt case never discovers a synthesized target through one (see
+// that case's own doc comment, shake.cla) -- so without an explicit
+// root, shake would prune all four as unreachable. Also needs a
+// lowUiSynthExternName entry each (below), so cprint's fpCallExt and its
+// extern-prototype pass route the call to `clar_fn_NAME` instead of a
+// nonexistent `rt_ext_NAME` shim.
+
+// lowSynthConnFireOpened builds clar_conn_fire_opened(slot: int).
+func lowSynthConnFireOpened() {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var fnName: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("slot"), irIntT)
+
+    i = 0
+    while i < 4 {
+        fnName = lowConnHandlerFn.get(numToStr(i) + "|opened", -1)
+        conds.add(lowSynthEqInt("slot", i))
+        if fnName != -1 {
+            bodies.add(newIRExprStmt(newIRCallFn(fnName, -1, irVoidT)))
+        } else {
+            bodies.add(-1)
+        }
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, -1)
+    fnameIdx = intern("clar_conn_fire_opened")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthConnFireClosed builds clar_conn_fire_closed(slot: int) --
+// same shape as lowSynthConnFireOpened, different event key.
+func lowSynthConnFireClosed() {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var fnName: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("slot"), irIntT)
+
+    i = 0
+    while i < 4 {
+        fnName = lowConnHandlerFn.get(numToStr(i) + "|closed", -1)
+        conds.add(lowSynthEqInt("slot", i))
+        if fnName != -1 {
+            bodies.add(newIRExprStmt(newIRCallFn(fnName, -1, irVoidT)))
+        } else {
+            bodies.add(-1)
+        }
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, -1)
+    fnameIdx = intern("clar_conn_fire_closed")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthConnFireReceived builds clar_conn_fire_received(slot: int,
+// data: text) -- each matched arm passes `data` straight through to the
+// handler (the event spec's own single `data: text` param, checkTable
+// HandlerDecl already having proven a matching handler param shape).
+func lowSynthConnFireReceived() {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var fnName: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("slot"), irIntT)
+    irLocalListAppend(paramsHead, newIRLocal(intern("data"), irTextT))
+
+    i = 0
+    while i < 4 {
+        fnName = lowConnHandlerFn.get(numToStr(i) + "|received", -1)
+        conds.add(lowSynthEqInt("slot", i))
+        if fnName != -1 {
+            bodies.add(newIRExprStmt(newIRCallFn(fnName, newIRVarRef(intern("data"), false, irTextT), irVoidT)))
+        } else {
+            bodies.add(-1)
+        }
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, -1)
+    fnameIdx = intern("clar_conn_fire_received")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthConnFireFailed builds clar_conn_fire_failed(slot: int, code:
+// int, msg: string) -- the one dispatcher that needs a scratch local: the
+// handler's own `err: error` param (Ch3's `{code, message}` record,
+// ErrTIndex/irErrT) has to be ASSEMBLED from the two scalar params, since
+// there is no literal-record-construction syntax to lower from (ExNew's
+// own ENewRec form is a NAMED user record's zero-init constructor,
+// `clar_new_<Name>()` -- KErr is a builtin singleton with no such ctor).
+// One shared local declared ONCE (lowAddLocal, matching the ordinary
+// lowFuncBody idiom exactly -- NOT lowSynthAppLog's own "no locals of its
+// own" case): every matched arm is mutually exclusive at runtime, so
+// reusing the same local across arms is correct and avoids one dead local
+// declaration per empty arm. `.code`/`.message` are plain FieldRef writes
+// (fpFieldRef's own KErr case prints them with no cv_ prefix, cprint.cla)
+// routed through lowStoreStmt for the same Str-store treatment an
+// ordinary `.message = msg` assignment would get.
+//
+// `msg`'s own PARAM type is `ptr`, not `string`, even though the extern
+// this dispatcher answers for (conn.cla's `clar_conn_fire_failed(slot,
+// code, msg: string)`) declares it `string` -- fpCallExt's own KStr-arg
+// marshaling always passes a Str argument's ADDRESS as a bare `const
+// uint8_t *` (the extern-call convention), but cpEmitFuncs prints an
+// ORDINARY function's own KStr param as `const clar_str_255 *` (a
+// different, if layout-compatible, C pointer type) -- typing the param
+// `ptr` here sidesteps that mismatch outright (a real
+// -Wincompatible-pointer-types warning otherwise, caught building this
+// task's own echo fixture), and IUiValueAtPtr (ir.cla) is the existing
+// intrinsic for "reinterpret this ptr as my own by-value wire type and
+// copy it out" -- exactly clar_ui_fire_launchdoc's own `path: ptr` ->
+// `string` marshaling one section up (lowSynthLaunchDoc), the identical
+// shape reused here for `msg`.
+func lowSynthConnFireFailed() {
+    var paramsHead: int
+    var paramsTail: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var fnName: int
+    var chain: int
+    var fnameIdx: int
+    var setCode: int
+    var setMsg: int
+    var callStmt: int
+    var body: int
+
+    paramsHead = newIRLocal(intern("slot"), irIntT)
+    paramsTail = irLocalListAppend(paramsHead, newIRLocal(intern("code"), irIntT))
+    irLocalListAppend(paramsTail, newIRLocal(intern("msg"), irPtrT))
+
+    lowLocalsHead = -1
+    lowLocalsTail = -1
+    lowAddLocal(intern("err"), irErrT)
+
+    i = 0
+    while i < 4 {
+        body = -1
+        fnName = lowConnHandlerFn.get(numToStr(i) + "|failed", -1)
+        if fnName != -1 {
+            setCode = lowStoreStmt(newIRFieldRef(newIRVarRef(intern("err"), false, irErrT), intern("code"), irIntT), lowSynthIntRef("code"), irIntT)
+            setMsg = lowStoreStmt(newIRFieldRef(newIRVarRef(intern("err"), false, irErrT), intern("message"), irStrType(255)), newIRIntr(IUiValueAtPtr(), lowSynthPtrRef("msg"), irStrType(255)), irStrType(255))
+            irStmtListAppend(setCode, setMsg)
+            callStmt = newIRExprStmt(newIRCallFn(fnName, newIRVarRef(intern("err"), false, irErrT), irVoidT))
+            irStmtListAppend(setMsg, callStmt)
+            body = setCode
+        }
+        conds.add(lowSynthEqInt("slot", i))
+        bodies.add(body)
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, -1)
+    fnameIdx = intern("clar_conn_fire_failed")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, lowLocalsHead, chain)
+    shakeAddRoot(fnameIdx)
+    lowLocalsHead = -1
+    lowLocalsTail = -1
+}
+
+// lowSynthConnDispatchers is this section's one entry point (called from
+// lowerProgram's tail, only when usesConn).
+func lowSynthConnDispatchers() {
+    lowSynthConnFireOpened()
+    lowSynthConnFireReceived()
+    lowSynthConnFireClosed()
+    lowSynthConnFireFailed()
+}
+
 // lowUiSynthExternName maps a reverse-waist extern's OWN declared Clarus
 // name (as ui.cla, Task 7+, will spell it) to the interned C name of the
 // IRFunc lowSynthUiDispatchers built for it above -- the ONE place (per
@@ -6937,6 +7323,18 @@ func lowUiSynthExternName(externNameIdx: int): int {
     if nm == "UiFireLaunchDoc" { return intern("clar_ui_fire_launchdoc") }
     if nm == "UiFireStartEmpty" { return intern("clar_ui_fire_startempty") }
     if nm == "UiTableRows" { return intern("clar_ui_fire_staterows") }
+    // Connection dispatchers (serial-connection phase, Task 5): conn.cla
+    // declares these as `external func clar_conn_fire_NAME` (Task 4) and
+    // rtConnPump calls them by that same literal name -- UNLIKE the UI
+    // family above, the extern's declared name and the synthesized
+    // IRFunc's own name are IDENTICAL strings, so this is an identity
+    // mapping, not a rename; still needed so fpCallExt/the extern-
+    // prototype pass route to `clar_fn_NAME` instead of a nonexistent
+    // `rt_ext_NAME` shim.
+    if nm == "clar_conn_fire_opened" { return intern("clar_conn_fire_opened") }
+    if nm == "clar_conn_fire_received" { return intern("clar_conn_fire_received") }
+    if nm == "clar_conn_fire_closed" { return intern("clar_conn_fire_closed") }
+    if nm == "clar_conn_fire_failed" { return intern("clar_conn_fire_failed") }
     return -1
 }
 
@@ -6977,6 +7375,10 @@ func lowerProgram(declHead: int): int {
     var d: int
     var freshStrIdx: map of int
     var freshUiMenuItemIdx: map of int
+    var freshConnSlot: map of int
+    var freshConnHandlerFn: map of int
+    var connCount: int
+    var connSymIdx: int
 
     // runtime-ir-bake Task 4: lowResumeFromBake skips exactly the two
     // pieces of reset that would clobber/duplicate an already-installed
@@ -7056,6 +7458,35 @@ func lowerProgram(declHead: int): int {
         }
         d = declNext(d)
     }
+    // Connection slot pre-pass (serial-connection phase, Task 5), same
+    // reason the two pre-passes above exist: a method call or `on
+    // <var>.<event>` handler reached BEFORE the connection var's own
+    // decl (source order is not required) still needs its slot. Always
+    // recomputed, never resumed from a bake (a runtime module can never
+    // declare a `connection` global, so both maps are always empty
+    // during a bake pass regardless). irUsesConn mirrors check.cla's
+    // already-fully-computed usesConn -- see that var's own doc comment
+    // (ir.cla) for why it lives there and not here.
+    lowConnSlotOf = freshConnSlot
+    lowConnHandlerFn = freshConnHandlerFn
+    irUsesConn = usesConn
+    connCount = 0
+    if usesConn {
+        d = declHead
+        while d != -1 {
+            if declKind(d) == DkVar {
+                connSymIdx = scopeLookup(curScope, varDeclName(d))
+                if connSymIdx != -1 and symbols[connSymIdx].typeIdx == connectionT {
+                    if connCount >= 4 {
+                        abort("clarusc emit: too many connection variables (max 4)")
+                    }
+                    lowConnSlotOf[poolGet(varDeclName(d))] = connCount
+                    connCount = connCount + 1
+                }
+            }
+            d = declNext(d)
+        }
+    }
     d = declHead
     while d != -1 {
         lowDecl(d)
@@ -7070,6 +7501,17 @@ func lowerProgram(declHead: int): int {
     // the bake generator lowers the runtime chain alone, where
     // lowHasAppLog is false regardless.
     lowSynthAppLog()
+    // Connection dispatcher synthesis (serial-connection phase, Task 5):
+    // gated on usesConn -- UNLIKE lowSynthUiDispatchers just below (made
+    // unconditional by runtime-ir-bake Task 2, see that call's own doc
+    // comment), this stays usage-gated on purpose, so a conn-less
+    // program's IR (and therefore every existing golden) stays byte-
+    // identical. Task 6's 68k superset splice will need to revisit this
+    // gate the same way it revisited lowSynthUiDispatchers' own -- see
+    // this section's own header comment, above lowSynthConnFireOpened.
+    if usesConn {
+        lowSynthConnDispatchers()
+    }
     // Reverse-waist dispatcher synthesis (runtime-ir-bake Task 2: made
     // UNCONDITIONAL -- was gated on irIsUiProgram()'s own condition,
     // duplicated here rather than calling across the layering boundary).

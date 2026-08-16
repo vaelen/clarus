@@ -1,0 +1,38 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// serial-connection phase, Task 5's own end-to-end fixture: a serial echo
+// server driven entirely off `on conn.*` events, no polling of its own.
+// `internal/conntest/conntest_test.go` builds this with a current-source
+// clarusc (the committed snapshot can't parse `serial` -- Task 8 regens
+// it) and drives it over the host TCP glue (runtime/host/rt_serial.inc)
+// via CLARUS_SERIAL_MODEM, both connect: and listen: modes.
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    conn.open(serial "modem:9600")
+}
+
+on conn.opened {
+    conn.send("READY\n")
+}
+
+on conn.received(data: text) {
+    var i: int = 0
+    var quit3: int = 0
+    conn.send(data)
+    while i < data.length {
+        if data[i] == 'Q' { quit3 = quit3 + 1 } else { quit3 = 0 }
+        if quit3 == 3 { conn.close() }
+        i = i + 1
+    }
+}
+
+on conn.closed {
+    log("peer gone")
+}
+
+on conn.failed(err: error) {
+    log("failed: " + err.message)
+    quit 1
+}

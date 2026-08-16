@@ -228,6 +228,21 @@ func shakeProgram() {
         shakeMarkAndEnqueue(intern("handler_App_openDocument"))
     }
 
+    // ---- connection pump loop (serial-connection phase, Task 5) ----
+    // cpEmitMain's non-UI main() calls clar_fn_rtConnPump/rtConnAlive
+    // directly as raw text, exactly like the App entry points just
+    // above -- neither is reachable through any ECallFn/EIntr node the
+    // walk below would ever find, so both are rooted explicitly here.
+    // The four clar_conn_fire_* dispatchers rtConnPump calls (as
+    // EXTERNS -- see shakeWalkExpr's own ECallExt case, which never
+    // discovers a synthesized target the way ECallFn does) self-root
+    // instead, via lowSynthConnDispatchers' own shakeAddRoot calls
+    // (lower.cla), consumed by the "extra roots" pass below.
+    if irUsesConn {
+        shakeMarkAndEnqueue(intern("rtConnPump"))
+        shakeMarkAndEnqueue(intern("rtConnAlive"))
+    }
+
     // ---- window + widget handlers ----
     i = 0
     while i < irWinHandlers.count {

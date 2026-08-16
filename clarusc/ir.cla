@@ -788,6 +788,22 @@ var irHasStartCLI: bool
 // irHasOpenDocument (mac-target-4c Task 5): `on App.openDocument(path: string)`.
 var irHasOpenDocument: bool
 
+// irUsesConn (serial-connection phase, Task 5) mirrors check.cla's own
+// usesConn (set once, near the top of lowerProgram, straight off that
+// already-computed flag) -- cprint.cla's cpEmitMain reads this name
+// directly to decide whether to emit the host pump loop, and shake.cla
+// reads it to root rtConnPump/rtConnAlive (both called only from
+// cpEmitMain's own raw text, exactly like the App entry-point handlers
+// just above -- never through an ECallFn/EIntr node the ordinary
+// reachability walk would find). Declared here (not lower.cla) so
+// shake.cla's `include "ir.cla"` alone is enough to see it -- shake.cla
+// doesn't include lower.cla. Never threaded through bake.cla: a runtime
+// module can never declare a `connection` global, so a baked chain's own
+// lowerProgram pass always computes this false regardless of who reads
+// it, exactly like irHasLaunch et al. behave for a bake pass -- no new
+// bkPutBool/bkLdIr* code needed, so no CLIR format-version bump either.
+var irUsesConn: bool
+
 // The (at most one) `app` section's string properties, as string-pool
 // indices (-1 = property absent) -- icon stays build-time-only (check.cla's
 // checkAppDecl already validated it) and never reaches IR. id reached IR as
@@ -1133,6 +1149,7 @@ func irReset() {
     irHasStartEmpty = false
     irHasStartCLI = false
     irHasOpenDocument = false
+    irUsesConn = false
     irAppName = -1
     irAppVersion = -1
     irAppAuthor = -1
