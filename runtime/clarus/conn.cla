@@ -255,6 +255,19 @@ func rtConnSendText(slot: int, t: text) {
         return
     }
     scratch = SerNewPtr(n)
+    if scratch == ptr(0) {
+        // Guarded (final-review Fix 5, same hardware-safety treatment as
+        // conn_68k.cla's SerSetBuf guard at open time): an unchecked null
+        // scratch here would send the pokeb marshal loop below writing to
+        // low memory. -108 (memFullErr) stages a pending `failed` instead
+        // -- keep-first, matching the write-error path just below -- and
+        // returns without writing a single byte.
+        if rtConnPendFailedCode[slot] == 0 {
+            rtConnPendFailedCode[slot] = -108
+            rtConnPendFailedMsg[slot] = "write failed"
+        }
+        return
+    }
     i = 0
     while i < n {
         pokeb(scratch + i, int(t[i]))
@@ -295,10 +308,19 @@ func rtConnClose(slot: int) {
 // became open THIS pass is still eligible, services an open slot:
 // device-gone closes it and fires `closed`; otherwise drains everything
 // currently available into ONE fresh `text` and fires `received` once.
+// "Currently available" is a SNAPSHOT taken once (rtConnDevAvail(i) read
+// into `n` before the drain loop, not re-queried each iteration) --
+// final-review Important 1: a sender producing bytes at least as fast as
+// the drain (2 traps/byte natively) never let a re-querying loop exit,
+// livelocking the whole event loop. Bytes that arrive DURING the drain
+// are left for the next pass, matching "fires once per event-loop pass"
+// exactly.
 func rtConnPump() {
     var i: int
     var t: text
     var code: int
+    var n: int
+    var j: int
 
     i = 0
     while i < rtConnMax {
@@ -324,8 +346,11 @@ func rtConnPump() {
                 // makes this a bottleneck, the lever is a batched
                 // rtConnDevReadInto(slot, buf, n) added to the per-lane
                 // waist instead of this byte-at-a-time loop.
-                while rtConnDevAvail(i) > 0 {
+                n = rtConnDevAvail(i)
+                j = 0
+                while j < n {
                     t.append(char(rtConnDevReadByte(i)))
+                    j = j + 1
                 }
                 clar_conn_fire_received(i, t)
             }

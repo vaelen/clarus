@@ -83,7 +83,7 @@ LBL_238:
         DC.W $A063  ; _MaxApplZone
         DC.W $A036  ; _MoreMasters
         BSR.W LBL_237
-        JSR 3218(A5)
+        JSR 3226(A5)
         ; UI startup: rtUiStartup / [App.launch] / rtUiLaunch / rtUiRun
         BSR.W LBL_194
         JSR 3402(A5)
@@ -91,7 +91,7 @@ LBL_238:
         JSR 1762(A5)
         BSR.W LBL_235
         CLR.L -(A7)
-        JSR 3242(A5)
+        JSR 3250(A5)
         RTS
 LBL_237:
         ; cg_init_globals
@@ -398,7 +398,7 @@ LBL_0:
         MOVE.L D0,-(A7)
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3258(A5)
+        JSR 3178(A5)
         ADDQ.L #8,A7
 LBL_244:
         UNLK A6
@@ -409,7 +409,7 @@ LBL_1:
         LINK A6,#-8296
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3250(A5)
+        JSR 3258(A5)
         ADDQ.L #4,A7
 LBL_245:
         UNLK A6

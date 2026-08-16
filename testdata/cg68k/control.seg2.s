@@ -1,37 +1,36 @@
-        ; func clar_cb_aeQuitHandler (JT slot 180) -- pascal callback glue for aeQuitHandler
+        ; func clar_ui_fire_staterows  (JT slot 181)
+        ;   param rowsIdx : 8(A6)  size 4
 LBL_0:
-        LINK A6,#0
-        ;   theAppleEvent : 16(A6)  pascal size 4
-        MOVE.L 16(A6),-(A7)
-        ;   reply : 12(A6)  pascal size 4
-        MOVE.L 12(A6),-(A7)
-        ;   handlerRefcon : 8(A6)  pascal size 4
-        MOVE.L 8(A6),-(A7)
-        JSR 666(A5)
-        ADDA.W #12,A7
-        MOVE.W D0,20(A6)
+        LINK A6,#-8296
+        MOVE.L 8(A6),D1
+        MOVEQ #61,D0
+        CMP.L D0,D1
+        SEQ D0
+        ANDI.L #1,D0
+        TST.L D0
+        BEQ.W LBL_9
+        LEA -1292(A5),A0
+        MOVE.L A0,D0
+        BRA.W LBL_8
+        BRA.W LBL_10
+LBL_9:
+        LEA LBL_3(PC),A0
+        MOVE.L A0,-(A7)
+        JSR 1154(A5)
+        ADDQ.L #4,A7
+        BSR.W LBL_7
+        MOVEQ #1,D0
+        MOVE.L D0,-(A7)
+        JSR 1162(A5)
+        ADDQ.L #4,A7
+        MOVEQ #0,D0
+        BRA.W LBL_8
+LBL_10:
+LBL_8:
         UNLK A6
-        MOVE.L (A7)+,A0
-        ADDA.W #12,A7
-        JMP (A0)
-        ; func clar_cb_aeOappHandler (JT slot 181) -- pascal callback glue for aeOappHandler
-LBL_1:
-        LINK A6,#0
-        ;   theAppleEvent : 16(A6)  pascal size 4
-        MOVE.L 16(A6),-(A7)
-        ;   reply : 12(A6)  pascal size 4
-        MOVE.L 12(A6),-(A7)
-        ;   handlerRefcon : 8(A6)  pascal size 4
-        MOVE.L 8(A6),-(A7)
-        JSR 674(A5)
-        ADDA.W #12,A7
-        MOVE.W D0,20(A6)
-        UNLK A6
-        MOVE.L (A7)+,A0
-        ADDA.W #12,A7
-        JMP (A0)
+        RTS
         ; func clar_cb_rtUiScrollbarAction (JT slot 182) -- pascal callback glue for rtUiScrollbarAction
-LBL_2:
+LBL_1:
         LINK A6,#0
         ;   ctrl : 10(A6)  pascal size 4
         MOVE.L 10(A6),-(A7)
@@ -46,7 +45,7 @@ LBL_2:
         ADDQ.L #6,A7
         JMP (A0)
         ; func clar_cb_rtUiLdefDraw (JT slot 183) -- pascal callback glue for rtUiLdefDraw
-LBL_3:
+LBL_2:
         LINK A6,#0
         ;   msg : 26(A6)  pascal size 2
         MOVE.W 26(A6),D0
@@ -113,19 +112,19 @@ LBL_5:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_8
+        BPL.W LBL_11
         NEG.L D2
         MOVE.L #1,D4
-LBL_8:
+LBL_11:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_9
+        BPL.W LBL_12
         NEG.L D3
         MOVE.L #1,D5
-LBL_9:
+LBL_12:
         CLR.L D6
         MOVE.W #31,D7
-LBL_10:
+LBL_13:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -133,16 +132,16 @@ LBL_10:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_11
+        BCS.W LBL_14
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_11:
-        DBRA D7,LBL_10
+LBL_14:
+        DBRA D7,LBL_13
         EOR.L D5,D4
         TST.L D4
-        BEQ.W LBL_12
+        BEQ.W LBL_15
         NEG.L D2
-LBL_12:
+LBL_15:
         MOVE.L D2,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -163,19 +162,19 @@ LBL_6:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_13
+        BPL.W LBL_16
         NEG.L D2
         MOVE.L #1,D4
-LBL_13:
+LBL_16:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_14
+        BPL.W LBL_17
         NEG.L D3
         MOVE.L #1,D5
-LBL_14:
+LBL_17:
         CLR.L D6
         MOVE.W #31,D7
-LBL_15:
+LBL_18:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -183,15 +182,15 @@ LBL_15:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_16
+        BCS.W LBL_19
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_16:
-        DBRA D7,LBL_15
+LBL_19:
+        DBRA D7,LBL_18
         TST.L D4
-        BEQ.W LBL_17
+        BEQ.W LBL_20
         NEG.L D6
-LBL_17:
+LBL_20:
         MOVE.L D6,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -205,7 +204,7 @@ LBL_7:
         LINK A6,#-48
         MOVE.L -1292(A5),D0
         MOVE.L D0,-4(A6)
-LBL_18:
+LBL_21:
         MOVE.L A1,-(A7)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
@@ -215,5 +214,9 @@ LBL_18:
         UNLK A6
         RTS
         ; constant pool: string literals
+LBL_3:
+        DC.B $2C
+        DC.B $63,$6C,$61,$72,$5F,$75,$69,$5F,$66,$69,$72,$65,$5F,$73,$74,$61,$74,$65,$72,$6F,$77,$73,$3A,$20,$72,$6F,$77,$73,$49,$64,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
+        DC.B $00
         ; constant pool: enum value tables
         ; constant pool: serdesc tables

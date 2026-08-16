@@ -86,7 +86,7 @@ LBL_241:
         JSR 3122(A5)
         ; UI startup: rtUiStartup / [App.launch] / rtUiLaunch / rtUiRun
         BSR.W LBL_191
-        JSR 3322(A5)
+        JSR 3314(A5)
         JSR 1778(A5)
         JSR 1770(A5)
         BSR.W LBL_238
@@ -6134,7 +6134,7 @@ LBL_161:
         EXT.L D0
         MOVE.L D0,-4(A6)
 LBL_538:
-        JSR 3266(A5)
+        JSR 3418(A5)
 LBL_537:
         UNLK A6
         RTS
@@ -7129,7 +7129,7 @@ LBL_578:
         MOVE.L D0,-24(A6)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3306(A5)
+        JSR 3250(A5)
         ADDQ.L #4,A7
         MOVE.L -24(A6),D1
         MOVEQ #0,D0
@@ -7564,7 +7564,7 @@ LBL_596:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 3378(A5)
+        JSR 3370(A5)
         ADDA.W #20,A7
         MOVE.L -8(A6),D0
         BRA.W LBL_573
@@ -7685,7 +7685,7 @@ LBL_603:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 3378(A5)
+        JSR 3370(A5)
         ADDA.W #20,A7
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
@@ -7702,7 +7702,7 @@ LBL_603:
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3410(A5)
+        JSR 3402(A5)
         ADDQ.L #8,A7
 LBL_605:
         MOVEQ #0,D0
@@ -7953,7 +7953,7 @@ LBL_614:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 3378(A5)
+        JSR 3370(A5)
         ADDA.W #20,A7
         MOVE.L -12(A6),D0
         MOVEA.L D0,A0
@@ -9395,7 +9395,7 @@ LBL_697:
         MOVE.L D0,-(A7)
         MOVE.L -28(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3394(A5)
+        JSR 3386(A5)
         ADDQ.L #8,A7
 LBL_699:
 LBL_695:
@@ -9589,7 +9589,7 @@ LBL_710:
         ADDQ.L #4,A7
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3402(A5)
+        JSR 3394(A5)
         ADDQ.L #4,A7
 LBL_712:
         MOVE.L -8(A6),D1
@@ -9610,7 +9610,7 @@ LBL_191:
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
         MOVE.L D0,-8(A6)
-        JSR 3250(A5)
+        JSR 3298(A5)
         MOVE.L #65535,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
@@ -11316,7 +11316,7 @@ LBL_197:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 3378(A5)
+        JSR 3370(A5)
         ADDA.W #20,A7
 LBL_776:
         UNLK A6
@@ -11415,7 +11415,7 @@ LBL_778:
         MOVE.L D0,-24(A6)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3306(A5)
+        JSR 3250(A5)
         ADDQ.L #4,A7
         MOVE.L -24(A6),D1
         MOVEQ #6,D0
@@ -11671,7 +11671,7 @@ LBL_199:
         MOVE.L D0,-4(A6)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3306(A5)
+        JSR 3250(A5)
         ADDQ.L #4,A7
         MOVE.L -4(A6),D1
         MOVEQ #6,D0
@@ -12041,7 +12041,7 @@ LBL_800:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 3386(A5)
+        JSR 3378(A5)
         ADDA.W #24,A7
         BRA.W LBL_798
 LBL_797:
@@ -12147,7 +12147,7 @@ LBL_808:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 3386(A5)
+        JSR 3378(A5)
         ADDA.W #24,A7
 LBL_809:
 LBL_805:
@@ -12506,7 +12506,7 @@ LBL_829:
         SUB.L D0,D1
         MOVE.L D1,D0
         MOVE.L D0,-(A7)
-        JSR 3386(A5)
+        JSR 3378(A5)
         ADDA.W #24,A7
 LBL_827:
         UNLK A6

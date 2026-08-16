@@ -120,6 +120,25 @@ var lowCurFnRuntimeOrigin: bool
 // module can never declare a `connection` global, so this is always
 // empty during a bake pass regardless).
 //
+// Name-keyed, guarded by lowIsLocal at every read site (final-review
+// Important 2): `curScope` is pinned at the program's TOP scope for the
+// whole lowering pass (see lowTableRowsGlobalName's own doc comment --
+// check.cla's block/function scopes are pushed and popped during
+// CHECKING only and don't survive into lowering), so a symbol-table
+// scopeLookup from inside a function body can never see that function's
+// own locals -- it would just re-resolve to the global every time,
+// reproducing the exact bug this map switched away from name-keying to
+// fix. lowIsLocal(nameIdx) is lowering's OWN real answer to "does the
+// current lowering scope shadow this name with a local?" (lowScopes,
+// populated by lowDeclareLocal as lowering walks each block -- the same
+// mechanism isBareWindowTitleIdent/lowIdent already use for this exact
+// kind of shadow guard), so every lowConnSlotOf lookup below first checks
+// `not lowIsLocal(name)`: a LOCAL `var conn: connection` that shadows a
+// same-named global no longer matches this map at all, regardless of the
+// name collision, and falls through to the spec-mandated
+// not-yet-implemented rejection like any other unsupported receiver
+// shape.
+//
 // 4 (not a named const): matches conn.cla's own `const rtConnMax: int =
 // 4` -- clarusc's own source (this file) and a user program's runtime
 // modules (conn.cla) are different compilation units with no shared
@@ -1333,23 +1352,28 @@ func lowConnCoerceArg(fnName: string, paramIdx: int, argAst: int): int {
 // lowConnMethod dispatches `connVar.open/send/close(...)` (serial-
 // connection phase, Task 5) to the matching rtConn* runtime call, slot
 // number substituted for the receiver. Only a BARE global connection-var
-// receiver (its name present in lowConnSlotOf, built by lowerProgram's
-// own pre-pass) reaches a real lowering here; and for `open`, only the
-// `serial` transport tag (callTransport(e) == 2) does. Every other shape
-// this method-call node can take on a checker-clean program -- a local/
-// field/array-element connection receiver (never added to lowConnSlotOf),
-// `open` with no transport prefix, the `appletalk` prefix, or a resolved
-// `address` argument (all legal per connectionMethods' own signature,
-// just not implemented yet) -- falls through to the exact SAME generic
-// not-yet-implemented diagnostic lowMethodCall's own fallback produces
-// for an unhandled receiver kind (brief: "EXACTLY as today"), since
-// xk == TyConnection either way. Task 6 lifts the `not want68k` gate
-// this function used to carry (Task 4/5: rtConnOpen/etc. were host-lane-
-// only symbols, drive.cla's own `if usesConn and not want68k`) --
-// drive.cla now splices conn.cla + conn_68k.cla unconditionally under
-// want68k, so rtConnOpen/rtConnSendText/rtConnSendStr/rtConnClose exist
-// as declared symbols on every native build too, and this method-call
-// lowering runs identically on both lanes now.
+// receiver (its name present in lowConnSlotOf AND not shadowed by a
+// lowering-local of the same name -- lowIsLocal, final-review Important 2;
+// see lowConnSlotOf's own doc comment for why a scopeLookup-based symbol
+// resolution can't do this job here) reaches a real lowering here; and
+// for `open`, only the `serial` transport tag (callTransport(e) == 2)
+// does. Every other shape this method-call node can take on a
+// checker-clean program -- a local/field/array-element connection
+// receiver (never added to lowConnSlotOf), a local that SHADOWS a global
+// connection var of the same name (lowIsLocal excludes it even though
+// the name IS in the map), `open` with no transport prefix, the
+// `appletalk` prefix, or a resolved `address` argument (all legal per
+// connectionMethods' own signature, just not implemented yet) -- falls
+// through to the exact SAME generic not-yet-implemented diagnostic
+// lowMethodCall's own fallback produces for an unhandled receiver kind
+// (brief: "EXACTLY as today"), since xk == TyConnection either way.
+// Task 6 lifts the `not want68k` gate this function used to carry (Task
+// 4/5: rtConnOpen/etc. were host-lane-only symbols, drive.cla's own `if
+// usesConn and not want68k`) -- drive.cla now splices conn.cla +
+// conn_68k.cla unconditionally under want68k, so
+// rtConnOpen/rtConnSendText/rtConnSendStr/rtConnClose exist as declared
+// symbols on every native build too, and this method-call lowering runs
+// identically on both lanes now.
 func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
     var recvExpr: int
     var name: string
@@ -1360,7 +1384,7 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
 
     recvExpr = selectX(fn)
     slot = -1
-    if exprKind(recvExpr) == ExIdent {
+    if exprKind(recvExpr) == ExIdent and not lowIsLocal(identName(recvExpr)) {
         slot = lowConnSlotOf.get(poolGet(identName(recvExpr)), -1)
     }
     name = poolGet(selectName(fn))
@@ -4891,7 +4915,13 @@ func lowTopHandler(d: int) {
             // whole branch's premise -- symbols[symIdx].typeIdx ==
             // connectionT can only hold true when usesConn is true) walks
             // every global connection var BEFORE the main decl walk that
-            // reaches this function ever starts.
+            // reaches this function ever starts. An `on <var>.<event>`
+            // handler's target can only ever be a global per spec %3.3
+            // (checkTopHandlerDecl enforces it), so -- unlike
+            // lowConnMethod's receiver, which can be shadowed by a local
+            // of the same name (final-review Important 2) -- `root` here
+            // needs no lowIsLocal guard: this whole branch runs at
+            // top-level decl lowering, never inside a function body.
             slot = lowConnSlotOf.get(root, -1)
             fnNameIdx = intern("handler_" + root + "_" + event)
             lowFuncBody(fnNameIdx, handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)

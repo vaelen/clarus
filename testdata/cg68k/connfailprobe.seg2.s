@@ -1793,7 +1793,7 @@ LBL_213:
 LBL_211:
 LBL_207:
         JSR 1586(A5)
-        JSR 3178(A5)
+        JSR 3186(A5)
         BSR.W LBL_58
         JSR 1602(A5)
         JSR 2402(A5)
@@ -4166,12 +4166,12 @@ LBL_375:
 LBL_373:
         LEA LBL_89(PC),A0
         MOVE.L A0,-(A7)
-        JSR 3234(A5)
+        JSR 3242(A5)
         ADDQ.L #4,A7
         BSR.W LBL_97
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
-        JSR 3242(A5)
+        JSR 3250(A5)
         ADDQ.L #4,A7
 LBL_374:
 LBL_369:

@@ -8326,9 +8326,11 @@ LBL_608:
         ;   local i : -4(A6)  size 4
         ;   local t : -8(A6)  size 4
         ;   local code : -12(A6)  size 4
-        ;   local __store1 : -16(A6)  size 4
+        ;   local n : -16(A6)  size 4
+        ;   local j : -20(A6)  size 4
+        ;   local __store1 : -24(A6)  size 4
 LBL_128:
-        LINK A6,#-8312
+        LINK A6,#-8320
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         LEA -8(A6),A0
@@ -8338,7 +8340,11 @@ LBL_128:
         MOVE.L D0,(A0)
         MOVEQ #0,D0
         MOVE.L D0,-12(A6)
-        LEA -16(A6),A0
+        MOVEQ #0,D0
+        MOVE.L D0,-16(A6)
+        MOVEQ #0,D0
+        MOVE.L D0,-20(A6)
+        LEA -24(A6),A0
         CLR.W (A0)+
         CLR.W (A0)+
         MOVEQ #0,D0
@@ -8560,7 +8566,7 @@ LBL_619:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_621
-        LEA -16(A6),A0
+        LEA -24(A6),A0
         MOVE.L A1,-(A7)
         MOVE.L 0(A0),D0
         MOVE.L D0,-(A7)
@@ -8568,15 +8574,15 @@ LBL_619:
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         BSR.W LBL_11
-        MOVE.L D0,-20(A6)
-        MOVE.L -20(A6),D0
+        MOVE.L D0,-28(A6)
+        MOVE.L -28(A6),D0
         MOVE.L D0,-(A7)
         LEA LBL_204(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_14
         ADDQ.L #8,A7
-        MOVE.L -20(A6),D0
-        MOVE.L D0,-16(A6)
+        MOVE.L -28(A6),D0
+        MOVE.L D0,-24(A6)
         LEA -8(A6),A0
         MOVE.L A1,-(A7)
         MOVE.L 0(A0),D0
@@ -8584,19 +8590,22 @@ LBL_619:
         BSR.W LBL_13
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-        MOVE.L -16(A6),D0
+        MOVE.L -24(A6),D0
         MOVE.L D0,-8(A6)
         MOVEQ #0,D0
-        MOVE.L D0,-16(A6)
-LBL_622:
+        MOVE.L D0,-24(A6)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_129
         ADDQ.L #4,A7
-        MOVE.L D0,D1
+        MOVE.L D0,-16(A6)
         MOVEQ #0,D0
+        MOVE.L D0,-20(A6)
+LBL_622:
+        MOVE.L -20(A6),D1
+        MOVE.L -16(A6),D0
         CMP.L D0,D1
-        SGT D0
+        SLT D0
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_623
@@ -8610,6 +8619,10 @@ LBL_622:
         MOVE.L D0,-(A7)
         BSR.W LBL_17
         ADDQ.L #8,A7
+        MOVE.L -20(A6),D1
+        MOVEQ #1,D0
+        ADD.L D1,D0
+        MOVE.L D0,-20(A6)
         BRA.W LBL_622
 LBL_623:
         MOVE.L -4(A6),D0
