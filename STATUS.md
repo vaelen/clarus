@@ -1,28 +1,29 @@
-# Session status — 2026-08-16 (serial-connection: ALL gates GREEN incl. both Snow finals at tip fad4e9e; merge on Andrew's word)
+# Session status — 2026-08-16 (serial-connection: COMPLETE — all gates GREEN incl. both Snow finals; MERGED to main and PUSHED)
 
-Handoff summary. **The `serial-connection` phase is IMPLEMENTATION DONE
-and gated — T1 throughout every task, T2 PASS end-to-end on the
-branch tip (both Task 8's own run and the final-review fix wave's own
-re-run, §3/§3b), and the echo acceptance app has PASSED on Snow hardware 4
-times across development. The branch is NOT merged — merge is Andrew's
-call, and two hardware finals still need the controller to run them
-post-final-review (see §2), now against the fix wave's own tip.** The
-local checkout works on `serial-connection` directly (no-worktree
-convention), 19 commits ahead of `main` at `f8c15a1`.
+Handoff summary. **The `serial-connection` phase is COMPLETE and
+MERGED — T1 throughout every task, T2 PASS end-to-end on the branch tip
+(both Task 8's own run and the final-review fix wave's own re-run,
+§3/§3b), the echo acceptance app PASSED on Snow hardware 4 times across
+development, and both controller-run Snow finals PASSED at the tip.
+Merged on Andrew's word 2026-08-16 17:35 JST: `main` fast-forwarded
+`f8c15a1..1d8b703` (20 commits) and pushed to origin — the push also
+carried the 3 pre-branch doc commits (spec, plan, roadmap reorg), so
+`main == origin/main == 1d8b703`.**
 
 ## 0. START HERE next session
 
-**Remaining before merge-eligible:**
-1. ~~Controller runs the two Snow finals (§2)~~ **DONE, both PASS at tip
-   `fad4e9e` (2026-08-16 controller session):** `TestSerialEchoOnSnow`
-   33.6s; `TestClarusCBakePathOnSnow` 3307s, on-Mac bake-path TickProbe
-   compile 11m05s, zero fallback/drift lines — the new conn modules'
-   native size growth is a partition non-event.
-2. Andrew's word to merge (fast-forward `f8c15a1..fad4e9e`).
+The phase is fully closed — nothing remains from it. Snow finals, both
+PASS at the tip (2026-08-16 controller session): `TestSerialEchoOnSnow`
+33.6s; `TestClarusCBakePathOnSnow` 3307s, on-Mac bake-path TickProbe
+compile 11m05s, zero fallback/drift lines — the new conn modules'
+native size growth is a partition non-event.
 
-No further implementation work is expected. If Andrew wants the next
-roadmap item picked up, it's AppleTalk (`docs/ROADMAP.md`'s "Next:
-language usability" list, item 3 — serial is now marked done).
+Next roadmap item when Andrew wants it picked up: AppleTalk
+(`docs/ROADMAP.md`'s "Next: language usability" list, item 3 — serial
+is marked done). `snow/MacII.snoww` is preconfigured for it (AppleTalk
+on the printer port, over UDP — two Snow instances can see each other;
+see the ROADMAP environment note). Design-first per convention: spec
+before plan before code.
 
 ## 1. What landed
 
@@ -127,7 +128,7 @@ network phase knows where to look first):
   pending-`failed` with `-108` (keep-first, matching the write-error
   path's own discipline) and return without writing.
 
-## 2. Two controller-run finals — NOT run by this task, by design
+## 2. Two controller-run finals — run post-final-review, both PASS (see §0)
 
 - **`TestClarusCBakePathOnSnow`** (`CLARUS_SNOW_TESTS=1`, ~55m, standing
   rule) — the runtime source manifest changed this phase (new `conn*.cla`
@@ -143,8 +144,9 @@ network phase knows where to look first):
   runtime/native codegen this time, unlike Task 8's own docs-only move —
   a fresh run at the true tip is not optional this round).
 
-Both are the controller's to run post-final-review; then the phase is
-merge-eligible on Andrew's word.
+Both were run by the controller post-final-review and PASSED at tip
+`fad4e9e` (§0); the phase was then merged on Andrew's word (see the
+header).
 
 ## 3. Gate results (Task 8, tip `0907364` — historical)
 
@@ -274,7 +276,7 @@ bytes, can be split across sends) quits the guest app.
 - **clir-load-perf** (CLIR load-path perf: header re-verify skip, once-
   per-session parse memo, bulk `text` range-read methods) — merged
   2026-08-15/16 (`42c7265` → `main` at `f8c15a1`, via the same
-  fast-forward-on-request convention this phase now waits on). Both
+  fast-forward-on-request convention this phase also followed). Both
   Snow gates (`TestClarusCBakePathOnSnow` 1206s,
   `TestMacResidentFailedCompileStaysAliveOnSnow` 1201s) PASSED on final
   tip `1d88846`. Full detail: HISTORY's `clir-load-perf` entry.
