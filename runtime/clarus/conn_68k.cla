@@ -144,9 +144,25 @@ func rtConnDevOpen(slot: int, portIdx: int, baud: int): int {
     }
     rtConnInRef[slot] = inPb.ioRefNum
 
+    // Guarded BEFORE SerSetBuf (Snow pair review finding, hardware-safety
+    // ahead of Task 7's boot): an unchecked null serBPtr with serBLen
+    // still 8192 would arm the serial receive ISR to write incoming
+    // bytes into low memory asynchronously the moment data arrives --
+    // -108 (memFullErr) here fails the open cleanly instead, surfacing as
+    // an ordinary `failed` event (rtConnOpen's own contract) rather than
+    // a corrupted heap.
+    // ponytail: this buffer is never freed -- one 8KB block per
+    // successful open. Fine for a program that opens each port once
+    // (this phase's whole scope); a slow leak for open/close cycling.
+    // Upgrade path: cache the buffer per slot (alongside
+    // rtConnOutRef/rtConnInRef) and reuse it across re-opens instead of
+    // NewPtr'ing fresh every time.
     setBufPb.ioCRefNum = inPb.ioRefNum
     setBufPb.csCode = kSERDInputBuffer
     setBufPb.serBPtr = SerNewPtr(8192)
+    if setBufPb.serBPtr == ptr(0) {
+        return -108
+    }
     setBufPb.serBLen = 8192
     err = PBControlSync(setBufPb)
     if err != 0 {

@@ -7517,8 +7517,23 @@ func lowerProgram(declHead: int): int {
     // regardless of want68k -- see this function's own pre-pass above),
     // harmless no-ops exactly like lowSynthUiDispatchers' own degrade-to-
     // no-op-body behavior its doc comment already describes.
-    if usesConn or want68k {
-        lowSynthConnDispatchers()
+    //
+    // Snow pair review (fix round): moved inside the lowSkipUiDispatchers
+    // guard just below (was its own standalone `if` here) -- outside the
+    // guard, this call was excluded from the baked IR only because
+    // `want68k` happens to be false during `--bake-ir` (main.cla quits
+    // before ever setting it true), an INCIDENTAL fact, not an explicit
+    // guard the way lowSkipUiDispatchers is for lowSynthUiDispatchers
+    // just below. A future want68k-before-bake refactor could otherwise
+    // silently start duplicating these four dispatchers into the baked
+    // IR. Equivalent today for every real (non-bake) compile:
+    // lowSkipUiDispatchers defaults false there, so `not
+    // lowSkipUiDispatchers` is always true and this inner `if usesConn or
+    // want68k` governs exactly as before.
+    if not lowSkipUiDispatchers {
+        if usesConn or want68k {
+            lowSynthConnDispatchers()
+        }
     }
     // Reverse-waist dispatcher synthesis (runtime-ir-bake Task 2: made
     // UNCONDITIONAL -- was gated on irIsUiProgram()'s own condition,

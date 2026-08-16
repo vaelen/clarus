@@ -605,7 +605,10 @@ void rt_ext_UiMacInitToolbox(void) { rt_mac_init_toolbox(); }
  * integration stays an unwired, documented gap, the same as
  * rt_ext_UiMacInitToolbox above having no plain-host (non-Mac)
  * counterpart in rt_ext_host.inc: this lane's own conn.cla splice stays
- * usesConn-gated and untouched by this task either way. */
+ * usesConn-gated and untouched by this task either way.
+ * FORWARD-PROOFING (Snow pair review): if the ConnH*/PB* shims ever land
+ * on this lane, this body must become a real pump or UI+conn programs
+ * will silently never fire events. */
 void rt_ext_UiConnPump(void) { }
 void rt_ext_UiRtQuit(int32_t code) { rt_quit(code); }
 void *rt_ext_UiTestScript(void) { return (void *)rt_ui_test_script; }
