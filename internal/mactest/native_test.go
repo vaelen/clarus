@@ -375,6 +375,49 @@ func TestRealEventLoopTickOn68k(t *testing.T) {
 	}
 }
 
+// TestConnFailedHandlerOn68k is the regression pin for the cg68k KErr
+// call-argument ABI fix (serial-connection Task 7 review, fix round 1,
+// Critical 1): cgPushArgs/cgArgSlotSize pass a `KErr` (`error`) call
+// argument BY ADDRESS, but cgEmitFunc's own frameIsRef computation (the
+// CALLEE side of the exact same ABI) had been left testing only
+// KStr/KRec -- a one-sided edit that made every native `on X.failed(err:
+// error)` handler LEA its own param slot (treating it as the 260-byte
+// struct itself) instead of MOVEA-dereferencing the pointer the caller
+// actually pushed, reading garbage stack bytes as the error record.
+//
+// Follows TestRealEventLoopTickOn68k's own "runerr-style" precedent
+// immediately above (plain substring/exit-code assertions, no golden
+// snap comparison -- this fixture has no UI worth freezing a PBM for)
+// rather than the full checkUIGoldens scenario style, but needs
+// buildNative68kUI + --events (like TestSmokeBounceOn68k) since the
+// fixture is a UI program and the assertion depends on a deterministic
+// scripted pump pass actually firing `conn.failed`, not the real
+// WaitNextEvent loop's own timing.
+//
+// testdata/cg68k/connfailprobe.cla opens serial "modem:99" (99 isn't one
+// of the Serial Driver's eleven standard baud rates -- conn.cla's own
+// rtConnValidBaud), so `on conn.failed(err: error)` fires on the first
+// scripted pump pass with a message conn.cla itself pins exactly:
+// rtConnOpen's `rtConnSetFailed(slot, rtConnErrInvalidSpec, "invalid
+// connection spec")`. alert()ing err.message and requiring that EXACT
+// string in the captured trace is real end-to-end proof: a still-broken
+// LEA-instead-of-MOVEA read would alert() whatever garbage happened to
+// sit in the caller's frame, not this specific text.
+func TestConnFailedHandlerOn68k(t *testing.T) {
+	requireMac(t)
+	eventsRel := filepath.Join("..", "..", "testdata", "cg68k", "connfailprobe.events")
+	claRel := filepath.Join("..", "..", "testdata", "cg68k", "connfailprobe.cla")
+	bin := buildNative68kUI(t, "connfailprobe", eventsRel, claRel)
+	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+	if exitCode != 0 {
+		t.Fatalf("connfailprobe exit code %d, want 0:\n%s", exitCode, out)
+	}
+	const want = "invalid connection spec"
+	if !strings.Contains(out, want) {
+		t.Fatalf("connfailprobe trace missing %q (KErr call-arg ABI regression -- got garbage or nothing instead):\n%s", want, out)
+	}
+}
+
 // TestSuiteOn68k (native-5d Task 16's end gate, rebased by test-suite-
 // review Task 9 onto the core suite's CLI composition, coreCLIMacFiles --
 // since deleted, see mac_test.go's TestSuiteOnMac retirement comment)

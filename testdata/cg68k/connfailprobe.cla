@@ -1,0 +1,41 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// connfailprobe.cla: regression fixture for the cg68k KErr call-argument
+// ABI fix (serial-connection Task 7 review, fix round 1, Critical 1).
+// cgPushArgs/cgArgSlotSize were widened to pass a `KErr` (`error`) call
+// argument BY ADDRESS, but the CALLEE side (cgEmitFunc's own frameIsRef
+// computation) was left testing only KStr/KRec -- a one-sided ABI edit
+// (the exact trap cgRetNeedsHidden's own doc comment warns about by
+// name). Every native `on X.failed(err: error)` handler read ~260 bytes
+// of the CALLER's own stack as the error record instead of dereferencing
+// the pointer the caller actually pushed.
+//
+// This app deliberately opens an INVALID serial spec ("modem:99" -- 99
+// isn't one of the Serial Driver's eleven standard baud rates,
+// conn.cla's own rtConnValidBaud) so `on conn.failed(err: error)` fires
+// on the very first scripted pump pass (rtConnOpen's own
+// rtConnParseSpec failure path, conn.cla), with a message whose exact
+// text is nailed down by conn.cla itself: "invalid connection spec"
+// (rtConnOpen's `rtConnSetFailed(slot, rtConnErrInvalidSpec, "invalid
+// connection spec")` call). alert()ing `err.message` and capturing the
+// trace is a real end-to-end proof the fix works: a still-broken
+// LEA-instead-of-MOVEA read would alert() garbage stack bytes, not this
+// exact string.
+
+window Main {
+    title: "ConnFailProbe"
+    size: 200, 100
+}
+
+var conn: connection
+
+on App.launch {
+    open Main
+    conn.open(serial "modem:99")
+}
+
+on conn.failed(err: error) {
+    alert(err.message)
+    quit
+}

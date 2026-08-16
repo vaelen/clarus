@@ -65,21 +65,14 @@ on conn.opened {
 on conn.received(data: text) {
     var w: Echo = Echo.front
     var i: int = 0
-    var inMsg: string = ""
-    var outMsg: string = ""
 
     bytesIn = bytesIn + data.length
     conn.send(data)
     bytesOut = bytesOut + data.length
 
     if w != nil {
-        // cg68k can't store a computed string expression straight into a
-        // widget property (cgEmitStoreStr's ui_value_at_ptr store-context
-        // gap) -- build the message in a local first, then assign that.
-        inMsg = "Bytes in: " + intStr(bytesIn)
-        outMsg = "Bytes out: " + intStr(bytesOut)
-        w.InCount.text = inMsg
-        w.OutCount.text = outMsg
+        w.InCount.text = "Bytes in: " + intStr(bytesIn)
+        w.OutCount.text = "Bytes out: " + intStr(bytesOut)
     }
 
     // Three consecutive 'Q' bytes quits, even split across separate

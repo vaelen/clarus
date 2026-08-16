@@ -93,12 +93,13 @@ static void fill_pattern(unsigned char *buf, int n, unsigned char start) {
  * process-wide alarm() watchdog in main(), so a genuinely stuck peer
  * socket fails this one CHECK fast instead of hanging the whole test.
  * Callers pass 30s (up from 10s, port-hygiene fix round, serial-connection
- * Task 7): 10s was found to fire under the real T1 gate's heavy parallel
- * CPU contention (a dozen other Go test packages' own compiles/emulator
- * boots competing for cores) even though the glue's own accept+write had
- * already genuinely succeeded (wait_accept_and_write's own CHECK passed)
- * -- the bytes were sent, just slower to actually reach the peer's recv()
- * than 10s of real time under that load, not lost or misdirected. */
+ * Task 7). The ORIGINAL 10s firing under the real T1 gate's parallel load
+ * turned out, on investigation, to be wait_accept_and_write's own
+ * accept-race (Bug B, that function's own doc comment): bytes were never
+ * sent at all in most reproductions, not merely slow to arrive -- fixed
+ * there, not here. 30s stays anyway as real belt-and-suspenders headroom
+ * for genuine parallel-load latency in the (now much rarer) case the
+ * bytes really were sent and just took a while to actually reach recv(). */
 static void set_recv_timeout(int fd, int seconds) {
     struct timeval tv;
     tv.tv_sec = seconds;
@@ -189,11 +190,23 @@ static int wait_gone(int slot) {
  * this call ConnHWrite exactly once, now safe to trust fully. */
 static int wait_accept_and_write(int slot, int peerFd, const unsigned char *buf, int32_t n) {
     unsigned char sentinel = 0xAA;
+    int i;
 
     if (send(peerFd, &sentinel, 1, 0) != 1) return 0;
-    if (!wait_avail(slot, 1)) return 0;
-    rt_ext_ConnHReadByte(slot); /* drain the sentinel, value irrelevant */
-    return rt_ext_ConnHWrite(slot, (void *)buf, n) == 0;
+    /* Sentinel wait: this file's own historically-flakiest assertion
+     * (see the doc comment above) gets its own explicit, most-generous
+     * budget -- 30000 * 1ms = 30s, matching set_recv_timeout's own bumped
+     * 30s -- rather than reusing wait_avail's generic 2000*1ms=2s bound
+     * (which would have made THIS wait tighter than every sibling budget
+     * this same fix round widened for real parallel-load headroom). */
+    for (i = 0; i < 30000; i++) {
+        if (rt_ext_ConnHAvail(slot) >= 1) {
+            rt_ext_ConnHReadByte(slot); /* drain the sentinel, value irrelevant */
+            return rt_ext_ConnHWrite(slot, (void *)buf, n) == 0;
+        }
+        usleep(1000);
+    }
+    return 0;
 }
 
 /* glue_read_all: drains exactly n bytes through ConnHReadByte, ONLY after
@@ -278,8 +291,9 @@ static void test_listen_mode(void) {
     set_recv_timeout(peer, 30);
 
     /* server(glue) -> client(plain): fill, wait_accept_and_write (see its
-       own comment for why this is a retry loop and not one unconditional
-       call), plain_recv_all, compare. */
+       own doc comment for why this confirms real acceptance via a
+       sentinel byte before trusting ConnHWrite's own ambiguous return
+       code), plain_recv_all, compare. */
     fill_pattern(out, sizeof(out), 0);
     CHECK(wait_accept_and_write(0, peer, out, (int32_t)sizeof(out)), "listen mode: accept+ConnHWrite should eventually succeed");
     plain_recv_all(peer, in, (int)sizeof(in));
@@ -350,7 +364,7 @@ static void test_connect_mode(void) {
  * needs one more round trip (this side's next send actually reaching the
  * peer and getting an RST back) before EPIPE shows up -- so proving the
  * SIGPIPE fix needs "keep writing until it fails", not "the first write
- * fails". Bounded at 500 * 20ms = 10s, safely inside main()'s alarm(60)
+ * fails". Bounded at 500 * 20ms = 10s, safely inside main()'s own watchdog
  * (port-hygiene fix round, serial-connection Task 7: 50*20ms=1s was found
  * too tight under the real T1 gate's heavy parallel CPU contention --
  * getting the RST processed and surfaced through ConnHWrite's own error
@@ -475,23 +489,34 @@ static void test_open_failure(void) {
  * the whole `go test -timeout 30m` gate for half an hour. */
 static void on_alarm(int sig) {
     (void)sig;
-    fprintf(stderr, "FAIL: watchdog fired -- a call hung past the 90s bound\n");
+    fprintf(stderr, "FAIL: watchdog fired -- a call hung past the 240s bound\n");
     fprintf(stderr, "FAILED\n");
     _exit(1);
 }
 
 int main(void) {
     signal(SIGALRM, on_alarm);
-    /* 90s (up from 20s, port-hygiene fix round, serial-connection Task 7):
-     * headroom above the worst realistic sequential sum of this file's own
-     * per-scenario budgets (three 30s recv timeouts + one 10s sigpipe
-     * retry, each bumped from a tighter default that this task found too
-     * tight under the real T1 gate's heavy parallel CPU contention -- see
-     * set_recv_timeout's and write_until_fails' own doc comments). Still
-     * loud and fast in the overwhelmingly common case (a clean run finishes
-     * in well under a second); this only matters on the rare contended
-     * run that used to time out and fail outright. */
-    alarm(90);
+    /* 240s (up from 20s, port-hygiene fix round, serial-connection Task 7,
+     * fix round 1): headroom above the HONEST worst-case sequential sum of
+     * every bounded blocking call in this file, computed per scenario
+     * (review fix round 1, Important 4 -- the original 90s bound and its
+     * comment undercounted this):
+     *   test_listen_mode:         wait_accept_and_write 30s + plain_recv_all
+     *                              (set_recv_timeout) 30s + wait_avail 2s +
+     *                              wait_gone 2s               = 64s
+     *   test_connect_mode:        plain_recv_all 30s + wait_avail 2s = 32s
+     *   test_sigpipe:              wait_accept_and_write 30s +
+     *                              write_until_fails 10s      = 40s
+     *   test_write_before_accept: wait_accept_and_write 30s +
+     *                              plain_recv_all 30s          = 60s
+     *   test_open_failure:                                     = 0s
+     *   ------------------------------------------------------------
+     *   sum                                                    = 196s
+     * 240s leaves ~44s of headroom above that honest sum. Still loud and
+     * fast in the overwhelmingly common case (a clean run finishes in well
+     * under a second); this only matters on the rare, deeply pathological
+     * run where every single one of these hit its own worst case at once. */
+    alarm(240);
 
     test_listen_mode();
     test_connect_mode();

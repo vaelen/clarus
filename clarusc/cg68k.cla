@@ -5027,7 +5027,18 @@ func cgEmitFunc(f: int) {
         // param-abi phase, Task 6: KStr/KRec params pass BY ADDRESS now --
         // this frame slot HOLDS a pointer, not the value itself. cgExprAddr's
         // EVarRef arm consults this bit to MOVEA (deref) instead of LEA.
-        frameIsRef.add(irtKind(irLocalType(params[i])) == KStr or irtKind(irLocalType(params[i])) == KRec)
+        // KErr joined the by-address caller side (cgPushArgs/cgArgSlotSize,
+        // serial-connection Task 7's own KErr call-argument fix) but this
+        // callee-side bit was left on the old KStr/KRec-only test -- the
+        // exact one-sided-ABI-edit trap cgRetNeedsHidden's own doc comment
+        // (this file) warns about by name: a caller-only or callee-only
+        // fix silently reintroduces a caller/callee mismatch. Fix-round
+        // finding (Task 7 review): `on X.failed(err: error)` handlers were
+        // reading ~260 bytes of the caller's own stack as the error record
+        // (LEA 8(A6),A0 -- treating the slot as the struct itself -- instead
+        // of MOVEA 8(A6),A0 -- loading the pointer the caller actually
+        // pushed) until this line joined the caller-side fix.
+        frameIsRef.add(irtKind(irLocalType(params[i])) == KStr or irtKind(irLocalType(params[i])) == KRec or irtKind(irLocalType(params[i])) == KErr)
         i = i + 1
     }
 
