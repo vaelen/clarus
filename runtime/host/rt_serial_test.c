@@ -26,6 +26,15 @@
  * Both directions of 256 bytes of data are pushed through
  * ConnHWrite/ConnHAvail/ConnHReadByte in each scenario; the listen-mode
  * scenario additionally proves ConnHGone fires once the peer closes.
+ *
+ * A third scenario (slot 2, review fix round) proves the SIGPIPE fix:
+ * write into a slot whose peer already closed its end, without ever
+ * calling ConnHClose/observing Gone first -- exactly the state a real
+ * open connection sits in between "peer hangs up" and "the next pump
+ * pass's Gone check gets around to closing it". Before the fix, that
+ * write's send() would raise SIGPIPE and kill the whole process with the
+ * default disposition; the assertion IS the process still being alive to
+ * check ConnHWrite's return value at all.
  */
 #include "rt.h"
 #include <stdio.h>
@@ -268,6 +277,71 @@ static void test_connect_mode(void) {
     close(serverFd);
 }
 
+/* write_until_fails: retries ConnHWrite until it reports a failure (or a
+ * bounded number of attempts elapses). A single write right after a
+ * peer's ORDERLY close very often still succeeds locally -- TCP usually
+ * needs one more round trip (this side's next send actually reaching the
+ * peer and getting an RST back) before EPIPE shows up -- so proving the
+ * SIGPIPE fix needs "keep writing until it fails", not "the first write
+ * fails". Bounded at 50 * 20ms = 1s, safely inside main()'s alarm(20). */
+static int write_until_fails(int slot, const unsigned char *buf, int32_t n) {
+    int i;
+    for (i = 0; i < 50; i++) {
+        int rc = rt_ext_ConnHWrite(slot, (void *)buf, n);
+        if (rc != 0) return rc;
+        usleep(20000);
+    }
+    return 0;
+}
+
+/* test_sigpipe: slot 2 (unused by the two scenarios above -- their own
+ * slots 0/1 are already closed by the time this runs). See this file's
+ * header comment for the scenario. */
+static void test_sigpipe(void) {
+    int listenPort;
+    int probe;
+    char envbuf[64];
+    int peer;
+    struct sockaddr_in addr;
+    unsigned char out[16];
+    int rc;
+
+    probe = bind_ephemeral(&listenPort);
+    CHECK(probe >= 0, "sigpipe test: probe bind should succeed");
+    close(probe);
+
+    snprintf(envbuf, sizeof(envbuf), "listen:%d", listenPort);
+    setenv("CLARUS_SERIAL_MODEM", envbuf, 1);
+
+    rc = rt_ext_ConnHOpen(2, 0);
+    CHECK(rc == 0, "sigpipe test: ConnHOpen should succeed");
+
+    peer = socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(peer >= 0, "sigpipe test: peer socket() should succeed");
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons((uint16_t)listenPort);
+    CHECK(connect(peer, (struct sockaddr *)&addr, sizeof(addr)) == 0, "sigpipe test: peer connect should succeed");
+
+    fill_pattern(out, sizeof(out), 0);
+    CHECK(wait_accept_and_write(2, out, (int32_t)sizeof(out)), "sigpipe test: initial accept+write should succeed");
+
+    /* Close the peer's end -- WITHOUT closing our own slot 2 or calling
+       ConnHGone first, so the slot is exactly in the "stOpen but the
+       channel is actually dead" window a real rtConnPump hasn't caught
+       up to yet. */
+    close(peer);
+
+    rc = write_until_fails(2, out, (int32_t)sizeof(out));
+    /* The real assertion is reaching this line at all: the default
+       SIGPIPE disposition would have killed the process partway through
+       write_until_fails, before any CHECK below could run. */
+    CHECK(rc != 0, "sigpipe test: write after peer close eventually reports a nonzero error (process survived, no silent 0)");
+
+    rt_ext_ConnHClose(2);
+}
+
 /* test_open_failure: unset env var / garbled spec both report a nonzero
  * code, never crash -- the two environmental-failure paths conn.cla's own
  * rtConnOpen turns into a `failed` event rather than a panic. */
@@ -301,6 +375,7 @@ int main(void) {
 
     test_listen_mode();
     test_connect_mode();
+    test_sigpipe();
     test_open_failure();
     /* ConnHIdle: just prove it returns promptly with nothing open (all
        slots were closed by their own tests above) rather than hanging --

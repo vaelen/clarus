@@ -45,6 +45,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -107,6 +108,26 @@ static int rt_conn_connect(const char *host, int port) {
     return fd;
 }
 
+/* rt_conn_ignore_sigpipe: one-time process-wide SIGPIPE suppression
+ * (review fix, Task 4 follow-up). Without this, ConnHWrite's send() to a
+ * peer that already closed its end raises SIGPIPE, which terminates the
+ * whole process by default -- the BBS's routine "user hung up mid-write"
+ * case, not an exceptional one. SIG_IGN here (rather than SO_NOSIGPIPE
+ * per fd, the macOS-only alternative) is portable to both build targets
+ * this runtime cares about (macOS/BSD and Linux) in one line; every
+ * send()/write() in the process silently returns EPIPE instead of
+ * signaling from this point on, which is exactly what ConnHWrite already
+ * checks for via its `k <= 0` test. Guarded so a slot's Nth open doesn't
+ * re-signal(); called from ConnHOpen since that's the one glue entry
+ * point guaranteed to run before any ConnHWrite ever could. */
+static void rt_conn_ignore_sigpipe(void) {
+    static int done = 0;
+    if (!done) {
+        signal(SIGPIPE, SIG_IGN);
+        done = 1;
+    }
+}
+
 /* rt_ext_ConnHOpen: parses CLARUS_SERIAL_MODEM (portIdx 0) /
  * CLARUS_SERIAL_PRINTER (portIdx 1), opens the slot per the spec above.
  * Returns 0 on success, else a nonzero code (bare errno when one is
@@ -115,6 +136,7 @@ int32_t rt_ext_ConnHOpen(int32_t slot, int32_t portIdx) {
     const char *spec;
     int fd;
 
+    rt_conn_ignore_sigpipe();
     if (!rt_conn_slot_ok(slot)) return 1;
     if (portIdx == 0) {
         spec = getenv("CLARUS_SERIAL_MODEM");
@@ -193,7 +215,11 @@ int32_t rt_ext_ConnHReadByte(int32_t slot) {
 
 /* rt_ext_ConnHWrite: loops send() to completion (the fd is plain blocking
  * -- see the header comment). Returns 0 on success, nonzero on any
- * send failure (peer gone is then caught on the next ConnHGone poll). */
+ * send failure (peer gone is then caught on the next ConnHGone poll).
+ * SIGPIPE is neutralized process-wide by rt_conn_ignore_sigpipe (called
+ * from ConnHOpen, guaranteed to have run before this can) -- a send() to
+ * an already-closed peer fails with EPIPE here, `k <= 0`, same as any
+ * other write failure, instead of killing the process. */
 int32_t rt_ext_ConnHWrite(int32_t slot, void *p, int32_t n) {
     const unsigned char *buf;
     int32_t sent;

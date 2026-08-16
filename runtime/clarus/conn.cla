@@ -28,7 +28,13 @@
 // non-open slot, reopening an open slot) are runtime errors/`failed`
 // events as the spec itself distinguishes -- NOT interchangeable. Send on
 // a non-open slot panics (a bug); every OPEN failure (bad spec, device
-// error, already-open) is a `failed` event (weather), never a panic.
+// error, already-open) is a `failed` event (weather), never a panic. A
+// WRITE failure on an already-open slot (spec %3: "failed(err) -- open
+// errors AND I/O errors") is weather too, staged as a pending `failed`
+// exactly like an open failure -- but the slot stays open (only the
+// device/Gone check, not send, ever closes it) and the event fires from
+// the next rtConnPump pass, never synchronously from send itself, per
+// this whole file's deferred-event design (see rtConnSendText).
 
 const rtConnMax: int = 4
 
@@ -81,9 +87,19 @@ var rtConnPendOpened: bool[4]
 // failed event pending" (a real OSErr/errno is always positive, and
 // rtConnErrAlreadyOpen/InvalidSpec above are both negative -- 0 is never
 // a valid failure code from any source), so no separate bool is needed
-// alongside it. At most one open result (opened OR failed) is ever
-// pending per slot -- rtConnOpen and rtConnPump's own drain both
-// preserve that invariant, never setting both for the same slot.
+// alongside it. Carries a pending `failed` from EITHER an open failure
+// (rtConnOpen) OR a later write failure on an already-open slot
+// (rtConnSendText -- spec %3's `failed(err)` covers both "open errors AND
+// I/O errors" as the same event, so both stage through this one field).
+// At most one FAILED result is ever pending per slot -- both writers only
+// set it when it's currently 0 ("keep the first", see rtConnSendText's
+// own comment for why). pendOpened and this are usually mutually
+// exclusive (an open attempt sets exactly one), but NOT strictly so once
+// writes are in the mix: a slot can have a still-undelivered `opened`
+// AND a fresh write failure pending at once (open(), then send()
+// immediately, before any pump pass) -- rtConnPump's own ordering
+// handles that correctly without special-casing it here (see its doc
+// comment).
 var rtConnPendFailedCode: int[4]
 var rtConnPendFailedMsg: string[4]
 
@@ -212,11 +228,24 @@ func rtConnOpen(slot: int, transport: int, spec: string) {
 // comment): one exact-size SerNewPtr per call is plain and correct at
 // serial/BBS data rates -- a persistent reusable scratch buffer would
 // only start mattering if send() ever became a hot path.
+//
+// A WRITE failure (device/I/O error, as opposed to the contract violation
+// above) is weather, not a bug -- spec %3's `failed(err)` explicitly
+// covers "open errors AND I/O errors" as the same event -- so it stages a
+// pending `failed` exactly like an open failure does, rather than
+// panicking or firing synchronously (this whole file only ever fires
+// events from rtConnPump, never from a direct call). The slot stays open:
+// only the device/Gone check in rtConnPump ever closes it, never send.
+// If a failed event is ALREADY pending (an earlier open or write failure
+// the next pump pass hasn't drained yet), this keeps that FIRST one and
+// drops the new report rather than overwriting it -- reporting the
+// earliest failure is more useful than the latest, and rtConnPendFailedCode
+// == 0 is the field's own "nothing pending yet" guard either way.
 func rtConnSendText(slot: int, t: text) {
     var scratch: ptr
     var n: int
     var i: int
-    var junk: int
+    var wErr: int
 
     if rtConnState[slot] != stOpen {
         rtPanic("connection not open")
@@ -231,7 +260,11 @@ func rtConnSendText(slot: int, t: text) {
         pokeb(scratch + i, int(t[i]))
         i = i + 1
     }
-    junk = rtConnDevWrite(slot, scratch, n)
+    wErr = rtConnDevWrite(slot, scratch, n)
+    if wErr != 0 and rtConnPendFailedCode[slot] == 0 {
+        rtConnPendFailedCode[slot] = wErr
+        rtConnPendFailedMsg[slot] = "write failed"
+    }
     SerDisposePtr(scratch)
 }
 
@@ -253,11 +286,15 @@ func rtConnClose(slot: int) {
 }
 
 // rtConnPump: one event-loop pass over every slot. Drains any pending
-// open result FIRST (opened or failed -- mutually exclusive per slot),
-// then -- independently, so a slot that just became open THIS pass is
-// still eligible -- services an open slot: device-gone closes it and
-// fires `closed`; otherwise drains everything currently available into
-// ONE fresh `text` and fires `received` once.
+// event FIRST -- opened, or failed (an open failure OR a write failure
+// staged by rtConnSendText, see that function's own comment; if BOTH
+// pendOpened and a write-triggered pendFailedCode are set at once, this
+// pass fires only `opened` and leaves pendFailedCode untouched for the
+// NEXT pass to drain, since the `else if` never reaches it while
+// pendOpened is still true) -- then, independently, so a slot that just
+// became open THIS pass is still eligible, services an open slot:
+// device-gone closes it and fires `closed`; otherwise drains everything
+// currently available into ONE fresh `text` and fires `received` once.
 func rtConnPump() {
     var i: int
     var t: text
