@@ -1320,6 +1320,8 @@ var toolboxSuiteGUIFiles = []string{
 	filepath.Join("toolbox", "scrap.cla"),
 	filepath.Join("toolbox", "files.cla"),
 	filepath.Join("toolbox", "resources.cla"),
+	filepath.Join("toolbox", "devices.cla"),
+	filepath.Join("toolbox", "serial.cla"),
 	filepath.Join("testsuite", "toolbox", "runner.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_events.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_draw.cla"),
@@ -1346,6 +1348,7 @@ var toolboxSuiteGUIFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_finfo.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_resources.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_datetime.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_serial.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
