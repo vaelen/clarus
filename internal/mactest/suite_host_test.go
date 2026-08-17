@@ -116,6 +116,9 @@ var coreCLIFiles = []string{
 	// rename). Same story in internal/cg68k/segment_test.go and
 	// internal/bake/bakeidentity_test.go's own core-suite file lists.
 	filepath.Join("testsuite", "core", "cases_textrange.cla"),
+	// correctness-cleanup Task 6: cases_errret.cla MUST be here -- runner.cla
+	// (above) unconditionally calls caseErrReturn().
+	filepath.Join("testsuite", "core", "cases_errret.cla"),
 }
 
 // coreCLIHostFiles/absFiles/BuildCoreCLIHost/RunCoreCLIHost (coreCLIFiles +

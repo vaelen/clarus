@@ -91,6 +91,11 @@
 // and (by running on both lanes) the fact that the dispatcher clarusc
 // synthesizes for it needs no backend-specific arm. Its handler is the
 // suite's only `on App.log`, and nothing else in the suite calls log().
+//
+// ErrReturn (cases_errret.cla, correctness-cleanup Task 6) is the 72nd
+// real case: the KErr hidden-result-pointer RETURN ABI (`func f():
+// error`), both the discard-dispatch and store-dispatch call-site paths,
+// in-process on whichever lane compiles this suite.
 
 enum CoreTest {
     All
@@ -165,16 +170,17 @@ enum CoreTest {
     TextRange
     ListClone
     OnLog
+    ErrReturn
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 71 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 72 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 72
+const nCoreCases: int = 73
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -396,6 +402,9 @@ func coreCaseName(t: CoreTest): string {
     case OnLog {
         return "OnLog"
     }
+    case ErrReturn {
+        return "ErrReturn"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -487,6 +496,7 @@ func coreAllCases(): list of CoreTest {
     l.add(TextRange)
     l.add(ListClone)
     l.add(OnLog)
+    l.add(ErrReturn)
     l.add(SelfCheck)
     return l
 }
@@ -807,6 +817,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, OnLog) {
         results.add(caseOnLog())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, ErrReturn) {
+        results.add(caseErrReturn())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

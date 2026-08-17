@@ -5563,17 +5563,24 @@ func cgIsScalarKind(k: IRKind): bool {
 
 // cgRetNeedsHidden (Task 14.7 review fix) is the SINGLE authority for
 // "does a function returning retTy use the hidden-result-pointer calling
-// convention" -- a KIND test (KStr/KRec), never a SIZE test. Was three
-// independent inline copies (cgEmitFunc's own needsHidden, plus matching
-// guards in cgCallFnScalar and cgCallFnInto's own callers); collapsed here
-// so a future one-sided edit can't silently reintroduce the caller/
-// callee ABI mismatch the kind-vs-size bug was (see cgEmitFunc's own
-// needsHidden doc comment for the full account: a `string(3)` return is
-// exactly 4 bytes, same size as a scalar int, but every CALLER already
-// assumes the hidden-pointer convention for ANY KStr/KRec result
-// unconditionally, regardless of size).
+// convention" -- a KIND test (KStr/KRec/KErr), never a SIZE test. Was
+// three independent inline copies (cgEmitFunc's own needsHidden, plus
+// matching guards in cgCallFnScalar and cgCallFnInto's own callers);
+// collapsed here so a future one-sided edit can't silently reintroduce
+// the caller/callee ABI mismatch the kind-vs-size bug was (see
+// cgEmitFunc's own needsHidden doc comment for the full account: a
+// `string(3)` return is exactly 4 bytes, same size as a scalar int, but
+// every CALLER already assumes the hidden-pointer convention for ANY
+// KStr/KRec result unconditionally, regardless of size). correctness-
+// cleanup Task 6: KErr joins the set -- a 260-byte struct
+// (cgSizeOfUncached's own KErr arm), same non-scalar shape as KRec
+// (cgIsScalarKind already excluded KErr from the scalar set; this
+// function was the one holdout still treating a `func f(): error` return
+// as scalar, failing check-time as "EVarRef non-scalar" at the `return e`
+// statement -- the param side of KErr was already fixed, this closes the
+// return side).
 func cgRetNeedsHidden(retTy: int): bool {
-    return irtKind(retTy) == KStr or irtKind(retTy) == KRec
+    return irtKind(retTy) == KStr or irtKind(retTy) == KRec or irtKind(retTy) == KErr
 }
 
 // cgArgSlotSize (param-abi phase, Task 6) is the bytes a call ARGUMENT of
@@ -5646,6 +5653,17 @@ func cgMaterializeToTemp(e: int): int {
         cgEmitStoreRec(dst, e)
     } else if irtKind(t) == KStr {
         cgEmitStoreStr(dst, e)
+    } else if irtKind(t) == KErr {
+        // correctness-cleanup Task 6: KErr is non-scalar (cgIsScalarKind),
+        // so it must NOT fall to cgEmitStoreScalarAny below -- that arm
+        // treats e as a plain 4-byte value, which for a KErr-typed
+        // EIntr/ECallFn (e.g. `return lastError` reaching here through
+        // cgEmitReturnErr -> cgExprAddr's generic materialize fallback)
+        // routed into cgIntr's scalar dispatch and hard-errored
+        // ("unsupported UI intrinsic lasterr_value") since "lasterr_value"
+        // has no scalar form (only "lasterr_code" does -- see
+        // cgEmitStoreErr's own doc comment).
+        cgEmitStoreErr(dst, e)
     } else {
         cgEmitStoreScalarAny(dst, e)
     }
@@ -6119,14 +6137,18 @@ func cgEmitStoreRec(dst: int, src: int) {
     cgBlockCopy(sz)
 }
 
-// cgEmitStoreErr (Task 14.7) mirrors cgEmitStoreRec's own shape for a KErr
-// dst: the only src this backend's fixtures ever produce is EIntr
-// "lasterr_value" (`e = lastError`, ir.cla's ILastErr -- lower.cla's own
-// "no VarRef for the bare global lastError" doc comment) -- materialized
-// field-by-field via the SAME natLastErrCode/natLastErrMsg calls
-// cgIntr's "lasterr_code" arm and cgEmitStoreStr's "lasterr_msg" arm
-// already use, rather than one combined runtime call (native.cla has no
-// single "give me the whole Err struct" entry point). Any OTHER src
+// cgEmitStoreErr (Task 14.7; ECallFn fast path added by correctness-cleanup
+// Task 6) mirrors cgEmitStoreRec's own shape for a KErr dst: the only src
+// this backend's fixtures ever produce is EIntr "lasterr_value" (`e =
+// lastError`, ir.cla's ILastErr -- lower.cla's own "no VarRef for the bare
+// global lastError" doc comment) -- materialized field-by-field via the
+// SAME natLastErrCode/natLastErrMsg calls cgIntr's "lasterr_code" arm and
+// cgEmitStoreStr's "lasterr_msg" arm already use, rather than one combined
+// runtime call (native.cla has no single "give me the whole Err struct"
+// entry point). An ECallFn src (an error-returning user function's result,
+// e.g. `e = relayError()`) writes straight into dst via cgCallFnInto, same
+// as cgEmitStoreRec's own ECallFn arm -- this is also cgCallFnScalar's
+// discard-dispatch target (a bare `relayError()` statement). Any OTHER src
 // (error-to-error copy, e.g. `e2 = e1`) falls through to a plain
 // cgSizeOf(KErr)-byte block copy, same generic tail cgEmitStoreRec's own
 // KRec default uses -- not exercised by any fixture, but layout-safe
@@ -6155,6 +6177,10 @@ func cgEmitStoreErr(dst: int, src: int) {
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
         cgCallFunc(msgFi)
         cgCleanupStack(4)
+        return
+    }
+    if sk == ECallFn {
+        cgCallFnInto(src, dst)
         return
     }
     sz = cgSizeOf(irExprType(dst))
@@ -6218,6 +6244,30 @@ func cgEmitReturnRec(src: int) {
         cgRecordCtorAt(0, 0, irNewRecName(src))
         return
     }
+    sz = cgSizeOf(cgCurRetType)
+    cgExprAddr(src)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 1, 0)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgBlockCopy(sz)
+}
+
+// cgEmitReturnErr (correctness-cleanup Task 6) mirrors cgEmitReturnRec's
+// own generic block-copy tail for a `return <error expr>` inside a
+// function whose return needs a hidden pointer -- there is no KErr
+// equivalent of ENewRec: `error`'s own fields (code/message) are
+// permanently read-only from user code (checkAssignStmt's
+// readOnlyPropName, TyErrorType arm), so a function can only ever return
+// an EXISTING error value (a variable, a field, `lastError`, or another
+// error-returning call's result), never construct one in place. src's
+// address (cgExprAddr -- EVarRef/EFieldRef resolve directly; EIntr/
+// ECallFn fall to cgExprAddr's own generic materialize fallback,
+// cgMaterializeToTemp, now KErr-aware) is stashed on the stack across the
+// 8(A6) hidden-pointer read exactly like cgEmitReturnRec's own generic
+// arm, then block-copied.
+func cgEmitReturnErr(src: int) {
+    var sz: int
+
     sz = cgSizeOf(cgCurRetType)
     cgExprAddr(src)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
@@ -9574,12 +9624,20 @@ func cgCallFnScalar(e: int) {
             dst = cgVarRefAt(off, retType)
             if irtKind(retType) == KRec {
                 cgEmitStoreRec(dst, e)
+            } else if irtKind(retType) == KErr {
+                // correctness-cleanup Task 6: a bare, discarded call to an
+                // error-returning function (`relayError()` as a statement)
+                // reaches here same as the KRec/KStr cases above --
+                // cgEmitStoreErr's own ECallFn arm routes into
+                // cgCallFnInto, writing the (unused) result into the fresh
+                // tracked temp cgFreeStmtTmps releases at statement end.
+                cgEmitStoreErr(dst, e)
             } else {
                 cgEmitStoreStr(dst, e)
             }
             return
         }
-        abort("cg68k: cgCallFnScalar used for str/rec-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
+        abort("cg68k: cgCallFnScalar used for str/rec/err-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
     }
     // param-abi phase, Task 6: cgSaveArgReleases/cgFlushArgReleases bracket
     // the push+call+cleanup span -- see cgPendingArgReleases' own doc
@@ -11576,6 +11634,8 @@ func cgReturnStmt(s: int) {
     if cgCurHiddenOffset != -1 {
         if irtKind(cgCurRetType) == KRec {
             cgEmitReturnRec(x)
+        } else if irtKind(cgCurRetType) == KErr {
+            cgEmitReturnErr(x)
         } else {
             cgEmitReturnStr(x)
         }

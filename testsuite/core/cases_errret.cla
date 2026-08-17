@@ -1,0 +1,47 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_errret.cla: the core suite's ErrReturn case (correctness-cleanup
+// Task 6) -- proves the KErr hidden-result-pointer RETURN ABI in-process,
+// on whichever lane compiles this suite (host CLI, native 68k GUI). The
+// param side of KErr was already fixed (serial-connection phase Task 7);
+// this task closed the return side (cg68k's cgRetNeedsHidden, formerly
+// KStr/KRec-only, plus cgMaterializeToTemp/cgEmitStoreErr/cgEmitStoreRec's
+// discard-dispatch, all now KErr-aware).
+//
+// `error`'s own fields (code/message) are permanently read-only from user
+// code (checkAssignStmt's readOnlyPropName, TyErrorType arm), so the only
+// way to produce a custom error value is to relay `lastError` after a
+// real soft failure -- the same trick testdata/run/errret.cla uses.
+// errReturnRelay returns lastError directly (`return lastError`, an
+// EIntr src reaching cgEmitReturnErr's generic materialize fallback),
+// and is called both as a bare discarded statement (cgCallFnScalar's
+// KErr discard-dispatch arm) and as an assignment RHS (cgEmitStoreErr's
+// new ECallFn fast path) -- the two caller-side dispatch sites this
+// task's fix touches.
+func errReturnRelay(): error {
+    return lastError
+}
+
+func caseErrReturn(): TestResult {
+    var g: string(3)
+    var e: error
+
+    // clamp store: sets lastError to a nonzero code + "string truncated"
+    // (runtime/clarus/str.cla's shared clamp path, both lanes).
+    g = "ab" + "cdef"
+
+    // discard-dispatch path: bare call statement, result unused.
+    errReturnRelay()
+
+    // store path: call result assigned into e.
+    e = errReturnRelay()
+
+    if e.code == 0 {
+        return tkFail("ErrReturn", "e.code == 0 after relay")
+    }
+    if e.message != "string truncated" {
+        return tkFail("ErrReturn", "e.message = " + e.message)
+    }
+    return tkPass("ErrReturn")
+}

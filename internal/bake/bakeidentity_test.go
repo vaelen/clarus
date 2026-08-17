@@ -1309,6 +1309,9 @@ var coreSuiteGUIFiles = []string{
 	// deliberately out of THIS task's scope. Accepted/expected until Task
 	// 3 lands cg68k support.
 	filepath.Join("testsuite", "core", "cases_textrange.cla"),
+	// correctness-cleanup Task 6: cases_errret.cla MUST be here -- runner.cla
+	// (above) unconditionally calls caseErrReturn().
+	filepath.Join("testsuite", "core", "cases_errret.cla"),
 	filepath.Join("testsuite", "core", "gui.cla"),
 }
 

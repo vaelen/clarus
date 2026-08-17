@@ -88,6 +88,9 @@ func segmentationFixture(root string) []string {
 		// lands. Accepted/expected per the task brief; not a regression to
 		// paper over by leaving this file out.
 		filepath.Join("testsuite", "core", "cases_textrange.cla"),
+		// correctness-cleanup Task 6: cases_errret.cla MUST be here --
+		// runner.cla (above) unconditionally calls caseErrReturn().
+		filepath.Join("testsuite", "core", "cases_errret.cla"),
 		filepath.Join("testsuite", "core", "cli_mac.cla"),
 	}
 	abs := make([]string, len(rel))

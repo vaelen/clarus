@@ -4,6 +4,7 @@
 package mactest
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,6 +22,16 @@ import (
 // the non-UI entry path cli_mac.cla's own doc comment escalates (Task
 // 9's report, native-compat gap #4), which a UI program never reaches.
 var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("testsuite", "core", "gui.cla"))
+
+// wantCoreSuiteCases is runner.cla's own nCoreCases (72 real cases +
+// SelfCheck -- 71 real + SelfCheck before correctness-cleanup Task 6's own
+// ErrReturn addition) -- the single shared authority for the core-suite
+// case count, consulted everywhere this package previously carried the
+// count as a duplicated literal (checkCoreSuiteCapture's passes/total
+// assertions, below). A future case addition/removal updates this ONE
+// const plus runner.cla's own nCoreCases, instead of hunting down every
+// hardcoded copy.
+const wantCoreSuiteCases = 73
 
 // TestCoreSuiteGUIOn68k is the core suite's Mac GUI front-end gate
 // (test-suite-review Task 10): one native 68k boot (buildNative68kUI --
@@ -40,8 +51,8 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // `FAIL <name>: <detail>` line per case plus a final `TOTAL n PASS p
 // FAIL f` line -- exactly the log RunMac's capture protocol already
 // surfaces as `out` for any other native boot. This test parses that
-// capture for all 72 real CoreTest cases (71 + SelfCheck, runner.cla's
-// own nCoreCases -- grown from 42 by the map-hashtable phase's
+// capture for all wantCoreSuiteCases real CoreTest cases (72 + SelfCheck,
+// runner.cla's own nCoreCases -- grown from 42 by the map-hashtable phase's
 // sortedmap/hashtable-map/intmap case families, then 57 by the
 // datetime-instrumentation phase's own case family, then 58 by the
 // layer1-compiler-perf phase's own ClearBasics case, then 61 by the
@@ -58,15 +69,18 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // phase's own field-measured follow-on ListClone case (`list.clone()`,
 // the bulk copy-on-install fix), then 72 by the onlog phase's own OnLog
 // case (`on App.log(line: string)` -- ordering + re-entrancy guard,
-// cases_misc.cla). Task 2 bumped runner.cla's
+// cases_misc.cla), then 73 by correctness-cleanup Task 6's own ErrReturn
+// case (the KErr hidden-result-pointer RETURN ABI, cases_errret.cla) --
+// the count now lives in the ONE wantCoreSuiteCases const above, not a
+// literal at every use site. Task 2 bumped runner.cla's
 // nCoreCases and internal/testsuite's own wantCases, but this file's
 // hardcoded count was explicitly out of Task 2's host-lane-only scope
 // (cg68k.cla off limits, no cg68k arms yet to boot natively past
 // "unsupported UI intrinsic text_int_at" -- text_u32_at before the
 // post-review u32At->intAt rename) -- Task 3's cg68k arms are what
 // first let this gate reach the per-case capture below at all, so the
-// count bump lands together with them here. Requires all 72 real cases
-// PASS in this ONE boot, plus the matching TOTAL line -- success
+// count bump lands together with them here. Requires all wantCoreSuiteCases
+// real cases PASS in this ONE boot, plus the matching TOTAL line -- success
 // criterion 2's native/GUI half (the host/CLI half is
 // internal/testsuite's TestCoreSuiteCLI; the Mac/native CLI half, once
 // TestSuiteOn68k in native_test.go, was retired by test-consolidation --
@@ -110,12 +124,13 @@ func TestCoreSuiteGUIOnMac(t *testing.T) {
 // XRecFieldsRoundtrip, then 46/50/54 via that phase's sortedmap/
 // hashtable-map/intmap case additions, then 70 by the clir-load-perf
 // phase's own TextRange case, then 71 by that same phase's own
-// ListClone case, then 72 by the onlog phase's own OnLog case, see
-// TestCoreSuiteGUIOn68k's own doc
-// comment above): parses the PASS/FAIL/TOTAL lines kit.cla's tkReport
-// funnels every case through, requiring all 72 real CoreTest cases (71 +
-// SelfCheck) PASS and the matching TOTAL line, regardless of which lane
-// produced the capture.
+// ListClone case, then 72 by the onlog phase's own OnLog case, then 73 by
+// correctness-cleanup Task 6's own ErrReturn case -- see
+// TestCoreSuiteGUIOn68k's own doc comment above; the count now lives in
+// wantCoreSuiteCases): parses the PASS/FAIL/TOTAL lines kit.cla's tkReport
+// funnels every case through, requiring all wantCoreSuiteCases real
+// CoreTest cases (72 + SelfCheck) PASS and the matching TOTAL line,
+// regardless of which lane produced the capture.
 func checkCoreSuiteCapture(t *testing.T, out string) {
 	t.Helper()
 	var passes, fails int
@@ -131,13 +146,13 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 			total = line
 		}
 	}
-	if passes != 72 {
-		t.Errorf("PASS lines: got %d, want 72\ncapture:\n%s", passes, out)
+	if passes != wantCoreSuiteCases {
+		t.Errorf("PASS lines: got %d, want %d\ncapture:\n%s", passes, wantCoreSuiteCases, out)
 	}
 	if fails != 0 {
 		t.Errorf("FAIL lines: got %d, want 0", fails)
 	}
-	if want := "TOTAL 72 PASS 72 FAIL 0"; total != want {
+	if want := fmt.Sprintf("TOTAL %d PASS %d FAIL 0", wantCoreSuiteCases, wantCoreSuiteCases); total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

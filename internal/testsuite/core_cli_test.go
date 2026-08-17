@@ -76,6 +76,7 @@ func buildCoreCLI(t *testing.T) string {
 		filepath.Join(root, "testsuite", "core", "cases_param.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_abort.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_textrange.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_errret.cla"),
 		filepath.Join(root, "testsuite", "core", "cli.cla"),
 	}
 	args := append([]string{"emit", "--rtdir", rtDir, "-o", outC}, files...)
@@ -208,6 +209,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"TextRange",
 			"ListClone",
 			"OnLog",
+			"ErrReturn",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

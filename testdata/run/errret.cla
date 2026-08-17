@@ -1,0 +1,44 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// errret.cla: correctness-cleanup Task 6 -- a user function RETURNING
+// `error` (native-lane (cg68k) hidden-result-pointer ABI gap:
+// cgRetNeedsHidden only recognized KStr/KRec, so `return e` in an
+// error-returning function failed check-time as "EVarRef non-scalar"
+// under `clarusc emit68k`). Host lane (C struct return) never hit this
+// bug -- this fixture proves parity across both lanes once the native
+// gap is closed.
+//
+// `error`'s own fields (code/message) are permanently read-only from user
+// code (checkAssignStmt's readOnlyPropName, TyErrorType arm) -- a
+// function can only ever return an EXISTING error value, never build one
+// field by field. `relayError` returns the global `lastError`, which a
+// clamped string store below sets to something non-zero.
+
+func relayError(): error {
+    return lastError
+}
+
+on App.startCLI(args: list of string) {
+    var g: string(3)
+    var e: error
+
+    // overflow g's capacity: sets lastError to a nonzero code.
+    g = "ab" + "cdef"
+
+    // discard-dispatch path: called as a bare statement, result unused --
+    // cgCallFnScalar's KErr discard arm must route to cgEmitStoreErr.
+    relayError()
+
+    // store path: called as an assignment RHS -- cgEmitStoreErr's ECallFn
+    // fast path must materialize the hidden result directly into e.
+    e = relayError()
+
+    if e.code != 0 {
+        alert("code ok")
+    } else {
+        alert("code FAIL")
+    }
+    alert(e.message)
+    quit 0
+}
