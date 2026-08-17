@@ -1,0 +1,28 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// correctness-cleanup Task 9: `file.readText(p, d.Body.text)` -- a widget
+// PROPERTY select (Ch8's runtime properties, not a real lvalue -- reading
+// it materializes a fresh temporary each time) passed as readText's
+// out-arg. checkRejectParamFill only ever rejected a value-typed PARAM
+// root; a widget-property root wasn't covered at all, so this compiled
+// silently, filling a throwaway copy that never reaches the widget (see
+// testdata/valid/editor.cla:30 for the exact same real-world bug --
+// that fixture predates this check and is a frozen byte-for-byte pin
+// per its own history, so it stays as-is; this fixture is the new,
+// owned regression pin).
+window Doc {
+    title: "Untitled"
+    size: 300, 200
+
+    textview Body { fill: both }
+}
+
+func openPath(p: string) {
+    var d: Doc
+
+    d = open Doc
+    if file.readText(p, d.Body.text) {
+        d.title = file.name(p)
+    }
+}

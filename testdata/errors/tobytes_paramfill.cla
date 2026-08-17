@@ -1,0 +1,13 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// correctness-cleanup Task 9 regression pin: `s.toBytes(buf)` fills `buf`
+// in place (Ch12), so a value-typed PARAM root there is rejected the same
+// as any other fill surface (checkRejectParamFill, param-abi phase Task
+// 2). Task 9 moved this guard behind a receiver-kind check (TyStr/TyText)
+// so it's keyed on the receiver, not the method name alone -- this
+// fixture pins that the ordinary string-receiver case still correctly
+// rejects after that change.
+func f(s: string, buf: char[8]): int {
+    return s.toBytes(buf)
+}

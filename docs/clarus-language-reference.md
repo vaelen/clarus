@@ -2054,9 +2054,11 @@ menu Edit { standard edit }        // Undo (dimmed)/Cut/Copy/Paste/Clear, pre-wi
 
 func openPath(p: string) {
     var d: Doc
+    var t: text
 
     d = open Doc
-    if file.readText(p, d.Body.text) {
+    if file.readText(p, t) {
+        d.Body.text = t
         d.path = p
         d.title = file.name(p)
     } else {

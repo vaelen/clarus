@@ -1853,6 +1853,7 @@ func checkMethodCall(sel: int, argsHead: int): int {
     var x: int
     var xt: int
     var name: string
+    var result: int
 
     x = selectX(sel)
     if exprKind(x) == ExIdent and identName(x) == cnFile {
@@ -1871,29 +1872,47 @@ func checkMethodCall(sel: int, argsHead: int): int {
         // types, so checkRejectParamFill's value-kind gate (keyed off the
         // ROOT symbol's own declared type) already leaves those alone.
         // file.save's `data` is read-only (serialized FROM it), so it
-        // needs no guard.
+        // needs no guard. This check needs no type memo (lvalueRootIdent +
+        // the symbol table only), so it can run before dispatch below.
         if name == "load" and argsHead != -1 and exprNext(argsHead) != -1 {
             checkRejectParamFill(exprNext(argsHead))
         }
-        return checkTableMethod(fileFuncs, sel, argsHead)
+        result = checkTableMethod(fileFuncs, sel, argsHead)
+        // correctness-cleanup Task 9: file.readText(path, out)/
+        // file.readResource(name, out) fill `out` in place exactly like
+        // load's `data` above, PLUS `out` may itself be a widget-property
+        // select (`d.Body.text`, checkIsWidgetPropSelect) -- unlike load's
+        // check, that needs `out`'s own base type memo warm
+        // (exprTypeGet(selectX(out)) == TyWidget), which only
+        // checkTableMethod's checkParamArg call above guarantees (it runs
+        // checkExpr on every argument) -- so this call runs AFTER
+        // dispatch, not before.
+        if (name == "readText" or name == "readResource") and argsHead != -1 and exprNext(argsHead) != -1 {
+            checkRejectParamFill(exprNext(argsHead))
+        }
+        return result
     }
     xt = checkExpr(x, -1)
     if xt == InvalidT {
         return InvalidT
     }
     name = poolGet(selectName(sel))
-    // param-abi phase, Task 2 (review round 1): the two in-place-mutating
-    // string/text methods. `fromBytes` mutates its RECEIVER in place (buf
-    // is the read-only source) -- legal for a `text` receiver (reference
-    // type) but not a `string` receiver reached through a value-typed
-    // param. `toBytes` instead fills its `buf` ARGUMENT (always a fixed
-    // char array, always value-kind) regardless of the receiver's own
-    // kind, so it's guarded unconditionally here rather than inside the
-    // TyStr/TyText cases below.
+    // param-abi phase, Task 2 (review round 1); tightened by
+    // correctness-cleanup Task 9: the two in-place-mutating string/text
+    // methods. `fromBytes` mutates its RECEIVER in place (buf is the
+    // read-only source) -- legal for a `text` receiver (reference type)
+    // but not a `string` receiver reached through a value-typed param.
+    // `toBytes` instead fills its `buf` ARGUMENT (always a fixed char
+    // array, always value-kind), so it's guarded here rather than inside
+    // the TyStr/TyText cases below -- but keyed on the RECEIVER's own kind
+    // (TyStr or TyText) rather than the method name alone, so a same-named
+    // method on some other receiver kind (none exists today, but nothing
+    // in this table-dispatch shape stops one being added later) can't be
+    // misdiagnosed by a guard that never looked at xt.
     if name == "fromBytes" and typeKind(xt) == TyStr {
         checkRejectParamFill(x)
     }
-    if name == "toBytes" and argsHead != -1 {
+    if name == "toBytes" and argsHead != -1 and (typeKind(xt) == TyStr or typeKind(xt) == TyText) {
         checkRejectParamFill(argsHead)
     }
     switch typeKind(xt) {
@@ -3954,6 +3973,22 @@ func symTypeIsValueKind(t: int): bool {
     return typeKind(t) == TyRec or typeKind(t) == TyArr or typeKind(t) == TyStr
 }
 
+// checkIsWidgetPropSelect reports whether e is `w.Widget.prop` -- e's own
+// base (`w.Widget`) checks as the TyWidget pseudo-type (Ch8: Widgets'
+// runtime properties) -- the check.cla twin of lower.cla's own
+// isWidgetPropSelect (same shape, same TyWidget test), correctness-cleanup
+// Task 9. Reads exprTypeGet rather than calling checkExpr itself, so it
+// only gives a correct answer once selectX(e) has already been checked by
+// the caller (readOnlyPropName's own doc comment notes the same warm-memo
+// requirement for the identical reason: re-running checkExpr here would
+// just re-emit any diagnostic selectX(e) already reported once).
+func checkIsWidgetPropSelect(e: int): bool {
+    if exprKind(e) != ExSelect {
+        return false
+    }
+    return typeKind(exprTypeGet(selectX(e))) == TyWidget
+}
+
 // checkRejectParamFill bans passing a value-typed param (bare, or reached
 // through a field/index chain) at any position a callee fills or mutates
 // in place -- the fill-argument surface's own version of checkAssignStmt's
@@ -3968,10 +4003,23 @@ func symTypeIsValueKind(t: int): bool {
 // map/window ref/connection/listener/serviceBrowser) stays legal
 // unconditionally, matching every other by-reference mutation in the
 // language.
+//
+// correctness-cleanup Task 9: also rejects a WIDGET-PROPERTY root
+// (`d.Body.text`, checkIsWidgetPropSelect above) -- reading a widget
+// property materializes a fresh temporary every time (Ch8: it isn't a real
+// lvalue), so filling it in place silently discards the result instead of
+// ever reaching the widget. This check runs first and returns outright:
+// a widget-property expr's own root Ident (if any, e.g. `d` above) is
+// never itself the thing at fault, so falling through to the value-kind
+// param check below would be both redundant and possibly wrong.
 func checkRejectParamFill(argExpr: int) {
     var rootIdent: int
     var symIdx: int
 
+    if checkIsWidgetPropSelect(argExpr) {
+        emitDiag(exprLine(argExpr), exprCol(argExpr), "cannot fill a widget property in place; read into a text variable first")
+        return
+    }
     rootIdent = lvalueRootIdent(argExpr)
     if rootIdent == -1 {
         return

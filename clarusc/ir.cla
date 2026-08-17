@@ -2427,6 +2427,19 @@ func irXRecType(name: int): int {
     return newIRType(KXRec, 0, -1, name)
 }
 
+// irXRecDiagLine/irXRecDiagCol (correctness-cleanup Task 9): the position
+// irXRecFieldSize blames if its XFRec branch finds a nested field's
+// element record not yet in irRecords (the same composition-ordering
+// forward reference lowTypeAt's own TyXRec arm already guards for the
+// OUTER record -- see that guard's doc comment, lower.cla). An
+// IRFieldSlot carries no line/col of its own, so this file has no
+// "nearest" position to read off the field directly; lowTypeAt -- the one
+// caller of irXRecSize with real position info -- stamps these two right
+// before calling it, the nearest available context for whatever forward
+// reference its own TyXRec arm is currently resolving.
+var irXRecDiagLine: int
+var irXRecDiagCol: int
+
 // irXRecFieldAlign/irXRecFieldSize (Task 4) are irXRecFieldOffset/
 // irXRecSize's own per-field primitives -- Ch13's field palette table,
 // read off an irFieldSlots entry's xkind/xn (never t, except XFRec's
@@ -2444,6 +2457,7 @@ func irXRecFieldAlign(f: int): int {
 
 func irXRecFieldSize(f: int): int {
     var xk: int
+    var nestedIdx: int
 
     xk = irFieldSlotXKind(f)
     if xk == XFBool or xk == XFByte {
@@ -2462,8 +2476,21 @@ func irXRecFieldSize(f: int): int {
         return irFieldSlotXN(f)
     }
     // XFRec: irtName(t) is the nested record's own interned name
-    // (irXRecType's `name` slot).
-    return irXRecSize(irFindRecordLayoutByName(irtName(irFieldSlotType(f))))
+    // (irXRecType's `name` slot). task-9: that nested record's OWN
+    // irRecords entry may not exist yet (the same composition-ordering
+    // forward reference lowTypeAt's TyXRec arm already guards for the
+    // OUTER record, which this field is nested INSIDE -- that guard can't
+    // see this deeper case). Diagnose instead of letting irXRecSize's
+    // irRecordLayoutFieldsHead(-1) panic on irRecords[-1], same message
+    // shape as lowTypeAt's own guard; a 0-byte fallback keeps this field
+    // (and the offset/size walk it's part of) from ever blocking on this
+    // record entry so lowering can keep collecting diagnostics.
+    nestedIdx = irFindRecordLayoutByName(irtName(irFieldSlotType(f)))
+    if nestedIdx == -1 {
+        emitDiag(irXRecDiagLine, irXRecDiagCol, "extern record " + poolGet(irtName(irFieldSlotType(f))) + " is not declared before this use")
+        return 0
+    }
+    return irXRecSize(nestedIdx)
 }
 
 // irXRecFieldOffset returns fieldIdx's (0-based, declaration-order)

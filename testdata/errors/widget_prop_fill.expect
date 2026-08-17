@@ -1,0 +1,1 @@
+../../testdata/errors/widget_prop_fill.cla:25:31: cannot fill a widget property in place; read into a text variable first

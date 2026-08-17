@@ -396,6 +396,14 @@ func lowTypeAt(t: int, line: int, col: int): int {
             emitDiag(line, col, "extern record " + poolGet(typeNameIdx(t)) + " is not declared before this use")
             return irArrType(irCharT, 0)
         }
+        // task-9: irXRecSize's own walk can recurse into a NESTED field
+        // whose element record isn't in irRecords yet (irXRecFieldSize's
+        // own guard, ir.cla) -- stamp the position it should blame before
+        // calling in, the nearest available context for whichever
+        // composition-ordering forward reference that guard ends up
+        // resolving.
+        irXRecDiagLine = line
+        irXRecDiagCol = col
         return irArrType(irCharT, irXRecSize(recIdx))
     }
     case TyArr { return irArrType(lowType(typeElem(t)), typeN(t)) }
