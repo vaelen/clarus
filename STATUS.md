@@ -1,12 +1,13 @@
-# Session status — 2026-08-17/18 (correctness-cleanup: IMPLEMENTATION DONE, T2 green; merge on Andrew's word)
+# Session status — 2026-08-18 (correctness-cleanup: MERGED to main and pushed)
 
-Handoff summary. **The `correctness-cleanup` phase is COMPLETE on branch
-`correctness-cleanup` — all 12 tasks landed, T1 (`--smoke` where
-applicable) green throughout, the bootstrap snapshot regenerated and
-re-verified (fixed point reached), and full T2
-(`scripts/test-merge.sh`) PASS end-to-end at the branch tip, including
-the new `TestToolboxSuiteJiggleOn68k` gated native boot. The branch is
-NOT merged — merge is Andrew's call.**
+Handoff summary. **The `correctness-cleanup` phase is COMPLETE and
+MERGED — all 12 tasks landed, T1 (`--smoke` where applicable) green
+throughout, the bootstrap snapshot regenerated and re-verified (fixed
+point reached), and full T2 (`scripts/test-merge.sh`) PASS end-to-end
+at the tip, including the new `TestToolboxSuiteJiggleOn68k` gated
+native boot. Merged to `main` (ff `48a4696..3a4c054`) and pushed to
+origin 2026-08-18 01:15 JST on Andrew's request; `main == origin/main
+== 3a4c054`.**
 
 ## 0. START HERE next session
 

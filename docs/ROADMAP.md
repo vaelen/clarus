@@ -65,8 +65,8 @@ Everything through the serial-connection phase is merged to `main`:
   phase, merged 2026-08-16).
 
 **`correctness-cleanup` phase (an interleaved detour, not on the
-language-usability list below) is COMPLETE on branch
-`correctness-cleanup`, merge pending Andrew's request:** the About box
+language-usability list below) is COMPLETE — merged to `main` (ff
+`48a4696..3a4c054`) and pushed 2026-08-18:** the About box
 now shows real app info in unscripted runs; a labeled `popup` with a
 narrow declared width no longer collapses to an unclickable box;
 div-by-zero (and INT_MIN/-1) is pinned as a runtime error on both lanes;
