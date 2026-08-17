@@ -47,7 +47,7 @@ func caseNarrowPopup(): TestResult {
 
     UiTestClick(tbNpCancelX, tbNpCancelY)
 
-    if right - left >= 16 and left >= 0 and right <= tbNpContentW {
+    if right - left == 60 and left >= 0 and right <= tbNpContentW {
         return tkPass("NarrowPopup")
     }
     detail = "left " + tkIntToStr(left) + " right " + tkIntToStr(right)

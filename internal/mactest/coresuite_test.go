@@ -23,9 +23,9 @@ import (
 // 9's report, native-compat gap #4), which a UI program never reaches.
 var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("testsuite", "core", "gui.cla"))
 
-// wantCoreSuiteCases is runner.cla's own nCoreCases (72 real cases +
-// SelfCheck -- 71 real + SelfCheck before correctness-cleanup Task 6's own
-// ErrReturn addition) -- the single shared authority for the core-suite
+// wantCoreSuiteCases is runner.cla's own nCoreCases (the total result-line
+// count a full run produces: every real CoreTest case plus SelfCheck) --
+// the single shared authority for the core-suite
 // case count, consulted everywhere this package previously carried the
 // count as a duplicated literal (checkCoreSuiteCapture's passes/total
 // assertions, below). A future case addition/removal updates this ONE
@@ -51,8 +51,8 @@ const wantCoreSuiteCases = 74
 // `FAIL <name>: <detail>` line per case plus a final `TOTAL n PASS p
 // FAIL f` line -- exactly the log RunMac's capture protocol already
 // surfaces as `out` for any other native boot. This test parses that
-// capture for all wantCoreSuiteCases real CoreTest cases (72 + SelfCheck,
-// runner.cla's own nCoreCases -- grown from 42 by the map-hashtable phase's
+// capture for all wantCoreSuiteCases real CoreTest cases, runner.cla's
+// own nCoreCases -- grown from 42 by the map-hashtable phase's
 // sortedmap/hashtable-map/intmap case families, then 57 by the
 // datetime-instrumentation phase's own case family, then 58 by the
 // layer1-compiler-perf phase's own ClearBasics case, then 61 by the
@@ -131,7 +131,7 @@ func TestCoreSuiteGUIOnMac(t *testing.T) {
 // TestCoreSuiteGUIOn68k's own doc comment above; the count now lives in
 // wantCoreSuiteCases): parses the PASS/FAIL/TOTAL lines kit.cla's tkReport
 // funnels every case through, requiring all wantCoreSuiteCases real
-// CoreTest cases (72 + SelfCheck) PASS and the matching TOTAL line,
+// CoreTest cases PASS and the matching TOTAL line,
 // regardless of which lane produced the capture.
 func checkCoreSuiteCapture(t *testing.T, out string) {
 	t.Helper()

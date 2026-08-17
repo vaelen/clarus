@@ -460,6 +460,7 @@ func TestRunErrOn68k(t *testing.T) {
 		filepath.Join(repoRoot(t), "testdata", "runerr", "oob.cla"),
 		filepath.Join(repoRoot(t), "testdata", "runerr", "listindex.cla"),
 		filepath.Join(repoRoot(t), "testdata", "runerr", "divzero.cla"),
+		filepath.Join(repoRoot(t), "testdata", "runerr", "modzero.cla"),
 	}
 	for _, f := range files {
 		f := f

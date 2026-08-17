@@ -109,6 +109,16 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   golden (or a narrower text-contains assertion) over the emitted C
   around `cpEmitMain`'s pump loop would close that tripwire gap.
 
+### Correctness-cleanup phase (2026-08-17)
+
+- **`cgLastTrackedOff` aliasing hazard in `cgIntrMapGetDv` widened by one
+  arg position** — the key is now evaluated before the dv handoff
+  consult, widening the pre-existing hazard window by one arg position.
+  Unreachable today (the checker rejects text-typed keys; the same
+  hazard already existed for the map expression itself). Defensive fix
+  is `cgLastTrackedOff = -1` before the dv store; deferred because it
+  forces a snapshot regen.
+
 ## ABI / performance
 
 - **`KArr` param ABI** still copies arrays by value at call sites
@@ -141,6 +151,15 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   session's `##CLARUS-LOG##` trailer clips at the tail. Raising it
   reblesses ~40 native goldens (`MOVE.L #4096,D0` in every `.s`); do it
   when a real session loses lines that matter.
+
+### Correctness-cleanup phase (2026-08-17)
+
+- **`scripts/size-68k.sh` suite composition is stale/broken** — missing
+  `cases_param`/`abort`/`textrange`/`errret`/`evalorder`; repair before
+  the next size-sensitive phase. This phase's own code-size growth
+  (jiggle machinery in the always-spliced `uiscript.cla`, plus the
+  div/mod guard added to every glue site; 7 fixtures newly crossed into
+  seg2) went unmeasured as a result — record that gap alongside the fix.
 
 ### Serial/connection phase (2026-08-16)
 

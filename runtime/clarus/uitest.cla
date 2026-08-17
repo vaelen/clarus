@@ -308,16 +308,22 @@ func UiTestChecksum(x: int, y: int, w: int, h: int): int {
 // marshal a ptr out-param through from a --testapi-spliced function.
 func UiTestPopupBoxLeft(i: int): int {
     var out: ptr
+    var v: int
 
     out = UiNewPtr(rtUiRectSize)
     rtUiPopupBoxInto(rtUiWinstOf(UiFrontWindow()), i, out)
-    return peekw(out + 2)
+    v = peekw(out + 2)
+    UiDisposePtr(out)
+    return v
 }
 
 func UiTestPopupBoxRight(i: int): int {
     var out: ptr
+    var v: int
 
     out = UiNewPtr(rtUiRectSize)
     rtUiPopupBoxInto(rtUiWinstOf(UiFrontWindow()), i, out)
-    return peekw(out + 6)
+    v = peekw(out + 6)
+    UiDisposePtr(out)
+    return v
 }

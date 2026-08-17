@@ -115,8 +115,14 @@ enum + runner, not one boot per case.
   toolbox-cookbook phase's `Catalog` case, which hardware-proves the
   `toolbox/` catalog below — then to 24 real by the native-gaps-cleanup
   phase's `FInfoStamp` case, which hardware-proves the doctype/creator
-  file-stamp rule on both lanes) needs
-  the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
+  file-stamp rule on both lanes — then to 27 real by the mac-resident-
+  clarusc phase's `ResourceBake`/`WriteResStamp`/`FieldCap` cases — then
+  to 28 real by the datetime-instrumentation phase's `DateTimeRoundTrip`
+  case — then to 29 real by the clarusc-live-log phase's `LivePaint`
+  case — then to 30 real by the serial-connection phase's
+  `SerialOpenWrite` case — then to 31 real by the correctness-cleanup
+  phase's `NarrowPopup` case, which pins the labeled-popup layout fix)
+  needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
   (`cli_mac.cla` — `cli.cla` can't boot natively, see its own doc comment:
@@ -133,7 +139,7 @@ enum + runner, not one boot per case.
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
   `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract
-  design: it asserts all 40 other cases ran in the same invocation
+  design: it asserts all 73 other cases ran in the same invocation
   (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
   `all`), never alone.
   (Exact file list: `internal/mactest/suite_host_test.go`'s
