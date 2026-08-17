@@ -60,6 +60,55 @@ var rtUiScripted: bool = false
 var rtUiScriptDbl: bool = false
 
 // ================================================================
+// Heap-jiggle stress mode (correctness-cleanup Task 3). The
+// stale-master-pointer-across-compaction bug class has been found six
+// times by heap-layout luck: a relocatable block's master pointer gets
+// cached in a local/register before a call that can compact the heap,
+// then dereferenced after compaction has moved the block. `jiggle on`
+// forces a full CompactMem before every scripted dispatch AND at the
+// UiNewPtr allocation waist (ui.cla) so every unlocked relocatable
+// block that CAN move DOES move on (almost) every opportunity --
+// turning that bug class from heap-layout luck into a deterministic
+// failure. Default off: byte-identical to pre-Task-3 behavior.
+// ================================================================
+var rtUiJiggle: bool = false
+var rtUiJiggleBusy: bool = false
+
+// UiCompactMem: local extern per the runtime convention (each runtime
+// file declares its own externs even when another module already
+// declares the same trap under a different name -- Ch13's redeclare-
+// identically-is-safe rule, toolbox/memory.cla's own header comment).
+// See toolbox/memory.cla's CompactMem entry for the full trap-word
+// citation (0xA04C, `reg`, D0 in/out).
+external func UiCompactMem(cbNeeded: int): int = trap 0xA04C reg
+
+// rtUiJiggleTick: when jiggle mode is on, force a full-heap compaction so
+// every unlocked relocatable block that CAN move DOES move -- turns the
+// stale-master-pointer-across-compaction class from heap-layout luck into
+// a deterministic failure. Recursion guard: CompactMem itself must not
+// re-enter through an allocating wrapper.
+func rtUiJiggleTick() {
+    if not rtUiJiggle or rtUiJiggleBusy {
+        return
+    }
+    rtUiJiggleBusy = true
+    UiCompactMem(0x7FFFFFF0)
+    rtUiJiggleBusy = false
+}
+
+// rtUiScriptJiggle: `jiggle on|off` verb body -- mirrors
+// rtUiScriptAnswerChanges's own on/off/three-way string-arg shape.
+func rtUiScriptJiggle() {
+    if rtUiStrEq(rtUiArg1Buf, UiStrAddr("on")) {
+        rtUiJiggle = true
+    } else if rtUiStrEq(rtUiArg1Buf, UiStrAddr("off")) {
+        rtUiJiggle = false
+    } else {
+        rtPanic("jiggle: bad argument (want on|off)")
+    }
+}
+
+// ================================================================
 // Scripted dialog/popup answer queue (rt_ui.c:586-658). askOpen/askSave/
 // askSaveChanges (uidialogs.cla, Task 10) consume this queue instead of a
 // real Standard File dialog or Alert(130). Task 9 wired the POPUP kind
@@ -1320,6 +1369,7 @@ func rtUiRunScripted() {
             return
         }
         rtUiScriptTokenize()
+        rtUiJiggleTick()
         if not rtUiScriptDispatchLine() {
             log("uiport: unknown or unsupported scripted verb")
             quit 1
@@ -1358,6 +1408,8 @@ func rtUiScriptDispatchLine(): bool {
         rtUiScriptTick(rtUiAtoi(rtUiArg1Buf))
     } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("snap")) {
         rtUiTestSnap(rtUiArg1Buf)
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("jiggle")) {
+        rtUiScriptJiggle()
     } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("quit")) {
         rtUiQuit()
     } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("launchdoc")) {

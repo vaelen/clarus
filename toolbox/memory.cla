@@ -94,6 +94,69 @@
 // All ten trap words above are bit-11-clear (`trap & 0x0800 == 0`, per
 // the Ch13 reading rule), confirming the `reg` convention this whole
 // file uses.
+//
+// heap-jiggle-stress-mode phase (correctness-cleanup Task 3): five more
+// Memory Manager routines -- CompactMem/PurgeMem/MoveHHi/FreeMem/MaxMem.
+// None of the five appear in Retro68's Universal Interfaces 3.4 headers
+// at all (confirmed by direct grep of both CIncludes/MacMemory.h and
+// AIncludes/MacMemory.a -- zero matches for any of the five names, in
+// contrast to every routine cited above), so the usual "decode the
+// Apple pragma" path is unavailable; Apple's own C/asm interfaces
+// simply don't expose these (heap-compaction control was never part of
+// the sanctioned app-facing surface, though the traps themselves are
+// real and documented). Verified instead against two independent
+// sources that agree: Inside Macintosh Volume II's Memory Manager
+// chapter (`inside-macintosh-v1/Inside Macintosh Volume II.pdf`, the
+// Pascal signature + "On entry/On exit" register table for each
+// routine, pp. II-38-46) for existence/register-shape, cross-checked
+// against Retro68/multiversal/defs/MemoryMgr.yaml for the trap word
+// itself -- multiversal is normally untrusted when cited ALONE, but is
+// independently corroborated here by IM's own register table, and its
+// entries for the traps already verified above (HLock 0xA029/HUnlock
+// 0xA02A) match Apple's real headers exactly, giving no reason to
+// distrust adjacent entries in the same file. This combination caught a
+// real bug in this task's own starting plan: it guessed PurgeMem =
+// 0xA049, but multiversal's own table shows 0xA049 is HPurge (a
+// different, already-real routine a few lines away in the same trap
+// range) and PurgeMem is actually 0xA04D -- exactly the kind of
+// transposed-adjacent-trap-word error the verify-before-trusting rule
+// exists to catch.
+//
+//   CompactMem  IM-II p.II-38: `FUNCTION CompactMem (cbNeeded: Size):
+//               Size`. "On entry D0: cbNeeded (long word); On exit D0:
+//               function result (long word)" -- a true function, D0 in
+//               and D0 out, matches `reg` exactly (one int param -> D0,
+//               int return -> D0). multiversal: trap 0xA04C, no
+//               ReturnMemErr extras (agrees -- real D0 result, not an
+//               error code).
+//   PurgeMem    IM-II p.II-39: `PROCEDURE PurgeMem (cbNeeded: Size)`.
+//               "On entry D0: cbNeeded (long word); On exit D0: result
+//               code (word)" -- a void PROCEDURE whose D0 exit value is
+//               an error code, the same shape as SetHandleSize above:
+//               `reg memerr`. multiversal: trap 0xA04D, `executor_extras:
+//               ReturnMemErr<D0>` (confirms the memerr shape).
+//   MoveHHi     IM-II p.II-44: `PROCEDURE MoveHHi (h: Handle) [Not in
+//               ROM]`, with its own "Result codes" list (noErr/
+//               nilHandleErr/memLockedErr) -- another void-PROCEDURE/
+//               memerr shape, h in A0 (one ptr param -> A0, matches
+//               HLock's positional rule). multiversal: trap 0xA064,
+//               `executor_extras: ReturnMemErr<D0>` (confirms).
+//   FreeMem     IM-II p.II-38: `FUNCTION FreeMem: LONGINT`, no params,
+//               D0 out only. multiversal: trap 0xA01C, `returnreg: D0`,
+//               no memerr extras -- matches `reg` with zero args.
+//   MaxMem      IM-II p.II-38: `FUNCTION MaxMem: LONGINT`, "On exit D0:
+//               function result (long); A0: grow (long)" -- TWO output
+//               registers (multiversal: trap 0xA11D, `returnreg: D0`
+//               PLUS a separate `growp` arg bound `Out<A0>`). This
+//               file's `reg` extern form has no way to express a second
+//               output register, and the runtime only ever needs the D0
+//               result (the largest contiguous free block size after
+//               growing the heap zone to its limit -- the common way
+//               MaxMem is called in practice), so it's declared narrowly
+//               below: D0 result only, A0 left unbound/unread. Do not
+//               rely on A0 after calling this declaration.
+//
+// All five new trap words are also bit-11-clear.
 
 external func NewPtr(byteCount: int): ptr = trap 0xA11E reg
 external func DisposePtr(p: ptr) = trap 0xA01F reg
@@ -105,3 +168,8 @@ external func HLock(h: ptr) = trap 0xA029 reg
 external func HUnlock(h: ptr) = trap 0xA02A reg
 external func BlockMoveData(srcPtr: ptr, destPtr: ptr, byteCount: int) = trap 0xA22E reg
 external func MoreMasters() = trap 0xA036 reg
+external func CompactMem(cbNeeded: int): int = trap 0xA04C reg
+external func PurgeMem(cbNeeded: int): int = trap 0xA04D reg memerr
+external func MoveHHi(h: ptr): int = trap 0xA064 reg memerr
+external func FreeMem(): int = trap 0xA01C reg
+external func MaxMem(): int = trap 0xA11D reg

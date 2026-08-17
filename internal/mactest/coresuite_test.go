@@ -328,6 +328,43 @@ func TestToolboxSuiteOn68k(t *testing.T) {
 	checkToolboxSuiteCapture(t, out)
 }
 
+// TestToolboxSuiteJiggleOn68k (heap-jiggle-stress-mode phase,
+// correctness-cleanup Task 3) is TestToolboxSuiteOn68k's stress-mode
+// twin: identical build (toolboxFiles, same --testapi/--bake args), but
+// driven by testdata/ui/toolboxsuite_jiggle.events, which prepends
+// `jiggle on` before the same `click 86 194` / `quit` script. With
+// jiggle on, uiscript.cla's rtUiJiggleTick forces a full CompactMem
+// before every scripted dispatch AND at ui.cla's UiNewPtr allocation
+// waist -- every unlocked relocatable block that CAN move DOES move on
+// (almost) every opportunity, turning the stale-master-pointer-across-
+// compaction bug class (found six times by heap-layout luck) from luck
+// into determinism.
+//
+// A FAIL here with TestToolboxSuiteOn68k green is exactly the target
+// signal: a real stale-master-pointer bug, now caught deterministically
+// instead of by chance. This task's own controller has pre-ruled that
+// outcome as expected and NOT this task's failure -- it's Task 4's
+// input. A FAIL in the exit code or capture format itself (as opposed
+// to a per-case FAIL line) would still indicate something more basic
+// broke and is worth a second look.
+//
+// Longer timeout than the plain suite (5m): CompactMem runs before
+// every dispatch and every UiNewPtr call, which is a lot more heap
+// walking than the non-jiggled boot. 15m budgeted; bump (or fall back
+// to a deterministic every-Nth-call stride in rtUiJiggleTick, a const
+// N) if that proves too tight.
+func TestToolboxSuiteJiggleOn68k(t *testing.T) {
+	requireMac(t)
+	eventsRel := filepath.Join("..", "..", "testdata", "ui", "toolboxsuite_jiggle.events")
+	toolboxArgs := append([]string{"--testapi", "--bake", toolboxResourceBakeName}, pkgRelFiles(toolboxFiles)...)
+	bin := buildNative68kUI(t, "toolboxsuite_jiggle_gui", eventsRel, toolboxArgs...)
+	out, _, exitCode := RunMac(t, bin, 15*time.Minute)
+	if exitCode != 0 {
+		t.Fatalf("toolbox suite (jiggle) exit code %d, want 0\ncapture:\n%s", exitCode, out)
+	}
+	checkToolboxSuiteCapture(t, out)
+}
+
 // TestToolboxSuiteOnMac (Task 12) is TestToolboxSuiteOn68k's Retro68/
 // cprint-lane twin -- same toolboxFiles composition, same
 // toolboxsuite.events script, same per-case result assertion

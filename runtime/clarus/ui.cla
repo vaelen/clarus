@@ -179,7 +179,24 @@
 include "../../toolbox/appleevents.cla"
 
 external func UiHandleDeref(h: ptr): ptr = inline deref
-external func UiNewPtr(size: int): ptr = trap 0xA11E reg
+external func UiNewPtrRaw(size: int): ptr = trap 0xA11E reg
+
+// UiNewPtr: the allocation-waist wrapper around UiNewPtrRaw
+// (heap-jiggle-stress-mode phase, correctness-cleanup Task 3). Every
+// existing call site in this runtime already calls `UiNewPtr` -- this
+// wrapper is the smallest diff that hooks the allocation waist without
+// touching any of them: `rtUiJiggleTick()` (uiscript.cla) is a no-op
+// unless scripted `jiggle on` is in effect, so this is byte-identical
+// to a plain trap call by default. Within-handler staleness (a master
+// pointer cached before an allocation that can compact the heap, then
+// dereferenced after) is the historical bug shape; dispatch-boundary
+// jiggle alone (rtUiRunScripted) cannot catch it -- only hooking the
+// allocation waist itself does.
+func UiNewPtr(size: int): ptr {
+    rtUiJiggleTick()
+    return UiNewPtrRaw(size)
+}
+
 external func UiNewPtrClear(size: int): ptr = trap 0xA31E reg
 external func UiNewHandleClear(size: int): ptr = trap 0xA322 reg
 external func UiDisposeHandle(h: ptr) = trap 0xA023 reg

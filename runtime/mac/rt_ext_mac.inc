@@ -305,7 +305,23 @@ static Point rt_ext_ui_pt(int32_t packed) {
     return p;
 }
 void *rt_ext_UiHandleDeref(void *h) { return *(void **)h; }
-void *rt_ext_UiNewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
+/* rt_ext_UiNewPtrRaw: renamed from rt_ext_UiNewPtr (heap-jiggle-stress-mode
+ * phase, correctness-cleanup Task 3) -- ui.cla's own `UiNewPtr` is now a
+ * plain (non-extern) Clarus wrapper around `UiNewPtrRaw` that ticks the
+ * jiggle hook first, so it needs no C glue of its own on this lane; only
+ * the raw trap call still does. */
+void *rt_ext_UiNewPtrRaw(int32_t size) { return (void *)NewPtr((Size)size); }
+/* rt_ext_UiCompactMem: ponytail -- deliberate no-op (return 0), not a real
+ * CompactMem() call. Apple's own Universal Interfaces headers (this
+ * Retro68 checkout's CIncludes/AIncludes/MacMemory.*) don't declare
+ * CompactMem at all (see toolbox/memory.cla's header comment for the
+ * verification trail), so there's no sanctioned C symbol to call here
+ * without hand-rolled inline-asm trap glue; this lane also has no jiggle
+ * test today (TestToolboxSuiteJiggleOn68k is native-68k-only), so the
+ * no-op is inert rather than silently wrong. Upgrade to a real trap call
+ * (inline asm `dc.w 0xA04C` or equivalent) if/when a jiggle-mode test
+ * targets the Retro68/cprint lane. */
+int32_t rt_ext_UiCompactMem(int32_t cbNeeded) { (void)cbNeeded; return 0; }
 void *rt_ext_UiNewPtrClear(int32_t size) { return (void *)NewPtrClear((Size)size); }
 void *rt_ext_UiNewHandleClear(int32_t size) { return (void *)NewHandleClear((Size)size); }
 void rt_ext_UiDisposeHandle(void *h) { DisposeHandle((Handle)h); }
