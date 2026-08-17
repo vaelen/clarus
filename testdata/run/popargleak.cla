@@ -1,0 +1,53 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// popargleak.cla: correctness-cleanup Task 8 regression pin. A bare
+// list.pop()/shift() result passed DIRECTLY as a call argument transfers
+// ownership out of the list with no retain (IListPop/IListShift's own
+// printer/codegen) -- lowIntrIsOwningContainerRead's own doc comment
+// (clarusc/lower.cla) names this exact gap: nothing ever schedules a
+// release for that fresh +1 once the call returns, on EITHER lane. Values
+// still come out correct either way (the leak is a refcount/heap-block
+// bug, not a value bug) -- the LEAK half of this regression is pinned by
+// internal/mactest's TestLeakGate/PopArgLeak, which reuses THIS SAME
+// fixture via the memory-leak-fix phase's CLARUS_MEM_STRICT live-block
+// seam (runLeakFixture). This .behavior golden only pins the VALUES.
+func consumeLen(t: text): int {
+    return t.length
+}
+
+on App.startCLI(args: list of string) {
+    var l: list of text
+    var i: int
+    var total: int
+    var n: int
+
+    n = 500
+    i = 0
+    while i < n {
+        l.push("leaktest")
+        i = i + 1
+    }
+    total = 0
+    i = 0
+    while i < n / 2 {
+        // pop() used directly as a call argument -- host: fpCallFnArg's
+        // early KStr/KRec-only return used to skip release scheduling for
+        // this KText result; native: cgPushArgs' scalar-slot else arm
+        // (every non-KStr/KRec/KErr kind) never scheduled one either.
+        total = total + consumeLen(l.pop())
+        i = i + 1
+    }
+    i = 0
+    while i < n / 2 {
+        // shift() -- same owning-read classification, opposite end.
+        total = total + consumeLen(l.shift())
+        i = i + 1
+    }
+    if total == n * 8 and l.count == 0 {
+        alert("PASS")
+    } else {
+        alert("FAIL")
+    }
+    quit 0
+}

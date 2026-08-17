@@ -1423,6 +1423,19 @@ func fpCallFnArg(a: int): text {
     t = irExprType(a)
     k = irtKind(t)
     if k != KStr and k != KRec {
+        // Task 8 (memory-bug pair): a bare pop/shift result passed DIRECTLY
+        // as a call argument transfers ownership out of the list with no
+        // retain (same as the KRec case below), but for a non-KStr/KRec
+        // handle kind (KText/KList/KMap/KSortedMap/KIntMap) this early
+        // return used to hand the raw fpExpr(a) straight to the callee
+        // with no release ever scheduled -- a leak on every call. Route it
+        // through the same tracked-temp machinery as the KRec branch below
+        // so fpStmt's end-of-statement flush releases it.
+        if irExprKind(a) == EIntr and lowIntrIsOwningContainerRead(irIntrName(a)) and fpNeedsRelease(t) {
+            name = fpNewTrackedTmp(t)
+            fpEmit(name + " = " + fpExpr(a) + ";")
+            return name
+        }
         return fpExpr(a)
     }
     if not irArgNeedsCopy(a) {

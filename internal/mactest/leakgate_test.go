@@ -50,6 +50,20 @@ func TestLeakGate(t *testing.T) {
 		// out-of-this-fix-round's-scope push/set-retain gap.
 		runLeakFixture(t, "../../testdata/leakgate/arrelem.cla")
 	})
+	t.Run("PopArgLeak", func(t *testing.T) {
+		// correctness-cleanup Task 8: a bare list.pop()/shift() result
+		// passed DIRECTLY as a call argument used to leak its owning
+		// reference on both lanes (lowIntrIsOwningContainerRead's own doc
+		// comment, clarusc/lower.cla, names this exact gap) -- host:
+		// fpCallFnArg's k != KStr/KRec early return skipped release
+		// scheduling for a KText result entirely; native: cgPushArgs'
+		// scalar-slot else arm never scheduled one for any handle kind.
+		// Shares testdata/run/popargleak.cla with the values-only
+		// .behavior golden (internal/selfhost) -- same fixture, two
+		// different assertions (values here don't prove the leak is
+		// fixed; only the live-block count does).
+		runLeakFixture(t, "../../testdata/run/popargleak.cla")
+	})
 	t.Run("DoubleCompile", func(t *testing.T) {
 		runDoubleCompileGate(t)
 	})

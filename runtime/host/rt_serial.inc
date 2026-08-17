@@ -152,6 +152,11 @@ int32_t rt_ext_ConnHOpen(int32_t slot, int32_t portIdx) {
         if (port <= 0) return 1;
         fd = rt_conn_listen(port);
         if (fd < 0) return errno != 0 ? errno : 1;
+        /* Belt, not currently reachable: conn.cla's rtConnOpen only ever
+         * calls down here when rtConnState[slot] != stOpen, so slot's fd
+         * should already be -1 here. Close it first anyway in case that
+         * invariant ever loosens (e.g. a future direct-reopen path). */
+        if (rt_conn_slots[slot].fd >= 0) close(rt_conn_slots[slot].fd);
         rt_conn_slots[slot].fd = fd;
         rt_conn_slots[slot].listening = 1;
         return 0;
@@ -172,6 +177,8 @@ int32_t rt_ext_ConnHOpen(int32_t slot, int32_t portIdx) {
         if (port <= 0) return 1;
         fd = rt_conn_connect(host, port);
         if (fd < 0) return errno != 0 ? errno : 1;
+        /* Belt, not currently reachable -- see the listen: branch above. */
+        if (rt_conn_slots[slot].fd >= 0) close(rt_conn_slots[slot].fd);
         rt_conn_slots[slot].fd = fd;
         rt_conn_slots[slot].listening = 0;
         return 0;

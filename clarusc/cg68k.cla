@@ -9485,6 +9485,7 @@ func cgPushArgs(argsHead: int): int {
     var ak: IRExprKind
     var tmpRef: int
     var recNameIdx: int
+    var off: int
 
     total = 0
     a = argsHead
@@ -9550,7 +9551,31 @@ func cgPushArgs(argsHead: int): int {
             }
         } else {
             sz = cgSlotSizeOf(t)
-            if sz == 2 {
+            ak = irExprKind(a)
+            // Task 8 (memory-bug pair): the KRec sub-branch above (its own
+            // final-review fix wave comment, `ak == EIntr and
+            // lowIntrIsOwningContainerRead(...)`) schedules a release for a
+            // bare pop/shift record used directly as a call argument, but a
+            // non-KRec handle kind (KText/KList/KMap/KSortedMap/KIntMap)
+            // falls through to this plain scalar-slot arm instead, which
+            // used to push the popped/shifted value with no release ever
+            // scheduled -- a leak on every call, mirroring the host-lane
+            // gap this same task closes in cprint.cla's fpCallFnArg.
+            // cgPendingArgReleases can't hold this (cgFlushArgReleases only
+            // knows how to walk a KRec via cgEmitRecWalkCall), so this
+            // reuses the same general tracked-temp facility
+            // cgCallFnScalar's own discard-detection branch already uses
+            // for a bare scalar/handle return: store the just-evaluated
+            // value into a fresh tracked temp (cgFreeStmtTmps releases it
+            // at end of statement -- after this call has long since
+            // returned and consumed the pushed copy) without disturbing D0,
+            // then push D0 as the argument exactly as before.
+            if sz == 4 and ak == EIntr and lowIntrIsOwningContainerRead(irIntrName(a)) and cgNeedsRelease(t) {
+                cgExpr(a)
+                off = cgNewTrackedTmp(t)
+                cgStoreD0At(6, off, t)
+                a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            } else if sz == 2 {
                 cgExpr(a)
                 a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
             } else {
