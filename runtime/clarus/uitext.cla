@@ -273,6 +273,7 @@ func rtUiTeWidestLine(te: ptr): int {
     hTextMp = UiHandleDeref(hText)
     i = 0
     while i < n {
+        teMp = UiHandleDeref(te) // re-derive: UiTextWidth (prior iteration) can move memory
         a = peekw(teMp + rtUiTeLineStarts + i * 2)
         b = peekw(teMp + rtUiTeLineStarts + (i + 1) * 2)
         // a line's terminating CR contributes no width -- trim it.
@@ -338,6 +339,7 @@ func rtUiTeScrollSync(inst: ptr, wIdx: int) {
             maxScroll = 0
         }
         UiSetControlMaximum(sb, maxScroll)
+        teMp = UiHandleDeref(te) // re-derive: SetControlMaximum can move memory
         offset = peekw(teMp + rtUiTeViewRect + 0) - peekw(teMp + rtUiTeDestRect + 0)
         if offset > maxScroll {
             UiTEScroll(0, offset - maxScroll, te) // positive dv: content back down
@@ -346,6 +348,7 @@ func rtUiTeScrollSync(inst: ptr, wIdx: int) {
         UiSetControlValue(sb, offset)
     }
     if hb != ptr(0) {
+        teMp = UiHandleDeref(te) // re-derive: the sb branch above (SetControlMaximum/TEScroll/SetControlValue) can move memory
         viewW = peekw(teMp + rtUiTeViewRect + 6) - peekw(teMp + rtUiTeViewRect + 2)
         widest = rtUiTeWidestLine(te)
         maxScroll = widest - viewW
@@ -353,6 +356,7 @@ func rtUiTeScrollSync(inst: ptr, wIdx: int) {
             maxScroll = 0
         }
         UiSetControlMaximum(hb, maxScroll)
+        teMp = UiHandleDeref(te) // re-derive: rtUiTeWidestLine (TextWidth) / SetControlMaximum can move memory
         offset = peekw(teMp + rtUiTeViewRect + 2) - peekw(teMp + rtUiTeDestRect + 2)
         if offset > maxScroll {
             UiTEScroll(offset - maxScroll, 0, te)
@@ -386,6 +390,7 @@ func rtUiTeClamp(te: ptr, maxLen: int) {
     thMp = UiHandleDeref(th)
     UiTESetText(thMp, maxLen, te)
     UiHUnlock(th)
+    teMp = UiHandleDeref(te) // re-derive: TESetText can move memory
     sel = peekw(teMp + rtUiTeSelStart)
     if sel > maxLen {
         sel = maxLen
