@@ -2012,6 +2012,9 @@ extend Main {
     }
 
     on Remove.click {
+        if Marks.selected == -1 {
+            return
+        }
         bookmarks.remove(Marks.selected)
     }
 }
