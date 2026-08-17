@@ -1,0 +1,46 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_evalorder.cla: the core suite's EvalOrder case (correctness-cleanup
+// Task 7) -- proves `get(k, dv)`'s three arguments evaluate LEFT TO RIGHT
+// (m, then k, then dv -- docs/clarus-language-reference.md's `get` entries)
+// in-process, on whichever lane compiles this suite (host CLI, native 68k
+// GUI). The host lane (cprint.cla's fpIntrCall IMapGetDv arm) always
+// evaluated m, k, dv in that order; the native lane (cg68k.cla's
+// cgIntrMapGetDv) used to evaluate m, dv, k instead -- dv was materialized
+// before k's own address was taken, observable only with side-effecting
+// arguments like the three helpers below. testdata/run/getdvorder.cla
+// pins the same shape as a standalone host-lane fixture; this case is the
+// native-lane proof (no one-off native binary can assert stdout the way
+// the host fixture does, so the suite boot is native's oracle here).
+var evalOrderLog: text = ""
+
+func evalOrderMap(): map of string {
+    var m: map of string
+    evalOrderLog.append('m')
+    m["present"] = "value"
+    return m
+}
+
+func evalOrderKey(): string {
+    evalOrderLog.append('k')
+    return "missing"
+}
+
+func evalOrderDv(): string {
+    evalOrderLog.append('d')
+    return "default"
+}
+
+func caseEvalOrder(): TestResult {
+    var v: string
+
+    v = evalOrderMap().get(evalOrderKey(), evalOrderDv())
+    if v != "default" {
+        return tkFail("EvalOrder", "get result = " + v)
+    }
+    if evalOrderLog != "mkd" {
+        return tkFail("EvalOrder", "order != mkd")
+    }
+    return tkPass("EvalOrder")
+}

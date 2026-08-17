@@ -31,7 +31,7 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // assertions, below). A future case addition/removal updates this ONE
 // const plus runner.cla's own nCoreCases, instead of hunting down every
 // hardcoded copy.
-const wantCoreSuiteCases = 73
+const wantCoreSuiteCases = 74
 
 // TestCoreSuiteGUIOn68k is the core suite's Mac GUI front-end gate
 // (test-suite-review Task 10): one native 68k boot (buildNative68kUI --
@@ -70,7 +70,9 @@ const wantCoreSuiteCases = 73
 // the bulk copy-on-install fix), then 72 by the onlog phase's own OnLog
 // case (`on App.log(line: string)` -- ordering + re-entrancy guard,
 // cases_misc.cla), then 73 by correctness-cleanup Task 6's own ErrReturn
-// case (the KErr hidden-result-pointer RETURN ABI, cases_errret.cla) --
+// case (the KErr hidden-result-pointer RETURN ABI, cases_errret.cla), then
+// 74 by correctness-cleanup Task 7's own EvalOrder case (`get(k, dv)`
+// argument evaluation order, cases_evalorder.cla) --
 // the count now lives in the ONE wantCoreSuiteCases const above, not a
 // literal at every use site. Task 2 bumped runner.cla's
 // nCoreCases and internal/testsuite's own wantCases, but this file's

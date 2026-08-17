@@ -7482,6 +7482,7 @@ func cgIntrMapGetDv(e: int, isBirth: bool, sorted: bool): int {
     var a2e: int
     var elemT: int
     var mOff: int
+    var kAddrOff: int
     var dvOff: int
     var off: int
     var k: IRKind
@@ -7496,6 +7497,19 @@ func cgIntrMapGetDv(e: int, isBirth: bool, sorted: bool): int {
     mOff = cgAllocTmpOff(irPtrT)
     cgExpr(a0e)
     cgStoreD0At(6, mOff, irPtrT)
+
+    // correctness-cleanup Task 7: evaluate k's address BETWEEN m and dv,
+    // source order (matches cprint.cla's host-lane fpIntrCall IMapGetDv arm:
+    // m = fpExpr(a0), k = fpStrAddr(a1), dv = fpExpr(a2)) -- cgExprAddr(a1e)
+    // is where any side effect in a1e (e.g. a function call producing the
+    // key) actually runs, via cgMaterializeToTemp's own fallback, so it must
+    // run HERE, before dv's own evaluation below, not merely be PUSHED here.
+    // The resulting address is stashed off A6 (kAddrOff) rather than
+    // re-derived at push time, so a1e is only ever evaluated once.
+    kAddrOff = cgAllocTmpOff(irPtrT)
+    cgExprAddr(a1e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
+    cgStoreD0At(6, kAddrOff, irPtrT)
 
     dvOff = cgAllocTmpOff(elemT)
     cgStoreElemAt(dvOff, elemT, a2e)
@@ -7515,8 +7529,8 @@ func cgIntrMapGetDv(e: int, isBirth: bool, sorted: bool): int {
 
     a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgExprAddr(a1e)
-    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, kAddrOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     nameIdx = rnMapGetDv

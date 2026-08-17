@@ -1312,6 +1312,9 @@ var coreSuiteGUIFiles = []string{
 	// correctness-cleanup Task 6: cases_errret.cla MUST be here -- runner.cla
 	// (above) unconditionally calls caseErrReturn().
 	filepath.Join("testsuite", "core", "cases_errret.cla"),
+	// correctness-cleanup Task 7: cases_evalorder.cla MUST be here --
+	// runner.cla (above) unconditionally calls caseEvalOrder().
+	filepath.Join("testsuite", "core", "cases_evalorder.cla"),
 	filepath.Join("testsuite", "core", "gui.cla"),
 }
 

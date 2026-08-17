@@ -1,0 +1,50 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// correctness-cleanup Task 7: pins `get(k, dv)`'s argument evaluation
+// order -- left to right, m then k then dv (docs/clarus-language-
+// reference.md's `get` entries) -- observable only with side-effecting
+// arguments. Host lane (cprint.cla's fpIntrCall IMapGetDv arm) already
+// evaluates m, k, dv in that order; the native lane (cg68k.cla's
+// cgIntrMapGetDv) used to evaluate m, dv, k instead (dv materialized
+// before k's own address was taken). Each helper below appends its own
+// letter to the global `order` text before returning the map/key/default
+// the get() expression actually uses, so the printed order pins the real
+// evaluation sequence directly, not just the final push order (which was
+// always m, k, dv on both lanes -- only the OBSERVABLE evaluation moment
+// differed).
+
+var order: text = ""
+
+func mapArg(): map of string {
+    var m: map of string
+    order.append('m')
+    m["present"] = "value"
+    return m
+}
+
+func keyArg(): string {
+    order.append('k')
+    return "missing"
+}
+
+func dvArg(): string {
+    order.append('d')
+    return "default"
+}
+
+func runGetdvorder() {
+    var v: string
+    var buf: char[64]
+    var n: int
+    var s: string
+
+    v = mapArg().get(keyArg(), dvArg())
+    if v == "default" {
+        n = order.toBytes(buf)
+        s.fromBytes(buf, n)
+        alert(s)
+    } else {
+        alert("FAIL: unexpected get result")
+    }
+}

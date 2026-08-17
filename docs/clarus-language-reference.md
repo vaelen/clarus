@@ -339,7 +339,7 @@ A `map of T` is a hashtable with string keys (up to 255 bytes) and values of fix
 
 - `m[k] = v` — set key `k` to value `v`
 - `m[k]` — retrieve value for key `k` (returns `T`); runtime error if absent
-- `m.get(k, dv)` — retrieve the value for key `k`, or the default value `dv` (of type `T`) if the key is absent; never errors
+- `m.get(k, dv)` — retrieve the value for key `k`, or the default value `dv` (of type `T`) if the key is absent; never errors. `k` and `dv` are evaluated left to right (`m`, then `k`, then `dv`) if either is an expression with side effects
 - `m.has(k)` — test for key presence (returns `bool`)
 - `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)

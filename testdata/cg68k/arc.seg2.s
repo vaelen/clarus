@@ -1434,19 +1434,22 @@ LBL_11:
         ADDA.W #12,A7
         MOVE.L -8(A6),D0
         MOVE.L D0,-16(A6)
-        MOVEQ #0,D0
+        LEA LBL_36(PC),A0
+        MOVE.L A0,D0
         MOVE.L D0,-20(A6)
-        MOVE.L -20(A6),D0
+        MOVEQ #0,D0
         MOVE.L D0,-24(A6)
+        MOVE.L -24(A6),D0
+        MOVE.L D0,-28(A6)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_36(PC),A0
-        MOVE.L A0,-(A7)
-        LEA -24(A6),A0
+        MOVE.L -20(A6),D0
+        MOVE.L D0,-(A7)
+        LEA -28(A6),A0
         MOVE.L A0,-(A7)
         JSR 474(A5)
         ADDA.W #12,A7
-        MOVE.L -24(A6),D0
+        MOVE.L -28(A6),D0
         MOVE.L D0,-12(A6)
         LEA -4(A6),A0
         MOVE.L 0(A0),D0

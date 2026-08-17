@@ -1829,13 +1829,6 @@ LBL_145:
         ADDA.W #12,A7
         MOVE.L -264(A6),D0
         MOVE.L D0,-790(A6)
-        MOVEQ #1,D0
-        NEG.L D0
-        MOVE.L D0,-794(A6)
-        MOVE.L -794(A6),D0
-        MOVE.L D0,-798(A6)
-        MOVE.L -790(A6),D0
-        MOVE.L D0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
@@ -1854,12 +1847,22 @@ LBL_145:
         ADDA.W #12,A7
         ADDA.W #256,A7
         LEA -1354(A6),A0
-        MOVE.L A0,-(A7)
-        LEA -798(A6),A0
+        MOVE.L A0,D0
+        MOVE.L D0,-794(A6)
+        MOVEQ #1,D0
+        NEG.L D0
+        MOVE.L D0,-798(A6)
+        MOVE.L -798(A6),D0
+        MOVE.L D0,-802(A6)
+        MOVE.L -790(A6),D0
+        MOVE.L D0,-(A7)
+        MOVE.L -794(A6),D0
+        MOVE.L D0,-(A7)
+        LEA -802(A6),A0
         MOVE.L A0,-(A7)
         JSR 490(A5)
         ADDA.W #12,A7
-        MOVE.L -798(A6),D1
+        MOVE.L -802(A6),D1
         MOVEQ #42,D0
         CMP.L D0,D1
         SEQ D0
