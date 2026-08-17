@@ -828,6 +828,8 @@ static int32_t clar_fn_rtUiLoWord(int32_t cv_v);
 static void * clar_fn_rtUiAboutPrefixPtr(void);
 static void * clar_fn_rtUiEmptyPStrGet(void);
 static void clar_fn_rtUiBuildAppleMenu(void);
+static void * clar_fn_rtUiAboutParam(void * cv_p);
+static void clar_fn_rtUiAboutAlert(void);
 static void clar_fn_rtUiAppleSelect(int32_t cv_itemNum);
 static void clar_fn_rtUiBuildMenus(void);
 static void clar_fn_rtUiMenuEnable(int32_t cv_menuIdx, int32_t cv_itemIdx, int32_t cv_enable);
@@ -2926,14 +2928,31 @@ static void clar_fn_rtUiBuildAppleMenu(void) {
     rt_ext_UiInsertMenu(cv_rtUiAppleMenuHandle, 0);
 }
 
+static void * clar_fn_rtUiAboutParam(void * cv_p) {
+    if (cv_p == (void *)(intptr_t)(0)) {
+        return clar_fn_rtUiEmptyPStrGet();
+    }
+    return cv_p;
+    return 0;
+}
+
+static void clar_fn_rtUiAboutAlert(void) {
+    rt_ext_UiParamText(clar_fn_rtUiAboutParam(clar_fn_uidAppName()), clar_fn_rtUiAboutParam(clar_fn_uidAppVersion()), clar_fn_rtUiAboutParam(clar_fn_uidAppAuthor()), clar_fn_rtUiAboutParam(clar_fn_uidAppAbout()));
+    rt_ext_UiNoteAlert(129, (void *)(intptr_t)(0));
+}
+
 static void clar_fn_rtUiAppleSelect(int32_t cv_itemNum) {
     void * cv_empty;
     cv_empty = 0;
     void * cv_itemNameBuf;
     cv_itemNameBuf = 0;
     if (cv_itemNum == 1) {
-        if (clar_fn_uidHasApp() && (rt_peekb(clar_fn_uidAppName()) != 0)) {
+        if (cv_rtUiScripted) {
             clar_fn_rtUiTraceAbout();
+            return;
+        }
+        if ((clar_fn_uidHasApp() && (clar_fn_uidAppName() != (void *)(intptr_t)(0))) && (rt_peekb(clar_fn_uidAppName()) != 0)) {
+            clar_fn_rtUiAboutAlert();
         } else {
             cv_empty = clar_fn_rtUiEmptyPStrGet();
             rt_ext_UiParamText((void *)(intptr_t)(2320), cv_empty, cv_empty, cv_empty);

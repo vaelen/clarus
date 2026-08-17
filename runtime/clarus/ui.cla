@@ -1189,18 +1189,42 @@ func rtUiBuildAppleMenu() {
     UiInsertMenu(rtUiAppleMenuHandle, 0)
 }
 
+// rtUiAboutParam (new). Substitutes the cached empty Pascal string for
+// an absent `uidApp*` property (each getter returns `ptr(0)` when the
+// `app` section omits that field) so UiParamText always gets a real
+// Pascal-string pointer.
+func rtUiAboutParam(p: ptr): ptr {
+    if p == ptr(0) {
+        return rtUiEmptyPStrGet()
+    }
+    return p
+}
+
+// rtUiAboutAlert (new). Real About display for an app-declared program:
+// ALRT/DITL 129's ParamText slots are ^0=name, ^1=version, ^2=author,
+// ^3=about (see clarusc/cg68k.cla:12386-12393 / scripts/build-mac.sh:103-110
+// for where 129 is emitted on each lane).
+func rtUiAboutAlert() {
+    UiParamText(rtUiAboutParam(uidAppName()), rtUiAboutParam(uidAppVersion()), rtUiAboutParam(uidAppAuthor()), rtUiAboutParam(uidAppAbout()))
+    UiNoteAlert(129, ptr(0))
+}
+
 // rtUiAppleSelect (rt_ui.c:2283-2306). The real (non-RT_MAC_TEST) About
-// path (a NoteAlert) and the DA-list dispatch (item > 1) are both never
-// exercised by any golden scenario (every one is script-driven, so
-// rtUiTraceAbout's own branch always runs instead) -- ported for
-// contract completeness.
+// path (ALRT 129 for an app-declared program, NoteAlert 128 otherwise)
+// and the DA-list dispatch (item > 1) are never exercised by any golden
+// scenario (every one is script-driven, so rtUiTraceAbout's own branch
+// always runs instead) -- ported for contract completeness.
 func rtUiAppleSelect(itemNum: int) {
     var empty: ptr
     var itemNameBuf: ptr
 
     if itemNum == 1 {
-        if uidHasApp() and peekb(uidAppName()) != 0 {
+        if rtUiScripted {
             rtUiTraceAbout()
+            return
+        }
+        if uidHasApp() and uidAppName() != ptr(0) and peekb(uidAppName()) != 0 {
+            rtUiAboutAlert()
         } else {
             empty = rtUiEmptyPStrGet()
             UiParamText(ptr(0x910), empty, empty, empty) // LMGetCurApName == ptr(0x910) directly
