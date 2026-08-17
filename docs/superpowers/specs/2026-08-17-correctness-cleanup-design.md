@@ -76,10 +76,11 @@ them.
 - Real path, no `app` section: keep the existing generic
   `NoteAlert(128)` + CurApName fallback (already correct; ALRT 128 is
   unconditionally emitted for UI programs).
-- While in the alert templates: fix the attempt-abort field-test's
-  known **OOM-alert button-overrun geometry bug** (button outside the
-  ALRT frame) in `app68BuildAlrt`/DITL geometry — same builder family,
-  one task.
+- ~~While in the alert templates: fix the OOM-alert button-overrun
+  geometry bug~~ — CORRECTION (plan-time investigation): already fixed
+  by attempt-abort Task 10 (DITL 128 OK button inset; DITL 129/130
+  verified in-frame in the same pass, task-10-report.md geometry
+  table). No resource geometry change in this phase.
 
 **Acceptance:** boot one app-declared example (`mandelbrot`) and one
 bare-UI program in Snow WITHOUT `--events`, click Apple menu → About,
