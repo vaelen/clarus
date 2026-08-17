@@ -290,6 +290,9 @@ func rtUiPopupBoxInto(inst: ptr, wIdx: int, out: ptr) {
     UiBlockMoveData(rtUiRectAt(w, wIdx), out, rtUiRectSize)
     if peekb(rtUiLabelAt(w, wIdx)) > 0 {
         pokew(out + 2, peekw(out + 2) + rtUiFieldLabelW)
+        if peekw(out + 2) > peekw(out + 6) - 16 {
+            pokew(out + 2, peekw(out + 6) - 16) // ponytail: floor at 16px; layout-side fix is the real guarantee
+        }
     }
 }
 

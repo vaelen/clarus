@@ -513,6 +513,19 @@ func rtUiLayout(inst: ptr) {
             } else {
                 ww = uidWidgetWidth(winIdx, i) + rtUiFieldLabelW
             }
+        } else if kind == rtUiKindPopup and peekb(rtUiLabelAt(w, i)) > 0 {
+            // Labeled popup: mirrors the labeled-field arm above -- `width:`
+            // is the POPUP BOX; the label lane is added on top, so
+            // rtUiPopupBoxInto's later label-lane subtraction (uitable.cla)
+            // can't go negative. No separate box-only default exists for
+            // popup (unlike rtUiFieldBoxW/rtUiFieldW), so the zero-width
+            // fallback reuses the same kind-width default as the unlabeled
+            // case below.
+            if uidWidgetWidth(winIdx, i) == 0 {
+                ww = rtUiKindWidth(kind)
+            } else {
+                ww = uidWidgetWidth(winIdx, i) + rtUiFieldLabelW
+            }
         } else if uidWidgetWidth(winIdx, i) == 0 {
             ww = rtUiKindWidth(kind)
         } else {

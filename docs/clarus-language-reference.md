@@ -1052,7 +1052,7 @@ Widget declarations appear inside a `window` body. Each widget has declaration-t
 | `field` | `label`, `at`, `width`, `binds` | `text`, `enabled` | `change`, `enter` |
 | `textview` | `at`, `fill`, `scrollbar` (`vertical`\|`both`) | `text` | `change` |
 | `check` | `caption`, `at`, `binds` | `checked` | `change` |
-| `popup` | `label`, `at`, `binds` | `selected` (int index) | `change` |
+| `popup` | `label`, `at`, `width`, `binds` | `selected` (int index) | `change` |
 | `table` | `rows`, `column ...` (Chapter 10), `at`, `fill` | `selected` (int, −1 none) | `select(i: int)`, `doubleClick(i: int)` |
 | `canvas` | `at`, `fill`, `buffered` | `width`, `height` | `click(x: int, y: int)`, `drag(x: int, y: int)` |
 | `label` | `text`, `at`, `width` | `text` | — |
@@ -1085,7 +1085,7 @@ extend Doc {
 
 `at: x, y` positions a widget's top-left corner; `at: right, y` and `at: next, bottom` position it relative to the previous widget's right or bottom edge. `width: fill` and `fill: both` stretch a widget to fill remaining width, or both dimensions, of the window. Resize re-layout is automatic: the runtime keeps edge-relative widgets pinned to the edges they were declared relative to; no resize handler is needed for ordinary layouts.
 
-On a `field` with a `label:`, `width:` gives the width of the edit box alone — the fixed label lane is added to its left, so every field's edit box in a form starts at the same x regardless of each field's own `width:`. `width: fill` is the exception: it sizes the whole widget (label lane included), same as any other widget. Omitting `width:` keeps the field's natural overall size (label lane plus a default box width) unchanged from a bare, un-widthed field.
+On a `field` with a `label:`, `width:` gives the width of the edit box alone — the fixed label lane is added to its left, so every field's edit box in a form starts at the same x regardless of each field's own `width:`. `width: fill` is the exception: it sizes the whole widget (label lane included), same as any other widget. Omitting `width:` keeps the field's natural overall size (label lane plus a default box width) unchanged from a bare, un-widthed field. A `popup` with a `label:` follows the identical rule — `width:` gives the popup's own visible box, with the label lane added to its left — so a labeled `popup` and a labeled `field` of the same declared `width:` line up the same way.
 
 A widget declared with no `at:` at all defaults to a vertical stack — placed one gap below the previous widget (or the window's top edge, for the first widget), at a fixed left margin — unless it also declares `fill: both`, which defaults instead to the window's own top-left origin, since a widget filling both dimensions is meant to occupy the whole window regardless of declaration order. A window declared with no `size:` at all sizes itself to fit its widgets' laid-out extent (their declared or default sizes, stacked per the rule above) plus margin, the same way an explicit `size:` is itself only a request (see the Mac note above). Appendix C's Bookmark Manager `EditForm` relies on both defaults: it gives its window no `size:` and none of its widgets an `at:`. Auto-placed and explicitly placed widgets share one running layout cursor: an at:-less widget stacks one gap below whatever widget preceded it, whether that widget was itself placed explicitly or by default, and a later `at: next`/`at: right` widget measures from an auto-placed widget's rect the same way it would from an explicitly placed one.
 

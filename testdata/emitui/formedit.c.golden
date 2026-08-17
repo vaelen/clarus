@@ -4750,10 +4750,18 @@ static void clar_fn_rtUiLayout(void * cv_inst) {
                     cv_ww = CLAR_ADD32(clar_fn_uidWidgetWidth(cv_winIdx, cv_i), 70);
                 }
             } else {
-                if (clar_fn_uidWidgetWidth(cv_winIdx, cv_i) == 0) {
-                    cv_ww = clar_fn_rtUiKindWidth(cv_kind);
+                if ((cv_kind == 6) && (rt_peekb(clar_fn_rtUiLabelAt(cv_w, cv_i)) > 0)) {
+                    if (clar_fn_uidWidgetWidth(cv_winIdx, cv_i) == 0) {
+                        cv_ww = clar_fn_rtUiKindWidth(cv_kind);
+                    } else {
+                        cv_ww = CLAR_ADD32(clar_fn_uidWidgetWidth(cv_winIdx, cv_i), 70);
+                    }
                 } else {
-                    cv_ww = clar_fn_uidWidgetWidth(cv_winIdx, cv_i);
+                    if (clar_fn_uidWidgetWidth(cv_winIdx, cv_i) == 0) {
+                        cv_ww = clar_fn_rtUiKindWidth(cv_kind);
+                    } else {
+                        cv_ww = clar_fn_uidWidgetWidth(cv_winIdx, cv_i);
+                    }
                 }
             }
         }
@@ -6373,6 +6381,9 @@ static void clar_fn_rtUiPopupBoxInto(void * cv_inst, int32_t cv_wIdx, void * cv_
     rt_ext_UiBlockMoveData(clar_fn_rtUiRectAt(cv_w, cv_wIdx), cv_out, 8);
     if (rt_peekb(clar_fn_rtUiLabelAt(cv_w, cv_wIdx)) > 0) {
         rt_pokew((void *)((char *)(cv_out) + (2)), CLAR_ADD32(rt_peekw((void *)((char *)(cv_out) + (2))), 70));
+        if (rt_peekw((void *)((char *)(cv_out) + (2))) > CLAR_SUB32(rt_peekw((void *)((char *)(cv_out) + (6))), 16)) {
+            rt_pokew((void *)((char *)(cv_out) + (2)), CLAR_SUB32(rt_peekw((void *)((char *)(cv_out) + (6))), 16));
+        }
     }
 }
 

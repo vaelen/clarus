@@ -113,6 +113,12 @@
 // catalog by opening the real .AOut/.AIn drivers, configuring 9600-8N1,
 // exercising the load-bearing SerSetBuf call, writing 5 bytes, and
 // reading a real SerGetBuf count -- see that case's own header comment.
+// NarrowPopup (cases_narrowpopup.cla) is correctness-cleanup Task 2's own
+// addition: hardware-proves the labeled-popup layout fix
+// (uiwidgets.cla's new rtUiKindPopup-with-label arm +
+// rtUiPopupBoxInto's defensive floor, uitable.cla) against a real
+// `width: 60` labeled popup (harness.cla's NarrowPopupWin) -- see that
+// case's own header comment.
 
 enum ToolboxTest {
     All
@@ -146,15 +152,16 @@ enum ToolboxTest {
     DateTimeRoundTrip
     LivePaint
     SerialOpenWrite
+    NarrowPopup
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 30 real cases
+// nTbCases is ToolboxTest's member count minus All: the 31 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 31
+const nTbCases: int = 32
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -253,6 +260,9 @@ func tbCaseName(t: ToolboxTest): string {
     case SerialOpenWrite {
         return "SerialOpenWrite"
     }
+    case NarrowPopup {
+        return "NarrowPopup"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -294,6 +304,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(DateTimeRoundTrip)
     l.add(LivePaint)
     l.add(SerialOpenWrite)
+    l.add(NarrowPopup)
     l.add(SelfCheck)
     return l
 }
@@ -450,6 +461,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, SerialOpenWrite) {
         results.add(caseSerialOpenWrite())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, NarrowPopup) {
+        results.add(caseNarrowPopup())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

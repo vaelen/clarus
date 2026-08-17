@@ -832,3 +832,35 @@ extend FormEditWin {
         tbFeCancelledFired = true
     }
 }
+
+// NarrowPopupWin (correctness-cleanup Task 2): a minimal form window
+// whose ONLY widget ahead of its OK/Cancel buttons is `Pick`, a labeled
+// popup with an explicit `width: 60` -- narrower than the 70px label
+// lane rtUiFieldLabelW (uiwidgets.cla) reserves, so it hardware-proves
+// the labeled-popup layout fix (uiwidgets.cla's new rtUiKindPopup arm +
+// rtUiPopupBoxInto's defensive floor, uitable.cla) rather than merely
+// exercising the already-correct unlabeled/default-width paths every
+// other popup in this suite (FormEditWin's own Proto, above) already
+// covers. Declared FIRST among NarrowPopupWin's widgets so its widget
+// index within RtUiWinst's own per-window arrays (rtUiRectAt/
+// rtUiLabelAt) is always 0 -- cases_narrowpopup.cla's own
+// UiTestPopupBoxLeft(0)/UiTestPopupBoxRight(0) calls depend on that.
+enum TbNpChoice {
+    TbNpAlpha
+    TbNpBeta
+}
+
+record TbNpRec {
+    choice: TbNpChoice
+}
+
+window NarrowPopupWin {
+    title: "Narrow Popup"
+    size: 200, 100
+    form for TbNpRec
+
+    popup Pick { binds: choice; label: "Pick:"; at: 10, 10; width: 60 }
+
+    button OK     { at: 10, 50;  default }
+    button Cancel { at: 100, 50; cancel }
+}

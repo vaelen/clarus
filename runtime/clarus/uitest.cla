@@ -293,3 +293,31 @@ func UiTestChecksum(x: int, y: int, w: int, h: int): int {
     }
     return sum
 }
+
+// UiTestPopupBoxLeft/UiTestPopupBoxRight (correctness-cleanup Task 2):
+// expose rtUiPopupBoxInto's (uitable.cla) label-lane-narrowed popup box,
+// in the FRONT window's own local coords, for widget index i -- Ch8's
+// popup only has a `selected` runtime property
+// (docs/clarus-language-reference.md:1055), no rect accessor at the
+// user-facing level, so a geometry regression test (NarrowPopup,
+// testsuite/toolbox/cases_narrowpopup.cla) needs this internal-only
+// bridge. rtUiWinstOf(UiFrontWindow()) (ui.cla) is the same
+// WindowPtr->instance lookup rtUiEveryPump's own front-window idle work
+// already uses, not new plumbing. Two int-returning calls rather than
+// one struct-returning call: there is no user-facing Rect type to
+// marshal a ptr out-param through from a --testapi-spliced function.
+func UiTestPopupBoxLeft(i: int): int {
+    var out: ptr
+
+    out = UiNewPtr(rtUiRectSize)
+    rtUiPopupBoxInto(rtUiWinstOf(UiFrontWindow()), i, out)
+    return peekw(out + 2)
+}
+
+func UiTestPopupBoxRight(i: int): int {
+    var out: ptr
+
+    out = UiNewPtr(rtUiRectSize)
+    rtUiPopupBoxInto(rtUiWinstOf(UiFrontWindow()), i, out)
+    return peekw(out + 6)
+}
