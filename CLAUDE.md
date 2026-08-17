@@ -105,8 +105,8 @@ Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
 Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
-- `testsuite/core/` (42 `CoreTest` cases: 41 real + `SelfCheck`) runs on
-  host and natively; `testsuite/toolbox/` (25 `ToolboxTest` cases: 24 real +
+- `testsuite/core/` (74 `CoreTest` cases: 73 real + `SelfCheck`) runs on
+  host and natively; `testsuite/toolbox/` (32 `ToolboxTest` cases: 31 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real

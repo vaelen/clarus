@@ -52,26 +52,9 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   should not cascade a second spurious diagnostic scanning to EOF.
   Message fix is small; cascade fix is architectural (lazy lexing or
   truncate-after-first). Land both together with a triggering fixture.
-- **Widget-property out-param fill-in-place gap** (mac-target-4c final
-  review): `file.readText(p, d.Body.text)` compiles but fills a
-  discarded temporary, not the widget. Needs either a loud compile-time
-  error for the shape or a real fill-in-place binding for widget
-  properties (binding-walker work).
 - **`edit F, sm[k]` / `im[k]`** dies in lowering with a generic "edit
   target" message instead of a checker diagnostic naming the map-only
   restriction (map-hashtable).
-- **map/sortedmap `get(k, dv)` argument evaluation order** diverges host
-  (m, k, dv) vs native (m, dv, k) — observable only with interacting
-  side effects. Either pin "unspecified" in the reference or align the
-  native order (map-hashtable).
-- **`toBytes` name-only mutation guard** (param-abi Task 2): fires on
-  the method name before the receiver-kind switch; harmless today, not
-  principled.
-- **`irXRecFieldSize` nested-xrec forward-reference panic** remains
-  unguarded (native-gaps-cleanup Task 8's known follow-on): same class
-  as the fixed `lowTypeAt` path, reachable only for a nested xrec field
-  whose element record is itself forward-referenced; no current fixture
-  reaches it. Guard + diagnose the same way if triggered.
 - **`declIsRuntimeOrigin` symlink-equivalence residual** (attempt-abort
   Task 8): two `--rtdir` spellings equal only via a symlink can still
   misclassify — shared limitation with `expand()`'s key comparison.
@@ -98,25 +81,6 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 - **`lowSynthConnFireFailed` declares an `err` local even when no
   `failed` handler exists** (Task 5) — unused C var under `-Wall`,
   harmless but sloppy.
-- **`cgRetNeedsHidden` is `KStr`/`KRec`-only** (pre-existing, surfaced
-  by Task 7's `KErr` callee-ABI review) — a user function *returning*
-  `error` would hit the same one-sided hidden-return-slot ABI mismatch
-  Task 7 fixed for `error` parameters; no such function exists in-tree
-  today, so unreproduced, but the gap is real (`clarusc/cg68k.cla`).
-  Final fix-wave Probe 6 reproduced this directly with a throwaway
-  `func makeError(): error { var e: error; return e }` fixture: the
-  NATIVE lane (`clarusc emit68k`) fails LOUD, not silently — `cg68k:
-  cgExpr: EVarRef non-scalar (str/rec/arr) reached in value context --
-  bind/store it instead of reading its value directly`, exit 1, at the
-  `return e` statement (cgIsScalarKind correctly refuses to load a
-  non-scalar `KErr` value into D0, but cgRetNeedsHidden never routed the
-  function into the hidden-pointer convention that would have made that
-  load unnecessary). The HOST lane (`clarusc emit` + `cc`) is unaffected
-  — `cgRetNeedsHidden` is `cg68k.cla`-only; the C printer lane returns a
-  plain C struct and the host C compiler's own ABI handles it correctly
-  with no analogous hidden-pointer bookkeeping. No code change made
-  (loud beats silent); still an open gap for `cg68k.cla` to close if a
-  real `func f(): error` ever needs to compile.
 - **Every native binary carries the conn runtime, `connection` or not**
   (final review, Important 3, confirmed as PLANNED, not a bug) —
   `cg68AddRoots` (`clarusc/cg68k.cla`) roots every `nat*`-named function
@@ -152,9 +116,6 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 - **param-abi RSS increase (+4-9%) unexplained** — profile before
   further Layer-2/3 memory work; suspects are the call-site copy temps
   and classification side tables.
-- **Bare-`EIntr` arg release gap, both lanes** (pre-param-abi):
-  `list_pop`/`list_shift` results passed directly as borrowed call args
-  get no scheduled release.
 - **§1.7 double codegen** (layer1 findings doc): full fix needs
   relocation entries so emission becomes segment-independent — Layer 3
   (caching/architecture) scope.
@@ -195,11 +156,6 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 
 ## Runtime / Toolbox robustness
 
-- **PBM app icons rejected on the Mac** (attempt-abort field test):
-  `app68BuildIcnFamily`'s P1 parser should accept CR/CRLF/LF line
-  endings (files staged via `hcopy -t` get CR; Mac-authored PBMs would
-  too) — same treatment as the lexer's CR-byte fix. Deferred per Andrew;
-  warn-and-continue fallback works as designed meanwhile.
 - **`rtUiTableClick` scripted row math has no upper clamp** against the
   live row count — deliberate tripwire (runtime-ir-bake T2 blocker): a
   clamp would mask the next stale-master-pointer bug. Do not "fix"
@@ -209,11 +165,6 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   `sizeof`-only; dead `MAP_KEYBLOCK` constant; three near-identical
   growers; keypool is append-only until release/clear (fine for compiler
   workloads, a real ceiling otherwise).
-- **Popup label-lane latent bug** (mac-target-4d): `rt_ui_popup_box` +
-  the popup draw branch still use raw unclamped `RTUI_FIELD_LABEL_W`; a
-  labeled `popup` with declared `width:` under ~90px reproduces the
-  zero-width unclickable box. Fix in `rt_ui_layout`'s width computation
-  (mirror the labeled-field branch). No current fixture declares one.
 - **Unreproduced live-input popup anomaly** (mac-target-4d): Protocol
   popup failed to open once; 20+ repro attempts failed. Guarded by the
   `rt_ui_popup_assert_alive` tripwire in both scripted popup lanes — if
@@ -233,16 +184,32 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 - **Retain/release elision** (ARC non-goal): trigger not met by
   measurement (deltas within noise). Revisit only if a
   refcount-heavier acceptance app or real hardware shows degradation.
-- **Reference erratum**: Appendix C Bookmark Manager's `Remove.click`
-  doesn't guard `Marks.selected == -1` — fix reference-side in a docs
-  pass (the example is normative and shipped verbatim).
+
+### Correctness-cleanup phase (2026-08-17)
+
+- **Heap-jiggle stress mode only hooks the `UiNewPtr` waist** (Task 3):
+  `rtUiJiggleTick()` forces a full-heap `CompactMem` at each scripted
+  dispatch and each `UiNewPtr` call, but core text/list allocations
+  (`TENew`, List Manager row storage) and Toolbox-internal moves that
+  don't route through `UiNewPtr` are not jiggled — a stale-master-pointer
+  bug reachable only through one of those paths would not be caught by
+  the harness as it stands today. The stride lever named in the brief
+  (tick every Nth call, for when per-call `CompactMem` overhead becomes
+  unacceptable) is unused — Task 3's one measured script ran well under
+  budget (44.75s vs. a 15m allowance), so no stride was needed.
+- **`rtUiLayout`'s dead `ctrlMp` assignment** (`runtime/clarus/
+  uiwidgets.cla`, Task 4 audit): `ctrlMp = UiHandleDeref(ctrl)` is
+  computed and never read. Harmless (not a staleness hazard — nothing
+  consumes the stale value), left in place per the audit's "don't churn
+  safe code" rule; worth deleting in a future cleanup pass through that
+  function.
+- **`(new)` doc-comment tag is a one-off convention** (`runtime/clarus/
+  ui.cla:1192,1203`, Task 1): marks the two About-box helpers as new
+  relative to the file's inherited `rt_ui.c`-heritage citation style;
+  cosmetic, not reused anywhere else in the runtime.
 
 ### Serial/connection phase (2026-08-16)
 
-- **`rt_ext_ConnHOpen` overwrites an already-open slot's fd without
-  closing it** (`runtime/host/rt_serial.inc`, Task 4) — unreachable
-  today because `rtConnOpen`'s own gate never opens an already-open
-  slot, but latent if that invariant ever loosens.
 - **Host `every`-timer gap in the CLI pump** (design doc
   `docs/superpowers/specs/2026-08-15-serial-connection-design.md` §6/§7)
   — `every` machinery is UI-runtime-entangled today; the host CLI pump
@@ -355,6 +322,21 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 - **`/tmp/l1src` frozen-source byte-identity procedure is stale**
   (predates param-abi's immutable-params rule); any future phase using
   it needs a fresh re-freeze.
+
+### Correctness-cleanup phase (2026-08-17)
+
+- **`runner.cla:326`'s "24 real cases here" comment is stale**
+  (`testsuite/toolbox/runner.cla`'s `runToolboxTests`, pre-existing
+  drift noted during Task 2): the real count has moved several times
+  since (now 31 real cases, `nTbCases` = 32). Candidate fix: derive the
+  message from `nTbCases` instead of a hand-written number, or delete
+  the count from the comment entirely.
+- **`rt_ext_UiCompactMem` (Task 3's cprint-lane no-op stub for
+  `CompactMem`) is unexercised** — no jiggle test targets the Retro68/
+  cprint Mac lane (`TestToolboxSuiteJiggleOn68k` is native-68k-only), so
+  the stub is only really compiled whenever the opt-in cprint lane next
+  runs (`CLARUS_CPRINT_MAC_TESTS=1`), same class of gap as the existing
+  Datetime glue entry above.
 
 ### Serial/connection phase (2026-08-16)
 

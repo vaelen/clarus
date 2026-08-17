@@ -42,9 +42,9 @@ check (Gestalt) with a graceful fallback when the feature is absent.
   runtime-ir-bake T2 blocker and the fallback-trigger-narrowing final
   fix wave). Re-derive master pointers after any allocating call.
 
-## Where we are (2026-08-15)
+## Where we are (2026-08-17)
 
-Everything through the clir-load-perf phase is merged to `main`:
+Everything through the serial-connection phase is merged to `main`:
 
 - **clarusc is the only compiler** — self-hosted (the Go compiler is
   deleted, tag `go-compiler-final`), bootstrapped from the committed C
@@ -60,6 +60,26 @@ Everything through the clir-load-perf phase is merged to `main`:
 - Retro68/cprint's Mac lane is already demoted to an opt-in diagnostic
   (`CLARUS_CPRINT_MAC_TESTS=1`); the C printer's first-class role is
   host builds.
+- **The fenced `connection` type** is real end to end, serial as its
+  first transport, both lanes, Snow-hardware-proved (serial-connection
+  phase, merged 2026-08-16).
+
+**`correctness-cleanup` phase (an interleaved detour, not on the
+language-usability list below) is COMPLETE on branch
+`correctness-cleanup`, merge pending Andrew's request:** the About box
+now shows real app info in unscripted runs; a labeled `popup` with a
+narrow declared width no longer collapses to an unclickable box;
+div-by-zero (and INT_MIN/-1) is pinned as a runtime error on both lanes;
+a new heap-jiggle stress mode + stale-master-pointer audit (3 real bugs
+fixed, `TestToolboxSuiteJiggleOn68k` gated native boot added) make that
+bug class deterministically testable instead of heap-layout luck; the
+`error`-return hidden-pointer ABI gap is closed; `get(k, dv)`'s
+evaluation order now matches host on native; two memory leaks/fd-reuse
+gaps are closed; three checker guards (widget-property fill-in-place,
+`toBytes` receiver-kind keying, xrec forward-reference) are tightened;
+the PBM icon parser accepts CR/CRLF; and the Bookmark Manager reference
+erratum is fixed. Full detail: `STATUS.md` §1, or (once merged)
+`docs/HISTORY.md`.
 
 ## Roadmap
 
