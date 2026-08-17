@@ -340,3 +340,137 @@ func TestApp68kIconMissingWarns(t *testing.T) {
 		t.Errorf("examples/mandelbrot.cla (icon present, resolves) unexpectedly warned: %s", out)
 	}
 }
+
+// crlfProbeCla is a minimal app-section fixture referencing "icon.pbm" in
+// its own directory -- the smallest program that exercises
+// app68BuildIcnFamily/app68PbmDecode (res68k.cla) via a real `clarusc
+// emit68k` build.
+const crlfProbeCla = `app IconCRLFProbe {
+    name: "Icon CRLF Probe"
+    version: "1.0"
+    author: "Test"
+    about: "Icon CRLF probe."
+    icon: "icon.pbm"
+    id: "TCRL"
+}
+
+window Main {
+    title: "Main"
+    size: 200, 100
+}
+
+on App.launch {
+    open Main
+}
+`
+
+// buildCRLFIconPbm returns a well-formed 32x32 ASCII (P1) PBM, all bits
+// clear, with a '#' comment line in the header (the trigger for the
+// comment-to-EOL scan bug: it only recognized LF (byte 10) as end-of-line,
+// so a CR-only header comment consumed the rest of the file looking for a
+// LF that was never there). Header and raster rows are LF-joined; the
+// caller rewrites line endings to CR/CRLF to get byte-identical-except-
+// terminator variants.
+func buildCRLFIconPbm() []byte {
+	var buf bytes.Buffer
+	buf.WriteString("P1\n")
+	buf.WriteString("# icon CRLF acceptance probe\n")
+	buf.WriteString("32 32\n")
+	for i := 0; i < 1024; i++ {
+		if i > 0 {
+			if i%32 == 0 {
+				buf.WriteByte('\n')
+			} else {
+				buf.WriteByte(' ')
+			}
+		}
+		buf.WriteByte('0')
+	}
+	buf.WriteByte('\n')
+	return buf.Bytes()
+}
+
+// buildIconCRLFVariant writes crlfProbeCla + pbm into a fresh temp dir,
+// runs `clarusc emit68k`, and returns the resulting ICN# 128 and ICON 128
+// resource bytes.
+func buildIconCRLFVariant(t *testing.T, pbm []byte) (icnFam, icon []byte, warned bool) {
+	t.Helper()
+	dir := t.TempDir()
+	claPath := filepath.Join(dir, "iconcrlf.cla")
+	if err := os.WriteFile(claPath, []byte(crlfProbeCla), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "icon.pbm"), pbm, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := buildNativeClarusc(t)
+	bin := filepath.Join(dir, "out.bin")
+	cmd := exec.Command(exe, "emit68k", "-o", bin, "--rtdir", filepath.Join(repoRoot(t), "runtime", "clarus"), claPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("clarusc emit68k %s failed: %v\n%s", claPath, err, out)
+	}
+	warned = strings.Contains(string(out), "warning:")
+	img, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := img[:128]
+	rsrcForkLen := binary.BigEndian.Uint32(h[87:91])
+	fork := img[128:]
+	fork = fork[:rsrcForkLen]
+	entries := resparParseFork(t, fork)
+	for _, e := range entries {
+		if e.typ == "ICN#" && e.id == 128 {
+			icnFam = e.data
+		}
+		if e.typ == "ICON" && e.id == 128 {
+			icon = e.data
+		}
+	}
+	return icnFam, icon, warned
+}
+
+// TestApp68kIconAcceptsCRLineEndings is Task 10's own gate: a Mac-staged
+// (hcopy -t, CR line endings) or CRLF PBM icon must decode identically to
+// its LF original -- app68PbmDecode/app68PbmSkipWs (res68k.cla) must not
+// fall back to the warn-and-continue no-icon path just because the file's
+// line terminators aren't bare LF. No emulator, no Retro68 -- same
+// no-novel-machinery discipline as TestApp68kResourceParity/
+// TestApp68kIconMissingWarns above; the PBM bytes are built in-test (not
+// a committed fixture file) specifically so an editor can't silently
+// normalize the CR/CRLF bytes under test.
+func TestApp68kIconAcceptsCRLineEndings(t *testing.T) {
+	lf := buildCRLFIconPbm()
+	cr := bytes.ReplaceAll(lf, []byte("\n"), []byte("\r"))
+	crlf := bytes.ReplaceAll(lf, []byte("\n"), []byte("\r\n"))
+
+	lfIcn, lfIcon, lfWarned := buildIconCRLFVariant(t, lf)
+	if lfWarned {
+		t.Fatalf("LF baseline PBM unexpectedly warned")
+	}
+	if lfIcn == nil || lfIcon == nil {
+		t.Fatalf("LF baseline PBM produced no ICN#/ICON resource")
+	}
+
+	for _, tc := range []struct {
+		name string
+		pbm  []byte
+	}{
+		{"CR", cr},
+		{"CRLF", crlf},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			icnFam, icon, warned := buildIconCRLFVariant(t, tc.pbm)
+			if warned {
+				t.Errorf("%s-terminated PBM produced a malformed-icon/cannot-read warning; want silent accept", tc.name)
+			}
+			if !bytes.Equal(icnFam, lfIcn) {
+				t.Errorf("%s ICN# 128 (%d bytes) != LF baseline ICN# 128 (%d bytes)", tc.name, len(icnFam), len(lfIcn))
+			}
+			if !bytes.Equal(icon, lfIcon) {
+				t.Errorf("%s ICON 128 (%d bytes) != LF baseline ICON 128 (%d bytes)", tc.name, len(icon), len(lfIcon))
+			}
+		})
+	}
+}
