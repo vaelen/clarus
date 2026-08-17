@@ -1,0 +1,7 @@
+exit=0
+--- stdout ---
+intMin / -1 ok
+intMin mod -1 ok
+7 / 2 ok
+-7 mod 2 ok
+--- stderr ---

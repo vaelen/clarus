@@ -1,0 +1,49 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// divedge.cla (Task 5, correctness-cleanup): INT_MIN/-1 edge case for
+// signed division/mod. The 68k restoring-division glue is the semantics
+// anchor -- this fixture's expected values were measured under Mini
+// vMac before blessing (see task-5-report.md), and the host C macros
+// were matched to that measurement. Also covers a couple of ordinary
+// signed div/mod cases as a control. intMin is built at runtime
+// (-2147483647, then - 1) rather than as a literal, so it can never be
+// constant-folded away.
+on App.startCLI(args: list of string) {
+    var intMin: int
+    var q: int
+    var r: int
+
+    intMin = -2147483647
+    intMin = intMin - 1
+
+    q = intMin / -1
+    if q == intMin {
+        alert("intMin / -1 ok")
+    } else {
+        alert("intMin / -1 FAIL")
+    }
+
+    r = intMin mod -1
+    if r == 0 {
+        alert("intMin mod -1 ok")
+    } else {
+        alert("intMin mod -1 FAIL")
+    }
+
+    q = 7 / 2
+    if q == 3 {
+        alert("7 / 2 ok")
+    } else {
+        alert("7 / 2 FAIL")
+    }
+
+    r = -7 mod 2
+    if r == -1 {
+        alert("-7 mod 2 ok")
+    } else {
+        alert("-7 mod 2 FAIL")
+    }
+
+    quit 0
+}

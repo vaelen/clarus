@@ -2608,7 +2608,7 @@ static void * clar_fn_rtUiOpen(int32_t cv_winIdx) {
     rt_ext_UiDisposePtr(cv_screenBoundsSlot);
     cv_screenW = CLAR_SUB32(cv_screenRight, cv_screenLeft);
     cv_screenH = CLAR_SUB32(cv_screenBottom, cv_screenTop);
-    cv_left = (CLAR_SUB32(cv_screenW, cv_reqW) / 2);
+    cv_left = CLAR_DIV32(CLAR_SUB32(cv_screenW, cv_reqW), 2);
     if (cv_left < 4) {
         cv_left = 4;
     }
@@ -3438,7 +3438,7 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                                 rt_ext_UiDisposePtr(cv_itemText);
                                 rt_ext_UiDisposePtr(cv_textRect);
                                 cv_cx = CLAR_SUB32(rt_peekw((void *)((char *)(cv_box) + (6))), 10);
-                                cv_cy = CLAR_SUB32((CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (0))), rt_peekw((void *)((char *)(cv_box) + (4)))) / 2), 2);
+                                cv_cy = CLAR_SUB32(CLAR_DIV32(CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (0))), rt_peekw((void *)((char *)(cv_box) + (4)))), 2), 2);
                                 cv_pk = 0;
                                 while (1) {
                                     if (!((cv_pk < 5))) break;
@@ -5159,7 +5159,7 @@ static void clar_fn_rtUiCanvasMake(void * cv_cb, int32_t cv_ww, int32_t cv_hh) {
     if ((cv_buf)->cv_port == (void *)(intptr_t)(0)) {
         clar_fn_rtPanic(&(clar_lit_6));
     }
-    cv_rowBytes = CLAR_MUL32((CLAR_ADD32(cv_w2, 15) / 16), 2);
+    cv_rowBytes = CLAR_MUL32(CLAR_DIV32(CLAR_ADD32(cv_w2, 15), 16), 2);
     (cv_buf)->cv_pixels = rt_ext_UiNewPtrClear(CLAR_MUL32(cv_rowBytes, cv_h2));
     if ((cv_buf)->cv_pixels == (void *)(intptr_t)(0)) {
         clar_fn_rtPanic(&(clar_lit_6));
@@ -6233,7 +6233,7 @@ static void clar_fn_rtUiFixedToStr(int32_t cv_v, void * cv_out255) {
     cv_ibuf = clar_fn_UiNewPtr(256);
     cv_fbuf = clar_fn_UiNewPtr(256);
     rt_ext_UiNumToString((cv_uv >> 16), cv_ibuf);
-    cv_frac = (CLAR_MUL32((cv_uv & 65535), 10000) / 65536);
+    cv_frac = CLAR_DIV32(CLAR_MUL32((cv_uv & 65535), 10000), 65536);
     rt_ext_UiNumToString(cv_frac, cv_fbuf);
     cv_n = 0;
     if (cv_neg) {
@@ -6635,7 +6635,7 @@ static void clar_fn_rtUiTableClick(void * cv_inst, int32_t cv_wIdx, int32_t cv_l
     cv_lh = clar_fn_rtUiListAt(cv_w, cv_wIdx);
     cv_lhMp = rt_ext_UiHandleDeref(cv_lh);
     if (cv_rtUiScripted) {
-        cv_row = CLAR_ADD32(rt_peekw((void *)((char *)(cv_lhMp) + (20))), (CLAR_SUB32(clar_fn_rtUiHiWord(cv_localPt), rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (0)))) / rt_peekw((void *)((char *)(cv_lhMp) + (16)))));
+        cv_row = CLAR_ADD32(rt_peekw((void *)((char *)(cv_lhMp) + (20))), CLAR_DIV32(CLAR_SUB32(clar_fn_rtUiHiWord(cv_localPt), rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (0)))), rt_peekw((void *)((char *)(cv_lhMp) + (16)))));
         if (cv_row < 0) {
             cv_row = 0;
         }
@@ -6875,7 +6875,7 @@ static void clar_fn_rtUiAnswerInit(void) {
 
 static void clar_fn_rtUiAnswerCheckRoom(void) {
     clar_fn_rtUiAnswerInit();
-    if ((CLAR_ADD32(cv_rtUiAnswerTail, 1) % 8) == cv_rtUiAnswerHead) {
+    if (CLAR_MOD32(CLAR_ADD32(cv_rtUiAnswerTail, 1), 8) == cv_rtUiAnswerHead) {
         clar_fn_rtPanic(&(clar_lit_41));
     }
 }
@@ -6884,7 +6884,7 @@ static void clar_fn_rtUiAnswerPushVal(int32_t cv_kind, int32_t cv_val) {
     clar_fn_rtUiAnswerCheckRoom();
     rt_pokel((void *)((char *)(cv_rtUiAnswerKinds) + (CLAR_MUL32(cv_rtUiAnswerTail, 4))), cv_kind);
     rt_pokel((void *)((char *)(cv_rtUiAnswerVals) + (CLAR_MUL32(cv_rtUiAnswerTail, 4))), cv_val);
-    cv_rtUiAnswerTail = (CLAR_ADD32(cv_rtUiAnswerTail, 1) % 8);
+    cv_rtUiAnswerTail = CLAR_MOD32(CLAR_ADD32(cv_rtUiAnswerTail, 1), 8);
 }
 
 static void clar_fn_rtUiAnswerPushPath(int32_t cv_kind, void * cv_srcC) {
@@ -6912,7 +6912,7 @@ static void clar_fn_rtUiAnswerPushPath(int32_t cv_kind, void * cv_srcC) {
         rt_pokeb((void *)((char *)((void *)((char *)(cv_dst) + (1))) + (cv_i)), rt_peekb((void *)((char *)(cv_srcC) + (cv_i))));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-    cv_rtUiAnswerTail = (CLAR_ADD32(cv_rtUiAnswerTail, 1) % 8);
+    cv_rtUiAnswerTail = CLAR_MOD32(CLAR_ADD32(cv_rtUiAnswerTail, 1), 8);
 }
 
 static int32_t clar_fn_rtUiAnswerPopIdx(void) {
@@ -6923,7 +6923,7 @@ static int32_t clar_fn_rtUiAnswerPopIdx(void) {
         clar_fn_rtPanic(&(clar_lit_42));
     }
     cv_idx = cv_rtUiAnswerHead;
-    cv_rtUiAnswerHead = (CLAR_ADD32(cv_rtUiAnswerHead, 1) % 8);
+    cv_rtUiAnswerHead = CLAR_MOD32(CLAR_ADD32(cv_rtUiAnswerHead, 1), 8);
     return cv_idx;
     return 0;
 }
@@ -6969,9 +6969,9 @@ static void * clar_fn_rtUiIntToText(int32_t cv_v) {
     } else {
         while (1) {
             if (!((cv_n > 0))) break;
-            cv_d = (cv_n % 10);
+            cv_d = CLAR_MOD32(cv_n, 10);
             rt_pokeb((void *)((char *)(cv_digits) + (cv_i)), CLAR_ADD32(((int32_t)(48)), cv_d));
-            cv_n = (cv_n / 10);
+            cv_n = CLAR_DIV32(cv_n, 10);
             cv_i = CLAR_ADD32(cv_i, 1);
         }
     }
@@ -8006,7 +8006,7 @@ static int32_t clar_fn_rtUiParseInt(void * cv_p, int32_t cv_len, void * cv_out) 
         if ((cv_c < ((int32_t)(48))) || (cv_c > ((int32_t)(57)))) {
             return 0;
         }
-        if (cv_v > (CLAR_SUB32(2147483647, CLAR_SUB32(cv_c, ((int32_t)(48)))) / 10)) {
+        if (cv_v > CLAR_DIV32(CLAR_SUB32(2147483647, CLAR_SUB32(cv_c, ((int32_t)(48)))), 10)) {
             return 0;
         }
         cv_v = CLAR_ADD32(CLAR_MUL32(cv_v, 10), CLAR_SUB32(cv_c, ((int32_t)(48))));
@@ -8091,7 +8091,7 @@ static int32_t clar_fn_rtUiParseFixed(void * cv_p, int32_t cv_len, void * cv_out
     while (1) {
         if (!((cv_j < cv_limit))) break;
         cv_c = rt_peekb((void *)((char *)(cv_p) + (cv_j)));
-        if (cv_ipart > (CLAR_SUB32(32767, CLAR_SUB32(cv_c, ((int32_t)(48)))) / 10)) {
+        if (cv_ipart > CLAR_DIV32(CLAR_SUB32(32767, CLAR_SUB32(cv_c, ((int32_t)(48)))), 10)) {
             return 0;
         }
         cv_ipart = CLAR_ADD32(CLAR_MUL32(cv_ipart, 10), CLAR_SUB32(cv_c, ((int32_t)(48))));
@@ -8103,7 +8103,7 @@ static int32_t clar_fn_rtUiParseFixed(void * cv_p, int32_t cv_len, void * cv_out
         while (1) {
             if (!((cv_j > cv_dot))) break;
             cv_c = rt_peekb((void *)((char *)(cv_p) + (cv_j)));
-            cv_frac = (CLAR_ADD32(cv_frac, CLAR_MUL32(CLAR_SUB32(cv_c, ((int32_t)(48))), 65536)) / 10);
+            cv_frac = CLAR_DIV32(CLAR_ADD32(cv_frac, CLAR_MUL32(CLAR_SUB32(cv_c, ((int32_t)(48))), 65536)), 10);
             cv_j = CLAR_SUB32(cv_j, 1);
         }
     }

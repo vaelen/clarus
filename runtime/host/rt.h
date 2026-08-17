@@ -13,9 +13,12 @@
    fpUn route every wrap-sensitive `+ - * << unary-` through these so the C
    lane wraps by construction instead of by (missing) luck. Division,
    modulo, comparisons, and `>>` are excluded: div/mod trap by contract on
-   both lanes instead of wrapping, and `>>` must stay a signed arithmetic
-   shift to match the 68k lane's ASR (an unsigned shift would change
-   negative-operand behavior instead of preserving it). */
+   both lanes instead of wrapping (CLAR_DIV32/CLAR_MOD32 below, once
+   rt_panic is declared -- the one exception, INT_MIN/-1, is pinned to
+   match the 68k lane's restoring-division glue rather than trapping),
+   and `>>` must stay a signed arithmetic shift to match the 68k lane's
+   ASR (an unsigned shift would change negative-operand behavior instead
+   of preserving it). */
 #define CLAR_ADD32(a, b) ((int32_t)((uint32_t)(a) + (uint32_t)(b)))
 #define CLAR_SUB32(a, b) ((int32_t)((uint32_t)(a) - (uint32_t)(b)))
 #define CLAR_MUL32(a, b) ((int32_t)((uint32_t)(a) * (uint32_t)(b)))
@@ -42,6 +45,30 @@ int32_t rt_fix_mul(int32_t a, int32_t b);                             /* (a*b)>>
 int32_t rt_fix_div(int32_t a, int32_t b);                             /* (a<<16)/b via int64; b==0 panics "division by zero" */
 
 void rt_panic(const char *msg);                                       /* "runtime error: MSG" to stderr, exit(3) */
+
+/* Integer `/`/`mod`: divisor 0 is a Clarus runtime error, same class as
+   list bounds (task-5, correctness-cleanup) -- matches rt_fix_div's own
+   "b==0 panics division by zero" precedent above. INT_MIN/-1 wraps to
+   INT_MIN (quotient) / 0 (remainder) rather than trapping: the 68k
+   lane's restoring-division glue (cgEmitDiv32/cgEmitMod32, cg68k.cla)
+   is the semantics anchor here, confirmed by a real Mini vMac boot
+   (task-5-report.md) before this was pinned. Both cases are UB in bare
+   C (division by zero, and INT_MIN/-1 overflows mid-division), hence
+   wrapping `/`/`%` here instead of using them directly -- fpBin routes
+   `/` and `mod` through these (cprint.cla). */
+static inline int32_t clar_div32(int32_t x, int32_t y) {
+    if (y == 0) rt_panic("division by zero");
+    if (y == -1 && x == INT32_MIN) return INT32_MIN;
+    return x / y;
+}
+static inline int32_t clar_mod32(int32_t x, int32_t y) {
+    if (y == 0) rt_panic("division by zero");
+    if (y == -1) return 0;
+    return x % y;
+}
+#define CLAR_DIV32(x, y) clar_div32((x), (y))
+#define CLAR_MOD32(x, y) clar_mod32((x), (y))
+
 void rt_alert(const uint8_t *s);                                      /* stdout + \n; CR bytes rendered as LF */
 void rt_log(const uint8_t *s);                                        /* stderr + \n; CR bytes rendered as LF (Ch12) */
 void rt_quit(int32_t code);                                           /* `quit [code]` statement: exit(code) */

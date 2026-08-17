@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+on App.launch {
+    var d: int
+    var v: int
+
+    d = 0
+    v = 5 / d
+    alert("unreachable")
+}

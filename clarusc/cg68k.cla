@@ -1502,6 +1502,20 @@ var cgDeepValueOffs: list of int
 // four sites, list.cla's own module header comment).
 var cgListOobMsgIdx: int
 
+// cgDivZeroMsgIdx is the irStrLits index of "division by zero" --
+// registered alongside cgListOobMsgIdx (same up-front timing, same
+// reasoning) for cgEmitDiv32/cgEmitMod32's own zero-divisor guard
+// (Task 5, correctness-cleanup). Unlike cgListOobMsgIdx this symbol
+// never needs Amendment A2's cgRelClsPanicMsg promotion in the object
+// linker: the guard lives entirely inside the div32/mod32 GLUE bundle
+// (cgEmitDiv32/cgEmitMod32), which cg68Measure/cg68ProgramFork always
+// emit fresh, every segment, outside the per-IRFunc bake/capture path
+// (cgObjApplyGlueUsage's own doc comment) -- so the pool-string hole it
+// creates is never captured into a baked function body at all, and the
+// hardcoded cgListOobMsgIdx check in cgObjRecordHole/cgObjResolveLabel
+// simply never sees it.
+var cgDivZeroMsgIdx: int
+
 // cgResetCodegenState clears every Task 8 module-global above -- called
 // once per cg68Program() run, mirroring cgAssignJtSlots/
 // cgAssignGlobalOffsets's own fresh-per-run discipline. Also invalidates
@@ -1546,6 +1560,7 @@ func cgResetCodegenState() {
 // every other irStrLits producer).
 func cgReservePanicMsgs() {
     cgListOobMsgIdx = irAddStrLit(intern("list index out of range"))
+    cgDivZeroMsgIdx = irAddStrLit(intern("division by zero"))
 }
 
 func cgMul32Label(): int {
@@ -11924,6 +11939,7 @@ func cgEmitDivModCore() {
 // is signA XOR signB, magnitude is the unsigned core's D2.
 func cgEmitDiv32(lbl: int) {
     var lpos: int
+    var okLbl: int
 
     a68Bind(lbl)
     if a68ListingOn {
@@ -11931,6 +11947,16 @@ func cgEmitDiv32(lbl: int) {
     } else {
         a68CommentMarker()
     }
+    // Zero-divisor guard (Task 5, correctness-cleanup): checked first,
+    // before the D2-D7 saves below, so the stack is clean for
+    // cgEmitPanic's own scratch push -- same ordering cgListAddrFromRegs
+    // uses for its bounds check. rtPanic never returns, so no
+    // register-restore concern on this arm.
+    okLbl = a68NewLabel()
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68EmitBr(OpBcc, 6, okLbl) // BNE: right != 0 -> ok
+    cgEmitPanic(cgDivZeroMsgIdx)
+    a68Bind(okLbl)
     a68Emit(OpMove, 4, AmDn, 2, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 3, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 4, 0, AmPreDec, 7, 0)
@@ -11962,6 +11988,7 @@ func cgEmitDiv32(lbl: int) {
 // untouched by the unsigned core, which only ever touches D2/D3/D6/D7).
 func cgEmitMod32(lbl: int) {
     var lpos: int
+    var okLbl: int
 
     a68Bind(lbl)
     if a68ListingOn {
@@ -11969,6 +11996,13 @@ func cgEmitMod32(lbl: int) {
     } else {
         a68CommentMarker()
     }
+    // Zero-divisor guard (Task 5, correctness-cleanup) -- see
+    // cgEmitDiv32's identical guard for the ordering rationale.
+    okLbl = a68NewLabel()
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68EmitBr(OpBcc, 6, okLbl) // BNE: right != 0 -> ok
+    cgEmitPanic(cgDivZeroMsgIdx)
+    a68Bind(okLbl)
     a68Emit(OpMove, 4, AmDn, 2, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 3, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 4, 0, AmPreDec, 7, 0)

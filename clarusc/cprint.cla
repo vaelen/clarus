@@ -1781,6 +1781,15 @@ func fpBin(e: int): text {
         return "CLAR_SUB32(" + fpExpr(irBinX(e)) + ", " + fpExpr(irBinY(e)) + ")"
     } else if op == "<<" {
         return "CLAR_SHL32(" + fpExpr(irBinX(e)) + ", " + fpExpr(irBinY(e)) + ")"
+    } else if op == "/" {
+        // Task 5 (correctness-cleanup): zero divisor is a runtime error,
+        // INT_MIN/-1 is pinned to the 68k lane's own restoring-division
+        // result -- both handled by CLAR_DIV32 (rt.h), same "route the
+        // wrap/trap-sensitive op through a macro" convention as the
+        // CLAR_MUL32 family just above.
+        return "CLAR_DIV32(" + fpExpr(irBinX(e)) + ", " + fpExpr(irBinY(e)) + ")"
+    } else if op == "mod" {
+        return "CLAR_MOD32(" + fpExpr(irBinX(e)) + ", " + fpExpr(irBinY(e)) + ")"
     }
     return "(" + fpExpr(irBinX(e)) + " " + cOp(op) + " " + fpExpr(irBinY(e)) + ")"
 }

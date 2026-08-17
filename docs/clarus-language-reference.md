@@ -432,6 +432,7 @@ The following operations may raise runtime errors (Chapter 12 specifies how erro
 - Accessing a map with the `[]` form using a key that does not exist (`get` never errors)
 - A checked enum conversion (`EnumType(i)`) with a value that matches no member
 - Dereferencing a `nil` window reference
+- Dividing an `int` by zero, or taking `mod` by zero
 
 ## Chapter 4: Expressions and Operators
 
@@ -443,7 +444,7 @@ The following table is normative. Operators bind tighter the lower their level n
 |---|---|---|
 | 1 | `()` grouping, `f(args)` call, `a[i]` index, `a.b` field/property, `new T`, `open T` | postfix/primary |
 | 2 | unary `-`, `not`, `~` | `~` is bitwise NOT (int only) |
-| 3 | `*` `/` `mod` `<<` `>>` `&` | `/` on int truncates toward zero; `fixed` uses `FixMul`/`FixDiv`; shifts and `&` are int only |
+| 3 | `*` `/` `mod` `<<` `>>` `&` | `/` on int truncates toward zero; `fixed` uses `FixMul`/`FixDiv`; shifts and `&` are int only; division or `mod` by zero is a runtime error (Chapter 3); the quotient of the most negative `int` and −1 is the most negative `int`, and the remainder is 0 |
 | 4 | `+` `-` `\|` `^` | `+` also concatenates strings and text; `\|` `^` are int only |
 | 5 | `==` `!=` `<` `<=` `>` `>=` | strings compare byte-wise, case-sensitive |
 | 6 | `and` | short-circuit |

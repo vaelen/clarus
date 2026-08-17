@@ -3399,7 +3399,7 @@ LBL_81:
         MOVE.L D0,-(A7)
         MOVE.L #1903520116,D0
         MOVE.L D0,-(A7)
-        LEA 1458(A5),A0
+        LEA 1450(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -3417,7 +3417,7 @@ LBL_81:
         MOVE.L D0,-(A7)
         MOVE.L #1868656752,D0
         MOVE.L D0,-(A7)
-        LEA 1466(A5),A0
+        LEA 1458(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -3431,7 +3431,7 @@ LBL_81:
         EXT.L D0
         MOVE.L D0,-4(A6)
 LBL_380:
-        BSR.W LBL_176
+        BSR.W LBL_175
 LBL_379:
         UNLK A6
         RTS
@@ -5852,7 +5852,7 @@ LBL_107:
         DC.W $A8A3  ; UiEraseRect
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        BSR.W LBL_174
+        JSR 1466(A5)
         ADDQ.L #4,A7
         MOVE.L D0,-28(A6)
         MOVE.L -28(A6),D0
@@ -7353,7 +7353,7 @@ LBL_575:
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
         MOVE.L #255,-(A7)
-        LEA LBL_216(PC),A0
+        LEA LBL_215(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_6
         ADDA.W #12,A7
@@ -7393,7 +7393,7 @@ LBL_578:
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
         MOVE.L #255,-(A7)
-        LEA LBL_216(PC),A0
+        LEA LBL_215(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_6
         ADDA.W #12,A7
@@ -7433,7 +7433,7 @@ LBL_581:
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
         MOVE.L #255,-(A7)
-        LEA LBL_216(PC),A0
+        LEA LBL_215(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_6
         ADDA.W #12,A7
@@ -7473,7 +7473,7 @@ LBL_584:
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
         MOVE.L #255,-(A7)
-        LEA LBL_216(PC),A0
+        LEA LBL_215(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_6
         ADDA.W #12,A7
@@ -12206,52 +12206,21 @@ LBL_173:
 LBL_769:
         UNLK A6
         RTS
-        ; func clar_ui_fire_staterows  (JT slot 175)
-        ;   param rowsIdx : 8(A6)  size 4
+        ; func clar_ui_fire_launchdoc  (JT slot 175)
+        ;   param path : 8(A6)  size 4
 LBL_174:
         LINK A6,#-8296
-        MOVE.L 8(A6),D1
-        MOVEQ #63,D0
-        CMP.L D0,D1
-        SEQ D0
-        ANDI.L #1,D0
-        TST.L D0
-        BEQ.W LBL_771
-        LEA -1296(A5),A0
-        MOVE.L A0,D0
-        BRA.W LBL_770
-        BRA.W LBL_772
-LBL_771:
-        LEA LBL_215(PC),A0
-        MOVE.L A0,-(A7)
-        BSR.W LBL_141
-        ADDQ.L #4,A7
-        BSR.W LBL_222
-        MOVEQ #1,D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_142
-        ADDQ.L #4,A7
-        MOVEQ #0,D0
-        BRA.W LBL_770
-LBL_772:
 LBL_770:
         UNLK A6
         RTS
-        ; func clar_ui_fire_launchdoc  (JT slot 176)
-        ;   param path : 8(A6)  size 4
+        ; func clar_ui_fire_startempty  (JT slot 176)
 LBL_175:
         LINK A6,#-8296
-LBL_773:
+LBL_771:
         UNLK A6
         RTS
-        ; func clar_ui_fire_startempty  (JT slot 177)
+        ; func clar_cb_aeQuitHandler (JT slot 177) -- pascal callback glue for aeQuitHandler
 LBL_176:
-        LINK A6,#-8296
-LBL_774:
-        UNLK A6
-        RTS
-        ; func clar_cb_aeQuitHandler (JT slot 178) -- pascal callback glue for aeQuitHandler
-LBL_177:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
         MOVE.L 16(A6),-(A7)
@@ -12260,6 +12229,22 @@ LBL_177:
         ;   handlerRefcon : 8(A6)  pascal size 4
         MOVE.L 8(A6),-(A7)
         BSR.W LBL_79
+        ADDA.W #12,A7
+        MOVE.W D0,20(A6)
+        UNLK A6
+        MOVE.L (A7)+,A0
+        ADDA.W #12,A7
+        JMP (A0)
+        ; func clar_cb_aeOappHandler (JT slot 178) -- pascal callback glue for aeOappHandler
+LBL_177:
+        LINK A6,#0
+        ;   theAppleEvent : 16(A6)  pascal size 4
+        MOVE.L 16(A6),-(A7)
+        ;   reply : 12(A6)  pascal size 4
+        MOVE.L 12(A6),-(A7)
+        ;   handlerRefcon : 8(A6)  pascal size 4
+        MOVE.L 8(A6),-(A7)
+        BSR.W LBL_80
         ADDA.W #12,A7
         MOVE.W D0,20(A6)
         UNLK A6
@@ -12293,6 +12278,20 @@ LBL_219:
         RTS
 LBL_220:
         ; cg_div32: D1=left / D0=right -> D0 (truncate toward zero, C99)
+        TST.L D0
+        BNE.W LBL_772
+        ADDA.L #-256,A7
+        MOVEA.L A7,A1
+        MOVE.L A1,-(A7)
+        MOVE.L #255,-(A7)
+        LEA LBL_216(PC),A0
+        MOVE.L A0,-(A7)
+        BSR.W LBL_6
+        ADDA.W #12,A7
+        MOVEA.L A7,A0
+        MOVE.L A0,-(A7)
+        BSR.W LBL_1
+LBL_772:
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
         MOVE.L D4,-(A7)
@@ -12303,19 +12302,19 @@ LBL_220:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_775
+        BPL.W LBL_773
         NEG.L D2
         MOVE.L #1,D4
-LBL_775:
+LBL_773:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_776
+        BPL.W LBL_774
         NEG.L D3
         MOVE.L #1,D5
-LBL_776:
+LBL_774:
         CLR.L D6
         MOVE.W #31,D7
-LBL_777:
+LBL_775:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -12323,16 +12322,16 @@ LBL_777:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_778
+        BCS.W LBL_776
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_778:
-        DBRA D7,LBL_777
+LBL_776:
+        DBRA D7,LBL_775
         EOR.L D5,D4
         TST.L D4
-        BEQ.W LBL_779
+        BEQ.W LBL_777
         NEG.L D2
-LBL_779:
+LBL_777:
         MOVE.L D2,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -12343,6 +12342,20 @@ LBL_779:
         RTS
 LBL_221:
         ; cg_mod32: D1=left mod D0=right -> D0 (sign follows dividend, C99)
+        TST.L D0
+        BNE.W LBL_778
+        ADDA.L #-256,A7
+        MOVEA.L A7,A1
+        MOVE.L A1,-(A7)
+        MOVE.L #255,-(A7)
+        LEA LBL_216(PC),A0
+        MOVE.L A0,-(A7)
+        BSR.W LBL_6
+        ADDA.W #12,A7
+        MOVEA.L A7,A0
+        MOVE.L A0,-(A7)
+        BSR.W LBL_1
+LBL_778:
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
         MOVE.L D4,-(A7)
@@ -12353,19 +12366,19 @@ LBL_221:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_780
+        BPL.W LBL_779
         NEG.L D2
         MOVE.L #1,D4
-LBL_780:
+LBL_779:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_781
+        BPL.W LBL_780
         NEG.L D3
         MOVE.L #1,D5
-LBL_781:
+LBL_780:
         CLR.L D6
         MOVE.W #31,D7
-LBL_782:
+LBL_781:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -12373,15 +12386,15 @@ LBL_782:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_783
+        BCS.W LBL_782
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_783:
-        DBRA D7,LBL_782
+LBL_782:
+        DBRA D7,LBL_781
         TST.L D4
-        BEQ.W LBL_784
+        BEQ.W LBL_783
         NEG.L D6
-LBL_784:
+LBL_783:
         MOVE.L D6,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -12395,7 +12408,7 @@ LBL_222:
         LINK A6,#-48
         MOVE.L -1296(A5),D0
         MOVE.L D0,-4(A6)
-LBL_785:
+LBL_784:
         MOVE.L A1,-(A7)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
@@ -12405,6 +12418,10 @@ LBL_785:
         UNLK A6
         RTS
         ; constant pool: string literals
+LBL_216:
+        DC.B $10
+        DC.B $64,$69,$76,$69,$73,$69,$6F,$6E,$20,$62,$79,$20,$7A,$65,$72,$6F
+        DC.B $00
 LBL_178:
         DC.B $18
         DC.B $61,$72,$72,$61,$79,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
@@ -12480,7 +12497,7 @@ LBL_198:
 LBL_199:
         DC.B $31
         DC.B $61,$73,$6B,$4F,$70,$65,$6E,$20,$66,$69,$6C,$74,$65,$72,$20,$65,$6E,$74,$72,$79,$20,$6D,$75,$73,$74,$20,$62,$65,$20,$61,$74,$20,$6D,$6F,$73,$74,$20,$34,$20,$63,$68,$61,$72,$61,$63,$74,$65,$72,$73
-LBL_216:
+LBL_215:
         DC.B $17
         DC.B $6C,$69,$73,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
 LBL_200:
@@ -12536,10 +12553,6 @@ LBL_213:
 LBL_214:
         DC.B $2D
         DC.B $63,$6C,$61,$72,$5F,$75,$69,$5F,$66,$69,$72,$65,$5F,$72,$65,$6C,$65,$61,$73,$65,$76,$61,$72,$73,$3A,$20,$77,$69,$6E,$49,$64,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-LBL_215:
-        DC.B $2C
-        DC.B $63,$6C,$61,$72,$5F,$75,$69,$5F,$66,$69,$72,$65,$5F,$73,$74,$61,$74,$65,$72,$6F,$77,$73,$3A,$20,$72,$6F,$77,$73,$49,$64,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-        DC.B $00
         ; constant pool: enum value tables
         ; constant pool: serdesc tables
         ; constant pool: UI descriptor blob (44 bytes)
