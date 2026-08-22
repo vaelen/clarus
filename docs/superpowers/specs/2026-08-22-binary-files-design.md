@@ -118,10 +118,12 @@ Semantics:
 - `flush()`: Mac `_FlushFile` then `_FlushVol` on the file's volume;
   host `fsync`. This is the journal protocol's write-ahead barrier.
 - `close()`: idempotent; closing a `nil` handle is a no-op. After
-  `close` every copy of the value is stale; an operation through a
-  stale copy fails with `false` + `lastError` (File Manager `rfNumErr`
-  on the Mac, `EBADF` on the host) — never silently reused. A program
-  that wants a "closed" marker sets its variable to `nil`.
+  `close` every copy of the value is stale, with C-fd semantics: an
+  operation through it usually fails with `false` + `lastError`
+  (`rfNumErr` / `EBADF`), but if the OS has since reused the number it
+  reaches a different file — the same hazard as a closed C fd, documented,
+  not guarded (a generation counter is out of scope). Programs set the
+  variable to `nil` on close; the runtime cannot do it for copies.
 - **Any method other than `close` on a `nil` handle is a runtime
   error** ("use of nil filehandle") — a bug, not weather.
 - Every operation is synchronous; no events, no pump.
