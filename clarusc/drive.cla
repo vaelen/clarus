@@ -847,6 +847,7 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     var incResolved: string
     var incKey: string
     var missing: bool
+    var tbKey: string
     var diskProbe: text
     var progressLine: string
     var key2: string
@@ -1008,6 +1009,30 @@ func expand(rawPath: string, entry: bool, key: string): bool {
                     incKey = driveKeyResolve(key2, incName)
                 }
                 missing = expand(incResolved, false, incKey)
+                if missing {
+                    // toolbox-include-fallback (Task 7): a dir-relative miss
+                    // whose KEY (driveKeyResolve is pure '/'-space, so this
+                    // check applies regardless of hostPaths) falls in the
+                    // "toolbox/" key space gets one more try against the
+                    // compiler's OWN toolbox/ directory, a sibling of the
+                    // runtime directory rtDir sits inside
+                    // (<rtdir>/../../toolbox/<rest> -- matches the relative
+                    // spelling runtime/clarus/*.cla's own toolbox includes
+                    // already use, e.g. uidialogs.cla's
+                    // `include "../../toolbox/files.cla"` -- so a fallback
+                    // hit and a runtime module's own include of the same
+                    // file resolve to the identical path/key and dedup
+                    // against each other via the SAME incKey passed below).
+                    tbKey = driveKeyResolve(key2, incName)
+                    if tbKey.length >= 8 and tbKey[0, 8] == "toolbox/" {
+                        if not haveRtDir and rtDir == "" {
+                            rtDir = findRtDir("core.cla")
+                        }
+                        if rtDir != "" {
+                            missing = expand(drivePathJoin(rtDir, "../../" + incName), false, incKey)
+                        }
+                    }
+                }
                 if missing {
                     // Recursion may have moved curPathIdx into a child file;
                     // restore this file's path before stamping the diagnostic,

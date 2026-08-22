@@ -1,0 +1,21 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// main.cla: internal/lowlevel's TestRtInc/ToolboxIncludeFallback fixture
+// (binary-files phase Task 7). This file has no toolbox/ sibling of its
+// own, so `include "toolbox/osutils.cla"`/`include "toolbox/files.cla"`
+// only resolve via the rtdir-sibling fallback (spec section 3.5). The
+// `window` decl independently pulls in runtime/clarus/uidialogs.cla,
+// which itself `include`s "../../toolbox/files.cla" -- proving the
+// fallback-resolved copy of files.cla and the runtime module's
+// relatively-resolved copy dedup to the same identity (same incKey)
+// instead of double-parsing/redeclaring.
+include "toolbox/osutils.cla"
+include "toolbox/files.cla"
+
+var dt: DateTimeRec
+
+window Main {
+    title: "probe"
+    size: 200, 100
+}

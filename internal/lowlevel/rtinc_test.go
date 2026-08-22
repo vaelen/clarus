@@ -78,6 +78,51 @@ func TestRtInc(t *testing.T) {
 		}
 	})
 
+	t.Run("ToolboxIncludeFallback", func(t *testing.T) {
+		// toolbox_fallback/main.cla has no toolbox/ sibling of its own, so
+		// its bare `include "toolbox/osutils.cla"`/`include
+		// "toolbox/files.cla"` spellings only resolve via the rtdir-sibling
+		// fallback (spec section 3.5, Task 7). Its `window` decl also pulls
+		// in runtime/clarus/uidialogs.cla, which independently includes
+		// "../../toolbox/files.cla" -- a clean (non-error) compile proves
+		// the two routes to files.cla dedup instead of redeclaring.
+		fixture := filepath.Join(root, "testdata", "rtinc", "toolbox_fallback", "main.cla")
+		outC := filepath.Join(t.TempDir(), "main.c")
+		cmd := exec.Command(exe, "emit", "-o", outC, "--rtdir", filepath.Join(root, "runtime", "clarus"), fixture)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("clarusc emit --rtdir %s: %v\nstdout: %s\nstderr: %s", fixture, err, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("ToolboxIncludeFallbackNoRtDir", func(t *testing.T) {
+		// Same fixture, but no --rtdir and cwd has no runtime/clarus/
+		// above it -- the fallback can't resolve rtDir at all, so it must
+		// stay a silent no-op and the ordinary diagnostic still fires
+		// (the error stays honest instead of masking a real problem).
+		fixture := filepath.Join(root, "testdata", "rtinc", "toolbox_fallback", "main.cla")
+		cwd := t.TempDir() // no runtime/clarus/ anywhere above this
+		outC := filepath.Join(t.TempDir(), "main.c")
+		cmd := exec.Command(exe, "emit", "-o", outC, fixture)
+		cmd.Dir = cwd
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err == nil {
+			t.Fatalf("expected nonzero exit, got success\nstdout: %s", stdout.String())
+		}
+		// The ordinary cannot-open diagnostic (emitDiag) prints via stdout
+		// (like every other lex/parse/check diagnostic in this suite --
+		// see IncludesRuntimeModule/NoInclusionWithoutUsage above), unlike
+		// the fatal abort() MissingRtdirErrors checks for on stderr.
+		if !strings.Contains(stdout.String(), `cannot open included file "toolbox/osutils.cla"`) {
+			t.Fatalf("stdout missing the honest cannot-open diagnostic:\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
+		}
+	})
+
 	t.Run("NoInclusionWithoutUsage", func(t *testing.T) {
 		outC := filepath.Join(t.TempDir(), "main.c")
 		cmd := exec.Command(exe, "emit", "-o", outC, noflag)
