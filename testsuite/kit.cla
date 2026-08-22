@@ -67,12 +67,16 @@ func tkReport(results: list of TestResult): int {
             fails = fails + 1
         }
     }
-    // binary-files phase Task 8: re-joined into one expression -- native
-    // 68k codegen's str/rec temp-slot pool is now sized per function from
-    // the measure pass (no more fixed per-statement ceiling), so the
-    // three-tkIntToStr()-call chain this workaround used to dodge now
-    // Just Works, and runs natively in every suite boot (this function is
-    // on the path every core/toolbox suite GUI takes).
+    // binary-files phase Task 8: re-joined into one expression. The split
+    // workaround (2026-08-04) was already obsolete by the mac-resident-
+    // clarusc cgBigTmpSlots 4->16 bump (2026-08-09) -- three tkIntToStr()
+    // calls chained here never needed more than 3-4 big temps, well under
+    // even the OLD ceiling -- so this rejoin is just overdue cleanup, not
+    // evidence the ceiling itself is gone. Removed together with the
+    // ceiling anyway, since Task 8 deleted the per-statement limit this
+    // comment used to warn about; see testdata/run/bigtmp_spill.cla for
+    // the actual proof the ceiling is gone (40 concurrently-live big
+    // temps in one statement, more than double the old hard limit).
     alert("TOTAL " + tkIntToStr(total) + " PASS " + tkIntToStr(total - fails) + " FAIL " + tkIntToStr(fails))
     return fails
 }

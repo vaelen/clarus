@@ -269,9 +269,9 @@ func app68BuildCodeN(seg: text, jtFirstSlot: int, jtCount: int): text {
 // reproducible early hang (frozen desktop, no window ever draws, no
 // natInit-created "out" file even appears) on a plain UI program
 // (testdata/valid/bounce.cla) at 384KB, root-caused to stack/heap
-// headroom: cgEmitFunc's own per-function LINK frame floor is ~8.3KB on
-// the CURRENT compiler (cgTmpSlots/cgBigTmpSlots/cgBigTmpSize's fixed
-// per-function scratch pools, cg68k.cla's own header comment), and the
+// headroom: cgEmitFunc's own per-function LINK frame floor was ~8.3KB AT
+// THE TIME (cgTmpSlots/cgBigTmpSlots/cgBigTmpSize's fixed per-function
+// scratch pools, cg68k.cla's own header comment as it read then), and the
 // early boot call chain alone (rtUiStartup -> App.launch -> rtUiLaunch ->
 // UiLaunchReal -> nat_UiLaunchReal, each its own ~8.3KB+ frame) already
 // exhausts a 384KB partition's stack headroom before any Toolbox call
@@ -285,9 +285,16 @@ func app68BuildCodeN(seg: text, jtFirstSlot: int, jtCount: int): text {
 // partition to 2MB with ZERO other change makes the identical binary boot
 // and run cleanly on Snow. 2MB is an empirically-verified, generously
 // round choice (not a computed minimum) -- comfortably above the ~8.3KB-
-// per-frame floor at any plausible call depth for a program this size,
-// same "round, generous, not hand-tuned to the byte" spirit as the
-// original 384KB pick. UNCHANGED by hlEventAware (Task 13, native-5e,
+// per-frame floor observed at Task 12's own time, at any plausible call
+// depth for a program this size, same "round, generous, not hand-tuned
+// to the byte" spirit as the original 384KB pick. binary-files phase
+// Task 8 later replaced the flat cgBigTmpSlots pool with a per-function
+// cgBigTmpFloor (4 slots instead of 16, cg68k.cla's own header comment)
+// -- a minimal function's frame floor is now ~2.1KB, not ~8.3KB, and
+// only a function that actually needs more big-temp slots grows past
+// that. This partition size only GAINED headroom from that change, never
+// lost any, so the 2MB figure above still stands with more margin than
+// when it was picked. UNCHANGED by hlEventAware (Task 13, native-5e,
 // mirrors build-mac.sh's own appres.r *flag word* exactly -- its own
 // comment: notHighLevelEventAware -> isHighLevelEventAware is "what makes
 // a Clarus build AppleEvent-aware" -- not its memory partition size,
