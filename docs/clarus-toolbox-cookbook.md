@@ -803,6 +803,43 @@ This is `toolbox/osutils.cla`'s real declaration, verbatim. `DateToSeconds`
 always check the glue word count, not just the bit-11 bit, when the two
 disagree.
 
+## 11. Walkthrough: positioned file I/O in the param block
+
+`toolbox/files.cla`'s `IOParam` record is one shared 50-byte layout, reused
+by every `PBxxxSync` File Manager trap by repurposing the SAME three
+fields for different jobs depending on which trap is called — the param
+block itself never changes shape.
+
+`ioPosMode`/`ioPosOffset` position a read or write before it happens:
+`ioPosMode` picks one of `fsAtMark`/`fsFromStart`/`fsFromLEOF`/`fsFromMark`
+(`toolbox/files.cla`, `Files.h:92-95`) and `ioPosOffset` gives the byte
+offset relative to it, so writing at absolute offset 2048 is
+`pb.ioPosMode = fsFromStart` then `pb.ioPosOffset = 2048` before
+`PBWriteSync`. `PBGetFPosSync`/`PBSetFPosSync` read/write `ioPosOffset`
+too — the same field, repurposed as an out/in parameter instead of a
+pre-call setting.
+
+`ioMisc` is the same trick again: `PBGetEOFSync` returns the file's
+current logical EOF (length) through it, and `PBSetEOFSync` reads a
+target length FROM it (truncating or extending) — same field, opposite
+direction depending on which trap you called. Both are declared `ptr` in
+the record (matching the struct's `long` width), so read/write it through
+`int()`/`ptr()`: `pb.ioMisc = ptr(32)` before `PBSetEOFSync`, then
+`int(pb.ioMisc)` after `PBGetEOFSync`.
+
+**The eofErr short-read contract**: a read whose request spans past the
+current EOF is not a hard failure. `PBReadSync` (and its high-level
+`FSRead` cousin) returns `eofErr` (`-39`) in the OSErr AND fills
+`ioActCount` with however many bytes actually existed before EOF — Task
+1's probe wave confirmed this in hardware (`task-1-report.md` §(d)):
+reading 100 bytes at offset 2000 against an EOF of 2064 returned
+`ioActCount = 64` with OSErr `-39`, not a truncated failure. Any caller
+of a positioned read must treat `eofErr` with a nonzero `ioActCount` as a
+**successful short read**, checking `ioActCount` rather than branching
+on the OSErr alone. The same probe also confirmed the opposite direction
+is unremarkable: writing past the current EOF (leaving a "hole") just
+extends the file to `offset + reqCount`, no separate grow step needed.
+
 ---
 
 *Everything in this document is a citation, not an assertion — see the

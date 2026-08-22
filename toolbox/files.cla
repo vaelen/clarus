@@ -159,10 +159,23 @@ external func PBSetFInfoSync(paramBlock: ptr): int = trap 0xA00D reg
 // native.cla's own natFilePb header comment documents in full -- this
 // record mirrors it field-for-field, public-catalog spelling): qLink@0(4)
 // qType@4(2) ioTrap@6(2) ioCmdAddr@8(4) ioCompletion@12(4) ioResult@16(2)
-// ioNamePtr@18(4) ioVRefNum@22(2) ioRefNum@24(2) ioVersNum/ioPermssn@26
-// (2, only the low byte -- ioPermssn -- is ever set by this catalog's
-// callers) ioMisc@28(4) ioBuffer@32(4) ioReqCount@36(4) ioActCount@40(4)
-// ioPosMode@44(2) ioPosOffset@46(4) -- struct size 50.
+// ioNamePtr@18(4) ioVRefNum@22(2) ioRefNum@24(2) ioVersNum@26(1)
+// ioPermssn@27(1) ioMisc@28(4) ioBuffer@32(4) ioReqCount@36(4)
+// ioActCount@40(4) ioPosMode@44(2) ioPosOffset@46(4) -- struct size 50.
+//
+// ioVersNum/ioPermssn (binary-files phase Task 2, task-1-report.md
+// Amendment 2): named in place of the `pad[2]` this record used to carry
+// at that offset -- purely additive, no existing caller (`conn_68k.cla`,
+// `cases_serial.cla`) ever wrote that pad, so this changes nothing for
+// them. A positioned-I/O open (PBOpenSync, toolbox/devices.cla) needs a
+// real `ioPermssn` value (`fsRdWrPerm` below) to get read/write access;
+// the byte-field spelling (`byte`, not a 2nd VolumeParam/FileParam-style
+// `pad[2]`) is the language reference's own extern-record field palette
+// (docs/clarus-language-reference.md, "Field Palette": `byte` is 1 byte,
+// reads/writes as `int`, zero-extended) -- the first extern record in
+// this catalog to need a *named* 1-byte field rather than opaque filler,
+// so there's no `byte`-field precedent elsewhere in this file to match;
+// this is the plain form the language itself defines for the case.
 
 extern record IOParam {
     qLink: ptr
@@ -174,7 +187,8 @@ extern record IOParam {
     ioNamePtr: ptr
     ioVRefNum: word
     ioRefNum: word
-    pad[2]
+    ioVersNum: byte
+    ioPermssn: byte
     ioMisc: ptr
     ioBuffer: ptr
     ioReqCount: int
@@ -187,3 +201,79 @@ external func PBCreateSync(paramBlock: ptr): int = trap 0xA008 reg
 external func PBOpenRFSync(paramBlock: ptr): int = trap 0xA00A reg
 external func PBWriteSync(paramBlock: ptr): int = trap 0xA003 reg
 external func PBCloseSync(paramBlock: ptr): int = trap 0xA001 reg
+
+// ---- PBGetEOFSync / PBSetEOFSync / PBGetFPosSync / PBSetFPosSync /
+// PBFlushFileSync / PBFlushVolSync / PBAllocateSync (Task 2, binary-files
+// phase): the File Manager's positioned-I/O family a `filehandle`'s
+// native lane (Task 6) needs for `size()`/`seek()`/`writeAt()`/`flush()`
+// -- same Toolbox-first fill-the-manager discipline as Task 7's create/
+// open-RF/write/close block above. Every trap word below was re-verified
+// against Apple's own headers by this phase's own probe wave
+// (task-1-report.md section (a)), not merely carried over from that
+// report -- all seven matched the report's table exactly. All seven are
+// OS/register convention (bit 11 clear on every word below), bare `reg`,
+// identical shape to every other PBxxxSync trap already in this file.
+// `ioMisc` carries GetEOF's result / SetEOF's input (this file's own
+// IOParam header comment above); `ioPosOffset` carries GetFPos's result /
+// SetFPos's target offset -- both confirmed empirically by the probe
+// (task-1-report.md section (a), "IOParam struct" sub-section).
+//
+//   PBGetEOFSync     CIncludes/Files.h:1793-1795:
+//                    `#pragma parameter __D0 PBGetEOFSync(__A0)` ...
+//                    `EXTERN_API( OSErr ) PBGetEOFSync(ParmBlkPtr
+//                    paramBlock) ONEWORDINLINE(0xA011);` -- pb in A0,
+//                    OSErr in D0, bit 11 clear (0xA011 & 0x0800 == 0)
+//                    --> `reg`. Corroborated in AIncludes/Files.a:2151
+//                    `_PBGetEOFSync: OPWORD $A011`.
+//   PBSetEOFSync     CIncludes/Files.h:1821-1823: same shape,
+//                    `ONEWORDINLINE(0xA012)`. Corroborated in
+//                    AIncludes/Files.a:2195 `_PBSetEOFSync: OPWORD $A012`.
+//   PBGetFPosSync    CIncludes/Files.h:1849-1851: same shape,
+//                    `ONEWORDINLINE(0xA018)`. Corroborated in
+//                    AIncludes/Files.a:2239 `_PBGetFPosSync: OPWORD $A018`.
+//   PBSetFPosSync    CIncludes/Files.h:1877-1879: same shape,
+//                    `ONEWORDINLINE(0xA044)`. Corroborated in
+//                    AIncludes/Files.a:2283 `_PBSetFPosSync: OPWORD $A044`.
+//   PBFlushFileSync  CIncludes/Files.h:1905-1907: same shape,
+//                    `ONEWORDINLINE(0xA045)`. Corroborated in
+//                    AIncludes/Files.a:2327
+//                    `_PBFlushFileSync: OPWORD $A045`.
+//   PBFlushVolSync   CIncludes/Files.h:1440-1442: same shape,
+//                    `ONEWORDINLINE(0xA013)`. Corroborated in
+//                    AIncludes/Files.a:1591 `_PBFlushVolSync: OPWORD $A013`.
+//   PBAllocateSync   CIncludes/Files.h:1765-1767: same shape,
+//                    `ONEWORDINLINE(0xA010)`. Corroborated in
+//                    AIncludes/Files.a:2107 `_PBAllocateSync: OPWORD $A010`.
+//                    Verified but NOT called by this task's own Catalog
+//                    proof below -- declared for File Manager
+//                    completeness, same rationale as the already-unused
+//                    `PBKillIOSync` (toolbox/devices.cla).
+//
+// fsCurPerm/fsRdPerm/fsWrPerm/fsRdWrPerm (Files.h:77-80, the `ioPermssn`
+// open-access-permission constants -- `fsRdWrShPerm` at :81 is NOT added,
+// no caller needs shared-write access) and fsAtMark/fsFromStart/
+// fsFromLEOF/fsFromMark (Files.h:92-95, the `ioPosMode` positioning-mode
+// constants) -- both enum blocks read directly off the reflowed header
+// (task-1-report.md section (a), "Constants" sub-section):
+//   fsCurPerm    = 0x00   fsAtMark    = 0
+//   fsRdPerm     = 0x01   fsFromStart = 1
+//   fsWrPerm     = 0x02   fsFromLEOF  = 2
+//   fsRdWrPerm   = 0x03   fsFromMark  = 3
+
+external func PBGetEOFSync(paramBlock: ptr): int = trap 0xA011 reg
+external func PBSetEOFSync(paramBlock: ptr): int = trap 0xA012 reg
+external func PBGetFPosSync(paramBlock: ptr): int = trap 0xA018 reg
+external func PBSetFPosSync(paramBlock: ptr): int = trap 0xA044 reg
+external func PBFlushFileSync(paramBlock: ptr): int = trap 0xA045 reg
+external func PBFlushVolSync(paramBlock: ptr): int = trap 0xA013 reg
+external func PBAllocateSync(paramBlock: ptr): int = trap 0xA010 reg
+
+const fsCurPerm: int = 0
+const fsRdPerm: int = 1
+const fsWrPerm: int = 2
+const fsRdWrPerm: int = 3
+
+const fsAtMark: int = 0
+const fsFromStart: int = 1
+const fsFromLEOF: int = 2
+const fsFromMark: int = 3

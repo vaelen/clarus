@@ -47,6 +47,10 @@ var catalogFiles = []string{
 // it, per that file's own composition-with-files.cla header comment),
 // kSERDConfiguration/kSERDInputBuffer/kSERDSerHShake/kSERDInputCount/
 // kSERDStatus/baud9600/data8/noParity/stop10 (serial, same Task 2).
+// PBGetEOFSync/PBSetEOFSync/PBGetFPosSync/PBSetFPosSync/
+// PBFlushFileSync/PBFlushVolSync/PBAllocateSync/fsRdWrPerm/fsFromStart
+// (files, binary-files phase Task 2 -- positioned-I/O fill, reuses `iop`
+// rather than redeclaring IOParam).
 const catalogDriver = `on App.startCLI(args: list of string) {
     var ev: EventRecord
     var t0: int
@@ -123,6 +127,19 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     err = PBControlSync(cb)
     err = PBKillIOSync(iop)
     t0 = t0 + kSERDSerHShake + kSERDStatus + cc.csCount
+
+    iop.ioVersNum = 0
+    iop.ioPermssn = fsRdWrPerm
+    err = PBGetEOFSync(iop)
+    iop.ioMisc = ptr(0)
+    err = PBSetEOFSync(iop)
+    err = PBGetFPosSync(iop)
+    iop.ioPosMode = fsFromStart
+    err = PBSetFPosSync(iop)
+    err = PBFlushFileSync(iop)
+    err = PBFlushVolSync(iop)
+    err = PBAllocateSync(iop)
+    t0 = t0 + fsAtMark + fsFromLEOF + fsFromMark + fsCurPerm + fsRdPerm + fsWrPerm
 }
 `
 

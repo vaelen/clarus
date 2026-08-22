@@ -6,7 +6,10 @@
 // calling it against real ROM, in-process. Unlike every other case file,
 // the externs here are NOT declared locally: the whole point is that the
 // toolbox/*.cla files in the build supply them. Task 4 extends this case
-// with a TE<->desk-scrap bridge roundtrip (see the section markers).
+// with a TE<->desk-scrap bridge roundtrip (see the section markers). Task
+// 2 (binary-files phase) further extends it with a File Manager
+// positioned-I/O sub-proof (create/open/write/GetEOF/SetEOF/Flush/close,
+// see that section's own marker).
 
 // tbCatEditBar/tbCatEditCopy/tbCatEditPaste: Edit menu bar position and
 // std-edit item numbers -- same values cases_editmenu.cla's own
@@ -45,6 +48,12 @@ func caseCatalog(): TestResult {
     var n: int
     var i: int
     var ok: bool
+
+    // files: positioned-I/O sub-proof's own locals (Task 2, binary-files
+    // phase) -- kept separate from the plain-catalog vars above, same
+    // discipline the TE-bridge section below already follows.
+    var fpb: IOParam
+    var wbuf: ptr
 
     // TE <-> desk-scrap bridge section's own locals (kept separate from
     // the plain-catalog vars above, which this section also reuses for
@@ -193,6 +202,79 @@ func caseCatalog(): TestResult {
     mp = InfoScrap()
     if mp == ptr(0) or peekl(mp) < 5 {
         return tkFail("Catalog", "infoscrap")
+    }
+
+    // -- files: File Manager positioned I/O (Task 2, binary-files phase)
+    // -- create+open a scratch file, PBWriteSync 64 bytes at fsFromStart
+    // 0, PBGetEOFSync (Task 1's chosen EOF query, task-1-report.md
+    // section (c)) confirms 64, PBSetEOFSync truncates to 32, a second
+    // PBGetEOFSync confirms 32, PBFlushFileSync, then PBCloseSync --
+    // hardware-proves every trap this task adds to toolbox/files.cla. A
+    // plain per-call local `IOParam` (declared with the other locals
+    // above), never a long-lived heap-resident block -- task-1-report.md
+    // Amendment 3's own recommendation, the shape the probe proved safe
+    // under this same suite's busy heap.
+    fpb.ioNamePtr = UiStrAddr("IOCatalog.dat")
+    fpb.ioVRefNum = 0
+    PBCreateSync(fpb) // dupFNErr on a rerun is fine; PBOpenSync below is the real gate
+
+    fpb.ioNamePtr = UiStrAddr("IOCatalog.dat")
+    fpb.ioVRefNum = 0
+    fpb.ioPermssn = fsRdWrPerm
+    err = PBOpenSync(fpb)
+    if err != 0 {
+        detail = "io open err " + tkIntToStr(err)
+        return tkFail("Catalog", detail)
+    }
+
+    wbuf = NewPtr(64)
+    i = 0
+    while i < 64 {
+        pokeb(wbuf + i, i)
+        i = i + 1
+    }
+    fpb.ioBuffer = wbuf
+    fpb.ioReqCount = 64
+    fpb.ioPosMode = fsFromStart
+    fpb.ioPosOffset = 0
+    err = PBWriteSync(fpb)
+    if err != 0 or fpb.ioActCount != 64 {
+        detail = "io write err " + tkIntToStr(err)
+        detail = detail + " act " + tkIntToStr(fpb.ioActCount)
+        return tkFail("Catalog", detail)
+    }
+
+    err = PBGetEOFSync(fpb)
+    if err != 0 or int(fpb.ioMisc) != 64 {
+        detail = "io geteof1 err " + tkIntToStr(err)
+        detail = detail + " eof " + tkIntToStr(int(fpb.ioMisc))
+        return tkFail("Catalog", detail)
+    }
+
+    fpb.ioMisc = ptr(32)
+    err = PBSetEOFSync(fpb)
+    if err != 0 {
+        detail = "io seteof err " + tkIntToStr(err)
+        return tkFail("Catalog", detail)
+    }
+
+    err = PBGetEOFSync(fpb)
+    if err != 0 or int(fpb.ioMisc) != 32 {
+        detail = "io geteof2 err " + tkIntToStr(err)
+        detail = detail + " eof " + tkIntToStr(int(fpb.ioMisc))
+        return tkFail("Catalog", detail)
+    }
+
+    err = PBFlushFileSync(fpb)
+    if err != 0 {
+        detail = "io flush err " + tkIntToStr(err)
+        return tkFail("Catalog", detail)
+    }
+
+    err = PBCloseSync(fpb)
+    if err != 0 {
+        detail = "io close err " + tkIntToStr(err)
+        return tkFail("Catalog", detail)
     }
 
     // -- TE <-> desk-scrap bridge (toolbox-cookbook rider 2): Copy a real
