@@ -1,0 +1,16 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// constdedup.cla: internal/lowlevel's TestConstDedupAcrossIncludePaths
+// fixture (binary-files phase Task 2 fix) -- an explicit user-side
+// `include "toolbox/files.cla"`, PLUS a `window` decl so the UI runtime
+// gets spliced in too (runtime/clarus/uidialogs.cla independently
+// includes the same toolbox/files.cla). Two separate include routes
+// reach the SAME file's top-level `const` declarations (fsCurPerm etc.)
+// in one compile; checkConstDecl's own dedup must tolerate that.
+include "../../toolbox/files.cla"
+
+window Main {
+    title: "probe"
+    size: 200, 100
+}

@@ -657,6 +657,18 @@ var funcSigByDecl: intmap of int
 // checkFuncSig in between (single-threaded, no recursion here).
 var externFirstDeclByName: map of int
 var externMergeCandidate: int
+
+// constFirstDeclByName (binary-files phase Task 2 dedup) is checkConstDecl's
+// own name-keyed "first occurrence" registry, the same shape/reset
+// discipline externFirstDeclByName above already settled on (plain name
+// key, no progGen namespacing, folded into checkReset below) -- unlike
+// externFirstDeclByName there is no separate merge-candidate scratch var:
+// checkConstDecl's own comparison (constSymMatches) runs inline, right
+// where the merge decision is made, since a const's whole "clause" is
+// already sitting in the first decl's scope Symbol (no separate
+// resolution phase to wait for, unlike an extern func's trap/conv/reg
+// clause).
+var constFirstDeclByName: map of int
 var enumConstOf: intmap of int
 var constUseIsStr: intmap of int
 var constUseInt: intmap of int
@@ -2455,15 +2467,62 @@ func constValue(val: int, t: int): CVal {
     return literalConstVal(val)
 }
 
+// constSymMatches (binary-files phase Task 2, checkConstDecl dedup)
+// reports whether two `const` decls sharing a name are byte-identical:
+// same checked type (typesEqual, not raw == -- a `string`-typed const's
+// type is TyStr, and strT's own doc comment (types.cla) says every
+// resolveType call allocates a FRESH arena entry, so two identical
+// `string` consts would spuriously conflict under raw ==, the exact
+// reason externClauseMatches's own param comparison already documents
+// for `str`/`text` params) and the same compile-time value
+// (constIsStr/constInt/constStrIdx -- intern() already dedups equal
+// string content to the same pool index, so constStrIdx compares safely
+// by ==, the same trust constValue's own ExIdent branch already places
+// in it, above).
+func constSymMatches(a: Symbol, b: Symbol): bool {
+    if not typesEqual(a.typeIdx, b.typeIdx) {
+        return false
+    }
+    if a.constIsStr != b.constIsStr {
+        return false
+    }
+    if a.constIsStr {
+        return a.constStrIdx == b.constStrIdx
+    }
+    return a.constInt == b.constInt
+}
+
 // checkConstDecl checks a `const` declaration (Ch3: Constants): the type
 // is restricted to those representable at compile time, and the
 // initializer must be a literal, an enum member, or a previously declared
 // constant.
+//
+// constFirstDeclByName dedup (binary-files phase Task 2): mirrors Task
+// 3's extern-func merge (externFirstDeclByName/checkFuncSig) and Task 4's
+// extern-record merge (xrecFirstDeclByName/checkRecordDecl) -- a second
+// top-level `const` sharing a name with an EARLIER const THIS
+// checkProgram call already registered is accepted silently iff
+// byte-identical (constSymMatches above); "first registration wins" the
+// same way those two do (no second scope entry; call sites keep
+// resolving through the first decl's symbol). A genuine mismatch keeps
+// today's plain "redeclaration of X" diagnostic -- unlike extern
+// func/record there is no separate "conflicting" message, since a
+// const's whole comparable "clause" is exactly its Symbol's own
+// typeIdx/constIsStr/constInt/constStrIdx, already sitting in the first
+// decl's scope entry (checkConstDecl is phase-1-only, called from
+// checkTopDeclPhase1 in declaration order, so that entry is always
+// already there by the time a same-name duplicate is checked) -- no new
+// decl-indexed side table (funcSigByDecl's own idiom) is needed to
+// compare against, scopeLookup reads the first decl's Symbol straight
+// back.
 func checkConstDecl(d: int) {
     var t: int
     var k: TypeKind
     var cv: CVal
     var sym: Symbol
+    var key: string
+    var firstDecl: int
+    var symIdx: int
 
     t = resolveType(constDeclType(d))
     k = typeKind(t)
@@ -2482,8 +2541,19 @@ func checkConstDecl(d: int) {
     sym.constInt = cv.intVal
     sym.constStrIdx = cv.strIdx
     sym.isMenu = false
-    if not scopeDeclare(curScope, sym) {
-        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+
+    key = poolGet(sym.nameIdx)
+    firstDecl = constFirstDeclByName.get(key, -1)
+    if firstDecl == -1 {
+        constFirstDeclByName[key] = d
+        if not scopeDeclare(curScope, sym) {
+            emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+        }
+    } else {
+        symIdx = scopeLookup(curScope, sym.nameIdx)
+        if symIdx == -1 or not constSymMatches(symbols[symIdx], sym) {
+            emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+        }
     }
 }
 
@@ -5618,6 +5688,7 @@ func checkReset() {
     var freshXrecFirstDeclByName: map of int
     var freshMenuItems: map of int
     var freshExternFirstDeclByName: map of int
+    var freshConstFirstDeclByName: map of int
 
     // cnInit's own guard (cnInited) is a process-lifetime lazy-init idiom
     // (see its own decl comment) -- reset here, right before calling it,
@@ -5661,6 +5732,10 @@ func checkReset() {
     xrecFirstDeclByName = freshXrecFirstDeclByName
     menuItems = freshMenuItems
     externFirstDeclByName = freshExternFirstDeclByName
+    // constFirstDeclByName (binary-files phase Task 2 dedup): same
+    // bounded-memory fold, plain-key style (no former progGen namespace
+    // to drop -- this map is new, born already in its final shape).
+    constFirstDeclByName = freshConstFirstDeclByName
 
     connectionT = pushSimple(TyConnection)
     listenerT = pushSimple(TyListener)

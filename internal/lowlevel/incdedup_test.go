@@ -62,3 +62,36 @@ func TestIncludeDedup(t *testing.T) {
 		}
 	})
 }
+
+// TestConstDedupAcrossIncludePaths (binary-files phase Task 2 fix): a
+// TOP-LEVEL `const` reached via two DIFFERENT include routes in one
+// compile -- constdedup.cla's own explicit `include "../../toolbox/
+// files.cla"` (user-program phase), plus the runtime's own independent
+// `runtime/clarus/uidialogs.cla` -> `toolbox/files.cla` include (runtime-
+// load phase, triggered by the `window` decl below) -- must not
+// redeclaration-error, the same "first registration wins, iff
+// byte-identical" tolerance checkFuncSig/checkXRecDecl already give
+// `external func`/`extern record`. Unlike TestIncludeDedup above (one
+// normalized path, deduped before a second parse ever happens), this
+// fixture's two routes are NOT collapsed by that mechanism at all -- the
+// same manifest path really is parsed twice, in two separately-tracked
+// passes -- so it needs checkConstDecl's own dedup (constFirstDeclByName)
+// instead. Before that fix, toolbox/files.cla's fsCurPerm/fsRdPerm/
+// fsWrPerm/fsRdWrPerm/fsAtMark/fsFromStart/fsFromLEOF/fsFromMark consts
+// (its first-ever top-level consts) failed exactly this way -- this
+// fixture is the minimal non-bake reproduction of the internal/bake
+// TestRtbakeDriftFallback failure that surfaced it.
+func TestConstDedupAcrossIncludePaths(t *testing.T) {
+	root := repoRoot(t)
+	exe := buildClarusc(t)
+	fixture := filepath.Join(root, "testdata", "incdedup", "constdedup.cla")
+
+	outC := filepath.Join(t.TempDir(), "constdedup.c")
+	cmd := exec.Command(exe, "emit", "-o", outC, fixture)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("clarusc emit %s: %v\nstdout: %s\nstderr: %s", fixture, err, stdout.String(), stderr.String())
+	}
+}
