@@ -9,18 +9,33 @@
 // via CLARUS_SERIAL_MODEM, both connect: and listen: modes.
 var conn: connection
 
+// record Link/link (Task 4, binary-files phase): exercises `connection` as
+// a record field -- link.conn holds the SAME value `conn` does (a plain
+// int, assigned once at startup) and link.conn.send(data) below is a
+// field-select receiver, not a bare global.
+record Link { conn: connection }
+var link: Link
+
+// sendVia (Task 4, binary-files phase): exercises `connection` as an
+// ordinary function param -- c is a copy of whatever connection value the
+// caller passes.
+func sendVia(c: connection, s: string) {
+    c.send(s)
+}
+
 on App.startCLI(args: list of string) {
     conn.open(serial "modem:9600")
+    link.conn = conn
 }
 
 on conn.opened {
-    conn.send("READY\n")
+    sendVia(conn, "READY\n")
 }
 
 on conn.received(data: text) {
     var i: int = 0
     var quit3: int = 0
-    conn.send(data)
+    link.conn.send(data)
     while i < data.length {
         if data[i] == 'Q' { quit3 = quit3 + 1 } else { quit3 = 0 }
         if quit3 == 3 { conn.close() }

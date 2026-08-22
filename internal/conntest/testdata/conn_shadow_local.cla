@@ -1,14 +1,18 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// conn_shadow_local.cla: final fix-wave regression fixture (Fix 2). A
-// local `var conn: connection` SHADOWS the global `conn` of the same
-// name; the method call below must resolve to the LOCAL (a receiver
-// shape lowConnMethod does not implement) and hit the spec-mandated
-// not-yet-implemented rejection, never silently reuse the global's slot.
-// Before the fix, lowConnMethod's receiver lookup was a plain name-string
-// probe into lowConnSlotOf, so this shape silently lowered to a real
-// rtConnSendText call against the GLOBAL's slot instead.
+// conn_shadow_local.cla: TestConnShadowedLocalIsNil's own fixture (Task 4,
+// binary-files phase -- flipped from the old TestConnShadowedLocalRejected
+// pin now that `connection` is an ordinary value, ir.cla). A local `var
+// conn: connection` SHADOWS the global `conn` of the same name; the
+// method call below resolves to the LOCAL (lowIsLocal/lowExpr, not
+// lowConnSlotOf's name map -- that map is name-keyed and would otherwise
+// misresolve this to the global's slot, final-review Important 2's
+// original bug). The local is never assigned, so it's `nil` (0) by
+// construction -- `conn.send("shadowed")` on it is a legal BUILD (a local
+// connection receiver is no longer rejected) but a runtime panic (`use of
+// nil connection`, runtime/clarus/conn.cla's h == 0 check), never a
+// silent reuse of the global's own open slot.
 var conn: connection
 
 on App.startCLI(args: list of string) {

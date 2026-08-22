@@ -1,0 +1,41 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// conn_nil_field.cla (Task 4, binary-files phase): a `connection` FIELD
+// (never assigned, so nil -- zero, like any other never-assigned int
+// field) is a legal method-call receiver now (lowConnMethod lowers ANY
+// receiver expression via lowExpr, lower.cla) but sending on it is a
+// runtime contract violation, exactly like sending on a never-assigned
+// local/global connection -- runtime/clarus/conn.cla's `h == 0` guard
+// panics "use of nil connection" before ever touching rtConnState.
+//
+// `conn` below is otherwise unused -- it exists only so usesConn
+// (check.cla, GLOBAL-var-only by design) is true and the host build
+// splices conn.cla in at all; without it `rtConnSendText` (the runtime
+// call r.c.send lowers to) would be an unresolved symbol, a link error
+// instead of the intended runtime panic.
+//
+// Host-only pinning, same layout convention as conn_send_closed.cla
+// (.cla + .err + .behavior). NOT yet exercised by T1 (behavior_test.go
+// lives in internal/selfhost, which scripts/test-task.sh explicitly
+// excludes) and NOT yet green under T2 either: TestBehaviorGoldens
+// bootstraps from the COMMITTED clarusc/clarusc.c snapshot, which
+// predates Task 4's whole "any receiver expression" lowering (the old
+// lowConnMethod only ever resolved a bare global identifier) -- a
+// record-FIELD receiver like `r.c` still hits the pre-Task-4 "method
+// call on receiver kind 13 (not yet implemented)" diagnostic under that
+// stale snapshot, so `clarusc emit` itself fails before this fixture
+// ever runs. The .err/.behavior goldens below were computed against a
+// CURRENT-source two-stage build (build-run/clarusc-current, the same
+// bootstrap internal/conntest's buildConnFixture uses), matching this
+// task's report; both will start passing once a later task regenerates
+// clarusc.c from current source.
+var conn: connection
+
+record R { c: connection }
+
+var r: R
+
+on App.startCLI(args: list of string) {
+    r.c.send("x")
+}

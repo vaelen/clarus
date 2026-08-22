@@ -371,6 +371,16 @@ func lowTypeAt(t: int, line: int, col: int): int {
     case TyVoid { return irVoidT }
     case TyPtr { return irPtrT }
     case TyErrorType { return irErrT }
+    case TyConnection {
+        // Task 4 (binary-files phase): a `connection` value is an ordinary
+        // int now -- slot+1 (see lowGlobalVarDecl/lowConnMethod), so nil
+        // (0, ExNilLit) stays distinguishable from slot 0. This is the ONE
+        // line that turns every connection-typed param/local/field/array-
+        // element storage slot from "no case, falls to irVoidT" into real
+        // int storage everywhere lowType/lowResolveType/lowMustType route
+        // through lowTypeAt (they all do).
+        return irIntT
+    }
     case TyStr { return irStrType(typeN(t)) }
     case TyEnum { return irEnumType(typeNameIdx(t)) }
     case TyRec { return irRecType(typeNameIdx(t)) }
@@ -1363,55 +1373,47 @@ func lowConnCoerceArg(fnName: string, paramIdx: int, argAst: int): int {
     return lowCoerceStr(lowType(funcSigParam(symbols[symIdx].sigIdx, paramIdx)), lowExpr(argAst))
 }
 
-// lowConnMethod dispatches `connVar.open/send/close(...)` (serial-
-// connection phase, Task 5) to the matching rtConn* runtime call, slot
-// number substituted for the receiver. Only a BARE global connection-var
-// receiver (its name present in lowConnSlotOf AND not shadowed by a
-// lowering-local of the same name -- lowIsLocal, final-review Important 2;
-// see lowConnSlotOf's own doc comment for why a scopeLookup-based symbol
-// resolution can't do this job here) reaches a real lowering here; and
-// for `open`, only the `serial` transport tag (callTransport(e) == 2)
-// does. Every other shape this method-call node can take on a
-// checker-clean program -- a local/field/array-element connection
-// receiver (never added to lowConnSlotOf), a local that SHADOWS a global
-// connection var of the same name (lowIsLocal excludes it even though
-// the name IS in the map), `open` with no transport prefix, the
-// `appletalk` prefix, or a resolved `address` argument (all legal per
-// connectionMethods' own signature, just not implemented yet) -- falls
+// lowConnMethod dispatches `connExpr.open/send/close(...)` to the matching
+// rtConn* runtime call. Task 4 (binary-files phase) made `connection` an
+// ordinary int VALUE (slot+1, lowTypeAt's TyConnection case), so unlike
+// the old slot-lookup design, EVERY receiver shape -- bare global, a local
+// (shadowing a global or not), a param, a record field, an array element,
+// any expression at all typed `connection` -- lowers for real here via
+// the ordinary lowExpr, and its resulting int value (1-based handle, 0 =
+// nil) is passed straight through to the rtConn* runtime entry point,
+// which now does its own `h == 0` nil check (runtime/clarus/conn.cla).
+// For `open`, only the `serial` transport tag (callTransport(e) == 2)
+// is implemented; `open` with no transport prefix, the `appletalk`
+// prefix, or a resolved `address` argument (all legal per
+// connectionMethods' own signature, just not implemented yet) still fall
 // through to the exact SAME generic not-yet-implemented diagnostic
 // lowMethodCall's own fallback produces for an unhandled receiver kind
 // (brief: "EXACTLY as today"), since xk == TyConnection either way.
-// Task 6 lifts the `not want68k` gate this function used to carry (Task
-// 4/5: rtConnOpen/etc. were host-lane-only symbols, drive.cla's own `if
-// usesConn and not want68k`) -- drive.cla now splices conn.cla +
-// conn_68k.cla unconditionally under want68k, so
-// rtConnOpen/rtConnSendText/rtConnSendStr/rtConnClose exist as declared
-// symbols on every native build too, and this method-call lowering runs
-// identically on both lanes now.
+// `on <var>.<event>` handlers (lowTopHandler) and lowerProgram's own
+// connection-slot pre-pass still use lowConnSlotOf/lowIsLocal -- a
+// handler's target is spec-mandated to always be a global (checkTop-
+// HandlerDecl), so that name/slot machinery survives untouched there.
 func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
     var recvExpr: int
     var name: string
-    var slot: int
+    var recv: int
     var argsHead: int
     var args: int
     var tail: int
 
     recvExpr = selectX(fn)
-    slot = -1
-    if exprKind(recvExpr) == ExIdent and not lowIsLocal(identName(recvExpr)) {
-        slot = lowConnSlotOf.get(poolGet(identName(recvExpr)), -1)
-    }
+    recv = lowExpr(recvExpr)
     name = poolGet(selectName(fn))
     argsHead = callArgsHead(e)
 
-    if slot != -1 and name == "open" and callTransport(e) == 2 {
-        args = newIRIntConst(slot, irIntT)
+    if name == "open" and callTransport(e) == 2 {
+        args = recv
         tail = irExprListAppend(args, newIRIntConst(2, irIntT))
         irExprListAppend(tail, lowConnCoerceArg("rtConnOpen", 2, argsHead))
         return newIRCallFn(intern("rtConnOpen"), args, irVoidT)
     }
-    if slot != -1 and name == "send" {
-        args = newIRIntConst(slot, irIntT)
+    if name == "send" {
+        args = recv
         if typeKind(exprTypeGet(argsHead)) == TyText {
             irExprListAppend(args, lowConnCoerceArg("rtConnSendText", 1, argsHead))
             return newIRCallFn(intern("rtConnSendText"), args, irVoidT)
@@ -1419,8 +1421,8 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
         irExprListAppend(args, lowConnCoerceArg("rtConnSendStr", 1, argsHead))
         return newIRCallFn(intern("rtConnSendStr"), args, irVoidT)
     }
-    if slot != -1 and name == "close" {
-        return newIRCallFn(intern("rtConnClose"), newIRIntConst(slot, irIntT), irVoidT)
+    if name == "close" {
+        return newIRCallFn(intern("rtConnClose"), recv, irVoidT)
     }
     // xk (this function's own 4th param, the caller's already-computed
     // receiver kind) is what lowMethodCall's own fallback reports for
@@ -5160,21 +5162,6 @@ func lowGlobalVarDecl(d: int) {
     var initAst: int
     var isBirth: bool
 
-    // Connection globals (serial-connection phase, Task 5) get NO IR
-    // global at all: a `connection` value has no runtime storage of its
-    // own -- every slot's real state lives in conn.cla's own rtConn*
-    // arrays, indexed by a compile-time SLOT number (lowConnSlotOf), not
-    // by a C variable. Every reference to this var resolves straight to
-    // its slot constant (lowConnMethod, lowTopHandler) -- nothing ever
-    // reads it as a plain rvalue (spec %3.3: exclusively a method/handler
-    // receiver). There is also nothing meaningful to lower it TO:
-    // lowTypeAt has no TyConnection case, by design. lowConnSlotOf is
-    // only ever populated for connection-typed globals (lowerProgram's
-    // own pre-pass), so membership alone is the right test.
-    if lowConnSlotOf.has(poolGet(varDeclName(d))) {
-        return
-    }
-
     t = lowResolveType(varDeclType(d))
     init = -1
     isBirth = true
@@ -5189,6 +5176,21 @@ func lowGlobalVarDecl(d: int) {
         // store, computed here (AST is only available at lowering time)
         // and carried on the IRGlobal for cpEmitGlobalsInit to consult.
         isBirth = lowStoreIsBirth(initAst) or lowStoreIntrOwnsResult(init)
+    } else if lowConnSlotOf.has(poolGet(varDeclName(d))) {
+        // Connection globals (Task 4, binary-files phase): `connection`
+        // is now an ordinary int value -- slot+1, so nil (0) stays
+        // distinguishable from slot 0 -- with real IR global storage
+        // (t is already irIntT here, via lowResolveType -> lowTypeAt's
+        // TyConnection case above). There is no AST init to lower (a
+        // `var conn: connection` decl never writes `= ...`), so
+        // synthesize the SAME newIRIntConst shape an ordinary `var x:
+        // int = 5` global's Init gets just above, using the var's own
+        // pre-assigned slot (lowerProgram's own pre-pass, lowConnSlotOf)
+        // instead of a user source expression. isBirth stays the default
+        // `true` set above -- irrelevant for a non-counted scalar init
+        // (irtNeedsCtor never retains/releases irIntT) but matching the
+        // ordinary-int-with-initializer case's own default.
+        init = newIRIntConst(lowConnSlotOf.get(poolGet(varDeclName(d)), -1) + 1, irIntT)
     }
     newIRGlobal(varDeclName(d), t, init, isBirth)
 }

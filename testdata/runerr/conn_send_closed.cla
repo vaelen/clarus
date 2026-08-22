@@ -10,13 +10,24 @@
 // Host-only pinning, same layout convention as stringat_oor.cla (.cla +
 // .err + .behavior; discovered by internal/selfhost/behavior_test.go's
 // testdata/runerr glob). NOT yet exercised by T1 (behavior_test.go lives
-// in internal/selfhost, which scripts/test-task.sh explicitly excludes)
-// and NOT yet green under T2 either: TestBehaviorGoldens bootstraps from
-// the COMMITTED clarusc/clarusc.c snapshot (claruscboot.SnapshotExe),
-// which predates this task's whole `connection` lowering surface and
-// cannot lower `conn.send` at all until Task 8 regenerates it -- see
-// task-5-report.md for the goldens' provenance (computed against a
-// CURRENT-source two-stage build) and this gap's own writeup.
+// in internal/selfhost, which scripts/test-task.sh explicitly excludes).
+//
+// Task 4 (binary-files phase) STALE-SNAPSHOT ARTIFACT: TestBehaviorGoldens
+// bootstraps from the COMMITTED clarusc/clarusc.c snapshot, which predates
+// Task 4's runtime ABI change (`connection` is now an int VALUE -- the
+// global's own slot+1, not a bare compile-time slot constant -- and
+// rtConn* take that 1-based handle, conn.cla's own `h == 0` nil check).
+// The frozen snapshot still EMITS the old 0-based slot constant (0, for
+// this program's only connection global), which the new runtime decodes
+// as `h == 0` -- nil -- so THIS fixture, compiled by the stale snapshot,
+// currently observes "use of nil connection" instead of its originally
+// intended "connection not open". This is expected to revert to
+// "connection not open" once a later task regenerates clarusc.c from
+// current source (current-source codegen assigns this global slot+1 = 1,
+// a real non-nil handle, so `conn.send` reaches the not-open check
+// again) -- see lower.cla's lowConnMethod/lowGlobalVarDecl and
+// runtime/clarus/conn.cla's rtConnSendText for the current-source
+// behavior this fixture will exercise again at that point.
 var conn: connection
 
 on App.startCLI(args: list of string) {

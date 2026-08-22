@@ -425,40 +425,42 @@ func TestAbortDuringPump(t *testing.T) {
 	}
 }
 
-// TestConnShadowedLocalRejected is the final-review Fix 2 regression pin
-// (also closing Task 5's own deferred coverage gap, ledger minor 3):
-// testdata/conn_shadow_local.cla declares a local `var conn: connection`
-// that shadows a global of the same name and calls a method on it.
-// lowConnMethod must resolve the receiver through the call's own scope
-// (scopeLookup), see that the shadowing local's symbol was never added to
-// lowConnSlotOf (only globals are), and fall through to the same
-// not-yet-implemented diagnostic every other unsupported connection
-// receiver shape gets -- never silently reuse the global's slot. This is
-// an EMIT-time (lowering) rejection, not a checker one (the shape checks
-// clean per spec %3.3 -- see lowConnMethod's own doc comment), so this
-// runs `clarusc emit` directly and asserts nonzero exit + stderr text,
-// the same pattern internal/emitui's TestEmitUiTablePopupGuards uses for
-// its own lowUnsupported-driven guards.
-func TestConnShadowedLocalRejected(t *testing.T) {
-	root := repoRoot(t)
-	claruscExe := claruscboot.CurrentExe(t)
-	claPath := filepath.Join(root, "internal", "conntest", "testdata", "conn_shadow_local.cla")
-	rtDir := filepath.Join(root, "runtime", "clarus") + string(filepath.Separator)
+// TestConnShadowedLocalIsNil (Task 4, binary-files phase -- flipped from
+// the old TestConnShadowedLocalRejected pin now that `connection` is an
+// ordinary VALUE, not a compile-time slot alias: a local `var conn:
+// connection` shadowing a global of the same name is a perfectly legal
+// receiver shape now, same as any other local variable shadowing a
+// global). testdata/conn_shadow_local.cla's `useLocal` declares such a
+// local, never assigns it, and calls `.send` on it -- this must BUILD
+// clean (no lowUnsupported rejection) and PANIC at runtime with "use of
+// nil connection" (runtime/clarus/conn.cla's `h == 0` guard), since a
+// never-assigned connection local is nil (0) by construction, exactly
+// like any other never-assigned int-shaped local. No CLARUS_SERIAL_MODEM
+// is set: `conn.open(serial "modem:9600")` on the GLOBAL in App.startCLI
+// takes the synchronous env-unset `failed` path (TestEnvUnsetFailedPath's
+// own contract -- never blocks, never panics) before useLocal() ever
+// runs, so this needs no TCP peer at all, unlike TestAbortDuringPump.
+func TestConnShadowedLocalIsNil(t *testing.T) {
+	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "conn_shadow_local.cla"), "conn_shadow_local")
 
-	cmd := exec.Command(claruscExe, "emit", "--rtdir", rtDir, "-o", filepath.Join(t.TempDir(), "out.c"), claPath)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err := cmd.Run()
-	if err == nil {
-		t.Fatalf("clarusc emit %s: want nonzero exit (shadowed-local receiver must be rejected), got success (output: %s)", claPath, out.String())
+	cmd := exec.Command(exe)
+	cmd.Env = os.Environ()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+
+	exitErr, ok := runErr.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected the program to exit nonzero via *exec.ExitError, got: %v (stdout: %s, stderr: %s)", runErr, stdout.String(), stderr.String())
 	}
-	const want = "method call on receiver kind"
-	if !strings.Contains(out.String(), want) {
-		t.Errorf("output %q missing %q", out.String(), want)
+	// rt.c's panic path (runtime/host/rt.c) exits 3 -- the host-lane
+	// panic-exit convention (distinct from `quit N`/abort's exit 1).
+	if got := exitErr.ExitCode(); got != 3 {
+		t.Errorf("exit code: got %d want 3 (stdout: %s, stderr: %s)", got, stdout.String(), stderr.String())
 	}
-	const wantSuffix = "(not yet implemented)"
-	if !strings.Contains(out.String(), wantSuffix) {
-		t.Errorf("output %q missing %q", out.String(), wantSuffix)
+	const want = "use of nil connection"
+	if !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr %q missing %q", stderr.String(), want)
 	}
 }

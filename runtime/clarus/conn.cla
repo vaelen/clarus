@@ -193,9 +193,23 @@ func rtConnSetFailed(slot: int, code: int, msg: string) {
 // state flips to open immediately but `opened` itself only fires on the
 // next rtConnPump pass (spec: "not inside open itself"), via
 // rtConnPendOpened.
-func rtConnOpen(slot: int, transport: int, spec: string) {
+//
+// h (Task 4, binary-files phase): the 1-based connection handle every
+// caller now passes (a `connection` value IS this int -- lower.cla's
+// lowTypeAt TyConnection case), NOT the 0-based slot -- `nil` (an
+// unassigned connection value) is 0, so `h == 0` is a genuine bug-grade
+// contract violation (spec %3.2) the same way an unopened send/close is,
+// panicking rather than staging a `failed` like the environmental cases
+// below. slot = h - 1 recovers the same 0-based index every array in this
+// file is still indexed by.
+func rtConnOpen(h: int, transport: int, spec: string) {
     var devErr: int
+    var slot: int
 
+    if h == 0 {
+        rtPanic("use of nil connection")
+    }
+    slot = h - 1
     if rtConnState[slot] == stOpen {
         rtConnSetFailed(slot, rtConnErrAlreadyOpen, "connection already open")
         return
@@ -241,12 +255,21 @@ func rtConnOpen(slot: int, transport: int, spec: string) {
 // drops the new report rather than overwriting it -- reporting the
 // earliest failure is more useful than the latest, and rtConnPendFailedCode
 // == 0 is the field's own "nothing pending yet" guard either way.
-func rtConnSendText(slot: int, t: text) {
+//
+// h (Task 4, binary-files phase): 1-based handle, same contract as
+// rtConnOpen's own h -- `h == 0` (nil) panics the same way an unopened
+// slot does; slot = h - 1 for the rest of the body.
+func rtConnSendText(h: int, t: text) {
     var scratch: ptr
     var n: int
     var i: int
     var wErr: int
+    var slot: int
 
+    if h == 0 {
+        rtPanic("use of nil connection")
+    }
+    slot = h - 1
     if rtConnState[slot] != stOpen {
         rtPanic("connection not open")
     }
@@ -284,16 +307,26 @@ func rtConnSendText(slot: int, t: text) {
 // rtConnSendStr: `string` is implicitly convertible to `text` at a call
 // argument (Ch3, "A string value may be used wherever a text is
 // expected"), so the string form is exactly the text form with no
-// separate byte-marshal path to maintain.
-func rtConnSendStr(slot: int, s: string) {
-    rtConnSendText(slot, s)
+// separate byte-marshal path to maintain. h (Task 4, binary-files phase):
+// 1-based handle, passed straight through -- rtConnSendText does its own
+// nil check and slot conversion.
+func rtConnSendStr(h: int, s: string) {
+    rtConnSendText(h, s)
 }
 
 // rtConnClose: idempotent by construction -- rtConnDevClose itself is
 // idempotent (closing an already-closed device slot is a no-op on both
 // lanes), so no "already closed" guard is needed here. Never fires
-// `closed` (spec %3: "A local c.close() does NOT fire it").
-func rtConnClose(slot: int) {
+// `closed` (spec %3: "A local c.close() does NOT fire it"). h (Task 4,
+// binary-files phase): 1-based handle, same `h == 0` nil-panic contract
+// as rtConnOpen/rtConnSendText.
+func rtConnClose(h: int) {
+    var slot: int
+
+    if h == 0 {
+        rtPanic("use of nil connection")
+    }
+    slot = h - 1
     rtConnDevClose(slot)
     rtConnState[slot] = stClosed
 }
