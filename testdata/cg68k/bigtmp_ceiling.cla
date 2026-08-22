@@ -1,19 +1,19 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// bigtmp_ceiling.cla: mac-resident-clarusc Task 3 -- regression pin for
-// cgBigTmpSlots (clarusc/cg68k.cla). clarusc's own self-emit (compiling
-// itself through `clarusc emit68k`) needs 16 concurrently-live big
-// (str/rec) temps within ONE statement -- a call whose OWN 16 arguments
-// each need cgPushArgMaterialized's generic fallback (Task 2), so
+// bigtmp_ceiling.cla: originally a mac-resident-clarusc Task 3 regression
+// pin for the OLD flat cgBigTmpSlots ceiling -- clarusc's own self-emit
+// (compiling itself through `clarusc emit68k`) needs 16 concurrently-live
+// big (str/rec) temps within ONE statement (a call whose OWN 16 arguments
+// each need the generic materialize-to-temp fallback, so
 // cgStmtBigTmpNext's per-statement bump allocator never gets to reuse a
-// slot before the call itself fires. Discovered when clarusc's own
-// self-emit hit "too many str/rec temps needed in one statement -- bump
-// cgBigTmpSlots" at the OLD ceiling (4); the const is now set to the
-// exact observed need (16), and THIS fixture exercises exactly that many
-// at once -- a future accidental shrink of cgBigTmpSlots below 16 fails
-// HERE, as a loud test failure, instead of only being discovered later
-// self-hosting clarusc itself (a field error).
+// slot before the call itself fires), which is what drove the const to
+// 16 back then. binary-files phase Task 8 replaced that flat per-program
+// const with a per-function pool sized from a measure pass (see
+// clarusc/cg68k.cla's own cgBigTmpFloor/cgAllocBigTmpOff doc comments),
+// so there is no longer a ceiling for this fixture to pin -- it now just
+// serves as a cg68k emit golden proving a 16-big-temp function's frame
+// layout (LINK immediate, pool offsets) stays correct.
 func take16(a: string, b: string, c: string, d: string, e: string, f: string, g: string, h: string, i: string, j: string, k: string, l: string, m: string, n: string, o: string, p: string): int {
     return a.length + b.length + c.length + d.length + e.length + f.length + g.length + h.length + i.length + j.length + k.length + l.length + m.length + n.length + o.length + p.length
 }
