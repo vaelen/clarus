@@ -4252,27 +4252,42 @@ brief asked for it directly.
     call, say) just works. One planned golden-rebless wave (frame sizes
     change everywhere a big temp is used) with a normalization-diff
     proof, not a blind rebless.
-  - **Two compiler bugs found and fixed along the way:**
+  - **Four compiler bugs found and fixed along the way:**
     `checkConstDecl` didn't tolerate an identical redeclaration
     reached via two different include paths (Task 2's pre-review fix,
     mirroring the pattern `externFirstDeclByName`/`xrecFirstDeclByName`
-    already used); and a `--rtbake` (baked-IR fast compile path)
-    lowering crash for ANY program calling a `connection`/`filehandle`
-    method — `lower.cla`'s `lowRtCoerceArg` looked up the target
-    runtime function's param type by NAME through the checker's symbol
-    table at lowering time, a table `--rtbake` never populates for
-    baked runtime functions (it skips their parse+check for
-    performance); found by Task 10's own close-out T2 run (the first
-    time this phase `internal/bake`'s `CLARUS_BAKE_FULL=1` gate
-    actually ran), root-caused via `lldb`, fixed in Task 9c by sourcing
-    every runtime-call arg coercion from a statically-known target IR
-    type instead of a lookup — the target was always fixed at compile
-    time, no lookup was ever load-bearing. A new T1-speed regression
-    (`internal/bake`'s `TestRtbakeConnFilehByteIdentity`, plain `go
-    test ./internal/bake`, not gated) catches this specific class going
-    forward; the broader testing-strategy gap it exposed (`--rtbake` as
-    a whole has no other T1 smoke, only the opt-in full-corpus gate) is
-    recorded in `docs/TODO.md`.
+    already used); a `return call(...)` where the call's own arg needed
+    a string->text coercion temp released that temp (`fpFreeStmtTmps`)
+    BEFORE the `return` line that used it ever printed, a host-lane
+    (`cprint.cla`) use-after-free (worked around in `fileh.cla`, then
+    root-caused and fixed for real, workaround removed, Task 9b, commit
+    `ba1a9a4`); the native lane's sibling bug in the same spot —
+    `cg68k.cla`'s `cgReturnStmt` emitted the statement-temp RELEASE
+    calls (ordinary JSRs) between the value-producing call and the
+    `return`, clobbering the D0 register the call's result was sitting
+    in, fixed with a D0 save/reload around the releases (only emitted
+    when releases actually exist, Task 9b, commit `ba1a9a4`); and a
+    `--rtbake` (baked-IR fast compile path) lowering crash for ANY
+    program calling a `connection`/`filehandle` method — `lower.cla`'s
+    `lowRtCoerceArg` looked up the target runtime function's param type
+    by NAME through the checker's symbol table at lowering time, a
+    table `--rtbake` never populates for baked runtime functions (it
+    skips their parse+check for performance); found by Task 10's own
+    close-out T2 run (the first time this phase `internal/bake`'s
+    `CLARUS_BAKE_FULL=1` gate actually ran), root-caused via `lldb`,
+    fixed in Task 9c by sourcing every runtime-call arg coercion from a
+    statically-known target IR type instead of a lookup — the target
+    was always fixed at compile time, no lookup was ever load-bearing.
+    A new T1-speed regression (`internal/bake`'s
+    `TestRtbakeConnFilehByteIdentity`, plain `go test ./internal/bake`,
+    not gated) catches this specific class going forward; the broader
+    testing-strategy gap it exposed (`--rtbake` as a whole has no other
+    T1 smoke, only the opt-in full-corpus gate) is recorded in
+    `docs/TODO.md`, alongside a separate still-live compiler robustness
+    gap Task 5 found and worked around rather than fixed (an unspliced
+    runtime-function reference in a native build crashes clarusc the
+    same way instead of diagnosing — a different code path than either
+    Task 9b or Task 9c fixed).
   - **Acceptance**: `examples/pagefile.cla` (vDB-shaped pages, a
     journal, `crc16` checksums), hardware-proved on Snow
     (`TestPageFileOnSnow`).

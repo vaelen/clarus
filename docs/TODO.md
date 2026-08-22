@@ -166,6 +166,27 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   at compile time, no lookup was ever actually needed. Full trail:
   `.superpowers/sdd/2026-08-22-binary-files/task-10-report.md`'s "Task
   9c" section.
+- **STILL LIVE: an `emit68k` build whose generated code references a
+  runtime function that was NOT spliced into that build crashes
+  clarusc** (`runtime error: list index out of range`, exit 3) instead
+  of emitting a diagnostic — found by Task 5 when
+  `internal/cg68k/segment_test.go`'s `segmentationFixture` (a native
+  composition of the whole core suite) tried composing
+  `cases_fileh.cla` before the native `filehandle` lane existed
+  (`fileh_68k.cla` was Task 6's; at Task 5's own tip, `rtFh*` calls had
+  no spliced module to resolve against). Task 5's report ("Golden churn
+  / known gaps") worked around it by leaving `cases_fileh.cla` out of
+  `segmentationFixture` rather than fixing the underlying gap — DISTINCT
+  from the FIXED item just above: there, the runtime function WAS
+  spliced and the crash was a checker-symbol-table lookup that
+  `--rtbake` never populates; here, the function is genuinely absent
+  from the build (a real, ordinary "undefined" situation any other
+  unresolved reference gets a clean diagnostic for) and the compiler
+  crashes instead of saying so. Same crash text, different code path,
+  still live — Task 6 landing `fileh_68k.cla` only removed the ONE
+  trigger `cases_fileh.cla` happened to hit; the general robustness gap
+  (any unspliced runtime-function reference in a native build) is
+  untouched.
 - **Testing-strategy gap the FIXED item above exposed**: `--rtbake` (the
   fast baked-IR compile path `ClarusC.APPL` uses by default) was only
   ever exercised by `internal/bake`'s `CLARUS_BAKE_FULL=1` gate, which

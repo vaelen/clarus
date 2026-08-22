@@ -39,10 +39,18 @@ each — full detail in `.superpowers/sdd/2026-08-22-binary-files/`):
    mode too.
 6. **emit68k big-temp pool sized per function** — no more flat
    per-statement ceiling.
-7. **Two compiler bugs found and fixed along the way**: `checkConstDecl`
-   identical-redeclaration tolerance (Task 2); a `--rtbake` lowering
-   crash for `connection`/`filehandle` calls, found by this task's own
-   T2 run and fixed in Task 9c (full detail below).
+7. **Four compiler bugs found and fixed along the way**:
+   `checkConstDecl` identical-redeclaration tolerance (Task 2);
+   `return call(...)` releasing a string->text coercion temp BEFORE
+   the `return` line that used it, a host-lane use-after-free
+   (Task 9b, commit `ba1a9a4`; worked around in `fileh.cla` first,
+   then fixed for real and the workaround dropped); the native lane's
+   sibling bug in the same spot, `cgReturnStmt` emitting temp-release
+   calls between the value-producing call and the `return` and
+   clobbering the D0 register the result was sitting in, fixed with a
+   D0 save/reload (Task 9b, commit `ba1a9a4`); and a `--rtbake`
+   lowering crash for `connection`/`filehandle` calls, found by this
+   task's own T2 run and fixed in Task 9c (full detail below).
 8. **Acceptance**: `examples/pagefile.cla` (vDB-shaped pages, journal,
    `crc16`), hardware-proved on Snow.
 9. **Close-out**: this task — snapshot regen, reftest manifest regen,
