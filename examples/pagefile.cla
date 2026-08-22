@@ -31,18 +31,34 @@
 // but its `conn.open` never reaches `opened`: confirmed empirically
 // while building this app (a throwaway window-free probe sent nothing
 // over 8+ minutes on Snow; adding one window fixed it in ~27s, in line
-// with serialecho's own boot-timing probe). The flip side: a UI-
-// classified program's connection is never pumped on the HOST C lane
-// (`clarusc emit` / scripts/clarus-run.sh) either -- a separate,
-// pre-existing, documented gap (cprint.cla's own cpEmitMain doc comment:
-// "Host/Mac-cprint UI+connection integration is a documented gap this
-// phase never closes"), confirmed here to affect serialecho.cla too, not
-// just this program. So on host, `runPageFile`'s file work (everything
-// this task actually adds) still runs and is directly inspectable via
-// the written PageFile.dat/PageFile.jnl, but the final "PASS 16" line
-// never reaches a host nc session -- only the native/Snow lane can
-// observe that. See the Task 9 report for the host-side verification
-// this drove instead.
+// with serialecho's own boot-timing probe).
+//
+// Consequence: THIS committed (windowed) program builds and runs on the
+// NATIVE lane only -- `scripts/build-68k.sh`/`clarusc emit68k`, which is
+// what `internal/mactest/pagefile_snow_test.go` and Mini vMac both use.
+// It does NOT compile on the plain host `cc` lane at all
+// (`scripts/clarus-run.sh` / bare `clarusc emit`): cprint.cla emits an
+// unconditional `#include "rt_ui.h"` for any UI-classified program, and
+// that header exists only under `runtime/mac/` -- not on
+// `scripts/clarus-run.sh`'s `-I runtime/host` include path. This is a
+// real, pre-existing runtime gap (confirmed here to affect
+// examples/serialecho.cla's own host-lane doc-comment claim too, not
+// just this program) -- see docs/TODO.md for the follow-up entry. It is
+// not fixed here; this task's brief is scoped to this app + its Snow
+// test, not compiler/runtime changes.
+//
+// To exercise `runPageFile`'s file work (create/write/flush/commit/
+// verify -- everything this task actually adds) on the plain host `cc`
+// lane, use a MANUAL, uncommitted variant: delete the `window Status`
+// block, the `var conn: connection` global, `report`, and the whole
+// `on conn.*`/`open Status`/`Status.front` machinery from `on App.launch`/
+// `on conn.opened`, leaving just `on App.launch { resultMsg =
+// runPageFile() }` -- then `scripts/clarus-run.sh` builds and runs it,
+// and `resultMsg`/PageFile.dat/PageFile.jnl are directly inspectable.
+// That is not a supported build mode of this file; it is a manual
+// diagnostic technique, recorded here (and in the Task 9 report, which
+// used exactly this to verify the host-observable file logic) so it
+// does not need rediscovering.
 
 const pageSize: int = 512
 const numPages: int = 16
