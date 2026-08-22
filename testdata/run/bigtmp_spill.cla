@@ -1,0 +1,34 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// bigtmp_spill.cla: binary-files phase Task 8 -- regression pin proving
+// the emit68k str/rec temp pool has NO per-statement ceiling. Through
+// mac-resident-clarusc Task 3, this fixture (as bigtmp_ceiling.cla)
+// pinned the OLD flat pool's exact size (16 slots, cgBigTmpSlots) --
+// clarusc's own self-emit had needed exactly that many concurrently-live
+// big (str/rec) temps in one statement, and the const was set to that
+// exact observed need so a shrink would fail loudly. Task 8 replaced the
+// flat per-program const with a per-function pool sized from a measure
+// pass (see clarusc/cg68k.cla's own cgBigTmpFloor/cgAllocBigTmpOff doc
+// comments), so there is no longer any fixed ceiling to pin -- instead
+// this fixture is repointed to prove the OPPOSITE: a single statement
+// that needs MORE than the old hard ceiling (40, not 16) still emits and
+// runs correctly, because the pool now simply grows to fit whatever one
+// statement in this program's body actually needs. Same shape as the
+// original bigtmp_ceiling.cla's take16 (each argument is a concatenation
+// -- cgPushArgs' generic materialize-to-temp fallback -- so
+// cgStmtBigTmpNext's per-statement bump allocator never gets to reuse a
+// slot before the call itself fires), just scaled from 16 to 40.
+func take40(p1: string, p2: string, p3: string, p4: string, p5: string, p6: string, p7: string, p8: string, p9: string, p10: string, p11: string, p12: string, p13: string, p14: string, p15: string, p16: string, p17: string, p18: string, p19: string, p20: string, p21: string, p22: string, p23: string, p24: string, p25: string, p26: string, p27: string, p28: string, p29: string, p30: string, p31: string, p32: string, p33: string, p34: string, p35: string, p36: string, p37: string, p38: string, p39: string, p40: string): int {
+    return p1.length + p2.length + p3.length + p4.length + p5.length + p6.length + p7.length + p8.length + p9.length + p10.length + p11.length + p12.length + p13.length + p14.length + p15.length + p16.length + p17.length + p18.length + p19.length + p20.length + p21.length + p22.length + p23.length + p24.length + p25.length + p26.length + p27.length + p28.length + p29.length + p30.length + p31.length + p32.length + p33.length + p34.length + p35.length + p36.length + p37.length + p38.length + p39.length + p40.length
+}
+on App.startCLI(args: list of string) {
+    var n: int
+    n = take40("a" + "1", "a" + "2", "a" + "3", "a" + "4", "a" + "5", "a" + "6", "a" + "7", "a" + "8", "a" + "9", "a" + "10", "a" + "11", "a" + "12", "a" + "13", "a" + "14", "a" + "15", "a" + "16", "a" + "17", "a" + "18", "a" + "19", "a" + "20", "a" + "21", "a" + "22", "a" + "23", "a" + "24", "a" + "25", "a" + "26", "a" + "27", "a" + "28", "a" + "29", "a" + "30", "a" + "31", "a" + "32", "a" + "33", "a" + "34", "a" + "35", "a" + "36", "a" + "37", "a" + "38", "a" + "39", "a" + "40")
+    if n == 111 {
+        alert("bigtmp spill ok")
+    } else {
+        alert("bigtmp spill FAIL")
+    }
+    quit 0
+}

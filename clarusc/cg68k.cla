@@ -1130,6 +1130,20 @@ var cgFuncSegment: list of int
 // comment). cgStackHeuristic's only reader.
 var cgFuncFrameSizes: list of int
 
+// cgFuncBigTmpNeed[i] is irFuncs index i's own high-water big-temp
+// (str/rec scratch) slot count (binary-files phase, Task 8) -- the
+// measure pass's cgEmitFunc call records the max concurrent
+// cgAllocBigTmpOff need any ONE statement in i's body reached
+// (cgFuncBigTmpHigh, index-assigned here exactly like cgFuncFrameSizes
+// above); the real pass's cgEmitFunc call reads it back to size that
+// function's own pool. Pre-sized to irFuncs.count zeros by cg68Measure
+// before either pass runs, same discipline as cgFuncFrameSizes -- 0
+// (the pre-sized default) is also the correct value for any function
+// that never allocates a big temp at all, and for an object-code-linker
+// pasted function (cgObjPasteFunc replays captured bytes directly and
+// never consults this list).
+var cgFuncBigTmpNeed: list of int
+
 // cgCurFuncSegment is the segment number of whatever code unit is
 // CURRENTLY being emitted (a packed function, or 1 while emitting
 // startup/cg_init_globals/any duplicated-glue routine) -- cgCallFunc's
@@ -1369,61 +1383,36 @@ var cgSerdescLabels: list of int
 // of only being caught by self-hosting clarusc again.
 const cgTmpSlots: int = 14
 
-// cgBigTmpSlots/cgBigTmpSize (Task 14.7 gap-closure; bumped Task 14,
-// native-5e): a SEPARATE, smaller pool sized for a KStr/KRec temp
-// (cgTmpBaseOffs' own slots are a fixed 4 bytes, too small for anything
-// past a str(3)/tiny record) -- same per-statement bump-allocated
-// lifetime as the small pool (cgStmtBigTmpNext mirrors cgStmtTmpNext
-// exactly), just reserved and indexed separately since the two never
-// share a slot. Originally 256 bytes/2 slots (Task 14.7's own corpus
-// never needed more than a bare Str255); bumped to 512/4 when a REAL UI
-// record (popuptable.cla/formedit.cla/bookmarks.cla's own `record
-// Bookmark { name: string(63); url: string(255); ... }`, ~330 bytes)
-// first exceeded 256, and a texteditor.cla statement first needed more
-// than 2 concurrently-live big temps. Both are literally the upgrade
-// path their own error messages name ("bump cgBigTmpSlots"/the size
-// check) -- not a new mechanism, just headroom for real (not synthetic)
-// UI record shapes. mac-resident-clarusc Task 3: bumped 4 -> 16 --
-// self-hosting clarusc through emit68k hit the ceiling again, this time
-// from clarusc's OWN source (a single call statement with 16 str_concat
-// arguments, each needing the arg-materialization generic fallback --
-// cgPushArgMaterialized at the time, folded into cgPushArgs' own
-// cgMaterializeToTemp branch by the param-abi phase, Task 6, but drawing
-// from this SAME pool either way).
-// Set to the exact observed need, not padded -- see the regression pin,
-// testdata/run/bigtmp_ceiling.cla, which exercises exactly 16 so an
-// accidental future shrink fails there, loudly, instead of only being
-// caught by self-hosting clarusc again.
+// cgBigTmpFloor/cgBigTmpSize: a SEPARATE, smaller pool sized for a
+// KStr/KRec temp (cgTmpBaseOffs' own slots are a fixed 4 bytes, too
+// small for anything past a str(3)/tiny record) -- same per-statement
+// bump-allocated lifetime as the small pool (cgStmtBigTmpNext mirrors
+// cgStmtTmpNext exactly), just reserved and indexed separately since the
+// two never share a slot. Through Task 14.7/mac-resident-clarusc Task 3
+// this was a single flat const (cgBigTmpSlots, last bumped to 16 when
+// clarusc's own self-emit needed that many concurrently-live big temps
+// in one statement -- 16 str_concat call arguments) reserved
+// UNCONDITIONALLY in every function's frame; a corpus scan at the time
+// found 69% of functions used ZERO big-temp slots and 93% used <=2 of
+// the 16 reserved, +6144B/function of stack paid whether or not a
+// function ever touched the pool.
 //
-// Cost/review note (Task 3 fix round): both pools are reserved
-// UNCONDITIONALLY in every function's frame (this file's own "cheap if
-// unused" framing above), so this bump's real per-function cost is
-// +6144B (cgBigTmpSlots 4->16, x512B/slot) + 24B (cgTmpSlots 8->14,
-// x4B/slot) = +6168B/function, paid by EVERY reachable function whether
-// or not it ever touches either pool. Quantified before accepting the
-// flat design over per-function sizing (task-3-report.md's own
-// "Fix round: frame-cost quantification" has the full numbers; summary
-// here since a future reader of just this const deserves the headline):
-// this is a STACK reservation, not a CODE-size or heap cost -- it changes
-// only the immediate operand of each function's own `LINK A6,#-N`
-// (same instruction bytes either way; confirmed zero effect on the
-// per-segment 32KB CODE budget) and the deepest-call-chain SetApplLimit
-// reserve cgStackHeuristic below computes automatically. That reserve,
-// re-measured after this bump: tickprobe 199,676B, coregui 224,588B,
-// toolboxgui 245,248B, clarusc's own self-emit composition (measured
-// directly since packing still fails on an unrelated pool-segmentation
-// gap) 2,220,906B (~2.17MB) -- all a small fraction of both the phase's
-// 128MB Snow acceptance machine and the ~48-64MB SIZE-resource compile
-// partition the plan already budgets (Task 10). A corpus scan (clarusc's
-// own 1611-function self-emit reachable set) found 69% of functions use
-// ZERO big-temp slots and 93% use <=2 of the 16 reserved -- real waste,
-// but bounded by call-chain DEPTH (which stays small above), not by
-// total function count, so it doesn't compound the way it might look at
-// first glance. Recommendation on record: keep the flat reservation
-// (simpler, no correctness risk found at this target); revisit only if
-// a future phase re-targets a memory-constrained machine (the pre-Snow-
-// pivot 4MB Mac Plus scope Task 1 originally assumed).
-const cgBigTmpSlots: int = 16
+// binary-files phase Task 8: sized PER FUNCTION instead, from
+// cg68Measure's throwaway pass -- cgAllocBigTmpOff grows the pool on
+// demand (no ceiling, no "bump cgBigTmpSlots" abort) while measuring,
+// recording each function's own high-water need into
+// cgFuncBigTmpNeed[f] (cgFuncBigTmpHigh, below); cgEmitFunc's real pass
+// then lays out exactly max(cgBigTmpFloor, cgFuncBigTmpNeed[f]) slots.
+// cgBigTmpFloor keeps small/no-big-temp functions' frames cheap and
+// stable (most functions need 0-2); only a function that previously
+// could not compile at all now pays for its own real need. The real
+// pass's cgAllocBigTmpOff must never need to extend past what the
+// measure pass recorded -- both passes walk the identical IR, so a
+// mismatch there is a compiler bug, not a ceiling, and aborts loudly
+// (see cgAllocBigTmpOff below). The single-temp size limit
+// (cgBigTmpSize, 512 bytes) is unchanged -- it bounds one record/string,
+// not statement shape.
+const cgBigTmpFloor: int = 4
 const cgBigTmpSize: int = 512
 
 var cgTmpBaseOffs: list of int
@@ -1432,6 +1421,15 @@ var cgStmtTmpOffs: list of int
 var cgStmtTmpType: list of int
 var cgStmtTmpNext: int
 var cgStmtBigTmpNext: int
+
+// cgFuncBigTmpHigh is the CURRENT function's own big-temp high-water
+// mark (binary-files phase Task 8) -- reset to 0 at the top of every
+// cgEmitFunc call (both the measure pass and the real pass), bumped in
+// cgAllocBigTmpOff whenever cgStmtBigTmpNext grows past it. At the end
+// of the MEASURE pass's cgEmitFunc call, this is the function's true
+// per-statement peak need, written into cgFuncBigTmpNeed[f] for the
+// real pass to read back.
+var cgFuncBigTmpHigh: int
 var cgSyntheticVarSeq: int
 
 // cgLastTrackedOff mirrors cprint's own string-identity handoff check
@@ -2513,9 +2511,10 @@ const cgToolboxHeadroom: int = 8192
 // adds on top of each function's own cgFuncFrameSizes weight: 4 bytes
 // return address (the caller's JSR/BSR push) + 4 bytes saved A6 (the
 // callee's own LINK) -- frameSize itself already counts everything
-// BELOW A6 (locals + the fixed cgTmpSlots/cgBigTmpSlots/cgDeepLevels
-// pools), so this is the only per-call cost frameSize doesn't already
-// include.
+// BELOW A6 (locals + the cgTmpSlots pool + this function's OWN
+// per-function-sized cgBigTmpFloor/cgFuncBigTmpNeed pool +
+// cgDeepLevels), so this is the only per-call cost frameSize doesn't
+// already include.
 const cgHeurCallOverhead: int = 8
 
 // cgHeurState[i]/cgHeurMemo[i] -- memoized-DFS scratch for
@@ -4086,17 +4085,39 @@ func cgAllocTmpOff(t: int): int {
 // cgAllocTmpOff, so a `list of string`/`map of string`/small-record
 // element now Just Works via this one extra branch, no call-site changes
 // needed -- the size split is the ONLY thing that changed.
+//
+// binary-files phase Task 8: no more per-statement ceiling. The pool
+// (cgBigTmpBaseOffs) starts each function at cgBigTmpFloor slots
+// (cgEmitFunc's frame layout); when a statement needs one more slot than
+// currently reserved, this function grows the pool by one more
+// cgBigTmpSize-wide offset below the last -- but ONLY during the measure
+// pass (cgRecMode == 1), whose bytes are thrown away, so growing here
+// costs nothing real and simply records the true need. The real pass
+// (cgRecMode == 0) already had cgFuncBigTmpNeed[f]'s recorded max laid
+// out up front by cgEmitFunc, so it must NEVER hit this growth branch --
+// if it does, the two passes disagreed about how many big temps this
+// function's body needs, which can only mean a codegen bug (both walk
+// the identical IR), not a real ceiling -- hence the hard abort rather
+// than silently growing there too.
 func cgAllocBigTmpOff(t: int): int {
     var off: int
+    var newOff: int
 
     if cgSizeOf(t) > cgBigTmpSize {
         abort("cg68k: str/rec temp >" + numToStr(cgBigTmpSize) + " bytes not supported by this backend's scratch pool")
     }
-    if cgStmtBigTmpNext >= cgBigTmpSlots {
-        abort("cg68k: too many str/rec temps needed in one statement -- bump cgBigTmpSlots")
+    if cgStmtBigTmpNext >= cgBigTmpBaseOffs.count {
+        if cgRecMode != 1 {
+            abort("cg68k: big-temp need mismatch between measure and emit passes")
+        }
+        newOff = cgBigTmpBaseOffs[cgBigTmpBaseOffs.count - 1] - cgBigTmpSize
+        cgBigTmpBaseOffs.add(newOff)
     }
     off = cgBigTmpBaseOffs[cgStmtBigTmpNext]
     cgStmtBigTmpNext = cgStmtBigTmpNext + 1
+    if cgStmtBigTmpNext > cgFuncBigTmpHigh {
+        cgFuncBigTmpHigh = cgStmtBigTmpNext
+    }
     return off
 }
 
@@ -4963,6 +4984,7 @@ func cgEmitFunc(f: int) {
     var recLocalNoBirth: list of bool
     var tmpOffs: list of int
     var bigTmpOffs: list of int
+    var bigTmpCount: int
     var startIdx: int
 
     // Task 9 (toolbox-integration Feature C): the hand-built LDEF/
@@ -5160,20 +5182,34 @@ func cgEmitFunc(f: int) {
     }
     cgTmpBaseOffs = tmpOffs
 
-    // Task 14.7: the big (str/rec) scratch pool, same contiguous-negative-
-    // offset discipline, reserved unconditionally right after the small
-    // pool (cheap; ignored cost if this function never materializes a
-    // str/rec temp at all -- same "cheap if unused" philosophy this file's
-    // own Task 13 doc comment already uses for cgTmpSlots).
+    // binary-files phase Task 8: the big (str/rec) scratch pool, same
+    // contiguous-negative-offset discipline, reserved right after the
+    // small pool -- sized to this function's OWN recorded need
+    // (cgFuncBigTmpNeed[f], pre-sized to 0 by cg68Measure before either
+    // pass runs), floored at cgBigTmpFloor so a tiny/no-big-temp function
+    // still gets a cheap, stable pool. On the MEASURE pass (cgRecMode ==
+    // 1) cgFuncBigTmpNeed[f] is still its pre-sized 0 here (this
+    // function's own measure hasn't run yet), so this lays out exactly
+    // cgBigTmpFloor slots and cgAllocBigTmpOff grows the list on demand
+    // if the body needs more; cgFuncBigTmpHigh (reset just below) then
+    // records the true high-water mark at the end of this same call. On
+    // the REAL pass, cgFuncBigTmpNeed[f] already holds that recorded
+    // max, so this lays out the exact right size up front and
+    // cgAllocBigTmpOff never needs to grow the list again.
+    bigTmpCount = cgBigTmpFloor
+    if cgFuncBigTmpNeed[f] > bigTmpCount {
+        bigTmpCount = cgFuncBigTmpNeed[f]
+    }
     bigTmpOffs = cgFreshIntList()
     i = 0
-    while i < cgBigTmpSlots {
+    while i < bigTmpCount {
         runningNeg = runningNeg - cgBigTmpSize
         bigTmpOffs.add(runningNeg)
         i = i + 1
     }
     cgBigTmpBaseOffs = bigTmpOffs
     cgStmtBigTmpNext = 0
+    cgFuncBigTmpHigh = 0
 
     runningNeg = cgReserveDeepScratch(runningNeg)
     frameSize = 0 - runningNeg
@@ -5251,6 +5287,14 @@ func cgEmitFunc(f: int) {
         a68Bind(cgBailLbl)
         cgStmts(irFuncBail(f))
     }
+    // binary-files phase Task 8: record this function's own big-temp
+    // high-water mark (cgFuncBigTmpHigh, bumped by every cgAllocBigTmpOff
+    // call during the cgStmts walk above, body and bail block alike) --
+    // same idempotent index-write discipline as cgFuncFrameSizes[f]
+    // above (cgEmitFunc runs twice per function, always computing the
+    // identical value from the same IR): a no-op re-write on the real
+    // pass, the actual recording on the measure pass.
+    cgFuncBigTmpNeed[f] = cgFuncBigTmpHigh
     a68Bind(cgCurEpilogueLabel)
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
@@ -12910,6 +12954,21 @@ func cg68Measure(): bool {
     i = 0
     while i < irFuncs.count {
         cgFuncFrameSizes.add(0)
+        i = i + 1
+    }
+
+    // binary-files phase Task 8: cgFuncBigTmpNeed pre-sized to all zeros
+    // alongside cgFuncFrameSizes, same reason -- cgEmitFunc's frame
+    // layout below reads cgFuncBigTmpNeed[f] to decide this function's
+    // OWN big-temp pool size, and on THIS (measure) pass, before that
+    // function's own cgEmitFunc call has run, 0 is exactly right: it
+    // means "no recorded need yet", so the pool starts at cgBigTmpFloor
+    // and cgAllocBigTmpOff grows it on demand (see that function's own
+    // doc comment).
+    cgFuncBigTmpNeed = cgFreshIntList()
+    i = 0
+    while i < irFuncs.count {
+        cgFuncBigTmpNeed.add(0)
         i = i + 1
     }
 

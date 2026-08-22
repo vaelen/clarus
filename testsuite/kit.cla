@@ -67,16 +67,12 @@ func tkReport(results: list of TestResult): int {
             fails = fails + 1
         }
     }
-    // Built up piecewise into `line` rather than one long chained-`+`
-    // alert() argument: native 68k codegen (cg68k) has a per-statement
-    // string/record temp-slot budget, and this many concatenations (three
-    // tkIntToStr() calls included) in one expression exceeds it ("too many
-    // str/rec temps needed in one statement") -- a real gap Task 8 never
-    // caught since nothing built kit.cla via emit68k before test-suite-
-    // review Task 9's Mac-gate swap.
-    line = "TOTAL " + tkIntToStr(total)
-    line = line + " PASS " + tkIntToStr(total - fails)
-    line = line + " FAIL " + tkIntToStr(fails)
-    alert(line)
+    // binary-files phase Task 8: re-joined into one expression -- native
+    // 68k codegen's str/rec temp-slot pool is now sized per function from
+    // the measure pass (no more fixed per-statement ceiling), so the
+    // three-tkIntToStr()-call chain this workaround used to dodge now
+    // Just Works, and runs natively in every suite boot (this function is
+    // on the path every core/toolbox suite GUI takes).
+    alert("TOTAL " + tkIntToStr(total) + " PASS " + tkIntToStr(total - fails) + " FAIL " + tkIntToStr(fails))
     return fails
 }

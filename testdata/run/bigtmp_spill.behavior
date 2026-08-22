@@ -1,4 +1,4 @@
 exit=0
 --- stdout ---
-bigtmp ceiling ok
+bigtmp spill ok
 --- stderr ---
