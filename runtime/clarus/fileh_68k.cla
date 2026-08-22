@@ -92,13 +92,12 @@ func rtFhDevOpen(path: string): int {
     return pb.ioRefNum
 }
 
-// rtFhDevCreate: PBCreateSync's own result is deliberately ignored here
-// (dupFNErr -- the file already existing, the one error filehandle.
-// create treats as fine -- or any other real failure alike): the
-// PBOpenSync below is the actual success/failure gate, exactly
-// native.cla's own natFileWriteText precedent ("dupFNErr ignored either
-// way -- Open just below is the real success/failure gate", native.cla:
-// 809-812).
+// rtFhDevCreate: PBCreateSync's own result is deliberately ignored for
+// the dupFNErr case (the file already existing, the one error
+// filehandle.create treats as fine) -- the PBOpenSync below is the
+// actual open success/failure gate, exactly native.cla's own
+// natFileWriteText precedent ("dupFNErr ignored either way -- Open just
+// below is the real success/failure gate", native.cla:809-812).
 //
 // Type/creator are stamped via a DIRECT PBSetFInfoSync on a FileParam
 // (ioFDirIndex = 0, fdType/fdCreator packed by rtFourCC) -- the no-Get
@@ -107,16 +106,29 @@ func rtFhDevOpen(path: string): int {
 // busy with live UI/List/Map/Text traffic is the exact class of hang
 // that function's own header comment root-causes (and Task 1's probe
 // wave, task-1-report.md (c), independently re-confirms the caution is
-// still warranted for this phase's own GetEOF call below). UNLIKE
-// natFileWriteText's own ioResult-gated stamp (which only fires for a
-// genuinely FRESH file, leaving an overwrite's Finder info untouched):
-// this stamps UNCONDITIONALLY, every call, fresh or dupFNErr'd alike --
-// filehandle.create's own contract always resets the file's DATA
-// regardless of whether it pre-existed (Task 5's host lane unconditionally
-// O_TRUNCs, proven by rt_fileh_test.c's own create-truncates-an-existing-
-// file case), so this lane stamps type/creator fresh every time too,
-// matching that "create always resets" contract rather than writeText's
-// narrower "don't touch Finder info on an overwrite" one.
+// still warranted for this phase's own GetEOF call below).
+//
+// FIX ROUND 1 (review finding): the stamp is GATED on PBCreateSync's
+// own result being 0 (a genuinely FRESH file) -- exactly
+// native.cla:847-852's own ioResult-gated discipline, NOT the
+// unconditional stamp this function shipped with originally. A zeroed
+// `fp` (Clarus local semantics) written UNCONDITIONALLY would zero a
+// PRE-EXISTING file's real fdFlags/fdLocation/fdFldr (the pad[40] bytes
+// after fdCreator in FileParam) on every dupFNErr'd re-create -- wiping
+// that file's real Finder flags/icon position/folder, not just its
+// type/creator. `filehandle.create`'s "always resets" contract (Task 5's
+// host lane unconditionally O_TRUNCs) only covers the file's DATA
+// (truncated unconditionally below via PBSetEOFSync 0, independent of
+// this gate) -- spec %3.1 itself says create "stamps type/creator
+// EXACTLY as file.writeText does", and writeText's own precedent
+// (native.cla:824-852) is this exact ioResult gate. PBSetFInfoSync's own
+// OSErr is captured into rtFh68kLastErr and treated as a create failure
+// (return 0, matching every other trap call in this function -- the
+// PBSetEOFSync check just below is the direct template) rather than
+// silently ignored the way PBCreateSync's own dupFNErr is: an InfoSync
+// failure on an otherwise-fresh file is real weather (disk full, locked
+// volume), not the one specific "already exists" case this function
+// already knows how to shrug off.
 //
 // ftype/fcreator arrive as plain `string` values, already Str255-shaped
 // in memory (uiscript.cla's own UiStrAddr header comment) -- UiStrAddr
@@ -125,7 +137,8 @@ func rtFhDevOpen(path: string): int {
 // what rtFourCC (core.cla:130, always spliced) wants.
 //
 // PBSetEOFSync 0 truncates the just-opened file to empty (filehandle.
-// create's own "always resets" contract, restated above); a failure here
+// create's own "always resets" contract, restated above) UNCONDITIONALLY
+// -- independent of whether the FInfo stamp above ran; a failure here
 // closes the just-opened refNum before returning 0 rather than leaking
 // an open, half-truncated handle back to a caller who thinks create()
 // failed outright.
@@ -138,6 +151,7 @@ func rtFhDevCreate(path: string, ftype: string, fcreator: string): int {
     var packedCreator: int
     var h: int
     var err: int
+    var createErr: int
 
     packedType = rtFourCC(UiStrAddr(ftype))
     packedCreator = rtFourCC(UiStrAddr(fcreator))
@@ -146,14 +160,21 @@ func rtFhDevCreate(path: string, ftype: string, fcreator: string): int {
 
     pb.ioNamePtr = namePtr
     pb.ioVRefNum = 0
-    PBCreateSync(pb)
+    createErr = PBCreateSync(pb)
 
-    fp.ioNamePtr = namePtr
-    fp.ioVRefNum = 0
-    fp.ioFDirIndex = 0
-    fp.fdType = packedType
-    fp.fdCreator = packedCreator
-    PBSetFInfoSync(fp)
+    if createErr == 0 {
+        fp.ioNamePtr = namePtr
+        fp.ioVRefNum = 0
+        fp.ioFDirIndex = 0
+        fp.fdType = packedType
+        fp.fdCreator = packedCreator
+        err = PBSetFInfoSync(fp)
+        if err != 0 {
+            rtFh68kLastErr = err
+            SerDisposePtr(namePtr)
+            return 0
+        }
+    }
 
     SerDisposePtr(namePtr)
 
