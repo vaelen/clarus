@@ -1,0 +1,211 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// pagefile.cla: the binary-files phase's acceptance app (Task 9). A
+// vDB-shaped toy page store: a fixed-size (512-byte) page file plus a
+// write-ahead journal, the same write-then-truncate commit shape a real
+// page-oriented database uses. Exercises the whole phase's surface in one
+// small program: `filehandle` (create/writeAt/readAt/append/size/setSize/
+// flush/close), the `text` binary accessors (setWordAtLE/setIntAtLE/
+// wordAtLE/intAtLE), `crc16`, `string(n)`, and `connection` as a value
+// (passed into `report`, Task 4's own feature).
+//
+// On launch it writes 16 pages: build a 512-byte page with a little-
+// endian header (signature, version, page size, page number) and a byte
+// pattern payload, CRC it, append the page+CRC to the journal and flush
+// (the write-ahead step), write the page itself into the data file and
+// flush, then truncate the journal to 0 bytes (the commit). It then
+// re-reads every page from the data file and checks the CRC and header
+// fields match. The result ("PASS 16" or "FAIL <what>") goes out over the
+// Mac's modem serial port and the app quits -- useful both for the gated
+// Snow test (internal/mactest/pagefile_snow_test.go, TestPageFileOnSnow)
+// and for Andrew's own manual demo: build for real Mac hardware.
+//
+// One window (Status, a single result label), matching examples/
+// serialecho.cla's own minimal style -- and NOT optional here: a Clarus
+// program's connection only gets pumped (its `on conn.*` handlers only
+// ever fire) on the native 68k lane's real event loop, which only runs
+// for a program cg68k classifies as "UI" (declares a window, menu, or
+// `every` -- clarusc/cprint.cla's irIsUiProgram()). A window-free version
+// of this program compiles and runs its whole file pass fine natively,
+// but its `conn.open` never reaches `opened`: confirmed empirically
+// while building this app (a throwaway window-free probe sent nothing
+// over 8+ minutes on Snow; adding one window fixed it in ~27s, in line
+// with serialecho's own boot-timing probe). The flip side: a UI-
+// classified program's connection is never pumped on the HOST C lane
+// (`clarusc emit` / scripts/clarus-run.sh) either -- a separate,
+// pre-existing, documented gap (cprint.cla's own cpEmitMain doc comment:
+// "Host/Mac-cprint UI+connection integration is a documented gap this
+// phase never closes"), confirmed here to affect serialecho.cla too, not
+// just this program. So on host, `runPageFile`'s file work (everything
+// this task actually adds) still runs and is directly inspectable via
+// the written PageFile.dat/PageFile.jnl, but the final "PASS 16" line
+// never reaches a host nc session -- only the native/Snow lane can
+// observe that. See the Task 9 report for the host-side verification
+// this drove instead.
+
+const pageSize: int = 512
+const numPages: int = 16
+
+var conn: connection
+var resultMsg: string
+
+window Status {
+    title: "Page File"
+    size: 260, 80
+
+    label Result { at: 10, 10; text: "Running..." }
+}
+
+// buildPage returns a fresh 512-byte page for pageNo: a little-endian
+// header (4-byte signature "VDB\0", 2-byte version, 2-byte page size,
+// 4-byte page number) followed by a payload pattern that depends on both
+// the page number and the byte offset, so a page mixed up with its
+// neighbor is caught by the field checks below even before the CRC is.
+func buildPage(pageNo: int): text {
+    var t: text
+    var k: int
+
+    for k in 1 to pageSize {
+        t.append(char(0))
+    }
+
+    t[0] = 'V'
+    t[1] = 'D'
+    t[2] = 'B'
+    t[3] = char(0)
+    t.setWordAtLE(4, 1)          // version
+    t.setWordAtLE(6, pageSize)   // page_size
+    t.setIntAtLE(8, pageNo)      // page number
+
+    for k in 12 to pageSize - 1 {
+        t[k] = char((pageNo + k) mod 256)
+    }
+
+    return t
+}
+
+// checkPage verifies a page re-read from the data file against the CRC
+// computed when it was written, plus every header field. Returns "" on
+// success or a "FAIL ..." message.
+func checkPage(pageNo: int, page: text, wantCrc: int): string {
+    if page.length != pageSize {
+        return "FAIL short read page " + string(pageNo)
+    }
+    if page.crc16(0, 0, pageSize) != wantCrc {
+        return "FAIL crc mismatch page " + string(pageNo)
+    }
+    if page[0] != 'V' or page[1] != 'D' or page[2] != 'B' or page[3] != char(0) {
+        return "FAIL signature page " + string(pageNo)
+    }
+    if page.wordAtLE(4) != 1 {
+        return "FAIL version page " + string(pageNo)
+    }
+    if page.wordAtLE(6) != pageSize {
+        return "FAIL page_size field page " + string(pageNo)
+    }
+    if page.intAtLE(8) != pageNo {
+        return "FAIL page number page " + string(pageNo)
+    }
+    return ""
+}
+
+// runPageFile does the whole write/commit/verify pass and returns the
+// result string to report over the wire.
+func runPageFile(): string {
+    var dat: filehandle
+    var jnl: filehandle
+    var page: text
+    var entry: text
+    var crcs: int[16]
+    var buf: text
+    var check: string
+    var pageNo: int
+
+    dat = file.create("PageFile.dat", "VDBD", "68BB")
+    if dat == nil {
+        return "FAIL create dat: " + lastError.message
+    }
+    jnl = file.create("PageFile.jnl", "VDBJ", "68BB")
+    if jnl == nil {
+        return "FAIL create jnl: " + lastError.message
+    }
+
+    for pageNo in 0 to numPages - 1 {
+        page = buildPage(pageNo)
+        crcs[pageNo] = page.crc16(0, 0, pageSize)
+
+        // Journal entry: a fresh copy of the page (text.textAt, not a
+        // plain `=`, since assignment aliases the same handle -- Chapter
+        // 3's "Value and Reference Semantics") plus the CRC as two more
+        // little-endian bytes.
+        entry = page.textAt(0, pageSize)
+        entry.append(char(0))
+        entry.append(char(0))
+        entry.setWordAtLE(pageSize, crcs[pageNo])
+
+        if not jnl.append(entry) {
+            return "FAIL journal append page " + string(pageNo)
+        }
+        if not jnl.flush() {
+            return "FAIL journal flush page " + string(pageNo)
+        }
+        if not dat.writeAt(pageNo * pageSize, page) {
+            return "FAIL data writeAt page " + string(pageNo)
+        }
+        if not dat.flush() {
+            return "FAIL data flush page " + string(pageNo)
+        }
+        // Commit: truncate the journal now that the page is durably in
+        // the data file.
+        if not jnl.setSize(0) {
+            return "FAIL journal truncate page " + string(pageNo)
+        }
+    }
+
+    if dat.size() != numPages * pageSize {
+        return "FAIL dat size wrong"
+    }
+    if jnl.size() != 0 {
+        return "FAIL journal not empty after commit"
+    }
+
+    for pageNo in 0 to numPages - 1 {
+        if not dat.readAt(pageNo * pageSize, pageSize, buf) {
+            return "FAIL readAt page " + string(pageNo)
+        }
+        check = checkPage(pageNo, buf, crcs[pageNo])
+        if check != "" {
+            return check
+        }
+    }
+
+    dat.close()
+    jnl.close()
+
+    return "PASS " + string(numPages)
+}
+
+func report(c: connection, s: string) {
+    c.send(s + "\n")
+}
+
+on App.launch {
+    open Status
+    resultMsg = runPageFile()
+    conn.open(serial "modem:9600")
+}
+
+on conn.opened {
+    var w: Status = Status.front
+    if w != nil {
+        w.Result.text = resultMsg
+    }
+    report(conn, resultMsg)
+    quit
+}
+
+on conn.failed(err: error) {
+    log("pagefile: serial open failed: " + err.message)
+    quit 1
+}
