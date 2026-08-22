@@ -4229,11 +4229,13 @@ brief asked for it directly.
   - **`text` binary accessors + `crc16`** — LE/word-typed
     getters/setters on `text` (`intAtLE`/`wordAt`/`wordAtLE`/
     `setIntAt`/`setIntAtLE`/`setWordAt`/`setWordAtLE`) plus a `crc16`
-    method (CRC-16/CCITT-FALSE-shaped, vector 0x2189), chunked and
+    method (CRC-16/KERMIT: poly 0x8408 reflected, seed 0, no final
+    XOR -- published check value 0x2189 for "123456789"), chunked and
     bounds-checked, both lanes.
-  - **`string(n)`** — bounded-capacity string values as a first-class
-    type, `int()`-style `string(...)` conversions, and `IntToStr`
-    migrated onto it from the ad hoc `tkIntToStr`/`intStr`
+  - **`string(n)`** — the int-to-decimal-string conversion (`string(i)`,
+    `int()`-style, joining `int()`/`fixed()`/`char()`/`ptr()` -- not the
+    pre-existing bounded-capacity TYPE syntax of the same name), and
+    `IntToStr` migrated onto it from the ad hoc `tkIntToStr`/`intStr`
     reimplementations scattered across the tree.
   - **`toolbox/` include fallback** — `include "toolbox/..."` that
     isn't found relative to the including file falls back to the

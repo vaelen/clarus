@@ -31,8 +31,9 @@ each — full detail in `.superpowers/sdd/2026-08-22-binary-files/`):
    local, or record field, not just a global.
 3. **`text` binary accessors + `crc16`** — LE/word-typed getters/
    setters plus a bounds-checked `crc16` method, both lanes.
-4. **`string(n)`** — bounded-capacity string values as a first-class
-   type; `IntToStr` migrated onto it from ad hoc reimplementations.
+4. **`string(n)`** — int-to-decimal-string conversion (`string(i)`,
+   joining `int()`/`fixed()`/`char()`/`ptr()`); `IntToStr` migrated onto
+   it from ad hoc reimplementations.
 5. **`toolbox/` include fallback** — `include "toolbox/..."` resolves
    against the compiler's own `toolbox/` directory when not found
    relative to the including file; `--rtdir` now works in check-only

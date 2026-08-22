@@ -87,8 +87,12 @@ request):** closes item 1 below, "Next: language usability"'s next
 item after serial. All eight 68kBBS language gaps closed in one phase
 (`filehandle`, `connection` as a value, `text` binary accessors +
 `crc16`, `string(n)`, the `toolbox/` include fallback, no more emit68k
-big-temp ceiling) plus two compiler bugs found and fixed along the way
-(`checkConstDecl` identical-redeclaration tolerance; a `--rtbake`
+big-temp ceiling) plus four compiler bugs found and fixed along the
+way (`checkConstDecl` identical-redeclaration tolerance; a host-lane
+use-after-free releasing a string->text coercion temp before a
+`return call(...)` line that used it; the native lane's sibling bug in
+the same spot, `cgReturnStmt` clobbering D0 with a temp-release call
+before the branch out, fixed with a D0 save/reload; and a `--rtbake`
 lowering crash for any `connection`/`filehandle`-using program, found
 by this phase's own close-out T2 run and fixed by sourcing runtime-call
 arg coercions from statically-known types instead of a checker

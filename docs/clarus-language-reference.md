@@ -163,14 +163,14 @@ Clarus is statically typed. All types are known at compile time; values are eith
 | `sortedmap of T` | 4-byte handle | heap | string-keyed container, values fixed-size; iterates in ascending key order |
 | `intmap of T` | 4-byte handle | heap | hashtable, int keys, values fixed-size |
 | window ref (e.g. `Doc`) | 4 bytes | inline | reference to a window instance; `nil` until assigned |
-| `connection`, `listener`, `serviceBrowser` | opaque | resource | networking resources (Chapter 12) |
+| `connection`, `listener`, `serviceBrowser`, `filehandle` | opaque | resource | networking and file resources (Chapter 12) |
 | `error` | record | inline | `{ code: int, message: string }` |
 | `address` | opaque | inline | network address from a `serviceBrowser` |
 | `saveChoice` | enum | inline | built-in: `Save`, `Discard`, `Cancel` |
 
 \* "inline" values past a size threshold are transparently promoted to handle-backed storage by the compiler (spec §6); semantics are identical.
 
-Resource variables (`connection`, `listener`, `serviceBrowser`) are fixed-size 4-byte references, like window references: assignable, storable in records and arrays (`connection[8]` is 8 references, 32 bytes), and `nil` until bound.
+Resource variables (`connection`, `listener`, `serviceBrowser`, `filehandle`) are fixed-size 4-byte references, like window references: assignable, storable in records and arrays (`connection[8]` is 8 references, 32 bytes), and `nil` until bound.
 
 **Storage:** `bool` and `char` occupy exactly 1 byte inside every ordinary aggregate — records and arrays — on every target; `bool` occupies 1 byte inside an `extern record` too, but `char` is not a legal `extern record` field type at all (an extern record's 1-byte numeric field type is `byte` — see the Chapter 13 field palette). As a standalone local, parameter, or global, `bool`/`char` occupy a 2-byte slot (68000 even-address alignment). At `external func`/`trap` boundaries the Chapter 13 marshaling rules apply (a bool/char parameter or result travels in a 16-bit stack word).
 
@@ -406,7 +406,7 @@ A `text` is an unbounded, resizable buffer of characters. A `string` value may b
 - `t.setWordAt(pos, v)` / `t.setWordAtLE(pos, v)` — writes `v`'s low 16 bits at `pos` as a 2-byte field, big- or little-endian.
 - `t.crc16(h, pos, n)` — folds bytes `[pos, pos+n)` into running CRC `h` (masked to 16 bits) and returns the updated value; `n == 0` returns `h` unchanged. Out-of-range `pos`/`n` raises a runtime error. The algorithm is CRC-16/KERMIT (poly `0x8408` reflected, seed and result both taken as-is, no final XOR) — the published check value for `crc16(0, 0, 9)` over the ASCII bytes `"123456789"` is `0x2189`. Like `hashStep`, it is chunkable: folding a buffer in pieces (feeding each call's return value in as the next call's `h`) produces the same result as one call over the whole range.
 
-All seven bound accessors above (`intAt`/`intAtLE`/`wordAt`/`wordAtLE`/`setIntAt`/`setIntAtLE`/`setWordAt`/`setWordAtLE`) use the same STRICT out-of-range rule as `intAt` and `hashStep`: `pos` must be in range for the field's own width, checked without the overflow a naive `pos + width > t.length` test would have.
+All eight bound accessors above (`intAt`/`intAtLE`/`wordAt`/`wordAtLE`/`setIntAt`/`setIntAtLE`/`setWordAt`/`setWordAtLE`), plus `crc16`, use the same STRICT out-of-range rule as `intAt` and `hashStep`: `pos` must be in range for the field's own width, checked without the overflow a naive `pos + width > t.length` test would have.
 
 Out-of-range indexing raises a runtime error. Indexing and byte copies make `text` usable directly for binary protocol work — data arriving in `on conn.received(data: text)` (Chapter 12) can be scanned byte by byte without an intermediate copy.
 

@@ -232,8 +232,10 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   binary-files phase (2026-08-22) rounded out the binary-data surface:
   `filehandle` (positioned file I/O — `file.open`/`file.create`/
   `readAt`/`writeAt`/`size`/`setSize`/`flush`/`close`, both lanes,
-  hardware-proved on System 6 and System 7), `string(n)` (bounded-
-  capacity string values), and `text`'s LE/word/setter binary accessors
+  hardware-proved on System 6 and System 7), `string(n)` (the
+  int-to-decimal-string conversion, `string(i)`, joining `int()`/
+  `fixed()`/`char()`/`ptr()` -- not the pre-existing bounded-capacity
+  TYPE syntax of the same name), and `text`'s LE/word/setter binary accessors
   plus `crc16`; `emit68k` also now sizes a function's string/record temp
   pool per function instead of a fixed per-statement ceiling. See the
   reference for the full method lists.

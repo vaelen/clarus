@@ -220,6 +220,16 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   (Task 3 minor; `clarusc/check.cla` ~5372) — mirrors the pre-existing
   `int()` path's wording; source and target type names coincide for
   this one conversion, so the message is technically true but useless.
+- **Duplicate-`const` diagnostic cites only the second declaration's
+  position** (Task 2 minor; final-review wave M5; `clarusc/check.cla`'s
+  `checkConstDecl`, ~2705/2710) — both `emitDiag` calls use `declLine(d)/
+  declCol(d)` (the redeclaration), never the first decl's own position;
+  `externFirstDeclByName`/`xrecFirstDeclByName`'s sibling diagnostics
+  cite both. Cosmetic (the message still names the right identifier).
+- **`cgReturnStmt` computes `irExprType(x)` twice** (Task 9b minor;
+  final-review wave M5; `clarusc/cg68k.cla`'s `cgReturnStmt`) — once for
+  `rk = irtKind(irExprType(x))`, again a few lines later for
+  `retT = irExprType(x)`; pure polish, same result both times.
 
 ## ABI / performance
 
@@ -352,6 +362,23 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   bad handle ever reaches the C glue, and there is no way for user code
   to forge a handle value; hardening candidate if that invariant ever
   loosens.
+- **`rtFhDevFlush`'s two-attempt error shape is invisible** (Task 6
+  minor; final-review wave M5; `runtime/clarus/fileh_68k.cla`) — it
+  always issues BOTH `PBFlushFileSync` and `PBFlushVolSync` and reports
+  the file error over the vol error when both fail, deliberately (a
+  vol-flush failure after a file-flush success is still surfaced), but
+  nothing about the return value tells a caller two attempts were made
+  or which one is being reported. Documented behavior, not a bug.
+- **`testsuite/toolbox/cases_catalog.cla` discards `PBCreateSync`'s own
+  error** (Task 2 minor; final-review wave M5; ~line 219,
+  `PBCreateSync(fpb) // dupFNErr on a rerun is fine; PBOpenSync below is
+  the real gate`) — test-side only, `PBOpenSync` right after is the real
+  pass/fail gate for this case. NOT made moot by the final-review wave's
+  M2 fix (the `wbuf` `NewPtr(64)` leak a few lines below, in the same
+  function) — M2 only disposes the write buffer; it does not touch this
+  discarded return value. The *runtime* sibling of this same class of
+  gap (`rtFhDevCreate` reporting the OPEN error over a real non-dupFNErr
+  CREATE error) is the final-review wave's M4, fixed for real.
 
 ## Bake / CLIR artifact machinery
 
@@ -489,11 +516,22 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 
 ### binary-files phase (2026-08-22)
 
-- **No fixture pins the native D0-save fix for a `text`-typed
-  `return call(...)`** (Task 9b minor) — Task 9b's native
-  `cgReturnStmt` D0-clobber-by-release fix is only exercised today by
-  `FileHandleRW`'s bool-returning paths; a `text`/handle-returning
-  `return call(...)` shape reaching the same fix is untested.
+- **FIXED (final-review wave, M6): no fixture pinned the native D0-save
+  fix for a `text`-typed `return call(...)`** (Task 9b minor) — Task
+  9b's native `cgReturnStmt` D0-clobber-by-release fix was only
+  exercised by `FileHandleRW`'s bool-returning paths.
+  `testdata/run/ret_text_tmp_release.cla` (host behavior golden + native
+  `scripts/build-68k.sh` build) and `testsuite/core/cases_textbinary.cla`'s
+  `TextBinaryAccessors` case (internal check bump, same case count) now
+  both exercise a `text`-returning `return call(...)` whose call
+  argument is a coerced temp.
+- **No fixture asserts `readAt`/`writeAt` with `count == 0`** (Task 5
+  minor; final-review wave M5) — the `pos == EOF` case IS covered
+  (`readAt(600,10)` past EOF, `readAt(512,100)` crossing EOF); only a
+  zero-length request is unpinned. `rtFhWriteRaw`'s `n == 0` early
+  return means a zero-length `writeAt` never reaches the device
+  (correct, undocumented); `readAt`'s zero-length behavior is likewise
+  unexercised.
 - **`internal/perfgate`'s `TestEmitPerfTripwire` flakes under parallel
   `go test` on this host** — every task this phase saw it fail inside a
   full `scripts/test-task.sh --smoke`/T2 run and PASS cleanly re-run
@@ -501,6 +539,8 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   FAIL, median 0.160s vs. a 0.124s limit; isolated re-run: PASS, medians
   0.10-0.12s both times). Host-contention artifact of running the whole
   gauntlet in parallel with itself, not a real regression — the
-  baseline itself is fine. A future session could reduce the noise (a
-  longer warm-up, more samples, or a wider margin) but the underlying
-  test intent (catch a real emit-time regression) is sound as-is.
+  baseline itself is fine. Final-review wave (M7): the tripwire has
+  almost no headroom even isolated (0.110s median vs. the 0.124s limit)
+  and failed twice under T2 contention during this phase; a re-baseline
+  decision (longer warm-up, more samples, or a wider margin) is owed
+  before the next phase adds anything to the host emit path.
