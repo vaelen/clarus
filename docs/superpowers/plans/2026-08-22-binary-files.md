@@ -281,6 +281,20 @@ Found by Task 5: when a `string` argument is implicitly coerced to a `text` para
 
 ---
 
+### Task 9c: Lowering must not depend on the checker's runtime-function symbols (inserted 2026-08-23)
+
+Found by Task 10's T2 (`CLARUS_BAKE_FULL=1 go test ./internal/bake`): `clarusc emit68k --rtbake` crashed (`list index out of range`) on any program using `connection` or `filehandle` — `lowRtCoerceArg` (Task 5's rename of `lowConnCoerceArg`) did `scopeLookup(curScope, intern(fnName))` on a RUNTIME function name at lowering time, and under the baked-resume path (`lowResumeFromBake`) the runtime source is never checked, so the checker's symbol table has no such entry. Plain `connection` under `--rtbake` (serial phase) crashed the same way; never exercised because T2 was not run mid-phase. Load-bearing: ClarusC.APPL's default on-Mac compile path for the whole 68kBBS use case.
+
+**Files:**
+- Modify: `clarusc/lower.cla` (`lowRtCoerceArg` → takes the target IR type from the caller; `lowConnMethod`/`lowFileHandleMethod` pass the statically known param types, commented with the runtime function name), `internal/bake/*_test.go` (T1-speed regression: `--bake-ir --lane 68k` then `emit68k --rtbake` over a program using both `connection` and `filehandle`, exit 0 — modeled on `TestRtbakeDriftFallback`, NOT gated behind `CLARUS_BAKE_FULL`), `clarusc/clarusc.c` (regen).
+
+- [ ] **Step 1: Failing test** — the regression above, RED (`list index out of range`) on the unfixed compiler.
+- [ ] **Step 2: Fix** — no `scopeLookup` of runtime names in lowering; audit `lower.cla` for any other lowering-time `scopeLookup(curScope, intern("rt…"))` and treat each the same way.
+- [ ] **Step 3: Prove** — from-source emission byte-identical (`internal/cg68k` + `internal/emitui` zero churn); `CLARUS_BAKE_FULL=1 go test ./internal/bake -count=1` PASS; snapshot fixed point; T1.
+- [ ] **Step 4: Commit** — `fix: lowering coerces runtime-call args from statically known param types, not checker symbols -- emit68k --rtbake works for connection/filehandle; T1 regression`. Then Task 10 resumes at its gate 4.
+
+---
+
 ### Task 10: Close-out — snapshot regen, selfhost, reftest manifest, docs
 
 **Files:**
