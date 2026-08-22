@@ -44,6 +44,38 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   real modem control lines (RING/carrier) if a future BBS-target phase
   needs it.
 
+### binary-files phase (2026-08-22)
+
+- **UI/non-UI connection-pump lane gap** (Task 9's report) — the native
+  lane only pumps `connection` traffic (`nat_UiConnPump`) for
+  UI-classified programs (window/menu/`every` present); the host C lane
+  only ever compiles NON-UI programs (`cprint` emits `#include
+  "rt_ui.h"`, which lives only under `runtime/mac/`, so `cc` against
+  `runtime/host` fails outright for any program with a `window`/`menu`).
+  There is no single program shape that both boots on the host dev lane
+  AND pumps connections on native — a serial/BBS-style program has to
+  carry at least one throwaway status window purely to get native
+  pumping (`examples/pagefile.cla`'s workaround). Serial-connection
+  phase's own spec §3/§7 promised one program shape on both lanes; it
+  doesn't hold today. Also affects `examples/serialecho.cla`'s doc
+  comment, fixed this task to state the real constraint instead of
+  claiming host-lane runnability it never had.
+- **Handle generation-counter idea (spec §7, out of scope this phase)**
+  — `filehandle`/`connection` values are bare small ints (slot+1); a
+  closed-then-reused slot number is indistinguishable from the original
+  handle at the type level (no staleness detection). A generation
+  counter packed into the value (or a parallel generation table checked
+  by every `rtFh*`/`rtConn*` call) would catch use-after-close bugs
+  instead of silently operating on a reused slot. Recorded, unscheduled.
+- **`natItoa`/`rtUiIntToText` stay unmerged** (Task 3 ruling, reverted a
+  same-body collapse) — three near-identical int-to-string bodies live
+  in the runtime (`natItoa`, `rtUiIntToText`, and `string(n)`'s own
+  `rtIntToStr`) rather than one shared routine, because collapsing them
+  pulled `str.cla` into every native binary's always-reachable set
+  (`globals.cla` 2→3 CODE segments) for no user benefit. Duplication
+  only, no functional gap; revisit if a future phase needs the shared
+  body for another reason anyway.
+
 ## Compiler correctness / diagnostics
 
 - **Lexer diagnostic quality** (decided 2026-07-23): a bad escape in a
@@ -118,6 +150,55 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   hazard already existed for the map expression itself). Defensive fix
   is `cgLastTrackedOff = -1` before the dv store; deferred because it
   forces a snapshot regen.
+
+### binary-files phase (2026-08-22)
+
+- **FIXED (Task 9c): `--rtbake` + `connection`/`filehandle` method calls
+  used to crash clarusc** (`list index out of range`) — found by Task
+  10's own T2 run, root-caused via `lldb` to `lower.cla`'s
+  `lowRtCoerceArg`, which looked up the target runtime function's
+  DECLARED param type by NAME through the checker's live symbol table
+  at lowering time, a table `--rtbake` never populates for baked
+  runtime functions (it skips their parse+check for performance). Fixed
+  by `lowCoerceTo`, which passes the statically-known target IR type
+  (`irTextT`/`irStrType(255)`) directly at each of the 7 call sites
+  instead of looking anything up — the coercion target was always fixed
+  at compile time, no lookup was ever actually needed. Full trail:
+  `.superpowers/sdd/2026-08-22-binary-files/task-10-report.md`'s "Task
+  9c" section.
+- **Testing-strategy gap the FIXED item above exposed**: `--rtbake` (the
+  fast baked-IR compile path `ClarusC.APPL` uses by default) was only
+  ever exercised by `internal/bake`'s `CLARUS_BAKE_FULL=1` gate, which
+  is opt-in and runs only inside T2 (`scripts/test-merge.sh`) — not T1,
+  not any individual task's `--smoke` run. A whole phase (8 tasks, one
+  new type end-to-end) shipped with a `--rtbake`-breaking bug that
+  nothing caught until the FINAL close-out task happened to run T2 for
+  the first time. Task 9c added ONE targeted T1-speed regression
+  (`TestRtbakeConnFilehByteIdentity`) for this specific bug class, but
+  the broader gap stands: `--rtbake` as a WHOLE has no T1-speed smoke at
+  all, only the opt-in full-corpus gate. A cheap general fix: promote
+  one or two representative `--rtbake` fixtures (a self-compile, one
+  fixture using each "unusual" runtime module) into T1's default run,
+  the same way `TestBakePathByteIdentity` already does for the cg68k
+  corpus slice — `connection`/`filehandle` are now covered by Task 9c's
+  own test, but a FUTURE new value-typed runtime module (the same shape
+  as `connection`/`filehandle`) could reintroduce a sibling gap with no
+  T1 tripwire.
+- **`expand()` marks `seenPaths` before a successful read** (Task 7
+  re-review; `clarusc/drive.cla` ~950-953) — a failed dir-relative
+  attempt poisons that raw path for later calls; benign in every
+  reachable case today, hardening candidate (mark on success only).
+- **A program whose only `connection`-typed things are record
+  fields/params (no global) never sets `usesConn`** (Task 4 minor;
+  `clarusc/check.cla` ~5850-5865) — so `conn.cla` isn't spliced and the
+  program fails with a link error instead of a diagnostic; unreachable
+  in practice (no non-nil connection without a global) but ugly.
+  `usesFileh` does the equivalent gating correctly (any `filehandle`
+  use, not just a global, sets it) — port that discipline over.
+- **`string("x")` diagnostic reads "cannot convert string to string"**
+  (Task 3 minor; `clarusc/check.cla` ~5372) — mirrors the pre-existing
+  `int()` path's wording; source and target type names coincide for
+  this one conversion, so the message is technically true but useless.
 
 ## ABI / performance
 
@@ -242,6 +323,14 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   instead of returning immediately; `runtime/host/rt_serial_test.c` has
   three stale/contradictory comments (alarm numbers, a retry-loop
   reference, and `set_recv_timeout`'s stated rationale).
+
+### binary-files phase (2026-08-22)
+
+- **`rt_fileh.inc`'s `rt_ext_FhH*` glue never guards `h <= 0`** (Task 5
+  minor) — safe only because `fileh.cla`'s own nil check panics before a
+  bad handle ever reaches the C glue, and there is no way for user code
+  to forge a handle value; hardening candidate if that invariant ever
+  loosens.
 
 ## Bake / CLIR artifact machinery
 
@@ -376,3 +465,21 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   hot-path cost, harmless but avoidable.
 - **No coverage for the >4-connections build error** (Task 5) — the
   cap exists and is enforced, just untested.
+
+### binary-files phase (2026-08-22)
+
+- **No fixture pins the native D0-save fix for a `text`-typed
+  `return call(...)`** (Task 9b minor) — Task 9b's native
+  `cgReturnStmt` D0-clobber-by-release fix is only exercised today by
+  `FileHandleRW`'s bool-returning paths; a `text`/handle-returning
+  `return call(...)` shape reaching the same fix is untested.
+- **`internal/perfgate`'s `TestEmitPerfTripwire` flakes under parallel
+  `go test` on this host** — every task this phase saw it fail inside a
+  full `scripts/test-task.sh --smoke`/T2 run and PASS cleanly re-run
+  alone (`-p 1`); confirmed again at Task 10's own T2 run (T1 body:
+  FAIL, median 0.160s vs. a 0.124s limit; isolated re-run: PASS, medians
+  0.10-0.12s both times). Host-contention artifact of running the whole
+  gauntlet in parallel with itself, not a real regression — the
+  baseline itself is fine. A future session could reduce the noise (a
+  longer warm-up, more samples, or a wider margin) but the underlying
+  test intent (catch a real emit-time regression) is sound as-is.

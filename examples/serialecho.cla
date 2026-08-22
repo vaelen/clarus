@@ -9,9 +9,16 @@
 // in/bytes out) give a live, at-a-glance signal that the connection is
 // actually flowing -- useful both for the gated Snow test
 // (internal/mactest/serial_snow_test.go, TestSerialEchoOnSnow) and for
-// Andrew's own manual demo: build for real Mac hardware, or run the host
-// dev lane with CLARUS_SERIAL_MODEM=listen:1984 (his own convention
-// port) and connect a terminal with `nc localhost 1984`.
+// Andrew's own manual demo: build for real Mac hardware via
+// scripts/build-mac.sh or scripts/build-68k.sh. NOT runnable on the
+// plain host cc lane -- this is a UI program (window + menu), and the
+// host C lane only ever compiles non-UI programs: cprint emits
+// `#include "rt_ui.h"`, which lives only under runtime/mac/, so `cc`
+// against runtime/host fails with "rt_ui.h file not found" (the same
+// UI/non-UI connection-pump lane gap docs/TODO.md's binary-files phase
+// entry records). CLARUS_SERIAL_MODEM=listen:1984 + `nc localhost 1984`
+// is real, but only for the NON-UI host dev-lane fixture,
+// internal/conntest/testdata/echo.cla -- not this app.
 //
 // Kept Appendix-C-plain, matching examples/menu-demo.cla's own minimal
 // style: no `app` section (not needed for a double-clickable demo), just

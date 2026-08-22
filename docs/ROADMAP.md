@@ -81,6 +81,21 @@ the PBM icon parser accepts CR/CRLF; and the Bookmark Manager reference
 erratum is fixed. Full detail: `STATUS.md` §1, or (once merged)
 `docs/HISTORY.md`.
 
+**`binary-files` phase (branch `binary-files`, 2026-08-22/23) is
+COMPLETE — full T2 green, NOT YET merged (merge only on Andrew's
+request):** closes item 1 below, "Next: language usability"'s next
+item after serial. All eight 68kBBS language gaps closed in one phase
+(`filehandle`, `connection` as a value, `text` binary accessors +
+`crc16`, `string(n)`, the `toolbox/` include fallback, no more emit68k
+big-temp ceiling) plus two compiler bugs found and fixed along the way
+(`checkConstDecl` identical-redeclaration tolerance; a `--rtbake`
+lowering crash for any `connection`/`filehandle`-using program, found
+by this phase's own close-out T2 run and fixed by sourcing runtime-call
+arg coercions from statically-known types instead of a checker
+symbol-table lookup the baked-IR fast path never populates). Full
+detail: `docs/HISTORY.md` (once archived) or
+`.superpowers/sdd/2026-08-22-binary-files/`.
+
 ## Roadmap
 
 Focus (Andrew, 2026-08-15): make the tools more usable — expand the set
@@ -93,7 +108,16 @@ compilation cache is deliberately de-prioritized (see "Later").
 In order:
 
 1. **Binary streams and files** — proper reading and writing of binary
-   data, filling the gaps in the existing support.
+   data, filling the gaps in the existing support. DONE (`binary-files`
+   phase, 2026-08-22/23): closed all eight 68kBBS language gaps —
+   `filehandle` (positioned file I/O, both lanes, hardware-proved on
+   System 6 via Mini vMac and System 7 via Snow), `connection` as an
+   ordinary int value (params/locals/fields, not just a global), `text`
+   LE/word/setter binary accessors + `crc16`, `string(n)`, the
+   `toolbox/` include fallback (+ `--rtdir` in check-only mode), and
+   emit68k's per-function big-temp pool (no more per-statement
+   ceiling). Full T2 green on branch `binary-files`; not yet merged
+   (merge only on Andrew's request).
 2. **Serial ports** — controlling the ports and sending/receiving data.
    DONE (`serial-connection` phase, 2026-08-16): the fenced `connection`
    type is real end to end, serial as its first transport, both lanes

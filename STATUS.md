@@ -1,164 +1,163 @@
-# Session status — 2026-08-18 (correctness-cleanup: MERGED to main and pushed)
+# Session status — 2026-08-23 (binary-files: COMPLETE, T2 green, not merged)
 
-Handoff summary. **The `correctness-cleanup` phase is COMPLETE and
-MERGED — all 12 tasks landed, T1 (`--smoke` where applicable) green
-throughout, the bootstrap snapshot regenerated and re-verified (fixed
-point reached), and full T2 (`scripts/test-merge.sh`) PASS end-to-end
-at the tip, including the new `TestToolboxSuiteJiggleOn68k` gated
-native boot. Merged to `main` (ff `48a4696..3a4c054`) and pushed to
-origin 2026-08-18 01:15 JST on Andrew's request; `main == origin/main
-== 3a4c054`.**
+Handoff summary. **The `binary-files` phase (branch `binary-files`) closed
+all eight 68kBBS language gaps — `filehandle`, `connection` as a value,
+`text` binary accessors + `crc16`, `string(n)`, the `toolbox/` include
+fallback, and the emit68k big-temp ceiling removal — every task (1-9b)
+landed with a clean per-task review, and Task 10 close-out ran every
+gate green: snapshot fixed point, reftest manifest regeneration, full
+`internal/selfhost`, and full `scripts/test-merge.sh` (T2), including
+`internal/bake`'s `CLARUS_BAKE_FULL=1` gate. That last gate DID catch a
+real bug on its first run this phase — a `--rtbake` (baked-IR fast
+compile path) lowering crash for any program using `connection` or
+`filehandle` — which is now fixed (Task 9c, inserted between Task 10's
+first BLOCKED attempt and this resumed run). Full T2 PASS at the tip
+(`6778e88`). NOT merged, NOT pushed — merge only on Andrew's request.**
 
 ## 0. START HERE next session
 
-The phase is fully closed on the branch — nothing remains from it.
+**The phase is fully closed on the branch — nothing code-side remains.**
+What's left is entirely controller-run verification (below) plus the
+merge decision itself.
 
-**What this phase fixed** (12 tasks, one commit each plus the snapshot
-regen — full detail in `.superpowers/sdd/2026-08-17-correctness-cleanup/`):
+**What this phase built** (10 tasks + Task 9b + Task 9c, one commit
+each — full detail in `.superpowers/sdd/2026-08-22-binary-files/`):
 
-1. **About box** — Apple-menu item 1 now shows the real ALRT 129
-   (name/version/author/about) in unscripted runs instead of always
-   tracing; scripted runs unaffected.
-2. **Popup label-lane width fix** — a labeled `popup` with a narrow
-   declared `width:` no longer collapses to a zero/negative-width box;
-   `NarrowPopup` toolbox-suite case added (31st real case).
-3. **Heap-jiggle stress mode** — new `jiggle on|off` scripted verb forces
-   a full-heap `CompactMem` at every scripted dispatch and every
-   `UiNewPtr` call, turning the stale-master-pointer bug class from
-   heap-layout luck into a deterministic failure; `TestToolboxSuiteJiggleOn68k`
-   gated native boot added. Limitation recorded in `docs/TODO.md`: only
-   the `UiNewPtr` waist is jiggled (core text/list allocs and
-   Toolbox-internal moves are not).
-4. **Stale-master-pointer audit** — 20 functions across `uitable.cla`/
-   `ui.cla`/`uiwidgets.cla`/`uitext.cla` traced against Inside Macintosh's
-   memory-moving-routines list; 3 real bugs fixed (`rtUiTeWidestLine`,
-   `rtUiTeClamp`, `rtUiTeScrollSync`), 4 already-correct from prior
-   phases, 13 verified safe. `TestToolboxSuiteJiggleOn68k` green
-   throughout (32/32 both before and after — this script path never hit
-   the class, but the audit fixed 3 real reachable-elsewhere bugs anyway).
-5. **Div/mod by zero** — now a runtime error (`division by zero`, exit 3)
-   on both lanes, not UB; INT_MIN/-1 pinned to INT_MIN (quotient) / 0
-   (remainder), matching the 68k restoring-division glue, verified on
-   real hardware before blessing. Reference (Ch3/Ch4) updated.
-6. **`func f(): error` — KErr hidden-return ABI** — a function returning
-   `error` now routes through the hidden-pointer return convention on
-   the native lane (previously failed loud at codegen time,
-   `cg68k: cgExpr: EVarRef non-scalar`); `ErrReturn` core-suite case
-   added.
-7. **`get(k, dv)` evaluation order** — native now evaluates map/sortedmap/
-   intmap `get`'s arguments left to right (m, k, dv), matching the host
-   lane; previously diverged (m, dv, k) on native. `EvalOrder` core case
-   added; reference pinned.
-8. **Memory-bug pair** — `list.pop()`/`list.shift()` results passed
-   directly as call arguments now get their scheduled release on both
-   lanes (previously leaked); `rt_ext_ConnHOpen` now closes an
-   already-open slot's fd before overwriting it (defensive — currently
-   unreachable given the caller-side gate).
-9. **Checker guards** — a widget property (e.g. `d.Body.text`) used as a
-   fill-in-place out-arg to `file.readText`/`file.readResource` is now a
-   loud compile-time error instead of silently filling a discarded
-   temporary (this also uncovered and fixed the same live bug in the
-   language reference's own Appendix C Text Editor fence); `toBytes`'s
-   mutation guard now keys on receiver kind, not method name alone;
-   `irXRecFieldSize`'s nested-xrec forward-reference panic is now
-   guarded with a diagnostic + safe fallback (proven unreachable via
-   today's check-phase ordering constraints — no fixture reaches it, but
-   the guard is real defensive hardening).
-10. **PBM icon parser** — `app68BuildIcnFamily`'s P1 parser now accepts
-    CR/CRLF line endings (previously LF-only, so files staged via
-    `hcopy -t` or authored on a Mac fell back to no-icon with a warning).
-11. **Appendix C erratum** — the Bookmark Manager's `Remove.click` now
-    guards `Marks.selected == -1` in both the reference and
-    `examples/bookmarks.cla` (kept identical, as required).
-12. **Phase close** — this task: snapshot regen (fixed point reached,
-    the four previously-known-red fixtures divzero/modzero/divedge/
-    popargleak now PASS on both `TestBehaviorGoldens` and
-    `TestCrossGenDifferential`), full T2 green, docs pruned/updated.
+1. **`filehandle`** — a value-typed handle for positioned file I/O
+   (`file.open`/`file.create`, `readAt`/`writeAt`/`append`/`size`/
+   `setSize`/`flush`/`close`), shared host+native runtime waist,
+   hardware-proved on System 6 (Mini vMac) and System 7 (Snow).
+2. **`connection` as an ordinary int value** — now usable as a param,
+   local, or record field, not just a global.
+3. **`text` binary accessors + `crc16`** — LE/word-typed getters/
+   setters plus a bounds-checked `crc16` method, both lanes.
+4. **`string(n)`** — bounded-capacity string values as a first-class
+   type; `IntToStr` migrated onto it from ad hoc reimplementations.
+5. **`toolbox/` include fallback** — `include "toolbox/..."` resolves
+   against the compiler's own `toolbox/` directory when not found
+   relative to the including file; `--rtdir` now works in check-only
+   mode too.
+6. **emit68k big-temp pool sized per function** — no more flat
+   per-statement ceiling.
+7. **Two compiler bugs found and fixed along the way**: `checkConstDecl`
+   identical-redeclaration tolerance (Task 2); a `--rtbake` lowering
+   crash for `connection`/`filehandle` calls, found by this task's own
+   T2 run and fixed in Task 9c (full detail below).
+8. **Acceptance**: `examples/pagefile.cla` (vDB-shaped pages, journal,
+   `crc16`), hardware-proved on Snow.
+9. **Close-out**: this task — snapshot regen, reftest manifest regen,
+   docs (this file, `docs/ROADMAP.md`, `docs/TODO.md`,
+   `docs/HISTORY.md`, `CLAUDE.md`, a spec correction note).
 
-Next roadmap item when Andrew wants it picked up: AppleTalk
-(`docs/ROADMAP.md`'s "Next: language usability" list, item 3 — serial is
-marked done, this cleanup phase was an interleaved detour). Design-first
-per convention: spec before plan before code.
+**Task 9c, inserted mid-close-out (full trail:
+`.superpowers/sdd/2026-08-22-binary-files/task-10-report.md`'s "Task
+9c" section):** Task 10's first close-out attempt found T2's
+`internal/bake` `CLARUS_BAKE_FULL=1` gate RED — the first time this
+phase that gate had actually run. Root cause (via `lldb`):
+`clarusc/lower.cla`'s `lowRtCoerceArg` looked up a target runtime
+function's param type by NAME through the checker's symbol table at
+LOWERING time; `--rtbake` skips parsing+checking the runtime for
+performance, so that table is never populated for runtime functions —
+the lookup returned -1 and the next line crashed indexing `symbols[-1]`.
+Fixed by replacing the lookup with `lowCoerceTo`, which takes the
+target IR type directly at each of the 7 call sites (the coercion
+target was always statically known — `lowConnMethod`/
+`lowFileHandleMethod` already pick the runtime twin by the argument's
+checked kind). Audited every other lowering-time `scopeLookup` in
+`clarusc/*.cla` for the same pattern — none found; Task 4/5 (via the
+shared `lowRtCoerceArg`) were the only two culprits. New T1-speed
+regression added (`internal/bake`'s `TestRtbakeConnFilehByteIdentity`,
+plain `go test ./internal/bake`, not gated) — proven to catch the bug
+(red before the fix, green after, via `git stash`). Zero golden churn.
+Commit `6778e88`.
 
-## 1. Gate results (this phase, branch tip)
+**Controller-run finals (NOT run by this task, by design — foreground,
+long, hardware-gated):**
+- `TestClarusCBakePathOnSnow` (`CLARUS_SNOW_TESTS=1`, ~55 min) — the
+  standing rule fires this phase: `fileh.cla`/`fileh_68k.cla` were
+  added to `clarusc/bake.cla`'s native runtime module manifest.
+  Should now PASS given the `--rtbake` fix, but hasn't been confirmed
+  on real hardware yet — worth running before merge as the hardware
+  proof of Task 9c's own host-side fix.
+- A final `TestPageFileOnSnow` rerun at the true tip (`6778e88`) — last
+  known-PASS was at Task 9's own tip (`c5cc2cf`); nothing in Tasks
+  9b/9c/10 should affect it (pagefile.cla doesn't call `.open`/`.send`
+  on a `connection`, so Task 9c's fix path isn't even exercised by it),
+  but it hasn't been re-run at the literal current HEAD.
 
-- **T1 `--smoke`** after every task touching `runtime/`/`clarusc/`
-  (Tasks 1-10): green throughout, per-task reports in
-  `.superpowers/sdd/2026-08-17-correctness-cleanup/task-N-report.md`.
-  Golden reblesses (emitui + cg68k `.s`) inspected by hand each time the
-  new code shifted emitted bytes (About-box strings, jiggle
-  globals/externs, div/mod guard glue, KErr return glue, checker
-  diagnostics) — every diff traced to the expected cause, nothing
-  unrelated moved.
-- **Snapshot regen** (`clarusc/clarusc.c`, Go-free per
-  `internal/selfhost/fixedpoint_test.go`'s own instructions): fixed
-  point reached (gen1 == gen2, 4,756,150 bytes) and matches the
-  committed snapshot. The four fixtures known-red against the STALE
-  snapshot (Tasks 5-9's div/mod guard, KErr ABI, get() eval order, and
-  leak-release changes weren't yet visible to a snapshot built before
-  those tasks landed) now PASS on both oracle tests:
-  - `TestBehaviorGoldens`: `run/divedge.cla`, `run/popargleak.cla`,
-    `runerr/divzero.cla`, `runerr/modzero.cla` all PASS.
-  - `TestCrossGenDifferential`: same four, all PASS.
-  - Zero FAILs anywhere in either test's full run (`go test
-    ./internal/selfhost -run 'TestBehaviorGoldens|TestCrossGenDifferential'
-    -timeout 30m`, 108.99s total).
-  Commit `d3887f0`.
-- **`scripts/test-merge.sh` (T2)**: PASS at tip. T1 body, `internal/selfhost`
-  (fixed point + full behavior/differential/error-golden suites), the
-  gated native `internal/mactest` lane (`CLARUS_MAC_TESTS=1`, no `-run`
-  filter — every frozen scenario, codegen test, the real-event-loop tick
-  test, and both suites' native GUI boots including the NEW
-  `TestToolboxSuiteJiggleOn68k`), and the `internal/bake` full-corpus
-  byte-identity gate (`CLARUS_BAKE_FULL=1`) all green. See §2 for timing.
-  Full log kept at `.superpowers/sdd/2026-08-17-correctness-cleanup/
-  task-12-report.md`.
+**Consumer-side follow-ups for Andrew's 68kBBS repo (not this repo):**
+- `termio.cla` can restore `(conn: connection, ...)` parameter/field
+  signatures now that Task 4 makes `connection` an ordinary value type.
+- `bbs.cla` should drop its `clarus-src/` include symlink spelling for
+  `toolbox/osutils.cla` — the real fallback is `include
+  "toolbox/osutils.cla"` with either `--rtdir
+  ~/repos/clarus/runtime/clarus/` passed explicitly, or a
+  `runtime/clarus` directory somewhere above the cwd. **Important:** if
+  `~/repos/68kbbs/bin/clarusc` is a symlink to this repo's
+  `build-run/clarusc` (as it was described), `findRtDir`'s upward
+  cwd-probe finds NOTHING from `~/repos/68kbbs` (the probe walks up
+  from the CWD, not the symlink target) — 68kBBS MUST pass
+  `--rtdir ~/repos/clarus/runtime/clarus/` explicitly; the upward-probe
+  fallback will not help them.
+- `docs/language-gaps.md` (in the 68kBBS repo) should tick off all
+  eight gaps as closed.
 
-## 2. T2 timing
+## 1. Gate results (this phase, branch tip `6778e88`)
 
-`scripts/test-merge.sh`: **PASS in 311s** total, zero FAILs:
+1. **Snapshot fixed point**: PASS (regenerated once more after Task
+   9c's `lower.cla` edit; 4,876,797 bytes, gen1 == gen2, matches
+   committed).
+2. **reftest manifest regeneration**: `internal/reftest/manifest.go`
+   rebuilt from a fresh `clarusc check` pass over all 87 fences (46
+   clean). `go test ./internal/reftest -count=1`: PASS.
+3. **Full selfhost**: `go test ./internal/selfhost -count=1 -timeout
+   30m`: PASS, 215.4s.
+4. **T2** (`scripts/test-merge.sh`, log at
+   `.superpowers/sdd/2026-08-22-binary-files/t2-final.log`) — **PASS
+   end to end**, ~9.7 min total:
+   - T1 body (13 packages): 12/13 PASS in-script; `internal/perfgate`
+     `TestEmitPerfTripwire` FAILed under parallel contention both times
+     this task ran the full body (median 0.146-0.160s vs the 0.124s
+     limit), re-run alone (`-p 1`) PASSed cleanly every time
+     (0.10-0.12s medians) — the known, already-documented host-
+     contention flake, confirmed again, not a regression.
+   - `internal/selfhost` (T2 stage): PASS, 215.4s.
+   - `CLARUS_MAC_TESTS=1 go test ./internal/mactest` (gated native
+     lane, no `-run` filter): PASS, 213.9s.
+   - `CLARUS_BAKE_FULL=1 go test ./internal/bake`: **PASS**, 14.7s —
+     `TestBakeFullCorpusSuiteCore` (the test that originally failed)
+     now green, plus the new `TestRtbakeConnFilehByteIdentity`.
+5. **Docs**: this file, `docs/ROADMAP.md` (item 1 DONE, "Where we are"
+   updated), `docs/TODO.md` (9 deferred items filed + Task 9c's fix
+   noted + a new testing-strategy TODO), `docs/HISTORY.md` (phase
+   entry), `CLAUDE.md` (case counts, new-surface one-liners),
+   `docs/superpowers/specs/2026-08-22-binary-files-design.md` (§3.5
+   dated correction note) — all committed alongside this file.
 
-- T1 body (every package except `internal/selfhost`): 26s.
-- `internal/selfhost` (fixed point + behavior/differential/error
-  goldens, `-timeout 30m` budget): 96s.
-- `internal/mactest` gated native lane (`CLARUS_MAC_TESTS=1`, no `-run`
-  filter — 4 frozen scenarios, codegen tests, event-loop tick test, both
-  suites' native GUI boots including `TestToolboxSuiteJiggleOn68k`,
-  `-timeout 90m` budget): 183s. `TestToolboxSuiteJiggleOn68k` re-run in
-  isolation for confirmation: PASS, 44.78s, all 32 subtests green
-  (31 real cases + `SelfCheck`).
-- `internal/bake` full-corpus byte-identity gate (`CLARUS_BAKE_FULL=1`):
-  6s.
+## 2. Prior phases (all merged; recap pointers only)
 
-Full log: `.superpowers/sdd/2026-08-17-correctness-cleanup/
-task-12-report.md`.
-
-## 3. Prior phases (all merged; recap pointers only)
-
+- **correctness-cleanup** — merged to `main` (ff `48a4696..3a4c054`),
+  pushed 2026-08-18.
 - **serial-connection** (fenced `connection` type, serial as first
-  transport, both lanes, Snow-hardware-proved) — merged 2026-08-16
-  (`f8c15a1` → `main` at `1d8b703`, then pushed to `origin/main`). Full
-  detail: HISTORY's `serial-connection` entry.
-- **clir-load-perf** (CLIR load-path perf: header re-verify skip, once-
-  per-session parse memo, bulk `text` range-read methods) — merged
-  2026-08-15/16. Both Snow gates PASSED. Full detail: HISTORY's
-  `clir-load-perf` entry.
-- **attempt-abort** (`attempt { } aborted msg { }` + `abort(msg)`,
-  cooperative unwinding, both lanes) — merged 2026-08-15. Full detail:
-  HISTORY's `attempt-abort` entry.
-- **object-code-linker** (stage 3.5, CLIR v6 baked object code) — merged
-  2026-08-14.
+  transport, both lanes, Snow-hardware-proved) — merged 2026-08-16.
+- **clir-load-perf** — merged 2026-08-15/16. Both Snow gates PASSED.
+- **attempt-abort** — merged 2026-08-15.
+- **object-code-linker** — merged 2026-08-14.
 - **fallback-trigger-narrowing / runtime-ir-bake / param-abi /
   memory-leak-fix / layer1-compiler-perf / datetime-instrumentation /
   map-hashtable / mac-resident-clarusc** — the 2026-08-12/13 stack, all
   merged. Recap pointers only; see HISTORY.
 
-**Standing rules (unchanged):** re-run `TestClarusCBakePathOnSnow`
+**Doc-hygiene note (pre-existing, not this task's job):** `attempt-abort`,
+`serial-connection`, and `correctness-cleanup` are all merged to `main`
+but none has its full write-up archived into `docs/HISTORY.md` yet
+(HISTORY jumps from `clir-load-perf` straight to `binary-files`, with a
+note explaining the gap) — a future docs pass should catch HISTORY up
+through all three.
+
+**Standing rules:** re-run `TestClarusCBakePathOnSnow`
 (`CLARUS_SNOW_TESTS=1`) after ANY change to `clarusc/bake.cla`,
-`clarusc/macgui.cla`, OR the native runtime source manifest — this
-phase touched neither (all runtime/compiler changes are pre-existing
-modules edited in place, no new module added to the manifest), so the
-standing rule does NOT fire this phase; `TestClarusCBakePathOnSnow`'s
-last known-PASS (serial-connection phase tip) still stands.
+`clarusc/macgui.cla`, OR the native runtime source manifest — THIS
+PHASE fires that rule; see §0's controller-run finals.
 `internal/selfhost` always gets `-count=1 -timeout 30m`. Merge only on
-Andrew's request; main stays green.
+Andrew's request; main stays green (this branch does NOT touch main).

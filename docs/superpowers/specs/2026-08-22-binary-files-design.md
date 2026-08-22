@@ -202,6 +202,15 @@ a program that includes `toolbox/osutils.cla` and a runtime module
 that includes `../../toolbox/osutils.cla` parse it once. 68kBBS drops
 its `clarus-src` symlink spelling.
 
+> **Correction (2026-08-22, Task 10 close-out):** step 2's path above,
+> `<rtdir>/../toolbox/<rest>`, is off by one directory level. The real
+> fallback path, as implemented and hardware-verified (Task 7's own
+> report), is `<rtdir>/../../toolbox/<rest>` — `<rtdir>` is
+> `runtime/clarus/`, so one `../` reaches the repo root and a second
+> reaches `toolbox/`'s sibling position next to it. Left as-is above
+> per this file's own record-not-rewrite convention (specs are
+> historical rationale; the reference and this note are normative).
+
 ### 3.6 emit68k string/record temp ceiling
 
 Gone. A statement may need any number of string/record temporaries;

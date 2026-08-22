@@ -105,7 +105,12 @@ Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
 Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
-- `testsuite/core/` (74 `CoreTest` cases: 73 real + `SelfCheck`) runs on
+- `testsuite/core/` (78 `CoreTest` cases: 77 real + `SelfCheck`, grown
+  from 74 real (correctness-cleanup phase tip) by the binary-files
+  phase's `TextBinary`/`Crc16`/`IntToStr`/`FileHandleRW` cases — the
+  first three hardware-prove `text`'s new LE/word/setter binary
+  accessors, `crc16`, and `string(n)`'s `IntToStr` migration; the fourth
+  hardware-proves `filehandle` positioned I/O on both lanes) runs on
   host and natively; `testsuite/toolbox/` (32 `ToolboxTest` cases: 31 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
@@ -121,7 +126,9 @@ enum + runner, not one boot per case.
   case — then to 29 real by the clarusc-live-log phase's `LivePaint`
   case — then to 30 real by the serial-connection phase's
   `SerialOpenWrite` case — then to 31 real by the correctness-cleanup
-  phase's `NarrowPopup` case, which pins the labeled-popup layout fix)
+  phase's `NarrowPopup` case, which pins the labeled-popup layout fix;
+  unchanged by the binary-files phase, whose new suite coverage landed
+  in `core` instead)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -139,11 +146,11 @@ enum + runner, not one boot per case.
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
   `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract
-  design: it asserts all 73 other cases ran in the same invocation
+  design: it asserts all 77 other cases ran in the same invocation
   (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
   `all`), never alone.
   (Exact file list: `internal/mactest/suite_host_test.go`'s
-  `coreCLIHostFiles`/`coreCLIFiles`.) `toolbox` has no host CLI by design
+  `coreCLIFiles`.) `toolbox` has no host CLI by design
   (Toolbox/hardware-only) — it only runs via a Mac/native boot.
 - **The four gated suite-boot tests** (`internal/mactest/coresuite_test.go`),
   one boot each, both platform lanes: `TestCoreSuiteGUIOn68k`/
@@ -165,6 +172,13 @@ enum + runner, not one boot per case.
   UI code instead of hand-declaring traps; `internal/testsuite/
   catalog_test.go` is its T1 check. See
   `docs/clarus-toolbox-cookbook.md` for worked transcription examples.
+  An `include "toolbox/..."` path that isn't found relative to the
+  including file falls back to the compiler's own `toolbox/` directory
+  (`<rtdir>/../../toolbox/<rest>`, since `<rtdir>` is `runtime/clarus/`)
+  — usable from a program tree outside this repo, not just in-tree;
+  `--rtdir DIR` is honored in check-only mode too (`clarusc FILE.cla
+  --rtdir DIR`), not just `emit`/`emit68k` (binary-files phase,
+  2026-08-22).
 
 ## Retro68 / Mac toolchain (symlinks, not in git)
 
@@ -214,7 +228,15 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   phase entry). `file.readResource(name, out)`/`file.writeRes(path,
   fork, doctype, creator)` are the underlying resource-fork intrinsics
   (Mac-only; a host build's `readResource` always returns `false`) — see
-  `docs/clarus-language-reference.md`'s own entry for both.
+  `docs/clarus-language-reference.md`'s own entry for both. The
+  binary-files phase (2026-08-22) rounded out the binary-data surface:
+  `filehandle` (positioned file I/O — `file.open`/`file.create`/
+  `readAt`/`writeAt`/`size`/`setSize`/`flush`/`close`, both lanes,
+  hardware-proved on System 6 and System 7), `string(n)` (bounded-
+  capacity string values), and `text`'s LE/word/setter binary accessors
+  plus `crc16`; `emit68k` also now sizes a function's string/record temp
+  pool per function instead of a fixed per-statement ceiling. See the
+  reference for the full method lists.
 - Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
   `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.
 - UI test scenarios live in `testdata/ui`, with blessed goldens (trace +

@@ -4192,6 +4192,96 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   global is now also a live, per-compile-recomputed paste-bound global
   rather than staged-once install state — see `cgObjPasteEligible`.
 
+**Doc-hygiene note (binary-files phase, Task 10, 2026-08-23):** three
+merged phases predate this entry without their own full HISTORY
+archival yet — `attempt-abort` (merged 2026-08-15), `serial-connection`
+(merged 2026-08-16), and `correctness-cleanup` (merged 2026-08-18, ff
+`48a4696..3a4c054`). This file otherwise ends at `clir-load-perf`
+(merged 2026-08-15/16, above). Their own condensed write-ups live in
+`STATUS.md`'s git history and `docs/ROADMAP.md`'s "Where we are"
+section; a future docs pass should catch HISTORY up through all three
+before adding a fourth phase's entry above this note. Only
+`binary-files` (this entry) is archived here now, out of chronological
+order with respect to the three gaps above it, because Task 10's own
+brief asked for it directly.
+
+- **binary-files (branch `binary-files`, 2026-08-22/23, based on
+  `correctness-cleanup`/`main` at `3a4c054`): DONE, T2 PASS.** Closes
+  ROADMAP's "Next: language usability" item 1 — all eight 68kBBS
+  language gaps in one phase. Spec:
+  `docs/superpowers/specs/2026-08-22-binary-files-design.md`; plan (10
+  tasks + Task 9b + Task 9c inserted along the way):
+  `docs/superpowers/plans/2026-08-22-binary-files.md`; full ledger:
+  `.superpowers/sdd/2026-08-22-binary-files/progress.md`.
+  - **`filehandle`** — a value-typed handle for positioned file I/O
+    (`file.open`/`file.create`, `readAt`/`writeAt`/`append`/`size`/
+    `setSize`/`flush`/`close`), a shared host+native runtime waist
+    (`fileh.cla`/`fileh_c.cla`/`rt_fileh.inc` host; `fileh_68k.cla`
+    native, File Manager positioned I/O via `toolbox/files.cla`'s new
+    `PBGetEOF`/`SetEOF`/`GetFPos`/`SetFPos`/`FlushFile`/`FlushVol`/
+    `Allocate` traps), hardware-proved on System 6 (Mini vMac) and
+    System 7 (Snow). `file.create`'s doctype/creator args reuse the
+    literal-4CC-argument check.
+  - **`connection` as an ordinary int value** — usable as a param,
+    local, or record field, not just a global (the receiver lowers via
+    plain `lowExpr` instead of the old slot-lookup design; every method
+    call routes through the runtime's own `h == 0` nil check).
+  - **`text` binary accessors + `crc16`** — LE/word-typed
+    getters/setters on `text` (`intAtLE`/`wordAt`/`wordAtLE`/
+    `setIntAt`/`setIntAtLE`/`setWordAt`/`setWordAtLE`) plus a `crc16`
+    method (CRC-16/CCITT-FALSE-shaped, vector 0x2189), chunked and
+    bounds-checked, both lanes.
+  - **`string(n)`** — bounded-capacity string values as a first-class
+    type, `int()`-style `string(...)` conversions, and `IntToStr`
+    migrated onto it from the ad hoc `tkIntToStr`/`intStr`
+    reimplementations scattered across the tree.
+  - **`toolbox/` include fallback** — `include "toolbox/..."` that
+    isn't found relative to the including file falls back to the
+    compiler's own `toolbox/` directory (`<rtdir>/../../toolbox/<rest>`
+    — the design spec's own `<rtdir>/../toolbox/` was off by one
+    directory, corrected with a dated note in the spec rather than
+    silently rewritten); `--rtdir` now works in check-only mode too,
+    not just `emit`/`emit68k`, so a consumer repo outside this tree
+    (68kBBS) can use the fallback without an upward-probe-visible
+    `runtime/clarus/`.
+  - **emit68k big-temp pool sized per function** — the old flat
+    `cgBigTmpSlots` ceiling (a single statement could need at most N
+    concurrently-live string/record temps) is gone; the pool is sized
+    from a per-function measure pass instead, so a statement needing
+    MORE temps than any prior program ever required (a 16-argument
+    call, say) just works. One planned golden-rebless wave (frame sizes
+    change everywhere a big temp is used) with a normalization-diff
+    proof, not a blind rebless.
+  - **Two compiler bugs found and fixed along the way:**
+    `checkConstDecl` didn't tolerate an identical redeclaration
+    reached via two different include paths (Task 2's pre-review fix,
+    mirroring the pattern `externFirstDeclByName`/`xrecFirstDeclByName`
+    already used); and a `--rtbake` (baked-IR fast compile path)
+    lowering crash for ANY program calling a `connection`/`filehandle`
+    method — `lower.cla`'s `lowRtCoerceArg` looked up the target
+    runtime function's param type by NAME through the checker's symbol
+    table at lowering time, a table `--rtbake` never populates for
+    baked runtime functions (it skips their parse+check for
+    performance); found by Task 10's own close-out T2 run (the first
+    time this phase `internal/bake`'s `CLARUS_BAKE_FULL=1` gate
+    actually ran), root-caused via `lldb`, fixed in Task 9c by sourcing
+    every runtime-call arg coercion from a statically-known target IR
+    type instead of a lookup — the target was always fixed at compile
+    time, no lookup was ever load-bearing. A new T1-speed regression
+    (`internal/bake`'s `TestRtbakeConnFilehByteIdentity`, plain `go
+    test ./internal/bake`, not gated) catches this specific class going
+    forward; the broader testing-strategy gap it exposed (`--rtbake` as
+    a whole has no other T1 smoke, only the opt-in full-corpus gate) is
+    recorded in `docs/TODO.md`.
+  - **Acceptance**: `examples/pagefile.cla` (vDB-shaped pages, a
+    journal, `crc16` checksums), hardware-proved on Snow
+    (`TestPageFileOnSnow`).
+  - Standing rule fired: `fileh.cla`/`fileh_68k.cla` were added to
+    `clarusc/bake.cla`'s native runtime module manifest, so
+    `TestClarusCBakePathOnSnow` (`CLARUS_SNOW_TESTS=1`, ~55 min) needs
+    a controller rerun before/at merge — not run by any task this
+    phase (foreground, hardware-gated, by design).
+
 ## Resolved "Small open items" (moved verbatim from ROADMAP, 2026-08-15)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

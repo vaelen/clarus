@@ -1,7 +1,9 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// bigtmp_ceiling.cla: originally a mac-resident-clarusc Task 3 regression
+// bigtmp16.cla (renamed from bigtmp_ceiling.cla, binary-files phase
+// Task 10 -- the name-cleanup deferral its own review left open):
+// originally a mac-resident-clarusc Task 3 regression
 // pin for the OLD flat cgBigTmpSlots ceiling -- clarusc's own self-emit
 // (compiling itself through `clarusc emit68k`) needs 16 concurrently-live
 // big (str/rec) temps within ONE statement (a call whose OWN 16 arguments
