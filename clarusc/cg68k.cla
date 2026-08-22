@@ -317,6 +317,15 @@ var rnTextStringAt: int
 var rnTextTextAt: int
 var rnTextToBytes: int
 var rnTextIntAt: int
+var rnTextIntAtLE: int
+var rnTextWordAt: int
+var rnTextWordAtLE: int
+var rnTextSetIntAt: int
+var rnTextSetIntAtLE: int
+var rnTextSetWordAt: int
+var rnTextSetWordAtLE: int
+var rnTextCrc16: int
+var rnIntToStr: int
 var rnUiAskOpen: int
 var rnUiAskSave: int
 var rnUiAskSaveChanges: int
@@ -456,6 +465,15 @@ func rnInit() {
     rnTextTextAt = intern("rtTextTextAt")
     rnTextToBytes = intern("rtTextToBytes")
     rnTextIntAt = intern("rtTextIntAt")
+    rnTextIntAtLE = intern("rtTextIntAtLE")
+    rnTextWordAt = intern("rtTextWordAt")
+    rnTextWordAtLE = intern("rtTextWordAtLE")
+    rnTextSetIntAt = intern("rtTextSetIntAt")
+    rnTextSetIntAtLE = intern("rtTextSetIntAtLE")
+    rnTextSetWordAt = intern("rtTextSetWordAt")
+    rnTextSetWordAtLE = intern("rtTextSetWordAtLE")
+    rnTextCrc16 = intern("rtTextCrc16")
+    rnIntToStr = intern("rtIntToStr")
     rnUiAskOpen = intern("rtUiAskOpen")
     rnUiAskSave = intern("rtUiAskSave")
     rnUiAskSaveChanges = intern("rtUiAskSaveChanges")
@@ -8203,6 +8221,42 @@ func cgIntr(e: int) {
         cgIntr2(e, rnTextIntAt, false, false)
         return
     }
+    // binary-files phase, Task 3: intAtLE/wordAt/wordAtLE/crc16 are plain
+    // int scalars, same value-context dispatch as intAt/hashStep just
+    // above; the four setters are void (cgIntr3, mirroring ITextSetIndex
+    // at :8142-8145 above), also reachable from this same dispatch.
+    if nm == ITextIntAtLE() {
+        cgIntr2(e, rnTextIntAtLE, false, false)
+        return
+    }
+    if nm == ITextWordAt() {
+        cgIntr2(e, rnTextWordAt, false, false)
+        return
+    }
+    if nm == ITextWordAtLE() {
+        cgIntr2(e, rnTextWordAtLE, false, false)
+        return
+    }
+    if nm == ITextSetIntAt() {
+        cgIntr3(e, rnTextSetIntAt, false, false, false)
+        return
+    }
+    if nm == ITextSetIntAtLE() {
+        cgIntr3(e, rnTextSetIntAtLE, false, false, false)
+        return
+    }
+    if nm == ITextSetWordAt() {
+        cgIntr3(e, rnTextSetWordAt, false, false, false)
+        return
+    }
+    if nm == ITextSetWordAtLE() {
+        cgIntr3(e, rnTextSetWordAtLE, false, false, false)
+        return
+    }
+    if nm == ITextCrc16() {
+        cgIntr4(e, rnTextCrc16, false, false, false, false)
+        return
+    }
     if nm == ITextTextAt() {
         cgIntrTextTextAt(e)
         return
@@ -10792,6 +10846,23 @@ func cgEmitStoreStr(dst: int, src: int) {
             cgCleanupStack(12)
             return
         }
+        if nm == "int_to_str" {
+            // string(n) (Task 3): mirrors "text_string_at" just above,
+            // minus the receiver arg -- one declared arg (n) pushed BY
+            // VALUE, then dst's own address as the hidden result pointer.
+            a0e = irIntrArgsHead(src2)
+            fi = findIRFuncIdxByName(rnIntToStr)
+            if fi == -1 or not shakeReachable(fi) {
+                abort("cg68k: rtIntToStr not found/reachable")
+            }
+            cgExpr(a0e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(dst)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgCallFunc(fi)
+            cgCleanupStack(8)
+            return
+        }
         if nm == "xrec_str_read" {
             // Task 6 (toolbox-integration Feature B): `s = ev.fName` -- an
             // extern-record str[N] field READ (`IXRecStrRead`, a KStr-
@@ -11102,6 +11173,24 @@ func cgEmitReturnStr(src: int) {
             a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
             cgCallFunc(fi)
             cgCleanupStack(12)
+            return
+        }
+        if nm == "int_to_str" {
+            // string(n) (Task 3): mirrors cgEmitStoreStr's own
+            // "int_to_str" arm -- the destination is the hidden pointer's
+            // VALUE at 8(A6), pushed directly (not LEA'd), same
+            // convention this function's own "lasterr_msg" arm below
+            // already uses.
+            a0e = irIntrArgsHead(src2)
+            fi = findIRFuncIdxByName(rnIntToStr)
+            if fi == -1 or not shakeReachable(fi) {
+                abort("cg68k: rtIntToStr not found/reachable")
+            }
+            cgExpr(a0e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
+            cgCallFunc(fi)
+            cgCleanupStack(8)
             return
         }
         if nm == "lasterr_msg" {

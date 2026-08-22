@@ -102,6 +102,14 @@
 // dv) on both lanes -- native (cg68k.cla's cgIntrMapGetDv) used to
 // evaluate m, dv, k instead, observable only with side-effecting
 // arguments.
+//
+// TextBinary/Crc16/IntToStr (cases_textbinary.cla, binary-files phase
+// Task 3) are the 74th-76th real cases: the LE/word/setter text
+// accessors (intAtLE/wordAt/wordAtLE/setIntAt/setIntAtLE/setWordAt/
+// setWordAtLE) plus CRC-16/KERMIT (crc16), and `string(n)` (Ch3: Numeric
+// Conversions) -- known-answer coverage for a vDB database engine's
+// binary-format helpers, hardware-proved on the native lane the same way
+// TextRange proved the original bulk text range-read methods.
 
 enum CoreTest {
     All
@@ -178,16 +186,19 @@ enum CoreTest {
     OnLog
     ErrReturn
     EvalOrder
+    TextBinary
+    Crc16
+    IntToStr
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 73 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 76 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 74
+const nCoreCases: int = 77
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -415,6 +426,15 @@ func coreCaseName(t: CoreTest): string {
     case EvalOrder {
         return "EvalOrder"
     }
+    case TextBinary {
+        return "TextBinary"
+    }
+    case Crc16 {
+        return "Crc16"
+    }
+    case IntToStr {
+        return "IntToStr"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -508,6 +528,9 @@ func coreAllCases(): list of CoreTest {
     l.add(OnLog)
     l.add(ErrReturn)
     l.add(EvalOrder)
+    l.add(TextBinary)
+    l.add(Crc16)
+    l.add(IntToStr)
     l.add(SelfCheck)
     return l
 }
@@ -836,6 +859,18 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, EvalOrder) {
         results.add(caseEvalOrder())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, TextBinary) {
+        results.add(caseTextBinary())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, Crc16) {
+        results.add(caseCrc16())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, IntToStr) {
+        results.add(caseIntToStr())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

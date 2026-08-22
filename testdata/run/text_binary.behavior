@@ -1,0 +1,12 @@
+exit=0
+--- stdout ---
+intAt(0) ok
+intAtLE(4) ok
+t[4] ok
+wordAt(8) ok
+wordAtLE(10) ok
+t[10] ok
+intAt(12) ok
+intAtLE(12) ok
+wordAt(12) ok
+--- stderr ---

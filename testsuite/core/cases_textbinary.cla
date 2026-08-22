@@ -1,0 +1,114 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_textbinary.cla (binary-files phase, Task 3): the LE/word/setter
+// text accessors, CRC-16/KERMIT, and `string(n)` -- the same known-answer
+// assertions as testdata/run/text_binary.cla, testdata/run/crc16.cla, and
+// testdata/run/int_to_str.cla, restated as tkFail-detail TestResult cases
+// (ordinary caseX(): TestResult + tkFail/tkPass shape, e.g.
+// cases_textrange.cla) so they run in-process on both the host CLI and
+// the native suite boot.
+
+func caseTextBinary(): TestResult {
+    var t: text
+    var i: int
+
+    i = 0
+    while i < 16 {
+        t.append(char(0))
+        i = i + 1
+    }
+
+    t.setIntAt(0, 0x01020304)
+    t.setIntAtLE(4, 0x01020304)
+    t.setWordAt(8, 0xBEEF)
+    t.setWordAtLE(10, 0xBEEF)
+    t.setIntAt(12, -2)
+
+    if t.intAt(0) != 0x01020304 {
+        return tkFail("TextBinary", "intAt(0) wrong")
+    }
+    if t.intAtLE(4) != 0x01020304 {
+        return tkFail("TextBinary", "intAtLE(4) wrong")
+    }
+    // LE byte-order proof: setIntAtLE(4, 0x01020304) writes 04 03 02 01,
+    // so the first byte at offset 4 is the low byte, 0x04.
+    if int(t[4]) != 4 {
+        return tkFail("TextBinary", "t[4] wrong")
+    }
+    if t.wordAt(8) != 0xBEEF {
+        return tkFail("TextBinary", "wordAt(8) wrong")
+    }
+    if t.wordAtLE(10) != 0xBEEF {
+        return tkFail("TextBinary", "wordAtLE(10) wrong")
+    }
+    // setWordAtLE(10, 0xBEEF) writes EF BE, so the byte at offset 10 is
+    // the low byte, 0xEF.
+    if int(t[10]) != 0xEF {
+        return tkFail("TextBinary", "t[10] wrong")
+    }
+    if t.intAt(12) != -2 {
+        return tkFail("TextBinary", "intAt(12) wrong")
+    }
+    // -2 is 0xFFFFFFFE big-endian; read LE, its bytes come out as
+    // 0xFEFFFFFF -- a different (and still negative) int.
+    if t.intAtLE(12) != -16777217 {
+        return tkFail("TextBinary", "intAtLE(12) wrong")
+    }
+    // wordAt is unsigned: the last two bytes of -2's BE encoding (FF FF)
+    // read back as 0xFFFF, not -1.
+    if t.wordAt(12) != 0xFFFF {
+        return tkFail("TextBinary", "wordAt(12) wrong")
+    }
+    return tkPass("TextBinary")
+}
+
+// caseCrc16: CRC-16/KERMIT over the standard "123456789" check-string
+// test vector (published check value 0x2189), one-shot and chunked
+// (proving the seed-carry chunking contract), plus n == 0 identity.
+func caseCrc16(): TestResult {
+    var t: text
+    var oneShot: int
+    var chunked: int
+
+    t.append("123456789")
+
+    oneShot = t.crc16(0, 0, 9)
+    if oneShot != 0x2189 {
+        return tkFail("Crc16", "one-shot wrong")
+    }
+
+    chunked = t.crc16(0, 0, 4)
+    chunked = t.crc16(chunked, 4, 5)
+    if chunked != oneShot {
+        return tkFail("Crc16", "chunked wrong")
+    }
+
+    if t.crc16(0x1234, 0, 0) != 0x1234 {
+        return tkFail("Crc16", "n=0 wrong")
+    }
+
+    return tkPass("Crc16")
+}
+
+// caseIntToStr: `string(n)` (Ch3: Numeric Conversions) -- zero, an
+// ordinary positive/negative value, and both int extremes (int.min
+// exercises rtIntToStr's int.min-safe digit-by-digit shape).
+func caseIntToStr(): TestResult {
+    if string(0) != "0" {
+        return tkFail("IntToStr", "0 wrong")
+    }
+    if string(42) != "42" {
+        return tkFail("IntToStr", "42 wrong")
+    }
+    if string(-7) != "-7" {
+        return tkFail("IntToStr", "-7 wrong")
+    }
+    if string(2147483647) != "2147483647" {
+        return tkFail("IntToStr", "int.max wrong")
+    }
+    if string(-2147483648) != "-2147483648" {
+        return tkFail("IntToStr", "int.min wrong")
+    }
+    return tkPass("IntToStr")
+}

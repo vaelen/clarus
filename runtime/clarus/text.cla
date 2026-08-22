@@ -664,6 +664,159 @@ func rtTextIntAt(t: ptr, pos: int): int {
     return (peekb(mp + pos) << 24) | (peekb(mp + pos + 1) << 16) | (peekb(mp + pos + 2) << 8) | peekb(mp + pos + 3)
 }
 
+// rtTextIntAtLE (binary-files phase, Task 3): rtTextIntAt's little-endian
+// twin -- same STRICT bound, same panic contract, just the four peekb
+// results combined low-byte-first instead of high-byte-first.
+func rtTextIntAtLE(t: ptr, pos: int): int {
+    var rt: RtText
+    var mp: ptr
+
+    rt = RtText(t)
+    if pos < 0 or pos > rt.len - 4 {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    return (peekb(mp + pos + 3) << 24) | (peekb(mp + pos + 2) << 16) | (peekb(mp + pos + 1) << 8) | peekb(mp + pos)
+}
+
+// rtTextWordAt/rtTextWordAtLE (Task 3): 2-byte big-/little-endian reads,
+// returned as an unsigned 0-65535 value -- unlike intAt/intAtLE there is
+// no sign bit to preserve at 16 bits, so no masking is needed beyond the
+// natural range of two peekb results shifted/ORed together.
+func rtTextWordAt(t: ptr, pos: int): int {
+    var rt: RtText
+    var mp: ptr
+
+    rt = RtText(t)
+    if pos < 0 or pos > rt.len - 2 {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    return (peekb(mp + pos) << 8) | peekb(mp + pos + 1)
+}
+
+func rtTextWordAtLE(t: ptr, pos: int): int {
+    var rt: RtText
+    var mp: ptr
+
+    rt = RtText(t)
+    if pos < 0 or pos > rt.len - 2 {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    return (peekb(mp + pos + 1) << 8) | peekb(mp + pos)
+}
+
+// rtTextSetIntAt/rtTextSetIntAtLE/rtTextSetWordAt/rtTextSetWordAtLE
+// (Task 3): the writer twins of the four readers above -- same STRICT
+// bound, same panic contract, mirroring rtTextSetIndex's body shape.
+// Each byte is masked with `& 0xFF` before pokeb so a negative v's
+// two's-complement bit pattern comes out identical to an unsigned write
+// regardless of how pokeb itself treats its argument.
+func rtTextSetIntAt(t: ptr, pos: int, v: int) {
+    var rt: RtText
+    var mp: ptr
+
+    rt = RtText(t)
+    if pos < 0 or pos > rt.len - 4 {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    pokeb(mp + pos, (v >> 24) & 0xFF)
+    pokeb(mp + pos + 1, (v >> 16) & 0xFF)
+    pokeb(mp + pos + 2, (v >> 8) & 0xFF)
+    pokeb(mp + pos + 3, v & 0xFF)
+}
+
+func rtTextSetIntAtLE(t: ptr, pos: int, v: int) {
+    var rt: RtText
+    var mp: ptr
+
+    rt = RtText(t)
+    if pos < 0 or pos > rt.len - 4 {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    pokeb(mp + pos, v & 0xFF)
+    pokeb(mp + pos + 1, (v >> 8) & 0xFF)
+    pokeb(mp + pos + 2, (v >> 16) & 0xFF)
+    pokeb(mp + pos + 3, (v >> 24) & 0xFF)
+}
+
+// rtTextSetWordAt/rtTextSetWordAtLE store only the low 16 bits of v (the
+// same "low bits win" contract rtTextSetIndex's own single-byte c
+// argument already has).
+func rtTextSetWordAt(t: ptr, pos: int, v: int) {
+    var rt: RtText
+    var mp: ptr
+
+    rt = RtText(t)
+    if pos < 0 or pos > rt.len - 2 {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    pokeb(mp + pos, (v >> 8) & 0xFF)
+    pokeb(mp + pos + 1, v & 0xFF)
+}
+
+func rtTextSetWordAtLE(t: ptr, pos: int, v: int) {
+    var rt: RtText
+    var mp: ptr
+
+    rt = RtText(t)
+    if pos < 0 or pos > rt.len - 2 {
+        rtPanic("text index out of range")
+    }
+    mp = TextHandleDeref(rt.h)
+    pokeb(mp + pos, v & 0xFF)
+    pokeb(mp + pos + 1, (v >> 8) & 0xFF)
+}
+
+// rtTextCrc16 (Task 3): CRC-16/KERMIT over bytes [pos, pos+n), starting
+// from seed h (masked to 16 bits, so chunked calls can feed a prior
+// return value straight back in as the next h). n == 0 is a no-op
+// identity, same convention rtTextHashStep uses, and STILL bounds-checks
+// pos against rt.len first (same `pos > rt.len - n` shape with n == 0
+// reducing to `pos > rt.len`). `>>` is arithmetic in Clarus; every
+// intermediate crc value is masked with `& 0xFFFF` right after it's
+// produced so the 16-bit computation never depends on the sign bit of
+// the 32-bit int carrying it -- belt-and-suspenders on top of the fact
+// that a value bounded to 0-0xFFFF never sets int's own bit 31 anyway.
+func rtTextCrc16(t: ptr, h: int, pos: int, n: int): int {
+    var rt: RtText
+    var mp: ptr
+    var crc: int
+    var i: int
+    var b: int
+    var j: int
+
+    rt = RtText(t)
+    if pos < 0 or n < 0 or pos > rt.len - n {
+        rtPanic("text index out of range")
+    }
+    crc = h & 0xFFFF
+    if n == 0 {
+        return crc
+    }
+    mp = TextHandleDeref(rt.h)
+    i = 0
+    while i < n {
+        b = peekb(mp + pos + i)
+        crc = (crc ^ b) & 0xFFFF
+        j = 0
+        while j < 8 {
+            if (crc & 1) == 1 {
+                crc = ((crc >> 1) ^ 0x8408) & 0xFFFF
+            } else {
+                crc = (crc >> 1) & 0xFFFF
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return crc
+}
+
 // rtTextStringAt: reads a 1-byte Pascal-style length prefix at pos (the
 // same Str255 shape `string` itself uses -- length byte then payload),
 // then that many bytes. Str255 is a plain value type (no ARC birth

@@ -1250,6 +1250,12 @@ func lowCall(e: int): int {
             return newIRConv(CvIntToChar, lowExpr(callArgsHead(e)), -1, ty)
         } else if name == "ptr" {
             return lowPtrConv(e, ty)
+        } else if name == "string" {
+            // string(n) (binary-files phase, Task 3, Ch3: Numeric
+            // Conversions) -- IIntToStr is a KStr-producing conversion,
+            // lowered the same shape as any other single-arg conversion
+            // just above.
+            return newIRIntr(IIntToStr(), lowArgs(callArgsHead(e)), ty)
         } else if name == "askOpen" {
             // askOpen(path, types) -- native-gaps-cleanup Task 2: types is
             // a literal-checked filter string (lowCheckLiteralFilter,
@@ -1917,6 +1923,28 @@ func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: i
         return newIRIntr(ITextHashStep(), lowMethodArgs4(recv, arg0, arg1, arg2), ty)
     } else if nm == "intAt" {
         return newIRIntr(ITextIntAt(), lowMethodArgs2(recv, arg0), ty)
+    } else if nm == "intAtLE" {
+        return newIRIntr(ITextIntAtLE(), lowMethodArgs2(recv, arg0), ty)
+    } else if nm == "wordAt" {
+        return newIRIntr(ITextWordAt(), lowMethodArgs2(recv, arg0), ty)
+    } else if nm == "wordAtLE" {
+        return newIRIntr(ITextWordAtLE(), lowMethodArgs2(recv, arg0), ty)
+    } else if nm == "setIntAt" {
+        arg1 = exprNext(arg0)
+        return newIRIntr(ITextSetIntAt(), lowMethodArgs3(recv, arg0, arg1), ty)
+    } else if nm == "setIntAtLE" {
+        arg1 = exprNext(arg0)
+        return newIRIntr(ITextSetIntAtLE(), lowMethodArgs3(recv, arg0, arg1), ty)
+    } else if nm == "setWordAt" {
+        arg1 = exprNext(arg0)
+        return newIRIntr(ITextSetWordAt(), lowMethodArgs3(recv, arg0, arg1), ty)
+    } else if nm == "setWordAtLE" {
+        arg1 = exprNext(arg0)
+        return newIRIntr(ITextSetWordAtLE(), lowMethodArgs3(recv, arg0, arg1), ty)
+    } else if nm == "crc16" {
+        arg1 = exprNext(arg0)
+        arg2 = exprNext(arg1)
+        return newIRIntr(ITextCrc16(), lowMethodArgs4(recv, arg0, arg1, arg2), ty)
     } else if nm == "stringAt" {
         return newIRIntr(ITextStringAt(), lowMethodArgs2(recv, arg0), ty)
     } else if nm == "textAt" {

@@ -1,0 +1,40 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// crc16.cla (binary-files phase, Task 3): CRC-16/KERMIT over the
+// standard "123456789" check-string test vector (published check value
+// 0x2189), one-shot and chunked (proving the seed-carry chunking
+// contract: crc16(h, pos, n) with h fed back in from a prior call
+// produces the SAME result as one call over the whole range). Also
+// covers n == 0 returning h unchanged (masked to 16 bits).
+on App.launch {
+    var t: text
+    var oneShot: int
+    var chunked: int
+    var pass: bool
+
+    pass = true
+
+    t.append("123456789")
+
+    oneShot = t.crc16(0, 0, 9)
+    if oneShot == 0x2189 {
+        alert("one-shot ok")
+    } else {
+        alert("one-shot FAIL")
+    }
+
+    chunked = t.crc16(0, 0, 4)
+    chunked = t.crc16(chunked, 4, 5)
+    if chunked == oneShot {
+        alert("chunked ok")
+    } else {
+        alert("chunked FAIL")
+    }
+
+    if t.crc16(0x1234, 0, 0) == 0x1234 {
+        alert("n=0 ok")
+    } else {
+        alert("n=0 FAIL")
+    }
+}

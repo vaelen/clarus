@@ -34,25 +34,6 @@ var bytesIn: int = 0
 var bytesOut: int = 0
 var qRun: int = 0
 
-// intStr renders a non-negative int as a decimal string -- the language
-// has no built-in numeric-to-string conversion (Ch3's "Numeric
-// Conversions" only covers int/fixed/char), so the two counter labels
-// build their own digit string here, low digit first via `mod`/`/`, then
-// prepend each new digit (char + string prepends, Ch3's "String
-// Concatenation").
-func intStr(n: int): string {
-    var v: int = n
-    var s: string = ""
-    var d: int = 0
-    if v == 0 { return "0" }
-    while v > 0 {
-        d = v mod 10
-        s = char(int('0') + d) + s
-        v = v / 10
-    }
-    return s
-}
-
 on App.launch {
     open Echo
     conn.open(serial "modem:9600")
@@ -71,8 +52,8 @@ on conn.received(data: text) {
     bytesOut = bytesOut + data.length
 
     if w != nil {
-        w.InCount.text = "Bytes in: " + intStr(bytesIn)
-        w.OutCount.text = "Bytes out: " + intStr(bytesOut)
+        w.InCount.text = "Bytes in: " + string(bytesIn)
+        w.OutCount.text = "Bytes out: " + string(bytesOut)
     }
 
     // Three consecutive 'Q' bytes quits, even split across separate

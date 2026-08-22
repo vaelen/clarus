@@ -1,0 +1,6 @@
+exit=0
+--- stdout ---
+one-shot ok
+chunked ok
+n=0 ok
+--- stderr ---

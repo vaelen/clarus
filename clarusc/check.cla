@@ -67,6 +67,7 @@ var serviceBrowserT: int
 // wiring libReset()).
 var cnInited: bool
 var cnInt: int
+var cnString: int
 var cnBool: int
 var cnFixed: int
 var cnChar: int
@@ -86,6 +87,7 @@ func cnInit() {
     if cnInited { return }
     cnInited = true
     cnInt = intern("int")
+    cnString = intern("string")
     cnBool = intern("bool")
     cnFixed = intern("fixed")
     cnChar = intern("char")
@@ -1509,6 +1511,48 @@ func buildMethodTables() {
     sigAdd(psPlain(IntT))
     sigAdd(psPlain(IntT))
     textOnlyMethods["textAt"] = sigEnd(TextT)
+
+    // intAtLE/wordAt/wordAtLE/setIntAt/setIntAtLE/setWordAt/setWordAtLE/
+    // crc16 (binary-files phase, Task 3): little-endian/word/setter
+    // accessors + CRC-16/KERMIT -- same table placement as intAt/hashStep
+    // just above (text-receiver only).
+    sigStart()
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["intAtLE"] = sigEnd(IntT)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["wordAt"] = sigEnd(IntT)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["wordAtLE"] = sigEnd(IntT)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["setIntAt"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["setIntAtLE"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["setWordAt"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["setWordAtLE"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["crc16"] = sigEnd(IntT)
 
     sigStart()
     sigAdd(psOneOf2(TyStr, TyAddress))
@@ -5321,7 +5365,13 @@ func checkConversion(e: int, target: int, name: string): int {
         return InvalidT
     }
     ok = false
-    if target == IntT {
+    if name == "string" {
+        // string(n) (Task 3): strT(255)'s own index is non-singleton (one
+        // per distinct string length), unlike IntT/FixedT/CharT/PtrT
+        // below, so this arm keys on the conversion NAME rather than
+        // `target == ...`.
+        ok = typeKind(at) == TyInt
+    } else if target == IntT {
         ok = typeKind(at) == TyFixed or typeKind(at) == TyChar or typeKind(at) == TyEnum or typeKind(at) == TyPtr
     } else if target == FixedT {
         ok = typeKind(at) == TyInt
@@ -5434,6 +5484,16 @@ func checkIdentCall(e: int, fn: int): int {
     }
     if nameIdx == cnPtr {
         return checkConversion(e, PtrT, "ptr")
+    }
+    if nameIdx == cnString {
+        // string(n) (binary-files phase, Task 3, Ch3: Numeric
+        // Conversions): NOT a lexer keyword, so `string(n)` parses as an
+        // ordinary call expression -- caught here BEFORE scopeLookup,
+        // same shape as int/fixed/char/ptr just above. strT(255)'s own
+        // index is non-singleton (one per distinct string length), so
+        // checkConversion keys this arm on the NAME ("string"), not the
+        // target index.
+        return checkConversion(e, strT(255), "string")
     }
     if nameIdx == cnNow or nameIdx == cnDateTimeStr or nameIdx == cnDurationStr {
         usesDateTime = true

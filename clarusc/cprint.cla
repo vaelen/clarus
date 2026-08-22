@@ -3768,6 +3768,8 @@ func fpIntrCall11(nm: int, x: int, a0: int, a1: int, a2: int): text {
 // move here verbatim; none of them touch any local var, so this
 // function needs no locals of its own, same as fpIntrCall11.
 func fpIntrCall12(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+
     if nm == IUiCanvasClear() {
         fpEmit("clar_fn_rtUiCanvasClear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         return toText("")
@@ -3809,6 +3811,45 @@ func fpIntrCall12(nm: int, x: int, a0: int, a1: int, a2: int): text {
         return "(*(clar_rec_" + poolGet(irtName(irExprType(x))) + " *)(" + fpExpr(a0) + "))"
     } else if nm == IUiAddrOfGlobal() {
         return "((void*)&(" + fpExpr(a0) + "))"
+
+    // binary-files phase, Task 3: intAtLE/wordAt/wordAtLE/crc16 (plain int
+    // scalars, no rt_core.inc legacy equivalent, no raw-C fallback -- same
+    // shape as ITextHashStep/ITextIntAt, fpIntrCall3), the four setters
+    // (void, fpEmit + toText(""), mirroring ITextSetIndex's own arm), and
+    // IIntToStr (string(n) -- same KStr-by-value temp-capture shape as
+    // ITextStringAt) -- landed HERE rather than alongside ITextIntAt in
+    // fpIntrCall3 because fpIntrCall3 already trips the 32KB-per-function
+    // native-68k segment limit with them added (TestSelfEmit68k,
+    // clarusc self-emitting itself); fpIntrCall8's own doc comment above
+    // records the identical precedent for the sortedmap family. This chain
+    // step has no receiver-kind grouping of its own (native-5e Task 6's
+    // reverse-waist synthesis intrinsics just above), so there's no
+    // closer-knit family to land beside -- any chain step with headroom
+    // works equally well.
+    } else if nm == ITextIntAtLE() {
+        return "clar_fn_rtTextIntAtLE((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+    } else if nm == ITextWordAt() {
+        return "clar_fn_rtTextWordAt((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+    } else if nm == ITextWordAtLE() {
+        return "clar_fn_rtTextWordAtLE((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+    } else if nm == ITextSetIntAt() {
+        fpEmit("clar_fn_rtTextSetIntAt((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "));")
+        return toText("")
+    } else if nm == ITextSetIntAtLE() {
+        fpEmit("clar_fn_rtTextSetIntAtLE((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "));")
+        return toText("")
+    } else if nm == ITextSetWordAt() {
+        fpEmit("clar_fn_rtTextSetWordAt((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "));")
+        return toText("")
+    } else if nm == ITextSetWordAtLE() {
+        fpEmit("clar_fn_rtTextSetWordAtLE((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "));")
+        return toText("")
+    } else if nm == ITextCrc16() {
+        return "clar_fn_rtTextCrc16((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "), (int32_t)(" + fpExpr(fpArgAt(a0, 3)) + "))"
+    } else if nm == IIntToStr() {
+        t = fpNewTmp("clar_str_255")
+        fpEmit(t + " = clar_fn_rtIntToStr((int32_t)(" + fpExpr(a0) + "));")
+        return t
     }
     fpIntrMatched = false
     return toText("")

@@ -33,45 +33,13 @@ func tkFail(name: string, detail: string): TestResult {
     return r
 }
 
-// tkIntToStr renders n in decimal, negative included. No numeric-
-// formatting builtin is available to ordinary Clarus programs --
-// clarusc's own numToStr is a compiler-internal helper, confirmed
-// unavailable outside clarusc itself (see
-// runtime/clarus/uiscript.cla's rtUiIntToText doc comment, which hits the
-// same gap for the UI runtime) -- so this is the standard divide-by-10
-// decimal conversion, same shape as testdata/run/lib/strings.cla's
-// stringsShow: digits collected into a scratch buffer, then appended
-// back-to-front.
+// tkIntToStr renders n in decimal, negative included -- kept as its own
+// name/signature (callers throughout the suites use it), but the body is
+// now just `string(n)` (binary-files phase, Task 3: Ch3's own int->string
+// numeric conversion, no longer a gap ordinary Clarus programs have to
+// work around by hand).
 func tkIntToStr(n: int): string {
-    var digits: char[12]
-    var count: int = 0
-    var v: int = n
-    var neg: bool = false
-    var s: string
-    var i: int
-
-    if v < 0 {
-        neg = true
-        v = -v
-    }
-    while v > 0 {
-        digits[count] = char(v mod 10 + int('0'))
-        v = v / 10
-        count = count + 1
-    }
-    if count == 0 {
-        digits[0] = '0'
-        count = 1
-    }
-    if neg {
-        s = "-"
-    }
-    i = count - 1
-    while i >= 0 {
-        s = s + digits[i]
-        i = i - 1
-    }
-    return s
+    return string(n)
 }
 
 // tkReport prints one line per result -- `PASS <name>` or

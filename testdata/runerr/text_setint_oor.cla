@@ -1,0 +1,19 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// text_setint_oor.cla (binary-files phase, Task 3): setIntAt's STRICT
+// bounds panic on a 16-byte text -- writing 4 bytes starting at 13 would
+// run past the end (13 + 4 = 17 > 16), same "text index out of range"
+// message every other text bounds panic uses.
+on App.launch {
+    var t: text
+    var i: int
+
+    i = 0
+    while i < 16 {
+        t.append(char(0))
+        i = i + 1
+    }
+    t.setIntAt(13, 1)
+    alert("unreachable")
+}

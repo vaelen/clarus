@@ -213,6 +213,39 @@ func rtStrSetIndex(s: ptr, i: int, c: int) {
     pokeb(s + 1 + i, c)
 }
 
+// rtIntToStr (binary-files phase, Task 3): renders n in base 10 --
+// `string(n)`'s runtime body. Same int.min-safe shape as clarusc/lib.cla's
+// own numToStr (clarusc/lib.cla:139-163): building the digits by
+// PREPENDING each one (char + string) is a flat loop, and working from
+// the low digit of a (possibly negative) n via mod/div never negates n
+// directly, so int.min (whose negation overflows a 32-bit int) is
+// handled safely.
+func rtIntToStr(n: int): string {
+    var s: string
+    var d: int
+    var neg: bool
+    var cur: int
+
+    cur = n
+    if cur == 0 {
+        return "0"
+    }
+    neg = cur < 0
+    s = ""
+    while cur != 0 {
+        d = cur mod 10
+        if d < 0 {
+            d = 0 - d
+        }
+        s = char(48 + d) + s
+        cur = cur / 10
+    }
+    if neg {
+        s = "-" + s
+    }
+    return s
+}
+
 // rtStrFromBytes (rt_core.inc:116-126): clamped copy of count bytes
 // (negative count treated as 0) from a bufcap-byte buffer into a
 // dstcap-byte Str255.

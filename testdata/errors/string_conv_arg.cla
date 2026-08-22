@@ -1,0 +1,9 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// binary-files phase, Task 3: string(n) requires an int argument (same
+// arity/type-check shape as int/fixed/char/ptr conversions) -- a string
+// argument is a checker error.
+func f() {
+    string("x")
+}

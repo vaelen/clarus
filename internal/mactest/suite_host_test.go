@@ -122,6 +122,10 @@ var coreCLIFiles = []string{
 	// correctness-cleanup Task 7: cases_evalorder.cla MUST be here --
 	// runner.cla unconditionally calls caseEvalOrder().
 	filepath.Join("testsuite", "core", "cases_evalorder.cla"),
+	// binary-files phase Task 3: cases_textbinary.cla MUST be here --
+	// runner.cla unconditionally calls caseTextBinary()/caseCrc16()/
+	// caseIntToStr().
+	filepath.Join("testsuite", "core", "cases_textbinary.cla"),
 }
 
 // coreCLIHostFiles/absFiles/BuildCoreCLIHost/RunCoreCLIHost (coreCLIFiles +

@@ -628,6 +628,24 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtTextHashStep"))
     } else if nm == ITextIntAt() {
         shakeMarkAndEnqueue(intern("rtTextIntAt"))
+    } else if nm == ITextIntAtLE() {
+        shakeMarkAndEnqueue(intern("rtTextIntAtLE"))
+    } else if nm == ITextWordAt() {
+        shakeMarkAndEnqueue(intern("rtTextWordAt"))
+    } else if nm == ITextWordAtLE() {
+        shakeMarkAndEnqueue(intern("rtTextWordAtLE"))
+    } else if nm == ITextSetIntAt() {
+        shakeMarkAndEnqueue(intern("rtTextSetIntAt"))
+    } else if nm == ITextSetIntAtLE() {
+        shakeMarkAndEnqueue(intern("rtTextSetIntAtLE"))
+    } else if nm == ITextSetWordAt() {
+        shakeMarkAndEnqueue(intern("rtTextSetWordAt"))
+    } else if nm == ITextSetWordAtLE() {
+        shakeMarkAndEnqueue(intern("rtTextSetWordAtLE"))
+    } else if nm == ITextCrc16() {
+        shakeMarkAndEnqueue(intern("rtTextCrc16"))
+    } else if nm == IIntToStr() {
+        shakeMarkAndEnqueue(intern("rtIntToStr"))
     } else if nm == ITextStringAt() {
         shakeMarkAndEnqueue(intern("rtTextStringAt"))
     } else if nm == ITextTextAt() {

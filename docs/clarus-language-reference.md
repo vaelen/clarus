@@ -205,9 +205,10 @@ var f: fixed = fixed(i)      // int to fixed
 var j: int = int(f)          // fixed to int (truncates toward zero)
 var c: char = char(i)        // int to char (takes low byte, 0–255)
 var k: int = int(c)          // char to int
+var s: string = string(i)    // int to string, decimal, "42"
 ```
 
-Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric truncation: it keeps only the low byte of `i` — `char(-1)` yields 255.
+Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric truncation: it keeps only the low byte of `i` — `char(-1)` yields 255. `string(n)` renders an `int` in decimal, negative values included (e.g. `string(-7)` is `"-7"`); it is unrelated to the type-position use of `string(n)` as a capacity declaration (e.g. `var s: string(20)`) — the two are told apart positionally (a call expression vs. a type), never ambiguously.
 
 ### Strings
 
@@ -399,6 +400,13 @@ A `text` is an unbounded, resizable buffer of characters. A `string` value may b
 - `t.intAt(pos)` — reads the 4-byte big-endian field at `pos` and returns it as the `int` whose bits those are (values with the top bit set are negative). Out-of-range `pos` raises a runtime error. For reading binary formats with a fixed-width length or offset field.
 - `t.stringAt(pos)` — reads a 1-byte Pascal-style length prefix `L` at `pos` (the same layout `string` itself uses — length byte then payload), then `L` bytes, returning them as a `string`; the caller advances by `1 + result.length`. Raises a runtime error if the range is out of bounds. For reading length-prefixed binary formats whose length byte matches `string`'s own Str255 shape.
 - `t.textAt(pos, n)` — a fresh `text` holding a copy of bytes `[pos, pos+n)`; `n == 0` is legal and yields an empty `text`. Out-of-range `pos`/`n` raises a runtime error. For extracting a binary-format sub-range without hand-copying byte by byte.
+- `t.intAtLE(pos)` — `intAt`'s little-endian twin: reads the same 4-byte field but combines the bytes low-byte-first.
+- `t.wordAt(pos)` / `t.wordAtLE(pos)` — reads a 2-byte big-/little-endian field at `pos` and returns it as an **unsigned** value, `0`–`65535` (unlike `intAt`/`intAtLE`, there is no sign bit to preserve at 16 bits).
+- `t.setIntAt(pos, v)` / `t.setIntAtLE(pos, v)` — writes `v`'s 4 bytes at `pos`, big- or little-endian.
+- `t.setWordAt(pos, v)` / `t.setWordAtLE(pos, v)` — writes `v`'s low 16 bits at `pos` as a 2-byte field, big- or little-endian.
+- `t.crc16(h, pos, n)` — folds bytes `[pos, pos+n)` into running CRC `h` (masked to 16 bits) and returns the updated value; `n == 0` returns `h` unchanged. Out-of-range `pos`/`n` raises a runtime error. The algorithm is CRC-16/KERMIT (poly `0x8408` reflected, seed and result both taken as-is, no final XOR) — the published check value for `crc16(0, 0, 9)` over the ASCII bytes `"123456789"` is `0x2189`. Like `hashStep`, it is chunkable: folding a buffer in pieces (feeding each call's return value in as the next call's `h`) produces the same result as one call over the whole range.
+
+All seven bound accessors above (`intAt`/`intAtLE`/`wordAt`/`wordAtLE`/`setIntAt`/`setIntAtLE`/`setWordAt`/`setWordAtLE`) use the same STRICT out-of-range rule as `intAt` and `hashStep`: `pos` must be in range for the field's own width, checked without the overflow a naive `pos + width > t.length` test would have.
 
 Out-of-range indexing raises a runtime error. Indexing and byte copies make `text` usable directly for binary protocol work — data arriving in `on conn.received(data: text)` (Chapter 12) can be scanned byte by byte without an intermediate copy.
 

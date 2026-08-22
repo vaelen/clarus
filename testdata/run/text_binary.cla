@@ -1,0 +1,92 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// text_binary.cla (binary-files phase, Task 3): the LE/word/setter text
+// accessors -- intAt/intAtLE/wordAt/wordAtLE (readers) and
+// setIntAt/setIntAtLE/setWordAt/setWordAtLE (writers). Builds a 16-byte
+// text, writes a few fields through the new setters, then reads them
+// back through both the existing BE reader (intAt) and the new LE/word
+// readers, proving byte order and unsignedness at the same time as the
+// STRICT bounds panic (covered separately by testdata/runerr/
+// text_setint_oor.cla).
+on App.launch {
+    var t: text
+    var i: int
+    var pass: bool
+
+    pass = true
+
+    i = 0
+    while i < 16 {
+        t.append(char(0))
+        i = i + 1
+    }
+
+    t.setIntAt(0, 0x01020304)
+    t.setIntAtLE(4, 0x01020304)
+    t.setWordAt(8, 0xBEEF)
+    t.setWordAtLE(10, 0xBEEF)
+    t.setIntAt(12, -2)
+
+    if t.intAt(0) == 0x01020304 {
+        alert("intAt(0) ok")
+    } else {
+        alert("intAt(0) FAIL")
+    }
+
+    if t.intAtLE(4) == 0x01020304 {
+        alert("intAtLE(4) ok")
+    } else {
+        alert("intAtLE(4) FAIL")
+    }
+
+    // LE byte-order proof: setIntAtLE(4, 0x01020304) writes 04 03 02 01,
+    // so the first byte at offset 4 is the low byte, 0x04.
+    if int(t[4]) == 4 {
+        alert("t[4] ok")
+    } else {
+        alert("t[4] FAIL")
+    }
+
+    if t.wordAt(8) == 0xBEEF {
+        alert("wordAt(8) ok")
+    } else {
+        alert("wordAt(8) FAIL")
+    }
+
+    if t.wordAtLE(10) == 0xBEEF {
+        alert("wordAtLE(10) ok")
+    } else {
+        alert("wordAtLE(10) FAIL")
+    }
+
+    // setWordAtLE(10, 0xBEEF) writes EF BE, so the byte at offset 10 is
+    // the low byte, 0xEF.
+    if int(t[10]) == 0xEF {
+        alert("t[10] ok")
+    } else {
+        alert("t[10] FAIL")
+    }
+
+    if t.intAt(12) == -2 {
+        alert("intAt(12) ok")
+    } else {
+        alert("intAt(12) FAIL")
+    }
+
+    // -2 is 0xFFFFFFFE big-endian; read LE, its bytes come out as
+    // 0xFEFFFFFF -- a different (and still negative) int.
+    if t.intAtLE(12) == -16777217 {
+        alert("intAtLE(12) ok")
+    } else {
+        alert("intAtLE(12) FAIL")
+    }
+
+    // wordAt is unsigned: the last two bytes of -2's BE encoding (FF FF)
+    // read back as 0xFFFF, not -1.
+    if t.wordAt(12) == 0xFFFF {
+        alert("wordAt(12) ok")
+    } else {
+        alert("wordAt(12) FAIL")
+    }
+}

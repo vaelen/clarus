@@ -1,0 +1,15 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// int_to_str.cla (binary-files phase, Task 3): string(n) (Ch3: Numeric
+// Conversions), covering zero, an ordinary positive/negative value, and
+// both int extremes -- int.min in particular exercises rtIntToStr's
+// int.min-safe digit-by-digit shape (its negation would overflow a
+// 32-bit int).
+on App.launch {
+    alert(string(0))
+    alert(string(42))
+    alert(string(-7))
+    alert(string(2147483647))
+    alert(string(-2147483648))
+}

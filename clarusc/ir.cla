@@ -1229,6 +1229,15 @@ func irReset() {
     iTextFreeVarIdx = -1
     iTextHashStepIdx = -1
     iTextIntAtIdx = -1
+    iTextIntAtLEIdx = -1
+    iTextWordAtIdx = -1
+    iTextWordAtLEIdx = -1
+    iTextSetIntAtIdx = -1
+    iTextSetIntAtLEIdx = -1
+    iTextSetWordAtIdx = -1
+    iTextSetWordAtLEIdx = -1
+    iTextCrc16Idx = -1
+    iIntToStrIdx = -1
     iTextStringAtIdx = -1
     iTextTextAtIdx = -1
     iListPushIdx = -1
@@ -3525,6 +3534,93 @@ func ITextIntAt(): int {
         iTextIntAtIdx = intern("text_int_at")
     }
     return iTextIntAtIdx
+}
+
+// ITextIntAtLE/ITextWordAt/ITextWordAtLE/ITextSetIntAt/ITextSetIntAtLE/
+// ITextSetWordAt/ITextSetWordAtLE/ITextCrc16 (binary-files phase, Task 3):
+// little-endian/word/setter accessors + CRC-16/KERMIT -- same
+// memoized-intern shape as ITextIntAt just above.
+var iTextIntAtLEIdx: int = -1
+
+func ITextIntAtLE(): int {
+    if iTextIntAtLEIdx == -1 {
+        iTextIntAtLEIdx = intern("text_int_at_le")
+    }
+    return iTextIntAtLEIdx
+}
+
+var iTextWordAtIdx: int = -1
+
+func ITextWordAt(): int {
+    if iTextWordAtIdx == -1 {
+        iTextWordAtIdx = intern("text_word_at")
+    }
+    return iTextWordAtIdx
+}
+
+var iTextWordAtLEIdx: int = -1
+
+func ITextWordAtLE(): int {
+    if iTextWordAtLEIdx == -1 {
+        iTextWordAtLEIdx = intern("text_word_at_le")
+    }
+    return iTextWordAtLEIdx
+}
+
+var iTextSetIntAtIdx: int = -1
+
+func ITextSetIntAt(): int {
+    if iTextSetIntAtIdx == -1 {
+        iTextSetIntAtIdx = intern("text_set_int_at")
+    }
+    return iTextSetIntAtIdx
+}
+
+var iTextSetIntAtLEIdx: int = -1
+
+func ITextSetIntAtLE(): int {
+    if iTextSetIntAtLEIdx == -1 {
+        iTextSetIntAtLEIdx = intern("text_set_int_at_le")
+    }
+    return iTextSetIntAtLEIdx
+}
+
+var iTextSetWordAtIdx: int = -1
+
+func ITextSetWordAt(): int {
+    if iTextSetWordAtIdx == -1 {
+        iTextSetWordAtIdx = intern("text_set_word_at")
+    }
+    return iTextSetWordAtIdx
+}
+
+var iTextSetWordAtLEIdx: int = -1
+
+func ITextSetWordAtLE(): int {
+    if iTextSetWordAtLEIdx == -1 {
+        iTextSetWordAtLEIdx = intern("text_set_word_at_le")
+    }
+    return iTextSetWordAtLEIdx
+}
+
+var iTextCrc16Idx: int = -1
+
+func ITextCrc16(): int {
+    if iTextCrc16Idx == -1 {
+        iTextCrc16Idx = intern("text_crc16")
+    }
+    return iTextCrc16Idx
+}
+
+// IIntToStr (Task 3): `string(n)`'s intrinsic -- a KStr-producing
+// conversion, same memoized-intern shape as every intrinsic above.
+var iIntToStrIdx: int = -1
+
+func IIntToStr(): int {
+    if iIntToStrIdx == -1 {
+        iIntToStrIdx = intern("int_to_str")
+    }
+    return iIntToStrIdx
 }
 
 var iTextStringAtIdx: int = -1
