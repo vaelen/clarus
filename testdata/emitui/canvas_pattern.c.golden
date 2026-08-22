@@ -656,9 +656,6 @@ static CLAR_PASCAL void clar_cb_rtUiLdefDraw(short cv_msg, uint8_t cv_select, vo
 static void clar_fn_rtSetLastErr(int32_t cv_code, const clar_str_255 *cv_msg);
 static void clar_fn_rtPanic(const clar_str_255 *cv_msg);
 static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
-static void clar_fn_rtStrConcat(void * cv_out, void * cv_a, void * cv_b);
-static void clar_fn_rtStrPrependChar(void * cv_out, int32_t cv_c, void * cv_a);
-static clar_str_255 clar_fn_rtIntToStr(int32_t cv_n);
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need);
 static void * clar_fn_rtTextNew(void);
 static void clar_fn_rtTextRetain(void * cv_t);
@@ -1051,98 +1048,6 @@ static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src) 
     if (cv_n < cv_srclen) {
         clar_fn_rtSetLastErr(1, &(clar_lit_3));
     }
-}
-
-static void clar_fn_rtStrConcat(void * cv_out, void * cv_a, void * cv_b) {
-    int32_t cv_la;
-    cv_la = 0;
-    int32_t cv_lb;
-    cv_lb = 0;
-    int32_t cv_total;
-    cv_total = 0;
-    int32_t cv_n;
-    cv_n = 0;
-    int32_t cv_fromA;
-    cv_fromA = 0;
-    int32_t cv_fromB;
-    cv_fromB = 0;
-    cv_la = rt_peekb(cv_a);
-    cv_lb = rt_peekb(cv_b);
-    cv_total = CLAR_ADD32(cv_la, cv_lb);
-    if (cv_total > 255) {
-        cv_n = 255;
-    } else {
-        cv_n = cv_total;
-    }
-    if (cv_la < cv_n) {
-        cv_fromA = cv_la;
-    } else {
-        cv_fromA = cv_n;
-    }
-    cv_fromB = CLAR_SUB32(cv_n, cv_fromA);
-    rt_ext_StrBlockMoveData((void *)((char *)(cv_a) + (1)), (void *)((char *)(cv_out) + (1)), cv_fromA);
-    rt_ext_StrBlockMoveData((void *)((char *)(cv_b) + (1)), (void *)((char *)((void *)((char *)(cv_out) + (1))) + (cv_fromA)), cv_fromB);
-    rt_pokeb(cv_out, cv_n);
-    if (cv_n < cv_total) {
-        clar_fn_rtSetLastErr(1, &(clar_lit_3));
-    }
-}
-
-static void clar_fn_rtStrPrependChar(void * cv_out, int32_t cv_c, void * cv_a) {
-    int32_t cv_la;
-    cv_la = 0;
-    int32_t cv_total;
-    cv_total = 0;
-    int32_t cv_n;
-    cv_n = 0;
-    cv_la = rt_peekb(cv_a);
-    cv_total = CLAR_ADD32(cv_la, 1);
-    if (cv_total > 255) {
-        cv_n = 255;
-    } else {
-        cv_n = cv_total;
-    }
-    rt_pokeb((void *)((char *)(cv_out) + (1)), cv_c);
-    rt_ext_StrBlockMoveData((void *)((char *)(cv_a) + (1)), (void *)((char *)(cv_out) + (2)), CLAR_SUB32(cv_n, 1));
-    rt_pokeb(cv_out, cv_n);
-    if (cv_n < cv_total) {
-        clar_fn_rtSetLastErr(1, &(clar_lit_3));
-    }
-}
-
-static clar_str_255 clar_fn_rtIntToStr(int32_t cv_n) {
-    clar_str_255 cv_s;
-    cv_s = (clar_str_255){0};
-    int32_t cv_d;
-    cv_d = 0;
-    int32_t cv_neg;
-    cv_neg = 0;
-    int32_t cv_cur;
-    cv_cur = 0;
-    cv_cur = cv_n;
-    if (cv_cur == 0) {
-        return clar_lit_5;
-    }
-    cv_neg = (cv_cur < 0);
-    clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(clar_lit_6));
-    while (1) {
-        if (!((cv_cur != 0))) break;
-        cv_d = CLAR_MOD32(cv_cur, 10);
-        if (cv_d < 0) {
-            cv_d = CLAR_SUB32(0, cv_d);
-        }
-        clar_str_255 t1;
-        clar_fn_rtStrPrependChar((void*)&t1, (int32_t)(((uint8_t)(CLAR_ADD32(48, cv_d)))), (void*)(const uint8_t*)&(cv_s));
-        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t1));
-        cv_cur = CLAR_DIV32(cv_cur, 10);
-    }
-    if (cv_neg) {
-        clar_str_255 t2;
-        clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(clar_lit_7), (void*)(const uint8_t*)&(cv_s));
-        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t2));
-    }
-    return cv_s;
-    return (clar_str_255){0};
 }
 
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need) {
@@ -7054,10 +6959,45 @@ static void clar_fn_rtUiTextAppendStrSafe(void * cv_t, void * cv_s) {
 static void * clar_fn_rtUiIntToText(int32_t cv_v) {
     void * cv_t;
     cv_t = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_neg;
+    cv_neg = 0;
+    void * cv_digits;
+    cv_digits = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    int32_t cv_d;
+    cv_d = 0;
     cv_t = clar_fn_rtTextNew();
-    clar_str_255 t1;
-    t1 = clar_fn_rtIntToStr(cv_v);
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(t1)));
+    cv_n = cv_v;
+    cv_neg = (cv_n < 0);
+    if (cv_neg) {
+        cv_n = CLAR_NEG32(cv_n);
+    }
+    cv_digits = clar_fn_UiNewPtr(16);
+    cv_i = 0;
+    if (cv_n == 0) {
+        rt_pokeb(cv_digits, ((int32_t)(48)));
+        cv_i = 1;
+    } else {
+        while (1) {
+            if (!((cv_n > 0))) break;
+            cv_d = CLAR_MOD32(cv_n, 10);
+            rt_pokeb((void *)((char *)(cv_digits) + (cv_i)), CLAR_ADD32(((int32_t)(48)), cv_d));
+            cv_n = CLAR_DIV32(cv_n, 10);
+            cv_i = CLAR_ADD32(cv_i, 1);
+        }
+    }
+    if (cv_neg) {
+        clar_fn_rtTextAppendChar(cv_t, ((int32_t)(45)));
+    }
+    while (1) {
+        if (!((cv_i > 0))) break;
+        cv_i = CLAR_SUB32(cv_i, 1);
+        clar_fn_rtTextAppendChar(cv_t, rt_peekb((void *)((char *)(cv_digits) + (cv_i))));
+    }
+    rt_ext_UiDisposePtr(cv_digits);
     return cv_t;
     return 0;
 }

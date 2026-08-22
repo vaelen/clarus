@@ -239,18 +239,49 @@ func rtUiTextAppendStrSafe(t: ptr, s: ptr) {
     }
 }
 
-// rtUiIntToText (binary-files phase, Task 3: `string(n)`, Ch3's own
-// int->string numeric conversion, closed the gap this used to work
-// around by hand -- see rtIntToStr, text.cla's str.cla sibling)
-// delegates to rtIntToStr and appends the result. Same contract as
-// before: returns a fresh owned Text (caller's job to rtTextAppendText +
-// rtTextRelease it, or just rtTextRelease it directly if it's the whole
-// result).
+// rtUiIntToText: no numeric-formatting builtin exists for ordinary
+// Clarus programs (`numToStr` is clarusc's OWN compiler-internal helper,
+// confirmed unavailable to a plain program by direct test: `undefined:
+// numToStr` from the Go reference's own checker) -- standard
+// divide-by-10 decimal conversion, building digits into a scratch
+// buffer in reverse then appending them back-to-front. Returns a fresh
+// owned Text (caller's job to rtTextAppendText + rtTextRelease it, or
+// just rtTextRelease it directly if it's the whole result).
 func rtUiIntToText(v: int): ptr {
     var t: ptr
+    var n: int
+    var neg: bool
+    var digits: ptr
+    var i: int
+    var d: int
 
     t = rtTextNew()
-    rtTextAppendStr(t, UiStrAddr(rtIntToStr(v)))
+    n = v
+    neg = n < 0
+    if neg {
+        n = -n
+    }
+    digits = UiNewPtr(16)
+    i = 0
+    if n == 0 {
+        pokeb(digits, int('0'))
+        i = 1
+    } else {
+        while n > 0 {
+            d = n mod 10
+            pokeb(digits + i, int('0') + d)
+            n = n / 10
+            i = i + 1
+        }
+    }
+    if neg {
+        rtTextAppendChar(t, int('-'))
+    }
+    while i > 0 {
+        i = i - 1
+        rtTextAppendChar(t, peekb(digits + i))
+    }
+    UiDisposePtr(digits)
     return t
 }
 
