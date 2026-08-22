@@ -7902,6 +7902,7 @@ static int32_t clar_fn_cgStackHeuristic(void);
 static void clar_fn_cgEmitStartup(int32_t cv_startupLbl, int32_t cv_initGlobalsLbl, int32_t cv_freeGlobalsLbl);
 static void clar_fn_cgStoreImmAt(int32_t cv_reg, int32_t cv_off, int32_t cv_t, int32_t cv_val);
 static void clar_fn_cgStoreD0At(int32_t cv_reg, int32_t cv_off, int32_t cv_t);
+static void clar_fn_cgLoadD0At(int32_t cv_reg, int32_t cv_off, int32_t cv_t);
 static void clar_fn_cgZeroBlockAtA0(int32_t cv_size);
 static void clar_fn_cgZeroInitAt(int32_t cv_reg, int32_t cv_off, int32_t cv_t);
 static void clar_fn_cgDefaultInitStrAt(int32_t cv_reg, int32_t cv_off, int32_t cv_t, int32_t cv_strDefaultIdx);
@@ -58862,6 +58863,8 @@ static void clar_fn_fpStmt(int32_t cv_s) {
     cv_d = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv_v;
     cv_v = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv_t;
+    cv_t = (rt_text *)clar_fn_rtTextNew();
     rt_list * cv_saved;
     cv_saved = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
     rt_list * cv_fresh;
@@ -58888,6 +58891,8 @@ static void clar_fn_fpStmt(int32_t cv_s) {
     cv___store256 = NULL;
     rt_text * cv___store257;
     cv___store257 = NULL;
+    rt_text * cv___store258;
+    cv___store258 = NULL;
         clar_fn_rtListRetain((void*)cv_fpStmtTmps);
 
         if (clar_fn_rtListLastref((void*)cv_saved)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_saved); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_saved, i)); }
@@ -59045,17 +59050,45 @@ static void clar_fn_fpStmt(int32_t cv_s) {
                                     cv_e = cv___store257;
                                     cv___store257 = 0;
                                     clar_fn_fpHandoff(cv_e);
+                                    if (clar_fn_rtListCount((void*)cv_fpStmtTmps) > 0) {
+                                        clar_fn_rtTextRelease((void*)cv___store258);
+                                        clar_str_255 t12;
+                                        t12 = clar_fn_cpCType(clar_fn_irExprType(clar_fn_irReturnX(cv_s)));
+                                        rt_text * t13 = NULL;
+                                        t13 = clar_fn_fpNewTmp(&(t12));
+                                        cv___store258 = t13;
+                                        clar_fn_rtTextRelease((void*)cv_t);
+                                        cv_t = cv___store258;
+                                        cv___store258 = 0;
+                                        rt_text * t14 = NULL;
+                                        t14 = (rt_text *)clar_fn_rtTextNew();
+                                        clar_fn_rtTextConcat((void*)t14, (void*)cv_t, (void*)(const uint8_t*)&(clar_lit_1336), (void*)0);
+                                        rt_text * t15 = NULL;
+                                        t15 = (rt_text *)clar_fn_rtTextNew();
+                                        clar_fn_rtTextConcat((void*)t15, (void*)t14, (void*)0, (void*)cv_e);
+                                        rt_text * t16 = NULL;
+                                        t16 = (rt_text *)clar_fn_rtTextNew();
+                                        clar_fn_rtTextConcat((void*)t16, (void*)t15, (void*)(const uint8_t*)&(clar_lit_1273), (void*)0);
+                                        clar_fn_fpEmit(t16);
+                                        clar_fn_rtTextRelease(t14);
+                                        clar_fn_rtTextRelease(t15);
+                                        clar_fn_rtTextRelease(t16);
+                                        clar_fn_fpHandoff(cv_t);
+                                        clar_fn_rtTextRetain((void*)cv_t);
+                                        clar_fn_rtTextRelease((void*)cv_e);
+                                        cv_e = cv_t;
+                                    }
                                     clar_fn_fpFreeStmtTmps();
                                     if (clar_aborting) goto bail;
-                                    rt_text * t12 = NULL;
-                                    t12 = (rt_text *)clar_fn_rtTextNew();
-                                    clar_fn_rtTextConcatSl((void*)t12, (void*)(const uint8_t*)&(clar_lit_1690), (void*)cv_e);
-                                    rt_text * t13 = NULL;
-                                    t13 = (rt_text *)clar_fn_rtTextNew();
-                                    clar_fn_rtTextConcat((void*)t13, (void*)t12, (void*)(const uint8_t*)&(clar_lit_1273), (void*)0);
-                                    clar_fn_fpEmit(t13);
-                                    clar_fn_rtTextRelease(t12);
-                                    clar_fn_rtTextRelease(t13);
+                                    rt_text * t17 = NULL;
+                                    t17 = (rt_text *)clar_fn_rtTextNew();
+                                    clar_fn_rtTextConcatSl((void*)t17, (void*)(const uint8_t*)&(clar_lit_1690), (void*)cv_e);
+                                    rt_text * t18 = NULL;
+                                    t18 = (rt_text *)clar_fn_rtTextNew();
+                                    clar_fn_rtTextConcat((void*)t18, (void*)t17, (void*)(const uint8_t*)&(clar_lit_1273), (void*)0);
+                                    clar_fn_fpEmit(t18);
+                                    clar_fn_rtTextRelease(t17);
+                                    clar_fn_rtTextRelease(t18);
                                 }
                             } else {
                                 if (clar_fn_irStmtKind(cv_s) == 6) {
@@ -59070,36 +59103,36 @@ static void clar_fn_fpStmt(int32_t cv_s) {
                                             cv_terminal = 1;
                                             clar_fn_fpFreeStmtTmps();
                                             if (clar_aborting) goto bail;
-                                            rt_text * t14 = NULL;
-                                            t14 = clar_fn_toText(&(clar_lit_1691));
-                                            clar_fn_fpEmit(t14);
-                                            clar_fn_rtTextRelease(t14);
+                                            rt_text * t19 = NULL;
+                                            t19 = clar_fn_toText(&(clar_lit_1691));
+                                            clar_fn_fpEmit(t19);
+                                            clar_fn_rtTextRelease(t19);
                                         } else {
                                             if (clar_fn_irStmtKind(cv_s) == 10) {
                                                 cv_terminal = 1;
                                                 clar_fn_fpFreeStmtTmps();
                                                 if (clar_aborting) goto bail;
-                                                rt_text * t15 = NULL;
-                                                t15 = clar_fn_toText(&(clar_lit_1692));
-                                                clar_fn_fpEmit(t15);
-                                                clar_fn_rtTextRelease(t15);
+                                                rt_text * t20 = NULL;
+                                                t20 = clar_fn_toText(&(clar_lit_1692));
+                                                clar_fn_fpEmit(t20);
+                                                clar_fn_rtTextRelease(t20);
                                             } else {
                                                 if (clar_fn_irStmtKind(cv_s) == 11) {
                                                     clar_fn_fpAttemptStmt(cv_s);
                                                     if (clar_aborting) goto bail;
                                                 } else {
-                                                    clar_str_255 t16;
-                                                    t16 = clar_fn_numToStr(((int32_t)(clar_fn_irStmtKind(cv_s))));
-                                                    clar_str_255 t17;
-                                                    clar_fn_rtStrConcat((void*)&t17, (void*)(const uint8_t*)&(clar_lit_1693), (void*)(const uint8_t*)&(t16));
-                                                    rt_text * t18 = NULL;
-                                                    t18 = clar_fn_cpFatal(&(t17));
+                                                    clar_str_255 t21;
+                                                    t21 = clar_fn_numToStr(((int32_t)(clar_fn_irStmtKind(cv_s))));
+                                                    clar_str_255 t22;
+                                                    clar_fn_rtStrConcat((void*)&t22, (void*)(const uint8_t*)&(clar_lit_1693), (void*)(const uint8_t*)&(t21));
+                                                    rt_text * t23 = NULL;
+                                                    t23 = clar_fn_cpFatal(&(t22));
                                                     if (clar_aborting) {
-                                                        clar_fn_rtTextRelease(t18);
+                                                        clar_fn_rtTextRelease(t23);
                                                         goto bail;
                                                     }
-                                                    (void)(t18);
-                                                    clar_fn_rtTextRelease(t18);
+                                                    (void)(t23);
+                                                    clar_fn_rtTextRelease(t23);
                                                 }
                                             }
                                         }
@@ -59141,6 +59174,7 @@ static void clar_fn_fpStmt(int32_t cv_s) {
     clar_fn_rtTextRelease((void*)cv_e);
     clar_fn_rtTextRelease((void*)cv_d);
     clar_fn_rtTextRelease((void*)cv_v);
+    clar_fn_rtTextRelease((void*)cv_t);
         if (clar_fn_rtListLastref((void*)cv_saved)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_saved); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_saved, i)); }
     clar_fn_rtListRelease((void*)cv_saved);
 
@@ -59166,6 +59200,7 @@ static void clar_fn_fpStmt(int32_t cv_s) {
     clar_fn_rtTextRelease((void*)cv_e);
     clar_fn_rtTextRelease((void*)cv_d);
     clar_fn_rtTextRelease((void*)cv_v);
+    clar_fn_rtTextRelease((void*)cv_t);
         if (clar_fn_rtListLastref((void*)cv_saved)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_saved); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_saved, i)); }
     clar_fn_rtListRelease((void*)cv_saved);
 
@@ -59202,32 +59237,32 @@ static void clar_fn_fpForListStmt(int32_t cv_s) {
     cv_elemC = (clar_str_255){0};
     clar_str_255 cv_vName;
     cv_vName = (clar_str_255){0};
-    rt_text * cv___store258;
-    cv___store258 = NULL;
     rt_text * cv___store259;
     cv___store259 = NULL;
     rt_text * cv___store260;
     cv___store260 = NULL;
     rt_text * cv___store261;
     cv___store261 = NULL;
-    clar_fn_rtTextRelease((void*)cv___store258);
+    rt_text * cv___store262;
+    cv___store262 = NULL;
+    clar_fn_rtTextRelease((void*)cv___store259);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(clar_fn_irForListListV(cv_s));
     if (clar_aborting) {
         clar_fn_rtTextRelease(t1);
         goto bail;
     }
-    cv___store258 = t1;
+    cv___store259 = t1;
     clar_fn_rtTextRelease((void*)cv_lv);
-    cv_lv = cv___store258;
-    cv___store258 = 0;
-    clar_fn_rtTextRelease((void*)cv___store259);
+    cv_lv = cv___store259;
+    cv___store259 = 0;
+    clar_fn_rtTextRelease((void*)cv___store260);
     rt_text * t2 = NULL;
     t2 = clar_fn_fpNewTmp(&(clar_lit_1316));
-    cv___store259 = t2;
+    cv___store260 = t2;
     clar_fn_rtTextRelease((void*)cv_lt);
-    cv_lt = cv___store259;
-    cv___store259 = 0;
+    cv_lt = cv___store260;
+    cv___store260 = 0;
     rt_text * t3 = NULL;
     t3 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcat((void*)t3, (void*)cv_lt, (void*)(const uint8_t*)&(clar_lit_1336), (void*)0);
@@ -59241,13 +59276,13 @@ static void clar_fn_fpForListStmt(int32_t cv_s) {
     clar_fn_rtTextRelease(t3);
     clar_fn_rtTextRelease(t4);
     clar_fn_rtTextRelease(t5);
-    clar_fn_rtTextRelease((void*)cv___store260);
+    clar_fn_rtTextRelease((void*)cv___store261);
     rt_text * t6 = NULL;
     t6 = clar_fn_fpNewTmp(&(clar_lit_1319));
-    cv___store260 = t6;
+    cv___store261 = t6;
     clar_fn_rtTextRelease((void*)cv_cnt);
-    cv_cnt = cv___store260;
-    cv___store260 = 0;
+    cv_cnt = cv___store261;
+    cv___store261 = 0;
     if (cv_cpListPorted) {
         rt_text * t7 = NULL;
         t7 = (rt_text *)clar_fn_rtTextNew();
@@ -59277,13 +59312,13 @@ static void clar_fn_fpForListStmt(int32_t cv_s) {
         clar_fn_rtTextRelease(t11);
         clar_fn_rtTextRelease(t12);
     }
-    clar_fn_rtTextRelease((void*)cv___store261);
+    clar_fn_rtTextRelease((void*)cv___store262);
     rt_text * t13 = NULL;
     t13 = clar_fn_fpNewTmp(&(clar_lit_1319));
-    cv___store261 = t13;
+    cv___store262 = t13;
     clar_fn_rtTextRelease((void*)cv_ix);
-    cv_ix = cv___store261;
-    cv___store261 = 0;
+    cv_ix = cv___store262;
+    cv___store262 = 0;
     clar_str_255 t14;
     t14 = clar_fn_cpCType(clar_fn_irtElem(clar_fn_irExprType(clar_fn_irForListListV(cv_s))));
     clar_fn_rtStrStore((void*)&(cv_elemC), 255, (void*)(const uint8_t*)&(t14));
@@ -59384,8 +59419,6 @@ static void clar_fn_fpForMapStmt(int32_t cv_s) {
     cv_sorted = 0;
     int32_t cv_intM;
     cv_intM = 0;
-    rt_text * cv___store262;
-    cv___store262 = NULL;
     rt_text * cv___store263;
     cv___store263 = NULL;
     rt_text * cv___store264;
@@ -59396,19 +59429,21 @@ static void clar_fn_fpForMapStmt(int32_t cv_s) {
     cv___store266 = NULL;
     rt_text * cv___store267;
     cv___store267 = NULL;
+    rt_text * cv___store268;
+    cv___store268 = NULL;
     cv_sorted = (clar_fn_irtKind(clar_fn_irExprType(clar_fn_irForMapMapV(cv_s))) == 19);
     cv_intM = (clar_fn_irtKind(clar_fn_irExprType(clar_fn_irForMapMapV(cv_s))) == 20);
-    clar_fn_rtTextRelease((void*)cv___store262);
+    clar_fn_rtTextRelease((void*)cv___store263);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(clar_fn_irForMapMapV(cv_s));
     if (clar_aborting) {
         clar_fn_rtTextRelease(t1);
         goto bail;
     }
-    cv___store262 = t1;
+    cv___store263 = t1;
     clar_fn_rtTextRelease((void*)cv_mv);
-    cv_mv = cv___store262;
-    cv___store262 = 0;
+    cv_mv = cv___store263;
+    cv___store263 = 0;
     if (cv_intM) {
         if (!(cv_cpIntMapPorted)) {
             rt_text * t2 = NULL;
@@ -59420,13 +59455,13 @@ static void clar_fn_fpForMapStmt(int32_t cv_s) {
             (void)(t2);
             clar_fn_rtTextRelease(t2);
         }
-        clar_fn_rtTextRelease((void*)cv___store263);
+        clar_fn_rtTextRelease((void*)cv___store264);
         rt_text * t3 = NULL;
         t3 = clar_fn_fpNewTmp(&(clar_lit_1313));
-        cv___store263 = t3;
+        cv___store264 = t3;
         clar_fn_rtTextRelease((void*)cv_mt);
-        cv_mt = cv___store263;
-        cv___store263 = 0;
+        cv_mt = cv___store264;
+        cv___store264 = 0;
     } else {
         if (cv_sorted) {
             if (!(cv_cpSortedMapPorted)) {
@@ -59439,21 +59474,21 @@ static void clar_fn_fpForMapStmt(int32_t cv_s) {
                 (void)(t4);
                 clar_fn_rtTextRelease(t4);
             }
-            clar_fn_rtTextRelease((void*)cv___store264);
+            clar_fn_rtTextRelease((void*)cv___store265);
             rt_text * t5 = NULL;
             t5 = clar_fn_fpNewTmp(&(clar_lit_1314));
-            cv___store264 = t5;
-            clar_fn_rtTextRelease((void*)cv_mt);
-            cv_mt = cv___store264;
-            cv___store264 = 0;
-        } else {
-            clar_fn_rtTextRelease((void*)cv___store265);
-            rt_text * t6 = NULL;
-            t6 = clar_fn_fpNewTmp(&(clar_lit_1315));
-            cv___store265 = t6;
+            cv___store265 = t5;
             clar_fn_rtTextRelease((void*)cv_mt);
             cv_mt = cv___store265;
             cv___store265 = 0;
+        } else {
+            clar_fn_rtTextRelease((void*)cv___store266);
+            rt_text * t6 = NULL;
+            t6 = clar_fn_fpNewTmp(&(clar_lit_1315));
+            cv___store266 = t6;
+            clar_fn_rtTextRelease((void*)cv_mt);
+            cv_mt = cv___store266;
+            cv___store266 = 0;
         }
     }
     rt_text * t7 = NULL;
@@ -59469,13 +59504,13 @@ static void clar_fn_fpForMapStmt(int32_t cv_s) {
     clar_fn_rtTextRelease(t7);
     clar_fn_rtTextRelease(t8);
     clar_fn_rtTextRelease(t9);
-    clar_fn_rtTextRelease((void*)cv___store266);
+    clar_fn_rtTextRelease((void*)cv___store267);
     rt_text * t10 = NULL;
     t10 = clar_fn_fpNewTmp(&(clar_lit_1319));
-    cv___store266 = t10;
+    cv___store267 = t10;
     clar_fn_rtTextRelease((void*)cv_cnt);
-    cv_cnt = cv___store266;
-    cv___store266 = 0;
+    cv_cnt = cv___store267;
+    cv___store267 = 0;
     if (cv_intM) {
         rt_text * t11 = NULL;
         t11 = (rt_text *)clar_fn_rtTextNew();
@@ -59537,13 +59572,13 @@ static void clar_fn_fpForMapStmt(int32_t cv_s) {
             }
         }
     }
-    clar_fn_rtTextRelease((void*)cv___store267);
+    clar_fn_rtTextRelease((void*)cv___store268);
     rt_text * t23 = NULL;
     t23 = clar_fn_fpNewTmp(&(clar_lit_1319));
-    cv___store267 = t23;
+    cv___store268 = t23;
     clar_fn_rtTextRelease((void*)cv_ix);
-    cv_ix = cv___store267;
-    cv___store267 = 0;
+    cv_ix = cv___store268;
+    cv___store268 = 0;
     rt_text * t24 = NULL;
     t24 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcatSl((void*)t24, (void*)(const uint8_t*)&(clar_lit_1696), (void*)cv_ix);
@@ -59836,24 +59871,24 @@ static void clar_fn_fpWhileStmt(int32_t cv_s) {
     cv_cond = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_i;
     cv_i = 0;
-    rt_text * cv___store268;
-    cv___store268 = NULL;
+    rt_text * cv___store269;
+    cv___store269 = NULL;
     rt_text * t1 = NULL;
     t1 = clar_fn_toText(&(clar_lit_1719));
     clar_fn_fpEmit(t1);
     clar_fn_rtTextRelease(t1);
     cv_fpIndent = CLAR_ADD32(cv_fpIndent, 1);
-    clar_fn_rtTextRelease((void*)cv___store268);
+    clar_fn_rtTextRelease((void*)cv___store269);
     rt_text * t2 = NULL;
     t2 = clar_fn_fpExpr(clar_fn_irWhileCond(cv_s));
     if (clar_aborting) {
         clar_fn_rtTextRelease(t2);
         goto bail;
     }
-    cv___store268 = t2;
+    cv___store269 = t2;
     clar_fn_rtTextRelease((void*)cv_cond);
-    cv_cond = cv___store268;
-    cv___store268 = 0;
+    cv_cond = cv___store269;
+    cv___store269 = 0;
     if (clar_fn_rtListCount((void*)cv_fpStmtTmps) > 0) {
         rt_text * t3 = NULL;
         t3 = (rt_text *)clar_fn_rtTextNew();
@@ -59919,32 +59954,32 @@ static void clar_fn_fpForRangeStmt(int32_t cv_s) {
     cv_tt = (rt_text *)clar_fn_rtTextNew();
     clar_str_255 cv_vName;
     cv_vName = (clar_str_255){0};
-    rt_text * cv___store269;
-    cv___store269 = NULL;
     rt_text * cv___store270;
     cv___store270 = NULL;
     rt_text * cv___store271;
     cv___store271 = NULL;
     rt_text * cv___store272;
     cv___store272 = NULL;
-    clar_fn_rtTextRelease((void*)cv___store269);
+    rt_text * cv___store273;
+    cv___store273 = NULL;
+    clar_fn_rtTextRelease((void*)cv___store270);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(clar_fn_irForRangeFrom(cv_s));
     if (clar_aborting) {
         clar_fn_rtTextRelease(t1);
         goto bail;
     }
-    cv___store269 = t1;
+    cv___store270 = t1;
     clar_fn_rtTextRelease((void*)cv_from);
-    cv_from = cv___store269;
-    cv___store269 = 0;
-    clar_fn_rtTextRelease((void*)cv___store270);
+    cv_from = cv___store270;
+    cv___store270 = 0;
+    clar_fn_rtTextRelease((void*)cv___store271);
     rt_text * t2 = NULL;
     t2 = clar_fn_fpNewTmp(&(clar_lit_1319));
-    cv___store270 = t2;
+    cv___store271 = t2;
     clar_fn_rtTextRelease((void*)cv_ft);
-    cv_ft = cv___store270;
-    cv___store270 = 0;
+    cv_ft = cv___store271;
+    cv___store271 = 0;
     rt_text * t3 = NULL;
     t3 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcat((void*)t3, (void*)cv_ft, (void*)(const uint8_t*)&(clar_lit_1336), (void*)0);
@@ -59958,24 +59993,24 @@ static void clar_fn_fpForRangeStmt(int32_t cv_s) {
     clar_fn_rtTextRelease(t3);
     clar_fn_rtTextRelease(t4);
     clar_fn_rtTextRelease(t5);
-    clar_fn_rtTextRelease((void*)cv___store271);
+    clar_fn_rtTextRelease((void*)cv___store272);
     rt_text * t6 = NULL;
     t6 = clar_fn_fpExpr(clar_fn_irForRangeTo(cv_s));
     if (clar_aborting) {
         clar_fn_rtTextRelease(t6);
         goto bail;
     }
-    cv___store271 = t6;
+    cv___store272 = t6;
     clar_fn_rtTextRelease((void*)cv_toVal);
-    cv_toVal = cv___store271;
-    cv___store271 = 0;
-    clar_fn_rtTextRelease((void*)cv___store272);
+    cv_toVal = cv___store272;
+    cv___store272 = 0;
+    clar_fn_rtTextRelease((void*)cv___store273);
     rt_text * t7 = NULL;
     t7 = clar_fn_fpNewTmp(&(clar_lit_1319));
-    cv___store272 = t7;
+    cv___store273 = t7;
     clar_fn_rtTextRelease((void*)cv_tt);
-    cv_tt = cv___store272;
-    cv___store272 = 0;
+    cv_tt = cv___store273;
+    cv___store273 = 0;
     rt_text * t8 = NULL;
     t8 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcat((void*)t8, (void*)cv_tt, (void*)(const uint8_t*)&(clar_lit_1336), (void*)0);
@@ -60061,8 +60096,8 @@ static rt_text * clar_fn_fpStripOuterParens(rt_text * cv_s) {
     cv_r = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___ret1144;
     cv___ret1144 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store273;
-    cv___store273 = NULL;
+    rt_text * cv___store274;
+    cv___store274 = NULL;
     if (((clar_fn_rtTextLen((void*)cv_s) < 2) || (clar_fn_rtTextIndex((void*)cv_s, (int32_t)(0)) != 40)) || (clar_fn_rtTextIndex((void*)cv_s, (int32_t)(CLAR_SUB32(clar_fn_rtTextLen((void*)cv_s), 1))) != 41)) {
         clar_fn_rtTextRelease((void*)cv___ret1144);
         cv___ret1144 = cv_s;
@@ -60091,14 +60126,14 @@ static rt_text * clar_fn_fpStripOuterParens(rt_text * cv_s) {
         }
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-    clar_fn_rtTextRelease((void*)cv___store273);
+    clar_fn_rtTextRelease((void*)cv___store274);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store273 = t1;
+    cv___store274 = t1;
     clar_fn_rtTextRelease((void*)cv_r);
-    cv_r = cv___store273;
-    cv___store273 = 0;
+    cv_r = cv___store274;
+    cv___store274 = 0;
     cv_i = 1;
     while (1) {
         if (!((cv_i < CLAR_SUB32(clar_fn_rtTextLen((void*)cv_s), 1)))) break;
@@ -60120,12 +60155,12 @@ static void clar_fn_fpIfStmt(int32_t cv_s) {
     cv_flag = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_markCount;
     cv_markCount = 0;
-    rt_text * cv___store274;
-    cv___store274 = NULL;
     rt_text * cv___store275;
     cv___store275 = NULL;
+    rt_text * cv___store276;
+    cv___store276 = NULL;
     cv_markCount = clar_fn_rtListCount((void*)cv_fpStmtTmps);
-    clar_fn_rtTextRelease((void*)cv___store274);
+    clar_fn_rtTextRelease((void*)cv___store275);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(clar_fn_irIfCond(cv_s));
     if (clar_aborting) {
@@ -60134,19 +60169,19 @@ static void clar_fn_fpIfStmt(int32_t cv_s) {
     }
     rt_text * t2 = NULL;
     t2 = clar_fn_fpStripOuterParens(t1);
-    cv___store274 = t2;
+    cv___store275 = t2;
     clar_fn_rtTextRelease(t1);
     clar_fn_rtTextRelease((void*)cv_cond);
-    cv_cond = cv___store274;
-    cv___store274 = 0;
+    cv_cond = cv___store275;
+    cv___store275 = 0;
     if (clar_fn_rtListCount((void*)cv_fpStmtTmps) > cv_markCount) {
-        clar_fn_rtTextRelease((void*)cv___store275);
+        clar_fn_rtTextRelease((void*)cv___store276);
         rt_text * t3 = NULL;
         t3 = clar_fn_fpNewTmp(&(clar_lit_1319));
-        cv___store275 = t3;
+        cv___store276 = t3;
         clar_fn_rtTextRelease((void*)cv_flag);
-        cv_flag = cv___store275;
-        cv___store275 = 0;
+        cv_flag = cv___store276;
+        cv___store276 = 0;
         rt_text * t4 = NULL;
         t4 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t4, (void*)cv_flag, (void*)(const uint8_t*)&(clar_lit_1336), (void*)0);
@@ -60230,8 +60265,6 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
     cv_pt = 0;
     int32_t cv_pk;
     cv_pk = 0;
-    rt_text * cv___store276;
-    cv___store276 = NULL;
     rt_text * cv___store277;
     cv___store277 = NULL;
     rt_text * cv___store278;
@@ -60240,34 +60273,36 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
     cv___store279 = NULL;
     rt_text * cv___store280;
     cv___store280 = NULL;
+    rt_text * cv___store281;
+    cv___store281 = NULL;
     rt_text * cv___ret1145;
     cv___ret1145 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___store276);
+    clar_fn_rtTextRelease((void*)cv___store277);
     rt_text * t1 = NULL;
     t1 = clar_fn_toText(&(clar_lit_6));
-    cv___store276 = t1;
+    cv___store277 = t1;
     clar_fn_rtTextRelease((void*)cv_params);
-    cv_params = cv___store276;
-    cv___store276 = 0;
+    cv_params = cv___store277;
+    cv___store277 = 0;
     cv_first = 1;
     cv_p = clar_fn_irFuncParamsHead(cv_f);
     while (1) {
         if (!((cv_p != CLAR_NEG32(1)))) break;
         if (!(cv_first)) {
-            clar_fn_rtTextRelease((void*)cv___store277);
+            clar_fn_rtTextRelease((void*)cv___store278);
             rt_text * t2 = NULL;
             t2 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t2, (void*)cv_params, (void*)(const uint8_t*)&(clar_lit_493), (void*)0);
-            cv___store277 = t2;
+            cv___store278 = t2;
             clar_fn_rtTextRelease((void*)cv_params);
-            cv_params = cv___store277;
-            cv___store277 = 0;
+            cv_params = cv___store278;
+            cv___store278 = 0;
         }
         cv_first = 0;
         cv_pt = clar_fn_irLocalType(cv_p);
         cv_pk = clar_fn_irtKind(cv_pt);
         if ((cv_pk == 5) || (cv_pk == 9)) {
-            clar_fn_rtTextRelease((void*)cv___store278);
+            clar_fn_rtTextRelease((void*)cv___store279);
             rt_text * t3 = NULL;
             t3 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t3, (void*)cv_params, (void*)(const uint8_t*)&(clar_lit_1726), (void*)0);
@@ -60284,15 +60319,15 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
             clar_str_255 t8;
             t8 = clar_fn_poolGet(clar_fn_irLocalName(cv_p));
             clar_fn_rtTextConcat((void*)t7, (void*)t6, (void*)(const uint8_t*)&(t8), (void*)0);
-            cv___store278 = t7;
+            cv___store279 = t7;
             clar_fn_rtTextRelease(t3);
             clar_fn_rtTextRelease(t4);
             clar_fn_rtTextRelease(t6);
             clar_fn_rtTextRelease((void*)cv_params);
-            cv_params = cv___store278;
-            cv___store278 = 0;
+            cv_params = cv___store279;
+            cv___store279 = 0;
         } else {
-            clar_fn_rtTextRelease((void*)cv___store279);
+            clar_fn_rtTextRelease((void*)cv___store280);
             rt_text * t9 = NULL;
             t9 = (rt_text *)clar_fn_rtTextNew();
             clar_str_255 t10;
@@ -60306,23 +60341,23 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
             clar_str_255 t13;
             t13 = clar_fn_poolGet(clar_fn_irLocalName(cv_p));
             clar_fn_rtTextConcat((void*)t12, (void*)t11, (void*)(const uint8_t*)&(t13), (void*)0);
-            cv___store279 = t12;
+            cv___store280 = t12;
             clar_fn_rtTextRelease(t9);
             clar_fn_rtTextRelease(t11);
             clar_fn_rtTextRelease((void*)cv_params);
-            cv_params = cv___store279;
-            cv___store279 = 0;
+            cv_params = cv___store280;
+            cv___store280 = 0;
         }
         cv_p = clar_fn_irLocalNext(cv_p);
     }
     if (cv_first) {
-        clar_fn_rtTextRelease((void*)cv___store280);
+        clar_fn_rtTextRelease((void*)cv___store281);
         rt_text * t14 = NULL;
         t14 = clar_fn_toText(&(clar_lit_505));
-        cv___store280 = t14;
+        cv___store281 = t14;
         clar_fn_rtTextRelease((void*)cv_params);
-        cv_params = cv___store280;
-        cv___store280 = 0;
+        cv_params = cv___store281;
+        cv___store281 = 0;
     }
     clar_fn_rtStrStore((void*)&(cv_linkage), 255, (void*)(const uint8_t*)&(clar_lit_1729));
     clar_str_255 t15;
@@ -60388,8 +60423,8 @@ static void clar_fn_cpDefaultInit(rt_text * cv_dst, int32_t cv_t, int32_t cv_sca
     cv_k = 0;
     rt_text * cv_ix;
     cv_ix = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store281;
-    cv___store281 = NULL;
+    rt_text * cv___store282;
+    cv___store282 = NULL;
     cv_k = clar_fn_irtKind(cv_t);
     if (((((cv_k == 1) || (cv_k == 2)) || (cv_k == 3)) || (cv_k == 4)) || (cv_k == 10)) {
         rt_text * t1 = NULL;
@@ -60708,7 +60743,7 @@ static void clar_fn_cpDefaultInit(rt_text * cv_dst, int32_t cv_t, int32_t cv_sca
                                         } else {
                                             if (cv_k == 11) {
                                                 cv_cpLoopN = CLAR_ADD32(cv_cpLoopN, 1);
-                                                clar_fn_rtTextRelease((void*)cv___store281);
+                                                clar_fn_rtTextRelease((void*)cv___store282);
                                                 rt_text * t70 = NULL;
                                                 clar_str_255 t71;
                                                 t71 = clar_fn_numToStr(cv_cpLoopN);
@@ -60716,10 +60751,10 @@ static void clar_fn_cpDefaultInit(rt_text * cv_dst, int32_t cv_t, int32_t cv_sca
                                                 clar_fn_rtStrConcat((void*)&t72, (void*)(const uint8_t*)&(clar_lit_1747), (void*)(const uint8_t*)&(t71));
                                                 t70 = (rt_text *)clar_fn_rtTextNew();
                                                 clar_fn_rtTextStore((void*)t70, (void*)(const uint8_t*)&(t72));
-                                                cv___store281 = t70;
+                                                cv___store282 = t70;
                                                 clar_fn_rtTextRelease((void*)cv_ix);
-                                                cv_ix = cv___store281;
-                                                cv___store281 = 0;
+                                                cv_ix = cv___store282;
+                                                cv___store282 = 0;
                                                 rt_text * t73 = NULL;
                                                 t73 = (rt_text *)clar_fn_rtTextNew();
                                                 clar_fn_rtTextConcatSl((void*)t73, (void*)(const uint8_t*)&(clar_lit_1748), (void*)cv_ix);
@@ -62254,32 +62289,32 @@ static void clar_fn_cpEmitOneRcWalk(int32_t cv_i, int32_t cv_name) {
     cv_retainBody = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv_releaseBody;
     cv_releaseBody = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store282;
-    cv___store282 = NULL;
     rt_text * cv___store283;
     cv___store283 = NULL;
+    rt_text * cv___store284;
+    cv___store284 = NULL;
     clar_str_255 t1;
     t1 = clar_fn_poolGet(cv_name);
     clar_fn_rtStrStore((void*)&(cv_recName), 255, (void*)(const uint8_t*)&(t1));
     clar_str_255 t2;
     clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(clar_lit_1308), (void*)(const uint8_t*)&(cv_recName));
     clar_fn_rtStrStore((void*)&(cv_ctype), 255, (void*)(const uint8_t*)&(t2));
-    clar_fn_rtTextRelease((void*)cv___store282);
+    clar_fn_rtTextRelease((void*)cv___store283);
     rt_text * t3 = NULL;
     t3 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t3, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store282 = t3;
+    cv___store283 = t3;
     clar_fn_rtTextRelease((void*)cv_retainBody);
-    cv_retainBody = cv___store282;
-    cv___store282 = 0;
-    clar_fn_rtTextRelease((void*)cv___store283);
+    cv_retainBody = cv___store283;
+    cv___store283 = 0;
+    clar_fn_rtTextRelease((void*)cv___store284);
     rt_text * t4 = NULL;
     t4 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t4, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store283 = t4;
+    cv___store284 = t4;
     clar_fn_rtTextRelease((void*)cv_releaseBody);
-    cv_releaseBody = cv___store283;
-    cv___store283 = 0;
+    cv_releaseBody = cv___store284;
+    cv___store284 = 0;
     cv_f = clar_fn_irRecordLayoutFieldsHead(cv_i);
     while (1) {
         if (!((cv_f != CLAR_NEG32(1)))) break;
@@ -62767,8 +62802,6 @@ static rt_text * clar_fn_cpCbSignature(int32_t cv_fIdx, rt_list * cv_paramsOut, 
     cv_p = 0;
     clar_str_255 cv_pname;
     cv_pname = (clar_str_255){0};
-    rt_text * cv___store284;
-    cv___store284 = NULL;
     rt_text * cv___store285;
     cv___store285 = NULL;
     rt_text * cv___store286;
@@ -62783,45 +62816,47 @@ static rt_text * clar_fn_cpCbSignature(int32_t cv_fIdx, rt_list * cv_paramsOut, 
     cv___store290 = NULL;
     rt_text * cv___store291;
     cv___store291 = NULL;
+    rt_text * cv___store292;
+    cv___store292 = NULL;
     rt_text * cv___ret1149;
     cv___ret1149 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___store284);
+    clar_fn_rtTextRelease((void*)cv___store285);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store284 = t1;
+    cv___store285 = t1;
     clar_fn_rtTextRelease((void*)cv_params);
-    cv_params = cv___store284;
-    cv___store284 = 0;
-    clar_fn_rtTextRelease((void*)cv___store285);
+    cv_params = cv___store285;
+    cv___store285 = 0;
+    clar_fn_rtTextRelease((void*)cv___store286);
     rt_text * t2 = NULL;
     t2 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store285 = t2;
+    cv___store286 = t2;
     clar_fn_rtTextRelease((void*)cv_args);
-    cv_args = cv___store285;
-    cv___store285 = 0;
+    cv_args = cv___store286;
+    cv___store286 = 0;
     cv_first = 1;
     cv_p = clar_fn_irFuncParamsHead(cv_fIdx);
     while (1) {
         if (!((cv_p != CLAR_NEG32(1)))) break;
         if (!(cv_first)) {
-            clar_fn_rtTextRelease((void*)cv___store286);
+            clar_fn_rtTextRelease((void*)cv___store287);
             rt_text * t3 = NULL;
             t3 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t3, (void*)cv_params, (void*)(const uint8_t*)&(clar_lit_493), (void*)0);
-            cv___store286 = t3;
+            cv___store287 = t3;
             clar_fn_rtTextRelease((void*)cv_params);
-            cv_params = cv___store286;
-            cv___store286 = 0;
-            clar_fn_rtTextRelease((void*)cv___store287);
+            cv_params = cv___store287;
+            cv___store287 = 0;
+            clar_fn_rtTextRelease((void*)cv___store288);
             rt_text * t4 = NULL;
             t4 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t4, (void*)cv_args, (void*)(const uint8_t*)&(clar_lit_493), (void*)0);
-            cv___store287 = t4;
+            cv___store288 = t4;
             clar_fn_rtTextRelease((void*)cv_args);
-            cv_args = cv___store287;
-            cv___store287 = 0;
+            cv_args = cv___store288;
+            cv___store288 = 0;
         }
         cv_first = 0;
         clar_str_255 t5;
@@ -62829,7 +62864,7 @@ static rt_text * clar_fn_cpCbSignature(int32_t cv_fIdx, rt_list * cv_paramsOut, 
         clar_str_255 t6;
         clar_fn_rtStrConcat((void*)&t6, (void*)(const uint8_t*)&(clar_lit_1331), (void*)(const uint8_t*)&(t5));
         clar_fn_rtStrStore((void*)&(cv_pname), 255, (void*)(const uint8_t*)&(t6));
-        clar_fn_rtTextRelease((void*)cv___store288);
+        clar_fn_rtTextRelease((void*)cv___store289);
         rt_text * t7 = NULL;
         t7 = (rt_text *)clar_fn_rtTextNew();
         clar_str_255 t8;
@@ -62847,46 +62882,46 @@ static rt_text * clar_fn_cpCbSignature(int32_t cv_fIdx, rt_list * cv_paramsOut, 
         rt_text * t11 = NULL;
         t11 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t11, (void*)t10, (void*)(const uint8_t*)&(cv_pname), (void*)0);
-        cv___store288 = t11;
+        cv___store289 = t11;
         clar_fn_rtTextRelease(t7);
         clar_fn_rtTextRelease(t10);
         clar_fn_rtTextRelease((void*)cv_params);
-        cv_params = cv___store288;
-        cv___store288 = 0;
+        cv_params = cv___store289;
+        cv___store289 = 0;
         if (clar_fn_irtKind(clar_fn_irLocalType(cv_p)) == 2) {
-            clar_fn_rtTextRelease((void*)cv___store289);
+            clar_fn_rtTextRelease((void*)cv___store290);
             rt_text * t12 = NULL;
             t12 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t12, (void*)cv_args, (void*)(const uint8_t*)&(clar_lit_1828), (void*)0);
             rt_text * t13 = NULL;
             t13 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t13, (void*)t12, (void*)(const uint8_t*)&(cv_pname), (void*)0);
-            cv___store289 = t13;
+            cv___store290 = t13;
             clar_fn_rtTextRelease(t12);
-            clar_fn_rtTextRelease((void*)cv_args);
-            cv_args = cv___store289;
-            cv___store289 = 0;
-        } else {
-            clar_fn_rtTextRelease((void*)cv___store290);
-            rt_text * t14 = NULL;
-            t14 = (rt_text *)clar_fn_rtTextNew();
-            clar_fn_rtTextConcat((void*)t14, (void*)cv_args, (void*)(const uint8_t*)&(cv_pname), (void*)0);
-            cv___store290 = t14;
             clar_fn_rtTextRelease((void*)cv_args);
             cv_args = cv___store290;
             cv___store290 = 0;
+        } else {
+            clar_fn_rtTextRelease((void*)cv___store291);
+            rt_text * t14 = NULL;
+            t14 = (rt_text *)clar_fn_rtTextNew();
+            clar_fn_rtTextConcat((void*)t14, (void*)cv_args, (void*)(const uint8_t*)&(cv_pname), (void*)0);
+            cv___store291 = t14;
+            clar_fn_rtTextRelease((void*)cv_args);
+            cv_args = cv___store291;
+            cv___store291 = 0;
         }
         cv_p = clar_fn_irLocalNext(cv_p);
     }
     if (cv_first) {
-        clar_fn_rtTextRelease((void*)cv___store291);
+        clar_fn_rtTextRelease((void*)cv___store292);
         rt_text * t15 = NULL;
         t15 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t15, (void*)(const uint8_t*)&(clar_lit_505));
-        cv___store291 = t15;
+        cv___store292 = t15;
         clar_fn_rtTextRelease((void*)cv_params);
-        cv_params = cv___store291;
-        cv___store291 = 0;
+        cv_params = cv___store292;
+        cv___store292 = 0;
     }
     rt_text * t16 = NULL;
     t16 = cv_params;
@@ -63000,8 +63035,6 @@ static rt_text * clar_fn_cpCbGlueWrapper(int32_t cv_fIdx) {
     cv_fnName = (clar_str_255){0};
     rt_text * cv_body;
     cv_body = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store292;
-    cv___store292 = NULL;
     rt_text * cv___store293;
     cv___store293 = NULL;
     rt_text * cv___store294;
@@ -63010,6 +63043,8 @@ static rt_text * clar_fn_cpCbGlueWrapper(int32_t cv_fIdx) {
     cv___store295 = NULL;
     rt_text * cv___store296;
     cv___store296 = NULL;
+    rt_text * cv___store297;
+    cv___store297 = NULL;
     rt_text * cv___ret1151;
     cv___ret1151 = (rt_text *)clar_fn_rtTextNew();
     rt_text * t1 = NULL;
@@ -63024,35 +63059,35 @@ static rt_text * clar_fn_cpCbGlueWrapper(int32_t cv_fIdx) {
     rt_text * t4 = NULL;
     t4 = t3;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t4));
-    clar_fn_rtTextRelease((void*)cv___store292);
+    clar_fn_rtTextRelease((void*)cv___store293);
     rt_text * t5 = NULL;
     t5 = clar_fn_cpCbSignature(cv_fIdx, cv_params, cv_args);
     if (clar_aborting) {
         clar_fn_rtTextRelease(t5);
         goto bail;
     }
-    cv___store292 = t5;
+    cv___store293 = t5;
     clar_fn_rtTextRelease((void*)cv_sig);
-    cv_sig = cv___store292;
-    cv___store292 = 0;
+    cv_sig = cv___store293;
+    cv___store293 = 0;
     cv_retT = clar_fn_irFuncRet(cv_fIdx);
     clar_str_255 t6;
     t6 = clar_fn_poolGet(clar_fn_irFuncName(cv_fIdx));
     clar_fn_rtStrStore((void*)&(cv_fnName), 255, (void*)(const uint8_t*)&(t6));
-    clar_fn_rtTextRelease((void*)cv___store293);
+    clar_fn_rtTextRelease((void*)cv___store294);
     rt_text * t7 = NULL;
     t7 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcatSl((void*)t7, (void*)(const uint8_t*)&(clar_lit_1830), (void*)cv_sig);
     rt_text * t8 = NULL;
     t8 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcat((void*)t8, (void*)t7, (void*)(const uint8_t*)&(clar_lit_1831), (void*)0);
-    cv___store293 = t8;
+    cv___store294 = t8;
     clar_fn_rtTextRelease(t7);
     clar_fn_rtTextRelease((void*)cv_body);
-    cv_body = cv___store293;
-    cv___store293 = 0;
+    cv_body = cv___store294;
+    cv___store294 = 0;
     if (clar_fn_irtKind(cv_retT) == 0) {
-        clar_fn_rtTextRelease((void*)cv___store294);
+        clar_fn_rtTextRelease((void*)cv___store295);
         rt_text * t9 = NULL;
         t9 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t9, (void*)cv_body, (void*)(const uint8_t*)&(clar_lit_1338), (void*)0);
@@ -63068,17 +63103,17 @@ static rt_text * clar_fn_cpCbGlueWrapper(int32_t cv_fIdx) {
         rt_text * t13 = NULL;
         t13 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t13, (void*)t12, (void*)(const uint8_t*)&(clar_lit_1542), (void*)0);
-        cv___store294 = t13;
+        cv___store295 = t13;
         clar_fn_rtTextRelease(t9);
         clar_fn_rtTextRelease(t10);
         clar_fn_rtTextRelease(t11);
         clar_fn_rtTextRelease(t12);
         clar_fn_rtTextRelease((void*)cv_body);
-        cv_body = cv___store294;
-        cv___store294 = 0;
+        cv_body = cv___store295;
+        cv___store295 = 0;
     } else {
         if (clar_fn_irtKind(cv_retT) == 2) {
-            clar_fn_rtTextRelease((void*)cv___store295);
+            clar_fn_rtTextRelease((void*)cv___store296);
             rt_text * t14 = NULL;
             t14 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t14, (void*)cv_body, (void*)(const uint8_t*)&(clar_lit_1832), (void*)0);
@@ -63094,16 +63129,16 @@ static rt_text * clar_fn_cpCbGlueWrapper(int32_t cv_fIdx) {
             rt_text * t18 = NULL;
             t18 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t18, (void*)t17, (void*)(const uint8_t*)&(clar_lit_1542), (void*)0);
-            cv___store295 = t18;
+            cv___store296 = t18;
             clar_fn_rtTextRelease(t14);
             clar_fn_rtTextRelease(t15);
             clar_fn_rtTextRelease(t16);
             clar_fn_rtTextRelease(t17);
             clar_fn_rtTextRelease((void*)cv_body);
-            cv_body = cv___store295;
-            cv___store295 = 0;
+            cv_body = cv___store296;
+            cv___store296 = 0;
         } else {
-            clar_fn_rtTextRelease((void*)cv___store296);
+            clar_fn_rtTextRelease((void*)cv___store297);
             rt_text * t19 = NULL;
             t19 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t19, (void*)cv_body, (void*)(const uint8_t*)&(clar_lit_1833), (void*)0);
@@ -63119,14 +63154,14 @@ static rt_text * clar_fn_cpCbGlueWrapper(int32_t cv_fIdx) {
             rt_text * t23 = NULL;
             t23 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t23, (void*)t22, (void*)(const uint8_t*)&(clar_lit_1542), (void*)0);
-            cv___store296 = t23;
+            cv___store297 = t23;
             clar_fn_rtTextRelease(t19);
             clar_fn_rtTextRelease(t20);
             clar_fn_rtTextRelease(t21);
             clar_fn_rtTextRelease(t22);
             clar_fn_rtTextRelease((void*)cv_body);
-            cv_body = cv___store296;
-            cv___store296 = 0;
+            cv_body = cv___store297;
+            cv___store297 = 0;
         }
     }
     clar_fn_rtTextRelease((void*)cv___ret1151);
@@ -63480,10 +63515,10 @@ static void clar_fn_cpEmitEnumArraysOnce(int32_t cv_enumNameIdx) {
     cv_labels = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_first;
     cv_first = 0;
-    rt_text * cv___store297;
-    cv___store297 = NULL;
     rt_text * cv___store298;
     cv___store298 = NULL;
+    rt_text * cv___store299;
+    cv___store299 = NULL;
     clar_str_255 t1;
     t1 = clar_fn_poolGet(cv_enumNameIdx);
     clar_fn_rtStrStore((void*)&(cv_name), 255, (void*)(const uint8_t*)&(t1));
@@ -63499,22 +63534,22 @@ static void clar_fn_cpEmitEnumArraysOnce(int32_t cv_enumNameIdx) {
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irEnums)))) break;
         if (clar_fn_irEnumLayoutName(cv_i) == cv_enumNameIdx) {
-            clar_fn_rtTextRelease((void*)cv___store297);
+            clar_fn_rtTextRelease((void*)cv___store298);
             rt_text * t3 = NULL;
             t3 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextStore((void*)t3, (void*)(const uint8_t*)&(clar_lit_6));
-            cv___store297 = t3;
+            cv___store298 = t3;
             clar_fn_rtTextRelease((void*)cv_vals);
-            cv_vals = cv___store297;
-            cv___store297 = 0;
-            clar_fn_rtTextRelease((void*)cv___store298);
+            cv_vals = cv___store298;
+            cv___store298 = 0;
+            clar_fn_rtTextRelease((void*)cv___store299);
             rt_text * t4 = NULL;
             t4 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextStore((void*)t4, (void*)(const uint8_t*)&(clar_lit_6));
-            cv___store298 = t4;
+            cv___store299 = t4;
             clar_fn_rtTextRelease((void*)cv_labels);
-            cv_labels = cv___store298;
-            cv___store298 = 0;
+            cv_labels = cv___store299;
+            cv___store299 = 0;
             cv_first = 1;
             cv_m = clar_fn_irEnumLayoutMembersHead(cv_i);
             while (1) {
@@ -63800,17 +63835,17 @@ static rt_text * clar_fn_cpSerEnumValsInline(int32_t cv_nameIdx) {
     cv_m = 0;
     rt_text * cv_out;
     cv_out = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store299;
-    cv___store299 = NULL;
+    rt_text * cv___store300;
+    cv___store300 = NULL;
     rt_text * cv___ret1153;
     cv___ret1153 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___store299);
+    clar_fn_rtTextRelease((void*)cv___store300);
     rt_text * t1 = NULL;
     t1 = clar_fn_toText(&(clar_lit_6));
-    cv___store299 = t1;
+    cv___store300 = t1;
     clar_fn_rtTextRelease((void*)cv_out);
-    cv_out = cv___store299;
-    cv___store299 = 0;
+    cv_out = cv___store300;
+    cv___store300 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irEnums)))) break;
@@ -63864,8 +63899,8 @@ static rt_text * clar_fn_cpSerFieldRow(const clar_str_255 *cv_recName, int32_t c
     cv_enumCount = 0;
     rt_text * cv_row;
     cv_row = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store300;
-    cv___store300 = NULL;
+    rt_text * cv___store301;
+    cv___store301 = NULL;
     rt_text * cv___ret1154;
     cv___ret1154 = (rt_text *)clar_fn_rtTextNew();
     cv_t = clar_fn_irFieldSlotType(cv_f);
@@ -63898,7 +63933,7 @@ static rt_text * clar_fn_cpSerFieldRow(const clar_str_255 *cv_recName, int32_t c
             }
         }
     }
-    clar_fn_rtTextRelease((void*)cv___store300);
+    clar_fn_rtTextRelease((void*)cv___store301);
     clar_str_255 t2;
     clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(clar_lit_1277), (void*)(const uint8_t*)&(cv_ftype));
     clar_str_255 t3;
@@ -63925,10 +63960,10 @@ static rt_text * clar_fn_cpSerFieldRow(const clar_str_255 *cv_recName, int32_t c
     clar_fn_rtStrConcat((void*)&t13, (void*)(const uint8_t*)&(t11), (void*)(const uint8_t*)&(t12));
     rt_text * t14 = NULL;
     t14 = clar_fn_toText(&(t13));
-    cv___store300 = t14;
+    cv___store301 = t14;
     clar_fn_rtTextRelease((void*)cv_row);
-    cv_row = cv___store300;
-    cv___store300 = 0;
+    cv_row = cv___store301;
+    cv___store301 = 0;
     if (cv_k == 10) {
         rt_text * t15 = NULL;
         t15 = clar_fn_cpSerEnumValsInline(clar_fn_irtName(cv_t));
@@ -64044,8 +64079,8 @@ static void clar_fn_cpEmitUiLayoutAsserts(void) {
     cv_recName = (clar_str_255){0};
     rt_text * cv_line;
     cv_line = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store301;
-    cv___store301 = NULL;
+    rt_text * cv___store302;
+    cv___store302 = NULL;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irRecords)))) break;
@@ -64057,7 +64092,7 @@ static void clar_fn_cpEmitUiLayoutAsserts(void) {
             clar_str_255 t2;
             t2 = clar_fn_poolGet(cv_name);
             clar_fn_rtStrStore((void*)&(cv_recName), 255, (void*)(const uint8_t*)&(t2));
-            clar_fn_rtTextRelease((void*)cv___store301);
+            clar_fn_rtTextRelease((void*)cv___store302);
             clar_str_255 t3;
             clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(clar_lit_1871), (void*)(const uint8_t*)&(cv_recName));
             clar_str_255 t4;
@@ -64072,10 +64107,10 @@ static void clar_fn_cpEmitUiLayoutAsserts(void) {
             clar_fn_rtStrConcat((void*)&t8, (void*)(const uint8_t*)&(t6), (void*)(const uint8_t*)&(t7));
             rt_text * t9 = NULL;
             t9 = clar_fn_toText(&(t8));
-            cv___store301 = t9;
+            cv___store302 = t9;
             clar_fn_rtTextRelease((void*)cv_line);
-            cv_line = cv___store301;
-            cv___store301 = 0;
+            cv_line = cv___store302;
+            cv___store302 = 0;
             cv_f = clar_fn_irRecordLayoutFieldsHead(cv_i);
             while (1) {
                 if (!((cv_f != CLAR_NEG32(1)))) break;
@@ -64129,48 +64164,48 @@ static void clar_fn_cpEmitEnums(void) {
     cv_count = 0;
     clar_str_255 cv_name;
     cv_name = (clar_str_255){0};
-    rt_text * cv___store302;
-    cv___store302 = NULL;
     rt_text * cv___store303;
     cv___store303 = NULL;
     rt_text * cv___store304;
     cv___store304 = NULL;
+    rt_text * cv___store305;
+    cv___store305 = NULL;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irEnums)))) break;
-        clar_fn_rtTextRelease((void*)cv___store302);
+        clar_fn_rtTextRelease((void*)cv___store303);
         rt_text * t1 = NULL;
         t1 = clar_fn_toText(&(clar_lit_6));
-        cv___store302 = t1;
+        cv___store303 = t1;
         clar_fn_rtTextRelease((void*)cv_vals);
-        cv_vals = cv___store302;
-        cv___store302 = 0;
+        cv_vals = cv___store303;
+        cv___store303 = 0;
         cv_first = 1;
         cv_count = 0;
         cv_m = clar_fn_irEnumLayoutMembersHead(cv_i);
         while (1) {
             if (!((cv_m != CLAR_NEG32(1)))) break;
             if (!(cv_first)) {
-                clar_fn_rtTextRelease((void*)cv___store303);
+                clar_fn_rtTextRelease((void*)cv___store304);
                 rt_text * t2 = NULL;
                 t2 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextConcat((void*)t2, (void*)cv_vals, (void*)(const uint8_t*)&(clar_lit_493), (void*)0);
-                cv___store303 = t2;
+                cv___store304 = t2;
                 clar_fn_rtTextRelease((void*)cv_vals);
-                cv_vals = cv___store303;
-                cv___store303 = 0;
+                cv_vals = cv___store304;
+                cv___store304 = 0;
             }
             cv_first = 0;
-            clar_fn_rtTextRelease((void*)cv___store304);
+            clar_fn_rtTextRelease((void*)cv___store305);
             rt_text * t3 = NULL;
             t3 = (rt_text *)clar_fn_rtTextNew();
             clar_str_255 t4;
             t4 = clar_fn_numToStr(clar_fn_irEnumMemberValue(cv_m));
             clar_fn_rtTextConcat((void*)t3, (void*)cv_vals, (void*)(const uint8_t*)&(t4), (void*)0);
-            cv___store304 = t3;
+            cv___store305 = t3;
             clar_fn_rtTextRelease((void*)cv_vals);
-            cv_vals = cv___store304;
-            cv___store304 = 0;
+            cv_vals = cv___store305;
+            cv___store305 = 0;
             cv_count = CLAR_ADD32(cv_count, 1);
             cv_m = clar_fn_irEnumMemberNext(cv_m);
         }
@@ -64552,8 +64587,8 @@ static void clar_fn_cpEmitUiStateStructs(void) {
 static void clar_fn_cpEmitAppInfo(void) {
     rt_text * cv_line;
     cv_line = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store305;
-    cv___store305 = NULL;
+    rt_text * cv___store306;
+    cv___store306 = NULL;
     if (!(cv_irHasApp)) {
         clar_fn_rtTextRelease((void*)cv_line);
         return;
@@ -64562,13 +64597,13 @@ static void clar_fn_cpEmitAppInfo(void) {
         clar_fn_rtTextRelease((void*)cv_line);
         return;
     }
-    clar_fn_rtTextRelease((void*)cv___store305);
+    clar_fn_rtTextRelease((void*)cv___store306);
     rt_text * t1 = NULL;
     t1 = clar_fn_toText(&(clar_lit_1892));
-    cv___store305 = t1;
+    cv___store306 = t1;
     clar_fn_rtTextRelease((void*)cv_line);
-    cv_line = cv___store305;
-    cv___store305 = 0;
+    cv_line = cv___store306;
+    cv___store306 = 0;
     clar_str_255 t2;
     t2 = clar_fn_cpUiTitleStr(cv_irAppName);
     clar_fn_rtTextAppendStr((void*)cv_line, (void*)(const uint8_t*)&(t2));
@@ -64605,9 +64640,9 @@ static void clar_fn_cpEmitUiBlob(void) {
     cv_i = 0;
     clar_str_255 cv_line;
     cv_line = (clar_str_255){0};
-    rt_list * cv___store306;
-    cv___store306 = NULL;
-        clar_fn_rtListRelease((void*)cv___store306);
+    rt_list * cv___store307;
+    cv___store307 = NULL;
+        clar_fn_rtListRelease((void*)cv___store307);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_uibBuild();
@@ -64616,11 +64651,11 @@ static void clar_fn_cpEmitUiBlob(void) {
 
         goto bail;
     }
-    cv___store306 = t1;
+    cv___store307 = t1;
         clar_fn_rtListRelease((void*)cv_bytes);
 
-    cv_bytes = cv___store306;
-    cv___store306 = 0;
+    cv_bytes = cv___store307;
+    cv___store307 = 0;
     rt_text * t2 = NULL;
     t2 = clar_fn_toText(&(clar_lit_1893));
     rt_text * t3 = NULL;
@@ -64754,10 +64789,10 @@ static void clar_fn_cpEmitGlobalsInit(void) {
     cv_fullReplace = 0;
     rt_text * cv_initRetainBuf;
     cv_initRetainBuf = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store307;
-    cv___store307 = NULL;
     rt_text * cv___store308;
     cv___store308 = NULL;
+    rt_text * cv___store309;
+    cv___store309 = NULL;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irGlobals)))) break;
@@ -64873,14 +64908,14 @@ static void clar_fn_cpEmitGlobalsInit(void) {
                     clar_fn_rtTextRelease(t25);
                     clar_fn_rtTextRelease(t26);
                     if (clar_fn_irtNeedsCtor(cv_gt) && (!(clar_fn_irGlobalInitBirth(cv_i)))) {
-                        clar_fn_rtTextRelease((void*)cv___store307);
+                        clar_fn_rtTextRelease((void*)cv___store308);
                         rt_text * t27 = NULL;
                         t27 = (rt_text *)clar_fn_rtTextNew();
                         clar_fn_rtTextStore((void*)t27, (void*)(const uint8_t*)&(clar_lit_6));
-                        cv___store307 = t27;
+                        cv___store308 = t27;
                         clar_fn_rtTextRelease((void*)cv_initRetainBuf);
-                        cv_initRetainBuf = cv___store307;
-                        cv___store307 = 0;
+                        cv_initRetainBuf = cv___store308;
+                        cv___store308 = 0;
                         clar_str_255 t28;
                         clar_fn_rtStrConcat((void*)&t28, (void*)(const uint8_t*)&(clar_lit_1331), (void*)(const uint8_t*)&(cv_nm));
                         clar_fn_cpEmitRetain(cv_initRetainBuf, &(t28), cv_gt);
@@ -64917,14 +64952,14 @@ static void clar_fn_cpEmitGlobalsInit(void) {
     t35 = t34;
     clar_fn_rtListPush((void*)cv_cpRestBuf, (void*)&(t35));
     clar_fn_fpReset(1);
-    clar_fn_rtTextRelease((void*)cv___store308);
+    clar_fn_rtTextRelease((void*)cv___store309);
     rt_text * t36 = NULL;
     t36 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t36, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store308 = t36;
+    cv___store309 = t36;
     clar_fn_rtTextRelease((void*)cv_freeBuf);
-    cv_freeBuf = cv___store308;
-    cv___store308 = 0;
+    cv_freeBuf = cv___store309;
+    cv___store309 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irGlobals)))) break;
@@ -64975,49 +65010,49 @@ static void clar_fn_cpEmitStrLits(void) {
     cv_bytesStr = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_j;
     cv_j = 0;
-    rt_text * cv___store309;
-    cv___store309 = NULL;
     rt_text * cv___store310;
     cv___store310 = NULL;
     rt_text * cv___store311;
     cv___store311 = NULL;
+    rt_text * cv___store312;
+    cv___store312 = NULL;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irStrLits)))) break;
         clar_str_255 t1;
         t1 = clar_fn_poolGet(clar_fn_irStrLitPoolIdx(cv_i));
         clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t1));
-        clar_fn_rtTextRelease((void*)cv___store309);
+        clar_fn_rtTextRelease((void*)cv___store310);
         rt_text * t2 = NULL;
         t2 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_6));
-        cv___store309 = t2;
+        cv___store310 = t2;
         clar_fn_rtTextRelease((void*)cv_bytesStr);
-        cv_bytesStr = cv___store309;
-        cv___store309 = 0;
+        cv_bytesStr = cv___store310;
+        cv___store310 = 0;
         cv_j = 0;
         while (1) {
             if (!((cv_j < clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_s))))) break;
             if (cv_j > 0) {
-                clar_fn_rtTextRelease((void*)cv___store310);
+                clar_fn_rtTextRelease((void*)cv___store311);
                 rt_text * t3 = NULL;
                 t3 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextConcat((void*)t3, (void*)cv_bytesStr, (void*)(const uint8_t*)&(clar_lit_493), (void*)0);
-                cv___store310 = t3;
+                cv___store311 = t3;
                 clar_fn_rtTextRelease((void*)cv_bytesStr);
-                cv_bytesStr = cv___store310;
-                cv___store310 = 0;
+                cv_bytesStr = cv___store311;
+                cv___store311 = 0;
             }
-            clar_fn_rtTextRelease((void*)cv___store311);
+            clar_fn_rtTextRelease((void*)cv___store312);
             rt_text * t4 = NULL;
             t4 = (rt_text *)clar_fn_rtTextNew();
             clar_str_255 t5;
             t5 = clar_fn_numToStr(((int32_t)(clar_fn_rtStrIndex((void*)(const uint8_t*)&(cv_s), (int32_t)(cv_j)))));
             clar_fn_rtTextConcat((void*)t4, (void*)cv_bytesStr, (void*)(const uint8_t*)&(t5), (void*)0);
-            cv___store311 = t4;
+            cv___store312 = t4;
             clar_fn_rtTextRelease((void*)cv_bytesStr);
-            cv_bytesStr = cv___store311;
-            cv___store311 = 0;
+            cv_bytesStr = cv___store312;
+            cv___store312 = 0;
             cv_j = CLAR_ADD32(cv_j, 1);
         }
         clar_str_255 t6;
@@ -65287,18 +65322,18 @@ static void clar_fn_cpAppendTextList(rt_text * cv_out, rt_list * cv_buf) {
 static rt_text * clar_fn_emitProgram(void) {
     rt_text * cv_out;
     cv_out = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store312;
-    cv___store312 = NULL;
+    rt_text * cv___store313;
+    cv___store313 = NULL;
     rt_text * cv___ret1167;
     cv___ret1167 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___store312);
+    clar_fn_rtTextRelease((void*)cv___store313);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store312 = t1;
+    cv___store313 = t1;
     clar_fn_rtTextRelease((void*)cv_out);
-    cv_out = cv___store312;
-    cv___store312 = 0;
+    cv_out = cv___store313;
+    cv___store313 = 0;
     clar_fn_cpResetBuffers();
     clar_fn_cpEnsureStr(255);
     if (cv_cpSortedMapPorted) {
@@ -65631,19 +65666,19 @@ static rt_list * clar_fn_cgFreshIntListSized(int32_t cv_n) {
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_i;
     cv_i = 0;
-    rt_list * cv___store313;
-    cv___store313 = NULL;
+    rt_list * cv___store314;
+    cv___store314 = NULL;
     rt_list * cv___ret1169;
     cv___ret1169 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___store313);
+        clar_fn_rtListRelease((void*)cv___store314);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store313 = t1;
+    cv___store314 = t1;
         clar_fn_rtListRelease((void*)cv_l);
 
-    cv_l = cv___store313;
-    cv___store313 = 0;
+    cv_l = cv___store314;
+    cv___store314 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_n))) break;
@@ -65700,19 +65735,19 @@ static rt_list * clar_fn_cgFreshBoolListSized(int32_t cv_n) {
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_i;
     cv_i = 0;
-    rt_list * cv___store314;
-    cv___store314 = NULL;
+    rt_list * cv___store315;
+    cv___store315 = NULL;
     rt_list * cv___ret1172;
     cv___ret1172 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___store314);
+        clar_fn_rtListRelease((void*)cv___store315);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshBoolList();
-    cv___store314 = t1;
+    cv___store315 = t1;
         clar_fn_rtListRelease((void*)cv_l);
 
-    cv_l = cv___store314;
-    cv___store314 = 0;
+    cv_l = cv___store315;
+    cv___store315 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_n))) break;
@@ -65737,19 +65772,19 @@ static rt_list * clar_fn_cgBoolBitmapFromList(rt_list * cv_lst, int32_t cv_n) {
     cv_bits = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_i;
     cv_i = 0;
-    rt_list * cv___store315;
-    cv___store315 = NULL;
+    rt_list * cv___store316;
+    cv___store316 = NULL;
     rt_list * cv___ret1173;
     cv___ret1173 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___store315);
+        clar_fn_rtListRelease((void*)cv___store316);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshBoolListSized(cv_n);
-    cv___store315 = t1;
+    cv___store316 = t1;
         clar_fn_rtListRelease((void*)cv_bits);
 
-    cv_bits = cv___store315;
-    cv___store315 = 0;
+    cv_bits = cv___store316;
+    cv___store316 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_lst)))) break;
@@ -66006,44 +66041,44 @@ static int32_t clar_fn_cgPoolDeltaAndUnion(rt_list * cv_cand, rt_list * cv_sizes
 }
 
 static void clar_fn_cgResetCodegenState(void) {
-    rt_list * cv___store316;
-    cv___store316 = NULL;
     rt_list * cv___store317;
     cv___store317 = NULL;
     rt_list * cv___store318;
     cv___store318 = NULL;
+    rt_list * cv___store319;
+    cv___store319 = NULL;
     cv_cgMul32Used = 0;
     cv_cgDiv32Used = 0;
     cv_cgMod32Used = 0;
-        clar_fn_rtListRelease((void*)cv___store316);
+        clar_fn_rtListRelease((void*)cv___store317);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store316 = t1;
+    cv___store317 = t1;
         clar_fn_rtListRelease((void*)cv_cgLoopBreakLabels);
 
-    cv_cgLoopBreakLabels = cv___store316;
-    cv___store316 = 0;
-        clar_fn_rtListRelease((void*)cv___store317);
+    cv_cgLoopBreakLabels = cv___store317;
+    cv___store317 = 0;
+        clar_fn_rtListRelease((void*)cv___store318);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_cgFreshIntList();
-    cv___store317 = t2;
+    cv___store318 = t2;
         clar_fn_rtListRelease((void*)cv_cgLoopContinueLabels);
 
-    cv_cgLoopContinueLabels = cv___store317;
-    cv___store317 = 0;
+    cv_cgLoopContinueLabels = cv___store318;
+    cv___store318 = 0;
     cv_cgLastTrackedOff = CLAR_NEG32(1);
     cv_cgDiscardExprIdx = CLAR_NEG32(1);
-        clar_fn_rtListRelease((void*)cv___store318);
+        clar_fn_rtListRelease((void*)cv___store319);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_cgFreshIntList();
-    cv___store318 = t3;
+    cv___store319 = t3;
         clar_fn_rtListRelease((void*)cv_cgPendingArgReleases);
 
-    cv_cgPendingArgReleases = cv___store318;
-    cv___store318 = 0;
+    cv_cgPendingArgReleases = cv___store319;
+    cv___store319 = 0;
     clar_fn_rtIntMapClear((void*)cv_cgRecIdxByName);
     cv_cgRecIdxByNameValid = 0;
     clar_fn_rtListClear((void*)cv_cgSizeMemo);
@@ -66123,28 +66158,28 @@ static void clar_fn_cg68SynthCbGlue(void) {
     cv_glueName = 0;
     int32_t cv_glueFi;
     cv_glueFi = 0;
-    rt_list * cv___store319;
-    cv___store319 = NULL;
     rt_list * cv___store320;
     cv___store320 = NULL;
-        clar_fn_rtListRelease((void*)cv___store319);
+    rt_list * cv___store321;
+    cv___store321 = NULL;
+        clar_fn_rtListRelease((void*)cv___store320);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store319 = t1;
+    cv___store320 = t1;
         clar_fn_rtListRelease((void*)cv_cgCbGlueFuncIdx);
 
-    cv_cgCbGlueFuncIdx = cv___store319;
-    cv___store319 = 0;
-        clar_fn_rtListRelease((void*)cv___store320);
+    cv_cgCbGlueFuncIdx = cv___store320;
+    cv___store320 = 0;
+        clar_fn_rtListRelease((void*)cv___store321);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_cgFreshIntList();
-    cv___store320 = t2;
+    cv___store321 = t2;
         clar_fn_rtListRelease((void*)cv_cgCbGlueBodyFuncIdx);
 
-    cv_cgCbGlueBodyFuncIdx = cv___store320;
-    cv___store320 = 0;
+    cv_cgCbGlueBodyFuncIdx = cv___store321;
+    cv___store321 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_irCbGlueNeededCount()))) break;
@@ -66219,18 +66254,18 @@ static int32_t clar_fn_cgCbGlueSlotIdx(int32_t cv_f) {
 static rt_text * clar_fn_cg68ToText(const clar_str_255 *cv_s) {
     rt_text * cv_t;
     cv_t = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store321;
-    cv___store321 = NULL;
+    rt_text * cv___store322;
+    cv___store322 = NULL;
     rt_text * cv___ret1185;
     cv___ret1185 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___store321);
+    clar_fn_rtTextRelease((void*)cv___store322);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store321 = t1;
+    cv___store322 = t1;
     clar_fn_rtTextRelease((void*)cv_t);
-    cv_t = cv___store321;
-    cv___store321 = 0;
+    cv_t = cv___store322;
+    cv___store322 = 0;
     clar_fn_rtTextAppendStr((void*)cv_t, (void*)(const uint8_t*)&((*cv_s)));
     clar_fn_rtTextRelease((void*)cv___ret1185);
     cv___ret1185 = cv_t;
@@ -66589,17 +66624,17 @@ static void clar_fn_cgAssignMeasureFuncLabels(void) {
     cv_i = 0;
     rt_list * cv_labels;
     cv_labels = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store322;
-    cv___store322 = NULL;
-        clar_fn_rtListRelease((void*)cv___store322);
+    rt_list * cv___store323;
+    cv___store323 = NULL;
+        clar_fn_rtListRelease((void*)cv___store323);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store322 = t1;
+    cv___store323 = t1;
         clar_fn_rtListRelease((void*)cv_labels);
 
-    cv_labels = cv___store322;
-    cv___store322 = 0;
+    cv_labels = cv___store323;
+    cv___store323 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -66629,17 +66664,17 @@ static void clar_fn_cgAssignSegFuncLabels(int32_t cv_s) {
     cv_i = 0;
     rt_list * cv_labels;
     cv_labels = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store323;
-    cv___store323 = NULL;
-        clar_fn_rtListRelease((void*)cv___store323);
+    rt_list * cv___store324;
+    cv___store324 = NULL;
+        clar_fn_rtListRelease((void*)cv___store324);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store323 = t1;
+    cv___store324 = t1;
         clar_fn_rtListRelease((void*)cv_labels);
 
-    cv_labels = cv___store323;
-    cv___store323 = 0;
+    cv_labels = cv___store324;
+    cv___store324 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -66681,21 +66716,21 @@ static void clar_fn_cgAssignFinalJtSlots(void) {
     cv_segFirst = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_segCount;
     cv_segCount = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store324;
-    cv___store324 = NULL;
     rt_list * cv___store325;
     cv___store325 = NULL;
     rt_list * cv___store326;
     cv___store326 = NULL;
-        clar_fn_rtListRelease((void*)cv___store324);
+    rt_list * cv___store327;
+    cv___store327 = NULL;
+        clar_fn_rtListRelease((void*)cv___store325);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store324 = t1;
+    cv___store325 = t1;
         clar_fn_rtListRelease((void*)cv_slots);
 
-    cv_slots = cv___store324;
-    cv___store324 = 0;
+    cv_slots = cv___store325;
+    cv___store325 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -66704,24 +66739,24 @@ static void clar_fn_cgAssignFinalJtSlots(void) {
         clar_fn_rtListPush((void*)cv_slots, (void*)&(t2));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store325);
+        clar_fn_rtListRelease((void*)cv___store326);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_cgFreshIntList();
-    cv___store325 = t3;
+    cv___store326 = t3;
         clar_fn_rtListRelease((void*)cv_segFirst);
 
-    cv_segFirst = cv___store325;
-    cv___store325 = 0;
-        clar_fn_rtListRelease((void*)cv___store326);
+    cv_segFirst = cv___store326;
+    cv___store326 = 0;
+        clar_fn_rtListRelease((void*)cv___store327);
 
     rt_list * t4 = NULL;
     t4 = clar_fn_cgFreshIntList();
-    cv___store326 = t4;
+    cv___store327 = t4;
         clar_fn_rtListRelease((void*)cv_segCount);
 
-    cv_segCount = cv___store326;
-    cv___store326 = 0;
+    cv_segCount = cv___store327;
+    cv___store327 = 0;
     cv_next = 0;
     cv_s = 1;
     while (1) {
@@ -66848,17 +66883,17 @@ static void clar_fn_cgAssignGlobalOffsets(void) {
     cv_offs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_running;
     cv_running = 0;
-    rt_list * cv___store327;
-    cv___store327 = NULL;
-        clar_fn_rtListRelease((void*)cv___store327);
+    rt_list * cv___store328;
+    cv___store328 = NULL;
+        clar_fn_rtListRelease((void*)cv___store328);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store327 = t1;
+    cv___store328 = t1;
         clar_fn_rtListRelease((void*)cv_offs);
 
-    cv_offs = cv___store327;
-    cv___store327 = 0;
+    cv_offs = cv___store328;
+    cv___store328 = 0;
     clar_fn_rtIntMapClear((void*)cv_cgGlobalOffByName);
     cv_running = 0;
     cv_i = 0;
@@ -67025,8 +67060,6 @@ static void clar_fn_cgBuildAdjacency(void) {
     cv_from = 0;
     int32_t cv_e;
     cv_e = 0;
-    rt_list * cv___store328;
-    cv___store328 = NULL;
     rt_list * cv___store329;
     cv___store329 = NULL;
     rt_list * cv___store330;
@@ -67035,51 +67068,53 @@ static void clar_fn_cgBuildAdjacency(void) {
     cv___store331 = NULL;
     rt_list * cv___store332;
     cv___store332 = NULL;
-        clar_fn_rtListRelease((void*)cv___store328);
+    rt_list * cv___store333;
+    cv___store333 = NULL;
+        clar_fn_rtListRelease((void*)cv___store329);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store328 = t1;
+    cv___store329 = t1;
         clar_fn_rtListRelease((void*)cv_cgAdjHead);
 
-    cv_cgAdjHead = cv___store328;
-    cv___store328 = 0;
-        clar_fn_rtListRelease((void*)cv___store329);
-
-    rt_list * t2 = NULL;
-    t2 = clar_fn_cgFreshIntList();
-    cv___store329 = t2;
-        clar_fn_rtListRelease((void*)cv_cgAdjNext);
-
-    cv_cgAdjNext = cv___store329;
+    cv_cgAdjHead = cv___store329;
     cv___store329 = 0;
         clar_fn_rtListRelease((void*)cv___store330);
 
-    rt_list * t3 = NULL;
-    t3 = clar_fn_cgFreshIntList();
-    cv___store330 = t3;
-        clar_fn_rtListRelease((void*)cv_cgAdjTo);
+    rt_list * t2 = NULL;
+    t2 = clar_fn_cgFreshIntList();
+    cv___store330 = t2;
+        clar_fn_rtListRelease((void*)cv_cgAdjNext);
 
-    cv_cgAdjTo = cv___store330;
+    cv_cgAdjNext = cv___store330;
     cv___store330 = 0;
         clar_fn_rtListRelease((void*)cv___store331);
 
-    rt_list * t4 = NULL;
-    t4 = clar_fn_cgFreshIntList();
-    cv___store331 = t4;
-        clar_fn_rtListRelease((void*)cv_cgAdjTail);
+    rt_list * t3 = NULL;
+    t3 = clar_fn_cgFreshIntList();
+    cv___store331 = t3;
+        clar_fn_rtListRelease((void*)cv_cgAdjTo);
 
-    cv_cgAdjTail = cv___store331;
+    cv_cgAdjTo = cv___store331;
     cv___store331 = 0;
         clar_fn_rtListRelease((void*)cv___store332);
 
+    rt_list * t4 = NULL;
+    t4 = clar_fn_cgFreshIntList();
+    cv___store332 = t4;
+        clar_fn_rtListRelease((void*)cv_cgAdjTail);
+
+    cv_cgAdjTail = cv___store332;
+    cv___store332 = 0;
+        clar_fn_rtListRelease((void*)cv___store333);
+
     rt_list * t5 = NULL;
     t5 = clar_fn_cgFreshBoolList();
-    cv___store332 = t5;
+    cv___store333 = t5;
         clar_fn_rtListRelease((void*)cv_cgSelfEdge);
 
-    cv_cgSelfEdge = cv___store332;
-    cv___store332 = 0;
+    cv_cgSelfEdge = cv___store333;
+    cv___store333 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -67157,8 +67192,6 @@ static void clar_fn_cgBuildOnCycleTab(void) {
     cv_k = 0;
     int32_t cv_junk;
     cv_junk = 0;
-    rt_list * cv___store333;
-    cv___store333 = NULL;
     rt_list * cv___store334;
     cv___store334 = NULL;
     rt_list * cv___store335;
@@ -67173,43 +67206,45 @@ static void clar_fn_cgBuildOnCycleTab(void) {
     cv___store339 = NULL;
     rt_list * cv___store340;
     cv___store340 = NULL;
+    rt_list * cv___store341;
+    cv___store341 = NULL;
     cv_n = clar_fn_rtListCount((void*)cv_irFuncs);
-        clar_fn_rtListRelease((void*)cv___store333);
+        clar_fn_rtListRelease((void*)cv___store334);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store333 = t1;
+    cv___store334 = t1;
         clar_fn_rtListRelease((void*)cv_idx);
 
-    cv_idx = cv___store333;
-    cv___store333 = 0;
-        clar_fn_rtListRelease((void*)cv___store334);
-
-    rt_list * t2 = NULL;
-    t2 = clar_fn_cgFreshIntList();
-    cv___store334 = t2;
-        clar_fn_rtListRelease((void*)cv_low);
-
-    cv_low = cv___store334;
+    cv_idx = cv___store334;
     cv___store334 = 0;
         clar_fn_rtListRelease((void*)cv___store335);
 
-    rt_list * t3 = NULL;
-    t3 = clar_fn_cgFreshBoolList();
-    cv___store335 = t3;
-        clar_fn_rtListRelease((void*)cv_onStack);
+    rt_list * t2 = NULL;
+    t2 = clar_fn_cgFreshIntList();
+    cv___store335 = t2;
+        clar_fn_rtListRelease((void*)cv_low);
 
-    cv_onStack = cv___store335;
+    cv_low = cv___store335;
     cv___store335 = 0;
         clar_fn_rtListRelease((void*)cv___store336);
 
+    rt_list * t3 = NULL;
+    t3 = clar_fn_cgFreshBoolList();
+    cv___store336 = t3;
+        clar_fn_rtListRelease((void*)cv_onStack);
+
+    cv_onStack = cv___store336;
+    cv___store336 = 0;
+        clar_fn_rtListRelease((void*)cv___store337);
+
     rt_list * t4 = NULL;
     t4 = clar_fn_cgFreshBoolList();
-    cv___store336 = t4;
+    cv___store337 = t4;
         clar_fn_rtListRelease((void*)cv_cgOnCycleTab);
 
-    cv_cgOnCycleTab = cv___store336;
-    cv___store336 = 0;
+    cv_cgOnCycleTab = cv___store337;
+    cv___store337 = 0;
     cv_v = 0;
     while (1) {
         if (!((cv_v < cv_n))) break;
@@ -67227,33 +67262,33 @@ static void clar_fn_cgBuildOnCycleTab(void) {
         clar_fn_rtListPush((void*)cv_cgOnCycleTab, (void*)&(t8));
         cv_v = CLAR_ADD32(cv_v, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store337);
+        clar_fn_rtListRelease((void*)cv___store338);
 
     rt_list * t9 = NULL;
     t9 = clar_fn_cgFreshIntList();
-    cv___store337 = t9;
+    cv___store338 = t9;
         clar_fn_rtListRelease((void*)cv_sccStack);
 
-    cv_sccStack = cv___store337;
-    cv___store337 = 0;
-        clar_fn_rtListRelease((void*)cv___store338);
-
-    rt_list * t10 = NULL;
-    t10 = clar_fn_cgFreshIntList();
-    cv___store338 = t10;
-        clar_fn_rtListRelease((void*)cv_callNode);
-
-    cv_callNode = cv___store338;
+    cv_sccStack = cv___store338;
     cv___store338 = 0;
         clar_fn_rtListRelease((void*)cv___store339);
 
+    rt_list * t10 = NULL;
+    t10 = clar_fn_cgFreshIntList();
+    cv___store339 = t10;
+        clar_fn_rtListRelease((void*)cv_callNode);
+
+    cv_callNode = cv___store339;
+    cv___store339 = 0;
+        clar_fn_rtListRelease((void*)cv___store340);
+
     rt_list * t11 = NULL;
     t11 = clar_fn_cgFreshIntList();
-    cv___store339 = t11;
+    cv___store340 = t11;
         clar_fn_rtListRelease((void*)cv_callEdge);
 
-    cv_callEdge = cv___store339;
-    cv___store339 = 0;
+    cv_callEdge = cv___store340;
+    cv___store340 = 0;
     cv_nextIndex = 0;
     cv_v = 0;
     while (1) {
@@ -67319,15 +67354,15 @@ static void clar_fn_cgBuildOnCycleTab(void) {
                         }
                     }
                     if ((*(int32_t*)rt_list_at(cv_low, (int32_t)(cv_node))) == (*(int32_t*)rt_list_at(cv_idx, (int32_t)(cv_node)))) {
-                            clar_fn_rtListRelease((void*)cv___store340);
+                            clar_fn_rtListRelease((void*)cv___store341);
 
                         rt_list * t20 = NULL;
                         t20 = clar_fn_cgFreshIntList();
-                        cv___store340 = t20;
+                        cv___store341 = t20;
                             clar_fn_rtListRelease((void*)cv_comp);
 
-                        cv_comp = cv___store340;
-                        cv___store340 = 0;
+                        cv_comp = cv___store341;
+                        cv___store341 = 0;
                         int32_t t21;
                         clar_fn_rtListPop((void*)cv_sccStack, (void*)&t21);
                         cv_top = t21;
@@ -67437,10 +67472,10 @@ static int32_t clar_fn_cgStackHeuristic(void) {
     cv_fam = 0;
     int32_t cv_result;
     cv_result = 0;
-    rt_list * cv___store341;
-    cv___store341 = NULL;
     rt_list * cv___store342;
     cv___store342 = NULL;
+    rt_list * cv___store343;
+    cv___store343 = NULL;
     int32_t cv___ret1207;
     cv___ret1207 = 0;
     if (cv_irAppStack != CLAR_NEG32(1)) {
@@ -67451,24 +67486,24 @@ static int32_t clar_fn_cgStackHeuristic(void) {
     }
     clar_fn_cgBuildAdjacency();
     clar_fn_cgBuildOnCycleTab();
-        clar_fn_rtListRelease((void*)cv___store341);
+        clar_fn_rtListRelease((void*)cv___store342);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store341 = t1;
+    cv___store342 = t1;
         clar_fn_rtListRelease((void*)cv_cgHeurState);
 
-    cv_cgHeurState = cv___store341;
-    cv___store341 = 0;
-        clar_fn_rtListRelease((void*)cv___store342);
+    cv_cgHeurState = cv___store342;
+    cv___store342 = 0;
+        clar_fn_rtListRelease((void*)cv___store343);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_cgFreshIntList();
-    cv___store342 = t2;
+    cv___store343 = t2;
         clar_fn_rtListRelease((void*)cv_cgHeurMemo);
 
-    cv_cgHeurMemo = cv___store342;
-    cv___store342 = 0;
+    cv_cgHeurMemo = cv___store343;
+    cv___store343 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -67656,6 +67691,16 @@ static void clar_fn_cgStoreD0At(int32_t cv_reg, int32_t cv_off, int32_t cv_t) {
         clar_fn_a68Emit(0, 1, 1, 0, 0, 6, cv_reg, cv_off);
     } else {
         clar_fn_a68Emit(0, 4, 1, 0, 0, 6, cv_reg, cv_off);
+    }
+    return;
+}
+
+static void clar_fn_cgLoadD0At(int32_t cv_reg, int32_t cv_off, int32_t cv_t) {
+    if (clar_fn_cgSizeOf(cv_t) == 1) {
+        clar_fn_a68Emit(35, 4, 0, 0, 0, 1, 0, 0);
+        clar_fn_a68Emit(0, 1, 6, cv_reg, cv_off, 1, 0, 0);
+    } else {
+        clar_fn_a68Emit(0, 4, 6, cv_reg, cv_off, 1, 0, 0);
     }
     return;
 }
@@ -68130,28 +68175,28 @@ static void clar_fn_cgAssignRcWalkLabels(void) {
     cv_retains = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_releases;
     cv_releases = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store343;
-    cv___store343 = NULL;
     rt_list * cv___store344;
     cv___store344 = NULL;
-        clar_fn_rtListRelease((void*)cv___store343);
+    rt_list * cv___store345;
+    cv___store345 = NULL;
+        clar_fn_rtListRelease((void*)cv___store344);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store343 = t1;
+    cv___store344 = t1;
         clar_fn_rtListRelease((void*)cv_retains);
 
-    cv_retains = cv___store343;
-    cv___store343 = 0;
-        clar_fn_rtListRelease((void*)cv___store344);
+    cv_retains = cv___store344;
+    cv___store344 = 0;
+        clar_fn_rtListRelease((void*)cv___store345);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_cgFreshIntList();
-    cv___store344 = t2;
+    cv___store345 = t2;
         clar_fn_rtListRelease((void*)cv_releases);
 
-    cv_releases = cv___store344;
-    cv___store344 = 0;
+    cv_releases = cv___store345;
+    cv___store345 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irRecords)))) break;
@@ -68297,53 +68342,53 @@ static int32_t clar_fn_cgReserveDeepScratch(int32_t cv_startNeg) {
     cv_vals = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_i;
     cv_i = 0;
-    rt_list * cv___store345;
-    cv___store345 = NULL;
     rt_list * cv___store346;
     cv___store346 = NULL;
     rt_list * cv___store347;
     cv___store347 = NULL;
     rt_list * cv___store348;
     cv___store348 = NULL;
+    rt_list * cv___store349;
+    cv___store349 = NULL;
     int32_t cv___ret1208;
     cv___ret1208 = 0;
     cv_running = cv_startNeg;
-        clar_fn_rtListRelease((void*)cv___store345);
+        clar_fn_rtListRelease((void*)cv___store346);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store345 = t1;
+    cv___store346 = t1;
         clar_fn_rtListRelease((void*)cv_ptrs);
 
-    cv_ptrs = cv___store345;
-    cv___store345 = 0;
-        clar_fn_rtListRelease((void*)cv___store346);
-
-    rt_list * t2 = NULL;
-    t2 = clar_fn_cgFreshIntList();
-    cv___store346 = t2;
-        clar_fn_rtListRelease((void*)cv_counts);
-
-    cv_counts = cv___store346;
+    cv_ptrs = cv___store346;
     cv___store346 = 0;
         clar_fn_rtListRelease((void*)cv___store347);
 
-    rt_list * t3 = NULL;
-    t3 = clar_fn_cgFreshIntList();
-    cv___store347 = t3;
-        clar_fn_rtListRelease((void*)cv_idxs);
+    rt_list * t2 = NULL;
+    t2 = clar_fn_cgFreshIntList();
+    cv___store347 = t2;
+        clar_fn_rtListRelease((void*)cv_counts);
 
-    cv_idxs = cv___store347;
+    cv_counts = cv___store347;
     cv___store347 = 0;
         clar_fn_rtListRelease((void*)cv___store348);
 
+    rt_list * t3 = NULL;
+    t3 = clar_fn_cgFreshIntList();
+    cv___store348 = t3;
+        clar_fn_rtListRelease((void*)cv_idxs);
+
+    cv_idxs = cv___store348;
+    cv___store348 = 0;
+        clar_fn_rtListRelease((void*)cv___store349);
+
     rt_list * t4 = NULL;
     t4 = clar_fn_cgFreshIntList();
-    cv___store348 = t4;
+    cv___store349 = t4;
         clar_fn_rtListRelease((void*)cv_vals);
 
-    cv_vals = cv___store348;
-    cv___store348 = 0;
+    cv_vals = cv___store349;
+    cv___store349 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < 3))) break;
@@ -68863,17 +68908,17 @@ static void clar_fn_cgReserveEnumTableLabels(void) {
     cv_i = 0;
     rt_list * cv_labels;
     cv_labels = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store349;
-    cv___store349 = NULL;
-        clar_fn_rtListRelease((void*)cv___store349);
+    rt_list * cv___store350;
+    cv___store350 = NULL;
+        clar_fn_rtListRelease((void*)cv___store350);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store349 = t1;
+    cv___store350 = t1;
         clar_fn_rtListRelease((void*)cv_labels);
 
-    cv_labels = cv___store349;
-    cv___store349 = 0;
+    cv_labels = cv___store350;
+    cv___store350 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irEnums)))) break;
@@ -68945,17 +68990,17 @@ static void clar_fn_cgReserveSerdescLabels(void) {
     cv_i = 0;
     rt_list * cv_labels;
     cv_labels = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store350;
-    cv___store350 = NULL;
-        clar_fn_rtListRelease((void*)cv___store350);
+    rt_list * cv___store351;
+    cv___store351 = NULL;
+        clar_fn_rtListRelease((void*)cv___store351);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store350 = t1;
+    cv___store351 = t1;
         clar_fn_rtListRelease((void*)cv_labels);
 
-    cv_labels = cv___store350;
-    cv___store350 = 0;
+    cv_labels = cv___store351;
+    cv___store351 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irRecords)))) break;
@@ -69023,19 +69068,19 @@ static rt_list * clar_fn_cgBuildSerdescInts(int32_t cv_recNameIdx) {
     cv_ei = 0;
     int32_t cv_m;
     cv_m = 0;
-    rt_list * cv___store351;
-    cv___store351 = NULL;
+    rt_list * cv___store352;
+    cv___store352 = NULL;
     rt_list * cv___ret1218;
     cv___ret1218 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___store351);
+        clar_fn_rtListRelease((void*)cv___store352);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store351 = t1;
+    cv___store352 = t1;
         clar_fn_rtListRelease((void*)cv_out);
 
-    cv_out = cv___store351;
-    cv___store351 = 0;
+    cv_out = cv___store352;
+    cv___store352 = 0;
     cv_ri = clar_fn_cgFindRecordByName(cv_recNameIdx);
     if (cv_ri == CLAR_NEG32(1)) {
         clar_str_255 t2;
@@ -69151,8 +69196,8 @@ static void clar_fn_cgEmitSerdescTables(void) {
     cv_j = 0;
     int32_t cv_before;
     cv_before = 0;
-    rt_list * cv___store352;
-    cv___store352 = NULL;
+    rt_list * cv___store353;
+    cv___store353 = NULL;
     if (cv_a68ListingOn) {
         clar_fn_a68Comment(&(clar_lit_2000));
     } else {
@@ -69164,7 +69209,7 @@ static void clar_fn_cgEmitSerdescTables(void) {
         cv_ri = (*(int32_t*)rt_list_at(cv_cgCurPoolSerdescs, (int32_t)(cv_i)));
         cv_before = clar_fn_a68SizeSoFar();
         clar_fn_a68Bind((*(int32_t*)rt_list_at(cv_cgSerdescLabels, (int32_t)(cv_ri))));
-            clar_fn_rtListRelease((void*)cv___store352);
+            clar_fn_rtListRelease((void*)cv___store353);
 
         rt_list * t1 = NULL;
         t1 = clar_fn_cgBuildSerdescInts(clar_fn_irRecordLayoutName(cv_ri));
@@ -69173,11 +69218,11 @@ static void clar_fn_cgEmitSerdescTables(void) {
 
             goto bail;
         }
-        cv___store352 = t1;
+        cv___store353 = t1;
             clar_fn_rtListRelease((void*)cv_vals);
 
-        cv_vals = cv___store352;
-        cv___store352 = 0;
+        cv_vals = cv___store353;
+        cv___store353 = 0;
         cv_j = 0;
         while (1) {
             if (!((cv_j < clar_fn_rtListCount((void*)cv_vals)))) break;
@@ -69425,8 +69470,6 @@ static void clar_fn_cgEmitFunc(int32_t cv_f) {
     cv_bigTmpCount = 0;
     int32_t cv_startIdx;
     cv_startIdx = 0;
-    rt_list * cv___store353;
-    cv___store353 = NULL;
     rt_list * cv___store354;
     cv___store354 = NULL;
     rt_list * cv___store355;
@@ -69455,6 +69498,8 @@ static void clar_fn_cgEmitFunc(int32_t cv_f) {
     cv___store366 = NULL;
     rt_list * cv___store367;
     cv___store367 = NULL;
+    rt_list * cv___store368;
+    cv___store368 = NULL;
     if (clar_fn_cgCbGlueBodyFor(cv_f) != CLAR_NEG32(1)) {
         clar_fn_cgEmitCallbackGlue(cv_f, clar_fn_cgCbGlueBodyFor(cv_f));
         if (clar_aborting) goto bail;
@@ -69502,78 +69547,78 @@ static void clar_fn_cgEmitFunc(int32_t cv_f) {
     } else {
         clar_fn_a68CommentMarker();
     }
-        clar_fn_rtListRelease((void*)cv___store353);
+        clar_fn_rtListRelease((void*)cv___store354);
 
     rt_list * t7 = NULL;
     t7 = clar_fn_cgFreshStringList();
-    cv___store353 = t7;
+    cv___store354 = t7;
         clar_fn_rtListRelease((void*)cv_frameNames);
 
-    cv_frameNames = cv___store353;
-    cv___store353 = 0;
-        clar_fn_rtListRelease((void*)cv___store354);
-
-    rt_list * t8 = NULL;
-    t8 = clar_fn_cgFreshIntList();
-    cv___store354 = t8;
-        clar_fn_rtListRelease((void*)cv_frameOffsets);
-
-    cv_frameOffsets = cv___store354;
+    cv_frameNames = cv___store354;
     cv___store354 = 0;
         clar_fn_rtListRelease((void*)cv___store355);
 
-    rt_list * t9 = NULL;
-    t9 = clar_fn_cgFreshIntList();
-    cv___store355 = t9;
-        clar_fn_rtListRelease((void*)cv_frameNameIdxs);
+    rt_list * t8 = NULL;
+    t8 = clar_fn_cgFreshIntList();
+    cv___store355 = t8;
+        clar_fn_rtListRelease((void*)cv_frameOffsets);
 
-    cv_frameNameIdxs = cv___store355;
+    cv_frameOffsets = cv___store355;
     cv___store355 = 0;
         clar_fn_rtListRelease((void*)cv___store356);
 
-    rt_list * t10 = NULL;
-    t10 = clar_fn_cgFreshBoolList();
-    cv___store356 = t10;
-        clar_fn_rtListRelease((void*)cv_frameIsRef);
+    rt_list * t9 = NULL;
+    t9 = clar_fn_cgFreshIntList();
+    cv___store356 = t9;
+        clar_fn_rtListRelease((void*)cv_frameNameIdxs);
 
-    cv_frameIsRef = cv___store356;
+    cv_frameNameIdxs = cv___store356;
     cv___store356 = 0;
         clar_fn_rtListRelease((void*)cv___store357);
 
-    rt_list * t11 = NULL;
-    t11 = clar_fn_cgFreshIntList();
-    cv___store357 = t11;
-        clar_fn_rtListRelease((void*)cv_recLocalOffsets);
+    rt_list * t10 = NULL;
+    t10 = clar_fn_cgFreshBoolList();
+    cv___store357 = t10;
+        clar_fn_rtListRelease((void*)cv_frameIsRef);
 
-    cv_recLocalOffsets = cv___store357;
+    cv_frameIsRef = cv___store357;
     cv___store357 = 0;
         clar_fn_rtListRelease((void*)cv___store358);
 
-    rt_list * t12 = NULL;
-    t12 = clar_fn_cgFreshIntList();
-    cv___store358 = t12;
-        clar_fn_rtListRelease((void*)cv_recLocalTypes);
+    rt_list * t11 = NULL;
+    t11 = clar_fn_cgFreshIntList();
+    cv___store358 = t11;
+        clar_fn_rtListRelease((void*)cv_recLocalOffsets);
 
-    cv_recLocalTypes = cv___store358;
+    cv_recLocalOffsets = cv___store358;
     cv___store358 = 0;
         clar_fn_rtListRelease((void*)cv___store359);
 
-    rt_list * t13 = NULL;
-    t13 = clar_fn_cgFreshBoolList();
-    cv___store359 = t13;
-        clar_fn_rtListRelease((void*)cv_recLocalNoBirth);
+    rt_list * t12 = NULL;
+    t12 = clar_fn_cgFreshIntList();
+    cv___store359 = t12;
+        clar_fn_rtListRelease((void*)cv_recLocalTypes);
 
-    cv_recLocalNoBirth = cv___store359;
+    cv_recLocalTypes = cv___store359;
     cv___store359 = 0;
         clar_fn_rtListRelease((void*)cv___store360);
 
+    rt_list * t13 = NULL;
+    t13 = clar_fn_cgFreshBoolList();
+    cv___store360 = t13;
+        clar_fn_rtListRelease((void*)cv_recLocalNoBirth);
+
+    cv_recLocalNoBirth = cv___store360;
+    cv___store360 = 0;
+        clar_fn_rtListRelease((void*)cv___store361);
+
     rt_list * t14 = NULL;
     t14 = clar_fn_cgFreshIntList();
-    cv___store360 = t14;
+    cv___store361 = t14;
         clar_fn_rtListRelease((void*)cv_params);
 
-    cv_params = cv___store360;
-    cv___store360 = 0;
+    cv_params = cv___store361;
+    cv___store361 = 0;
     cv_p = clar_fn_irFuncParamsHead(cv_f);
     while (1) {
         if (!((cv_p != CLAR_NEG32(1)))) break;
@@ -69582,15 +69627,15 @@ static void clar_fn_cgEmitFunc(int32_t cv_f) {
         clar_fn_rtListPush((void*)cv_params, (void*)&(t15));
         cv_p = clar_fn_irLocalNext(cv_p);
     }
-        clar_fn_rtListRelease((void*)cv___store361);
+        clar_fn_rtListRelease((void*)cv___store362);
 
     rt_list * t16 = NULL;
     t16 = clar_fn_cgFreshIntList();
-    cv___store361 = t16;
+    cv___store362 = t16;
         clar_fn_rtListRelease((void*)cv_paramOffsets);
 
-    cv_paramOffsets = cv___store361;
-    cv___store361 = 0;
+    cv_paramOffsets = cv___store362;
+    cv___store362 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_params)))) break;
@@ -69733,15 +69778,15 @@ static void clar_fn_cgEmitFunc(int32_t cv_f) {
         }
         cv_loc = clar_fn_irLocalNext(cv_loc);
     }
-        clar_fn_rtListRelease((void*)cv___store362);
+        clar_fn_rtListRelease((void*)cv___store363);
 
     rt_list * t52 = NULL;
     t52 = clar_fn_cgFreshIntList();
-    cv___store362 = t52;
+    cv___store363 = t52;
         clar_fn_rtListRelease((void*)cv_tmpOffs);
 
-    cv_tmpOffs = cv___store362;
-    cv___store362 = 0;
+    cv_tmpOffs = cv___store363;
+    cv___store363 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < 14))) break;
@@ -69760,15 +69805,15 @@ static void clar_fn_cgEmitFunc(int32_t cv_f) {
     if ((*(int32_t*)rt_list_at(cv_cgFuncBigTmpNeed, (int32_t)(cv_f))) > cv_bigTmpCount) {
         cv_bigTmpCount = (*(int32_t*)rt_list_at(cv_cgFuncBigTmpNeed, (int32_t)(cv_f)));
     }
-        clar_fn_rtListRelease((void*)cv___store363);
+        clar_fn_rtListRelease((void*)cv___store364);
 
     rt_list * t54 = NULL;
     t54 = clar_fn_cgFreshIntList();
-    cv___store363 = t54;
+    cv___store364 = t54;
         clar_fn_rtListRelease((void*)cv_bigTmpOffs);
 
-    cv_bigTmpOffs = cv___store363;
-    cv___store363 = 0;
+    cv_bigTmpOffs = cv___store364;
+    cv___store364 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_bigTmpCount))) break;
@@ -69788,24 +69833,24 @@ static void clar_fn_cgEmitFunc(int32_t cv_f) {
     cv_runningNeg = clar_fn_cgReserveDeepScratch(cv_runningNeg);
     cv_frameSize = CLAR_SUB32(0, cv_runningNeg);
     (*(int32_t*)rt_list_at(cv_cgFuncFrameSizes, (int32_t)(cv_f))) = cv_frameSize;
-        clar_fn_rtListRelease((void*)cv___store364);
+        clar_fn_rtListRelease((void*)cv___store365);
 
     rt_list * t56 = NULL;
     t56 = clar_fn_cgFreshIntList();
-    cv___store364 = t56;
+    cv___store365 = t56;
         clar_fn_rtListRelease((void*)cv_cgStmtTmpOffs);
 
-    cv_cgStmtTmpOffs = cv___store364;
-    cv___store364 = 0;
-        clar_fn_rtListRelease((void*)cv___store365);
+    cv_cgStmtTmpOffs = cv___store365;
+    cv___store365 = 0;
+        clar_fn_rtListRelease((void*)cv___store366);
 
     rt_list * t57 = NULL;
     t57 = clar_fn_cgFreshIntList();
-    cv___store365 = t57;
+    cv___store366 = t57;
         clar_fn_rtListRelease((void*)cv_cgStmtTmpType);
 
-    cv_cgStmtTmpType = cv___store365;
-    cv___store365 = 0;
+    cv_cgStmtTmpType = cv___store366;
+    cv___store366 = 0;
     cv_cgStmtTmpNext = 0;
         clar_fn_rtListRetain((void*)cv_frameNames);
 
@@ -69832,24 +69877,24 @@ static void clar_fn_cgEmitFunc(int32_t cv_f) {
         cv_cgCurHiddenOffset = 8;
     }
     cv_cgCurRetType = clar_fn_irFuncRet(cv_f);
-        clar_fn_rtListRelease((void*)cv___store366);
+        clar_fn_rtListRelease((void*)cv___store367);
 
     rt_list * t58 = NULL;
     t58 = clar_fn_cgFreshIntList();
-    cv___store366 = t58;
+    cv___store367 = t58;
         clar_fn_rtListRelease((void*)cv_cgLoopBreakLabels);
 
-    cv_cgLoopBreakLabels = cv___store366;
-    cv___store366 = 0;
-        clar_fn_rtListRelease((void*)cv___store367);
+    cv_cgLoopBreakLabels = cv___store367;
+    cv___store367 = 0;
+        clar_fn_rtListRelease((void*)cv___store368);
 
     rt_list * t59 = NULL;
     t59 = clar_fn_cgFreshIntList();
-    cv___store367 = t59;
+    cv___store368 = t59;
         clar_fn_rtListRelease((void*)cv_cgLoopContinueLabels);
 
-    cv_cgLoopContinueLabels = cv___store367;
-    cv___store367 = 0;
+    cv_cgLoopContinueLabels = cv___store368;
+    cv___store368 = 0;
     cv_cgCurEpilogueLabel = clar_fn_a68NewLabel();
     cv_cgBailDepth = 0;
     cv_cgBailUsed = 0;
@@ -69986,12 +70031,12 @@ static void clar_fn_cgEmitCallbackGlue(int32_t cv_glueFi, int32_t cv_bodyFi) {
     cv_retKind = 0;
     int32_t cv_pk;
     cv_pk = 0;
-    rt_list * cv___store368;
-    cv___store368 = NULL;
     rt_list * cv___store369;
     cv___store369 = NULL;
     rt_list * cv___store370;
     cv___store370 = NULL;
+    rt_list * cv___store371;
+    cv___store371 = NULL;
     if (cv_a68ListingOn) {
         clar_str_255 t1;
         t1 = clar_fn_poolGet(clar_fn_irFuncName(cv_glueFi));
@@ -70032,15 +70077,15 @@ static void clar_fn_cgEmitCallbackGlue(int32_t cv_glueFi, int32_t cv_bodyFi) {
         clar_aborting = 1;
         goto bail;
     }
-        clar_fn_rtListRelease((void*)cv___store368);
+        clar_fn_rtListRelease((void*)cv___store369);
 
     rt_list * t15 = NULL;
     t15 = clar_fn_cgFreshIntList();
-    cv___store368 = t15;
+    cv___store369 = t15;
         clar_fn_rtListRelease((void*)cv_params);
 
-    cv_params = cv___store368;
-    cv___store368 = 0;
+    cv_params = cv___store369;
+    cv___store369 = 0;
     cv_p = clar_fn_irFuncParamsHead(cv_bodyFi);
     while (1) {
         if (!((cv_p != CLAR_NEG32(1)))) break;
@@ -70049,24 +70094,24 @@ static void clar_fn_cgEmitCallbackGlue(int32_t cv_glueFi, int32_t cv_bodyFi) {
         clar_fn_rtListPush((void*)cv_params, (void*)&(t16));
         cv_p = clar_fn_irLocalNext(cv_p);
     }
-        clar_fn_rtListRelease((void*)cv___store369);
+        clar_fn_rtListRelease((void*)cv___store370);
 
     rt_list * t17 = NULL;
     t17 = clar_fn_cgFreshIntList();
-    cv___store369 = t17;
+    cv___store370 = t17;
         clar_fn_rtListRelease((void*)cv_pascalWidths);
 
-    cv_pascalWidths = cv___store369;
-    cv___store369 = 0;
-        clar_fn_rtListRelease((void*)cv___store370);
+    cv_pascalWidths = cv___store370;
+    cv___store370 = 0;
+        clar_fn_rtListRelease((void*)cv___store371);
 
     rt_list * t18 = NULL;
     t18 = clar_fn_cgFreshIntList();
-    cv___store370 = t18;
+    cv___store371 = t18;
         clar_fn_rtListRelease((void*)cv_offsets);
 
-    cv_offsets = cv___store370;
-    cv___store370 = 0;
+    cv_offsets = cv___store371;
+    cv___store371 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_params)))) break;
@@ -70603,38 +70648,38 @@ static void clar_fn_cgArrElemAddr(int32_t cv_e, int32_t cv_xt) {
     cv_args = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_addrs;
     cv_addrs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store371;
-    cv___store371 = NULL;
     rt_list * cv___store372;
     cv___store372 = NULL;
+    rt_list * cv___store373;
+    cv___store373 = NULL;
     clar_fn_cgExprAddr(clar_fn_irIndexRefX(cv_e));
     if (clar_aborting) goto bail;
     clar_fn_a68Emit(0, 4, 2, 0, 0, 5, 7, 0);
     cv_elemT = clar_fn_irtElem(cv_xt);
-        clar_fn_rtListRelease((void*)cv___store371);
+        clar_fn_rtListRelease((void*)cv___store372);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store371 = t1;
+    cv___store372 = t1;
         clar_fn_rtListRelease((void*)cv_args);
 
-    cv_args = cv___store371;
-    cv___store371 = 0;
+    cv_args = cv___store372;
+    cv___store372 = 0;
     int32_t t2;
     t2 = clar_fn_irIndexRefI(cv_e);
     clar_fn_rtListPush((void*)cv_args, (void*)&(t2));
     int32_t t3;
     t3 = clar_fn_newIRIntConst(clar_fn_irtN(cv_xt), cv_irIntT);
     clar_fn_rtListPush((void*)cv_args, (void*)&(t3));
-        clar_fn_rtListRelease((void*)cv___store372);
+        clar_fn_rtListRelease((void*)cv___store373);
 
     rt_list * t4 = NULL;
     t4 = clar_fn_cgFreshBoolList();
-    cv___store372 = t4;
+    cv___store373 = t4;
         clar_fn_rtListRelease((void*)cv_addrs);
 
-    cv_addrs = cv___store372;
-    cv___store372 = 0;
+    cv_addrs = cv___store373;
+    cv___store373 = 0;
     int32_t t5;
     t5 = 0;
     clar_fn_rtListPush((void*)cv_addrs, (void*)&(t5));
@@ -71334,32 +71379,32 @@ static void clar_fn_cgIntr1(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0) 
     cv_args = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_addrs;
     cv_addrs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store373;
-    cv___store373 = NULL;
     rt_list * cv___store374;
     cv___store374 = NULL;
+    rt_list * cv___store375;
+    cv___store375 = NULL;
     cv_a0e = clar_fn_irIntrArgsHead(cv_e);
-        clar_fn_rtListRelease((void*)cv___store373);
+        clar_fn_rtListRelease((void*)cv___store374);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store373 = t1;
+    cv___store374 = t1;
         clar_fn_rtListRelease((void*)cv_args);
 
-    cv_args = cv___store373;
-    cv___store373 = 0;
+    cv_args = cv___store374;
+    cv___store374 = 0;
     int32_t t2;
     t2 = cv_a0e;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t2));
-        clar_fn_rtListRelease((void*)cv___store374);
+        clar_fn_rtListRelease((void*)cv___store375);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_cgFreshBoolList();
-    cv___store374 = t3;
+    cv___store375 = t3;
         clar_fn_rtListRelease((void*)cv_addrs);
 
-    cv_addrs = cv___store374;
-    cv___store374 = 0;
+    cv_addrs = cv___store375;
+    cv___store375 = 0;
     int32_t t4;
     t4 = cv_addr0;
     clar_fn_rtListPush((void*)cv_addrs, (void*)&(t4));
@@ -71393,36 +71438,36 @@ static void clar_fn_cgIntr2(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0, 
     cv_args = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_addrs;
     cv_addrs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store375;
-    cv___store375 = NULL;
     rt_list * cv___store376;
     cv___store376 = NULL;
+    rt_list * cv___store377;
+    cv___store377 = NULL;
     cv_a0e = clar_fn_irIntrArgsHead(cv_e);
     cv_a1e = clar_fn_irExprNext(cv_a0e);
-        clar_fn_rtListRelease((void*)cv___store375);
+        clar_fn_rtListRelease((void*)cv___store376);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store375 = t1;
+    cv___store376 = t1;
         clar_fn_rtListRelease((void*)cv_args);
 
-    cv_args = cv___store375;
-    cv___store375 = 0;
+    cv_args = cv___store376;
+    cv___store376 = 0;
     int32_t t2;
     t2 = cv_a0e;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t2));
     int32_t t3;
     t3 = cv_a1e;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t3));
-        clar_fn_rtListRelease((void*)cv___store376);
+        clar_fn_rtListRelease((void*)cv___store377);
 
     rt_list * t4 = NULL;
     t4 = clar_fn_cgFreshBoolList();
-    cv___store376 = t4;
+    cv___store377 = t4;
         clar_fn_rtListRelease((void*)cv_addrs);
 
-    cv_addrs = cv___store376;
-    cv___store376 = 0;
+    cv_addrs = cv___store377;
+    cv___store377 = 0;
     int32_t t5;
     t5 = cv_addr0;
     clar_fn_rtListPush((void*)cv_addrs, (void*)&(t5));
@@ -71461,22 +71506,22 @@ static void clar_fn_cgIntr3(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0, 
     cv_args = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_addrs;
     cv_addrs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store377;
-    cv___store377 = NULL;
     rt_list * cv___store378;
     cv___store378 = NULL;
+    rt_list * cv___store379;
+    cv___store379 = NULL;
     cv_a0e = clar_fn_irIntrArgsHead(cv_e);
     cv_a1e = clar_fn_irExprNext(cv_a0e);
     cv_a2e = clar_fn_irExprNext(cv_a1e);
-        clar_fn_rtListRelease((void*)cv___store377);
+        clar_fn_rtListRelease((void*)cv___store378);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store377 = t1;
+    cv___store378 = t1;
         clar_fn_rtListRelease((void*)cv_args);
 
-    cv_args = cv___store377;
-    cv___store377 = 0;
+    cv_args = cv___store378;
+    cv___store378 = 0;
     int32_t t2;
     t2 = cv_a0e;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t2));
@@ -71486,15 +71531,15 @@ static void clar_fn_cgIntr3(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0, 
     int32_t t4;
     t4 = cv_a2e;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t4));
-        clar_fn_rtListRelease((void*)cv___store378);
+        clar_fn_rtListRelease((void*)cv___store379);
 
     rt_list * t5 = NULL;
     t5 = clar_fn_cgFreshBoolList();
-    cv___store378 = t5;
+    cv___store379 = t5;
         clar_fn_rtListRelease((void*)cv_addrs);
 
-    cv_addrs = cv___store378;
-    cv___store378 = 0;
+    cv_addrs = cv___store379;
+    cv___store379 = 0;
     int32_t t6;
     t6 = cv_addr0;
     clar_fn_rtListPush((void*)cv_addrs, (void*)&(t6));
@@ -71538,23 +71583,23 @@ static void clar_fn_cgIntr4(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0, 
     cv_args = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_addrs;
     cv_addrs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store379;
-    cv___store379 = NULL;
     rt_list * cv___store380;
     cv___store380 = NULL;
+    rt_list * cv___store381;
+    cv___store381 = NULL;
     cv_a0e = clar_fn_irIntrArgsHead(cv_e);
     cv_a1e = clar_fn_irExprNext(cv_a0e);
     cv_a2e = clar_fn_irExprNext(cv_a1e);
     cv_a3e = clar_fn_irExprNext(cv_a2e);
-        clar_fn_rtListRelease((void*)cv___store379);
+        clar_fn_rtListRelease((void*)cv___store380);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store379 = t1;
+    cv___store380 = t1;
         clar_fn_rtListRelease((void*)cv_args);
 
-    cv_args = cv___store379;
-    cv___store379 = 0;
+    cv_args = cv___store380;
+    cv___store380 = 0;
     int32_t t2;
     t2 = cv_a0e;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t2));
@@ -71567,15 +71612,15 @@ static void clar_fn_cgIntr4(int32_t cv_e, int32_t cv_nameIdx, int32_t cv_addr0, 
     int32_t t5;
     t5 = cv_a3e;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t5));
-        clar_fn_rtListRelease((void*)cv___store380);
+        clar_fn_rtListRelease((void*)cv___store381);
 
     rt_list * t6 = NULL;
     t6 = clar_fn_cgFreshBoolList();
-    cv___store380 = t6;
+    cv___store381 = t6;
         clar_fn_rtListRelease((void*)cv_addrs);
 
-    cv_addrs = cv___store380;
-    cv___store380 = 0;
+    cv_addrs = cv___store381;
+    cv___store381 = 0;
     int32_t t7;
     t7 = cv_addr0;
     clar_fn_rtListPush((void*)cv_addrs, (void*)&(t7));
@@ -71766,8 +71811,6 @@ static void clar_fn_cgIntrTextCmp(int32_t cv_e) {
     cv_args = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_addrs;
     cv_addrs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store381;
-    cv___store381 = NULL;
     rt_list * cv___store382;
     cv___store382 = NULL;
     rt_list * cv___store383;
@@ -71778,35 +71821,37 @@ static void clar_fn_cgIntrTextCmp(int32_t cv_e) {
     cv___store385 = NULL;
     rt_list * cv___store386;
     cv___store386 = NULL;
+    rt_list * cv___store387;
+    cv___store387 = NULL;
     cv_a0e = clar_fn_irIntrArgsHead(cv_e);
     cv_a1e = clar_fn_irExprNext(cv_a0e);
     cv_aKind = clar_fn_irtKind(clar_fn_irExprType(cv_a0e));
     cv_bKind = clar_fn_irtKind(clar_fn_irExprType(cv_a1e));
     if ((cv_aKind == 6) && (cv_bKind == 6)) {
-            clar_fn_rtListRelease((void*)cv___store381);
+            clar_fn_rtListRelease((void*)cv___store382);
 
         rt_list * t1 = NULL;
         t1 = clar_fn_cgFreshIntList();
-        cv___store381 = t1;
+        cv___store382 = t1;
             clar_fn_rtListRelease((void*)cv_args);
 
-        cv_args = cv___store381;
-        cv___store381 = 0;
+        cv_args = cv___store382;
+        cv___store382 = 0;
         int32_t t2;
         t2 = cv_a0e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t2));
         int32_t t3;
         t3 = cv_a1e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t3));
-            clar_fn_rtListRelease((void*)cv___store382);
+            clar_fn_rtListRelease((void*)cv___store383);
 
         rt_list * t4 = NULL;
         t4 = clar_fn_cgFreshBoolList();
-        cv___store382 = t4;
+        cv___store383 = t4;
             clar_fn_rtListRelease((void*)cv_addrs);
 
-        cv_addrs = cv___store382;
-        cv___store382 = 0;
+        cv_addrs = cv___store383;
+        cv___store383 = 0;
         int32_t t5;
         t5 = 0;
         clar_fn_rtListPush((void*)cv_addrs, (void*)&(t5));
@@ -71828,30 +71873,30 @@ static void clar_fn_cgIntrTextCmp(int32_t cv_e) {
         return;
     }
     if ((cv_aKind == 6) && (cv_bKind == 5)) {
-            clar_fn_rtListRelease((void*)cv___store383);
+            clar_fn_rtListRelease((void*)cv___store384);
 
         rt_list * t8 = NULL;
         t8 = clar_fn_cgFreshIntList();
-        cv___store383 = t8;
+        cv___store384 = t8;
             clar_fn_rtListRelease((void*)cv_args);
 
-        cv_args = cv___store383;
-        cv___store383 = 0;
+        cv_args = cv___store384;
+        cv___store384 = 0;
         int32_t t9;
         t9 = cv_a0e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t9));
         int32_t t10;
         t10 = cv_a1e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t10));
-            clar_fn_rtListRelease((void*)cv___store384);
+            clar_fn_rtListRelease((void*)cv___store385);
 
         rt_list * t11 = NULL;
         t11 = clar_fn_cgFreshBoolList();
-        cv___store384 = t11;
+        cv___store385 = t11;
             clar_fn_rtListRelease((void*)cv_addrs);
 
-        cv_addrs = cv___store384;
-        cv___store384 = 0;
+        cv_addrs = cv___store385;
+        cv___store385 = 0;
         int32_t t12;
         t12 = 0;
         clar_fn_rtListPush((void*)cv_addrs, (void*)&(t12));
@@ -71872,30 +71917,30 @@ static void clar_fn_cgIntrTextCmp(int32_t cv_e) {
 
         return;
     }
-        clar_fn_rtListRelease((void*)cv___store385);
+        clar_fn_rtListRelease((void*)cv___store386);
 
     rt_list * t15 = NULL;
     t15 = clar_fn_cgFreshIntList();
-    cv___store385 = t15;
+    cv___store386 = t15;
         clar_fn_rtListRelease((void*)cv_args);
 
-    cv_args = cv___store385;
-    cv___store385 = 0;
+    cv_args = cv___store386;
+    cv___store386 = 0;
     int32_t t16;
     t16 = cv_a1e;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t16));
     int32_t t17;
     t17 = cv_a0e;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t17));
-        clar_fn_rtListRelease((void*)cv___store386);
+        clar_fn_rtListRelease((void*)cv___store387);
 
     rt_list * t18 = NULL;
     t18 = clar_fn_cgFreshBoolList();
-    cv___store386 = t18;
+    cv___store387 = t18;
         clar_fn_rtListRelease((void*)cv_addrs);
 
-    cv_addrs = cv___store386;
-    cv___store386 = 0;
+    cv_addrs = cv___store387;
+    cv___store387 = 0;
     int32_t t19;
     t19 = 0;
     clar_fn_rtListPush((void*)cv_addrs, (void*)&(t19));
@@ -73089,8 +73134,6 @@ static void clar_fn_cgIntr(int32_t cv_e) {
     cv_args = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_addrs;
     cv_addrs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store387;
-    cv___store387 = NULL;
     rt_list * cv___store388;
     cv___store388 = NULL;
     rt_list * cv___store389;
@@ -73113,34 +73156,36 @@ static void clar_fn_cgIntr(int32_t cv_e) {
     cv___store397 = NULL;
     rt_list * cv___store398;
     cv___store398 = NULL;
+    rt_list * cv___store399;
+    cv___store399 = NULL;
     cv_nm = clar_fn_irIntrName(cv_e);
     if (cv_nm == clar_fn_IStrCmp()) {
         cv_a0e = clar_fn_irIntrArgsHead(cv_e);
         cv_a1e = clar_fn_irExprNext(cv_a0e);
-            clar_fn_rtListRelease((void*)cv___store387);
+            clar_fn_rtListRelease((void*)cv___store388);
 
         rt_list * t1 = NULL;
         t1 = clar_fn_cgFreshIntList();
-        cv___store387 = t1;
+        cv___store388 = t1;
             clar_fn_rtListRelease((void*)cv_args);
 
-        cv_args = cv___store387;
-        cv___store387 = 0;
+        cv_args = cv___store388;
+        cv___store388 = 0;
         int32_t t2;
         t2 = cv_a0e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t2));
         int32_t t3;
         t3 = cv_a1e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t3));
-            clar_fn_rtListRelease((void*)cv___store388);
+            clar_fn_rtListRelease((void*)cv___store389);
 
         rt_list * t4 = NULL;
         t4 = clar_fn_cgFreshBoolList();
-        cv___store388 = t4;
+        cv___store389 = t4;
             clar_fn_rtListRelease((void*)cv_addrs);
 
-        cv_addrs = cv___store388;
-        cv___store388 = 0;
+        cv_addrs = cv___store389;
+        cv___store389 = 0;
         int32_t t5;
         t5 = 1;
         clar_fn_rtListPush((void*)cv_addrs, (void*)&(t5));
@@ -73181,27 +73226,27 @@ static void clar_fn_cgIntr(int32_t cv_e) {
     }
     if (cv_nm == clar_fn_IAlert()) {
         cv_a0e = clar_fn_irIntrArgsHead(cv_e);
-            clar_fn_rtListRelease((void*)cv___store389);
+            clar_fn_rtListRelease((void*)cv___store390);
 
         rt_list * t8 = NULL;
         t8 = clar_fn_cgFreshIntList();
-        cv___store389 = t8;
+        cv___store390 = t8;
             clar_fn_rtListRelease((void*)cv_args);
 
-        cv_args = cv___store389;
-        cv___store389 = 0;
+        cv_args = cv___store390;
+        cv___store390 = 0;
         int32_t t9;
         t9 = cv_a0e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t9));
-            clar_fn_rtListRelease((void*)cv___store390);
+            clar_fn_rtListRelease((void*)cv___store391);
 
         rt_list * t10 = NULL;
         t10 = clar_fn_cgFreshBoolList();
-        cv___store390 = t10;
+        cv___store391 = t10;
             clar_fn_rtListRelease((void*)cv_addrs);
 
-        cv_addrs = cv___store390;
-        cv___store390 = 0;
+        cv_addrs = cv___store391;
+        cv___store391 = 0;
         int32_t t11;
         t11 = 1;
         clar_fn_rtListPush((void*)cv_addrs, (void*)&(t11));
@@ -73232,27 +73277,27 @@ static void clar_fn_cgIntr(int32_t cv_e) {
     }
     if (cv_nm == clar_fn_ILog()) {
         cv_a0e = clar_fn_irIntrArgsHead(cv_e);
-            clar_fn_rtListRelease((void*)cv___store391);
+            clar_fn_rtListRelease((void*)cv___store392);
 
         rt_list * t14 = NULL;
         t14 = clar_fn_cgFreshIntList();
-        cv___store391 = t14;
+        cv___store392 = t14;
             clar_fn_rtListRelease((void*)cv_args);
 
-        cv_args = cv___store391;
-        cv___store391 = 0;
+        cv_args = cv___store392;
+        cv___store392 = 0;
         int32_t t15;
         t15 = cv_a0e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t15));
-            clar_fn_rtListRelease((void*)cv___store392);
+            clar_fn_rtListRelease((void*)cv___store393);
 
         rt_list * t16 = NULL;
         t16 = clar_fn_cgFreshBoolList();
-        cv___store392 = t16;
+        cv___store393 = t16;
             clar_fn_rtListRelease((void*)cv_addrs);
 
-        cv_addrs = cv___store392;
-        cv___store392 = 0;
+        cv_addrs = cv___store393;
+        cv___store393 = 0;
         int32_t t17;
         t17 = 1;
         clar_fn_rtListPush((void*)cv_addrs, (void*)&(t17));
@@ -73273,27 +73318,27 @@ static void clar_fn_cgIntr(int32_t cv_e) {
     if (cv_nm == clar_fn_IQuit()) {
         cv_a0e = clar_fn_irIntrArgsHead(cv_e);
         clar_fn_a68EmitBr(28, 0, cv_cgFreeGlobalsLbl);
-            clar_fn_rtListRelease((void*)cv___store393);
+            clar_fn_rtListRelease((void*)cv___store394);
 
         rt_list * t19 = NULL;
         t19 = clar_fn_cgFreshIntList();
-        cv___store393 = t19;
+        cv___store394 = t19;
             clar_fn_rtListRelease((void*)cv_args);
 
-        cv_args = cv___store393;
-        cv___store393 = 0;
+        cv_args = cv___store394;
+        cv___store394 = 0;
         int32_t t20;
         t20 = cv_a0e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t20));
-            clar_fn_rtListRelease((void*)cv___store394);
+            clar_fn_rtListRelease((void*)cv___store395);
 
         rt_list * t21 = NULL;
         t21 = clar_fn_cgFreshBoolList();
-        cv___store394 = t21;
+        cv___store395 = t21;
             clar_fn_rtListRelease((void*)cv_addrs);
 
-        cv_addrs = cv___store394;
-        cv___store394 = 0;
+        cv_addrs = cv___store395;
+        cv___store395 = 0;
         int32_t t22;
         t22 = 0;
         clar_fn_rtListPush((void*)cv_addrs, (void*)&(t22));
@@ -73341,15 +73386,15 @@ static void clar_fn_cgIntr(int32_t cv_e) {
     if (cv_nm == clar_fn_IXRecStrWrite()) {
         cv_a0e = clar_fn_irIntrArgsHead(cv_e);
         cv_a1e = clar_fn_irExprNext(cv_a0e);
-            clar_fn_rtListRelease((void*)cv___store395);
+            clar_fn_rtListRelease((void*)cv___store396);
 
         rt_list * t24 = NULL;
         t24 = clar_fn_cgFreshIntList();
-        cv___store395 = t24;
+        cv___store396 = t24;
             clar_fn_rtListRelease((void*)cv_args);
 
-        cv_args = cv___store395;
-        cv___store395 = 0;
+        cv_args = cv___store396;
+        cv___store396 = 0;
         int32_t t25;
         t25 = cv_a0e;
         clar_fn_rtListPush((void*)cv_args, (void*)&(t25));
@@ -73359,15 +73404,15 @@ static void clar_fn_cgIntr(int32_t cv_e) {
         int32_t t27;
         t27 = clar_fn_irExprNext(cv_a1e);
         clar_fn_rtListPush((void*)cv_args, (void*)&(t27));
-            clar_fn_rtListRelease((void*)cv___store396);
+            clar_fn_rtListRelease((void*)cv___store397);
 
         rt_list * t28 = NULL;
         t28 = clar_fn_cgFreshBoolList();
-        cv___store396 = t28;
+        cv___store397 = t28;
             clar_fn_rtListRelease((void*)cv_addrs);
 
-        cv_addrs = cv___store396;
-        cv___store396 = 0;
+        cv_addrs = cv___store397;
+        cv___store397 = 0;
         int32_t t29;
         t29 = 1;
         clar_fn_rtListPush((void*)cv_addrs, (void*)&(t29));
@@ -73392,24 +73437,24 @@ static void clar_fn_cgIntr(int32_t cv_e) {
         return;
     }
     if (cv_nm == clar_fn_ILastErrCode()) {
-            clar_fn_rtListRelease((void*)cv___store397);
+            clar_fn_rtListRelease((void*)cv___store398);
 
         rt_list * t33 = NULL;
         t33 = clar_fn_cgFreshIntList();
-        cv___store397 = t33;
+        cv___store398 = t33;
             clar_fn_rtListRelease((void*)cv_args);
 
-        cv_args = cv___store397;
-        cv___store397 = 0;
-            clar_fn_rtListRelease((void*)cv___store398);
+        cv_args = cv___store398;
+        cv___store398 = 0;
+            clar_fn_rtListRelease((void*)cv___store399);
 
         rt_list * t34 = NULL;
         t34 = clar_fn_cgFreshBoolList();
-        cv___store398 = t34;
+        cv___store399 = t34;
             clar_fn_rtListRelease((void*)cv_addrs);
 
-        cv_addrs = cv___store398;
-        cv___store398 = 0;
+        cv_addrs = cv___store399;
+        cv___store399 = 0;
         int32_t t35;
         t35 = clar_fn_cgCallRuntime(cv_rnLastErrCode, cv_args, cv_addrs);
         if (clar_aborting) goto bail;
@@ -74793,17 +74838,17 @@ static void clar_fn_cgIntrUiForward(int32_t cv_e, int32_t cv_nameIdx) {
     cv_total = 0;
     rt_list * cv_savedReleases;
     cv_savedReleases = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store399;
-    cv___store399 = NULL;
-        clar_fn_rtListRelease((void*)cv___store399);
+    rt_list * cv___store400;
+    cv___store400 = NULL;
+        clar_fn_rtListRelease((void*)cv___store400);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgSaveArgReleases();
-    cv___store399 = t1;
+    cv___store400 = t1;
         clar_fn_rtListRelease((void*)cv_savedReleases);
 
-    cv_savedReleases = cv___store399;
-    cv___store399 = 0;
+    cv_savedReleases = cv___store400;
+    cv___store400 = 0;
     int32_t t2;
     t2 = clar_fn_cgPushArgs(clar_fn_irIntrArgsHead(cv_e));
     if (clar_aborting) goto bail;
@@ -75048,8 +75093,8 @@ static void clar_fn_cgBlockCopy(int32_t cv_size) {
 static rt_list * clar_fn_cgSaveArgReleases(void) {
     rt_list * cv_saved;
     cv_saved = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store400;
-    cv___store400 = NULL;
+    rt_list * cv___store401;
+    cv___store401 = NULL;
     rt_list * cv___ret1243;
     cv___ret1243 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
         clar_fn_rtListRetain((void*)cv_cgPendingArgReleases);
@@ -75057,15 +75102,15 @@ static rt_list * clar_fn_cgSaveArgReleases(void) {
         clar_fn_rtListRelease((void*)cv_saved);
 
     cv_saved = cv_cgPendingArgReleases;
-        clar_fn_rtListRelease((void*)cv___store400);
+        clar_fn_rtListRelease((void*)cv___store401);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store400 = t1;
+    cv___store401 = t1;
         clar_fn_rtListRelease((void*)cv_cgPendingArgReleases);
 
-    cv_cgPendingArgReleases = cv___store400;
-    cv___store400 = 0;
+    cv_cgPendingArgReleases = cv___store401;
+    cv___store401 = 0;
         clar_fn_rtListRelease((void*)cv___ret1243);
 
     cv___ret1243 = cv_saved;
@@ -75269,8 +75314,8 @@ static void clar_fn_cgCallFnScalar(int32_t cv_e) {
     cv_dst = 0;
     rt_list * cv_savedReleases;
     cv_savedReleases = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store401;
-    cv___store401 = NULL;
+    rt_list * cv___store402;
+    cv___store402 = NULL;
     cv_fi = clar_fn_findIRFuncIdxByName(clar_fn_irCallFnName(cv_e));
     if ((cv_fi == CLAR_NEG32(1)) || (!(clar_fn_shakeReachable(cv_fi)))) {
         clar_str_255 t1;
@@ -75315,15 +75360,15 @@ static void clar_fn_cgCallFnScalar(int32_t cv_e) {
         clar_aborting = 1;
         goto bail;
     }
-        clar_fn_rtListRelease((void*)cv___store401);
+        clar_fn_rtListRelease((void*)cv___store402);
 
     rt_list * t7 = NULL;
     t7 = clar_fn_cgSaveArgReleases();
-    cv___store401 = t7;
+    cv___store402 = t7;
         clar_fn_rtListRelease((void*)cv_savedReleases);
 
-    cv_savedReleases = cv___store401;
-    cv___store401 = 0;
+    cv_savedReleases = cv___store402;
+    cv___store402 = 0;
     int32_t t8;
     t8 = clar_fn_cgPushArgs(clar_fn_irCallFnArgsHead(cv_e));
     if (clar_aborting) goto bail;
@@ -75358,8 +75403,8 @@ static void clar_fn_cgCallFnInto(int32_t cv_e, int32_t cv_dst) {
     cv_total = 0;
     rt_list * cv_savedReleases;
     cv_savedReleases = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store402;
-    cv___store402 = NULL;
+    rt_list * cv___store403;
+    cv___store403 = NULL;
     cv_fi = clar_fn_findIRFuncIdxByName(clar_fn_irCallFnName(cv_e));
     if ((cv_fi == CLAR_NEG32(1)) || (!(clar_fn_shakeReachable(cv_fi)))) {
         clar_str_255 t1;
@@ -75370,15 +75415,15 @@ static void clar_fn_cgCallFnInto(int32_t cv_e, int32_t cv_dst) {
         clar_aborting = 1;
         goto bail;
     }
-        clar_fn_rtListRelease((void*)cv___store402);
+        clar_fn_rtListRelease((void*)cv___store403);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_cgSaveArgReleases();
-    cv___store402 = t3;
+    cv___store403 = t3;
         clar_fn_rtListRelease((void*)cv_savedReleases);
 
-    cv_savedReleases = cv___store402;
-    cv___store402 = 0;
+    cv_savedReleases = cv___store403;
+    cv___store403 = 0;
     int32_t t4;
     t4 = clar_fn_cgPushArgs(clar_fn_irCallFnArgsHead(cv_e));
     if (clar_aborting) goto bail;
@@ -75567,18 +75612,18 @@ static void clar_fn_cgRegPassArgsAndTrap(int32_t cv_e, int32_t cv_xi) {
     cv_i = 0;
     int32_t cv_j;
     cv_j = 0;
-    rt_list * cv___store403;
-    cv___store403 = NULL;
+    rt_list * cv___store404;
+    cv___store404 = NULL;
     cv_conv = clar_fn_irExternConv(cv_xi);
-        clar_fn_rtListRelease((void*)cv___store403);
+        clar_fn_rtListRelease((void*)cv___store404);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store403 = t1;
+    cv___store404 = t1;
         clar_fn_rtListRelease((void*)cv_regs);
 
-    cv_regs = cv___store403;
-    cv___store403 = 0;
+    cv_regs = cv___store404;
+    cv___store404 = 0;
     cv_ptrSlot = 0;
     cv_scalarSlot = 0;
     cv_n = 0;
@@ -75805,8 +75850,8 @@ static void clar_fn_cgCallExtNatFallback(int32_t cv_e) {
     cv_total = 0;
     rt_list * cv_savedReleases;
     cv_savedReleases = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store404;
-    cv___store404 = NULL;
+    rt_list * cv___store405;
+    cv___store405 = NULL;
     clar_str_255 t1;
     t1 = clar_fn_poolGet(clar_fn_irCallExtName(cv_e));
     clar_str_255 t2;
@@ -75824,15 +75869,15 @@ static void clar_fn_cgCallExtNatFallback(int32_t cv_e) {
         clar_aborting = 1;
         goto bail;
     }
-        clar_fn_rtListRelease((void*)cv___store404);
+        clar_fn_rtListRelease((void*)cv___store405);
 
     rt_list * t6 = NULL;
     t6 = clar_fn_cgSaveArgReleases();
-    cv___store404 = t6;
+    cv___store405 = t6;
         clar_fn_rtListRelease((void*)cv_savedReleases);
 
-    cv_savedReleases = cv___store404;
-    cv___store404 = 0;
+    cv_savedReleases = cv___store405;
+    cv___store405 = 0;
     int32_t t7;
     t7 = clar_fn_cgPushArgs(clar_fn_irCallExtArgsHead(cv_e));
     if (clar_aborting) goto bail;
@@ -75941,8 +75986,8 @@ static void clar_fn_cgCallExtUiSynth(int32_t cv_e, int32_t cv_synthName) {
     cv_total = 0;
     rt_list * cv_savedReleases;
     cv_savedReleases = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store405;
-    cv___store405 = NULL;
+    rt_list * cv___store406;
+    cv___store406 = NULL;
     cv_fi = clar_fn_findIRFuncIdxByName(cv_synthName);
     if ((cv_fi == CLAR_NEG32(1)) || (!(clar_fn_shakeReachable(cv_fi)))) {
         if (cv_cgBakeCapture) {
@@ -75961,15 +76006,15 @@ static void clar_fn_cgCallExtUiSynth(int32_t cv_e, int32_t cv_synthName) {
         clar_aborting = 1;
         goto bail;
     }
-        clar_fn_rtListRelease((void*)cv___store405);
+        clar_fn_rtListRelease((void*)cv___store406);
 
     rt_list * t4 = NULL;
     t4 = clar_fn_cgSaveArgReleases();
-    cv___store405 = t4;
+    cv___store406 = t4;
         clar_fn_rtListRelease((void*)cv_savedReleases);
 
-    cv_savedReleases = cv___store405;
-    cv___store405 = 0;
+    cv_savedReleases = cv___store406;
+    cv___store406 = 0;
     int32_t t5;
     t5 = clar_fn_cgPushArgs(clar_fn_irCallExtArgsHead(cv_e));
     if (clar_aborting) goto bail;
@@ -76141,8 +76186,6 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
     cv_addrs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_src2;
     cv_src2 = 0;
-    rt_list * cv___store406;
-    cv___store406 = NULL;
     rt_list * cv___store407;
     cv___store407 = NULL;
     rt_list * cv___store408;
@@ -76169,6 +76212,8 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
     cv___store418 = NULL;
     rt_list * cv___store419;
     cv___store419 = NULL;
+    rt_list * cv___store420;
+    cv___store420 = NULL;
     cv_src2 = cv_src;
     cv_sk = clar_fn_irExprKind(cv_src2);
     if (cv_sk == 8) {
@@ -76187,30 +76232,30 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
         if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_nm), (void*)(const uint8_t*)&(clar_lit_748)) == 0) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
-                clar_fn_rtListRelease((void*)cv___store406);
+                clar_fn_rtListRelease((void*)cv___store407);
 
             rt_list * t2 = NULL;
             t2 = clar_fn_cgFreshIntList();
-            cv___store406 = t2;
+            cv___store407 = t2;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store406;
-            cv___store406 = 0;
+            cv_args = cv___store407;
+            cv___store407 = 0;
             int32_t t3;
             t3 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t3));
             int32_t t4;
             t4 = cv_a1e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t4));
-                clar_fn_rtListRelease((void*)cv___store407);
+                clar_fn_rtListRelease((void*)cv___store408);
 
             rt_list * t5 = NULL;
             t5 = clar_fn_cgFreshBoolList();
-            cv___store407 = t5;
+            cv___store408 = t5;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store407;
-            cv___store407 = 0;
+            cv_addrs = cv___store408;
+            cv___store408 = 0;
             int32_t t6;
             t6 = 1;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t6));
@@ -76230,30 +76275,30 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
         if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_nm), (void*)(const uint8_t*)&(clar_lit_749)) == 0) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
-                clar_fn_rtListRelease((void*)cv___store408);
+                clar_fn_rtListRelease((void*)cv___store409);
 
             rt_list * t8 = NULL;
             t8 = clar_fn_cgFreshIntList();
-            cv___store408 = t8;
+            cv___store409 = t8;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store408;
-            cv___store408 = 0;
+            cv_args = cv___store409;
+            cv___store409 = 0;
             int32_t t9;
             t9 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t9));
             int32_t t10;
             t10 = cv_a1e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t10));
-                clar_fn_rtListRelease((void*)cv___store409);
+                clar_fn_rtListRelease((void*)cv___store410);
 
             rt_list * t11 = NULL;
             t11 = clar_fn_cgFreshBoolList();
-            cv___store409 = t11;
+            cv___store410 = t11;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store409;
-            cv___store409 = 0;
+            cv_addrs = cv___store410;
+            cv___store410 = 0;
             int32_t t12;
             t12 = 1;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t12));
@@ -76273,30 +76318,30 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
         if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_nm), (void*)(const uint8_t*)&(clar_lit_750)) == 0) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
-                clar_fn_rtListRelease((void*)cv___store410);
+                clar_fn_rtListRelease((void*)cv___store411);
 
             rt_list * t14 = NULL;
             t14 = clar_fn_cgFreshIntList();
-            cv___store410 = t14;
+            cv___store411 = t14;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store410;
-            cv___store410 = 0;
+            cv_args = cv___store411;
+            cv___store411 = 0;
             int32_t t15;
             t15 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t15));
             int32_t t16;
             t16 = cv_a1e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t16));
-                clar_fn_rtListRelease((void*)cv___store411);
+                clar_fn_rtListRelease((void*)cv___store412);
 
             rt_list * t17 = NULL;
             t17 = clar_fn_cgFreshBoolList();
-            cv___store411 = t17;
+            cv___store412 = t17;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store411;
-            cv___store411 = 0;
+            cv_addrs = cv___store412;
+            cv___store412 = 0;
             int32_t t18;
             t18 = 0;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t18));
@@ -76317,15 +76362,15 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
             cv_a2e = clar_fn_irExprNext(cv_a1e);
-                clar_fn_rtListRelease((void*)cv___store412);
+                clar_fn_rtListRelease((void*)cv___store413);
 
             rt_list * t20 = NULL;
             t20 = clar_fn_cgFreshIntList();
-            cv___store412 = t20;
+            cv___store413 = t20;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store412;
-            cv___store412 = 0;
+            cv_args = cv___store413;
+            cv___store413 = 0;
             int32_t t21;
             t21 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t21));
@@ -76335,15 +76380,15 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
             int32_t t23;
             t23 = cv_a2e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t23));
-                clar_fn_rtListRelease((void*)cv___store413);
+                clar_fn_rtListRelease((void*)cv___store414);
 
             rt_list * t24 = NULL;
             t24 = clar_fn_cgFreshBoolList();
-            cv___store413 = t24;
+            cv___store414 = t24;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store413;
-            cv___store413 = 0;
+            cv_addrs = cv___store414;
+            cv___store414 = 0;
             int32_t t25;
             t25 = 1;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t25));
@@ -76367,15 +76412,15 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
             cv_a2e = clar_fn_irExprNext(cv_a1e);
-                clar_fn_rtListRelease((void*)cv___store414);
+                clar_fn_rtListRelease((void*)cv___store415);
 
             rt_list * t28 = NULL;
             t28 = clar_fn_cgFreshIntList();
-            cv___store414 = t28;
+            cv___store415 = t28;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store414;
-            cv___store414 = 0;
+            cv_args = cv___store415;
+            cv___store415 = 0;
             int32_t t29;
             t29 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t29));
@@ -76385,15 +76430,15 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
             int32_t t31;
             t31 = cv_a2e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t31));
-                clar_fn_rtListRelease((void*)cv___store415);
+                clar_fn_rtListRelease((void*)cv___store416);
 
             rt_list * t32 = NULL;
             t32 = clar_fn_cgFreshBoolList();
-            cv___store415 = t32;
+            cv___store416 = t32;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store415;
-            cv___store415 = 0;
+            cv_addrs = cv___store416;
+            cv___store416 = 0;
             int32_t t33;
             t33 = 0;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t33));
@@ -76463,15 +76508,15 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
         }
         if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_nm), (void*)(const uint8_t*)&(clar_lit_844)) == 0) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
-                clar_fn_rtListRelease((void*)cv___store416);
+                clar_fn_rtListRelease((void*)cv___store417);
 
             rt_list * t36 = NULL;
             t36 = clar_fn_cgFreshIntList();
-            cv___store416 = t36;
+            cv___store417 = t36;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store416;
-            cv___store416 = 0;
+            cv_args = cv___store417;
+            cv___store417 = 0;
             int32_t t37;
             t37 = cv_dst;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t37));
@@ -76481,15 +76526,15 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
             int32_t t39;
             t39 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t39));
-                clar_fn_rtListRelease((void*)cv___store417);
+                clar_fn_rtListRelease((void*)cv___store418);
 
             rt_list * t40 = NULL;
             t40 = clar_fn_cgFreshBoolList();
-            cv___store417 = t40;
+            cv___store418 = t40;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store417;
-            cv___store417 = 0;
+            cv_addrs = cv___store418;
+            cv___store418 = 0;
             int32_t t41;
             t41 = 1;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t41));
@@ -76716,15 +76761,15 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
         }
     }
     cv_cap = clar_fn_irtN(clar_fn_irExprType(cv_dst));
-        clar_fn_rtListRelease((void*)cv___store418);
+        clar_fn_rtListRelease((void*)cv___store419);
 
     rt_list * t55 = NULL;
     t55 = clar_fn_cgFreshIntList();
-    cv___store418 = t55;
+    cv___store419 = t55;
         clar_fn_rtListRelease((void*)cv_args);
 
-    cv_args = cv___store418;
-    cv___store418 = 0;
+    cv_args = cv___store419;
+    cv___store419 = 0;
     int32_t t56;
     t56 = cv_dst;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t56));
@@ -76734,15 +76779,15 @@ static void clar_fn_cgEmitStoreStr(int32_t cv_dst, int32_t cv_src) {
     int32_t t58;
     t58 = cv_src2;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t58));
-        clar_fn_rtListRelease((void*)cv___store419);
+        clar_fn_rtListRelease((void*)cv___store420);
 
     rt_list * t59 = NULL;
     t59 = clar_fn_cgFreshBoolList();
-    cv___store419 = t59;
+    cv___store420 = t59;
         clar_fn_rtListRelease((void*)cv_addrs);
 
-    cv_addrs = cv___store419;
-    cv___store419 = 0;
+    cv_addrs = cv___store420;
+    cv___store420 = 0;
     int32_t t60;
     t60 = 1;
     clar_fn_rtListPush((void*)cv_addrs, (void*)&(t60));
@@ -76794,8 +76839,6 @@ static void clar_fn_cgEmitReturnStr(int32_t cv_src) {
     cv_addrs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_src2;
     cv_src2 = 0;
-    rt_list * cv___store420;
-    cv___store420 = NULL;
     rt_list * cv___store421;
     cv___store421 = NULL;
     rt_list * cv___store422;
@@ -76814,6 +76857,8 @@ static void clar_fn_cgEmitReturnStr(int32_t cv_src) {
     cv___store428 = NULL;
     rt_list * cv___store429;
     cv___store429 = NULL;
+    rt_list * cv___store430;
+    cv___store430 = NULL;
     cv_src2 = cv_src;
     cv_sk = clar_fn_irExprKind(cv_src2);
     if (cv_sk == 10) {
@@ -76823,30 +76868,30 @@ static void clar_fn_cgEmitReturnStr(int32_t cv_src) {
         if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_nm), (void*)(const uint8_t*)&(clar_lit_748)) == 0) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
-                clar_fn_rtListRelease((void*)cv___store420);
+                clar_fn_rtListRelease((void*)cv___store421);
 
             rt_list * t2 = NULL;
             t2 = clar_fn_cgFreshIntList();
-            cv___store420 = t2;
+            cv___store421 = t2;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store420;
-            cv___store420 = 0;
+            cv_args = cv___store421;
+            cv___store421 = 0;
             int32_t t3;
             t3 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t3));
             int32_t t4;
             t4 = cv_a1e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t4));
-                clar_fn_rtListRelease((void*)cv___store421);
+                clar_fn_rtListRelease((void*)cv___store422);
 
             rt_list * t5 = NULL;
             t5 = clar_fn_cgFreshBoolList();
-            cv___store421 = t5;
+            cv___store422 = t5;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store421;
-            cv___store421 = 0;
+            cv_addrs = cv___store422;
+            cv___store422 = 0;
             int32_t t6;
             t6 = 1;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t6));
@@ -76866,30 +76911,30 @@ static void clar_fn_cgEmitReturnStr(int32_t cv_src) {
         if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_nm), (void*)(const uint8_t*)&(clar_lit_749)) == 0) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
-                clar_fn_rtListRelease((void*)cv___store422);
+                clar_fn_rtListRelease((void*)cv___store423);
 
             rt_list * t8 = NULL;
             t8 = clar_fn_cgFreshIntList();
-            cv___store422 = t8;
+            cv___store423 = t8;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store422;
-            cv___store422 = 0;
+            cv_args = cv___store423;
+            cv___store423 = 0;
             int32_t t9;
             t9 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t9));
             int32_t t10;
             t10 = cv_a1e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t10));
-                clar_fn_rtListRelease((void*)cv___store423);
+                clar_fn_rtListRelease((void*)cv___store424);
 
             rt_list * t11 = NULL;
             t11 = clar_fn_cgFreshBoolList();
-            cv___store423 = t11;
+            cv___store424 = t11;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store423;
-            cv___store423 = 0;
+            cv_addrs = cv___store424;
+            cv___store424 = 0;
             int32_t t12;
             t12 = 1;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t12));
@@ -76909,30 +76954,30 @@ static void clar_fn_cgEmitReturnStr(int32_t cv_src) {
         if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_nm), (void*)(const uint8_t*)&(clar_lit_750)) == 0) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
-                clar_fn_rtListRelease((void*)cv___store424);
+                clar_fn_rtListRelease((void*)cv___store425);
 
             rt_list * t14 = NULL;
             t14 = clar_fn_cgFreshIntList();
-            cv___store424 = t14;
+            cv___store425 = t14;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store424;
-            cv___store424 = 0;
+            cv_args = cv___store425;
+            cv___store425 = 0;
             int32_t t15;
             t15 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t15));
             int32_t t16;
             t16 = cv_a1e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t16));
-                clar_fn_rtListRelease((void*)cv___store425);
+                clar_fn_rtListRelease((void*)cv___store426);
 
             rt_list * t17 = NULL;
             t17 = clar_fn_cgFreshBoolList();
-            cv___store425 = t17;
+            cv___store426 = t17;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store425;
-            cv___store425 = 0;
+            cv_addrs = cv___store426;
+            cv___store426 = 0;
             int32_t t18;
             t18 = 0;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t18));
@@ -76953,15 +76998,15 @@ static void clar_fn_cgEmitReturnStr(int32_t cv_src) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
             cv_a2e = clar_fn_irExprNext(cv_a1e);
-                clar_fn_rtListRelease((void*)cv___store426);
+                clar_fn_rtListRelease((void*)cv___store427);
 
             rt_list * t20 = NULL;
             t20 = clar_fn_cgFreshIntList();
-            cv___store426 = t20;
+            cv___store427 = t20;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store426;
-            cv___store426 = 0;
+            cv_args = cv___store427;
+            cv___store427 = 0;
             int32_t t21;
             t21 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t21));
@@ -76971,15 +77016,15 @@ static void clar_fn_cgEmitReturnStr(int32_t cv_src) {
             int32_t t23;
             t23 = cv_a2e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t23));
-                clar_fn_rtListRelease((void*)cv___store427);
+                clar_fn_rtListRelease((void*)cv___store428);
 
             rt_list * t24 = NULL;
             t24 = clar_fn_cgFreshBoolList();
-            cv___store427 = t24;
+            cv___store428 = t24;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store427;
-            cv___store427 = 0;
+            cv_addrs = cv___store428;
+            cv___store428 = 0;
             int32_t t25;
             t25 = 1;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t25));
@@ -77003,15 +77048,15 @@ static void clar_fn_cgEmitReturnStr(int32_t cv_src) {
             cv_a0e = clar_fn_irIntrArgsHead(cv_src2);
             cv_a1e = clar_fn_irExprNext(cv_a0e);
             cv_a2e = clar_fn_irExprNext(cv_a1e);
-                clar_fn_rtListRelease((void*)cv___store428);
+                clar_fn_rtListRelease((void*)cv___store429);
 
             rt_list * t28 = NULL;
             t28 = clar_fn_cgFreshIntList();
-            cv___store428 = t28;
+            cv___store429 = t28;
                 clar_fn_rtListRelease((void*)cv_args);
 
-            cv_args = cv___store428;
-            cv___store428 = 0;
+            cv_args = cv___store429;
+            cv___store429 = 0;
             int32_t t29;
             t29 = cv_a0e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t29));
@@ -77021,15 +77066,15 @@ static void clar_fn_cgEmitReturnStr(int32_t cv_src) {
             int32_t t31;
             t31 = cv_a2e;
             clar_fn_rtListPush((void*)cv_args, (void*)&(t31));
-                clar_fn_rtListRelease((void*)cv___store429);
+                clar_fn_rtListRelease((void*)cv___store430);
 
             rt_list * t32 = NULL;
             t32 = clar_fn_cgFreshBoolList();
-            cv___store429 = t32;
+            cv___store430 = t32;
                 clar_fn_rtListRelease((void*)cv_addrs);
 
-            cv_addrs = cv___store429;
-            cv___store429 = 0;
+            cv_addrs = cv___store430;
+            cv___store430 = 0;
             int32_t t33;
             t33 = 0;
             clar_fn_rtListPush((void*)cv_addrs, (void*)&(t33));
@@ -77655,6 +77700,12 @@ static void clar_fn_cgReturnStmt(int32_t cv_s) {
     cv_x = 0;
     int32_t cv_rk;
     cv_rk = 0;
+    int32_t cv_retT;
+    cv_retT = 0;
+    int32_t cv_saveOff;
+    cv_saveOff = 0;
+    int32_t cv_saved;
+    cv_saved = 0;
     cv_x = clar_fn_irReturnX(cv_s);
     if (cv_x == CLAR_NEG32(1)) {
         clar_fn_cgFreeStmtTmps();
@@ -77662,6 +77713,7 @@ static void clar_fn_cgReturnStmt(int32_t cv_s) {
         clar_fn_a68EmitBr(26, 0, cv_cgCurEpilogueLabel);
         return;
     }
+    cv_saved = 0;
     if (cv_cgCurHiddenOffset != CLAR_NEG32(1)) {
         if (clar_fn_irtKind(cv_cgCurRetType) == 9) {
             clar_fn_cgEmitReturnRec(cv_x);
@@ -77682,9 +77734,21 @@ static void clar_fn_cgReturnStmt(int32_t cv_s) {
         if ((((((cv_rk == 6) || (cv_rk == 7)) || (cv_rk == 8)) || (cv_rk == 19)) || (cv_rk == 20)) && (cv_cgLastTrackedOff != CLAR_NEG32(1))) {
             clar_fn_cgHandoff(cv_cgLastTrackedOff);
         }
+        if (clar_fn_rtListCount((void*)cv_cgStmtTmpOffs) > 0) {
+            cv_retT = clar_fn_irExprType(cv_x);
+            int32_t t1;
+            t1 = clar_fn_cgAllocTmpOff(cv_retT);
+            if (clar_aborting) goto bail;
+            cv_saveOff = t1;
+            clar_fn_cgStoreD0At(6, cv_saveOff, cv_retT);
+            cv_saved = 1;
+        }
     }
     clar_fn_cgFreeStmtTmps();
     if (clar_aborting) goto bail;
+    if (cv_saved) {
+        clar_fn_cgLoadD0At(6, cv_saveOff, cv_retT);
+    }
     clar_fn_a68EmitBr(26, 0, cv_cgCurEpilogueLabel);
     return;
     bail:;
@@ -77743,10 +77807,10 @@ static void clar_fn_cgStmt(int32_t cv_s) {
     cv_savedNext = 0;
     int32_t cv_savedBigNext;
     cv_savedBigNext = 0;
-    rt_list * cv___store430;
-    cv___store430 = NULL;
     rt_list * cv___store431;
     cv___store431 = NULL;
+    rt_list * cv___store432;
+    cv___store432 = NULL;
         clar_fn_rtListRetain((void*)cv_cgStmtTmpOffs);
 
         clar_fn_rtListRelease((void*)cv_savedOffs);
@@ -77759,24 +77823,24 @@ static void clar_fn_cgStmt(int32_t cv_s) {
     cv_savedType = cv_cgStmtTmpType;
     cv_savedNext = cv_cgStmtTmpNext;
     cv_savedBigNext = cv_cgStmtBigTmpNext;
-        clar_fn_rtListRelease((void*)cv___store430);
+        clar_fn_rtListRelease((void*)cv___store431);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store430 = t1;
+    cv___store431 = t1;
         clar_fn_rtListRelease((void*)cv_cgStmtTmpOffs);
 
-    cv_cgStmtTmpOffs = cv___store430;
-    cv___store430 = 0;
-        clar_fn_rtListRelease((void*)cv___store431);
+    cv_cgStmtTmpOffs = cv___store431;
+    cv___store431 = 0;
+        clar_fn_rtListRelease((void*)cv___store432);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_cgFreshIntList();
-    cv___store431 = t2;
+    cv___store432 = t2;
         clar_fn_rtListRelease((void*)cv_cgStmtTmpType);
 
-    cv_cgStmtTmpType = cv___store431;
-    cv___store431 = 0;
+    cv_cgStmtTmpType = cv___store432;
+    cv___store432 = 0;
     cv_cgStmtTmpNext = 0;
     cv_cgStmtBigTmpNext = 0;
     cv_cgLastTrackedOff = CLAR_NEG32(1);
@@ -78135,17 +78199,17 @@ static void clar_fn_cgReserveStrLitLabels(void) {
     cv_i = 0;
     rt_list * cv_labels;
     cv_labels = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store432;
-    cv___store432 = NULL;
-        clar_fn_rtListRelease((void*)cv___store432);
+    rt_list * cv___store433;
+    cv___store433 = NULL;
+        clar_fn_rtListRelease((void*)cv___store433);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store432 = t1;
+    cv___store433 = t1;
         clar_fn_rtListRelease((void*)cv_labels);
 
-    cv_labels = cv___store432;
-    cv___store432 = 0;
+    cv_labels = cv___store433;
+    cv___store433 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irStrLits)))) break;
@@ -78232,10 +78296,10 @@ static void clar_fn_cgEmitUiBlobPool(void) {
     cv_bytes = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_i;
     cv_i = 0;
-    rt_list * cv___store433;
-    cv___store433 = NULL;
+    rt_list * cv___store434;
+    cv___store434 = NULL;
     cv_uibNativeLane = 1;
-        clar_fn_rtListRelease((void*)cv___store433);
+        clar_fn_rtListRelease((void*)cv___store434);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_uibBuild();
@@ -78244,11 +78308,11 @@ static void clar_fn_cgEmitUiBlobPool(void) {
 
         goto bail;
     }
-    cv___store433 = t1;
+    cv___store434 = t1;
         clar_fn_rtListRelease((void*)cv_bytes);
 
-    cv_bytes = cv___store433;
-    cv___store433 = 0;
+    cv_bytes = cv___store434;
+    cv___store434 = 0;
     cv_uibNativeLane = 0;
     if (cv_a68ListingOn) {
         clar_str_255 t2;
@@ -78407,8 +78471,6 @@ static void clar_fn_cg68ResourceParitySet(rt_list * cv_extraTypes, rt_list * cv_
     cv_idStr = (clar_str_255){0};
     clar_str_255 cv_verStr;
     cv_verStr = (clar_str_255){0};
-    rt_text * cv___store434;
-    cv___store434 = NULL;
     rt_text * cv___store435;
     cv___store435 = NULL;
     rt_text * cv___store436;
@@ -78419,6 +78481,8 @@ static void clar_fn_cg68ResourceParitySet(rt_list * cv_extraTypes, rt_list * cv_
     cv___store438 = NULL;
     rt_text * cv___store439;
     cv___store439 = NULL;
+    rt_text * cv___store440;
+    cv___store440 = NULL;
     if (clar_fn_irIsUiProgram()) {
         clar_str_255 t1;
         t1 = clar_lit_2110;
@@ -78466,23 +78530,23 @@ static void clar_fn_cg68ResourceParitySet(rt_list * cv_extraTypes, rt_list * cv_
         clar_fn_rtListPush((void*)cv_extraDatas, (void*)&(t16));
     }
     cv_hasIcon = (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_cgAppIconPath), (void*)(const uint8_t*)&(clar_lit_6)) != 0);
-    clar_fn_rtTextRelease((void*)cv___store434);
+    clar_fn_rtTextRelease((void*)cv___store435);
     rt_text * t17 = NULL;
     t17 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t17, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store434 = t17;
+    cv___store435 = t17;
     clar_fn_rtTextRelease((void*)cv_iconBytes);
-    cv_iconBytes = cv___store434;
-    cv___store434 = 0;
+    cv_iconBytes = cv___store435;
+    cv___store435 = 0;
     if (cv_hasIcon) {
-        clar_fn_rtTextRelease((void*)cv___store435);
+        clar_fn_rtTextRelease((void*)cv___store436);
         rt_text * t18 = NULL;
         t18 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t18, (void*)(const uint8_t*)&(clar_lit_6));
-        cv___store435 = t18;
+        cv___store436 = t18;
         clar_fn_rtTextRelease((void*)cv_pbmRaw);
-        cv_pbmRaw = cv___store435;
-        cv___store435 = 0;
+        cv_pbmRaw = cv___store436;
+        cv___store436 = 0;
         if (!(rt_file_read_text((const uint8_t*)&(cv_cgAppIconPath), cv_pbmRaw))) {
             clar_str_255 t19;
             clar_fn_rtStrConcat((void*)&t19, (void*)(const uint8_t*)&(clar_lit_2112), (void*)(const uint8_t*)&(cv_cgAppIconPath));
@@ -78497,14 +78561,14 @@ static void clar_fn_cg68ResourceParitySet(rt_list * cv_extraTypes, rt_list * cv_
             rt_log((const uint8_t*)&(t23));
             cv_hasIcon = 0;
         } else {
-            clar_fn_rtTextRelease((void*)cv___store436);
+            clar_fn_rtTextRelease((void*)cv___store437);
             rt_text * t24 = NULL;
             t24 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextStore((void*)t24, (void*)(const uint8_t*)&(clar_lit_6));
-            cv___store436 = t24;
+            cv___store437 = t24;
             clar_fn_rtTextRelease((void*)cv_icnBytes);
-            cv_icnBytes = cv___store436;
-            cv___store436 = 0;
+            cv_icnBytes = cv___store437;
+            cv___store437 = 0;
             if (!(clar_fn_app68BuildIcnFamily(cv_pbmRaw, cv_iconBytes, cv_icnBytes))) {
                 clar_str_255 t25;
                 clar_fn_rtStrConcat((void*)&t25, (void*)(const uint8_t*)&(clar_lit_2114), (void*)(const uint8_t*)&(cv_cgAppIconPath));
@@ -78512,14 +78576,14 @@ static void clar_fn_cg68ResourceParitySet(rt_list * cv_extraTypes, rt_list * cv_
                 clar_fn_rtStrConcat((void*)&t26, (void*)(const uint8_t*)&(t25), (void*)(const uint8_t*)&(clar_lit_2115));
                 rt_log((const uint8_t*)&(t26));
                 cv_hasIcon = 0;
-                clar_fn_rtTextRelease((void*)cv___store437);
+                clar_fn_rtTextRelease((void*)cv___store438);
                 rt_text * t27 = NULL;
                 t27 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextStore((void*)t27, (void*)(const uint8_t*)&(clar_lit_6));
-                cv___store437 = t27;
+                cv___store438 = t27;
                 clar_fn_rtTextRelease((void*)cv_iconBytes);
-                cv_iconBytes = cv___store437;
-                cv___store437 = 0;
+                cv_iconBytes = cv___store438;
+                cv___store438 = 0;
             }
         }
     }
@@ -78644,23 +78708,23 @@ static void clar_fn_cg68ResourceParitySet(rt_list * cv_extraTypes, rt_list * cv_
             t68 = cv_iconBytes;
             clar_fn_rtTextRetain((void*)t68);
             clar_fn_rtListPush((void*)cv_extraDatas, (void*)&(t68));
-            clar_fn_rtTextRelease((void*)cv___store438);
+            clar_fn_rtTextRelease((void*)cv___store439);
             rt_text * t69 = NULL;
             t69 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextStore((void*)t69, (void*)(const uint8_t*)&(clar_lit_6));
-            cv___store438 = t69;
+            cv___store439 = t69;
             clar_fn_rtTextRelease((void*)cv_docIcon);
-            cv_docIcon = cv___store438;
-            cv___store438 = 0;
+            cv_docIcon = cv___store439;
+            cv___store439 = 0;
             clar_fn_app68DocIconBitmapAppend(cv_docIcon);
-            clar_fn_rtTextRelease((void*)cv___store439);
+            clar_fn_rtTextRelease((void*)cv___store440);
             rt_text * t70 = NULL;
             t70 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextStore((void*)t70, (void*)(const uint8_t*)&(clar_lit_6));
-            cv___store439 = t70;
+            cv___store440 = t70;
             clar_fn_rtTextRelease((void*)cv_docIcn);
-            cv_docIcn = cv___store439;
-            cv___store439 = 0;
+            cv_docIcn = cv___store440;
+            cv___store440 = 0;
             clar_fn_rtTextAppendText((void*)cv_docIcn, (void*)cv_docIcon);
             clar_fn_app68DocIconMaskAppend(cv_docIcn);
             clar_str_255 t71;
@@ -78715,16 +78779,16 @@ static int32_t clar_fn_cg68BuildFork(rt_list * cv_jtEntries, rt_list * cv_jtSegN
     cv_extraDatas = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
     int32_t cv_bi;
     cv_bi = 0;
-    rt_list * cv___store440;
-    cv___store440 = NULL;
     rt_list * cv___store441;
     cv___store441 = NULL;
     rt_list * cv___store442;
     cv___store442 = NULL;
     rt_list * cv___store443;
     cv___store443 = NULL;
-    rt_text * cv___store444;
+    rt_list * cv___store444;
     cv___store444 = NULL;
+    rt_text * cv___store445;
+    cv___store445 = NULL;
     int32_t cv___ret1254;
     cv___ret1254 = 0;
     if (cv_irHasApp && (cv_irAppId != CLAR_NEG32(1))) {
@@ -78734,45 +78798,45 @@ static int32_t clar_fn_cg68BuildFork(rt_list * cv_jtEntries, rt_list * cv_jtSegN
     } else {
         clar_fn_rtStrStore((void*)&(cv_cgLastCreator), 7, (void*)(const uint8_t*)&(clar_lit_899));
     }
-        clar_fn_rtListRelease((void*)cv___store440);
+        clar_fn_rtListRelease((void*)cv___store441);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_cgFreshStringList();
-    cv___store440 = t2;
+    cv___store441 = t2;
         clar_fn_rtListRelease((void*)cv_extraTypes);
 
-    cv_extraTypes = cv___store440;
-    cv___store440 = 0;
-        clar_fn_rtListRelease((void*)cv___store441);
+    cv_extraTypes = cv___store441;
+    cv___store441 = 0;
+        clar_fn_rtListRelease((void*)cv___store442);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_cgFreshIntList();
-    cv___store441 = t3;
+    cv___store442 = t3;
         clar_fn_rtListRelease((void*)cv_extraIds);
 
-    cv_extraIds = cv___store441;
-    cv___store441 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store442)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store442); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store442, i)); }
-    clar_fn_rtListRelease((void*)cv___store442);
+    cv_extraIds = cv___store442;
+    cv___store442 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store443)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store443); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store443, i)); }
+    clar_fn_rtListRelease((void*)cv___store443);
 
     rt_list * t4 = NULL;
     t4 = clar_fn_cgFreshTextList();
-    cv___store442 = t4;
+    cv___store443 = t4;
         if (clar_fn_rtListLastref((void*)cv_extraDatas)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_extraDatas); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_extraDatas, i)); }
     clar_fn_rtListRelease((void*)cv_extraDatas);
 
-    cv_extraDatas = cv___store442;
-    cv___store442 = 0;
+    cv_extraDatas = cv___store443;
+    cv___store443 = 0;
     clar_fn_cg68ResourceParitySet(cv_extraTypes, cv_extraIds, cv_extraDatas);
-        clar_fn_rtListRelease((void*)cv___store443);
+        clar_fn_rtListRelease((void*)cv___store444);
 
     rt_list * t5 = NULL;
     t5 = clar_fn_cgFreshStringList();
-    cv___store443 = t5;
+    cv___store444 = t5;
         clar_fn_rtListRelease((void*)cv_extraNames);
 
-    cv_extraNames = cv___store443;
-    cv___store443 = 0;
+    cv_extraNames = cv___store444;
+    cv___store444 = 0;
     cv_bi = 0;
     while (1) {
         if (!((cv_bi < clar_fn_rtListCount((void*)cv_extraTypes)))) break;
@@ -78799,13 +78863,13 @@ static int32_t clar_fn_cg68BuildFork(rt_list * cv_jtEntries, rt_list * cv_jtSegN
         clar_fn_rtListPush((void*)cv_extraDatas, (void*)&(t10));
         cv_bi = CLAR_ADD32(cv_bi, 1);
     }
-    clar_fn_rtTextRelease((void*)cv___store444);
+    clar_fn_rtTextRelease((void*)cv___store445);
     rt_text * t11 = NULL;
     t11 = clar_fn_app68BuildFork(cv_segBytes, cv_jtEntries, cv_jtSegNums, cv_cgSegJtFirst, cv_cgSegJtCount, cv_cgGlobalsBelowA5Size, cv_extraTypes, cv_extraIds, cv_extraNames, cv_extraDatas);
-    cv___store444 = t11;
+    cv___store445 = t11;
     clar_fn_rtTextRelease((void*)cv_cgLastFork);
-    cv_cgLastFork = cv___store444;
-    cv___store444 = 0;
+    cv_cgLastFork = cv___store445;
+    cv___store445 = 0;
     cv___ret1254 = 1;
         clar_fn_rtListRelease((void*)cv_extraTypes);
 
@@ -78823,21 +78887,21 @@ static int32_t clar_fn_cg68BuildFork(rt_list * cv_jtEntries, rt_list * cv_jtSegN
 static int32_t clar_fn_cg68WriteImageWrap(const clar_str_255 *cv_outPath) {
     rt_text * cv_img;
     cv_img = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store445;
-    cv___store445 = NULL;
+    rt_text * cv___store446;
+    cv___store446 = NULL;
     int32_t cv___ret1255;
     cv___ret1255 = 0;
-    clar_fn_rtTextRelease((void*)cv___store445);
+    clar_fn_rtTextRelease((void*)cv___store446);
     clar_str_31 t1;
     t1 = clar_fn_cgAppName(&((*cv_outPath)));
     clar_str_7 t2;
     t2 = cv_cgLastCreator;
     rt_text * t3 = NULL;
     t3 = clar_fn_app68WrapFork(&(t1), &(t2), cv_cgLastFork);
-    cv___store445 = t3;
+    cv___store446 = t3;
     clar_fn_rtTextRelease((void*)cv_img);
-    cv_img = cv___store445;
-    cv___store445 = 0;
+    cv_img = cv___store446;
+    cv___store446 = 0;
     if (!(rt_file_write_text((const uint8_t*)&((*cv_outPath)), cv_img, (const uint8_t*)&(clar_lit_526), (const uint8_t*)&(cv_cgLastCreator)))) {
         clar_str_255 t4;
         clar_fn_rtStrConcat((void*)&t4, (void*)(const uint8_t*)&(clar_lit_2120), (void*)(const uint8_t*)&((*cv_outPath)));
@@ -78877,8 +78941,6 @@ static int32_t clar_fn_cg68Measure(void) {
     cv_allEnumTables = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_allSerdescs;
     cv_allSerdescs = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store446;
-    cv___store446 = NULL;
     rt_list * cv___store447;
     cv___store447 = NULL;
     rt_list * cv___store448;
@@ -78933,48 +78995,50 @@ static int32_t clar_fn_cg68Measure(void) {
     cv___store472 = NULL;
     rt_list * cv___store473;
     cv___store473 = NULL;
+    rt_list * cv___store474;
+    cv___store474 = NULL;
     int32_t cv___ret1256;
     cv___ret1256 = 0;
     clar_fn_a68Reset();
     clar_fn_cgResetCodegenState();
     clar_fn_cgAssignGlobalOffsets();
     clar_fn_cgReservePanicMsgs();
-        clar_fn_rtListRelease((void*)cv___store446);
+        clar_fn_rtListRelease((void*)cv___store447);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irStrLits));
-    cv___store446 = t1;
+    cv___store447 = t1;
         clar_fn_rtListRelease((void*)cv_cgStrLitSeen);
 
-    cv_cgStrLitSeen = cv___store446;
-    cv___store446 = 0;
-        clar_fn_rtListRelease((void*)cv___store447);
-
-    rt_list * t2 = NULL;
-    t2 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irEnums));
-    cv___store447 = t2;
-        clar_fn_rtListRelease((void*)cv_cgEnumSeen);
-
-    cv_cgEnumSeen = cv___store447;
+    cv_cgStrLitSeen = cv___store447;
     cv___store447 = 0;
         clar_fn_rtListRelease((void*)cv___store448);
 
-    rt_list * t3 = NULL;
-    t3 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irRecords));
-    cv___store448 = t3;
-        clar_fn_rtListRelease((void*)cv_cgSerdescSeen);
+    rt_list * t2 = NULL;
+    t2 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irEnums));
+    cv___store448 = t2;
+        clar_fn_rtListRelease((void*)cv_cgEnumSeen);
 
-    cv_cgSerdescSeen = cv___store448;
+    cv_cgEnumSeen = cv___store448;
     cv___store448 = 0;
         clar_fn_rtListRelease((void*)cv___store449);
 
+    rt_list * t3 = NULL;
+    t3 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irRecords));
+    cv___store449 = t3;
+        clar_fn_rtListRelease((void*)cv_cgSerdescSeen);
+
+    cv_cgSerdescSeen = cv___store449;
+    cv___store449 = 0;
+        clar_fn_rtListRelease((void*)cv___store450);
+
     rt_list * t4 = NULL;
     t4 = clar_fn_cgFreshIntList();
-    cv___store449 = t4;
+    cv___store450 = t4;
         clar_fn_rtListRelease((void*)cv_allStrLits);
 
-    cv_allStrLits = cv___store449;
-    cv___store449 = 0;
+    cv_allStrLits = cv___store450;
+    cv___store450 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irStrLits)))) break;
@@ -78983,15 +79047,15 @@ static int32_t clar_fn_cg68Measure(void) {
         clar_fn_rtListPush((void*)cv_allStrLits, (void*)&(t5));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store450);
+        clar_fn_rtListRelease((void*)cv___store451);
 
     rt_list * t6 = NULL;
     t6 = clar_fn_cgFreshIntList();
-    cv___store450 = t6;
+    cv___store451 = t6;
         clar_fn_rtListRelease((void*)cv_allEnumTables);
 
-    cv_allEnumTables = cv___store450;
-    cv___store450 = 0;
+    cv_allEnumTables = cv___store451;
+    cv___store451 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irEnums)))) break;
@@ -79000,15 +79064,15 @@ static int32_t clar_fn_cg68Measure(void) {
         clar_fn_rtListPush((void*)cv_allEnumTables, (void*)&(t7));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store451);
+        clar_fn_rtListRelease((void*)cv___store452);
 
     rt_list * t8 = NULL;
     t8 = clar_fn_cgFreshIntList();
-    cv___store451 = t8;
+    cv___store452 = t8;
         clar_fn_rtListRelease((void*)cv_allSerdescs);
 
-    cv_allSerdescs = cv___store451;
-    cv___store451 = 0;
+    cv_allSerdescs = cv___store452;
+    cv___store452 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irRecords)))) break;
@@ -79051,50 +79115,50 @@ static int32_t clar_fn_cg68Measure(void) {
         clar_fn_rtListRelease((void*)cv_cgAllSerdescs);
 
     cv_cgAllSerdescs = cv_allSerdescs;
-        clar_fn_rtListRelease((void*)cv___store452);
+        clar_fn_rtListRelease((void*)cv___store453);
 
     rt_list * t10 = NULL;
     t10 = clar_fn_cgBoolBitmapFromList(cv_cgCurPoolStrLits, clar_fn_rtListCount((void*)cv_irStrLits));
-    cv___store452 = t10;
+    cv___store453 = t10;
         clar_fn_rtListRelease((void*)cv_cgCurPoolStrLitBits);
 
-    cv_cgCurPoolStrLitBits = cv___store452;
-    cv___store452 = 0;
-        clar_fn_rtListRelease((void*)cv___store453);
-
-    rt_list * t11 = NULL;
-    t11 = clar_fn_cgBoolBitmapFromList(cv_cgCurPoolEnumTables, clar_fn_rtListCount((void*)cv_irEnums));
-    cv___store453 = t11;
-        clar_fn_rtListRelease((void*)cv_cgCurPoolEnumBits);
-
-    cv_cgCurPoolEnumBits = cv___store453;
+    cv_cgCurPoolStrLitBits = cv___store453;
     cv___store453 = 0;
         clar_fn_rtListRelease((void*)cv___store454);
 
+    rt_list * t11 = NULL;
+    t11 = clar_fn_cgBoolBitmapFromList(cv_cgCurPoolEnumTables, clar_fn_rtListCount((void*)cv_irEnums));
+    cv___store454 = t11;
+        clar_fn_rtListRelease((void*)cv_cgCurPoolEnumBits);
+
+    cv_cgCurPoolEnumBits = cv___store454;
+    cv___store454 = 0;
+        clar_fn_rtListRelease((void*)cv___store455);
+
     rt_list * t12 = NULL;
     t12 = clar_fn_cgBoolBitmapFromList(cv_cgCurPoolSerdescs, clar_fn_rtListCount((void*)cv_irRecords));
-    cv___store454 = t12;
+    cv___store455 = t12;
         clar_fn_rtListRelease((void*)cv_cgCurPoolSerdescBits);
 
-    cv_cgCurPoolSerdescBits = cv___store454;
-    cv___store454 = 0;
+    cv_cgCurPoolSerdescBits = cv___store455;
+    cv___store455 = 0;
     clar_fn_cgReserveStrLitLabels();
     clar_fn_cgReserveUiPoolLabels();
     clar_fn_cgAssignRcWalkLabels();
     clar_fn_cgReserveEnumTableLabels();
     clar_fn_cgReserveSerdescLabels();
     clar_fn_cgAssignMeasureFuncLabels();
-        if (clar_fn_rtListLastref((void*)cv___store455)) {
-    for (int32_t ix18 = 0; ix18 < clar_fn_rtListCount((void*)cv___store455); ix18++) {
-    rt_list * en18 = *(rt_list **)clar_fn_rtListAt((void*)cv___store455, ix18);
+        if (clar_fn_rtListLastref((void*)cv___store456)) {
+    for (int32_t ix18 = 0; ix18 < clar_fn_rtListCount((void*)cv___store456); ix18++) {
+    rt_list * en18 = *(rt_list **)clar_fn_rtListAt((void*)cv___store456, ix18);
     clar_fn_rtListRelease((void*)en18);
     }
     }
-    clar_fn_rtListRelease((void*)cv___store455);
+    clar_fn_rtListRelease((void*)cv___store456);
 
     rt_list * t13 = NULL;
     t13 = clar_fn_cgFreshIntListList();
-    cv___store455 = t13;
+    cv___store456 = t13;
         if (clar_fn_rtListLastref((void*)cv_cgFuncStrLits)) {
     for (int32_t ix19 = 0; ix19 < clar_fn_rtListCount((void*)cv_cgFuncStrLits); ix19++) {
     rt_list * en19 = *(rt_list **)clar_fn_rtListAt((void*)cv_cgFuncStrLits, ix19);
@@ -79103,19 +79167,19 @@ static int32_t clar_fn_cg68Measure(void) {
     }
     clar_fn_rtListRelease((void*)cv_cgFuncStrLits);
 
-    cv_cgFuncStrLits = cv___store455;
-    cv___store455 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store456)) {
-    for (int32_t ix20 = 0; ix20 < clar_fn_rtListCount((void*)cv___store456); ix20++) {
-    rt_list * en20 = *(rt_list **)clar_fn_rtListAt((void*)cv___store456, ix20);
+    cv_cgFuncStrLits = cv___store456;
+    cv___store456 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store457)) {
+    for (int32_t ix20 = 0; ix20 < clar_fn_rtListCount((void*)cv___store457); ix20++) {
+    rt_list * en20 = *(rt_list **)clar_fn_rtListAt((void*)cv___store457, ix20);
     clar_fn_rtListRelease((void*)en20);
     }
     }
-    clar_fn_rtListRelease((void*)cv___store456);
+    clar_fn_rtListRelease((void*)cv___store457);
 
     rt_list * t14 = NULL;
     t14 = clar_fn_cgFreshIntListList();
-    cv___store456 = t14;
+    cv___store457 = t14;
         if (clar_fn_rtListLastref((void*)cv_cgFuncEnumTables)) {
     for (int32_t ix21 = 0; ix21 < clar_fn_rtListCount((void*)cv_cgFuncEnumTables); ix21++) {
     rt_list * en21 = *(rt_list **)clar_fn_rtListAt((void*)cv_cgFuncEnumTables, ix21);
@@ -79124,19 +79188,19 @@ static int32_t clar_fn_cg68Measure(void) {
     }
     clar_fn_rtListRelease((void*)cv_cgFuncEnumTables);
 
-    cv_cgFuncEnumTables = cv___store456;
-    cv___store456 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store457)) {
-    for (int32_t ix22 = 0; ix22 < clar_fn_rtListCount((void*)cv___store457); ix22++) {
-    rt_list * en22 = *(rt_list **)clar_fn_rtListAt((void*)cv___store457, ix22);
+    cv_cgFuncEnumTables = cv___store457;
+    cv___store457 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store458)) {
+    for (int32_t ix22 = 0; ix22 < clar_fn_rtListCount((void*)cv___store458); ix22++) {
+    rt_list * en22 = *(rt_list **)clar_fn_rtListAt((void*)cv___store458, ix22);
     clar_fn_rtListRelease((void*)en22);
     }
     }
-    clar_fn_rtListRelease((void*)cv___store457);
+    clar_fn_rtListRelease((void*)cv___store458);
 
     rt_list * t15 = NULL;
     t15 = clar_fn_cgFreshIntListList();
-    cv___store457 = t15;
+    cv___store458 = t15;
         if (clar_fn_rtListLastref((void*)cv_cgFuncSerdescs)) {
     for (int32_t ix23 = 0; ix23 < clar_fn_rtListCount((void*)cv_cgFuncSerdescs); ix23++) {
     rt_list * en23 = *(rt_list **)clar_fn_rtListAt((void*)cv_cgFuncSerdescs, ix23);
@@ -79145,26 +79209,26 @@ static int32_t clar_fn_cg68Measure(void) {
     }
     clar_fn_rtListRelease((void*)cv_cgFuncSerdescs);
 
-    cv_cgFuncSerdescs = cv___store457;
-    cv___store457 = 0;
-        clar_fn_rtListRelease((void*)cv___store458);
-
-    rt_list * t16 = NULL;
-    t16 = clar_fn_cgFreshBoolList();
-    cv___store458 = t16;
-        clar_fn_rtListRelease((void*)cv_cgFuncUsesUiBlob);
-
-    cv_cgFuncUsesUiBlob = cv___store458;
+    cv_cgFuncSerdescs = cv___store458;
     cv___store458 = 0;
         clar_fn_rtListRelease((void*)cv___store459);
 
+    rt_list * t16 = NULL;
+    t16 = clar_fn_cgFreshBoolList();
+    cv___store459 = t16;
+        clar_fn_rtListRelease((void*)cv_cgFuncUsesUiBlob);
+
+    cv_cgFuncUsesUiBlob = cv___store459;
+    cv___store459 = 0;
+        clar_fn_rtListRelease((void*)cv___store460);
+
     rt_list * t17 = NULL;
     t17 = clar_fn_cgFreshBoolList();
-    cv___store459 = t17;
+    cv___store460 = t17;
         clar_fn_rtListRelease((void*)cv_cgFuncUsesUiEvents);
 
-    cv_cgFuncUsesUiEvents = cv___store459;
-    cv___store459 = 0;
+    cv_cgFuncUsesUiEvents = cv___store460;
+    cv___store460 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -79191,73 +79255,73 @@ static int32_t clar_fn_cg68Measure(void) {
         clar_fn_rtListPush((void*)cv_cgFuncUsesUiEvents, (void*)&(t25));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store460);
+        clar_fn_rtListRelease((void*)cv___store461);
 
     rt_list * t26 = NULL;
     t26 = clar_fn_cgFreshIntList();
-    cv___store460 = t26;
+    cv___store461 = t26;
         clar_fn_rtListRelease((void*)cv_cgSeg1StrLits);
 
-    cv_cgSeg1StrLits = cv___store460;
-    cv___store460 = 0;
-        clar_fn_rtListRelease((void*)cv___store461);
-
-    rt_list * t27 = NULL;
-    t27 = clar_fn_cgFreshIntList();
-    cv___store461 = t27;
-        clar_fn_rtListRelease((void*)cv_cgSeg1EnumTables);
-
-    cv_cgSeg1EnumTables = cv___store461;
+    cv_cgSeg1StrLits = cv___store461;
     cv___store461 = 0;
         clar_fn_rtListRelease((void*)cv___store462);
 
+    rt_list * t27 = NULL;
+    t27 = clar_fn_cgFreshIntList();
+    cv___store462 = t27;
+        clar_fn_rtListRelease((void*)cv_cgSeg1EnumTables);
+
+    cv_cgSeg1EnumTables = cv___store462;
+    cv___store462 = 0;
+        clar_fn_rtListRelease((void*)cv___store463);
+
     rt_list * t28 = NULL;
     t28 = clar_fn_cgFreshIntList();
-    cv___store462 = t28;
+    cv___store463 = t28;
         clar_fn_rtListRelease((void*)cv_cgSeg1Serdescs);
 
-    cv_cgSeg1Serdescs = cv___store462;
-    cv___store462 = 0;
+    cv_cgSeg1Serdescs = cv___store463;
+    cv___store463 = 0;
     cv_cgSeg1UsesUiBlob = 0;
     cv_cgSeg1UsesUiEvents = 0;
-        clar_fn_rtListRelease((void*)cv___store463);
+        clar_fn_rtListRelease((void*)cv___store464);
 
     rt_list * t29 = NULL;
     t29 = clar_fn_cgFreshIntList();
-    cv___store463 = t29;
+    cv___store464 = t29;
         clar_fn_rtListRelease((void*)cv_cgGlueStrLits);
 
-    cv_cgGlueStrLits = cv___store463;
-    cv___store463 = 0;
-        clar_fn_rtListRelease((void*)cv___store464);
-
-    rt_list * t30 = NULL;
-    t30 = clar_fn_cgFreshIntList();
-    cv___store464 = t30;
-        clar_fn_rtListRelease((void*)cv_cgGlueEnumTables);
-
-    cv_cgGlueEnumTables = cv___store464;
+    cv_cgGlueStrLits = cv___store464;
     cv___store464 = 0;
         clar_fn_rtListRelease((void*)cv___store465);
 
+    rt_list * t30 = NULL;
+    t30 = clar_fn_cgFreshIntList();
+    cv___store465 = t30;
+        clar_fn_rtListRelease((void*)cv_cgGlueEnumTables);
+
+    cv_cgGlueEnumTables = cv___store465;
+    cv___store465 = 0;
+        clar_fn_rtListRelease((void*)cv___store466);
+
     rt_list * t31 = NULL;
     t31 = clar_fn_cgFreshIntList();
-    cv___store465 = t31;
+    cv___store466 = t31;
         clar_fn_rtListRelease((void*)cv_cgGlueSerdescs);
 
-    cv_cgGlueSerdescs = cv___store465;
-    cv___store465 = 0;
+    cv_cgGlueSerdescs = cv___store466;
+    cv___store466 = 0;
     cv_cgGlueUsesUiBlob = 0;
     cv_cgGlueUsesUiEvents = 0;
-        clar_fn_rtListRelease((void*)cv___store466);
+        clar_fn_rtListRelease((void*)cv___store467);
 
     rt_list * t32 = NULL;
     t32 = clar_fn_cgFreshIntList();
-    cv___store466 = t32;
+    cv___store467 = t32;
         clar_fn_rtListRelease((void*)cv_segPlaceholder);
 
-    cv_segPlaceholder = cv___store466;
-    cv___store466 = 0;
+    cv_segPlaceholder = cv___store467;
+    cv___store467 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -79272,15 +79336,15 @@ static int32_t clar_fn_cg68Measure(void) {
 
     cv_cgFuncSegment = cv_segPlaceholder;
     cv_cgCurFuncSegment = 0;
-        clar_fn_rtListRelease((void*)cv___store467);
+        clar_fn_rtListRelease((void*)cv___store468);
 
     rt_list * t34 = NULL;
     t34 = clar_fn_cgFreshIntList();
-    cv___store467 = t34;
+    cv___store468 = t34;
         clar_fn_rtListRelease((void*)cv_cgJtSlots);
 
-    cv_cgJtSlots = cv___store467;
-    cv___store467 = 0;
+    cv_cgJtSlots = cv___store468;
+    cv___store468 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -79289,15 +79353,15 @@ static int32_t clar_fn_cg68Measure(void) {
         clar_fn_rtListPush((void*)cv_cgJtSlots, (void*)&(t35));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store468);
+        clar_fn_rtListRelease((void*)cv___store469);
 
     rt_list * t36 = NULL;
     t36 = clar_fn_cgFreshIntList();
-    cv___store468 = t36;
+    cv___store469 = t36;
         clar_fn_rtListRelease((void*)cv_cgFuncFrameSizes);
 
-    cv_cgFuncFrameSizes = cv___store468;
-    cv___store468 = 0;
+    cv_cgFuncFrameSizes = cv___store469;
+    cv___store469 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -79306,15 +79370,15 @@ static int32_t clar_fn_cg68Measure(void) {
         clar_fn_rtListPush((void*)cv_cgFuncFrameSizes, (void*)&(t37));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store469);
+        clar_fn_rtListRelease((void*)cv___store470);
 
     rt_list * t38 = NULL;
     t38 = clar_fn_cgFreshIntList();
-    cv___store469 = t38;
+    cv___store470 = t38;
         clar_fn_rtListRelease((void*)cv_cgFuncBigTmpNeed);
 
-    cv_cgFuncBigTmpNeed = cv___store469;
-    cv___store469 = 0;
+    cv_cgFuncBigTmpNeed = cv___store470;
+    cv___store470 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -79336,15 +79400,15 @@ static int32_t clar_fn_cg68Measure(void) {
     if (clar_aborting) goto bail;
     cv_cgRecMode = 0;
     cv_cgSeg1ExtraSize = CLAR_SUB32(clar_fn_a68SizeSoFar(), cv_before);
-        clar_fn_rtListRelease((void*)cv___store470);
+        clar_fn_rtListRelease((void*)cv___store471);
 
     rt_list * t40 = NULL;
     t40 = clar_fn_cgFreshIntList();
-    cv___store470 = t40;
+    cv___store471 = t40;
         clar_fn_rtListRelease((void*)cv_cgFuncSize);
 
-    cv_cgFuncSize = cv___store470;
-    cv___store470 = 0;
+    cv_cgFuncSize = cv___store471;
+    cv___store471 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -79424,15 +79488,15 @@ static int32_t clar_fn_cg68Measure(void) {
     if (clar_aborting) goto bail;
     cv_cgRecMode = 0;
     cv_cgGlueBundleSize = CLAR_SUB32(clar_fn_a68SizeSoFar(), cv_before);
-        clar_fn_rtListRelease((void*)cv___store471);
+        clar_fn_rtListRelease((void*)cv___store472);
 
     rt_list * t53 = NULL;
     t53 = clar_fn_cgFreshIntList();
-    cv___store471 = t53;
+    cv___store472 = t53;
         clar_fn_rtListRelease((void*)cv_cgStrLitSize);
 
-    cv_cgStrLitSize = cv___store471;
-    cv___store471 = 0;
+    cv_cgStrLitSize = cv___store472;
+    cv___store472 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irStrLits)))) break;
@@ -79441,15 +79505,15 @@ static int32_t clar_fn_cg68Measure(void) {
         clar_fn_rtListPush((void*)cv_cgStrLitSize, (void*)&(t54));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store472);
+        clar_fn_rtListRelease((void*)cv___store473);
 
     rt_list * t55 = NULL;
     t55 = clar_fn_cgFreshIntList();
-    cv___store472 = t55;
+    cv___store473 = t55;
         clar_fn_rtListRelease((void*)cv_cgEnumTableSize);
 
-    cv_cgEnumTableSize = cv___store472;
-    cv___store472 = 0;
+    cv_cgEnumTableSize = cv___store473;
+    cv___store473 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irEnums)))) break;
@@ -79458,15 +79522,15 @@ static int32_t clar_fn_cg68Measure(void) {
         clar_fn_rtListPush((void*)cv_cgEnumTableSize, (void*)&(t56));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store473);
+        clar_fn_rtListRelease((void*)cv___store474);
 
     rt_list * t57 = NULL;
     t57 = clar_fn_cgFreshIntList();
-    cv___store473 = t57;
+    cv___store474 = t57;
         clar_fn_rtListRelease((void*)cv_cgSerdescSize);
 
-    cv_cgSerdescSize = cv___store473;
-    cv___store473 = 0;
+    cv_cgSerdescSize = cv___store474;
+    cv___store474 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irRecords)))) break;
@@ -79561,8 +79625,6 @@ static int32_t clar_fn_cgPackProgram(void) {
     cv_newUiEvents = 0;
     int32_t cv_newUsed;
     cv_newUsed = 0;
-    rt_list * cv___store474;
-    cv___store474 = NULL;
     rt_list * cv___store475;
     cv___store475 = NULL;
     rt_list * cv___store476;
@@ -79595,19 +79657,21 @@ static int32_t clar_fn_cgPackProgram(void) {
     cv___store489 = NULL;
     rt_list * cv___store490;
     cv___store490 = NULL;
+    rt_list * cv___store491;
+    cv___store491 = NULL;
     int32_t cv___ret1257;
     cv___ret1257 = 0;
     cv_fixedBase = CLAR_ADD32(4, cv_cgGlueBundleSize);
     cv_freshAvail = CLAR_SUB32(cv_cgSegLimit, cv_fixedBase);
-        clar_fn_rtListRelease((void*)cv___store474);
+        clar_fn_rtListRelease((void*)cv___store475);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store474 = t1;
+    cv___store475 = t1;
         clar_fn_rtListRelease((void*)cv_cgFuncSegment);
 
-    cv_cgFuncSegment = cv___store474;
-    cv___store474 = 0;
+    cv_cgFuncSegment = cv___store475;
+    cv___store475 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irFuncs)))) break;
@@ -79616,35 +79680,35 @@ static int32_t clar_fn_cgPackProgram(void) {
         clar_fn_rtListPush((void*)cv_cgFuncSegment, (void*)&(t2));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store475);
+        clar_fn_rtListRelease((void*)cv___store476);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_cgFreshIntList();
-    cv___store475 = t3;
+    cv___store476 = t3;
         clar_fn_rtListRelease((void*)cv_segUsed);
 
-    cv_segUsed = cv___store475;
-    cv___store475 = 0;
-        clar_fn_rtListRelease((void*)cv___store476);
+    cv_segUsed = cv___store476;
+    cv___store476 = 0;
+        clar_fn_rtListRelease((void*)cv___store477);
 
     rt_list * t4 = NULL;
     t4 = clar_fn_cgFreshIntList();
-    cv___store476 = t4;
+    cv___store477 = t4;
         clar_fn_rtListRelease((void*)cv_segAvail);
 
-    cv_segAvail = cv___store476;
-    cv___store476 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store477)) {
-    for (int32_t ix24 = 0; ix24 < clar_fn_rtListCount((void*)cv___store477); ix24++) {
-    rt_list * en24 = *(rt_list **)clar_fn_rtListAt((void*)cv___store477, ix24);
+    cv_segAvail = cv___store477;
+    cv___store477 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store478)) {
+    for (int32_t ix24 = 0; ix24 < clar_fn_rtListCount((void*)cv___store478); ix24++) {
+    rt_list * en24 = *(rt_list **)clar_fn_rtListAt((void*)cv___store478, ix24);
     clar_fn_rtListRelease((void*)en24);
     }
     }
-    clar_fn_rtListRelease((void*)cv___store477);
+    clar_fn_rtListRelease((void*)cv___store478);
 
     rt_list * t5 = NULL;
     t5 = clar_fn_cgFreshIntListList();
-    cv___store477 = t5;
+    cv___store478 = t5;
         if (clar_fn_rtListLastref((void*)cv_segStrSets)) {
     for (int32_t ix25 = 0; ix25 < clar_fn_rtListCount((void*)cv_segStrSets); ix25++) {
     rt_list * en25 = *(rt_list **)clar_fn_rtListAt((void*)cv_segStrSets, ix25);
@@ -79653,19 +79717,19 @@ static int32_t clar_fn_cgPackProgram(void) {
     }
     clar_fn_rtListRelease((void*)cv_segStrSets);
 
-    cv_segStrSets = cv___store477;
-    cv___store477 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store478)) {
-    for (int32_t ix26 = 0; ix26 < clar_fn_rtListCount((void*)cv___store478); ix26++) {
-    rt_list * en26 = *(rt_list **)clar_fn_rtListAt((void*)cv___store478, ix26);
+    cv_segStrSets = cv___store478;
+    cv___store478 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store479)) {
+    for (int32_t ix26 = 0; ix26 < clar_fn_rtListCount((void*)cv___store479); ix26++) {
+    rt_list * en26 = *(rt_list **)clar_fn_rtListAt((void*)cv___store479, ix26);
     clar_fn_rtListRelease((void*)en26);
     }
     }
-    clar_fn_rtListRelease((void*)cv___store478);
+    clar_fn_rtListRelease((void*)cv___store479);
 
     rt_list * t6 = NULL;
     t6 = clar_fn_cgFreshIntListList();
-    cv___store478 = t6;
+    cv___store479 = t6;
         if (clar_fn_rtListLastref((void*)cv_segEnumSets)) {
     for (int32_t ix27 = 0; ix27 < clar_fn_rtListCount((void*)cv_segEnumSets); ix27++) {
     rt_list * en27 = *(rt_list **)clar_fn_rtListAt((void*)cv_segEnumSets, ix27);
@@ -79674,19 +79738,19 @@ static int32_t clar_fn_cgPackProgram(void) {
     }
     clar_fn_rtListRelease((void*)cv_segEnumSets);
 
-    cv_segEnumSets = cv___store478;
-    cv___store478 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store479)) {
-    for (int32_t ix28 = 0; ix28 < clar_fn_rtListCount((void*)cv___store479); ix28++) {
-    rt_list * en28 = *(rt_list **)clar_fn_rtListAt((void*)cv___store479, ix28);
+    cv_segEnumSets = cv___store479;
+    cv___store479 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store480)) {
+    for (int32_t ix28 = 0; ix28 < clar_fn_rtListCount((void*)cv___store480); ix28++) {
+    rt_list * en28 = *(rt_list **)clar_fn_rtListAt((void*)cv___store480, ix28);
     clar_fn_rtListRelease((void*)en28);
     }
     }
-    clar_fn_rtListRelease((void*)cv___store479);
+    clar_fn_rtListRelease((void*)cv___store480);
 
     rt_list * t7 = NULL;
     t7 = clar_fn_cgFreshIntListList();
-    cv___store479 = t7;
+    cv___store480 = t7;
         if (clar_fn_rtListLastref((void*)cv_segSerdescSets)) {
     for (int32_t ix29 = 0; ix29 < clar_fn_rtListCount((void*)cv_segSerdescSets); ix29++) {
     rt_list * en29 = *(rt_list **)clar_fn_rtListAt((void*)cv_segSerdescSets, ix29);
@@ -79695,19 +79759,19 @@ static int32_t clar_fn_cgPackProgram(void) {
     }
     clar_fn_rtListRelease((void*)cv_segSerdescSets);
 
-    cv_segSerdescSets = cv___store479;
-    cv___store479 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store480)) {
-    for (int32_t ix30 = 0; ix30 < clar_fn_rtListCount((void*)cv___store480); ix30++) {
-    rt_list * en30 = *(rt_list **)clar_fn_rtListAt((void*)cv___store480, ix30);
+    cv_segSerdescSets = cv___store480;
+    cv___store480 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store481)) {
+    for (int32_t ix30 = 0; ix30 < clar_fn_rtListCount((void*)cv___store481); ix30++) {
+    rt_list * en30 = *(rt_list **)clar_fn_rtListAt((void*)cv___store481, ix30);
     clar_fn_rtListRelease((void*)en30);
     }
     }
-    clar_fn_rtListRelease((void*)cv___store480);
+    clar_fn_rtListRelease((void*)cv___store481);
 
     rt_list * t8 = NULL;
     t8 = clar_fn_cgFreshBoolListList();
-    cv___store480 = t8;
+    cv___store481 = t8;
         if (clar_fn_rtListLastref((void*)cv_segStrBits)) {
     for (int32_t ix31 = 0; ix31 < clar_fn_rtListCount((void*)cv_segStrBits); ix31++) {
     rt_list * en31 = *(rt_list **)clar_fn_rtListAt((void*)cv_segStrBits, ix31);
@@ -79716,19 +79780,19 @@ static int32_t clar_fn_cgPackProgram(void) {
     }
     clar_fn_rtListRelease((void*)cv_segStrBits);
 
-    cv_segStrBits = cv___store480;
-    cv___store480 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store481)) {
-    for (int32_t ix32 = 0; ix32 < clar_fn_rtListCount((void*)cv___store481); ix32++) {
-    rt_list * en32 = *(rt_list **)clar_fn_rtListAt((void*)cv___store481, ix32);
+    cv_segStrBits = cv___store481;
+    cv___store481 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store482)) {
+    for (int32_t ix32 = 0; ix32 < clar_fn_rtListCount((void*)cv___store482); ix32++) {
+    rt_list * en32 = *(rt_list **)clar_fn_rtListAt((void*)cv___store482, ix32);
     clar_fn_rtListRelease((void*)en32);
     }
     }
-    clar_fn_rtListRelease((void*)cv___store481);
+    clar_fn_rtListRelease((void*)cv___store482);
 
     rt_list * t9 = NULL;
     t9 = clar_fn_cgFreshBoolListList();
-    cv___store481 = t9;
+    cv___store482 = t9;
         if (clar_fn_rtListLastref((void*)cv_segEnumBits)) {
     for (int32_t ix33 = 0; ix33 < clar_fn_rtListCount((void*)cv_segEnumBits); ix33++) {
     rt_list * en33 = *(rt_list **)clar_fn_rtListAt((void*)cv_segEnumBits, ix33);
@@ -79737,19 +79801,19 @@ static int32_t clar_fn_cgPackProgram(void) {
     }
     clar_fn_rtListRelease((void*)cv_segEnumBits);
 
-    cv_segEnumBits = cv___store481;
-    cv___store481 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store482)) {
-    for (int32_t ix34 = 0; ix34 < clar_fn_rtListCount((void*)cv___store482); ix34++) {
-    rt_list * en34 = *(rt_list **)clar_fn_rtListAt((void*)cv___store482, ix34);
+    cv_segEnumBits = cv___store482;
+    cv___store482 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store483)) {
+    for (int32_t ix34 = 0; ix34 < clar_fn_rtListCount((void*)cv___store483); ix34++) {
+    rt_list * en34 = *(rt_list **)clar_fn_rtListAt((void*)cv___store483, ix34);
     clar_fn_rtListRelease((void*)en34);
     }
     }
-    clar_fn_rtListRelease((void*)cv___store482);
+    clar_fn_rtListRelease((void*)cv___store483);
 
     rt_list * t10 = NULL;
     t10 = clar_fn_cgFreshBoolListList();
-    cv___store482 = t10;
+    cv___store483 = t10;
         if (clar_fn_rtListLastref((void*)cv_segSerdescBits)) {
     for (int32_t ix35 = 0; ix35 < clar_fn_rtListCount((void*)cv_segSerdescBits); ix35++) {
     rt_list * en35 = *(rt_list **)clar_fn_rtListAt((void*)cv_segSerdescBits, ix35);
@@ -79758,26 +79822,26 @@ static int32_t clar_fn_cgPackProgram(void) {
     }
     clar_fn_rtListRelease((void*)cv_segSerdescBits);
 
-    cv_segSerdescBits = cv___store482;
-    cv___store482 = 0;
-        clar_fn_rtListRelease((void*)cv___store483);
-
-    rt_list * t11 = NULL;
-    t11 = clar_fn_cgFreshBoolList();
-    cv___store483 = t11;
-        clar_fn_rtListRelease((void*)cv_segUiBlob);
-
-    cv_segUiBlob = cv___store483;
+    cv_segSerdescBits = cv___store483;
     cv___store483 = 0;
         clar_fn_rtListRelease((void*)cv___store484);
 
+    rt_list * t11 = NULL;
+    t11 = clar_fn_cgFreshBoolList();
+    cv___store484 = t11;
+        clar_fn_rtListRelease((void*)cv_segUiBlob);
+
+    cv_segUiBlob = cv___store484;
+    cv___store484 = 0;
+        clar_fn_rtListRelease((void*)cv___store485);
+
     rt_list * t12 = NULL;
     t12 = clar_fn_cgFreshBoolList();
-    cv___store484 = t12;
+    cv___store485 = t12;
         clar_fn_rtListRelease((void*)cv_segUiEvents);
 
-    cv_segUiEvents = cv___store484;
-    cv___store484 = 0;
+    cv_segUiEvents = cv___store485;
+    cv___store485 = 0;
     rt_list * t13 = NULL;
     t13 = clar_fn_cgFreshIntList();
     rt_list * t14;
@@ -79880,60 +79944,60 @@ static int32_t clar_fn_cgPackProgram(void) {
                 cv_s = CLAR_ADD32(cv_s, 1);
             }
             if (!(cv_placed)) {
-                    clar_fn_rtListRelease((void*)cv___store485);
+                    clar_fn_rtListRelease((void*)cv___store486);
 
                 rt_list * t29 = NULL;
                 t29 = clar_fn_cgFreshIntList();
-                cv___store485 = t29;
+                cv___store486 = t29;
                     clar_fn_rtListRelease((void*)cv_newStrSet);
 
-                cv_newStrSet = cv___store485;
-                cv___store485 = 0;
-                    clar_fn_rtListRelease((void*)cv___store486);
-
-                rt_list * t30 = NULL;
-                t30 = clar_fn_cgFreshIntList();
-                cv___store486 = t30;
-                    clar_fn_rtListRelease((void*)cv_newEnumSet);
-
-                cv_newEnumSet = cv___store486;
+                cv_newStrSet = cv___store486;
                 cv___store486 = 0;
                     clar_fn_rtListRelease((void*)cv___store487);
 
-                rt_list * t31 = NULL;
-                t31 = clar_fn_cgFreshIntList();
-                cv___store487 = t31;
-                    clar_fn_rtListRelease((void*)cv_newSerdescSet);
+                rt_list * t30 = NULL;
+                t30 = clar_fn_cgFreshIntList();
+                cv___store487 = t30;
+                    clar_fn_rtListRelease((void*)cv_newEnumSet);
 
-                cv_newSerdescSet = cv___store487;
+                cv_newEnumSet = cv___store487;
                 cv___store487 = 0;
                     clar_fn_rtListRelease((void*)cv___store488);
 
-                rt_list * t32 = NULL;
-                t32 = clar_fn_cgFreshBoolListSized(clar_fn_rtListCount((void*)cv_irStrLits));
-                cv___store488 = t32;
-                    clar_fn_rtListRelease((void*)cv_newStrBits);
+                rt_list * t31 = NULL;
+                t31 = clar_fn_cgFreshIntList();
+                cv___store488 = t31;
+                    clar_fn_rtListRelease((void*)cv_newSerdescSet);
 
-                cv_newStrBits = cv___store488;
+                cv_newSerdescSet = cv___store488;
                 cv___store488 = 0;
                     clar_fn_rtListRelease((void*)cv___store489);
 
-                rt_list * t33 = NULL;
-                t33 = clar_fn_cgFreshBoolListSized(clar_fn_rtListCount((void*)cv_irEnums));
-                cv___store489 = t33;
-                    clar_fn_rtListRelease((void*)cv_newEnumBits);
+                rt_list * t32 = NULL;
+                t32 = clar_fn_cgFreshBoolListSized(clar_fn_rtListCount((void*)cv_irStrLits));
+                cv___store489 = t32;
+                    clar_fn_rtListRelease((void*)cv_newStrBits);
 
-                cv_newEnumBits = cv___store489;
+                cv_newStrBits = cv___store489;
                 cv___store489 = 0;
                     clar_fn_rtListRelease((void*)cv___store490);
 
+                rt_list * t33 = NULL;
+                t33 = clar_fn_cgFreshBoolListSized(clar_fn_rtListCount((void*)cv_irEnums));
+                cv___store490 = t33;
+                    clar_fn_rtListRelease((void*)cv_newEnumBits);
+
+                cv_newEnumBits = cv___store490;
+                cv___store490 = 0;
+                    clar_fn_rtListRelease((void*)cv___store491);
+
                 rt_list * t34 = NULL;
                 t34 = clar_fn_cgFreshBoolListSized(clar_fn_rtListCount((void*)cv_irRecords));
-                cv___store490 = t34;
+                cv___store491 = t34;
                     clar_fn_rtListRelease((void*)cv_newSerdescBits);
 
-                cv_newSerdescBits = cv___store490;
-                cv___store490 = 0;
+                cv_newSerdescBits = cv___store491;
+                cv___store491 = 0;
                 cv_newUiBlob = 0;
                 cv_newUiEvents = 0;
                 cv_newUsed = 0;
@@ -80461,18 +80525,18 @@ static rt_text * clar_fn_cgObjSlice(rt_text * cv_b, int32_t cv_start, int32_t cv
     cv_t = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_i;
     cv_i = 0;
-    rt_text * cv___store491;
-    cv___store491 = NULL;
+    rt_text * cv___store492;
+    cv___store492 = NULL;
     rt_text * cv___ret1260;
     cv___ret1260 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___store491);
+    clar_fn_rtTextRelease((void*)cv___store492);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store491 = t1;
+    cv___store492 = t1;
     clar_fn_rtTextRelease((void*)cv_t);
-    cv_t = cv___store491;
-    cv___store491 = 0;
+    cv_t = cv___store492;
+    cv___store492 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_n))) break;
@@ -80518,40 +80582,40 @@ static int32_t clar_fn_cgObjDumpSegment(rt_list * cv_segFuncIdx, rt_list * cv_se
     cv_sumLen = 0;
     int32_t cv_p;
     cv_p = 0;
-    rt_list * cv___store492;
-    cv___store492 = NULL;
     rt_list * cv___store493;
     cv___store493 = NULL;
-    rt_text * cv___store494;
+    rt_list * cv___store494;
     cv___store494 = NULL;
+    rt_text * cv___store495;
+    cv___store495 = NULL;
     int32_t cv___ret1261;
     cv___ret1261 = 0;
-        clar_fn_rtListRelease((void*)cv___store492);
+        clar_fn_rtListRelease((void*)cv___store493);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_a68LabelAddr));
-    cv___store492 = t1;
+    cv___store493 = t1;
         clar_fn_rtListRelease((void*)cv_lblCls);
 
-    cv_lblCls = cv___store492;
-    cv___store492 = 0;
-        clar_fn_rtListRelease((void*)cv___store493);
+    cv_lblCls = cv___store493;
+    cv___store493 = 0;
+        clar_fn_rtListRelease((void*)cv___store494);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_a68LabelAddr));
-    cv___store493 = t2;
+    cv___store494 = t2;
         clar_fn_rtListRelease((void*)cv_lblSym);
 
-    cv_lblSym = cv___store493;
-    cv___store493 = 0;
+    cv_lblSym = cv___store494;
+    cv___store494 = 0;
     clar_fn_cgObjBuildLabelMaps(cv_lblCls, cv_lblSym);
-    clar_fn_rtTextRelease((void*)cv___store494);
+    clar_fn_rtTextRelease((void*)cv___store495);
     rt_text * t3 = NULL;
     t3 = clar_fn_a68Bytes();
-    cv___store494 = t3;
+    cv___store495 = t3;
     clar_fn_rtTextRelease((void*)cv_b);
-    cv_b = cv___store494;
-    cv___store494 = 0;
+    cv_b = cv___store495;
+    cv___store495 = 0;
     cv_k = 0;
     while (1) {
         if (!((cv_k < clar_fn_rtListCount((void*)cv_segFuncIdx)))) break;
@@ -80765,19 +80829,19 @@ static rt_list * clar_fn_cgObjFlatSlice(rt_list * cv_flat, int32_t cv_first, int
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_i;
     cv_i = 0;
-    rt_list * cv___store495;
-    cv___store495 = NULL;
+    rt_list * cv___store496;
+    cv___store496 = NULL;
     rt_list * cv___ret1264;
     cv___ret1264 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___store495);
+        clar_fn_rtListRelease((void*)cv___store496);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store495 = t1;
+    cv___store496 = t1;
         clar_fn_rtListRelease((void*)cv_l);
 
-    cv_l = cv___store495;
-    cv___store495 = 0;
+    cv_l = cv___store496;
+    cv___store496 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_count))) break;
@@ -80814,19 +80878,19 @@ static rt_list * clar_fn_cgObjBuildFuncStrLits(int32_t cv_f) {
     cv_sym = 0;
     int32_t cv_found;
     cv_found = 0;
-    rt_list * cv___store496;
-    cv___store496 = NULL;
+    rt_list * cv___store497;
+    cv___store497 = NULL;
     rt_list * cv___ret1265;
     cv___ret1265 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___store496);
+        clar_fn_rtListRelease((void*)cv___store497);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshIntList();
-    cv___store496 = t1;
+    cv___store497 = t1;
         clar_fn_rtListRelease((void*)cv_l);
 
-    cv_l = cv___store496;
-    cv___store496 = 0;
+    cv_l = cv___store497;
+    cv___store497 = 0;
     cv_hf = (*(int32_t*)rt_list_at(cv_bkLdObjHoleFirst, (int32_t)(cv_f)));
     cv_nh = (*(int32_t*)rt_list_at(cv_bkLdObjNHoles, (int32_t)(cv_f)));
     cv_k = 0;
@@ -81064,8 +81128,6 @@ static int32_t clar_fn_cg68ProgramFork(const clar_str_255 *cv_outPath, int32_t c
     cv_objSegTainted = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv___ret1267;
     cv___ret1267 = 0;
-    rt_list * cv___store497;
-    cv___store497 = NULL;
     rt_list * cv___store498;
     cv___store498 = NULL;
     rt_list * cv___store499;
@@ -81098,6 +81160,8 @@ static int32_t clar_fn_cg68ProgramFork(const clar_str_255 *cv_outPath, int32_t c
     cv___store512 = NULL;
     rt_list * cv___store513;
     cv___store513 = NULL;
+    rt_list * cv___store514;
+    cv___store514 = NULL;
     clar_fn_rnInit();
     if (cv_segLimit > 0) {
         cv_cgSegLimit = cv_segLimit;
@@ -81159,24 +81223,24 @@ static int32_t clar_fn_cg68ProgramFork(const clar_str_255 *cv_outPath, int32_t c
     clar_fn_driveProgressPhase(&(cv_progressLine));
     clar_fn_drvStepsAddSegments(cv_cgSegCount);
     clar_fn_cgAssignFinalJtSlots();
-        clar_fn_rtListRelease((void*)cv___store497);
+        clar_fn_rtListRelease((void*)cv___store498);
 
     rt_list * t5 = NULL;
     t5 = clar_fn_cgFreshIntList();
-    cv___store497 = t5;
+    cv___store498 = t5;
         clar_fn_rtListRelease((void*)cv_jtEntries);
 
-    cv_jtEntries = cv___store497;
-    cv___store497 = 0;
-        clar_fn_rtListRelease((void*)cv___store498);
+    cv_jtEntries = cv___store498;
+    cv___store498 = 0;
+        clar_fn_rtListRelease((void*)cv___store499);
 
     rt_list * t6 = NULL;
     t6 = clar_fn_cgFreshIntList();
-    cv___store498 = t6;
+    cv___store499 = t6;
         clar_fn_rtListRelease((void*)cv_jtSegNums);
 
-    cv_jtSegNums = cv___store498;
-    cv___store498 = 0;
+    cv_jtSegNums = cv___store499;
+    cv___store499 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_cgTotalJtSlots))) break;
@@ -81188,57 +81252,57 @@ static int32_t clar_fn_cg68ProgramFork(const clar_str_255 *cv_outPath, int32_t c
         clar_fn_rtListPush((void*)cv_jtSegNums, (void*)&(t8));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        if (clar_fn_rtListLastref((void*)cv___store499)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store499); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store499, i)); }
-    clar_fn_rtListRelease((void*)cv___store499);
+        if (clar_fn_rtListLastref((void*)cv___store500)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store500); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store500, i)); }
+    clar_fn_rtListRelease((void*)cv___store500);
 
     rt_list * t9 = NULL;
     t9 = clar_fn_cgFreshTextList();
-    cv___store499 = t9;
+    cv___store500 = t9;
         if (clar_fn_rtListLastref((void*)cv_segBytes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_segBytes); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_segBytes, i)); }
     clar_fn_rtListRelease((void*)cv_segBytes);
 
-    cv_segBytes = cv___store499;
-    cv___store499 = 0;
+    cv_segBytes = cv___store500;
+    cv___store500 = 0;
     clar_str_255 t10;
     t10 = clar_fn_cgSegBase(&((*cv_outPath)));
     clar_fn_rtStrStore((void*)&(cv_base), 255, (void*)(const uint8_t*)&(t10));
     if (cv_cgBakeCapture) {
-            clar_fn_rtListRelease((void*)cv___store500);
+            clar_fn_rtListRelease((void*)cv___store501);
 
         rt_list * t11 = NULL;
         t11 = clar_fn_cgFreshBoolListSized(clar_fn_rtListCount((void*)cv_irFuncs));
-        cv___store500 = t11;
+        cv___store501 = t11;
             clar_fn_rtListRelease((void*)cv_cgObjValid);
 
-        cv_cgObjValid = cv___store500;
-        cv___store500 = 0;
-            clar_fn_rtListRelease((void*)cv___store501);
-
-        rt_list * t12 = NULL;
-        t12 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irFuncs));
-        cv___store501 = t12;
-            clar_fn_rtListRelease((void*)cv_cgObjRunFirst);
-
-        cv_cgObjRunFirst = cv___store501;
+        cv_cgObjValid = cv___store501;
         cv___store501 = 0;
             clar_fn_rtListRelease((void*)cv___store502);
 
-        rt_list * t13 = NULL;
-        t13 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irFuncs));
-        cv___store502 = t13;
-            clar_fn_rtListRelease((void*)cv_cgObjHoleFirst);
+        rt_list * t12 = NULL;
+        t12 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irFuncs));
+        cv___store502 = t12;
+            clar_fn_rtListRelease((void*)cv_cgObjRunFirst);
 
-        cv_cgObjHoleFirst = cv___store502;
+        cv_cgObjRunFirst = cv___store502;
         cv___store502 = 0;
             clar_fn_rtListRelease((void*)cv___store503);
 
+        rt_list * t13 = NULL;
+        t13 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irFuncs));
+        cv___store503 = t13;
+            clar_fn_rtListRelease((void*)cv_cgObjHoleFirst);
+
+        cv_cgObjHoleFirst = cv___store503;
+        cv___store503 = 0;
+            clar_fn_rtListRelease((void*)cv___store504);
+
         rt_list * t14 = NULL;
         t14 = clar_fn_cgFreshIntListSized(clar_fn_rtListCount((void*)cv_irFuncs));
-        cv___store503 = t14;
+        cv___store504 = t14;
             clar_fn_rtListRelease((void*)cv_cgObjNHoles);
 
-        cv_cgObjNHoles = cv___store503;
-        cv___store503 = 0;
+        cv_cgObjNHoles = cv___store504;
+        cv___store504 = 0;
             { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_cgObjRuns); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_cgObjRuns, i)); }
 
         clar_fn_rtListClear((void*)cv_cgObjRuns);
@@ -81255,62 +81319,62 @@ static int32_t clar_fn_cg68ProgramFork(const clar_str_255 *cv_outPath, int32_t c
         clar_fn_driveProgressStage(&(cv_stageLine));
         clar_fn_a68Reset();
         clar_fn_cgAssignSegFuncLabels(cv_s);
-            clar_fn_rtListRelease((void*)cv___store504);
+            clar_fn_rtListRelease((void*)cv___store505);
 
-        cv___store504 = (*(rt_list **)rt_list_at(cv_cgSegStrLitSets, (int32_t)(CLAR_SUB32(cv_s, 1))));
-            clar_fn_rtListRetain((void*)cv___store504);
+        cv___store505 = (*(rt_list **)rt_list_at(cv_cgSegStrLitSets, (int32_t)(CLAR_SUB32(cv_s, 1))));
+            clar_fn_rtListRetain((void*)cv___store505);
 
             clar_fn_rtListRelease((void*)cv_cgCurPoolStrLits);
 
-        cv_cgCurPoolStrLits = cv___store504;
-        cv___store504 = 0;
-            clar_fn_rtListRelease((void*)cv___store505);
-
-        cv___store505 = (*(rt_list **)rt_list_at(cv_cgSegEnumTableSets, (int32_t)(CLAR_SUB32(cv_s, 1))));
-            clar_fn_rtListRetain((void*)cv___store505);
-
-            clar_fn_rtListRelease((void*)cv_cgCurPoolEnumTables);
-
-        cv_cgCurPoolEnumTables = cv___store505;
+        cv_cgCurPoolStrLits = cv___store505;
         cv___store505 = 0;
             clar_fn_rtListRelease((void*)cv___store506);
 
-        cv___store506 = (*(rt_list **)rt_list_at(cv_cgSegSerdescSets, (int32_t)(CLAR_SUB32(cv_s, 1))));
+        cv___store506 = (*(rt_list **)rt_list_at(cv_cgSegEnumTableSets, (int32_t)(CLAR_SUB32(cv_s, 1))));
             clar_fn_rtListRetain((void*)cv___store506);
+
+            clar_fn_rtListRelease((void*)cv_cgCurPoolEnumTables);
+
+        cv_cgCurPoolEnumTables = cv___store506;
+        cv___store506 = 0;
+            clar_fn_rtListRelease((void*)cv___store507);
+
+        cv___store507 = (*(rt_list **)rt_list_at(cv_cgSegSerdescSets, (int32_t)(CLAR_SUB32(cv_s, 1))));
+            clar_fn_rtListRetain((void*)cv___store507);
 
             clar_fn_rtListRelease((void*)cv_cgCurPoolSerdescs);
 
-        cv_cgCurPoolSerdescs = cv___store506;
-        cv___store506 = 0;
+        cv_cgCurPoolSerdescs = cv___store507;
+        cv___store507 = 0;
         cv_cgCurPoolUsesUiBlob = (*(int32_t*)rt_list_at(cv_cgSegUsesUiBlob, (int32_t)(CLAR_SUB32(cv_s, 1))));
         cv_cgCurPoolUsesUiEvents = (*(int32_t*)rt_list_at(cv_cgSegUsesUiEvents, (int32_t)(CLAR_SUB32(cv_s, 1))));
-            clar_fn_rtListRelease((void*)cv___store507);
+            clar_fn_rtListRelease((void*)cv___store508);
 
         rt_list * t17 = NULL;
         t17 = clar_fn_cgBoolBitmapFromList(cv_cgCurPoolStrLits, clar_fn_rtListCount((void*)cv_irStrLits));
-        cv___store507 = t17;
+        cv___store508 = t17;
             clar_fn_rtListRelease((void*)cv_cgCurPoolStrLitBits);
 
-        cv_cgCurPoolStrLitBits = cv___store507;
-        cv___store507 = 0;
-            clar_fn_rtListRelease((void*)cv___store508);
-
-        rt_list * t18 = NULL;
-        t18 = clar_fn_cgBoolBitmapFromList(cv_cgCurPoolEnumTables, clar_fn_rtListCount((void*)cv_irEnums));
-        cv___store508 = t18;
-            clar_fn_rtListRelease((void*)cv_cgCurPoolEnumBits);
-
-        cv_cgCurPoolEnumBits = cv___store508;
+        cv_cgCurPoolStrLitBits = cv___store508;
         cv___store508 = 0;
             clar_fn_rtListRelease((void*)cv___store509);
 
+        rt_list * t18 = NULL;
+        t18 = clar_fn_cgBoolBitmapFromList(cv_cgCurPoolEnumTables, clar_fn_rtListCount((void*)cv_irEnums));
+        cv___store509 = t18;
+            clar_fn_rtListRelease((void*)cv_cgCurPoolEnumBits);
+
+        cv_cgCurPoolEnumBits = cv___store509;
+        cv___store509 = 0;
+            clar_fn_rtListRelease((void*)cv___store510);
+
         rt_list * t19 = NULL;
         t19 = clar_fn_cgBoolBitmapFromList(cv_cgCurPoolSerdescs, clar_fn_rtListCount((void*)cv_irRecords));
-        cv___store509 = t19;
+        cv___store510 = t19;
             clar_fn_rtListRelease((void*)cv_cgCurPoolSerdescBits);
 
-        cv_cgCurPoolSerdescBits = cv___store509;
-        cv___store509 = 0;
+        cv_cgCurPoolSerdescBits = cv___store510;
+        cv___store510 = 0;
         clar_fn_cgReserveStrLitLabels();
         clar_fn_cgReserveUiPoolLabels();
         clar_fn_cgReserveEnumTableLabels();
@@ -81337,42 +81401,42 @@ static int32_t clar_fn_cg68ProgramFork(const clar_str_255 *cv_outPath, int32_t c
             if (clar_aborting) goto bail;
         }
         if (cv_cgBakeCapture) {
-                clar_fn_rtListRelease((void*)cv___store510);
+                clar_fn_rtListRelease((void*)cv___store511);
 
             rt_list * t20 = NULL;
             t20 = clar_fn_cgFreshIntList();
-            cv___store510 = t20;
+            cv___store511 = t20;
                 clar_fn_rtListRelease((void*)cv_objSegFuncIdx);
 
-            cv_objSegFuncIdx = cv___store510;
-            cv___store510 = 0;
-                clar_fn_rtListRelease((void*)cv___store511);
-
-            rt_list * t21 = NULL;
-            t21 = clar_fn_cgFreshIntList();
-            cv___store511 = t21;
-                clar_fn_rtListRelease((void*)cv_objSegItemStart);
-
-            cv_objSegItemStart = cv___store511;
+            cv_objSegFuncIdx = cv___store511;
             cv___store511 = 0;
                 clar_fn_rtListRelease((void*)cv___store512);
 
-            rt_list * t22 = NULL;
-            t22 = clar_fn_cgFreshIntList();
-            cv___store512 = t22;
-                clar_fn_rtListRelease((void*)cv_objSegItemEnd);
+            rt_list * t21 = NULL;
+            t21 = clar_fn_cgFreshIntList();
+            cv___store512 = t21;
+                clar_fn_rtListRelease((void*)cv_objSegItemStart);
 
-            cv_objSegItemEnd = cv___store512;
+            cv_objSegItemStart = cv___store512;
             cv___store512 = 0;
                 clar_fn_rtListRelease((void*)cv___store513);
 
+            rt_list * t22 = NULL;
+            t22 = clar_fn_cgFreshIntList();
+            cv___store513 = t22;
+                clar_fn_rtListRelease((void*)cv_objSegItemEnd);
+
+            cv_objSegItemEnd = cv___store513;
+            cv___store513 = 0;
+                clar_fn_rtListRelease((void*)cv___store514);
+
             rt_list * t23 = NULL;
             t23 = clar_fn_cgFreshBoolList();
-            cv___store513 = t23;
+            cv___store514 = t23;
                 clar_fn_rtListRelease((void*)cv_objSegTainted);
 
-            cv_objSegTainted = cv___store513;
-            cv___store513 = 0;
+            cv_objSegTainted = cv___store514;
+            cv___store514 = 0;
         }
         cv_i = 0;
         while (1) {
@@ -81731,8 +81795,6 @@ static void clar_fn_uibI32(rt_list * cv_b, int32_t cv_v) {
 }
 
 static void clar_fn_uibReset(void) {
-    rt_list * cv___store514;
-    cv___store514 = NULL;
     rt_list * cv___store515;
     cv___store515 = NULL;
     rt_list * cv___store516;
@@ -81761,152 +81823,154 @@ static void clar_fn_uibReset(void) {
     cv___store527 = NULL;
     rt_list * cv___store528;
     cv___store528 = NULL;
-    rt_map * cv___store529;
+    rt_list * cv___store529;
     cv___store529 = NULL;
-        clar_fn_rtListRelease((void*)cv___store514);
+    rt_map * cv___store530;
+    cv___store530 = NULL;
+        clar_fn_rtListRelease((void*)cv___store515);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_uibFreshIntList();
-    cv___store514 = t1;
+    cv___store515 = t1;
         clar_fn_rtListRelease((void*)cv_uibHeader);
 
-    cv_uibHeader = cv___store514;
-    cv___store514 = 0;
-        clar_fn_rtListRelease((void*)cv___store515);
-
-    rt_list * t2 = NULL;
-    t2 = clar_fn_uibFreshIntList();
-    cv___store515 = t2;
-        clar_fn_rtListRelease((void*)cv_uibWindows);
-
-    cv_uibWindows = cv___store515;
+    cv_uibHeader = cv___store515;
     cv___store515 = 0;
         clar_fn_rtListRelease((void*)cv___store516);
 
-    rt_list * t3 = NULL;
-    t3 = clar_fn_uibFreshIntList();
-    cv___store516 = t3;
-        clar_fn_rtListRelease((void*)cv_uibWidgets);
+    rt_list * t2 = NULL;
+    t2 = clar_fn_uibFreshIntList();
+    cv___store516 = t2;
+        clar_fn_rtListRelease((void*)cv_uibWindows);
 
-    cv_uibWidgets = cv___store516;
+    cv_uibWindows = cv___store516;
     cv___store516 = 0;
         clar_fn_rtListRelease((void*)cv___store517);
 
-    rt_list * t4 = NULL;
-    t4 = clar_fn_uibFreshIntList();
-    cv___store517 = t4;
-        clar_fn_rtListRelease((void*)cv_uibMenus);
+    rt_list * t3 = NULL;
+    t3 = clar_fn_uibFreshIntList();
+    cv___store517 = t3;
+        clar_fn_rtListRelease((void*)cv_uibWidgets);
 
-    cv_uibMenus = cv___store517;
+    cv_uibWidgets = cv___store517;
     cv___store517 = 0;
         clar_fn_rtListRelease((void*)cv___store518);
 
-    rt_list * t5 = NULL;
-    t5 = clar_fn_uibFreshIntList();
-    cv___store518 = t5;
-        clar_fn_rtListRelease((void*)cv_uibItems);
+    rt_list * t4 = NULL;
+    t4 = clar_fn_uibFreshIntList();
+    cv___store518 = t4;
+        clar_fn_rtListRelease((void*)cv_uibMenus);
 
-    cv_uibItems = cv___store518;
+    cv_uibMenus = cv___store518;
     cv___store518 = 0;
         clar_fn_rtListRelease((void*)cv___store519);
 
-    rt_list * t6 = NULL;
-    t6 = clar_fn_uibFreshIntList();
-    cv___store519 = t6;
-        clar_fn_rtListRelease((void*)cv_uibMenuHandlers);
+    rt_list * t5 = NULL;
+    t5 = clar_fn_uibFreshIntList();
+    cv___store519 = t5;
+        clar_fn_rtListRelease((void*)cv_uibItems);
 
-    cv_uibMenuHandlers = cv___store519;
+    cv_uibItems = cv___store519;
     cv___store519 = 0;
         clar_fn_rtListRelease((void*)cv___store520);
 
-    rt_list * t7 = NULL;
-    t7 = clar_fn_uibFreshIntList();
-    cv___store520 = t7;
-        clar_fn_rtListRelease((void*)cv_uibEvery);
+    rt_list * t6 = NULL;
+    t6 = clar_fn_uibFreshIntList();
+    cv___store520 = t6;
+        clar_fn_rtListRelease((void*)cv_uibMenuHandlers);
 
-    cv_uibEvery = cv___store520;
+    cv_uibMenuHandlers = cv___store520;
     cv___store520 = 0;
         clar_fn_rtListRelease((void*)cv___store521);
 
-    rt_list * t8 = NULL;
-    t8 = clar_fn_uibFreshIntList();
-    cv___store521 = t8;
-        clar_fn_rtListRelease((void*)cv_uibApp);
+    rt_list * t7 = NULL;
+    t7 = clar_fn_uibFreshIntList();
+    cv___store521 = t7;
+        clar_fn_rtListRelease((void*)cv_uibEvery);
 
-    cv_uibApp = cv___store521;
+    cv_uibEvery = cv___store521;
     cv___store521 = 0;
         clar_fn_rtListRelease((void*)cv___store522);
 
-    rt_list * t9 = NULL;
-    t9 = clar_fn_uibFreshIntList();
-    cv___store522 = t9;
-        clar_fn_rtListRelease((void*)cv_uibForms);
+    rt_list * t8 = NULL;
+    t8 = clar_fn_uibFreshIntList();
+    cv___store522 = t8;
+        clar_fn_rtListRelease((void*)cv_uibApp);
 
-    cv_uibForms = cv___store522;
+    cv_uibApp = cv___store522;
     cv___store522 = 0;
         clar_fn_rtListRelease((void*)cv___store523);
 
-    rt_list * t10 = NULL;
-    t10 = clar_fn_uibFreshIntList();
-    cv___store523 = t10;
-        clar_fn_rtListRelease((void*)cv_uibBinds);
+    rt_list * t9 = NULL;
+    t9 = clar_fn_uibFreshIntList();
+    cv___store523 = t9;
+        clar_fn_rtListRelease((void*)cv_uibForms);
 
-    cv_uibBinds = cv___store523;
+    cv_uibForms = cv___store523;
     cv___store523 = 0;
         clar_fn_rtListRelease((void*)cv___store524);
 
-    rt_list * t11 = NULL;
-    t11 = clar_fn_uibFreshIntList();
-    cv___store524 = t11;
-        clar_fn_rtListRelease((void*)cv_uibTables);
+    rt_list * t10 = NULL;
+    t10 = clar_fn_uibFreshIntList();
+    cv___store524 = t10;
+        clar_fn_rtListRelease((void*)cv_uibBinds);
 
-    cv_uibTables = cv___store524;
+    cv_uibBinds = cv___store524;
     cv___store524 = 0;
         clar_fn_rtListRelease((void*)cv___store525);
 
-    rt_list * t12 = NULL;
-    t12 = clar_fn_uibFreshIntList();
-    cv___store525 = t12;
-        clar_fn_rtListRelease((void*)cv_uibCols);
+    rt_list * t11 = NULL;
+    t11 = clar_fn_uibFreshIntList();
+    cv___store525 = t11;
+        clar_fn_rtListRelease((void*)cv_uibTables);
 
-    cv_uibCols = cv___store525;
+    cv_uibTables = cv___store525;
     cv___store525 = 0;
         clar_fn_rtListRelease((void*)cv___store526);
 
-    rt_list * t13 = NULL;
-    t13 = clar_fn_uibFreshIntList();
-    cv___store526 = t13;
-        clar_fn_rtListRelease((void*)cv_uibLayouts);
+    rt_list * t12 = NULL;
+    t12 = clar_fn_uibFreshIntList();
+    cv___store526 = t12;
+        clar_fn_rtListRelease((void*)cv_uibCols);
 
-    cv_uibLayouts = cv___store526;
+    cv_uibCols = cv___store526;
     cv___store526 = 0;
         clar_fn_rtListRelease((void*)cv___store527);
 
-    rt_list * t14 = NULL;
-    t14 = clar_fn_uibFreshIntList();
-    cv___store527 = t14;
-        clar_fn_rtListRelease((void*)cv_uibEnumArrays);
+    rt_list * t13 = NULL;
+    t13 = clar_fn_uibFreshIntList();
+    cv___store527 = t13;
+        clar_fn_rtListRelease((void*)cv_uibLayouts);
 
-    cv_uibEnumArrays = cv___store527;
+    cv_uibLayouts = cv___store527;
     cv___store527 = 0;
         clar_fn_rtListRelease((void*)cv___store528);
 
+    rt_list * t14 = NULL;
+    t14 = clar_fn_uibFreshIntList();
+    cv___store528 = t14;
+        clar_fn_rtListRelease((void*)cv_uibEnumArrays);
+
+    cv_uibEnumArrays = cv___store528;
+    cv___store528 = 0;
+        clar_fn_rtListRelease((void*)cv___store529);
+
     rt_list * t15 = NULL;
     t15 = clar_fn_uibFreshIntList();
-    cv___store528 = t15;
+    cv___store529 = t15;
         clar_fn_rtListRelease((void*)cv_uibStrings);
 
-    cv_uibStrings = cv___store528;
-    cv___store528 = 0;
-        clar_fn_rtMapRelease((void*)cv___store529);
+    cv_uibStrings = cv___store529;
+    cv___store529 = 0;
+        clar_fn_rtMapRelease((void*)cv___store530);
 
     rt_map * t16 = NULL;
     t16 = clar_fn_uibFreshIntMap();
-    cv___store529 = t16;
+    cv___store530 = t16;
         clar_fn_rtMapRelease((void*)cv_uibStrMemo);
 
-    cv_uibStrMemo = cv___store529;
-    cv___store529 = 0;
+    cv_uibStrMemo = cv___store530;
+    cv___store530 = 0;
     cv_uibBaseWindows = 0;
     cv_uibBaseWidgets = 0;
     cv_uibBaseMenus = 0;
@@ -82663,8 +82727,8 @@ static rt_list * clar_fn_uibBuild(void) {
     cv_totalLen = 0;
     rt_list * cv_result;
     cv_result = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store530;
-    cv___store530 = NULL;
+    rt_list * cv___store531;
+    cv___store531 = NULL;
     rt_list * cv___ret1286;
     cv___ret1286 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_uibReset();
@@ -82854,15 +82918,15 @@ static rt_list * clar_fn_uibBuild(void) {
         clar_fn_rtListPush((void*)cv_uibStrings, (void*)&(t7));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-        clar_fn_rtListRelease((void*)cv___store530);
+        clar_fn_rtListRelease((void*)cv___store531);
 
     rt_list * t8 = NULL;
     t8 = clar_fn_uibFreshIntList();
-    cv___store530 = t8;
+    cv___store531 = t8;
         clar_fn_rtListRelease((void*)cv_result);
 
-    cv_result = cv___store530;
-    cv___store530 = 0;
+    cv_result = cv___store531;
+    cv___store531 = 0;
     clar_fn_uibAppendAll(cv_result, cv_uibHeader);
     clar_fn_uibAppendAll(cv_result, cv_uibWindows);
     clar_fn_uibAppendAll(cv_result, cv_uibWidgets);
@@ -83290,9 +83354,7 @@ static rt_map * clar_fn_driveFreshIntMap(void) {
 }
 
 static void clar_fn_driveReset(void) {
-    rt_map * cv___store531;
-    cv___store531 = NULL;
-    rt_list * cv___store532;
+    rt_map * cv___store532;
     cv___store532 = NULL;
     rt_list * cv___store533;
     cv___store533 = NULL;
@@ -83304,53 +83366,55 @@ static void clar_fn_driveReset(void) {
     cv___store536 = NULL;
     rt_list * cv___store537;
     cv___store537 = NULL;
+    rt_list * cv___store538;
+    cv___store538 = NULL;
     clar_fn_libReset();
     cv_rnInited = 0;
-        clar_fn_rtMapRelease((void*)cv___store531);
+        clar_fn_rtMapRelease((void*)cv___store532);
 
     rt_map * t1 = NULL;
     t1 = clar_fn_driveFreshIntMap();
-    cv___store531 = t1;
+    cv___store532 = t1;
         clar_fn_rtMapRelease((void*)cv_seenPaths);
 
-    cv_seenPaths = cv___store531;
-    cv___store531 = 0;
-        clar_fn_rtListRelease((void*)cv___store532);
-
-    rt_list * t2 = NULL;
-    t2 = clar_fn_driveFreshIntList();
-    cv___store532 = t2;
-        clar_fn_rtListRelease((void*)cv_asmHeads);
-
-    cv_asmHeads = cv___store532;
+    cv_seenPaths = cv___store532;
     cv___store532 = 0;
         clar_fn_rtListRelease((void*)cv___store533);
 
-    rt_list * t3 = NULL;
-    t3 = clar_fn_driveFreshIntList();
-    cv___store533 = t3;
-        clar_fn_rtListRelease((void*)cv_asmTails);
+    rt_list * t2 = NULL;
+    t2 = clar_fn_driveFreshIntList();
+    cv___store533 = t2;
+        clar_fn_rtListRelease((void*)cv_asmHeads);
 
-    cv_asmTails = cv___store533;
+    cv_asmHeads = cv___store533;
     cv___store533 = 0;
         clar_fn_rtListRelease((void*)cv___store534);
 
-    rt_list * t4 = NULL;
-    t4 = clar_fn_driveFreshIntList();
-    cv___store534 = t4;
-        clar_fn_rtListRelease((void*)cv_dedupHits);
+    rt_list * t3 = NULL;
+    t3 = clar_fn_driveFreshIntList();
+    cv___store534 = t3;
+        clar_fn_rtListRelease((void*)cv_asmTails);
 
-    cv_dedupHits = cv___store534;
+    cv_asmTails = cv___store534;
     cv___store534 = 0;
         clar_fn_rtListRelease((void*)cv___store535);
 
+    rt_list * t4 = NULL;
+    t4 = clar_fn_driveFreshIntList();
+    cv___store535 = t4;
+        clar_fn_rtListRelease((void*)cv_dedupHits);
+
+    cv_dedupHits = cv___store535;
+    cv___store535 = 0;
+        clar_fn_rtListRelease((void*)cv___store536);
+
     rt_list * t5 = NULL;
     t5 = clar_fn_driveFreshBoolList();
-    cv___store535 = t5;
+    cv___store536 = t5;
         clar_fn_rtListRelease((void*)cv_hoistedHead);
 
-    cv_hoistedHead = cv___store535;
-    cv___store535 = 0;
+    cv_hoistedHead = cv___store536;
+    cv___store536 = 0;
     cv_hoistCount = 0;
     cv_userHeadCount = 0;
     cv_entryFailed = 0;
@@ -83359,24 +83423,24 @@ static void clar_fn_driveReset(void) {
     cv_lowSkipUiDispatchers = 0;
     cv_lowResumeFromBake = 0;
     clar_fn_rtStrStore((void*)&(cv_bkManifestDriftPath), 255, (void*)(const uint8_t*)&(clar_lit_6));
-        clar_fn_rtListRelease((void*)cv___store536);
+        clar_fn_rtListRelease((void*)cv___store537);
 
     rt_list * t6 = NULL;
     t6 = clar_fn_driveFreshIntList();
-    cv___store536 = t6;
+    cv___store537 = t6;
         clar_fn_rtListRelease((void*)cv_bkManifestCollidedIdx);
 
-    cv_bkManifestCollidedIdx = cv___store536;
-    cv___store536 = 0;
-        clar_fn_rtListRelease((void*)cv___store537);
+    cv_bkManifestCollidedIdx = cv___store537;
+    cv___store537 = 0;
+        clar_fn_rtListRelease((void*)cv___store538);
 
     rt_list * t7 = NULL;
     t7 = clar_fn_driveFreshBoolList();
-    cv___store537 = t7;
+    cv___store538 = t7;
         clar_fn_rtListRelease((void*)cv_bkManifestCollidedEarly);
 
-    cv_bkManifestCollidedEarly = cv___store537;
-    cv___store537 = 0;
+    cv_bkManifestCollidedEarly = cv___store538;
+    cv___store538 = 0;
     cv_bkRuntimeFuncBoundary = 0;
     cv_bkHeaderVerified = 0;
     return;
@@ -83393,8 +83457,8 @@ static clar_str_255 clar_fn_findRtDir(const clar_str_255 *cv_probeFile) {
     cv_probe = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_ok;
     cv_ok = 0;
-    rt_text * cv___store538;
-    cv___store538 = NULL;
+    rt_text * cv___store539;
+    cv___store539 = NULL;
     clar_str_255 cv___ret1297;
     cv___ret1297 = (clar_str_255){0};
     clar_fn_rtStrStore((void*)&(cv_prefix), 255, (void*)(const uint8_t*)&(clar_lit_6));
@@ -83404,14 +83468,14 @@ static clar_str_255 clar_fn_findRtDir(const clar_str_255 *cv_probeFile) {
         clar_str_255 t1;
         clar_fn_rtStrConcat((void*)&t1, (void*)(const uint8_t*)&(cv_prefix), (void*)(const uint8_t*)&(clar_lit_952));
         clar_fn_rtStrStore((void*)&(cv_candidate), 255, (void*)(const uint8_t*)&(t1));
-        clar_fn_rtTextRelease((void*)cv___store538);
+        clar_fn_rtTextRelease((void*)cv___store539);
         rt_text * t2 = NULL;
         t2 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_6));
-        cv___store538 = t2;
+        cv___store539 = t2;
         clar_fn_rtTextRelease((void*)cv_probe);
-        cv_probe = cv___store538;
-        cv___store538 = 0;
+        cv_probe = cv___store539;
+        cv___store539 = 0;
         clar_str_255 t3;
         clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(cv_candidate), (void*)(const uint8_t*)&((*cv_probeFile)));
         cv_ok = rt_file_read_text((const uint8_t*)&(t3), cv_probe);
@@ -83614,14 +83678,14 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
     cv_manifestCollision = 0;
     int32_t cv_manifestCollisionEarly;
     cv_manifestCollisionEarly = 0;
-    rt_text * cv___store539;
-    cv___store539 = NULL;
     rt_text * cv___store540;
     cv___store540 = NULL;
-    int32_t cv___ret1300;
-    cv___ret1300 = 0;
     rt_text * cv___store541;
     cv___store541 = NULL;
+    int32_t cv___ret1300;
+    cv___ret1300 = 0;
+    rt_text * cv___store542;
+    cv___store542 = NULL;
     clar_fn_rtStrStore((void*)&(cv_key2), 255, (void*)(const uint8_t*)&((*cv_key)));
     clar_fn_rtStrStore((void*)&(cv_altPath), 255, (void*)(const uint8_t*)&(clar_lit_6));
     if (cv_hostPaths) {
@@ -83648,14 +83712,14 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
             clar_fn_rtStrStore((void*)&(cv_path), 255, (void*)(const uint8_t*)&(cv_readPath));
         } else {
             clar_fn_rtStrStore((void*)&(cv_readPath), 255, (void*)(const uint8_t*)&((*cv_rawPath)));
-            clar_fn_rtTextRelease((void*)cv___store539);
+            clar_fn_rtTextRelease((void*)cv___store540);
             rt_text * t5 = NULL;
             t5 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextStore((void*)t5, (void*)(const uint8_t*)&(clar_lit_6));
-            cv___store539 = t5;
+            cv___store540 = t5;
             clar_fn_rtTextRelease((void*)cv_diskProbe);
-            cv_diskProbe = cv___store539;
-            cv___store539 = 0;
+            cv_diskProbe = cv___store540;
+            cv___store540 = 0;
             if (rt_file_read_text((const uint8_t*)&(cv_readPath), cv_diskProbe)) {
                 clar_fn_rtStrStore((void*)&(cv_path), 255, (void*)(const uint8_t*)&(cv_readPath));
                 clar_fn_rtStrStore((void*)&(cv_altPath), 255, (void*)(const uint8_t*)&(cv_key2));
@@ -83664,14 +83728,14 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
             }
         }
     }
-    clar_fn_rtTextRelease((void*)cv___store540);
+    clar_fn_rtTextRelease((void*)cv___store541);
     rt_text * t6 = NULL;
     t6 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t6, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store540 = t6;
+    cv___store541 = t6;
     clar_fn_rtTextRelease((void*)cv_diskSrc);
-    cv_diskSrc = cv___store540;
-    cv___store540 = 0;
+    cv_diskSrc = cv___store541;
+    cv___store541 = 0;
     cv_haveDiskSrc = 0;
     cv_manifestCollision = 0;
     cv_manifestCollisionEarly = 0;
@@ -83748,14 +83812,14 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
         t16 = 0;
         clar_fn_rtMapSet((void*)cv_seenPaths, (void*)(const uint8_t*)&(cv_altPath), (void*)&(t16));
     }
-    clar_fn_rtTextRelease((void*)cv___store541);
+    clar_fn_rtTextRelease((void*)cv___store542);
     rt_text * t17 = NULL;
     t17 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t17, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store541 = t17;
+    cv___store542 = t17;
     clar_fn_rtTextRelease((void*)cv_src);
-    cv_src = cv___store541;
-    cv___store541 = 0;
+    cv_src = cv___store542;
+    cv___store542 = 0;
     if (cv_haveDiskSrc) {
         clar_fn_rtTextRetain((void*)cv_diskSrc);
         clar_fn_rtTextRelease((void*)cv_src);
@@ -84028,32 +84092,32 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
     cv_freshIntList1 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv_freshIntList2;
     cv_freshIntList2 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store542;
-    cv___store542 = NULL;
     rt_list * cv___store543;
     cv___store543 = NULL;
-    int32_t cv___ret1304;
-    cv___ret1304 = 0;
     rt_list * cv___store544;
     cv___store544 = NULL;
-        clar_fn_rtListRelease((void*)cv___store542);
+    int32_t cv___ret1304;
+    cv___ret1304 = 0;
+    rt_list * cv___store545;
+    cv___store545 = NULL;
+        clar_fn_rtListRelease((void*)cv___store543);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_driveFreshIntList();
-    cv___store542 = t1;
+    cv___store543 = t1;
         clar_fn_rtListRelease((void*)cv_freshIntList1);
 
-    cv_freshIntList1 = cv___store542;
-    cv___store542 = 0;
-        clar_fn_rtListRelease((void*)cv___store543);
+    cv_freshIntList1 = cv___store543;
+    cv___store543 = 0;
+        clar_fn_rtListRelease((void*)cv___store544);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_driveFreshIntList();
-    cv___store543 = t2;
+    cv___store544 = t2;
         clar_fn_rtListRelease((void*)cv_freshIntList2);
 
-    cv_freshIntList2 = cv___store543;
-    cv___store543 = 0;
+    cv_freshIntList2 = cv___store544;
+    cv___store544 = 0;
         clar_fn_rtListRetain((void*)cv_freshIntList1);
 
         clar_fn_rtListRelease((void*)cv_drvEarlyRtHeadsNoUitest);
@@ -84187,15 +84251,15 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
                 goto bail;
             }
         }
-            clar_fn_rtListRelease((void*)cv___store544);
+            clar_fn_rtListRelease((void*)cv___store545);
 
         rt_list * t29 = NULL;
         t29 = clar_fn_hoistDedups(cv_beforeHits);
-        cv___store544 = t29;
+        cv___store545 = t29;
             clar_fn_rtListRelease((void*)cv_hoists);
 
-        cv_hoists = cv___store544;
-        cv___store544 = 0;
+        cv_hoists = cv___store545;
+        cv___store545 = 0;
         cv_j = 0;
         while (1) {
             if (!((cv_j < clar_fn_rtListCount((void*)cv_hoists)))) break;
@@ -84410,8 +84474,8 @@ static int32_t clar_fn_driveManifestSplice(rt_list * cv_entries, int32_t cv_earl
     cv_userChainRebuilt = 0;
     int32_t cv_userChainRebuiltTail;
     cv_userChainRebuiltTail = 0;
-    rt_list * cv___store545;
-    cv___store545 = NULL;
+    rt_list * cv___store546;
+    cv___store546 = NULL;
     int32_t cv___ret1305;
     cv___ret1305 = 0;
     if (cv_want68k) {
@@ -84605,15 +84669,15 @@ static int32_t clar_fn_driveManifestSplice(rt_list * cv_entries, int32_t cv_earl
                     goto bail;
                 }
             }
-                clar_fn_rtListRelease((void*)cv___store545);
+                clar_fn_rtListRelease((void*)cv___store546);
 
             rt_list * t40 = NULL;
             t40 = clar_fn_hoistDedups(cv_beforeHits);
-            cv___store545 = t40;
+            cv___store546 = t40;
                 clar_fn_rtListRelease((void*)cv_hoists);
 
-            cv_hoists = cv___store545;
-            cv___store545 = 0;
+            cv_hoists = cv___store546;
+            cv___store546 = 0;
             cv_j = 0;
             while (1) {
                 if (!((cv_j < clar_fn_rtListCount((void*)cv_hoists)))) break;
@@ -84772,12 +84836,12 @@ static int32_t clar_fn_driveCompile(rt_list * cv_entries, int32_t cv_testapi) {
     cv_earlySkip = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv___ret1306;
     cv___ret1306 = 0;
-    rt_list * cv___store546;
-    cv___store546 = NULL;
     rt_list * cv___store547;
     cv___store547 = NULL;
     rt_list * cv___store548;
     cv___store548 = NULL;
+    rt_list * cv___store549;
+    cv___store549 = NULL;
     clar_fn_cgResetCodegenState();
     if (cv_haveRtbake) {
         cv_wantLane = 1;
@@ -84796,24 +84860,24 @@ static int32_t clar_fn_driveCompile(rt_list * cv_entries, int32_t cv_testapi) {
         clar_fn_bkInstallPool();
         clar_fn_bkComputeManifestPaths();
         clar_fn_rtStrStore((void*)&(cv_bkManifestDriftPath), 255, (void*)(const uint8_t*)&(clar_lit_6));
-            clar_fn_rtListRelease((void*)cv___store546);
+            clar_fn_rtListRelease((void*)cv___store547);
 
         rt_list * t1 = NULL;
         t1 = clar_fn_driveFreshIntList();
-        cv___store546 = t1;
+        cv___store547 = t1;
             clar_fn_rtListRelease((void*)cv_bkManifestCollidedIdx);
 
-        cv_bkManifestCollidedIdx = cv___store546;
-        cv___store546 = 0;
-            clar_fn_rtListRelease((void*)cv___store547);
+        cv_bkManifestCollidedIdx = cv___store547;
+        cv___store547 = 0;
+            clar_fn_rtListRelease((void*)cv___store548);
 
         rt_list * t2 = NULL;
         t2 = clar_fn_driveFreshBoolList();
-        cv___store547 = t2;
+        cv___store548 = t2;
             clar_fn_rtListRelease((void*)cv_bkManifestCollidedEarly);
 
-        cv_bkManifestCollidedEarly = cv___store547;
-        cv___store547 = 0;
+        cv_bkManifestCollidedEarly = cv___store548;
+        cv___store548 = 0;
     }
     cv_drvStartTicks = rt_ext_TickCount();
     cv_drvPhaseTicks = cv_drvStartTicks;
@@ -84897,15 +84961,15 @@ static int32_t clar_fn_driveCompile(rt_list * cv_entries, int32_t cv_testapi) {
     cv_isUiProg = ((cv_combined != CLAR_NEG32(1)) && clar_fn_driveIsUiProgram(cv_combined));
     clar_fn_driveProgressStage(&(clar_lit_2204));
     if ((cv_haveRtbake && cv_testapi) && cv_isUiProg) {
-            clar_fn_rtListRelease((void*)cv___store548);
+            clar_fn_rtListRelease((void*)cv___store549);
 
         rt_list * t8 = NULL;
         t8 = clar_fn_driveFreshIntList();
-        cv___store548 = t8;
+        cv___store549 = t8;
             clar_fn_rtListRelease((void*)cv_earlySkip);
 
-        cv_earlySkip = cv___store548;
-        cv___store548 = 0;
+        cv_earlySkip = cv___store549;
+        cv___store549 = 0;
         cv_i = 0;
         while (1) {
             if (!((cv_i < clar_fn_rtListCount((void*)cv_bkManifestCollidedIdx)))) break;
@@ -85331,19 +85395,19 @@ static int32_t clar_fn_bakeGenerateChain(int32_t cv_lane) {
     cv_savedNextAfterUitest = 0;
     int32_t cv_manifestOnlyHead;
     cv_manifestOnlyHead = 0;
-    rt_list * cv___store549;
-    cv___store549 = NULL;
+    rt_list * cv___store550;
+    cv___store550 = NULL;
     int32_t cv___ret1317;
     cv___ret1317 = 0;
-        clar_fn_rtListRelease((void*)cv___store549);
+        clar_fn_rtListRelease((void*)cv___store550);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_bakeModuleList(cv_lane);
-    cv___store549 = t1;
+    cv___store550 = t1;
         clar_fn_rtListRelease((void*)cv_mods);
 
-    cv_mods = cv___store549;
-    cv___store549 = 0;
+    cv_mods = cv___store550;
+    cv___store550 = 0;
     if (!(cv_haveRtDir)) {
         clar_str_255 t2;
         t2 = (*(clar_str_255*)rt_list_at(cv_mods, (int32_t)(0)));
@@ -86369,8 +86433,8 @@ static rt_text * clar_fn_bkWriteCheckerSymbols(void) {
     cv_k = 0;
     int32_t cv_v;
     cv_v = 0;
-    rt_intmap * cv___store550;
-    cv___store550 = NULL;
+    rt_intmap * cv___store551;
+    cv___store551 = NULL;
     rt_text * cv___ret1347;
     cv___ret1347 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_bkPutU32(cv_sec, clar_fn_rtListCount((void*)cv_funcSigs));
@@ -86411,15 +86475,15 @@ static rt_text * clar_fn_bkWriteCheckerSymbols(void) {
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_scopes)))) break;
         clar_fn_bkPutU32(cv_sec, ((*(clar_rec_Scope*)rt_list_at(cv_scopes, (int32_t)(cv_i)))).cv_parent);
-            clar_fn_rtIntMapRelease((void*)cv___store550);
+            clar_fn_rtIntMapRelease((void*)cv___store551);
 
-        cv___store550 = ((*(clar_rec_Scope*)rt_list_at(cv_scopes, (int32_t)(cv_i)))).cv_names;
-            clar_fn_rtIntMapRetain((void*)cv___store550);
+        cv___store551 = ((*(clar_rec_Scope*)rt_list_at(cv_scopes, (int32_t)(cv_i)))).cv_names;
+            clar_fn_rtIntMapRetain((void*)cv___store551);
 
             clar_fn_rtIntMapRelease((void*)cv_names);
 
-        cv_names = cv___store550;
-        cv___store550 = 0;
+        cv_names = cv___store551;
+        cv___store551 = 0;
         clar_fn_bkPutU32(cv_sec, clar_fn_rtIntMapCount((void*)cv_names));
         rt_intmap * t1;
         t1 = cv_names;
@@ -86570,22 +86634,22 @@ static rt_text * clar_fn_bkWriteManifestHashes(void) {
     cv_src = (rt_text *)clar_fn_rtTextNew();
     rt_map * cv_seen;
     cv_seen = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
-    rt_text * cv___store551;
-    cv___store551 = NULL;
     rt_text * cv___store552;
     cv___store552 = NULL;
     rt_text * cv___store553;
     cv___store553 = NULL;
+    rt_text * cv___store554;
+    cv___store554 = NULL;
     rt_text * cv___ret1352;
     cv___ret1352 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___store551);
+    clar_fn_rtTextRelease((void*)cv___store552);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store551 = t1;
+    cv___store552 = t1;
     clar_fn_rtTextRelease((void*)cv_entries);
-    cv_entries = cv___store551;
-    cv___store551 = 0;
+    cv_entries = cv___store552;
+    cv___store552 = 0;
     cv_count = 0;
     cv_i = 0;
     while (1) {
@@ -86598,14 +86662,14 @@ static rt_text * clar_fn_bkWriteManifestHashes(void) {
                 int32_t t3;
                 t3 = 1;
                 clar_fn_rtMapSet((void*)cv_seen, (void*)(const uint8_t*)&(cv_p), (void*)&(t3));
-                clar_fn_rtTextRelease((void*)cv___store552);
+                clar_fn_rtTextRelease((void*)cv___store553);
                 rt_text * t4 = NULL;
                 t4 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextStore((void*)t4, (void*)(const uint8_t*)&(clar_lit_6));
-                cv___store552 = t4;
+                cv___store553 = t4;
                 clar_fn_rtTextRelease((void*)cv_src);
-                cv_src = cv___store552;
-                cv___store552 = 0;
+                cv_src = cv___store553;
+                cv___store553 = 0;
                 if (rt_file_read_text((const uint8_t*)&(cv_p), cv_src)) {
                     clar_fn_bkPutStrShort(cv_entries, &(cv_p));
                     clar_fn_bkPutU32(cv_entries, clar_fn_bkHashText(cv_src));
@@ -86616,14 +86680,14 @@ static rt_text * clar_fn_bkWriteManifestHashes(void) {
         }
         cv_i = CLAR_ADD32(cv_i, 1);
     }
-    clar_fn_rtTextRelease((void*)cv___store553);
+    clar_fn_rtTextRelease((void*)cv___store554);
     rt_text * t5 = NULL;
     t5 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t5, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store553 = t5;
+    cv___store554 = t5;
     clar_fn_rtTextRelease((void*)cv_sec);
-    cv_sec = cv___store553;
-    cv___store553 = 0;
+    cv_sec = cv___store554;
+    cv___store554 = 0;
     clar_fn_bkPutU32(cv_sec, cv_count);
     clar_fn_rtTextAppendText((void*)cv_sec, (void*)cv_entries);
     clar_fn_rtTextRelease((void*)cv___ret1352);
@@ -86653,22 +86717,22 @@ static rt_text * clar_fn_bkWriteObjCode(int32_t cv_lane) {
     cv_corruptedOne = 0;
     int32_t cv_sym;
     cv_sym = 0;
-    rt_text * cv___store554;
-    cv___store554 = NULL;
+    rt_text * cv___store555;
+    cv___store555 = NULL;
     rt_text * cv___ret1353;
     cv___ret1353 = (rt_text *)clar_fn_rtTextNew();
     cv_count = 0;
     if (cv_lane == 0) {
         cv_count = clar_fn_rtListCount((void*)cv_irFuncs);
     }
-    clar_fn_rtTextRelease((void*)cv___store554);
+    clar_fn_rtTextRelease((void*)cv___store555);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store554 = t1;
+    cv___store555 = t1;
     clar_fn_rtTextRelease((void*)cv_sec);
-    cv_sec = cv___store554;
-    cv___store554 = 0;
+    cv_sec = cv___store555;
+    cv___store555 = 0;
     clar_fn_bkPutU32(cv_sec, cv_count);
     cv_i = 0;
     while (1) {
@@ -86724,39 +86788,39 @@ static rt_text * clar_fn_bkWriteObjMeta(int32_t cv_lane) {
     cv_k = 0;
     rt_list * cv_strLits;
     cv_strLits = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_text * cv___store555;
-    cv___store555 = NULL;
-    rt_list * cv___store556;
+    rt_text * cv___store556;
     cv___store556 = NULL;
+    rt_list * cv___store557;
+    cv___store557 = NULL;
     rt_text * cv___ret1354;
     cv___ret1354 = (rt_text *)clar_fn_rtTextNew();
     cv_count = 0;
     if (cv_lane == 0) {
         cv_count = clar_fn_rtListCount((void*)cv_irFuncs);
     }
-    clar_fn_rtTextRelease((void*)cv___store555);
+    clar_fn_rtTextRelease((void*)cv___store556);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store555 = t1;
+    cv___store556 = t1;
     clar_fn_rtTextRelease((void*)cv_sec);
-    cv_sec = cv___store555;
-    cv___store555 = 0;
+    cv_sec = cv___store556;
+    cv___store556 = 0;
     clar_fn_bkPutU32(cv_sec, cv_count);
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_count))) break;
         clar_fn_bkPutU32(cv_sec, (*(int32_t*)rt_list_at(cv_cgFuncSize, (int32_t)(cv_i))));
         clar_fn_bkPutU32(cv_sec, (*(int32_t*)rt_list_at(cv_cgFuncFrameSizes, (int32_t)(cv_i))));
-            clar_fn_rtListRelease((void*)cv___store556);
+            clar_fn_rtListRelease((void*)cv___store557);
 
         rt_list * t2 = NULL;
         t2 = clar_fn_driveFreshIntList();
-        cv___store556 = t2;
+        cv___store557 = t2;
             clar_fn_rtListRelease((void*)cv_strLits);
 
-        cv_strLits = cv___store556;
-        cv___store556 = 0;
+        cv_strLits = cv___store557;
+        cv___store557 = 0;
         cv_k = 0;
         while (1) {
             if (!((cv_k < clar_fn_rtListCount((void*)(*(rt_list **)rt_list_at(cv_cgFuncStrLits, (int32_t)(cv_i))))))) break;
@@ -86856,9 +86920,7 @@ static int32_t clar_fn_bakeWriteFile(int32_t cv_lane, const clar_str_255 *cv_out
     cv_bodyHash = 0;
     int32_t cv___ret1355;
     cv___ret1355 = 0;
-    rt_list * cv___store557;
-    cv___store557 = NULL;
-    rt_text * cv___store558;
+    rt_list * cv___store558;
     cv___store558 = NULL;
     rt_text * cv___store559;
     cv___store559 = NULL;
@@ -86866,6 +86928,8 @@ static int32_t clar_fn_bakeWriteFile(int32_t cv_lane, const clar_str_255 *cv_out
     cv___store560 = NULL;
     rt_text * cv___store561;
     cv___store561 = NULL;
+    rt_text * cv___store562;
+    cv___store562 = NULL;
     int32_t t1;
     t1 = clar_fn_bakeGenerateChain(cv_lane);
     if (clar_aborting) goto bail;
@@ -86879,23 +86943,23 @@ static int32_t clar_fn_bakeWriteFile(int32_t cv_lane, const clar_str_255 *cv_out
         clar_fn_rtTextRelease((void*)cv_compilerSrc);
         return cv___ret1355;
     }
-        clar_fn_rtListRelease((void*)cv___store557);
+        clar_fn_rtListRelease((void*)cv___store558);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_bakeModuleList(cv_lane);
-    cv___store557 = t2;
+    cv___store558 = t2;
         clar_fn_rtListRelease((void*)cv_mods);
 
-    cv_mods = cv___store557;
-    cv___store557 = 0;
-    clar_fn_rtTextRelease((void*)cv___store558);
+    cv_mods = cv___store558;
+    cv___store558 = 0;
+    clar_fn_rtTextRelease((void*)cv___store559);
     rt_text * t3 = NULL;
     t3 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t3, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store558 = t3;
+    cv___store559 = t3;
     clar_fn_rtTextRelease((void*)cv_body);
-    cv_body = cv___store558;
-    cv___store558 = 0;
+    cv_body = cv___store559;
+    cv___store559 = 0;
     clar_fn_bkPutU16(cv_body, clar_fn_rtListCount((void*)cv_mods));
     cv_i = 0;
     while (1) {
@@ -87109,33 +87173,33 @@ static int32_t clar_fn_bakeWriteFile(int32_t cv_lane, const clar_str_255 *cv_out
     clar_fn_bkEmitSection(cv_body, 49, t52);
     clar_fn_rtTextRelease(t52);
     cv_bodyHash = clar_fn_bkHashText(cv_body);
-    clar_fn_rtTextRelease((void*)cv___store559);
+    clar_fn_rtTextRelease((void*)cv___store560);
     rt_text * t53 = NULL;
     t53 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t53, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store559 = t53;
+    cv___store560 = t53;
     clar_fn_rtTextRelease((void*)cv_out);
-    cv_out = cv___store559;
-    cv___store559 = 0;
+    cv_out = cv___store560;
+    cv___store560 = 0;
     clar_fn_rtTextAppendStr((void*)cv_out, (void*)(const uint8_t*)&(clar_lit_2219));
     clar_fn_bkPutU32(cv_out, 7);
     clar_fn_bkPutByte(cv_out, cv_lane);
-    clar_fn_rtTextRelease((void*)cv___store560);
+    clar_fn_rtTextRelease((void*)cv___store561);
     rt_text * t54 = NULL;
     t54 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t54, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store560 = t54;
+    cv___store561 = t54;
     clar_fn_rtTextRelease((void*)cv_compilerSrc);
-    cv_compilerSrc = cv___store560;
-    cv___store560 = 0;
-    clar_fn_rtTextRelease((void*)cv___store561);
+    cv_compilerSrc = cv___store561;
+    cv___store561 = 0;
+    clar_fn_rtTextRelease((void*)cv___store562);
     rt_text * t55 = NULL;
     t55 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t55, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store561 = t55;
+    cv___store562 = t55;
     clar_fn_rtTextRelease((void*)cv_stamp);
-    cv_stamp = cv___store561;
-    cv___store561 = 0;
+    cv_stamp = cv___store562;
+    cv___store562 = 0;
     if (clar_fn_bkFindClarusC(cv_compilerSrc)) {
         cv_bkLastStamp = clar_fn_bkHashText(cv_compilerSrc);
     } else {
@@ -87268,8 +87332,8 @@ static rt_text * clar_fn_bkGetBytes(void) {
     cv_t = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___ret1361;
     cv___ret1361 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store562;
-    cv___store562 = NULL;
+    rt_text * cv___store563;
+    cv___store563 = NULL;
     if (CLAR_ADD32(cv_bkLoadPos, 4) > clar_fn_rtTextLen((void*)cv_bkLoadBuf)) {
         cv_bkLoadOverrun = 1;
         cv_bkLoadPos = clar_fn_rtTextLen((void*)cv_bkLoadBuf);
@@ -87293,14 +87357,14 @@ static rt_text * clar_fn_bkGetBytes(void) {
         clar_fn_rtTextRelease((void*)cv_t);
         return cv___ret1361;
     }
-    clar_fn_rtTextRelease((void*)cv___store562);
+    clar_fn_rtTextRelease((void*)cv___store563);
     rt_text * t3 = NULL;
     t3 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextTextAt((void*)t3, (void*)cv_bkLoadBuf, (int32_t)(CLAR_ADD32(cv_bkLoadPos, 4)), (int32_t)(cv_n));
-    cv___store562 = t3;
+    cv___store563 = t3;
     clar_fn_rtTextRelease((void*)cv_t);
-    cv_t = cv___store562;
-    cv___store562 = 0;
+    cv_t = cv___store563;
+    cv___store563 = 0;
     cv_bkLoadPos = CLAR_ADD32(CLAR_ADD32(cv_bkLoadPos, 4), cv_n);
     clar_fn_rtTextRelease((void*)cv___ret1361);
     cv___ret1361 = cv_t;
@@ -88290,24 +88354,24 @@ static void clar_fn_bkReadCheckerSymbols(void) {
     cv_em = clar_new_EnumMemberInfo();
     rt_list * cv_lEnumMembers;
     cv_lEnumMembers = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_EnumMemberInfo));
-    rt_list * cv___store563;
-    cv___store563 = NULL;
-    rt_intmap * cv___store564;
+    rt_list * cv___store564;
     cv___store564 = NULL;
+    rt_intmap * cv___store565;
+    cv___store565 = NULL;
     cv_n = clar_fn_bkGetU32();
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_n))) break;
         cv_pn = clar_fn_bkGetU32();
-            clar_fn_rtListRelease((void*)cv___store563);
+            clar_fn_rtListRelease((void*)cv___store564);
 
         rt_list * t1 = NULL;
         t1 = clar_fn_driveFreshIntList();
-        cv___store563 = t1;
+        cv___store564 = t1;
             clar_fn_rtListRelease((void*)cv_params);
 
-        cv_params = cv___store563;
-        cv___store563 = 0;
+        cv_params = cv___store564;
+        cv___store564 = 0;
         cv_j = 0;
         while (1) {
             if (!((cv_j < cv_pn))) break;
@@ -88366,15 +88430,15 @@ static void clar_fn_bkReadCheckerSymbols(void) {
     while (1) {
         if (!((cv_i < cv_n))) break;
         (cv_scope).cv_parent = clar_fn_bkGetU32();
-            clar_fn_rtIntMapRelease((void*)cv___store564);
+            clar_fn_rtIntMapRelease((void*)cv___store565);
 
         rt_intmap * t5 = NULL;
         t5 = clar_fn_bkReadIntIntMap();
-        cv___store564 = t5;
+        cv___store565 = t5;
             clar_fn_rtIntMapRelease((void*)(cv_scope).cv_names);
 
-        (cv_scope).cv_names = cv___store564;
-        cv___store564 = 0;
+        (cv_scope).cv_names = cv___store565;
+        cv___store565 = 0;
         clar_rec_Scope t6;
         t6 = cv_scope;
         clar_retain_Scope(&(t6));
@@ -88450,8 +88514,8 @@ static void clar_fn_bkReadFieldInfo(void) {
     cv_fi = clar_new_FieldInfo();
     rt_list * cv_lFieldInfos;
     cv_lFieldInfos = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_FieldInfo));
-    rt_intmap * cv___store565;
-    cv___store565 = NULL;
+    rt_intmap * cv___store566;
+    cv___store566 = NULL;
     cv_n = clar_fn_bkGetU32();
     cv_i = 0;
     while (1) {
@@ -88469,15 +88533,15 @@ static void clar_fn_bkReadFieldInfo(void) {
         clar_fn_rtListRelease((void*)cv_bkLoadedFieldInfos);
 
     cv_bkLoadedFieldInfos = cv_lFieldInfos;
-        clar_fn_rtIntMapRelease((void*)cv___store565);
+        clar_fn_rtIntMapRelease((void*)cv___store566);
 
     rt_intmap * t2 = NULL;
     t2 = clar_fn_bkReadIntIntMap();
-    cv___store565 = t2;
+    cv___store566 = t2;
         clar_fn_rtIntMapRelease((void*)cv_bkLoadedRecFieldsHeadByName);
 
-    cv_bkLoadedRecFieldsHeadByName = cv___store565;
-    cv___store565 = 0;
+    cv_bkLoadedRecFieldsHeadByName = cv___store566;
+    cv___store566 = 0;
         clar_fn_rtListRelease((void*)cv_lFieldInfos);
 
     return;
@@ -88603,8 +88667,6 @@ static int32_t clar_fn_bkReadObjCode(void) {
     cv_lRuns = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
     rt_list * cv_lHoles;
     cv_lHoles = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_CgObjHole));
-    rt_list * cv___store566;
-    cv___store566 = NULL;
     rt_list * cv___store567;
     cv___store567 = NULL;
     rt_list * cv___store568;
@@ -88613,56 +88675,58 @@ static int32_t clar_fn_bkReadObjCode(void) {
     cv___store569 = NULL;
     rt_list * cv___store570;
     cv___store570 = NULL;
+    rt_list * cv___store571;
+    cv___store571 = NULL;
     int32_t cv___ret1388;
     cv___ret1388 = 0;
     cv_count = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store566);
+        clar_fn_rtListRelease((void*)cv___store567);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_driveFreshBoolList();
-    cv___store566 = t1;
+    cv___store567 = t1;
         clar_fn_rtListRelease((void*)cv_lValid);
 
-    cv_lValid = cv___store566;
-    cv___store566 = 0;
-        clar_fn_rtListRelease((void*)cv___store567);
-
-    rt_list * t2 = NULL;
-    t2 = clar_fn_driveFreshIntList();
-    cv___store567 = t2;
-        clar_fn_rtListRelease((void*)cv_lRunFirst);
-
-    cv_lRunFirst = cv___store567;
+    cv_lValid = cv___store567;
     cv___store567 = 0;
         clar_fn_rtListRelease((void*)cv___store568);
 
-    rt_list * t3 = NULL;
-    t3 = clar_fn_driveFreshIntList();
-    cv___store568 = t3;
-        clar_fn_rtListRelease((void*)cv_lHoleFirst);
+    rt_list * t2 = NULL;
+    t2 = clar_fn_driveFreshIntList();
+    cv___store568 = t2;
+        clar_fn_rtListRelease((void*)cv_lRunFirst);
 
-    cv_lHoleFirst = cv___store568;
+    cv_lRunFirst = cv___store568;
     cv___store568 = 0;
         clar_fn_rtListRelease((void*)cv___store569);
 
+    rt_list * t3 = NULL;
+    t3 = clar_fn_driveFreshIntList();
+    cv___store569 = t3;
+        clar_fn_rtListRelease((void*)cv_lHoleFirst);
+
+    cv_lHoleFirst = cv___store569;
+    cv___store569 = 0;
+        clar_fn_rtListRelease((void*)cv___store570);
+
     rt_list * t4 = NULL;
     t4 = clar_fn_driveFreshIntList();
-    cv___store569 = t4;
+    cv___store570 = t4;
         clar_fn_rtListRelease((void*)cv_lNHoles);
 
-    cv_lNHoles = cv___store569;
-    cv___store569 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store570)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store570); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store570, i)); }
-    clar_fn_rtListRelease((void*)cv___store570);
+    cv_lNHoles = cv___store570;
+    cv___store570 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store571)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store571); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store571, i)); }
+    clar_fn_rtListRelease((void*)cv___store571);
 
     rt_list * t5 = NULL;
     t5 = clar_fn_cgFreshTextList();
-    cv___store570 = t5;
+    cv___store571 = t5;
         if (clar_fn_rtListLastref((void*)cv_lRuns)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_lRuns); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_lRuns, i)); }
     clar_fn_rtListRelease((void*)cv_lRuns);
 
-    cv_lRuns = cv___store570;
-    cv___store570 = 0;
+    cv_lRuns = cv___store571;
+    cv___store571 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_count))) break;
@@ -88871,8 +88935,6 @@ static int32_t clar_fn_bkReadObjMeta(void) {
     cv_lUiBlobSize = 0;
     int32_t cv_lUiEventsSize;
     cv_lUiEventsSize = 0;
-    rt_list * cv___store571;
-    cv___store571 = NULL;
     rt_list * cv___store572;
     cv___store572 = NULL;
     rt_list * cv___store573;
@@ -88897,132 +88959,134 @@ static int32_t clar_fn_bkReadObjMeta(void) {
     cv___store582 = NULL;
     rt_list * cv___store583;
     cv___store583 = NULL;
-    int32_t cv___ret1390;
-    cv___ret1390 = 0;
     rt_list * cv___store584;
     cv___store584 = NULL;
+    int32_t cv___ret1390;
+    cv___ret1390 = 0;
     rt_list * cv___store585;
     cv___store585 = NULL;
     rt_list * cv___store586;
     cv___store586 = NULL;
+    rt_list * cv___store587;
+    cv___store587 = NULL;
     cv_count = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store571);
+        clar_fn_rtListRelease((void*)cv___store572);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_driveFreshIntList();
-    cv___store571 = t1;
+    cv___store572 = t1;
         clar_fn_rtListRelease((void*)cv_lSize);
 
-    cv_lSize = cv___store571;
-    cv___store571 = 0;
-        clar_fn_rtListRelease((void*)cv___store572);
-
-    rt_list * t2 = NULL;
-    t2 = clar_fn_driveFreshIntList();
-    cv___store572 = t2;
-        clar_fn_rtListRelease((void*)cv_lFrame);
-
-    cv_lFrame = cv___store572;
+    cv_lSize = cv___store572;
     cv___store572 = 0;
         clar_fn_rtListRelease((void*)cv___store573);
 
-    rt_list * t3 = NULL;
-    t3 = clar_fn_driveFreshIntList();
-    cv___store573 = t3;
-        clar_fn_rtListRelease((void*)cv_lStrLitFirst);
+    rt_list * t2 = NULL;
+    t2 = clar_fn_driveFreshIntList();
+    cv___store573 = t2;
+        clar_fn_rtListRelease((void*)cv_lFrame);
 
-    cv_lStrLitFirst = cv___store573;
+    cv_lFrame = cv___store573;
     cv___store573 = 0;
         clar_fn_rtListRelease((void*)cv___store574);
 
-    rt_list * t4 = NULL;
-    t4 = clar_fn_driveFreshIntList();
-    cv___store574 = t4;
-        clar_fn_rtListRelease((void*)cv_lStrLitCount);
+    rt_list * t3 = NULL;
+    t3 = clar_fn_driveFreshIntList();
+    cv___store574 = t3;
+        clar_fn_rtListRelease((void*)cv_lStrLitFirst);
 
-    cv_lStrLitCount = cv___store574;
+    cv_lStrLitFirst = cv___store574;
     cv___store574 = 0;
         clar_fn_rtListRelease((void*)cv___store575);
 
-    rt_list * t5 = NULL;
-    t5 = clar_fn_driveFreshIntList();
-    cv___store575 = t5;
-        clar_fn_rtListRelease((void*)cv_lStrLitFlat);
+    rt_list * t4 = NULL;
+    t4 = clar_fn_driveFreshIntList();
+    cv___store575 = t4;
+        clar_fn_rtListRelease((void*)cv_lStrLitCount);
 
-    cv_lStrLitFlat = cv___store575;
+    cv_lStrLitCount = cv___store575;
     cv___store575 = 0;
         clar_fn_rtListRelease((void*)cv___store576);
 
-    rt_list * t6 = NULL;
-    t6 = clar_fn_driveFreshIntList();
-    cv___store576 = t6;
-        clar_fn_rtListRelease((void*)cv_lEnumTableFirst);
+    rt_list * t5 = NULL;
+    t5 = clar_fn_driveFreshIntList();
+    cv___store576 = t5;
+        clar_fn_rtListRelease((void*)cv_lStrLitFlat);
 
-    cv_lEnumTableFirst = cv___store576;
+    cv_lStrLitFlat = cv___store576;
     cv___store576 = 0;
         clar_fn_rtListRelease((void*)cv___store577);
 
-    rt_list * t7 = NULL;
-    t7 = clar_fn_driveFreshIntList();
-    cv___store577 = t7;
-        clar_fn_rtListRelease((void*)cv_lEnumTableCount);
+    rt_list * t6 = NULL;
+    t6 = clar_fn_driveFreshIntList();
+    cv___store577 = t6;
+        clar_fn_rtListRelease((void*)cv_lEnumTableFirst);
 
-    cv_lEnumTableCount = cv___store577;
+    cv_lEnumTableFirst = cv___store577;
     cv___store577 = 0;
         clar_fn_rtListRelease((void*)cv___store578);
 
-    rt_list * t8 = NULL;
-    t8 = clar_fn_driveFreshIntList();
-    cv___store578 = t8;
-        clar_fn_rtListRelease((void*)cv_lEnumTableFlat);
+    rt_list * t7 = NULL;
+    t7 = clar_fn_driveFreshIntList();
+    cv___store578 = t7;
+        clar_fn_rtListRelease((void*)cv_lEnumTableCount);
 
-    cv_lEnumTableFlat = cv___store578;
+    cv_lEnumTableCount = cv___store578;
     cv___store578 = 0;
         clar_fn_rtListRelease((void*)cv___store579);
 
-    rt_list * t9 = NULL;
-    t9 = clar_fn_driveFreshIntList();
-    cv___store579 = t9;
-        clar_fn_rtListRelease((void*)cv_lSerdescFirst);
+    rt_list * t8 = NULL;
+    t8 = clar_fn_driveFreshIntList();
+    cv___store579 = t8;
+        clar_fn_rtListRelease((void*)cv_lEnumTableFlat);
 
-    cv_lSerdescFirst = cv___store579;
+    cv_lEnumTableFlat = cv___store579;
     cv___store579 = 0;
         clar_fn_rtListRelease((void*)cv___store580);
 
-    rt_list * t10 = NULL;
-    t10 = clar_fn_driveFreshIntList();
-    cv___store580 = t10;
-        clar_fn_rtListRelease((void*)cv_lSerdescCount);
+    rt_list * t9 = NULL;
+    t9 = clar_fn_driveFreshIntList();
+    cv___store580 = t9;
+        clar_fn_rtListRelease((void*)cv_lSerdescFirst);
 
-    cv_lSerdescCount = cv___store580;
+    cv_lSerdescFirst = cv___store580;
     cv___store580 = 0;
         clar_fn_rtListRelease((void*)cv___store581);
 
-    rt_list * t11 = NULL;
-    t11 = clar_fn_driveFreshIntList();
-    cv___store581 = t11;
-        clar_fn_rtListRelease((void*)cv_lSerdescFlat);
+    rt_list * t10 = NULL;
+    t10 = clar_fn_driveFreshIntList();
+    cv___store581 = t10;
+        clar_fn_rtListRelease((void*)cv_lSerdescCount);
 
-    cv_lSerdescFlat = cv___store581;
+    cv_lSerdescCount = cv___store581;
     cv___store581 = 0;
         clar_fn_rtListRelease((void*)cv___store582);
 
-    rt_list * t12 = NULL;
-    t12 = clar_fn_driveFreshBoolList();
-    cv___store582 = t12;
-        clar_fn_rtListRelease((void*)cv_lUsesUiBlob);
+    rt_list * t11 = NULL;
+    t11 = clar_fn_driveFreshIntList();
+    cv___store582 = t11;
+        clar_fn_rtListRelease((void*)cv_lSerdescFlat);
 
-    cv_lUsesUiBlob = cv___store582;
+    cv_lSerdescFlat = cv___store582;
     cv___store582 = 0;
         clar_fn_rtListRelease((void*)cv___store583);
 
+    rt_list * t12 = NULL;
+    t12 = clar_fn_driveFreshBoolList();
+    cv___store583 = t12;
+        clar_fn_rtListRelease((void*)cv_lUsesUiBlob);
+
+    cv_lUsesUiBlob = cv___store583;
+    cv___store583 = 0;
+        clar_fn_rtListRelease((void*)cv___store584);
+
     rt_list * t13 = NULL;
     t13 = clar_fn_driveFreshBoolList();
-    cv___store583 = t13;
+    cv___store584 = t13;
         clar_fn_rtListRelease((void*)cv_lUsesUiEvents);
 
-    cv_lUsesUiEvents = cv___store583;
-    cv___store583 = 0;
+    cv_lUsesUiEvents = cv___store584;
+    cv___store584 = 0;
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_count))) break;
@@ -89212,15 +89276,15 @@ static int32_t clar_fn_bkReadObjMeta(void) {
     cv_lGlueBundleSize = clar_fn_bkGetU32();
     cv_lPoolSize = clar_fn_bkGetU32();
     cv_n = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store584);
+        clar_fn_rtListRelease((void*)cv___store585);
 
     rt_list * t33 = NULL;
     t33 = clar_fn_driveFreshIntList();
-    cv___store584 = t33;
+    cv___store585 = t33;
         clar_fn_rtListRelease((void*)cv_lStrLitSize);
 
-    cv_lStrLitSize = cv___store584;
-    cv___store584 = 0;
+    cv_lStrLitSize = cv___store585;
+    cv___store585 = 0;
     cv_k = 0;
     while (1) {
         if (!((cv_k < cv_n))) break;
@@ -89230,15 +89294,15 @@ static int32_t clar_fn_bkReadObjMeta(void) {
         cv_k = CLAR_ADD32(cv_k, 1);
     }
     cv_n = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store585);
+        clar_fn_rtListRelease((void*)cv___store586);
 
     rt_list * t35 = NULL;
     t35 = clar_fn_driveFreshIntList();
-    cv___store585 = t35;
+    cv___store586 = t35;
         clar_fn_rtListRelease((void*)cv_lEnumTableSize);
 
-    cv_lEnumTableSize = cv___store585;
-    cv___store585 = 0;
+    cv_lEnumTableSize = cv___store586;
+    cv___store586 = 0;
     cv_k = 0;
     while (1) {
         if (!((cv_k < cv_n))) break;
@@ -89248,15 +89312,15 @@ static int32_t clar_fn_bkReadObjMeta(void) {
         cv_k = CLAR_ADD32(cv_k, 1);
     }
     cv_n = clar_fn_bkGetU32();
-        clar_fn_rtListRelease((void*)cv___store586);
+        clar_fn_rtListRelease((void*)cv___store587);
 
     rt_list * t37 = NULL;
     t37 = clar_fn_driveFreshIntList();
-    cv___store586 = t37;
+    cv___store587 = t37;
         clar_fn_rtListRelease((void*)cv_lSerdescSize);
 
-    cv_lSerdescSize = cv___store586;
-    cv___store586 = 0;
+    cv_lSerdescSize = cv___store587;
+    cv___store587 = 0;
     cv_k = 0;
     while (1) {
         if (!((cv_k < cv_n))) break;
@@ -89400,8 +89464,6 @@ static int32_t clar_fn_bkLoadSections(void) {
     cv_len = 0;
     int32_t cv_expectedPos;
     cv_expectedPos = 0;
-    rt_list * cv___store587;
-    cv___store587 = NULL;
     rt_list * cv___store588;
     cv___store588 = NULL;
     rt_list * cv___store589;
@@ -89410,9 +89472,9 @@ static int32_t clar_fn_bkLoadSections(void) {
     cv___store590 = NULL;
     rt_list * cv___store591;
     cv___store591 = NULL;
-    rt_intmap * cv___store592;
+    rt_list * cv___store592;
     cv___store592 = NULL;
-    rt_list * cv___store593;
+    rt_intmap * cv___store593;
     cv___store593 = NULL;
     rt_list * cv___store594;
     cv___store594 = NULL;
@@ -89466,14 +89528,16 @@ static int32_t clar_fn_bkLoadSections(void) {
     cv___store618 = NULL;
     rt_list * cv___store619;
     cv___store619 = NULL;
-    rt_intmap * cv___store620;
+    rt_list * cv___store620;
     cv___store620 = NULL;
     rt_intmap * cv___store621;
     cv___store621 = NULL;
-    rt_list * cv___store622;
+    rt_intmap * cv___store622;
     cv___store622 = NULL;
     rt_list * cv___store623;
     cv___store623 = NULL;
+    rt_list * cv___store624;
+    cv___store624 = NULL;
     int32_t cv___ret1391;
     cv___ret1391 = 0;
     cv_n = clar_fn_bkGetU16();
@@ -89500,403 +89564,403 @@ static int32_t clar_fn_bkLoadSections(void) {
         cv_len = clar_fn_bkGetU32();
         cv_expectedPos = CLAR_ADD32(cv_bkLoadPos, cv_len);
         if (cv_id == 1) {
-                clar_fn_rtListRelease((void*)cv___store587);
+                clar_fn_rtListRelease((void*)cv___store588);
 
             rt_list * t7 = NULL;
             t7 = clar_fn_bkReadIrTypes();
-            cv___store587 = t7;
+            cv___store588 = t7;
                 clar_fn_rtListRelease((void*)cv_bkLdIrTypes);
 
-            cv_bkLdIrTypes = cv___store587;
-            cv___store587 = 0;
+            cv_bkLdIrTypes = cv___store588;
+            cv___store588 = 0;
         } else {
             if (cv_id == 2) {
-                    clar_fn_rtListRelease((void*)cv___store588);
+                    clar_fn_rtListRelease((void*)cv___store589);
 
                 rt_list * t8 = NULL;
                 t8 = clar_fn_bkReadIrStmts();
-                cv___store588 = t8;
+                cv___store589 = t8;
                     clar_fn_rtListRelease((void*)cv_bkLdIrStmts);
 
-                cv_bkLdIrStmts = cv___store588;
-                cv___store588 = 0;
+                cv_bkLdIrStmts = cv___store589;
+                cv___store589 = 0;
             } else {
                 if (cv_id == 3) {
-                        clar_fn_rtListRelease((void*)cv___store589);
+                        clar_fn_rtListRelease((void*)cv___store590);
 
                     rt_list * t9 = NULL;
                     t9 = clar_fn_bkReadIrExprs();
-                    cv___store589 = t9;
+                    cv___store590 = t9;
                         clar_fn_rtListRelease((void*)cv_bkLdIrExprs);
 
-                    cv_bkLdIrExprs = cv___store589;
-                    cv___store589 = 0;
+                    cv_bkLdIrExprs = cv___store590;
+                    cv___store590 = 0;
                 } else {
                     if (cv_id == 4) {
-                            clar_fn_rtListRelease((void*)cv___store590);
+                            clar_fn_rtListRelease((void*)cv___store591);
 
                         rt_list * t10 = NULL;
                         t10 = clar_fn_bkReadIrLocals();
-                        cv___store590 = t10;
+                        cv___store591 = t10;
                             clar_fn_rtListRelease((void*)cv_bkLdIrLocals);
 
-                        cv_bkLdIrLocals = cv___store590;
-                        cv___store590 = 0;
+                        cv_bkLdIrLocals = cv___store591;
+                        cv___store591 = 0;
                     } else {
                         if (cv_id == 5) {
-                                clar_fn_rtListRelease((void*)cv___store591);
+                                clar_fn_rtListRelease((void*)cv___store592);
 
                             rt_list * t11 = NULL;
                             t11 = clar_fn_bkReadIrFuncs();
-                            cv___store591 = t11;
+                            cv___store592 = t11;
                                 clar_fn_rtListRelease((void*)cv_bkLdIrFuncs);
 
-                            cv_bkLdIrFuncs = cv___store591;
-                            cv___store591 = 0;
+                            cv_bkLdIrFuncs = cv___store592;
+                            cv___store592 = 0;
                         } else {
                             if (cv_id == 6) {
-                                    clar_fn_rtIntMapRelease((void*)cv___store592);
+                                    clar_fn_rtIntMapRelease((void*)cv___store593);
 
                                 rt_intmap * t12 = NULL;
                                 t12 = clar_fn_bkReadIntIntMap();
-                                cv___store592 = t12;
+                                cv___store593 = t12;
                                     clar_fn_rtIntMapRelease((void*)cv_bkLdIrFuncIdxByName);
 
-                                cv_bkLdIrFuncIdxByName = cv___store592;
-                                cv___store592 = 0;
+                                cv_bkLdIrFuncIdxByName = cv___store593;
+                                cv___store593 = 0;
                             } else {
                                 if (cv_id == 7) {
-                                        clar_fn_rtListRelease((void*)cv___store593);
+                                        clar_fn_rtListRelease((void*)cv___store594);
 
                                     rt_list * t13 = NULL;
                                     t13 = clar_fn_bkReadIntList();
-                                    cv___store593 = t13;
+                                    cv___store594 = t13;
                                         clar_fn_rtListRelease((void*)cv_bkLdIrCbGlueNames);
 
-                                    cv_bkLdIrCbGlueNames = cv___store593;
-                                    cv___store593 = 0;
+                                    cv_bkLdIrCbGlueNames = cv___store594;
+                                    cv___store594 = 0;
                                 } else {
                                     if (cv_id == 8) {
-                                            clar_fn_rtListRelease((void*)cv___store594);
+                                            clar_fn_rtListRelease((void*)cv___store595);
 
                                         rt_list * t14 = NULL;
                                         t14 = clar_fn_bkReadIrGlobals();
-                                        cv___store594 = t14;
+                                        cv___store595 = t14;
                                             clar_fn_rtListRelease((void*)cv_bkLdIrGlobals);
 
-                                        cv_bkLdIrGlobals = cv___store594;
-                                        cv___store594 = 0;
+                                        cv_bkLdIrGlobals = cv___store595;
+                                        cv___store595 = 0;
                                     } else {
                                         if (cv_id == 9) {
-                                                clar_fn_rtListRelease((void*)cv___store595);
+                                                clar_fn_rtListRelease((void*)cv___store596);
 
                                             rt_list * t15 = NULL;
                                             t15 = clar_fn_bkReadIrFieldSlots();
-                                            cv___store595 = t15;
+                                            cv___store596 = t15;
                                                 clar_fn_rtListRelease((void*)cv_bkLdIrFieldSlots);
 
-                                            cv_bkLdIrFieldSlots = cv___store595;
-                                            cv___store595 = 0;
+                                            cv_bkLdIrFieldSlots = cv___store596;
+                                            cv___store596 = 0;
                                         } else {
                                             if (cv_id == 10) {
-                                                    clar_fn_rtListRelease((void*)cv___store596);
+                                                    clar_fn_rtListRelease((void*)cv___store597);
 
                                                 rt_list * t16 = NULL;
                                                 t16 = clar_fn_bkReadIrRecords();
-                                                cv___store596 = t16;
+                                                cv___store597 = t16;
                                                     clar_fn_rtListRelease((void*)cv_bkLdIrRecords);
 
-                                                cv_bkLdIrRecords = cv___store596;
-                                                cv___store596 = 0;
+                                                cv_bkLdIrRecords = cv___store597;
+                                                cv___store597 = 0;
                                             } else {
                                                 if (cv_id == 11) {
-                                                        clar_fn_rtListRelease((void*)cv___store597);
+                                                        clar_fn_rtListRelease((void*)cv___store598);
 
                                                     rt_list * t17 = NULL;
                                                     t17 = clar_fn_bkReadIrEnumMembers();
-                                                    cv___store597 = t17;
+                                                    cv___store598 = t17;
                                                         clar_fn_rtListRelease((void*)cv_bkLdIrEnumMembers);
 
-                                                    cv_bkLdIrEnumMembers = cv___store597;
-                                                    cv___store597 = 0;
+                                                    cv_bkLdIrEnumMembers = cv___store598;
+                                                    cv___store598 = 0;
                                                 } else {
                                                     if (cv_id == 12) {
-                                                            clar_fn_rtListRelease((void*)cv___store598);
+                                                            clar_fn_rtListRelease((void*)cv___store599);
 
                                                         rt_list * t18 = NULL;
                                                         t18 = clar_fn_bkReadIrEnums();
-                                                        cv___store598 = t18;
+                                                        cv___store599 = t18;
                                                             clar_fn_rtListRelease((void*)cv_bkLdIrEnums);
 
-                                                        cv_bkLdIrEnums = cv___store598;
-                                                        cv___store598 = 0;
+                                                        cv_bkLdIrEnums = cv___store599;
+                                                        cv___store599 = 0;
                                                     } else {
                                                         if (cv_id == 13) {
-                                                                clar_fn_rtListRelease((void*)cv___store599);
+                                                                clar_fn_rtListRelease((void*)cv___store600);
 
                                                             rt_list * t19 = NULL;
                                                             t19 = clar_fn_bkReadIrWidgetDescs();
-                                                            cv___store599 = t19;
+                                                            cv___store600 = t19;
                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrWidgetDescs);
 
-                                                            cv_bkLdIrWidgetDescs = cv___store599;
-                                                            cv___store599 = 0;
+                                                            cv_bkLdIrWidgetDescs = cv___store600;
+                                                            cv___store600 = 0;
                                                         } else {
                                                             if (cv_id == 14) {
-                                                                    clar_fn_rtListRelease((void*)cv___store600);
+                                                                    clar_fn_rtListRelease((void*)cv___store601);
 
                                                                 rt_list * t20 = NULL;
                                                                 t20 = clar_fn_bkReadIrColumnDescs();
-                                                                cv___store600 = t20;
+                                                                cv___store601 = t20;
                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrColumnDescs);
 
-                                                                cv_bkLdIrColumnDescs = cv___store600;
-                                                                cv___store600 = 0;
+                                                                cv_bkLdIrColumnDescs = cv___store601;
+                                                                cv___store601 = 0;
                                                             } else {
                                                                 if (cv_id == 15) {
-                                                                        clar_fn_rtListRelease((void*)cv___store601);
+                                                                        clar_fn_rtListRelease((void*)cv___store602);
 
                                                                     rt_list * t21 = NULL;
                                                                     t21 = clar_fn_bkReadIrBindDescs();
-                                                                    cv___store601 = t21;
+                                                                    cv___store602 = t21;
                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrBindDescs);
 
-                                                                    cv_bkLdIrBindDescs = cv___store601;
-                                                                    cv___store601 = 0;
+                                                                    cv_bkLdIrBindDescs = cv___store602;
+                                                                    cv___store602 = 0;
                                                                 } else {
                                                                     if (cv_id == 16) {
-                                                                            clar_fn_rtListRelease((void*)cv___store602);
+                                                                            clar_fn_rtListRelease((void*)cv___store603);
 
                                                                         rt_list * t22 = NULL;
                                                                         t22 = clar_fn_bkReadIrWindowDescs();
-                                                                        cv___store602 = t22;
+                                                                        cv___store603 = t22;
                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrWindowDescs);
 
-                                                                        cv_bkLdIrWindowDescs = cv___store602;
-                                                                        cv___store602 = 0;
+                                                                        cv_bkLdIrWindowDescs = cv___store603;
+                                                                        cv___store603 = 0;
                                                                     } else {
                                                                         if (cv_id == 17) {
-                                                                                clar_fn_rtListRelease((void*)cv___store603);
+                                                                                clar_fn_rtListRelease((void*)cv___store604);
 
                                                                             rt_list * t23 = NULL;
                                                                             t23 = clar_fn_bkReadIrMenuItemDescs();
-                                                                            cv___store603 = t23;
+                                                                            cv___store604 = t23;
                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrMenuItemDescs);
 
-                                                                            cv_bkLdIrMenuItemDescs = cv___store603;
-                                                                            cv___store603 = 0;
+                                                                            cv_bkLdIrMenuItemDescs = cv___store604;
+                                                                            cv___store604 = 0;
                                                                         } else {
                                                                             if (cv_id == 18) {
-                                                                                    clar_fn_rtListRelease((void*)cv___store604);
+                                                                                    clar_fn_rtListRelease((void*)cv___store605);
 
                                                                                 rt_list * t24 = NULL;
                                                                                 t24 = clar_fn_bkReadIrMenuDescs();
-                                                                                cv___store604 = t24;
+                                                                                cv___store605 = t24;
                                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrMenuDescs);
 
-                                                                                cv_bkLdIrMenuDescs = cv___store604;
-                                                                                cv___store604 = 0;
+                                                                                cv_bkLdIrMenuDescs = cv___store605;
+                                                                                cv___store605 = 0;
                                                                             } else {
                                                                                 if (cv_id == 19) {
-                                                                                        clar_fn_rtListRelease((void*)cv___store605);
+                                                                                        clar_fn_rtListRelease((void*)cv___store606);
 
                                                                                     rt_list * t25 = NULL;
                                                                                     t25 = clar_fn_bkReadIrWinHandlers();
-                                                                                    cv___store605 = t25;
+                                                                                    cv___store606 = t25;
                                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrWinHandlers);
 
-                                                                                    cv_bkLdIrWinHandlers = cv___store605;
-                                                                                    cv___store605 = 0;
+                                                                                    cv_bkLdIrWinHandlers = cv___store606;
+                                                                                    cv___store606 = 0;
                                                                                 } else {
                                                                                     if (cv_id == 20) {
-                                                                                            clar_fn_rtListRelease((void*)cv___store606);
+                                                                                            clar_fn_rtListRelease((void*)cv___store607);
 
                                                                                         rt_list * t26 = NULL;
                                                                                         t26 = clar_fn_bkReadIrWidgetHandlerEntries();
-                                                                                        cv___store606 = t26;
+                                                                                        cv___store607 = t26;
                                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrWidgetHandlerEntries);
 
-                                                                                        cv_bkLdIrWidgetHandlerEntries = cv___store606;
-                                                                                        cv___store606 = 0;
+                                                                                        cv_bkLdIrWidgetHandlerEntries = cv___store607;
+                                                                                        cv___store607 = 0;
                                                                                     } else {
                                                                                         if (cv_id == 21) {
-                                                                                                clar_fn_rtListRelease((void*)cv___store607);
+                                                                                                clar_fn_rtListRelease((void*)cv___store608);
 
                                                                                             rt_list * t27 = NULL;
                                                                                             t27 = clar_fn_bkReadIrMenuHandlerEntries();
-                                                                                            cv___store607 = t27;
+                                                                                            cv___store608 = t27;
                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrMenuHandlerEntries);
 
-                                                                                            cv_bkLdIrMenuHandlerEntries = cv___store607;
-                                                                                            cv___store607 = 0;
+                                                                                            cv_bkLdIrMenuHandlerEntries = cv___store608;
+                                                                                            cv___store608 = 0;
                                                                                         } else {
                                                                                             if (cv_id == 22) {
-                                                                                                    clar_fn_rtListRelease((void*)cv___store608);
+                                                                                                    clar_fn_rtListRelease((void*)cv___store609);
 
                                                                                                 rt_list * t28 = NULL;
                                                                                                 t28 = clar_fn_bkReadIrEveryEntries();
-                                                                                                cv___store608 = t28;
+                                                                                                cv___store609 = t28;
                                                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrEveryEntries);
 
-                                                                                                cv_bkLdIrEveryEntries = cv___store608;
-                                                                                                cv___store608 = 0;
+                                                                                                cv_bkLdIrEveryEntries = cv___store609;
+                                                                                                cv___store609 = 0;
                                                                                             } else {
                                                                                                 if (cv_id == 23) {
-                                                                                                        clar_fn_rtListRelease((void*)cv___store609);
+                                                                                                        clar_fn_rtListRelease((void*)cv___store610);
 
                                                                                                     rt_list * t29 = NULL;
                                                                                                     t29 = clar_fn_bkReadIntList();
-                                                                                                    cv___store609 = t29;
+                                                                                                    cv___store610 = t29;
                                                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrStrLits);
 
-                                                                                                    cv_bkLdIrStrLits = cv___store609;
-                                                                                                    cv___store609 = 0;
+                                                                                                    cv_bkLdIrStrLits = cv___store610;
+                                                                                                    cv___store610 = 0;
                                                                                                 } else {
                                                                                                     if (cv_id == 24) {
-                                                                                                            clar_fn_rtListRelease((void*)cv___store610);
+                                                                                                            clar_fn_rtListRelease((void*)cv___store611);
 
                                                                                                         rt_list * t30 = NULL;
                                                                                                         t30 = clar_fn_bkReadIntList();
-                                                                                                        cv___store610 = t30;
+                                                                                                        cv___store611 = t30;
                                                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrExternNames);
 
-                                                                                                        cv_bkLdIrExternNames = cv___store610;
-                                                                                                        cv___store610 = 0;
+                                                                                                        cv_bkLdIrExternNames = cv___store611;
+                                                                                                        cv___store611 = 0;
                                                                                                     } else {
                                                                                                         if (cv_id == 25) {
-                                                                                                                clar_fn_rtListRelease((void*)cv___store611);
+                                                                                                                clar_fn_rtListRelease((void*)cv___store612);
 
                                                                                                             rt_list * t31 = NULL;
                                                                                                             t31 = clar_fn_bkReadIntList();
-                                                                                                            cv___store611 = t31;
+                                                                                                            cv___store612 = t31;
                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrExternRetTys);
 
-                                                                                                            cv_bkLdIrExternRetTys = cv___store611;
-                                                                                                            cv___store611 = 0;
+                                                                                                            cv_bkLdIrExternRetTys = cv___store612;
+                                                                                                            cv___store612 = 0;
                                                                                                         } else {
                                                                                                             if (cv_id == 26) {
-                                                                                                                    clar_fn_rtListRelease((void*)cv___store612);
+                                                                                                                    clar_fn_rtListRelease((void*)cv___store613);
 
                                                                                                                 rt_list * t32 = NULL;
                                                                                                                 t32 = clar_fn_bkReadIntList();
-                                                                                                                cv___store612 = t32;
+                                                                                                                cv___store613 = t32;
                                                                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrExternParamStart);
 
-                                                                                                                cv_bkLdIrExternParamStart = cv___store612;
-                                                                                                                cv___store612 = 0;
+                                                                                                                cv_bkLdIrExternParamStart = cv___store613;
+                                                                                                                cv___store613 = 0;
                                                                                                             } else {
                                                                                                                 if (cv_id == 27) {
-                                                                                                                        clar_fn_rtListRelease((void*)cv___store613);
+                                                                                                                        clar_fn_rtListRelease((void*)cv___store614);
 
                                                                                                                     rt_list * t33 = NULL;
                                                                                                                     t33 = clar_fn_bkReadIntList();
-                                                                                                                    cv___store613 = t33;
+                                                                                                                    cv___store614 = t33;
                                                                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrExternParamCountArr);
 
-                                                                                                                    cv_bkLdIrExternParamCountArr = cv___store613;
-                                                                                                                    cv___store613 = 0;
+                                                                                                                    cv_bkLdIrExternParamCountArr = cv___store614;
+                                                                                                                    cv___store614 = 0;
                                                                                                                 } else {
                                                                                                                     if (cv_id == 28) {
-                                                                                                                            clar_fn_rtListRelease((void*)cv___store614);
+                                                                                                                            clar_fn_rtListRelease((void*)cv___store615);
 
                                                                                                                         rt_list * t34 = NULL;
                                                                                                                         t34 = clar_fn_bkReadIntList();
-                                                                                                                        cv___store614 = t34;
+                                                                                                                        cv___store615 = t34;
                                                                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrExternParamTys);
 
-                                                                                                                        cv_bkLdIrExternParamTys = cv___store614;
-                                                                                                                        cv___store614 = 0;
+                                                                                                                        cv_bkLdIrExternParamTys = cv___store615;
+                                                                                                                        cv___store615 = 0;
                                                                                                                     } else {
                                                                                                                         if (cv_id == 29) {
-                                                                                                                                clar_fn_rtListRelease((void*)cv___store615);
+                                                                                                                                clar_fn_rtListRelease((void*)cv___store616);
 
                                                                                                                             rt_list * t35 = NULL;
                                                                                                                             t35 = clar_fn_bkReadIntList();
-                                                                                                                            cv___store615 = t35;
+                                                                                                                            cv___store616 = t35;
                                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrExternTrapWords);
 
-                                                                                                                            cv_bkLdIrExternTrapWords = cv___store615;
-                                                                                                                            cv___store615 = 0;
+                                                                                                                            cv_bkLdIrExternTrapWords = cv___store616;
+                                                                                                                            cv___store616 = 0;
                                                                                                                         } else {
                                                                                                                             if (cv_id == 30) {
-                                                                                                                                    clar_fn_rtListRelease((void*)cv___store616);
+                                                                                                                                    clar_fn_rtListRelease((void*)cv___store617);
 
                                                                                                                                 rt_list * t36 = NULL;
                                                                                                                                 t36 = clar_fn_bkReadIntList();
-                                                                                                                                cv___store616 = t36;
+                                                                                                                                cv___store617 = t36;
                                                                                                                                     clar_fn_rtListRelease((void*)cv_bkLdIrExternConvs);
 
-                                                                                                                                cv_bkLdIrExternConvs = cv___store616;
-                                                                                                                                cv___store616 = 0;
+                                                                                                                                cv_bkLdIrExternConvs = cv___store617;
+                                                                                                                                cv___store617 = 0;
                                                                                                                             } else {
                                                                                                                                 if (cv_id == 31) {
-                                                                                                                                        clar_fn_rtListRelease((void*)cv___store617);
+                                                                                                                                        clar_fn_rtListRelease((void*)cv___store618);
 
                                                                                                                                     rt_list * t37 = NULL;
                                                                                                                                     t37 = clar_fn_bkReadIntList();
-                                                                                                                                    cv___store617 = t37;
+                                                                                                                                    cv___store618 = t37;
                                                                                                                                         clar_fn_rtListRelease((void*)cv_bkLdIrExternSels);
 
-                                                                                                                                    cv_bkLdIrExternSels = cv___store617;
-                                                                                                                                    cv___store617 = 0;
+                                                                                                                                    cv_bkLdIrExternSels = cv___store618;
+                                                                                                                                    cv___store618 = 0;
                                                                                                                                 } else {
                                                                                                                                     if (cv_id == 32) {
-                                                                                                                                            clar_fn_rtListRelease((void*)cv___store618);
+                                                                                                                                            clar_fn_rtListRelease((void*)cv___store619);
 
                                                                                                                                         rt_list * t38 = NULL;
                                                                                                                                         t38 = clar_fn_bkReadIntList();
-                                                                                                                                        cv___store618 = t38;
+                                                                                                                                        cv___store619 = t38;
                                                                                                                                             clar_fn_rtListRelease((void*)cv_bkLdIrExternParamRegs);
 
-                                                                                                                                        cv_bkLdIrExternParamRegs = cv___store618;
-                                                                                                                                        cv___store618 = 0;
+                                                                                                                                        cv_bkLdIrExternParamRegs = cv___store619;
+                                                                                                                                        cv___store619 = 0;
                                                                                                                                     } else {
                                                                                                                                         if (cv_id == 33) {
-                                                                                                                                                clar_fn_rtListRelease((void*)cv___store619);
+                                                                                                                                                clar_fn_rtListRelease((void*)cv___store620);
 
                                                                                                                                             rt_list * t39 = NULL;
                                                                                                                                             t39 = clar_fn_bkReadIntList();
-                                                                                                                                            cv___store619 = t39;
+                                                                                                                                            cv___store620 = t39;
                                                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdIrExternRetRegs);
 
-                                                                                                                                            cv_bkLdIrExternRetRegs = cv___store619;
-                                                                                                                                            cv___store619 = 0;
+                                                                                                                                            cv_bkLdIrExternRetRegs = cv___store620;
+                                                                                                                                            cv___store620 = 0;
                                                                                                                                         } else {
                                                                                                                                             if (cv_id == 34) {
-                                                                                                                                                    clar_fn_rtIntMapRelease((void*)cv___store620);
+                                                                                                                                                    clar_fn_rtIntMapRelease((void*)cv___store621);
 
                                                                                                                                                 rt_intmap * t40 = NULL;
                                                                                                                                                 t40 = clar_fn_bkReadIntIntMap();
-                                                                                                                                                cv___store620 = t40;
+                                                                                                                                                cv___store621 = t40;
                                                                                                                                                     clar_fn_rtIntMapRelease((void*)cv_bkLdIrLayoutNeededByName);
 
-                                                                                                                                                cv_bkLdIrLayoutNeededByName = cv___store620;
-                                                                                                                                                cv___store620 = 0;
+                                                                                                                                                cv_bkLdIrLayoutNeededByName = cv___store621;
+                                                                                                                                                cv___store621 = 0;
                                                                                                                                             } else {
                                                                                                                                                 if (cv_id == 35) {
-                                                                                                                                                        clar_fn_rtIntMapRelease((void*)cv___store621);
+                                                                                                                                                        clar_fn_rtIntMapRelease((void*)cv___store622);
 
                                                                                                                                                     rt_intmap * t41 = NULL;
                                                                                                                                                     t41 = clar_fn_bkReadIntIntMap();
-                                                                                                                                                    cv___store621 = t41;
+                                                                                                                                                    cv___store622 = t41;
                                                                                                                                                         clar_fn_rtIntMapRelease((void*)cv_bkLdIrRcWalkNeededByName);
 
-                                                                                                                                                    cv_bkLdIrRcWalkNeededByName = cv___store621;
-                                                                                                                                                    cv___store621 = 0;
+                                                                                                                                                    cv_bkLdIrRcWalkNeededByName = cv___store622;
+                                                                                                                                                    cv___store622 = 0;
                                                                                                                                                 } else {
                                                                                                                                                     if (cv_id == 36) {
                                                                                                                                                         clar_fn_bkReadIrScalars();
                                                                                                                                                     } else {
                                                                                                                                                         if (cv_id == 40) {
-                                                                                                                                                                clar_fn_rtListRelease((void*)cv___store622);
+                                                                                                                                                                clar_fn_rtListRelease((void*)cv___store623);
 
                                                                                                                                                             rt_list * t42 = NULL;
                                                                                                                                                             t42 = clar_fn_bkReadStrPool();
-                                                                                                                                                            cv___store622 = t42;
+                                                                                                                                                            cv___store623 = t42;
                                                                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLdStrPool);
 
-                                                                                                                                                            cv_bkLdStrPool = cv___store622;
-                                                                                                                                                            cv___store622 = 0;
+                                                                                                                                                            cv_bkLdStrPool = cv___store623;
+                                                                                                                                                            cv___store623 = 0;
                                                                                                                                                         } else {
                                                                                                                                                             if (cv_id == 41) {
                                                                                                                                                                 clar_fn_bkReadLowCounters();
@@ -89908,15 +89972,15 @@ static int32_t clar_fn_bkLoadSections(void) {
                                                                                                                                                                         clar_fn_bkReadFieldInfo();
                                                                                                                                                                     } else {
                                                                                                                                                                         if (cv_id == 43) {
-                                                                                                                                                                                clar_fn_rtListRelease((void*)cv___store623);
+                                                                                                                                                                                clar_fn_rtListRelease((void*)cv___store624);
 
                                                                                                                                                                             rt_list * t43 = NULL;
                                                                                                                                                                             t43 = clar_fn_bkReadIntList();
-                                                                                                                                                                            cv___store623 = t43;
+                                                                                                                                                                            cv___store624 = t43;
                                                                                                                                                                                 clar_fn_rtListRelease((void*)cv_bkLoadedDeclFileTab);
 
-                                                                                                                                                                            cv_bkLoadedDeclFileTab = cv___store623;
-                                                                                                                                                                            cv___store623 = 0;
+                                                                                                                                                                            cv_bkLoadedDeclFileTab = cv___store624;
+                                                                                                                                                                            cv___store624 = 0;
                                                                                                                                                                         } else {
                                                                                                                                                                             if (cv_id == 44) {
                                                                                                                                                                                 clar_fn_bkReadUitestBounds();
@@ -90020,21 +90084,21 @@ static int32_t clar_fn_bkLoadSections(void) {
 }
 
 static int32_t clar_fn_bkCheckRtbakeHeader(rt_text * cv_buf, int32_t cv_wantLane) {
-    rt_text * cv___store624;
-    cv___store624 = NULL;
+    rt_text * cv___store625;
+    cv___store625 = NULL;
     int32_t cv___ret1392;
     cv___ret1392 = 0;
     if (clar_fn_bkCheckRtbakeHeaderBody(cv_buf, cv_wantLane)) {
         return 1;
     }
-    clar_fn_rtTextRelease((void*)cv___store624);
+    clar_fn_rtTextRelease((void*)cv___store625);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store624 = t1;
+    cv___store625 = t1;
     clar_fn_rtTextRelease((void*)cv_bkLoadBuf);
-    cv_bkLoadBuf = cv___store624;
-    cv___store624 = 0;
+    cv_bkLoadBuf = cv___store625;
+    cv___store625 = 0;
     return 0;
     return 0;
 }
@@ -90171,8 +90235,8 @@ static int32_t clar_fn_bkLoadRtbake(rt_text * cv_buf, int32_t cv_wantLane) {
     cv_parsed = 0;
     int32_t cv___ret1394;
     cv___ret1394 = 0;
-    rt_text * cv___store625;
-    cv___store625 = NULL;
+    rt_text * cv___store626;
+    cv___store626 = NULL;
     if (cv_bkHeaderVerified) {
         cv_bkHeaderVerified = 0;
         cv_bkLoadOverrun = 0;
@@ -90203,14 +90267,14 @@ static int32_t clar_fn_bkLoadRtbake(rt_text * cv_buf, int32_t cv_wantLane) {
 
     cv_bkLoadedModules = cv_loadedMods;
     cv_parsed = clar_fn_bkLoadSections();
-    clar_fn_rtTextRelease((void*)cv___store625);
+    clar_fn_rtTextRelease((void*)cv___store626);
     rt_text * t2 = NULL;
     t2 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store625 = t2;
+    cv___store626 = t2;
     clar_fn_rtTextRelease((void*)cv_bkLoadBuf);
-    cv_bkLoadBuf = cv___store625;
-    cv___store625 = 0;
+    cv_bkLoadBuf = cv___store626;
+    cv___store626 = 0;
     cv___ret1394 = cv_parsed;
         clar_fn_rtListRelease((void*)cv_loadedMods);
 
@@ -90450,30 +90514,30 @@ static rt_list * clar_fn_bkCopyListScope(rt_list * cv_src) {
     cv_s = clar_new_Scope();
     int32_t cv_i;
     cv_i = 0;
-    clar_rec_Scope cv___store626;
-    cv___store626 = (clar_rec_Scope){0};
-    rt_intmap * cv___store627;
-    cv___store627 = NULL;
+    clar_rec_Scope cv___store627;
+    cv___store627 = (clar_rec_Scope){0};
+    rt_intmap * cv___store628;
+    cv___store628 = NULL;
     rt_list * cv___ret1403;
     cv___ret1403 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_Scope));
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_src)))) break;
-        clar_release_Scope(&(cv___store626));
-        cv___store626 = (*(clar_rec_Scope*)rt_list_at(cv_src, (int32_t)(cv_i)));
-        clar_retain_Scope(&(cv___store626));
+        clar_release_Scope(&(cv___store627));
+        cv___store627 = (*(clar_rec_Scope*)rt_list_at(cv_src, (int32_t)(cv_i)));
+        clar_retain_Scope(&(cv___store627));
         clar_release_Scope(&(cv_s));
-        cv_s = cv___store626;
-        (cv___store626).cv_names = 0;
-            clar_fn_rtIntMapRelease((void*)cv___store627);
+        cv_s = cv___store627;
+        (cv___store627).cv_names = 0;
+            clar_fn_rtIntMapRelease((void*)cv___store628);
 
         rt_intmap * t1 = NULL;
         t1 = clar_fn_bkCopyIntmapInt(((*(clar_rec_Scope*)rt_list_at(cv_src, (int32_t)(cv_i)))).cv_names);
-        cv___store627 = t1;
+        cv___store628 = t1;
             clar_fn_rtIntMapRelease((void*)(cv_s).cv_names);
 
-        (cv_s).cv_names = cv___store627;
-        cv___store627 = 0;
+        (cv_s).cv_names = cv___store628;
+        cv___store628 = 0;
         clar_rec_Scope t2;
         t2 = cv_s;
         clar_retain_Scope(&(t2));
@@ -90499,28 +90563,28 @@ static void clar_fn_bkInstallPool(void) {
     cv_freshIndex = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
     int32_t cv_i;
     cv_i = 0;
-    rt_list * cv___store628;
-    cv___store628 = NULL;
-    rt_map * cv___store629;
+    rt_list * cv___store629;
     cv___store629 = NULL;
-        clar_fn_rtListRelease((void*)cv___store628);
+    rt_map * cv___store630;
+    cv___store630 = NULL;
+        clar_fn_rtListRelease((void*)cv___store629);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_bkCopyListString(cv_bkLdStrPool);
-    cv___store628 = t1;
+    cv___store629 = t1;
         clar_fn_rtListRelease((void*)cv_strPool);
 
-    cv_strPool = cv___store628;
-    cv___store628 = 0;
-        clar_fn_rtMapRelease((void*)cv___store629);
+    cv_strPool = cv___store629;
+    cv___store629 = 0;
+        clar_fn_rtMapRelease((void*)cv___store630);
 
     rt_map * t2 = NULL;
     t2 = clar_fn_driveFreshIntMap();
-    cv___store629 = t2;
+    cv___store630 = t2;
         clar_fn_rtMapRelease((void*)cv_freshIndex);
 
-    cv_freshIndex = cv___store629;
-    cv___store629 = 0;
+    cv_freshIndex = cv___store630;
+    cv___store630 = 0;
         clar_fn_rtMapRetain((void*)cv_freshIndex);
 
         clar_fn_rtMapRelease((void*)cv_strIndex);
@@ -90540,54 +90604,54 @@ static void clar_fn_bkInstallPool(void) {
 }
 
 static void clar_fn_bkInstallTypeArenaPrefix(void) {
-    rt_list * cv___store630;
-    cv___store630 = NULL;
     rt_list * cv___store631;
     cv___store631 = NULL;
-        clar_fn_rtListRelease((void*)cv___store630);
+    rt_list * cv___store632;
+    cv___store632 = NULL;
+        clar_fn_rtListRelease((void*)cv___store631);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_bkCopyListTypeInfo(cv_bkLoadedTypeArena);
-    cv___store630 = t1;
+    cv___store631 = t1;
         clar_fn_rtListRelease((void*)cv_typeArena);
 
-    cv_typeArena = cv___store630;
-    cv___store630 = 0;
-        clar_fn_rtListRelease((void*)cv___store631);
+    cv_typeArena = cv___store631;
+    cv___store631 = 0;
+        clar_fn_rtListRelease((void*)cv___store632);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_bkCopyListEnumMemberInfo(cv_bkLoadedEnumMembers);
-    cv___store631 = t2;
+    cv___store632 = t2;
         clar_fn_rtListRelease((void*)cv_enumMembers);
 
-    cv_enumMembers = cv___store631;
-    cv___store631 = 0;
+    cv_enumMembers = cv___store632;
+    cv___store632 = 0;
     return;
 }
 
 static void clar_fn_bkInstallFieldInfo(void) {
-    rt_list * cv___store632;
-    cv___store632 = NULL;
-    rt_intmap * cv___store633;
+    rt_list * cv___store633;
     cv___store633 = NULL;
-        clar_fn_rtListRelease((void*)cv___store632);
+    rt_intmap * cv___store634;
+    cv___store634 = NULL;
+        clar_fn_rtListRelease((void*)cv___store633);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_bkCopyListFieldInfo(cv_bkLoadedFieldInfos);
-    cv___store632 = t1;
+    cv___store633 = t1;
         clar_fn_rtListRelease((void*)cv_fieldInfos);
 
-    cv_fieldInfos = cv___store632;
-    cv___store632 = 0;
-        clar_fn_rtIntMapRelease((void*)cv___store633);
+    cv_fieldInfos = cv___store633;
+    cv___store633 = 0;
+        clar_fn_rtIntMapRelease((void*)cv___store634);
 
     rt_intmap * t2 = NULL;
     t2 = clar_fn_bkCopyIntmapInt(cv_bkLoadedRecFieldsHeadByName);
-    cv___store633 = t2;
+    cv___store634 = t2;
         clar_fn_rtIntMapRelease((void*)cv_recFieldsHeadByName);
 
-    cv_recFieldsHeadByName = cv___store633;
-    cv___store633 = 0;
+    cv_recFieldsHeadByName = cv___store634;
+    cv___store634 = 0;
     return;
 }
 
@@ -90669,8 +90733,6 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
     cv_truncFuncs = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRFunc));
     rt_list * cv_truncStrLits;
     cv_truncStrLits = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___store634;
-    cv___store634 = NULL;
     rt_list * cv___store635;
     cv___store635 = NULL;
     rt_list * cv___store636;
@@ -90733,73 +90795,75 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
     cv___store664 = NULL;
     rt_list * cv___store665;
     cv___store665 = NULL;
-    rt_intmap * cv___store666;
+    rt_list * cv___store666;
     cv___store666 = NULL;
     rt_intmap * cv___store667;
     cv___store667 = NULL;
-    rt_map * cv___store668;
+    rt_intmap * cv___store668;
     cv___store668 = NULL;
-        clar_fn_rtListRelease((void*)cv___store634);
+    rt_map * cv___store669;
+    cv___store669 = NULL;
+        clar_fn_rtListRelease((void*)cv___store635);
 
     rt_list * t1;
     t1 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRType));
     clar_fn_rtListClone((void*)t1, (void*)cv_bkLdIrTypes, sizeof(clar_rec_IRType));
-    cv___store634 = t1;
+    cv___store635 = t1;
         clar_fn_rtListRelease((void*)cv_irTypes);
 
-    cv_irTypes = cv___store634;
-    cv___store634 = 0;
-        clar_fn_rtListRelease((void*)cv___store635);
+    cv_irTypes = cv___store635;
+    cv___store635 = 0;
+        clar_fn_rtListRelease((void*)cv___store636);
 
     rt_list * t2;
     t2 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRStmt));
     clar_fn_rtListClone((void*)t2, (void*)cv_bkLdIrStmts, sizeof(clar_rec_IRStmt));
-    cv___store635 = t2;
+    cv___store636 = t2;
         clar_fn_rtListRelease((void*)cv_irStmts);
 
-    cv_irStmts = cv___store635;
-    cv___store635 = 0;
-        clar_fn_rtListRelease((void*)cv___store636);
+    cv_irStmts = cv___store636;
+    cv___store636 = 0;
+        clar_fn_rtListRelease((void*)cv___store637);
 
     rt_list * t3;
     t3 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRExpr));
     clar_fn_rtListClone((void*)t3, (void*)cv_bkLdIrExprs, sizeof(clar_rec_IRExpr));
-    cv___store636 = t3;
+    cv___store637 = t3;
         clar_fn_rtListRelease((void*)cv_irExprs);
 
-    cv_irExprs = cv___store636;
-    cv___store636 = 0;
-        clar_fn_rtListRelease((void*)cv___store637);
+    cv_irExprs = cv___store637;
+    cv___store637 = 0;
+        clar_fn_rtListRelease((void*)cv___store638);
 
     rt_list * t4;
     t4 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRLocal));
     clar_fn_rtListClone((void*)t4, (void*)cv_bkLdIrLocals, sizeof(clar_rec_IRLocal));
-    cv___store637 = t4;
+    cv___store638 = t4;
         clar_fn_rtListRelease((void*)cv_irLocals);
 
-    cv_irLocals = cv___store637;
-    cv___store637 = 0;
+    cv_irLocals = cv___store638;
+    cv___store638 = 0;
     if (cv_testapi) {
-            clar_fn_rtListRelease((void*)cv___store638);
+            clar_fn_rtListRelease((void*)cv___store639);
 
         rt_list * t5;
         t5 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRFunc));
         clar_fn_rtListClone((void*)t5, (void*)cv_bkLdIrFuncs, sizeof(clar_rec_IRFunc));
-        cv___store638 = t5;
+        cv___store639 = t5;
             clar_fn_rtListRelease((void*)cv_srcFuncs);
 
-        cv_srcFuncs = cv___store638;
-        cv___store638 = 0;
-            clar_fn_rtListRelease((void*)cv___store639);
+        cv_srcFuncs = cv___store639;
+        cv___store639 = 0;
+            clar_fn_rtListRelease((void*)cv___store640);
 
         rt_list * t6;
         t6 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
         clar_fn_rtListClone((void*)t6, (void*)cv_bkLdIrStrLits, sizeof(int32_t));
-        cv___store639 = t6;
+        cv___store640 = t6;
             clar_fn_rtListRelease((void*)cv_srcStrLits);
 
-        cv_srcStrLits = cv___store639;
-        cv___store639 = 0;
+        cv_srcStrLits = cv___store640;
+        cv___store640 = 0;
     } else {
         cv_i = 0;
         while (1) {
@@ -90852,289 +90916,289 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
         clar_fn_rtIntMapRelease((void*)cv_irFuncIdxByName);
 
     cv_irFuncIdxByName = cv_filteredIdx;
-        clar_fn_rtListRelease((void*)cv___store640);
+        clar_fn_rtListRelease((void*)cv___store641);
 
     rt_list * t11;
     t11 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t11, (void*)cv_bkLdIrCbGlueNames, sizeof(int32_t));
-    cv___store640 = t11;
+    cv___store641 = t11;
         clar_fn_rtListRelease((void*)cv_irCbGlueNames);
 
-    cv_irCbGlueNames = cv___store640;
-    cv___store640 = 0;
-        clar_fn_rtListRelease((void*)cv___store641);
+    cv_irCbGlueNames = cv___store641;
+    cv___store641 = 0;
+        clar_fn_rtListRelease((void*)cv___store642);
 
     rt_list * t12;
     t12 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRGlobal));
     clar_fn_rtListClone((void*)t12, (void*)cv_bkLdIrGlobals, sizeof(clar_rec_IRGlobal));
-    cv___store641 = t12;
+    cv___store642 = t12;
         clar_fn_rtListRelease((void*)cv_irGlobals);
 
-    cv_irGlobals = cv___store641;
-    cv___store641 = 0;
-        clar_fn_rtListRelease((void*)cv___store642);
+    cv_irGlobals = cv___store642;
+    cv___store642 = 0;
+        clar_fn_rtListRelease((void*)cv___store643);
 
     rt_list * t13;
     t13 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRFieldSlot));
     clar_fn_rtListClone((void*)t13, (void*)cv_bkLdIrFieldSlots, sizeof(clar_rec_IRFieldSlot));
-    cv___store642 = t13;
+    cv___store643 = t13;
         clar_fn_rtListRelease((void*)cv_irFieldSlots);
 
-    cv_irFieldSlots = cv___store642;
-    cv___store642 = 0;
-        clar_fn_rtListRelease((void*)cv___store643);
+    cv_irFieldSlots = cv___store643;
+    cv___store643 = 0;
+        clar_fn_rtListRelease((void*)cv___store644);
 
     rt_list * t14;
     t14 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRRecordLayout));
     clar_fn_rtListClone((void*)t14, (void*)cv_bkLdIrRecords, sizeof(clar_rec_IRRecordLayout));
-    cv___store643 = t14;
+    cv___store644 = t14;
         clar_fn_rtListRelease((void*)cv_irRecords);
 
-    cv_irRecords = cv___store643;
-    cv___store643 = 0;
-        clar_fn_rtListRelease((void*)cv___store644);
+    cv_irRecords = cv___store644;
+    cv___store644 = 0;
+        clar_fn_rtListRelease((void*)cv___store645);
 
     rt_list * t15;
     t15 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IREnumMember));
     clar_fn_rtListClone((void*)t15, (void*)cv_bkLdIrEnumMembers, sizeof(clar_rec_IREnumMember));
-    cv___store644 = t15;
+    cv___store645 = t15;
         clar_fn_rtListRelease((void*)cv_irEnumMembers);
 
-    cv_irEnumMembers = cv___store644;
-    cv___store644 = 0;
-        clar_fn_rtListRelease((void*)cv___store645);
+    cv_irEnumMembers = cv___store645;
+    cv___store645 = 0;
+        clar_fn_rtListRelease((void*)cv___store646);
 
     rt_list * t16;
     t16 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IREnumLayout));
     clar_fn_rtListClone((void*)t16, (void*)cv_bkLdIrEnums, sizeof(clar_rec_IREnumLayout));
-    cv___store645 = t16;
+    cv___store646 = t16;
         clar_fn_rtListRelease((void*)cv_irEnums);
 
-    cv_irEnums = cv___store645;
-    cv___store645 = 0;
-        clar_fn_rtListRelease((void*)cv___store646);
+    cv_irEnums = cv___store646;
+    cv___store646 = 0;
+        clar_fn_rtListRelease((void*)cv___store647);
 
     rt_list * t17;
     t17 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWidgetDesc));
     clar_fn_rtListClone((void*)t17, (void*)cv_bkLdIrWidgetDescs, sizeof(clar_rec_IRWidgetDesc));
-    cv___store646 = t17;
+    cv___store647 = t17;
         clar_fn_rtListRelease((void*)cv_irWidgetDescs);
 
-    cv_irWidgetDescs = cv___store646;
-    cv___store646 = 0;
-        clar_fn_rtListRelease((void*)cv___store647);
+    cv_irWidgetDescs = cv___store647;
+    cv___store647 = 0;
+        clar_fn_rtListRelease((void*)cv___store648);
 
     rt_list * t18;
     t18 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRColumnDesc));
     clar_fn_rtListClone((void*)t18, (void*)cv_bkLdIrColumnDescs, sizeof(clar_rec_IRColumnDesc));
-    cv___store647 = t18;
+    cv___store648 = t18;
         clar_fn_rtListRelease((void*)cv_irColumnDescs);
 
-    cv_irColumnDescs = cv___store647;
-    cv___store647 = 0;
-        clar_fn_rtListRelease((void*)cv___store648);
+    cv_irColumnDescs = cv___store648;
+    cv___store648 = 0;
+        clar_fn_rtListRelease((void*)cv___store649);
 
     rt_list * t19;
     t19 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRBindDesc));
     clar_fn_rtListClone((void*)t19, (void*)cv_bkLdIrBindDescs, sizeof(clar_rec_IRBindDesc));
-    cv___store648 = t19;
+    cv___store649 = t19;
         clar_fn_rtListRelease((void*)cv_irBindDescs);
 
-    cv_irBindDescs = cv___store648;
-    cv___store648 = 0;
-        clar_fn_rtListRelease((void*)cv___store649);
+    cv_irBindDescs = cv___store649;
+    cv___store649 = 0;
+        clar_fn_rtListRelease((void*)cv___store650);
 
     rt_list * t20;
     t20 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWindowDesc));
     clar_fn_rtListClone((void*)t20, (void*)cv_bkLdIrWindowDescs, sizeof(clar_rec_IRWindowDesc));
-    cv___store649 = t20;
+    cv___store650 = t20;
         clar_fn_rtListRelease((void*)cv_irWindowDescs);
 
-    cv_irWindowDescs = cv___store649;
-    cv___store649 = 0;
-        clar_fn_rtListRelease((void*)cv___store650);
+    cv_irWindowDescs = cv___store650;
+    cv___store650 = 0;
+        clar_fn_rtListRelease((void*)cv___store651);
 
     rt_list * t21;
     t21 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRMenuItemDesc));
     clar_fn_rtListClone((void*)t21, (void*)cv_bkLdIrMenuItemDescs, sizeof(clar_rec_IRMenuItemDesc));
-    cv___store650 = t21;
+    cv___store651 = t21;
         clar_fn_rtListRelease((void*)cv_irMenuItemDescs);
 
-    cv_irMenuItemDescs = cv___store650;
-    cv___store650 = 0;
-        clar_fn_rtListRelease((void*)cv___store651);
+    cv_irMenuItemDescs = cv___store651;
+    cv___store651 = 0;
+        clar_fn_rtListRelease((void*)cv___store652);
 
     rt_list * t22;
     t22 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRMenuDesc));
     clar_fn_rtListClone((void*)t22, (void*)cv_bkLdIrMenuDescs, sizeof(clar_rec_IRMenuDesc));
-    cv___store651 = t22;
+    cv___store652 = t22;
         clar_fn_rtListRelease((void*)cv_irMenuDescs);
 
-    cv_irMenuDescs = cv___store651;
-    cv___store651 = 0;
-        clar_fn_rtListRelease((void*)cv___store652);
+    cv_irMenuDescs = cv___store652;
+    cv___store652 = 0;
+        clar_fn_rtListRelease((void*)cv___store653);
 
     rt_list * t23;
     t23 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWinHandlers));
     clar_fn_rtListClone((void*)t23, (void*)cv_bkLdIrWinHandlers, sizeof(clar_rec_IRWinHandlers));
-    cv___store652 = t23;
+    cv___store653 = t23;
         clar_fn_rtListRelease((void*)cv_irWinHandlers);
 
-    cv_irWinHandlers = cv___store652;
-    cv___store652 = 0;
-        clar_fn_rtListRelease((void*)cv___store653);
+    cv_irWinHandlers = cv___store653;
+    cv___store653 = 0;
+        clar_fn_rtListRelease((void*)cv___store654);
 
     rt_list * t24;
     t24 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRWidgetHandlerEntry));
     clar_fn_rtListClone((void*)t24, (void*)cv_bkLdIrWidgetHandlerEntries, sizeof(clar_rec_IRWidgetHandlerEntry));
-    cv___store653 = t24;
+    cv___store654 = t24;
         clar_fn_rtListRelease((void*)cv_irWidgetHandlerEntries);
 
-    cv_irWidgetHandlerEntries = cv___store653;
-    cv___store653 = 0;
-        clar_fn_rtListRelease((void*)cv___store654);
+    cv_irWidgetHandlerEntries = cv___store654;
+    cv___store654 = 0;
+        clar_fn_rtListRelease((void*)cv___store655);
 
     rt_list * t25;
     t25 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IRMenuHandlerEntry));
     clar_fn_rtListClone((void*)t25, (void*)cv_bkLdIrMenuHandlerEntries, sizeof(clar_rec_IRMenuHandlerEntry));
-    cv___store654 = t25;
+    cv___store655 = t25;
         clar_fn_rtListRelease((void*)cv_irMenuHandlerEntries);
 
-    cv_irMenuHandlerEntries = cv___store654;
-    cv___store654 = 0;
-        clar_fn_rtListRelease((void*)cv___store655);
+    cv_irMenuHandlerEntries = cv___store655;
+    cv___store655 = 0;
+        clar_fn_rtListRelease((void*)cv___store656);
 
     rt_list * t26;
     t26 = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_IREveryEntry));
     clar_fn_rtListClone((void*)t26, (void*)cv_bkLdIrEveryEntries, sizeof(clar_rec_IREveryEntry));
-    cv___store655 = t26;
+    cv___store656 = t26;
         clar_fn_rtListRelease((void*)cv_irEveryEntries);
 
-    cv_irEveryEntries = cv___store655;
-    cv___store655 = 0;
+    cv_irEveryEntries = cv___store656;
+    cv___store656 = 0;
         clar_fn_rtListRetain((void*)cv_srcStrLits);
 
         clar_fn_rtListRelease((void*)cv_irStrLits);
 
     cv_irStrLits = cv_srcStrLits;
-        clar_fn_rtListRelease((void*)cv___store656);
+        clar_fn_rtListRelease((void*)cv___store657);
 
     rt_list * t27;
     t27 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t27, (void*)cv_bkLdIrExternNames, sizeof(int32_t));
-    cv___store656 = t27;
+    cv___store657 = t27;
         clar_fn_rtListRelease((void*)cv_irExternNames);
 
-    cv_irExternNames = cv___store656;
-    cv___store656 = 0;
-        clar_fn_rtListRelease((void*)cv___store657);
+    cv_irExternNames = cv___store657;
+    cv___store657 = 0;
+        clar_fn_rtListRelease((void*)cv___store658);
 
     rt_list * t28;
     t28 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t28, (void*)cv_bkLdIrExternRetTys, sizeof(int32_t));
-    cv___store657 = t28;
+    cv___store658 = t28;
         clar_fn_rtListRelease((void*)cv_irExternRetTys);
 
-    cv_irExternRetTys = cv___store657;
-    cv___store657 = 0;
-        clar_fn_rtListRelease((void*)cv___store658);
+    cv_irExternRetTys = cv___store658;
+    cv___store658 = 0;
+        clar_fn_rtListRelease((void*)cv___store659);
 
     rt_list * t29;
     t29 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t29, (void*)cv_bkLdIrExternParamStart, sizeof(int32_t));
-    cv___store658 = t29;
+    cv___store659 = t29;
         clar_fn_rtListRelease((void*)cv_irExternParamStart);
 
-    cv_irExternParamStart = cv___store658;
-    cv___store658 = 0;
-        clar_fn_rtListRelease((void*)cv___store659);
+    cv_irExternParamStart = cv___store659;
+    cv___store659 = 0;
+        clar_fn_rtListRelease((void*)cv___store660);
 
     rt_list * t30;
     t30 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t30, (void*)cv_bkLdIrExternParamCountArr, sizeof(int32_t));
-    cv___store659 = t30;
+    cv___store660 = t30;
         clar_fn_rtListRelease((void*)cv_irExternParamCountArr);
 
-    cv_irExternParamCountArr = cv___store659;
-    cv___store659 = 0;
-        clar_fn_rtListRelease((void*)cv___store660);
+    cv_irExternParamCountArr = cv___store660;
+    cv___store660 = 0;
+        clar_fn_rtListRelease((void*)cv___store661);
 
     rt_list * t31;
     t31 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t31, (void*)cv_bkLdIrExternParamTys, sizeof(int32_t));
-    cv___store660 = t31;
+    cv___store661 = t31;
         clar_fn_rtListRelease((void*)cv_irExternParamTys);
 
-    cv_irExternParamTys = cv___store660;
-    cv___store660 = 0;
-        clar_fn_rtListRelease((void*)cv___store661);
+    cv_irExternParamTys = cv___store661;
+    cv___store661 = 0;
+        clar_fn_rtListRelease((void*)cv___store662);
 
     rt_list * t32;
     t32 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t32, (void*)cv_bkLdIrExternTrapWords, sizeof(int32_t));
-    cv___store661 = t32;
+    cv___store662 = t32;
         clar_fn_rtListRelease((void*)cv_irExternTrapWords);
 
-    cv_irExternTrapWords = cv___store661;
-    cv___store661 = 0;
-        clar_fn_rtListRelease((void*)cv___store662);
+    cv_irExternTrapWords = cv___store662;
+    cv___store662 = 0;
+        clar_fn_rtListRelease((void*)cv___store663);
 
     rt_list * t33;
     t33 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t33, (void*)cv_bkLdIrExternConvs, sizeof(int32_t));
-    cv___store662 = t33;
+    cv___store663 = t33;
         clar_fn_rtListRelease((void*)cv_irExternConvs);
 
-    cv_irExternConvs = cv___store662;
-    cv___store662 = 0;
-        clar_fn_rtListRelease((void*)cv___store663);
+    cv_irExternConvs = cv___store663;
+    cv___store663 = 0;
+        clar_fn_rtListRelease((void*)cv___store664);
 
     rt_list * t34;
     t34 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t34, (void*)cv_bkLdIrExternSels, sizeof(int32_t));
-    cv___store663 = t34;
+    cv___store664 = t34;
         clar_fn_rtListRelease((void*)cv_irExternSels);
 
-    cv_irExternSels = cv___store663;
-    cv___store663 = 0;
-        clar_fn_rtListRelease((void*)cv___store664);
+    cv_irExternSels = cv___store664;
+    cv___store664 = 0;
+        clar_fn_rtListRelease((void*)cv___store665);
 
     rt_list * t35;
     t35 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t35, (void*)cv_bkLdIrExternParamRegs, sizeof(int32_t));
-    cv___store664 = t35;
+    cv___store665 = t35;
         clar_fn_rtListRelease((void*)cv_irExternParamRegs);
 
-    cv_irExternParamRegs = cv___store664;
-    cv___store664 = 0;
-        clar_fn_rtListRelease((void*)cv___store665);
+    cv_irExternParamRegs = cv___store665;
+    cv___store665 = 0;
+        clar_fn_rtListRelease((void*)cv___store666);
 
     rt_list * t36;
     t36 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_rtListClone((void*)t36, (void*)cv_bkLdIrExternRetRegs, sizeof(int32_t));
-    cv___store665 = t36;
+    cv___store666 = t36;
         clar_fn_rtListRelease((void*)cv_irExternRetRegs);
 
-    cv_irExternRetRegs = cv___store665;
-    cv___store665 = 0;
-        clar_fn_rtIntMapRelease((void*)cv___store666);
-
-    rt_intmap * t37 = NULL;
-    t37 = clar_fn_bkCopyIntmapInt(cv_bkLdIrLayoutNeededByName);
-    cv___store666 = t37;
-        clar_fn_rtIntMapRelease((void*)cv_irLayoutNeededByName);
-
-    cv_irLayoutNeededByName = cv___store666;
+    cv_irExternRetRegs = cv___store666;
     cv___store666 = 0;
         clar_fn_rtIntMapRelease((void*)cv___store667);
 
+    rt_intmap * t37 = NULL;
+    t37 = clar_fn_bkCopyIntmapInt(cv_bkLdIrLayoutNeededByName);
+    cv___store667 = t37;
+        clar_fn_rtIntMapRelease((void*)cv_irLayoutNeededByName);
+
+    cv_irLayoutNeededByName = cv___store667;
+    cv___store667 = 0;
+        clar_fn_rtIntMapRelease((void*)cv___store668);
+
     rt_intmap * t38 = NULL;
     t38 = clar_fn_bkCopyIntmapInt(cv_bkLdIrRcWalkNeededByName);
-    cv___store667 = t38;
+    cv___store668 = t38;
         clar_fn_rtIntMapRelease((void*)cv_irRcWalkNeededByName);
 
-    cv_irRcWalkNeededByName = cv___store667;
-    cv___store667 = 0;
+    cv_irRcWalkNeededByName = cv___store668;
+    cv___store668 = 0;
     cv_irHasLaunch = cv_bkLdIrHasLaunch;
     cv_irHasStartEmpty = cv_bkLdIrHasStartEmpty;
     cv_irHasStartCLI = cv_bkLdIrHasStartCLI;
@@ -91166,15 +91230,15 @@ static void clar_fn_bkInstallArenas(int32_t cv_testapi) {
     cv_uiMenuCount = cv_bkLdUiMenuCount;
     cv_lowStoreTempN = cv_bkLdLowStoreTempN;
     cv_lowRetTempN = cv_bkLdLowRetTempN;
-        clar_fn_rtMapRelease((void*)cv___store668);
+        clar_fn_rtMapRelease((void*)cv___store669);
 
     rt_map * t39 = NULL;
     t39 = clar_fn_bkCopyMapInt(cv_bkLdLowStrIdx);
-    cv___store668 = t39;
+    cv___store669 = t39;
         clar_fn_rtMapRelease((void*)cv_lowStrIdx);
 
-    cv_lowStrIdx = cv___store668;
-    cv___store668 = 0;
+    cv_lowStrIdx = cv___store669;
+    cv___store669 = 0;
         clar_fn_rtIntMapRelease((void*)cv_filteredIdx);
 
         clar_fn_rtListRelease((void*)cv_srcFuncs);
@@ -91197,45 +91261,45 @@ static void clar_fn_bkInstallCheckerSymbolsForTestapi(void) {
     cv_v = 0;
     rt_intmap * cv_srcNames;
     cv_srcNames = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
-    rt_list * cv___store669;
-    cv___store669 = NULL;
     rt_list * cv___store670;
     cv___store670 = NULL;
     rt_list * cv___store671;
     cv___store671 = NULL;
-    rt_intmap * cv___store672;
+    rt_list * cv___store672;
     cv___store672 = NULL;
-        if (clar_fn_rtListLastref((void*)cv___store669)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store669); i++) clar_release_FuncSig((clar_rec_FuncSig *)clar_fn_rtListAt((void*)cv___store669, i)); }
-    clar_fn_rtListRelease((void*)cv___store669);
+    rt_intmap * cv___store673;
+    cv___store673 = NULL;
+        if (clar_fn_rtListLastref((void*)cv___store670)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store670); i++) clar_release_FuncSig((clar_rec_FuncSig *)clar_fn_rtListAt((void*)cv___store670, i)); }
+    clar_fn_rtListRelease((void*)cv___store670);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_bkCopyListFuncSig(cv_bkLoadedFuncSigs);
-    cv___store669 = t1;
+    cv___store670 = t1;
         if (clar_fn_rtListLastref((void*)cv_funcSigs)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_funcSigs); i++) clar_release_FuncSig((clar_rec_FuncSig *)clar_fn_rtListAt((void*)cv_funcSigs, i)); }
     clar_fn_rtListRelease((void*)cv_funcSigs);
 
-    cv_funcSigs = cv___store669;
-    cv___store669 = 0;
-        clar_fn_rtListRelease((void*)cv___store670);
+    cv_funcSigs = cv___store670;
+    cv___store670 = 0;
+        clar_fn_rtListRelease((void*)cv___store671);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_bkCopyListSymbol(cv_bkLoadedSymbols);
-    cv___store670 = t2;
+    cv___store671 = t2;
         clar_fn_rtListRelease((void*)cv_symbols);
 
-    cv_symbols = cv___store670;
-    cv___store670 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store671)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store671); i++) clar_release_Scope((clar_rec_Scope *)clar_fn_rtListAt((void*)cv___store671, i)); }
-    clar_fn_rtListRelease((void*)cv___store671);
+    cv_symbols = cv___store671;
+    cv___store671 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store672)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store672); i++) clar_release_Scope((clar_rec_Scope *)clar_fn_rtListAt((void*)cv___store672, i)); }
+    clar_fn_rtListRelease((void*)cv___store672);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_bkCopyListScope(cv_bkLoadedScopes);
-    cv___store671 = t3;
+    cv___store672 = t3;
         if (clar_fn_rtListLastref((void*)cv_scopes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_scopes); i++) clar_release_Scope((clar_rec_Scope *)clar_fn_rtListAt((void*)cv_scopes, i)); }
     clar_fn_rtListRelease((void*)cv_scopes);
 
-    cv_scopes = cv___store671;
-    cv___store671 = 0;
+    cv_scopes = cv___store672;
+    cv___store672 = 0;
     if (clar_fn_rtListCount((void*)cv_bkLoadedScopes) <= cv_topScope) {
             clar_fn_rtIntMapRelease((void*)cv_filteredTopNames);
 
@@ -91243,15 +91307,15 @@ static void clar_fn_bkInstallCheckerSymbolsForTestapi(void) {
 
         return;
     }
-        clar_fn_rtIntMapRelease((void*)cv___store672);
+        clar_fn_rtIntMapRelease((void*)cv___store673);
 
-    cv___store672 = ((*(clar_rec_Scope*)rt_list_at(cv_bkLoadedScopes, (int32_t)(cv_topScope)))).cv_names;
-        clar_fn_rtIntMapRetain((void*)cv___store672);
+    cv___store673 = ((*(clar_rec_Scope*)rt_list_at(cv_bkLoadedScopes, (int32_t)(cv_topScope)))).cv_names;
+        clar_fn_rtIntMapRetain((void*)cv___store673);
 
         clar_fn_rtIntMapRelease((void*)cv_srcNames);
 
-    cv_srcNames = cv___store672;
-    cv___store672 = 0;
+    cv_srcNames = cv___store673;
+    cv___store673 = 0;
     rt_intmap * t4;
     t4 = cv_srcNames;
     int32_t t5;
@@ -91310,18 +91374,18 @@ static void clar_fn_feProgressTick(void) {
 static int32_t clar_fn_feExpectedStamp(void) {
     rt_text * cv_compilerSrc;
     cv_compilerSrc = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___store673;
-    cv___store673 = NULL;
+    rt_text * cv___store674;
+    cv___store674 = NULL;
     int32_t cv___ret1406;
     cv___ret1406 = 0;
-    clar_fn_rtTextRelease((void*)cv___store673);
+    clar_fn_rtTextRelease((void*)cv___store674);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store673 = t1;
+    cv___store674 = t1;
     clar_fn_rtTextRelease((void*)cv_compilerSrc);
-    cv_compilerSrc = cv___store673;
-    cv___store673 = 0;
+    cv_compilerSrc = cv___store674;
+    cv___store674 = 0;
     if (clar_fn_bkFindClarusC(cv_compilerSrc)) {
         cv___ret1406 = clar_fn_bkHashText(cv_compilerSrc);
         clar_fn_rtTextRelease((void*)cv_compilerSrc);
@@ -91340,43 +91404,43 @@ static void clar_fn_cliResolveBake(rt_list * cv_bakePaths) {
     cv_bj = 0;
     rt_text * cv_bakeBytes;
     cv_bakeBytes = (rt_text *)clar_fn_rtTextNew();
-    rt_list * cv___store674;
-    cv___store674 = NULL;
     rt_list * cv___store675;
     cv___store675 = NULL;
     rt_list * cv___store676;
     cv___store676 = NULL;
-    rt_text * cv___store677;
+    rt_list * cv___store677;
     cv___store677 = NULL;
-        clar_fn_rtListRelease((void*)cv___store674);
+    rt_text * cv___store678;
+    cv___store678 = NULL;
+        clar_fn_rtListRelease((void*)cv___store675);
 
     rt_list * t1 = NULL;
     t1 = clar_fn_cgFreshStringList();
-    cv___store674 = t1;
+    cv___store675 = t1;
         clar_fn_rtListRelease((void*)cv_cgBakeNames);
 
-    cv_cgBakeNames = cv___store674;
-    cv___store674 = 0;
-        clar_fn_rtListRelease((void*)cv___store675);
+    cv_cgBakeNames = cv___store675;
+    cv___store675 = 0;
+        clar_fn_rtListRelease((void*)cv___store676);
 
     rt_list * t2 = NULL;
     t2 = clar_fn_cgFreshStringList();
-    cv___store675 = t2;
+    cv___store676 = t2;
         clar_fn_rtListRelease((void*)cv_cgBakeTypes);
 
-    cv_cgBakeTypes = cv___store675;
-    cv___store675 = 0;
-        if (clar_fn_rtListLastref((void*)cv___store676)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store676); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store676, i)); }
-    clar_fn_rtListRelease((void*)cv___store676);
+    cv_cgBakeTypes = cv___store676;
+    cv___store676 = 0;
+        if (clar_fn_rtListLastref((void*)cv___store677)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___store677); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___store677, i)); }
+    clar_fn_rtListRelease((void*)cv___store677);
 
     rt_list * t3 = NULL;
     t3 = clar_fn_cgFreshTextList();
-    cv___store676 = t3;
+    cv___store677 = t3;
         if (clar_fn_rtListLastref((void*)cv_cgBakeDatas)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_cgBakeDatas); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_cgBakeDatas, i)); }
     clar_fn_rtListRelease((void*)cv_cgBakeDatas);
 
-    cv_cgBakeDatas = cv___store676;
-    cv___store676 = 0;
+    cv_cgBakeDatas = cv___store677;
+    cv___store677 = 0;
     cv_bi = 0;
     while (1) {
         if (!((cv_bi < clar_fn_rtListCount((void*)cv_bakePaths)))) break;
@@ -91405,14 +91469,14 @@ static void clar_fn_cliResolveBake(rt_list * cv_bakePaths) {
             }
             cv_bj = CLAR_ADD32(cv_bj, 1);
         }
-        clar_fn_rtTextRelease((void*)cv___store677);
+        clar_fn_rtTextRelease((void*)cv___store678);
         rt_text * t9 = NULL;
         t9 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t9, (void*)(const uint8_t*)&(clar_lit_6));
-        cv___store677 = t9;
+        cv___store678 = t9;
         clar_fn_rtTextRelease((void*)cv_bakeBytes);
-        cv_bakeBytes = cv___store677;
-        cv___store677 = 0;
+        cv_bakeBytes = cv___store678;
+        cv___store678 = 0;
         if (!(rt_file_read_text((const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_bakePaths, (int32_t)(cv_bi)))), cv_bakeBytes))) {
             clar_str_255 t10;
             clar_fn_rtStrConcat((void*)&t10, (void*)(const uint8_t*)&(clar_lit_2248), (void*)(const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_bakePaths, (int32_t)(cv_bi)))));
@@ -91449,10 +91513,10 @@ static void clar_fn_cliResolveBakeIr(const clar_str_255 *cv_clirPath) {
     cv_stampPath = (clar_str_255){0};
     int32_t cv_bi;
     cv_bi = 0;
-    rt_text * cv___store678;
-    cv___store678 = NULL;
     rt_text * cv___store679;
     cv___store679 = NULL;
+    rt_text * cv___store680;
+    cv___store680 = NULL;
     cv_bi = 0;
     while (1) {
         if (!((cv_bi < clar_fn_rtListCount((void*)cv_cgBakeNames)))) break;
@@ -91465,14 +91529,14 @@ static void clar_fn_cliResolveBakeIr(const clar_str_255 *cv_clirPath) {
         }
         cv_bi = CLAR_ADD32(cv_bi, 1);
     }
-    clar_fn_rtTextRelease((void*)cv___store678);
+    clar_fn_rtTextRelease((void*)cv___store679);
     rt_text * t2 = NULL;
     t2 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store678 = t2;
+    cv___store679 = t2;
     clar_fn_rtTextRelease((void*)cv_bytes);
-    cv_bytes = cv___store678;
-    cv___store678 = 0;
+    cv_bytes = cv___store679;
+    cv___store679 = 0;
     if (!(rt_file_read_text((const uint8_t*)&((*cv_clirPath)), cv_bytes))) {
         clar_str_255 t3;
         clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(clar_lit_2253), (void*)(const uint8_t*)&((*cv_clirPath)));
@@ -91499,14 +91563,14 @@ static void clar_fn_cliResolveBakeIr(const clar_str_255 *cv_clirPath) {
     clar_str_255 t10;
     clar_fn_rtStrConcat((void*)&t10, (void*)(const uint8_t*)&((*cv_clirPath)), (void*)(const uint8_t*)&(clar_lit_2254));
     clar_fn_rtStrStore((void*)&(cv_stampPath), 255, (void*)(const uint8_t*)&(t10));
-    clar_fn_rtTextRelease((void*)cv___store679);
+    clar_fn_rtTextRelease((void*)cv___store680);
     rt_text * t11 = NULL;
     t11 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t11, (void*)(const uint8_t*)&(clar_lit_6));
-    cv___store679 = t11;
+    cv___store680 = t11;
     clar_fn_rtTextRelease((void*)cv_bytes);
-    cv_bytes = cv___store679;
-    cv___store679 = 0;
+    cv_bytes = cv___store680;
+    cv___store680 = 0;
     if (!(rt_file_read_text((const uint8_t*)&(cv_stampPath), cv_bytes))) {
         clar_str_255 t12;
         clar_fn_rtStrConcat((void*)&t12, (void*)(const uint8_t*)&(clar_lit_2253), (void*)(const uint8_t*)&(cv_stampPath));
@@ -91617,8 +91681,6 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     cv_stampBytes = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_checkMode;
     cv_checkMode = 0;
-    rt_text * cv___store680;
-    cv___store680 = NULL;
     rt_text * cv___store681;
     cv___store681 = NULL;
     rt_text * cv___store682;
@@ -91627,6 +91689,8 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     cv___store683 = NULL;
     rt_text * cv___store684;
     cv___store684 = NULL;
+    rt_text * cv___store685;
+    cv___store685 = NULL;
     clar_fn_resetDiags();
     clar_fn_astReset();
     cv_hostPaths = 1;
@@ -92032,14 +92096,14 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
             clar_fn_rtTextRelease((void*)cv_stampBytes);
             rt_quit((int32_t)(1));
         }
-        clar_fn_rtTextRelease((void*)cv___store680);
+        clar_fn_rtTextRelease((void*)cv___store681);
         rt_text * t12 = NULL;
         t12 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t12, (void*)(const uint8_t*)&(clar_lit_6));
-        cv___store680 = t12;
+        cv___store681 = t12;
         clar_fn_rtTextRelease((void*)cv_stampBytes);
-        cv_stampBytes = cv___store680;
-        cv___store680 = 0;
+        cv_stampBytes = cv___store681;
+        cv___store681 = 0;
         clar_fn_bkPutU32(cv_stampBytes, cv_bkLastStamp);
         clar_str_255 t13;
         clar_fn_rtStrConcat((void*)&t13, (void*)(const uint8_t*)&(cv_outPath), (void*)(const uint8_t*)&(clar_lit_2254));
@@ -92072,14 +92136,14 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
         rt_quit((int32_t)(0));
     }
     if (cv_haveRtbakeFlag) {
-        clar_fn_rtTextRelease((void*)cv___store681);
+        clar_fn_rtTextRelease((void*)cv___store682);
         rt_text * t18 = NULL;
         t18 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t18, (void*)(const uint8_t*)&(clar_lit_6));
-        cv___store681 = t18;
+        cv___store682 = t18;
         clar_fn_rtTextRelease((void*)cv_rtbakeBytes);
-        cv_rtbakeBytes = cv___store681;
-        cv___store681 = 0;
+        cv_rtbakeBytes = cv___store682;
+        cv___store682 = 0;
         if (!(rt_file_read_text((const uint8_t*)&(cv_rtbakePath), cv_rtbakeBytes))) {
             clar_str_255 t19;
             clar_fn_rtStrConcat((void*)&t19, (void*)(const uint8_t*)&(clar_lit_2290), (void*)(const uint8_t*)&(cv_rtbakePath));
@@ -92236,17 +92300,17 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     }
     if (cv_emitMode) {
         clar_fn_shakeProgram();
-        clar_fn_rtTextRelease((void*)cv___store682);
+        clar_fn_rtTextRelease((void*)cv___store683);
         rt_text * t42 = NULL;
         t42 = clar_fn_emitProgram();
         if (clar_aborting) {
             clar_fn_rtTextRelease(t42);
             goto bail;
         }
-        cv___store682 = t42;
+        cv___store683 = t42;
         clar_fn_rtTextRelease((void*)cv_cSrc);
-        cv_cSrc = cv___store682;
-        cv___store682 = 0;
+        cv_cSrc = cv___store683;
+        cv___store683 = 0;
         cv_wrote = rt_file_write_text((const uint8_t*)&(cv_outPath), cv_cSrc, (const uint8_t*)&(clar_lit_520), (const uint8_t*)&(clar_lit_899));
         if (!(cv_wrote)) {
             clar_str_255 t43;
@@ -92270,14 +92334,14 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     } else {
         if (cv_emitMode68k) {
             if (cv_haveEvents) {
-                clar_fn_rtTextRelease((void*)cv___store683);
+                clar_fn_rtTextRelease((void*)cv___store684);
                 rt_text * t47 = NULL;
                 t47 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextStore((void*)t47, (void*)(const uint8_t*)&(clar_lit_6));
-                cv___store683 = t47;
+                cv___store684 = t47;
                 clar_fn_rtTextRelease((void*)cv_eventsBytes);
-                cv_eventsBytes = cv___store683;
-                cv___store683 = 0;
+                cv_eventsBytes = cv___store684;
+                cv___store684 = 0;
                 if (!(rt_file_read_text((const uint8_t*)&(cv_eventsPath), cv_eventsBytes))) {
                     clar_str_255 t48;
                     clar_fn_rtStrConcat((void*)&t48, (void*)(const uint8_t*)&(clar_lit_2248), (void*)(const uint8_t*)&(cv_eventsPath));
@@ -92301,14 +92365,14 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
                 clar_fn_rtTextRelease((void*)cv_cgEventsBytes);
                 cv_cgEventsBytes = cv_eventsBytes;
             } else {
-                clar_fn_rtTextRelease((void*)cv___store684);
+                clar_fn_rtTextRelease((void*)cv___store685);
                 rt_text * t52 = NULL;
                 t52 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextStore((void*)t52, (void*)(const uint8_t*)&(clar_lit_6));
-                cv___store684 = t52;
+                cv___store685 = t52;
                 clar_fn_rtTextRelease((void*)cv_cgEventsBytes);
-                cv_cgEventsBytes = cv___store684;
-                cv___store684 = 0;
+                cv_cgEventsBytes = cv___store685;
+                cv___store685 = 0;
             }
             clar_fn_cliResolveBake(cv_bakePaths);
             if (cv_haveBakeIrEmbed) {

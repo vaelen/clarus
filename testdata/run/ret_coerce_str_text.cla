@@ -1,0 +1,36 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// ret_coerce_str_text.cla (Task 9b, binary-files phase): reproduces the
+// cprint return+coercion release-order bug this task fixes -- a `string`
+// argument implicitly coerced to a `text` parameter, where the coercion
+// happens inside a call that is itself the operand of `return`. `via`'s
+// own `return takes(s)` lowers `s` (string) into a freshly birthed text
+// temp (lowCoerceStr's ITextOfStr) fed straight into `takes`'s call as an
+// argument. On the UNFIXED compiler, cprint's SReturn arm released that
+// temp BEFORE emitting the `return` line that still needed it -- a
+// use-after-free surfaced by CLARUS_MEM_PARANOID's poisoned-free reads
+// (this fixture's memCheck run, internal/selfhost/behavior_test.go, is
+// unconditional for every testdata/run fixture) as a wrong `n` value, and
+// by CLARUS_MEM_STRICT's own live-count report as an extra live
+// allocation (the freed-then-reused-as-something-else block never gets
+// counted back). See task-9b-report.md's TDD evidence for the exact
+// unfixed RED output.
+on App.launch {
+    var n: int
+
+    n = via("hello")
+    if n == 5 {
+        alert("via ok")
+    } else {
+        alert("via FAIL")
+    }
+}
+
+func takes(t: text): int {
+    return t.length
+}
+
+func via(s: string): int {
+    return takes(s)
+}

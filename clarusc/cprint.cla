@@ -4356,6 +4356,7 @@ func fpStmt(s: int) {
     var e: text
     var d: text
     var v: text
+    var t: text
     var saved: list of text
     var fresh: list of text
     var savedRel: list of text
@@ -4440,9 +4441,38 @@ func fpStmt(s: int) {
             e = fpExpr(irReturnX(s))
             fpHandoff(e) // the returned value escapes to the caller
             // A sub-expression that FED the returned value (e.g. a concat
-            // consumed by an outer concat) can still be tracked here and
-            // must be freed BEFORE the `return` -- anything emitted after
-            // an unconditional jump is unreachable C, never runs.
+            // consumed by an outer concat, OR a string->text coercion temp
+            // consumed as THIS call's own argument -- Task 9b's bug) can
+            // still be tracked here and must be freed BEFORE the `return`
+            // -- anything emitted after an unconditional jump is
+            // unreachable C, never runs. An intrinsic's own result (e.g. a
+            // concat) always reduces to a bare tracked-temp name by the
+            // time it reaches here, so `fpHandoff(e)` above already
+            // untracks it exactly; but a plain user/runtime FUNCTION CALL
+            // whose return is scalar (fpCallFn's un-materialized fallthrough,
+            // its own doc comment) prints its ARGUMENTS' temps inline,
+            // embedded raw inside e's own C text (e.g. `clar_fn_rtFhWriteAt
+            // (cv_h, cv_pos, t1)`) -- freeing t1 here, before e is ever
+            // PRINTED (only the `fpEmit("return " + e + ...)` below prints
+            // it), is a release-then-use bug, not merely a leak. Task 9b's
+            // fix: when anything is STILL tracked at this point (the only
+            // case that can bite -- see above), capture e's VALUE into a
+            // fresh local FIRST (so the call embedded in e's text actually
+            // runs, right here, as its own reachable C statement), THEN
+            // free the (now-already-consumed) temps, THEN return the
+            // capture. fpHandoff(t) mirrors fpCopyToTemp's own contract
+            // (:2031) -- fpNewTmp self-tracks a fresh `rt_text *` temp for
+            // release, but this one is escaping via the return, not this
+            // statement's own end, so it must be untracked same as e was.
+            // The common case (nothing left tracked) takes the OLD path,
+            // byte-identical -- zero churn for every fixture that never
+            // hits this shape.
+            if fpStmtTmps.count > 0 {
+                t = fpNewTmp(cpCType(irExprType(irReturnX(s))))
+                fpEmit(t + " = " + e + ";")
+                fpHandoff(t)
+                e = t
+            }
             fpFreeStmtTmps()
             fpEmit("return " + e + ";")
         }

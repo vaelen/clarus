@@ -3286,6 +3286,23 @@ func cgStoreD0At(reg: int, off: int, t: int) {
     }
 }
 
+// cgLoadD0At is cgStoreD0At's exact reverse: reads t's slot at off(reg)
+// back into D0, byte or long per cgSizeOf(t) -- mirrors cgLoadVar's own
+// size dispatch (CLR.L first for a 1-byte bool/char slot, so D0's upper
+// three bytes can't carry stale garbage from whatever used D0 last).
+// cgReturnStmt's own D0-preservation dance (Task 9b) is this function's
+// one caller: cgStoreD0At saves a scalar return value out of D0 before
+// cgFreeStmtTmps's own release calls (each an ordinary JSR, clobbering D0
+// same as any call would) run, and this reloads it right after.
+func cgLoadD0At(reg: int, off: int, t: int) {
+    if cgSizeOf(t) == 1 {
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68Emit(OpMove, 1, AmDisp16, reg, off, AmDn, 0, 0)
+    } else {
+        a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
+    }
+}
+
 // cgZeroBlockAtA0 clears size bytes starting at (A0), advancing -- the
 // CLR.W-instead-of-copy sibling of cgBlockCopy (same unrolled-vs-DBRA-loop
 // shape, same "size is always even" precondition cgBlockCopy's own doc
@@ -11793,9 +11810,31 @@ func cgForMapStmt(s: int) {
 // tracked temp (cgLastTrackedOff, set by cgIntr's own first/last/get/
 // getDv/getDvBirth arms) is handed off first -- it escapes to the caller,
 // same as fpHandoff(e) for `return e;`.
+//
+// Task 9b: the scalar-fitting path (cgCurHiddenOffset == -1) has its own
+// analogue of the cprint release-order bug this task fixes -- NOT a
+// use-after-free (this backend emits instructions in true execution
+// order, so a call embedded in x's own evaluation, e.g. a string->text
+// coercion temp consumed as x's OWN call argument, has already run by the
+// time cgExpr(x) returns), but a D0 CLOBBER: cgExpr(x) leaves x's value in
+// D0 (its documented postcondition), and cgFreeStmtTmps below can still
+// emit release CALLS (ordinary JSRs, each clobbering D0 like any call)
+// for whatever fed x but wasn't itself x's own value -- with nothing
+// between there and the branch out to reload D0, the function returns
+// whatever the LAST release call happened to leave in D0, not x's real
+// value (reproduced: `return rtFhWriteAt(h, pos, s)` -- s string-to-text
+// coerced -- returned the wrong bool on the 68k lane; see task-9b-report.md).
+// Fix mirrors cprint's own (materialize-then-free-then-return): when
+// anything is still tracked after x's own handle handoff (the only case
+// that can bite), save D0 to a scratch slot BEFORE the releases run, then
+// reload it right after -- the common case (nothing left tracked) takes
+// the old path, byte-identical.
 func cgReturnStmt(s: int) {
     var x: int
     var rk: IRKind
+    var retT: int
+    var saveOff: int
+    var saved: bool
 
     x = irReturnX(s)
     if x == -1 {
@@ -11803,6 +11842,7 @@ func cgReturnStmt(s: int) {
         a68EmitBr(OpBra, 0, cgCurEpilogueLabel)
         return
     }
+    saved = false
     if cgCurHiddenOffset != -1 {
         if irtKind(cgCurRetType) == KRec {
             cgEmitReturnRec(x)
@@ -11817,8 +11857,17 @@ func cgReturnStmt(s: int) {
         if (rk == KText or rk == KList or rk == KMap or rk == KSortedMap or rk == KIntMap) and cgLastTrackedOff != -1 {
             cgHandoff(cgLastTrackedOff)
         }
+        if cgStmtTmpOffs.count > 0 {
+            retT = irExprType(x)
+            saveOff = cgAllocTmpOff(retT)
+            cgStoreD0At(6, saveOff, retT)
+            saved = true
+        }
     }
     cgFreeStmtTmps()
+    if saved {
+        cgLoadD0At(6, saveOff, retT)
+    }
     a68EmitBr(OpBra, 0, cgCurEpilogueLabel)
 }
 

@@ -159,25 +159,16 @@ func rtFhWriteAt(h: int, pos: int, t: text): bool {
 
 // rtFhWriteAtStr: the implicit string->text conversion (Ch3) rtConnSendStr
 // relies on at conn.cla:288-290 -- `s` assigns straight into rtFhWriteAt's
-// `t: text` parameter, no separate marshal path to maintain. NOT written
-// as the one-liner `return rtFhWriteAt(h, pos, s)` (what rtConnSendStr's
-// own VOID equivalent gets away with) -- a real, reproduced cprint/lower
-// bug: when a string->text (ITextOfStr) BIRTH coercion is the return
-// expression's own call argument, the generated C releases the freshly
-// birthed text BEFORE the call that still needs it (`clar_fn_
-// rtTextRelease(t1); return clar_fn_rtFhWriteAt(..., t1);` -- a
-// release-then-use, i.e. a use-after-free), because rtConnSendStr's void
-// return never exercises this path. Storing the result in a local first
-// (`ok = rtFhWriteAt(...); return ok`) sidesteps it -- the coercion still
-// happens inside that assignment statement, but nothing about ITS OWN
-// lowering conflates "release this statement's temporaries" with "the
-// enclosing return's own value." Filed for a future compiler-bug task;
-// out of Task 5's scope to fix generally. rtFhAppendStr below carries the
-// identical workaround for the identical reason.
+// `t: text` parameter, no separate marshal path to maintain. Task 5 found a
+// real cprint/lower bug here (a string->text BIRTH coercion consumed by the
+// call that is itself `return`'s own operand released the freshly birthed
+// text BEFORE the call that still needed it) and worked around it with an
+// explicit local (`ok = rtFhWriteAt(...); return ok`) instead of this
+// one-liner; Task 9b fixed the release ordering in cprint.cla's SReturn arm
+// generally (any `return call(strCoercedToTextArg)` shape, not just this
+// one) and removed the workaround -- this is the intended code.
 func rtFhWriteAtStr(h: int, pos: int, s: string): bool {
-    var ok: bool
-    ok = rtFhWriteAt(h, pos, s)
-    return ok
+    return rtFhWriteAt(h, pos, s)
 }
 
 // rtFhAppend: writes at the current EOF (pos == -1, the lane waist's own
@@ -190,10 +181,11 @@ func rtFhAppend(h: int, t: text): bool {
     return rtFhWriteRaw(h, -1, t)
 }
 
+// rtFhAppendStr: carried the identical Task 5 workaround as rtFhWriteAtStr
+// above (same doc comment there) for the identical reason; removed by the
+// same Task 9b fix.
 func rtFhAppendStr(h: int, s: string): bool {
-    var ok: bool
-    ok = rtFhAppend(h, s)
-    return ok
+    return rtFhAppend(h, s)
 }
 
 // rtFhSize: the logical EOF, or -1 + lastError on error.
