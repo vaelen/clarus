@@ -1,0 +1,14 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// foo.cla: fix round 1's nested-includer fixture (review finding on
+// binary-files phase Task 7) -- one directory deeper than main.cla, so
+// its OWN dir-relative miss for the toolbox catalog is spelled with one
+// fewer climb, "../toolbox/osutils.cla", not "toolbox/osutils.cla". Both
+// spellings must normalize to the identical "toolbox/osutils.cla" key
+// and resolve via the SAME rtdir-sibling fallback join (drive.cla's
+// expand() joins on the normalized key, not the raw incName, precisely
+// so this case works).
+include "../toolbox/osutils.cla"
+
+var dt: DateTimeRec

@@ -3,17 +3,28 @@
 
 // main.cla: internal/lowlevel's TestRtInc/ToolboxIncludeFallback fixture
 // (binary-files phase Task 7). This file has no toolbox/ sibling of its
-// own, so `include "toolbox/osutils.cla"`/`include "toolbox/files.cla"`
-// only resolve via the rtdir-sibling fallback (spec section 3.5). The
-// `window` decl independently pulls in runtime/clarus/uidialogs.cla,
-// which itself `include`s "../../toolbox/files.cla" -- proving the
-// fallback-resolved copy of files.cla and the runtime module's
-// relatively-resolved copy dedup to the same identity (same incKey)
-// instead of double-parsing/redeclaring.
-include "toolbox/osutils.cla"
+// own, so `include "toolbox/files.cla"` only resolves via the
+// rtdir-sibling fallback (spec section 3.5). The `window` decl
+// independently pulls in runtime/clarus/uidialogs.cla, which itself
+// `include`s "../../toolbox/files.cla" -- proving the fallback-resolved
+// copy of files.cla and the runtime module's relatively-resolved copy
+// dedup to the same identity (same incKey) instead of double-parsing/
+// redeclaring.
+//
+// `include "sub/foo.cla"` (fix round 1, review finding) adds a NESTED
+// includer spelling ITS OWN fallback target "../toolbox/osutils.cla"
+// (one climb fewer than a top-level "toolbox/x.cla" spelling, since
+// foo.cla sits one directory deeper) -- both spellings must normalize to
+// the same key and resolve via the identical fallback join. Deliberately
+// targets a DIFFERENT toolbox file (osutils.cla, not files.cla) than
+// this file's own direct include: `expand()`'s dedup marks a path as
+// "seen" even on a FAILED attempt (drive.cla:940-947), so a nested
+// include normalizing to the SAME bare path as an already-attempted
+// direct include would short-circuit through dedup before ever reaching
+// the fallback -- masking, not exercising, the fix under review. See
+// sub/foo.cla's own header comment.
 include "toolbox/files.cla"
-
-var dt: DateTimeRec
+include "sub/foo.cla"
 
 window Main {
     title: "probe"

@@ -10,12 +10,39 @@ package lowlevel
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// copyDir recursively copies src's contents into dst (both must already
+// exist as directories, dst empty) -- used to give a fixture with nested
+// includes (testdata/rtinc/toolbox_fallback/, fix round 1) an isolated
+// temp-dir copy with no runtime/clarus/ anywhere above it.
+func copyDir(t *testing.T, src, dst string) {
+	t.Helper()
+	if err := fs.WalkDir(os.DirFS(src), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == "." {
+			return nil
+		}
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(dst, path), 0o755)
+		}
+		b, err := os.ReadFile(filepath.Join(src, path))
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dst, path), b, 0o644)
+	}); err != nil {
+		t.Fatalf("copyDir %s -> %s: %v", src, dst, err)
+	}
+}
 
 func TestRtInc(t *testing.T) {
 	root := repoRoot(t)
@@ -118,7 +145,7 @@ func TestRtInc(t *testing.T) {
 		// (like every other lex/parse/check diagnostic in this suite --
 		// see IncludesRuntimeModule/NoInclusionWithoutUsage above), unlike
 		// the fatal abort() MissingRtdirErrors checks for on stderr.
-		if !strings.Contains(stdout.String(), `cannot open included file "toolbox/osutils.cla"`) {
+		if !strings.Contains(stdout.String(), `cannot open included file "toolbox/files.cla"`) {
 			t.Fatalf("stdout missing the honest cannot-open diagnostic:\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
 		}
 	})
@@ -127,18 +154,14 @@ func TestRtInc(t *testing.T) {
 		// Fix round: bare check-only mode (no emit/emit68k/appinfo
 		// subcommand) is the fallback's actual day-to-day consumer --
 		// 68kBBS's own `bin/clarusc bbs.cla` is a bare check-only
-		// invocation. Copy the fixture into a fresh temp dir with no
-		// runtime/clarus/ anywhere above it, same as the brief's own
-		// "no repo above it" setup, and confirm --rtdir alone (no "emit")
-		// resolves the fallback.
-		src, err := os.ReadFile(filepath.Join(root, "testdata", "rtinc", "toolbox_fallback", "main.cla"))
-		if err != nil {
-			t.Fatal(err)
-		}
+		// invocation. Copy the WHOLE fixture directory (main.cla AND
+		// sub/foo.cla -- fix round 1's nested-includer addition) into a
+		// fresh temp dir with no runtime/clarus/ anywhere above it, same
+		// as the brief's own "no repo above it" setup, and confirm
+		// --rtdir alone (no "emit") resolves the fallback for both the
+		// top-level and the nested spelling.
 		cwd := t.TempDir()
-		if err := os.WriteFile(filepath.Join(cwd, "main.cla"), src, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		copyDir(t, filepath.Join(root, "testdata", "rtinc", "toolbox_fallback"), cwd)
 		rtDir := filepath.Join(root, "runtime", "clarus")
 
 		t.Run("WithRtDir", func(t *testing.T) {
@@ -162,7 +185,7 @@ func TestRtInc(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected nonzero exit, got success\nstdout: %s", stdout.String())
 			}
-			if !strings.Contains(stdout.String(), `cannot open included file "toolbox/osutils.cla"`) {
+			if !strings.Contains(stdout.String(), `cannot open included file "toolbox/files.cla"`) {
 				t.Fatalf("stdout missing the honest cannot-open diagnostic:\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
 			}
 		})

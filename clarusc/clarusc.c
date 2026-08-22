@@ -83782,9 +83782,13 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
                 }
                 cv_missing = clar_fn_expand(&(cv_incResolved), 0, &(cv_incKey));
                 if (cv_missing) {
-                    clar_str_255 t25;
-                    t25 = clar_fn_driveKeyResolve(&(cv_key2), &(cv_incName));
-                    clar_fn_rtStrStore((void*)&(cv_tbKey), 255, (void*)(const uint8_t*)&(t25));
+                    if (!(cv_hostPaths)) {
+                        clar_fn_rtStrStore((void*)&(cv_tbKey), 255, (void*)(const uint8_t*)&(cv_incKey));
+                    } else {
+                        clar_str_255 t25;
+                        t25 = clar_fn_driveKeyResolve(&(cv_key2), &(cv_incName));
+                        clar_fn_rtStrStore((void*)&(cv_tbKey), 255, (void*)(const uint8_t*)&(t25));
+                    }
                     int32_t t27;
                     t27 = (clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_tbKey)) >= 8);
                     if (t27) {
@@ -83802,7 +83806,7 @@ static int32_t clar_fn_expand(const clar_str_255 *cv_rawPath, int32_t cv_entry, 
                             clar_str_255 t29;
                             t29 = cv_rtDir;
                             clar_str_255 t30;
-                            clar_fn_rtStrConcat((void*)&t30, (void*)(const uint8_t*)&(clar_lit_2166), (void*)(const uint8_t*)&(cv_incName));
+                            clar_fn_rtStrConcat((void*)&t30, (void*)(const uint8_t*)&(clar_lit_2166), (void*)(const uint8_t*)&(cv_tbKey));
                             clar_str_255 t31;
                             t31 = clar_fn_drivePathJoin(&(t29), &(t30));
                             cv_missing = clar_fn_expand(&(t31), 0, &(cv_incKey));

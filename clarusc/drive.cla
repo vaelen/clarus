@@ -1023,13 +1023,28 @@ func expand(rawPath: string, entry: bool, key: string): bool {
                     // hit and a runtime module's own include of the same
                     // file resolve to the identical path/key and dedup
                     // against each other via the SAME incKey passed below).
-                    tbKey = driveKeyResolve(key2, incName)
+                    //
+                    // Fix round 1 (review finding): the JOIN must use the
+                    // NORMALIZED key, not the raw incName spelling -- a
+                    // nested includer spelling "../toolbox/x.cla" (one
+                    // less climb than the top-level "toolbox/x.cla" case)
+                    // normalizes to the same "toolbox/x.cla" key, but
+                    // joining "../../" + the RAW spelling would climb one
+                    // level too far ("../../../toolbox/x.cla"). incKey
+                    // already holds the normalized key when not hostPaths
+                    // (computed above); only the hostPaths lane needs its
+                    // own driveKeyResolve call here.
+                    if not hostPaths {
+                        tbKey = incKey
+                    } else {
+                        tbKey = driveKeyResolve(key2, incName)
+                    }
                     if tbKey.length >= 8 and tbKey[0, 8] == "toolbox/" {
                         if not haveRtDir and rtDir == "" {
                             rtDir = findRtDir("core.cla")
                         }
                         if rtDir != "" {
-                            missing = expand(drivePathJoin(rtDir, "../../" + incName), false, incKey)
+                            missing = expand(drivePathJoin(rtDir, "../../" + tbKey), false, incKey)
                         }
                     }
                 }
