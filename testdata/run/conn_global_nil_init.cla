@@ -1,0 +1,25 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// conn_global_nil_init.cla: final-review wave regression pin for C1
+// (clarusc/lower.cla's lowGlobalVarDecl). A global `connection` declared
+// WITH a written `= nil` initializer used to lower that literal `nil`
+// straight through (ExNilLit -> 0) instead of the slot+1 value every
+// other global connection gets -- the connection-slot arm only ran in
+// the "no initializer" `else if` branch, so a spelled-out `= nil` global
+// stayed permanently nil (`rtConnOpen`/`rtConnClose`'s own h == 0 check
+// panics "use of nil connection" on first use) even though the checker
+// accepts the declaration, the variable still owns a slot, and `on
+// c.<event>` handlers still bind to it. c.close() needs no prior open()
+// (rtConnClose only nil-checks h; closing a never-opened slot is
+// idempotent, spec Ch12) -- calling it here and reaching the alert
+// PROVES c's own slot value is non-nil: on the unfixed compiler this
+// program panics with exit 3 ("use of nil connection") before ever
+// printing anything.
+var c: connection = nil
+
+on App.startCLI(args: list of string) {
+    c.close()
+    alert("conn global nil init ok")
+    quit 0
+}

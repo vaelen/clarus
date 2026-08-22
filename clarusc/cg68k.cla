@@ -1422,6 +1422,22 @@ var cgStmtTmpType: list of int
 var cgStmtTmpNext: int
 var cgStmtBigTmpNext: int
 
+// cgRetSaveOff (final-review wave, I2): cgReturnStmt's own dedicated
+// 4-byte A6-relative frame slot, reserved once per function right next to
+// the cgTmpSlots small pool (cgEmitFunc), NOT drawn from that pool via
+// cgAllocTmpOff. The D0 save Task 9b added to cgReturnStmt only runs when
+// the statement's OWN cgStmtTmpOffs is non-empty -- i.e. exactly when the
+// small pool may already be fully spoken for by the return expression's
+// own evaluation, so sharing the pool means a `return` whose operand
+// alone needs all cgTmpSlots temps aborts ("too many tracked temps") on a
+// save that has nothing to do with the operand's own temp need. The
+// save's lifetime never overlaps any statement-pool temp's lifetime (it
+// is written after cgExpr(x) and cgHandoff have both finished consuming
+// the pool, and read back only after cgFreeStmtTmps has released
+// everything) -- a separate, non-shared slot removes the false ceiling
+// entirely rather than growing it.
+var cgRetSaveOff: int
+
 // cgFuncBigTmpHigh is the CURRENT function's own big-temp high-water
 // mark (binary-files phase Task 8) -- reset to 0 at the top of every
 // cgEmitFunc call (both the measure pass and the real pass), bumped in
@@ -5199,6 +5215,13 @@ func cgEmitFunc(f: int) {
     }
     cgTmpBaseOffs = tmpOffs
 
+    // final-review wave, I2: cgReturnStmt's own dedicated 4-byte save
+    // slot, reserved unconditionally right next to the small pool above --
+    // see cgRetSaveOff's own doc comment for why this must NOT be one of
+    // the cgTmpSlots slots cgAllocTmpOff hands out.
+    runningNeg = runningNeg - 4
+    cgRetSaveOff = runningNeg
+
     // binary-files phase Task 8: the big (str/rec) scratch pool, same
     // contiguous-negative-offset discipline, reserved right after the
     // small pool -- sized to this function's OWN recorded need
@@ -5230,6 +5253,19 @@ func cgEmitFunc(f: int) {
 
     runningNeg = cgReserveDeepScratch(runningNeg)
     frameSize = 0 - runningNeg
+    // final-review wave, I1: every frame offset below is emitted through
+    // AmDisp16 (a68PutWord truncates silently to 16 bits -- see its own
+    // doc comment) and LINK's own displacement immediate is likewise a
+    // 16-bit word (cgEmitFunc's `a68Emit(OpLink, 0, ..., 0 - frameSize)`
+    // just below the body walk) -- so a frame past +/-32767 bytes wraps
+    // silently instead of failing, and the big-temp ceiling removal
+    // (Task 8) made that reachable from ordinary user statement shape
+    // (the pool now grows without bound). Abort loudly here, at the one
+    // place frameSize is first known to be final, rather than let it
+    // become a wrong-code frame.
+    if frameSize > 32767 {
+        abort("cg68k: function " + poolGet(irFuncName(f)) + " needs a " + numToStr(frameSize) + "-byte frame; the 68000 d16(A6) frame addressing this backend uses caps frames at 32767 bytes -- split the function or the statement")
+    }
     cgFuncFrameSizes[f] = frameSize
     cgStmtTmpOffs = cgFreshIntList()
     cgStmtTmpType = cgFreshIntList()
@@ -5271,6 +5307,9 @@ func cgEmitFunc(f: int) {
     cgCurFuncIsUiDispatcher = cgSeveredFamily(poolGet(irFuncName(f))) == 1
 
     a68Bind(cgFuncLabels[f])
+    // LINK's own displacement immediate is 16-bit (a68PutWord); the
+    // frameSize > 32767 abort just above (final-review wave, I1) is what
+    // keeps `0 - frameSize` here from silently truncating.
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     i = 0
     while i < recLocalOffsets.count {
@@ -11859,7 +11898,12 @@ func cgReturnStmt(s: int) {
         }
         if cgStmtTmpOffs.count > 0 {
             retT = irExprType(x)
-            saveOff = cgAllocTmpOff(retT)
+            // final-review wave, I2: cgRetSaveOff is this function's OWN
+            // dedicated slot (cgEmitFunc), not cgAllocTmpOff -- drawing
+            // from the shared 14-slot small pool here could abort a
+            // `return` whose own operand already used all 14 (see
+            // cgRetSaveOff's doc comment).
+            saveOff = cgRetSaveOff
             cgStoreD0At(6, saveOff, retT)
             saved = true
         }

@@ -708,7 +708,12 @@ func a68PutByte(out: text, b: int) {
 // arithmetic (sign-propagating) shift and char() keeping only the low
 // byte (Ch3/Ch4): for any w, `char(w >> 8)` and `char(w)` are exactly w's
 // high and low bytes as a 16-bit two's-complement quantity, negative or
-// not.
+// not. w is truncated SILENTLY here -- no range check -- which is exactly
+// why cgEmitFunc (cg68k.cla, final-review wave I1) aborts loudly if a
+// function's frameSize ever exceeds 32767: an A6 frame-offset word or a
+// LINK displacement immediate both pass through this function, and a
+// too-large frame would otherwise wrap here into wrong-code instead of
+// failing.
 func a68PutWord(out: text, w: int) {
     out.append(char(w >> 8))
     out.append(char(w))

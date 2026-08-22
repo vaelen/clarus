@@ -162,6 +162,21 @@ func rtFhDevCreate(path: string, ftype: string, fcreator: string): int {
     pb.ioVRefNum = 0
     createErr = PBCreateSync(pb)
 
+    // final-review wave, M4: dupFNErr (-48, "file already exists") is the
+    // ONE PBCreateSync failure this function tolerates -- a re-create of
+    // an existing file falls through to the open below, same as
+    // natFileWriteText's own precedent just above. Any OTHER non-zero
+    // result (disk full, bad name, locked volume, ...) is a real create
+    // failure; previously this fell through anyway and PBOpenSync below
+    // almost always succeeds against the pre-existing file, so the
+    // caller only ever saw the OPEN error, never the real cause. Stash it
+    // and bail here instead.
+    if createErr != 0 and createErr != -48 {
+        rtFh68kLastErr = createErr
+        SerDisposePtr(namePtr)
+        return 0
+    }
+
     if createErr == 0 {
         fp.ioNamePtr = namePtr
         fp.ioVRefNum = 0

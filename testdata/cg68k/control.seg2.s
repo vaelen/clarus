@@ -1,7 +1,7 @@
         ; func clar_ui_fire_every  (JT slot 177)
         ;   param idx : 8(A6)  size 4
 LBL_0:
-        LINK A6,#-2152
+        LINK A6,#-2156
         LEA LBL_9(PC),A0
         MOVE.L A0,-(A7)
         JSR 1170(A5)
@@ -18,7 +18,7 @@ LBL_17:
         ;   param winIdx : 12(A6)  size 4
         ;   param inst : 8(A6)  size 4
 LBL_1:
-        LINK A6,#-2152
+        LINK A6,#-2156
         LEA LBL_10(PC),A0
         MOVE.L A0,-(A7)
         JSR 1170(A5)
@@ -34,7 +34,7 @@ LBL_18:
         ; func clar_ui_fire_staterows  (JT slot 179)
         ;   param rowsIdx : 8(A6)  size 4
 LBL_2:
-        LINK A6,#-2152
+        LINK A6,#-2156
         MOVE.L 8(A6),D1
         MOVEQ #63,D0
         CMP.L D0,D1
@@ -65,13 +65,13 @@ LBL_19:
         ; func clar_ui_fire_launchdoc  (JT slot 180)
         ;   param path : 8(A6)  size 4
 LBL_3:
-        LINK A6,#-2152
+        LINK A6,#-2156
 LBL_22:
         UNLK A6
         RTS
         ; func clar_ui_fire_startempty  (JT slot 181)
 LBL_4:
-        LINK A6,#-2152
+        LINK A6,#-2156
 LBL_23:
         UNLK A6
         RTS

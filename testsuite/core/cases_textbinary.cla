@@ -9,6 +9,19 @@
 // cases_textrange.cla) so they run in-process on both the host CLI and
 // the native suite boot.
 
+// tbEchoText/tbMkText (final-review wave M6): the text-typed
+// `return call(...)` shape whose argument is a string->text coercion
+// temp -- see testdata/run/ret_text_tmp_release.cla's own doc comment
+// for the full D0-save mechanism this pins natively via caseTextBinary
+// below (the standalone fixture only proves the host lane).
+func tbEchoText(t: text): text {
+    return t
+}
+
+func tbMkText(s: string): text {
+    return tbEchoText(s)
+}
+
 func caseTextBinary(): TestResult {
     var t: text
     var i: int
@@ -59,6 +72,13 @@ func caseTextBinary(): TestResult {
     // read back as 0xFFFF, not -1.
     if t.wordAt(12) != 0xFFFF {
         return tkFail("TextBinary", "wordAt(12) wrong")
+    }
+    // final-review wave M6: native D0-save regression check (Task 9b's
+    // cgReturnStmt fix, cg68k.cla) for a text-typed `return call(...)`
+    // whose call argument is a string->text coercion temp still tracked
+    // when the outer call's KText result lands in D0.
+    if tbMkText("hi") != "hi" {
+        return tkFail("TextBinary", "return-call text D0 save wrong")
     }
     return tkPass("TextBinary")
 }

@@ -5314,7 +5314,32 @@ func lowGlobalVarDecl(d: int) {
     init = -1
     isBirth = true
     initAst = varDeclInit(d)
-    if initAst != -1 {
+    if lowConnSlotOf.has(poolGet(varDeclName(d))) {
+        // Connection globals (Task 4, binary-files phase; made
+        // unconditional by the final-review wave's C1 fix): `connection`
+        // is now an ordinary int value -- slot+1, so nil (0) stays
+        // distinguishable from slot 0 -- with real IR global storage
+        // (t is already irIntT here, via lowResolveType -> lowTypeAt's
+        // TyConnection case above). This arm ALWAYS wins over a written
+        // initializer: the only legal source initializer for a
+        // connection-typed global is the literal `nil` (there is no other
+        // connection-valued constant expression), and a written `nil` is
+        // not meaningful for a global that owns a slot -- it would zero
+        // out the slot+1 value and leave the variable permanently nil
+        // even though `on c.<event>` handlers and the 4-connection cap
+        // still bind to its slot (C1, final-review wave: this used to be
+        // an `else if`, so `var c: connection = nil` silently regressed
+        // to a dead-forever global; base commit f6fff11 had no
+        // initializer arm at all and worked). Synthesize the SAME
+        // newIRIntConst shape an ordinary `var x: int = 5` global's Init
+        // gets below, using the var's own pre-assigned slot (lowerProgram's
+        // own pre-pass, lowConnSlotOf) instead of any source expression.
+        // isBirth stays the default `true` set above -- irrelevant for a
+        // non-counted scalar init (irtNeedsCtor never retains/releases
+        // irIntT) but matching the ordinary-int-with-initializer case's
+        // own default.
+        init = newIRIntConst(lowConnSlotOf.get(poolGet(varDeclName(d)), -1) + 1, irIntT)
+    } else if initAst != -1 {
         init = lowExpr(initAst)
         // ARC Task 6 fix (reviewer Critical, reproduced double-free): a
         // global's Init is printed directly by cpEmitGlobalsInit, never
@@ -5324,21 +5349,6 @@ func lowGlobalVarDecl(d: int) {
         // store, computed here (AST is only available at lowering time)
         // and carried on the IRGlobal for cpEmitGlobalsInit to consult.
         isBirth = lowStoreIsBirth(initAst) or lowStoreIntrOwnsResult(init)
-    } else if lowConnSlotOf.has(poolGet(varDeclName(d))) {
-        // Connection globals (Task 4, binary-files phase): `connection`
-        // is now an ordinary int value -- slot+1, so nil (0) stays
-        // distinguishable from slot 0 -- with real IR global storage
-        // (t is already irIntT here, via lowResolveType -> lowTypeAt's
-        // TyConnection case above). There is no AST init to lower (a
-        // `var conn: connection` decl never writes `= ...`), so
-        // synthesize the SAME newIRIntConst shape an ordinary `var x:
-        // int = 5` global's Init gets just above, using the var's own
-        // pre-assigned slot (lowerProgram's own pre-pass, lowConnSlotOf)
-        // instead of a user source expression. isBirth stays the default
-        // `true` set above -- irrelevant for a non-counted scalar init
-        // (irtNeedsCtor never retains/releases irIntT) but matching the
-        // ordinary-int-with-initializer case's own default.
-        init = newIRIntConst(lowConnSlotOf.get(poolGet(varDeclName(d)), -1) + 1, irIntT)
     }
     newIRGlobal(varDeclName(d), t, init, isBirth)
 }

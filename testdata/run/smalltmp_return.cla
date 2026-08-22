@@ -1,0 +1,47 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// smalltmp_return.cla: final-review wave regression pin for I2
+// (clarusc/cg68k.cla's cgReturnStmt/cgRetSaveOff). smalltmp_ceiling.cla
+// pins that a single statement can track exactly cgTmpSlots (14)
+// concurrently-live small temps -- but that fixture's 14 `nums.pop()`
+// scratch offsets are UNTRACKED raw cgAllocTmpOff allocations (int
+// results need no release, cgAllocTmpOff's own doc comment), so they
+// never populate cgStmtTmpOffs and never exercise cgReturnStmt's D0-save
+// branch, which is gated on `cgStmtTmpOffs.count > 0` -- release-tracked
+// temps specifically (cgNewTrackedTmp), not just any allocated slot.
+//
+// This fixture is the shape that DOES populate that list, to exactly
+// 14: `mk14`'s `s: string` argument, passed 14 times to `sum14Text`'s 14
+// `text` params, triggers 14 SEPARATE `lowCoerceStr`-synthesized
+// `ITextOfStr` intrinsics (clarusc/lower.cla's `lowCallArgs`), and
+// `cgIntrTextOfStr` (cg68k.cla) ALWAYS births its result into a fresh
+// `cgNewTrackedTmp` slot, unconditionally -- each of the 14 stays
+// tracked, unreleased, until cgFreeStmtTmps at end of statement (verified
+// empirically: instrumenting cgReturnStmt showed `cgStmtTmpNext == 14`,
+// `cgStmtTmpOffs.count == 14` exactly when `return`'s own save check
+// runs). Task 9b's D0 save used to draw its own scratch slot from this
+// SAME exhausted pool via cgAllocTmpOff, so `return sum14Text(s, ...)`
+// aborted ("too many tracked temps") on a save that has nothing to do
+// with the operand's own temp need -- reproduced against the unfixed
+// compiler (`cg68k: too many tracked temps in one statement`), unlike a
+// plain assignment shape, which cannot populate cgStmtTmpOffs at all.
+// With the final-review wave's dedicated cgRetSaveOff slot, the save no
+// longer competes with those 14 for a spot.
+func sum14Text(a: text, b: text, c: text, d: text, e: text, f: text, g: text, h: text, i: text, j: text, k: text, l: text, m: text, n: text): int {
+    return a.length + b.length + c.length + d.length + e.length + f.length + g.length + h.length + i.length + j.length + k.length + l.length + m.length + n.length
+}
+func mk14(s: string): int {
+    return sum14Text(s, s, s, s, s, s, s, s, s, s, s, s, s, s)
+}
+on App.startCLI(args: list of string) {
+    var total: int
+
+    total = mk14("x")
+    if total == 14 {
+        alert("smalltmp return ok")
+    } else {
+        alert("smalltmp return FAIL")
+    }
+    quit 0
+}

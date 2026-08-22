@@ -1,0 +1,38 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// ret_text_tmp_release.cla: final-review wave regression pin for M6 (the
+// D0-save fix Task 9b added to clarusc/cg68k.cla's cgReturnStmt, native
+// lane). That fix was only ever exercised by FileHandleRW's bool-typed
+// return paths -- this fixture is the missing shape: a `text`-TYPED
+// `return call(...)`, where the call's own argument is a string->text
+// coercion temp (lowCoerceStr, clarusc/lower.cla's lowCallArgs) still
+// tracked (cgStmtTmpOffs) when the outer call's result lands in D0.
+// `mkText`'s `return echoText(s)` is exactly this: `s` (string) coerces
+// to a fresh `text` to satisfy echoText's `t: text` param, that coercion
+// temp is released by cgFreeStmtTmps AFTER echoText's own call has
+// already left its KText result in D0 -- the release call is an
+// ordinary JSR, which clobbers D0 like any call, so without the D0
+// save/reload the wrong handle (or garbage) would come back from
+// mkText. See cgReturnStmt's own doc comment (cg68k.cla) for the
+// bool-typed sibling this bug was first found through
+// (`return rtFhWriteAt(h, pos, s)`).
+func echoText(t: text): text {
+    return t
+}
+
+func mkText(s: string): text {
+    return echoText(s)
+}
+
+on App.startCLI(args: list of string) {
+    var r: text
+
+    r = mkText("hello world")
+    if r == "hello world" {
+        alert("ret text tmp release ok")
+    } else {
+        alert("ret text tmp release FAIL")
+    }
+    quit 0
+}

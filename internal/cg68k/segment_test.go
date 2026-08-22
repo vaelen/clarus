@@ -374,3 +374,79 @@ func TestSegmentationOversizedFunction(t *testing.T) {
 		t.Errorf("emit68k left a .bin behind despite the oversized-function error")
 	}
 }
+
+// TestSegmentationOversizedFrame is the final-review wave's I1 pin: a
+// single function whose ONE statement needs more big (str/rec) temps
+// than fit in a 32767-byte A6 frame must abort loudly (cg68k.cla's
+// cgEmitFunc, right after frameSize is computed), not silently wrap the
+// LINK/A6-offset 16-bit displacement into wrong code. Mirrors
+// testdata/run/bigtmp_spill.cla's own proven mechanism exactly (each
+// call argument is a `"a" + "N"` concatenation -- cgPushArgs' generic
+// materialize-to-temp fallback, so cgStmtBigTmpNext's per-statement bump
+// allocator never gets to reuse a slot before the call itself fires) but
+// scaled from 40 args (20480 bytes, well under the cap -- bigtmp_spill.cla
+// must keep compiling clean) to 70 (70*512 = 35840 bytes, past the
+// 32767-byte cap). The overflowing frame belongs to the CALLER (the 70
+// concatenation temps materialize in the statement that invokes
+// takeMany, not in takeMany's own body), so the assertion below checks
+// the message shape, not a specific function name. Deliberately generated here rather than committed
+// under testdata/cg68k/ (golden_test.go globs every testdata/cg68k/*.cla
+// as a listing-golden fixture; this program exists only to prove the
+// abort fires, never to have emitted code compared against a golden).
+func TestSegmentationOversizedFrame(t *testing.T) {
+	exe := buildClarusc(t)
+	dir := t.TempDir()
+
+	const nArgs = 70
+	var b strings.Builder
+	b.WriteString("func takeMany(")
+	for i := 1; i <= nArgs; i++ {
+		if i > 1 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "p%d: string", i)
+	}
+	b.WriteString("): int {\n    return ")
+	for i := 1; i <= nArgs; i++ {
+		if i > 1 {
+			b.WriteString(" + ")
+		}
+		fmt.Fprintf(&b, "p%d.length", i)
+	}
+	b.WriteString("\n}\n")
+	b.WriteString("on App.startCLI(args: list of string) {\n")
+	b.WriteString("    var n: int\n")
+	b.WriteString("    n = takeMany(")
+	for i := 1; i <= nArgs; i++ {
+		if i > 1 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "\"a\" + \"%d\"", i)
+	}
+	b.WriteString(")\n")
+	b.WriteString("    quit 0\n")
+	b.WriteString("}\n")
+
+	src := filepath.Join(dir, "oversizedframe.cla")
+	if err := os.WriteFile(src, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outBin := filepath.Join(dir, "out.bin")
+	cmd := exec.Command(exe, "emit68k", "-o", outBin, src)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("emit68k unexpectedly succeeded on a function needing a >32KB frame:\n%s", out)
+	}
+	// The overflowing frame belongs to the CALLER (the 70 `"a" + "N"`
+	// concatenation temps materialize as call arguments in the statement
+	// that invokes takeMany, e.g. the App.startCLI dispatcher), not
+	// takeMany itself -- so the assertion names the message shape, not a
+	// specific function name.
+	if !strings.Contains(string(out), "needs a") || !strings.Contains(string(out), "-byte frame") || !strings.Contains(string(out), "caps frames at 32767 bytes -- split the function or the statement") {
+		t.Fatalf("expected the named oversized-frame error, got:\n%s", out)
+	}
+	if _, statErr := os.Stat(outBin); statErr == nil {
+		t.Errorf("emit68k left a .bin behind despite the oversized-frame error")
+	}
+}

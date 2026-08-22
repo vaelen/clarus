@@ -238,6 +238,13 @@ func caseCatalog(): TestResult {
     fpb.ioPosMode = fsFromStart
     fpb.ioPosOffset = 0
     err = PBWriteSync(fpb)
+    // final-review wave, M2: dispose wbuf right after the one call that
+    // uses it -- wbuf is never touched again below, on the success path
+    // or any of the seven early returns that follow (write/geteof1/
+    // seteof/geteof2/flush/close), so disposing it here (before the err
+    // check, so it still runs on a write failure too) is the smallest fix
+    // that covers every path instead of leaking the busy-heap buffer.
+    DisposePtr(wbuf)
     if err != 0 or fpb.ioActCount != 64 {
         detail = "io write err " + tkIntToStr(err)
         detail = detail + " act " + tkIntToStr(fpb.ioActCount)
