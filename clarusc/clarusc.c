@@ -19146,7 +19146,11 @@ static int32_t clar_fn_checkMethodCall(int32_t cv_sel, int32_t cv_argsHead) {
                                 return clar_fn_checkTableMethod(cv_connectionMethods, cv_sel, cv_argsHead);
                             } else {
                                 if (cv___switch18 == 27) {
-                                    return clar_fn_checkTableMethod(cv_filehandleMethods, cv_sel, cv_argsHead);
+                                    cv_result = clar_fn_checkTableMethod(cv_filehandleMethods, cv_sel, cv_argsHead);
+                                    if ((((clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_name), (void*)(const uint8_t*)&(clar_lit_553)) == 0) && (cv_argsHead != CLAR_NEG32(1))) && (clar_fn_exprNext(cv_argsHead) != CLAR_NEG32(1))) && (clar_fn_exprNext(clar_fn_exprNext(cv_argsHead)) != CLAR_NEG32(1))) {
+                                        clar_fn_checkRejectParamFill(clar_fn_exprNext(clar_fn_exprNext(cv_argsHead)));
+                                    }
+                                    return cv_result;
                                 } else {
                                     if (cv___switch18 == 14) {
                                         return clar_fn_checkTableMethod(cv_listenerMethods, cv_sel, cv_argsHead);

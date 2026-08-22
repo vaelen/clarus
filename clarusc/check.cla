@@ -2084,7 +2084,20 @@ func checkMethodCall(sel: int, argsHead: int): int {
         return checkTableMethod(connectionMethods, sel, argsHead)
     }
     case TyFileHandle {
-        return checkTableMethod(filehandleMethods, sel, argsHead)
+        // binary-files phase Task 5 (review fix round 1): readAt(pos,
+        // count, out) fills `out` in place exactly like file.readText's
+        // own `out` above -- same guard, same post-dispatch timing (needs
+        // checkTableMethod's own checkParamArg call to have already run
+        // checkExpr on the third argument, for checkIsWidgetPropSelect's
+        // sake, exactly like readText/readResource's own comment above
+        // explains). Without this, `x.readAt(pos, count, rec.textField)`
+        // through a by-value record PARAM compiled clean and silently
+        // filled a private copy.
+        result = checkTableMethod(filehandleMethods, sel, argsHead)
+        if name == "readAt" and argsHead != -1 and exprNext(argsHead) != -1 and exprNext(exprNext(argsHead)) != -1 {
+            checkRejectParamFill(exprNext(exprNext(argsHead)))
+        }
+        return result
     }
     case TyListener {
         return checkTableMethod(listenerMethods, sel, argsHead)

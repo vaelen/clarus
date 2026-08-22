@@ -1,0 +1,17 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fileh_readat_paramfill.cla (2026-08-22 binary-files spec, Task 5,
+// review fix round 1): filehandle.readAt(pos, count, out) fills `out` in
+// place exactly like file.readText's own `out` argument -- a value-typed
+// record PARAM root there is rejected the same way, via
+// checkRejectParamFill (checkMethodCall's TyFileHandle case).
+record R {
+    buf: text
+}
+
+var fh: filehandle
+
+func f(r: R): bool {
+    return fh.readAt(0, 4, r.buf)
+}
