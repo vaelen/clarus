@@ -28762,51 +28762,55 @@ static int32_t clar_fn_lowTypeAt(int32_t cv_t, int32_t cv_line, int32_t cv_col) 
                                 if (cv___switch27 == 17) {
                                     return cv_irErrT;
                                 } else {
-                                    if (cv___switch27 == 5) {
-                                        return clar_fn_irStrType(clar_fn_typeN(cv_t));
+                                    if (cv___switch27 == 13) {
+                                        return cv_irIntT;
                                     } else {
-                                        if (cv___switch27 == 7) {
-                                            return clar_fn_irEnumType(clar_fn_typeNameIdx(cv_t));
+                                        if (cv___switch27 == 5) {
+                                            return clar_fn_irStrType(clar_fn_typeN(cv_t));
                                         } else {
-                                            if (cv___switch27 == 8) {
-                                                return clar_fn_irRecType(clar_fn_typeNameIdx(cv_t));
+                                            if (cv___switch27 == 7) {
+                                                return clar_fn_irEnumType(clar_fn_typeNameIdx(cv_t));
                                             } else {
-                                                if (cv___switch27 == 22) {
-                                                    return clar_fn_irOverlayType(clar_fn_typeNameIdx(cv_t));
+                                                if (cv___switch27 == 8) {
+                                                    return clar_fn_irRecType(clar_fn_typeNameIdx(cv_t));
                                                 } else {
-                                                    if (cv___switch27 == 23) {
-                                                        cv_recIdx = clar_fn_irFindRecordLayoutByName(clar_fn_typeNameIdx(cv_t));
-                                                        if (cv_recIdx == CLAR_NEG32(1)) {
-                                                            clar_str_255 t1;
-                                                            t1 = clar_fn_poolGet(clar_fn_typeNameIdx(cv_t));
-                                                            clar_str_255 t2;
-                                                            clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(clar_lit_740), (void*)(const uint8_t*)&(t1));
-                                                            clar_str_255 t3;
-                                                            clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(t2), (void*)(const uint8_t*)&(clar_lit_741));
-                                                            clar_fn_emitDiag(cv_line, cv_col, &(t3));
-                                                            return clar_fn_irArrType(cv_irCharT, 0);
-                                                        }
-                                                        cv_irXRecDiagLine = cv_line;
-                                                        cv_irXRecDiagCol = cv_col;
-                                                        return clar_fn_irArrType(cv_irCharT, clar_fn_irXRecSize(cv_recIdx));
+                                                    if (cv___switch27 == 22) {
+                                                        return clar_fn_irOverlayType(clar_fn_typeNameIdx(cv_t));
                                                     } else {
-                                                        if (cv___switch27 == 9) {
-                                                            return clar_fn_irArrType(clar_fn_lowType(clar_fn_typeElem(cv_t)), clar_fn_typeN(cv_t));
+                                                        if (cv___switch27 == 23) {
+                                                            cv_recIdx = clar_fn_irFindRecordLayoutByName(clar_fn_typeNameIdx(cv_t));
+                                                            if (cv_recIdx == CLAR_NEG32(1)) {
+                                                                clar_str_255 t1;
+                                                                t1 = clar_fn_poolGet(clar_fn_typeNameIdx(cv_t));
+                                                                clar_str_255 t2;
+                                                                clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(clar_lit_740), (void*)(const uint8_t*)&(t1));
+                                                                clar_str_255 t3;
+                                                                clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(t2), (void*)(const uint8_t*)&(clar_lit_741));
+                                                                clar_fn_emitDiag(cv_line, cv_col, &(t3));
+                                                                return clar_fn_irArrType(cv_irCharT, 0);
+                                                            }
+                                                            cv_irXRecDiagLine = cv_line;
+                                                            cv_irXRecDiagCol = cv_col;
+                                                            return clar_fn_irArrType(cv_irCharT, clar_fn_irXRecSize(cv_recIdx));
                                                         } else {
-                                                            if (cv___switch27 == 10) {
-                                                                return clar_fn_irListType(clar_fn_lowType(clar_fn_typeElem(cv_t)));
+                                                            if (cv___switch27 == 9) {
+                                                                return clar_fn_irArrType(clar_fn_lowType(clar_fn_typeElem(cv_t)), clar_fn_typeN(cv_t));
                                                             } else {
-                                                                if (cv___switch27 == 11) {
-                                                                    return clar_fn_irMapType(clar_fn_lowType(clar_fn_typeElem(cv_t)));
+                                                                if (cv___switch27 == 10) {
+                                                                    return clar_fn_irListType(clar_fn_lowType(clar_fn_typeElem(cv_t)));
                                                                 } else {
-                                                                    if (cv___switch27 == 25) {
-                                                                        return clar_fn_irSortedMapType(clar_fn_lowType(clar_fn_typeElem(cv_t)));
+                                                                    if (cv___switch27 == 11) {
+                                                                        return clar_fn_irMapType(clar_fn_lowType(clar_fn_typeElem(cv_t)));
                                                                     } else {
-                                                                        if (cv___switch27 == 26) {
-                                                                            return clar_fn_irIntMapType(clar_fn_lowType(clar_fn_typeElem(cv_t)));
+                                                                        if (cv___switch27 == 25) {
+                                                                            return clar_fn_irSortedMapType(clar_fn_lowType(clar_fn_typeElem(cv_t)));
                                                                         } else {
-                                                                            if (cv___switch27 == 12) {
-                                                                                return clar_fn_irWinRefType(clar_fn_typeNameIdx(cv_t));
+                                                                            if (cv___switch27 == 26) {
+                                                                                return clar_fn_irIntMapType(clar_fn_lowType(clar_fn_typeElem(cv_t)));
+                                                                            } else {
+                                                                                if (cv___switch27 == 12) {
+                                                                                    return clar_fn_irWinRefType(clar_fn_typeNameIdx(cv_t));
+                                                                                }
                                                                             }
                                                                         }
                                                                     }
@@ -29990,8 +29994,8 @@ static int32_t clar_fn_lowConnMethod(int32_t cv_e, int32_t cv_fn, int32_t cv_ty,
     cv_recvExpr = 0;
     clar_str_255 cv_name;
     cv_name = (clar_str_255){0};
-    int32_t cv_slot;
-    cv_slot = 0;
+    int32_t cv_recv;
+    cv_recv = 0;
     int32_t cv_argsHead;
     cv_argsHead = 0;
     int32_t cv_args;
@@ -30001,51 +30005,46 @@ static int32_t clar_fn_lowConnMethod(int32_t cv_e, int32_t cv_fn, int32_t cv_ty,
     int32_t cv___ret917;
     cv___ret917 = 0;
     cv_recvExpr = clar_fn_selectX(cv_fn);
-    cv_slot = CLAR_NEG32(1);
-    if ((clar_fn_exprKind(cv_recvExpr) == 0) && (!(clar_fn_lowIsLocal(clar_fn_identName(cv_recvExpr))))) {
-        clar_str_255 t1;
-        t1 = clar_fn_poolGet(clar_fn_identName(cv_recvExpr));
-        int32_t t2;
-        t2 = CLAR_NEG32(1);
-        clar_fn_rtMapGetDv((void*)cv_lowConnSlotOf, (void*)(const uint8_t*)&(t1), (void*)&t2);
-        cv_slot = t2;
-    }
-    clar_str_255 t3;
-    t3 = clar_fn_poolGet(clar_fn_selectName(cv_fn));
-    clar_fn_rtStrStore((void*)&(cv_name), 255, (void*)(const uint8_t*)&(t3));
+    int32_t t1;
+    t1 = clar_fn_lowExpr(cv_recvExpr);
+    if (clar_aborting) goto bail;
+    cv_recv = t1;
+    clar_str_255 t2;
+    t2 = clar_fn_poolGet(clar_fn_selectName(cv_fn));
+    clar_fn_rtStrStore((void*)&(cv_name), 255, (void*)(const uint8_t*)&(t2));
     cv_argsHead = clar_fn_callArgsHead(cv_e);
-    if (((cv_slot != CLAR_NEG32(1)) && (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_name), (void*)(const uint8_t*)&(clar_lit_140)) == 0)) && (clar_fn_callTransport(cv_e) == 2)) {
-        cv_args = clar_fn_newIRIntConst(cv_slot, cv_irIntT);
+    if ((clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_name), (void*)(const uint8_t*)&(clar_lit_140)) == 0) && (clar_fn_callTransport(cv_e) == 2)) {
+        cv_args = cv_recv;
         cv_tail = clar_fn_irExprListAppend(cv_args, clar_fn_newIRIntConst(2, cv_irIntT));
-        int32_t t4;
-        t4 = clar_fn_lowConnCoerceArg(&(clar_lit_902), 2, cv_argsHead);
+        int32_t t3;
+        t3 = clar_fn_lowConnCoerceArg(&(clar_lit_902), 2, cv_argsHead);
         if (clar_aborting) goto bail;
-        clar_fn_irExprListAppend(cv_tail, t4);
+        clar_fn_irExprListAppend(cv_tail, t3);
         return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_902)), cv_args, cv_irVoidT);
     }
-    if ((cv_slot != CLAR_NEG32(1)) && (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_name), (void*)(const uint8_t*)&(clar_lit_542)) == 0)) {
-        cv_args = clar_fn_newIRIntConst(cv_slot, cv_irIntT);
+    if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_name), (void*)(const uint8_t*)&(clar_lit_542)) == 0) {
+        cv_args = cv_recv;
         if (clar_fn_typeKind(clar_fn_exprTypeGet(cv_argsHead)) == 6) {
-            int32_t t5;
-            t5 = clar_fn_lowConnCoerceArg(&(clar_lit_903), 1, cv_argsHead);
+            int32_t t4;
+            t4 = clar_fn_lowConnCoerceArg(&(clar_lit_903), 1, cv_argsHead);
             if (clar_aborting) goto bail;
-            clar_fn_irExprListAppend(cv_args, t5);
+            clar_fn_irExprListAppend(cv_args, t4);
             return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_903)), cv_args, cv_irVoidT);
         }
-        int32_t t6;
-        t6 = clar_fn_lowConnCoerceArg(&(clar_lit_904), 1, cv_argsHead);
+        int32_t t5;
+        t5 = clar_fn_lowConnCoerceArg(&(clar_lit_904), 1, cv_argsHead);
         if (clar_aborting) goto bail;
-        clar_fn_irExprListAppend(cv_args, t6);
+        clar_fn_irExprListAppend(cv_args, t5);
         return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_904)), cv_args, cv_irVoidT);
     }
-    if ((cv_slot != CLAR_NEG32(1)) && (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_name), (void*)(const uint8_t*)&(clar_lit_82)) == 0)) {
-        return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_905)), clar_fn_newIRIntConst(cv_slot, cv_irIntT), cv_irVoidT);
+    if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_name), (void*)(const uint8_t*)&(clar_lit_82)) == 0) {
+        return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_905)), cv_recv, cv_irVoidT);
     }
+    clar_str_255 t6;
+    t6 = clar_fn_numToStr(((int32_t)(cv_xk)));
     clar_str_255 t7;
-    t7 = clar_fn_numToStr(((int32_t)(cv_xk)));
-    clar_str_255 t8;
-    clar_fn_rtStrConcat((void*)&t8, (void*)(const uint8_t*)&(clar_lit_901), (void*)(const uint8_t*)&(t7));
-    clar_fn_lowUnsupported(&(t8));
+    clar_fn_rtStrConcat((void*)&t7, (void*)(const uint8_t*)&(clar_lit_901), (void*)(const uint8_t*)&(t6));
+    clar_fn_lowUnsupported(&(t7));
     if (clar_aborting) goto bail;
     return CLAR_NEG32(1);
     bail:;
@@ -33562,21 +33561,27 @@ static void clar_fn_lowGlobalVarDecl(int32_t cv_d) {
     cv_initAst = 0;
     int32_t cv_isBirth;
     cv_isBirth = 0;
-    clar_str_255 t1;
-    t1 = clar_fn_poolGet(clar_fn_varDeclName(cv_d));
-    if (clar_fn_rtMapHas((void*)cv_lowConnSlotOf, (void*)(const uint8_t*)&(t1))) {
-        return;
-    }
     cv_t = clar_fn_lowResolveType(clar_fn_varDeclType(cv_d));
     cv_init = CLAR_NEG32(1);
     cv_isBirth = 1;
     cv_initAst = clar_fn_varDeclInit(cv_d);
     if (cv_initAst != CLAR_NEG32(1)) {
-        int32_t t2;
-        t2 = clar_fn_lowExpr(cv_initAst);
+        int32_t t1;
+        t1 = clar_fn_lowExpr(cv_initAst);
         if (clar_aborting) goto bail;
-        cv_init = t2;
+        cv_init = t1;
         cv_isBirth = (clar_fn_lowStoreIsBirth(cv_initAst) || clar_fn_lowStoreIntrOwnsResult(cv_init));
+    } else {
+        clar_str_255 t2;
+        t2 = clar_fn_poolGet(clar_fn_varDeclName(cv_d));
+        if (clar_fn_rtMapHas((void*)cv_lowConnSlotOf, (void*)(const uint8_t*)&(t2))) {
+            clar_str_255 t3;
+            t3 = clar_fn_poolGet(clar_fn_varDeclName(cv_d));
+            int32_t t4;
+            t4 = CLAR_NEG32(1);
+            clar_fn_rtMapGetDv((void*)cv_lowConnSlotOf, (void*)(const uint8_t*)&(t3), (void*)&t4);
+            cv_init = clar_fn_newIRIntConst(CLAR_ADD32(t4, 1), cv_irIntT);
+        }
     }
     clar_fn_newIRGlobal(clar_fn_varDeclName(cv_d), cv_t, cv_init, cv_isBirth);
     return;

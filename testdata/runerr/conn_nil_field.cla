@@ -16,20 +16,10 @@
 // instead of the intended runtime panic.
 //
 // Host-only pinning, same layout convention as conn_send_closed.cla
-// (.cla + .err + .behavior). NOT yet exercised by T1 (behavior_test.go
-// lives in internal/selfhost, which scripts/test-task.sh explicitly
-// excludes) and NOT yet green under T2 either: TestBehaviorGoldens
-// bootstraps from the COMMITTED clarusc/clarusc.c snapshot, which
-// predates Task 4's whole "any receiver expression" lowering (the old
-// lowConnMethod only ever resolved a bare global identifier) -- a
-// record-FIELD receiver like `r.c` still hits the pre-Task-4 "method
-// call on receiver kind 13 (not yet implemented)" diagnostic under that
-// stale snapshot, so `clarusc emit` itself fails before this fixture
-// ever runs. The .err/.behavior goldens below were computed against a
-// CURRENT-source two-stage build (build-run/clarusc-current, the same
-// bootstrap internal/conntest's buildConnFixture uses), matching this
-// task's report; both will start passing once a later task regenerates
-// clarusc.c from current source.
+// (.cla + .err + .behavior; discovered by internal/selfhost/
+// behavior_test.go's testdata/runerr glob). NOT yet exercised by T1
+// (behavior_test.go lives in internal/selfhost, which
+// scripts/test-task.sh explicitly excludes).
 var conn: connection
 
 record R { c: connection }
