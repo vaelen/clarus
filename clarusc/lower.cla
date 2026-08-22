@@ -1334,12 +1334,17 @@ func lowMethodCall(e: int, fn: int): int {
         return lowCanvasMethod(e, fn, ty)
     }
     if xk == TyConnection {
-        // Connection methods (serial-connection phase, Task 5): the
-        // receiver is never lowered to a real IR value (see
-        // lowGlobalVarDecl's own comment) -- lowConnMethod resolves it
-        // straight to a compile-time slot number instead, so this must
-        // return BEFORE the generic `recv = lowExpr(...)` line below ever
-        // runs, exactly like the TyWidget case just above.
+        // Connection methods (Task 4, binary-files phase): lowConnMethod
+        // lowers the receiver itself, via its OWN `recv = lowExpr(recvExpr)`
+        // call -- a `connection` is an ordinary int value (lowTypeAt's
+        // TyConnection case), so any receiver expression (bare global,
+        // local, param, field, array element) lowers to a real IR value,
+        // a bare global just happens to constant-fold to its own slot+1.
+        // This must still return BEFORE the generic `recv = lowExpr(...)`
+        // line below ever runs, exactly like the TyWidget case just
+        // above, since lowConnMethod's own args/dispatch shape (the
+        // slot+transport/data-arg prepending) differs from every other
+        // method-call family handled below.
         return lowConnMethod(e, fn, ty, xk)
     }
     recv = lowExpr(selectX(fn))
@@ -1363,9 +1368,11 @@ func lowMethodCall(e: int, fn: int): int {
 // sigIdx -- the same source lowCallArgs' own per-arg loop reads) and
 // coerces argAst's lowered value against it via lowCoerceStr -- the same
 // per-arg treatment an ordinary user call gets, just indexed by hand
-// since a connection call's real arg list is a compile-time slot number
-// (or two) PREPENDED ahead of the one AST argument the user actually
-// wrote, not a straight lowering of callArgsHead(e).
+// since a connection call's real arg list is `recv` (the receiver's own
+// lowered value -- a general expression, the 1-based handle, not
+// necessarily a constant) and possibly a transport tag PREPENDED ahead
+// of the one AST argument the user actually wrote, not a straight
+// lowering of callArgsHead(e).
 func lowConnCoerceArg(fnName: string, paramIdx: int, argAst: int): int {
     var symIdx: int
 
