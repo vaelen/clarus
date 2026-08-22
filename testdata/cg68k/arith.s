@@ -1,6 +1,6 @@
 LBL_215:
         ; startup (JT slot 0)
-        ; globals (below A5, 1580 bytes total):
+        ; globals (below A5, 1584 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiAppleMenuHandle : -12(A5)  size 4  type ptr
@@ -74,8 +74,9 @@ LBL_215:
         ;   natUiEmitBuf : -1574(A5)  size 4  type ptr
         ;   natQdInited : -1576(A5)  size 1  type bool
         ;   natQdGlobals : -1580(A5)  size 4  type ptr
-        LEA -1580(A5),A0
-        MOVE.W #789,D0
+        ;   rtFh68kLastErr : -1584(A5)  size 4  type int
+        LEA -1584(A5),A0
+        MOVE.W #791,D0
 LBL_217:
         CLR.W (A0)+
         DBRA D0,LBL_217
@@ -394,6 +395,8 @@ LBL_222:
         MOVE.L D0,-1580(A5)
         MOVE.L #0,D0
         MOVE.L D0,-1580(A5)
+        MOVE.L #0,D0
+        MOVE.L D0,-1584(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)

@@ -64,6 +64,32 @@ int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_f
  * caller-supplied values -- threaded straight through. */
 int32_t rt_ext_SerFileWriteData(void *path, rt_text *t, void *type, void *creator) { return rt_file_write_data((const uint8_t *)path, t, (const uint8_t *)type, (const uint8_t *)creator); }
 int32_t rt_ext_SerFileReadTextInto(void *path, rt_text *out) { return rt_file_read_text((const uint8_t *)path, out); }
+/* rt_ext_FhH*: binary-files phase Task 6 stubs for fileh_c.cla's own
+ * FhH*-prefixed externs (runtime/host/rt_fileh.inc's rt_ext_FhH* is the
+ * real implementation, host lane only). The Retro68/cprint-Mac lane
+ * (`clarusc emit`, want68k stays FALSE there -- see main.cla's own
+ * `want68k = emitMode68k`) splices the exact same host-shaped module
+ * list fileh_c.cla belongs to (drive.cla's `if not want68k and
+ * usesFileh` gate has no lane awareness beyond that one flag), so this
+ * demoted diagnostic lane (CLARUS_CPRINT_MAC_TESTS=1) needs SOME rt_ext_
+ * FhH* definition to link at all -- real File Manager positioned I/O on
+ * this lane is Task 6's native-68k (`fileh_68k.cla`, cg68k emission)
+ * counterpart, never this one. Matching the ConnH*/PB* forward-proofing
+ * precedent just above (`rt_ext_UiConnPump`'s own comment): plain,
+ * permanent failure stubs -- FhHOpen/FhHCreate return 0 (fileh.cla's own
+ * nil-handle-on-failure contract), every other call returns -1 (I/O
+ * error), FhHErrno returns -1 (no real OS error code behind it). A
+ * program that calls file.open/create on this lane gets a clean
+ * lastError failure, never a crash or a link error. */
+int32_t rt_ext_FhHOpen(const uint8_t *path) { (void)path; return 0; }
+int32_t rt_ext_FhHCreate(const uint8_t *path) { (void)path; return 0; }
+int32_t rt_ext_FhHReadAt(int32_t h, int32_t pos, void *p, int32_t n) { (void)h; (void)pos; (void)p; (void)n; return -1; }
+int32_t rt_ext_FhHWriteAt(int32_t h, int32_t pos, void *p, int32_t n) { (void)h; (void)pos; (void)p; (void)n; return -1; }
+int32_t rt_ext_FhHSize(int32_t h) { (void)h; return -1; }
+int32_t rt_ext_FhHSetSize(int32_t h, int32_t n) { (void)h; (void)n; return -1; }
+int32_t rt_ext_FhHFlush(int32_t h) { (void)h; return -1; }
+void rt_ext_FhHClose(int32_t h) { (void)h; }
+int32_t rt_ext_FhHErrno(void) { return -1; }
 /* rt_ext_Ser{BlockMoveData,NewPtr,DisposePtr}: final-review fix, mirroring
  * runtime/host/rt_ext_host.inc's block exactly -- ser.cla's remaining
  * externs were still unprefixed and collided with a user program's own

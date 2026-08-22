@@ -1,6 +1,6 @@
 LBL_214:
         ; startup (JT slot 0)
-        ; globals (below A5, 1580 bytes total):
+        ; globals (below A5, 1584 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiAppleMenuHandle : -12(A5)  size 4  type ptr
@@ -74,8 +74,9 @@ LBL_214:
         ;   natUiEmitBuf : -1574(A5)  size 4  type ptr
         ;   natQdInited : -1576(A5)  size 1  type bool
         ;   natQdGlobals : -1580(A5)  size 4  type ptr
-        LEA -1580(A5),A0
-        MOVE.W #789,D0
+        ;   rtFh68kLastErr : -1584(A5)  size 4  type int
+        LEA -1584(A5),A0
+        MOVE.W #791,D0
 LBL_216:
         CLR.W (A0)+
         DBRA D0,LBL_216
@@ -394,6 +395,8 @@ LBL_221:
         MOVE.L D0,-1580(A5)
         MOVE.L #0,D0
         MOVE.L D0,-1580(A5)
+        MOVE.L #0,D0
+        MOVE.L D0,-1584(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -7146,7 +7149,7 @@ LBL_539:
 LBL_538:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        BSR.W LBL_174
+        JSR 1618(A5)
         ADDQ.L #4,A7
 LBL_536:
         UNLK A6
@@ -12263,14 +12266,10 @@ LBL_173:
 LBL_765:
         UNLK A6
         RTS
-        ; func nat_UiRtQuit  (JT slot 175)
-        ;   param code : 8(A6)  size 4
+        ; func nat_UiConnPump  (JT slot 175)
 LBL_174:
         LINK A6,#-8296
-        MOVE.L 8(A6),D0
-        MOVE.L D0,-(A7)
-        JSR 1498(A5)
-        ADDQ.L #4,A7
+        BSR.W LBL_168
 LBL_766:
         UNLK A6
         RTS

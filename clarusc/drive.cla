@@ -1530,13 +1530,23 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         neededMods.add("native.cla")
     }
 
-    // filehandle (2026-08-22 binary-files spec, Task 5): shared fileh.cla +
-    // the host-lane rtFhDev* waist (fileh_c.cla), usage-gated exactly like
-    // conn.cla just above -- host lane ONLY this task; the 68k superset
-    // (fileh_68k.cla) is Task 6's, so a native build that names
-    // `filehandle` fails to link until Task 6 lands, by design (not
-    // joining want68k's unconditional splice here).
-    if not want68k and usesFileh {
+    // filehandle (2026-08-22 binary-files spec, Task 5/6): shared
+    // fileh.cla + exactly one per-lane rtFhDev* waist, same lane-split
+    // shape as conn.cla just above. The 68k lane (Task 6) now joins the
+    // unconditional full-superset splice, matching conn.cla/conn_68k.cla's
+    // own precedent: fileh.cla's own rtFh* entry points must resolve on
+    // every native build once the checker's usesFileh hook can fire from
+    // ANY type position (Task 5's own check.cla note, not just a global
+    // var), so fileh_68k.cla must always be there to answer them, dormant
+    // program or not. The host lane STAYS usesFileh-gated (Task 5's own
+    // choice, unchanged) -- nothing calls rtFhOpen/etc. from a
+    // filehandle-less host program, so gating keeps every EXISTING
+    // (non-filehandle) host program's manifest, and therefore its IR
+    // indices and goldens, byte-identical.
+    if want68k {
+        neededMods.add("fileh.cla")
+        neededMods.add("fileh_68k.cla")
+    } else if usesFileh {
         neededMods.add("fileh.cla")
         neededMods.add("fileh_c.cla")
     }

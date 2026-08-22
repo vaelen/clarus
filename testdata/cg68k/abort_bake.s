@@ -1,6 +1,6 @@
 LBL_228:
         ; startup (JT slot 0)
-        ; globals (below A5, 1838 bytes total):
+        ; globals (below A5, 1842 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiAppleMenuHandle : -12(A5)  size 4  type ptr
@@ -74,8 +74,9 @@ LBL_228:
         ;   natUiEmitBuf : -1574(A5)  size 4  type ptr
         ;   natQdInited : -1576(A5)  size 1  type bool
         ;   natQdGlobals : -1580(A5)  size 4  type ptr
-        LEA -1838(A5),A0
-        MOVE.W #918,D0
+        ;   rtFh68kLastErr : -1584(A5)  size 4  type int
+        LEA -1842(A5),A0
+        MOVE.W #920,D0
 LBL_230:
         CLR.W (A0)+
         DBRA D0,LBL_230
@@ -88,9 +89,9 @@ LBL_230:
         BSR.W LBL_139
         ; entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)
         BSR.W LBL_166
-        TST.B -1582(A5)
+        TST.B -1586(A5)
         BEQ.W LBL_231
-        LEA -1838(A5),A0
+        LEA -1842(A5),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_141
         ADDQ.L #4,A7
@@ -98,9 +99,9 @@ LBL_230:
         MOVE.L #1,-(A7)
         BSR.W LBL_142
 LBL_231:
-        TST.B -1582(A5)
+        TST.B -1586(A5)
         BEQ.W LBL_232
-        LEA -1838(A5),A0
+        LEA -1842(A5),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_141
         ADDQ.L #4,A7
@@ -414,6 +415,8 @@ LBL_237:
         MOVE.L D0,-1580(A5)
         MOVE.L #0,D0
         MOVE.L D0,-1580(A5)
+        MOVE.L #0,D0
+        MOVE.L D0,-1584(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -3386,7 +3389,7 @@ LBL_81:
         MOVE.L D0,-(A7)
         MOVE.L #1903520116,D0
         MOVE.L D0,-(A7)
-        LEA 1474(A5),A0
+        LEA 1482(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -3404,7 +3407,7 @@ LBL_81:
         MOVE.L D0,-(A7)
         MOVE.L #1868656752,D0
         MOVE.L D0,-(A7)
-        LEA 1482(A5),A0
+        LEA 1490(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -11805,14 +11808,14 @@ LBL_163:
         LINK A6,#-8300
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
-        LEA -1838(A5),A0
+        LEA -1842(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
         LEA LBL_212(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_6
         ADDA.W #12,A7
-        MOVE.B #1,-1582(A5)
+        MOVE.B #1,-1586(A5)
         BRA.W LBL_738
         MOVEQ #0,D0
         BRA.W LBL_737
@@ -11829,7 +11832,7 @@ LBL_164:
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         BSR.W LBL_163
-        TST.B -1582(A5)
+        TST.B -1586(A5)
         BNE.W LBL_740
         BRA.W LBL_739
 LBL_740:
@@ -11848,13 +11851,13 @@ LBL_742:
         CLR.W (A0)+
         DBRA D0,LBL_742
         BSR.W LBL_164
-        TST.B -1582(A5)
+        TST.B -1586(A5)
         BNE.W LBL_743
         BRA.W LBL_744
 LBL_743:
-        MOVE.B #0,-1582(A5)
+        MOVE.B #0,-1586(A5)
         LEA -256(A6),A1
-        LEA -1838(A5),A0
+        LEA -1842(A5),A0
         MOVE.W #127,D0
 LBL_745:
         MOVE.W (A0)+,(A1)+
@@ -11889,7 +11892,7 @@ LBL_741:
 LBL_166:
         LINK A6,#-8296
         BSR.W LBL_165
-        TST.B -1582(A5)
+        TST.B -1586(A5)
         BNE.W LBL_747
         BRA.W LBL_746
 LBL_747:
@@ -12223,21 +12226,20 @@ LBL_178:
 LBL_790:
         UNLK A6
         RTS
-        ; func clar_cb_aeQuitHandler (JT slot 180) -- pascal callback glue for aeQuitHandler
+        ; func clar_cb_rtUiScrollbarAction (JT slot 180) -- pascal callback glue for rtUiScrollbarAction
 LBL_179:
         LINK A6,#0
-        ;   theAppleEvent : 16(A6)  pascal size 4
-        MOVE.L 16(A6),-(A7)
-        ;   reply : 12(A6)  pascal size 4
-        MOVE.L 12(A6),-(A7)
-        ;   handlerRefcon : 8(A6)  pascal size 4
-        MOVE.L 8(A6),-(A7)
-        BSR.W LBL_79
-        ADDA.W #12,A7
-        MOVE.W D0,20(A6)
+        ;   ctrl : 10(A6)  pascal size 4
+        MOVE.L 10(A6),-(A7)
+        ;   part : 8(A6)  pascal size 2
+        MOVE.W 8(A6),D0
+        EXT.L D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_100
+        ADDQ.L #8,A7
         UNLK A6
         MOVE.L (A7)+,A0
-        ADDA.W #12,A7
+        ADDQ.L #6,A7
         JMP (A0)
 LBL_224:
         ; cg_mul32: D1=left * D0=right -> D0 (32x32->32, MULU partial products)

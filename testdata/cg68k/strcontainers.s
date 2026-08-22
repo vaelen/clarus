@@ -1,6 +1,6 @@
 LBL_216:
         ; startup (JT slot 0)
-        ; globals (below A5, 1580 bytes total):
+        ; globals (below A5, 1584 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiAppleMenuHandle : -12(A5)  size 4  type ptr
@@ -74,8 +74,9 @@ LBL_216:
         ;   natUiEmitBuf : -1574(A5)  size 4  type ptr
         ;   natQdInited : -1576(A5)  size 1  type bool
         ;   natQdGlobals : -1580(A5)  size 4  type ptr
-        LEA -1580(A5),A0
-        MOVE.W #789,D0
+        ;   rtFh68kLastErr : -1584(A5)  size 4  type int
+        LEA -1584(A5),A0
+        MOVE.W #791,D0
 LBL_218:
         CLR.W (A0)+
         DBRA D0,LBL_218
@@ -87,7 +88,7 @@ LBL_218:
         BSR.W LBL_217
         BSR.W LBL_165
         ; entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)
-        JSR 1562(A5)
+        JSR 1570(A5)
         BSR.W LBL_215
         CLR.L -(A7)
         BSR.W LBL_168
@@ -394,6 +395,8 @@ LBL_223:
         MOVE.L D0,-1580(A5)
         MOVE.L #0,D0
         MOVE.L D0,-1580(A5)
+        MOVE.L #0,D0
+        MOVE.L D0,-1584(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -5563,7 +5566,7 @@ LBL_481:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1602(A5)
+        JSR 1610(A5)
         ADDA.W #20,A7
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
@@ -5580,7 +5583,7 @@ LBL_481:
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1634(A5)
+        JSR 1642(A5)
         ADDQ.L #8,A7
 LBL_483:
         MOVEQ #0,D0
@@ -5830,7 +5833,7 @@ LBL_492:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1602(A5)
+        JSR 1610(A5)
         ADDA.W #20,A7
         MOVE.L -12(A6),D0
         MOVEA.L D0,A0
@@ -7722,7 +7725,7 @@ LBL_133:
         DC.W $A8A3  ; UiEraseRect
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1642(A5)
+        JSR 1650(A5)
         ADDQ.L #4,A7
         MOVE.L D0,-28(A6)
         MOVE.L -28(A6),D0
@@ -9898,7 +9901,7 @@ LBL_148:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1602(A5)
+        JSR 1610(A5)
         ADDA.W #20,A7
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
@@ -10341,7 +10344,7 @@ LBL_702:
         MOVE.B D0,(A0)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1570(A5)
+        JSR 1578(A5)
         ADDQ.L #4,A7
         BRA.W LBL_705
 LBL_704:
@@ -10420,7 +10423,7 @@ LBL_704:
         ADDA.L D0,A1
         MOVEA.L A1,A0
         MOVE.L A0,-(A7)
-        JSR 1594(A5)
+        JSR 1602(A5)
         ADDA.W #12,A7
         LEA -1220(A5),A0
         MOVE.L A0,-(A7)
@@ -10497,7 +10500,7 @@ LBL_705:
         MOVE.L D0,(A0)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1586(A5)
+        JSR 1594(A5)
         ADDQ.L #4,A7
         BRA.W LBL_709
 LBL_708:
@@ -10575,7 +10578,7 @@ LBL_712:
         MOVE.L D0,-(A7)
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1578(A5)
+        JSR 1586(A5)
         ADDQ.L #8,A7
 LBL_710:
 LBL_709:
@@ -12362,10 +12365,10 @@ LBL_770:
 LBL_769:
         UNLK A6
         RTS
-        ; func nat_UiConnPump  (JT slot 181)
+        ; func clar_ui_fire_launchdoc  (JT slot 181)
+        ;   param path : 8(A6)  size 4
 LBL_180:
         LINK A6,#-8296
-        BSR.W LBL_156
 LBL_771:
         UNLK A6
         RTS

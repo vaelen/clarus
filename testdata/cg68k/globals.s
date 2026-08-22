@@ -1,6 +1,6 @@
 LBL_227:
         ; startup (JT slot 0)
-        ; globals (below A5, 1840 bytes total):
+        ; globals (below A5, 1844 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiAppleMenuHandle : -12(A5)  size 4  type ptr
@@ -74,10 +74,11 @@ LBL_227:
         ;   natUiEmitBuf : -1574(A5)  size 4  type ptr
         ;   natQdInited : -1576(A5)  size 1  type bool
         ;   natQdGlobals : -1580(A5)  size 4  type ptr
-        ;   count : -1584(A5)  size 4  type int
-        ;   name : -1840(A5)  size 256  type str
-        LEA -1840(A5),A0
-        MOVE.W #919,D0
+        ;   rtFh68kLastErr : -1584(A5)  size 4  type int
+        ;   count : -1588(A5)  size 4  type int
+        ;   name : -1844(A5)  size 256  type str
+        LEA -1844(A5),A0
+        MOVE.W #921,D0
 LBL_229:
         CLR.W (A0)+
         DBRA D0,LBL_229
@@ -398,14 +399,16 @@ LBL_234:
         MOVE.L D0,-1580(A5)
         MOVE.L #0,D0
         MOVE.L D0,-1584(A5)
+        MOVE.L #0,D0
+        MOVE.L D0,-1588(A5)
         MOVE.L #42,D0
-        MOVE.L D0,-1584(A5)
-        LEA -1840(A5),A0
+        MOVE.L D0,-1588(A5)
+        LEA -1844(A5),A0
         MOVE.W #127,D0
 LBL_235:
         CLR.W (A0)+
         DBRA D0,LBL_235
-        LEA -1840(A5),A0
+        LEA -1844(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L #255,D0
         MOVE.L D0,-(A7)

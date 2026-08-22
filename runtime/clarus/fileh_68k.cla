@@ -1,0 +1,332 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fileh_68k.cla: the native-68k rtFhDev* waist (2026-08-22 binary-files
+// spec, Task 6) -- fileh_c.cla's twin, same nine function names, real
+// File Manager positioned-I/O calls (toolbox/files.cla + toolbox/
+// devices.cla) instead of host pread/pwrite. Spliced (with fileh.cla)
+// into EVERY want68k build now, unconditionally -- the same full-lane-
+// superset treatment conn.cla/conn_68k.cla got in Task 6 of the serial-
+// connection phase (drive.cla's own header comment on that splice site):
+// fileh.cla's own rtFh* entry points must resolve in every native build
+// once the checker's usesFileh hook can fire from ANY type position
+// (Task 5's own check.cla note), so fileh_68k.cla must always be there
+// to answer them, dormant or not. The host lane's fileh.cla+fileh_c.cla
+// pair stays usesFileh-gated (drive.cla), unlike this pair.
+//
+// Pulls the real File Manager/Device Manager declarations from
+// toolbox/devices.cla (PBOpenSync/PBReadSync) + toolbox/files.cla
+// (IOParam, FileParam, PBCreateSync/PBWriteSync/PBCloseSync/
+// PBSetFInfoSync/PBGetEOFSync/PBSetEOFSync/PBFlushFileSync/
+// PBFlushVolSync, fsRdWrPerm/fsFromStart/fsFromLEOF) + toolbox/
+// memory.cla (HLock/HUnlock) -- the same "runtime modules include
+// toolbox catalog files" idiom conn_68k.cla already establishes; Task 1's
+// normalized include-once identity dedups conn_68k.cla's own identical
+// includes of devices.cla/files.cla (both modules are always spliced
+// together under want68k -- see drive.cla), so composing all three here
+// costs nothing extra.
+include "../../toolbox/devices.cla"
+include "../../toolbox/files.cla"
+include "../../toolbox/memory.cla"
+
+// rtFh68kLastErr: this lane's own "last OS error" storage, read back by
+// rtFhDevLastOSErr -- every rtFhDev* entry below that calls a PBxxxSync
+// trap stashes that trap's own OSErr result here, whether zero or not
+// (fileh.cla only ever reads it immediately after a call it already knows
+// failed, so an overwritten-but-unread zero from an unrelated successful
+// call in between is never observed).
+var rtFh68kLastErr: int
+
+// rtFh68kName: the NewPtr+pokeb Pascal-string pattern conn_68k.cla's own
+// rtConn68kName already establishes for ioNamePtr (toolbox/devices.cla's
+// own header comment: extern record has no address-of operator, so a
+// name that must exist BEFORE a PB call needs its own hand-built buffer).
+// Reuses ser.cla's already-spliced SerNewPtr/SerDisposePtr (ser.cla always
+// precedes this module in the splice order -- see drive.cla) rather than
+// declaring a redundant unprefixed NewPtr/DisposePtr pair of its own.
+//
+// UNLIKE rtConn68kName's own buffer (opened at most twice per whole
+// program run, for the two fixed serial ports, and never disposed --
+// that function's own header comment calls this out explicitly): every
+// rtFhDevOpen/rtFhDevCreate call below builds and DISPOSES one of these
+// buffers per call, since a program can open/create arbitrarily many
+// filehandles over its run (cases_fileh.cla's own reopen step is one
+// concrete example) -- leaving the conn precedent's "never freed" choice
+// in place here would be an unbounded per-open leak, not a one-time cost.
+// PBOpenSync/PBCreateSync are synchronous and copy the name out of this
+// buffer before returning, so disposing it immediately after each call
+// is safe.
+func rtFh68kName(s: string): ptr {
+    var p: ptr
+    var i: int
+
+    p = SerNewPtr(s.length + 1)
+    pokeb(p, s.length)
+    i = 0
+    while i < s.length {
+        pokeb(p + 1 + i, int(s[i]))
+        i = i + 1
+    }
+    return p
+}
+
+// rtFhDevOpen: ioPermssn = fsRdWrPerm (positioned read/write access),
+// PBOpenSync, handle = ioRefNum (never 0 on success, per Task 1's own
+// probe -- refNum 472 in that report's trace). A nonzero OSErr stashes
+// itself in rtFh68kLastErr and returns 0, fileh.cla's own nil-on-failure
+// contract.
+func rtFhDevOpen(path: string): int {
+    var pb: IOParam
+    var namePtr: ptr
+
+    namePtr = rtFh68kName(path)
+    pb.ioNamePtr = namePtr
+    pb.ioVRefNum = 0
+    pb.ioPermssn = fsRdWrPerm
+    rtFh68kLastErr = PBOpenSync(pb)
+    SerDisposePtr(namePtr)
+
+    if rtFh68kLastErr != 0 {
+        return 0
+    }
+    return pb.ioRefNum
+}
+
+// rtFhDevCreate: PBCreateSync's own result is deliberately ignored here
+// (dupFNErr -- the file already existing, the one error filehandle.
+// create treats as fine -- or any other real failure alike): the
+// PBOpenSync below is the actual success/failure gate, exactly
+// native.cla's own natFileWriteText precedent ("dupFNErr ignored either
+// way -- Open just below is the real success/failure gate", native.cla:
+// 809-812).
+//
+// Type/creator are stamped via a DIRECT PBSetFInfoSync on a FileParam
+// (ioFDirIndex = 0, fdType/fdCreator packed by rtFourCC) -- the no-Get
+// discipline native.cla:824-852 documents in full: never call
+// PBGetFInfoSync first, since a File Manager QUERY trap under a heap
+// busy with live UI/List/Map/Text traffic is the exact class of hang
+// that function's own header comment root-causes (and Task 1's probe
+// wave, task-1-report.md (c), independently re-confirms the caution is
+// still warranted for this phase's own GetEOF call below). UNLIKE
+// natFileWriteText's own ioResult-gated stamp (which only fires for a
+// genuinely FRESH file, leaving an overwrite's Finder info untouched):
+// this stamps UNCONDITIONALLY, every call, fresh or dupFNErr'd alike --
+// filehandle.create's own contract always resets the file's DATA
+// regardless of whether it pre-existed (Task 5's host lane unconditionally
+// O_TRUNCs, proven by rt_fileh_test.c's own create-truncates-an-existing-
+// file case), so this lane stamps type/creator fresh every time too,
+// matching that "create always resets" contract rather than writeText's
+// narrower "don't touch Finder info on an overwrite" one.
+//
+// ftype/fcreator arrive as plain `string` values, already Str255-shaped
+// in memory (uiscript.cla's own UiStrAddr header comment) -- UiStrAddr
+// (uiscript.cla, always spliced ahead of this module -- see drive.cla)
+// hands back that Str255 buffer's own address with no extra copy, exactly
+// what rtFourCC (core.cla:130, always spliced) wants.
+//
+// PBSetEOFSync 0 truncates the just-opened file to empty (filehandle.
+// create's own "always resets" contract, restated above); a failure here
+// closes the just-opened refNum before returning 0 rather than leaking
+// an open, half-truncated handle back to a caller who thinks create()
+// failed outright.
+func rtFhDevCreate(path: string, ftype: string, fcreator: string): int {
+    var pb: IOParam
+    var fp: FileParam
+    var eofPb: IOParam
+    var namePtr: ptr
+    var packedType: int
+    var packedCreator: int
+    var h: int
+    var err: int
+
+    packedType = rtFourCC(UiStrAddr(ftype))
+    packedCreator = rtFourCC(UiStrAddr(fcreator))
+
+    namePtr = rtFh68kName(path)
+
+    pb.ioNamePtr = namePtr
+    pb.ioVRefNum = 0
+    PBCreateSync(pb)
+
+    fp.ioNamePtr = namePtr
+    fp.ioVRefNum = 0
+    fp.ioFDirIndex = 0
+    fp.fdType = packedType
+    fp.fdCreator = packedCreator
+    PBSetFInfoSync(fp)
+
+    SerDisposePtr(namePtr)
+
+    h = rtFhDevOpen(path)
+    if h == 0 {
+        return 0
+    }
+
+    eofPb.ioRefNum = h
+    eofPb.ioMisc = ptr(0)
+    err = PBSetEOFSync(eofPb)
+    if err != 0 {
+        rtFh68kLastErr = err
+        rtFhDevClose(h)
+        return 0
+    }
+
+    return h
+}
+
+// rtFhDevReadAt: grows `out` to `count` bytes (rtTextGrow, text.cla,
+// always spliced ahead of this module), then HLocks the Handle and
+// re-derives the master pointer AFTER the lock -- native.cla's own
+// natFileWriteText:865-893 discipline for the identical hazard on the
+// WRITE side (PBWriteSync's underlying _Write trap can itself allocate a
+// disk driver/cache buffer, triggering Memory Manager compaction
+// mid-call; an unlocked Handle is fair game to relocate during that
+// compaction, stranding a pointer captured before the call). PBReadSync's
+// underlying _Read trap shares the identical hazard (Inside Macintosh:
+// both traps can allocate a buffer-cache block), so the same lock
+// discipline applies symmetrically here. Chosen over the brief's other
+// offered option (a NewPtrCLEAR bounce buffer + BlockMove, natFileReadText's
+// own discipline) because rtTextGrow already sizes `out` to exactly the
+// `count` bytes this call needs -- reading straight into the locked
+// Handle needs no second buffer or copy; a chunked/unbounded read (which
+// is what drove natFileReadText to a bounce buffer in the first place,
+// per that function's own header) is not this waist's shape at all.
+//
+// ioPosMode = fsFromStart / ioPosOffset = pos / ioReqCount = count.
+// eofErr (-39) with ioActCount >= 0 is SUCCESS (short read at/past EOF,
+// Task 1's probe (d)) -- any OTHER nonzero OSErr is a hard I/O error.
+func rtFhDevReadAt(h: int, pos: int, out: ptr, count: int): int {
+    var pb: IOParam
+    var rt: RtText
+    var mp: ptr
+    var got: int
+
+    rtTextGrow(out, count)
+    rt = RtText(out)
+
+    HLock(rt.h)
+    mp = TextHandleDeref(rt.h)
+
+    pb.ioRefNum = h
+    pb.ioBuffer = mp
+    pb.ioReqCount = count
+    pb.ioPosMode = fsFromStart
+    pb.ioPosOffset = pos
+    rtFh68kLastErr = PBReadSync(pb)
+    got = pb.ioActCount
+
+    HUnlock(rt.h)
+
+    if rtFh68kLastErr != 0 and rtFh68kLastErr != -39 {
+        rt.len = 0
+        return -1
+    }
+    rt.len = got
+    return got
+}
+
+// rtFhDevWriteAt: `p` is already a raw, non-relocatable NewPtr'd scratch
+// buffer (fileh.cla's own rtFhWriteRaw marshals every write/append call
+// into one before ever reaching this lane) -- never Handle-backed, so no
+// HLock/HUnlock bracket is needed here (unlike rtFhDevReadAt's `out`
+// above, which fills the caller's own Handle-backed text in place).
+// pos == -1 is rtFhWriteRaw's own "at current EOF" sentinel (rtFhAppend):
+// fsFromLEOF/0 positions there without a separate size() query; any other
+// pos writes fsFromStart/pos, extending the file past its current EOF
+// exactly the way Task 1's probe (d) proved (a "hole" between old EOF and
+// the new write's start reads back however the Mac OS itself fills it --
+// unspecified per the spec, not this lane's concern).
+func rtFhDevWriteAt(h: int, pos: int, p: ptr, n: int): int {
+    var pb: IOParam
+
+    pb.ioBuffer = p
+    pb.ioReqCount = n
+    if pos == -1 {
+        pb.ioPosMode = fsFromLEOF
+        pb.ioPosOffset = 0
+    } else {
+        pb.ioPosMode = fsFromStart
+        pb.ioPosOffset = pos
+    }
+    pb.ioRefNum = h
+    rtFh68kLastErr = PBWriteSync(pb)
+    return rtFh68kLastErr
+}
+
+// rtFhDevSize: PBGetEOFSync via ioMisc, a plain per-call LOCAL param
+// block -- Task 1's own probe wave (task-1-report.md (c)) is this
+// function's entire justification: it proved PBGetEOFSync survives the
+// busiest heap this repo can currently produce (three separate calls,
+// immediately after 31 real toolbox-suite cases' worth of live traffic)
+// with a FRESH local `extern record` pb each time, correct results every
+// time -- but does NOT positively prove safety against a long-lived,
+// heap-resident, REUSED pb the way native.cla's own natFilePb caused the
+// original documented hang. This function therefore never reuses a pb
+// across calls (no module-global param block anywhere in this file), per
+// that report's own explicit Task 6 recommendation.
+func rtFhDevSize(h: int): int {
+    var pb: IOParam
+
+    pb.ioRefNum = h
+    rtFh68kLastErr = PBGetEOFSync(pb)
+    if rtFh68kLastErr != 0 {
+        return -1
+    }
+    return int(pb.ioMisc)
+}
+
+// rtFhDevSetSize: PBSetEOFSync with ioMisc = n (the truncate/grow target
+// -- IOParam's own header comment in toolbox/files.cla: "ioMisc carries
+// GetEOF's result AND SetEOF's input"). Growing the file this way is
+// unspecified-fill on the Mac (spec %3.1, not guarded here -- fileh.cla's
+// own rtFhSetSize doc comment already states the host/Mac split).
+func rtFhDevSetSize(h: int, n: int): int {
+    var pb: IOParam
+
+    pb.ioRefNum = h
+    pb.ioMisc = ptr(n)
+    rtFh68kLastErr = PBSetEOFSync(pb)
+    return rtFh68kLastErr
+}
+
+// rtFhDevFlush: PBFlushFileSync(ioRefNum) then PBFlushVolSync with
+// ioNamePtr = 0 / ioVRefNum = 0 (default volume) -- native.cla's own
+// natFileFlush precedent (native.cla:753-764). A file-flush failure is
+// reported over a vol-flush failure when both occur (the more specific,
+// more actionable of the two); either alone still surfaces.
+func rtFhDevFlush(h: int): int {
+    var filePb: IOParam
+    var volPb: IOParam
+    var fileErr: int
+    var volErr: int
+
+    filePb.ioRefNum = h
+    fileErr = PBFlushFileSync(filePb)
+
+    volPb.ioNamePtr = ptr(0)
+    volPb.ioVRefNum = 0
+    volErr = PBFlushVolSync(volPb)
+
+    if fileErr != 0 {
+        rtFh68kLastErr = fileErr
+        return fileErr
+    }
+    rtFh68kLastErr = volErr
+    return volErr
+}
+
+// rtFhDevClose: PBCloseSync. fileh.cla's own rtFhClose already treats
+// h == 0 as a no-op before ever reaching this lane, so no nil check is
+// needed here.
+func rtFhDevClose(h: int) {
+    var pb: IOParam
+
+    pb.ioRefNum = h
+    PBCloseSync(pb)
+}
+
+// rtFhDevLastOSErr: this lane's own last-OSErr storage (rtFh68kLastErr,
+// this file's header comment above).
+func rtFhDevLastOSErr(): int {
+    return rtFh68kLastErr
+}

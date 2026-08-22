@@ -2497,15 +2497,26 @@ LBL_312:
 LBL_311:
         UNLK A6
         RTS
-        ; func nat_UiMacInitToolbox  (JT slot 198)
+        ; func nat_UiRtQuit  (JT slot 198)
+        ;   param code : 8(A6)  size 4
 LBL_22:
+        LINK A6,#-8296
+        MOVE.L 8(A6),D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_7
+        ADDQ.L #4,A7
+LBL_313:
+        UNLK A6
+        RTS
+        ; func nat_UiMacInitToolbox  (JT slot 199)
+LBL_23:
         LINK A6,#-8296
         CLR.L D0
         MOVE.B -1576(A5),D0
         TST.L D0
-        BEQ.W LBL_314
-        BRA.W LBL_313
-LBL_314:
+        BEQ.W LBL_315
+        BRA.W LBL_314
+LBL_315:
         MOVE.L #206,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
@@ -2530,12 +2541,12 @@ LBL_314:
         MOVEQ #1,D0
         MOVE.B D0,-1576(A5)
         DC.W $A850  ; NatInitCursor
-LBL_313:
+LBL_314:
         UNLK A6
         RTS
-        ; func nat_UiScreenBounds  (JT slot 199)
+        ; func nat_UiScreenBounds  (JT slot 200)
         ;   param out : 8(A6)  size 4
-LBL_23:
+LBL_24:
         LINK A6,#-8296
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
@@ -2557,15 +2568,15 @@ LBL_23:
         MOVE.L (A0),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-LBL_315:
+LBL_316:
         UNLK A6
         RTS
-        ; func nat_UiScreenBits  (JT slot 200)
+        ; func nat_UiScreenBits  (JT slot 201)
         ;   param baseAddrOut : 16(A6)  size 4
         ;   param rowBytesOut : 12(A6)  size 4
         ;   param boundsOut : 8(A6)  size 4
         ;   local rb : -4(A6)  size 4
-LBL_24:
+LBL_25:
         LINK A6,#-8300
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
@@ -2591,13 +2602,13 @@ LBL_24:
         SGE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_317
+        BEQ.W LBL_318
         MOVE.L -4(A6),D1
         MOVE.L #65536,D0
         SUB.L D0,D1
         MOVE.L D1,D0
         MOVE.L D0,-4(A6)
-LBL_317:
+LBL_318:
         MOVE.L 12(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -4(A6),D0
@@ -2623,14 +2634,7 @@ LBL_317:
         MOVE.L (A0),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-LBL_316:
-        UNLK A6
-        RTS
-        ; func nat_UiConnPump  (JT slot 201)
-LBL_25:
-        LINK A6,#-8296
-        JSR 1386(A5)
-LBL_318:
+LBL_317:
         UNLK A6
         RTS
         ; func smokeCheck  (JT slot 202)

@@ -12,14 +12,17 @@ import (
 	"clarus/internal/claruscboot"
 )
 
-// wantModuleCounts mirrors clarusc/bake.cla's bakeModuleList: 20 modules
+// wantModuleCounts mirrors clarusc/bake.cla's bakeModuleList: 22 modules
 // for the 68k lane (17 shared + conn.cla + conn_68k.cla + native.cla --
 // serial-connection phase Task 6 joined conn.cla + the per-lane
 // conn_68k.cla waist to the 68k lane's own unconditional full-superset
-// splice), 17 for the c lane (same 17 shared; conn.cla/conn_c.cla stay
-// usesConn-gated on that lane, so they're never part of its own
-// unconditional bake module list at all).
-var wantModuleCounts = map[string]int{"68k": 20, "c": 17}
+// splice -- + fileh.cla + fileh_68k.cla, binary-files phase Task 6
+// joining the same pair to the same unconditional splice), 17 for the c
+// lane (same 17 shared; conn.cla/conn_c.cla and fileh.cla/fileh_c.cla
+// both stay usage-gated -- usesConn/usesFileh respectively -- on that
+// lane, so neither pair is ever part of its own unconditional bake
+// module list at all).
+var wantModuleCounts = map[string]int{"68k": 22, "c": 17}
 var wantLaneTag = map[string]int{"68k": 0, "c": 1}
 
 // TestBakeTwiceIdentical asserts bake-twice-byte-identical (the design

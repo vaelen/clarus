@@ -436,6 +436,16 @@ func bakeModuleList(lane: int): list of string {
         // only ever splices it under want68k, and the bake generator
         // follows the exact same gate.
         mods.add("native.cla")
+        // filehandle (binary-files phase, Task 6): fileh.cla + fileh_68k.cla
+        // join the 68k lane's full superset unconditionally now, mirroring
+        // conn.cla/conn_68k.cla's own precedent just above --
+        // driveManifestSplice's own `if want68k` splice (drive.cla) is the
+        // source of truth this list mirrors. The host lane's fileh.cla+
+        // fileh_c.cla pair stays usesFileh-gated (drive.cla's own header
+        // comment) and so is deliberately absent from bkLaneC's own module
+        // list here, same as conn.cla/conn_c.cla always has been.
+        mods.add("fileh.cla")
+        mods.add("fileh_68k.cla")
     }
     return mods
 }
