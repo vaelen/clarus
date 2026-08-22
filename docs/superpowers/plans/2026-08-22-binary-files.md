@@ -266,6 +266,21 @@ git commit -m "feat: pagefile acceptance app (vDB-shaped pages, journal, crc16) 
 
 ---
 
+### Task 9b: Compiler hardening — coercion-temp release order in `return call(...)` (inserted 2026-08-22)
+
+Found by Task 5: when a `string` argument is implicitly coerced to a `text` parameter inside a call that is itself the operand of `return` (`return rtFoo(h, s)` where `rtFoo(h: int, t: text)`), lowering/cprint releases the coercion temp BEFORE the call consumes it (use-after-free on the host lane; the native lane needs the same audit). `runtime/clarus/fileh.cla` carries a marked workaround (`rtFhWriteAtStr`/`rtFhAppendStr` avoid the shape). Task 5's report ("TDD evidence" section) has the reproduction.
+
+**Files:**
+- Modify: `clarusc/lower.cla` and/or `clarusc/cprint.cla` (wherever the coercion temp's release is scheduled relative to the call — find the `lowCoerceStr`/temp-release path the report names), `clarusc/cg68k.cla` only if the native lane has the same ordering bug (prove it either way with the fixture below built via `scripts/build-68k.sh` and run on the suite lane if needed), `runtime/clarus/fileh.cla` (remove the workaround once the fix lands; the one-liner `return rtFhWriteAt(h, pos, s)` shape is the intended code).
+- Create: `testdata/run/ret_coerce_str_text.cla` (+ `.behavior`): a user `func takes(t: text): int { return t.count }` and `func via(s: string): int { return takes(s) }` called with a non-empty string; under `CLARUS_MEM_STRICT=1`/the leak-strict harness the use-after-free must be observable (read `internal/selfhost/behavior_test.go`'s `.leaks` handling) — assert the correct count AND no leak/no UAF.
+
+- [ ] **Step 1: Failing fixture** (RED under the strict harness or a visible wrong value).
+- [ ] **Step 2: Fix the release ordering** (the temp must live until after the call returns; mirror how a non-`return` call statement already orders it). Remove the `fileh.cla` workaround.
+- [ ] **Step 3: Prove both lanes** — behavior golden green; `scripts/build-68k.sh` the fixture and run it under the native lane (`internal/mactest` smoke or a one-off `LaunchAPPL` boot) if cg68k was touched; host core CLI `all` PASS; `go test ./internal/cg68k ./internal/emitui -count=1` (goldens: zero churn expected unless emitted C/asm ordering legitimately changes for existing fixtures — explain any churn; rebless only with proof).
+- [ ] **Step 4: Snapshot regen to the fixed point; T1; commit** — `fix: release string->text coercion temps after the call they feed (return-call use-after-free); drop fileh.cla workaround`.
+
+---
+
 ### Task 10: Close-out — snapshot regen, selfhost, reftest manifest, docs
 
 **Files:**
