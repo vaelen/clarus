@@ -7444,7 +7444,7 @@ static int32_t clar_fn_lowArgNeedsCopy(int32_t cv_e);
 static int32_t clar_fn_lowCallArgs(int32_t cv_argsHead, int32_t cv_sig, int32_t cv_isUserCall);
 static int32_t clar_fn_lowCall(int32_t cv_e);
 static int32_t clar_fn_lowMethodCall(int32_t cv_e, int32_t cv_fn);
-static int32_t clar_fn_lowRtCoerceArg(const clar_str_255 *cv_fnName, int32_t cv_paramIdx, int32_t cv_argAst);
+static int32_t clar_fn_lowCoerceTo(int32_t cv_targetType, int32_t cv_argAst);
 static int32_t clar_fn_lowConnMethod(int32_t cv_e, int32_t cv_fn, int32_t cv_ty, int32_t cv_xk);
 static int32_t clar_fn_lowFileHandleMethod(int32_t cv_e, int32_t cv_fn, int32_t cv_ty, int32_t cv_xk);
 static clar_rec_LowWidgetRecv clar_fn_lowWidgetRecv(int32_t cv_recvAst);
@@ -30095,16 +30095,13 @@ static int32_t clar_fn_lowMethodCall(int32_t cv_e, int32_t cv_fn) {
     return 0;
 }
 
-static int32_t clar_fn_lowRtCoerceArg(const clar_str_255 *cv_fnName, int32_t cv_paramIdx, int32_t cv_argAst) {
-    int32_t cv_symIdx;
-    cv_symIdx = 0;
+static int32_t clar_fn_lowCoerceTo(int32_t cv_targetType, int32_t cv_argAst) {
     int32_t cv___ret916;
     cv___ret916 = 0;
-    cv_symIdx = clar_fn_scopeLookup(cv_curScope, clar_fn_intern(&((*cv_fnName))));
     int32_t t1;
     t1 = clar_fn_lowExpr(cv_argAst);
     if (clar_aborting) goto bail;
-    return clar_fn_lowCoerceStr(clar_fn_lowType(clar_fn_funcSigParam(((*(clar_rec_Symbol*)rt_list_at(cv_symbols, (int32_t)(cv_symIdx)))).cv_sigIdx, cv_paramIdx)), t1);
+    return clar_fn_lowCoerceStr(cv_targetType, t1);
     bail:;
     return cv___ret916;
     return 0;
@@ -30138,7 +30135,7 @@ static int32_t clar_fn_lowConnMethod(int32_t cv_e, int32_t cv_fn, int32_t cv_ty,
         cv_args = cv_recv;
         cv_tail = clar_fn_irExprListAppend(cv_args, clar_fn_newIRIntConst(2, cv_irIntT));
         int32_t t3;
-        t3 = clar_fn_lowRtCoerceArg(&(clar_lit_908), 2, cv_argsHead);
+        t3 = clar_fn_lowCoerceTo(clar_fn_irStrType(255), cv_argsHead);
         if (clar_aborting) goto bail;
         clar_fn_irExprListAppend(cv_tail, t3);
         return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_908)), cv_args, cv_irVoidT);
@@ -30147,13 +30144,13 @@ static int32_t clar_fn_lowConnMethod(int32_t cv_e, int32_t cv_fn, int32_t cv_ty,
         cv_args = cv_recv;
         if (clar_fn_typeKind(clar_fn_exprTypeGet(cv_argsHead)) == 6) {
             int32_t t4;
-            t4 = clar_fn_lowRtCoerceArg(&(clar_lit_909), 1, cv_argsHead);
+            t4 = clar_fn_lowCoerceTo(cv_irTextT, cv_argsHead);
             if (clar_aborting) goto bail;
             clar_fn_irExprListAppend(cv_args, t4);
             return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_909)), cv_args, cv_irVoidT);
         }
         int32_t t5;
-        t5 = clar_fn_lowRtCoerceArg(&(clar_lit_910), 1, cv_argsHead);
+        t5 = clar_fn_lowCoerceTo(clar_fn_irStrType(255), cv_argsHead);
         if (clar_aborting) goto bail;
         clar_fn_irExprListAppend(cv_args, t5);
         return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_910)), cv_args, cv_irVoidT);
@@ -30234,13 +30231,13 @@ static int32_t clar_fn_lowFileHandleMethod(int32_t cv_e, int32_t cv_fn, int32_t 
         cv_tail = clar_fn_irExprListAppend(cv_args, t6);
         if (clar_fn_typeKind(clar_fn_exprTypeGet(cv_dataArg)) == 6) {
             int32_t t7;
-            t7 = clar_fn_lowRtCoerceArg(&(clar_lit_913), 2, cv_dataArg);
+            t7 = clar_fn_lowCoerceTo(cv_irTextT, cv_dataArg);
             if (clar_aborting) goto bail;
             clar_fn_irExprListAppend(cv_tail, t7);
             return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_913)), cv_args, cv_irBoolT);
         }
         int32_t t8;
-        t8 = clar_fn_lowRtCoerceArg(&(clar_lit_914), 2, cv_dataArg);
+        t8 = clar_fn_lowCoerceTo(clar_fn_irStrType(255), cv_dataArg);
         if (clar_aborting) goto bail;
         clar_fn_irExprListAppend(cv_tail, t8);
         return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_914)), cv_args, cv_irBoolT);
@@ -30250,13 +30247,13 @@ static int32_t clar_fn_lowFileHandleMethod(int32_t cv_e, int32_t cv_fn, int32_t 
         cv_args = cv_recv;
         if (clar_fn_typeKind(clar_fn_exprTypeGet(cv_dataArg)) == 6) {
             int32_t t9;
-            t9 = clar_fn_lowRtCoerceArg(&(clar_lit_915), 1, cv_dataArg);
+            t9 = clar_fn_lowCoerceTo(cv_irTextT, cv_dataArg);
             if (clar_aborting) goto bail;
             clar_fn_irExprListAppend(cv_args, t9);
             return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_915)), cv_args, cv_irBoolT);
         }
         int32_t t10;
-        t10 = clar_fn_lowRtCoerceArg(&(clar_lit_916), 1, cv_dataArg);
+        t10 = clar_fn_lowCoerceTo(clar_fn_irStrType(255), cv_dataArg);
         if (clar_aborting) goto bail;
         clar_fn_irExprListAppend(cv_args, t10);
         return clar_fn_newIRCallFn(clar_fn_intern(&(clar_lit_916)), cv_args, cv_irBoolT);

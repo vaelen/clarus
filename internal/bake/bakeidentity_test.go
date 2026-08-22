@@ -125,6 +125,73 @@ func TestBakePathByteIdentity(t *testing.T) {
 	}
 }
 
+// TestRtbakeConnFilehByteIdentity (binary-files phase, Task 9c) is the
+// T1-speed regression for the bug Task 10's own T2 run found:
+// `emit68k --rtbake` crashed clarusc (`runtime error: list index out of
+// range`) for ANY program calling a `connection` or `filehandle` method,
+// because `lower.cla`'s old `lowRtCoerceArg` looked up the target
+// runtime function's param type by NAME through the checker's symbol
+// table at lowering time -- a table `--rtbake` never populates for baked
+// runtime functions (it skips their parse+check for performance). Fixed
+// by `lowCoerceTo`, which takes the statically-known target IR type
+// directly instead of looking anything up. This fixture exercises BOTH
+// types and, between them, every one of lowConnMethod's/
+// lowFileHandleMethod's seven lowCoerceTo call sites (open with a string
+// spec; send with a string arg and a text arg; writeAt with a text arg
+// and a string arg; append with a text arg and a string arg) -- unlike
+// TestBakePathByteIdentity's own cg68kFixtures slice, none of which
+// declares a `connection` or `filehandle`. Runs under plain `go test
+// ./internal/bake` (NOT behind CLARUS_BAKE_FULL), so T1 catches this
+// class next time, per the controller ruling on this bug.
+func TestRtbakeConnFilehByteIdentity(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+
+	fixturePath := filepath.Join(dir, "connfileh.cla")
+	src := `var conn: connection
+
+on App.startCLI(args: list of string) {
+    var fh: filehandle
+    var t: text
+
+    conn.open(serial "modem:9600")
+    conn.send("str payload")
+    t = "text payload"
+    conn.send(t)
+    conn.close()
+
+    fh = file.create("scratch.dat", "TEXT", "CLAR")
+    fh.writeAt(0, "str payload")
+    fh.writeAt(20, t)
+    fh.append("str tail")
+    fh.append(t)
+    fh.close()
+    quit 0
+}
+`
+	if err := os.WriteFile(fixturePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcDir := filepath.Join(dir, "src-out")
+	bakeDir := filepath.Join(dir, "bake-out")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(bakeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	srcOut := filepath.Join(srcDir, "connfileh.bin")
+	bakeOut := filepath.Join(bakeDir, "connfileh.bin")
+	srcData := runEmit68k(t, exe, fixturePath, srcOut, "")
+	bakeData := runEmit68k(t, exe, fixturePath, bakeOut, bakePath)
+	if !bytes.Equal(srcData, bakeData) {
+		t.Fatalf("connfileh.cla: --rtbake fork (%d bytes) != from-source fork (%d bytes)", len(bakeData), len(srcData))
+	}
+}
+
 // TestRtbakeCorruptStampRefused proves the loader refuses a bake whose
 // stamp doesn't match the loading compiler's own recomputed hash: clear
 // diagnostic, nonzero exit -- this task's open question (a)'s refusal
@@ -1052,7 +1119,7 @@ func TestRtbakeTestapiManifestOnlyIncludeParity(t *testing.T) {
 // is asserted to match, full stop -- a clean oracle needs no exceptions.
 var cg68kAllFixtures = []string{
 	"abort_bake.cla", "arc.cla", "argmat_intr.cla", "argmat_nested.cla", "arith.cla", "arr_whole_assign.cla",
-	"bigtmp_ceiling.cla", "bounce.cla", "callback.cla", "calls.cla", "clear_deep.cla",
+	"bigtmp16.cla", "bounce.cla", "callback.cla", "calls.cla", "clear_deep.cla",
 	"control.cla", "enums.cla", "gapclose3.cla", "globals.cla", "inline_a5.cla", "mutrec.cla",
 	"peep_clr.cla", "peep_pushpop.cla", "peep_quick.cla", "peep_shuffle.cla", "recs.cla",
 	"regnamed.cla", "smalltmp_ceiling.cla", "smoke.cla", "strcontainers.cla", "strs.cla",

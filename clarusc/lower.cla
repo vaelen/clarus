@@ -1379,21 +1379,39 @@ func lowMethodCall(e: int, fn: int): int {
     return -1
 }
 
-// lowRtCoerceArg reads target Clarus function fnName's own DECLARED
-// param type back off its checker-registered signature (scopeLookup +
-// sigIdx -- the same source lowCallArgs' own per-arg loop reads) and
-// coerces argAst's lowered value against it via lowCoerceStr -- the same
-// per-arg treatment an ordinary user call gets, just indexed by hand
-// since a connection call's real arg list is `recv` (the receiver's own
-// lowered value -- a general expression, the 1-based handle, not
-// necessarily a constant) and possibly a transport tag PREPENDED ahead
-// of the one AST argument the user actually wrote, not a straight
-// lowering of callArgsHead(e).
-func lowRtCoerceArg(fnName: string, paramIdx: int, argAst: int): int {
-    var symIdx: int
-
-    symIdx = scopeLookup(curScope, intern(fnName))
-    return lowCoerceStr(lowType(funcSigParam(symbols[symIdx].sigIdx, paramIdx)), lowExpr(argAst))
+// lowCoerceTo coerces argAst's lowered value against targetType via
+// lowCoerceStr -- the same per-arg treatment an ordinary user call gets,
+// just indexed by hand since a connection/filehandle call's real arg
+// list is `recv` (the receiver's own lowered value -- a general
+// expression, the 1-based handle, not necessarily a constant) and
+// possibly a transport tag PREPENDED ahead of the one AST argument the
+// user actually wrote, not a straight lowering of callArgsHead(e).
+//
+// Task 9c (binary-files phase, 2026-08-22): this used to be
+// lowRtCoerceArg(fnName, paramIdx, argAst), which read the target
+// runtime function's DECLARED param type back off its CHECKER-
+// registered signature (scopeLookup(curScope, intern(fnName)) +
+// symbols[symIdx].sigIdx). That only worked from-source, where the
+// runtime module's own declarations get parsed and checked normally --
+// under `--rtbake` (lowResumeFromBake), the runtime's parse+check is
+// skipped entirely for performance, so the checker's symbol table was
+// never populated for baked runtime functions, scopeLookup returned -1,
+// and `symbols[-1]` crashed (`runtime error: list index out of range`)
+// for ANY program calling a `connection`/`filehandle` method under the
+// baked-IR fast path -- found by Task 10's own T2 run
+// (`internal/bake`'s `CLARUS_BAKE_FULL=1 TestBakeFullCorpusSuiteCore`),
+// root-caused via lldb, fixed here by every call site below passing its
+// OWN statically-known target type directly instead: the coercion
+// target IS fixed at compile time (lowConnMethod/lowFileHandleMethod
+// already choose the `*Text` vs `*Str` runtime twin BY the argument's
+// checked kind, and every one of the seven rtConn*/rtFh* functions this
+// fed takes exactly one `text` or bare `string` (capacity 255) payload
+// param -- see each call site's own comment for the exact function/param
+// it names). No lowering-time dependency on the checker's runtime
+// symbols remains anywhere in this file (grepped:
+// `scopeLookup([^)]*intern("` matches nothing else in clarusc/*.cla).
+func lowCoerceTo(targetType: int, argAst: int): int {
+    return lowCoerceStr(targetType, lowExpr(argAst))
 }
 
 // lowConnMethod dispatches `connExpr.open/send/close(...)` to the matching
@@ -1432,16 +1450,19 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
     if name == "open" and callTransport(e) == 2 {
         args = recv
         tail = irExprListAppend(args, newIRIntConst(2, irIntT))
-        irExprListAppend(tail, lowRtCoerceArg("rtConnOpen", 2, argsHead))
+        // rtConnOpen(h: int, transport: int, spec: string) -- 3rd param.
+        irExprListAppend(tail, lowCoerceTo(irStrType(255), argsHead))
         return newIRCallFn(intern("rtConnOpen"), args, irVoidT)
     }
     if name == "send" {
         args = recv
         if typeKind(exprTypeGet(argsHead)) == TyText {
-            irExprListAppend(args, lowRtCoerceArg("rtConnSendText", 1, argsHead))
+            // rtConnSendText(h: int, t: text) -- 2nd param.
+            irExprListAppend(args, lowCoerceTo(irTextT, argsHead))
             return newIRCallFn(intern("rtConnSendText"), args, irVoidT)
         }
-        irExprListAppend(args, lowRtCoerceArg("rtConnSendStr", 1, argsHead))
+        // rtConnSendStr(h: int, s: string) -- 2nd param.
+        irExprListAppend(args, lowCoerceTo(irStrType(255), argsHead))
         return newIRCallFn(intern("rtConnSendStr"), args, irVoidT)
     }
     if name == "close" {
@@ -1483,7 +1504,7 @@ func lowFileHandleMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
     argsHead = callArgsHead(e)
 
     if name == "readAt" {
-        // out is passed straight through with no lowRtCoerceArg call --
+        // out is passed straight through with no lowCoerceTo call --
         // rtFhReadAt's own `out` param is `ptr` (it fills the SAME
         // storage in place, natFileReadText's own established shape;
         // see fileh.cla's header comment), so no Str->Text coercion ever
@@ -1504,20 +1525,24 @@ func lowFileHandleMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
         args = recv
         tail = irExprListAppend(args, lowExpr(posArg))
         if typeKind(exprTypeGet(dataArg)) == TyText {
-            irExprListAppend(tail, lowRtCoerceArg("rtFhWriteAt", 2, dataArg))
+            // rtFhWriteAt(h: int, pos: int, t: text) -- 3rd param.
+            irExprListAppend(tail, lowCoerceTo(irTextT, dataArg))
             return newIRCallFn(intern("rtFhWriteAt"), args, irBoolT)
         }
-        irExprListAppend(tail, lowRtCoerceArg("rtFhWriteAtStr", 2, dataArg))
+        // rtFhWriteAtStr(h: int, pos: int, s: string) -- 3rd param.
+        irExprListAppend(tail, lowCoerceTo(irStrType(255), dataArg))
         return newIRCallFn(intern("rtFhWriteAtStr"), args, irBoolT)
     }
     if name == "append" {
         dataArg = argsHead
         args = recv
         if typeKind(exprTypeGet(dataArg)) == TyText {
-            irExprListAppend(args, lowRtCoerceArg("rtFhAppend", 1, dataArg))
+            // rtFhAppend(h: int, t: text) -- 2nd param.
+            irExprListAppend(args, lowCoerceTo(irTextT, dataArg))
             return newIRCallFn(intern("rtFhAppend"), args, irBoolT)
         }
-        irExprListAppend(args, lowRtCoerceArg("rtFhAppendStr", 1, dataArg))
+        // rtFhAppendStr(h: int, s: string) -- 2nd param.
+        irExprListAppend(args, lowCoerceTo(irStrType(255), dataArg))
         return newIRCallFn(intern("rtFhAppendStr"), args, irBoolT)
     }
     if name == "size" {
