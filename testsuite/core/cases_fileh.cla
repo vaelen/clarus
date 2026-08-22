@@ -1,0 +1,129 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_fileh.cla (2026-08-22 binary-files spec, Task 5): the `filehandle`
+// type's surface, restated as one tkFail-detail TestResult case (the same
+// caseX(): TestResult + tkFail/tkPass shape cases_textbinary.cla uses) so
+// it runs in-process on both the host CLI and the native suite boot
+// (Task 6). Mirrors testdata/run/fileh_basic.cla's assertions EXCEPT the
+// host-only zero-fill-on-grow region (spec %3.1: unspecified on the Mac --
+// that assertion stays in the host-only .cla fixture, not here), and
+// stale-after-close, which is asserted conditionally (C-fd semantics: a
+// stale handle may alias a reused fd, so a nonzero size() result there is
+// not itself a failure -- only a REAL -1 is checked against lastError).
+
+func caseFileHandleRW(): TestResult {
+    var f: filehandle
+    var g: filehandle
+    var t: text
+    var out: text
+    var db: FhDB
+    var ok: bool
+    var stale: filehandle
+
+    f = file.create("core_fileh_basic.dat", "TEXT", "CLRS")
+    if f == nil {
+        return tkFail("FileHandleRW", "create failed")
+    }
+
+    if not f.writeAt(0, "hello") {
+        return tkFail("FileHandleRW", "writeAt(0) failed")
+    }
+
+    t = ""
+    t.append('t')
+    t.append('e')
+    t.append('s')
+    t.append('t')
+    if not f.writeAt(512, t) {
+        return tkFail("FileHandleRW", "writeAt(512) failed")
+    }
+
+    if f.size() != 516 {
+        return tkFail("FileHandleRW", "size after far write wrong")
+    }
+
+    ok = f.readAt(0, 5, out)
+    if not ok or out != "hello" {
+        return tkFail("FileHandleRW", "readAt(0,5) wrong")
+    }
+
+    ok = f.readAt(512, 100, out)
+    if not ok or out.length != 4 or out != "test" {
+        return tkFail("FileHandleRW", "readAt(512,100) short-read-at-EOF wrong")
+    }
+
+    ok = f.readAt(600, 10, out)
+    if not ok or out.length != 0 {
+        return tkFail("FileHandleRW", "readAt(600,10) past-EOF wrong")
+    }
+
+    if not f.append("!") or f.size() != 517 {
+        return tkFail("FileHandleRW", "append wrong")
+    }
+
+    if not f.setSize(8) or f.size() != 8 {
+        return tkFail("FileHandleRW", "setSize(8) truncate wrong")
+    }
+
+    // Growing again: only size() is checked here -- the grown region's
+    // CONTENTS are lane-specific (zero on the host, unspecified on the
+    // Mac, spec %3.1), so this case must not assert them (it runs on
+    // both lanes, Task 6).
+    if not f.setSize(1024) or f.size() != 1024 {
+        return tkFail("FileHandleRW", "setSize(1024) grow wrong")
+    }
+
+    if not f.flush() {
+        return tkFail("FileHandleRW", "flush failed")
+    }
+
+    stale = f
+    f.close()
+
+    f = file.open("core_fileh_basic.dat")
+    if f == nil {
+        return tkFail("FileHandleRW", "reopen failed")
+    }
+    ok = f.readAt(0, 5, out)
+    if not ok or out != "hello" {
+        return tkFail("FileHandleRW", "reopen readAt wrong")
+    }
+    f.close()
+
+    // A record holding two handles, and a handle passed to a function.
+    db.dat = file.create("core_fileh_dat.dat", "TEXT", "CLRS")
+    db.jnl = file.create("core_fileh_jnl.dat", "TEXT", "CLRS")
+    if not fhPageWrite(db.dat, 0, "page0") {
+        return tkFail("FileHandleRW", "pageWrite failed")
+    }
+    db.dat.close()
+    db.jnl.close()
+
+    // Stale-after-close: `stale` is the SAME handle number `f` held right
+    // before close() -- C-fd semantics (documented, not guarded): the
+    // number may have since been reused by an unrelated open elsewhere in
+    // the process, so this only asserts lastError when size() itself
+    // actually returned -1.
+    if stale.size() == -1 {
+        if lastError.message != "size failed" {
+            return tkFail("FileHandleRW", "stale size() lastError wrong")
+        }
+    }
+
+    g = file.open("core_fileh_does_not_exist.dat")
+    if g != nil or lastError.message != "open failed" {
+        return tkFail("FileHandleRW", "open of nonexistent file wrong")
+    }
+
+    return tkPass("FileHandleRW")
+}
+
+func fhPageWrite(f: filehandle, n: int, t: text): bool {
+    return f.writeAt(n, t)
+}
+
+record FhDB {
+    dat: filehandle
+    jnl: filehandle
+}

@@ -120,6 +120,14 @@ enum TypeKind {
     // last, after TySortedMap; ordering among the other kinds is not
     // load-bearing.
     TyIntMap
+
+    // TyFileHandle (2026-08-22 binary-files spec, Task 5) is `filehandle`:
+    // a resource kind like TyConnection (nil-comparable, runtime repr is a
+    // 1-based int handle, 0 = nil) -- see check.cla's isResourceKind and
+    // fileHandleT. Appended last so every earlier kind number (including
+    // TyConnection's 13) stays stable; ordering among the other kinds is
+    // not load-bearing.
+    TyFileHandle
 }
 
 // TypeInfo is one entry in typeArena. Only the fields relevant to `kind`

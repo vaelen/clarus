@@ -1,0 +1,258 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fileh.cla: the shared `filehandle` runtime (2026-08-22 binary-files
+// spec %3.1/%4.2, Task 5). A `filehandle` value IS an ordinary int (the
+// lane's 1-based device handle, 0 = nil -- lower.cla's lowTypeAt
+// TyFileHandle case), so every entry point here takes that int straight
+// from the caller with no slot table of its own (unlike conn.cla's fixed
+// rtConnMax array -- there is no per-program cap on open filehandles,
+// and no event/pump machinery: every operation here is synchronous,
+// spec %3.1's own "no events, no pump").
+//
+// Lane-neutral: every device-facing operation goes through the nine
+// rtFhDev* functions (fileh_c.cla now, fileh_68k.cla in Task 6 -- same
+// names, one file spliced per lane, the conn.cla/conn_c.cla precedent).
+// rtFhDevReadAt/rtFhDevWriteAt take a raw `ptr` buffer + byte count, not a
+// `text` -- deliberately dumb, matching conn_c.cla's own
+// `rtConnDevWrite(slot, p: ptr, n: int)` shape, so this module (not the
+// lane) owns every bit of `text` marshaling:
+//   - write/append (rtFhWriteRaw below) only ever READS `t` (t.length,
+//     t[i], the same per-byte marshal-into-a-scratch-ptr idiom
+//     rtConnSendText uses for the identical reason -- see that function's
+//     own comment), so `t` stays a genuine checked `text` parameter
+//     throughout, which is what lets rtFhWriteAtStr's one-liner reuse the
+//     string->text implicit conversion (Ch3: "a string value may be used
+//     wherever a text is expected") the same way rtConnSendStr does.
+//   - read (rtFhReadAt) REPLACES `out`'s contents in place, which a
+//     `text` PARAMETER cannot do via ordinary assignment (`out = ...`)
+//     inside a function -- an assignment REBINDS the local parameter to
+//     a fresh value, it does not reach back into the caller's own
+//     storage (only mutating the SAME underlying box does, e.g.
+//     `.append`, or a field write through the box's own overlay). So
+//     `out` here -- and rtFhDevReadAt's own `out` -- is `ptr`: the raw
+//     box address, grown and filled in place via rtTextGrow/
+//     TextHandleDeref/RtText field writes, the EXACT shape
+//     runtime/clarus/native.cla's natFileReadText already established for
+//     the identical "fill an existing text in place" problem
+//     (`natFileReadText(path: ptr, out: ptr): bool`). The call from
+//     lowFileHandleMethod (lower.cla) passes the user's real `text`
+//     argument here directly -- an unchecked, lowering-time-only
+//     newIRCallFn construction (not a checked Clarus-to-Clarus call), so
+//     the Clarus type system's normal text/ptr kind mismatch never
+//     applies at that one call site; text and ptr are bit-identical
+//     4-byte values in the emitted C (`rt_text *` implicitly converts to
+//     `void *` and back, the same "cosmetic" declared-type looseness
+//     native.cla's own nat_SerFileReadTextInto comment documents for the
+//     clause-less-extern boundary, generalized here to a plain lowering
+//     call).
+//
+// Error principle (spec %4.2's binding table, restated in the Task 5
+// brief): `h == 0` on any entry but rtFhClose is a bug, not weather --
+// rtPanic("use of nil filehandle"), never staged. A negative pos/count/n
+// is likewise a bug -- rtPanic("filehandle position out of range").
+// Every OTHER failure (open/create/read/write/size/setSize/flush) is
+// weather: rtSetLastErr(code, msg) with code = the lane's own OS error
+// (rtFhDevLastOSErr()) and msg one of the seven fixed strings the spec
+// pins, then a false/-1/nil return -- never a panic, and never an event
+// (spec %3.1: "Every operation is synchronous").
+
+func rtFhOpen(path: string): int {
+    var h: int
+
+    h = rtFhDevOpen(path)
+    if h == 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "open failed")
+    }
+    return h
+}
+
+// rtFhCreate: type/creator are mandatory compile-time-literal 4-character
+// strings (lowFileCall's own lowCheckLiteral4CCArg, exactly like
+// file.writeText) -- stamped on the Mac lane, ignored on the host (the
+// device layer's own contract, matching writeText's own C-lane behavior).
+func rtFhCreate(path: string, ftype: string, fcreator: string): int {
+    var h: int
+
+    h = rtFhDevCreate(path, ftype, fcreator)
+    if h == 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "create failed")
+    }
+    return h
+}
+
+// rtFhReadAt: `out` is the raw box address (see this file's header
+// comment) -- rtFhDevReadAt owns growing it to `count` bytes and setting
+// its length to however many bytes actually came back (a short read at
+// EOF is not an error, spec %3.1). A negative got is the only I/O-error
+// signal; got >= 0 (including 0, "read starting at or past EOF") is
+// success.
+func rtFhReadAt(h: int, pos: int, count: int, out: ptr): bool {
+    var got: int
+
+    if h == 0 {
+        rtPanic("use of nil filehandle")
+    }
+    if pos < 0 or count < 0 {
+        rtPanic("filehandle position out of range")
+    }
+    got = rtFhDevReadAt(h, pos, out, count)
+    if got < 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "read failed")
+        return false
+    }
+    return true
+}
+
+// rtFhWriteRaw is writeAt/append's shared marshal-and-call body: `t` is
+// read-only here (t.length/t[i], never grown or mutated), so a plain
+// per-byte copy into a scratch `ptr` -- exactly rtConnSendText's own
+// bounce-buffer idiom, see this file's header comment -- is both correct
+// and simplest; a bulk profile hot enough to matter would add a
+// rtTextRawPtr-style bulk primitive instead of this loop (ponytail: plain
+// byte-at-a-time is fine at file-page rates, not a hot path this phase).
+// pos == -1 means "at current EOF" (rtFhAppend's own sentinel, matching
+// the lane waist's own pos contract) -- deliberately NOT range-checked
+// here (that -1 is internal, not user input; rtFhWriteAt/rtFhAppend below
+// are the two checked entry points).
+func rtFhWriteRaw(h: int, pos: int, t: text): bool {
+    var scratch: ptr
+    var n: int
+    var i: int
+    var err: int
+
+    n = t.length
+    if n == 0 {
+        return true
+    }
+    scratch = TextNewPtr(n)
+    if scratch == ptr(0) {
+        rtPanic("out of memory")
+    }
+    i = 0
+    while i < n {
+        pokeb(scratch + i, int(t[i]))
+        i = i + 1
+    }
+    err = rtFhDevWriteAt(h, pos, scratch, n)
+    TextDisposePtr(scratch)
+    if err != 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "write failed")
+        return false
+    }
+    return true
+}
+
+// rtFhWriteAt: a write past EOF extends the file (spec %3.1); `pos < 0`
+// is the one contract violation writeAt itself guards (rtFhAppend's own
+// internal pos == -1 sentinel goes straight to rtFhWriteRaw, bypassing
+// this check).
+func rtFhWriteAt(h: int, pos: int, t: text): bool {
+    if h == 0 {
+        rtPanic("use of nil filehandle")
+    }
+    if pos < 0 {
+        rtPanic("filehandle position out of range")
+    }
+    return rtFhWriteRaw(h, pos, t)
+}
+
+// rtFhWriteAtStr: the implicit string->text conversion (Ch3) rtConnSendStr
+// relies on at conn.cla:288-290 -- `s` assigns straight into rtFhWriteAt's
+// `t: text` parameter, no separate marshal path to maintain. NOT written
+// as the one-liner `return rtFhWriteAt(h, pos, s)` (what rtConnSendStr's
+// own VOID equivalent gets away with) -- a real, reproduced cprint/lower
+// bug: when a string->text (ITextOfStr) BIRTH coercion is the return
+// expression's own call argument, the generated C releases the freshly
+// birthed text BEFORE the call that still needs it (`clar_fn_
+// rtTextRelease(t1); return clar_fn_rtFhWriteAt(..., t1);` -- a
+// release-then-use, i.e. a use-after-free), because rtConnSendStr's void
+// return never exercises this path. Storing the result in a local first
+// (`ok = rtFhWriteAt(...); return ok`) sidesteps it -- the coercion still
+// happens inside that assignment statement, but nothing about ITS OWN
+// lowering conflates "release this statement's temporaries" with "the
+// enclosing return's own value." Filed for a future compiler-bug task;
+// out of Task 5's scope to fix generally. rtFhAppendStr below carries the
+// identical workaround for the identical reason.
+func rtFhWriteAtStr(h: int, pos: int, s: string): bool {
+    var ok: bool
+    ok = rtFhWriteAt(h, pos, s)
+    return ok
+}
+
+// rtFhAppend: writes at the current EOF (pos == -1, the lane waist's own
+// "at EOF" sentinel) -- no size() query is ever involved, so append never
+// depends on the Mac GetEOF hardware question spec %4.2 flags for size().
+func rtFhAppend(h: int, t: text): bool {
+    if h == 0 {
+        rtPanic("use of nil filehandle")
+    }
+    return rtFhWriteRaw(h, -1, t)
+}
+
+func rtFhAppendStr(h: int, s: string): bool {
+    var ok: bool
+    ok = rtFhAppend(h, s)
+    return ok
+}
+
+// rtFhSize: the logical EOF, or -1 + lastError on error.
+func rtFhSize(h: int): int {
+    var n: int
+
+    if h == 0 {
+        rtPanic("use of nil filehandle")
+    }
+    n = rtFhDevSize(h)
+    if n < 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "size failed")
+    }
+    return n
+}
+
+// rtFhSetSize: growing zero-fills on the host, unspecified on the Mac
+// (spec %3.1, documented in the reference, not guarded here -- both
+// lanes' own rtFhDevSetSize decide their own fill behavior).
+func rtFhSetSize(h: int, n: int): bool {
+    var err: int
+
+    if h == 0 {
+        rtPanic("use of nil filehandle")
+    }
+    if n < 0 {
+        rtPanic("filehandle position out of range")
+    }
+    err = rtFhDevSetSize(h, n)
+    if err != 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "setSize failed")
+        return false
+    }
+    return true
+}
+
+// rtFhFlush: a durability barrier (Mac _FlushFile+_FlushVol; host fsync).
+func rtFhFlush(h: int): bool {
+    var err: int
+
+    if h == 0 {
+        rtPanic("use of nil filehandle")
+    }
+    err = rtFhDevFlush(h)
+    if err != 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "flush failed")
+        return false
+    }
+    return true
+}
+
+// rtFhClose: idempotent; closing a nil handle is a no-op (the one entry
+// point spec %3.1 exempts from the nil-panic rule). After close, every
+// OTHER copy of the value is stale with C-fd semantics (documented, not
+// guarded -- see the reference's own `filehandle` entry); the runtime
+// cannot reach back into a caller's other copies to clear them.
+func rtFhClose(h: int) {
+    if h == 0 {
+        return
+    }
+    rtFhDevClose(h)
+}

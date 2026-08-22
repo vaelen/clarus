@@ -381,6 +381,13 @@ func lowTypeAt(t: int, line: int, col: int): int {
         // through lowTypeAt (they all do).
         return irIntT
     }
+    case TyFileHandle {
+        // 2026-08-22 binary-files spec, Task 5: a `filehandle` value is
+        // likewise an ordinary int -- the 1-based device handle (0 = nil),
+        // same "every storage slot becomes real int storage" reasoning as
+        // TyConnection just above.
+        return irIntT
+    }
     case TyStr { return irStrType(typeN(t)) }
     case TyEnum { return irEnumType(typeNameIdx(t)) }
     case TyRec { return irRecType(typeNameIdx(t)) }
@@ -1347,6 +1354,15 @@ func lowMethodCall(e: int, fn: int): int {
         // method-call family handled below.
         return lowConnMethod(e, fn, ty, xk)
     }
+    if xk == TyFileHandle {
+        // Filehandle methods (2026-08-22 binary-files spec, Task 5): same
+        // shape/reasoning as the TyConnection branch just above --
+        // lowFileHandleMethod lowers the receiver itself (a `filehandle`
+        // is likewise an ordinary int value, lowTypeAt's TyFileHandle
+        // case), so must return before the generic `recv = lowExpr(...)`
+        // line below runs.
+        return lowFileHandleMethod(e, fn, ty, xk)
+    }
     recv = lowExpr(selectX(fn))
     if xk == TyStr or xk == TyText {
         return lowStringTextMethod(recv, xk == TyText, fn, callArgsHead(e), ty)
@@ -1363,7 +1379,7 @@ func lowMethodCall(e: int, fn: int): int {
     return -1
 }
 
-// lowConnCoerceArg reads target Clarus function fnName's own DECLARED
+// lowRtCoerceArg reads target Clarus function fnName's own DECLARED
 // param type back off its checker-registered signature (scopeLookup +
 // sigIdx -- the same source lowCallArgs' own per-arg loop reads) and
 // coerces argAst's lowered value against it via lowCoerceStr -- the same
@@ -1373,7 +1389,7 @@ func lowMethodCall(e: int, fn: int): int {
 // necessarily a constant) and possibly a transport tag PREPENDED ahead
 // of the one AST argument the user actually wrote, not a straight
 // lowering of callArgsHead(e).
-func lowConnCoerceArg(fnName: string, paramIdx: int, argAst: int): int {
+func lowRtCoerceArg(fnName: string, paramIdx: int, argAst: int): int {
     var symIdx: int
 
     symIdx = scopeLookup(curScope, intern(fnName))
@@ -1416,16 +1432,16 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
     if name == "open" and callTransport(e) == 2 {
         args = recv
         tail = irExprListAppend(args, newIRIntConst(2, irIntT))
-        irExprListAppend(tail, lowConnCoerceArg("rtConnOpen", 2, argsHead))
+        irExprListAppend(tail, lowRtCoerceArg("rtConnOpen", 2, argsHead))
         return newIRCallFn(intern("rtConnOpen"), args, irVoidT)
     }
     if name == "send" {
         args = recv
         if typeKind(exprTypeGet(argsHead)) == TyText {
-            irExprListAppend(args, lowConnCoerceArg("rtConnSendText", 1, argsHead))
+            irExprListAppend(args, lowRtCoerceArg("rtConnSendText", 1, argsHead))
             return newIRCallFn(intern("rtConnSendText"), args, irVoidT)
         }
-        irExprListAppend(args, lowConnCoerceArg("rtConnSendStr", 1, argsHead))
+        irExprListAppend(args, lowRtCoerceArg("rtConnSendStr", 1, argsHead))
         return newIRCallFn(intern("rtConnSendStr"), args, irVoidT)
     }
     if name == "close" {
@@ -1435,6 +1451,93 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
     // receiver kind) is what lowMethodCall's own fallback reports for
     // every OTHER unhandled receiver kind -- ty is the CALL's result
     // type, not the receiver's, and must not be substituted here.
+    lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
+    return -1
+}
+
+// lowFileHandleMethod dispatches `fExpr.readAt/writeAt/append/size/
+// setSize/flush/close(...)` to the matching rtFh* runtime call
+// (2026-08-22 binary-files spec, Task 5) -- same shape as lowConnMethod
+// just above: a `filehandle` is an ordinary int value (lowTypeAt's
+// TyFileHandle case), so the receiver lowers via plain lowExpr and its
+// resulting int (1-based device handle, 0 = nil) is passed straight
+// through; the runtime (fileh.cla) does its own `h == 0`/negative-pos
+// checks. writeAt/append pick the text or string entry point by the
+// argument's OWN checked type, exactly like lowConnMethod's "send" arm
+// (typeKind(exprTypeGet(arg)) == TyText).
+func lowFileHandleMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
+    var recvExpr: int
+    var recv: int
+    var name: string
+    var argsHead: int
+    var posArg: int
+    var countArg: int
+    var outArg: int
+    var dataArg: int
+    var args: int
+    var tail: int
+
+    recvExpr = selectX(fn)
+    recv = lowExpr(recvExpr)
+    name = poolGet(selectName(fn))
+    argsHead = callArgsHead(e)
+
+    if name == "readAt" {
+        // out is passed straight through with no lowRtCoerceArg call --
+        // rtFhReadAt's own `out` param is `ptr` (it fills the SAME
+        // storage in place, natFileReadText's own established shape;
+        // see fileh.cla's header comment), so no Str->Text coercion ever
+        // applies here (lowCoerceStr would be a no-op against a ptr
+        // target anyway).
+        posArg = argsHead
+        countArg = exprNext(posArg)
+        outArg = exprNext(countArg)
+        args = recv
+        tail = irExprListAppend(args, lowExpr(posArg))
+        tail = irExprListAppend(tail, lowExpr(countArg))
+        irExprListAppend(tail, lowExpr(outArg))
+        return newIRCallFn(intern("rtFhReadAt"), args, irBoolT)
+    }
+    if name == "writeAt" {
+        posArg = argsHead
+        dataArg = exprNext(posArg)
+        args = recv
+        tail = irExprListAppend(args, lowExpr(posArg))
+        if typeKind(exprTypeGet(dataArg)) == TyText {
+            irExprListAppend(tail, lowRtCoerceArg("rtFhWriteAt", 2, dataArg))
+            return newIRCallFn(intern("rtFhWriteAt"), args, irBoolT)
+        }
+        irExprListAppend(tail, lowRtCoerceArg("rtFhWriteAtStr", 2, dataArg))
+        return newIRCallFn(intern("rtFhWriteAtStr"), args, irBoolT)
+    }
+    if name == "append" {
+        dataArg = argsHead
+        args = recv
+        if typeKind(exprTypeGet(dataArg)) == TyText {
+            irExprListAppend(args, lowRtCoerceArg("rtFhAppend", 1, dataArg))
+            return newIRCallFn(intern("rtFhAppend"), args, irBoolT)
+        }
+        irExprListAppend(args, lowRtCoerceArg("rtFhAppendStr", 1, dataArg))
+        return newIRCallFn(intern("rtFhAppendStr"), args, irBoolT)
+    }
+    if name == "size" {
+        return newIRCallFn(intern("rtFhSize"), recv, irIntT)
+    }
+    if name == "setSize" {
+        args = recv
+        irExprListAppend(args, lowExpr(argsHead))
+        return newIRCallFn(intern("rtFhSetSize"), args, irBoolT)
+    }
+    if name == "flush" {
+        return newIRCallFn(intern("rtFhFlush"), recv, irBoolT)
+    }
+    if name == "close" {
+        return newIRCallFn(intern("rtFhClose"), recv, irVoidT)
+    }
+    // xk (this function's own 4th param) is what lowMethodCall's own
+    // fallback reports for every OTHER unhandled receiver kind -- ty is
+    // the CALL's result type, not the receiver's, and must not be
+    // substituted here (matches lowConnMethod's own fallback comment).
     lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
     return -1
 }
@@ -1583,6 +1686,19 @@ func lowFileCall(e: int, fn: int, ty: int): int {
         return newIRIntr(IFileWriteRes(), lowArgs(callArgsHead(e)), ty)
     } else if nm == "name" {
         return newIRIntr(IFileName(), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "open" {
+        // file.open(path) (2026-08-22 binary-files spec, Task 5): unlike
+        // readText/writeText/etc. above, `filehandle` gets a real spliced
+        // runtime module (fileh.cla/fileh_c.cla) rather than a cprint/
+        // cg68k-hardwired intrinsic, so this is an ordinary runtime CALL
+        // (newIRCallFn), not newIRIntr.
+        return newIRCallFn(intern("rtFhOpen"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "create" {
+        // file.create(path, type, creator) -- same mandatory-literal-4CC
+        // rule as writeText above (lowCheckLiteral4CCArg).
+        lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 1), "file.create type")
+        lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 2), "file.create creator")
+        return newIRCallFn(intern("rtFhCreate"), lowArgs(callArgsHead(e)), ty)
     } else if nm == "save" or nm == "load" {
         dataAst = exprNext(callArgsHead(e))
         xt = exprTypeGet(dataAst)

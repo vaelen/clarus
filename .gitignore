@@ -20,3 +20,6 @@ internal/mactest/uiprobe/build/
 /core_mixed_scalar.dat
 /core_ser_name.txt
 /core_ser_roundtrip.txt
+/core_fileh_basic.dat
+/core_fileh_dat.dat
+/core_fileh_jnl.dat

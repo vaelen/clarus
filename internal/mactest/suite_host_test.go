@@ -126,6 +126,9 @@ var coreCLIFiles = []string{
 	// runner.cla unconditionally calls caseTextBinary()/caseCrc16()/
 	// caseIntToStr().
 	filepath.Join("testsuite", "core", "cases_textbinary.cla"),
+	// binary-files phase Task 5: cases_fileh.cla MUST be here -- runner.cla
+	// unconditionally calls caseFileHandleRW().
+	filepath.Join("testsuite", "core", "cases_fileh.cla"),
 }
 
 // coreCLIHostFiles/absFiles/BuildCoreCLIHost/RunCoreCLIHost (coreCLIFiles +

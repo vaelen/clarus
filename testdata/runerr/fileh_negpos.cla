@@ -1,0 +1,18 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fileh_negpos.cla (2026-08-22 binary-files spec, Task 5): a negative
+// pos/count is a runtime contract violation (spec %3.1: "pos < 0 or
+// count < 0 is a runtime error"), not weather -- readAt's own guard in
+// runtime/clarus/fileh.cla panics "filehandle position out of range"
+// before the device layer ever sees it. h is a real, freshly-created
+// handle (not nil) so the nil check doesn't fire first and mask this
+// one.
+on App.launch {
+    var f: filehandle
+    var out: text
+
+    f = file.create("fileh_negpos.dat", "TEXT", "CLRS")
+    f.readAt(-1, 4, out)
+    alert("unreachable")
+}

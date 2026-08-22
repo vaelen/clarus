@@ -79,6 +79,7 @@ func buildCoreCLI(t *testing.T) string {
 		filepath.Join(root, "testsuite", "core", "cases_errret.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_evalorder.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_textbinary.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_fileh.cla"),
 		filepath.Join(root, "testsuite", "core", "cli.cla"),
 	}
 	args := append([]string{"emit", "--rtdir", rtDir, "-o", outC}, files...)
@@ -216,6 +217,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"TextBinary",
 			"Crc16",
 			"IntToStr",
+			"FileHandleRW",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

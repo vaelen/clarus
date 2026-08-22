@@ -47,6 +47,13 @@ var connectionT: int
 var listenerT: int
 var serviceBrowserT: int
 
+// fileHandleT (2026-08-22 binary-files spec, Task 5) is the singleton
+// `filehandle` type -- same TyFileHandle-resource-kind shape connectionT
+// above already established. Reallocated in checkReset (typesReset empties
+// typeArena each run), same "stale index here would silently alias" hazard
+// this file's own header comment already warns about for connectionT.
+var fileHandleT: int
+
 // Built-in-name index cache, pre-interned once per compile and cached in
 // module globals (parse.cla's cwInit pattern -- see its own doc comment
 // for why this can't be a plain global initializer): every hot-path spot
@@ -543,6 +550,7 @@ var connectionMethods: map of int
 var listenerMethods: map of int
 var serviceBrowserMethods: map of int
 var fileFuncs: map of int
+var filehandleMethods: map of int
 var canvasMethods: map of int
 var canvasProperties: map of int
 
@@ -745,6 +753,21 @@ var usesDateTime: bool
 // (non-conn) program's manifest, and thus its IR indices and goldens,
 // stays byte-identical. Reset alongside its siblings in checkReset().
 var usesConn: bool
+
+// usesFileh (2026-08-22 binary-files spec, Task 5) is true once the
+// program under check either names the `filehandle` type ANYWHERE a type
+// may appear (resolveType's TxNamed arm sets it -- unlike usesConn above,
+// this is not restricted to global vars: a record field, a param, or a
+// function return type must ALSO pull in the runtime, or a program that
+// only ever passes a `filehandle` around never gets the module spliced
+// and fails to link, the exact gap Task 4 documented for connection) OR
+// calls `file.open`/`file.create` (checkMethodCall's `x == file` arm sets
+// it there, since a program that never names the TYPE but still calls
+// `open`/`create` -- e.g. immediately discarding the result -- needs the
+// runtime too). Read by drive.cla's manifest splice (fileh.cla +
+// fileh_c.cla, host lane only, same usage-gated shape as usesConn).
+// Reset alongside its siblings in checkReset().
+var usesFileh: bool
 
 // lowUsesAbort (attempt-abort phase Task 2, design doc %3.1/%3.3;
 // Ruling A2/A3): true once the program under check contains an `attempt`
@@ -1140,6 +1163,9 @@ func typeName(t: int): string {
     case TyServiceBrowser {
         return "serviceBrowser"
     }
+    case TyFileHandle {
+        return "filehandle"
+    }
     case TyEnum {
         return poolGet(typeNameIdx(t))
     }
@@ -1216,6 +1242,9 @@ func kindName(k: TypeKind): string {
     case TyServiceBrowser {
         return "serviceBrowser"
     }
+    case TyFileHandle {
+        return "filehandle"
+    }
     case TyEnum {
         return "enum"
     }
@@ -1261,7 +1290,7 @@ func kindsList(k1: TypeKind, k2: TypeKind, k3: TypeKind, count: int): string {
 // isResourceKind reports whether k is a window ref or one of the network
 // resource kinds -- the only kinds `nil` is valid for.
 func isResourceKind(k: TypeKind): bool {
-    return k == TyWindowRef or k == TyConnection or k == TyListener or k == TyServiceBrowser
+    return k == TyWindowRef or k == TyConnection or k == TyListener or k == TyServiceBrowser or k == TyFileHandle
 }
 
 func isTextish(t: int): bool {
@@ -1413,6 +1442,7 @@ func registerUniverse(scope: int) {
     declBuiltinType(scope, "connection", connectionT)
     declBuiltinType(scope, "listener", listenerT)
     declBuiltinType(scope, "serviceBrowser", serviceBrowserT)
+    declBuiltinType(scope, "filehandle", fileHandleT)
     declBuiltinType(scope, "address", AddressT)
     declBuiltinType(scope, "error", ErrTIndex)
     declBuiltinType(scope, "saveChoice", SaveChoiceT)
@@ -1638,6 +1668,54 @@ func buildMethodTables() {
     sigStart()
     sigAdd(psPlain(strT(255)))
     fileFuncs["name"] = sigEnd(strT(255))
+
+    // file.open(path)/file.create(path, type, creator) (2026-08-22
+    // binary-files spec, Task 5): return the new `filehandle` type --
+    // nil (0) on failure, lastError set (lowFileCall's own "open"/"create"
+    // arms; checkMethodCall's `x == file` arm sets usesFileh for both).
+    // create's type/creator are mandatory literal 4-char strings, same
+    // rule as writeText/save above (lowCheckLiteral4CCArg validates).
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["open"] = sigEnd(fileHandleT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["create"] = sigEnd(fileHandleT)
+
+    // filehandle methods (spec %3.1): readAt replaces `out` entirely;
+    // writeAt/append accept text OR string (the `send` overload shape,
+    // psOneOf2, matching connectionMethods["send"] above); size/setSize/
+    // flush/close need no data argument.
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(TextT))
+    filehandleMethods["readAt"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psOneOf2(TyText, TyStr))
+    filehandleMethods["writeAt"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psOneOf2(TyText, TyStr))
+    filehandleMethods["append"] = sigEnd(BoolT)
+
+    sigStart()
+    filehandleMethods["size"] = sigEnd(IntT)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    filehandleMethods["setSize"] = sigEnd(BoolT)
+
+    sigStart()
+    filehandleMethods["flush"] = sigEnd(BoolT)
+
+    sigStart()
+    filehandleMethods["close"] = sigEnd(-1)
 
     // canvas (Ch11: Drawing) -- data only; unreachable in 9a/9b's expr
     // checking until a later task adds widget symbols (checkMethodCall's
@@ -1920,6 +1998,15 @@ func checkMethodCall(sel: int, argsHead: int): int {
             // at emit time; Task 7 wires the real module in).
             usesFileSaveLoad = true
         }
+        // usesFileh (2026-08-22 binary-files spec, Task 5): a program that
+        // calls open/create but never NAMES the `filehandle` type (e.g.
+        // immediately discards the result, or only ever assigns into an
+        // inferred local) still needs fileh.cla/fileh_c.cla spliced --
+        // resolveType's own hook (above) only fires when the type is
+        // written out, which this call site does not guarantee.
+        if name == "open" or name == "create" {
+            usesFileh = true
+        }
         // param-abi phase, Task 2 (review round 1): file.load(path, data)
         // fills `data` in place (Ch12) -- ban a value-typed param there,
         // same as any other fill surface. `data` may also be a `list of`
@@ -1996,6 +2083,9 @@ func checkMethodCall(sel: int, argsHead: int): int {
     case TyConnection {
         return checkTableMethod(connectionMethods, sel, argsHead)
     }
+    case TyFileHandle {
+        return checkTableMethod(filehandleMethods, sel, argsHead)
+    }
     case TyListener {
         return checkTableMethod(listenerMethods, sel, argsHead)
     }
@@ -2062,6 +2152,14 @@ func resolveType(te: int): int {
         if symIdx == -1 or not symbols[symIdx].isType {
             emitDiag(typeExprLine(te), typeExprCol(te), "undefined: " + poolGet(nameIdx))
             return InvalidT
+        }
+        // usesFileh (2026-08-22 binary-files spec, Task 5): set here, not
+        // just for global vars (usesConn's own narrower hook) -- a
+        // `filehandle` named in ANY type position (local, param, field,
+        // return type) must pull the runtime in, or a record/param-only
+        // program fails to link (the gap Task 4 documented for connection).
+        if symbols[symIdx].typeIdx == fileHandleT {
+            usesFileh = true
         }
         return symbols[symIdx].typeIdx
     }
@@ -5800,6 +5898,7 @@ func checkReset() {
     connectionT = pushSimple(TyConnection)
     listenerT = pushSimple(TyListener)
     serviceBrowserT = pushSimple(TyServiceBrowser)
+    fileHandleT = pushSimple(TyFileHandle)
 
     universeScope = scopeNew(-1)
     topScope = scopeNew(universeScope)
@@ -5814,6 +5913,7 @@ func checkReset() {
     usesSortedMap = false
     usesDateTime = false
     usesConn = false
+    usesFileh = false
     lowUsesAbort = false
     progGen = progGen + 1
 

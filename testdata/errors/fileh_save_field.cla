@@ -1,0 +1,19 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fileh_save_field.cla (2026-08-22 binary-files spec, Task 5): a record
+// with a `filehandle` field is rejected by file.save's existing value-
+// type-fields rule -- no new checker rule needed (spec %3.1: "Not
+// serializable"). Runs at emit (lowCheckSerializableFields, lower.cla),
+// so this is caught only by the emit-mode diagnostic pass, not bare
+// check-only mode.
+record Note {
+    body: string
+    log: filehandle
+}
+
+on App.launch {
+    var n: Note
+
+    file.save("note.dat", n, "TEXT", "CLRS")
+}

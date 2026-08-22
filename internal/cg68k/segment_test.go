@@ -98,6 +98,25 @@ func segmentationFixture(root string) []string {
 		// runner.cla (above) unconditionally calls caseTextBinary()/
 		// caseCrc16()/caseIntToStr().
 		filepath.Join("testsuite", "core", "cases_textbinary.cla"),
+		// binary-files phase Task 5: cases_fileh.cla is DELIBERATELY left
+		// OUT of this NATIVE emit68k composition (unlike every other
+		// coreCLIFiles-family list, which does include it) -- runner.cla
+		// now unconditionally calls caseFileHandleRW(), so leaving it out
+		// still fails this test ("undefined: caseFileHandleRW", a plain
+		// checker diagnostic), but ADDING it trades that for something
+		// worse: the runtime is host-lane-only until Task 6 lands
+		// fileh_68k.cla (drive.cla gates fileh.cla/fileh_c.cla on `not
+		// want68k`, by design), and referencing rtFh* calls with no
+		// runtime to resolve them against crashes clarusc itself
+		// ("runtime error: list index out of range", exit 3) rather than
+		// producing a clean "unsupported" diagnostic the way
+		// cases_textrange.cla's own gap above did -- confirmed by direct
+		// trial, not a guess. Either way this ONE test (ungated, part of
+		// plain `go test ./internal/cg68k`) is expected red until Task 6;
+		// the clean checker diagnostic is the less confusing failure mode
+		// to leave it in, so this file is NOT added here despite the
+		// "MUST be here" pattern every other case follows -- see
+		// task-5-report.md for the full tradeoff.
 		filepath.Join("testsuite", "core", "cli_mac.cla"),
 	}
 	abs := make([]string, len(rel))

@@ -1,0 +1,13 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fileh_nil.cla (2026-08-22 binary-files spec, Task 5): any method other
+// than close() on a nil `filehandle` is a runtime contract violation
+// (spec %3.1), not weather -- runtime/clarus/fileh.cla's `h == 0` guard
+// panics "use of nil filehandle" before ever touching the device layer.
+on App.launch {
+    var f: filehandle
+
+    f.size()
+    alert("unreachable")
+}

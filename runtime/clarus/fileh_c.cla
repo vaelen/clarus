@@ -1,0 +1,96 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fileh_c.cla: the C-lane rtFhDev* waist (2026-08-22 binary-files spec,
+// Task 5). Nine thin wrappers over the FhH*-prefixed externs (the
+// family-prefix convention ser.cla's own header comment explains -- see
+// conn_c.cla's identical rationale for its own ConnH* family) rendering
+// as rt_ext_FhH* in runtime/host/rt_fileh.inc: plain pread/pwrite over an
+// fd, handle = fd + 1. fileh_68k.cla (Task 6) is this file's native twin,
+// same nine function names, real File Manager calls instead.
+//
+// Never spliced onto the native lane (drive.cla adds this module only for
+// non-68k builds), so it can freely assume a host fd-backed handle.
+//
+// rtFhDevReadAt owns the ONE piece of `text` awareness this lane needs:
+// growing `out`'s storage (a raw box `ptr`, see fileh.cla's own header
+// comment for why) to `count` bytes and setting its length to the actual
+// byte count read, via rtTextGrow/TextHandleDeref/the RtText overlay --
+// text.cla's own established idiom (rtTextTextAt is the template; text.cla
+// is always spliced, so calling straight into its already-declared
+// functions here needs no re-declaration, the same "plain intra-Clarus
+// call to another module's already-spliced" move conn.cla's own header
+// comment documents for SerNewPtr). FhHReadAt itself stays dumb -- a raw
+// pread into the already-grown buffer, no rt_text struct awareness in C
+// at all, matching FhHWriteAt's own raw-buffer shape.
+//
+// Every rtFhDev* body just narrows/renames onto its FhH* extern; rtFhDevCreate
+// drops ftype/fcreator (host filesystem has no type/creator concept, same
+// as file.writeText's own C-lane behavior).
+
+external func FhHOpen(path: string): int
+external func FhHCreate(path: string): int
+external func FhHReadAt(h: int, pos: int, p: ptr, n: int): int
+external func FhHWriteAt(h: int, pos: int, p: ptr, n: int): int
+external func FhHSize(h: int): int
+external func FhHSetSize(h: int, n: int): int
+external func FhHFlush(h: int): int
+external func FhHClose(h: int)
+external func FhHErrno(): int
+
+func rtFhDevOpen(path: string): int {
+    return FhHOpen(path)
+}
+
+func rtFhDevCreate(path: string, ftype: string, fcreator: string): int {
+    return FhHCreate(path)
+}
+
+// rtFhDevReadAt: grows `out` to `count` bytes (rtTextGrow can relocate its
+// Handle, so the master pointer is re-derived AFTER growing, THEN passed
+// to FhHReadAt -- on the host a text's storage does not move during a
+// plain C call, so no second re-derive is needed after that call
+// returns). A negative FhHReadAt result is an I/O error; on success `len`
+// is set to however many bytes actually came back, which may be less than
+// `count` (a short read at EOF, not an error -- rtFhReadAt's own caller
+// treats any got >= 0 as success).
+func rtFhDevReadAt(h: int, pos: int, out: ptr, count: int): int {
+    var rt: RtText
+    var mp: ptr
+    var got: int
+
+    rtTextGrow(out, count)
+    rt = RtText(out)
+    mp = TextHandleDeref(rt.h)
+    got = FhHReadAt(h, pos, mp, count)
+    if got < 0 {
+        rt.len = 0
+        return -1
+    }
+    rt.len = got
+    return got
+}
+
+func rtFhDevWriteAt(h: int, pos: int, p: ptr, n: int): int {
+    return FhHWriteAt(h, pos, p, n)
+}
+
+func rtFhDevSize(h: int): int {
+    return FhHSize(h)
+}
+
+func rtFhDevSetSize(h: int, n: int): int {
+    return FhHSetSize(h, n)
+}
+
+func rtFhDevFlush(h: int): int {
+    return FhHFlush(h)
+}
+
+func rtFhDevClose(h: int) {
+    FhHClose(h)
+}
+
+func rtFhDevLastOSErr(): int {
+    return FhHErrno()
+}

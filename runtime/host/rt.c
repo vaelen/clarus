@@ -217,3 +217,12 @@ static int rt_file_write_data(const uint8_t *path, const rt_text *t, const uint8
  * referenced (and thus only gets linked) when the Clarus side actually
  * calls it. */
 #include "rt_serial.inc"
+
+/* Filehandle glue (2026-08-22 binary-files spec, Task 5): host pread/pwrite
+ * stand-in for the `filehandle` type's positioned file I/O, only spliced
+ * into a build that actually calls it (fileh.cla + fileh_c.cla, usage-
+ * gated by drive.cla) -- unconditionally included here regardless, same as
+ * rt_serial.inc above: cheap dead weight in an unused build, and every
+ * rt_ext_FhH* symbol only gets referenced (and thus only gets linked) when
+ * the Clarus side actually calls it. */
+#include "rt_fileh.inc"

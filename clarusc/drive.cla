@@ -1530,6 +1530,17 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         neededMods.add("native.cla")
     }
 
+    // filehandle (2026-08-22 binary-files spec, Task 5): shared fileh.cla +
+    // the host-lane rtFhDev* waist (fileh_c.cla), usage-gated exactly like
+    // conn.cla just above -- host lane ONLY this task; the 68k superset
+    // (fileh_68k.cla) is Task 6's, so a native build that names
+    // `filehandle` fails to link until Task 6 lands, by design (not
+    // joining want68k's unconditional splice here).
+    if not want68k and usesFileh {
+        neededMods.add("fileh.cla")
+        neededMods.add("fileh_c.cla")
+    }
+
     // runtime-ir-bake Task 5, fix round 2: for testapi, combined2 gets
     // assembled from THREE separately-tracked chains -- earlyRuntimeChain
     // (the twelve non-uitest early modules, drvEarlyRtHeadsNoUitest),

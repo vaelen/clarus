@@ -1319,6 +1319,20 @@ var coreSuiteGUIFiles = []string{
 	// runner.cla (above) unconditionally calls caseTextBinary()/
 	// caseCrc16()/caseIntToStr().
 	filepath.Join("testsuite", "core", "cases_textbinary.cla"),
+	// binary-files phase Task 5: cases_fileh.cla MUST be here -- runner.cla
+	// (above) unconditionally calls caseFileHandleRW(). Known consequence,
+	// same shape as cases_textrange.cla's own comment above: `filehandle`'s
+	// runtime is host-lane-only until Task 6 lands fileh_68k.cla (drive.cla
+	// gates fileh.cla/fileh_c.cla on `not want68k`, by design -- see
+	// runtime/clarus/fileh.cla's header comment), so a NATIVE emit68k
+	// composition that reaches caseFileHandleRW()'s rtFh* calls has no
+	// runtime to resolve them against yet. This list itself is only
+	// exercised by CLARUS_BAKE_FULL=1 (requireBakeFull, skipped by
+	// default) and CLARUS_MAC_TESTS=1 (TestCoreSuiteGUIOn68k/OnMac,
+	// coresuite_test.go's own coreGUIFiles, derived from coreCLIFiles) --
+	// both opt-in, neither part of T1 (scripts/test-task.sh) -- so this is
+	// accepted/expected until Task 6, not a T1 regression.
+	filepath.Join("testsuite", "core", "cases_fileh.cla"),
 	filepath.Join("testsuite", "core", "gui.cla"),
 }
 

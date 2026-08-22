@@ -1,0 +1,166 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fileh_basic.cla (2026-08-22 binary-files spec, Task 5): the `filehandle`
+// type's surface end to end on the host lane -- create, writeAt (both an
+// in-place write and one that extends past EOF, leaving a gap), size,
+// readAt (exact, a short read crossing EOF, and a read that starts past
+// EOF), append, setSize (truncate then grow), the host-only zero-fill
+// assertion over a grown region (spec %3.1: unspecified on the Mac, so
+// this assertion stays HOST-ONLY -- testsuite/toolbox's FileHandleRW case,
+// which also runs natively, must not repeat it), flush, close, reopen via
+// file.open, a record holding two handles, a handle passed to a function,
+// `f = nil`/`f == nil`, and file.open's own not-found failure mode. Runs
+// in the behavior harness's own per-test temp cwd (internal/selfhost/
+// behavior_test.go's `run.Dir = t.TempDir()`), so the scratch files this
+// writes need no cleanup and no .gitignore entry.
+on App.launch {
+    var f: filehandle
+    var g: filehandle
+    var t: text
+    var out: text
+    var db: DB
+    var ok: bool
+
+    f = file.create("fileh_basic.dat", "TEXT", "CLRS")
+    if f == nil {
+        alert("create FAIL")
+    } else {
+        alert("create ok")
+    }
+
+    ok = f.writeAt(0, "hello")
+    if ok {
+        alert("writeAt(0) ok")
+    } else {
+        alert("writeAt(0) FAIL")
+    }
+
+    t = ""
+    t.append('t')
+    t.append('e')
+    t.append('s')
+    t.append('t')
+    ok = f.writeAt(512, t)
+    if ok {
+        alert("writeAt(512) ok")
+    } else {
+        alert("writeAt(512) FAIL")
+    }
+
+    if f.size() == 516 {
+        alert("size after far write ok")
+    } else {
+        alert("size after far write FAIL")
+    }
+
+    ok = f.readAt(0, 5, out)
+    if ok and out == "hello" {
+        alert("readAt(0,5) ok")
+    } else {
+        alert("readAt(0,5) FAIL")
+    }
+
+    ok = f.readAt(512, 100, out)
+    if ok and out.length == 4 and out == "test" {
+        alert("readAt(512,100) short-read-at-EOF ok")
+    } else {
+        alert("readAt(512,100) short-read-at-EOF FAIL")
+    }
+
+    ok = f.readAt(600, 10, out)
+    if ok and out.length == 0 {
+        alert("readAt(600,10) past-EOF ok")
+    } else {
+        alert("readAt(600,10) past-EOF FAIL")
+    }
+
+    ok = f.append("!")
+    if ok and f.size() == 517 {
+        alert("append ok")
+    } else {
+        alert("append FAIL")
+    }
+
+    ok = f.setSize(8)
+    if ok and f.size() == 8 {
+        alert("setSize(8) truncate ok")
+    } else {
+        alert("setSize(8) truncate FAIL")
+    }
+
+    ok = f.setSize(1024)
+    if ok and f.size() == 1024 {
+        alert("setSize(1024) grow ok")
+    } else {
+        alert("setSize(1024) grow FAIL")
+    }
+
+    // Host-only: growing zero-fills on the host (spec %3.1). Unspecified
+    // on the Mac -- do NOT copy this assertion into a native-running case.
+    ok = f.readAt(1000, 4, out)
+    if ok and out.length == 4 and int(out[0]) == 0 and int(out[1]) == 0 and int(out[2]) == 0 and int(out[3]) == 0 {
+        alert("grown region zero-fill ok")
+    } else {
+        alert("grown region zero-fill FAIL")
+    }
+
+    ok = f.flush()
+    if ok {
+        alert("flush ok")
+    } else {
+        alert("flush FAIL")
+    }
+
+    f.close()
+
+    f = file.open("fileh_basic.dat")
+    if f == nil {
+        alert("reopen FAIL")
+    } else {
+        alert("reopen ok")
+    }
+
+    ok = f.readAt(0, 5, out)
+    if ok and out == "hello" {
+        alert("reopen readAt ok")
+    } else {
+        alert("reopen readAt FAIL")
+    }
+
+    f.close()
+
+    // A record holding two handles, and a handle passed to a function.
+    db.dat = file.create("fileh_dat.dat", "TEXT", "CLRS")
+    db.jnl = file.create("fileh_jnl.dat", "TEXT", "CLRS")
+    if pageWrite(db.dat, 0, "page0") {
+        alert("pageWrite ok")
+    } else {
+        alert("pageWrite FAIL")
+    }
+    db.dat.close()
+    db.jnl.close()
+
+    f = nil
+    if f == nil {
+        alert("f == nil after f = nil ok")
+    } else {
+        alert("f == nil after f = nil FAIL")
+    }
+
+    g = file.open("does-not-exist")
+    if g == nil and lastError.message == "open failed" {
+        alert("open of nonexistent file ok")
+    } else {
+        alert("open of nonexistent file FAIL")
+    }
+}
+
+func pageWrite(f: filehandle, n: int, t: text): bool {
+    return f.writeAt(n, t)
+}
+
+record DB {
+    dat: filehandle
+    jnl: filehandle
+}

@@ -1,0 +1,20 @@
+exit=0
+--- stdout ---
+create ok
+writeAt(0) ok
+writeAt(512) ok
+size after far write ok
+readAt(0,5) ok
+readAt(512,100) short-read-at-EOF ok
+readAt(600,10) past-EOF ok
+append ok
+setSize(8) truncate ok
+setSize(1024) grow ok
+grown region zero-fill ok
+flush ok
+reopen ok
+reopen readAt ok
+pageWrite ok
+f == nil after f = nil ok
+open of nonexistent file ok
+--- stderr ---

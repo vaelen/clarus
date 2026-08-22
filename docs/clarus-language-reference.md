@@ -136,7 +136,7 @@ This list is representative, not exhaustive: later chapters introduce further co
 | Character | `'A'`, `'\n'`, `'\xC9'` | single Mac Roman character; same escapes as strings |
 | String | `"hello"` | escapes: `\"` `\\` `\n` `\t` `\xHH`; `\n` emits CR (13), the Mac newline; `\xHH` (exactly two hex digits, case-insensitive) emits byte HH — the way to put MacRoman bytes (e.g. `\xC9` for `…`) in a literal while keeping source files pure ASCII. A string literal may be at most 255 bytes. |
 | Boolean | `true`, `false` | |
-| Nil | `nil` | window/resource references only |
+| Nil | `nil` | window/resource references only (`connection`, `listener`, `serviceBrowser`, `filehandle`) |
 | Enum member | bare identifier | resolved against the expected enum type |
 
 ### Statement Termination
@@ -1433,7 +1433,7 @@ on browser.failed(err: error) { }
 
 ### Files
 
-The `file` namespace covers documents and preferences. Every function but `file.name` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong. 
+The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, and `file.create` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong. `open`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O.
 
 | Function | Signature | Notes |
 |---|---|---|
@@ -1444,6 +1444,8 @@ The `file` namespace covers documents and preferences. Every function but `file.
 | `name` | `file.name(path: string): string` | the file's display name; always succeeds |
 | `readResource` | `file.readResource(name: string, out: text): bool` | fills `out` from the named resource; Macintosh only |
 | `writeRes` | `file.writeRes(path: string, fork: text, doctype: string, creator: string): bool` | writes `fork`'s contents as `path`'s resource fork, stamped with `doctype`/`creator`; Macintosh only |
+| `open` | `file.open(path: string): filehandle` | opens an existing file read/write; `nil` + `lastError` if it doesn't exist or can't be opened |
+| `create` | `file.create(path: string, type: string, creator: string): filehandle` | creates the file if missing, truncates it to 0 bytes if it already exists, opens it read/write, stamped with `type`/`creator`; `nil` + `lastError` on failure |
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
 
@@ -1454,6 +1456,37 @@ Every field of the record — transitively, for a `list of` or `map of` payload 
 **`type`/`creator`:** four-character Finder type/creator codes (the App Section's `app.doctype`/`app.id` constants, above, are the idiomatic values — `file.writeText(p, t, app.doctype, app.id)`; the four `fileType*` constants or any other 4-character `string` also work). There are no defaults: every call spells them out. A `string` literal longer than four characters is a build-time error; a shorter one is space-padded on the right. A *non-literal* `string` longer than four characters fails the whole operation instead (`false` + `lastError`) — the same rule `askOpen`'s filter, below, follows. These literal-length checks run during `clarusc emit`'s lowering pass, not bare check-only mode (`clarusc FILE.cla`) — a program with a bad literal here passes a check-only run and is only rejected when built with `emit`. Stamping happens only when the file is freshly created; writing to an already-existing path leaves that file's type/creator untouched. Double-clicking a document saved this way in the Finder launches the application that wrote it and fires `App.openDocument` with the document's path (Chapter 7).
 
 **`readResource`/`writeRes`:** a minimal pair reserved for resource-fork access — `readResource` fills `out` from a named resource in the current resource chain; `writeRes` writes `fork` verbatim as a *whole file's* resource fork (the data fork is left empty), stamped with `doctype`/`creator` the same way `writeText` stamps a data-fork file. Both are Macintosh-only: on a host build, `readResource` always returns `false` (nothing to fill), and `writeRes` always returns `false` (nothing written) — there is no resource fork on that filesystem. `writeRes`'s `doctype`/`creator` follow the exact same literal-length/padding rule as `writeText`'s `type`/`creator`, above. Ordinary programs have little reason to reach for either function directly; they exist for tools that read or produce Macintosh resource forks.
+
+#### `filehandle`
+
+`readText`/`writeText` and `save`/`load` cover whole-file I/O; `filehandle` (Chapter 3) is the positioned (random-access) counterpart — the way to read or write part of a file without reading or rewriting the whole thing, the shape a small database engine or an append-only log needs. It is a resource kind like `connection`: `nil`-comparable, copyable (a local, a parameter, a return value, a record field, an array/list/map element — anywhere a value type is allowed), `==`/`!=` between two handles compare identity, and its default (never-assigned) value is `nil`. It is **not serializable**: a record with a `filehandle` field is rejected by `save`/`load`'s value-type-fields rule, above, with the same "is not a value type" diagnostic any other reference-typed field gets.
+
+```rust
+var f: filehandle = file.open(path)                    // existing file, read/write
+var j: filehandle = file.create(path, "VDBJ", "68BB")   // create-or-truncate, read/write
+if f == nil { alert(lastError.message) }
+```
+
+| Method | Signature | Notes |
+|---|---|---|
+| `readAt` | `f.readAt(pos: int, count: int, out: text): bool` | positioned read; replaces `out` entirely |
+| `writeAt` | `f.writeAt(pos: int, data: text \| string): bool` | positioned write; extends the file past EOF |
+| `append` | `f.append(data: text \| string): bool` | writes `data` at the current end of file |
+| `size` | `f.size(): int` | the logical end of file, in bytes |
+| `setSize` | `f.setSize(n: int): bool` | grows (new bytes zero) or truncates |
+| `flush` | `f.flush(): bool` | a durability barrier |
+| `close` | `f.close()` | idempotent |
+
+- `readAt(pos, count, out)` reads up to `count` bytes starting at byte offset `pos` into `out`, replacing whatever `out` held. A read that crosses the end of file succeeds with a shorter `out`; a read starting at or past the end of file succeeds with an empty `out` — neither is an error. `readAt` returns `false` + `lastError` only on an actual I/O error. `pos < 0` or `count < 0` is a runtime error.
+- `writeAt(pos, data)` writes all of `data` (`text` or `string` — the same either-form `connection.send` accepts) at `pos`. A write that starts past the current end of file extends it (the Mac File Manager's own behavior on write); the gap between the old end of file and `pos`, if any, has unspecified contents on the Macintosh and reads as zero bytes on a host build — a program that cares about the gap's contents should `setSize` first to pin them down. `pos < 0` is a runtime error.
+- `append(data)` writes `data` at the file's current end, with no separate `size()` query involved.
+- `size()` returns the logical end of file; `-1` + `lastError` on error.
+- `setSize(n)` grows or truncates the file to exactly `n` bytes. `n < 0` is a runtime error. Growing reads as zero bytes on a host build; on the Macintosh, the new bytes' contents are unspecified (documented, not guarded — pre-size and overwrite explicitly if a program needs to depend on them).
+- `flush()` is a durability barrier: on the Macintosh, `_FlushFile` followed by `_FlushVol`; on a host build, `fsync`. Nothing else in this reference forces bytes to stable storage before the OS gets around to it on its own.
+- `close()` is idempotent — closing a `nil` handle is a no-op, and closing an already-closed handle does nothing further. After `close`, every OTHER copy of the same value is stale, with the same hazard a closed C file descriptor has: an operation through it usually fails with `false` + `lastError`, but if the underlying platform has since reused that same handle number for a different file, it silently reaches that different file instead. This is documented, not guarded — a generation counter that could detect it is out of scope for this release. A program that assigns `f = nil` right after `f.close()` protects that one variable; the runtime has no way to reach into a record field, array element, or other copy that also held the same value and clear it too.
+- Any method other than `close` called on a `nil` handle is a runtime error (`use of nil filehandle`) — a program bug, the same category as indexing a string out of range, not an environmental failure to inspect `lastError` for.
+- Every `filehandle` operation is synchronous: there are no `filehandle` events, and nothing here interacts with the event-loop pump `connection`/`listener`/`serviceBrowser` use.
+- No Gestalt gating: every Toolbox trap `filehandle` uses is available on the original 1984 Macintosh File Manager (System 6-era), so there is no fallback path to document.
 
 ### Dialogs
 
