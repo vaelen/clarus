@@ -123,6 +123,51 @@ func TestRtInc(t *testing.T) {
 		}
 	})
 
+	t.Run("ToolboxIncludeFallbackCheckOnly", func(t *testing.T) {
+		// Fix round: bare check-only mode (no emit/emit68k/appinfo
+		// subcommand) is the fallback's actual day-to-day consumer --
+		// 68kBBS's own `bin/clarusc bbs.cla` is a bare check-only
+		// invocation. Copy the fixture into a fresh temp dir with no
+		// runtime/clarus/ anywhere above it, same as the brief's own
+		// "no repo above it" setup, and confirm --rtdir alone (no "emit")
+		// resolves the fallback.
+		src, err := os.ReadFile(filepath.Join(root, "testdata", "rtinc", "toolbox_fallback", "main.cla"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cwd := t.TempDir()
+		if err := os.WriteFile(filepath.Join(cwd, "main.cla"), src, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		rtDir := filepath.Join(root, "runtime", "clarus")
+
+		t.Run("WithRtDir", func(t *testing.T) {
+			cmd := exec.Command(exe, "--rtdir", rtDir, "main.cla")
+			cmd.Dir = cwd
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("clarusc --rtdir %s main.cla: %v\nstdout: %s\nstderr: %s", rtDir, err, stdout.String(), stderr.String())
+			}
+		})
+
+		t.Run("NoRtDirStillErrors", func(t *testing.T) {
+			cmd := exec.Command(exe, "main.cla")
+			cmd.Dir = cwd
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			err := cmd.Run()
+			if err == nil {
+				t.Fatalf("expected nonzero exit, got success\nstdout: %s", stdout.String())
+			}
+			if !strings.Contains(stdout.String(), `cannot open included file "toolbox/osutils.cla"`) {
+				t.Fatalf("stdout missing the honest cannot-open diagnostic:\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
+			}
+		})
+	})
+
 	t.Run("NoInclusionWithoutUsage", func(t *testing.T) {
 		outC := filepath.Join(t.TempDir(), "main.c")
 		cmd := exec.Command(exe, "emit", "-o", outC, noflag)

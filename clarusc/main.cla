@@ -237,6 +237,7 @@ on App.startCLI(args: list of string) {
     var bakeIrEmbedPath: string
     var haveBakeIrEmbed: bool
     var stampBytes: text
+    var checkMode: bool
 
     // Reset-at-start: one clarusc invocation checks (or emits) one program
     // (each differential-harness case is a fresh exec). These resets clear the
@@ -302,6 +303,14 @@ on App.startCLI(args: list of string) {
         bakeIrMode = true
         startArg = 1
     }
+    // checkMode: the default (no subcommand) -- bare `clarusc FILE...`,
+    // check-only, prints diagnostics and quits, no emit/appinfo/bake-ir.
+    // toolbox-include-fallback fix round (binary-files phase Task 7):
+    // --rtdir is this mode's ONLY new flag (below) -- --testapi stays
+    // unrecognized here (falls to the positional-fileArgs branch, same as
+    // before), since check-only has no early-splice/appinfo print step to
+    // feed it.
+    checkMode = not emitMode and not emitMode68k and not appinfoMode and not bakeIrMode
     if startArg >= args.count {
         log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo | --bake-ir --lane 68k|c -o OUT.clir] FILE...")
         quit 2
@@ -332,15 +341,17 @@ on App.startCLI(args: list of string) {
             }
             outPath = args[i]
             haveOutPath = true
-        } else if (emitMode or emitMode68k or bakeIrMode) and args[i] == "--rtdir" {
+        } else if (emitMode or emitMode68k or bakeIrMode or checkMode) and args[i] == "--rtdir" {
             i = i + 1
             if i >= args.count {
                 if emitMode68k {
                     log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
                 } else if bakeIrMode {
                     log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
-                } else {
+                } else if emitMode {
                     log("usage: clarusc emit -o OUT.c [--rtdir DIR] [--testapi] FILE...")
+                } else {
+                    log("usage: clarusc [--rtdir DIR] FILE...")
                 }
                 quit 2
             }
