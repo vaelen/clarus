@@ -350,7 +350,7 @@ Then edit the STRICT-rule sentence (`:409`): `plus \`crc16\`,` → `plus \`crc16
 
 First capture HEAD's goldens for the proof: `git stash list` must be empty of your work — instead copy: `mkdir -p /tmp/gold && cp testdata/cg68k/*.s /tmp/gold/ && cp testdata/emitui/*.c.golden /tmp/gold/`.
 
-Regenerate: `CLARUS_CG68K_BLESS=1 go test ./internal/cg68k -run TestCg68kGoldens -count=1`; for emitui there is no bless switch — regenerate each fixture that has a golden with the current-source compiler: `for f in testdata/emitui/*.c.golden; do build-run/cur emit -o "$f" "${f%.c.golden}.cla"; done` (the test invokes `clarusc emit -o OUT FIXTURE` with no `--rtdir`, so match that exactly).
+Regenerate: `CLARUS_CG68K_BLESS=1 go test ./internal/cg68k -run TestCg68kGoldens -count=1`; for emitui there is no bless switch — regenerate each fixture that has a golden with the current-source compiler, FROM THE REPO ROOT (with no `--rtdir`, clarusc walks up from the cwd to find `runtime/clarus/`, which is exactly what the test relies on): `for f in testdata/emitui/*.c.golden; do build-run/cur emit -o "$f" "${f%.c.golden}.cla"; done` (the test invokes `clarusc emit -o OUT FIXTURE` with no `--rtdir`, so match that exactly).
 
 Proof (record the commands and their empty-diff output in the task report):
 1. cg68k `.s`: for each file, `diff <(sed -E 's/-[0-9]+\(A5\)/-N(A5)/g; s/^ *;   rtCrc32Tab.*$//; s/^ *;   rtCrc32TabReady.*$//' /tmp/gold/X.s) <(same sed over testdata/cg68k/X.s)`. The ONLY remaining differences allowed are (a) the startup zero-loop's bound immediate (one instruction in `cgEmitStartup`'s sweep — name it), and (b) nothing else. Confirm every shifted offset moved by exactly the same delta (1024 + 2: `int[256]` plus the even-rounded `bool`) with `grep -o -- '-[0-9]*(A5)' old | paste - <(grep -o … new) | awk '{d=$2-$1; print d}' | sort -u` — one nonzero delta value (plus zeros for globals declared before `text.cla`'s).
@@ -372,7 +372,7 @@ git commit -m "feat: text.crc16x (CRC-16/XMODEM, bitwise) + text.crc32 (table-dr
 
 **Files:**
 - Modify: `testsuite/core/cases_textbinary.cla` (`caseCrc16`, `:86-111`), `testsuite/core/runner.cla` (`:106-110` comment only — the `Crc16` case's description).
-- Create (throwaway, NOT committed): a timing program under the scratchpad.
+- Create (throwaway, NOT committed): `build-run/crctime.cla` (gitignored).
 
 **Interfaces:**
 - Consumes: `t.crc16x(h, pos, n): int`, `t.crc32(h, pos, n): int` (Task 1); `tkPass(name)`/`tkFail(name, detail)` from `testsuite/kit.cla`.
@@ -436,7 +436,7 @@ Expected: PASS, including the `Crc16` subtest — this is the hardware proof of 
 
 - [ ] **Step 4: Snow timing spot-check (manual, numbers go in the report, nothing committed)**
 
-Write `<scratchpad>/crctime.cla`: a non-UI program that appends 65536 bytes (`i & 0xFF`) to a `text`, then times — via `datetime`'s tick source already used by `testsuite/toolbox/cases_datetime.cla` (read it for the exact API) — three loops of one full-buffer call each: `t.crc16(0, 0, 65536)`, `t.crc16x(0, 0, 65536)`, `t.crc32(0xFFFFFFFF, 0, 65536)`, and alerts the three tick deltas. Build with `scripts/build-68k.sh CrcTime <scratchpad>/crctime.cla`, run it on Snow the way `internal/mactest/pagefile_snow_test.go` boots `examples/pagefile.cla` (read that test for the boot/read-back mechanics; a manual `LaunchAPPL`-style boot is fine), and record the three numbers plus the 68020 clock in the task report. Expected: `crc32` (table) clearly faster per byte than `crc16`/`crc16x` (bitwise); if it is NOT, stop and report — the ZMODEM motivation in the spec rests on it. Delete the scratch program's build outputs; nothing from this step is committed.
+Write `build-run/crctime.cla` (gitignored directory), a native-only program: declare `external func TickCount(): int = trap 0xA975` (the reference's own example, `docs/clarus-language-reference.md:1771`), append 65536 bytes (`char(i & 0xFF)`) to a `text` in `on App.launch`, then for each of `t.crc16(0, 0, 65536)`, `t.crc16x(0, 0, 65536)`, `t.crc32(0xFFFFFFFF, 0, 65536)`: read `TickCount()`, make the call, read `TickCount()` again, and `alert("crc16 ticks: " + string(delta))` (one alert per algorithm; 1 tick = 1/60 s). Build with `scripts/build-68k.sh CrcTime build-run/crctime.cla`, boot it on Snow the way `internal/mactest/pagefile_snow_test.go` boots `examples/pagefile.cla` (read that test for the boot mechanics; a manual boot and a screenshot of the three alerts is fine), and record the three tick counts plus the machine (Snow, Mac II, 16 MHz 68020) in the task report. Expected: `crc32` (table) clearly faster per byte than `crc16`/`crc16x` (bitwise) — the spec's ZMODEM motivation rests on it; if it is NOT, stop and report before Task 3. Nothing from this step is committed.
 
 - [ ] **Step 5: T1 + zero-churn + commit**
 
