@@ -22,12 +22,13 @@ merged, NOT pushed — merge only on Andrew's request.**
 
 ## 0. START HERE next session
 
-**The phase is fully closed on the branch — nothing code-side remains.**
-What's left is entirely the merge decision, plus the Snow timing probe
-noted below (informational only, not a gate).
+**The phase is fully closed on the branch — nothing code-side remains,
+including the Snow timing probe (below).** What's left is entirely the
+merge decision.
 
-**What this phase built** (3 tasks, one commit each; full detail in
-`.superpowers/sdd/2026-08-25-transfer-crcs/`):
+**What this phase built** (3 tasks, one commit each — `c4e6c31` (Task
+1), `213a782` (Task 2), `f3e8367` (Task 3), plus the close-out fix
+commit; full detail in `.superpowers/sdd/2026-08-25-transfer-crcs/`):
 
 1. **`t.crc16x(h, pos, n)`** — CRC-16/XMODEM, poly `0x1021` forward
    (MSB-first, no reflection), same bitwise-loop shape as the existing
@@ -61,15 +62,24 @@ noted below (informational only, not a gate).
    table-reuse); no new `CoreTest` enum member, no case-count site
    touched. Proved on real 68000 hardware
    (`TestCoreSuiteGUIOn68k`, System 6, Mini vMac).
-5. **Snow timing probe: pending controller rerun
-   (`build-run/crctime.cla`); see the phase's final report.** Task 2's
-   attempt collided with a second, unrelated Snow instance sharing this
-   machine's display (a concurrent session's own work) and was aborted
-   rather than risk clicking into someone else's window; the throwaway
-   probe program (TickCount-bracketed `crc16`/`crc16x`/`crc32` calls
-   over a 64 KB buffer) is unverified but compiled cleanly and is not a
-   gate — only supporting evidence for the design spec's "table pays
-   off" claim.
+5. **Snow timing probe.** Task 2's own attempt collided with a second,
+   unrelated Snow instance sharing this machine's display (a concurrent
+   session's own work) and was aborted rather than risk clicking into
+   someone else's window. A controller rerun of the same throwaway
+   program (`build-run/crctime.cla`, TickCount-bracketed
+   `crc16`/`crc16x`/`crc32` calls over a 64 KB buffer) completed
+   cleanly on a Mac II (16 MHz 68020) Snow instance, read from the
+   app's captured out-file (byte-exact) rather than an on-screen alert
+   (none was ever observed on screen, though the clean
+   `##CLARUS-EXIT## 0` trailer confirms a normal completion). Single
+   run, no repeats. Results: `crc16` 277 ticks (≈70.4 µs/byte),
+   `crc16x` 287 ticks (≈73.0 µs/byte), `crc32` 120 ticks (≈30.5
+   µs/byte) — `crc32` ≈2.3-2.4x faster than either bitwise loop, less
+   than the ~5x a table alone would suggest (per-byte loop/`peekb`/
+   `peekl` overhead dominates on a 68020); a 1 KB ZMODEM subpacket
+   costs ≈31 ms of `crc32` time against the ~180 ms it takes to arrive
+   at 57600 bps (≈72 ms bitwise). Full trail:
+   `.superpowers/sdd/2026-08-25-transfer-crcs/snow-probe-report.md`.
 6. **Close-out (this task)**: bootstrap snapshot regenerated and
    fixed-point-verified, `.behavior` golden re-verified against the
    real bless, spec amendment (`docs/superpowers/specs/
@@ -93,7 +103,8 @@ noted below (informational only, not a gate).
   initializer (`var t: int[256]` is always zero-filled); that gap is
   filed in `docs/TODO.md` as its own future language-feature phase.
 
-## 1. Gate results (this phase, branch tip `213a782`, code unchanged by
+## 1. Gate results (this phase — `c4e6c31` Task 1, `213a782` Task 2,
+   `f3e8367` Task 3, plus the close-out fix commit; code unchanged by
    Task 3 except the snapshot regen + the new `.leaks` golden)
 
 1. **Snapshot fixed point**: PASS. Regenerated per

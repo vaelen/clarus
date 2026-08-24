@@ -4307,7 +4307,8 @@ brief asked for it directly.
   `docs/superpowers/specs/2026-08-25-transfer-crcs-design.md`; plan:
   `docs/superpowers/plans/2026-08-25-transfer-crcs.md`; full ledger:
   `.superpowers/sdd/2026-08-25-transfer-crcs/`. Three tasks, one commit
-  each (`c4e6c31`, `213a782`, plus this close-out commit).
+  each (`c4e6c31` Task 1, `213a782` Task 2, `f3e8367` Task 3), plus the
+  close-out fix commit.
   - **`t.crc16x(h, pos, n)`** (Task 1, commit `c4e6c31`) — CRC-16/XMODEM,
     poly `0x1021` forward (MSB-first, no reflection), the same bitwise
     per-bit loop shape as `t.crc16` (CRC-16/KERMIT). Check value
@@ -4345,7 +4346,24 @@ brief asked for it directly.
     vs. new by global name across four fixtures — one new global, zero
     lost, every pre-existing global shifts by exactly +4) instead of
     round 1's **+1026 bytes** (array + flag, same join technique, same
-    proof shape). Rebless redone from a clean base
+    proof shape). **Caveat carried over from the round-1 proof:** this
+    +4-byte offset shift comes with a matching ~10 bytes of new
+    `cg_init_globals` code (one `MOVE.L #0,D0`/`MOVE.L D0,-N(A5)` pair,
+    zeroing the new pointer) in every fixture, and in fixtures that were
+    ALREADY multi-segment before this phase (`abort_bake`, `bounce`,
+    `strcontainers`) that small growth was enough to shift the segment
+    packer's own boundary, moving one or a few functions from one
+    pre-existing segment to another — JT-slot renumbering and
+    `BSR.W`↔`JSR N(A5)` call-shape changes follow deterministically from
+    that move. No fixture's segment COUNT changed anywhere in the
+    corpus, and `globals.cla` (the one fixture
+    `internal/cg68k/image_test.go` actually depends on for its
+    single-segment assumption) shows a byte-for-byte identical JT-slot
+    listing. `TestSmokeBounceOn68k`'s real 68k-emulator boot of
+    `bounce.cla` — the most-reshuffled fixture — passes, confirming the
+    reshuffle is the segment packer's normal, correct behavior on a
+    fixture already packed close to its own internal boundary, not a
+    bug. Rebless redone from a clean base
     (`git checkout 26d6748 -- testdata/cg68k testdata/emitui` before
     reblessing) so the final diff carries only the heap-block shape,
     not round 1's larger array-global churn: 8 stray `.seg2.s` files
@@ -4379,15 +4397,29 @@ brief asked for it directly.
     — the aggregate suite-boot check (`PASS ` line count/`TOTAL`
     reconciliation, no per-case subtests for `core`) covers `Crc16`
     among all 78 cases.
-  - **Snow timing spot-check: pending controller rerun
-    (`build-run/crctime.cla`); see the phase's final report.** Task 2's
-    attempt (a TickCount-bracketed `crc16`/`crc16x`/`crc32` timing loop
-    over a 64 KB buffer) collided with a second, unrelated Snow
-    instance sharing this machine's display — a concurrent session's
-    own active work, both windows spawning at the identical screen
-    position — and was aborted rather than risk clicking into someone
-    else's window. Not a gate; only supporting evidence for the design
-    spec's "table pays off" claim.
+  - **Snow timing probe.** Task 2's own attempt (a TickCount-bracketed
+    `crc16`/`crc16x`/`crc32` timing loop over a 64 KB buffer) collided
+    with a second, unrelated Snow instance sharing this machine's
+    display — a concurrent session's own active work, both windows
+    spawning at the identical screen position — and was aborted rather
+    than risk clicking into someone else's window. A controller rerun
+    (`build-run/crctime.cla`, unchanged) completed cleanly on a Mac II
+    (16 MHz 68020, model `MacIIFDHD`) Snow instance, read from the
+    app's captured out-file (byte-exact, the same mechanism
+    `TestSnowRoundTrip` trusts) rather than an on-screen alert — no
+    alert dialog was ever observed during the run despite several
+    clean, uncontested screenshots, though the clean `##CLARUS-EXIT##
+    0` trailer confirms the run completed normally. Single run, no
+    repeats. Results (64 KB buffer, ticks at 1/60 s each): `crc16`
+    (KERMIT, bitwise) 277 ticks (≈70.4 µs/byte); `crc16x` (XMODEM,
+    bitwise) 287 ticks (≈73.0 µs/byte); `crc32` (table-driven) 120
+    ticks (≈30.5 µs/byte) — `crc32` ≈2.3-2.4x faster than either
+    bitwise loop, less than the ~5x a table alone would suggest (the
+    per-byte loop/`peekb`/`peekl` overhead dominates on a 68020). At
+    that rate a 1 KB ZMODEM subpacket costs ≈31 ms of `crc32` time
+    against the ~180 ms it takes to arrive at 57600 bps (≈72 ms with
+    the bitwise loop). Full trail, screenshots, and the raw out-file:
+    `.superpowers/sdd/2026-08-25-transfer-crcs/snow-probe-report.md`.
   - **Close-out (Task 3)**: bootstrap snapshot regenerated
     (`TestSnapshotFixedPoint` PASS) and the `.behavior` golden for
     `testdata/run/crc16.cla` — hand-written in Task 1 because the
