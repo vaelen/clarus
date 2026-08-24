@@ -25,9 +25,10 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   fixed arrays are always zero-filled and `const` initializers are single
   literals — so lookup tables (the `crc32` table, sine tables, MacRoman
   translation tables, keycode maps) must be built at run time. `crc32`'s
-  table is built lazily at first call as a stopgap (1 KB in every
+  table is built lazily at first call as a stopgap (a 4-byte table pointer in every
   program's data segment, since shake prunes unreachable functions but
-  never globals — a second, smaller follow-up in its own right). Needs
+  never globals — a second, smaller follow-up in its own right; the 1 KB
+  block itself is heap-allocated only by programs that call `crc32`). Needs
   parser + checker + IR + both backends (cg68k constant pool; cprint
   static initializer). Spec: `docs/superpowers/specs/2026-08-25-transfer-crcs-design.md` §2.3.
   The `crc32` table ended up as a heap block rather than a global array

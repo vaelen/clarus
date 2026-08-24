@@ -113,9 +113,10 @@ the written record.
   allocated only by programs that do.
 - Consequence found while planning (2026-08-25): runtime globals are
   laid out in module splice order and `text.cla` is spliced third, so
-  the two new globals shift every later global's A5 offset in every
-  cg68k golden (and add two `static` declarations to every emitui C
-  golden). That is one planned rebless wave with a normalization-diff
+  the new global shifts every later global's A5 offset in every
+  cg68k golden (and adds one `static` declaration to every emitui C
+  golden; the original design's two globals became one 4-byte pointer
+  in Task 1). That is one planned rebless wave with a normalization-diff
   proof (plan, Task 1) — a process cost, not a design change. A
   usage-gated `crc.cla` module was considered and rejected: the 68k lane
   splices every runtime module unconditionally for the bake's fixed
