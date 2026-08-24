@@ -644,6 +644,10 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtTextSetWordAtLE"))
     } else if nm == ITextCrc16() {
         shakeMarkAndEnqueue(intern("rtTextCrc16"))
+    } else if nm == ITextCrc16X() {
+        shakeMarkAndEnqueue(intern("rtTextCrc16X"))
+    } else if nm == ITextCrc32() {
+        shakeMarkAndEnqueue(intern("rtTextCrc32"))
     } else if nm == IIntToStr() {
         shakeMarkAndEnqueue(intern("rtIntToStr"))
     } else if nm == ITextStringAt() {

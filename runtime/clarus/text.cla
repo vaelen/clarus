@@ -817,6 +817,133 @@ func rtTextCrc16(t: ptr, h: int, pos: int, n: int): int {
     return crc
 }
 
+// rtTextCrc16X (transfer-crcs phase): CRC-16/XMODEM over bytes
+// [pos, pos+n) -- poly 0x1021 FORWARD (MSB-first, no reflection), seed h
+// masked to 16 bits, no final XOR. Same skeleton and chunking contract as
+// rtTextCrc16 above (which is the REFLECTED CRC-16/KERMIT); only the
+// inner loop differs: xor the byte into the HIGH half, shift LEFT, and
+// mask to 16 bits after every step so the value never reaches bit 31.
+// Published check value: "123456789" -> 0x31C3.
+func rtTextCrc16X(t: ptr, h: int, pos: int, n: int): int {
+    var rt: RtText
+    var mp: ptr
+    var crc: int
+    var i: int
+    var b: int
+    var j: int
+
+    rt = RtText(t)
+    if pos < 0 or n < 0 or pos > rt.len - n {
+        rtPanic("text index out of range")
+    }
+    crc = h & 0xFFFF
+    if n == 0 {
+        return crc
+    }
+    mp = TextHandleDeref(rt.h)
+    i = 0
+    while i < n {
+        b = peekb(mp + pos + i)
+        crc = crc ^ (b << 8)
+        j = 0
+        while j < 8 {
+            if (crc & 0x8000) != 0 {
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            } else {
+                crc = (crc << 1) & 0xFFFF
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return crc
+}
+
+// CRC-32 lookup table (transfer-crcs phase, spec %4; heap block since
+// fix round 1). Built ONCE, on the first rtTextCrc32 call, by
+// rtCrc32TabInit below: Clarus has no array-literal initializer, so a
+// build-time table is not expressible today. It is a HEAP block
+// (TextNewPtr), not an `int[256]` global, because cg68k's
+// cg_init_globals unrolls a global array's default-init into one
+// explicit store PER ELEMENT -- a 256-int global would cost ~1.5 KB of
+// startup code in EVERY native program, not just ones that call crc32
+// (found reblessing this phase's Task 1; internal/cg68k/image_test.go's
+// single-segment tripwire on testdata/cg68k/globals.cla caught it). A
+// heap block allocated once on first call costs one pointer's worth of
+// global storage and lives for the process. ponytail: replace with a
+// hardcoded array literal when the language grows one (docs/TODO.md,
+// "Array-literal initializers").
+var rtCrc32Tab: ptr
+
+// rtCrc32TabInit: the standard reflected-CRC-32 table (poly 0xEDB88320),
+// filled into a freshly allocated 1 KB (256 * 4 bytes) heap block.
+// `>>` is arithmetic in Clarus and every entry routinely has bit 31 set,
+// so each `>> 1` is masked with & 0x7FFFFFFF to make it a logical shift.
+func rtCrc32TabInit() {
+    var i: int
+    var j: int
+    var c: int
+    var p: ptr
+
+    p = TextNewPtr(1024)
+    if p == ptr(0) {
+        rtPanic("out of memory")
+    }
+    i = 0
+    while i < 256 {
+        c = i
+        j = 0
+        while j < 8 {
+            if (c & 1) == 1 {
+                c = ((c >> 1) & 0x7FFFFFFF) ^ 0xEDB88320
+            } else {
+                c = (c >> 1) & 0x7FFFFFFF
+            }
+            j = j + 1
+        }
+        pokel(p + i * 4, c)
+        i = i + 1
+    }
+    rtCrc32Tab = p
+}
+
+// rtTextCrc32 (transfer-crcs phase): CRC-32 (IEEE / ZMODEM / zip,
+// reflected poly 0xEDB88320) over bytes [pos, pos+n), table-driven. h is
+// the RAW 32-bit register in and out -- no masking (all 32 bits are
+// significant), no init, no final XOR: the caller seeds 0xFFFFFFFF and
+// xors the result with 0xFFFFFFFF, which keeps chunked calls composable
+// exactly like rtTextCrc16's seed-carry. Published check:
+// crc32(0xFFFFFFFF, "123456789") ^ 0xFFFFFFFF == 0xCBF43926. The
+// & 0x00FFFFFF after `>> 8` is load-bearing (arithmetic shift, bit 31
+// routinely set).
+func rtTextCrc32(t: ptr, h: int, pos: int, n: int): int {
+    var rt: RtText
+    var mp: ptr
+    var crc: int
+    var i: int
+    var b: int
+
+    rt = RtText(t)
+    if pos < 0 or n < 0 or pos > rt.len - n {
+        rtPanic("text index out of range")
+    }
+    if n == 0 {
+        return h
+    }
+    if rtCrc32Tab == ptr(0) {
+        rtCrc32TabInit()
+    }
+    crc = h
+    mp = TextHandleDeref(rt.h)
+    i = 0
+    while i < n {
+        b = peekb(mp + pos + i)
+        crc = peekl(rtCrc32Tab + ((crc ^ b) & 0xFF) * 4) ^ ((crc >> 8) & 0x00FFFFFF)
+        i = i + 1
+    }
+    return crc
+}
+
 // rtTextStringAt: reads a 1-byte Pascal-style length prefix at pos (the
 // same Str255 shape `string` itself uses -- length byte then payload),
 // then that many bytes. Str255 is a plain value type (no ARC birth

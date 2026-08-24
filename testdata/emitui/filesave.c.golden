@@ -540,6 +540,7 @@ static const int clar_enum_Protocol_count __attribute__((unused)) = 3;
 
 const rt_ui_app_desc rt_ui_app_info = { (const unsigned char *)"\pBookmarks", (const unsigned char *)"\p", (const unsigned char *)"\p", (const unsigned char *)"\p" };
 
+static void * cv_rtCrc32Tab;
 static void * cv_rtUiMenuHandlesArr;
 static int32_t cv_rtUiNMenusVal;
 static void * cv_rtUiAppleMenuHandle;
@@ -590,6 +591,7 @@ static clar_rec_Bookmark cv_one;
 static rt_list * cv_many;
 static rt_map * cv_byName;
 static void clar_init_globals(void) {
+    cv_rtCrc32Tab = 0;
     cv_rtUiMenuHandlesArr = 0;
     cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
     cv_rtUiNMenusVal = 0;
@@ -2222,7 +2224,7 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
 }
 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
-    if (cv_rowsIdx == 47) {
+    if (cv_rowsIdx == 48) {
         return ((void*)&(cv_many));
     } else {
         rt_log((const uint8_t*)&(clar_lit_131));

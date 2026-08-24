@@ -1,4 +1,4 @@
-        ; func rtUiFindFlagged  (JT slot 212)
+        ; func rtUiFindFlagged  (JT slot 211)
         ;   param inst : 16(A6)  size 4
         ;   param flag : 12(A6)  size 4
         ;   param outIdx : 8(A6)  size 4
@@ -91,7 +91,7 @@ LBL_98:
 LBL_96:
         UNLK A6
         RTS
-        ; func rtUiCanvasHit  (JT slot 213)
+        ; func rtUiCanvasHit  (JT slot 212)
         ;   param inst : 16(A6)  size 4
         ;   param localPt : 12(A6)  size 4
         ;   param outIdx : 8(A6)  size 4
@@ -181,7 +181,7 @@ LBL_104:
 LBL_102:
         UNLK A6
         RTS
-        ; func rtUiFireCanvasXY  (JT slot 214)
+        ; func rtUiFireCanvasXY  (JT slot 213)
         ;   param inst : 20(A6)  size 4
         ;   param wIdx : 16(A6)  size 4
         ;   param event : 12(A6)  size 4
@@ -266,7 +266,7 @@ LBL_2:
         MOVE.L D0,-(A7)
         LEA LBL_83(PC),A0
         MOVE.L A0,-(A7)
-        JSR 2602(A5)
+        JSR 2594(A5)
         ADDA.W #12,A7
         BRA.W LBL_110
 LBL_109:
@@ -290,7 +290,7 @@ LBL_109:
         MOVE.L D0,-(A7)
         LEA LBL_84(PC),A0
         MOVE.L A0,-(A7)
-        JSR 2602(A5)
+        JSR 2594(A5)
         ADDA.W #12,A7
 LBL_110:
         MOVE.L -4(A6),D0
@@ -319,7 +319,7 @@ LBL_110:
 LBL_108:
         UNLK A6
         RTS
-        ; func rtUiHandleContentClick  (JT slot 215)
+        ; func rtUiHandleContentClick  (JT slot 214)
         ;   param wp : 18(A6)  size 4
         ;   param inst : 14(A6)  size 4
         ;   param wherePt : 10(A6)  size 4
@@ -510,7 +510,7 @@ LBL_119:
         TST.L D0
         BEQ.W LBL_120
         CLR.L D0
-        MOVE.B -40(A5),D0
+        MOVE.B -44(A5),D0
         TST.L D0
         BEQ.W LBL_121
         BRA.W LBL_111
@@ -585,7 +585,7 @@ LBL_124:
         MOVE.L -24(A6),D0
         MOVE.L D0,-28(A6)
         CLR.L D0
-        MOVE.B -40(A5),D0
+        MOVE.B -44(A5),D0
         TST.L D0
         BEQ.W LBL_125
         MOVE.L 14(A6),D0
@@ -747,7 +747,7 @@ LBL_128:
         MOVE.L D0,-(A7)
         MOVE.L -70(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2434(A5)
+        JSR 2426(A5)
         ADDA.W #12,A7
         TST.L D0
         BEQ.W LBL_131
@@ -763,7 +763,7 @@ LBL_128:
         MOVE.L D0,-(A7)
         MOVE.L -74(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2458(A5)
+        JSR 2450(A5)
         ADDQ.L #8,A7
         BRA.W LBL_111
 LBL_131:
@@ -782,7 +782,7 @@ LBL_131:
         MOVE.L D0,-(A7)
         MOVE.L -78(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2386(A5)
+        JSR 2378(A5)
         ADDA.W #12,A7
         TST.L D0
         BEQ.W LBL_132
@@ -813,7 +813,7 @@ LBL_134:
         MOVE.L D0,-(A7)
         MOVE.L -66(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2410(A5)
+        JSR 2402(A5)
         ADDA.W #16,A7
         BRA.W LBL_111
 LBL_132:
@@ -824,7 +824,7 @@ LBL_132:
 LBL_111:
         UNLK A6
         RTS
-        ; func rtUiHandleMouseDown  (JT slot 216)
+        ; func rtUiHandleMouseDown  (JT slot 215)
         ;   param ev : 8(A6)  size 4
         ;   local wherePt : -4(A6)  size 4
         ;   local wpSlot : -8(A6)  size 4
@@ -881,7 +881,7 @@ LBL_4:
         MOVEA.L (A7)+,A0
         DC.W $A01F  ; UiDisposePtr
         CLR.L D0
-        MOVE.B -116(A5),D0
+        MOVE.B -120(A5),D0
         TST.L D0
         BEQ.W LBL_136
         MOVE.L -12(A6),D1
@@ -915,7 +915,7 @@ LBL_141:
         BEQ.W LBL_138
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        MOVE.L -120(A5),D0
+        MOVE.L -124(A5),D0
         MOVEA.L D0,A0
         LEA 4(A0),A0
         MOVE.L (A0),D0
@@ -1185,7 +1185,7 @@ LBL_144:
 LBL_135:
         UNLK A6
         RTS
-        ; func rtUiHandleKey  (JT slot 217)
+        ; func rtUiHandleKey  (JT slot 216)
         ;   param ev : 8(A6)  size 4
         ;   local ch : -4(A6)  size 4
         ;   local modifiers : -8(A6)  size 4
@@ -1347,7 +1347,7 @@ LBL_170:
         MOVE.L D0,-(A7)
         LEA LBL_85(PC),A0
         MOVE.L A0,-(A7)
-        JSR 2602(A5)
+        JSR 2594(A5)
         ADDA.W #12,A7
         MOVE.L -20(A6),D0
         MOVE.L D0,-(A7)
@@ -1376,10 +1376,10 @@ LBL_173:
         TST.L D0
         BEQ.W LBL_174
         CLR.L D0
-        MOVE.B -116(A5),D0
+        MOVE.B -120(A5),D0
         TST.L D0
         BEQ.W LBL_179
-        MOVE.L -120(A5),D1
+        MOVE.L -124(A5),D1
         MOVE.L -16(A6),D0
         CMP.L D0,D1
         SEQ D0
@@ -1492,7 +1492,7 @@ LBL_188:
         MOVE.L D0,-(A7)
         MOVE.L -44(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2970(A5)
+        JSR 2962(A5)
         ADDA.W #12,A7
         EORI.L #1,D0
         BRA.W LBL_186
@@ -1674,7 +1674,7 @@ LBL_201:
         MOVE.L D0,-(A7)
         LEA LBL_86(PC),A0
         MOVE.L A0,-(A7)
-        JSR 2594(A5)
+        JSR 2586(A5)
         ADDQ.L #8,A7
         MOVE.L -20(A6),D0
         MOVE.L D0,-(A7)
@@ -1691,7 +1691,7 @@ LBL_201:
 LBL_165:
         UNLK A6
         RTS
-        ; func rtUiRun  (JT slot 218)
+        ; func rtUiRun  (JT slot 217)
         ;   local evBuf : -4(A6)  size 4
         ;   local frontInst : -8(A6)  size 4
         ;   local sleepTicks : -12(A6)  size 4
@@ -1721,7 +1721,7 @@ LBL_6:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_203
-        JSR 2914(A5)
+        JSR 2906(A5)
         BRA.W LBL_202
 LBL_203:
         MOVEQ #16,D0
@@ -1740,7 +1740,7 @@ LBL_204:
         JSR 1386(A5)
         ADDQ.L #4,A7
         MOVE.L D0,-8(A6)
-        MOVE.L -26(A5),D1
+        MOVE.L -30(A5),D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SGT D0
@@ -1907,13 +1907,13 @@ LBL_213:
         JSR 3442(A5)
         BSR.W LBL_61
         JSR 1626(A5)
-        JSR 2426(A5)
+        JSR 2418(A5)
         BRA.W LBL_204
 LBL_205:
 LBL_202:
         UNLK A6
         RTS
-        ; func rtUiLaunch  (JT slot 219)
+        ; func rtUiLaunch  (JT slot 218)
         ;   local script : -4(A6)  size 4
         ;   local cursor : -8(A6)  size 4
         ;   local lineStart : -12(A6)  size 4
@@ -2243,11 +2243,11 @@ LBL_252:
         MOVE.L D0,-(A7)
         MOVE.L -28(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2706(A5)
+        JSR 2698(A5)
         ADDQ.L #8,A7
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3250(A5)
+        JSR 3242(A5)
         ADDQ.L #4,A7
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
@@ -2282,7 +2282,7 @@ LBL_254:
 LBL_223:
         UNLK A6
         RTS
-        ; func rtUiCtrlAt  (JT slot 220)
+        ; func rtUiCtrlAt  (JT slot 219)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_8:
@@ -2303,7 +2303,7 @@ LBL_8:
 LBL_255:
         UNLK A6
         RTS
-        ; func rtUiSetCtrlAt  (JT slot 221)
+        ; func rtUiSetCtrlAt  (JT slot 220)
         ;   param w : 16(A6)  size 4
         ;   param i : 12(A6)  size 4
         ;   param v : 8(A6)  size 4
@@ -2326,7 +2326,7 @@ LBL_9:
 LBL_256:
         UNLK A6
         RTS
-        ; func rtUiRectAt  (JT slot 222)
+        ; func rtUiRectAt  (JT slot 221)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_10:
@@ -2345,7 +2345,7 @@ LBL_10:
 LBL_257:
         UNLK A6
         RTS
-        ; func rtUiLabelAt  (JT slot 223)
+        ; func rtUiLabelAt  (JT slot 222)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_11:
@@ -2364,7 +2364,7 @@ LBL_11:
 LBL_258:
         UNLK A6
         RTS
-        ; func rtUiCanvasBufAt  (JT slot 224)
+        ; func rtUiCanvasBufAt  (JT slot 223)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_12:
@@ -2383,7 +2383,7 @@ LBL_12:
 LBL_259:
         UNLK A6
         RTS
-        ; func rtUiTeAt  (JT slot 225)
+        ; func rtUiTeAt  (JT slot 224)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_13:
@@ -2404,7 +2404,7 @@ LBL_13:
 LBL_260:
         UNLK A6
         RTS
-        ; func rtUiSetTeAt  (JT slot 226)
+        ; func rtUiSetTeAt  (JT slot 225)
         ;   param w : 16(A6)  size 4
         ;   param i : 12(A6)  size 4
         ;   param v : 8(A6)  size 4
@@ -2427,7 +2427,7 @@ LBL_14:
 LBL_261:
         UNLK A6
         RTS
-        ; func rtUiHbarAt  (JT slot 227)
+        ; func rtUiHbarAt  (JT slot 226)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_15:
@@ -2448,7 +2448,7 @@ LBL_15:
 LBL_262:
         UNLK A6
         RTS
-        ; func rtUiSetHbarAt  (JT slot 228)
+        ; func rtUiSetHbarAt  (JT slot 227)
         ;   param w : 16(A6)  size 4
         ;   param i : 12(A6)  size 4
         ;   param v : 8(A6)  size 4
@@ -2471,7 +2471,7 @@ LBL_16:
 LBL_263:
         UNLK A6
         RTS
-        ; func rtUiEnabledAt  (JT slot 229)
+        ; func rtUiEnabledAt  (JT slot 228)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_17:
@@ -2495,7 +2495,7 @@ LBL_17:
 LBL_264:
         UNLK A6
         RTS
-        ; func rtUiSetEnabledAt  (JT slot 230)
+        ; func rtUiSetEnabledAt  (JT slot 229)
         ;   param w : 14(A6)  size 4
         ;   param i : 10(A6)  size 4
         ;   param v : 8(A6)  size 2
@@ -2533,7 +2533,7 @@ LBL_267:
 LBL_265:
         UNLK A6
         RTS
-        ; func rtUiGetPortSaved  (JT slot 231)
+        ; func rtUiGetPortSaved  (JT slot 230)
         ;   local slot : -4(A6)  size 4
         ;   local p : -8(A6)  size 4
 LBL_19:
@@ -2563,7 +2563,7 @@ LBL_19:
 LBL_268:
         UNLK A6
         RTS
-        ; func rtUiKindHeight  (JT slot 232)
+        ; func rtUiKindHeight  (JT slot 231)
         ;   param kind : 8(A6)  size 4
         ;   local __switch2 : -4(A6)  size 4
 LBL_20:
@@ -2675,7 +2675,7 @@ LBL_271:
 LBL_269:
         UNLK A6
         RTS
-        ; func rtUiKindWidth  (JT slot 233)
+        ; func rtUiKindWidth  (JT slot 232)
         ;   param kind : 8(A6)  size 4
         ;   local __switch3 : -4(A6)  size 4
 LBL_21:
@@ -2787,7 +2787,7 @@ LBL_288:
 LBL_286:
         UNLK A6
         RTS
-        ; func rtUiPstrcpy  (JT slot 234)
+        ; func rtUiPstrcpy  (JT slot 233)
         ;   param dst : 12(A6)  size 4
         ;   param src : 8(A6)  size 4
         ;   local n : -4(A6)  size 4
@@ -2836,7 +2836,7 @@ LBL_304:
 LBL_303:
         UNLK A6
         RTS
-        ; func rtUiLayout  (JT slot 235)
+        ; func rtUiLayout  (JT slot 234)
         ;   param inst : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
         ;   local winIdx : -8(A6)  size 4
@@ -3549,7 +3549,7 @@ LBL_307:
 LBL_305:
         UNLK A6
         RTS
-        ; func rtUiMakeWidgets  (JT slot 236)
+        ; func rtUiMakeWidgets  (JT slot 235)
         ;   param inst : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
         ;   local winIdx : -8(A6)  size 4
@@ -4377,12 +4377,12 @@ LBL_389:
 LBL_387:
         LEA LBL_87(PC),A0
         MOVE.L A0,-(A7)
-        JSR 3282(A5)
+        JSR 3274(A5)
         ADDQ.L #4,A7
         BSR.W LBL_95
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
-        JSR 3290(A5)
+        JSR 3282(A5)
         ADDQ.L #4,A7
 LBL_388:
 LBL_383:
@@ -4448,7 +4448,7 @@ LBL_364:
 LBL_362:
         UNLK A6
         RTS
-        ; func rtUiWidgetSetStr  (JT slot 237)
+        ; func rtUiWidgetSetStr  (JT slot 236)
         ;   param instV : 20(A6)  size 4
         ;   param wIdx : 16(A6)  size 4
         ;   param prop : 12(A6)  size 4
@@ -4514,7 +4514,7 @@ LBL_25:
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2666(A5)
+        JSR 2658(A5)
         ADDA.W #16,A7
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
@@ -4726,7 +4726,7 @@ LBL_397:
 LBL_393:
         UNLK A6
         RTS
-        ; func rtUiWidgetGetStr  (JT slot 238)
+        ; func rtUiWidgetGetStr  (JT slot 237)
         ;   param instV : 20(A6)  size 4
         ;   param wIdx : 16(A6)  size 4
         ;   param prop : 12(A6)  size 4
@@ -4883,7 +4883,7 @@ LBL_415:
 LBL_411:
         UNLK A6
         RTS
-        ; func rtUiWidgetGetText  (JT slot 239)
+        ; func rtUiWidgetGetText  (JT slot 238)
         ;   param instV : 16(A6)  size 4
         ;   param wIdx : 12(A6)  size 4
         ;   param out : 8(A6)  size 4
@@ -4996,7 +4996,7 @@ LBL_424:
 LBL_421:
         UNLK A6
         RTS
-        ; func rtUiWidgetSetText  (JT slot 240)
+        ; func rtUiWidgetSetText  (JT slot 239)
         ;   param instV : 16(A6)  size 4
         ;   param wIdx : 12(A6)  size 4
         ;   param t : 8(A6)  size 4
@@ -5269,7 +5269,7 @@ LBL_431:
 LBL_425:
         UNLK A6
         RTS
-        ; func rtUiWidgetSetBool  (JT slot 241)
+        ; func rtUiWidgetSetBool  (JT slot 240)
         ;   param instV : 18(A6)  size 4
         ;   param wIdx : 14(A6)  size 4
         ;   param prop : 10(A6)  size 4
@@ -5330,7 +5330,7 @@ LBL_29:
         CLR.L D0
         MOVE.B 8(A6),D0
         MOVE.B D0,-(A7)
-        JSR 2674(A5)
+        JSR 2666(A5)
         ADDA.W #14,A7
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
@@ -5465,7 +5465,7 @@ LBL_438:
 LBL_432:
         UNLK A6
         RTS
-        ; func rtUiWidgetSetInt  (JT slot 242)
+        ; func rtUiWidgetSetInt  (JT slot 241)
         ;   param instV : 20(A6)  size 4
         ;   param wIdx : 16(A6)  size 4
         ;   param prop : 12(A6)  size 4
@@ -5661,7 +5661,7 @@ LBL_459:
         MOVE.L D0,-(A7)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2682(A5)
+        JSR 2674(A5)
         ADDA.W #16,A7
 LBL_452:
         MOVE.L -16(A6),D1
@@ -5734,7 +5734,7 @@ LBL_463:
         MOVE.L D0,-(A7)
         MOVE.L -48(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2378(A5)
+        JSR 2370(A5)
         ADDQ.L #8,A7
         MOVE.L -28(A6),D0
         MOVEA.L D0,A0
@@ -5760,7 +5760,7 @@ LBL_463:
         MOVE.L D0,-(A7)
         MOVE.L -48(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2682(A5)
+        JSR 2674(A5)
         ADDA.W #16,A7
 LBL_462:
         MOVE.L -12(A6),D0
@@ -5769,7 +5769,7 @@ LBL_462:
 LBL_449:
         UNLK A6
         RTS
-        ; func rtUiWidgetGetBool  (JT slot 243)
+        ; func rtUiWidgetGetBool  (JT slot 242)
         ;   param instV : 16(A6)  size 4
         ;   param wIdx : 12(A6)  size 4
         ;   param prop : 8(A6)  size 4
@@ -5892,7 +5892,7 @@ LBL_474:
 LBL_464:
         UNLK A6
         RTS
-        ; func rtUiWidgetGetInt  (JT slot 244)
+        ; func rtUiWidgetGetInt  (JT slot 243)
         ;   param instV : 16(A6)  size 4
         ;   param wIdx : 12(A6)  size 4
         ;   param prop : 8(A6)  size 4
@@ -6002,7 +6002,7 @@ LBL_481:
         BSR.W LBL_64
         ADDQ.L #8,A7
         MOVE.L D0,-(A7)
-        JSR 2370(A5)
+        JSR 2362(A5)
         ADDQ.L #4,A7
         BRA.W LBL_475
 LBL_482:
@@ -6026,10 +6026,10 @@ LBL_482:
 LBL_475:
         UNLK A6
         RTS
-        ; func rtUiScratchBitMapGet  (JT slot 245)
+        ; func rtUiScratchBitMapGet  (JT slot 244)
 LBL_33:
         LINK A6,#-2156
-        MOVE.L -34(A5),D1
+        MOVE.L -38(A5),D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SEQ D0
@@ -6040,14 +6040,14 @@ LBL_33:
         MOVE.L D0,-(A7)
         JSR 1338(A5)
         ADDQ.L #4,A7
-        MOVE.L D0,-34(A5)
+        MOVE.L D0,-38(A5)
 LBL_484:
-        MOVE.L -34(A5),D0
+        MOVE.L -38(A5),D0
         BRA.W LBL_483
 LBL_483:
         UNLK A6
         RTS
-        ; func rtUiBitMapFill  (JT slot 246)
+        ; func rtUiBitMapFill  (JT slot 245)
         ;   param cb : 8(A6)  size 4
         ;   local bm : -4(A6)  size 4
 LBL_34:
@@ -6121,7 +6121,7 @@ LBL_34:
 LBL_485:
         UNLK A6
         RTS
-        ; func rtUiCanvasDispose  (JT slot 247)
+        ; func rtUiCanvasDispose  (JT slot 246)
         ;   param cb : 8(A6)  size 4
         ;   local buf : -4(A6)  size 4
 LBL_35:
@@ -6180,7 +6180,7 @@ LBL_487:
 LBL_486:
         UNLK A6
         RTS
-        ; func rtUiCanvasMake  (JT slot 248)
+        ; func rtUiCanvasMake  (JT slot 247)
         ;   param cb : 16(A6)  size 4
         ;   param ww : 12(A6)  size 4
         ;   param hh : 8(A6)  size 4
@@ -6365,7 +6365,7 @@ LBL_492:
 LBL_488:
         UNLK A6
         RTS
-        ; func rtUiCanvasReallocAll  (JT slot 249)
+        ; func rtUiCanvasReallocAll  (JT slot 248)
         ;   param inst : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
         ;   local winIdx : -8(A6)  size 4
@@ -6516,7 +6516,7 @@ LBL_495:
 LBL_493:
         UNLK A6
         RTS
-        ; func rtUiFlushBufferedCanvases  (JT slot 250)
+        ; func rtUiFlushBufferedCanvases  (JT slot 249)
         ;   param inst : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
         ;   local winIdx : -8(A6)  size 4
@@ -6634,7 +6634,7 @@ LBL_502:
 LBL_499:
         UNLK A6
         RTS
-        ; func rtUiCanvasBegin  (JT slot 251)
+        ; func rtUiCanvasBegin  (JT slot 250)
         ;   hidden result ptr : 8(A6)  size 4
         ;   param instV : 16(A6)  size 4
         ;   param wIdx : 12(A6)  size 4
@@ -6767,20 +6767,20 @@ LBL_506:
 LBL_504:
         UNLK A6
         RTS
-        ; func rtUiGrayPatsGet  (JT slot 252)
+        ; func rtUiGrayPatsGet  (JT slot 251)
         ;   local p : -4(A6)  size 4
 LBL_40:
         LINK A6,#-2160
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
-        MOVE.L -38(A5),D1
+        MOVE.L -42(A5),D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SNE D0
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_508
-        MOVE.L -38(A5),D0
+        MOVE.L -42(A5),D0
         BRA.W LBL_507
 LBL_508:
         MOVEQ #72,D0
@@ -7293,13 +7293,13 @@ LBL_508:
         MOVEA.L (A7)+,A0
         MOVE.B D0,(A0)
         MOVE.L -4(A6),D0
-        MOVE.L D0,-38(A5)
+        MOVE.L D0,-42(A5)
         MOVE.L -4(A6),D0
         BRA.W LBL_507
 LBL_507:
         UNLK A6
         RTS
-        ; func rtUiCanvasPattern  (JT slot 253)
+        ; func rtUiCanvasPattern  (JT slot 252)
         ;   param instV : 16(A6)  size 4
         ;   param wIdx : 12(A6)  size 4
         ;   param level : 8(A6)  size 4
@@ -7355,7 +7355,7 @@ LBL_511:
 LBL_509:
         UNLK A6
         RTS
-        ; func rtUiCanvasClear  (JT slot 254)
+        ; func rtUiCanvasClear  (JT slot 253)
         ;   param instV : 12(A6)  size 4
         ;   param wIdx : 8(A6)  size 4
         ;   local t : -16(A6)  size 16
@@ -7459,7 +7459,7 @@ LBL_514:
 LBL_512:
         UNLK A6
         RTS
-        ; func rtUiCanvasLine  (JT slot 255)
+        ; func rtUiCanvasLine  (JT slot 254)
         ;   param instV : 28(A6)  size 4
         ;   param wIdx : 24(A6)  size 4
         ;   param x0 : 20(A6)  size 4
@@ -7526,7 +7526,7 @@ LBL_43:
 LBL_515:
         UNLK A6
         RTS
-        ; func rtUiCanvasRect  (JT slot 256)
+        ; func rtUiCanvasRect  (JT slot 255)
         ;   param instV : 30(A6)  size 4
         ;   param wIdx : 26(A6)  size 4
         ;   param x : 22(A6)  size 4
@@ -7658,7 +7658,7 @@ LBL_518:
 LBL_516:
         UNLK A6
         RTS
-        ; func rtUiCanvasFillCircle  (JT slot 257)
+        ; func rtUiCanvasFillCircle  (JT slot 256)
         ;   param instV : 24(A6)  size 4
         ;   param wIdx : 20(A6)  size 4
         ;   param x : 16(A6)  size 4
@@ -7786,7 +7786,7 @@ LBL_45:
 LBL_519:
         UNLK A6
         RTS
-        ; func rtUiCanvasCircle  (JT slot 258)
+        ; func rtUiCanvasCircle  (JT slot 257)
         ;   param instV : 24(A6)  size 4
         ;   param wIdx : 20(A6)  size 4
         ;   param x : 16(A6)  size 4
@@ -7882,7 +7882,7 @@ LBL_46:
 LBL_520:
         UNLK A6
         RTS
-        ; func rtUiCanvasDrawText  (JT slot 259)
+        ; func rtUiCanvasDrawText  (JT slot 258)
         ;   param instV : 24(A6)  size 4
         ;   param wIdx : 20(A6)  size 4
         ;   param x : 16(A6)  size 4
@@ -7934,7 +7934,7 @@ LBL_47:
 LBL_521:
         UNLK A6
         RTS
-        ; func nat_UiTEFromScrap  (JT slot 260)
+        ; func nat_UiTEFromScrap  (JT slot 259)
         ;   local th : -4(A6)  size 4
         ;   local offSlot : -8(A6)  size 4
         ;   local n : -12(A6)  size 4
@@ -8010,7 +8010,7 @@ LBL_525:
 LBL_522:
         UNLK A6
         RTS
-        ; func nat_UiTEToScrap  (JT slot 261)
+        ; func nat_UiTEToScrap  (JT slot 260)
         ;   local th : -4(A6)  size 4
         ;   local st : -8(A6)  size 4
         ;   local err : -12(A6)  size 4
@@ -8069,7 +8069,7 @@ LBL_527:
 LBL_526:
         UNLK A6
         RTS
-        ; func nat_UiTEGetScrapLength  (JT slot 262)
+        ; func nat_UiTEGetScrapLength  (JT slot 261)
 LBL_50:
         LINK A6,#-2156
         MOVE.L #2736,D0
@@ -8080,7 +8080,7 @@ LBL_50:
 LBL_528:
         UNLK A6
         RTS
-        ; func rtUiTeWidestLine  (JT slot 263)
+        ; func rtUiTeWidestLine  (JT slot 262)
         ;   param te : 8(A6)  size 4
         ;   local teMp : -4(A6)  size 4
         ;   local savedPort : -8(A6)  size 4
@@ -8358,7 +8358,7 @@ LBL_531:
 LBL_529:
         UNLK A6
         RTS
-        ; func rtUiTeScrollSync  (JT slot 264)
+        ; func rtUiTeScrollSync  (JT slot 263)
         ;   param inst : 12(A6)  size 4
         ;   param wIdx : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
@@ -8666,7 +8666,7 @@ LBL_546:
 LBL_541:
         UNLK A6
         RTS
-        ; func rtUiTeClamp  (JT slot 265)
+        ; func rtUiTeClamp  (JT slot 264)
         ;   param te : 12(A6)  size 4
         ;   param maxLen : 8(A6)  size 4
         ;   local teMp : -4(A6)  size 4
@@ -8764,7 +8764,7 @@ LBL_551:
 LBL_549:
         UNLK A6
         RTS
-        ; func rtUiFieldCap  (JT slot 266)
+        ; func rtUiFieldCap  (JT slot 265)
         ;   param inst : 12(A6)  size 4
         ;   param wIdx : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
@@ -8807,10 +8807,10 @@ LBL_54:
         BRA.W LBL_552
 LBL_553:
         CLR.L D0
-        MOVE.B -116(A5),D0
+        MOVE.B -120(A5),D0
         TST.L D0
         BEQ.W LBL_554
-        MOVE.L -120(A5),D1
+        MOVE.L -124(A5),D1
         MOVE.L 12(A6),D0
         CMP.L D0,D1
         SEQ D0
@@ -8907,7 +8907,7 @@ LBL_560:
 LBL_552:
         UNLK A6
         RTS
-        ; func rtUiTeMutated  (JT slot 267)
+        ; func rtUiTeMutated  (JT slot 266)
         ;   param inst : 14(A6)  size 4
         ;   param wIdx : 10(A6)  size 4
         ;   param userEdit : 8(A6)  size 2
@@ -9010,7 +9010,7 @@ LBL_565:
         MOVE.L D0,-(A7)
         LEA LBL_82(PC),A0
         MOVE.L A0,-(A7)
-        JSR 2602(A5)
+        JSR 2594(A5)
         ADDA.W #12,A7
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
@@ -9032,7 +9032,7 @@ LBL_565:
 LBL_561:
         UNLK A6
         RTS
-        ; func rtUiTeRelayout  (JT slot 268)
+        ; func rtUiTeRelayout  (JT slot 267)
         ;   param inst : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
@@ -9743,7 +9743,7 @@ LBL_598:
 LBL_566:
         UNLK A6
         RTS
-        ; func rtUiTeSetFocus  (JT slot 269)
+        ; func rtUiTeSetFocus  (JT slot 268)
         ;   param inst : 12(A6)  size 4
         ;   param newIdx : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
@@ -9846,7 +9846,7 @@ LBL_603:
 LBL_599:
         UNLK A6
         RTS
-        ; func rtUiTeHit  (JT slot 270)
+        ; func rtUiTeHit  (JT slot 269)
         ;   param inst : 16(A6)  size 4
         ;   param localPt : 12(A6)  size 4
         ;   param outIdx : 8(A6)  size 4
@@ -9969,7 +9969,7 @@ LBL_607:
 LBL_605:
         UNLK A6
         RTS
-        ; func rtUiScrollbarAction  (JT slot 271)
+        ; func rtUiScrollbarAction  (JT slot 270)
         ;   param ctrl : 12(A6)  size 4
         ;   param part : 8(A6)  size 4
         ;   local ctrlMp : -4(A6)  size 4
@@ -10357,7 +10357,7 @@ LBL_641:
 LBL_614:
         UNLK A6
         RTS
-        ; func rtUiHandleScrollbarClick  (JT slot 272)
+        ; func rtUiHandleScrollbarClick  (JT slot 271)
         ;   param inst : 24(A6)  size 4
         ;   param ctrl : 20(A6)  size 4
         ;   param wIdx : 16(A6)  size 4
@@ -10381,7 +10381,7 @@ LBL_60:
         MOVEQ #0,D0
         MOVE.L D0,-18(A6)
         CLR.L D0
-        MOVE.B -40(A5),D0
+        MOVE.B -44(A5),D0
         TST.L D0
         BEQ.W LBL_643
         MOVE.L 12(A6),D1
@@ -10560,7 +10560,7 @@ LBL_652:
 LBL_642:
         UNLK A6
         RTS
-        ; func rtUiTeIdleFront  (JT slot 273)
+        ; func rtUiTeIdleFront  (JT slot 272)
         ;   local wp : -4(A6)  size 4
         ;   local inst : -8(A6)  size 4
         ;   local w : -12(A6)  size 4
@@ -10644,7 +10644,7 @@ LBL_662:
 LBL_659:
         UNLK A6
         RTS
-        ; func rtUiStdEditPaste  (JT slot 274)
+        ; func rtUiStdEditPaste  (JT slot 273)
         ;   param inst : 12(A6)  size 4
         ;   param te : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
@@ -10756,7 +10756,7 @@ LBL_667:
 LBL_663:
         UNLK A6
         RTS
-        ; func nat_UiCbAddr  (JT slot 275)
+        ; func nat_UiCbAddr  (JT slot 274)
         ;   param cb : 8(A6)  size 4
 LBL_63:
         LINK A6,#-2156
@@ -10765,7 +10765,7 @@ LBL_63:
 LBL_668:
         UNLK A6
         RTS
-        ; func rtUiListAt  (JT slot 276)
+        ; func rtUiListAt  (JT slot 275)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_64:
@@ -10786,7 +10786,7 @@ LBL_64:
 LBL_669:
         UNLK A6
         RTS
-        ; func rtUiSetListAt  (JT slot 277)
+        ; func rtUiSetListAt  (JT slot 276)
         ;   param w : 16(A6)  size 4
         ;   param i : 12(A6)  size 4
         ;   param v : 8(A6)  size 4
@@ -10809,7 +10809,7 @@ LBL_65:
 LBL_670:
         UNLK A6
         RTS
-        ; func rtUiPopupAt  (JT slot 278)
+        ; func rtUiPopupAt  (JT slot 277)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_66:
@@ -10830,7 +10830,7 @@ LBL_66:
 LBL_671:
         UNLK A6
         RTS
-        ; func rtUiSetPopupAt  (JT slot 279)
+        ; func rtUiSetPopupAt  (JT slot 278)
         ;   param w : 16(A6)  size 4
         ;   param i : 12(A6)  size 4
         ;   param v : 8(A6)  size 4
@@ -10853,7 +10853,7 @@ LBL_67:
 LBL_672:
         UNLK A6
         RTS
-        ; func rtUiPopupSelAt  (JT slot 280)
+        ; func rtUiPopupSelAt  (JT slot 279)
         ;   param w : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
 LBL_68:
@@ -10874,7 +10874,7 @@ LBL_68:
 LBL_673:
         UNLK A6
         RTS
-        ; func rtUiSetPopupSelAt  (JT slot 281)
+        ; func rtUiSetPopupSelAt  (JT slot 280)
         ;   param w : 16(A6)  size 4
         ;   param i : 12(A6)  size 4
         ;   param v : 8(A6)  size 4
@@ -10897,7 +10897,7 @@ LBL_69:
 LBL_674:
         UNLK A6
         RTS
-        ; func rtUiPopupBoxInto  (JT slot 282)
+        ; func rtUiPopupBoxInto  (JT slot 281)
         ;   param inst : 16(A6)  size 4
         ;   param wIdx : 12(A6)  size 4
         ;   param out : 8(A6)  size 4
@@ -10998,7 +10998,7 @@ LBL_676:
 LBL_675:
         UNLK A6
         RTS
-        ; func rtUiTableFillWidth  (JT slot 283)
+        ; func rtUiTableFillWidth  (JT slot 282)
         ;   param colsOff : 16(A6)  size 4
         ;   param nCols : 12(A6)  size 4
         ;   param totalW : 8(A6)  size 4
@@ -11072,7 +11072,7 @@ LBL_682:
 LBL_678:
         UNLK A6
         RTS
-        ; func rtUiFixedToStr  (JT slot 284)
+        ; func rtUiFixedToStr  (JT slot 283)
         ;   param v : 12(A6)  size 4
         ;   param out255 : 8(A6)  size 4
         ;   local neg : -2(A6)  size 2
@@ -11320,7 +11320,7 @@ LBL_692:
 LBL_683:
         UNLK A6
         RTS
-        ; func rtUiTableDrawField  (JT slot 285)
+        ; func rtUiTableDrawField  (JT slot 284)
         ;   param rec : 20(A6)  size 4
         ;   param layoutOff : 16(A6)  size 4
         ;   param fieldIdx : 12(A6)  size 4
@@ -11697,7 +11697,7 @@ LBL_695:
 LBL_693:
         UNLK A6
         RTS
-        ; func rtUiTableRowH  (JT slot 286)
+        ; func rtUiTableRowH  (JT slot 285)
         ;   local fi : -4(A6)  size 4
         ;   local h : -8(A6)  size 4
 LBL_74:
@@ -11758,7 +11758,7 @@ LBL_712:
 LBL_711:
         UNLK A6
         RTS
-        ; func rtUiTableHeaderH  (JT slot 287)
+        ; func rtUiTableHeaderH  (JT slot 286)
 LBL_75:
         LINK A6,#-2156
         BSR.W LBL_74
@@ -11769,7 +11769,7 @@ LBL_75:
 LBL_713:
         UNLK A6
         RTS
-        ; func rtUiMakeLdefStub  (JT slot 288)
+        ; func rtUiMakeLdefStub  (JT slot 287)
         ;   local h : -4(A6)  size 4
         ;   local mp : -8(A6)  size 4
         ;   local addr : -12(A6)  size 4
@@ -11845,7 +11845,7 @@ LBL_715:
 LBL_714:
         UNLK A6
         RTS
-        ; func rtUiLdefDraw  (JT slot 289)
+        ; func rtUiLdefDraw  (JT slot 288)
         ;   param msg : 30(A6)  size 4
         ;   param select : 28(A6)  size 2
         ;   param rectPtr : 24(A6)  size 4
@@ -12150,7 +12150,7 @@ LBL_718:
 LBL_716:
         UNLK A6
         RTS
-        ; func rtUiTableRelayout  (JT slot 290)
+        ; func rtUiTableRelayout  (JT slot 289)
         ;   param inst : 12(A6)  size 4
         ;   param i : 8(A6)  size 4
         ;   local w : -4(A6)  size 4
@@ -12486,12 +12486,11 @@ LBL_733:
 LBL_728:
         UNLK A6
         RTS
-        ; func rtConnDevGone  (JT slot 291)
-        ;   param slot : 8(A6)  size 4
+        ; func rtUiTraceDimFirstDone  (JT slot 290)
 LBL_79:
         LINK A6,#-2156
         MOVEQ #0,D0
-        BRA.W LBL_734
+        MOVE.B D0,-86(A5)
 LBL_734:
         UNLK A6
         RTS
@@ -12650,7 +12649,7 @@ LBL_746:
 LBL_95:
         ; cg_free_globals
         LINK A6,#-48
-        MOVE.L -1296(A5),D0
+        MOVE.L -1300(A5),D0
         MOVE.L D0,-4(A6)
 LBL_747:
         MOVE.L A1,-(A7)

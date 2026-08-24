@@ -2095,6 +2095,14 @@ func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: i
         arg1 = exprNext(arg0)
         arg2 = exprNext(arg1)
         return newIRIntr(ITextCrc16(), lowMethodArgs4(recv, arg0, arg1, arg2), ty)
+    } else if nm == "crc16x" {
+        arg1 = exprNext(arg0)
+        arg2 = exprNext(arg1)
+        return newIRIntr(ITextCrc16X(), lowMethodArgs4(recv, arg0, arg1, arg2), ty)
+    } else if nm == "crc32" {
+        arg1 = exprNext(arg0)
+        arg2 = exprNext(arg1)
+        return newIRIntr(ITextCrc32(), lowMethodArgs4(recv, arg0, arg1, arg2), ty)
     } else if nm == "stringAt" {
         return newIRIntr(ITextStringAt(), lowMethodArgs2(recv, arg0), ty)
     } else if nm == "textAt" {

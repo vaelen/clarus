@@ -149,13 +149,13 @@ LBL_34:
 LBL_6:
         LINK A6,#-2156
         MOVE.L 8(A6),D1
-        MOVEQ #63,D0
+        MOVEQ #64,D0
         CMP.L D0,D1
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_36
-        LEA -1296(A5),A0
+        LEA -1300(A5),A0
         MOVE.L A0,D0
         BRA.W LBL_35
         BRA.W LBL_37
@@ -392,7 +392,7 @@ LBL_49:
 LBL_20:
         ; cg_free_globals
         LINK A6,#-48
-        MOVE.L -1296(A5),D0
+        MOVE.L -1300(A5),D0
         MOVE.L D0,-4(A6)
 LBL_50:
         MOVE.L A1,-(A7)

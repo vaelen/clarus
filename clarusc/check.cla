@@ -1585,6 +1585,18 @@ func buildMethodTables() {
     textOnlyMethods["crc16"] = sigEnd(IntT)
 
     sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["crc16x"] = sigEnd(IntT)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["crc32"] = sigEnd(IntT)
+
+    sigStart()
     sigAdd(psOneOf2(TyStr, TyAddress))
     connectionMethods["open"] = sigEnd(-1)
 

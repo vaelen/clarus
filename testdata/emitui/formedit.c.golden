@@ -572,7 +572,7 @@ static const unsigned char clar_ui_blob[] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0,
     255, 255, 255, 255, 0, 0, 3, 240, 0, 0, 0, 5, 0, 0, 3, 8, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 2,
-    0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 46,
+    0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 47,
     0, 0, 3, 112, 0, 0, 0, 3, 0, 0, 3, 64, 0, 0, 4, 179, 0, 0, 0, 140,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 184, 0, 0, 0, 0, 0, 0, 0, 1,
     0, 0, 0, 1, 0, 0, 4, 188, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0, 0, 4,
@@ -609,6 +609,7 @@ static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
 static const int32_t clar_enum_Protocol[] __attribute__((unused)) = {0, 1, 2};
 static const int clar_enum_Protocol_count __attribute__((unused)) = 3;
 
+static void * cv_rtCrc32Tab;
 static void * cv_rtUiMenuHandlesArr;
 static int32_t cv_rtUiNMenusVal;
 static void * cv_rtUiAppleMenuHandle;
@@ -659,6 +660,7 @@ static rt_list * cv_bookmarks;
 static clar_rec_Bookmark cv_current;
 static rt_map * cv_byName;
 static void clar_init_globals(void) {
+    cv_rtCrc32Tab = 0;
     cv_rtUiMenuHandlesArr = 0;
     cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
     cv_rtUiNMenusVal = 0;
@@ -9107,7 +9109,7 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
 }
 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
-    if (cv_rowsIdx == 46) {
+    if (cv_rowsIdx == 47) {
         return ((void*)&(cv_bookmarks));
     } else {
         rt_log((const uint8_t*)&(clar_lit_125));

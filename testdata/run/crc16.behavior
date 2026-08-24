@@ -3,4 +3,11 @@ exit=0
 one-shot ok
 chunked ok
 n=0 ok
+crc16x one-shot ok
+crc16x chunked ok
+crc16x n=0 ok
+crc32 one-shot ok
+crc32 chunked ok
+crc32 n=0 ok
+crc32 table reuse ok
 --- stderr ---

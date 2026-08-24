@@ -488,6 +488,7 @@ static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
 
 const rt_ui_app_desc rt_ui_app_info = { (const unsigned char *)"\pCountLines", (const unsigned char *)"\p2.0", (const unsigned char *)"\p", (const unsigned char *)"\p" };
 
+static void * cv_rtCrc32Tab;
 static void * cv_rtUiMenuHandlesArr;
 static int32_t cv_rtUiNMenusVal;
 static void * cv_rtUiAppleMenuHandle;
@@ -535,6 +536,7 @@ static void * cv_rtUiModalKey255;
 static int32_t cv_rtSerPos;
 static int32_t cv_rtSerBad;
 static void clar_init_globals(void) {
+    cv_rtCrc32Tab = 0;
     cv_rtUiMenuHandlesArr = 0;
     cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
     cv_rtUiNMenusVal = 0;

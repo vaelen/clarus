@@ -1,12 +1,13 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// crc16.cla (binary-files phase, Task 3): CRC-16/KERMIT over the
-// standard "123456789" check-string test vector (published check value
-// 0x2189), one-shot and chunked (proving the seed-carry chunking
-// contract: crc16(h, pos, n) with h fed back in from a prior call
-// produces the SAME result as one call over the whole range). Also
-// covers n == 0 returning h unchanged (masked to 16 bits).
+// crc16.cla (binary-files phase, Task 3; grown by the transfer-crcs
+// phase, Task 1): all three CRCs over the standard "123456789"
+// check-string test vector -- CRC-16/KERMIT (published check value
+// 0x2189), CRC-16/XMODEM (0x31C3), and CRC-32 (0xCBF43926) -- one-shot
+// and chunked (proving the seed-carry chunking contract: h fed back in
+// from a prior call produces the SAME result as one call over the whole
+// range). Also covers n == 0 returning h unchanged.
 on App.launch {
     var t: text
     var oneShot: int
@@ -36,5 +37,53 @@ on App.launch {
         alert("n=0 ok")
     } else {
         alert("n=0 FAIL")
+    }
+
+    // CRC-16/XMODEM (poly 0x1021 forward): published check 0x31C3.
+    oneShot = t.crc16x(0, 0, 9)
+    if oneShot == 0x31C3 {
+        alert("crc16x one-shot ok")
+    } else {
+        alert("crc16x one-shot FAIL")
+    }
+    chunked = t.crc16x(0, 0, 4)
+    chunked = t.crc16x(chunked, 4, 5)
+    if chunked == oneShot {
+        alert("crc16x chunked ok")
+    } else {
+        alert("crc16x chunked FAIL")
+    }
+    if t.crc16x(0x1234, 0, 0) == 0x1234 {
+        alert("crc16x n=0 ok")
+    } else {
+        alert("crc16x n=0 FAIL")
+    }
+
+    // CRC-32 (reflected 0xEDB88320), raw register in/out: the caller
+    // seeds 0xFFFFFFFF and applies the final XOR. Published check
+    // 0xCBF43926 (a negative int -- hex literals above 0x7FFFFFFF wrap).
+    oneShot = t.crc32(0xFFFFFFFF, 0, 9) ^ 0xFFFFFFFF
+    if oneShot == 0xCBF43926 {
+        alert("crc32 one-shot ok")
+    } else {
+        alert("crc32 one-shot FAIL")
+    }
+    chunked = t.crc32(0xFFFFFFFF, 0, 4)
+    chunked = t.crc32(chunked, 4, 5) ^ 0xFFFFFFFF
+    if chunked == oneShot {
+        alert("crc32 chunked ok")
+    } else {
+        alert("crc32 chunked FAIL")
+    }
+    if t.crc32(0x12345678, 0, 0) == 0x12345678 {
+        alert("crc32 n=0 ok")
+    } else {
+        alert("crc32 n=0 FAIL")
+    }
+    // Second call proves the table survives (built once, reused).
+    if (t.crc32(0xFFFFFFFF, 0, 9) ^ 0xFFFFFFFF) == oneShot {
+        alert("crc32 table reuse ok")
+    } else {
+        alert("crc32 table reuse FAIL")
     }
 }

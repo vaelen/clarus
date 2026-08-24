@@ -1237,6 +1237,8 @@ func irReset() {
     iTextSetWordAtIdx = -1
     iTextSetWordAtLEIdx = -1
     iTextCrc16Idx = -1
+    iTextCrc16XIdx = -1
+    iTextCrc32Idx = -1
     iIntToStrIdx = -1
     iTextStringAtIdx = -1
     iTextTextAtIdx = -1
@@ -3610,6 +3612,24 @@ func ITextCrc16(): int {
         iTextCrc16Idx = intern("text_crc16")
     }
     return iTextCrc16Idx
+}
+
+var iTextCrc16XIdx: int = -1
+
+func ITextCrc16X(): int {
+    if iTextCrc16XIdx == -1 {
+        iTextCrc16XIdx = intern("text_crc16x")
+    }
+    return iTextCrc16XIdx
+}
+
+var iTextCrc32Idx: int = -1
+
+func ITextCrc32(): int {
+    if iTextCrc32Idx == -1 {
+        iTextCrc32Idx = intern("text_crc32")
+    }
+    return iTextCrc32Idx
 }
 
 // IIntToStr (Task 3): `string(n)`'s intrinsic -- a KStr-producing

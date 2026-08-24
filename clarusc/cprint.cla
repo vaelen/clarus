@@ -3846,6 +3846,10 @@ func fpIntrCall12(nm: int, x: int, a0: int, a1: int, a2: int): text {
         return toText("")
     } else if nm == ITextCrc16() {
         return "clar_fn_rtTextCrc16((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "), (int32_t)(" + fpExpr(fpArgAt(a0, 3)) + "))"
+    } else if nm == ITextCrc16X() {
+        return "clar_fn_rtTextCrc16X((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "), (int32_t)(" + fpExpr(fpArgAt(a0, 3)) + "))"
+    } else if nm == ITextCrc32() {
+        return "clar_fn_rtTextCrc32((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "), (int32_t)(" + fpExpr(a2) + "), (int32_t)(" + fpExpr(fpArgAt(a0, 3)) + "))"
     } else if nm == IIntToStr() {
         t = fpNewTmp("clar_str_255")
         fpEmit(t + " = clar_fn_rtIntToStr((int32_t)(" + fpExpr(a0) + "));")

@@ -1,5 +1,19 @@
-        ; func clar_cb_cbWord (JT slot 186) -- pascal callback glue for cbWord
+        ; func clar_cb_cbBool (JT slot 185) -- pascal callback glue for cbBool
 LBL_0:
+        LINK A6,#0
+        ;   sel : 8(A6)  pascal size 2
+        CLR.L D0
+        MOVE.B 8(A6),D0
+        MOVE.B D0,-(A7)
+        JSR 1354(A5)
+        ADDQ.L #2,A7
+        MOVE.B D0,10(A6)
+        UNLK A6
+        MOVE.L (A7)+,A0
+        ADDQ.L #2,A7
+        JMP (A0)
+        ; func clar_cb_cbWord (JT slot 186) -- pascal callback glue for cbWord
+LBL_1:
         LINK A6,#0
         ;   n : 8(A6)  pascal size 2
         MOVE.W 8(A6),D0
@@ -12,7 +26,7 @@ LBL_0:
         MOVE.L (A7)+,A0
         ADDQ.L #2,A7
         JMP (A0)
-LBL_2:
+LBL_3:
         ; cg_mul32: D1=left * D0=right -> D0 (32x32->32, MULU partial products)
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
@@ -37,22 +51,22 @@ LBL_2:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_3:
+LBL_4:
         ; cg_div32: D1=left / D0=right -> D0 (truncate toward zero, C99)
         TST.L D0
-        BNE.W LBL_6
+        BNE.W LBL_7
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
         MOVE.L #255,-(A7)
-        LEA LBL_1(PC),A0
+        LEA LBL_2(PC),A0
         MOVE.L A0,-(A7)
         JSR 90(A5)
         ADDA.W #12,A7
         MOVEA.L A7,A0
         MOVE.L A0,-(A7)
         JSR 50(A5)
-LBL_6:
+LBL_7:
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
         MOVE.L D4,-(A7)
@@ -63,19 +77,19 @@ LBL_6:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_7
+        BPL.W LBL_8
         NEG.L D2
         MOVE.L #1,D4
-LBL_7:
+LBL_8:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_8
+        BPL.W LBL_9
         NEG.L D3
         MOVE.L #1,D5
-LBL_8:
+LBL_9:
         CLR.L D6
         MOVE.W #31,D7
-LBL_9:
+LBL_10:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -83,16 +97,16 @@ LBL_9:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_10
+        BCS.W LBL_11
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_10:
-        DBRA D7,LBL_9
+LBL_11:
+        DBRA D7,LBL_10
         EOR.L D5,D4
         TST.L D4
-        BEQ.W LBL_11
+        BEQ.W LBL_12
         NEG.L D2
-LBL_11:
+LBL_12:
         MOVE.L D2,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -101,22 +115,22 @@ LBL_11:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_4:
+LBL_5:
         ; cg_mod32: D1=left mod D0=right -> D0 (sign follows dividend, C99)
         TST.L D0
-        BNE.W LBL_12
+        BNE.W LBL_13
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
         MOVE.L #255,-(A7)
-        LEA LBL_1(PC),A0
+        LEA LBL_2(PC),A0
         MOVE.L A0,-(A7)
         JSR 90(A5)
         ADDA.W #12,A7
         MOVEA.L A7,A0
         MOVE.L A0,-(A7)
         JSR 50(A5)
-LBL_12:
+LBL_13:
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
         MOVE.L D4,-(A7)
@@ -127,19 +141,19 @@ LBL_12:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_13
+        BPL.W LBL_14
         NEG.L D2
         MOVE.L #1,D4
-LBL_13:
+LBL_14:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_14
+        BPL.W LBL_15
         NEG.L D3
         MOVE.L #1,D5
-LBL_14:
+LBL_15:
         CLR.L D6
         MOVE.W #31,D7
-LBL_15:
+LBL_16:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -147,15 +161,15 @@ LBL_15:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_16
+        BCS.W LBL_17
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_16:
-        DBRA D7,LBL_15
-        TST.L D4
-        BEQ.W LBL_17
-        NEG.L D6
 LBL_17:
+        DBRA D7,LBL_16
+        TST.L D4
+        BEQ.W LBL_18
+        NEG.L D6
+LBL_18:
         MOVE.L D6,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -164,12 +178,12 @@ LBL_17:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_5:
+LBL_6:
         ; cg_free_globals
         LINK A6,#-48
-        MOVE.L -1296(A5),D0
+        MOVE.L -1300(A5),D0
         MOVE.L D0,-4(A6)
-LBL_18:
+LBL_19:
         MOVE.L A1,-(A7)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
@@ -179,7 +193,7 @@ LBL_18:
         UNLK A6
         RTS
         ; constant pool: string literals
-LBL_1:
+LBL_2:
         DC.B $10
         DC.B $64,$69,$76,$69,$73,$69,$6F,$6E,$20,$62,$79,$20,$7A,$65,$72,$6F
         DC.B $00

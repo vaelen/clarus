@@ -530,6 +530,7 @@ static const unsigned char clar_ui_blob[] = {
 static const int32_t clar_enum_saveChoice[] __attribute__((unused)) = {0, 1, 2};
 static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
 
+static void * cv_rtCrc32Tab;
 static void * cv_rtUiMenuHandlesArr;
 static int32_t cv_rtUiNMenusVal;
 static void * cv_rtUiAppleMenuHandle;
@@ -577,6 +578,7 @@ static void * cv_rtUiModalKey255;
 static int32_t cv_rtSerPos;
 static int32_t cv_rtSerBad;
 static void clar_init_globals(void) {
+    cv_rtCrc32Tab = 0;
     cv_rtUiMenuHandlesArr = 0;
     cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
     cv_rtUiNMenusVal = 0;

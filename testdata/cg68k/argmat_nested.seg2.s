@@ -215,7 +215,7 @@ LBL_19:
 LBL_7:
         ; cg_free_globals
         LINK A6,#-48
-        MOVE.L -1296(A5),D0
+        MOVE.L -1300(A5),D0
         MOVE.L D0,-4(A6)
 LBL_20:
         MOVE.L A1,-(A7)

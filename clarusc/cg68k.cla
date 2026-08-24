@@ -325,6 +325,8 @@ var rnTextSetIntAtLE: int
 var rnTextSetWordAt: int
 var rnTextSetWordAtLE: int
 var rnTextCrc16: int
+var rnTextCrc16X: int
+var rnTextCrc32: int
 var rnIntToStr: int
 var rnUiAskOpen: int
 var rnUiAskSave: int
@@ -473,6 +475,8 @@ func rnInit() {
     rnTextSetWordAt = intern("rtTextSetWordAt")
     rnTextSetWordAtLE = intern("rtTextSetWordAtLE")
     rnTextCrc16 = intern("rtTextCrc16")
+    rnTextCrc16X = intern("rtTextCrc16X")
+    rnTextCrc32 = intern("rtTextCrc32")
     rnIntToStr = intern("rtIntToStr")
     rnUiAskOpen = intern("rtUiAskOpen")
     rnUiAskSave = intern("rtUiAskSave")
@@ -8355,6 +8359,14 @@ func cgIntr(e: int) {
     }
     if nm == ITextCrc16() {
         cgIntr4(e, rnTextCrc16, false, false, false, false)
+        return
+    }
+    if nm == ITextCrc16X() {
+        cgIntr4(e, rnTextCrc16X, false, false, false, false)
+        return
+    }
+    if nm == ITextCrc32() {
+        cgIntr4(e, rnTextCrc32, false, false, false, false)
         return
     }
     if nm == ITextTextAt() {
