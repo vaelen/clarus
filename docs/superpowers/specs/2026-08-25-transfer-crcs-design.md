@@ -101,6 +101,19 @@ the written record.
 - Known cost, accepted: shake prunes unreachable *functions*, not
   globals, so the 1 KB table + flag land in every program's data
   segment whether or not it calls `crc32`.
+- Consequence found while planning (2026-08-25): runtime globals are
+  laid out in module splice order and `text.cla` is spliced third, so
+  the two new globals shift every later global's A5 offset in every
+  cg68k golden (and add two `static` declarations to every emitui C
+  golden). That is one planned rebless wave with a normalization-diff
+  proof (plan, Task 1) — a process cost, not a design change. A
+  usage-gated `crc.cla` module was considered and rejected: the 68k lane
+  splices every runtime module unconditionally for the bake's fixed
+  layout, so gating would not avoid the shift there and would add a
+  `bake.cla` change (and its standing 55-minute Snow rerun). A per-call
+  stack-local table (no globals) was rejected: 1 KB of stack per call on
+  an 8 KB Mac Plus stack, and the 2K-iteration rebuild per call erases
+  most of the win for 1 KB blocks.
 
 ## 5. Compiler (mechanical, `crc16` as the template)
 
