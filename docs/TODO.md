@@ -30,6 +30,10 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   never globals — a second, smaller follow-up in its own right). Needs
   parser + checker + IR + both backends (cg68k constant pool; cprint
   static initializer). Spec: `docs/superpowers/specs/2026-08-25-transfer-crcs-design.md` §2.3.
+  The `crc32` table ended up as a heap block rather than a global array
+  for the `cg_init_globals` reason recorded under ABI / performance —
+  an array literal would also need a zero-cost (constant-pool)
+  representation to be the right home for it.
 - **`text + char` concatenation** does not exist (append accepts char;
   `+` does not). Deliberate; revisit if it keeps surprising.
 - **Launch-an-application-from-Clarus** (ui-scenario-retirement, Andrew
@@ -294,6 +298,20 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   named upgrade lever being a batched `rtConnDevReadInto(slot, buf, n)`
   added to the per-lane waist if a future fast bulk transport ever makes
   it a bottleneck.
+
+### transfer-crcs phase (2026-08-25)
+
+- **`cg_init_globals` re-zeroes what the startup zero-loop already
+  zeroed, and unrolls arrays element by element** (transfer-crcs Task 1
+  finding): `cgEmitInitGlobalsStub` default-inits EVERY global via
+  `cgDefaultInitAt` even when the type's default is all-zero and the
+  below-A5 sweep has already zeroed it, and `cgArrDefaultAt` unrolls
+  `T[N]` into N stores — a 256-int global costs ~1.5 KB of startup code
+  in every native program. Skipping all-zero-default globals (or
+  looping large scalar arrays) would shrink every native program's
+  startup code; it is a planned rebless wave of its own (every cg68k
+  golden's `cg_init_globals` changes). The `crc32` table went to the
+  heap to sidestep this.
 
 ## Runtime / Toolbox robustness
 

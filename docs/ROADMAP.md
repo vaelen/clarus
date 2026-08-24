@@ -100,6 +100,17 @@ symbol-table lookup the baked-IR fast path never populates). Full
 detail: `docs/HISTORY.md` (once archived) or
 `.superpowers/sdd/2026-08-22-binary-files/`.
 
+**`transfer-crcs` phase (branch `transfer-crcs`, 2026-08-25, based on
+`main` at `26d6748` — `binary-files` is already merged) is COMPLETE —
+full T2 green, NOT YET merged (merge only on Andrew's request):**
+`text.crc16x` (CRC-16/XMODEM, bitwise) and `text.crc32` (CRC-32/
+ZMODEM, table-driven, table built lazily into a heap block on first
+call) on both lanes, driven by 68kBBS's XMODEM/YMODEM/ZMODEM needs.
+Array-literal initializers (the language feature that would let the
+`crc32` table be a build-time constant instead of a lazily-built heap
+block) filed in `docs/TODO.md`. Full detail: `docs/HISTORY.md` (once
+archived) or `.superpowers/sdd/2026-08-25-transfer-crcs/`.
+
 ## Roadmap
 
 Focus (Andrew, 2026-08-15): make the tools more usable — expand the set
@@ -121,7 +132,11 @@ In order:
    `toolbox/` include fallback (+ `--rtdir` in check-only mode), and
    emit68k's per-function big-temp pool (no more per-statement
    ceiling). Full T2 green on branch `binary-files`; not yet merged
-   (merge only on Andrew's request).
+   (merge only on Andrew's request). Extended by `text.crc16x`/
+   `text.crc32` (transfer-crcs phase, 2026-08-25) — XMODEM/YMODEM and
+   ZMODEM CRCs on both lanes; array-literal initializers filed in TODO.
+   Full T2 green on branch `transfer-crcs`; not yet merged (merge only
+   on Andrew's request).
 2. **Serial ports** — controlling the ports and sending/receiving data.
    DONE (`serial-connection` phase, 2026-08-16): the fenced `connection`
    type is real end to end, serial as its first transport, both lanes

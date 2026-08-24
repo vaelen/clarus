@@ -91,16 +91,26 @@ the written record.
   `crc = rtCrc32Tab[(crc ^ b) & 0xFF] ^ ((crc >> 8) & 0x00FFFFFF)`.
   The `& 0x00FFFFFF` after the shift is load-bearing: `>>` is
   arithmetic in Clarus and the register routinely has bit 31 set.
-- Table: `var rtCrc32Tab: int[256]` + `var rtCrc32TabReady: bool`, both
-  top-level in `text.cla`. `rtTextCrc32` calls `rtCrc32TabInit()` when
-  `not rtCrc32TabReady`: for `i` in 0..255, `c = i`, 8× `c = (c & 1) ==
-  1 ? ((c >> 1) & 0x7FFFFFFF) ^ 0xEDB88320 : (c >> 1) & 0x7FFFFFFF`,
-  store, then set the flag. ~2K iterations, once per process — a few ms
-  on a Mac Plus. `ponytail:` comment on the table names the ceiling and
-  the upgrade path (array-literal initializer, `docs/TODO.md`).
+- Table: `var rtCrc32Tab: ptr` (top-level in `text.cla`, `ptr(0)` until
+  built). `rtTextCrc32` calls `rtCrc32TabInit()` when it is still
+  `ptr(0)`: `TextNewPtr(1024)` (nil → `rtPanic("out of memory")`, the
+  same check text.cla's other TextNewPtr sites make), then for `i` in
+  0..255, `c = i`, 8× `c = (c & 1) == 1 ? ((c >> 1) & 0x7FFFFFFF) ^
+  0xEDB88320 : (c >> 1) & 0x7FFFFFFF`, `pokel(p + i * 4, c)`; the
+  per-byte lookup is `peekl(rtCrc32Tab + ((crc ^ b) & 0xFF) * 4)`. ~2K
+  iterations, once per process. **Amended 2026-08-25 during Task 1:**
+  the original design was an `int[256]` global + `bool` flag; cg68k's
+  `cg_init_globals` unrolls a global array's default-init into one
+  store per element, so that cost ~1.5 KB of startup code in EVERY
+  native program (not just crc32 callers) and pushed 8 previously
+  single-segment cg68k fixtures into a second segment. A heap block
+  costs one 4-byte global; the 1 KB lives only in programs that call
+  `crc32`. `ponytail:` comment on the table names the ceiling and the
+  upgrade path (array-literal initializer, `docs/TODO.md`).
 - Known cost, accepted: shake prunes unreachable *functions*, not
-  globals, so the 1 KB table + flag land in every program's data
-  segment whether or not it calls `crc32`.
+  globals, so the 4-byte table pointer lands in every program's data
+  segment whether or not it calls `crc32`; the 1 KB table itself is
+  allocated only by programs that do.
 - Consequence found while planning (2026-08-25): runtime globals are
   laid out in module splice order and `text.cla` is spliced third, so
   the two new globals shift every later global's A5 offset in every

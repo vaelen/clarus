@@ -4299,6 +4299,107 @@ brief asked for it directly.
     a controller rerun before/at merge — not run by any task this
     phase (foreground, hardware-gated, by design).
 
+- **transfer-crcs (branch `transfer-crcs`, 2026-08-25, based on
+  `main` at `26d6748` — `binary-files` already merged): DONE, T2
+  PASS.** Driven by the 68kBBS project's `docs/language-gaps.md` §8:
+  XMODEM/YMODEM need CRC-16/XMODEM and ZMODEM needs CRC-32;
+  `text.crc16` (binary-files phase) is CRC-16/KERMIT only. Spec:
+  `docs/superpowers/specs/2026-08-25-transfer-crcs-design.md`; plan:
+  `docs/superpowers/plans/2026-08-25-transfer-crcs.md`; full ledger:
+  `.superpowers/sdd/2026-08-25-transfer-crcs/`. Three tasks, one commit
+  each (`c4e6c31`, `213a782`, plus this close-out commit).
+  - **`t.crc16x(h, pos, n)`** (Task 1, commit `c4e6c31`) — CRC-16/XMODEM,
+    poly `0x1021` forward (MSB-first, no reflection), the same bitwise
+    per-bit loop shape as `t.crc16` (CRC-16/KERMIT). Check value
+    `0x31C3` over `"123456789"`.
+  - **`t.crc32(h, pos, n)`** (Task 1) — CRC-32/ZMODEM/IEEE, reflected
+    poly `0xEDB88320`, table-driven. The register is returned raw (the
+    caller supplies the `0xFFFFFFFF` init and applies the final XOR);
+    check value `t.crc32(0xFFFFFFFF, 0, 9) ^ 0xFFFFFFFF == 0xCBF43926`
+    over `"123456789"`.
+  - **Fix round 1: the `crc32` table moved from a global array to a
+    heap block** (Task 1, controller ruling on a mid-task finding).
+    The original design was `var rtCrc32Tab: int[256]` + a `bool` ready
+    flag, both top-level runtime globals. `clarusc/cg68k.cla`'s
+    `cgEmitInitGlobalsStub` default-inits every declared global at
+    startup unconditionally (`cgDefaultInitAt`), and unrolls an array
+    global's default-init one store per element (`cgArrDefaultAt`) —
+    for a 256-int array that is 257 scalars / 514 lines of explicit
+    `MOVE.L` code, added to EVERY native program's startup regardless
+    of whether it calls `crc32`. This pushed 8 previously
+    single-segment cg68k fixtures (`enums`, `globals`, `inline_a5`,
+    `peep_clr`, `peep_pushpop`, `peep_quick`, `peep_shuffle`,
+    `regnamed`) into a second segment and broke
+    `internal/cg68k/image_test.go`'s single-segment assumption for
+    `globals.cla`. Controller ruling: the fix belongs on the runtime
+    side, not codegen. `rtCrc32Tab` became a single `ptr` global
+    (`ptr(0)` until built, the existing `x == ptr(0)` null-test idiom —
+    Clarus has no `nil` literal for `ptr`); `rtCrc32TabInit` allocates
+    1 KB via `TextNewPtr` on first call (`ptr(0)` result → `rtPanic`,
+    the same check `text.cla`'s other `TextNewPtr` sites make), fills
+    it with `pokel`, and the per-byte lookup uses `peekl`. The image
+    test was reverted to its base form (the single-segment assumption
+    holds again). Net global-offset shift across the whole cg68k/emitui
+    corpus: a uniform **+4 bytes** (one pointer, proved by joining
+    `emit68k --listing`'s per-global name/offset comments across old
+    vs. new by global name across four fixtures — one new global, zero
+    lost, every pre-existing global shifts by exactly +4) instead of
+    round 1's **+1026 bytes** (array + flag, same join technique, same
+    proof shape). Rebless redone from a clean base
+    (`git checkout 26d6748 -- testdata/cg68k testdata/emitui` before
+    reblessing) so the final diff carries only the heap-block shape,
+    not round 1's larger array-global churn: 8 stray `.seg2.s` files
+    from round 1 are gone, `globals.cla` stays single-segment, and the
+    per-file diffs are purely additive (one static pointer declaration
+    + one zero-init line) except a `cv_rowsIdx`-style ordinal-index
+    literal shifting by exactly +1 in 4 emitui goldens (a widget-table
+    dispatch ID whose value depends on how many globals precede it in
+    splice order) — the same deterministic mechanism as round 1, now
+    proportional to one new global instead of two. All amended into a
+    single commit, `0eb644f` → `c4e6c31`.
+  - **The table is built lazily, not hardcoded**, because Clarus has
+    no array-literal initializer (`var t: int[256]` is always
+    zero-filled; `const` initializers are single literals) — filed in
+    `docs/TODO.md` as its own future language-feature phase.
+  - **`crc16` itself is untouched** — with `crc32` table-driven it no
+    longer shares a loop with `crc16x`, so the hardware-proved
+    `rtTextCrc16` stays as-is. **`app68Crc16`
+    (`clarusc/app68k.cla`, the compiler's own CRC-16/XMODEM used for
+    `.APPL` checksums) is deliberately NOT converted to call
+    `rtTextCrc16X`** — it lives in the compiler, which the committed
+    `clarusc/clarusc.c` bootstrap snapshot must still be able to
+    compile; wiring it to a runtime intrinsic would break the
+    bootstrap until the snapshot is regenerated, not worth the
+    coupling for a 124-byte header.
+  - **Core suite coverage** (Task 2, commit `213a782`):
+    `testsuite/core/cases_textbinary.cla`'s `caseCrc16` grew XMODEM and
+    ZMODEM vectors (one-shot/chunked/`n==0`/table-reuse assertions, no
+    new `CoreTest` enum member, no case-count site touched). Proved on
+    real 68000 hardware (`TestCoreSuiteGUIOn68k`, System 6, Mini vMac)
+    — the aggregate suite-boot check (`PASS ` line count/`TOTAL`
+    reconciliation, no per-case subtests for `core`) covers `Crc16`
+    among all 78 cases.
+  - **Snow timing spot-check: pending controller rerun
+    (`build-run/crctime.cla`); see the phase's final report.** Task 2's
+    attempt (a TickCount-bracketed `crc16`/`crc16x`/`crc32` timing loop
+    over a 64 KB buffer) collided with a second, unrelated Snow
+    instance sharing this machine's display — a concurrent session's
+    own active work, both windows spawning at the identical screen
+    position — and was aborted rather than risk clicking into someone
+    else's window. Not a gate; only supporting evidence for the design
+    spec's "table pays off" claim.
+  - **Close-out (Task 3)**: bootstrap snapshot regenerated
+    (`TestSnapshotFixedPoint` PASS) and the `.behavior` golden for
+    `testdata/run/crc16.cla` — hand-written in Task 1 because the
+    committed snapshot didn't know `crc16x`/`crc32` until this task —
+    re-verified against the real bless: byte-identical to the
+    hand-written version. The real bless surfaced one legitimate new
+    artifact the addendum didn't anticipate: a live-leak mismatch
+    (`testdata/run/crc16.leaks`, content `1`) for the `crc32` table's
+    intentional never-freed heap block (a process-lifetime cache, per
+    its own `ponytail:` comment) — precedented by the test-suite-review
+    phase's `for_loop_var_alias.leaks`, same mechanism.
+
 ## Resolved "Small open items" (moved verbatim from ROADMAP, 2026-08-15)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

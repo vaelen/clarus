@@ -236,7 +236,9 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   int-to-decimal-string conversion, `string(i)`, joining `int()`/
   `fixed()`/`char()`/`ptr()` -- not the pre-existing bounded-capacity
   TYPE syntax of the same name), and `text`'s LE/word/setter binary accessors
-  plus `crc16`; `emit68k` also now sizes a function's string/record temp
+  plus `crc16`/`crc16x`/`crc32` (the last two from the transfer-crcs
+  phase, 2026-08-25; `crc32`'s table is built lazily on first call);
+  `emit68k` also now sizes a function's string/record temp
   pool per function instead of a fixed per-statement ceiling. See the
   reference for the full method lists.
 - Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
