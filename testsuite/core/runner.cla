@@ -109,7 +109,10 @@
 // setWordAtLE) plus CRC-16/KERMIT (crc16), and `string(n)` (Ch3: Numeric
 // Conversions) -- known-answer coverage for a vDB database engine's
 // binary-format helpers, hardware-proved on the native lane the same way
-// TextRange proved the original bulk text range-read methods.
+// TextRange proved the original bulk text range-read methods. Crc16
+// grew (transfer-crcs phase, Task 2) to also cover CRC-16/XMODEM
+// (crc16x) and CRC-32 (crc32), one-shot, chunked, n == 0, and (crc32
+// only) table reuse across calls.
 //
 // FileHandleRW (cases_fileh.cla, binary-files phase Task 5) is the 77th
 // real case: create/writeAt/readAt/append/size/setSize/flush/close/

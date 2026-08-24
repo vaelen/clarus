@@ -83,9 +83,11 @@ func caseTextBinary(): TestResult {
     return tkPass("TextBinary")
 }
 
-// caseCrc16: CRC-16/KERMIT over the standard "123456789" check-string
-// test vector (published check value 0x2189), one-shot and chunked
-// (proving the seed-carry chunking contract), plus n == 0 identity.
+// caseCrc16: CRC-16/KERMIT, CRC-16/XMODEM, and CRC-32 over the standard
+// "123456789" check-string test vector (published check values 0x2189,
+// 0x31C3, 0xCBF43926), one-shot and chunked (proving the seed-carry
+// chunking contract) plus n == 0 identity for all three, plus a second
+// crc32 call proving the lazily-built 256-entry table is reused.
 func caseCrc16(): TestResult {
     var t: text
     var oneShot: int
@@ -106,6 +108,38 @@ func caseCrc16(): TestResult {
 
     if t.crc16(0x1234, 0, 0) != 0x1234 {
         return tkFail("Crc16", "n=0 wrong")
+    }
+
+    // CRC-16/XMODEM (0x1021 forward): published check 0x31C3.
+    oneShot = t.crc16x(0, 0, 9)
+    if oneShot != 0x31C3 {
+        return tkFail("Crc16", "crc16x one-shot wrong")
+    }
+    chunked = t.crc16x(0, 0, 4)
+    chunked = t.crc16x(chunked, 4, 5)
+    if chunked != oneShot {
+        return tkFail("Crc16", "crc16x chunked wrong")
+    }
+    if t.crc16x(0x1234, 0, 0) != 0x1234 {
+        return tkFail("Crc16", "crc16x n=0 wrong")
+    }
+
+    // CRC-32 (reflected 0xEDB88320), raw register: seed/final XOR by
+    // the caller. Published check 0xCBF43926 (negative as an int).
+    oneShot = t.crc32(0xFFFFFFFF, 0, 9) ^ 0xFFFFFFFF
+    if oneShot != 0xCBF43926 {
+        return tkFail("Crc16", "crc32 one-shot wrong")
+    }
+    chunked = t.crc32(0xFFFFFFFF, 0, 4)
+    chunked = t.crc32(chunked, 4, 5) ^ 0xFFFFFFFF
+    if chunked != oneShot {
+        return tkFail("Crc16", "crc32 chunked wrong")
+    }
+    if t.crc32(0x12345678, 0, 0) != 0x12345678 {
+        return tkFail("Crc16", "crc32 n=0 wrong")
+    }
+    if (t.crc32(0xFFFFFFFF, 0, 9) ^ 0xFFFFFFFF) != oneShot {
+        return tkFail("Crc16", "crc32 table reuse wrong")
     }
 
     return tkPass("Crc16")
