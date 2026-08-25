@@ -51,12 +51,12 @@ var catalogFiles = []string{
 // PBFlushFileSync/PBFlushVolSync/PBAllocateSync/fsRdWrPerm/fsFromStart
 // (files, binary-files phase Task 2 -- positioned-I/O fill, reuses `iop`
 // rather than redeclaring IOParam).
-// CInfoPBRec/HFileParam/CMovePBRec/PBGetCatInfoSync/PBDirCreateSync/
-// PBHDeleteSync/PBHRenameSync/PBHGetFInfoSync/PBHSetFInfoSync/
-// PBHOpenRFSync/PBCatMoveSync/hfsSelGetCatInfo/hfsSelDirCreate/
-// hfsSelCatMove/ioDirMask (files, filesystem-api phase Task 2 -- HFS
-// directory/catalog family via _HFSDispatch plus the H-prefixed
-// single-trap routines).
+// CInfoPBRec/HFileParam/CMovePBRec/HIOParamRename/PBGetCatInfoSync/
+// PBSetCatInfoSync/PBDirCreateSync/PBHDeleteSync/PBHRenameSync/
+// PBHGetFInfoSync/PBHSetFInfoSync/PBHOpenRFSync/PBCatMoveSync/
+// hfsSelGetCatInfo/hfsSelSetCatInfo/hfsSelDirCreate/hfsSelCatMove/
+// ioDirMask (files, filesystem-api phase Task 2 -- HFS directory/catalog
+// family via _HFSDispatch plus the H-prefixed single-trap routines).
 const catalogDriver = `on App.startCLI(args: list of string) {
     var ev: EventRecord
     var t0: int
@@ -75,6 +75,7 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     var ci: CInfoPBRec
     var hp: HFileParam
     var cm: CMovePBRec
+    var hr: HIOParamRename
 
     t0 = TickCount()
     p = NewPtr(4)
@@ -155,11 +156,15 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     ci.ioFDirIndex = 0
     ci.ioDirID = 0
     err = PBGetCatInfoSync(ci, hfsSelGetCatInfo)
+    err = PBSetCatInfoSync(ci, hfsSelSetCatInfo)
     hp.ioNamePtr = ptr(0)
     hp.ioDirID = 0
     err = PBDirCreateSync(hp, hfsSelDirCreate)
     err = PBHDeleteSync(hp)
-    err = PBHRenameSync(hp)
+    hr.ioNamePtr = ptr(0)
+    hr.ioMisc = ptr(0)
+    hr.ioDirID = 0
+    err = PBHRenameSync(hr)
     err = PBHGetFInfoSync(hp)
     err = PBHSetFInfoSync(hp)
     err = PBHOpenRFSync(hp)
