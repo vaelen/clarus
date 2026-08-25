@@ -447,6 +447,15 @@ func rtFhDevListNext(): string {
 func rtFhDevListEnd() {
 }
 
+// rtFhDevListFailed (fix round 1): failure-neutral stub -- rtFhDevListBegin
+// above already fails before any listing starts on this lane, so
+// rtFhList's post-loop check never has anything to report here. No
+// module-level var (this lane's rtFhListBuf-equivalent state doesn't
+// exist yet either); Task 5 gives this a real body alongside the rest.
+func rtFhDevListFailed(): bool {
+    return false
+}
+
 func rtFhDevSetInfo(path: string, ftype: string, fcreator: string, created: int, modified: int): int {
     rtFh68kLastErr = -4
     return -4

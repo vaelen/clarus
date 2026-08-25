@@ -298,7 +298,11 @@ func rtFhDelete(path: string): bool {
 
 // rtFhList: names is a reference (list), so filling it here reaches the
 // caller (Ch7). One listing at a time -- the device cursor is a single
-// module-level slot on each lane (spec %4.3).
+// module-level slot on each lane (spec %4.3). Fix round 1: ListNext's
+// "" return means either "done" OR "a real read error happened" (its own
+// documented 1-vs--1 distinction) -- rtFhDevListFailed() tells them apart
+// after the loop, so a genuine failure reports false + lastError instead
+// of a silently truncated true.
 func rtFhList(path: string, names: list of string): bool {
     var name: string
 
@@ -313,6 +317,10 @@ func rtFhList(path: string, names: list of string): bool {
         name = rtFhDevListNext()
     }
     rtFhDevListEnd()
+    if rtFhDevListFailed() {
+        rtSetLastErr(rtFhDevLastOSErr(), "list failed")
+        return false
+    }
     return true
 }
 

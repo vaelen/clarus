@@ -302,9 +302,13 @@ int32_t rt_ext_FhHListBegin(const uint8_t *path) {
     return 0;
 }
 
-/* 0 = wrote a Pascal-string name into buf (<= 255 bytes), 1 = done -- '.'
- * and '..' are skipped, matching spec %3's "every file and folder
- * directly inside path" (those two are not catalog entries on the Mac). */
+/* 0 = wrote a Pascal-string name into buf (<= 255 bytes), 1 = done, -1 =
+ * error (fix round 1: readdir() signals a real failure by leaving errno
+ * nonzero when it returns NULL -- "no more entries" leaves errno
+ * untouched at the 0 this loop resets it to before each call, so the two
+ * cases are distinguishable). '.' and '..' are skipped, matching spec
+ * %3's "every file and folder directly inside path" (those two are not
+ * catalog entries on the Mac). */
 int32_t rt_ext_FhHListNext(void *buf) {
     struct dirent *de;
     size_t n;
@@ -312,7 +316,10 @@ int32_t rt_ext_FhHListNext(void *buf) {
     for (;;) {
         errno = 0;
         de = readdir(rt_fh_dir);
-        if (!de) return 1;
+        if (!de) {
+            if (errno != 0) { rt_fh_errno = errno; return -1; }
+            return 1;
+        }
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
         n = strlen(de->d_name);
         if (n > 255) n = 255;

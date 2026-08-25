@@ -147,6 +147,12 @@ func rtFhDevStatIsDir(): bool {
 // module-level var here never touches a native golden.
 var rtFhListBuf: ptr = ptr(0)
 
+// rtFhListFailed (fix round 1): true once this listing's FhHListNext has
+// returned -1 (a real readdir() error, not "done") -- rtFhList (fileh.cla)
+// checks rtFhDevListFailed() after its ListNext loop so a truncated
+// listing surfaces as false + lastError instead of a silent true.
+var rtFhListFailed: bool = false
+
 // FhHMakeDir/Delete/ListBegin/ListNext/ListEnd/SetTimes/Rename/Move
 // (filesystem-api Task 4): the directory/catalog surface's host lane,
 // runtime/host/rt_fileh.inc's own rt_ext_FhH* bodies. FhHListNext writes
@@ -176,6 +182,7 @@ func rtFhDevListBegin(path: string): bool {
         return false
     }
     rtFhListBuf = SerNewPtr(256)
+    rtFhListFailed = false
     return true
 }
 
@@ -183,8 +190,13 @@ func rtFhDevListNext(): string {
     var s: string
     var n: int
     var i: int
+    var rc: int
 
-    if FhHListNext(rtFhListBuf) != 0 {
+    rc = FhHListNext(rtFhListBuf)
+    if rc != 0 {
+        if rc < 0 {
+            rtFhListFailed = true
+        }
         return ""
     }
     n = peekb(rtFhListBuf)
@@ -194,6 +206,14 @@ func rtFhDevListNext(): string {
         i = i + 1
     }
     return s
+}
+
+// rtFhDevListFailed: the lane-neutral error signal rtFhList checks after
+// its ListNext loop (fix round 1) -- true here iff the last ListNext saw
+// FhHListNext return -1 (a real readdir() failure, spec's own
+// "0 = got one, 1 = done, -1 = error" contract).
+func rtFhDevListFailed(): bool {
+    return rtFhListFailed
 }
 
 func rtFhDevListEnd() {
