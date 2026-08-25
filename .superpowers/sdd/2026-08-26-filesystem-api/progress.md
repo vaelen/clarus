@@ -43,3 +43,13 @@ Task 2: fix round 1/5 (1 addressed per implementer — driver binds PBSetCatInfo
 Task 2: fix round 1/5 re-review: 1 addressed, 0 open
 Task 2: complete (commits 90875f9..9549634, review clean after 1 fix round)
 Task 3: dispatched (implementer sonnet), BASE 9549634
+Task 3: implementer DONE_WITH_CONCERNS at 3e6aa69 (route 1 from-source splice; concerns: bake.cla manifest exclusion + drive.cla "collision registration" found empirically; --testapi --rtbake combo untested in T1/T2; fileh_68k.cla stubs added because the module is spliced into every native build — a plan gap). Review dispatched on opus (drive.cla +203 lines, bake manifest risk).
+Task 3: review (opus): spec ❌ 2 Important — (1) unguarded symbols[scopeLookup(FileInfo)] crashes clarusc when the prelude is absent (--rtdir <empty>, or a tree outside the repo); (2) bake.cla/drive.cla comments misdescribe the manifest exclusion (second loop still covers the bake-time path; drive.cla:2089 collision add is a duplicate). Reviewer verified --rtbake and --rtbake --testapi builds byte-equal on the bake path; 19 emitui goldens gained the identical FileInfo typedef+ctor; no cg68k/uisnaps change.
+Task 3: Ruling: psRecNamed + its matcher branch are dead (plan-mandated but unused; file.info resolves via sigEndNamed) — delete them. Cost if wrong: none (re-add on demand).
+Task 3: minor (deferred): rt_fh_mac_time duplicates rt_dt_now_mac's 3-line conversion — share one helper (final review triage).
+Task 3: minor (deferred): drive.cla splice rationale restated at 4 sites (drive.cla:63-73, 1516-1531, 1996-2077, bake.cla:404-417) — consolidate after the comment fix.
+Task 3: minor (deferred): reference lines 176/1441 use `--` where neighbours use em dashes.
+Task 3: note: native file.exists/file.info are STUBS until Task 5 (exists returns false, info fails with unimpErr -4) — the native lane must not ship without Task 5.
+Task 3: deferred test gap (for Task 7 / final review): no T1/T2 test exercises `emit68k --rtbake [--testapi]` over a file.info program; closing test = one internal/bake case asserting the bake path was taken (bkRuntimeFuncBoundary > 0) and output matches the from-source build. Pre-existing, not this phase's: the C lane's --rtbake cannot compile any filehandle program (fileh*.cla not in bakeModuleList on that lane).
+Task 3: note: internal/selfhost behavior/error goldens are red on the three new fixtures until Task 7's snapshot regen (expected per spec §4.7) — T2 cannot pass mid-branch.
+Task 3: fix round 1/5 dispatched (resume implementer)

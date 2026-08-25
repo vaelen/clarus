@@ -1997,14 +1997,17 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     // the exact same expand()/findRtDir/rtModuleKey machinery
     // driveManifestSplice uses for every other runtime module
     // (drvSpliceActive marks it "Included", not "Compiling", in progress
-    // output) -- EXCEPT expand()'s own ordinary haveRtbake-gated manifest-
-    // collision/drift check (this file, above `expand`'s own body) is
-    // deliberately made to never fire for prelude.cla specifically
-    // (bkComputeManifestPaths' own doc comment, bake.cla, explains why);
-    // this splice registers the --rtbake collision itself, directly, a
-    // few lines below. prelude.cla declares a TYPE only, never a
-    // function, so the "clean standalone" gate's purpose (user code
-    // cannot name runtime FUNCTIONS) is untouched.
+    // output), INCLUDING expand()'s own ordinary haveRtbake-gated
+    // manifest-collision/drift check (this file, above `expand`'s own
+    // body) -- bkComputeManifestPaths (bake.cla) narrows that check's own
+    // gate for prelude.cla specifically (its own doc comment explains
+    // why), but does not disable it: a genuine stale bake is still
+    // caught and falls back to a from-source recompile, and an ordinary
+    // (matching-cwd-depth) --rtbake compile still has expand() itself
+    // register the from-source/baked collision, the same as for any
+    // other bakeModuleList module. prelude.cla declares a TYPE only,
+    // never a function, so the "clean standalone" gate's purpose (user
+    // code cannot name runtime FUNCTIONS) is untouched.
     //
     // driveManifestSplice's own neededMods list (which builds combined2,
     // the runtime-spliced full-build chain) deliberately does NOT also
@@ -2043,38 +2046,27 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     // entries-loop check right below would otherwise treat as a silent,
     // diagnosis-free failure. drvPreludeHead/drvPreludeAsmIdx are left at
     // their -1 defaults (never assigned below) whenever expand() doesn't
-    // grow asmHeads -- not found anywhere reachable, the only remaining
-    // way that happens (bkComputeManifestPaths' own doc comment, bake.cla,
-    // explains why a --rtbake compile's expand() call for THIS module
-    // never takes the haveRtbake-gated "drift" early-return branch that
-    // every other bakeModuleList entry potentially could).
-    //
-    // haveRtbake needs one more step here that no other splice loop does:
-    // prelude.cla is BOTH unconditionally re-parsed from source on every
-    // compile (this splice, so the STANDALONE check -- `combined`, below
-    // -- always has FileInfo to resolve, with zero dependency on the
-    // bake) AND unconditionally part of the baked image (bakeModuleList,
-    // bake.cla -- fileh.cla's own `FileInfo`-returning function needs it
-    // declared for --bake-ir's own chain-building to check clean). Left
-    // alone, that means combined2's own LOWERING (below, wantEmit &&
-    // haveRtbake) would lower prelude's from-source record decl a SECOND
-    // time, redundant with (and, worse, a same-named sibling of) whatever
-    // bkInstallArenas already installed from the bake. Registering
-    // drvPreludeAsmIdx into bkManifestCollidedIdx here -- the exact
-    // mechanism expand()'s own hash-based drift/collision detector uses
-    // for every OTHER re-expanded module, just invoked directly instead
-    // of through that (for prelude.cla, deliberately bypassed) detector
-    // -- makes driveCompile's own existing driveRebuildChainSkipping call
-    // (wantEmit && haveRtbake, below) excise it from combined2 before
-    // lowering, the same as if expand() had found and reported the
-    // collision itself. bkManifestCollidedEarly gets `false`: unlike a
-    // --testapi UI compile's OWN early-visible collisions (excised from
-    // `combined` itself before checkPhase1, so a preloaded baked checker
-    // symbol of the SAME name doesn't double-declare against it),
-    // prelude.cla is never one of bkInstallCheckerSymbolsForTestapi's
-    // own preloaded names -- `combined` keeps it always, on every
-    // haveRtbake branch, precisely so checking (not just lowering) has
-    // FileInfo to resolve.
+    // grow asmHeads -- not found anywhere reachable is the only remaining
+    // way that happens: under --rtbake, expand()'s own ordinary haveRtbake-
+    // gated manifest-hash "drift" branch (this file, above `expand`'s own
+    // body) DOES still fire for prelude.cla on an ordinary invocation
+    // (use-time and --bake-ir-time resolve the same disk-path string,
+    // typically both from the repo root) -- a GENUINE stale-bake drift
+    // there correctly falls back to a full from-source recompile, exactly
+    // like every other bakeModuleList entry (fix round 1, Task 3 review
+    // finding 2; verified by experiment: a deliberately stale bake with a
+    // mutated prelude.cla still falls back and emits the record once,
+    // with the correct current layout). It's narrowed, not disabled --
+    // see bkComputeManifestPaths' own doc comment (bake.cla) for the one
+    // case it DOES change: a --rtbake compile whose own working directory
+    // sits at a different depth than whatever --bake-ir's invocation
+    // used, where prelude.cla's disk-path identity is a fresh per-compile
+    // findRtDir recomputation that would otherwise be compared against a
+    // bake-time string it was never going to match, a false "drift" (not
+    // a real content difference) that forced a full from-source fallback
+    // on every such compile. Found via internal/mactest's own
+    // DoubleCompileBake leak-gate case, which runs driveCompile from a
+    // nested build-run/ subdir on purpose.
     if not haveRtDir {
         rtDir = findRtDir("prelude.cla")
     }
@@ -2085,10 +2077,6 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     if asmHeads.count > h {
         drvPreludeAsmIdx = h
         drvPreludeHead = asmHeads[drvPreludeAsmIdx]
-        if haveRtbake {
-            bkManifestCollidedIdx.add(drvPreludeAsmIdx)
-            bkManifestCollidedEarly.add(false)
-        }
     }
 
     i = 0

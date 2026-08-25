@@ -4076,30 +4076,45 @@ func bkComputeManifestPaths() {
         while i < bkLoadedModules.count {
             bareMod = bkLoadedModules[i][prefixLen, bkLoadedModules[i].length - prefixLen]
             // filesystem-api Task 3: prelude.cla is deliberately excluded
-            // from bkManifestPaths (the drift-guard's own gate,
-            // `bkManifestPaths.has(path)` in expand()), even though it IS
-            // one of bakeModuleList's entries (bkWriteManifestHashes still
-            // hashes it into bkManifestHashes like any other module --
-            // this is the ONLY place it's skipped). Reason: unlike every
-            // other bakeModuleList module, prelude.cla is unconditionally
-            // re-expanded from source on EVERY compile, --rtbake included
-            // (drive.cla's own driveCompile splice, not anchored to any
-            // user entry file's own directory the way a nested include
-            // would be) -- so its disk-path identity is a FRESH per-
-            // compile findRtDir recomputation, which does not have to
-            // match whatever --bake-ir's OWN invocation (a different
-            // process, potentially run from a different working
-            // directory depth) produced. Gating the drift check on
-            // bkManifestPaths membership means that mismatch never
-            // reaches the hash comparison at all: prelude.cla's own
-            // splice call always takes expand()'s ordinary (non-drift)
-            // parse path, on every lane/mode, with no dependency on cwd
-            // depth matching between bake time and use time. Found via
-            // internal/mactest's own DoubleCompileBake leak-gate case,
-            // which runs driveCompile from a nested build-run/ subdir on
-            // purpose -- a false "drifted" report there silently forced a
-            // full from-source fallback recompile instead of exercising
-            // the real bake-install path the test specifically checks.
+            // from THIS loop's own contribution to bkManifestPaths (the
+            // drift-guard's own gate, `bkManifestPaths.has(path)` in
+            // expand()), even though it IS one of bakeModuleList's
+            // entries (bkWriteManifestHashes still hashes it into
+            // bkManifestHashes like any other module -- this is the ONLY
+            // place it's skipped). This narrows the drift guard for
+            // prelude.cla, it does NOT disable it: the SECOND loop below
+            // (bkLoadedDeclFileTab) unconditionally re-adds every baked
+            // decl's own file path, prelude.cla included, using the
+            // disk-path string --bake-ir time itself recorded -- so on an
+            // ordinary invocation (use-time's own findRtDir resolution
+            // happens to match --bake-ir time's, typically because both
+            // ran from the repo root) bkManifestPaths.has(path) is STILL
+            // true via that second loop, and expand()'s own drift check
+            // still runs and still catches genuine staleness (fix round
+            // 1, Task 3 review finding 2; verified by experiment: a
+            // deliberately stale bake with a mutated prelude.cla falls
+            // back to a from-source recompile and emits the record once,
+            // with the correct current layout -- the same outcome as
+            // every other bakeModuleList module's own drift case).
+            // What this loop's own exclusion changes is narrower: unlike
+            // every other bakeModuleList module, prelude.cla is
+            // unconditionally re-expanded from source on EVERY compile,
+            // --rtbake included (drive.cla's own driveCompile splice, not
+            // anchored to any user entry file's own directory the way a
+            // nested include would be) -- so on a --rtbake compile whose
+            // OWN working directory sits at a different depth than
+            // whatever --bake-ir's invocation used, THIS loop's own
+            // (unexcluded) entry would have been a FRESH per-compile
+            // findRtDir recomputation that could never equal the second
+            // loop's own bake-time string either -- a false "drift" (not
+            // a real content difference), since the two loops would then
+            // disagree about which string identifies prelude.cla. Found
+            // via internal/mactest's own DoubleCompileBake leak-gate
+            // case, which runs driveCompile from a nested build-run/
+            // subdir on purpose -- a false "drifted" report there
+            // silently forced a full from-source fallback recompile
+            // instead of exercising the real bake-install path the test
+            // specifically checks.
             if bareMod != "prelude.cla" {
                 p = normalizePath(joinPath(rtDir, bareMod))
                 m[p] = true
