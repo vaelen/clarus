@@ -840,6 +840,67 @@ on the OSErr alone. The same probe also confirmed the opposite direction
 is unremarkable: writing past the current EOF (leaving a "hole") just
 extends the file to `offset + reqCount`, no separate grow step needed.
 
+## 12. Walkthrough: _HFSDispatch — a selector in D0 under the register convention
+
+`toolbox/files.cla`'s HFS directory/catalog family (filesystem-api phase,
+Task 2) is a third selector-dispatch shape, distinct from both §6's `sel`
+and the reference's `seld0`. Universal Interfaces spells `PBGetCatInfoSync`
+as:
+
+```c
+EXTERN_API( OSErr ) PBGetCatInfoSync(CInfoPBPtr paramBlock)
+                                     TWOWORDINLINE(0x7009, 0xA260);
+```
+
+Two inline words, same as any `TWOWORDINLINE` entry, but here the FIRST
+word is not glue overhead — it is the selector itself. `0x7009` decodes as
+68k `MOVEQ #9,D0` (`0x70` is the MOVEQ opcode byte, `09` the immediate
+operand), and Files.a's own assembly macro confirms it in plain text:
+
+```
+Macro
+_PBGetCatInfoSync
+    moveq   #9,D0
+    dc.w    $A260
+EndM
+```
+
+`moveq #9,D0` loads the selector, then `dc.w $A260` is the actual trap
+dispatch — `_HFSDispatch`, ONE trap word shared by `PBGetCatInfoSync`/
+`PBSetCatInfoSync`/`PBDirCreateSync`/`PBCatMoveSync`, each just a different
+`moveq #N,D0` in front of the same `$A260`. Apply the bit-11 test to the
+trap word itself, same as always: `0xA260 & 0x0800 == 0`, bit 11 clear —
+OS/register convention, not Pascal-stack. So the selector is not a special
+case at all; it is simply one more `reg`-bound parameter, and the caller
+supplies it as an ordinary literal constant instead of the glue silently
+preloading it:
+
+```rust
+external func PBGetCatInfoSync(paramBlock: ptr, selector: int): int =
+    trap 0xA260 reg(a0: paramBlock, d0: selector) ret d0
+
+const hfsSelGetCatInfo: int = 9
+
+PBGetCatInfoSync(ci, hfsSelGetCatInfo)
+```
+
+Contrast with the other two selector shapes already in this document.
+§6's `LAddRow` uses `sel 0x0008`: bit 11 of `0xA9E7` is SET, so it is
+Pascal-convention, and the selector is a stack word the trap dispatcher
+itself pops after every pushed argument — the caller writes no selector
+in the call at all, it lives entirely in the `= trap` clause. The
+reference's `seld0` (AppleEvent Manager, `trap 0xA816 seld0 0x091F`) is
+also Pascal-convention (bit 11 set on `0xA816`), but the selector is
+preloaded into D0 by dedicated glue AFTER the Pascal argument push,
+again with no selector spelled at the call site. Neither shape applies
+here: `_HFSDispatch`'s bit 11 is CLEAR, so it was never a Pascal call to
+begin with, and `sel`/`seld0` are both defined only for the Pascal-stack
+convention. The register form's selector is instead exactly what it
+looks like — a normal `reg`-bound `int` parameter — the same D0 slot
+`GestaltErr`/`GestaltValue` already bind by name (§4, `toolbox/
+osutils.cla`), just holding a routine selector instead of a Gestalt
+selector.
+
 ---
 
 *Everything in this document is a citation, not an assertion — see the

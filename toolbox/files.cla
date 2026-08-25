@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 // toolbox/files.cla: curated File Manager declarations, pack3-standardfile
-// phase. DELIBERATELY THIN -- this catalog holds only what Standard
-// File's own SetVol step needs (a caller must set the default volume
-// before SFPutFile/SFGetFile so the dialog opens on the right disk); the
-// full File Manager fill belongs to a future file-abstraction phase.
+// phase. The filesystem-api phase's Task 2 filled the HFS directory/
+// catalog family (PBGetCatInfoSync/PBSetCatInfoSync/PBDirCreateSync/
+// PBCatMoveSync/PBHDeleteSync/PBHRenameSync/PBHGetFInfoSync/
+// PBHSetFInfoSync/PBHOpenRFSync) below -- see that block's own header
+// comment.
 //
 // Every trap word and struct layout below is confirmed directly against
 // Apple's own Universal Interfaces 3.4 (Retro68/InterfacesAndLibraries/
@@ -277,3 +278,308 @@ const fsAtMark: int = 0
 const fsFromStart: int = 1
 const fsFromLEOF: int = 2
 const fsFromMark: int = 3
+
+// ---- HFS directory / catalog family (filesystem-api phase, Task 2):
+// PBGetCatInfoSync/PBSetCatInfoSync/PBDirCreateSync/PBCatMoveSync (the
+// four _HFSDispatch routines, one shared trap word `0xA260` distinguished
+// by a selector) and PBHDeleteSync/PBHRenameSync/PBHGetFInfoSync/
+// PBHSetFInfoSync/PBHOpenRFSync (five single-trap H-prefixed routines) --
+// the HFS-aware directory/catalog calls a later task's native
+// `fileh_68k.cla` lane needs for nested-folder create/delete/rename/move
+// and per-item catalog info. All nine trap words below were independently
+// re-grepped against the reflowed headers by this phase's own probe wave
+// (task-1-report.md section (a)), not merely carried over from the plan
+// -- every one matched exactly.
+//
+// _HFSDispatch (`0xA260`) is ONE trap word SHARED by GetCatInfo/
+// SetCatInfo/DirCreate/CatMove, distinguished by a selector the glue
+// preloads into D0: the `TWOWORDINLINE(0x70NN, 0xA260)` first word IS a
+// `moveq #N,D0` (0x70NN is 68k MOVEQ's own opcode encoding for `#N,D0`;
+// Files.a's own `Macro` bodies below spell this out literally as
+// `moveq #N,D0` / `dc.w $A260`), and the second word is the trap dispatch
+// itself. Bit 11 of `0xA260` is clear (`0xA260 & 0x0800 == 0`) --> OS/
+// register convention (not Pascal-stack), so the selector is simply one
+// more `reg`-bound parameter: `reg(a0: paramBlock, d0: selector) ret d0`,
+// with the caller passing the selector as an ordinary literal constant
+// (`hfsSelGetCatInfo` etc., below) -- NOT `seld0` (the Pascal-convention
+// D0-selector shape the reference documents ~line 1807 for AppleEvent
+// Manager routines like AEInstallEventHandler, mutually exclusive with
+// `reg`: `seld0`'s selector is loaded by dedicated glue AFTER a
+// Pascal-convention argument push, whereas here the selector travels the
+// exact same way any other `reg` parameter does -- it is not a Pascal
+// call at all).
+//
+//   PBGetCatInfoSync  reflowed Files.h:2879-2881:
+//                     `#pragma parameter __D0 PBGetCatInfoSync(__A0)` ...
+//                     `EXTERN_API( OSErr ) PBGetCatInfoSync(CInfoPBPtr
+//                     paramBlock) TWOWORDINLINE(0x7009, 0xA260);` --
+//                     corroborated in reflowed Files.a:3367-3371, `Macro
+//                     _PBGetCatInfoSync / moveq #9,D0 / dc.w $A260 /
+//                     EndM`.
+//   PBSetCatInfoSync  reflowed Files.h:2907-2909:
+//                     `TWOWORDINLINE(0x700A, 0xA260)`; corroborated in
+//                     reflowed Files.a:3419-3423, `moveq #10,D0 / dc.w
+//                     $A260`.
+//   PBDirCreateSync   reflowed Files.h:2792-2794:
+//                     `TWOWORDINLINE(0x7006, 0xA260)`; corroborated in
+//                     reflowed Files.a:3209-3213, `moveq #6,D0 / dc.w
+//                     $A260`.
+//   PBCatMoveSync     reflowed Files.h:2764-2766:
+//                     `TWOWORDINLINE(0x7005, 0xA260)`; corroborated in
+//                     reflowed Files.a:3157-3161, `moveq #5,D0 / dc.w
+//                     $A260`.
+//
+// The five H-prefixed routines below each own a private trap word
+// (`0xA20x`), so they need no selector at all -- ordinary OS/register
+// convention, bare `reg`, the same shape as this file's existing
+// PBGetFInfoSync/PBSetFInfoSync above. Bit 11 is clear on every one
+// (`0xA20x & 0x0800 == 0`):
+//
+//   PBHDeleteSync    reflowed Files.h:3187-3189, `ONEWORDINLINE(0xA209)`;
+//                    corroborated in reflowed Files.a:3899,
+//                    `_PBHDeleteSync: OPWORD $A209`.
+//   PBHRenameSync    reflowed Files.h:3215-3217, `ONEWORDINLINE(0xA20B)`;
+//                    corroborated in reflowed Files.a:3943,
+//                    `_PBHRenameSync: OPWORD $A20B`. Hardware-verified
+//                    (task-1-report.md) requirement: `PBHRenameSync`
+//                    needs a BARE LEAF NAME in `ioNamePtr` plus the real
+//                    PARENT directory's ID in `ioDirID` -- the
+//                    `ioDirID = 0` + partial-colon-path convention every
+//                    other HFS call in this block accepts (PBCatMoveSync/
+//                    PBHDeleteSync/PBDirCreateSync/PBGetCatInfoSync all
+//                    take `ioDirID = 0` plus a partial path) FAILS here
+//                    with `bdNamErr`/`dirNFErr`. A caller must resolve
+//                    the parent's real numeric `ioDirID` (e.g. via a
+//                    prior PBGetCatInfoSync on the parent folder) before
+//                    calling PBHRenameSync.
+//   PBHGetFInfoSync  reflowed Files.h:3299-3301, `ONEWORDINLINE(0xA20C)`;
+//                    corroborated in reflowed Files.a:4075,
+//                    `_PBHGetFInfoSync: OPWORD $A20C`.
+//   PBHSetFInfoSync  reflowed Files.h:3327-3329, `ONEWORDINLINE(0xA20D)`;
+//                    corroborated in reflowed Files.a:4119,
+//                    `_PBHSetFInfoSync: OPWORD $A20D`.
+//   PBHOpenRFSync    reflowed Files.h:3103-3105, `ONEWORDINLINE(0xA20A)`;
+//                    corroborated in reflowed Files.a:3759,
+//                    `_PBHOpenRFSync: OPWORD $A20A`. The HFS-aware
+//                    (ioDirID-honoring) counterpart to this file's
+//                    existing non-H `PBOpenRFSync` above -- a distinct
+//                    trap word (`0xA20A` vs `0xA00A`), both declared;
+//                    pick whichever one a caller's path/ioDirID needs.
+//
+// HFileParam layout, reflowed Files.h:832-859 (80 bytes total,
+// task-1-report.md section (a)): identical prefix to this file's
+// FileParam/IOParam through offset 23 (`qLink`..`ioVRefNum`), then
+// ioFRefNum@24(2) ioFVersNum@26(1) filler1@27(1) ioFDirIndex@28(2)
+// ioFlAttrib@30(1) ioFlVersNum@31(1) [the FInfo struct, Finder.h:298-305]
+// fdType@32(4) fdCreator@36(4) fdFlags@40(2) fdLocationV@42(2)
+// fdLocationH@44(2) fdFldr@46(2) ioDirID@48(4) ioFlStBlk@52(2)
+// ioFlLgLen@54(4) ioFlPyLen@58(4) ioFlRStBlk@62(2) ioFlRLgLen@64(4)
+// ioFlRPyLen@68(4) ioFlCrDat@72(4) ioFlMdDat@76(4) -- ends at 80.
+// `HFileParam` and `HIOParam` (Files.h:811-830) are both members of the
+// same `HParamBlockRec` union, so bytes [24,32) genuinely overlap
+// between the two variants (task-1-report.md), and `ioDirID`@48 is a
+// real field in both -- a single `HFileParam` value correctly serves
+// PBHDeleteSync/PBDirCreateSync/PBGetCatInfoSync/PBHGetFInfoSync/
+// PBHSetFInfoSync/PBHOpenRFSync alike (all read/write only fields this
+// record already names).
+
+extern record HFileParam {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    ioFRefNum: word
+    ioFVersNum: byte
+    filler1: byte
+    ioFDirIndex: word
+    ioFlAttrib: byte
+    ioFlVersNum: byte
+    fdType: int
+    fdCreator: int
+    fdFlags: word
+    fdLocationV: word
+    fdLocationH: word
+    fdFldr: word
+    ioDirID: int
+    ioFlStBlk: word
+    ioFlLgLen: int
+    ioFlPyLen: int
+    ioFlRStBlk: word
+    ioFlRLgLen: int
+    ioFlRPyLen: int
+    ioFlCrDat: int
+    ioFlMdDat: int
+}
+
+// CInfoPBRec layout, reflowed Files.h:557-586 (`HFileInfo`, the file
+// variant of the `CInfoPBRec` union; 108 bytes total, task-1-report.md
+// section (a)): identical prefix through ioFDirIndex@28(2)/
+// ioFlAttrib@30(1), then ioACUser@31(1) fdType@32(4) fdCreator@36(4)
+// [the rest of FInfo/FXInfo's own leading 16 bytes -- fdFlags/
+// fdLocationV/fdLocationH/fdFldr, 8 bytes -- is unread by this catalog's
+// callers, captured as pad[8]@40] ioDirID@48(4) ioDrNmFls@52(2)
+// ioFlLgLen@54(4) ioFlPyLen@58(4) ioFlRStBlk@62(2) ioFlRLgLen@64(4)
+// ioFlRPyLen@68(4) ioFlCrDat@72(4) ioFlMdDat@76(4) ioFlBkDat@80(4) [the
+// FXInfo struct, 16 bytes, unread -- pad[16]@84] ioFlParID@100(4)
+// ioFlClpSiz@104(4) -- ends at 108. Arithmetic: 84 + 16 = 100, 100 + 4 =
+// 104, 104 + 4 = 108 -- confirms the controller's ruling that the
+// trailing pad after ioFlBkDat/FXInfo is exactly `pad[16]` (not `pad[32]`,
+// which would overrun the real 108-byte struct by 4 bytes).
+//
+// `CInfoPBRec` is declared here as its `HFileInfo` (file) variant; the
+// `DirInfo` (folder) variant, reflowed Files.h:588-611, shares the SAME
+// physical bytes byte-for-byte through offset 47 (`ioDrUsrWds`, a 16-byte
+// DInfo, occupies the same [32,48) span `fdType`/`fdCreator`/pad do
+// above -- a genuine union overlap in Apple's own struct, not a Clarus
+// modeling choice), then `ioDrDirID`@48(4) is the SAME bytes as
+// `ioDirID`@48 above, and `ioDrNmFls`@52(2) (named directly on this
+// record, since a folder hit is the common case that field is read for)
+// is the SAME bytes as the file variant's `ioFlStBlk`@52. Past that,
+// `DirInfo` has `filler3[9]` (18 bytes, Files.h) covering the same
+// [54,72) span as `ioFlLgLen`/`ioFlPyLen`/`ioFlRStBlk`/`ioFlRLgLen`/
+// `ioFlRPyLen` above, so `ioDrCrDat`@72(4) lands on the SAME bytes as
+// `ioFlCrDat`@72 (NOT @76 -- 72 is the arithmetic Task 1's report table
+// supports: 54 + 18 = 72) and `ioDrMdDat`@76(4) on the same bytes as
+// `ioFlMdDat`@76. A caller reads a folder hit through this same record's
+// `ioDirID`/`ioDrNmFls`/`ioFlCrDat`/`ioFlMdDat` field names (borrowing
+// the file-variant spelling for both cases) and tells file from folder
+// via `ioFlAttrib & ioDirMask` (below) -- confirmed empirically in Task
+// 1's own probe.
+
+extern record CInfoPBRec {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    ioFRefNum: word
+    ioFVersNum: byte
+    filler1: byte
+    ioFDirIndex: word
+    ioFlAttrib: byte
+    ioACUser: byte
+    fdType: int
+    fdCreator: int
+    pad[8]
+    ioDirID: int
+    ioDrNmFls: word
+    ioFlLgLen: int
+    ioFlPyLen: int
+    ioFlRStBlk: word
+    ioFlRLgLen: int
+    ioFlRPyLen: int
+    ioFlCrDat: int
+    ioFlMdDat: int
+    ioFlBkDat: int
+    pad[16]
+    ioFlParID: int
+    ioFlClpSiz: int
+}
+
+// CMovePBRec layout, reflowed Files.h:1117-1132 (52 bytes total,
+// task-1-report.md section (a)): identical prefix through
+// ioVRefNum@22(2), then filler1@24(4) ioNewName@28(4) filler2@32(4)
+// ioNewDirID@36(4) [filler3[2]@40, 8 bytes, unread -- pad[8]] ioDirID@48(4)
+// -- ends at 52. `ioNewName` is a StringPtr (the new leaf name to move
+// the item to, within `ioNewDirID`'s folder); `ioDirID` is the item's
+// OWN current parent directory ID (source side), `ioNewDirID` the
+// destination folder's directory ID.
+
+extern record CMovePBRec {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    filler1: int
+    ioNewName: ptr
+    filler2: int
+    ioNewDirID: int
+    pad[8]
+    ioDirID: int
+}
+
+// HIOParamRename: a purpose-built 52-byte record covering only the four
+// fields PBHRename actually touches, for a caller who wants to name
+// `ioMisc` directly instead of reaching it through HFileParam's
+// overlapping (differently-named) bytes at the same offset. `HIOParam`
+// layout, reflowed Files.h:811-830 (50 bytes total, task-1-report.md
+// section (a)): ioNamePtr@18(4) ioVRefNum@22(2) ioRefNum@24(2)
+// ioVersNum@26(1) ioPermssn@27(1) ioMisc@28(4, a Ptr) ioBuffer@32(4)
+// ioReqCount@36(4) ioActCount@40(4) ioPosMode@44(2) ioPosOffset@46(4).
+// `ioMisc`@28 carries the new name's StringPtr for PBHRenameSync (Inside
+// Macintosh - Files, 1992, p. 2-198, `PBHRename`'s own parameter table:
+// "ioMisc Ptr A pointer to the new name for the file." / "ioDirID
+// LongInt A directory ID."); `ioDirID`@48 is the real field confirmed in
+// both `HFileParam` (Files.h:848) and (as `ioDrDirID`) `DirInfo` -- not a
+// coincidental overlay. Sized to 52 bytes (pad[16]@32 to reach ioDirID@48)
+// so `ioDirID`@48(4) fits; it does not model the rest of the 80-byte
+// `HFileParam`/`HIOParam` union since PBHRenameSync never reads past
+// `ioDirID`. Either this record OR `HFileParam` (above) works as
+// PBHRenameSync's `ptr` argument -- both physically overlay the same
+// `ioDirID`@48 -- this record exists only so a caller can also name
+// `ioMisc` without computing HFileParam's overlapping offset by hand.
+
+extern record HIOParamRename {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    ioRefNum: word
+    ioVersNum: byte
+    ioPermssn: byte
+    ioMisc: ptr
+    pad[16]
+    ioDirID: int
+}
+
+external func PBGetCatInfoSync(paramBlock: ptr, selector: int): int = trap 0xA260 reg(a0: paramBlock, d0: selector) ret d0
+external func PBSetCatInfoSync(paramBlock: ptr, selector: int): int = trap 0xA260 reg(a0: paramBlock, d0: selector) ret d0
+external func PBDirCreateSync(paramBlock: ptr, selector: int): int = trap 0xA260 reg(a0: paramBlock, d0: selector) ret d0
+external func PBCatMoveSync(paramBlock: ptr, selector: int): int = trap 0xA260 reg(a0: paramBlock, d0: selector) ret d0
+external func PBHDeleteSync(paramBlock: ptr): int = trap 0xA209 reg
+external func PBHRenameSync(paramBlock: ptr): int = trap 0xA20B reg
+external func PBHGetFInfoSync(paramBlock: ptr): int = trap 0xA20C reg
+external func PBHSetFInfoSync(paramBlock: ptr): int = trap 0xA20D reg
+external func PBHOpenRFSync(paramBlock: ptr): int = trap 0xA20A reg
+
+// Selectors for the four _HFSDispatch routines above (Files.h enum,
+// task-1-report.md section (a)) -- hfsSelSetCatInfo (10) is declared for
+// completeness alongside PBSetCatInfoSync even though this task's own
+// Catalog proof only exercises GetCatInfo/DirCreate/CatMove, same
+// rationale as PBAllocateSync above.
+const hfsSelCatMove: int = 5
+const hfsSelDirCreate: int = 6
+const hfsSelGetCatInfo: int = 9
+const hfsSelSetCatInfo: int = 10
+
+// ioDirMask (Files.h:310 enum AND Files.a:247 `EQU $10`, both reconfirmed
+// live in task-1-report.md section (c)): tests `ioFlAttrib` to tell a
+// directory hit from a file hit in a CInfoPBRec catalog entry. fsRtDirID
+// (Files.h:88 / Files.a:59): the well-known directory ID of a volume's
+// root directory, the starting point for a caller building nested-path
+// enumeration without a partial-path string.
+const ioDirMask: int = 0x10
+const fsRtDirID: int = 2
+
+// OSErr constants an HFS directory/catalog caller commonly checks
+// (Files.h enum, reconfirmed live in task-1-report.md section (c)):
+// fnfErr on a GetCatInfo/HGetFInfo/HOpenRF miss, fBsyErr on a delete/
+// rename of a busy (open) item, dupFNErr on a DirCreate/rename collision.
+const fnfErr: int = -43
+const fBsyErr: int = -47
+const dupFNErr: int = -48
