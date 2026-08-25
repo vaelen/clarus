@@ -169,6 +169,17 @@ Both spikes (spec §5's own headline probe) succeeded on Mini vMac
 
 ## (c) Enumeration recipe
 
+**Superseded by Fix round 1** (see that section at the end of this
+report for what changed and why): the trace and step-by-step narrative
+below are from the fix-round-1 boot, which rewrote steps 7-9 so every
+path literal after the successful rename is the file's REAL on-disk name
+and added two deliberate stale-name calls (8b, 9e) to prove — not just
+assert — that a name which no longer resolves genuinely fails. The
+original round's steps 8-9 prose (which claimed `x.dat` was still the
+live name after a rename the same original trace showed had succeeded)
+was self-contradictory; this replaces it outright rather than layering a
+correction on top.
+
 Full accumulated trace from the probe's `Probe` case
 (`testsuite/toolbox/cases_probe.cla`), captured verbatim from
 `CLARUS_MAC_TESTS=1 go test -count=1 ./internal/mactest -run
@@ -180,7 +191,8 @@ step matched its expectation):
 ```
 probe:1:0/25 2a:0 2b:-48 3:5 4:0/SysAndApp/openOK 5:0/16/1/26
 6a:hits=1,x=1,end=-43 6b:hits=10,probeA=1,end=-43 7:-37 7b:-120/dir=26
-7d:0/dir=26 7c:reopenOK 8:0/reopenOK 9a:0 9b:-47 9c:0 9d:-43 9e:0
+7d:0/dir=26 7c:reopenOK 8:0/reopenOK 8b:-43 9a:0 9b:-47 9c:0 9d:0
+9e:-120 10:a=7,s=x
 ```
 
 Step-by-step, with the exact `ioVRefNum`/`ioDirID`/`ioFDirIndex` values
@@ -218,15 +230,24 @@ used and the raw OSErr/values the log shows:
 7. **`PBHRenameSync`, first attempt** (as literally specified by the
    brief): `ioNamePtr = ":ProbeA:B:x.dat"`, `ioVRefNum=0, ioDirID=0`,
    `ioMisc` → a buffer holding `"y.dat"` → OSErr **-37** (`bdNamErr`,
-   "Bad filename") — **did NOT match the brief's expectation of 0.**
+   "Bad filename") — **did NOT match the brief's expectation of 0.** This
+   attempt does not touch the disk (it fails outright), so it leaves
+   `x.dat` exactly where step 3 created it.
    **7b (diagnostic retry)**: same `ioNamePtr`/`ioMisc`, but
    `ioDirID = 26` (folder B's real DirID from step 5) instead of 0 →
    OSErr **-120** (`dirNFErr`, "Directory not found or incomplete
-   pathname") — still fails, differently.
+   pathname") — still fails, differently, and still leaves `x.dat` in
+   place.
    **7d (diagnostic retry, SUCCEEDS)**: `ioNamePtr = "x.dat"` (a BARE
    LEAF NAME, no colon) + `ioDirID = 26` (folder B's real DirID) +
-   `ioMisc` → `"y.dat"` → OSErr **0**. `file.open(":ProbeA:B:y.dat")`
-   → **reopenOK** (7c).
+   `ioMisc` → `"y.dat"` → OSErr **0**. **This is the one attempt that
+   actually renames the file on disk** — from this point on, the file
+   that started life as `":ProbeA:B:x.dat"` is physically named
+   `":ProbeA:B:y.dat"`, and every later step in this same run addresses
+   it by that real name.
+   **7c (independent confirmation)**: `file.open(":ProbeA:B:y.dat")` →
+   **reopenOK** — proves 7d's rename genuinely stuck, independently of
+   7d's own OSErr.
    **Finding for Task 2/3**: unlike `PBDirCreateSync`/`PBGetCatInfoSync`/
    `PBHDeleteSync`/`PBCatMoveSync` (which all accept a nested-partial
    *pathname* in `ioNamePtr` combined with `ioDirID = 0`, confirmed
@@ -244,25 +265,44 @@ used and the raw OSErr/values the log shows:
    `rtFhDevStat`) and pass a bare leaf name + that DirID, NOT the
    `dirID=0` + partial-pathname convention every other `rtFhDev*` call
    uses.**
-8. `PBCatMoveSync`: `ioNamePtr = ":ProbeA:B:x.dat"` (the rename never
-   stuck under `dirID=0`/nested-path, so `x.dat` — not `y.dat` — is what
-   actually moved; the probe tracks this live via its own `renamedOk`
-   flag), `ioNewName = ":ProbeA"`, `ioNewDirID=0, ioDirID=0`, sel 5 →
-   OSErr **0**. `file.open(":ProbeA:x.dat")` → **reopenOK**. **Confirms
+8. `PBCatMoveSync`: `ioNamePtr = ":ProbeA:B:y.dat"` — the file's REAL
+   current name after 7d's rename, confirmed independently by 7c, not
+   assumed — `ioNewName = ":ProbeA"`, `ioNewDirID=0, ioDirID=0`, sel 5 →
+   OSErr **0**. `file.open(":ProbeA:y.dat")` → **reopenOK**. **Confirms
    `PBCatMoveSync` DOES accept the ordinary `ioDirID=0` + nested-partial-
    pathname convention** (unlike `PBHRenameSync`) — spec §4.3's
    `rtFhDevMove` plan (`ioNamePtr` = path, `ioNewName` = `dirPath`,
    `ioNewDirID = 0`) needs no change.
+   **8b (fix round 1's own addition, proving finding 1's doubt wrong)**:
+   the SAME `PBCatMoveSync`, but deliberately addressed by the STALE name
+   `ioNamePtr = ":ProbeA:B:x.dat"` — the name the file had BEFORE 7d's
+   rename, which no longer resolves to anything in folder B → OSErr
+   **-43** (`fnfErr`). This is the direct, on-hardware proof the review
+   asked for: a name that is genuinely gone really does fail with
+   `fnfErr`, not silently resolve to the renamed file or something else.
 9. Cleanup, all via the ordinary `ioDirID=0` + nested-partial-path
-   convention: delete `":ProbeA:B"` (now empty) → **0**; delete
-   `":ProbeA"` (still has `x.dat`) → **-47** (`fBsyErr`, exactly as
-   expected); delete `":ProbeA:x.dat"` → **0**; delete `":ProbeA:B"`
-   again (already gone) → **-43** (`fnfErr`, a probe-added redundant
-   check, harmless); delete `":ProbeA"` → **0**. Boot disk left clean.
+   convention, all against the file's REAL name/location at each point:
+   delete `":ProbeA:B"` (now empty — `y.dat` already moved out by step 8)
+   → **0** (9a); delete `":ProbeA"` (still has `y.dat`) → **-47**
+   (`fBsyErr`, exactly as expected, 9b); delete `":ProbeA:y.dat"` →
+   **0** (9c); delete `":ProbeA"` (now empty) → **0** (9d).
+   **9e (fix round 1's own addition, proving finding 1's doubt wrong a
+   second way)**: `PBHDeleteSync` on the SAME path just deleted in 9c
+   (`":ProbeA:y.dat"`, now doubly gone — its own file AND its parent
+   folder `":ProbeA"` were both just removed in 9c/9d) → OSErr **-120**
+   (`dirNFErr`), not `fnfErr` — different from 8b's `-43` because by this
+   point the CONTAINING folder itself is gone too (9d ran before 9e), so
+   the File Manager reports "directory not found" rather than "file not
+   found" for the same dead path. Still a hard failure, not a silent
+   success — the point the review asked this step to prove.
 
 `PBHDeleteSync` (step 9) confirms `ioDirID=0` + nested-partial-path is
 fine for Delete, matching `DirCreate`/`GetCatInfo`; only `PBHRenameSync`
-is the odd one out.
+is the odd one out. Steps 8b and 9e together close the review's doubt:
+every call in this trace that reports OSErr 0 genuinely corresponds to a
+real on-disk change, and every stale-name call genuinely fails (`-43`
+when the parent folder still exists, `-120` when it doesn't) — none of
+them "succeed" on a name that no longer resolves.
 
 ## (d) `drive.cla` splice point, byte-identity, record-return, overlay
 
@@ -425,22 +465,28 @@ bool  s: string }`, `func mk(): R { var r: R  r.a = 7  r.s = "x"  return
 r }`, `on App.launch { var r: R  r = mk()  alert(string(r.a)) }`, run via
 `scripts/clarus-run.sh`): printed **`7`**, exactly as expected.
 
-Native lane: not re-verified with a fresh dedicated boot (time budget),
-but this exact call shape — a `func` returning a `record`, called and
-its field read back — is what `testsuite/kit.cla`'s `tkPass(name):
-TestResult` / `tkFail(name, detail): TestResult` already are, and this
-probe's OWN 33-case toolbox suite boot (steps (b)/(c) above) called them
-successfully dozens of times on the real native 68k lane in the same
-run, including the `Probe` case's own `return tkFail("Probe", detail)`
-at the very end of the trace shown in (c). This is the identical checked
-call → `KRec` construct → return → field-read shape Step 6 asks about;
-Task 3's `rtFhInfo`'s difference is only that its own call site is an
-*unchecked* `newIRCallFn`-lowered runtime call rather than a checked
-user-to-user call — codegen (cg68k) treats a call's return handling
-uniformly once lowered to IR regardless of which kind of call produced
-it, so this native-lane evidence transfers. **Confirms spec §4.2's claim
-("record-returning runtime calls already exist... so nothing new") —
-Task 3 needs no new cg68k/cprint work for `file.info`'s `KRec` return.**
+**Native lane (Fix round 1, dedicated check)**: the brief's own program
+shape was added directly into the probe case itself, `record ProbeR { a:
+int  b: bool  s: string }` + `func probeMk(): ProbeR { var r: ProbeR
+r.a = 7  r.s = "x"  return r }`, called as `rr = probeMk()` and logged as
+`detail = detail + " 10:a=" + tkIntToStr(rr.a) + ",s=" + rr.s`. The
+fix-round-1 trace's own step 10 reads **`10:a=7,s=x`** — both fields
+round-tripped correctly through a checked `func`-returning-`record` call
+on the real native 68k lane, confirming the brief's literal Step 6
+directly rather than only by the indirect `tkPass`/`tkFail` argument the
+first pass used. (That indirect argument was reasonable and stands too —
+`tkPass`/`tkFail` exercise the identical checked call → `KRec` construct
+→ return → field-read shape dozens of times in the same boot — but this
+dedicated check is the one the brief actually asked for.)
+
+Task 3's `rtFhInfo`'s own difference from either of these is only that
+its call site is an *unchecked* `newIRCallFn`-lowered runtime call rather
+than a checked user-to-user call — codegen (cg68k) treats a call's
+return handling uniformly once lowered to IR regardless of which kind of
+call produced it, so this native-lane evidence transfers. **Confirms
+spec §4.2's claim ("record-returning runtime calls already exist... so
+nothing new") — Task 3 needs no new cg68k/cprint work for `file.info`'s
+`KRec` return.**
 
 ### Overlay-spelling answer (controller ruling #3)
 
@@ -506,8 +552,16 @@ does elsewhere), not an overlay onto a computed address.**
   extra call is needed for `rtFhDevMove` (`PBCatMoveSync` DOES accept
   `ioDirID=0` + nested-partial-pathname, confirmed in (c) step 8) or for
   `rtFhDevDelete` (`PBHDeleteSync` likewise, confirmed in (c) step 9).
-  The emit68k byte-identity risk from spec §6 is closed: no
-  "referenced records only" cg68k gate is needed.
+  Fix round 1 re-ran this whole sequence with corrected path literals
+  (every step after the rename addresses the file's real post-rename
+  name, `y.dat`) plus two deliberate stale-name calls (8b: `PBCatMoveSync`
+  on the pre-rename name, `-43`/`fnfErr`; 9e: `PBHDeleteSync` on an
+  already-deleted path, `-120`/`dirNFErr` since its parent folder is also
+  gone by that point) — both hard-fail as expected, closing the doubt
+  that a wrong literal could have coincidentally "succeeded" in the first
+  pass. The rename finding itself is unchanged, now with stronger
+  evidence behind it. The emit68k byte-identity risk from spec §6 is
+  closed: no "referenced records only" cg68k gate is needed.
 - **Task 4**: no findings that touch the host lane directly; `file.info`'s
   `FileInfo` record on the C lane gets a typedef + zero-init constructor
   only (no retain/release, since it has no reference-typed field) — one
@@ -555,3 +609,130 @@ does elsewhere), not an overlay onto a computed address.**
   of finding Task 1 exists to catch before Task 3 writes `rtFhDevRename`
   against an unverified assumption — see the Task 3 amendment in (e) for
   the concrete fix.
+
+## Fix round 1
+
+Review returned two Important findings against the original report; both
+addressed with ONE more Mini vMac boot of the (re-added, then reverted)
+throwaway `Probe` case.
+
+### What changed in the probe
+
+`testsuite/toolbox/cases_probe.cla` (re-created identically to the
+original probe for steps 1-6, then):
+
+- **Steps 7-9 rewritten** so no path literal is asserted independent of
+  what the probe itself just proved on disk. Step 7d (bare leaf name +
+  real parent DirID) is still the one rename attempt that succeeds; step
+  7c's `file.open(":ProbeA:B:y.dat")` independently confirms it stuck.
+  Step 8's `PBCatMoveSync` now literally uses `":ProbeA:B:y.dat"` — the
+  file's real current name — instead of the stale `x.dat` the original
+  report's prose (wrongly) kept using. Step 9's cleanup literally deletes
+  `":ProbeA:y.dat"` (the file's real post-move name), not `x.dat`.
+- **Two new steps added**, both deliberately addressing a name that no
+  longer resolves, to prove (not just assert) that a stale reference
+  fails rather than silently "succeeding" against the wrong file:
+  - **8b**: `PBCatMoveSync` with `ioNamePtr = ":ProbeA:B:x.dat"` — the
+    file's PRE-rename name, dead since step 7d — expect `fnfErr` (-43).
+  - **9e**: `PBHDeleteSync` on `movedPath` (`":ProbeA:y.dat"`) a second
+    time, immediately after 9c/9d already deleted the file and then its
+    now-empty parent folder — expect a hard failure (not necessarily
+    `-43`; see the actual result below).
+- **A local record-return check added**: `record ProbeR { a: int  b:
+  bool  s: string }`, `func probeMk(): ProbeR { var r: ProbeR  r.a = 7
+  r.s = "x"  return r }`, called as `rr = probeMk()`, logged as step 10
+  (`a=`/`s=` in the trace). This is the brief's literal Step 6 program,
+  run directly on the native lane inside the same boot, closing the gap
+  the review flagged (the first pass only argued this indirectly via
+  `tkPass`/`tkFail`'s own pervasive record-returning calls elsewhere in
+  the suite).
+
+Wiring (registering `Probe` in `testsuite/toolbox/runner.cla` and
+`internal/mactest/coresuite_test.go`'s `toolboxFiles`/33-count) was
+identical to the original pass and was reverted the same way afterward;
+`git status` is clean except `.superpowers/sdd/`.
+
+### Exact command run
+
+```
+CLARUS_MAC_TESTS=1 go test -count=1 ./internal/mactest -run TestToolboxSuiteOn68k -v
+```
+
+(preceded by a `clarusc emit68k --testapi --rtdir runtime/clarus/ -o ... `
+dry-run compile of the same file list, to catch syntax/type errors before
+spending the ~1-minute emulator boot — came back clean on the first try
+this round).
+
+### Raw trace from the new boot
+
+```
+FAIL Probe: probe:1:0/25 2a:0 2b:-48 3:5 4:0/SysAndApp/openOK 5:0/16/1/26
+6a:hits=1,x=1,end=-43 6b:hits=10,probeA=1,end=-43 7:-37 7b:-120/dir=26
+7d:0/dir=26 7c:reopenOK 8:0/reopenOK 8b:-43 9a:0 9b:-47 9c:0 9d:0
+9e:-120 10:a=7,s=x
+```
+
+### Resolution of finding 1 (file-identity narrative)
+
+Steps 1-7d/7c are numerically identical to the original boot (same
+OSErr/values throughout) — the underlying hardware behavior did not
+change, only the probe's own bookkeeping and the report's prose did. The
+new trace is now self-consistent end to end:
+
+- Step 8 (`0/reopenOK`) is `PBCatMoveSync` on `":ProbeA:B:y.dat"` (the
+  REAL name after 7d), landing at `":ProbeA:y.dat"`.
+- Step 8b (`-43`) is the SAME call on the STALE `":ProbeA:B:x.dat"` —
+  fails with `fnfErr`, proving that name is genuinely dead, not silently
+  resolving to the renamed file (or anything else).
+- Steps 9a-9d (`0`, `-47`, `0`, `0`) are cleanup against the real
+  `":ProbeA:y.dat"` path throughout — no `x.dat` reference anywhere.
+- Step 9e (`-120`, `dirNFErr`) is a second `PBHDeleteSync` on the just-
+  deleted `":ProbeA:y.dat"` — a hard failure as expected, though
+  `dirNFErr` rather than the `fnfErr` the probe's own comment predicted,
+  because by 9e's point BOTH the file (9c) AND its parent folder `":ProbeA"`
+  (9d) are gone, so the File Manager reports "directory not found" rather
+  than "file not found" for the same dead path — still conclusively a
+  failure, not a success, which is what the review needed proven.
+
+**Root cause of the original contradiction**: it was a report-writing
+error, not a probe-code bug. The original probe's own `if renamedOk {
+leaf = "y.dat" } else { leaf = "x.dat" }` logic (removed in this
+rewrite in favor of literal names, now that the addressing mode is
+confirmed reliable) had already correctly computed `renamedOk = true`
+and `leaf = "y.dat"` by the time step 8 ran in the original boot too —
+the ORIGINAL trace's own `8:0/reopenOK` was therefore already the result
+of moving `y.dat`, not `x.dat`. The original report's prose ("the rename
+never stuck... so x.dat — not y.dat — is what actually moved") was
+narrating an EARLIER, pre-`7d` boot's behavior that had been overwritten
+in my own memory/notes when I wrote that paragraph, not what the actual
+final trace showed. This fix-round's rewrite removes the ambiguity at
+the source (no more conditional-on-`renamedOk` literal, since three
+boots now agree 7d reliably succeeds) and backs every claim with the two
+new stale-name steps besides.
+
+**No change to the underlying finding**: `PBHRenameSync` still needs
+bare-leaf-name + real-parent-DirID addressing (`ioDirID=0` +
+nested-partial-path fails, `-37` then `-120`); `PBCatMoveSync` and
+`PBHDeleteSync` still both accept the ordinary `ioDirID=0` +
+nested-partial-path convention (step 8 and steps 9a-9d, both against
+real, live paths this time). (c) and (e)'s Task 3 amendment are updated
+in place above to reflect the corrected narrative and the new stale-name
+evidence; no amendment content changed in substance, only its accuracy
+and evidentiary support.
+
+### Resolution of finding 2 (native-lane record-return)
+
+Step 10 of the new trace, `10:a=7,s=x`, is the brief's literal Step 6
+record-return program (`ProbeR`/`probeMk`, above) run directly on the
+real native 68k lane — both fields (`a: int`, `s: string`) round-tripped
+correctly through a checked `func`-returning-`record` call, construct →
+return → field-read, exactly the shape `file.info`'s own lowered runtime
+call will need. (d)'s "Record-return call shape" section is updated in
+place to lead with this direct result; the original indirect
+`tkPass`/`tkFail` argument is kept as corroborating (not primary)
+evidence. The host-lane result from the first pass (`7`, via
+`scripts/clarus-run.sh`) stands unchanged.
+
+Tree is clean (`git status` shows only `.superpowers/sdd/` staged) —
+`testsuite/toolbox/cases_probe.cla` deleted again, `runner.cla` and
+`internal/mactest/coresuite_test.go` reverted to their committed state.
