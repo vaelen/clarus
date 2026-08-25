@@ -66,3 +66,19 @@ Task 4: fix round 1/5 (1 addressed per implementer — readdir errno → -1, rtF
 Task 4: fix round 1/5 re-review: 1 addressed, 0 open
 Task 4: complete (commits 5efc3f5..3e97204, review clean after 1 fix round)
 Task 5: dispatched (implementer sonnet), BASE 3e97204
+Task 5: implementer DONE at 2084ccc (native DirOps GREEN on vMac; cg68k+emitui goldens reblessed for the one new global rtFh68kState; new segment file peep_pushpop.seg2.s; Snow skipped — still owned by 68kbbs session)
+Task 5: controller golden analysis (goldens-setnorm.txt, goldens-union.txt): 51 goldens churned; residue = uniform A5 shift (globals 1588→1592), label renumbering, one zero-init store pair per program (31 programs; the cg_init_globals unrolled-store cost), and segment repacking — every unusual instruction (NEG.L/MULU/SWAP/cg_div) is in the new peep_pushpop.seg2.s (that program crossed a segment boundary). Review dispatched on opus with the code-only diff + the three analysis files (raw package 3.5 MB).
+Task 5: review (opus): Approved w/ 2 Important — (1) fileh_68k.cla comments cite Task 1 findings/sections that don't exist (:454,:456-457,:592,:676); (2) plan-mandated "" lane divergence for exists/info (native synthetic default-folder hit, host stat("") fails). Golden churn re-derived independently: fully explained (init pair ×31, A5 shift, segment repacking, peep_pushpop.seg2.s per-segment helpers).
+Task 5: Ruling: "" names the program's own folder for EVERY folder-taking call on BOTH lanes (list, exists, info) — host FhHStat substitutes "." for an empty path (as FhHListBegin already does); DirOps pins parity; reference Paths paragraph generalised. Cost if wrong: a caller relying on exists("") == false — none exists.
+Task 5: minor (deferred): rtFhDevRename re-implements the by-name GetCatInfo block instead of stashing ioFlParID in a +44 state slot.
+Task 5: minor (deferred): bare -120 at fileh_68k.cla:605 — add `dirNFErr` const to toolbox/files.cla.
+Task 5: minor (deferred): rtFh68kEnsureState does not check SerNewPtr (pre-existing idiom; global-lifetime block).
+Task 5: minor (deferred): rtFh68kFourCCToStr maps a zero fdType to "" (conflates untyped file with folder) — comment.
+Task 5: minor (deferred, Task 7 doc pass): toolbox/files.cla:490-492 describes CMovePBRec.ioNewName as "new leaf name" — wrong; it is the destination folder path (Task 1 step 8 proved it). Fix wording.
+Task 5: minor (deferred): rtFh68kName truncates the Pascal length byte for paths > 255 (pre-existing; no overrun).
+Task 5: coverage gaps (deferred → TODO): folder rename untested on hardware; file.list("") untested; rtFhDevListFailed true-branch unexercised natively; System 7 unverified (Snow owned by another session).
+Task 5: fix round 1/5 dispatched (resume implementer)
+Task 5: fix round 1/5 (2 addressed per implementer; commit 607c2fa; native + host DirOps green, no golden churn; re-review pending)
+Task 5: fix round 1/5 re-review: 2 addressed, 0 open
+Task 5: complete (commits 3e97204..607c2fa, review clean after 1 fix round; one planned golden rebless for rtFh68kState)
+Task 6: dispatched (implementer sonnet), BASE 607c2fa
