@@ -82,3 +82,9 @@ Task 5: fix round 1/5 (2 addressed per implementer; commit 607c2fa; native + hos
 Task 5: fix round 1/5 re-review: 2 addressed, 0 open
 Task 5: complete (commits 3e97204..607c2fa, review clean after 1 fix round; one planned golden rebless for rtFh68kState)
 Task 6: dispatched (implementer sonnet), BASE 607c2fa
+Task 6: implementer DONE at 856d1d1 (ReadDateTime returns short per cprint; fixture uses alert(); selfhost TestSnapshotFixedPoint red as expected until Task 7 regen)
+Task 6: review (sonnet): spec ✅, no findings (arithmetic, prototypes, unsigned wrap, byte-exact reference edit all independently verified)
+Task 6: complete (commits 607c2fa..856d1d1, review clean)
+Task 7: Ruling: the ../68kbbs/docs/language-gaps.md update is WRITTEN but left UNCOMMITTED in that repo for Andrew (precedent: the transfer-crcs §8 edit was left uncommitted; committing in another repo is outside this branch's remit). Cost if wrong: one `git commit` for Andrew.
+Task 7: Ruling: TestClarusCBakePathOnSnow (~55 min, controller-run) is DEFERRED — Snow is still owned by a live 68kbbs session (pgrep, 06:00 JST); recorded in STATUS/TODO as an owed rerun before merge, alongside the System 7 spot check. Cost if wrong: a baked-runtime regression on the Mac-resident compiler reaches main unproven — the reviewer's --rtbake experiments in Task 3 are the only current evidence.
+Task 7: dispatched (implementer sonnet), BASE 856d1d1
