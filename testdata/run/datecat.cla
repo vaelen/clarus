@@ -1,0 +1,41 @@
+// filesystem-api Task 6: the PUBLIC osutils date externs link and agree
+// on the host lane. Vector: 1904-01-01 00:00:00 = 0; 2000-02-29 12:34:56.
+include "toolbox/osutils.cla"
+
+// the address ReadDateTime writes through (mirrors datetime_c.cla's DtSecsBox)
+extern record SecsBox {
+    secs: int
+}
+
+on App.startCLI(args: list of string) {
+    var rec: DateTimeRec
+    var box: SecsBox
+    var secs: int
+    var back: int
+
+    SecondsToDate(0, rec)
+    alert(string(rec.year) + "-" + string(rec.month) + "-" + string(rec.day) + " dow " + string(rec.dayOfWeek))
+
+    rec.year = 2000
+    rec.month = 2
+    rec.day = 29
+    rec.hour = 12
+    rec.minute = 34
+    rec.second = 56
+    secs = DateToSeconds(rec)
+    alert(string(secs))
+    SecondsToDate(secs, rec)
+    alert(string(rec.year) + "-" + string(rec.month) + "-" + string(rec.day) + " " + string(rec.hour) + ":" + string(rec.minute) + ":" + string(rec.second))
+
+    secs = now()
+    SecondsToDate(secs, rec)
+    back = DateToSeconds(rec)
+    if back == secs {
+        alert("now round trip ok")
+    } else {
+        alert("now round trip wrong")
+    }
+    if ReadDateTime(box) == 0 and box.secs != 0 {
+        alert("readdatetime ok")
+    }
+}

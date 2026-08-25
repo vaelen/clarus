@@ -1,0 +1,8 @@
+exit=0
+--- stdout ---
+1904-1-1 dow 6
+-1260294800
+2000-2-29 12:34:56
+now round trip ok
+readdatetime ok
+--- stderr ---

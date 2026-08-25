@@ -423,4 +423,34 @@ void rt_ext_DtSecs2Date(int32_t secs, void *d) {
     f[6] = (int16_t)((days + 5u) % 7u + 1u); /* day 0 = Friday = 6 */
 }
 
+/* Host twins of the PUBLIC toolbox/osutils.cla date externs (filesystem-api
+ * Task 6, spec %4.5) -- so a host build that calls the catalog names links.
+ * ReadDateTime/SecondsToDate delegate to the private Dt* bodies above;
+ * DateToSeconds is the inverse: Hinnant days-from-civil, day 0 = 1904-01-01.
+ * ReadDateTime returns `word` (cprint renders that `short`, not int32_t --
+ * matched against the actual generated prototype, not assumed).
+ * Pinned on hardware by the toolbox suite's DateTimeRoundTrip and on the
+ * host by testdata/run/datecat. */
+short rt_ext_ReadDateTime(void *t) {
+    return (short)rt_ext_DtReadDateTime(t);
+}
+
+void rt_ext_SecondsToDate(int32_t secs, void *d) {
+    rt_ext_DtSecs2Date(secs, d);
+}
+
+int32_t rt_ext_DateToSeconds(void *d) {
+    const int16_t *f = (const int16_t *)d;
+    long y = f[0], m = f[1], day = f[2];
+    long yy = m <= 2 ? y - 1 : y;
+    long era = (yy >= 0 ? yy : yy - 399) / 400;
+    long yoe = yy - era * 400;
+    long mp = m > 2 ? m - 3 : m + 9;
+    long doy = (153 * mp + 2) / 5 + day - 1;
+    long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    long days = era * 146097 + doe - 695361L;      /* 719468 - 24107, DtSecs2Date's own shift */
+    uint32_t secs = (uint32_t)days * 86400u + (uint32_t)f[3] * 3600u + (uint32_t)f[4] * 60u + (uint32_t)f[5];
+    return (int32_t)secs;
+}
+
 #endif /* CLARUS_RT_EXT_HOST_INC */
