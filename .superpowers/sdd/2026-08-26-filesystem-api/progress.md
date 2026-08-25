@@ -57,3 +57,12 @@ Task 3: fix round 1/5 (3 addressed per implementer — guard + honest diagnostic
 Task 3: fix round 1/5 re-review: 3 addressed, 0 open
 Task 3: complete (commits 9549634..5efc3f5, review clean after 1 fix round)
 Task 4: dispatched (implementer sonnet), BASE 5efc3f5
+Task 4: implementer DONE_WITH_CONCERNS at 8454885 (no golden churn; extra count mirrors found: internal/testsuite/core_cli_test.go, internal/cg68k/segment_test.go; native DirOps FAIL expected until Task 5)
+Task 4: review (sonnet): spec ✅; 1 Important — rt_ext_FhHListNext never returns -1 on a readdir() error (silently truncated listing reported as success). Approved otherwise; no golden churn.
+Task 4: minor (deferred): fileh_c.cla rtFhDevListBegin would leak rtFhListBuf if called twice without ListEnd (unreachable today; one-line guard).
+Task 4: minor (deferred, spec/doc): the reference's Host-behaviour paragraph omits that setInfo's `created` is ignored on POSIX (birth time not settable) — spec §3 text gap reproduced verbatim; fix in Task 7's doc pass.
+Task 4: fix round 1/5 dispatched (resume implementer)
+Task 4: fix round 1/5 (1 addressed per implementer — readdir errno → -1, rtFhDevListFailed-style reporting; commit 3e97204; T1 --smoke PASS; re-review pending)
+Task 4: fix round 1/5 re-review: 1 addressed, 0 open
+Task 4: complete (commits 5efc3f5..3e97204, review clean after 1 fix round)
+Task 5: dispatched (implementer sonnet), BASE 3e97204
