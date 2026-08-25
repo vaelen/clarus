@@ -313,6 +313,27 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   startup code; it is a planned rebless wave of its own (every cg68k
   golden's `cg_init_globals` changes). The `crc32` table went to the
   heap to sidestep this.
+- **Migrate `crc16` and `crc16x` to table-driven loops** (Andrew
+  2026-08-26): both are still per-bit loops (`rtTextCrc16`,
+  `rtTextCrc16X` in `runtime/clarus/text.cla`, 8 iterations per byte);
+  the Snow probe measured 277 / 287 ticks per 64 KB against `crc32`'s
+  120 with its table, so a 512-byte table each (256 × 16-bit entries:
+  reflected `0x8408` for KERMIT, forward `0x1021` for XMODEM — the
+  standard byte-indexed formulations, `crc = tab[(crc ^ b) & 0xFF] ^
+  (crc >> 8)` reflected, `crc = tab[((crc >> 8) ^ b) & 0xFF] ^ ((crc
+  << 8) & 0xFFFF)` forward) should bring each down to roughly `crc32`'s
+  per-byte cost. Follow the `crc32` pattern exactly: a lazily
+  `TextNewPtr`-allocated heap block behind one `ptr` global each, NOT
+  an `int[256]` global (the `cg_init_globals` unrolled-init cost just
+  above). Each new `ptr` global shifts every later global's A5 offset
+  — a full cg68k/emitui golden rebless per global — so land both
+  together, ideally in the same wave as the `cg_init_globals` fix or
+  the array-literal-initializer phase (which would make all three
+  tables constant-pool data and retire the heap blocks). Test vectors
+  already pinned: `"123456789"` → `0x2189` (KERMIT), `0x31C3` (XMODEM),
+  plus the chunked/n==0 cases in `testdata/run/crc16.cla` and the core
+  suite's `Crc16` case; the KERMIT one is also `examples/pagefile.cla`'s
+  journal checksum, so the migration must stay bit-exact.
 
 ## Runtime / Toolbox robustness
 
