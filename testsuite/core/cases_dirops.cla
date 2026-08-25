@@ -21,6 +21,18 @@ func caseDirOps(): TestResult {
         file.delete(":DirOpsT:c.dat")
         file.delete(":DirOpsT")
     }
+
+    // fix round 1 (Task 5 review, controller ruling): "" names the
+    // program's own folder for exists/info too, not just list -- lane
+    // parity (spec %3).
+    if not file.exists("") {
+        return tkFail("DirOps", "exists(\"\") false")
+    }
+    fi = file.info("")
+    if not fi.isDir {
+        return tkFail("DirOps", "info(\"\") not dir")
+    }
+
     if not file.makeDir(":DirOpsT") {
         return tkFail("DirOps", "makeDir failed " + tkIntToStr(lastError.code))
     }

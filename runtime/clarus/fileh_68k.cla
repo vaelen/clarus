@@ -451,12 +451,16 @@ func rtFh68kLeafName(path: string): string {
 // rtFhDevStat: PBGetCatInfoSync by name (ioFDirIndex = 0 = get info by
 // name, ioDirID = 0 = search starts at the default folder, ioVRefNum = 0
 // = default volume, ioACUser cleared per Files.a's own warning) --
-// task-1-report.md section (c) finding 1, reconfirmed live throughout
-// that probe's steps 1/2/5/7/8/9. `path == ""` is spec %4.3's own "stat
-// the default folder" case: task-1-report.md finding 2 showed a by-name
-// GetCatInfo on an empty name is NOT the same as enumerating DirID 0, so
-// this is special-cased directly into a synthetic directory hit (DirID
-// 0, no by-name call at all) rather than routed through PBGetCatInfoSync.
+// this addressing convention is task-1-report.md's own trace, confirmed
+// live throughout that probe's steps 1/2/5/7/8/9 (section (c)). `path ==
+// ""` is DESIGNED as a synthetic default-folder directory hit (DirID 0,
+// no by-name call at all) rather than routed through PBGetCatInfoSync --
+// a by-name GetCatInfo on an empty name was never itself probed; this
+// instead reuses Task 1's own DirID-0 enumeration finding (trace step 6,
+// section (c): "ioDirID = 0 ... DOES enumerate the default folder") plus
+// the controller's dispatch amendment for Task 5, which extends that
+// same "" = default-folder convention from `list` to `exists`/`info`
+// too (spec %3's lane-parity rule, fix round 1).
 // A `var ci: CInfoPBRec` local is fresh zero-initialized on every call
 // (docs/clarus-language-reference.md:1662, reconfirmed live in
 // task-1-report.md section (d): "declaring one as a local ... reserves
@@ -588,8 +592,10 @@ func rtFhDevDelete(path: string): int {
     return rtFh68kLastErr
 }
 
-// rtFhDevListBegin: rtFhDevStat by path first (task-1-report.md section
-// (c) finding 2's own "" convention flows through unchanged), reject a
+// rtFhDevListBegin: rtFhDevStat by path first ("" resolves to the
+// default folder per Task 1's trace step 6/section (c) plus the
+// controller's dispatch amendment for Task 5, flowing through
+// unchanged), reject a
 // file hit with dirNFErr (-120, "directory not found or incomplete
 // pathname" -- the same OSErr the probe's own 7b diagnostic saw for a
 // wrong-mode addressing attempt, reused here since Inside Macintosh has
@@ -672,8 +678,8 @@ func rtFhDevListFailed(): bool {
 // packing, uiscript.cla's own Str255 address helper) and ioFlCrDat/
 // ioFlMdDat only when the caller passed a nonzero value (spec %3's own
 // "0 = leave unchanged" convention), then PBHSetFInfoSync. GetFInfo
-// re-reads ioDirID as an OUTPUT (the file's real parent DirID,
-// task-1-report.md section (e) amendment for Task 5) -- the ioDirID = 0
+// re-reads ioDirID as an OUTPUT (the file's real parent DirID, the
+// controller's dispatch amendment for Task 5) -- the ioDirID = 0
 // reset right before Set undoes that so Set is given the same "search
 // from default folder + partial path" addressing GetFInfo itself
 // accepted, rather than whatever GetFInfo happened to leave behind.

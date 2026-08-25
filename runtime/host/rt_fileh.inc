@@ -234,10 +234,19 @@ static time_t rt_fh_unix_time(int32_t mac) {
 }
 
 /* rt_ext_FhHStat: stat by path; 0 on success (fields via FhHStatField),
- * -1 + rt_fh_errno otherwise. */
+ * -1 + rt_fh_errno otherwise. Fix round 1 (Task 5 review, controller
+ * ruling): "" names the program's own folder for every folder-taking
+ * call on both lanes (spec %3's lane-parity rule), not just `list` --
+ * the native lane already synthesizes that hit directly (fileh_68k.cla's
+ * own rtFhDevStat); here the empty translated path is substituted with
+ * "." (the SAME substitution FhHListBegin below already makes) so
+ * stat("") -- which always fails -- doesn't diverge from that. Done only
+ * here, not inside path_to_cstr, so open("")/create("")/etc. keep
+ * failing exactly as before. */
 int32_t rt_ext_FhHStat(const uint8_t *path) {
     char cpath[256];
     path_to_cstr(cpath, path);
+    if (cpath[0] == '\0') { cpath[0] = '.'; cpath[1] = '\0'; }
     if (stat(cpath, &rt_fh_stat_buf) != 0) {
         rt_fh_errno = errno;
         return -1;
