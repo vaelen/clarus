@@ -57,6 +57,22 @@ var combined: int
 // end needs to read it directly today.
 var combined2: int
 
+// drvPreludeHead/drvPreludeAsmIdx (filesystem-api Task 3): the single decl
+// node prelude.cla's own from-source splice produces, and the asmHeads
+// index it landed at (always 0 -- driveCompile's own splice runs before
+// the entries loop, unconditionally, every compile). `combined`'s own
+// head is ALWAYS drvPreludeHead once Phase A finishes (the "Assemble
+// combined" loop below walks asmHeads in order starting at 0), so
+// driveManifestSplice can reliably skip index drvPreludeAsmIdx wherever
+// it rebuilds a "user chain" from asmHeads directly, and reference
+// declNext(drvPreludeHead) as "combined minus its own prelude head" --
+// then re-prepend drvPreludeHead, once, as the true first thing in
+// combined2 (declare-before-use for fileh.cla's own `FileInfo`-returning
+// function and any other runtime module or user code that names it) --
+// see driveManifestSplice's own doc comment at its splice point.
+var drvPreludeHead: int = -1
+var drvPreludeAsmIdx: int = -1
+
 // rtDir/haveRtDir mirror the CLI's --rtdir flag (moved from local vars to
 // globals here since driveEarlySplice/driveManifestSplice both need them
 // and driveCompile's own signature has no room for them): the front end
@@ -504,6 +520,15 @@ func driveReset() {
     entryFailed = false
     combined = -1
     combined2 = -1
+    // filesystem-api Task 3: reset every compile (not just declared -1 at
+    // program start) -- a long-running process that calls driveCompile
+    // more than once (macgui.cla; the dblcompile*/leak-gate harnesses)
+    // must never let a stale index from a PREVIOUS compile's own asmHeads
+    // survive into this one, whether or not THIS compile's own prelude
+    // splice (driveCompile, right after Phase A starts) succeeds in
+    // growing asmHeads again.
+    drvPreludeHead = -1
+    drvPreludeAsmIdx = -1
     // runtime-ir-bake Task 5, fix round 3: defensive reset -- only
     // bake.cla's own bakeGenerateChain ever sets this true, and it
     // already clears it on both its own exits (success and every
@@ -1473,9 +1498,34 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     var uitestChainTail: int
     var userChainRebuilt: int
     var userChainRebuiltTail: int
+    var entriesOnlyHead: int
 
     if want68k {
         driveResolveAppName(entries)
+    }
+
+    // filesystem-api Task 3: when driveCompile's own early splice
+    // actually spliced prelude.cla (drvPreludeHead != -1 -- it may not
+    // have, e.g. no runtime/clarus/ reachable at all, or a --rtbake
+    // manifest-hash false positive deferred to a from-source fallback;
+    // see that splice's own doc comment), `combined`'s own head is
+    // ALWAYS drvPreludeHead (the splice runs before every
+    // entries.count > 0 parse, unconditionally), so declNext(
+    // drvPreludeHead) is "combined minus its own prelude.cla head" --
+    // the plain user-code chain, exactly what every use of `combined`
+    // below wanted BEFORE this task. drvPreludeHead itself is
+    // re-prepended once, unconditionally, right before checkProgram(
+    // combined2) below -- see driveCompile's own splice-point doc
+    // comment for why combined2 needs this surgery instead of just
+    // carrying `combined` through unchanged. When it ISN'T -1, this
+    // function behaves exactly as it did before this task (entriesOnlyHead
+    // == combined, drvPreludeAsmIdx == -1 so the two `i != drvPreludeAsmIdx`
+    // guards below never skip anything, and the final re-prepend is
+    // itself skipped).
+    if drvPreludeHead == -1 {
+        entriesOnlyHead = combined
+    } else {
+        entriesOnlyHead = declNext(drvPreludeHead)
     }
 
     if not earlySpliceDone {
@@ -1724,12 +1774,15 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             // runtime module (early OR neededMods) is already excluded
             // here by the SAME flag that put it into the runtime chain
             // above, so it can never appear twice.
+            // filesystem-api Task 3: skip drvPreludeAsmIdx -- prelude.cla
+            // is re-prepended to combined2 separately, once, below (not
+            // as part of this "rebuilt user chain").
             userChainRebuilt = -1
             userChainRebuiltTail = -1
             i = 0
             while i < userHeadCount {
                 h = asmHeads[i]
-                if h != -1 and not hoistedHead[i] {
+                if i != drvPreludeAsmIdx and h != -1 and not hoistedHead[i] {
                     if userChainRebuilt == -1 {
                         userChainRebuilt = h
                     } else {
@@ -1748,13 +1801,14 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
                 }
             }
         } else {
-            // Non-testapi: UNCHANGED from before this task -- runtime
-            // modules' heads FIRST (declare-before-use), followed by the
-            // original (already fully linked) user-program chain. rtHeads
-            // holds asmHeads INDICES (not heads), so each segment's own
-            // end comes from asmTails -- lastDecl would run off the end
-            // of a HOISTED segment, whose tail Phase A already linked to
-            // the next user file's head.
+            // Non-testapi: runtime modules' heads FIRST (declare-before-use),
+            // followed by the user-program chain (entriesOnlyHead, since
+            // filesystem-api Task 3 -- was `combined` verbatim before,
+            // see that variable's own doc comment above). rtHeads holds
+            // asmHeads INDICES (not heads), so each segment's own end
+            // comes from asmTails -- lastDecl would run off the end of a
+            // HOISTED segment, whose tail Phase A already linked to the
+            // next user file's head.
             combined2 = -1
             rtTail = -1
             i = 0
@@ -1768,11 +1822,16 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
                 rtTail = asmTails[rtHeads[i]]
                 i = i + 1
             }
-            if combined != -1 {
+            // filesystem-api Task 3: `combined` -> entriesOnlyHead
+            // (combined minus its own prelude.cla head, which is
+            // re-prepended to combined2 separately, once, below) and the
+            // hoisting-happened re-link loop skips drvPreludeAsmIdx for
+            // the same reason.
+            if entriesOnlyHead != -1 {
                 if combined2 == -1 {
-                    combined2 = combined
+                    combined2 = entriesOnlyHead
                 } else if hoistCount == hoistBefore {
-                    rtTail = declListAppend(rtTail, combined)
+                    rtTail = declListAppend(rtTail, entriesOnlyHead)
                 } else {
                     // Hoisting happened: the user chain has to be
                     // re-linked segment by segment, skipping the hoisted
@@ -1783,7 +1842,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
                     i = 0
                     while i < userHeadCount {
                         h = asmHeads[i]
-                        if h != -1 and not hoistedHead[i] {
+                        if i != drvPreludeAsmIdx and h != -1 and not hoistedHead[i] {
                             rtTail = declListAppend(rtTail, h)
                             rtTail = asmTails[i]
                         }
@@ -1792,6 +1851,22 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
                     rtTail = declListAppend(rtTail, -1)
                 }
             }
+        }
+
+        // filesystem-api Task 3: prelude.cla (drvPreludeHead) is ALWAYS
+        // first in combined2 when it was actually spliced this compile
+        // (drvPreludeHead != -1 -- see its own doc comment above for the
+        // two cases where it wasn't), regardless of which branch above
+        // built combined2 (or whether it left combined2 at -1, meaning
+        // rtHeads and entriesOnlyHead were both empty -- an unreachable-
+        // in-practice case in itself, since neededMods always contains at
+        // least core.cla, but handled correctly either way: drvPreludeHead
+        // becomes the whole of combined2). Every branch above skips
+        // drvPreludeAsmIdx / uses entriesOnlyHead instead of `combined`
+        // precisely so it is never duplicated here.
+        if drvPreludeHead != -1 {
+            declListAppend(drvPreludeHead, combined2)
+            combined2 = drvPreludeHead
         }
 
         // Stage 5 of drvFixedSteps. Reached on every want68k compile despite
@@ -1912,6 +1987,110 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     driveProgress("Starting")
 
     driveProgressStage("Parsing")
+
+    // filesystem-api Task 3: splice runtime/clarus/prelude.cla (currently
+    // just `record FileInfo`) as the VERY FIRST parsed file, ahead of the
+    // user's own entries -- so its decl(s) land in `combined` (the
+    // standalone user-only check, assembled from asmHeads just below) on
+    // EVERY lane and EVERY mode (plain check-only, --testapi, --rtbake
+    // --testapi), not only in the later runtime-spliced `combined2`. Uses
+    // the exact same expand()/findRtDir/rtModuleKey machinery
+    // driveManifestSplice uses for every other runtime module
+    // (drvSpliceActive marks it "Included", not "Compiling", in progress
+    // output) -- EXCEPT expand()'s own ordinary haveRtbake-gated manifest-
+    // collision/drift check (this file, above `expand`'s own body) is
+    // deliberately made to never fire for prelude.cla specifically
+    // (bkComputeManifestPaths' own doc comment, bake.cla, explains why);
+    // this splice registers the --rtbake collision itself, directly, a
+    // few lines below. prelude.cla declares a TYPE only, never a
+    // function, so the "clean standalone" gate's purpose (user code
+    // cannot name runtime FUNCTIONS) is untouched.
+    //
+    // driveManifestSplice's own neededMods list (which builds combined2,
+    // the runtime-spliced full-build chain) deliberately does NOT also
+    // carry "prelude.cla" -- adding it there too would double-declare
+    // FileInfo. It is NOT enough, though, to rely on `combined` (this
+    // splice's own home) simply flowing into combined2 unchanged: for an
+    // ordinary (non-testapi) full build, combined2's assembly puts every
+    // OTHER runtime module (core.cla ... fileh.cla, in neededMods'
+    // declare-before-use order) BEFORE combined's own user-code chain --
+    // which would put FileInfo AFTER fileh.cla's own `func rtFhInfo(
+    // path: string): FileInfo`, an undefined-type error inside fileh.cla
+    // itself (found empirically running the Step 1 fixture through
+    // `clarusc emit`, not by inspection -- CLIR/combined-chain surgery is
+    // exactly the kind of thing that looks right on paper and isn't).
+    // drvPreludeHead/drvPreludeAsmIdx (declared above, with `combined`)
+    // are how driveManifestSplice detaches prelude.cla from wherever its
+    // own reassembly would otherwise place it and re-prepends it as
+    // combined2's true first thing, every branch, unconditionally -- see
+    // that function's own doc comment at its splice point.
+    //
+    // Never a hard abort() on failure to splice, unlike every OTHER
+    // module driveManifestSplice itself requires (core.cla etc): this
+    // splice is genuinely OPTIONAL infrastructure, not mandatory --
+    // FileInfo's own absence surfaces as an ordinary "undefined: FileInfo"
+    // diagnostic wherever (if anywhere) the user's code actually names
+    // it, exactly like any other undeclared type, rather than failing
+    // every compile that has no `runtime/clarus/` reachable at all (found
+    // the hard way: internal/lowlevel's own TestRtInc exercises a
+    // deliberately-minimal --rtdir with no prelude.cla, and a from-a-
+    // temp-dir-with-nothing-above-it compile that's supposed to reach its
+    // OWN "cannot open included file" diagnostic -- both need the compile
+    // to proceed past a missing/undiscoverable prelude.cla, not abort
+    // before Phase A even starts). `entry=false` (unlike every other
+    // splice loop's own `entry=true`) avoids setting the global
+    // `entryFailed` as a side effect on a miss, which driveCompile's own
+    // entries-loop check right below would otherwise treat as a silent,
+    // diagnosis-free failure. drvPreludeHead/drvPreludeAsmIdx are left at
+    // their -1 defaults (never assigned below) whenever expand() doesn't
+    // grow asmHeads -- not found anywhere reachable, the only remaining
+    // way that happens (bkComputeManifestPaths' own doc comment, bake.cla,
+    // explains why a --rtbake compile's expand() call for THIS module
+    // never takes the haveRtbake-gated "drift" early-return branch that
+    // every other bakeModuleList entry potentially could).
+    //
+    // haveRtbake needs one more step here that no other splice loop does:
+    // prelude.cla is BOTH unconditionally re-parsed from source on every
+    // compile (this splice, so the STANDALONE check -- `combined`, below
+    // -- always has FileInfo to resolve, with zero dependency on the
+    // bake) AND unconditionally part of the baked image (bakeModuleList,
+    // bake.cla -- fileh.cla's own `FileInfo`-returning function needs it
+    // declared for --bake-ir's own chain-building to check clean). Left
+    // alone, that means combined2's own LOWERING (below, wantEmit &&
+    // haveRtbake) would lower prelude's from-source record decl a SECOND
+    // time, redundant with (and, worse, a same-named sibling of) whatever
+    // bkInstallArenas already installed from the bake. Registering
+    // drvPreludeAsmIdx into bkManifestCollidedIdx here -- the exact
+    // mechanism expand()'s own hash-based drift/collision detector uses
+    // for every OTHER re-expanded module, just invoked directly instead
+    // of through that (for prelude.cla, deliberately bypassed) detector
+    // -- makes driveCompile's own existing driveRebuildChainSkipping call
+    // (wantEmit && haveRtbake, below) excise it from combined2 before
+    // lowering, the same as if expand() had found and reported the
+    // collision itself. bkManifestCollidedEarly gets `false`: unlike a
+    // --testapi UI compile's OWN early-visible collisions (excised from
+    // `combined` itself before checkPhase1, so a preloaded baked checker
+    // symbol of the SAME name doesn't double-declare against it),
+    // prelude.cla is never one of bkInstallCheckerSymbolsForTestapi's
+    // own preloaded names -- `combined` keeps it always, on every
+    // haveRtbake branch, precisely so checking (not just lowering) has
+    // FileInfo to resolve.
+    if not haveRtDir {
+        rtDir = findRtDir("prelude.cla")
+    }
+    drvSpliceActive = true
+    h = asmHeads.count
+    expand(joinPath(rtDir, "prelude.cla"), false, rtModuleKey("prelude.cla"))
+    drvSpliceActive = false
+    if asmHeads.count > h {
+        drvPreludeAsmIdx = h
+        drvPreludeHead = asmHeads[drvPreludeAsmIdx]
+        if haveRtbake {
+            bkManifestCollidedIdx.add(drvPreludeAsmIdx)
+            bkManifestCollidedEarly.add(false)
+        }
+    }
+
     i = 0
     while i < entries.count {
         expand(entries[i], true, "")

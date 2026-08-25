@@ -38,6 +38,15 @@ external func FhHFlush(h: int): int
 external func FhHClose(h: int)
 external func FhHErrno(): int
 
+// FhHStat/FhHStatField (filesystem-api Task 3): FhHStat does one stat(2)
+// call and caches the result; FhHStatField reads one field back out of
+// that cached result (0 size, 1 rsrcSize -- unused on the host, always 0
+// via rtFhDevStatRsrcSize below -- 2 created, 3 modified, 4 isDir), so a
+// single rtFhDevStat call backs all seven rtFhDevStat* getters below
+// without re-statting.
+external func FhHStat(path: string): int
+external func FhHStatField(which: int): int
+
 func rtFhDevOpen(path: string): int {
     return FhHOpen(path)
 }
@@ -93,4 +102,40 @@ func rtFhDevClose(h: int) {
 
 func rtFhDevLastOSErr(): int {
     return FhHErrno()
+}
+
+// rtFhDevStat/rtFhDevStat*: the host lane's own contract for the seven
+// FileInfo scalars (spec %3, "Host behaviour") -- rsrcSize/type/creator
+// have no host filesystem concept, so they're the documented zero/empty
+// defaults; size/created/modified/isDir come straight from FhHStatField.
+func rtFhDevStat(path: string): bool {
+    return FhHStat(path) == 0
+}
+
+func rtFhDevStatSize(): int {
+    return FhHStatField(0)
+}
+
+func rtFhDevStatRsrcSize(): int {
+    return 0
+}
+
+func rtFhDevStatType(): string {
+    return ""
+}
+
+func rtFhDevStatCreator(): string {
+    return ""
+}
+
+func rtFhDevStatCreated(): int {
+    return FhHStatField(2)
+}
+
+func rtFhDevStatModified(): int {
+    return FhHStatField(3)
+}
+
+func rtFhDevStatIsDir(): bool {
+    return FhHStatField(4) != 0
 }

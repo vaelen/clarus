@@ -401,6 +401,28 @@ static const clar_str_255 clar_lit_123 = {44, {99, 108, 97, 114, 95, 117, 105, 9
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
 typedef struct {
+    int32_t cv_size;
+    int32_t cv_rsrcSize;
+    clar_str_255 cv_type;
+    clar_str_255 cv_creator;
+    int32_t cv_created;
+    int32_t cv_modified;
+    uint8_t cv_isDir;
+    uint8_t clar_pad0;
+} clar_rec_FileInfo;
+static clar_rec_FileInfo clar_new_FileInfo(void) {
+    clar_rec_FileInfo r;
+    r.cv_size = 0;
+    r.cv_rsrcSize = 0;
+    r.cv_type = (clar_str_255){0};
+    r.cv_creator = (clar_str_255){0};
+    r.cv_created = 0;
+    r.cv_modified = 0;
+    r.cv_isDir = 0;
+    return r;
+}
+
+typedef struct {
     int32_t cv_rc;
     void * cv_h;
     int32_t cv_len;

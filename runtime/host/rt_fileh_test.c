@@ -24,6 +24,7 @@
  * pos == -1) and the two-open-failure-mode/stale-handle checks.
  */
 #include "rt.h"
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -37,6 +38,8 @@ extern int32_t rt_ext_FhHSetSize(int32_t h, int32_t n);
 extern int32_t rt_ext_FhHFlush(int32_t h);
 extern void    rt_ext_FhHClose(int32_t h);
 extern int32_t rt_ext_FhHErrno(void);
+extern int32_t rt_ext_FhHStat(const uint8_t *path);
+extern int32_t rt_ext_FhHStatField(int32_t which);
 
 static int failed = 0;
 #define CHECK(cond, msg) \
@@ -161,10 +164,46 @@ static void test_create_truncates(void) {
     unlink((const char *)(path + 1));
 }
 
+/* test_stat: FhHStat/FhHStatField (filesystem-api Task 3) -- a scratch
+ * file's size and isDir==0, the cwd's isDir==1, and a nonexistent path's
+ * failure mode (mirrors test_open_failure's own ENOENT check). */
+static void test_stat(void) {
+    uint8_t path[256];
+    int32_t h;
+    unsigned char data[3] = { 1, 2, 3 };
+
+    mkpath(path, "fileh_test_stat.dat");
+    h = rt_ext_FhHCreate(path);
+    CHECK(h != 0, "create should succeed");
+    CHECK(rt_ext_FhHWriteAt(h, 0, data, 3) == 0, "initial write should succeed");
+    rt_ext_FhHClose(h);
+
+    CHECK(rt_ext_FhHStat(path) == 0, "stat of the scratch file should succeed");
+    CHECK(rt_ext_FhHStatField(0) == 3, "stat size should match the written length");
+    CHECK(rt_ext_FhHStatField(4) == 0, "a plain file's isDir field should be 0");
+
+    {
+        uint8_t dot[256];
+        mkpath(dot, ".");
+        CHECK(rt_ext_FhHStat(dot) == 0, "stat of the cwd should succeed");
+        CHECK(rt_ext_FhHStatField(4) == 1, "the cwd's isDir field should be 1");
+    }
+
+    {
+        uint8_t nope[256];
+        mkpath(nope, "fileh_test_stat_does_not_exist.dat");
+        CHECK(rt_ext_FhHStat(nope) == -1, "stat of a nonexistent path should fail");
+        CHECK(rt_ext_FhHErrno() == ENOENT, "FhHErrno should report ENOENT after the failed stat");
+    }
+
+    unlink((const char *)(path + 1));
+}
+
 int main(void) {
     test_round_trip();
     test_open_failure();
     test_create_truncates();
+    test_stat();
     if (failed) {
         fprintf(stderr, "FAILED\n");
         return 1;

@@ -1,0 +1,65 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// filesystem-api Task 3: file.exists / file.info on the host lane, plus
+// FileInfo as an ordinary value (copy, field access, list element).
+record Holder {
+    fi: FileInfo
+    n: int
+}
+
+func show(fi: FileInfo) {
+    if fi.isDir {
+        alert("dir")
+    } else {
+        alert("file size " + string(fi.size))
+    }
+}
+
+on App.startCLI(args: list of string) {
+    var f: filehandle
+    var fi: FileInfo
+    var h: Holder
+    var l: list of FileInfo
+    var before: int
+
+    before = now()
+    if file.exists("dirops_info_missing.dat") {
+        alert("exists(missing) wrong")
+    } else {
+        alert("exists(missing) ok")
+    }
+    fi = file.info("dirops_info_missing.dat")
+    if fi.size == 0 and not fi.isDir and lastError.message == "info failed" {
+        alert("info(missing) ok")
+    } else {
+        alert("info(missing) wrong")
+    }
+
+    f = file.create("dirops_info.dat", "TEXT", "CLRS")
+    f.writeAt(0, "hello")
+    f.close()
+
+    if file.exists("dirops_info.dat") {
+        alert("exists ok")
+    }
+    fi = file.info("dirops_info.dat")
+    show(fi)
+    if fi.modified >= before and fi.created >= before {
+        alert("dates ok")
+    } else {
+        alert("dates wrong")
+    }
+    if fi.rsrcSize == 0 and fi.type == "" {
+        alert("host fields ok")
+    }
+    h.fi = fi
+    h.n = 1
+    l.add(fi)
+    show(h.fi)
+    show(l[0])
+
+    fi = file.info(".")
+    show(fi)
+    quit 0
+}

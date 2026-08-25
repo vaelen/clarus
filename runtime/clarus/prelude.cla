@@ -1,0 +1,20 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// prelude.cla: predeclared PUBLIC types (filesystem-api phase, Task 3).
+// Spliced by drive.cla ahead of the user program in BOTH the standalone
+// user-code check and the full runtime-spliced build, on every lane and
+// in check-only mode -- the one runtime module whose names user code may
+// spell. Types only, never functions: the "clean standalone" gate's
+// purpose (user code cannot name runtime functions) is untouched.
+// FileInfo is what file.info(path) returns (reference Ch12: Files).
+
+record FileInfo {
+    size: int
+    rsrcSize: int
+    type: string
+    creator: string
+    created: int
+    modified: int
+    isDir: bool
+}

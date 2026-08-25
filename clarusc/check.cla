@@ -408,6 +408,7 @@ record ParamSpec {
     t: int
     anyCharArray: bool
     anyRecordish: bool
+    recNameIdx: int
     kindCount: int
     kind1: TypeKind
     kind2: TypeKind
@@ -433,6 +434,7 @@ func psPlain(t: int): int {
     p.t = t
     p.anyCharArray = false
     p.anyRecordish = false
+    p.recNameIdx = -1
     p.kindCount = 0
     p.kind1 = TyInvalid
     p.kind2 = TyInvalid
@@ -448,6 +450,7 @@ func psAnyCharArray(): int {
     p.t = -1
     p.anyCharArray = true
     p.anyRecordish = false
+    p.recNameIdx = -1
     p.kindCount = 0
     p.kind1 = TyInvalid
     p.kind2 = TyInvalid
@@ -463,6 +466,30 @@ func psAnyRecordish(): int {
     p.t = -1
     p.anyCharArray = false
     p.anyRecordish = true
+    p.recNameIdx = -1
+    p.kindCount = 0
+    p.kind1 = TyInvalid
+    p.kind2 = TyInvalid
+    p.kind3 = TyInvalid
+    p.next = -1
+    paramSpecs.add(p)
+    return paramSpecs.count - 1
+}
+
+// psRecNamed: a parameter/return spec naming a record TYPE by name,
+// resolved at check time (filesystem-api Task 3) -- for the predeclared
+// FileInfo, whose type index does not exist yet when this table is built
+// (buildMethodTables runs before any source, prelude.cla included, is
+// checked). Unlike psAnyRecordish (matches ANY record-ish value), this
+// matches exactly the ONE named type -- checkParamArg resolves nameIdx
+// via scopeLookup at match time and compares against it.
+func psRecNamed(nameIdx: int): int {
+    var p: ParamSpec
+
+    p.t = -1
+    p.anyCharArray = false
+    p.anyRecordish = false
+    p.recNameIdx = nameIdx
     p.kindCount = 0
     p.kind1 = TyInvalid
     p.kind2 = TyInvalid
@@ -478,6 +505,7 @@ func psOneOf2(k1: TypeKind, k2: TypeKind): int {
     p.t = -1
     p.anyCharArray = false
     p.anyRecordish = false
+    p.recNameIdx = -1
     p.kindCount = 2
     p.kind1 = k1
     p.kind2 = k2
@@ -493,6 +521,7 @@ func psOneOf3(k1: TypeKind, k2: TypeKind, k3: TypeKind): int {
     p.t = -1
     p.anyCharArray = false
     p.anyRecordish = false
+    p.recNameIdx = -1
     p.kindCount = 3
     p.kind1 = k1
     p.kind2 = k2
@@ -507,6 +536,7 @@ record MethodSig {
     paramsHead: int
     paramCount: int
     ret: int
+    retNameIdx: int
 }
 
 var methodSigs: list of MethodSig
@@ -517,6 +547,7 @@ func newMethodSig(paramsHead: int, paramCount: int, ret: int): int {
     s.paramsHead = paramsHead
     s.paramCount = paramCount
     s.ret = ret
+    s.retNameIdx = -1
     methodSigs.add(s)
     return methodSigs.count - 1
 }
@@ -541,6 +572,21 @@ func sigAdd(specIdx: int) {
 
 func sigEnd(ret: int): int {
     return newMethodSig(sigHead, sigCount, ret)
+}
+
+// sigEndNamed (filesystem-api Task 3): like sigEnd, but the return type
+// is a record named at TABLE-BUILD time (retNameIdx) rather than a type
+// index -- FileInfo's type index does not exist yet when buildMethodTables
+// runs (the prelude that declares it is checked later, per-compile).
+// ret is stashed as -2, a sentinel checkTableMethod resolves by name
+// (via topScope) the first time the sig is actually used, once the
+// prelude has definitely been checked.
+func sigEndNamed(retNameIdx: int): int {
+    var idx: int
+
+    idx = newMethodSig(sigHead, sigCount, -2)
+    methodSigs[idx].retNameIdx = retNameIdx
+    return idx
 }
 
 // ---- built-in method tables (name -> methodSigs index) ----
@@ -1697,6 +1743,19 @@ func buildMethodTables() {
     sigAdd(psPlain(strT(255)))
     fileFuncs["create"] = sigEnd(fileHandleT)
 
+    // file.exists(path) / file.info(path) (filesystem-api spec %3):
+    // exists never touches lastError (existence is a question, not a
+    // failure); info returns the predeclared FileInfo record (prelude.cla),
+    // resolved by name via sigEndNamed since FileInfo's type index does
+    // not exist yet when buildMethodTables runs.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["exists"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["info"] = sigEndNamed(intern("FileInfo"))
+
     // filehandle methods (spec %3.1): readAt replaces `out` entirely;
     // writeAt/append accept text OR string (the `send` overload shape,
     // psOneOf2, matching connectionMethods["send"] above); size/setSize/
@@ -1810,6 +1869,24 @@ func checkParamArg(arg: int, specIdx: int) {
         emitDiag(exprLine(arg), exprCol(arg), "cannot use " + typeName(t) + " where a record is expected")
         return
     }
+    if paramSpecs[specIdx].recNameIdx != -1 {
+        // psRecNamed (filesystem-api Task 3): resolved by NAME at match
+        // time, not at table-build time -- the prelude (runtime/clarus/
+        // prelude.cla) has always been checked by now (it's spliced
+        // ahead of every user file, drive.cla), so the name is always
+        // resolvable here even though it wasn't when buildMethodTables
+        // ran. Not currently reachable (file.info's own FileInfo return
+        // uses sigEndNamed below, not this param path), kept symmetric
+        // with psAnyRecordish for a future named-record PARAMETER.
+        t = checkExpr(arg, -1)
+        if t == InvalidT {
+            return
+        }
+        if not compatible(t, symbols[scopeLookup(topScope, paramSpecs[specIdx].recNameIdx)].typeIdx) {
+            emitDiag(exprLine(arg), exprCol(arg), "cannot use " + typeName(t) + " where " + poolGet(paramSpecs[specIdx].recNameIdx) + " is expected")
+        }
+        return
+    }
     if paramSpecs[specIdx].kindCount > 0 {
         t = checkExpr(arg, -1)
         if t == InvalidT {
@@ -1864,6 +1941,14 @@ func checkTableMethod(table: map of int, sel: int, argsHead: int): int {
     }
     if methodSigs[sigIdx].ret == -1 {
         return VoidT
+    }
+    if methodSigs[sigIdx].ret == -2 {
+        // sigEndNamed's sentinel (filesystem-api Task 3): resolve the
+        // named return type NOW, by which point the prelude declaring it
+        // has definitely been checked (it is spliced ahead of every user
+        // file, drive.cla) -- see psRecNamed's own doc comment for why
+        // this can't be resolved at buildMethodTables time.
+        return symbols[scopeLookup(topScope, methodSigs[sigIdx].retNameIdx)].typeIdx
     }
     return methodSigs[sigIdx].ret
 }
@@ -2016,7 +2101,7 @@ func checkMethodCall(sel: int, argsHead: int): int {
         // inferred local) still needs fileh.cla/fileh_c.cla spliced --
         // resolveType's own hook (above) only fires when the type is
         // written out, which this call site does not guarantee.
-        if name == "open" or name == "create" {
+        if name == "open" or name == "create" or name == "exists" or name == "info" {
             usesFileh = true
         }
         // param-abi phase, Task 2 (review round 1): file.load(path, data)

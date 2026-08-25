@@ -400,6 +400,21 @@ func bkFindClarusC(out: text): bool {
 func bakeModuleList(lane: int): list of string {
     var mods: list of string
 
+    // filesystem-api Task 3: prelude.cla (currently just `record
+    // FileInfo`) is unconditionally first, both lanes -- fileh.cla's own
+    // `func rtFhInfo(path: string): FileInfo` (below) needs it declared
+    // for --bake-ir's own chain-building to check clean, exactly like a
+    // from-source full build does (drive.cla's own splice). It declares a
+    // type only, matching drive.cla's own from-source splice, which
+    // parses it as the very first file ahead of everything else
+    // (including the user's own entries). Not gated like fileh.cla/
+    // fileh_68k.cla below: those declare FUNCTIONS a non-testapi compile
+    // must not see unless usesFileh, but a predeclared TYPE is meant to
+    // be visible unconditionally on every lane/mode. See
+    // bkComputeManifestPaths' own doc comment for why it is deliberately
+    // EXCLUDED from bkManifestPaths (the --rtbake drift-guard's own
+    // gate), even though it's included here.
+    mods.add("prelude.cla")
     mods.add("core.cla")
     mods.add("str.cla")
     mods.add("text.cla")
@@ -4060,8 +4075,35 @@ func bkComputeManifestPaths() {
         i = 0
         while i < bkLoadedModules.count {
             bareMod = bkLoadedModules[i][prefixLen, bkLoadedModules[i].length - prefixLen]
-            p = normalizePath(joinPath(rtDir, bareMod))
-            m[p] = true
+            // filesystem-api Task 3: prelude.cla is deliberately excluded
+            // from bkManifestPaths (the drift-guard's own gate,
+            // `bkManifestPaths.has(path)` in expand()), even though it IS
+            // one of bakeModuleList's entries (bkWriteManifestHashes still
+            // hashes it into bkManifestHashes like any other module --
+            // this is the ONLY place it's skipped). Reason: unlike every
+            // other bakeModuleList module, prelude.cla is unconditionally
+            // re-expanded from source on EVERY compile, --rtbake included
+            // (drive.cla's own driveCompile splice, not anchored to any
+            // user entry file's own directory the way a nested include
+            // would be) -- so its disk-path identity is a FRESH per-
+            // compile findRtDir recomputation, which does not have to
+            // match whatever --bake-ir's OWN invocation (a different
+            // process, potentially run from a different working
+            // directory depth) produced. Gating the drift check on
+            // bkManifestPaths membership means that mismatch never
+            // reaches the hash comparison at all: prelude.cla's own
+            // splice call always takes expand()'s ordinary (non-drift)
+            // parse path, on every lane/mode, with no dependency on cwd
+            // depth matching between bake time and use time. Found via
+            // internal/mactest's own DoubleCompileBake leak-gate case,
+            // which runs driveCompile from a nested build-run/ subdir on
+            // purpose -- a false "drifted" report there silently forced a
+            // full from-source fallback recompile instead of exercising
+            // the real bake-install path the test specifically checks.
+            if bareMod != "prelude.cla" {
+                p = normalizePath(joinPath(rtDir, bareMod))
+                m[p] = true
+            }
             i = i + 1
         }
     }

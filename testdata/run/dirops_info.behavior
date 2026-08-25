@@ -1,0 +1,12 @@
+exit=0
+--- stdout ---
+exists(missing) ok
+info(missing) ok
+exists ok
+file size 5
+dates ok
+host fields ok
+file size 5
+file size 5
+dir
+--- stderr ---

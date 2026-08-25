@@ -366,3 +366,50 @@ func rtFhDevClose(h: int) {
 func rtFhDevLastOSErr(): int {
     return rtFh68kLastErr
 }
+
+// rtFhDevStat/rtFhDevStat* (filesystem-api Task 3): PLACEHOLDER stubs so
+// fileh.cla's shared rtFhExists/rtFhInfo (which every want68k build
+// splices unconditionally, dormant program or not -- same "full-superset,
+// tree-shaking drops the unused rest" convention this file's own header
+// comment documents for every other rtFhDev* entry point) check and lower
+// cleanly on this lane. Task 5 (spec %4.3) replaces this with the real
+// PBGetCatInfoSync-backed implementation (CInfoPBRec, ioFDirIndex = 0,
+// ioDirID = 0, isDir from ioFlAttrib & 0x10); until then, file.exists is
+// always false and file.info always fails with rtFh68kLastErr = unimpErr
+// (-4, Inside Macintosh's own "unimplemented" OSErr) on the Mac lane --
+// deliberately, not silently: rtFhInfo (fileh.cla) surfaces this as
+// lastError exactly like any other rtFhDevStat failure. No caller in this
+// phase's own testdata exercises file.exists/file.info on the native
+// lane (Task 3 is host-lane only, CLAUDE.md).
+func rtFhDevStat(path: string): bool {
+    rtFh68kLastErr = -4
+    return false
+}
+
+func rtFhDevStatSize(): int {
+    return 0
+}
+
+func rtFhDevStatRsrcSize(): int {
+    return 0
+}
+
+func rtFhDevStatType(): string {
+    return ""
+}
+
+func rtFhDevStatCreator(): string {
+    return ""
+}
+
+func rtFhDevStatCreated(): int {
+    return 0
+}
+
+func rtFhDevStatModified(): int {
+    return 0
+}
+
+func rtFhDevStatIsDir(): bool {
+    return false
+}

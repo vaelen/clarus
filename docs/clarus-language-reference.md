@@ -165,12 +165,15 @@ Clarus is statically typed. All types are known at compile time; values are eith
 | window ref (e.g. `Doc`) | 4 bytes | inline | reference to a window instance; `nil` until assigned |
 | `connection`, `listener`, `serviceBrowser`, `filehandle` | opaque | resource | networking and file resources (Chapter 12) |
 | `error` | record | inline | `{ code: int, message: string }` |
+| `FileInfo` | record | inline | `{ size: int, rsrcSize: int, type: string, creator: string, created: int, modified: int, isDir: bool }` (Chapter 12) |
 | `address` | opaque | inline | network address from a `serviceBrowser` |
 | `saveChoice` | enum | inline | built-in: `Save`, `Discard`, `Cancel` |
 
 \* "inline" values past a size threshold are transparently promoted to handle-backed storage by the compiler (spec §6); semantics are identical.
 
 Resource variables (`connection`, `listener`, `serviceBrowser`, `filehandle`) are fixed-size 4-byte references, like window references: assignable, storable in records and arrays (`connection[8]` is 8 references, 32 bytes), and `nil` until bound.
+
+`FileInfo` is a predeclared record (Chapter 12: Files) returned by `file.info` -- an ordinary value, like any user record: assignable, copyable, a legal field, array, or `list of`/`map of` element type. A program may not declare its own `FileInfo` (the ordinary duplicate-declaration error). Its seven fields, in declaration order: `size: int` (data fork length in bytes; 0 for a folder), `rsrcSize: int` (resource fork length in bytes; 0 for a folder or on a host), `type: string` (Finder type, `""` on a host or for a folder), `creator: string` (Finder creator, `""` on a host or for a folder), `created: int` and `modified: int` (Macintosh-epoch seconds, the same clock as `now()`), and `isDir: bool`.
 
 **Storage:** `bool` and `char` occupy exactly 1 byte inside every ordinary aggregate — records and arrays — on every target; `bool` occupies 1 byte inside an `extern record` too, but `char` is not a legal `extern record` field type at all (an extern record's 1-byte numeric field type is `byte` — see the Chapter 13 field palette). As a standalone local, parameter, or global, `bool`/`char` occupy a 2-byte slot (68000 even-address alignment). At `external func`/`trap` boundaries the Chapter 13 marshaling rules apply (a bool/char parameter or result travels in a 16-bit stack word).
 
@@ -1435,7 +1438,7 @@ on browser.failed(err: error) { }
 
 ### Files
 
-The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, and `file.create` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong. `open`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O.
+The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, `file.create`, and `file.info` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong -- except `file.exists`, whose `false` just means the path doesn't exist, never a failure. `open`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O; `info` returns a `FileInfo` record (Chapter 3), zeroed with `lastError` set on failure.
 
 | Function | Signature | Notes |
 |---|---|---|
@@ -1448,6 +1451,8 @@ The `file` namespace covers documents and preferences. Every function but `file.
 | `writeRes` | `file.writeRes(path: string, fork: text, doctype: string, creator: string): bool` | writes `fork`'s contents as `path`'s resource fork, stamped with `doctype`/`creator`; Macintosh only |
 | `open` | `file.open(path: string): filehandle` | opens an existing file read/write; `nil` + `lastError` if it doesn't exist or can't be opened |
 | `create` | `file.create(path: string, type: string, creator: string): filehandle` | creates the file if missing, truncates it to 0 bytes if it already exists, opens it read/write, stamped with `type`/`creator`; `nil` + `lastError` on failure |
+| `exists` | `file.exists(path: string): bool` | `true` for an existing file or folder; never sets `lastError` |
+| `info` | `file.info(path: string): FileInfo` | on failure returns a zeroed record and sets `lastError` |
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
 

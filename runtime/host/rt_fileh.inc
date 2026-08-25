@@ -196,3 +196,53 @@ void rt_ext_FhHClose(int32_t h) {
 int32_t rt_ext_FhHErrno(void) {
     return (int32_t)rt_fh_errno;
 }
+
+/* rt_fh_stat_buf: the single cached catalog record FhHStat fills and
+ * FhHStatField reads back out of -- fileh.cla's own rtFhInfo issues
+ * exactly one rtFhDevStat per file.info(path) call, then reads all seven
+ * scalars from it (filesystem-api Task 3 spec %4.3: "the device layer
+ * never sees FileInfo"). */
+static struct stat rt_fh_stat_buf;
+
+/* rt_fh_mac_time: Unix seconds -> Mac-epoch LOCAL seconds, the identical
+ * conversion rt_dt_now_mac (rt_ext_host.inc, included earlier in rt.c so
+ * RT_MAC_EPOCH_DELTA is already visible here) uses for "now" -- applied
+ * here to a file's stat times instead of the current time. */
+static int32_t rt_fh_mac_time(time_t t) {
+    struct tm tmv;
+    localtime_r(&t, &tmv);
+    return (int32_t)((unsigned long)t + (unsigned long)tmv.tm_gmtoff + RT_MAC_EPOCH_DELTA);
+}
+
+/* rt_ext_FhHStat: stat by path; 0 on success (fields via FhHStatField),
+ * -1 + rt_fh_errno otherwise. */
+int32_t rt_ext_FhHStat(const uint8_t *path) {
+    char cpath[256];
+    path_to_cstr(cpath, path);
+    if (stat(cpath, &rt_fh_stat_buf) != 0) {
+        rt_fh_errno = errno;
+        return -1;
+    }
+    return 0;
+}
+
+/* rt_ext_FhHStatField: 0 size, 2 created, 3 modified, 4 isDir -- from the
+ * last successful FhHStat. Mac-epoch seconds via RT_MAC_EPOCH_DELTA and
+ * the local-time offset, the same convention rt_dt_now_mac uses. macOS/BSD
+ * report a real file-creation time (st_birthtime); other hosts have none,
+ * so "created" falls back to st_ctime there (documented in the reference
+ * as "where the host reports one"). */
+int32_t rt_ext_FhHStatField(int32_t which) {
+    switch (which) {
+    case 0: return (int32_t)rt_fh_stat_buf.st_size;
+    case 2:
+#if defined(__APPLE__)
+        return rt_fh_mac_time(rt_fh_stat_buf.st_birthtime);
+#else
+        return rt_fh_mac_time(rt_fh_stat_buf.st_ctime);
+#endif
+    case 3: return rt_fh_mac_time(rt_fh_stat_buf.st_mtime);
+    case 4: return S_ISDIR(rt_fh_stat_buf.st_mode) ? 1 : 0;
+    default: return 0;
+    }
+}

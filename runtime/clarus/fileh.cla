@@ -248,3 +248,30 @@ func rtFhClose(h: int) {
     }
     rtFhDevClose(h)
 }
+
+// rtFhExists: true for an existing file or folder; never touches
+// lastError (spec %3 -- existence is a question, not a failure).
+func rtFhExists(path: string): bool {
+    return rtFhDevStat(path)
+}
+
+// rtFhInfo: one device stat, then the seven scalar getters -- the device
+// layer never sees FileInfo (spec %4.3), so fileh_c.cla/fileh_68k.cla
+// stay layout-blind. On failure every field keeps its zero default and
+// lastError is set.
+func rtFhInfo(path: string): FileInfo {
+    var fi: FileInfo
+
+    if not rtFhDevStat(path) {
+        rtSetLastErr(rtFhDevLastOSErr(), "info failed")
+        return fi
+    }
+    fi.size = rtFhDevStatSize()
+    fi.rsrcSize = rtFhDevStatRsrcSize()
+    fi.type = rtFhDevStatType()
+    fi.creator = rtFhDevStatCreator()
+    fi.created = rtFhDevStatCreated()
+    fi.modified = rtFhDevStatModified()
+    fi.isDir = rtFhDevStatIsDir()
+    return fi
+}

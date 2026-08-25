@@ -1,0 +1,5 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// filesystem-api Task 3: file.exists(path) takes exactly one argument.
+var ok: bool = file.exists()

@@ -1,0 +1,8 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// filesystem-api Task 3: FileInfo is predeclared (runtime/clarus/
+// prelude.cla) -- a program may not declare its own record of that name.
+record FileInfo {
+    x: int
+}

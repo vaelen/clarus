@@ -1724,6 +1724,13 @@ func lowFileCall(e: int, fn: int, ty: int): int {
         lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 1), "file.create type")
         lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 2), "file.create creator")
         return newIRCallFn(intern("rtFhCreate"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "exists" {
+        return newIRCallFn(intern("rtFhExists"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "info" {
+        // file.info(path): FileInfo -- an ordinary record-returning runtime
+        // call (prelude.cla declares FileInfo; fileh.cla's rtFhInfo returns
+        // it by value, the same shape as any user function returning a record).
+        return newIRCallFn(intern("rtFhInfo"), lowArgs(callArgsHead(e)), ty)
     } else if nm == "save" or nm == "load" {
         dataAst = exprNext(callArgsHead(e))
         xt = exprTypeGet(dataAst)
