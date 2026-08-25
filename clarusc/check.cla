@@ -1727,6 +1727,42 @@ func buildMethodTables() {
     sigAdd(psPlain(strT(255)))
     fileFuncs["info"] = sigEndNamed(intern("FileInfo"))
 
+    // file.makeDir/delete/list/setInfo/rename/move (filesystem-api Task 4,
+    // spec %3): the directory/catalog surface. list's `names` arg gets
+    // checkRejectParamFill below, same as readText's `out` (a list is a
+    // reference type, so the guard is a documented no-op there -- see the
+    // checkMethodCall comment next to the readText guard).
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["makeDir"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["delete"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(listT(strT(255))))
+    fileFuncs["list"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    fileFuncs["setInfo"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["rename"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["move"] = sigEnd(BoolT)
+
     // filehandle methods (spec %3.1): readAt replaces `out` entirely;
     // writeAt/append accept text OR string (the `send` overload shape,
     // psOneOf2, matching connectionMethods["send"] above); size/setSize/
@@ -2059,13 +2095,18 @@ func checkMethodCall(sel: int, argsHead: int): int {
             // at emit time; Task 7 wires the real module in).
             usesFileSaveLoad = true
         }
-        // usesFileh (2026-08-22 binary-files spec, Task 5): a program that
-        // calls open/create but never NAMES the `filehandle` type (e.g.
+        // usesFileh (2026-08-22 binary-files spec, Task 5; extended by
+        // filesystem-api Task 4's six new calls): a program that calls
+        // open/create/... but never NAMES the `filehandle` type (e.g.
         // immediately discards the result, or only ever assigns into an
         // inferred local) still needs fileh.cla/fileh_c.cla spliced --
         // resolveType's own hook (above) only fires when the type is
-        // written out, which this call site does not guarantee.
-        if name == "open" or name == "create" or name == "exists" or name == "info" {
+        // written out, which this call site does not guarantee. Every
+        // fileFuncs entry EXCEPT the seven that predate fileh.cla
+        // (readText/writeText/readResource/writeRes/save/load/name --
+        // cprint/cg68k-hardwired intrinsics, no rtFhDev* device layer)
+        // needs the splice.
+        if fileFuncs.has(name) and name != "readText" and name != "writeText" and name != "readResource" and name != "writeRes" and name != "save" and name != "load" and name != "name" {
             usesFileh = true
         }
         // param-abi phase, Task 2 (review round 1): file.load(path, data)
@@ -2091,7 +2132,12 @@ func checkMethodCall(sel: int, argsHead: int): int {
         // checkTableMethod's checkParamArg call above guarantees (it runs
         // checkExpr on every argument) -- so this call runs AFTER
         // dispatch, not before.
-        if (name == "readText" or name == "readResource") and argsHead != -1 and exprNext(argsHead) != -1 {
+        // file.list(path, names) (filesystem-api Task 4): same fill-in-
+        // place guard as readText's `out` above -- a no-op in practice
+        // (list is a reference type, so checkRejectParamFill's value-kind
+        // gate always passes it), kept for consistency with every other
+        // out-param file call.
+        if (name == "readText" or name == "readResource" or name == "list") and argsHead != -1 and exprNext(argsHead) != -1 {
             checkRejectParamFill(exprNext(argsHead))
         }
         return result

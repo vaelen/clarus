@@ -413,3 +413,51 @@ func rtFhDevStatModified(): int {
 func rtFhDevStatIsDir(): bool {
     return false
 }
+
+// rtFhDevMakeDir/Delete/ListBegin/ListNext/ListEnd/SetInfo/Rename/Move
+// (filesystem-api Task 4): PLACEHOLDER stubs, same rationale as
+// rtFhDevStat/rtFhDevStat* above -- fileh.cla's six new shared rtFh*
+// entries (rtFhMakeDir/Delete/List/SetInfo/Rename/Move) are spliced
+// unconditionally into every want68k build (this file's own header
+// comment), so they need something to call here even before Task 5's
+// real PBDirCreateSync/PBHDeleteSync/PBGetCatInfoSync/PBHSetFInfoSync/
+// PBHRenameSync/PBCatMoveSync implementation lands (spec %4.3). Every
+// int-returning stub fails with rtFh68kLastErr = -4 (unimpErr, Inside
+// Macintosh's own "unimplemented" OSErr); rtFhDevListBegin/ListEnd match
+// their own bool/void shapes.
+func rtFhDevMakeDir(path: string): int {
+    rtFh68kLastErr = -4
+    return -4
+}
+
+func rtFhDevDelete(path: string): int {
+    rtFh68kLastErr = -4
+    return -4
+}
+
+func rtFhDevListBegin(path: string): bool {
+    rtFh68kLastErr = -4
+    return false
+}
+
+func rtFhDevListNext(): string {
+    return ""
+}
+
+func rtFhDevListEnd() {
+}
+
+func rtFhDevSetInfo(path: string, ftype: string, fcreator: string, created: int, modified: int): int {
+    rtFh68kLastErr = -4
+    return -4
+}
+
+func rtFhDevRename(path: string, newName: string): int {
+    rtFh68kLastErr = -4
+    return -4
+}
+
+func rtFhDevMove(path: string, dirPath: string): int {
+    rtFh68kLastErr = -4
+    return -4
+}

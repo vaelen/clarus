@@ -1400,6 +1400,16 @@ var coreSuiteGUIFiles = []string{
 	// both opt-in, neither part of T1 (scripts/test-task.sh) -- so this is
 	// accepted/expected until Task 6, not a T1 regression.
 	filepath.Join("testsuite", "core", "cases_fileh.cla"),
+	// filesystem-api phase Task 4: cases_dirops.cla MUST be here --
+	// runner.cla (above) unconditionally calls caseDirOps(). Unlike
+	// cases_fileh.cla's own Task-5-era gap above, this ONE checks and
+	// links cleanly on the native lane today (fileh_68k.cla carries real
+	// PLACEHOLDER stubs for every new rtFhDev* entry, spec %4.3) -- it's
+	// only DirOps' own RUNTIME result that fails there (every stub
+	// returns unimpErr) until Task 5 replaces them with real File
+	// Manager calls. Same opt-in-only, not-a-T1-regression story as
+	// cases_fileh.cla's own note.
+	filepath.Join("testsuite", "core", "cases_dirops.cla"),
 	filepath.Join("testsuite", "core", "gui.cla"),
 }
 

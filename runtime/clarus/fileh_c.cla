@@ -139,3 +139,77 @@ func rtFhDevStatModified(): int {
 func rtFhDevStatIsDir(): bool {
     return FhHStatField(4) != 0
 }
+
+// rtFhListBuf: the file.list(path, names) cursor's scratch buffer -- one
+// SerNewPtr(256) allocated in rtFhDevListBegin, read by rtFhDevListNext,
+// freed by rtFhDevListEnd. Host lane only (this module is never spliced
+// onto the native lane -- see the header comment above), so a
+// module-level var here never touches a native golden.
+var rtFhListBuf: ptr = ptr(0)
+
+// FhHMakeDir/Delete/ListBegin/ListNext/ListEnd/SetTimes/Rename/Move
+// (filesystem-api Task 4): the directory/catalog surface's host lane,
+// runtime/host/rt_fileh.inc's own rt_ext_FhH* bodies. FhHListNext writes
+// a Pascal-string name into a caller-supplied 256-byte buffer (0 = got
+// one, 1 = done, -1 = error); rtFhDevListNext below reads it back into a
+// `string` byte by byte via peekb, the same Pascal-buffer-to-string idiom
+// rtFh68kName (fileh_68k.cla) uses in reverse.
+external func FhHMakeDir(path: string): int
+external func FhHDelete(path: string): int
+external func FhHListBegin(path: string): int
+external func FhHListNext(buf: ptr): int
+external func FhHListEnd()
+external func FhHSetTimes(path: string, created: int, modified: int): int
+external func FhHRename(path: string, newName: string): int
+external func FhHMove(path: string, dirPath: string): int
+
+func rtFhDevMakeDir(path: string): int {
+    return FhHMakeDir(path)
+}
+
+func rtFhDevDelete(path: string): int {
+    return FhHDelete(path)
+}
+
+func rtFhDevListBegin(path: string): bool {
+    if FhHListBegin(path) != 0 {
+        return false
+    }
+    rtFhListBuf = SerNewPtr(256)
+    return true
+}
+
+func rtFhDevListNext(): string {
+    var s: string
+    var n: int
+    var i: int
+
+    if FhHListNext(rtFhListBuf) != 0 {
+        return ""
+    }
+    n = peekb(rtFhListBuf)
+    i = 0
+    while i < n {
+        s = s + char(peekb(rtFhListBuf + 1 + i))
+        i = i + 1
+    }
+    return s
+}
+
+func rtFhDevListEnd() {
+    FhHListEnd()
+    SerDisposePtr(rtFhListBuf)
+    rtFhListBuf = ptr(0)
+}
+
+func rtFhDevSetInfo(path: string, ftype: string, fcreator: string, created: int, modified: int): int {
+    return FhHSetTimes(path, created, modified)
+}
+
+func rtFhDevRename(path: string, newName: string): int {
+    return FhHRename(path, newName)
+}
+
+func rtFhDevMove(path: string, dirPath: string): int {
+    return FhHMove(path, dirPath)
+}

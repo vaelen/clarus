@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 extern int32_t rt_ext_FhHOpen(const uint8_t *path);
 extern int32_t rt_ext_FhHCreate(const uint8_t *path);
@@ -40,6 +41,16 @@ extern void    rt_ext_FhHClose(int32_t h);
 extern int32_t rt_ext_FhHErrno(void);
 extern int32_t rt_ext_FhHStat(const uint8_t *path);
 extern int32_t rt_ext_FhHStatField(int32_t which);
+
+/* filesystem-api Task 4: the directory/catalog surface's host lane. */
+extern int32_t rt_ext_FhHMakeDir(const uint8_t *path);
+extern int32_t rt_ext_FhHDelete(const uint8_t *path);
+extern int32_t rt_ext_FhHListBegin(const uint8_t *path);
+extern int32_t rt_ext_FhHListNext(void *buf);
+extern void    rt_ext_FhHListEnd(void);
+extern int32_t rt_ext_FhHSetTimes(const uint8_t *path, int32_t created, int32_t modified);
+extern int32_t rt_ext_FhHRename(const uint8_t *path, const uint8_t *newName);
+extern int32_t rt_ext_FhHMove(const uint8_t *path, const uint8_t *dirPath);
 
 static int failed = 0;
 #define CHECK(cond, msg) \
@@ -199,11 +210,162 @@ static void test_stat(void) {
     unlink((const char *)(path + 1));
 }
 
+/* test_hfs_path_translation (filesystem-api Task 4, spec %4.4): the
+ * translation table -- ":a:b" -> "a/b", "a" -> "a" (unchanged, no colon),
+ * "Vol:x" -> "Vol/x" -- proved through rt_ext_FhHMakeDir itself (which
+ * routes every path through path_to_cstr's rt_fh_posix_path hook) rather
+ * than a standalone unit test of the static helper, then confirmed with a
+ * plain POSIX stat() on the translated name. */
+static void test_hfs_path_translation(void) {
+    uint8_t p0[256], p1[256], p2[256], p3[256], p4[256];
+    struct stat st;
+
+    mkpath(p1, ":t1");
+    CHECK(rt_ext_FhHMakeDir(p1) == 0, "makeDir(':t1') should succeed (leading colon dropped)");
+    mkpath(p2, ":t1:sub");
+    CHECK(rt_ext_FhHMakeDir(p2) == 0, "makeDir(':t1:sub') should succeed (':' -> '/')");
+    CHECK(stat("t1/sub", &st) == 0 && S_ISDIR(st.st_mode), "t1/sub should exist as a directory (POSIX-side proof)");
+
+    mkpath(p3, "a");
+    CHECK(rt_ext_FhHMakeDir(p3) == 0, "makeDir('a') (no colon) should succeed unchanged");
+    CHECK(stat("a", &st) == 0 && S_ISDIR(st.st_mode), "a should exist as a directory");
+
+    /* "Vol:x" -> "Vol/x" (spec %4.4: a full path's volume name becomes an
+     * ordinary leading directory component) -- makeDir requires the
+     * parent to already exist, so "Vol" itself is made first. */
+    mkpath(p0, "Vol");
+    CHECK(rt_ext_FhHMakeDir(p0) == 0, "makeDir('Vol') should succeed");
+    mkpath(p4, "Vol:x");
+    CHECK(rt_ext_FhHMakeDir(p4) == 0, "makeDir('Vol:x') should succeed ('Vol:x' -> 'Vol/x')");
+    CHECK(stat("Vol/x", &st) == 0 && S_ISDIR(st.st_mode), "Vol/x should exist as a directory");
+
+    rmdir("t1/sub");
+    rmdir("t1");
+    rmdir("a");
+    rmdir("Vol/x");
+    rmdir("Vol");
+}
+
+/* test_list: FhHListBegin/FhHListNext over a folder with one subfolder --
+ * sees "sub" exactly once, then FhHListNext returns 1 (done). */
+static void test_list(void) {
+    uint8_t dir[256], sub[256], buf[256];
+    int32_t got;
+    int seen;
+
+    mkpath(dir, "fileh_test_list");
+    CHECK(rt_ext_FhHMakeDir(dir) == 0, "makeDir(list dir) should succeed");
+    mkpath(sub, "fileh_test_list:sub");
+    CHECK(rt_ext_FhHMakeDir(sub) == 0, "makeDir(list dir sub) should succeed");
+
+    CHECK(rt_ext_FhHListBegin(dir) == 0, "listBegin should succeed");
+    got = rt_ext_FhHListNext(buf);
+    CHECK(got == 0, "listNext should see one entry");
+    seen = (got == 0 && buf[0] == 3 && memcmp(buf + 1, "sub", 3) == 0);
+    CHECK(seen, "the one entry should be 'sub'");
+    got = rt_ext_FhHListNext(buf);
+    CHECK(got == 1, "listNext should report done after the one entry");
+    rt_ext_FhHListEnd();
+
+    rmdir("fileh_test_list/sub");
+    rmdir("fileh_test_list");
+}
+
+/* test_rename_move: FhHRename renames in place (same dir); FhHMove moves
+ * into a target dir keeping the name; round trip back. */
+static void test_rename_move(void) {
+    uint8_t dir[256], a[256], b[256], newName[256];
+    int32_t h;
+
+    mkpath(dir, "fileh_test_mvdir");
+    CHECK(rt_ext_FhHMakeDir(dir) == 0, "makeDir(move target dir) should succeed");
+    mkpath(a, "fileh_test_a.dat");
+    h = rt_ext_FhHCreate(a);
+    CHECK(h != 0, "create a.dat should succeed");
+    rt_ext_FhHClose(h);
+
+    /* rename's newName is a leaf name, not a path (spec %3): it REPLACES
+     * the leaf entirely, so "fileh_test_a.dat" renamed to "b.dat" becomes
+     * plain "b.dat" in the same directory -- not "fileh_test_b.dat". */
+    mkpath(newName, "b.dat");
+    CHECK(rt_ext_FhHRename(a, newName) == 0, "rename a.dat -> b.dat should succeed");
+    {
+        struct stat st;
+        CHECK(stat("b.dat", &st) == 0, "b.dat should exist after rename");
+        CHECK(stat("fileh_test_a.dat", &st) != 0, "fileh_test_a.dat should no longer exist after rename");
+    }
+
+    mkpath(b, "b.dat");
+    CHECK(rt_ext_FhHMove(b, dir) == 0, "move b.dat into fileh_test_mvdir should succeed");
+    {
+        struct stat st;
+        CHECK(stat("fileh_test_mvdir/b.dat", &st) == 0, "the moved file should exist in the target dir");
+        CHECK(stat("b.dat", &st) != 0, "the moved file should no longer exist at the old location");
+    }
+
+    unlink("fileh_test_mvdir/b.dat");
+    rmdir("fileh_test_mvdir");
+}
+
+/* test_delete_dir: FhHDelete of a non-empty folder fails (ENOTEMPTY, or
+ * EEXIST on some BSDs); it succeeds once the folder is empty. */
+static void test_delete_dir(void) {
+    uint8_t dir[256], sub[256];
+    int32_t rc;
+
+    mkpath(dir, "fileh_test_deldir");
+    CHECK(rt_ext_FhHMakeDir(dir) == 0, "makeDir(deldir) should succeed");
+    mkpath(sub, "fileh_test_deldir:sub");
+    CHECK(rt_ext_FhHMakeDir(sub) == 0, "makeDir(deldir sub) should succeed");
+
+    rc = rt_ext_FhHDelete(dir);
+    CHECK(rc != 0, "delete of a non-empty folder should fail");
+    CHECK(rt_ext_FhHErrno() == ENOTEMPTY || rt_ext_FhHErrno() == EEXIST, "FhHErrno should report ENOTEMPTY/EEXIST for a non-empty folder");
+
+    CHECK(rt_ext_FhHDelete(sub) == 0, "delete of the now-empty sub folder should succeed");
+    CHECK(rt_ext_FhHDelete(dir) == 0, "delete of the now-empty folder should succeed");
+}
+
+/* test_set_times: FhHSetTimes(path, 0, modified) restamps mtime;
+ * FhHStat/FhHStatField(3) reflects it back exactly -- modified taken from
+ * a real FhHStatField(3) reading plus an offset, so this test needs no
+ * duplicate of rt_fh_mac_time's own epoch math. */
+static void test_set_times(void) {
+    uint8_t path[256];
+    int32_t h;
+    int32_t before, target;
+
+    mkpath(path, "fileh_test_times.dat");
+    h = rt_ext_FhHCreate(path);
+    CHECK(h != 0, "create should succeed");
+    rt_ext_FhHClose(h);
+
+    CHECK(rt_ext_FhHStat(path) == 0, "stat before setTimes should succeed");
+    before = rt_ext_FhHStatField(3);
+    target = before - 3600; /* one hour earlier -- comfortably clear of DST-transition noise */
+
+    CHECK(rt_ext_FhHSetTimes(path, 0, target) == 0, "setTimes should succeed");
+    CHECK(rt_ext_FhHStat(path) == 0, "stat after setTimes should succeed");
+    CHECK(rt_ext_FhHStatField(3) == target, "modified field should match the value just set");
+
+    /* modified == 0 means "leave unchanged". */
+    CHECK(rt_ext_FhHSetTimes(path, 0, 0) == 0, "setTimes with modified == 0 should succeed as a no-op");
+    CHECK(rt_ext_FhHStat(path) == 0, "stat after the no-op setTimes should succeed");
+    CHECK(rt_ext_FhHStatField(3) == target, "modified field should be unchanged after a modified == 0 call");
+
+    unlink((const char *)(path + 1));
+}
+
 int main(void) {
     test_round_trip();
     test_open_failure();
     test_create_truncates();
     test_stat();
+    test_hfs_path_translation();
+    test_list();
+    test_rename_move();
+    test_delete_dir();
+    test_set_times();
     if (failed) {
         fprintf(stderr, "FAILED\n");
         return 1;

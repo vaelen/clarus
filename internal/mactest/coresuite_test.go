@@ -31,7 +31,7 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // assertions, below). A future case addition/removal updates this ONE
 // const plus runner.cla's own nCoreCases, instead of hunting down every
 // hardcoded copy.
-const wantCoreSuiteCases = 78
+const wantCoreSuiteCases = 79
 
 // TestCoreSuiteGUIOn68k is the core suite's Mac GUI front-end gate
 // (test-suite-review Task 10): one native 68k boot (buildNative68kUI --
@@ -78,7 +78,10 @@ const wantCoreSuiteCases = 78
 // KERMIT, and `string(n)`), then 78 by that same phase's Task 5
 // FileHandleRW case (cases_fileh.cla -- create/writeAt/readAt/append/
 // size/setSize/flush/close/reopen, a two-handle record, a handle passed
-// to a function, and stale-after-close) --
+// to a function, and stale-after-close), then 79 by the filesystem-api
+// phase's own Task 4 DirOps case (cases_dirops.cla -- makeDir/delete/
+// list/setInfo/rename/move end to end, host lane; native still fails
+// until Task 5 replaces fileh_68k.cla's PLACEHOLDER stubs) --
 // the count now lives in the ONE wantCoreSuiteCases const above, not a
 // literal at every use site. Task 2 bumped runner.cla's
 // nCoreCases and internal/testsuite's own wantCases, but this file's

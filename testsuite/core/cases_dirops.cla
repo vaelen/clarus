@@ -1,0 +1,128 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_dirops.cla (filesystem-api Task 4): the directory/catalog surface
+// end to end on both lanes -- makeDir, list, exists/info, setInfo, rename,
+// move, delete -- in one case so the folder it makes is torn down by the
+// same steps it proves.
+func caseDirOps(): TestResult {
+    var f: filehandle
+    var names: list of string
+    var fi: FileInfo
+    var before: int
+    var detail: string
+
+    before = now()
+    if file.exists(":DirOpsT") {
+        // a previous aborted run: best-effort teardown so the case is rerunnable
+        file.delete(":DirOpsT:Sub:b.dat")
+        file.delete(":DirOpsT:Sub")
+        file.delete(":DirOpsT:a.dat")
+        file.delete(":DirOpsT:c.dat")
+        file.delete(":DirOpsT")
+    }
+    if not file.makeDir(":DirOpsT") {
+        return tkFail("DirOps", "makeDir failed " + tkIntToStr(lastError.code))
+    }
+    if file.makeDir(":DirOpsT") {
+        return tkFail("DirOps", "makeDir twice succeeded")
+    }
+    if not file.makeDir(":DirOpsT:Sub") {
+        return tkFail("DirOps", "makeDir Sub failed")
+    }
+
+    f = file.create(":DirOpsT:a.dat", "TEXT", "CLRS")
+    if f == nil {
+        return tkFail("DirOps", "create a.dat failed " + tkIntToStr(lastError.code))
+    }
+    f.writeAt(0, "hello")
+    f.close()
+    f = file.create(":DirOpsT:b.dat", "TEXT", "CLRS")
+    if f == nil {
+        return tkFail("DirOps", "create b.dat failed")
+    }
+    f.writeAt(0, "hi")
+    f.close()
+
+    if not file.list(":DirOpsT", names) {
+        return tkFail("DirOps", "list failed " + tkIntToStr(lastError.code))
+    }
+    if names.count != 3 {
+        return tkFail("DirOps", "list count " + tkIntToStr(names.count))
+    }
+    if not dirOpsHas(names, "a.dat") or not dirOpsHas(names, "b.dat") or not dirOpsHas(names, "Sub") {
+        return tkFail("DirOps", "list names " + names[0] + "," + names[1] + "," + names[2])
+    }
+
+    fi = file.info(":DirOpsT:a.dat")
+    if fi.size != 5 or fi.isDir {
+        return tkFail("DirOps", "info a.dat size " + tkIntToStr(fi.size))
+    }
+    if fi.modified < before {
+        return tkFail("DirOps", "info modified before now")
+    }
+    fi = file.info(":DirOpsT:Sub")
+    if not fi.isDir {
+        return tkFail("DirOps", "info Sub not dir")
+    }
+
+    if not file.setInfo(":DirOpsT:a.dat", "BINA", "68BB", 0, before - 86400) {
+        return tkFail("DirOps", "setInfo failed " + tkIntToStr(lastError.code))
+    }
+    fi = file.info(":DirOpsT:a.dat")
+    if fi.modified > before - 86400 + 5 or fi.modified < before - 86400 - 5 {
+        return tkFail("DirOps", "setInfo modified not applied " + tkIntToStr(fi.modified))
+    }
+
+    if not file.move(":DirOpsT:b.dat", ":DirOpsT:Sub") {
+        return tkFail("DirOps", "move failed " + tkIntToStr(lastError.code))
+    }
+    if not file.exists(":DirOpsT:Sub:b.dat") or file.exists(":DirOpsT:b.dat") {
+        return tkFail("DirOps", "move not reflected")
+    }
+    if not file.rename(":DirOpsT:a.dat", "c.dat") {
+        return tkFail("DirOps", "rename failed " + tkIntToStr(lastError.code))
+    }
+    if not file.exists(":DirOpsT:c.dat") or file.exists(":DirOpsT:a.dat") {
+        return tkFail("DirOps", "rename not reflected")
+    }
+
+    if file.delete(":DirOpsT:Sub") {
+        return tkFail("DirOps", "delete non-empty folder succeeded")
+    }
+    if not file.delete(":DirOpsT:Sub:b.dat") {
+        return tkFail("DirOps", "delete b.dat failed")
+    }
+    if not file.delete(":DirOpsT:Sub") {
+        return tkFail("DirOps", "delete Sub failed " + tkIntToStr(lastError.code))
+    }
+    if not file.delete(":DirOpsT:c.dat") {
+        return tkFail("DirOps", "delete c.dat failed")
+    }
+    if not file.list(":DirOpsT", names) or names.count != 0 {
+        return tkFail("DirOps", "list after delete count " + tkIntToStr(names.count))
+    }
+    if not file.delete(":DirOpsT") {
+        return tkFail("DirOps", "delete DirOpsT failed")
+    }
+    if file.exists(":DirOpsT") {
+        return tkFail("DirOps", "exists after delete")
+    }
+    if file.list(":DirOpsT", names) {
+        return tkFail("DirOps", "list on missing folder succeeded")
+    }
+    return tkPass("DirOps")
+}
+
+func dirOpsHas(names: list of string, want: string): bool {
+    var i: int
+
+    i = 0
+    while i < names.count {
+        if names[i] == want {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}

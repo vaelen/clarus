@@ -1,0 +1,10 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// filesystem-api Task 4: file.setInfo's type/creator are mandatory
+// literal 4-char strings (lowCheckLiteral4CCArg), same rule as
+// file.writeText/file.save/file.create -- fires only under `emit`
+// lowering (testdata/errors is TestErrorGoldens' own family,
+// internal/selfhost/diag_test.go, which runs every fixture here through
+// `clarusc emit`).
+var ok: bool = file.setInfo("x", "TOOLONG", "CLRS", 0, 0)

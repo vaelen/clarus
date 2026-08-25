@@ -100,12 +100,31 @@ rt_list *rt_args_list(void) {
 
 /* ==================== files (Task 13) ==================== */
 
+/* rt_fh_posix_path: HFS spelling -> POSIX (filesystem-api Task 4, spec
+ * %4.4): a leading ':' is dropped, every other ':' becomes '/'. A path
+ * with no colon is unchanged; a full path "Vol:a:b" becomes the relative
+ * "Vol/a/b" (documented, not special-cased -- spec %4.4's own note).
+ * Lives here, directly above path_to_cstr (which calls it right after the
+ * memmove), so EVERY path-taking C entry point in this file AND in
+ * rt_fileh.inc (#included below, so it cannot define this helper itself)
+ * gets the translation for free through this one hook: rt_file_read_text/
+ * write_text/save/load/name above and below, plus every rt_ext_FhH* in
+ * rt_fileh.inc, existing and new. */
+static void rt_fh_posix_path(char *buf) {
+    char *s = buf;
+    char *d = buf;
+    if (*s == ':') s++;
+    for (; *s; s++, d++) *d = (*s == ':') ? '/' : *s;
+    *d = '\0';
+}
+
 /* path255 is at most 255 bytes; buf holds it plus a NUL terminator for the
- * libc file calls. */
+ * libc file calls, then gets the HFS->POSIX translation above applied. */
 static void path_to_cstr(char *buf, const uint8_t *path255) {
     uint8_t n = path255[0];
     memmove(buf, path255 + 1, (size_t)n);
     buf[n] = '\0';
+    rt_fh_posix_path(buf);
 }
 
 int rt_file_read_text(const uint8_t *path, rt_text *t) {
@@ -172,14 +191,21 @@ int rt_file_write_res(const uint8_t *path, const rt_text *t, const uint8_t *type
     return 0;
 }
 
+/* rt_file_name: the display name is the last POSIX component of the
+ * TRANSLATED path (filesystem-api Task 4, spec %4.4 ruling) -- routes
+ * through path_to_cstr for the same ':'->'/' translation every other
+ * path-taking call gets, then splits on the last '/'; a bare name (no
+ * colon in the original, so no '/' after translation) is unchanged. */
 void rt_file_name(uint8_t *dst255, const uint8_t *path) {
-    uint8_t n = path[0];
-    int start = 0;
-    for (int i = 0; i < n; i++) {
-        if (path[1 + i] == '/') start = i + 1;
+    char cpath[256];
+    path_to_cstr(cpath, path);
+    size_t n = strlen(cpath);
+    size_t start = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (cpath[i] == '/') start = i + 1;
     }
-    uint8_t len = n - (uint8_t)start;
-    memmove(dst255 + 1, path + 1 + start, (size_t)len);
+    uint8_t len = (uint8_t)(n - start);
+    memmove(dst255 + 1, cpath + start, (size_t)len);
     dst255[0] = len;
 }
 

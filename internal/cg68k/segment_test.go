@@ -111,6 +111,14 @@ func segmentationFixture(root string) []string {
 		// both correct and required (runner.cla unconditionally calls
 		// caseFileHandleRW()).
 		filepath.Join("testsuite", "core", "cases_fileh.cla"),
+		// filesystem-api phase Task 4: cases_dirops.cla MUST be here --
+		// runner.cla (above) unconditionally calls caseDirOps(). Checks
+		// and links cleanly on this native lane (fileh_68k.cla's new
+		// rtFhDev* PLACEHOLDER stubs resolve every call), matching every
+		// other coreCLIFiles-family list -- this test only compiles
+		// (emit68k), it never boots the binary, so DirOps' own runtime
+		// failure on native (Task 5's job to fix) doesn't reach it.
+		filepath.Join("testsuite", "core", "cases_dirops.cla"),
 		filepath.Join("testsuite", "core", "cli_mac.cla"),
 	}
 	abs := make([]string, len(rel))

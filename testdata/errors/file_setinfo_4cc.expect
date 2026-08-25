@@ -1,0 +1,1 @@
+../../testdata/errors/file_setinfo_4cc.cla:10:34: file.setInfo type must be at most 4 characters

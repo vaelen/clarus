@@ -275,3 +275,67 @@ func rtFhInfo(path: string): FileInfo {
     fi.isDir = rtFhDevStatIsDir()
     return fi
 }
+
+// rtFhMakeDir/Delete/List/SetInfo/Rename/Move (filesystem-api Task 4, spec
+// %3): the directory/catalog surface -- each the same three-line shape as
+// rtFhOpen/rtFhExists/rtFhInfo above: call the rtFhDev* twin, on failure
+// rtSetLastErr(rtFhDevLastOSErr(), "<op> failed").
+func rtFhMakeDir(path: string): bool {
+    if rtFhDevMakeDir(path) != 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "makeDir failed")
+        return false
+    }
+    return true
+}
+
+func rtFhDelete(path: string): bool {
+    if rtFhDevDelete(path) != 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "delete failed")
+        return false
+    }
+    return true
+}
+
+// rtFhList: names is a reference (list), so filling it here reaches the
+// caller (Ch7). One listing at a time -- the device cursor is a single
+// module-level slot on each lane (spec %4.3).
+func rtFhList(path: string, names: list of string): bool {
+    var name: string
+
+    names.clear()
+    if not rtFhDevListBegin(path) {
+        rtSetLastErr(rtFhDevLastOSErr(), "list failed")
+        return false
+    }
+    name = rtFhDevListNext()
+    while name != "" {
+        names.add(name)
+        name = rtFhDevListNext()
+    }
+    rtFhDevListEnd()
+    return true
+}
+
+func rtFhSetInfo(path: string, ftype: string, fcreator: string, created: int, modified: int): bool {
+    if rtFhDevSetInfo(path, ftype, fcreator, created, modified) != 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "setInfo failed")
+        return false
+    }
+    return true
+}
+
+func rtFhRename(path: string, newName: string): bool {
+    if rtFhDevRename(path, newName) != 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "rename failed")
+        return false
+    }
+    return true
+}
+
+func rtFhMove(path: string, dirPath: string): bool {
+    if rtFhDevMove(path, dirPath) != 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "move failed")
+        return false
+    }
+    return true
+}

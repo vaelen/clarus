@@ -1731,6 +1731,20 @@ func lowFileCall(e: int, fn: int, ty: int): int {
         // call (prelude.cla declares FileInfo; fileh.cla's rtFhInfo returns
         // it by value, the same shape as any user function returning a record).
         return newIRCallFn(intern("rtFhInfo"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "makeDir" {
+        return newIRCallFn(intern("rtFhMakeDir"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "delete" {
+        return newIRCallFn(intern("rtFhDelete"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "list" {
+        return newIRCallFn(intern("rtFhList"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "setInfo" {
+        lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 1), "file.setInfo type")
+        lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 2), "file.setInfo creator")
+        return newIRCallFn(intern("rtFhSetInfo"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "rename" {
+        return newIRCallFn(intern("rtFhRename"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "move" {
+        return newIRCallFn(intern("rtFhMove"), lowArgs(callArgsHead(e)), ty)
     } else if nm == "save" or nm == "load" {
         dataAst = exprNext(callArgsHead(e))
         xt = exprTypeGet(dataAst)

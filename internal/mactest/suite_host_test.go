@@ -129,6 +129,15 @@ var coreCLIFiles = []string{
 	// binary-files phase Task 5: cases_fileh.cla MUST be here -- runner.cla
 	// unconditionally calls caseFileHandleRW().
 	filepath.Join("testsuite", "core", "cases_fileh.cla"),
+	// filesystem-api phase Task 4: cases_dirops.cla MUST be here --
+	// runner.cla unconditionally calls caseDirOps(). Host lane only in
+	// this task: fileh_68k.cla's rtFhDevMakeDir/Delete/ListBegin/
+	// ListNext/ListEnd/SetInfo/Rename/Move are PLACEHOLDER stubs that all
+	// fail (spec %4.3), so DirOps fails on the two gated
+	// (CLARUS_MAC_TESTS=1) native-boot tests below until Task 5 replaces
+	// them with real File Manager calls -- same accepted/expected story
+	// as cases_textrange.cla's own comment above.
+	filepath.Join("testsuite", "core", "cases_dirops.cla"),
 }
 
 // coreCLIHostFiles/absFiles/BuildCoreCLIHost/RunCoreCLIHost (coreCLIFiles +

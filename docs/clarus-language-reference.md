@@ -1453,6 +1453,12 @@ The `file` namespace covers documents and preferences. Every function but `file.
 | `create` | `file.create(path: string, type: string, creator: string): filehandle` | creates the file if missing, truncates it to 0 bytes if it already exists, opens it read/write, stamped with `type`/`creator`; `nil` + `lastError` on failure |
 | `exists` | `file.exists(path: string): bool` | `true` for an existing file or folder; never sets `lastError` |
 | `info` | `file.info(path: string): FileInfo` | on failure returns a zeroed record and sets `lastError` |
+| `makeDir` | `file.makeDir(path: string): bool` | creates one folder; the parent must already exist; an existing folder or file at `path` is a failure (`dupFNErr` / `EEXIST`) |
+| `delete` | `file.delete(path: string): bool` | removes a file or an *empty* folder; a non-empty folder is a failure; on the Macintosh an open file is too (`fBsyErr`), while a POSIX host unlinks it |
+| `list` | `file.list(path: string, names: list of string): bool` | empties `names`, then appends the leaf name of every file **and** folder directly inside `path`, in catalog order; `""` names the program's own folder; a `path` that is not a folder is a failure |
+| `setInfo` | `file.setInfo(path: string, type: string, creator: string, created: int, modified: int): bool` | restamps an existing file's Finder type/creator and dates; a `0` date means "leave unchanged"; `type`/`creator` follow `writeText`'s four-character rule |
+| `rename` | `file.rename(path: string, newName: string): bool` | renames in place; `newName` is a leaf name, not a path |
+| `move` | `file.move(path: string, dirPath: string): bool` | moves a file or folder into the folder `dirPath`, keeping its name; same volume only (`badMovErr` otherwise) |
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
 
@@ -1463,6 +1469,10 @@ Every field of the record — transitively, for a `list of` or `map of` payload 
 **`type`/`creator`:** four-character Finder type/creator codes (the App Section's `app.doctype`/`app.id` constants, above, are the idiomatic values — `file.writeText(p, t, app.doctype, app.id)`; the four `fileType*` constants or any other 4-character `string` also work). There are no defaults: every call spells them out. A `string` literal longer than four characters is a build-time error; a shorter one is space-padded on the right. A *non-literal* `string` longer than four characters fails the whole operation instead (`false` + `lastError`) — the same rule `askOpen`'s filter, below, follows. These literal-length checks run during `clarusc emit`'s lowering pass, not bare check-only mode (`clarusc FILE.cla`) — a program with a bad literal here passes a check-only run and is only rejected when built with `emit`. Stamping happens only when the file is freshly created; writing to an already-existing path leaves that file's type/creator untouched. Double-clicking a document saved this way in the Finder launches the application that wrote it and fires `App.openDocument` with the document's path (Chapter 7).
 
 **`readResource`/`writeRes`:** a minimal pair reserved for resource-fork access — `readResource` fills `out` from a named resource in the current resource chain; `writeRes` writes `fork` verbatim as a *whole file's* resource fork (the data fork is left empty), stamped with `doctype`/`creator` the same way `writeText` stamps a data-fork file. Both are Macintosh-only: on a host build, `readResource` always returns `false` (nothing to fill), and `writeRes` always returns `false` (nothing written) — there is no resource fork on that filesystem. `writeRes`'s `doctype`/`creator` follow the exact same literal-length/padding rule as `writeText`'s `type`/`creator`, above. Ordinary programs have little reason to reach for either function directly; they exist for tools that read or produce Macintosh resource forks.
+
+**Paths.** Every `path` is an HFS path exactly as `file.open` takes one: a bare name (the program's own folder), a partial path with a leading colon (`:FTN:In:x.pkt`), or a full path (`BBS HD:Files:x`). On a host build the same spellings work — `:` separates components, a leading `:` is dropped, and a full path's volume name becomes an ordinary leading directory component. `file.list` returns leaf names; a caller re-joins them (`path + ":" + name`, or the bare name when `path` is `""`).
+
+**Host behaviour.** `setInfo`'s `type`/`creator` are accepted and ignored; `info` returns `rsrcSize = 0`, empty `type`/`creator`, `created` from the file's birth time where the host reports one (else its change time). Everything else behaves identically on both lanes.
 
 #### `filehandle`
 
