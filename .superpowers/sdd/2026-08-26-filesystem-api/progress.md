@@ -53,3 +53,7 @@ Task 3: note: native file.exists/file.info are STUBS until Task 5 (exists return
 Task 3: deferred test gap (for Task 7 / final review): no T1/T2 test exercises `emit68k --rtbake [--testapi]` over a file.info program; closing test = one internal/bake case asserting the bake path was taken (bkRuntimeFuncBoundary > 0) and output matches the from-source build. Pre-existing, not this phase's: the C lane's --rtbake cannot compile any filehandle program (fileh*.cla not in bakeModuleList on that lane).
 Task 3: note: internal/selfhost behavior/error goldens are red on the three new fixtures until Task 7's snapshot regen (expected per spec §4.7) — T2 cannot pass mid-branch.
 Task 3: fix round 1/5 dispatched (resume implementer)
+Task 3: fix round 1/5 (3 addressed per implementer — guard + honest diagnostic, bake/drive comments corrected + duplicate collision add removed, psRecNamed deleted; commit 5efc3f5; T1 --smoke PASS; re-review sonnet pending). Concern carried: testdata/errors harness cannot express the no-prelude repro (fixed cwd) — pinned by manual repro in the report.
+Task 3: fix round 1/5 re-review: 3 addressed, 0 open
+Task 3: complete (commits 9549634..5efc3f5, review clean after 1 fix round)
+Task 4: dispatched (implementer sonnet), BASE 5efc3f5
