@@ -1,6 +1,6 @@
 LBL_227:
         ; startup (JT slot 0)
-        ; globals (below A5, 1846 bytes total):
+        ; globals (below A5, 1850 bytes total):
         ;   rtCrc32Tab : -4(A5)  size 4  type ptr
         ;   rtUiMenuHandlesArr : -8(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -12(A5)  size 4  type int
@@ -76,8 +76,9 @@ LBL_227:
         ;   natQdInited : -1580(A5)  size 1  type bool
         ;   natQdGlobals : -1584(A5)  size 4  type ptr
         ;   rtFh68kLastErr : -1588(A5)  size 4  type int
-        LEA -1846(A5),A0
-        MOVE.W #922,D0
+        ;   rtFh68kState : -1592(A5)  size 4  type ptr
+        LEA -1850(A5),A0
+        MOVE.W #924,D0
 LBL_229:
         CLR.W (A0)+
         DBRA D0,LBL_229
@@ -90,9 +91,9 @@ LBL_229:
         BSR.W LBL_139
         ; entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)
         BSR.W LBL_166
-        TST.B -1590(A5)
+        TST.B -1594(A5)
         BEQ.W LBL_230
-        LEA -1846(A5),A0
+        LEA -1850(A5),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_141
         ADDQ.L #4,A7
@@ -100,9 +101,9 @@ LBL_229:
         MOVE.L #1,-(A7)
         BSR.W LBL_142
 LBL_230:
-        TST.B -1590(A5)
+        TST.B -1594(A5)
         BEQ.W LBL_231
-        LEA -1846(A5),A0
+        LEA -1850(A5),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_141
         ADDQ.L #4,A7
@@ -420,6 +421,8 @@ LBL_236:
         MOVE.L D0,-1584(A5)
         MOVE.L #0,D0
         MOVE.L D0,-1588(A5)
+        MOVE.L #0,D0
+        MOVE.L D0,-1592(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -11811,14 +11814,14 @@ LBL_163:
         LINK A6,#-2160
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
-        LEA -1846(A5),A0
+        LEA -1850(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
         LEA LBL_211(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_6
         ADDA.W #12,A7
-        MOVE.B #1,-1590(A5)
+        MOVE.B #1,-1594(A5)
         BRA.W LBL_737
         MOVEQ #0,D0
         BRA.W LBL_736
@@ -11835,7 +11838,7 @@ LBL_164:
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         BSR.W LBL_163
-        TST.B -1590(A5)
+        TST.B -1594(A5)
         BNE.W LBL_739
         BRA.W LBL_738
 LBL_739:
@@ -11854,13 +11857,13 @@ LBL_741:
         CLR.W (A0)+
         DBRA D0,LBL_741
         BSR.W LBL_164
-        TST.B -1590(A5)
+        TST.B -1594(A5)
         BNE.W LBL_742
         BRA.W LBL_743
 LBL_742:
-        MOVE.B #0,-1590(A5)
+        MOVE.B #0,-1594(A5)
         LEA -256(A6),A1
-        LEA -1846(A5),A0
+        LEA -1850(A5),A0
         MOVE.W #127,D0
 LBL_744:
         MOVE.W (A0)+,(A1)+
@@ -11895,7 +11898,7 @@ LBL_740:
 LBL_166:
         LINK A6,#-2156
         BSR.W LBL_165
-        TST.B -1590(A5)
+        TST.B -1594(A5)
         BNE.W LBL_746
         BRA.W LBL_745
 LBL_746:

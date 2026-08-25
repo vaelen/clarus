@@ -1,6 +1,6 @@
 LBL_218:
         ; startup (JT slot 0)
-        ; globals (below A5, 1588 bytes total):
+        ; globals (below A5, 1592 bytes total):
         ;   rtCrc32Tab : -4(A5)  size 4  type ptr
         ;   rtUiMenuHandlesArr : -8(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -12(A5)  size 4  type int
@@ -76,8 +76,9 @@ LBL_218:
         ;   natQdInited : -1580(A5)  size 1  type bool
         ;   natQdGlobals : -1584(A5)  size 4  type ptr
         ;   rtFh68kLastErr : -1588(A5)  size 4  type int
-        LEA -1588(A5),A0
-        MOVE.W #793,D0
+        ;   rtFh68kState : -1592(A5)  size 4  type ptr
+        LEA -1592(A5),A0
+        MOVE.W #795,D0
 LBL_220:
         CLR.W (A0)+
         DBRA D0,LBL_220
@@ -400,6 +401,8 @@ LBL_225:
         MOVE.L D0,-1584(A5)
         MOVE.L #0,D0
         MOVE.L D0,-1588(A5)
+        MOVE.L #0,D0
+        MOVE.L D0,-1592(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -3666,7 +3669,7 @@ LBL_388:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        BSR.W LBL_168
+        JSR 1418(A5)
         ADDA.W #20,A7
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
@@ -3933,7 +3936,7 @@ LBL_399:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        BSR.W LBL_168
+        JSR 1418(A5)
         ADDA.W #20,A7
         MOVE.L -12(A6),D0
         MOVEA.L D0,A0
@@ -8001,7 +8004,7 @@ LBL_122:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        BSR.W LBL_168
+        JSR 1418(A5)
         ADDA.W #20,A7
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
@@ -12177,12 +12180,8 @@ LBL_755:
 LBL_753:
         UNLK A6
         RTS
-        ; func clar_ui_fire_winevent  (JT slot 169)
-        ;   param winIdx : 24(A6)  size 4
-        ;   param inst : 20(A6)  size 4
-        ;   param ev : 16(A6)  size 4
-        ;   param a : 12(A6)  size 4
-        ;   param b : 8(A6)  size 4
+        ; func clar_ui_fire_every  (JT slot 169)
+        ;   param idx : 8(A6)  size 4
 LBL_168:
         LINK A6,#-2156
         LEA LBL_201(PC),A0
@@ -12595,8 +12594,8 @@ LBL_200:
         DC.B $72,$65,$73,$6F,$75,$72,$63,$65,$20,$6E,$6F,$74,$20,$66,$6F,$75,$6E,$64
         DC.B $00
 LBL_201:
-        DC.B $2A
-        DC.B $63,$6C,$61,$72,$5F,$75,$69,$5F,$66,$69,$72,$65,$5F,$77,$69,$6E,$65,$76,$65,$6E,$74,$3A,$20,$77,$69,$6E,$49,$64,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
+        DC.B $24
+        DC.B $63,$6C,$61,$72,$5F,$75,$69,$5F,$66,$69,$72,$65,$5F,$65,$76,$65,$72,$79,$3A,$20,$69,$64,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
         DC.B $00
         ; constant pool: enum value tables
         ; constant pool: serdesc tables

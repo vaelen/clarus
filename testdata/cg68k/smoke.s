@@ -1,6 +1,6 @@
 LBL_213:
         ; startup (JT slot 0)
-        ; globals (below A5, 1588 bytes total):
+        ; globals (below A5, 1592 bytes total):
         ;   rtCrc32Tab : -4(A5)  size 4  type ptr
         ;   rtUiMenuHandlesArr : -8(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -12(A5)  size 4  type int
@@ -76,8 +76,9 @@ LBL_213:
         ;   natQdInited : -1580(A5)  size 1  type bool
         ;   natQdGlobals : -1584(A5)  size 4  type ptr
         ;   rtFh68kLastErr : -1588(A5)  size 4  type int
-        LEA -1588(A5),A0
-        MOVE.W #793,D0
+        ;   rtFh68kState : -1592(A5)  size 4  type ptr
+        LEA -1592(A5),A0
+        MOVE.W #795,D0
 LBL_215:
         CLR.W (A0)+
         DBRA D0,LBL_215
@@ -89,7 +90,7 @@ LBL_215:
         BSR.W LBL_214
         JSR 1466(A5)
         ; entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)
-        JSR 1770(A5)
+        JSR 1778(A5)
         BSR.W LBL_212
         CLR.L -(A7)
         JSR 1490(A5)
@@ -400,6 +401,8 @@ LBL_220:
         MOVE.L D0,-1584(A5)
         MOVE.L #0,D0
         MOVE.L D0,-1588(A5)
+        MOVE.L #0,D0
+        MOVE.L D0,-1592(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -6796,7 +6799,7 @@ LBL_522:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1810(A5)
+        JSR 1818(A5)
         ADDA.W #20,A7
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
@@ -6813,7 +6816,7 @@ LBL_522:
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1842(A5)
+        JSR 1850(A5)
         ADDQ.L #8,A7
 LBL_524:
         MOVEQ #0,D0
@@ -7063,7 +7066,7 @@ LBL_533:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1810(A5)
+        JSR 1818(A5)
         ADDA.W #20,A7
         MOVE.L -12(A6),D0
         MOVEA.L D0,A0
@@ -7152,7 +7155,7 @@ LBL_538:
 LBL_537:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1610(A5)
+        JSR 1618(A5)
         ADDQ.L #4,A7
 LBL_535:
         UNLK A6
@@ -8955,7 +8958,7 @@ LBL_145:
         DC.W $A8A3  ; UiEraseRect
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1850(A5)
+        JSR 1858(A5)
         ADDQ.L #4,A7
         MOVE.L D0,-28(A6)
         MOVE.L -28(A6),D0
@@ -9386,7 +9389,7 @@ LBL_150:
         BEQ.W LBL_666
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1602(A5)
+        JSR 1610(A5)
         ADDQ.L #4,A7
 LBL_666:
         MOVE.L 8(A6),D0
@@ -11131,7 +11134,7 @@ LBL_160:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1810(A5)
+        JSR 1818(A5)
         ADDA.W #20,A7
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
@@ -11574,7 +11577,7 @@ LBL_743:
         MOVE.B D0,(A0)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1778(A5)
+        JSR 1786(A5)
         ADDQ.L #4,A7
         BRA.W LBL_746
 LBL_745:
@@ -11653,7 +11656,7 @@ LBL_745:
         ADDA.L D0,A1
         MOVEA.L A1,A0
         MOVE.L A0,-(A7)
-        JSR 1802(A5)
+        JSR 1810(A5)
         ADDA.W #12,A7
         LEA -1224(A5),A0
         MOVE.L A0,-(A7)
@@ -11730,7 +11733,7 @@ LBL_746:
         MOVE.L D0,(A0)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1794(A5)
+        JSR 1802(A5)
         ADDQ.L #4,A7
         BRA.W LBL_750
 LBL_749:
@@ -11808,7 +11811,7 @@ LBL_753:
         MOVE.L D0,-(A7)
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1786(A5)
+        JSR 1794(A5)
         ADDQ.L #8,A7
 LBL_751:
 LBL_750:
@@ -12261,11 +12264,10 @@ LBL_762:
 LBL_760:
         UNLK A6
         RTS
-        ; func natLastErrCode  (JT slot 174)
+        ; func clar_ui_fire_launchdoc  (JT slot 174)
+        ;   param path : 8(A6)  size 4
 LBL_173:
         LINK A6,#-2156
-        MOVE.L -1312(A5),D0
-        BRA.W LBL_764
 LBL_764:
         UNLK A6
         RTS

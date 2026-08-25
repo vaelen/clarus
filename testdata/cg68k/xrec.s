@@ -1,6 +1,6 @@
 LBL_222:
         ; startup (JT slot 0)
-        ; globals (below A5, 1604 bytes total):
+        ; globals (below A5, 1608 bytes total):
         ;   rtCrc32Tab : -4(A5)  size 4  type ptr
         ;   rtUiMenuHandlesArr : -8(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -12(A5)  size 4  type int
@@ -76,9 +76,10 @@ LBL_222:
         ;   natQdInited : -1580(A5)  size 1  type bool
         ;   natQdGlobals : -1584(A5)  size 4  type ptr
         ;   rtFh68kLastErr : -1588(A5)  size 4  type int
-        ;   gev : -1604(A5)  size 16  type arr
-        LEA -1604(A5),A0
-        MOVE.W #801,D0
+        ;   rtFh68kState : -1592(A5)  size 4  type ptr
+        ;   gev : -1608(A5)  size 16  type arr
+        LEA -1608(A5),A0
+        MOVE.W #803,D0
 LBL_224:
         CLR.W (A0)+
         DBRA D0,LBL_224
@@ -402,6 +403,16 @@ LBL_229:
         MOVE.L #0,D0
         MOVE.L D0,-1588(A5)
         MOVE.L #0,D0
+        MOVE.L D0,-1592(A5)
+        MOVE.L #0,D0
+        MOVE.B D0,-1608(A5)
+        MOVE.L #0,D0
+        MOVE.B D0,-1607(A5)
+        MOVE.L #0,D0
+        MOVE.B D0,-1606(A5)
+        MOVE.L #0,D0
+        MOVE.B D0,-1605(A5)
+        MOVE.L #0,D0
         MOVE.B D0,-1604(A5)
         MOVE.L #0,D0
         MOVE.B D0,-1603(A5)
@@ -425,14 +436,6 @@ LBL_229:
         MOVE.B D0,-1594(A5)
         MOVE.L #0,D0
         MOVE.B D0,-1593(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-1592(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-1591(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-1590(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-1589(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -11921,7 +11924,7 @@ LBL_164:
         MOVE.W (A0),D0
         EXT.L D0
         MOVE.L D0,-24(A6)
-        LEA -1604(A5),A0
+        LEA -1608(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #7,D0

@@ -367,106 +367,410 @@ func rtFhDevLastOSErr(): int {
     return rtFh68kLastErr
 }
 
-// rtFhDevStat/rtFhDevStat* (filesystem-api Task 3): PLACEHOLDER stubs so
-// fileh.cla's shared rtFhExists/rtFhInfo (which every want68k build
-// splices unconditionally, dormant program or not -- same "full-superset,
-// tree-shaking drops the unused rest" convention this file's own header
-// comment documents for every other rtFhDev* entry point) check and lower
-// cleanly on this lane. Task 5 (spec %4.3) replaces this with the real
-// PBGetCatInfoSync-backed implementation (CInfoPBRec, ioFDirIndex = 0,
-// ioDirID = 0, isDir from ioFlAttrib & 0x10); until then, file.exists is
-// always false and file.info always fails with rtFh68kLastErr = unimpErr
-// (-4, Inside Macintosh's own "unimplemented" OSErr) on the Mac lane --
-// deliberately, not silently: rtFhInfo (fileh.cla) surfaces this as
-// lastError exactly like any other rtFhDevStat failure. No caller in this
-// phase's own testdata exercises file.exists/file.info on the native
-// lane (Task 3 is host-lane only, CLAUDE.md).
+// rtFh68kState (filesystem-api Task 5, spec %4.3/%6): the ONE new
+// module-level global this task adds (Global Constraints -- every other
+// entry point below reuses local `extern record` vars, per the
+// controller ruling in task-1-report.md section (d): "Only `var x:
+// CInfoPBRec`-style locals exist. There is no `CInfoPBRec(ptr(...))`-
+// style overlay/conversion for `extern record`." A local goes out of
+// scope at the end of its call, so the seven rtFhDevStat* getters below
+// (each its OWN function, called well after rtFhDevStat returns) and
+// rtFhDevListNext's cursor (dirID/index, alive across many calls) both
+// need somewhere durable to live -- one lazily-allocated heap block,
+// SerNewPtr'd on first use, holds both. Layout (ints throughout, 4-byte
+// slots, no packing surprises):
+//   +0  stat size            +4  stat rsrcSize
+//   +8  stat type (raw 4CC)  +12 stat creator (raw 4CC)
+//   +16 stat created         +20 stat modified
+//   +24 stat isDir (0/1)     +28 stat dirID (the hit's OWN DirID, valid
+//                                 only when isDir -- ioDirID's folder-hit
+//                                 meaning, task-1-report.md section (c)
+//                                 step 6/(a)'s DirInfo overlap)
+//   +32 list dirID            +36 list index (ioFDirIndex, next call)
+//   +40 list name buffer ptr (256-byte scratch, PBGetCatInfoSync writes
+//                                 the Pascal leaf name here)
+// 44 bytes total.
+var rtFh68kState: ptr
+
+func rtFh68kEnsureState() {
+    if rtFh68kState == ptr(0) {
+        rtFh68kState = SerNewPtr(44)
+        pokel(rtFh68kState + 40, int(SerNewPtr(256)))
+    }
+}
+
+// rtFh68kFourCCToStr: the reverse of rtFourCC/rtPack4CCRange (core.cla) --
+// unpacks a big-endian 4CC int into its 4-char string, ser.cla's own
+// rtSerPutI32 byte-order (>>24/>>16/>>8/&255). 0 (this task's own
+// "no type/creator" sentinel for a directory hit or the "" default
+// folder) maps to "", matching fileh_c.cla's host-lane empty default --
+// DirOps' own new type/creator assertions (cases_dirops.cla, Step 1)
+// are written lane-neutral on exactly this "" convention.
+func rtFh68kFourCCToStr(v: int): string {
+    var s: string
+
+    if v == 0 {
+        return s
+    }
+    s = s + char((v >> 24) & 255)
+    s = s + char((v >> 16) & 255)
+    s = s + char((v >> 8) & 255)
+    s = s + char(v & 255)
+    return s
+}
+
+// rtFh68kLeafName: the text after the last ':' in `path` (the whole
+// string if there is none) -- PBHRenameSync's own required addressing
+// mode (task-1-report.md section (c) step 7/7d: "ioNamePtr must be JUST
+// the item's own leaf name (no colons at all)"), used only by
+// rtFhDevRename below.
+func rtFh68kLeafName(path: string): string {
+    var i: int
+    var last: int
+    var s: string
+
+    last = -1
+    i = 0
+    while i < path.length {
+        if path[i] == ':' {
+            last = i
+        }
+        i = i + 1
+    }
+    if last == -1 {
+        return path
+    }
+    i = last + 1
+    while i < path.length {
+        s = s + path[i]
+        i = i + 1
+    }
+    return s
+}
+
+// rtFhDevStat: PBGetCatInfoSync by name (ioFDirIndex = 0 = get info by
+// name, ioDirID = 0 = search starts at the default folder, ioVRefNum = 0
+// = default volume, ioACUser cleared per Files.a's own warning) --
+// task-1-report.md section (c) finding 1, reconfirmed live throughout
+// that probe's steps 1/2/5/7/8/9. `path == ""` is spec %4.3's own "stat
+// the default folder" case: task-1-report.md finding 2 showed a by-name
+// GetCatInfo on an empty name is NOT the same as enumerating DirID 0, so
+// this is special-cased directly into a synthetic directory hit (DirID
+// 0, no by-name call at all) rather than routed through PBGetCatInfoSync.
+// A `var ci: CInfoPBRec` local is fresh zero-initialized on every call
+// (docs/clarus-language-reference.md:1662, reconfirmed live in
+// task-1-report.md section (d): "declaring one as a local ... reserves
+// the record's packed size in bytes, directly, zero-initialized"), so no
+// manual zeroing is needed before filling in the fields this call sets.
+// The seven scalars + the folder's own DirID are copied out of `ci` into
+// the state block right after a successful call, exactly the fallback
+// the brief's Step 3 code names for when no address-of-a-local form
+// exists. `CInfoPBRec`'s `ioFlAttrib & ioDirMask` bit tells a folder hit
+// from a file hit (task-1-report.md section (a)); a folder hit zeros
+// size/rsrcSize/type/creator (spec %4.1's own dir defaults) and stashes
+// its own DirID at +28 for rtFhDevListBegin below -- a file hit fills
+// them from `ioFlLgLen`/`ioFlRLgLen`/`fdType`/`fdCreator` and leaves +28
+// unused (rtFhDevListBegin only reads it after asserting isDir first).
+// `ioFlCrDat`/`ioFlMdDat` are read unconditionally for both variants:
+// toolbox/files.cla's own CInfoPBRec header comment confirms
+// `ioDrCrDat`/`ioDrMdDat` (DirInfo) physically overlap the SAME bytes as
+// `ioFlCrDat`@72/`ioFlMdDat`@76 (HFileInfo) -- no isDir branch needed for
+// the two date fields, unlike size/rsrcSize/type/creator above.
 func rtFhDevStat(path: string): bool {
-    rtFh68kLastErr = -4
-    return false
+    var ci: CInfoPBRec
+    var namePtr: ptr
+
+    rtFh68kEnsureState()
+
+    if path == "" {
+        pokel(rtFh68kState, 0)
+        pokel(rtFh68kState + 4, 0)
+        pokel(rtFh68kState + 8, 0)
+        pokel(rtFh68kState + 12, 0)
+        pokel(rtFh68kState + 16, 0)
+        pokel(rtFh68kState + 20, 0)
+        pokel(rtFh68kState + 24, 1)
+        pokel(rtFh68kState + 28, 0)
+        rtFh68kLastErr = 0
+        return true
+    }
+
+    namePtr = rtFh68kName(path)
+    ci.ioNamePtr = namePtr
+    ci.ioVRefNum = 0
+    ci.ioFDirIndex = 0
+    ci.ioDirID = 0
+    ci.ioACUser = 0
+    rtFh68kLastErr = PBGetCatInfoSync(ci, hfsSelGetCatInfo)
+    SerDisposePtr(namePtr)
+    if rtFh68kLastErr != 0 {
+        return false
+    }
+
+    if (ci.ioFlAttrib & ioDirMask) != 0 {
+        pokel(rtFh68kState, 0)
+        pokel(rtFh68kState + 4, 0)
+        pokel(rtFh68kState + 8, 0)
+        pokel(rtFh68kState + 12, 0)
+        pokel(rtFh68kState + 24, 1)
+        pokel(rtFh68kState + 28, ci.ioDirID)
+    } else {
+        pokel(rtFh68kState, ci.ioFlLgLen)
+        pokel(rtFh68kState + 4, ci.ioFlRLgLen)
+        pokel(rtFh68kState + 8, ci.fdType)
+        pokel(rtFh68kState + 12, ci.fdCreator)
+        pokel(rtFh68kState + 24, 0)
+    }
+    pokel(rtFh68kState + 16, ci.ioFlCrDat)
+    pokel(rtFh68kState + 20, ci.ioFlMdDat)
+    return true
 }
 
 func rtFhDevStatSize(): int {
-    return 0
+    return peekl(rtFh68kState)
 }
 
 func rtFhDevStatRsrcSize(): int {
-    return 0
+    return peekl(rtFh68kState + 4)
 }
 
 func rtFhDevStatType(): string {
-    return ""
+    return rtFh68kFourCCToStr(peekl(rtFh68kState + 8))
 }
 
 func rtFhDevStatCreator(): string {
-    return ""
+    return rtFh68kFourCCToStr(peekl(rtFh68kState + 12))
 }
 
 func rtFhDevStatCreated(): int {
-    return 0
+    return peekl(rtFh68kState + 16)
 }
 
 func rtFhDevStatModified(): int {
-    return 0
+    return peekl(rtFh68kState + 20)
 }
 
 func rtFhDevStatIsDir(): bool {
-    return false
+    return peekl(rtFh68kState + 24) != 0
 }
 
-// rtFhDevMakeDir/Delete/ListBegin/ListNext/ListEnd/SetInfo/Rename/Move
-// (filesystem-api Task 4): PLACEHOLDER stubs, same rationale as
-// rtFhDevStat/rtFhDevStat* above -- fileh.cla's six new shared rtFh*
-// entries (rtFhMakeDir/Delete/List/SetInfo/Rename/Move) are spliced
-// unconditionally into every want68k build (this file's own header
-// comment), so they need something to call here even before Task 5's
-// real PBDirCreateSync/PBHDeleteSync/PBGetCatInfoSync/PBHSetFInfoSync/
-// PBHRenameSync/PBCatMoveSync implementation lands (spec %4.3). Every
-// int-returning stub fails with rtFh68kLastErr = -4 (unimpErr, Inside
-// Macintosh's own "unimplemented" OSErr); rtFhDevListBegin/ListEnd match
-// their own bool/void shapes.
+// rtFhDevMakeDir: PBDirCreateSync, ioDirID = 0 + a (possibly nested)
+// partial path in ioNamePtr -- task-1-report.md section (c) step 1/2,
+// confirmed working for both a fresh folder (OSErr 0) and a duplicate
+// name (dupFNErr, -48).
 func rtFhDevMakeDir(path: string): int {
-    rtFh68kLastErr = -4
-    return -4
+    var hp: HFileParam
+    var namePtr: ptr
+
+    namePtr = rtFh68kName(path)
+    hp.ioNamePtr = namePtr
+    hp.ioVRefNum = 0
+    hp.ioDirID = 0
+    rtFh68kLastErr = PBDirCreateSync(hp, hfsSelDirCreate)
+    SerDisposePtr(namePtr)
+    return rtFh68kLastErr
 }
 
+// rtFhDevDelete: PBHDeleteSync, same ioDirID = 0 + partial-path
+// addressing as MakeDir/GetCatInfo -- task-1-report.md section (c) step
+// 9, confirmed for both a clean delete (0) and a non-empty folder
+// (fBsyErr, -47).
 func rtFhDevDelete(path: string): int {
-    rtFh68kLastErr = -4
-    return -4
+    var hp: HFileParam
+    var namePtr: ptr
+
+    namePtr = rtFh68kName(path)
+    hp.ioNamePtr = namePtr
+    hp.ioVRefNum = 0
+    hp.ioDirID = 0
+    rtFh68kLastErr = PBHDeleteSync(hp)
+    SerDisposePtr(namePtr)
+    return rtFh68kLastErr
 }
 
+// rtFhDevListBegin: rtFhDevStat by path first (task-1-report.md section
+// (c) finding 2's own "" convention flows through unchanged), reject a
+// file hit with dirNFErr (-120, "directory not found or incomplete
+// pathname" -- the same OSErr the probe's own 7b diagnostic saw for a
+// wrong-mode addressing attempt, reused here since Inside Macintosh has
+// no more specific "not a directory" code for this call), then seed the
+// cursor at the state block's list slots (+32 dirID from the stat hit's
+// own +28, +36 index starting at 1 -- PBGetCatInfoSync's ioFDirIndex is
+// 1-based).
 func rtFhDevListBegin(path: string): bool {
-    rtFh68kLastErr = -4
-    return false
+    if not rtFhDevStat(path) {
+        return false
+    }
+    if not rtFhDevStatIsDir() {
+        rtFh68kLastErr = -120
+        return false
+    }
+    pokel(rtFh68kState + 32, peekl(rtFh68kState + 28))
+    pokel(rtFh68kState + 36, 1)
+    return true
 }
 
+// rtFhDevListNext: PBGetCatInfoSync by index (ioDirID = the listing's
+// folder, ioFDirIndex = the next 1-based slot, ioNamePtr = the state
+// block's persistent 256-byte scratch buffer the trap WRITES the leaf
+// Pascal name into) -- task-1-report.md section (c) step 6, confirmed
+// for both a real folder's own DirID and DirID 0 (the default folder).
+// `fnfErr` (-43) ends the listing (rtFh68kLastErr is left holding it, so
+// rtFhDevListFailed below can tell a clean end from a real failure); any
+// OTHER nonzero OSErr is a genuine failure, also left in rtFh68kLastErr,
+// both cases returning "" the same way fileh.cla's rtFhList loop already
+// expects. The Pascal-buffer-to-string unpack is fileh_c.cla's own
+// rtFhDevListNext idiom (`s = s + char(peekb(...))`), copied verbatim so
+// both lanes build a listed name identically.
 func rtFhDevListNext(): string {
-    return ""
+    var ci: CInfoPBRec
+    var buf: ptr
+    var s: string
+    var n: int
+    var i: int
+
+    buf = ptr(peekl(rtFh68kState + 40))
+    ci.ioNamePtr = buf
+    ci.ioVRefNum = 0
+    ci.ioDirID = peekl(rtFh68kState + 32)
+    ci.ioFDirIndex = peekl(rtFh68kState + 36)
+    ci.ioACUser = 0
+    rtFh68kLastErr = PBGetCatInfoSync(ci, hfsSelGetCatInfo)
+    if rtFh68kLastErr != 0 {
+        return s
+    }
+    pokel(rtFh68kState + 36, peekl(rtFh68kState + 36) + 1)
+    n = peekb(buf)
+    i = 0
+    while i < n {
+        s = s + char(peekb(buf + 1 + i))
+        i = i + 1
+    }
+    return s
 }
 
+// rtFhDevListEnd: no-op -- unlike fileh_c.cla's own ListEnd (which frees
+// a per-listing SerNewPtr'd buffer), this lane's 256-byte scratch buffer
+// lives in the state block for the whole program run (allocated once by
+// rtFh68kEnsureState, reused by every listing), so there is nothing here
+// the getters still need freed out from under them.
 func rtFhDevListEnd() {
 }
 
-// rtFhDevListFailed (fix round 1): failure-neutral stub -- rtFhDevListBegin
-// above already fails before any listing starts on this lane, so
-// rtFhList's post-loop check never has anything to report here. No
-// module-level var (this lane's rtFhListBuf-equivalent state doesn't
-// exist yet either); Task 5 gives this a real body alongside the rest.
+// rtFhDevListFailed: true iff the loop's last ListNext call ended on a
+// real OSErr rather than a clean end-of-directory -- rtFh68kLastErr
+// still holds whatever ended the loop (ListEnd above touches nothing),
+// so this is exactly "nonzero and not fnfErr", matching fileh_c.cla's
+// own rc<0-vs-rc==1 distinction on this lane's own OSErr vocabulary.
 func rtFhDevListFailed(): bool {
-    return false
+    return rtFh68kLastErr != 0 and rtFh68kLastErr != fnfErr
 }
 
+// rtFhDevSetInfo: PBHGetFInfoSync (ioFDirIndex = 0, ioDirID = 0,
+// ioVRefNum = 0, ioNamePtr = path) to read the file's current FInfo,
+// patch fdType/fdCreator (rtFourCC(UiStrAddr(...)), core.cla's own
+// packing, uiscript.cla's own Str255 address helper) and ioFlCrDat/
+// ioFlMdDat only when the caller passed a nonzero value (spec %3's own
+// "0 = leave unchanged" convention), then PBHSetFInfoSync. GetFInfo
+// re-reads ioDirID as an OUTPUT (the file's real parent DirID,
+// task-1-report.md section (e) amendment for Task 5) -- the ioDirID = 0
+// reset right before Set undoes that so Set is given the same "search
+// from default folder + partial path" addressing GetFInfo itself
+// accepted, rather than whatever GetFInfo happened to leave behind.
 func rtFhDevSetInfo(path: string, ftype: string, fcreator: string, created: int, modified: int): int {
-    rtFh68kLastErr = -4
-    return -4
+    var hp: HFileParam
+    var namePtr: ptr
+
+    namePtr = rtFh68kName(path)
+    hp.ioNamePtr = namePtr
+    hp.ioVRefNum = 0
+    hp.ioFDirIndex = 0
+    hp.ioDirID = 0
+    rtFh68kLastErr = PBHGetFInfoSync(hp)
+    if rtFh68kLastErr != 0 {
+        SerDisposePtr(namePtr)
+        return rtFh68kLastErr
+    }
+    hp.fdType = rtFourCC(UiStrAddr(ftype))
+    hp.fdCreator = rtFourCC(UiStrAddr(fcreator))
+    if created != 0 {
+        hp.ioFlCrDat = created
+    }
+    if modified != 0 {
+        hp.ioFlMdDat = modified
+    }
+    hp.ioDirID = 0
+    rtFh68kLastErr = PBHSetFInfoSync(hp)
+    SerDisposePtr(namePtr)
+    return rtFh68kLastErr
 }
 
+// rtFhDevRename: PBHRenameSync's own quirk (task-1-report.md section (c)
+// step 7/7b/7d) -- it does NOT accept ioDirID = 0 + a partial pathname
+// the way every other rtFhDev* call above does (bdNamErr/dirNFErr); it
+// needs ioNamePtr = the item's BARE LEAF NAME (no colons) and ioDirID =
+// the item's REAL containing-folder DirID. So this resolves that DirID
+// itself first via one PBGetCatInfoSync by the full `path` (mirroring
+// rtFhDevStat's own by-name call, kept separate here rather than reused
+// so this function's own `ci` local -- and its ioFlParID field -- is
+// still in scope when ioDirID is read below): `ioFlParID`@100 is the
+// item's parent DirID for a file hit, and (toolbox/files.cla's own
+// CInfoPBRec header comment / Inside Macintosh's DirInfo/HFileInfo
+// union) the SAME physical field is DirInfo's own `ioDrParID`@100 for a
+// folder hit -- both variants genuinely mean "parent directory ID" at
+// that offset, so no isDir branch is needed here (unlike ioDirID@48,
+// which means something different per variant). The leaf name is
+// rtFh68kLeafName(path) (everything after the last ':', or the whole
+// string if none).
 func rtFhDevRename(path: string, newName: string): int {
-    rtFh68kLastErr = -4
-    return -4
+    var ci: CInfoPBRec
+    var hp: HIOParamRename
+    var namePtr: ptr
+    var leafPtr: ptr
+    var newPtr: ptr
+
+    namePtr = rtFh68kName(path)
+    ci.ioNamePtr = namePtr
+    ci.ioVRefNum = 0
+    ci.ioFDirIndex = 0
+    ci.ioDirID = 0
+    ci.ioACUser = 0
+    rtFh68kLastErr = PBGetCatInfoSync(ci, hfsSelGetCatInfo)
+    SerDisposePtr(namePtr)
+    if rtFh68kLastErr != 0 {
+        return rtFh68kLastErr
+    }
+
+    leafPtr = rtFh68kName(rtFh68kLeafName(path))
+    newPtr = rtFh68kName(newName)
+    hp.ioNamePtr = leafPtr
+    hp.ioVRefNum = 0
+    hp.ioMisc = newPtr
+    hp.ioDirID = ci.ioFlParID
+    rtFh68kLastErr = PBHRenameSync(hp)
+    SerDisposePtr(newPtr)
+    SerDisposePtr(leafPtr)
+    return rtFh68kLastErr
 }
 
+// rtFhDevMove: PBCatMoveSync, ioDirID = 0 + partial path in ioNamePtr,
+// ioNewName = the destination folder's own (possibly partial) path,
+// ioNewDirID = 0 -- task-1-report.md section (c) step 8, confirmed
+// working with the ordinary ioDirID = 0 convention (unlike Rename).
 func rtFhDevMove(path: string, dirPath: string): int {
-    rtFh68kLastErr = -4
-    return -4
+    var cm: CMovePBRec
+    var namePtr: ptr
+    var dirPtr: ptr
+
+    namePtr = rtFh68kName(path)
+    dirPtr = rtFh68kName(dirPath)
+    cm.ioNamePtr = namePtr
+    cm.ioVRefNum = 0
+    cm.ioNewName = dirPtr
+    cm.ioNewDirID = 0
+    cm.ioDirID = 0
+    rtFh68kLastErr = PBCatMoveSync(cm, hfsSelCatMove)
+    SerDisposePtr(dirPtr)
+    SerDisposePtr(namePtr)
+    return rtFh68kLastErr
 }

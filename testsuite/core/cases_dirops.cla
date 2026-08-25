@@ -58,6 +58,9 @@ func caseDirOps(): TestResult {
     if fi.size != 5 or fi.isDir {
         return tkFail("DirOps", "info a.dat size " + tkIntToStr(fi.size))
     }
+    if fi.rsrcSize != 0 {
+        return tkFail("DirOps", "info a.dat rsrcSize " + tkIntToStr(fi.rsrcSize))
+    }
     if fi.modified < before {
         return tkFail("DirOps", "info modified before now")
     }
@@ -72,6 +75,12 @@ func caseDirOps(): TestResult {
     fi = file.info(":DirOpsT:a.dat")
     if fi.modified > before - 86400 + 5 or fi.modified < before - 86400 - 5 {
         return tkFail("DirOps", "setInfo modified not applied " + tkIntToStr(fi.modified))
+    }
+    if fi.type != "" and fi.type != "BINA" {
+        return tkFail("DirOps", "setInfo type not applied " + fi.type)
+    }
+    if fi.type != "" and fi.creator != "68BB" {
+        return tkFail("DirOps", "setInfo creator not applied " + fi.creator)
     }
 
     if not file.move(":DirOpsT:b.dat", ":DirOpsT:Sub") {
