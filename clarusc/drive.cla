@@ -1517,7 +1517,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     // re-prepended once, unconditionally, right before checkProgram(
     // combined2) below -- see driveCompile's own splice-point doc
     // comment for why combined2 needs this surgery instead of just
-    // carrying `combined` through unchanged. When it ISN'T -1, this
+    // carrying `combined` through unchanged. When it IS -1, this
     // function behaves exactly as it did before this task (entriesOnlyHead
     // == combined, drvPreludeAsmIdx == -1 so the two `i != drvPreludeAsmIdx`
     // guards below never skip anything, and the final re-prepend is

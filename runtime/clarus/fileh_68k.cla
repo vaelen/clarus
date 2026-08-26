@@ -70,6 +70,17 @@ func rtFh68kName(s: string): ptr {
     return p
 }
 
+// rtFh68kPack4CC: rtFourCC(UiStrAddr(s)) -- rtFourCC (core.cla:130)
+// returns -1 for a non-literal type/creator string longer than 4 bytes
+// (its own "overlong" sentinel); rtFhDevCreate and rtFhDevSetInfo both
+// pack a type and a creator this exact way, so the pack call itself
+// lives here once. The -1 CHECK stays at each call site (final-review
+// wave, Minor 6) since the two callers need different buffer-disposal
+// handling on that path.
+func rtFh68kPack4CC(s: string): int {
+    return rtFourCC(UiStrAddr(s))
+}
+
 // rtFhDevOpen: ioPermssn = fsRdWrPerm (positioned read/write access),
 // PBOpenSync, handle = ioRefNum (never 0 on success, per Task 1's own
 // probe -- refNum 472 in that report's trace). A nonzero OSErr stashes
@@ -153,8 +164,20 @@ func rtFhDevCreate(path: string, ftype: string, fcreator: string): int {
     var err: int
     var createErr: int
 
-    packedType = rtFourCC(UiStrAddr(ftype))
-    packedCreator = rtFourCC(UiStrAddr(fcreator))
+    packedType = rtFh68kPack4CC(ftype)
+    packedCreator = rtFh68kPack4CC(fcreator)
+
+    // final-review wave, Minor 6: an overlong (>4-byte) non-literal
+    // ftype/fcreator packs to rtFourCC's own -1 sentinel -- fail the
+    // create outright instead of stamping the file with 0xFFFFFFFF.
+    // -37 is bdNamErr (MacErrors.h: "Bad name"), the closest of the
+    // catalogued OSErrs to "the caller's type/creator string was
+    // rejected" -- no namePtr/buffer exists yet at this point, so there
+    // is nothing to dispose before returning.
+    if packedType == -1 or packedCreator == -1 {
+        rtFh68kLastErr = -37
+        return 0
+    }
 
     namePtr = rtFh68kName(path)
 
@@ -697,8 +720,17 @@ func rtFhDevSetInfo(path: string, ftype: string, fcreator: string, created: int,
         SerDisposePtr(namePtr)
         return rtFh68kLastErr
     }
-    hp.fdType = rtFourCC(UiStrAddr(ftype))
-    hp.fdCreator = rtFourCC(UiStrAddr(fcreator))
+    hp.fdType = rtFh68kPack4CC(ftype)
+    hp.fdCreator = rtFh68kPack4CC(fcreator)
+    // final-review wave, Minor 6: same overlong-FourCC guard as
+    // rtFhDevCreate above -- fail rather than stamp 0xFFFFFFFF; namePtr
+    // is already allocated at this point (rtFh68kName above), so it
+    // must be disposed on this path too.
+    if hp.fdType == -1 or hp.fdCreator == -1 {
+        rtFh68kLastErr = -37
+        SerDisposePtr(namePtr)
+        return rtFh68kLastErr
+    }
     if created != 0 {
         hp.ioFlCrDat = created
     }

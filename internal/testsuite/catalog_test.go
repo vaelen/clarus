@@ -55,8 +55,12 @@ var catalogFiles = []string{
 // PBSetCatInfoSync/PBDirCreateSync/PBHDeleteSync/PBHRenameSync/
 // PBHGetFInfoSync/PBHSetFInfoSync/PBHOpenRFSync/PBCatMoveSync/
 // hfsSelGetCatInfo/hfsSelSetCatInfo/hfsSelDirCreate/hfsSelCatMove/
-// ioDirMask (files, filesystem-api phase Task 2 -- HFS directory/catalog
-// family via _HFSDispatch plus the H-prefixed single-trap routines).
+// ioDirMask/fnfErr/fBsyErr/dupFNErr/dirNFErr/fsRtDirID (files,
+// filesystem-api phase Task 2 -- HFS directory/catalog family via
+// _HFSDispatch plus the H-prefixed single-trap routines; the five OSErr/
+// DirID consts were declared but never referenced by this driver until
+// the final-review wave's Minor 9 fix added the `t0 = t0 + ...` line
+// below).
 const catalogDriver = `on App.startCLI(args: list of string) {
     var ev: EventRecord
     var t0: int
@@ -174,6 +178,7 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     if (ci.ioFlAttrib & ioDirMask) != 0 {
         t0 = t0 + 1
     }
+    t0 = t0 + fnfErr + fBsyErr + dupFNErr + dirNFErr + fsRtDirID
 }
 `
 

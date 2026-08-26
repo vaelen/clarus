@@ -348,11 +348,17 @@ void rt_ext_FhHListEnd(void) {
 int32_t rt_ext_FhHSetTimes(const uint8_t *path, int32_t created, int32_t modified) {
     char cpath[256];
     struct timeval tv[2];
+    struct stat sb; /* final-review wave, Minor 5: a LOCAL stat buffer --
+                      * rt_fh_stat_buf is the shared FhHStat cache that
+                      * FhHStatField reads back from; stat()-ing into it
+                      * here would clobber a caller's still-pending
+                      * info() read for the atime this call only needs
+                      * internally. */
     (void)created;
     path_to_cstr(cpath, path);
     if (modified == 0) return 0;
-    if (stat(cpath, &rt_fh_stat_buf) != 0) { rt_fh_errno = errno; return -1; }
-    tv[0].tv_sec = rt_fh_stat_buf.st_atime; tv[0].tv_usec = 0;
+    if (stat(cpath, &sb) != 0) { rt_fh_errno = errno; return -1; }
+    tv[0].tv_sec = sb.st_atime; tv[0].tv_usec = 0;
     tv[1].tv_sec = rt_fh_unix_time(modified); tv[1].tv_usec = 0;
     if (utimes(cpath, tv) != 0) { rt_fh_errno = errno; return -1; }
     return 0;

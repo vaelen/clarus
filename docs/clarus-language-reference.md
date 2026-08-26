@@ -1455,9 +1455,9 @@ The `file` namespace covers documents and preferences. Every function but `file.
 | `info` | `file.info(path: string): FileInfo` | on failure returns a zeroed record and sets `lastError` |
 | `makeDir` | `file.makeDir(path: string): bool` | creates one folder; the parent must already exist; an existing folder or file at `path` is a failure (`dupFNErr` / `EEXIST`) |
 | `delete` | `file.delete(path: string): bool` | removes a file or an *empty* folder; a non-empty folder is a failure; on the Macintosh an open file is too (`fBsyErr`), while a POSIX host unlinks it |
-| `list` | `file.list(path: string, names: list of string): bool` | empties `names`, then appends the leaf name of every file **and** folder directly inside `path`, in catalog order; `""` names the program's own folder; a `path` that is not a folder is a failure |
+| `list` | `file.list(path: string, names: list of string): bool` | empties `names`, then appends the leaf name of every file **and** folder directly inside `path`, in catalog order; `""` names the program's own folder; a `path` that is not a folder is a failure; on failure `names` is empty |
 | `setInfo` | `file.setInfo(path: string, type: string, creator: string, created: int, modified: int): bool` | restamps an existing file's Finder type/creator and dates; a `0` date means "leave unchanged"; `type`/`creator` follow `writeText`'s four-character rule |
-| `rename` | `file.rename(path: string, newName: string): bool` | renames in place; `newName` is a leaf name, not a path |
+| `rename` | `file.rename(path: string, newName: string): bool` | renames in place; `newName` is a leaf name, not a path -- a `newName` containing `:` fails |
 | `move` | `file.move(path: string, dirPath: string): bool` | moves a file or folder into the folder `dirPath`, keeping its name; same volume only (`badMovErr` otherwise) |
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
@@ -1472,7 +1472,7 @@ Every field of the record — transitively, for a `list of` or `map of` payload 
 
 **Paths.** Every `path` is an HFS path exactly as `file.open` takes one: a bare name (the program's own folder), a partial path with a leading colon (`:FTN:In:x.pkt`), or a full path (`BBS HD:Files:x`). On a host build the same spellings work — `:` separates components, a leading `:` is dropped, and a full path's volume name becomes an ordinary leading directory component. `""` names the program's own folder wherever a folder is accepted, not just `list` — `exists` and `info` treat an empty `path` the same way. `file.list` returns leaf names; a caller re-joins them (`path + ":" + name`, or the bare name when `path` is `""`).
 
-**Host behaviour.** `setInfo`'s `type`/`creator` are accepted and ignored; its `created` is likewise accepted and ignored (POSIX birth time is not settable) — only `modified` actually restamps the file. `info` returns `rsrcSize = 0`, empty `type`/`creator`, `created` from the file's birth time where the host reports one (else its change time). Everything else behaves identically on both lanes.
+**Host behaviour.** `setInfo`'s `type`/`creator` are accepted and ignored; its `created` is likewise accepted and ignored (POSIX birth time is not settable) — only `modified` actually restamps the file. `info` returns `rsrcSize = 0`, empty `type`/`creator`, `created` from the file's birth time where the host reports one (else its change time). On the Macintosh, `file.info("")` reports only `isDir`; its other fields are zero (a host build reports the folder's real dates). Everything else behaves identically on both lanes.
 
 #### `filehandle`
 

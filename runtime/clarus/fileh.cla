@@ -318,6 +318,11 @@ func rtFhList(path: string, names: list of string): bool {
     }
     rtFhDevListEnd()
     if rtFhDevListFailed() {
+        // final-review wave, Minor 8: a mid-listing failure left `names`
+        // holding whatever was appended before the failing ListNext call
+        // -- clear it so a caller sees the documented "on failure `names`
+        // is empty" contract rather than a partial listing.
+        names.clear()
         rtSetLastErr(rtFhDevLastOSErr(), "list failed")
         return false
     }
@@ -332,7 +337,33 @@ func rtFhSetInfo(path: string, ftype: string, fcreator: string, created: int, mo
     return true
 }
 
+// rtFhRename: `newName` must be a bare leaf name (reference: "not a
+// path"), not just for native's own PBHRenameSync convention -- the
+// host lane's rt_ext_FhHRename runs `newName` through path_to_cstr too,
+// so an unguarded `newName` containing ':' silently MOVES the file
+// there (final-review wave, Important 2) instead of failing the way
+// native's PBHRenameSync already does (bdNamErr). Checked once here, at
+// the shared lane-neutral waist, so both device layers stay unreachable
+// with a path-shaped newName -- -37 is bdNamErr (MacErrors.h: "Bad name;
+// or fnfErr, or name in use"), the same OSErr PBHRenameSync itself
+// returns for a leaf name containing a colon; fileh.cla can't include
+// toolbox/files.cla's own const (lane-neutral, no catalog dependency),
+// so the literal is used directly.
 func rtFhRename(path: string, newName: string): bool {
+    var i: int
+
+    if newName == "" {
+        rtSetLastErr(-37, "rename failed")
+        return false
+    }
+    i = 0
+    while i < newName.length {
+        if newName[i] == ':' {
+            rtSetLastErr(-37, "rename failed")
+            return false
+        }
+        i = i + 1
+    }
     if rtFhDevRename(path, newName) != 0 {
         rtSetLastErr(rtFhDevLastOSErr(), "rename failed")
         return false

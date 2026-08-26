@@ -503,6 +503,14 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   fileh_68k.cla:59`) — pre-existing HFS path-length idiom; no
   overrun, just silent truncation of an already-illegal-length HFS
   path.
+- **Host `readdir` names over 255 bytes are silently clamped, and
+  `FhHRename`/`FhHMove`'s `snprintf` into a 512-byte `target` buffer
+  silently truncates a 255+255-byte path/newName combination**
+  (final-review wave, Minor 7, deferred; `runtime/host/rt_fileh.inc`'s
+  `rt_ext_FhHListNext:321`/`rt_ext_FhHRename:367`/`rt_ext_FhHMove:377`)
+  — neither ceiling sets `lastError`, both just quietly clip. An
+  HFS-authored path never reaches either limit (31-byte name cap), but
+  a host filesystem entry created by another program could.
 
 ## Bake / CLIR artifact machinery
 

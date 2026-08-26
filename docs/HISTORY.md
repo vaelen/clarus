@@ -4628,7 +4628,13 @@ brief asked for it directly.
     `CLAUDE.md`/`STATUS.md` closed out. The 68kBBS project's own
     `docs/language-gaps.md` update was written but deliberately left
     UNCOMMITTED in that separate repo, for Andrew (same precedent as
-    the transfer-crcs phase's own cross-repo note).
+    the transfer-crcs phase's own cross-repo note). The design spec's
+    §6 named two risks going in -- a standalone-gate allow-list the
+    prelude type might need, and cg68k golden growth from emitting
+    layout tables for an unused record -- and both turned out to be
+    non-issues: the from-source splice needed no allow-list, and cg68k
+    emits nothing at all for a record type no program in the corpus
+    references. The next phase needn't plan around either.
 
 ## Resolved "Small open items" (moved verbatim from ROADMAP, 2026-08-15)
 

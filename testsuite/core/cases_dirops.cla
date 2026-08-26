@@ -18,6 +18,7 @@ func caseDirOps(): TestResult {
         file.delete(":DirOpsT:Sub:b.dat")
         file.delete(":DirOpsT:Sub")
         file.delete(":DirOpsT:a.dat")
+        file.delete(":DirOpsT:b.dat")
         file.delete(":DirOpsT:c.dat")
         file.delete(":DirOpsT")
     }
@@ -106,6 +107,13 @@ func caseDirOps(): TestResult {
     }
     if not file.exists(":DirOpsT:c.dat") or file.exists(":DirOpsT:a.dat") {
         return tkFail("DirOps", "rename not reflected")
+    }
+    // final-review wave, Important 2: newName is a leaf name, not a path
+    // -- a colon-bearing newName must fail on both lanes, not silently
+    // move the file (the host lane's rename ran newName through the
+    // same path-translation helper as an ordinary path).
+    if file.rename(":DirOpsT:c.dat", "sub:d.dat") {
+        return tkFail("DirOps", "rename with path succeeded")
     }
 
     if file.delete(":DirOpsT:Sub") {
