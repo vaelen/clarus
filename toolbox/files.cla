@@ -584,9 +584,8 @@ const fsRtDirID: int = 2
 // fnfErr on a GetCatInfo/HGetFInfo/HOpenRF miss, fBsyErr on a delete/
 // rename of a busy (open) item, dupFNErr on a DirCreate/rename collision,
 // dirNFErr (MacErrors.h reflowed:108, `dirNFErr = -120, /*Directory not
-// found*/`; also Files.h -- "directory not found or incomplete pathname")
-// on a GetCatInfo/enumeration call given a non-directory path where a
-// directory is required (fileh_68k.cla's rtFhDevListBegin).
+// found*/`) on a GetCatInfo/enumeration call given a non-directory path
+// where a directory is required (fileh_68k.cla's rtFhDevListBegin).
 const fnfErr: int = -43
 const fBsyErr: int = -47
 const dupFNErr: int = -48

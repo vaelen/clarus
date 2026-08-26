@@ -94,3 +94,8 @@ Crash: RESOLVED by debugger (opus) at 4bc0a07 — root cause PRE-EXISTING: runti
 Crash: Ruling: the uitext.cla fix ships in THIS branch (it is what makes T2 green) and is recorded in HISTORY as a latent-bug find of the layout-sensitive class, not a filesystem-api defect. Cost if wrong: none — the fix is a strict ordering correction.
 Crash fix 4bc0a07: review (sonnet) Approved, no Critical/Important; minors: crash-report tally says uiwidgets ×6 (actually 7, all safe); scenario subtest list omits smoke_bounce (covered by TestSmokeBounceOn68k). No fix round needed.
 Task 7: resumed at 14:16 (docs first, gates last, foreground pieces)
+Task 7: implementer DONE at af10374 (T2 PASS all 5 pieces incl. Jiggle; 68kbbs edits uncommitted per ruling; Snow obligations recorded)
+Task 7: review (sonnet): ❌ 4 Important (doc accuracy) — CLAUDE.md "79 real" should be 78 real; 68kbbs language-gaps.md:220 `data.crc16x` → `t.crc16x`; files.cla dirNFErr comment misattributes a phrase to Files.h; HISTORY/STATUS omit Task 2/3 emitui reblesses. Minor (folded into the fix for cost reasons): STATUS "six" vs seven coverage gaps; task-7-report cg68k count 49→50+1.
+Task 7: minor (deferred): STATUS.md lacks a "how to run the new file.* surface" pointer (CLAUDE.md covers suites generically).
+Task 7: fix round 1/5 dispatched (resume implementer)
+Final whole-branch review dispatched on opus (package final-8b8e8e2..HEAD.code.diff + final-goldens.txt; triages ledger deferred/parked items) — in parallel with Task 7 fix round 1 (doc-only).

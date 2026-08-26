@@ -110,7 +110,7 @@ enum + runner, not one boot per case.
   phase's `TextBinary`/`Crc16`/`IntToStr`/`FileHandleRW` cases — the
   first three hardware-prove `text`'s new LE/word/setter binary
   accessors, `crc16`, and `string(n)`'s `IntToStr` migration; the fourth
-  hardware-proves `filehandle` positioned I/O on both lanes — then to 79
+  hardware-proves `filehandle` positioned I/O on both lanes — then to 78
   real by the filesystem-api phase's `DirOps` case, which hardware-
   proves the directory/catalog family (`makeDir`/`delete`/`list`/
   `exists`/`info`/`setInfo`/`rename`/`move`) on both lanes; unchanged by

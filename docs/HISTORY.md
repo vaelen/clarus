@@ -4483,7 +4483,10 @@ brief asked for it directly.
     `symbols[scopeLookup(...)]` lookup against a `-1` (undeclared) index
     — an unguarded index was a runtime "list index out of range" crash
     (exit 3) instead of a diagnostic for `file.info` called with no
-    discoverable prelude.
+    discoverable prelude. Also reblessed all 19 `testdata/emitui/*.c.golden`
+    files: every one gained the identical `clar_rec_FileInfo` typedef +
+    zero-init constructor (no retain/release — every field is scalar),
+    the same additive-only shape as Task 2's own rebless above.
   - **Checker**: `MethodSig.retNameIdx` + `sigEndNamed(nameIdx)`
     resolve a method's return type BY NAME at check time
     (`scopeLookup(topScope, …)`, walking up from the scope the call
@@ -4507,7 +4510,11 @@ brief asked for it directly.
     (the `HFileInfo`/`DirInfo` union, 108 bytes)/`CMovePBRec`/
     `HIOParamRename`; selector and OSErr constants including the
     close-out's own addition, `dirNFErr = -120`. New cookbook §12
-    walks the selector-in-D0 register shape end to end.
+    walks the selector-in-D0 register shape end to end. Reblessed all
+    19 `testdata/emitui/*.c.golden` files — every UI-runtime composition
+    splices `toolbox/files.cla` via `uidialogs.cla`, so each gained the
+    identical 9 new `extern` trap prototypes; verified purely additive
+    (controller ruling, reviewer-checked).
   - **Host lane** (Task 3/4): HFS `:`-path to POSIX `/`-path
     translation lives in exactly one place, `rt_fh_posix_path`
     (`runtime/host/rt.c`), called from `path_to_cstr` — the single hook

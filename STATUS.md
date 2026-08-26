@@ -167,14 +167,16 @@ vMac/System 6 only — full trail:
    item 1 extended + a new "Where we are" paragraph + the standing
    rule's bug-class count 6→7), `docs/TODO.md` (five new phase
    subsections: language follow-ups, a compiler-correctness minor, six
-   runtime/toolbox minors, a bake-machinery pre-existing gap, six
+   runtime/toolbox minors, a bake-machinery pre-existing gap, seven
    test-coverage gaps including the jiggle-twin follow-up),
-   `docs/HISTORY.md` (new phase entry + a "Latent bug found"
-   paragraph), `CLAUDE.md` (core-suite count 78→79, `toolbox/
-   files.cla` no-longer-thin description, `prelude.cla` next to
-   `--bake`, one sentence in the binary-files paragraph), the language
-   reference (Host-behaviour paragraph extended, two `--`→em-dash
-   fixes) — all committed alongside this file.
+   `docs/HISTORY.md` (new phase entry + a "Latent bug found" paragraph
+   + the Task 2/Task 3 golden-churn record — each reblessed all 19
+   `testdata/emitui/*.c.golden` files, additive-only), `CLAUDE.md`
+   (core-suite count 78→79, `toolbox/files.cla` no-longer-thin
+   description, `prelude.cla` next to `--bake`, one sentence in the
+   binary-files paragraph), the language reference (Host-behaviour
+   paragraph extended, two `--`→em-dash fixes) — all committed
+   alongside this file.
 
 ## 2. Prior phases (all merged; recap pointers only)
 

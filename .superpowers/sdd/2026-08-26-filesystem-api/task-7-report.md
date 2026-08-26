@@ -230,9 +230,10 @@ uncommitted the same way) — one `git commit` there is Andrew's to make.
   the docs touched this task — every such mention is explicitly flagged
   UNVERIFIED/deferred/owed.
 - Golden counts cited (14 `emitui` + 3 `cg68k` `.seg2.s` for the crash
-  fix; 19 `emitui` + 49 `cg68k`/1 new `.seg2.s` for Task 2/Task 5)
-  checked against `git show 4bc0a07 --stat` and the task reports
-  respectively, not paraphrased from memory.
+  fix; 19 `emitui` for Task 2 and again for Task 3; 50 modified + 1 new
+  `cg68k` file = 51 total for Task 5) checked against `git show 4bc0a07
+  --stat` and `git show 2084ccc --stat -- testdata/cg68k/` directly, not
+  paraphrased from memory.
 - Snapshot regen: confirmed both before AND after the crash fix landed,
   since the fix could in principle have touched `clarusc/*.cla` (it
   did not — verified by grep and by `git show 4bc0a07 --stat`).
@@ -247,3 +248,98 @@ uncommitted the same way) — one `git commit` there is Andrew's to make.
   debugger agent, not by me — I incorporated its findings into the
   docs this task owns but did not review its diff line-by-line beyond
   what's summarized in `crash-report.md` and the commit message.
+
+## Fix round 1
+
+Review (sonnet) returned 4 Important findings (all doc accuracy) plus
+2 cheap corrections folded into the same round.
+
+1. **CLAUDE.md self-contradicting count**: the core-suite growth
+   narrative said "... then to **79 real** by the filesystem-api
+   phase's `DirOps` case ..." — wrong; 77 real (binary-files tip) + 1
+   (`DirOps`) = 78 real, +`SelfCheck` = 79 total, matching the
+   paragraph's own opening clause ("79 `CoreTest` cases: 78 real +
+   `SelfCheck`"). Fixed: "79" → "78" at that one spot.
+2. **68kbbs `docs/language-gaps.md:220`**: "replaced by
+   `data.crc16x(0, 0, n)`" — `data` isn't a receiver used anywhere else
+   in the doc; every other instance spells it `t.crc16x`/`t.crc32`.
+   Fixed to `t.crc16x(0, 0, n)`. Left uncommitted in that repo per the
+   standing ruling.
+3. **Unsupported header citation** (`toolbox/files.cla`'s `dirNFErr`
+   comment): "also Files.h -- 'directory not found or incomplete
+   pathname'" — grepped the reflowed `Files.h` copy in the scratchpad,
+   confirmed that phrase does not appear there (only in `MacErrors.h`,
+   already cited). Dropped the unsupported Files.h clause; kept the
+   verified `MacErrors.h reflowed:108` citation as the comment's sole
+   source.
+4. **HISTORY.md omitted Task 2/3 golden churn**: added to both bullets
+   — Task 2's `toolbox/files.cla` bullet now records reblessing all 19
+   `testdata/emitui/*.c.golden` files (one new `extern` trap prototype
+   per file, additive-only, since every UI composition splices
+   `toolbox/files.cla`); the Task 3 `FileInfo` prelude bullet now
+   records its own 19-file emitui rebless (the `clar_rec_FileInfo`
+   typedef + zero-init constructor, same additive shape). Also added
+   to `STATUS.md`'s gate/golden ("Docs") summary.
+5. **STATUS.md "six" → "seven" test-coverage gaps**: recounted
+   `docs/TODO.md`'s filesystem-api "Test coverage gaps" subsection
+   directly (7 `- **` bullets, the jiggle-twin follow-up included) and
+   corrected the number.
+6. **task-7-report.md "49 cg68k/1 new"**: re-checked against `git show
+   2084ccc --stat -- testdata/cg68k/` directly — 51 files total in that
+   commit's `testdata/cg68k/` diff, of which `peep_pushpop.seg2.s` is
+   pure-addition (204 insertions, 0 deletions); corrected to "50
+   modified + 1 new `cg68k` file = 51 total".
+
+### Byte-diff proofs
+
+All four touched non-ASCII files (`CLAUDE.md`, `docs/HISTORY.md`,
+`STATUS.md`, `../68kbbs/docs/language-gaps.md`) were edited with Python
+scripts (never the `Edit` tool) and verified to round-trip as UTF-8
+after writing; `toolbox/files.cla` is plain ASCII (confirmed via
+`LC_ALL=C grep -nP '[\x80-\xff]'`, empty), so it was edited directly.
+
+```
+$ for f in CLAUDE.md docs/HISTORY.md STATUS.md; do
+    python3 -c "open('$f','rb').read().decode('utf-8')" && echo "$f: valid utf-8"
+  done
+CLAUDE.md: valid utf-8
+docs/HISTORY.md: valid utf-8
+STATUS.md: valid utf-8
+
+$ cd ../68kbbs && python3 -c "open('docs/language-gaps.md','rb').read().decode('utf-8')" && echo "valid utf-8"
+valid utf-8
+```
+
+`git diff --stat` for this round (clarus repo):
+
+```
+ .superpowers/sdd/2026-08-26-filesystem-api/progress.md   |  5 +++++
+ .../sdd/2026-08-26-filesystem-api/task-7-report.md       |  7 ++++---
+ CLAUDE.md                                                |  2 +-
+ STATUS.md                                                | 16 +++++++++-------
+ docs/HISTORY.md                                          | 11 +++++++++--
+ toolbox/files.cla                                        |  5 ++---
+ 6 files changed, 30 insertions(+), 16 deletions(-)
+```
+
+Each diff was read in full before committing; every changed line
+matches exactly one of the 4 findings + 2 corrections above, nothing
+else moved.
+
+### Test output
+
+```
+$ go test -count=1 ./internal/testsuite ./internal/reftest
+ok  	clarus/internal/testsuite	2.184s
+ok  	clarus/internal/reftest	0.724s
+```
+
+No emulator boot, no full gate — per the coordinator's instruction
+(the `dirNFErr` comment change is comment-only; the reference doc was
+untouched this round).
+
+### Files changed this round
+
+`CLAUDE.md`, `docs/HISTORY.md`, `STATUS.md`, `toolbox/files.cla` (all
+committed here); `../68kbbs/docs/language-gaps.md` (left uncommitted in
+that repo, per the standing ruling).
