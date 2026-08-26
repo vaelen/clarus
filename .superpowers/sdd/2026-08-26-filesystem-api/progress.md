@@ -99,3 +99,6 @@ Task 7: review (sonnet): ❌ 4 Important (doc accuracy) — CLAUDE.md "79 real" 
 Task 7: minor (deferred): STATUS.md lacks a "how to run the new file.* surface" pointer (CLAUDE.md covers suites generically).
 Task 7: fix round 1/5 dispatched (resume implementer)
 Final whole-branch review dispatched on opus (package final-8b8e8e2..HEAD.code.diff + final-goldens.txt; triages ledger deferred/parked items) — in parallel with Task 7 fix round 1 (doc-only).
+Task 7: fix round 1/5 (4 addressed per implementer + 2 cheap corrections; commit 5d94818; re-review pending)
+Task 7: fix round 1/5 re-review: 4+2 addressed, 0 open
+Task 7: complete (commits 856d1d1..5d94818 incl. crash fix 4bc0a07, review clean after 1 fix round; T2 PASS at af10374, doc-only commit since)
