@@ -7867,6 +7867,8 @@ LBL_49:
         MOVE.L D0,-52(A6)
         MOVEQ #0,D0
         MOVE.L D0,-52(A6)
+        BSR.W LBL_17
+        MOVE.L D0,-8(A6)
         MOVE.L 8(A6),D0
         MOVEA.L D0,A0
         MOVE.L (A0),D0
@@ -7878,8 +7880,6 @@ LBL_49:
         CLR.L D0
         MOVE.W (A0),D0
         MOVE.L D0,-12(A6)
-        BSR.W LBL_17
-        MOVE.L D0,-8(A6)
         MOVE.L -4(A6),D1
         MOVEQ #82,D0
         ADD.L D1,D0

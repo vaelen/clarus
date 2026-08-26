@@ -260,9 +260,19 @@ func rtUiTeWidestLine(te: ptr): int {
     var widest: int
 
     widest = 0
+    // rtUiGetPortSaved ALLOCATES (its own UiNewPtr(4) scratch slot, and
+    // that is the heap-jiggle waist), so it must run BEFORE te's master
+    // pointer is captured, not after: an unlocked TEHandle is fair game
+    // to relocate across that allocation, and every read below (inPort,
+    // txFont/txSize/txFace, hText) goes through teMp. Getting this
+    // backwards SetPort'd a garbage inPort and HLock'd a garbage hText,
+    // whereupon TextWidth ran QuickDraw against a bogus port -- an
+    // "illegal instruction" bomb whose landing site shifts with any
+    // heap-layout change (filesystem-api phase, 2026-08-26; the loop
+    // below already re-derived teMp for the same hazard).
+    savedPort = rtUiGetPortSaved()
     teMp = UiHandleDeref(te)
     n = peekw(teMp + rtUiTeNLines)
-    savedPort = rtUiGetPortSaved()
     UiSetPort(ptr(peekl(teMp + 82))) // (*te)->inPort
     UiTextFont(peekw(teMp + 74))
     UiTextSize(peekw(teMp + 80))

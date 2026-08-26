@@ -5773,9 +5773,9 @@ static int32_t clar_fn_rtUiTeWidestLine(void * cv_te) {
     int32_t cv_widest;
     cv_widest = 0;
     cv_widest = 0;
+    cv_savedPort = clar_fn_rtUiGetPortSaved();
     cv_teMp = rt_ext_UiHandleDeref(cv_te);
     cv_n = rt_peekw((void *)((char *)(cv_teMp) + (94)));
-    cv_savedPort = clar_fn_rtUiGetPortSaved();
     rt_ext_UiSetPort((void *)(intptr_t)(rt_peekl((void *)((char *)(cv_teMp) + (82)))));
     rt_ext_UiTextFont(rt_peekw((void *)((char *)(cv_teMp) + (74))));
     rt_ext_UiTextSize(rt_peekw((void *)((char *)(cv_teMp) + (80))));

@@ -292,6 +292,11 @@ func rtUiSetEnabledAt(w: RtUiWinst, i: int, v: bool) {
 // constantly here: rtUiOpen's own bracket, a later step, calls
 // rtUiMakeWidgets/rtUiLayout, each of which brackets its OWN port
 // save/restore around its body).
+// rtUiGetPortSaved ALLOCATES: its 4-byte GetPort scratch slot is a real
+// UiNewPtr, which is the heap-jiggle waist (uiscript.cla's
+// rtUiJiggleTick) and a Memory Manager allocation in any case. Never
+// call it while holding a master pointer -- re-derive after, or save the
+// port first. (uitext.cla's rtUiTeWidestLine got this wrong; see there.)
 func rtUiGetPortSaved(): ptr {
     var slot: ptr
     var p: ptr
