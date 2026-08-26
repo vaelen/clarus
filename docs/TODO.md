@@ -91,6 +91,34 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   only, no functional gap; revisit if a future phase needs the shared
   body for another reason anyway.
 
+### filesystem-api phase (2026-08-26)
+
+- **Resource-fork-as-bytes / `file.openRF`** — this phase's `file.*`
+  family covers the data fork only; `readResource`/`writeRes`
+  (binary-files phase) remain the only resource-fork surface. A
+  `file.openRF(path): filehandle` giving positioned I/O against the
+  resource fork (mirroring `file.open`'s data-fork `filehandle`) was
+  named out of scope (design spec §7), unscheduled.
+- **`list of string(31)` element capacity** — `file.list`'s `names`
+  param is `list of string`, whose element is the general (255-byte)
+  `string`; a caller who wants a narrower-capacity element (31 chars is
+  the real HFS leaf-name max) still pays the general `string`'s 256
+  B/entry ceiling — no `list of string(N)` narrowing is offered by the
+  catalog. Named out of scope (design spec §7), unscheduled.
+- **Recursive `makeDir`** — `file.makeDir` creates exactly one level
+  (the parent must already exist); a `makeDir -p`-style multi-level
+  create was named out of scope (design spec §7), unscheduled.
+- **Combined rename+move** — `file.rename` changes the leaf name in
+  place; `file.move` changes the parent folder while keeping the name;
+  no single call does both atomically (a caller wanting to move to a
+  new folder AND rename issues two calls). Named out of scope,
+  unscheduled.
+- **`PBSetCatInfoSync` declared but unused** — `toolbox/files.cla`'s
+  catalog exposes it (bound once by the catalog driver, Task 2) but no
+  `rtFhDev*` call in this phase calls it; `setInfo` goes through
+  `PBHGetFInfoSync`/`PBHSetFInfoSync` instead (spec §4.3). Same
+  declared-but-unused shape as other catalog-completeness entries.
+
 ## Compiler correctness / diagnostics
 
 - **Lexer diagnostic quality** (decided 2026-07-23): a bad escape in a
@@ -245,6 +273,15 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   final-review wave M5; `clarusc/cg68k.cla`'s `cgReturnStmt`) — once for
   `rk = irtKind(irExprType(x))`, again a few lines later for
   `retT = irExprType(x)`; pure polish, same result both times.
+
+### filesystem-api phase (2026-08-26)
+
+- **`drive.cla`'s prelude-splice rationale is restated at 4 sites**
+  (Task 3 minor, deferred) — `clarusc/drive.cla:63-73,1516-1531,
+  1996-2077` and `clarusc/bake.cla:404-417` each carry their own telling
+  of why `prelude.cla` is spliced from source first and excluded from
+  the bake drift guard; consolidate into one comment the others
+  reference, after the wording fix (already applied, fix round 1).
 
 ## ABI / performance
 
@@ -430,6 +467,43 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   gap (`rtFhDevCreate` reporting the OPEN error over a real non-dupFNErr
   CREATE error) is the final-review wave's M4, fixed for real.
 
+### filesystem-api phase (2026-08-26)
+
+- **`rt_fh_mac_time` duplicates `rt_dt_now_mac`'s 3-line Unix-to-Mac-
+  epoch-local conversion** (Task 3 minor, deferred; `runtime/host/
+  rt_fileh.inc:210-214`, `rt_ext_host.inc`'s `rt_dt_now_mac`) — share
+  one helper instead of two independently-maintained copies.
+- **`rtFhDevListBegin` (host lane) leaks `rtFhListBuf` if called twice
+  without an intervening `ListEnd`** (Task 4 minor, deferred;
+  `runtime/clarus/fileh_c.cla:180`) — unreachable today (`rtFhList`'s
+  own begin/next-loop/end shape always pairs them); one-line guard if a
+  future caller ever calls `ListBegin` directly without going through
+  `rtFhList`.
+- **`rtFhDevRename` (native lane) re-implements the by-name
+  `PBGetCatInfoSync` block instead of reusing a state-block slot**
+  (Task 5 minor, deferred; `runtime/clarus/fileh_68k.cla:731`) —
+  `rtFhDevStat` already stashes a directory hit's own DirID at
+  `rtFh68kState+28`; `rtFhDevRename` could stash the SAME lookup's
+  parent DirID at a new `+44` slot and reuse it instead of issuing its
+  own separate `PBGetCatInfoSync` call. Correctness is unaffected (both
+  calls read the identical field), purely a duplicate-call cost.
+- **`rtFh68kEnsureState` does not check `SerNewPtr`'s result** (Task 5
+  minor, deferred; `runtime/clarus/fileh_68k.cla:395`) — pre-existing
+  idiom for this file's global-lifetime allocation block; an
+  out-of-memory native Mac would crash on the next `peekl`/`pokel`
+  rather than fail cleanly.
+- **`rtFh68kFourCCToStr` maps a zero `fdType` to `""`, conflating an
+  untyped file with a folder** (Task 5 minor, deferred; `runtime/
+  clarus/fileh_68k.cla:409`) — both a folder and a file with no
+  Finder type set read back `type == ""` from `file.info`; `isDir` is
+  the only reliable discriminator today. Comment-only fix recorded,
+  unimplemented.
+- **`rtFh68kName` truncates the Pascal length byte for a path over 255
+  characters** (Task 5 minor, deferred; `runtime/clarus/
+  fileh_68k.cla:59`) — pre-existing HFS path-length idiom; no
+  overrun, just silent truncation of an already-illegal-length HFS
+  path.
+
 ## Bake / CLIR artifact machinery
 
 - **Stamp-proxy gap** (runtime-ir-bake, still open): the CLIR stamp
@@ -481,6 +555,15 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   idiom; `bkCheckRtbakeHeader`'s header doc still names
   `bkHashTextFrom`; `drive.cla`'s "rtbakeBytes still held"
   parenthetical is wrong for the memoized drift-interleaving case.
+
+### filesystem-api phase (2026-08-26)
+
+- **Pre-existing: the C (host) lane's `--rtbake` cannot compile any
+  `filehandle` program** — `fileh*.cla` is not in `clarusc/bake.cla`'s
+  `bakeModuleList` on that lane (found by Task 3's reviewer while
+  checking the `prelude.cla` bake path; not introduced by this phase,
+  not fixed by it either — the native/`emit68k` `--rtbake` lane is
+  unaffected).
 
 ## Test coverage gaps (recorded by audits, mostly need real input/hardware)
 
@@ -594,3 +677,47 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   and failed twice under T2 contention during this phase; a re-baseline
   decision (longer warm-up, more samples, or a wider margin) is owed
   before the next phase adds anything to the host emit path.
+
+### filesystem-api phase (2026-08-26)
+
+- **No test exercises `emit68k --rtbake [--testapi]` over a
+  `file.info`-calling program** (Task 3's own deferred test gap) —
+  closing test: one `internal/bake` case asserting the bake path was
+  taken (`bkRuntimeFuncBoundary > 0`) and that its output matches the
+  from-source build's. Task 3's own manual `--rtbake`/`--rtbake
+  --testapi` experiments (task-3-report.md) are the only current
+  evidence this path works.
+- **Folder rename untested on hardware** (Task 5) — `DirOps` only
+  renames a file (`a.dat` → `c.dat`); `rtFhDevRename`'s use of
+  `ci.ioFlParID` as the parent DirID for a FOLDER hit relies on the
+  DirInfo/HFileInfo union sharing that field's meaning at offset 100
+  (documented Inside Macintosh behavior, not independently re-derived
+  by Task 1's probe the way `ioDirID`@48's file/folder difference was).
+- **`file.list("")` untested** (Task 5) — `file.exists("")`/
+  `file.info("")` are pinned (fix round 1, both lanes); `list("")` (the
+  program's own folder) has no fixture on either lane.
+- **`rtFhDevListFailed`'s true branch is unexercised natively** (Task
+  4/5) — the host lane's `readdir()`-error path is pinned by a C
+  harness test (fix round 1); the native lane's `PBGetCatInfoSync`
+  hard-failure path (as opposed to the ordinary `fnfErr` end-of-listing
+  case) has no fixture on real hardware.
+- **System 7 (Snow) is entirely unverified for this phase** — Task 1's
+  probe wave, Task 5's native `fileh_68k.cla` lane, and
+  `TestClarusCBakePathOnSnow` (owed after any runtime-module addition,
+  deferred per the ledger's Task 7 ruling) all ran on Mini vMac/System 6
+  only; a live 68kbbs session owned the one Snow instance throughout
+  this phase. Every `PBH*`/`_HFSDispatch` trap predates System 7, so no
+  difference is expected, but none of this phase's own hardware claims
+  are System-7-backed.
+- **The full-path spike (Task 1 (b)) was verified only on the boot
+  volume** — `PBGetVolSync` + `vol + ":path"` opened successfully
+  against `"SysAndApp"` (the probe's own boot volume); a second,
+  non-boot mounted volume was never exercised.
+- **A core-suite jiggle twin** (crash-report.md §9, the `rtUiTeWidestLine`
+  find) — `TestToolboxSuiteJiggleOn68k` is the ONLY heap-jiggle boot in
+  the tree, and it is T2-only; a `TestCoreSuiteGUIJiggleOn68k` twin (or
+  a jiggle variant of one frozen UI scenario) would widen the net for
+  the next stale-master-pointer-across-compaction bug at the cost of
+  one more T2 boot. Every UI program shares the same runtime the
+  toolbox suite's jiggle boot exercises, so the gap is real, not
+  hypothetical.

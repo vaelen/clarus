@@ -1,146 +1,189 @@
-# Session status — 2026-08-25 (transfer-crcs: COMPLETE, T2 green, not merged)
+# Session status — 2026-08-26 (filesystem-api: COMPLETE, T2 green, not merged)
 
-Handoff summary. **The `transfer-crcs` phase (branch `transfer-crcs`, based
-on `main` at `26d6748` — `binary-files` is already merged into `main`)
-adds `text.crc16x` (CRC-16/XMODEM, bitwise) and `text.crc32` (CRC-32/
-ZMODEM, table-driven), both lanes, driven by 68kBBS's XMODEM/YMODEM/
-ZMODEM needs. Task 1 shipped the two methods plus a rebless wave (the
-two new runtime globals shift every later global's A5 offset in every
-cg68k/emitui golden); an unplanned mid-task finding forced the `crc32`
-table off a `int[256]` global onto a lazily-built heap block, because
-`cg_init_globals` unrolls array-global zero-init into one store per
-element (~1.5 KB of startup code added to every native program, not
-just `crc32` callers) — fixed on the runtime side, not codegen, and
-reblessed a second time from a clean base. Task 2 grew the core suite's
-`Crc16` case and proved it on real 68000 hardware. Task 3 (this
-close-out) regenerated the bootstrap snapshot, re-verified the
-`.behavior` golden for real (byte-identical to Task 1's hand-written
-version — the real bless surfaced one legitimate new artifact,
-`testdata/run/crc16.leaks`, for the table's intentional process-lifetime
-heap allocation), and closed out docs. Full T2 PASS (see §1). NOT
-merged, NOT pushed — merge only on Andrew's request.**
+Handoff summary. **The `filesystem-api` phase (branch `filesystem-api`,
+based on `main` at `8b8e8e2` — `binary-files` and `transfer-crcs` are
+already merged into local `main`) adds `file.makeDir/delete/list/
+exists/info/setInfo/rename/move` on both lanes, closing the remaining
+68kBBS filesystem gaps (`docs/language-gaps.md` §1/§2/§3/§5/§6/§7 in
+the `68kbbs` project). Task 1 was a hardware probe wave (trap/selector/
+offset verification, path-form spikes, the `drive.cla` splice-point
+analysis) with no code commit. Task 2 built the `toolbox/files.cla` HFS
+catalog/directory family (`_HFSDispatch`'s selector-in-D0 traps plus
+five `PBH*` single-trap routines). Task 3 added a new predeclared
+`FileInfo` record (a from-source `runtime/clarus/prelude.cla` splice
+ahead of the standalone user-code check) and `file.exists`/`file.info`
+on the host lane. Task 4 added the remaining six calls on the host
+lane, HFS→POSIX path translation, and the `DirOps` core suite case.
+Task 5 built the native lane (`fileh_68k.cla`), adding ONE new native
+global (`rtFh68kState`) and reblessing the cg68k/emitui corpus once.
+Task 6 added host C twins for the `ReadDateTime`/`SecondsToDate`/
+`DateToSeconds` public catalog externs. Task 7 (this close-out)
+regenerated the bootstrap snapshot, hit and fixed a PRE-EXISTING native
+UI crash the T2 gate surfaced (`4bc0a07`, see below — not a
+filesystem-api defect), closed out docs, and left a written-but-
+uncommitted update to `../68kbbs/docs/language-gaps.md` (+
+`docs/fidonet.md`) for Andrew. Full T2 PASS (see §1). NOT merged, NOT
+pushed — merge only on Andrew's request.**
 
 ## 0. START HERE next session
 
-**The phase is fully closed on the branch — nothing code-side remains,
-including the Snow timing probe (below).** What's left is entirely the
-merge decision.
+**Pre-merge obligations (both owed, neither run this phase):**
 
-**What this phase built** (3 tasks, one commit each — `c4e6c31` (Task
-1), `213a782` (Task 2), `f3e8367` (Task 3), plus the close-out fix
-commit; full detail in `.superpowers/sdd/2026-08-25-transfer-crcs/`):
+1. **System 7 (Snow) verification is UNVERIFIED for this entire
+   phase.** A live, unrelated 68kbbs session owned the one Snow
+   instance throughout (Task 1's probe wave, Task 5's native lane, and
+   the `TestClarusCBakePathOnSnow` rerun below all deferred for the
+   same reason). Every `PBH*`/`_HFSDispatch` trap this phase uses
+   predates System 7, so no difference is expected — but nothing in
+   this phase's own hardware evidence is System-7-backed. Re-run Task
+   1's probe (or at minimum `DirOps`, the core-suite case) on Snow
+   before merge.
+2. **`TestClarusCBakePathOnSnow`** (`CLARUS_SNOW_TESTS=1 go test
+   -count=1 -timeout 90m ./internal/mactest -run
+   TestClarusCBakePathOnSnow`, ~55 min) is owed after any runtime-module
+   addition — `fileh_68k.cla` gained real bodies this phase (Task 5).
+   Deferred for the same reason as (1). Task 3's own manual `--rtbake`/
+   `--rtbake --testapi` experiments are the only current evidence the
+   bake path works with the new `prelude.cla` splice.
 
-1. **`t.crc16x(h, pos, n)`** — CRC-16/XMODEM, poly `0x1021` forward
-   (MSB-first, no reflection), same bitwise-loop shape as the existing
-   `t.crc16` (CRC-16/KERMIT). Check value `0x31C3` over `"123456789"`.
-2. **`t.crc32(h, pos, n)`** — CRC-32/ZMODEM/IEEE, reflected poly
-   `0xEDB88320`, table-driven. Register returned raw (caller applies
-   the `0xFFFFFFFF` init/final XOR); check value
-   `t.crc32(0xFFFFFFFF, 0, 9) ^ 0xFFFFFFFF == 0xCBF43926` over
-   `"123456789"`.
-3. **The `crc32` table is a lazily-built heap block, not a global
-   array.** Original design was `var rtCrc32Tab: int[256]` + a `bool`
-   ready flag; `cg68k.cla`'s `cgEmitInitGlobalsStub` default-inits
-   every declared global unconditionally, unrolling an array global
-   into one store per element (257 scalars, 514 lines for a 256-int
-   array), which landed in EVERY native program's startup code
-   regardless of whether it calls `crc32`, and pushed 8 previously
-   single-segment cg68k fixtures into a second segment. Controller
-   ruling: fix on the runtime side. `rtCrc32Tab` is now a single
-   `ptr` global (`ptr(0)` until built); `rtCrc32TabInit` allocates 1 KB
-   via `TextNewPtr` on first call, fills it with `pokel`, and the
-   per-byte lookup uses `peekl`. Net global-offset shift across the
-   whole corpus: a uniform **+4 bytes** (one pointer) instead of the
-   original **+1026 bytes** (array + flag). The heap block itself is
-   never freed (a deliberate process-lifetime cache, same as the
-   `ponytail:` comment on the table says) — surfaced by Task 3's real
-   `.behavior` bless as one `1024`-byte live block, recorded in the new
-   `testdata/run/crc16.leaks` golden (precedented by
-   `for_loop_var_alias.leaks`, test-suite-review phase).
-4. **Core suite coverage**: `testsuite/core/cases_textbinary.cla`'s
-   `caseCrc16` grew XMODEM and ZMODEM vectors (one-shot/chunked/`n==0`/
-   table-reuse); no new `CoreTest` enum member, no case-count site
-   touched. Proved on real 68000 hardware
-   (`TestCoreSuiteGUIOn68k`, System 6, Mini vMac).
-5. **Snow timing probe.** Task 2's own attempt collided with a second,
-   unrelated Snow instance sharing this machine's display (a concurrent
-   session's own work) and was aborted rather than risk clicking into
-   someone else's window. A controller rerun of the same throwaway
-   program (`build-run/crctime.cla`, TickCount-bracketed
-   `crc16`/`crc16x`/`crc32` calls over a 64 KB buffer) completed
-   cleanly on a Mac II (16 MHz 68020) Snow instance, read from the
-   app's captured out-file (byte-exact) rather than an on-screen alert
-   (none was ever observed on screen, though the clean
-   `##CLARUS-EXIT## 0` trailer confirms a normal completion). Single
-   run, no repeats. Results: `crc16` 277 ticks (≈70.4 µs/byte),
-   `crc16x` 287 ticks (≈73.0 µs/byte), `crc32` 120 ticks (≈30.5
-   µs/byte) — `crc32` ≈2.3-2.4x faster than either bitwise loop, less
-   than the ~5x a table alone would suggest (per-byte loop/`peekb`/
-   `peekl` overhead dominates on a 68020); a 1 KB ZMODEM subpacket
-   costs ≈31 ms of `crc32` time against the ~180 ms it takes to arrive
-   at 57600 bps (≈72 ms bitwise). Full trail:
-   `.superpowers/sdd/2026-08-25-transfer-crcs/snow-probe-report.md`.
-6. **Close-out (this task)**: bootstrap snapshot regenerated and
-   fixed-point-verified, `.behavior` golden re-verified against the
-   real bless, spec amendment (`docs/superpowers/specs/
-   2026-08-25-transfer-crcs-design.md` §4, Task 1's heap-block pivot
-   folded in), `docs/TODO.md` (the `cg_init_globals` finding filed
-   under ABI/performance; the array-literal entry's own note extended),
-   `docs/HISTORY.md`, `docs/ROADMAP.md`, `CLAUDE.md`, this file.
+Otherwise the phase is fully closed on the branch: snapshot regenerated
+and fixed-point-verified, T2 green, docs closed out.
 
-**Deliberate decisions worth remembering** (full rationale: design spec
-§2, §4):
-- `crc16` itself is untouched — with `crc32` table-driven it no longer
-  shares a loop with `crc16x`, so the hardware-proved `rtTextCrc16`
-  stays as-is.
-- `app68Crc16` (`clarusc/app68k.cla`, the compiler's own CRC-16/XMODEM
-  used for `.APPL` checksums) is deliberately NOT converted to call
-  `rtTextCrc16X` — it lives in the compiler, which the committed
-  `clarusc/clarusc.c` bootstrap snapshot must still be able to compile;
-  wiring it to a runtime intrinsic would break the bootstrap until the
-  snapshot is regenerated, not worth the coupling for a 124-byte header.
-- The `crc32` table is built lazily because Clarus has no array-literal
-  initializer (`var t: int[256]` is always zero-filled); that gap is
-  filed in `docs/TODO.md` as its own future language-feature phase.
+**A pre-existing native UI crash surfaced and was fixed this task**
+(commit `4bc0a07`, full trail
+`.superpowers/sdd/2026-08-26-filesystem-api/crash-report.md`): T2's
+gated native lane bombed on `TestToolboxSuiteJiggleOn68k` ("illegal
+instruction") while the plain `TestToolboxSuiteOn68k` stayed green —
+exactly the signal the correctness-cleanup phase's heap-jiggle harness
+exists to catch. Root cause: `runtime/clarus/uitext.cla`'s
+`rtUiTeWidestLine` held a `TEHandle` master pointer across
+`rtUiGetPortSaved()`'s allocation (`UiNewPtr`, the jiggle waist),
+then kept reading through the now-stale pointer — a pre-existing bug,
+**not** a filesystem-api defect (two builds with byte-identical CODE
+segments landed on opposite sides of the crash; Task 5's new global
+merely re-rolled the heap layout that made it live). Fixed by hoisting
+the allocating call above the master-pointer capture; 14 `emitui` +
+3 `cg68k` `.seg2.s` goldens reblessed (one statement moved, normalized
+in the crash report). `docs/HISTORY.md`'s phase entry and
+`docs/ROADMAP.md`'s standing rule both cite it as the seventh instance
+of this bug class; `docs/TODO.md` records the follow-up (a core-suite
+jiggle twin — the jiggle gate exists only for the toolbox suite today).
 
-## 1. Gate results (this phase — `c4e6c31` Task 1, `213a782` Task 2,
-   `f3e8367` Task 3, plus the close-out fix commit; code unchanged by
-   Task 3 except the snapshot regen + the new `.leaks` golden)
+**What this phase built** (7 tasks; Task 1 no code commit, Tasks 2-6
+one feat + one fix-round commit each, plus the crash fix `4bc0a07` and
+this Task 7 close-out commit; full detail in
+`.superpowers/sdd/2026-08-26-filesystem-api/`):
+
+1. **`toolbox/files.cla` HFS catalog/directory family** (Task 2,
+   `75d9c39`, fix round `9549634`) — the `_HFSDispatch` trap trio
+   (`PBGetCatInfoSync`/`PBSetCatInfoSync`/`PBDirCreateSync`/
+   `PBCatMoveSync`, trap `0xA260`, selector in D0 via `moveq #N,D0`,
+   `reg(a0: pb, d0: selector) ret d0`) plus five single-trap
+   `PBH*Sync` routines; records `HFileParam`/`CInfoPBRec`/
+   `CMovePBRec`/`HIOParamRename`; cookbook §12.
+2. **`FileInfo` prelude + `file.exists`/`file.info`** (Task 3,
+   `3e6aa69`, fix round `5efc3f5`) — `runtime/clarus/prelude.cla`
+   spliced from source as the very first file in `driveCompile`, so
+   the predeclared `FileInfo` record is visible to the STANDALONE
+   check on every lane/mode. `MethodSig.retNameIdx`/`sigEndNamed`
+   resolve `file.info`'s return type by name at check time. A parallel
+   `ParamSpec.recNameIdx`/`psRecNamed` mechanism was drafted, never
+   became reachable, and was deleted (controller ruling) rather than
+   left dead. Fix round 1 guarded a `-1`-index crash on a missing
+   prelude (undeclared `FileInfo` now diagnoses cleanly instead of
+   panicking) and corrected the `--rtbake` manifest-drift exclusion.
+3. **`file.makeDir/delete/list/setInfo/rename/move`, host lane, HFS→
+   POSIX paths, `DirOps` core case** (Task 4, `8454885`, fix round
+   `3e97204`) — `rt_fh_posix_path` (`runtime/host/rt.c`) is the ONE
+   hook every path-taking C entry point shares. Fix round 1: a
+   `readdir()` error was silently reported as a truncated success;
+   `rtFhDevListFailed()` now surfaces it.
+4. **Native lane** (Task 5, `2084ccc`, fix round `607c2fa`) —
+   `fileh_68k.cla` drives every call for real. ONE new native global,
+   `rtFh68kState` (lazily `SerNewPtr`'d 44-byte state block).
+   Reblessed the cg68k/emitui corpus once: uniform A5 shift, one
+   `cg_init_globals` zero-init pair per program, one fixture
+   (`peep_pushpop.s`) crossed into a new second segment. Fix round 1:
+   `""` generalized to name the program's own folder for
+   `exists`/`info` too, on both lanes (was list-only, host-lane-absent
+   for the other two).
+5. **Host date glue** (Task 6, `856d1d1`) — host C twins for the
+   PUBLIC `ReadDateTime`/`SecondsToDate`/`DateToSeconds` catalog
+   externs, so a host build linking them now works.
+6. **Latent crash fix** (Task 7, `4bc0a07`) — see above.
+7. **Close-out (Task 7, this commit)**: bootstrap snapshot
+   regenerated and fixed-point-verified (confirmed unaffected by the
+   crash fix, which touches no `clarusc/*.cla`); `toolbox/files.cla`'s
+   `CMovePBRec.ioNewName` comment corrected + a `dirNFErr` const added
+   (replacing a bare `-120` in `fileh_68k.cla`); the reference's
+   Host-behaviour paragraph extended (`setInfo`'s `created` is ignored
+   on a host too); two stray `--` fixed to em dashes near the `Files`
+   section; `docs/TODO.md`/`docs/ROADMAP.md`/`docs/HISTORY.md`/
+   `CLAUDE.md` closed out; `../68kbbs/docs/language-gaps.md` (+
+   `docs/fidonet.md`) updated but left UNCOMMITTED in that repo, for
+   Andrew.
+
+**Task 1's hardware findings worth remembering** (probe wave, Mini
+vMac/System 6 only — full trail:
+`.superpowers/sdd/2026-08-26-filesystem-api/task-1-report.md`):
+
+- `PBHRenameSync` rejects the ordinary `ioDirID=0` + partial-path
+  convention every other HFS call in this phase accepts
+  (`bdNamErr`/`dirNFErr`); it needs a bare leaf name plus the item's
+  real parent DirID, resolved via one extra `PBGetCatInfoSync` call.
+- Both a nested partial path (`:ProbeA:B:x.dat`) and a full
+  volume-qualified path (`vol + ":ProbeA:B:x.dat"`) opened
+  successfully natively with zero code changes — verified only
+  against the probe's own boot volume, never a second mounted volume.
+- `ioDirID = 0` genuinely enumerates the default folder.
+- `""` names the program's own folder for `list`/`exists`/`info` on
+  both lanes (fix round 1 generalized this beyond `list`).
+- There is no `Name(ptr)`-style overlay/conversion form for `extern
+  record` — only `var x: SomeRecord`-style locals; `fileh_68k.cla`
+  uses function-local records reused across calls instead of a
+  persisted PB record.
+
+## 1. Gate results (this phase)
 
 1. **Snapshot fixed point**: PASS. Regenerated per
    `TestSnapshotFixedPoint`'s exact recipe (`cc`-only bootstrap, no Go
-   compiler); `go test ./internal/selfhost -run TestSnapshotFixedPoint
-   -count=1 -timeout 30m` → PASS, 13.0s. Sanity:
-   `scripts/clarus-run.sh testdata/run/crc16.cla` (Go-free, rebuilds
-   from the regenerated snapshot) prints all ten `ok` lines.
-2. **`.behavior` re-verification**: `CLARUS_BLESS_BEHAVIOR=1 go test
-   ./internal/selfhost -run 'TestBehaviorGoldens/run/crc16' -count=1
-   -timeout 30m` → the real bless produced a `testdata/run/crc16.behavior`
-   byte-identical to Task 1's hand-written version (confirmed via
-   `diff`), but FAILed on first run with a live-leak mismatch (`got 1
-   want 0`) — the `crc32` table's intentional never-freed heap block.
-   Added `testdata/run/crc16.leaks` (content `1`), matching the
-   existing `.leaks` golden mechanism (`for_loop_var_alias.leaks`,
-   test-suite-review phase); re-ran → PASS.
-3. **T2** (`scripts/test-merge.sh`) — **PASS**, 340s (~5:40) wall.
-   T1 body (13 packages): PASS in 25s. `internal/selfhost`: PASS,
-   125.2s. Gated native `internal/mactest` lane (`CLARUS_MAC_TESTS=1`,
-   no `-run` filter, includes `TestCoreSuiteGUIOn68k`/
-   `TestToolboxSuiteOn68k`): PASS, 183.8s. `internal/bake` full-corpus
-   gate (`CLARUS_BAKE_FULL=1`): PASS, 6.5s.
-4. **Docs**: this file, `docs/ROADMAP.md` (item 1 extended, "Where we
-   are" gets its own paragraph), `docs/TODO.md` (the `cg_init_globals`
-   finding filed; the array-literal entry's note extended),
-   `docs/HISTORY.md` (phase entry), `CLAUDE.md` (binary-data
-   paragraph), `docs/superpowers/specs/2026-08-25-transfer-crcs-design.md`
-   (§4 amendment) — all committed alongside this file.
+   compiler): `go test ./internal/selfhost -run TestSnapshotFixedPoint
+   -count=1 -timeout 30m` → PASS ("snapshot fixed point reached: gen1
+   == gen2 (4923665 bytes), and matches the committed snapshot").
+   Re-checked after the crash fix (`4bc0a07`, which touches no
+   `clarusc/*.cla`) — still at the fixed point, no regen needed.
+2. **Reftest manifest**: `go test -count=1 ./internal/reftest` → PASS,
+   no fence shift, no manifest regeneration needed.
+3. **T2** (`scripts/test-merge.sh`, run in pieces, foreground): PASS.
+   `scripts/test-task.sh --smoke` (T1 body + 2 native smokes) → PASS,
+   35s. `CLARUS_MAC_TESTS=1 go test ./internal/mactest` (no `-run`
+   filter, includes `TestToolboxSuiteJiggleOn68k` and every other
+   native-lane boot) → PASS, 184.7s. `go test ./internal/selfhost
+   -count=1 -timeout 30m` → PASS, 130.8s. `go test ./internal/reftest
+   -count=1` → PASS, 0.4s. `CLARUS_BAKE_FULL=1 go test ./internal/bake
+   -count=1 -timeout 10m` (full-corpus byte-identity gate) → PASS,
+   6.5s. `TestClarusCBakePathOnSnow` NOT run (deferred, §0 above).
+4. **Docs**: this file, `docs/ROADMAP.md` ("Next: language usability"
+   item 1 extended + a new "Where we are" paragraph + the standing
+   rule's bug-class count 6→7), `docs/TODO.md` (five new phase
+   subsections: language follow-ups, a compiler-correctness minor, six
+   runtime/toolbox minors, a bake-machinery pre-existing gap, six
+   test-coverage gaps including the jiggle-twin follow-up),
+   `docs/HISTORY.md` (new phase entry + a "Latent bug found"
+   paragraph), `CLAUDE.md` (core-suite count 78→79, `toolbox/
+   files.cla` no-longer-thin description, `prelude.cla` next to
+   `--bake`, one sentence in the binary-files paragraph), the language
+   reference (Host-behaviour paragraph extended, two `--`→em-dash
+   fixes) — all committed alongside this file.
 
 ## 2. Prior phases (all merged; recap pointers only)
 
+- **transfer-crcs** (`text.crc16x`/`text.crc32`) — merged to local
+  `main` 2026-08-25 (part of this branch's own base, `8b8e8e2`).
 - **binary-files** (`filehandle`, `connection` as a value, `text`
   binary accessors + `crc16`, `string(n)`, the `toolbox/` include
-  fallback, emit68k's per-function big-temp pool) — merged to `main`
-  2026-08-23.
+  fallback, emit68k's per-function big-temp pool) — merged to local
+  `main` 2026-08-23 (part of this branch's own base).
 - **correctness-cleanup** — merged to `main` (ff `48a4696..3a4c054`),
   pushed 2026-08-18.
 - **serial-connection** (fenced `connection` type, serial as first

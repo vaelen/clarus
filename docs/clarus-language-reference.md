@@ -173,7 +173,7 @@ Clarus is statically typed. All types are known at compile time; values are eith
 
 Resource variables (`connection`, `listener`, `serviceBrowser`, `filehandle`) are fixed-size 4-byte references, like window references: assignable, storable in records and arrays (`connection[8]` is 8 references, 32 bytes), and `nil` until bound.
 
-`FileInfo` is a predeclared record (Chapter 12: Files) returned by `file.info` -- an ordinary value, like any user record: assignable, copyable, a legal field, array, or `list of`/`map of` element type. A program may not declare its own `FileInfo` (the ordinary duplicate-declaration error). Its seven fields, in declaration order: `size: int` (data fork length in bytes; 0 for a folder), `rsrcSize: int` (resource fork length in bytes; 0 for a folder or on a host), `type: string` (Finder type, `""` on a host or for a folder), `creator: string` (Finder creator, `""` on a host or for a folder), `created: int` and `modified: int` (Macintosh-epoch seconds, the same clock as `now()`), and `isDir: bool`.
+`FileInfo` is a predeclared record (Chapter 12: Files) returned by `file.info` — an ordinary value, like any user record: assignable, copyable, a legal field, array, or `list of`/`map of` element type. A program may not declare its own `FileInfo` (the ordinary duplicate-declaration error). Its seven fields, in declaration order: `size: int` (data fork length in bytes; 0 for a folder), `rsrcSize: int` (resource fork length in bytes; 0 for a folder or on a host), `type: string` (Finder type, `""` on a host or for a folder), `creator: string` (Finder creator, `""` on a host or for a folder), `created: int` and `modified: int` (Macintosh-epoch seconds, the same clock as `now()`), and `isDir: bool`.
 
 **Storage:** `bool` and `char` occupy exactly 1 byte inside every ordinary aggregate — records and arrays — on every target; `bool` occupies 1 byte inside an `extern record` too, but `char` is not a legal `extern record` field type at all (an extern record's 1-byte numeric field type is `byte` — see the Chapter 13 field palette). As a standalone local, parameter, or global, `bool`/`char` occupy a 2-byte slot (68000 even-address alignment). At `external func`/`trap` boundaries the Chapter 13 marshaling rules apply (a bool/char parameter or result travels in a 16-bit stack word).
 
@@ -1438,7 +1438,7 @@ on browser.failed(err: error) { }
 
 ### Files
 
-The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, `file.create`, and `file.info` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong -- except `file.exists`, whose `false` just means the path doesn't exist, never a failure. `open`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O; `info` returns a `FileInfo` record (Chapter 3), zeroed with `lastError` set on failure.
+The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, `file.create`, and `file.info` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong — except `file.exists`, whose `false` just means the path doesn't exist, never a failure. `open`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O; `info` returns a `FileInfo` record (Chapter 3), zeroed with `lastError` set on failure.
 
 | Function | Signature | Notes |
 |---|---|---|
@@ -1472,7 +1472,7 @@ Every field of the record — transitively, for a `list of` or `map of` payload 
 
 **Paths.** Every `path` is an HFS path exactly as `file.open` takes one: a bare name (the program's own folder), a partial path with a leading colon (`:FTN:In:x.pkt`), or a full path (`BBS HD:Files:x`). On a host build the same spellings work — `:` separates components, a leading `:` is dropped, and a full path's volume name becomes an ordinary leading directory component. `""` names the program's own folder wherever a folder is accepted, not just `list` — `exists` and `info` treat an empty `path` the same way. `file.list` returns leaf names; a caller re-joins them (`path + ":" + name`, or the bare name when `path` is `""`).
 
-**Host behaviour.** `setInfo`'s `type`/`creator` are accepted and ignored; `info` returns `rsrcSize = 0`, empty `type`/`creator`, `created` from the file's birth time where the host reports one (else its change time). Everything else behaves identically on both lanes.
+**Host behaviour.** `setInfo`'s `type`/`creator` are accepted and ignored; its `created` is likewise accepted and ignored (POSIX birth time is not settable) — only `modified` actually restamps the file. `info` returns `rsrcSize = 0`, empty `type`/`creator`, `created` from the file's birth time where the host reports one (else its change time). Everything else behaves identically on both lanes.
 
 #### `filehandle`
 

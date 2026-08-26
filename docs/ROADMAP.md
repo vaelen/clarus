@@ -38,9 +38,12 @@ check (Gestalt) with a graceful fallback when the feature is absent.
   or `clarusc/macgui.cla`; neither T1 nor T2 boots it.
 - A green native UI boot is not proof that handle discipline is sound:
   the stale-master-pointer-across-compaction bug class has passed on
-  heap-layout luck before (found six times so far — see HISTORY,
-  runtime-ir-bake T2 blocker and the fallback-trigger-narrowing final
-  fix wave). Re-derive master pointers after any allocating call.
+  heap-layout luck before (found seven times so far — see HISTORY,
+  runtime-ir-bake T2 blocker, the fallback-trigger-narrowing final fix
+  wave, and the filesystem-api phase's `rtUiTeWidestLine` find, caught
+  only by the heap-jiggle gate on a byte-identical binary whose
+  resource fork alone differed). Re-derive master pointers after any
+  allocating call.
 
 ## Where we are (2026-08-17)
 
@@ -111,6 +114,27 @@ Array-literal initializers (the language feature that would let the
 block) filed in `docs/TODO.md`. Full detail: `docs/HISTORY.md` (once
 archived) or `.superpowers/sdd/2026-08-25-transfer-crcs/`.
 
+**`filesystem-api` phase (branch `filesystem-api`, 2026-08-26, based on
+`main` at `8b8e8e2` — `transfer-crcs` is already merged to local `main`,
+NOT pushed) is COMPLETE — full T2 green, NOT YET merged (merge only on
+Andrew's request):** `file.makeDir/delete/list/exists/info/setInfo/
+rename/move` on both lanes, closing the remaining 68kBBS filesystem
+gaps (FTN packet directory management, catalog dates, HFS-shaped
+names). A new predeclared `FileInfo` record (via a
+`runtime/clarus/prelude.cla` splice ahead of the standalone user-code
+check) carries `file.info`'s seven fields; the host lane translates
+HFS `:`-paths to POSIX; the native lane drives
+`PBGetCatInfo`/`PBDirCreate`/`PBCatMove` (the `_HFSDispatch` family,
+selector in D0) plus `PBHDelete`/`PBHRename`/`PBHGetFInfo`/
+`PBHSetFInfo` behind one new native global, `rtFh68kState`. Hardware
+findings worth remembering: `PBHRename` needs a bare leaf name + the
+real parent DirID, every other HFS call accepts `ioDirID = 0` + a
+partial path; `""` names the program's own folder for every
+folder-taking call on both lanes. System 7 (Snow) verification is
+UNVERIFIED — deferred, see `STATUS.md` §0. Full detail:
+`docs/HISTORY.md` (once archived) or
+`.superpowers/sdd/2026-08-26-filesystem-api/`.
+
 ## Roadmap
 
 Focus (Andrew, 2026-08-15): make the tools more usable — expand the set
@@ -137,6 +161,11 @@ In order:
    ZMODEM CRCs on both lanes; array-literal initializers filed in TODO.
    Full T2 green on branch `transfer-crcs`; not yet merged (merge only
    on Andrew's request).
+   Extended again by `file.makeDir/delete/list/exists/info/setInfo/rename/move`
+   (filesystem-api phase, 2026-08-26) — directory/catalog management on
+   both lanes, closing 68kBBS's remaining filesystem gaps. Full T2 green
+   on branch `filesystem-api`; not yet merged (merge only on Andrew's
+   request).
 2. **Serial ports** — controlling the ports and sending/receiving data.
    DONE (`serial-connection` phase, 2026-08-16): the fenced `connection`
    type is real end to end, serial as its first transport, both lanes

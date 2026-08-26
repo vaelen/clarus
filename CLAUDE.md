@@ -105,13 +105,17 @@ Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
 Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
-- `testsuite/core/` (78 `CoreTest` cases: 77 real + `SelfCheck`, grown
+- `testsuite/core/` (79 `CoreTest` cases: 78 real + `SelfCheck`, grown
   from 74 real (correctness-cleanup phase tip) by the binary-files
   phase's `TextBinary`/`Crc16`/`IntToStr`/`FileHandleRW` cases — the
   first three hardware-prove `text`'s new LE/word/setter binary
   accessors, `crc16`, and `string(n)`'s `IntToStr` migration; the fourth
-  hardware-proves `filehandle` positioned I/O on both lanes) runs on
-  host and natively; `testsuite/toolbox/` (32 `ToolboxTest` cases: 31 real +
+  hardware-proves `filehandle` positioned I/O on both lanes — then to 79
+  real by the filesystem-api phase's `DirOps` case, which hardware-
+  proves the directory/catalog family (`makeDir`/`delete`/`list`/
+  `exists`/`info`/`setInfo`/`rename`/`move`) on both lanes; unchanged by
+  the transfer-crcs phase, whose new `crc16x`/`crc32` coverage landed
+  inside the existing `Crc16` case) runs on host and natively; `testsuite/toolbox/` (32 `ToolboxTest` cases: 31 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -170,8 +174,13 @@ enum + runner, not one boot per case.
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new
   UI code instead of hand-declaring traps; `internal/testsuite/
-  catalog_test.go` is its T1 check. See
-  `docs/clarus-toolbox-cookbook.md` for worked transcription examples.
+  catalog_test.go` is its T1 check. `files.cla` itself grew from
+  pack3-standardfile's deliberately-thin SetVol-only scope to a full HFS
+  catalog/directory family (`_HFSDispatch`'s `GetCatInfo`/`SetCatInfo`/
+  `DirCreate`/`CatMove`, plus `PBH{Delete,Rename,Get/SetFInfo,OpenRF}Sync`)
+  in the filesystem-api phase, 2026-08-26 — no longer just a Standard
+  File helper. See `docs/clarus-toolbox-cookbook.md` for worked
+  transcription examples.
   An `include "toolbox/..."` path that isn't found relative to the
   including file falls back to the compiler's own `toolbox/` directory
   (`<rtdir>/../../toolbox/<rest>`, since `<rtdir>` is `runtime/clarus/`)
@@ -222,7 +231,10 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   `runtime/clarus/*.cla` + `toolbox/*.cla` file, used verbatim as the
   baked `'CLFS'` resource's name) embeds the whole runtime/toolbox source
   catalog in the app's own resource fork, so it needs no
-  `runtime/clarus/` directory on the Mac disk; `--partition N` overrides
+  `runtime/clarus/` directory on the Mac disk (the glob picks up
+  `runtime/clarus/prelude.cla` — the `FileInfo` record predeclaration,
+  filesystem-api phase — automatically, same as any other runtime
+  module); `--partition N` overrides
   the SIZE(-1) resource's partition (ClarusC.APPL itself needs more than
   the ordinary 2MB default — see `docs/HISTORY.md`'s mac-resident-clarusc
   phase entry). `file.readResource(name, out)`/`file.writeRes(path,
@@ -239,8 +251,12 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   plus `crc16`/`crc16x`/`crc32` (the last two from the transfer-crcs
   phase, 2026-08-25; `crc32`'s table is built lazily on first call);
   `emit68k` also now sizes a function's string/record temp
-  pool per function instead of a fixed per-statement ceiling. See the
-  reference for the full method lists.
+  pool per function instead of a fixed per-statement ceiling. The
+  filesystem-api phase (2026-08-26) rounded out directory/catalog
+  management on top of this: `file.makeDir/delete/list/exists/info/
+  setInfo/rename/move`, both lanes, backed by a new predeclared
+  `FileInfo` record and the `toolbox/files.cla` HFS catalog family
+  above. See the reference for the full method lists.
 - Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
   `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.
 - UI test scenarios live in `testdata/ui`, with blessed goldens (trace +

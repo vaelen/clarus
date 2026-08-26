@@ -4432,6 +4432,197 @@ brief asked for it directly.
     its own `ponytail:` comment) — precedented by the test-suite-review
     phase's `for_loop_var_alias.leaks`, same mechanism.
 
+- **filesystem-api (branch `filesystem-api`, 2026-08-26, based on
+  `main` at `8b8e8e2` — `transfer-crcs` already merged to local `main`,
+  NOT pushed): DONE, T2 PASS.** Driven by the 68kBBS project's
+  `docs/language-gaps.md` §1/§2/§3/§5/§6/§7: FTN packet directory
+  management, catalog dates, and HFS-shaped names had no Clarus surface
+  before this phase. Spec:
+  `docs/superpowers/specs/2026-08-26-filesystem-api-design.md`; plan:
+  `docs/superpowers/plans/2026-08-26-filesystem-api.md`; full ledger:
+  `.superpowers/sdd/2026-08-26-filesystem-api/`. Seven tasks (Task 1 a
+  probe wave, no code commit), one feat commit + one fix-round commit
+  each thereafter, plus this close-out commit.
+  - **`file.makeDir/delete/list/exists/info/setInfo/rename/move`**
+    (Tasks 3-5, both lanes): `makeDir(path): bool` (one level, parent
+    must exist), `delete(path): bool` (file or empty folder),
+    `list(path, names: list of string): bool` (names-only, catalog
+    order, `""` = program's own folder), `exists(path): bool` (never
+    sets `lastError`), `info(path): FileInfo` (returns the record
+    directly, zeroed + `lastError` set on failure), `setInfo(path,
+    type, creator, created, modified): bool` (`0` date = leave
+    unchanged), `rename(path, newName): bool` (leaf name, not a path),
+    `move(path, dirPath): bool` (same volume only).
+  - **`FileInfo` prelude mechanism** (Task 1 probe, Task 3 build): a
+    new `runtime/clarus/prelude.cla` declares the predeclared 7-field
+    `FileInfo` record. `clarusc/drive.cla`'s `driveCompile` parses it
+    via `expand()` as the very FIRST file, before the user's own
+    `entries` loop, so `FileInfo` is visible to the STANDALONE
+    (user-code-only) check on every lane/mode, not only whole-program
+    builds. Two new globals, `drvPreludeHead`/`drvPreludeAsmIdx`, let
+    `driveManifestSplice` strip prelude's decl out of the ordinary
+    runtime-module chain it rebuilds for `combined2` and re-prepend it
+    once, unconditionally, as `combined2`'s true first thing (a missing
+    prelude splice would otherwise land `FileInfo` AFTER `fileh.cla`'s
+    own `rtFhInfo(path): FileInfo` signature, an undefined-type error
+    inside the runtime itself). A missing/undiscoverable `prelude.cla`
+    is never a hard `abort()` — Task 3 found two real T1 tests
+    (`internal/lowlevel`'s minimal-`--rtdir` and no-`runtime/clarus/`
+    cases) that need the compile to proceed past a miss with an
+    ordinary "undefined: FileInfo" diagnostic instead. `--rtbake`
+    needed one more fix: `prelude.cla` is independently re-resolved via
+    `findRtDir` on every compile (not anchored to a user entry file's
+    own directory), so its bake-time vs. use-time path strings can
+    legitimately differ with no real content drift (e.g. compiling from
+    a nested `build-run/…` subdirectory) — `bkComputeManifestPaths`
+    excludes `"prelude.cla"` from the drift-guard's own path set while
+    it stays in `bakeModuleList`/`bkManifestHashes` like every other
+    baked module, so a genuine on-disk edit still triggers the drift
+    fallback (verified empirically) but a mismatched compile depth
+    never does. Fix round 1 (opus review) guarded the checker's
+    `symbols[scopeLookup(...)]` lookup against a `-1` (undeclared) index
+    — an unguarded index was a runtime "list index out of range" crash
+    (exit 3) instead of a diagnostic for `file.info` called with no
+    discoverable prelude.
+  - **Checker**: `MethodSig.retNameIdx` + `sigEndNamed(nameIdx)`
+    resolve a method's return type BY NAME at check time
+    (`scopeLookup(topScope, …)`, walking up from the scope the call
+    site is checked in) — `file.info`'s `FileInfo` return is the first
+    consumer. A parallel `ParamSpec.recNameIdx`/`psRecNamed` mechanism
+    (for a future name-resolved PARAMETER, not return type) was drafted
+    per the plan but never became reachable — no `fileFuncs` entry
+    needed it — so Task 3's fix round deleted it outright (controller
+    ruling) rather than leave dead code: `sigEndNamed` is the checker's
+    only name-resolved-type mechanism this phase actually uses.
+  - **`toolbox/files.cla` HFS catalog/directory family** (Task 2,
+    commit `75d9c39`, fix round `9549634`): the `_HFSDispatch` trap
+    family (`PBGetCatInfoSync`/`PBSetCatInfoSync`/`PBDirCreateSync`/
+    `PBCatMoveSync`, all through trap `0xA260` with the selector in D0
+    via `moveq #N,D0`) declared as `reg(a0: paramBlock, d0: selector)
+    ret d0` — the register convention confirmed by the Files.a macro
+    bodies, not merely the C header's `TWOWORDINLINE` pragma; five
+    single-trap H-prefixed routines (`PBHDeleteSync 0xA209`/
+    `PBHRenameSync 0xA20B`/`PBHGetFInfoSync 0xA20C`/`PBHSetFInfoSync
+    0xA20D`/`PBHOpenRFSync 0xA20A`); records `HFileParam`/`CInfoPBRec`
+    (the `HFileInfo`/`DirInfo` union, 108 bytes)/`CMovePBRec`/
+    `HIOParamRename`; selector and OSErr constants including the
+    close-out's own addition, `dirNFErr = -120`. New cookbook §12
+    walks the selector-in-D0 register shape end to end.
+  - **Host lane** (Task 3/4): HFS `:`-path to POSIX `/`-path
+    translation lives in exactly one place, `rt_fh_posix_path`
+    (`runtime/host/rt.c`), called from `path_to_cstr` — the single hook
+    every path-taking C entry point in `rt.c`/`rt_fileh.inc` (old and
+    new) already shares, so the translation covers every new `file.*`
+    call automatically. `rt_file_name` was fixed to route through
+    `path_to_cstr` before splitting on the leaf's last `/`, since a
+    colon-spelled path never contained a `/` before translation. Eight
+    new `FhH*` externs plus `rt_fh_unix_time` (the inverse of the
+    existing `rt_fh_mac_time`).
+  - **Native lane** (Task 5, commit `2084ccc`, fix round `607c2fa`):
+    `fileh_68k.cla` drives `PBGetCatInfoSync`/`PBDirCreateSync`/
+    `PBCatMoveSync` (the `_HFSDispatch` trio) plus `PBHDeleteSync`/
+    `PBHRenameSync`/`PBHGetFInfoSync`/`PBHSetFInfoSync`, using
+    function-local `extern record` variables per call (there is no
+    `Name(ptr)`-style overlay/conversion form for `extern record` —
+    confirmed against the language reference by Task 1's probe) rather
+    than a single persisted PB record. ONE new native global,
+    `rtFh68kState` — a lazily `SerNewPtr`'d 44-byte heap block holding
+    the seven stat scalars, the stat hit's own DirID, and the listing
+    cursor (dirID/index) plus its persistent 256-byte name buffer.
+    This reblessed the cg68k/emitui golden corpus once: a uniform A5
+    shift (every global's offset -4, e.g. globals `1588→1592`), one new
+    `cg_init_globals` zero-init store pair per program, and segment
+    repacking in files already close to the 32 KB boundary — one
+    fixture, `peep_pushpop.s`, crossed into a genuinely new second
+    segment (`peep_pushpop.seg2.s`). `internal/emitui` did not churn at
+    all (no C-lane surface touches this global). Golden analysis
+    confirmed every diff line is either that new global's own listing
+    entry or a mechanically-derived A5-relative offset/label-number
+    shift — no unusual instruction outside the one new segment file.
+  - **Task 1's hardware findings** (probe wave, Mini vMac/System 6
+    only — see below): `PBHRenameSync` rejects the ordinary `ioDirID=0`
+    + partial-path convention every other HFS call in this phase
+    accepts (`bdNamErr`/`dirNFErr`); it needs a BARE LEAF NAME plus the
+    item's REAL parent DirID, resolved via one extra `PBGetCatInfoSync`
+    call first — `rtFhDevRename` does exactly that. Both a nested
+    partial path (`:ProbeA:B:x.dat`) and a full volume-qualified path
+    (`vol + ":ProbeA:B:x.dat"`, `vol` from `PBGetVolSync`) opened
+    successfully natively with no code changes — verified only against
+    the probe's own boot volume (`"SysAndApp"`), never a second mounted
+    volume. `ioDirID = 0` genuinely enumerates the DEFAULT folder
+    during catalog enumeration, the exact convention `rtFhDevListBegin`
+    relies on. Fix round 1 (opus review) generalized `""` beyond just
+    `list`: it now names the program's own folder for `exists`/`info`
+    too, on BOTH lanes (native already synthesized this; the host
+    lane's `rt_ext_FhHStat` substitutes `"."` for an empty translated
+    path, the same substitution `FhHListBegin` already made).
+  - **Host date glue** (Task 6, commit `856d1d1`): host C twins
+    (`rt_ext_host.inc`) for the PUBLIC `toolbox/osutils.cla` externs
+    `ReadDateTime`/`SecondsToDate`/`DateToSeconds`, so a host build
+    calling them links — previously Mac-lane-only. Caught and corrected
+    against the brief's assumption: `rt_ext_ReadDateTime` returns
+    `short`, not `int32_t` (`ReadDateTime` is declared `: word` in
+    `toolbox/osutils.cla`, and cprint renders a `word` return as C
+    `short`).
+  - **Core suite**: `testsuite/core/cases_dirops.cla`'s `DirOps` case
+    (new), growing `testsuite/core`'s real-case count from 78 to 79
+    (`nCoreCases` including `SelfCheck`); wired into every count site
+    (`runner.cla`, `internal/testsuite/core_cli_test.go`,
+    `internal/cg68k/segment_test.go`, `internal/mactest/
+    coresuite_test.go`/`suite_host_test.go`); PASSes on both the host
+    CLI and the native `TestCoreSuiteGUIOn68k` boot.
+  - **Deferred, recorded for merge**: System 7 (Snow) verification is
+    UNVERIFIED for this entire phase — a live 68kbbs session owned the
+    one Snow instance throughout (probe wave, native lane, and
+    `TestClarusCBakePathOnSnow`, owed after any runtime-module
+    addition); see `STATUS.md` §0. Several code minors (`rt_fh_mac_time`
+    duplicating `rt_dt_now_mac`, `rtFhDevRename`'s native lane
+    re-deriving a parent DirID instead of caching it, an unchecked
+    `SerNewPtr` in `rtFh68kEnsureState`, and others) and test gaps
+    (folder rename, `file.list("")`, the `--rtbake`/`file.info`
+    combination, `rtFhDevListFailed`'s true branch natively) are filed
+    in `docs/TODO.md`, not fixed this phase.
+  - **Latent bug found (T2's native gate, fix commit `4bc0a07`)**:
+    `TestToolboxSuiteJiggleOn68k` bombed natively ("illegal instruction")
+    while the plain `TestToolboxSuiteOn68k` stayed green throughout —
+    exactly the signal the correctness-cleanup phase's heap-jiggle gate
+    exists to catch. Root cause was PRE-EXISTING and unrelated to any
+    filesystem-api code: `runtime/clarus/uitext.cla`'s
+    `rtUiTeWidestLine` captured a `TEHandle` master pointer, then called
+    `rtUiGetPortSaved()` — which allocates (`UiNewPtr(4)`), the exact
+    waist `rtUiJiggleTick` forces a full `CompactMem` at — and kept
+    reading `inPort`/`txFont`/`txSize`/`txFace`/`hText` through the now-
+    stale pointer, eventually handing QuickDraw's `TextWidth` a garbage
+    `GrafPtr` whose bogus `grafProcs` it JSRs through (vector 4). No
+    filesystem-api commit caused this: two builds of the toolbox suite
+    with byte-identical CODE segments (differing only in the `--bake`
+    resource's name string) landed on opposite sides of the crash: it
+    is a heap-layout coin flip that Task 5's ~400 spliced lines of
+    `fileh_68k.cla` plus its one new A5 global merely re-rolled — no
+    new filesystem code is even reachable from the toolbox suite. Fixed
+    by hoisting the allocating call above the master-pointer capture
+    (the function's own loop body already re-derived `teMp` each
+    iteration for the identical reason; the hazard at the top of the
+    function was missed) plus a warning comment on `rtUiGetPortSaved`
+    itself; an audit of all 17 other call sites found none else at
+    risk. This is the standing rule's bug class (ROADMAP: "re-derive
+    master pointers after any allocating call"), found a seventh time.
+    Goldens reblessed, provably nothing but one statement moving (14
+    `testdata/emitui/*.c.golden` files, 3 `testdata/cg68k/*.seg2.s`
+    files). Full trail:
+    `.superpowers/sdd/2026-08-26-filesystem-api/crash-report.md`.
+  - **Close-out (Task 7)**: bootstrap snapshot regenerated
+    (`TestSnapshotFixedPoint` PASS), `toolbox/files.cla`'s
+    `CMovePBRec.ioNewName` comment corrected (destination FOLDER path,
+    not a new leaf name) and a `dirNFErr` const added (replacing a bare
+    `-120` in `fileh_68k.cla`), the reference's Host-behaviour paragraph
+    extended (`setInfo`'s `created` is ignored on a host too — POSIX
+    birth time is not settable), `docs/TODO.md`/`docs/ROADMAP.md`/
+    `CLAUDE.md`/`STATUS.md` closed out. The 68kBBS project's own
+    `docs/language-gaps.md` update was written but deliberately left
+    UNCOMMITTED in that separate repo, for Andrew (same precedent as
+    the transfer-crcs phase's own cross-repo note).
+
 ## Resolved "Small open items" (moved verbatim from ROADMAP, 2026-08-15)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

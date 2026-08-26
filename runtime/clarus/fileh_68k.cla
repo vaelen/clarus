@@ -608,7 +608,7 @@ func rtFhDevListBegin(path: string): bool {
         return false
     }
     if not rtFhDevStatIsDir() {
-        rtFh68kLastErr = -120
+        rtFh68kLastErr = dirNFErr
         return false
     }
     pokel(rtFh68kState + 32, peekl(rtFh68kState + 28))
