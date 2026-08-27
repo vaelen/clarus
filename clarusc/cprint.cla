@@ -1622,7 +1622,12 @@ func fpExternIdxByName(nameIdx: int): int {
 // where the declared param is plain `ptr`); the remaining arguments
 // marshal exactly like the ordinary loop below (KStr via fpStrAddr, no
 // synth (void*) wrap -- a conv-10 extern is never a UI reverse-waist
-// synth).
+// synth). The cast signature is CLAR_PASCAL (final-review fix wave):
+// the real-world callees a conv-10 extern points at are pascal-
+// convention Toolbox/glue routines, so a plain C-convention cast would
+// silently corrupt the stack on the Mac/Retro68 lane -- cpEmitCallback
+// GlueProtos guarantees the macro is defined whenever this arm can fire,
+// even on a callback-free program (see its own doc comment).
 func fpCallExt(e: int): text {
     var args: text
     var a: int
@@ -1681,7 +1686,7 @@ func fpCallExt(e: int): text {
             castParams = "void"
         }
 
-        call = "((" + cpCbRetWireType(irExternRet(xi)) + " (*)(" + castParams + "))(" + targetText + "))(" + args + ")"
+        call = "((CLAR_PASCAL " + cpCbRetWireType(irExternRet(xi)) + " (*)(" + castParams + "))(" + targetText + "))(" + args + ")"
     } else {
 
         // ui.cla's reverse-waist externs (Task 7+) resolve to lower.cla's
@@ -6140,6 +6145,28 @@ func cpCbGlueWrapper(fIdx: int): text {
     return body
 }
 
+// cpAnyPtrCallExtern (final-review fix wave) answers whether the program
+// declares any conv-10 (`= ptr`) extern -- fpCallExt's cast for such a
+// call is CLAR_PASCAL (see fpCallExt's own doc comment), so
+// cpEmitCallbackGlueProtos must emit the macro define even when the
+// program has zero `callback func`s (irCbGlueNeededCount() == 0), e.g. a
+// plain `ptr` variable passed as the call target with no callback decay
+// in sight. Unconditionally true/false at declaration time (not gated on
+// shake-reachability like the callback-glue loop below) -- an unused
+// #define is harmless, and this keeps the check a simple one-pass scan.
+func cpAnyPtrCallExtern(): bool {
+    var i: int
+
+    i = 0
+    while i < irExternCount() {
+        if irExternConv(i) == 10 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
 // cpEmitCallbackGlueProtos emits the CLAR_PASCAL macro (`pascal` on the
 // Mac/Retro68 m68k lane -- see cpCbGlueWrapper's own doc comment -- empty
 // on host) plus one FORWARD-DECLARED prototype per callback in
@@ -6148,23 +6175,27 @@ func cpCbGlueWrapper(fIdx: int): text {
 // shake-reachable -- a decay embedded in otherwise-dead code should get
 // neither the glue nor the body, matching shake.cla's own ECbAddr arm
 // (which is what makes the callback's body reachable at all whenever a
-// live decay exists). A program with no callbacks at all (irCbGlueNames
-// empty) emits nothing here, at all -- a callback-free program's
-// generated C is byte-for-byte unchanged from before this task. Runs
-// BEFORE cpEmitFuncs (emitProgram's own call order): a decay can appear
-// in ANY function's body, including one cpEmitFuncs itself is about to
-// print, so the prototype must already be visible before ANY body
-// prints, not merely before the WRAPPER's own definition (see the task-7
-// report for the `clar_cb_double_it` used-before-declared bug this fixes
-// -- placing the whole glue block after cpEmitFuncs, prototype and body
-// together, compiled clean on a callback-only program but failed the
-// moment a decay call site's own enclosing function printed first).
+// live decay exists). A program with no callbacks AND no conv-10 (`=
+// ptr`) extern (irCbGlueNeededCount() == 0 and cpAnyPtrCallExtern() ==
+// false) emits nothing here, at all -- unchanged from before this task.
+// A program with a conv-10 extern but zero `callback func`s still needs
+// the macro (final-review fix wave: fpCallExt's cast is CLAR_PASCAL) --
+// cpAnyPtrCallExtern's scan catches that case even with the proto loop
+// below never firing. Runs BEFORE cpEmitFuncs (emitProgram's own call
+// order): a decay can appear in ANY function's body, including one
+// cpEmitFuncs itself is about to print, so the prototype must already
+// be visible before ANY body prints, not merely before the WRAPPER's
+// own definition (see the task-7 report for the `clar_cb_double_it`
+// used-before-declared bug this fixes -- placing the whole glue block
+// after cpEmitFuncs, prototype and body together, compiled clean on a
+// callback-only program but failed the moment a decay call site's own
+// enclosing function printed first).
 func cpEmitCallbackGlueProtos() {
     var i: int
     var nameIdx: int
     var fIdx: int
 
-    if irCbGlueNeededCount() == 0 {
+    if irCbGlueNeededCount() == 0 and not cpAnyPtrCallExtern() {
         return
     }
     cpRestBuf.add(toText(""))

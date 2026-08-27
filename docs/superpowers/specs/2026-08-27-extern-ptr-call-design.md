@@ -78,17 +78,23 @@ function-pointer type derived from the declared signature and calls
 through it:
 
 ```c
-((int32_t (*)(int16_t, void *))e_target)(a_verb, a_param)
+((CLAR_PASCAL int32_t (*)(int16_t, void *))e_target)(a_verb, a_param)
 ```
 
 The cast's parameter and return types are the callback glue wire types
 (`cpCbWireType`/`cpCbRetWireType`, cprint.cla) for the scalar kinds,
 and the address types extern marshalling already uses for `str`/`text`.
-Pinning scalars to the callback wire types is what makes a decayed
-callback (`clar_cb_<name>`) a strictly conforming target on host — the
-cast signature matches the glue's actual C signature, so the
-callback_host.cla/CbInvoke pattern generalizes per-signature with no
-undefined behavior. (`CbInvoke` itself stays: it is a fixed-signature
+The cast is also CLAR_PASCAL (`pascal` on the Mac/Retro68 m68k lane,
+empty on host — final-review fix wave) since the real-world callees a
+conv-10 extern points at are pascal-convention: a plain C-convention
+cast would silently corrupt the stack on that lane. Pinning scalars to
+the callback wire types is what makes a decayed callback
+(`clar_cb_<name>`) a matching target on host — the cast signature
+matches the glue's actual C signature, so the callback_host.cla/
+CbInvoke pattern generalizes per-signature, well-defined on every
+platform this compiler targets (the target arrives via a void*/
+function-pointer round trip, which is POSIX-guaranteed, not strictly
+conforming ISO C). (`CbInvoke` itself stays: it is a fixed-signature
 runtime seam; this feature emits the cast per declaration.)
 
 ## Testing

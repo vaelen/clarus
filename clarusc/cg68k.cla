@@ -10274,20 +10274,23 @@ func cgCallExtRegMemErr(e: int, xi: int) {
     a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
 }
 
-// cgCallExtPascal implements the locked PASCAL rule: reserve a result
-// slot first when the extern returns a value (CLR.L for int/ptr, CLR.W
-// for bool/char/word -- Toolbox convention: a byte- or word-sized Pascal
-// parameter or result still occupies a full stack WORD), push args
-// left-to-right (str/text by ADDRESS via cgExprAddr, matching fpCallExt's
-// own C-seam marshaling of a KStr argument through fpStrAddr; int/ptr as
-// .L, word as .W; bool/char ALSO as .W but see below), the trap word,
-// then pop the result.
+// cgPushPascalArgs pushes pascal-convention args starting at arg node
+// `a0` with param index `j0` (extern-ptr-call phase: factored out of
+// cgCallExtPascal so cgCallExtPtr can push args 1.. against params 1..,
+// its arg 0 being the jump target, never pushed). Byte-identical
+// emission for conv 1/9 callers (j0 = 0, a = args head). Returns the
+// total bytes pushed (2 per bool/char/word slot, 4 otherwise), which
+// cgCallExtPtr needs to address the saved target below the args.
+// Marshals left-to-right: str/text by ADDRESS via cgExprAddr, matching
+// fpCallExt's own C-seam marshaling of a KStr argument through
+// fpStrAddr; int/ptr as .L, word as .W; bool/char ALSO as .W but see
+// below.
 //
-// REVISED (Task 12 continuation, native-5e): the earlier claim right
-// above -- that a Bool/Char value lands in the padded word's LOW byte,
-// "no shift needed" -- was WRONG and has been empirically REFUTED. The
-// real ROM trap dispatcher reads a Bool/Char pascal parameter back as a
-// single byte at the padded word's OWN (lowest) address, which in 68k
+// REVISED (Task 12 continuation, native-5e): the earlier claim that a
+// Bool/Char value lands in the padded word's LOW byte, "no shift
+// needed" -- was WRONG and has been empirically REFUTED. The real ROM
+// trap dispatcher reads a Bool/Char pascal parameter back as a single
+// byte at the padded word's OWN (lowest) address, which in 68k
 // big-endian layout is that word's HIGH-order byte. Root-caused via A/B
 // `log()` instrumentation (WindowRecord.goAwayFlag, offset verified
 // against Retro68's own MacWindows.h) comparing this native lane against
@@ -10302,23 +10305,6 @@ func cgCallExtRegMemErr(e: int, xi: int) {
 // `.W`. See this session's task-12-report.md continuation-session section
 // for the full A/B trace.
 //
-// The bool-RETURN pop below (the `retIsShortSlot`-but-not-`retIsSigned` arm)
-// FIXED in Task 14 (native-5e): confirmed the mirror-image of the
-// argument-side bug -- winvar.cla's snap showed a window frame with NO
-// controls/text ever painted despite a fully correct trace, root-caused
-// to UiGetNextEvent's Boolean result being read from the popped word's
-// LOW byte (via `AND.L #255`) while the ROM places it in the HIGH byte,
-// so rtUiPumpPassive's event-drain loop never believed a pending updateEvt
-// existed. Now LSR.L #8 instead of AND.L #255 (see the arm's own doc
-// comment for the exact byte math).
-//
-// The trap dispatcher's OWN glue pops the pushed ARGS itself as part of
-// executing a Pascal-convention trap (Apple's Trap Manager docs: "the
-// calling routine's parameters are also popped off the stack" by the
-// callee) -- this code never emits a post-trap ADDA/ADDQ for the arg
-// bytes, only the final MOVE(.W/.L) (A7)+,D0 that retrieves the result
-// slot the trap dispatcher left behind.
-//
 // `word` (Task 4, native-5e, Ch13) is the one shape here that depends on
 // the EXTERN'S OWN DECLARED type, not the argument/result's own checked
 // type: the checker resolves a word param/return to plain int (check.cla's
@@ -10328,17 +10314,7 @@ func cgCallExtRegMemErr(e: int, xi: int) {
 // AST) still knows a given slot was written `word`. That is why the arg
 // loop below tracks its own param index j and branches on
 // irExternParam(xi, j) instead of irExprType(a): the marshaling choice is
-// the CALLEE's, not the caller expression's own type. A word RESULT is
-// SIGN-extended (EXT.L, not the bool/char AND-mask zero-extend) --
-// Toolbox INTEGER is a signed 16-bit quantity (e.g. LAddRow's row
-// number), unlike a byte-sized Pascal boolean/char result.
-// cgPushPascalArgs pushes pascal-convention args starting at arg node
-// `a` with param index `j0` (extern-ptr-call phase: factored out of
-// cgCallExtPascal so cgCallExtPtr can push args 1.. against params 1..,
-// its arg 0 being the jump target, never pushed). Byte-identical
-// emission for conv 1/9 callers (j0 = 0, a = args head). Returns the
-// total bytes pushed (2 per bool/char/word slot, 4 otherwise), which
-// cgCallExtPtr needs to address the saved target below the args.
+// the CALLEE's, not the caller expression's own type.
 func cgPushPascalArgs(a0: int, xi: int, j0: int): int {
     var a: int
     var t: int
@@ -10388,6 +10364,37 @@ func cgPushPascalArgs(a0: int, xi: int, j0: int): int {
     return bytes
 }
 
+// cgCallExtPascal implements the locked PASCAL rule: reserve a result
+// slot first when the extern returns a value (CLR.L for int/ptr, CLR.W
+// for bool/char/word -- Toolbox convention: a byte- or word-sized Pascal
+// parameter or result still occupies a full stack WORD), push args via
+// cgPushPascalArgs (see its own doc comment for the arg-marshaling
+// rules), emit the trap word, then pop the result.
+//
+// The bool-RETURN pop below (the `retIsShortSlot`-but-not-`retIsSigned`
+// arm) FIXED in Task 14 (native-5e): confirmed the mirror-image of the
+// argument-side bug -- winvar.cla's snap showed a window frame with NO
+// controls/text ever painted despite a fully correct trace, root-caused
+// to UiGetNextEvent's Boolean result being read from the popped word's
+// LOW byte (via `AND.L #255`) while the ROM places it in the HIGH byte,
+// so rtUiPumpPassive's event-drain loop never believed a pending
+// updateEvt existed. Now LSR.L #8 instead of AND.L #255 (see the arm's
+// own doc comment for the exact byte math). A word RESULT is
+// SIGN-extended (EXT.L, not the bool/char AND-mask zero-extend) --
+// Toolbox INTEGER is a signed 16-bit quantity (e.g. LAddRow's row
+// number), unlike a byte-sized Pascal boolean/char result.
+//
+// The trap dispatcher's OWN glue pops the pushed ARGS itself as part of
+// executing a Pascal-convention trap (Apple's Trap Manager docs: "the
+// calling routine's parameters are also popped off the stack" by the
+// callee) -- this code never emits a post-trap ADDA/ADDQ for the arg
+// bytes, only the final MOVE(.W/.L) (A7)+,D0 that retrieves the result
+// slot the trap dispatcher left behind. Exception: cgCallExtPtr (conv
+// 10) DOES emit a post-call ADDQ.L #4,A7 -- unlike a trap dispatcher's
+// own glue (which pops its own declared args as part of returning), a
+// JSR through a saved call target pops nothing on its own, so
+// cgCallExtPtr must explicitly discard its own saved target word after
+// the call returns.
 func cgCallExtPascal(e: int, xi: int) {
     var retTy: int
     // Task 4/15 (native-5e) naming: retIsShortSlot means "this result

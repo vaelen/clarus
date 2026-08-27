@@ -4,9 +4,12 @@
 // ptrcall_host.cla: `= ptr` extern (conv 10) host-lane proof
 // (extern-ptr-call phase). The target is a `callback func`'s decayed
 // glue address -- fpCallExt's cast uses the same cpCbWireType wire
-// types the glue itself is declared with, so this call is a strictly
-// conforming C function-pointer call, the per-signature generalization
-// of callback_host.cla's fixed-shape CbInvoke seam.
+// types the glue itself is declared with, so the cast signature matches
+// the glue's actual C signature, and the call is well-defined on every
+// platform this compiler targets (the target arrives via a void*/
+// function-pointer round trip, which is POSIX-guaranteed, not strictly
+// conforming ISO C) -- the per-signature generalization of
+// callback_host.cla's fixed-shape CbInvoke seam.
 external func NewPtr(size: int): ptr = trap 0xA11E reg
 external func DisposePtr(p: ptr) = trap 0xA01F reg
 external func PtrCallMixed(entry: ptr, w: word, flag: bool, out: ptr, n: int): int = ptr

@@ -132,6 +132,12 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   `memerr`/`ret` at the grammar level; a register-convention call
   through a runtime pointer was named out of scope (design spec's
   out-of-scope section), unscheduled.
+- **Converge the three byte-identical extern-index scans** —
+  `irExternLookup` (ir.cla:1036), `cgExternIdxByName` (cg68k.cla), and
+  `fpExternIdxByName` (cprint.cla) each do the same linear scan over the
+  extern registry by name; collapse the latter two onto `irExternLookup`.
+  Pure deletion, no behavior change; deferred because it forces a
+  snapshot regen + full T2 for zero user-visible effect.
 
 ## Compiler correctness / diagnostics
 

@@ -22,10 +22,19 @@
 // accommodation and picking up the host lane's existing
 // rt_ext_NewPtr/rt_ext_DisposePtr glue (runtime/host/rt_ext_host.inc)
 // for free.
+// PtrCallVoid/pcStamp (final-review fix wave) add a THIRD `= ptr` extern
+// whose RESULT is void, not word/bool -- checkExternFunc's zero-return
+// arm (cgCallExtPtr's own `irtKind(retTy) != KVoid` guards, both the
+// result-slot reservation and the readback) is otherwise unexercised by
+// PtrCallRound/PtrCallFlag alone. A void-return `callback func` is the
+// common case (an ordinary Toolbox action/filter procedure never hands
+// anything back) -- see the reference's own `myAction` example under
+// `callback func`.
 external func NewPtr(size: int): ptr = trap 0xA11E reg
 external func DisposePtr(p: ptr) = trap 0xA01F reg
 external func PtrCallRound(entry: ptr, w: word, flag: bool, out: ptr, n: int): word = ptr
 external func PtrCallFlag(entry: ptr, x: int): bool = ptr
+external func PtrCallVoid(entry: ptr, out: ptr) = ptr
 
 callback func pcMixed(w: word, flag: bool, out: ptr, n: int): word {
     pokel(out, n + w)
@@ -39,6 +48,10 @@ callback func pcIsPositive(x: int): bool {
     return x > 0
 }
 
+callback func pcStamp(out: ptr) {
+    pokel(out, 4242)
+}
+
 func casePtrCall(): TestResult {
     var scratch: ptr
     var r: int
@@ -48,25 +61,36 @@ func casePtrCall(): TestResult {
 
     r = PtrCallRound(pcMixed, 7, true, scratch, 21)
     if r != -93 {
+        DisposePtr(scratch)
         return tkFail("PtrCall", "flag=true result = " + tkIntToStr(r))
     }
     if peekl(scratch) != 28 {
+        DisposePtr(scratch)
         return tkFail("PtrCall", "peekl(scratch) = " + tkIntToStr(peekl(scratch)))
     }
 
     r = PtrCallRound(pcMixed, 7, false, scratch, 21)
     if r != 7 {
+        DisposePtr(scratch)
         return tkFail("PtrCall", "flag=false result = " + tkIntToStr(r))
     }
 
     b = PtrCallFlag(pcIsPositive, 5)
     if not b {
+        DisposePtr(scratch)
         return tkFail("PtrCall", "PtrCallFlag(pcIsPositive, 5) = false")
     }
 
     b = PtrCallFlag(pcIsPositive, -5)
     if b {
+        DisposePtr(scratch)
         return tkFail("PtrCall", "PtrCallFlag(pcIsPositive, -5) = true")
+    }
+
+    PtrCallVoid(pcStamp, scratch)
+    if peekl(scratch) != 4242 {
+        DisposePtr(scratch)
+        return tkFail("PtrCall", "PtrCallVoid peekl(scratch) = " + tkIntToStr(peekl(scratch)))
     }
 
     DisposePtr(scratch)

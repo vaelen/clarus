@@ -49,3 +49,17 @@ Task 4: complete (commits 0ae201d..8fa24f7, review clean). Native boot green: PA
 Task 5: minor (deferred): closing example uses undeclared `pb` with no comment (reference :1873-1882, cookbook :130-138; inherited from the spec's own example) — add a one-line comment like `h`'s.
 Task 5: complete (commits 8fa24f7..929bd15, review clean)
 Ruling: Task 6 (gates + close-out) runs before the final whole-branch review per plan order; if the final fix wave later touches clarusc/*.cla, that fix dispatch must regen the snapshot and re-run the affected gates. Costs if wrong: one redundant snapshot regen.
+
+Task 6 note: internal/reftest's CheckClean fence gate caught the Task 5
+deferred minor (bare statements + undeclared pb in the closing example) —
+fixed in-task (function-wrapped, mirrored to cookbook, manifest indices
+shifted). Task 5 minor: RESOLVED.
+
+Task 6: complete (commits 929bd15..24faf57, review clean). Gates: snapshot fixed-point PASS, T1 PASS, T2 PASS 345s. Reftest fence fix folded in (root-cause, disclosed).
+
+Final review (opus): READY WITH FIXES.
+- Important 1: host cast lacks CLAR_PASCAL — Retro68/cprint Mac lane gets C-convention call through pascal pointer (silent stack corruption; OnMac opt-in gate would go red). FIX PRE-MERGE. Wrinkle: CLAR_PASCAL #define lives under cpEmitCallbackGlueProtos' glue-count guard — must be hoisted for callback-free = ptr programs.
+- Important 2 (= deferred minor 3): fused/misattributed cg68k doc block; FIX PRE-MERGE with minor 5 (a/a0 word).
+- Minor: void-return/zero-param native arm unproven (add PtrCallVoid check); "strictly conforming" overclaim in fixture+spec; scratch leak on tkFail paths; manifest.go header sentence deletion.
+- Triage: check.cla wording stays deferred; fpExternIdxByName triplication → TODO.md line (no code change); readback duplication stays deferred.
+Ruling: fix wave = Important 1+2, minor 5(word), PtrCallVoid coverage, overclaim wording (fixture+spec), scratch-leak hygiene, TODO.md helper-dup line. Parked: check.cla "alongside" wording (comment nuance, truth already present in-line); manifest.go header sentence (its own "line numbers drift" note covers it). Costs if parked wrong: none functional.

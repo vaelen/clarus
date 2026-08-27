@@ -213,3 +213,175 @@ native globals, `fileh_68k.cla`/`prelude.cla` untouched).
   `testdata/emitui/*.c.golden` or `testdata/cg68k/*.s` changes), no new
   native globals (confirmed against Task 3/5's own reports and STATUS.md
   facts given).
+
+## Final-review fix wave
+
+Final whole-branch review returned READY WITH FIXES. All six fixes
+applied, one commit, all gates re-run green.
+
+### Fix 1 (load-bearing): host cast must be CLAR_PASCAL
+
+`fpCallExt`'s conv-10 call rendering (cprint.cla) now emits
+`((CLAR_PASCAL RET (*)(PARAMS))(target))(args)` instead of a plain
+C-convention cast. Wrinkle handled: `cpEmitCallbackGlueProtos`'s
+`#define CLAR_PASCAL` early-returned when `irCbGlueNeededCount() == 0`,
+which would leave the macro undefined for a callback-free `= ptr`
+program. Added `cpAnyPtrCallExtern()` (scans `irExternCount()`/
+`irExternConv` for conv 10) and changed the guard to
+`if irCbGlueNeededCount() == 0 and not cpAnyPtrCallExtern() { return }`
+— simpler than a second `#ifndef`-guarded emission site since the
+macro is a top-level `#define`, cheap to check for unconditionally, and
+harmless if unused.
+
+Proof (no-callback path): built `/tmp/boot` from the (still-unregenerated
+at that point) committed snapshot, emitted+compiled `clarusc/main.cla`
+against it to get `/tmp/cur` (current source, Fix 1+2 applied), then fed
+it a throwaway `/private/tmp/claude-501/.../scratchpad/ptrcall_nocb.cla`
+— a `= ptr` extern called through a plain `ptr` variable, ZERO
+`callback func` in the program. Emitted C, `cc -fsyntax-only -I
+runtime/host` clean. The emitted cast line:
+
+```c
+cv_r = ((CLAR_PASCAL int32_t (*)(void *))(cv_target))(cv_scratch);
+```
+
+with `#define CLAR_PASCAL pascal` / `#define CLAR_PASCAL` (host) both
+present in the output despite no callback anywhere in the program —
+confirms the macro-emission fix.
+
+### Fix 2: cg68k.cla doc-block split
+
+Split the fused doc block (cg68k.cla, was ~10277-10341 sitting entirely
+above `cgPushPascalArgs`, with `cgCallExtPascal` doc-less below it).
+`cgPushPascalArgs` now keeps: its own function-purpose paragraph (with
+"arg node `a`" corrected to "`a0`", the real parameter name), the
+bool/char high-byte-push REVISED paragraph, and the word-param
+declared-type paragraph. `cgCallExtPascal` gets its own new doc block:
+the top-level PASCAL-rule overview, the bool-RETURN pop paragraph plus
+the word-RESULT sign-extension sentence, and the "trap dispatcher pops
+its own args, no post-trap ADDA/ADDQ" paragraph — now with an explicit
+exception noting `cgCallExtPtr` (conv 10) DOES emit a post-call
+`ADDQ.L #4,A7` (verified against `cgCallExtPtr`'s own step 6,
+`a68Emit(OpAddq, 4, AmImm, 0, 4, AmAn, 7, 0)`) to discard its saved
+call target — unlike a trap dispatcher's own glue, a JSR through a
+saved target pops nothing on its own. Blank line preserved between the
+two blocks (comment-only change, no `.c` emission diff expected from
+this fix alone).
+
+### Fix 3: void-return / zero-remaining-param native arm
+
+Confirmed via `docs/clarus-language-reference.md`'s own `callback func`
+section (`myAction` example has no return type) that a void-return
+callback is legal — no BLOCKED needed. Added `external func
+PtrCallVoid(entry: ptr, out: ptr) = ptr` and `callback func
+pcStamp(out: ptr) { pokel(out, 4242) }` to
+`testsuite/core/cases_ptrcall.cla`; `casePtrCall` now also calls
+`PtrCallVoid(pcStamp, scratch)` and asserts `peekl(scratch) == 4242`
+with its own `tkFail` detail. Case count unchanged (80 total = 79 real
++ SelfCheck) — same case, more checks.
+
+### Fix 4: wording — dropped the "strictly conforming" overclaim
+
+`testdata/lowlevel/ptrcall_host.cla`'s header comment and the spec
+(`docs/superpowers/specs/2026-08-27-extern-ptr-call-design.md`, Host
+lane section) both reworded: "strictly conforming C function-pointer
+call" / "no undefined behavior" replaced with "the cast signature
+matches the glue's actual C signature" (the load-bearing property) plus
+"well-defined on every platform this compiler targets (the void*/
+function-pointer round trip is POSIX-guaranteed, not strictly
+conforming ISO C)". The spec's example cast line and surrounding prose
+also updated to show `CLAR_PASCAL` (Fix 1) and explain why.
+
+### Fix 5: scratch-leak hygiene
+
+`cases_ptrcall.cla`: every early `tkFail` return in `casePtrCall` now
+calls `DisposePtr(scratch)` before returning — previously every failure
+path skipped it (only the final `tkPass` path disposed). Uniform now
+across all 6 return paths.
+
+### Fix 6: TODO.md line
+
+Added one line to the extern-ptr-call deferred section: converge the
+three byte-identical extern-index scans (`irExternLookup` ir.cla:1036,
+`cgExternIdxByName` cg68k.cla, `fpExternIdxByName` cprint.cla) onto
+`irExternLookup`; pure deletion, deferred because it forces snapshot
+regen + T2 for zero behavior change.
+
+## Gate evidence (final tree, after all six fixes)
+
+1. **Snapshot regen** — `TestSnapshotFixedPoint` FAILed as expected
+   after Fix 1/2 changed `clarusc/*.cla` (committed snapshot 4938191
+   bytes != fresh emission 4938697 bytes, first divergence exactly at
+   the new `"((CLAR_PASCAL "` literal). Regenerated via the printed
+   Go-free recipe (`/tmp/boot` from old snapshot -> emit main.cla ->
+   `/tmp/cur` -> emit main.cla -> `clarusc/clarusc.c`). Re-run:
+   ```
+   ok  	clarus/internal/selfhost	12.902s
+   ```
+   PASS.
+
+2. **`scripts/test-task.sh --smoke`**:
+   ```
+   ok  	clarus/internal/mactest	24.702s
+   ...
+   ok  	clarus/internal/mactest	10.383s
+   test-task.sh: PASS in 36s (smoke=1)
+   ```
+   PASS.
+
+3. **`CLARUS_MAC_TESTS=1 go test -count=1 -run TestCoreSuiteGUIOn68k
+   ./internal/mactest`**:
+   ```
+   --- PASS: TestCoreSuiteGUIOn68k (3.95s)
+   PASS
+   ```
+   `checkCoreSuiteCapture` requires all `wantCoreSuiteCases` (80) PASS
+   lines + matching TOTAL line — confirmed via host-lane `core_cli all`
+   run first (`TOTAL 80 PASS 80 FAIL 0`, PtrCall included) before the
+   native boot. PASS, PtrCall green with the grown case.
+
+4. **Fix-1 proof lane**: `CLARUS_CPRINT_MAC_TESTS=1 CLARUS_MAC_TESTS=1
+   go test -count=1 -run TestCoreSuiteGUIOnMac -timeout 20m
+   ./internal/mactest` — **FAILED**, but proven NOT conv-10-related:
+   the Retro68/cmake build broke compiling `runtime/mac/rt_ext_mac.inc`
+   (a file this fix wave never touched — `git diff --stat -- runtime/
+   mac/rt_ext_mac.inc` is empty), root cause a pre-existing `*/` inside
+   a `/* ... */` block comment ("Matching the ConnH*/PB* forward-
+   proofing precedent...") that closes the comment early, from commit
+   `ae662a3` (binary-files phase, 2026-08-22 — five days before this
+   phase even started). Confirmed the actually-relevant emitted C
+   (`build-mac/coresuite_gui_mac/coresuite_gui_mac.c`, generated before
+   the separate `rt_mac.c` compile failed) is fully correct, CLAR_PASCAL
+   and all, including the new void-return case:
+   ```
+   1545:#define CLAR_PASCAL pascal
+   1547:#define CLAR_PASCAL
+   19435: cv_r = ((CLAR_PASCAL short (*)(short, uint8_t, void *, int32_t))(((void*)&clar_cb_pcMixed)))(7, 1, cv_scratch, 21);
+   19461: cv_b = ((CLAR_PASCAL uint8_t (*)(int32_t))(((void*)&clar_cb_pcIsPositive)))(5);
+   19471: ((CLAR_PASCAL void (*)(void *))(((void*)&clar_cb_pcStamp)))(cv_scratch);
+   19743:static CLAR_PASCAL void clar_cb_pcStamp(void * cv_out) { clar_fn_pcStamp(cv_out); }
+   ```
+   Per the brief's own contingency instruction, reporting
+   DONE_WITH_CONCERNS for this one gate rather than fixing the unrelated
+   pre-existing bug (out of this fix wave's scope) or claiming false
+   PASS.
+
+5. **`scripts/test-merge.sh`** (full T2, run AFTER Fix 1-6 were all in
+   place and the snapshot was regenerated):
+   ```
+   test-merge.sh: T1 body PASS in 18s
+   ok  	clarus/internal/selfhost	131.909s
+   test-merge.sh: internal/selfhost PASS in 132s
+   ok  	clarus/internal/mactest	188.971s
+   test-merge.sh: internal/mactest (gated, native lane; cprint-Mac lane opt-in via CLARUS_CPRINT_MAC_TESTS=1) PASS in 189s
+   ok  	clarus/internal/bake	6.701s
+   test-merge.sh: internal/bake full-corpus gate (CLARUS_BAKE_FULL=1) PASS in 7s
+   test-merge.sh: PASS in 346s
+   ```
+   PASS. (Note: T2 by design does NOT run the cprint-Mac lane — the
+   demoted diagnostic from gate 4 above stays outside T2's own scope,
+   consistent with CLAUDE.md's documented gate composition.)
+
+No goldens reblessed. No `testdata/emitui/*.c.golden` or
+`testdata/cg68k/*.s` diffs (unrelated to this fix wave's files, and
+`git status` confirms no such paths touched).
