@@ -1719,7 +1719,8 @@ func externFuncSel(i: int): int {
 // trap (named) memerr, 9=pascal trap with a D0-preload selector (`seld0`,
 // mac-resident-clarusc Task 12 -- the AppleEvent Manager's own
 // selector-dispatch shape, distinct from conv 1's `sel`'s stack-pushed
-// selector).
+// selector), 10=pascal call through a runtime pointer (`= ptr`,
+// extern-ptr-call phase -- first param is the jump target).
 func externFuncConv(i: int): int {
     return decls[i].intVal
 }

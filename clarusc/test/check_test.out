@@ -299,3 +299,18 @@ clean
 clean
 === param-windowref-field-assign-clean ===
 clean
+=== extern ptr clean + merge ===
+clean
+=== extern ptr no params ===
+check_test.cla:1:1: = ptr requires a first parameter of type ptr
+=== extern ptr first param not ptr ===
+check_test.cla:1:1: = ptr requires a first parameter of type ptr
+=== extern ptr redecl mismatch ===
+check_test.cla:1:1: conflicting extern declaration for 'Bad3' (also declared at 2:1)
+check_test.cla:2:1: conflicting extern declaration for 'Bad3' (also declared at 1:1)
+=== extern ptr rejects reg ===
+check_test.cla:1:43: expected declaration, found identifier
+=== extern ptr rejects sel ===
+check_test.cla:1:43: expected declaration, found identifier
+=== extern ptr rejects ret ===
+check_test.cla:1:43: expected declaration, found identifier

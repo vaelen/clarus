@@ -87,6 +87,7 @@ var cwReg: int
 var cwMemerr: int
 var cwRet: int
 var cwInline: int
+var cwPtr: int
 var cwDeref: int
 var cwNop: int
 var cwA5: int
@@ -123,6 +124,7 @@ func cwInit() {
     cwMemerr = intern("memerr")
     cwRet = intern("ret")
     cwInline = intern("inline")
+    cwPtr = intern("ptr")
     cwDeref = intern("deref")
     cwNop = intern("nop")
     cwA5 = intern("a5")
@@ -213,7 +215,7 @@ func parseSyncCur() {
 // curIsIdentText's poolGet + string compare (every contextual keyword:
 // mod, of, form, shows, width, fill, ticks, appletalk, serial, column,
 // key, app, pad, word, byte, str, trap, sel, seld0, reg, memerr, ret,
-// inline, deref, nop, a5, external, overlay, extern, callback).
+// inline, deref, nop, a5, ptr, external, overlay, extern, callback).
 func curIsIdentIdx(idx: int): bool {
     return curTokKind == TkIdent and curTokNameIdx == idx
 }
@@ -1673,7 +1675,7 @@ func parseRegBind(codes: list of int, names: list of int) {
 
 // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
 // [ ":" type ] [ "=" ( "trap" INTLIT [ "sel" INTLIT | "seld0" INTLIT | regClause ]
-// | "inline" ( "deref" | "nop" | "a5" ) ) ]` where
+// | "inline" ( "deref" | "nop" | "a5" ) | "ptr" ) ]` where
 // `regClause = "reg" [ "(" regBind { "," regBind } ")" ] [ "memerr" ]
 // [ "ret" REG ]` and `regBind = REG ":" IDENT` (Task 3, Ch13: `external
 // func`; trap/inline clause added Task 2, native-5d; `inline a5` added
@@ -1682,7 +1684,8 @@ func parseRegBind(codes: list of int, names: list of int) {
 // `ret REG` -- added Task 1, toolbox-integration Feature A; `trap ...
 // seld0` added mac-resident-clarusc Task 12, the AppleEvent Manager's own
 // D0-preload selector shape -- see the `seld0` arm's own doc comment,
-// above) -- parseFuncDecl
+// above; `ptr` added extern-ptr-call phase Task 1 -- a pascal call
+// through a runtime pointer, no suffixes of its own) -- parseFuncDecl
 // minus the body block, since an external declaration ends at the
 // signature; a following `{` is left for parseTopDecl to reject as an
 // ordinary top-level parse error (there is no external-func body to
@@ -1863,8 +1866,17 @@ func parseExternFuncDecl(): int {
             } else {
                 parseErrorf(curLine(), curCol(), "expected \"deref\", \"nop\", or \"a5\", found " + tokKindQuoted(curKind()))
             }
+        } else if curIsIdentIdx(cwPtr) {
+            // extern-ptr-call phase: `= ptr` -- pascal-convention call
+            // through a runtime pointer. The FIRST declared parameter
+            // (checkExternFunc enforces it exists and is `ptr`) is the
+            // jump target, consumed by the call, never pushed; every
+            // remaining param/return marshals exactly like conv 1's
+            // pascal trap. No suffixes: no trap word, no sel/reg/ret.
+            advance()
+            convFlag = 10
         } else {
-            parseErrorf(curLine(), curCol(), "expected \"trap\" or \"inline\", found " + tokKindQuoted(curKind()))
+            parseErrorf(curLine(), curCol(), "expected \"trap\", \"inline\", or \"ptr\", found " + tokKindQuoted(curKind()))
         }
     }
     // Pack selVal into trapVal's upper 16 bits (DeclNode's uniform shape

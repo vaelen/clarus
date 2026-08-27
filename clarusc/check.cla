@@ -2962,10 +2962,14 @@ func checkFuncSig(d: int) {
 // native-5e: a `void`-Pascal-signature Toolbox routine like SetHandleSize,
 // whose real result comes back via the MemErr low-memory global rather
 // than D0 -- cgCallExtRegMemErr's own doc comment, cg68k.cla) shares the
-// same reg-convention arg restrictions conv 2 does. Every trap/inline
-// check runs after, and independently of, the ordinary param/return type
-// checks above -- a param already flagged for its type is not re-flagged
-// here.
+// same reg-convention arg restrictions conv 2 does; `= ptr` (conv 10,
+// extern-ptr-call phase) requires at least one parameter with the FIRST
+// one type ptr (the call target, consumed by the call itself, never
+// pushed) -- every remaining param/return, and the trap-range check's
+// absence, follow the ordinary pascal-trap rules above unchanged. Every
+// trap/inline check runs after, and independently of, the ordinary
+// param/return type checks above -- a param already flagged for its type
+// is not re-flagged here.
 func checkExternFunc(d: int) {
     var sigIdx: int
     var p: int
@@ -3058,6 +3062,20 @@ func checkExternFunc(d: int) {
     }
     if conv == 5 and (i != 0 or ret == -1 or typeKind(ret) != TyPtr) {
         emitDiag(declLine(d), declCol(d), "inline a5 requires signature (): ptr")
+    }
+    // extern-ptr-call phase: `= ptr` (conv 10) requires at least one
+    // parameter, and the FIRST declared parameter must be type ptr --
+    // that's the call target, consumed by the call itself, never pushed.
+    // `i` is the param count from the walk above, so `i == 0` catches the
+    // no-params case before funcSigParam(sigIdx, 0) is read at all (the
+    // short-circuit `or` order matters -- reading param 0 of a
+    // zero-param signature is unsafe). No trap-range check applies (conv
+    // 10 is deliberately absent from the trap-range conv list above) and
+    // every other rule -- param/return palette, reg-clause exclusivity
+    // (grammar-level: `ptr` accepts no suffixes) -- is already enforced
+    // by the checks this rule sits alongside.
+    if conv == 10 and (i == 0 or typeKind(funcSigParam(sigIdx, 0)) != TyPtr) {
+        emitDiag(declLine(d), declCol(d), "= ptr requires a first parameter of type ptr")
     }
 
     // Task 1 (toolbox-integration Feature A): a named reg(...) clause's
