@@ -1777,7 +1777,8 @@ An `external func` declaration may end with a clause tying it to a specific Tool
 ```
 externDecl = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
              [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | "seld0" ( INT | HEXINT ) | regClause ]
-                   | "inline" ( "deref" | "nop" | "a5" ) ) ] ;
+                   | "inline" ( "deref" | "nop" | "a5" )
+                   | "ptr" ) ] ;
 regClause = "reg" [ "(" regBind { "," regBind } ")" ] [ "memerr" ] [ "ret" REG ] ;
 regBind   = REG ":" IDENT ;   // REG in { d0, d1, d2, a0, a1 }, lowercase
 ```
@@ -1844,6 +1845,39 @@ Two `external func` declarations sharing a name are legal if and only if they ar
 ```rust
 external func TickCount(): int = trap 0xA975
 external func TickCount(): int = trap 0xA975
+```
+
+### The `ptr` Clause
+
+`= ptr` names no trap and no compiler intrinsic; it calls through a pointer the program already holds at run time — a loaded code resource, a `ProcPtr` handed back from the Toolbox, any machine-code entry point reachable only by value rather than by a fixed trap number. The declaration's first parameter is the call target: it must exist and must be declared `ptr`, and it is consumed as the jump address rather than pushed as an argument — a zero-parameter `= ptr` declaration, or one whose first parameter is any other type, is a compile-time error (`= ptr requires a first parameter of type ptr`):
+
+```rust
+external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
+```
+
+Every parameter after the target, and the return type, follow the plain pascal `trap` clause's own marshalling rules exactly (Trap and Inline Clauses, above) — the same type sets (`int`/`ptr`/`bool`/`char`/`word`/`str`/`text` parameters; `int`/`ptr`/`bool`/`char`/`word`, or no return type), the same high-byte `bool`/`char` convention, the same borrowed-address treatment for `str`/`text`. A `= ptr` declaration with no parameters besides the target is fine — the call still marshals a target and nothing else.
+
+`ptr` takes no suffix: none of `sel`, `seld0`, `reg`, `memerr`, or `ret` may follow it — those all modify a `trap` clause's dispatch or calling convention, and `= ptr` is Pascal-convention-only with no trap word to select and no convention to override. The grammar itself has no production for a suffix in that position, so writing one is a plain parse error, not a checked diagnostic the way an incompatible `reg`/`sel` combination under `trap` is.
+
+The redeclaration-merge rule (above) applies unchanged, with `= ptr` counted as the clause for the identity check: two `external func` declarations sharing a name merge if and only if every part matches, including the clause, so two identical `= ptr` declarations merge silently, and a `= ptr` declaration conflicting with a `= trap`/`= inline` declaration (or a differently-shaped `= ptr` declaration) of the same name is a compile error naming both sites.
+
+A `callback func`'s bare name is a valid argument for a `= ptr` call's target parameter, needing no rule of its own: the target parameter is an ordinary `external func` `ptr` parameter, and a callback's bare name already decays to its glue's address in exactly that position (`callback func`, above). Calling a callback's own glue through `= ptr` — rather than through the Toolbox routine the callback was written for — is a legitimate use the existing decay rule already covers, not a special case the compiler has to recognize.
+
+A nil or garbage target is the caller's problem: `= ptr` performs no runtime check on the pointer before jumping through it, the same unchecked contract every other raw `ptr` value already carries in this language. Getting the target right — a locked, non-purged handle dereferenced down to a real code address — is entirely on the code that built it.
+
+Interrupt-time entry points are out of scope, for the same reason `callback func` excludes them (above): the A5-world and allocation restrictions VBL tasks, asynchronous completion procedures, and Time Manager tasks impose are not something this language can make safe yet. Call through `= ptr` only at ordinary application-level call time, never from a routine that fires from an interrupt.
+
+The declaration is a calling contract, not a binding: nothing in it ties the call to any one pointer, so the same declaration serves every call site regardless of which handle produced the target — a different `code` value at every call is the ordinary case, not an exception:
+
+```rust
+external func HLock(h: ptr) = trap 0xA029 reg               // toolbox/memory.cla
+external func HandleToPtr(h: ptr): ptr = inline deref
+external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
+
+// h: ptr — a resource Handle from GetResource, e.g. GetResource('PLUG', 128)
+HLock(h)                            // pin it: it can't move or be purged while code runs
+var code: ptr = HandleToPtr(h)      // master pointer -> the code's own address
+var result: int = PluginMain(code, 1, pb)
 ```
 
 ### The `word` Extern Type

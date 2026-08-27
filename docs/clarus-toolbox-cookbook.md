@@ -901,6 +901,65 @@ looks like — a normal `reg`-bound `int` parameter — the same D0 slot
 osutils.cla`), just holding a routine selector instead of a Gestalt
 selector.
 
+## 13. Walkthrough: calling loaded code — the `= ptr` clause
+
+Every walkthrough above calls a fixed Toolbox entry point: a trap number
+known at compile time. Loaded code — a code resource fetched with the
+Resource Manager, or any other `ProcPtr` the program only learns the value
+of at run time — has no trap number at all; the only way to reach it is
+through a pointer the program already holds. `= ptr` (Ch13, "The `ptr`
+Clause") is the extern clause for exactly that: a declaration whose first
+parameter is the call target, marshalling everything after it exactly like
+a plain pascal `trap` clause.
+
+Reach for `= ptr` whenever the entry point is a value, not a name — a
+plugin/door module fetched with `GetResource`, a callback whose glue
+address you already hold and want to invoke directly instead of through the
+Toolbox routine it was written for, or any other case where "which code
+runs" is decided at run time. Everything reachable by trap number stays a
+plain `= trap` declaration; `= ptr` is only for the entry points that
+aren't.
+
+The worked shape, end to end — fetch, lock, deref, call:
+
+```rust
+external func HLock(h: ptr) = trap 0xA029 reg              // toolbox/memory.cla
+external func HandleToPtr(h: ptr): ptr = inline deref       // Ch13, reference
+external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
+
+// h: ptr — a resource Handle from GetResource, e.g. GetResource('PLUG', 128)
+HLock(h)
+var code: ptr = HandleToPtr(h)
+var result: int = PluginMain(code, 1, pb)
+```
+
+`PluginMain`'s declaration is a calling contract, not a binding to this one
+`h` — the same declaration serves any handle whose contents match that
+entry-point shape, and a call site is free to swap in a different `code`
+value between calls with no change to the declaration itself.
+
+Two footguns:
+
+- **Keep the handle locked across every call into it.** `HLock` pins the
+  block so the Memory Manager can't relocate or purge it out from under
+  code the processor is actively executing; call `HandleToPtr` again (or
+  keep the `code` pointer alive) only while the handle stays locked for the
+  full duration any call might run. Unlocking (or letting the handle go)
+  while a call through `code` is still outstanding, or before the next
+  call, is a caller error the language does nothing to catch — `= ptr`
+  performs no check on the target, so a moved or purged block just means
+  the call jumps into whatever now occupies that address.
+- **One extern per distinct entry-point shape.** `= ptr`'s target parameter
+  carries no signature information of its own — the parameter list after
+  it IS the contract for what that entry point expects. A plugin family
+  with two different call shapes (say, a `(verb, param): int` shape and a
+  `(event): void` shape) needs two separate `= ptr` declarations, one per
+  shape, the same way two differently-shaped traps need two separate
+  `= trap` declarations. Calling a loaded routine through a declaration
+  whose parameter list doesn't match what that code actually expects
+  pushes the wrong arguments — the mismatch is entirely the caller's to
+  avoid, same as any other `= ptr` contract.
+
 ---
 
 *Everything in this document is a citation, not an assertion — see the
