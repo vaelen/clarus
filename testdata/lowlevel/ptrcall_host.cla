@@ -1,0 +1,39 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// ptrcall_host.cla: `= ptr` extern (conv 10) host-lane proof
+// (extern-ptr-call phase). The target is a `callback func`'s decayed
+// glue address -- fpCallExt's cast uses the same cpCbWireType wire
+// types the glue itself is declared with, so this call is a strictly
+// conforming C function-pointer call, the per-signature generalization
+// of callback_host.cla's fixed-shape CbInvoke seam.
+external func NewPtr(size: int): ptr = trap 0xA11E reg
+external func DisposePtr(p: ptr) = trap 0xA01F reg
+external func PtrCallMixed(entry: ptr, w: word, flag: bool, out: ptr, n: int): int = ptr
+
+callback func mixed(w: word, flag: bool, out: ptr, n: int): int {
+    pokel(out, n + w)
+    if flag {
+        return n * 2
+    }
+    return n
+}
+
+on App.startCLI(args: list of string) {
+    var scratch: ptr
+    var r: int
+
+    scratch = NewPtr(4)
+    r = PtrCallMixed(mixed, 7, true, scratch, 21)
+    if r == 42 {
+        alert("ptrcall-ret-ok")
+    } else {
+        alert("ptrcall-ret-FAIL")
+    }
+    if peekl(scratch) == 28 {
+        alert("ptrcall-write-ok")
+    } else {
+        alert("ptrcall-write-FAIL")
+    }
+    DisposePtr(scratch)
+}
