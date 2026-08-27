@@ -74,7 +74,7 @@ int32_t rt_ext_SerFileReadTextInto(void *path, rt_text *out) { return rt_file_re
  * demoted diagnostic lane (CLARUS_CPRINT_MAC_TESTS=1) needs SOME rt_ext_
  * FhH* definition to link at all -- real File Manager positioned I/O on
  * this lane is Task 6's native-68k (`fileh_68k.cla`, cg68k emission)
- * counterpart, never this one. Matching the ConnH*/PB* forward-proofing
+ * counterpart, never this one. Matching the ConnH* / PB* forward-proofing
  * precedent just above (`rt_ext_UiConnPump`'s own comment): plain,
  * permanent failure stubs -- FhHOpen/FhHCreate return 0 (fileh.cla's own
  * nil-handle-on-failure contract), every other call returns -1 (I/O
@@ -90,6 +90,28 @@ int32_t rt_ext_FhHSetSize(int32_t h, int32_t n) { (void)h; (void)n; return -1; }
 int32_t rt_ext_FhHFlush(int32_t h) { (void)h; return -1; }
 void rt_ext_FhHClose(int32_t h) { (void)h; }
 int32_t rt_ext_FhHErrno(void) { return -1; }
+/* The filesystem-api phase (2026-08-26) grew fileh_c.cla's extern surface
+ * by the directory/catalog family below AFTER the stub block above was
+ * written -- and the `ConnH* / PB*` early-comment-close bug (fixed
+ * 2026-08-28, this commit) had kept this whole lane from compiling since
+ * 2026-08-22, so the resulting link gap (undefined rt_ext_FhHMove et al,
+ * TestCoreSuiteGUIOnMac) stayed invisible until the comment fix unmasked
+ * it. Same permanent-failure convention as the block above, with each
+ * stub's value chosen against rt_fileh.inc's real contract: status-shaped
+ * calls (MakeDir/Delete/Stat/SetTimes/Rename/Move/ListBegin) return -1
+ * (error); StatField returns -1 (no cached stat can exist -- FhHStat
+ * always failed); ListNext returns -1 (error; unreachable in practice
+ * since ListBegin already failed); ListEnd is a no-op. */
+int32_t rt_ext_FhHStat(const uint8_t *path) { (void)path; return -1; }
+int32_t rt_ext_FhHStatField(int32_t which) { (void)which; return -1; }
+int32_t rt_ext_FhHMakeDir(const uint8_t *path) { (void)path; return -1; }
+int32_t rt_ext_FhHDelete(const uint8_t *path) { (void)path; return -1; }
+int32_t rt_ext_FhHListBegin(const uint8_t *path) { (void)path; return -1; }
+int32_t rt_ext_FhHListNext(void *buf) { (void)buf; return -1; }
+void rt_ext_FhHListEnd(void) { }
+int32_t rt_ext_FhHSetTimes(const uint8_t *path, int32_t created, int32_t modified) { (void)path; (void)created; (void)modified; return -1; }
+int32_t rt_ext_FhHRename(const uint8_t *path, const uint8_t *newName) { (void)path; (void)newName; return -1; }
+int32_t rt_ext_FhHMove(const uint8_t *path, const uint8_t *dirPath) { (void)path; (void)dirPath; return -1; }
 /* rt_ext_Ser{BlockMoveData,NewPtr,DisposePtr}: final-review fix, mirroring
  * runtime/host/rt_ext_host.inc's block exactly -- ser.cla's remaining
  * externs were still unprefixed and collided with a user program's own
@@ -379,6 +401,10 @@ int32_t rt_ext_UiTrackGoAway(void *window, int32_t thePt) { return (int32_t)Trac
 short rt_ext_UiFindWindow(int32_t pt, void *wpOut) { return (short)FindWindow(rt_ext_ui_pt(pt), (WindowRef *)wpOut); }
 
 void *rt_ext_UiNewMenu(short menuId, void *menuTitle) { return (void *)NewMenu(menuId, (ConstStr255Param)menuTitle); }
+/* rt_ext_UiNewMenuStr: same NewMenu trap behind ui.cla's string-param
+ * variant (str marshals as the Str255's address -- const uint8_t *, per
+ * cpEmitExternProtos). Added while the lane was dark; see UiValidRect. */
+void *rt_ext_UiNewMenuStr(short menuId, const uint8_t *menuTitle) { return (void *)NewMenu(menuId, (ConstStr255Param)menuTitle); }
 void rt_ext_UiDisposeMenu(void *theMenu) { DisposeMenu((MenuRef)theMenu); }
 void rt_ext_UiAppendMenu(void *theMenu, void *data) { AppendMenu((MenuRef)theMenu, (ConstStr255Param)data); }
 /* rt_ext_UiAppendMenuStr: UiAppendMenu's `string`-param sibling (Task 7) --
@@ -456,6 +482,11 @@ void rt_ext_UiEraseRect(void *r) { EraseRect((const Rect *)r); }
 void rt_ext_UiFrameRect(void *r) { FrameRect((const Rect *)r); }
 void rt_ext_UiFillRect(void *r, void *pat) { FillRect((const Rect *)r, (const Pattern *)pat); }
 void rt_ext_UiInvalRect(void *badRect) { InvalRect((const Rect *)badRect); }
+/* rt_ext_UiValidRect: live-log phase (uiwidgets.cla's SetStr/SetText sync
+ * paint) -- added to the runtime while this lane was dark behind the
+ * ConnH* / PB* comment bug, so its wrapper first lands here 2026-08-28
+ * with that fix. Mirrors UiInvalRect just above. */
+void rt_ext_UiValidRect(void *goodRect) { ValidRect((const Rect *)goodRect); }
 int32_t rt_ext_UiPtInRect(int32_t pt, void *r) { return (int32_t)PtInRect(rt_ext_ui_pt(pt), (const Rect *)r); }
 void rt_ext_UiFrameOval(void *r) { FrameOval((const Rect *)r); }
 void rt_ext_UiFillOval(void *r, void *pat) { FillOval((const Rect *)r, (const Pattern *)pat); }
@@ -648,7 +679,7 @@ void rt_ext_UiMacInitToolbox(void) { rt_mac_init_toolbox(); }
  * rt_ext_UiMacInitToolbox above having no plain-host (non-Mac)
  * counterpart in rt_ext_host.inc: this lane's own conn.cla splice stays
  * usesConn-gated and untouched by this task either way.
- * FORWARD-PROOFING (Snow pair review): if the ConnH*/PB* shims ever land
+ * FORWARD-PROOFING (Snow pair review): if the ConnH* / PB* shims ever land
  * on this lane, this body must become a real pump or UI+conn programs
  * will silently never fire events. */
 void rt_ext_UiConnPump(void) { }

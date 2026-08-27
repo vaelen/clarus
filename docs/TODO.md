@@ -138,13 +138,20 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   extern registry by name; collapse the latter two onto `irExternLookup`.
   Pure deletion, no behavior change; deferred because it forces a
   snapshot regen + full T2 for zero user-visible effect.
-- **Fix the pre-existing Retro68/cprint-lane build break** found by the
-  extern-ptr-call fix wave's `TestCoreSuiteGUIOnMac` proof run
-  (2026-08-28): `ae662a3` (2026-08-22, filesystem-api native filehandle)
-  introduced a `*/`-in-comment bug in `runtime/mac/rt_ext_mac.inc` that
-  breaks the opt-in `CLARUS_CPRINT_MAC_TESTS=1` lane's C build — the
-  demoted cross-lane oracle is dark until this is fixed on main (the
-  native lane is unaffected).
+- **Retro68/cprint-lane (OnMac twins) restoration, remaining scope** — the
+  `*/`-in-comment build break from `ae662a3` is FIXED (2026-08-28, with
+  the drift it had been hiding: ten missing `FhH*` failure stubs from
+  filesystem-api, `UiValidRect`/`UiNewMenuStr` wrappers from live-log);
+  `TestCoreSuiteGUIOnMac` now compiles, links, boots, and runs 78/80.
+  Remaining, deliberately unfixed pending a scope decision: (1) the two
+  red cases (`FileHandleRW`, `DirOps`) fail BY DESIGN — binary-files gave
+  this lane permanent-failure FhH stubs while also adding suite cases
+  that need real file I/O, so the twin can only go green via real
+  C-side HFS FhH implementations for this lane, lane-aware case skips,
+  or accepting a documented 78/80; (2) `TestToolboxSuiteOnMac` still
+  fails at link — the toolbox suite's live `PB*Sync`/`SF*`/`AE*` trap
+  externs (~28 symbols) never got `rt_ext_` wrappers in
+  `rt_ext_mac.inc` (mechanical Universal-Interfaces pass-throughs).
 
 ## Compiler correctness / diagnostics
 
