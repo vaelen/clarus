@@ -137,8 +137,10 @@ UNVERIFIED — deferred, see `STATUS.md` §0. Full detail:
 
 **`extern-ptr-call` phase (branch `extern-ptr-call`, 2026-08-27/28, based
 on `main` at `74c9e46` — `filesystem-api` and everything before it are
-already merged to local `main`) is COMPLETE — full T2 green, NOT YET
-merged (merge only on Andrew's request):** a new `external func` clause,
+already merged to local `main`) is COMPLETE — full T2 green at the
+final-review fix-wave tip `cac7ff1` (opus whole-branch review READY WITH
+FIXES → fix wave, re-review clean), NOT YET merged (merge only on
+Andrew's request):** a new `external func` clause,
 `= ptr` (conv 10), calls through a runtime pointer with the plain pascal
 calling convention instead of a fixed trap number — the way to reach
 loaded code (a plugin/door module fetched with `GetResource`, 68kBBS

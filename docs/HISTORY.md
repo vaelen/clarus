@@ -4637,8 +4637,17 @@ brief asked for it directly.
     references. The next phase needn't plan around either.
 
 - **extern-ptr-call (branch `extern-ptr-call`, 2026-08-27/28, based on
-  `main` at `74c9e46` — `filesystem-api` already merged to local `main`,
-  NOT pushed): DONE, T2 PASS.** Adds `= ptr`, a new `external func`
+  `main` at `74c9e46` — `filesystem-api` already merged to `main` and
+  pushed, origin/main = `9b2eea8`): DONE, T2 PASS.** Final opus
+  whole-branch review: READY WITH FIXES → fix wave applied (`cac7ff1`:
+  `CLAR_PASCAL` on the host-lane conv-10 cast + `#define` hoist for
+  callback-free `= ptr` programs, cg68k doc-block split, `PtrCallVoid`
+  void-return suite check, wording/hygiene), scoped re-review clean, all
+  gates re-run green at the tip. The fix wave's OnMac proof run also
+  surfaced a PRE-EXISTING main breakage: the opt-in cprint-lane suite
+  twin has been dark since `ae662a3` (2026-08-22, `*/`-in-comment in
+  `runtime/mac/rt_ext_mac.inc`) — recorded in STATUS/TODO, not this
+  phase's file. Adds `= ptr`, a new `external func`
   clause (conv 10) calling through a runtime pointer with the plain
   pascal calling convention instead of a fixed trap number — the
   driving use case is loaded code (a plugin/door module fetched with

@@ -63,3 +63,15 @@ Final review (opus): READY WITH FIXES.
 - Minor: void-return/zero-param native arm unproven (add PtrCallVoid check); "strictly conforming" overclaim in fixture+spec; scratch leak on tkFail paths; manifest.go header sentence deletion.
 - Triage: check.cla wording stays deferred; fpExternIdxByName triplication → TODO.md line (no code change); readback duplication stays deferred.
 Ruling: fix wave = Important 1+2, minor 5(word), PtrCallVoid coverage, overclaim wording (fixture+spec), scratch-leak hygiene, TODO.md helper-dup line. Parked: check.cla "alongside" wording (comment nuance, truth already present in-line); manifest.go header sentence (its own "line numbers drift" note covers it). Costs if parked wrong: none functional.
+
+Fix wave: commit cac7ff1 (all 6 items). Gates: snapshot PASS, T1 --smoke
+PASS, On68k boot PASS 80/80 (PtrCall green incl. new void arm), T2 PASS 346s.
+OnMac cprint twin (opt-in Fix-1 proof) FAIL — controller-verified
+pre-existing: ae662a3 (2026-08-22, predates branch base 74c9e46) broke
+runtime/mac/rt_ext_mac.inc for that lane ('*/' comment bug per fix report);
+branch never touches that file (empty diff 74c9e46..HEAD). Fix-1 proof on
+that lane rests on emitted-C evidence (CLAR_PASCAL present on casts) in the
+fix report. Ruling: OnMac breakage is main's, out of scope; surfaced to
+Andrew at finish — the demoted diagnostic lane has been silently broken
+since 2026-08-22. Costs if wrong: the cprint-Mac lane stays red until fixed
+on main; native lane fully proven regardless.

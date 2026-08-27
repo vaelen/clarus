@@ -138,6 +138,13 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   extern registry by name; collapse the latter two onto `irExternLookup`.
   Pure deletion, no behavior change; deferred because it forces a
   snapshot regen + full T2 for zero user-visible effect.
+- **Fix the pre-existing Retro68/cprint-lane build break** found by the
+  extern-ptr-call fix wave's `TestCoreSuiteGUIOnMac` proof run
+  (2026-08-28): `ae662a3` (2026-08-22, filesystem-api native filehandle)
+  introduced a `*/`-in-comment bug in `runtime/mac/rt_ext_mac.inc` that
+  breaks the opt-in `CLARUS_CPRINT_MAC_TESTS=1` lane's C build — the
+  demoted cross-lane oracle is dark until this is fixed on main (the
+  native lane is unaffected).
 
 ## Compiler correctness / diagnostics
 

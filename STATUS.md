@@ -1,8 +1,10 @@
 # Session status — 2026-08-28 (extern-ptr-call: COMPLETE, T2 green, not merged)
 
 Handoff summary. **The `extern-ptr-call` phase (branch `extern-ptr-call`,
-based on `main` at `74c9e46` — `filesystem-api` and everything before it
-are already merged to local `main`, NOT pushed) adds `= ptr`, a new
+based on `main` at `74c9e46` — `filesystem-api` is merged AND pushed
+(origin/main = `9b2eea8`, pushed 2026-08-27); only main's two
+extern-ptr-call spec/plan docs commits, `d3ae9fe`/`74c9e46`, are ahead of
+origin) adds `= ptr`, a new
 `external func` clause for a pascal-convention call through a runtime
 pointer rather than a fixed trap number, both lanes. Driving use case:
 loaded code resources — `GetResource` a plugin/door module (68kBBS
@@ -13,8 +15,28 @@ cookbook docs) all passed review clean, no fix rounds needed. Task 6
 (this close-out) regenerated the bootstrap snapshot, ran full T1/T2 green,
 found and fixed a real CheckClean gate break in the reference's own new
 `ptr`-clause worked example (not a compiler bug — a doc example that
-didn't compile standalone), and closed out docs. Full T2 PASS (see §1).
+didn't compile standalone), and closed out docs. Full T2 PASS (see §1). The final
+whole-branch review (opus) came back READY WITH FIXES; the fix wave
+(`cac7ff1`) landed all six findings — most notably the host-lane conv-10
+cast now carries `CLAR_PASCAL` (without it the Retro68/cprint Mac lane
+called a pascal callee through a C-convention pointer — silent stack
+corruption on `build-mac.sh` builds using `= ptr`; the `#define` is also
+emitted for callback-free `= ptr` programs now), plus the cg68k doc-block
+split, a void-return `PtrCallVoid` suite check, and wording/hygiene items —
+re-review clean, gates re-run green at `cac7ff1` (snapshot fixed-point,
+T1 --smoke, `TestCoreSuiteGUIOn68k` 80/80, T2 346s).
 NOT merged, NOT pushed — merge only on Andrew's request.**
+
+**Found-on-main while proving the fix wave:** the opt-in Retro68/cprint
+suite twin (`TestCoreSuiteGUIOnMac`, `CLARUS_CPRINT_MAC_TESTS=1`) is
+broken on main and has been since `ae662a3` (2026-08-22, filesystem-api's
+native filehandle commit): a `*/`-in-comment bug in
+`runtime/mac/rt_ext_mac.inc` breaks that lane's C build. Not this
+branch's doing (the file is untouched here) and invisible by default
+(demoted diagnostic lane), but the cross-lane oracle is dark until it's
+fixed on main. The conv-10 `CLAR_PASCAL` fix is instead proven by the
+emitted C for that very build (casts carry `CLAR_PASCAL`, evidence in the
+fix-wave report).**
 
 ## 0. START HERE next session
 
