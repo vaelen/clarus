@@ -928,9 +928,13 @@ external func HandleToPtr(h: ptr): ptr = inline deref       // Ch13, reference
 external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
 
 // h: ptr — a resource Handle from GetResource, e.g. GetResource('PLUG', 128)
-HLock(h)
-var code: ptr = HandleToPtr(h)
-var result: int = PluginMain(code, 1, pb)
+// pb: ptr — a parameter block the plugin's caller has already built
+func callPlugin(h: ptr, pb: ptr): int {
+    var code: ptr
+    HLock(h)
+    code = HandleToPtr(h)
+    return PluginMain(code, 1, pb)
+}
 ```
 
 `PluginMain`'s declaration is a calling contract, not a binding to this one

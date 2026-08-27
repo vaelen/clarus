@@ -135,6 +135,34 @@ UNVERIFIED — deferred, see `STATUS.md` §0. Full detail:
 `docs/HISTORY.md` (once archived) or
 `.superpowers/sdd/2026-08-26-filesystem-api/`.
 
+**`extern-ptr-call` phase (branch `extern-ptr-call`, 2026-08-27/28, based
+on `main` at `74c9e46` — `filesystem-api` and everything before it are
+already merged to local `main`) is COMPLETE — full T2 green, NOT YET
+merged (merge only on Andrew's request):** a new `external func` clause,
+`= ptr` (conv 10), calls through a runtime pointer with the plain pascal
+calling convention instead of a fixed trap number — the way to reach
+loaded code (a plugin/door module fetched with `GetResource`, 68kBBS
+territory) on both lanes, which had no language surface at all before
+this phase. The declaration's first parameter is the call target
+(consumed as the jump address, never pushed); everything after it
+marshals exactly like a plain pascal `trap` clause. Native codegen
+factored the pascal arg-push loop out of the existing trap path
+(`cgPushPascalArgs`, conv 1/9 emission proven byte-identical, no
+rebless) and reuses it for the new saved-target `JSR (A0)` + `ADDQ`
+sequence; the host lane casts through the same wire types a `callback
+func`'s glue already conforms to, so a callback's bare name is a valid
+`= ptr` target with no special-casing. Hardware-proved on the System 6
+Mini vMac native lane via the core suite's new `PtrCall` case (a word-
+and a bool-returning round trip; 80/80). Found and fixed one real
+`internal/reftest` gate break along the way: the reference's own new
+worked example didn't check clean standalone (bare top-level statements,
+an undeclared variable) — fixed by wrapping it in a function, with the
+`CheckClean` fence manifest updated for the two new fences this phase's
+reference edit added. Deferred: a named-target `= ptr(name)` form and
+register-convention (`reg`) targets, both filed in `docs/TODO.md`. Full
+detail: `docs/HISTORY.md` (once archived) or
+`.superpowers/sdd/2026-08-27-extern-ptr-call/`.
+
 ## Roadmap
 
 Focus (Andrew, 2026-08-15): make the tools more usable — expand the set

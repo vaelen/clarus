@@ -4636,6 +4636,105 @@ brief asked for it directly.
     emits nothing at all for a record type no program in the corpus
     references. The next phase needn't plan around either.
 
+- **extern-ptr-call (branch `extern-ptr-call`, 2026-08-27/28, based on
+  `main` at `74c9e46` — `filesystem-api` already merged to local `main`,
+  NOT pushed): DONE, T2 PASS.** Adds `= ptr`, a new `external func`
+  clause (conv 10) calling through a runtime pointer with the plain
+  pascal calling convention instead of a fixed trap number — the
+  driving use case is loaded code (a plugin/door module fetched with
+  `GetResource`, HLocked, dereffed, and jumped into — 68kBBS territory),
+  which had no Clarus surface at all before this phase. Spec:
+  `docs/superpowers/specs/2026-08-27-extern-ptr-call-design.md`; plan:
+  `docs/superpowers/plans/2026-08-27-extern-ptr-call.md`; full ledger:
+  `.superpowers/sdd/2026-08-27-extern-ptr-call/`. Six tasks, one feat
+  commit each for Tasks 1-5 (all review-clean, no fix rounds needed),
+  this close-out commit for Task 6.
+  - **Parser + checker** (Task 1, `c9c2d4f`): new contextual keyword
+    `ptr`, recognized only in an `external func`'s clause position. The
+    checker requires at least one parameter, with the first declared
+    `ptr` — the call target, consumed as the jump address and never
+    pushed; a zero-parameter or wrong-first-param-type declaration is a
+    compile error naming the rule. `ptr` is mutually exclusive with
+    `sel`/`seld0`/`reg`/`memerr`/`ret` at the grammar level — the parser
+    has no production for a suffix in that position, so writing one is a
+    plain parse error, not a checked diagnostic. The redeclaration-merge
+    rule (`externClauseMatches`) needed no extension: it already compares
+    `externFuncConv`, so a mismatched conv 10 falls out for free. Seven
+    new `check_test` fixture cases.
+  - **Host lane** (Task 2, `5f8d225`): `cprint.cla`'s `fpCallExt` casts
+    the call-site's first argument through a C function-pointer type
+    built from the extern's own declared param/return types
+    (`cpCbWireType`/`cpCbRetWireType` — the same wire types a `callback
+    func`'s compiler-generated glue already conforms to) and calls
+    through it directly. A conv-10 extern has no `rt_ext_` host symbol at
+    all (`cpEmitExternProtos` skips emitting a prototype for it) — the
+    cast and call happen entirely at the call site. New fixture
+    `testdata/lowlevel/ptrcall_host.cla` (`TestLowlevel`), modeled on
+    `callback_host.cla`; its `NewPtr`/`DisposePtr` externs carry the
+    exact trap clauses `runtime/clarus/list.cla`'s
+    `ListNewPtr`/`ListDisposePtr` already use, picking up their existing
+    host glue for free via the reference's identical-repeat-extern
+    accommodation.
+  - **Native lane** (Task 3, `0ae201d`): the pascal arg-push loop was
+    extracted verbatim out of `cgCallExtPascal` into a new
+    `cgPushPascalArgs(a0, xi, j0)` — conv 1 (plain pascal `trap`) and
+    conv 9 emission confirmed byte-identical against the existing golden
+    corpus, no rebless needed. New `cgCallExtPtr(e, xi)`: evaluate and
+    push the target (arg 0) as a saved long below the result slot, push
+    the result slot, push args 1.. via the shared loop against params
+    1.., `MOVEA.L` the saved target back into A0 past the pushed
+    args+slot, `JSR (A0)`, read the result back through the same three
+    signed/short-slot readback arms `cgCallExtPascal` already used
+    (including the bool/char high-byte convention — the historically
+    buggy arm), `ADDQ.L #4,A7` to discard the saved target since the
+    callee only pops its own declared args under pascal discipline. No
+    new native globals; `cgCallExt`'s dispatch gained one `else if conv
+    == 10` arm ahead of the native-fallback abort.
+  - **Core suite `PtrCall` case** (Task 4, `8fa24f7`):
+    `testsuite/core/cases_ptrcall.cla` — a word-returning round trip
+    (`PtrCallRound` through `callback func pcMixed`, asserting a signed
+    result, a `ptr`+`int` side effect via `peekl`, and a bool-steered
+    branch) plus a bool-returning round trip (`PtrCallFlag` through
+    `callback func pcIsPositive`) added by review specifically to
+    exercise the native bool-result readback arm the word case alone
+    doesn't reach. `nCoreCases` 79 → 80 (79 real + `SelfCheck`); wired
+    into every count site (`runner.cla`,
+    `internal/testsuite/core_cli_test.go`, `internal/cg68k/
+    segment_test.go`, `internal/mactest/coresuite_test.go`/
+    `suite_host_test.go`, `internal/bake/bakeidentity_test.go`). Green
+    80/80 on `TestCoreSuiteGUIOn68k` (System 6, Mini vMac).
+  - **Docs** (Task 5, `929bd15`): reference grammar production extended
+    with `| "ptr"`; new "The `ptr` Clause" subsection (Ch13) covering the
+    first-parameter target rule, the no-suffix grammar restriction, the
+    unchanged redeclaration-merge rule, the callback-name-as-target
+    accommodation, the unchecked nil-target contract, and the
+    interrupt-time exclusion; cookbook §13, "Walkthrough: calling loaded
+    code — the `= ptr` clause", with a real `toolbox/memory.cla`
+    `HLock` trap word in the worked example.
+  - **Close-out (Task 6, this commit)**: bootstrap snapshot regenerated
+    and fixed-point-verified. Found and fixed a real `internal/reftest`
+    gate break, NOT a compiler defect: Task 5's reference edit added a
+    closing worked example (`HLock` → `HandleToPtr` → `PluginMain(code,
+    1, pb)`) that didn't check clean standalone — bare top-level
+    statements (only declarations are legal at Clarus top level) and an
+    undeclared `pb`. Fixed by wrapping the example in a
+    `callPlugin(h: ptr, pb: ptr): int` function, with `var code: ptr`
+    declared (uninitialized) ahead of the `HLock`/`HandleToPtr`/`return`
+    statements — Clarus requires every local var declaration at the top
+    of a body before any statement, so the assignment into `code` moved
+    below the declaration rather than folding into it. The identical fix
+    was mirrored into `docs/clarus-toolbox-cookbook.md`'s own copy of the
+    example (not gate-checked, kept consistent). This inserted two new
+    fences into the reference, shifting every fence index at or after
+    the old "word extern type" fence by +2;
+    `internal/reftest/manifest.go`'s `CheckClean` list and header
+    comments were updated to match (new indices 84/85 added for the
+    `ptr`-clause fences; the two Appendix C programs shifted 85/86 →
+    87/88). `docs/TODO.md`/`docs/ROADMAP.md`/`CLAUDE.md`/`STATUS.md`
+    closed out; the two spec-out-of-scope follow-ups (a named-target
+    `= ptr(name)` form, register-convention `= ptr` targets) filed in
+    `docs/TODO.md`.
+
 ## Resolved "Small open items" (moved verbatim from ROADMAP, 2026-08-15)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

@@ -119,6 +119,20 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   `PBHGetFInfoSync`/`PBHSetFInfoSync` instead (spec §4.3). Same
   declared-but-unused shape as other catalog-completeness entries.
 
+### extern-ptr-call phase (2026-08-27)
+
+- **Named-target `= ptr(name)` form** — today every `= ptr` declaration is
+  a calling contract only, taking its target fresh as the first argument
+  at every call site; a `= ptr(name)` form binding a declaration to one
+  fixed pointer (set once, e.g. after a `GetResource`/`HLock`/deref, then
+  called with no target argument at each site) was named out of scope
+  (design spec's out-of-scope section), unscheduled.
+- **Register-convention (`reg`) targets for `= ptr`** — `= ptr` is
+  pascal-convention only, mutually exclusive with `reg`/`sel`/`seld0`/
+  `memerr`/`ret` at the grammar level; a register-convention call
+  through a runtime pointer was named out of scope (design spec's
+  out-of-scope section), unscheduled.
+
 ## Compiler correctness / diagnostics
 
 - **Lexer diagnostic quality** (decided 2026-07-23): a bad escape in a

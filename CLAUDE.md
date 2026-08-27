@@ -105,7 +105,7 @@ Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
 Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
-- `testsuite/core/` (79 `CoreTest` cases: 78 real + `SelfCheck`, grown
+- `testsuite/core/` (80 `CoreTest` cases: 79 real + `SelfCheck`, grown
   from 74 real (correctness-cleanup phase tip) by the binary-files
   phase's `TextBinary`/`Crc16`/`IntToStr`/`FileHandleRW` cases — the
   first three hardware-prove `text`'s new LE/word/setter binary
@@ -115,7 +115,11 @@ enum + runner, not one boot per case.
   proves the directory/catalog family (`makeDir`/`delete`/`list`/
   `exists`/`info`/`setInfo`/`rename`/`move`) on both lanes; unchanged by
   the transfer-crcs phase, whose new `crc16x`/`crc32` coverage landed
-  inside the existing `Crc16` case) runs on host and natively; `testsuite/toolbox/` (32 `ToolboxTest` cases: 31 real +
+  inside the existing `Crc16` case; then to 79 real by the
+  extern-ptr-call phase's `PtrCall` case, which hardware-proves the
+  `= ptr` extern clause (pascal-convention call through a runtime
+  pointer, including a bool-returning round trip) on both lanes) runs on
+  host and natively; `testsuite/toolbox/` (32 `ToolboxTest` cases: 31 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -150,7 +154,7 @@ enum + runner, not one boot per case.
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
   `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract
-  design: it asserts all 77 other cases ran in the same invocation
+  design: it asserts all 79 other cases ran in the same invocation
   (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
   `all`), never alone.
   (Exact file list: `internal/mactest/suite_host_test.go`'s
@@ -256,7 +260,11 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   management on top of this: `file.makeDir/delete/list/exists/info/
   setInfo/rename/move`, both lanes, backed by a new predeclared
   `FileInfo` record and the `toolbox/files.cla` HFS catalog family
-  above. See the reference for the full method lists.
+  above. The extern-ptr-call phase (2026-08-27) added `= ptr`, an
+  `external func` clause for a pascal-convention call through a runtime
+  pointer rather than a fixed trap number — the way to reach loaded code
+  (a plugin/door module fetched with `GetResource`), both lanes. See the
+  reference for the full method lists.
 - Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
   `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.
 - UI test scenarios live in `testdata/ui`, with blessed goldens (trace +

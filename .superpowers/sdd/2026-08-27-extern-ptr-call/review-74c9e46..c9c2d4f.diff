@@ -1,0 +1,330 @@
+# Review package: 74c9e46f76ec7a60cf87875cc4c327c6285a066f..HEAD
+
+## Commits
+c9c2d4f feat: parse + check '= ptr' extern clause (conv 10)
+
+## Files changed
+ clarusc/ast.cla             |  3 ++-
+ clarusc/check.cla           | 26 ++++++++++++++++++++++----
+ clarusc/parse.cla           | 20 ++++++++++++++++----
+ clarusc/test/check_test.cla | 32 ++++++++++++++++++++++++++++++++
+ clarusc/test/check_test.out | 15 +++++++++++++++
+ 5 files changed, 87 insertions(+), 9 deletions(-)
+
+## Diff
+diff --git a/clarusc/ast.cla b/clarusc/ast.cla
+index 2819b21..beb3886 100644
+--- a/clarusc/ast.cla
++++ b/clarusc/ast.cla
+@@ -1712,21 +1712,22 @@ func externFuncTrap(i: int): int {
+ func externFuncSel(i: int): int {
+     return (decls[i].c >> 16) - 1
+ }
+ 
+ // externFuncConv returns a DkExternFunc's calling-convention flag: 0=none,
+ // 1=pascal trap, 2=reg trap (positional), 3=inline deref, 4=inline nop,
+ // 5=inline a5, 6=reg trap (positional) memerr, 7=reg trap (named), 8=reg
+ // trap (named) memerr, 9=pascal trap with a D0-preload selector (`seld0`,
+ // mac-resident-clarusc Task 12 -- the AppleEvent Manager's own
+ // selector-dispatch shape, distinct from conv 1's `sel`'s stack-pushed
+-// selector).
++// selector), 10=pascal call through a runtime pointer (`= ptr`,
++// extern-ptr-call phase -- first param is the jump target).
+ func externFuncConv(i: int): int {
+     return decls[i].intVal
+ }
+ 
+ func newWindowDecl(nameIdx: int, itemsHead: int, line: int, col: int): int {
+     var n: DeclNode
+ 
+     n.kind = DkWindow
+     n.nameIdx = nameIdx
+     n.a = itemsHead
+diff --git a/clarusc/check.cla b/clarusc/check.cla
+index fbad8cd..df30827 100644
+--- a/clarusc/check.cla
++++ b/clarusc/check.cla
+@@ -2955,24 +2955,28 @@ func checkFuncSig(d: int) {
+ // the ptrCount/scalarCount/regBad tally the param loop below already
+ // builds, so str/text (neither of which has a register slot) trips regBad
+ // the same way a 3rd ptr or scalar trips the count. inline deref (conv 3)
+ // requires the signature to be exactly one ptr param returning ptr;
+ // inline nop (conv 4) requires no return type; inline a5 (conv 5, Task 12,
+ // native-5e: `MOVE.L A5,D0`, the running program's own A5 world base)
+ // requires zero params and a ptr return; reg memerr (conv 6, Task 14,
+ // native-5e: a `void`-Pascal-signature Toolbox routine like SetHandleSize,
+ // whose real result comes back via the MemErr low-memory global rather
+ // than D0 -- cgCallExtRegMemErr's own doc comment, cg68k.cla) shares the
+-// same reg-convention arg restrictions conv 2 does. Every trap/inline
+-// check runs after, and independently of, the ordinary param/return type
+-// checks above -- a param already flagged for its type is not re-flagged
+-// here.
++// same reg-convention arg restrictions conv 2 does; `= ptr` (conv 10,
++// extern-ptr-call phase) requires at least one parameter with the FIRST
++// one type ptr (the call target, consumed by the call itself, never
++// pushed) -- every remaining param/return, and the trap-range check's
++// absence, follow the ordinary pascal-trap rules above unchanged. Every
++// trap/inline check runs after, and independently of, the ordinary
++// param/return type checks above -- a param already flagged for its type
++// is not re-flagged here.
+ func checkExternFunc(d: int) {
+     var sigIdx: int
+     var p: int
+     var i: int
+     var k: TypeKind
+     var ret: int
+     var conv: int
+     var trapVal: int
+     var ptrCount: int
+     var scalarCount: int
+@@ -3052,20 +3056,34 @@ func checkExternFunc(d: int) {
+     }
+     if conv == 3 and (i != 1 or ptrCount != 1 or ret == -1 or typeKind(ret) != TyPtr) {
+         emitDiag(declLine(d), declCol(d), "inline deref requires signature (ptr): ptr")
+     }
+     if conv == 4 and ret != -1 {
+         emitDiag(declLine(d), declCol(d), "inline nop requires a void return")
+     }
+     if conv == 5 and (i != 0 or ret == -1 or typeKind(ret) != TyPtr) {
+         emitDiag(declLine(d), declCol(d), "inline a5 requires signature (): ptr")
+     }
++    // extern-ptr-call phase: `= ptr` (conv 10) requires at least one
++    // parameter, and the FIRST declared parameter must be type ptr --
++    // that's the call target, consumed by the call itself, never pushed.
++    // `i` is the param count from the walk above, so `i == 0` catches the
++    // no-params case before funcSigParam(sigIdx, 0) is read at all (the
++    // short-circuit `or` order matters -- reading param 0 of a
++    // zero-param signature is unsafe). No trap-range check applies (conv
++    // 10 is deliberately absent from the trap-range conv list above) and
++    // every other rule -- param/return palette, reg-clause exclusivity
++    // (grammar-level: `ptr` accepts no suffixes) -- is already enforced
++    // by the checks this rule sits alongside.
++    if conv == 10 and (i == 0 or typeKind(funcSigParam(sigIdx, 0)) != TyPtr) {
++        emitDiag(declLine(d), declCol(d), "= ptr requires a first parameter of type ptr")
++    }
+ 
+     // Task 1 (toolbox-integration Feature A): a named reg(...) clause's
+     // bind list -- resolve each raw (register code, raw param-name pool
+     // idx) pair (ast.cla's astExternRegBindRaw*, parsed but not resolved
+     // by parse.cla, see its own doc comment) against d's OWN declared
+     // params, tracking register reuse; on success write the resolved code
+     // onto that param (setParamRegBind), the paramRegBind/astExternRegBind
+     // story Task 2's codegen reads. Stops re-diagnosing (namedBindsBad)
+     // after the first bad bind so a single malformed clause produces
+     // exactly one diagnostic, matching every other rule in this function.
+diff --git a/clarusc/parse.cla b/clarusc/parse.cla
+index 58eecf7..a035831 100644
+--- a/clarusc/parse.cla
++++ b/clarusc/parse.cla
+@@ -80,20 +80,21 @@ var cwPad: int
+ var cwWord: int
+ var cwByte: int
+ var cwStr: int
+ var cwTrap: int
+ var cwSel: int
+ var cwSeld0: int
+ var cwReg: int
+ var cwMemerr: int
+ var cwRet: int
+ var cwInline: int
++var cwPtr: int
+ var cwDeref: int
+ var cwNop: int
+ var cwA5: int
+ var cwExternal: int
+ var cwOverlay: int
+ var cwExtern: int
+ var cwCallback: int
+ var cwForm: int
+ var cwColumn: int
+ var cwFill: int
+@@ -116,20 +117,21 @@ func cwInit() {
+     cwWord = intern("word")
+     cwByte = intern("byte")
+     cwStr = intern("str")
+     cwTrap = intern("trap")
+     cwSel = intern("sel")
+     cwSeld0 = intern("seld0")
+     cwReg = intern("reg")
+     cwMemerr = intern("memerr")
+     cwRet = intern("ret")
+     cwInline = intern("inline")
++    cwPtr = intern("ptr")
+     cwDeref = intern("deref")
+     cwNop = intern("nop")
+     cwA5 = intern("a5")
+     cwExternal = intern("external")
+     cwOverlay = intern("overlay")
+     cwExtern = intern("extern")
+     cwCallback = intern("callback")
+     cwForm = intern("form")
+     cwColumn = intern("column")
+     cwFill = intern("fill")
+@@ -206,21 +208,21 @@ func parseSyncCur() {
+     curTokLine = t.line
+     curTokCol = t.col
+     curTokNameIdx = t.nameIdx
+ }
+ 
+ // curIsIdentIdx reports whether the current token is an IDENT whose
+ // interned name equals idx -- the int-compare replacement for
+ // curIsIdentText's poolGet + string compare (every contextual keyword:
+ // mod, of, form, shows, width, fill, ticks, appletalk, serial, column,
+ // key, app, pad, word, byte, str, trap, sel, seld0, reg, memerr, ret,
+-// inline, deref, nop, a5, external, overlay, extern, callback).
++// inline, deref, nop, a5, ptr, external, overlay, extern, callback).
+ func curIsIdentIdx(idx: int): bool {
+     return curTokKind == TkIdent and curTokNameIdx == idx
+ }
+ 
+ func parseErrorf(line: int, col: int, msg: string) {
+     if parseAborted {
+         return
+     }
+     emitDiag(line, col, msg)
+     parseAborted = true
+@@ -1666,30 +1668,31 @@ func parseRegBind(codes: list of int, names: list of int) {
+ 
+     code = parseRegName()
+     expect(TkColon)
+     pname = expect(TkIdent)
+     codes.add(code)
+     names.add(pname.nameIdx)
+ }
+ 
+ // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
+ // [ ":" type ] [ "=" ( "trap" INTLIT [ "sel" INTLIT | "seld0" INTLIT | regClause ]
+-// | "inline" ( "deref" | "nop" | "a5" ) ) ]` where
++// | "inline" ( "deref" | "nop" | "a5" ) | "ptr" ) ]` where
+ // `regClause = "reg" [ "(" regBind { "," regBind } ")" ] [ "memerr" ]
+ // [ "ret" REG ]` and `regBind = REG ":" IDENT` (Task 3, Ch13: `external
+ // func`; trap/inline clause added Task 2, native-5d; `inline a5` added
+ // Task 12, native-5e; `reg memerr` and `trap ... sel` both added Task 14,
+ // native-5e; regClause's named form -- the parenthesized regBind list and
+ // `ret REG` -- added Task 1, toolbox-integration Feature A; `trap ...
+ // seld0` added mac-resident-clarusc Task 12, the AppleEvent Manager's own
+ // D0-preload selector shape -- see the `seld0` arm's own doc comment,
+-// above) -- parseFuncDecl
++// above; `ptr` added extern-ptr-call phase Task 1 -- a pascal call
++// through a runtime pointer, no suffixes of its own) -- parseFuncDecl
+ // minus the body block, since an external declaration ends at the
+ // signature; a following `{` is left for parseTopDecl to reject as an
+ // ordinary top-level parse error (there is no external-func body to
+ // parse). `trap`/`sel`/`seld0`/`reg`/`memerr`/`ret`/`inline`/`deref`/`nop`/`a5`
+ // are all contextual identifiers, matched the same curIsIdentText way
+ // `external` itself is (no new tokens), and REG (d0/d1/d2/a0/a1) is too
+ // (parseRegName) -- the trap/sel/seld0 words are ordinary TkInt, decimal
+ // or hex (the lexer already handles `0xA122`). trapVal/convFlag/selVal/
+ // retRegCode default to -1/0/-1/-1 (no clause); the checker
+ // (checkExternFunc) validates trapVal/convFlag/the regClause's own rules
+@@ -1856,22 +1859,31 @@ func parseExternFuncDecl(): int {
+                 convFlag = 3
+             } else if curIsIdentIdx(cwNop) {
+                 advance()
+                 convFlag = 4
+             } else if curIsIdentIdx(cwA5) {
+                 advance()
+                 convFlag = 5
+             } else {
+                 parseErrorf(curLine(), curCol(), "expected \"deref\", \"nop\", or \"a5\", found " + tokKindQuoted(curKind()))
+             }
++        } else if curIsIdentIdx(cwPtr) {
++            // extern-ptr-call phase: `= ptr` -- pascal-convention call
++            // through a runtime pointer. The FIRST declared parameter
++            // (checkExternFunc enforces it exists and is `ptr`) is the
++            // jump target, consumed by the call, never pushed; every
++            // remaining param/return marshals exactly like conv 1's
++            // pascal trap. No suffixes: no trap word, no sel/reg/ret.
++            advance()
++            convFlag = 10
+         } else {
+-            parseErrorf(curLine(), curCol(), "expected \"trap\" or \"inline\", found " + tokKindQuoted(curKind()))
++            parseErrorf(curLine(), curCol(), "expected \"trap\", \"inline\", or \"ptr\", found " + tokKindQuoted(curKind()))
+         }
+     }
+     // Pack selVal into trapVal's upper 16 bits (DeclNode's uniform shape
+     // has no spare field for a 4th piece of trap-clause data -- "a few
+     // unused ints per node is irrelevant" is the file's own precedent for
+     // NOT special-casing one decl kind's own struct, so this reuses the
+     // existing `c` slot instead): trap words are always 0xA000..0xAFFF
+     // (fits in the low 16 bits with room to spare) and selVal+1 (0 when
+     // selVal is -1, i.e. no `sel` clause -- a real selector is never
+     // negative) shifted up 16 leaves the low word untouched. externFuncSel
+diff --git a/clarusc/test/check_test.cla b/clarusc/test/check_test.cla
+index 8a422dc..486ad87 100644
+--- a/clarusc/test/check_test.cla
++++ b/clarusc/test/check_test.cla
+@@ -1831,11 +1831,43 @@ on App.startEmpty {
+     // save(d: Doc): bool { ... d.path = ... }` with `d: Doc` a window-ref
+     // param).
+     src = ""
+     ln(src, "window W {")
+     ln(src, "    var n: int")
+     ln(src, "}")
+     ln(src, "func f(w: W) {")
+     ln(src, "    w.n = 5")
+     ln(src, "}")
+     runCase("param-windowref-field-assign-clean", src)
++
++    // extern-ptr-call phase: `= ptr` clause (conv 10).
++    src = ""
++    ln(src, "external func PluginMain(entry: ptr, verb: int): int = ptr")
++    ln(src, "external func PluginMain(entry: ptr, verb: int): int = ptr")
++    ln(src, "func go(p: ptr): int { return PluginMain(p, 1) }")
++    runCase("extern ptr clean + merge", src)
++
++    src = ""
++    ln(src, "external func Bad1(): int = ptr")
++    runCase("extern ptr no params", src)
++
++    src = ""
++    ln(src, "external func Bad2(verb: int, entry: ptr): int = ptr")
++    runCase("extern ptr first param not ptr", src)
++
++    src = ""
++    ln(src, "external func Bad3(entry: ptr): int = ptr")
++    ln(src, "external func Bad3(entry: ptr): int = trap 0xA975")
++    runCase("extern ptr redecl mismatch", src)
++
++    src = ""
++    ln(src, "external func Bad4(entry: ptr): int = ptr reg")
++    runCase("extern ptr rejects reg", src)
++
++    src = ""
++    ln(src, "external func Bad5(entry: ptr): int = ptr sel 1")
++    runCase("extern ptr rejects sel", src)
++
++    src = ""
++    ln(src, "external func Bad6(entry: ptr): int = ptr ret d0")
++    runCase("extern ptr rejects ret", src)
+ }
+diff --git a/clarusc/test/check_test.out b/clarusc/test/check_test.out
+index 82c6944..05375d2 100644
+--- a/clarusc/test/check_test.out
++++ b/clarusc/test/check_test.out
+@@ -292,10 +292,25 @@ check_test.cla:5:21: cannot assign to parameter d
+ === string-frombytes-receiver-param-reject ===
+ check_test.cla:3:5: cannot assign to parameter s
+ === string-tobytes-argbuf-param-reject ===
+ check_test.cla:3:15: cannot assign to parameter buf
+ === text-frombytes-receiver-param-clean ===
+ clean
+ === file-load-list-param-clean ===
+ clean
+ === param-windowref-field-assign-clean ===
+ clean
++=== extern ptr clean + merge ===
++clean
++=== extern ptr no params ===
++check_test.cla:1:1: = ptr requires a first parameter of type ptr
++=== extern ptr first param not ptr ===
++check_test.cla:1:1: = ptr requires a first parameter of type ptr
++=== extern ptr redecl mismatch ===
++check_test.cla:1:1: conflicting extern declaration for 'Bad3' (also declared at 2:1)
++check_test.cla:2:1: conflicting extern declaration for 'Bad3' (also declared at 1:1)
++=== extern ptr rejects reg ===
++check_test.cla:1:43: expected declaration, found identifier
++=== extern ptr rejects sel ===
++check_test.cla:1:43: expected declaration, found identifier
++=== extern ptr rejects ret ===
++check_test.cla:1:43: expected declaration, found identifier

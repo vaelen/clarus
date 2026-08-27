@@ -1,191 +1,155 @@
-# Session status — 2026-08-26 (filesystem-api: COMPLETE, T2 green, not merged)
+# Session status — 2026-08-28 (extern-ptr-call: COMPLETE, T2 green, not merged)
 
-Handoff summary. **The `filesystem-api` phase (branch `filesystem-api`,
-based on `main` at `8b8e8e2` — `binary-files` and `transfer-crcs` are
-already merged into local `main`) adds `file.makeDir/delete/list/
-exists/info/setInfo/rename/move` on both lanes, closing the remaining
-68kBBS filesystem gaps (`docs/language-gaps.md` §1/§2/§3/§5/§6/§7 in
-the `68kbbs` project). Task 1 was a hardware probe wave (trap/selector/
-offset verification, path-form spikes, the `drive.cla` splice-point
-analysis) with no code commit. Task 2 built the `toolbox/files.cla` HFS
-catalog/directory family (`_HFSDispatch`'s selector-in-D0 traps plus
-five `PBH*` single-trap routines). Task 3 added a new predeclared
-`FileInfo` record (a from-source `runtime/clarus/prelude.cla` splice
-ahead of the standalone user-code check) and `file.exists`/`file.info`
-on the host lane. Task 4 added the remaining six calls on the host
-lane, HFS→POSIX path translation, and the `DirOps` core suite case.
-Task 5 built the native lane (`fileh_68k.cla`), adding ONE new native
-global (`rtFh68kState`) and reblessing the cg68k/emitui corpus once.
-Task 6 added host C twins for the `ReadDateTime`/`SecondsToDate`/
-`DateToSeconds` public catalog externs. Task 7 (this close-out)
-regenerated the bootstrap snapshot, hit and fixed a PRE-EXISTING native
-UI crash the T2 gate surfaced (`4bc0a07`, see below — not a
-filesystem-api defect), closed out docs, and left a written-but-
-uncommitted update to `../68kbbs/docs/language-gaps.md` (+
-`docs/fidonet.md`) for Andrew. Full T2 PASS (see §1). NOT merged, NOT
-pushed — merge only on Andrew's request.**
+Handoff summary. **The `extern-ptr-call` phase (branch `extern-ptr-call`,
+based on `main` at `74c9e46` — `filesystem-api` and everything before it
+are already merged to local `main`, NOT pushed) adds `= ptr`, a new
+`external func` clause for a pascal-convention call through a runtime
+pointer rather than a fixed trap number, both lanes. Driving use case:
+loaded code resources — `GetResource` a plugin/door module (68kBBS
+territory), `HLock` it, deref the handle, jump in with arguments — which
+had no language surface at all before this phase. Tasks 1-5 (parser/
+checker, host lane, native lane, core-suite `PtrCall` case, reference/
+cookbook docs) all passed review clean, no fix rounds needed. Task 6
+(this close-out) regenerated the bootstrap snapshot, ran full T1/T2 green,
+found and fixed a real CheckClean gate break in the reference's own new
+`ptr`-clause worked example (not a compiler bug — a doc example that
+didn't compile standalone), and closed out docs. Full T2 PASS (see §1).
+NOT merged, NOT pushed — merge only on Andrew's request.**
 
 ## 0. START HERE next session
 
-**Pre-merge obligations (both owed, neither run this phase):**
-
-1. **System 7 (Snow) verification is UNVERIFIED for this entire
-   phase.** A live, unrelated 68kbbs session owned the one Snow
-   instance throughout (Task 1's probe wave, Task 5's native lane, and
-   the `TestClarusCBakePathOnSnow` rerun below all deferred for the
-   same reason). Every `PBH*`/`_HFSDispatch` trap this phase uses
-   predates System 7, so no difference is expected — but nothing in
-   this phase's own hardware evidence is System-7-backed. Re-run Task
-   1's probe (or at minimum `DirOps`, the core-suite case) on Snow
-   before merge.
-2. **`TestClarusCBakePathOnSnow`** (`CLARUS_SNOW_TESTS=1 go test
-   -count=1 -timeout 90m ./internal/mactest -run
-   TestClarusCBakePathOnSnow`, ~55 min) is owed after any runtime-module
-   addition — `fileh_68k.cla` gained real bodies this phase (Task 5).
-   Deferred for the same reason as (1). Task 3's own manual `--rtbake`/
-   `--rtbake --testapi` experiments are the only current evidence the
-   bake path works with the new `prelude.cla` splice.
+No pre-merge obligations are owed by this phase specifically: `= ptr` is
+pure compiler front-end + codegen (conv 10 alongside the existing trap/
+inline convs) with no new Toolbox trap surface and no OS-version-
+dependent behavior, so there is nothing here that needs a System 7
+(Snow) spot check the way filesystem-api's new HFS traps did. The core
+suite's `PtrCall` case (both a word-returning and a bool-returning round
+trip through a callback's own glue) is hardware-proved green on the
+System 6 Mini vMac native lane (80/80, `TestCoreSuiteGUIOn68k`).
 
 Otherwise the phase is fully closed on the branch: snapshot regenerated
 and fixed-point-verified, T2 green, docs closed out.
 
-**A pre-existing native UI crash surfaced and was fixed this task**
-(commit `4bc0a07`, full trail
-`.superpowers/sdd/2026-08-26-filesystem-api/crash-report.md`): T2's
-gated native lane bombed on `TestToolboxSuiteJiggleOn68k` ("illegal
-instruction") while the plain `TestToolboxSuiteOn68k` stayed green —
-exactly the signal the correctness-cleanup phase's heap-jiggle harness
-exists to catch. Root cause: `runtime/clarus/uitext.cla`'s
-`rtUiTeWidestLine` held a `TEHandle` master pointer across
-`rtUiGetPortSaved()`'s allocation (`UiNewPtr`, the jiggle waist),
-then kept reading through the now-stale pointer — a pre-existing bug,
-**not** a filesystem-api defect (two builds with byte-identical CODE
-segments landed on opposite sides of the crash; Task 5's new global
-merely re-rolled the heap layout that made it live). Fixed by hoisting
-the allocating call above the master-pointer capture; 14 `emitui` +
-3 `cg68k` `.seg2.s` goldens reblessed (one statement moved, normalized
-in the crash report). `docs/HISTORY.md`'s phase entry and
-`docs/ROADMAP.md`'s standing rule both cite it as the seventh instance
-of this bug class; `docs/TODO.md` records the follow-up (a core-suite
-jiggle twin — the jiggle gate exists only for the toolbox suite today).
+**A real gate break was found and fixed this task, not a compiler
+defect:** T1's `internal/reftest` package (`TestCheckCleanFences`,
+`TestRequiredProgramsInManifest`) went red after Task 5's reference edit.
+The new "The `ptr` Clause" subsection's closing worked example (`HLock` →
+`HandleToPtr` → `PluginMain(code, 1, pb)`) had two real problems: it used
+bare top-level statements outside any function (only declarations are
+legal at top level in Clarus) and referenced an undeclared `pb`. Fixed by
+wrapping the example in a `callPlugin(h: ptr, pb: ptr): int` function,
+with `var code: ptr` declared (uninitialized) before the `HLock`/
+`HandleToPtr`/`return` statements — Clarus requires all local var
+declarations at the top of a body before any statement, so the assignment
+to `code` had to move after the declaration rather than being folded into
+it. Mirrored the identical fix into `docs/clarus-toolbox-cookbook.md`'s
+own copy of the same example (not gate-checked, but kept consistent).
+This inserted two new fences into `docs/clarus-language-reference.md`
+(the standalone `= ptr` declaration line, and the fixed closing example),
+shifting every fence index at or after the old "word extern type" fence
+by +2 — `internal/reftest/manifest.go`'s `CheckClean` list and its header
+comments were updated to match (new indices 84/85 added; the two
+Appendix C programs shifted from 85/86 to 87/88). Full trail: this file's
+§1 below and the language reference's own "The `ptr` Clause" subsection.
 
-**What this phase built** (7 tasks; Task 1 no code commit, Tasks 2-6
-one feat + one fix-round commit each, plus the crash fix `4bc0a07` and
-this Task 7 close-out commit; full detail in
-`.superpowers/sdd/2026-08-26-filesystem-api/`):
+**What this phase built** (6 tasks; Tasks 1-5 one feat commit each, all
+review-clean with no fix rounds; Task 6 this close-out commit; full
+detail in `.superpowers/sdd/2026-08-27-extern-ptr-call/`):
 
-1. **`toolbox/files.cla` HFS catalog/directory family** (Task 2,
-   `75d9c39`, fix round `9549634`) — the `_HFSDispatch` trap trio
-   (`PBGetCatInfoSync`/`PBSetCatInfoSync`/`PBDirCreateSync`/
-   `PBCatMoveSync`, trap `0xA260`, selector in D0 via `moveq #N,D0`,
-   `reg(a0: pb, d0: selector) ret d0`) plus five single-trap
-   `PBH*Sync` routines; records `HFileParam`/`CInfoPBRec`/
-   `CMovePBRec`/`HIOParamRename`; cookbook §12.
-2. **`FileInfo` prelude + `file.exists`/`file.info`** (Task 3,
-   `3e6aa69`, fix round `5efc3f5`) — `runtime/clarus/prelude.cla`
-   spliced from source as the very first file in `driveCompile`, so
-   the predeclared `FileInfo` record is visible to the STANDALONE
-   check on every lane/mode. `MethodSig.retNameIdx`/`sigEndNamed`
-   resolve `file.info`'s return type by name at check time. A parallel
-   `ParamSpec.recNameIdx`/`psRecNamed` mechanism was drafted, never
-   became reachable, and was deleted (controller ruling) rather than
-   left dead. Fix round 1 guarded a `-1`-index crash on a missing
-   prelude (undeclared `FileInfo` now diagnoses cleanly instead of
-   panicking) and corrected the `--rtbake` manifest-drift exclusion.
-3. **`file.makeDir/delete/list/setInfo/rename/move`, host lane, HFS→
-   POSIX paths, `DirOps` core case** (Task 4, `8454885`, fix round
-   `3e97204`) — `rt_fh_posix_path` (`runtime/host/rt.c`) is the ONE
-   hook every path-taking C entry point shares. Fix round 1: a
-   `readdir()` error was silently reported as a truncated success;
-   `rtFhDevListFailed()` now surfaces it.
-4. **Native lane** (Task 5, `2084ccc`, fix round `607c2fa`) —
-   `fileh_68k.cla` drives every call for real. ONE new native global,
-   `rtFh68kState` (lazily `SerNewPtr`'d 44-byte state block).
-   Reblessed the cg68k/emitui corpus once: uniform A5 shift, one
-   `cg_init_globals` zero-init pair per program, one fixture
-   (`peep_pushpop.s`) crossed into a new second segment. Fix round 1:
-   `""` generalized to name the program's own folder for
-   `exists`/`info` too, on both lanes (was list-only, host-lane-absent
-   for the other two).
-5. **Host date glue** (Task 6, `856d1d1`) — host C twins for the
-   PUBLIC `ReadDateTime`/`SecondsToDate`/`DateToSeconds` catalog
-   externs, so a host build linking them now works.
-6. **Latent crash fix** (Task 7, `4bc0a07`) — see above.
-7. **Close-out (Task 7, this commit)**: bootstrap snapshot
-   regenerated and fixed-point-verified (confirmed unaffected by the
-   crash fix, which touches no `clarusc/*.cla`); `toolbox/files.cla`'s
-   `CMovePBRec.ioNewName` comment corrected + a `dirNFErr` const added
-   (replacing a bare `-120` in `fileh_68k.cla`); the reference's
-   Host-behaviour paragraph extended (`setInfo`'s `created` is ignored
-   on a host too); two stray `--` fixed to em dashes near the `Files`
-   section; `docs/TODO.md`/`docs/ROADMAP.md`/`docs/HISTORY.md`/
-   `CLAUDE.md` closed out; `../68kbbs/docs/language-gaps.md` (+
-   `docs/fidonet.md`) updated but left UNCOMMITTED in that repo, for
-   Andrew.
+1. **Parser + checker front end** (Task 1, `c9c2d4f`) — new contextual
+   keyword `ptr` recognized only in `external func`'s clause position
+   (conv flag 10); the checker requires at least one parameter with the
+   first declared `ptr` (the call target, consumed as the jump address,
+   never pushed); `ptr` is grammar-level incompatible with `sel`/
+   `seld0`/`reg`/`memerr`/`ret` (a parse error, not a checked
+   diagnostic — the grammar has no production for a suffix there). Seven
+   new `check_test` fixture cases.
+2. **Host lane** (Task 2, `5f8d225`) — `cprint.cla`'s `fpCallExt` casts
+   the first argument through a C function-pointer type built from the
+   extern's own declared param/return types (`cpCbWireType`/
+   `cpCbRetWireType`, the same wire types a `callback func`'s glue
+   already conforms to) and calls through it directly — no `rt_ext_`
+   host symbol at all for a conv-10 extern (`cpEmitExternProtos` skips
+   it). New fixture `testdata/lowlevel/ptrcall_host.cla`
+   (`TestLowlevel`), modeled on `callback_host.cla`.
+3. **Native lane** (Task 3, `0ae201d`) — `cg68k.cla`'s pascal arg-push
+   loop was extracted verbatim out of `cgCallExtPascal` into
+   `cgPushPascalArgs(a0, xi, j0)` (conv 1/9 emission proven
+   byte-identical by the existing golden corpus — no rebless). New
+   `cgCallExtPtr`: push the target as a saved long below the result
+   slot, push the result slot, push args 1.. via the shared loop against
+   params 1.., `MOVEA.L` the saved target back into A0 past the pushed
+   args+slot, `JSR (A0)`, read the result back (same three
+   signed/short-slot arms `cgCallExtPascal` already used), `ADDQ.L
+   #4,A7` to discard the saved target (the callee only pops its own
+   declared args under pascal discipline). No new native globals.
+4. **Core suite `PtrCall` case** (Task 4, `8fa24f7`) —
+   `testsuite/core/cases_ptrcall.cla`: a word-returning round trip
+   (`PtrCallRound` through `callback func pcMixed`, asserting a signed
+   result, a `ptr`+`int` side effect via `peekl`, and a bool-steered
+   branch) plus a bool-returning round trip (`PtrCallFlag` through
+   `callback func pcIsPositive`) added by review to pin the
+   historically-buggy bool-result native readback arm — the word case
+   alone doesn't reach it. `nCoreCases` 79 → 80 (79 real + `SelfCheck`);
+   wired into every count site (`runner.cla`,
+   `internal/testsuite/core_cli_test.go`, `internal/cg68k/
+   segment_test.go`, `internal/mactest/coresuite_test.go`/
+   `suite_host_test.go`, `internal/bake/bakeidentity_test.go`). Hardware
+   green 80/80 on `TestCoreSuiteGUIOn68k` (System 6, Mini vMac).
+5. **Docs** (Task 5, `929bd15`) — reference grammar production extended
+   with `| "ptr"`; new "The `ptr` Clause" subsection (Ch13); cookbook
+   §13, "Walkthrough: calling loaded code — the `= ptr` clause".
+6. **Close-out (Task 6, this commit)** — bootstrap snapshot regenerated
+   and fixed-point-verified; the reference/cookbook `pb`/top-level-
+   statement fence bug found and fixed (see above); `internal/reftest/
+   manifest.go`'s `CheckClean` manifest updated for the two new fences;
+   `docs/TODO.md`/`docs/ROADMAP.md`/`docs/HISTORY.md`/`CLAUDE.md` closed
+   out.
 
-**Task 1's hardware findings worth remembering** (probe wave, Mini
-vMac/System 6 only — full trail:
-`.superpowers/sdd/2026-08-26-filesystem-api/task-1-report.md`):
-
-- `PBHRenameSync` rejects the ordinary `ioDirID=0` + partial-path
-  convention every other HFS call in this phase accepts
-  (`bdNamErr`/`dirNFErr`); it needs a bare leaf name plus the item's
-  real parent DirID, resolved via one extra `PBGetCatInfoSync` call.
-- Both a nested partial path (`:ProbeA:B:x.dat`) and a full
-  volume-qualified path (`vol + ":ProbeA:B:x.dat"`) opened
-  successfully natively with zero code changes — verified only
-  against the probe's own boot volume, never a second mounted volume.
-- `ioDirID = 0` genuinely enumerates the default folder.
-- `""` names the program's own folder for `list`/`exists`/`info` on
-  both lanes (fix round 1 generalized this beyond `list`).
-- There is no `Name(ptr)`-style overlay/conversion form for `extern
-  record` — only `var x: SomeRecord`-style locals; `fileh_68k.cla`
-  uses function-local records reused across calls instead of a
-  persisted PB record.
+**Deferred follow-ups** (both from the spec's own out-of-scope section,
+recorded in `docs/TODO.md`, not re-litigated): a named-target `= ptr(name)`
+form (binding a declaration to one fixed pointer rather than taking the
+target fresh at every call site); register-convention (`reg`) targets for
+`= ptr` (today pascal-only).
 
 ## 1. Gate results (this phase)
 
-1. **Snapshot fixed point**: PASS. Regenerated per
-   `TestSnapshotFixedPoint`'s exact recipe (`cc`-only bootstrap, no Go
-   compiler): `go test ./internal/selfhost -run TestSnapshotFixedPoint
-   -count=1 -timeout 30m` → PASS ("snapshot fixed point reached: gen1
-   == gen2 (4923665 bytes), and matches the committed snapshot").
-   Re-checked after the crash fix (`4bc0a07`, which touches no
-   `clarusc/*.cla`) — still at the fixed point, no regen needed.
-2. **Reftest manifest**: `go test -count=1 ./internal/reftest` → PASS,
-   no fence shift, no manifest regeneration needed.
-3. **T2** (`scripts/test-merge.sh`, run in pieces, foreground): PASS.
-   `scripts/test-task.sh --smoke` (T1 body + 2 native smokes) → PASS,
-   35s. `CLARUS_MAC_TESTS=1 go test ./internal/mactest` (no `-run`
-   filter, includes `TestToolboxSuiteJiggleOn68k` and every other
-   native-lane boot) → PASS, 184.7s. `go test ./internal/selfhost
-   -count=1 -timeout 30m` → PASS, 130.8s. `go test ./internal/reftest
-   -count=1` → PASS, 0.4s. `CLARUS_BAKE_FULL=1 go test ./internal/bake
-   -count=1 -timeout 10m` (full-corpus byte-identity gate) → PASS,
-   6.5s. `TestClarusCBakePathOnSnow` NOT run (deferred, §0 above).
-4. **Docs**: this file, `docs/ROADMAP.md` ("Next: language usability"
-   item 1 extended + a new "Where we are" paragraph + the standing
-   rule's bug-class count 6→7), `docs/TODO.md` (five new phase
-   subsections: language follow-ups, a compiler-correctness minor, six
-   runtime/toolbox minors, a bake-machinery pre-existing gap, seven
-   test-coverage gaps including the jiggle-twin follow-up),
-   `docs/HISTORY.md` (new phase entry + a "Latent bug found" paragraph
-   + the Task 2/Task 3 golden-churn record — each reblessed all 19
-   `testdata/emitui/*.c.golden` files, additive-only), `CLAUDE.md`
-   (core-suite count 78→79, `toolbox/files.cla` no-longer-thin
-   description, `prelude.cla` next to `--bake`, one sentence in the
-   binary-files paragraph), the language reference (Host-behaviour
-   paragraph extended, two `--`→em-dash fixes) — all committed
-   alongside this file.
+1. **Snapshot fixed point**: PASS. `go test -count=1 -timeout 30m -run
+   TestSnapshotFixedPoint ./internal/selfhost` first FAILed (stale
+   snapshot — clarusc's own source changed under parse/check/cprint/
+   cg68k this phase), printed the Go-free regen recipe, which was
+   followed verbatim (`cc`-only two-stage bootstrap through the current
+   source, no Go compiler); re-run → PASS ("snapshot fixed point
+   reached").
+2. **T1** (`scripts/test-task.sh --smoke`): first run FAILed
+   (`internal/reftest`, the fence-manifest gate break described above);
+   fixed (reference/cookbook doc edit + `manifest.go` update); re-run →
+   PASS, 28s.
+3. **T2** (`scripts/test-merge.sh`, foreground): PASS, 345s total. T1
+   body 18s; `internal/selfhost` (`-count=1 -timeout 30m`) 133s;
+   `internal/mactest` gated native lane (`CLARUS_MAC_TESTS=1`, no `-run`
+   filter — every native-lane boot including the heap-jiggle gate) 187s;
+   `internal/bake` full-corpus byte-identity gate
+   (`CLARUS_BAKE_FULL=1`) 7s.
+4. **Docs**: this file, `docs/ROADMAP.md` (new "Where we are" paragraph),
+   `docs/HISTORY.md` (new phase entry), `docs/TODO.md` (two deferred
+   follow-ups), `CLAUDE.md` (core-suite count 79→80, `= ptr` one-line
+   mention) — all committed alongside this file.
 
 ## 2. Prior phases (all merged; recap pointers only)
 
-- **transfer-crcs** (`text.crc16x`/`text.crc32`) — merged to local
-  `main` 2026-08-25 (part of this branch's own base, `8b8e8e2`).
-- **binary-files** (`filehandle`, `connection` as a value, `text`
-  binary accessors + `crc16`, `string(n)`, the `toolbox/` include
-  fallback, emit68k's per-function big-temp pool) — merged to local
-  `main` 2026-08-23 (part of this branch's own base).
+- **filesystem-api** (`file.makeDir/delete/list/exists/info/setInfo/
+  rename/move`, both lanes) — merged to local `main` 2026-08-26 (part of
+  this branch's own base, `74c9e46`). System 7 (Snow) verification for
+  that phase remains UNVERIFIED — still owed before that work (and this
+  branch, which sits on top of it) is pushed; see that phase's own
+  `docs/HISTORY.md` entry.
+- **transfer-crcs** (`text.crc16x`/`text.crc32`) — merged to local `main`
+  2026-08-25 (part of this branch's own base).
+- **binary-files** (`filehandle`, `connection` as a value, `text` binary
+  accessors + `crc16`, `string(n)`, the `toolbox/` include fallback,
+  emit68k's per-function big-temp pool) — merged to local `main`
+  2026-08-23 (part of this branch's own base).
 - **correctness-cleanup** — merged to `main` (ff `48a4696..3a4c054`),
   pushed 2026-08-18.
 - **serial-connection** (fenced `connection` type, serial as first
@@ -206,5 +170,5 @@ note explaining the gap) — a future docs pass should catch HISTORY up
 through all three.
 
 **Standing rules:** `internal/selfhost` always gets `-count=1 -timeout
-30m`. Merge only on Andrew's request; main stays green (this branch
-does NOT touch main).
+30m`. Merge only on Andrew's request; main stays green (this branch does
+NOT touch main).

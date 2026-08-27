@@ -1,0 +1,416 @@
+# Review package: 0ae201d..HEAD
+
+## Commits
+8fa24f7 test: core suite PtrCall case -- '= ptr' round trip via callback glue (80 cases)
+
+## Files changed
+ internal/bake/bakeidentity_test.go  |  2 +
+ internal/cg68k/segment_test.go      |  2 +
+ internal/mactest/coresuite_test.go  |  7 +++-
+ internal/mactest/suite_host_test.go |  2 +
+ internal/testsuite/core_cli_test.go |  3 ++
+ testsuite/core/cases_ptrcall.cla    | 74 +++++++++++++++++++++++++++++++++++++
+ testsuite/core/runner.cla           | 20 +++++++++-
+ 7 files changed, 106 insertions(+), 4 deletions(-)
+
+## Diff
+diff --git a/internal/bake/bakeidentity_test.go b/internal/bake/bakeidentity_test.go
+index 019b1c6..5addb9e 100644
+--- a/internal/bake/bakeidentity_test.go
++++ b/internal/bake/bakeidentity_test.go
+@@ -1403,20 +1403,22 @@ var coreSuiteGUIFiles = []string{
+ 	// filesystem-api phase Task 4: cases_dirops.cla MUST be here --
+ 	// runner.cla (above) unconditionally calls caseDirOps(). Unlike
+ 	// cases_fileh.cla's own Task-5-era gap above, this ONE checks and
+ 	// links cleanly on the native lane today (fileh_68k.cla carries real
+ 	// PLACEHOLDER stubs for every new rtFhDev* entry, spec %4.3) -- it's
+ 	// only DirOps' own RUNTIME result that fails there (every stub
+ 	// returns unimpErr) until Task 5 replaces them with real File
+ 	// Manager calls. Same opt-in-only, not-a-T1-regression story as
+ 	// cases_fileh.cla's own note.
+ 	filepath.Join("testsuite", "core", "cases_dirops.cla"),
++	// extern-ptr-call phase: runner.cla unconditionally calls casePtrCall().
++	filepath.Join("testsuite", "core", "cases_ptrcall.cla"),
+ 	filepath.Join("testsuite", "core", "gui.cla"),
+ }
+ 
+ var toolboxSuiteGUIFiles = []string{
+ 	filepath.Join("testsuite", "kit.cla"),
+ 	filepath.Join("toolbox", "memory.cla"),
+ 	filepath.Join("toolbox", "events.cla"),
+ 	filepath.Join("toolbox", "osutils.cla"),
+ 	filepath.Join("toolbox", "scrap.cla"),
+ 	filepath.Join("toolbox", "files.cla"),
+diff --git a/internal/cg68k/segment_test.go b/internal/cg68k/segment_test.go
+index 680df80..d767cfa 100644
+--- a/internal/cg68k/segment_test.go
++++ b/internal/cg68k/segment_test.go
+@@ -112,20 +112,22 @@ func segmentationFixture(root string) []string {
+ 		// caseFileHandleRW()).
+ 		filepath.Join("testsuite", "core", "cases_fileh.cla"),
+ 		// filesystem-api phase Task 4: cases_dirops.cla MUST be here --
+ 		// runner.cla (above) unconditionally calls caseDirOps(). Checks
+ 		// and links cleanly on this native lane (fileh_68k.cla's new
+ 		// rtFhDev* PLACEHOLDER stubs resolve every call), matching every
+ 		// other coreCLIFiles-family list -- this test only compiles
+ 		// (emit68k), it never boots the binary, so DirOps' own runtime
+ 		// failure on native (Task 5's job to fix) doesn't reach it.
+ 		filepath.Join("testsuite", "core", "cases_dirops.cla"),
++		// extern-ptr-call phase: runner.cla unconditionally calls casePtrCall().
++		filepath.Join("testsuite", "core", "cases_ptrcall.cla"),
+ 		filepath.Join("testsuite", "core", "cli_mac.cla"),
+ 	}
+ 	abs := make([]string, len(rel))
+ 	for i, f := range rel {
+ 		abs[i] = filepath.Join(root, f)
+ 	}
+ 	return abs
+ }
+ 
+ func TestSegmentationMultiSegment(t *testing.T) {
+diff --git a/internal/mactest/coresuite_test.go b/internal/mactest/coresuite_test.go
+index cdbe0a0..3f40268 100644
+--- a/internal/mactest/coresuite_test.go
++++ b/internal/mactest/coresuite_test.go
+@@ -24,21 +24,21 @@ import (
+ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("testsuite", "core", "gui.cla"))
+ 
+ // wantCoreSuiteCases is runner.cla's own nCoreCases (the total result-line
+ // count a full run produces: every real CoreTest case plus SelfCheck) --
+ // the single shared authority for the core-suite
+ // case count, consulted everywhere this package previously carried the
+ // count as a duplicated literal (checkCoreSuiteCapture's passes/total
+ // assertions, below). A future case addition/removal updates this ONE
+ // const plus runner.cla's own nCoreCases, instead of hunting down every
+ // hardcoded copy.
+-const wantCoreSuiteCases = 79
++const wantCoreSuiteCases = 80
+ 
+ // TestCoreSuiteGUIOn68k is the core suite's Mac GUI front-end gate
+ // (test-suite-review Task 10): one native 68k boot (buildNative68kUI --
+ // clarusc emit68k directly, no Retro68/cmake/C, the same lane
+ // TestSmokeBounceOn68k pioneered for native UI), driven by
+ // testdata/ui/coresuite.events (one click on the Run All button --
+ // coordinate derived from gui.cla's own fixed `at:` widget positions
+ // plus rt_ui_open's screen-centering math; see gui.cla's header comment
+ // for the arithmetic -- then `quit`).
+ //
+@@ -74,21 +74,24 @@ const wantCoreSuiteCases = 79
+ // 74 by correctness-cleanup Task 7's own EvalOrder case (`get(k, dv)`
+ // argument evaluation order, cases_evalorder.cla), then 77 by the
+ // binary-files phase's own TextBinary/Crc16/IntToStr cases
+ // (cases_textbinary.cla -- the LE/word/setter text accessors, CRC-16/
+ // KERMIT, and `string(n)`), then 78 by that same phase's Task 5
+ // FileHandleRW case (cases_fileh.cla -- create/writeAt/readAt/append/
+ // size/setSize/flush/close/reopen, a two-handle record, a handle passed
+ // to a function, and stale-after-close), then 79 by the filesystem-api
+ // phase's own Task 4 DirOps case (cases_dirops.cla -- makeDir/delete/
+ // list/setInfo/rename/move end to end, host lane; native still fails
+-// until Task 5 replaces fileh_68k.cla's PLACEHOLDER stubs) --
++// until Task 5 replaces fileh_68k.cla's PLACEHOLDER stubs), then 80 by
++// the extern-ptr-call phase's own Task 4 PtrCall case (cases_ptrcall.cla
++// -- `= ptr` conv-10 round trip through a callback's decayed glue
++// address, both a word- and a bool-returning call) --
+ // the count now lives in the ONE wantCoreSuiteCases const above, not a
+ // literal at every use site. Task 2 bumped runner.cla's
+ // nCoreCases and internal/testsuite's own wantCases, but this file's
+ // hardcoded count was explicitly out of Task 2's host-lane-only scope
+ // (cg68k.cla off limits, no cg68k arms yet to boot natively past
+ // "unsupported UI intrinsic text_int_at" -- text_u32_at before the
+ // post-review u32At->intAt rename) -- Task 3's cg68k arms are what
+ // first let this gate reach the per-case capture below at all, so the
+ // count bump lands together with them here. Requires all wantCoreSuiteCases
+ // real cases PASS in this ONE boot, plus the matching TOTAL line -- success
+diff --git a/internal/mactest/suite_host_test.go b/internal/mactest/suite_host_test.go
+index d6cb068..ad0ceea 100644
+--- a/internal/mactest/suite_host_test.go
++++ b/internal/mactest/suite_host_test.go
+@@ -131,20 +131,22 @@ var coreCLIFiles = []string{
+ 	filepath.Join("testsuite", "core", "cases_fileh.cla"),
+ 	// filesystem-api phase Task 4: cases_dirops.cla MUST be here --
+ 	// runner.cla unconditionally calls caseDirOps(). Host lane only in
+ 	// this task: fileh_68k.cla's rtFhDevMakeDir/Delete/ListBegin/
+ 	// ListNext/ListEnd/SetInfo/Rename/Move are PLACEHOLDER stubs that all
+ 	// fail (spec %4.3), so DirOps fails on the two gated
+ 	// (CLARUS_MAC_TESTS=1) native-boot tests below until Task 5 replaces
+ 	// them with real File Manager calls -- same accepted/expected story
+ 	// as cases_textrange.cla's own comment above.
+ 	filepath.Join("testsuite", "core", "cases_dirops.cla"),
++	// extern-ptr-call phase: runner.cla unconditionally calls casePtrCall().
++	filepath.Join("testsuite", "core", "cases_ptrcall.cla"),
+ }
+ 
+ // coreCLIHostFiles/absFiles/BuildCoreCLIHost/RunCoreCLIHost (coreCLIFiles +
+ // core/cli.cla, the host-oracle build/run pair for TestSuiteOnMac's
+ // mac/host byte-exact comparison) were deleted by test-consolidation
+ // Task 7 alongside their sole caller, TestSuiteOnMac (mac_test.go, audit
+ // row R12, DELETE) -- provably reference-free (`command grep -rn
+ // 'coreCLIHostFiles\|absFiles(\|BuildCoreCLIHost\|RunCoreCLIHost'
+ // internal/ testsuite/ scripts/` after this deletion finds only this
+ // comment).
+diff --git a/internal/testsuite/core_cli_test.go b/internal/testsuite/core_cli_test.go
+index 505bc24..699431a 100644
+--- a/internal/testsuite/core_cli_test.go
++++ b/internal/testsuite/core_cli_test.go
+@@ -74,20 +74,22 @@ func buildCoreCLI(t *testing.T) string {
+ 		filepath.Join(root, "testsuite", "core", "cases_xrec.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cases_datetime.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cases_param.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cases_abort.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cases_textrange.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cases_errret.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cases_evalorder.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cases_textbinary.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cases_fileh.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cases_dirops.cla"),
++		// extern-ptr-call phase: runner.cla unconditionally calls casePtrCall().
++		filepath.Join(root, "testsuite", "core", "cases_ptrcall.cla"),
+ 		filepath.Join(root, "testsuite", "core", "cli.cla"),
+ 	}
+ 	args := append([]string{"emit", "--rtdir", rtDir, "-o", outC}, files...)
+ 	emit := exec.Command(exe, args...)
+ 	if out, err := emit.CombinedOutput(); err != nil {
+ 		t.Fatalf("clarusc emit core CLI: %v\n%s", err, out)
+ 	}
+ 
+ 	bin := filepath.Join(work, "core_cli")
+ 	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "runtime", "host"),
+@@ -213,20 +215,21 @@ func TestCoreSuiteCLI(t *testing.T) {
+ 			"TextRange",
+ 			"ListClone",
+ 			"OnLog",
+ 			"ErrReturn",
+ 			"EvalOrder",
+ 			"TextBinary",
+ 			"Crc16",
+ 			"IntToStr",
+ 			"FileHandleRW",
+ 			"DirOps",
++			"PtrCall",
+ 			"SelfCheck",
+ 		}
+ 		if len(lines) != len(wantCases) {
+ 			t.Fatalf("expected %d cases, got %d: %+v", len(wantCases), len(lines), lines)
+ 		}
+ 		for i, name := range wantCases {
+ 			if lines[i].name != name {
+ 				t.Errorf("case %d: got %q, want %q", i, lines[i].name, name)
+ 			}
+ 			if !lines[i].passed {
+diff --git a/testsuite/core/cases_ptrcall.cla b/testsuite/core/cases_ptrcall.cla
+new file mode 100644
+index 0000000..1db3abb
+--- /dev/null
++++ b/testsuite/core/cases_ptrcall.cla
+@@ -0,0 +1,74 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// casePtrCall: `= ptr` extern (conv 10) round trip through a
++// callback's decayed glue address (extern-ptr-call phase). On the
++// native lane the glue is real pascal-convention 68k code, so this
++// hardware-proves the marshalling -- word sign, bool high-byte-in-word,
++// ptr, int, and a signed word RESULT -- against the compiler's own
++// glue. On host it proves fpCallExt's cast-and-call.
++//
++// PtrCallFlag/pcIsPositive (controller amendment, Task 3 review) add a
++// second `= ptr` extern whose RESULT is bool, not word -- the native
++// bool/char RESULT-readback arm (CLR.L / MOVE.W (A7)+ / LSR.L #8, a
++// historic hardware-bug site) is otherwise unexercised by
++// PtrCallRound's word-returning call alone.
++//
++// NewPtr/DisposePtr here are the SAME trap declarations
++// toolbox/memory.cla carries (0xA11E/0xA01F, `reg` positional) -- the
++// core suite doesn't compose that file, so this case declares its own
++// copy under the identical name/signature/clause rather than a `Pc`-
++// prefixed duplicate, matching the reference's "identical repeat" extern
++// accommodation and picking up the host lane's existing
++// rt_ext_NewPtr/rt_ext_DisposePtr glue (runtime/host/rt_ext_host.inc)
++// for free.
++external func NewPtr(size: int): ptr = trap 0xA11E reg
++external func DisposePtr(p: ptr) = trap 0xA01F reg
++external func PtrCallRound(entry: ptr, w: word, flag: bool, out: ptr, n: int): word = ptr
++external func PtrCallFlag(entry: ptr, x: int): bool = ptr
++
++callback func pcMixed(w: word, flag: bool, out: ptr, n: int): word {
++    pokel(out, n + w)
++    if flag {
++        return w - 100
++    }
++    return w
++}
++
++callback func pcIsPositive(x: int): bool {
++    return x > 0
++}
++
++func casePtrCall(): TestResult {
++    var scratch: ptr
++    var r: int
++    var b: bool
++
++    scratch = NewPtr(4)
++
++    r = PtrCallRound(pcMixed, 7, true, scratch, 21)
++    if r != -93 {
++        return tkFail("PtrCall", "flag=true result = " + tkIntToStr(r))
++    }
++    if peekl(scratch) != 28 {
++        return tkFail("PtrCall", "peekl(scratch) = " + tkIntToStr(peekl(scratch)))
++    }
++
++    r = PtrCallRound(pcMixed, 7, false, scratch, 21)
++    if r != 7 {
++        return tkFail("PtrCall", "flag=false result = " + tkIntToStr(r))
++    }
++
++    b = PtrCallFlag(pcIsPositive, 5)
++    if not b {
++        return tkFail("PtrCall", "PtrCallFlag(pcIsPositive, 5) = false")
++    }
++
++    b = PtrCallFlag(pcIsPositive, -5)
++    if b {
++        return tkFail("PtrCall", "PtrCallFlag(pcIsPositive, -5) = true")
++    }
++
++    DisposePtr(scratch)
++    return tkPass("PtrCall")
++}
+diff --git a/testsuite/core/runner.cla b/testsuite/core/runner.cla
+index 5df3c75..bc40678 100644
+--- a/testsuite/core/runner.cla
++++ b/testsuite/core/runner.cla
+@@ -121,20 +121,27 @@
+ // testdata/run/fileh_basic.cla, minus the host-only zero-fill-on-grow
+ // assertion (spec %3.1: unspecified on the Mac), since this case ALSO
+ // runs on the native lane (Task 6).
+ //
+ // DirOps (cases_dirops.cla, filesystem-api phase Task 4) is the 78th real
+ // case: the directory/catalog surface end to end on the host lane --
+ // makeDir, list, exists/info, setInfo, rename, move, delete -- in one
+ // case so the folder it makes is torn down by the same steps it proves.
+ // Host lane only in this task; Task 5 wires up the native lane (the
+ // fileh_68k.cla rtFhDev* stubs added here all fail, by design).
++//
++// PtrCall (cases_ptrcall.cla, extern-ptr-call phase Task 4) is the 79th
++// real case: the new `= ptr` extern clause (conv 10) round-tripped
++// through a callback's own decayed glue address -- a word-returning
++// call proving signed-word/ptr/int marshalling both directions, plus a
++// bool-returning call proving the RESULT readback's bool/char arm
++// (unexercised by the word-returning call alone).
+ 
+ enum CoreTest {
+     All
+     StrConcatClamp
+     StrIndexing
+     StrCompare
+     ErrVarIsolation
+     TextAppendStr
+     TextWidenAssignability
+     TextRealiasLocal
+@@ -202,30 +209,31 @@ enum CoreTest {
+     TextRange
+     ListClone
+     OnLog
+     ErrReturn
+     EvalOrder
+     TextBinary
+     Crc16
+     IntToStr
+     FileHandleRW
+     DirOps
++    PtrCall
+     SelfCheck
+ }
+ 
+-// nCoreCases is CoreTest's member count minus All: the 78 real cases plus
++// nCoreCases is CoreTest's member count minus All: the 79 real cases plus
+ // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
+ // itself (it is checking that the OTHER branches ran) -- so on a clean
+ // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
+ // check runs. A forgotten branch leaves casesRun short and SelfCheck
+ // fails, instead of the suite silently shrinking.
+-const nCoreCases: int = 79
++const nCoreCases: int = 80
+ 
+ // coreCaseName maps a CoreTest member to its programmatic name, used
+ // both for CLI arg matching (cli.cla) and as a TestResult's name.
+ func coreCaseName(t: CoreTest): string {
+     switch t {
+     case All {
+         return "All"
+     }
+     case StrConcatClamp {
+         return "StrConcatClamp"
+@@ -454,20 +462,23 @@ func coreCaseName(t: CoreTest): string {
+     }
+     case IntToStr {
+         return "IntToStr"
+     }
+     case FileHandleRW {
+         return "FileHandleRW"
+     }
+     case DirOps {
+         return "DirOps"
+     }
++    case PtrCall {
++        return "PtrCall"
++    }
+     case SelfCheck {
+         return "SelfCheck"
+     }
+     }
+     return "?"
+ }
+ 
+ // coreAllCases lists every real case (All excluded -- it's the "run
+ // everything" keyword, handled separately by its caller; SelfCheck IS
+ // included, so it stays addressable by name through this list same as
+@@ -552,20 +563,21 @@ func coreAllCases(): list of CoreTest {
+     l.add(TextRange)
+     l.add(ListClone)
+     l.add(OnLog)
+     l.add(ErrReturn)
+     l.add(EvalOrder)
+     l.add(TextBinary)
+     l.add(Crc16)
+     l.add(IntToStr)
+     l.add(FileHandleRW)
+     l.add(DirOps)
++    l.add(PtrCall)
+     l.add(SelfCheck)
+     return l
+ }
+ 
+ // coreHas reports whether l contains want.
+ func coreHas(l: list of CoreTest, want: CoreTest): bool {
+     var t: CoreTest
+     for t in l {
+         if t == want {
+             return true
+@@ -902,20 +914,24 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
+         casesRun = casesRun + 1
+     }
+     if wantAll or coreHas(deduped, FileHandleRW) {
+         results.add(caseFileHandleRW())
+         casesRun = casesRun + 1
+     }
+     if wantAll or coreHas(deduped, DirOps) {
+         results.add(caseDirOps())
+         casesRun = casesRun + 1
+     }
++    if wantAll or coreHas(deduped, PtrCall) {
++        results.add(casePtrCall())
++        casesRun = casesRun + 1
++    }
+     if wantAll or coreHas(deduped, SelfCheck) {
+         if casesRun == nCoreCases - 1 {
+             results.add(tkPass(coreCaseName(SelfCheck)))
+         } else {
+             selfDetail = "casesRun " + tkIntToStr(casesRun) + " != " + tkIntToStr(nCoreCases - 1)
+             results.add(tkFail(coreCaseName(SelfCheck), selfDetail))
+         }
+     }
+ 
+     return results

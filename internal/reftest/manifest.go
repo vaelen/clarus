@@ -125,11 +125,20 @@ package reftest
 // new index 63 above — in the new File Handles section, right after the
 // Chapter 12 Connections/serial/listener/serviceBrowser block and before
 // what was index 63 (ptr basics, now 64). Every fence at the old index 63
-// or higher shifted by +1 as a result; this whole manifest was regenerated
-// from a fresh clarusc-check pass over all 87 fences rather than hand-
-// patched, so every index/line/reason above is current as of this commit.
-// This shifted the two Appendix C programs a final time, from 84/85 to
-// 85/86.
+// or higher shifted by +1 as a result. This shifted the two Appendix C
+// programs a final time, from 84/85 to 85/86.
+//
+// extern-ptr-call phase (2026-08-27/28) inserted two new fences in the new
+// "The `ptr` Clause" subsection, between the extern-dedup fence (83) and
+// the word-extern-type fence (old 84): new index 84 (line 1854) is the
+// PluginMain `= ptr` declaration by itself; new index 85 (line 1872) is
+// the closing HLock/HandleToPtr/PluginMain worked example, wrapped in a
+// `callPlugin` function (var-decl-before-statement compliant) so it checks
+// clean standalone. Every fence at the old index 84 or higher shifted by
+// +2 as a result: word extern type 84->86, Appendix C bookmark manager
+// 85->87, Appendix C text editor 86->88. Full clarusc-check pass over all
+// 89 fences re-verified every index/OK-vs-FAIL classification above and
+// below.
 var CheckClean = []int{
 	0, 2, 3, 6, 7, 9, 10, 11, 17, 18,
 	33, 34, // Ch5 quit-code / App.startCLI + log example
@@ -143,8 +152,9 @@ var CheckClean = []int{
 	69,             // Chapter 13 overlay records restrictions
 	70, 72, 73, 74, // Chapter 13 extern record / callback func
 	75, 76, 77, 78, 79, 80, 81, 82, // Chapter 13 trap/inline clauses
-	83, // Chapter 13 extern dedup
-	84, // Chapter 13 word extern type
-	85, // Appendix C bookmark manager
-	86, // Appendix C text editor
+	83,     // Chapter 13 extern dedup
+	84, 85, // Chapter 13 ptr clause — declaration / closing worked example
+	86, // Chapter 13 word extern type
+	87, // Appendix C bookmark manager
+	88, // Appendix C text editor
 }

@@ -1,0 +1,321 @@
+# Review package: c9c2d4f..HEAD
+
+## Commits
+5f8d225 feat: host-lane '= ptr' extern call (cast through cpCbWireType signature)
+
+## Files changed
+ clarusc/cprint.cla                 | 185 +++++++++++++++++++++++++++----------
+ testdata/lowlevel/ptrcall_host.cla |  39 ++++++++
+ testdata/lowlevel/ptrcall_host.out |   2 +
+ 3 files changed, 177 insertions(+), 49 deletions(-)
+
+## Diff
+diff --git a/clarusc/cprint.cla b/clarusc/cprint.cla
+index f4477d7..05e6d42 100644
+--- a/clarusc/cprint.cla
++++ b/clarusc/cprint.cla
+@@ -1575,92 +1575,175 @@ func fpCallFn(e: int): text {
+             return toText("")
+         }
+         t = fpNewTmp(cpCType(irExprType(e)))
+         fpEmit(t + " = " + call + ";")
+         fpEmitAbortCheck()
+         return t
+     }
+     return call
+ }
+ 
++// fpExternIdxByName finds the IR extern table entry for an ECallExt's
++// callee name, or -1 (extern-ptr-call phase -- fpCallExt needs the
++// conv flag; mirrors cg68k.cla's cgExternIdxByName).
++func fpExternIdxByName(nameIdx: int): int {
++    var i: int
++
++    i = 0
++    while i < irExternCount() {
++        if irExternName(i) == nameIdx {
++            return i
++        }
++        i = i + 1
++    }
++    return -1
++}
++
+ // fpCallExt renders a call to an `external func` as `rt_ext_NAME(args...)`
+ // (Task 3, Ch13: `external func`) -- mirrors fpCallFn exactly, save for the
+ // symbol prefix; the tracked-temp materialization guard is kept for
+ // structural parity even though it can never fire here in practice (an
+ // external's return type is restricted to int/ptr/bool/char at check time
+ // -- check.cla's checkExternFunc -- never a handle-backed Text/List/Map/Rec).
+ // A KStr-typed argument marshals through fpStrAddr (Plan 5b Task 3), the
+ // same "&(<addrable e>)" cast the builtin-call path already uses, since the
+ // matching extern param prints as `const uint8_t *` (cpEmitExternProtos);
+ // every other argument -- including KText, which is already a `rt_text *`
+ // pointer -- passes through as the plain expression, unchanged from before.
++//
++// extern-ptr-call phase: a conv-10 extern (`= ptr` clause, Task 1's
++// checker guarantees >=1 param, first is `ptr`) is handled entirely
++// separately, BEFORE any of the rt_ext_/synth logic below runs -- it has
++// no `rt_ext_NAME` host symbol at all (cpEmitExternProtos also skips its
++// prototype). The first argument is the call target, rendered via
++// fpExpr and cast to a C function pointer built from the extern's OWN
++// declared param types (irExternParam(xi, j), j>=1 -- not the call-site
++// argument expressions, so the cast matches the signature even where an
++// argument's static type differs, e.g. a callback-decayed `ptr` passed
++// where the declared param is plain `ptr`); the remaining arguments
++// marshal exactly like the ordinary loop below (KStr via fpStrAddr, no
++// synth (void*) wrap -- a conv-10 extern is never a UI reverse-waist
++// synth).
+ func fpCallExt(e: int): text {
+     var args: text
+     var a: int
+     var first: bool
+     var argText: text
+     var call: text
+     var t: text
+     var synthName: int
++    var xi: int
++    var targetText: text
++    var castParams: text
++    var pty: int
++    var j: int
+ 
+-    // ui.cla's reverse-waist externs (Task 7+) resolve to lower.cla's
+-    // synthesized clar_ui_fire_* IRFuncs (called directly, no rt_ext_ shim
+-    // exists for them) rather than the ordinary host-symbol path below --
+-    // lowUiSynthExternName is the ONE place (per the plan's reverse-waist
+-    // section) that owns the name mapping. The synthesized IRFuncs are
+-    // ORDINARY functions (the whole point -- no per-backend dispatcher
+-    // emission), so the call still goes through the SAME "clar_fn_" symbol
+-    // convention every other function call does (the `nat_<Name>`
+-    // extern-fallback precedent, cg68k.cla's cgCallExtNatFallback, resolves
+-    // the exact same way: an ordinary function, called by its ordinary
+-    // name). UiProgDesc is a special case (not a synthesized FUNCTION at
+-    // all -- see ir.cla's own doc comment on why): it resolves straight to
+-    // the blob's own address, never a call. Computed BEFORE the arg loop
+-    // below (serial-connection phase, Task 5) so a KStr arg can tell
+-    // whether it's headed for a real rt_ext_ shim (whose own prototype
+-    // wants `const uint8_t *`, cpEmitExternProtos) or a synthesized
+-    // clar_fn_ target (an ORDINARY function, whose own KStr-ish params --
+-    // clar_conn_fire_failed's `msg`, the first reverse-waist dispatcher to
+-    // carry one -- are typed plain `ptr`/`void *`, per lowSynthConnFire
+-    // Failed's own doc comment): a bare `(const uint8_t*)&(...)` passed to
+-    // a `void *` param discards its const qualifier, a real (if harmless)
+-    // compiler warning this wrap avoids.
+-    synthName = -1
+-    if poolGet(irCallExtName(e)) != "UiProgDesc" {
+-        synthName = lowUiSynthExternName(irCallExtName(e))
+-    }
++    xi = fpExternIdxByName(irCallExtName(e))
++    if xi != -1 and irExternConv(xi) == 10 {
++        a = irCallExtArgsHead(e)
++        targetText = fpExpr(a)
++        a = irExprNext(a)
+ 
+-    args = ""
+-    first = true
+-    a = irCallExtArgsHead(e)
+-    while a != -1 {
+-        if not first {
+-            args = args + ", "
++        args = ""
++        first = true
++        while a != -1 {
++            if not first {
++                args = args + ", "
++            }
++            first = false
++            if irtKind(irExprType(a)) == KStr {
++                argText = fpStrAddr(a)
++            } else {
++                argText = fpExpr(a)
++            }
++            args = args + argText
++            a = irExprNext(a)
+         }
+-        first = false
+-        if irtKind(irExprType(a)) == KStr {
+-            argText = fpStrAddr(a)
+-            if synthName != -1 {
+-                argText = toText("(void*)") + argText
++
++        castParams = ""
++        first = true
++        j = 1
++        while j < irExternParamCount(xi) {
++            if not first {
++                castParams = castParams + ", "
+             }
+-        } else {
+-            argText = fpExpr(a)
++            first = false
++            pty = irExternParam(xi, j)
++            if irtKind(pty) == KStr {
++                castParams = castParams + "const uint8_t *"
++            } else if irtKind(pty) == KText {
++                castParams = castParams + cpCType(pty)
++            } else {
++                castParams = castParams + cpCbWireType(pty)
++            }
++            j = j + 1
+         }
+-        args = args + argText
+-        a = irExprNext(a)
+-    }
+-    if poolGet(irCallExtName(e)) == "UiProgDesc" {
+-        call = "(&clar_ui_blob[0])"
+-    } else if synthName != -1 {
+-        call = "clar_fn_" + poolGet(synthName) + "(" + args + ")"
++        if first {
++            castParams = "void"
++        }
++
++        call = "((" + cpCbRetWireType(irExternRet(xi)) + " (*)(" + castParams + "))(" + targetText + "))(" + args + ")"
+     } else {
+-        call = "rt_ext_" + poolGet(irCallExtName(e)) + "(" + args + ")"
++
++        // ui.cla's reverse-waist externs (Task 7+) resolve to lower.cla's
++        // synthesized clar_ui_fire_* IRFuncs (called directly, no rt_ext_ shim
++        // exists for them) rather than the ordinary host-symbol path below --
++        // lowUiSynthExternName is the ONE place (per the plan's reverse-waist
++        // section) that owns the name mapping. The synthesized IRFuncs are
++        // ORDINARY functions (the whole point -- no per-backend dispatcher
++        // emission), so the call still goes through the SAME "clar_fn_" symbol
++        // convention every other function call does (the `nat_<Name>`
++        // extern-fallback precedent, cg68k.cla's cgCallExtNatFallback, resolves
++        // the exact same way: an ordinary function, called by its ordinary
++        // name). UiProgDesc is a special case (not a synthesized FUNCTION at
++        // all -- see ir.cla's own doc comment on why): it resolves straight to
++        // the blob's own address, never a call. Computed BEFORE the arg loop
++        // below (serial-connection phase, Task 5) so a KStr arg can tell
++        // whether it's headed for a real rt_ext_ shim (whose own prototype
++        // wants `const uint8_t *`, cpEmitExternProtos) or a synthesized
++        // clar_fn_ target (an ORDINARY function, whose own KStr-ish params --
++        // clar_conn_fire_failed's `msg`, the first reverse-waist dispatcher to
++        // carry one -- are typed plain `ptr`/`void *`, per lowSynthConnFire
++        // Failed's own doc comment): a bare `(const uint8_t*)&(...)` passed to
++        // a `void *` param discards its const qualifier, a real (if harmless)
++        // compiler warning this wrap avoids.
++        synthName = -1
++        if poolGet(irCallExtName(e)) != "UiProgDesc" {
++            synthName = lowUiSynthExternName(irCallExtName(e))
++        }
++
++        args = ""
++        first = true
++        a = irCallExtArgsHead(e)
++        while a != -1 {
++            if not first {
++                args = args + ", "
++            }
++            first = false
++            if irtKind(irExprType(a)) == KStr {
++                argText = fpStrAddr(a)
++                if synthName != -1 {
++                    argText = toText("(void*)") + argText
++                }
++            } else {
++                argText = fpExpr(a)
++            }
++            args = args + argText
++            a = irExprNext(a)
++        }
++        if poolGet(irCallExtName(e)) == "UiProgDesc" {
++            call = "(&clar_ui_blob[0])"
++        } else if synthName != -1 {
++            call = "clar_fn_" + poolGet(synthName) + "(" + args + ")"
++        } else {
++            call = "rt_ext_" + poolGet(irCallExtName(e)) + "(" + args + ")"
++        }
+     }
+     if fpIsHandleType(irExprType(e)) or (irtKind(irExprType(e)) == KRec and irRecHasHandleField(irtName(irExprType(e)))) {
+         t = fpNewTrackedTmp(irExprType(e))
+         fpEmit(t + " = " + call + ";")
+         return t
+     }
+     return call
+ }
+ 
+ // fpFieldRef prints an EFieldRef node (funcprint.go's expr's *ir.FieldRef
+@@ -5841,22 +5924,26 @@ func cpEmitExternProtos() {
+     var pty: int
+     var skip: bool
+ 
+     i = 0
+     while i < irExternCount() {
+         // ui.cla's reverse-waist externs (Task 7+) never link against a
+         // rt_ext_ shim at all -- either they resolve straight to a
+         // synthesized clar_ui_fire_* function (lowUiSynthExternName) or,
+         // for UiProgDesc, straight to the blob's own address (fpCallExt's
+         // own special case) -- so declaring this prototype would be dead
+-        // and, worse, a NAME nothing ever defines.
+-        skip = lowUiSynthExternName(irExternName(i)) != -1 or poolGet(irExternName(i)) == "UiProgDesc"
++        // and, worse, a NAME nothing ever defines. extern-ptr-call phase:
++        // a conv-10 (`= ptr`) extern is likewise skipped -- fpCallExt casts
++        // and calls through its first argument directly, so it has no
++        // rt_ext_ host symbol either; declaring this prototype would name
++        // a symbol nothing defines, same reasoning as the two cases above.
++        skip = lowUiSynthExternName(irExternName(i)) != -1 or poolGet(irExternName(i)) == "UiProgDesc" or irExternConv(i) == 10
+         if not skip {
+             params = ""
+             first = true
+             j = 0
+             while j < irExternParamCount(i) {
+                 if not first {
+                     params = params + ", "
+                 }
+                 first = false
+                 pty = irExternParam(i, j)
+diff --git a/testdata/lowlevel/ptrcall_host.cla b/testdata/lowlevel/ptrcall_host.cla
+new file mode 100644
+index 0000000..a466f9d
+--- /dev/null
++++ b/testdata/lowlevel/ptrcall_host.cla
+@@ -0,0 +1,39 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// ptrcall_host.cla: `= ptr` extern (conv 10) host-lane proof
++// (extern-ptr-call phase). The target is a `callback func`'s decayed
++// glue address -- fpCallExt's cast uses the same cpCbWireType wire
++// types the glue itself is declared with, so this call is a strictly
++// conforming C function-pointer call, the per-signature generalization
++// of callback_host.cla's fixed-shape CbInvoke seam.
++external func NewPtr(size: int): ptr = trap 0xA11E reg
++external func DisposePtr(p: ptr) = trap 0xA01F reg
++external func PtrCallMixed(entry: ptr, w: word, flag: bool, out: ptr, n: int): int = ptr
++
++callback func mixed(w: word, flag: bool, out: ptr, n: int): int {
++    pokel(out, n + w)
++    if flag {
++        return n * 2
++    }
++    return n
++}
++
++on App.startCLI(args: list of string) {
++    var scratch: ptr
++    var r: int
++
++    scratch = NewPtr(4)
++    r = PtrCallMixed(mixed, 7, true, scratch, 21)
++    if r == 42 {
++        alert("ptrcall-ret-ok")
++    } else {
++        alert("ptrcall-ret-FAIL")
++    }
++    if peekl(scratch) == 28 {
++        alert("ptrcall-write-ok")
++    } else {
++        alert("ptrcall-write-FAIL")
++    }
++    DisposePtr(scratch)
++}
+diff --git a/testdata/lowlevel/ptrcall_host.out b/testdata/lowlevel/ptrcall_host.out
+new file mode 100644
+index 0000000..f387514
+--- /dev/null
++++ b/testdata/lowlevel/ptrcall_host.out
+@@ -0,0 +1,2 @@
++ptrcall-ret-ok
++ptrcall-write-ok

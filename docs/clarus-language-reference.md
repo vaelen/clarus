@@ -1875,9 +1875,13 @@ external func HandleToPtr(h: ptr): ptr = inline deref
 external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
 
 // h: ptr — a resource Handle from GetResource, e.g. GetResource('PLUG', 128)
-HLock(h)                            // pin it: it can't move or be purged while code runs
-var code: ptr = HandleToPtr(h)      // master pointer -> the code's own address
-var result: int = PluginMain(code, 1, pb)
+// pb: ptr — a parameter block the plugin's caller has already built
+func callPlugin(h: ptr, pb: ptr): int {
+    var code: ptr
+    HLock(h)                            // pin it: it can't move or be purged while code runs
+    code = HandleToPtr(h)               // master pointer -> the code's own address
+    return PluginMain(code, 1, pb)
+}
 ```
 
 ### The `word` Extern Type

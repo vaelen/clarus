@@ -1,0 +1,173 @@
+# Review package: 8fa24f7..HEAD
+
+## Commits
+929bd15 docs: '= ptr' extern clause -- reference subsection + cookbook recipe
+
+## Files changed
+ docs/clarus-language-reference.md | 36 +++++++++++++++++++++++-
+ docs/clarus-toolbox-cookbook.md   | 59 +++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 94 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/docs/clarus-language-reference.md b/docs/clarus-language-reference.md
+index acbdde2..814748d 100644
+--- a/docs/clarus-language-reference.md
++++ b/docs/clarus-language-reference.md
+@@ -1770,21 +1770,22 @@ Interrupt-time completion routines (VBL tasks, asynchronous completion procedure
+ 
+ **Interaction with `attempt`/`abort`.** See Chapter 5's own note on this: an `abort` that fires while control is inside a callback the Toolbox itself invoked cannot propagate past that boundary the normal way. The callback returns a default value to the Toolbox as if nothing happened, the Toolbox's own call completes normally, and the pending abort resumes propagating from the next ordinary checked call site after that external call returns. No code in the callback's own body needs to account for this.
+ 
+ ### Trap and Inline Clauses
+ 
+ An `external func` declaration may end with a clause tying it to a specific Toolbox entry point, instead of leaving name resolution to the toolchain:
+ 
+ ```
+ externDecl = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
+              [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | "seld0" ( INT | HEXINT ) | regClause ]
+-                   | "inline" ( "deref" | "nop" | "a5" ) ) ] ;
++                   | "inline" ( "deref" | "nop" | "a5" )
++                   | "ptr" ) ] ;
+ regClause = "reg" [ "(" regBind { "," regBind } ")" ] [ "memerr" ] [ "ret" REG ] ;
+ regBind   = REG ":" IDENT ;   // REG in { d0, d1, d2, a0, a1 }, lowercase
+ ```
+ 
+ `= trap NNNN` names the Toolbox trap word — an unsigned 16-bit A-line value, always in `0xA000`–`0xAFFF` — the runtime dispatches to using the ordinary Pascal calling convention (arguments pushed left to right, result returned in the caller-reserved stack slot the call pops after the trap — the same slot a real Pascal trap always writes its result to; D0 is not the calling convention's result location, it is only where the compiled code lands the value after popping that slot):
+ 
+ ```rust
+ external func TickCount(): int = trap 0xA975
+ ```
+ 
+@@ -1839,20 +1840,53 @@ external func DebugBreak() = inline nop
+ external func CurrentA5(): ptr = inline a5
+ ```
+ 
+ Two `external func` declarations sharing a name are legal if and only if they are IDENTICAL: the same parameter list (types and order; parameter names may differ), the same return type, and the same trap/inline clause in full — trap word, `sel`, calling convention, every register binding, `memerr`, and `ret`. The checker merges an identical repeat into the first declaration; every call site resolves to that one entry, and no diagnostic is raised. Any other kind of same-name mismatch is a compile error naming both declaration sites. This is the same accommodation a C header gives a repeated `extern` prototype: a program can redeclare a trap the runtime already declares — transcribed independently from the same Inside Macintosh page — without a spurious redeclaration error:
+ 
+ ```rust
+ external func TickCount(): int = trap 0xA975
+ external func TickCount(): int = trap 0xA975
+ ```
+ 
++### The `ptr` Clause
++
++`= ptr` names no trap and no compiler intrinsic; it calls through a pointer the program already holds at run time — a loaded code resource, a `ProcPtr` handed back from the Toolbox, any machine-code entry point reachable only by value rather than by a fixed trap number. The declaration's first parameter is the call target: it must exist and must be declared `ptr`, and it is consumed as the jump address rather than pushed as an argument — a zero-parameter `= ptr` declaration, or one whose first parameter is any other type, is a compile-time error (`= ptr requires a first parameter of type ptr`):
++
++```rust
++external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
++```
++
++Every parameter after the target, and the return type, follow the plain pascal `trap` clause's own marshalling rules exactly (Trap and Inline Clauses, above) — the same type sets (`int`/`ptr`/`bool`/`char`/`word`/`str`/`text` parameters; `int`/`ptr`/`bool`/`char`/`word`, or no return type), the same high-byte `bool`/`char` convention, the same borrowed-address treatment for `str`/`text`. A `= ptr` declaration with no parameters besides the target is fine — the call still marshals a target and nothing else.
++
++`ptr` takes no suffix: none of `sel`, `seld0`, `reg`, `memerr`, or `ret` may follow it — those all modify a `trap` clause's dispatch or calling convention, and `= ptr` is Pascal-convention-only with no trap word to select and no convention to override. The grammar itself has no production for a suffix in that position, so writing one is a plain parse error, not a checked diagnostic the way an incompatible `reg`/`sel` combination under `trap` is.
++
++The redeclaration-merge rule (above) applies unchanged, with `= ptr` counted as the clause for the identity check: two `external func` declarations sharing a name merge if and only if every part matches, including the clause, so two identical `= ptr` declarations merge silently, and a `= ptr` declaration conflicting with a `= trap`/`= inline` declaration (or a differently-shaped `= ptr` declaration) of the same name is a compile error naming both sites.
++
++A `callback func`'s bare name is a valid argument for a `= ptr` call's target parameter, needing no rule of its own: the target parameter is an ordinary `external func` `ptr` parameter, and a callback's bare name already decays to its glue's address in exactly that position (`callback func`, above). Calling a callback's own glue through `= ptr` — rather than through the Toolbox routine the callback was written for — is a legitimate use the existing decay rule already covers, not a special case the compiler has to recognize.
++
++A nil or garbage target is the caller's problem: `= ptr` performs no runtime check on the pointer before jumping through it, the same unchecked contract every other raw `ptr` value already carries in this language. Getting the target right — a locked, non-purged handle dereferenced down to a real code address — is entirely on the code that built it.
++
++Interrupt-time entry points are out of scope, for the same reason `callback func` excludes them (above): the A5-world and allocation restrictions VBL tasks, asynchronous completion procedures, and Time Manager tasks impose are not something this language can make safe yet. Call through `= ptr` only at ordinary application-level call time, never from a routine that fires from an interrupt.
++
++The declaration is a calling contract, not a binding: nothing in it ties the call to any one pointer, so the same declaration serves every call site regardless of which handle produced the target — a different `code` value at every call is the ordinary case, not an exception:
++
++```rust
++external func HLock(h: ptr) = trap 0xA029 reg               // toolbox/memory.cla
++external func HandleToPtr(h: ptr): ptr = inline deref
++external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
++
++// h: ptr — a resource Handle from GetResource, e.g. GetResource('PLUG', 128)
++HLock(h)                            // pin it: it can't move or be purged while code runs
++var code: ptr = HandleToPtr(h)      // master pointer -> the code's own address
++var result: int = PluginMain(code, 1, pb)
++```
++
+ ### The `word` Extern Type
+ 
+ The Toolbox's Pascal calling convention is built on 16-bit `INTEGER` arguments and results, not the 32-bit values every other Clarus `int` marshals as. `word` names that 16-bit width at the extern boundary — it is accepted ONLY as an `external func` parameter or return type:
+ 
+ ```
+ externParam = IDENT ":" ( type | "word" ) ;
+ externRet   = type | "word" ;
+ ```
+ 
+ `word` is contextual, the same way `overlay` and `external` are: recognized only in an `external func`'s own parameter list or return type position; everywhere else (a `var` declaration, a `record` field, a non-extern function's parameter) it is an ordinary identifier, and a program may freely use `word` as a variable or field name.
+diff --git a/docs/clarus-toolbox-cookbook.md b/docs/clarus-toolbox-cookbook.md
+index ec14a0b..bbc9113 100644
+--- a/docs/clarus-toolbox-cookbook.md
++++ b/docs/clarus-toolbox-cookbook.md
+@@ -894,16 +894,75 @@ also Pascal-convention (bit 11 set on `0xA816`), but the selector is
+ preloaded into D0 by dedicated glue AFTER the Pascal argument push,
+ again with no selector spelled at the call site. Neither shape applies
+ here: `_HFSDispatch`'s bit 11 is CLEAR, so it was never a Pascal call to
+ begin with, and `sel`/`seld0` are both defined only for the Pascal-stack
+ convention. The register form's selector is instead exactly what it
+ looks like — a normal `reg`-bound `int` parameter — the same D0 slot
+ `GestaltErr`/`GestaltValue` already bind by name (§4, `toolbox/
+ osutils.cla`), just holding a routine selector instead of a Gestalt
+ selector.
+ 
++## 13. Walkthrough: calling loaded code — the `= ptr` clause
++
++Every walkthrough above calls a fixed Toolbox entry point: a trap number
++known at compile time. Loaded code — a code resource fetched with the
++Resource Manager, or any other `ProcPtr` the program only learns the value
++of at run time — has no trap number at all; the only way to reach it is
++through a pointer the program already holds. `= ptr` (Ch13, "The `ptr`
++Clause") is the extern clause for exactly that: a declaration whose first
++parameter is the call target, marshalling everything after it exactly like
++a plain pascal `trap` clause.
++
++Reach for `= ptr` whenever the entry point is a value, not a name — a
++plugin/door module fetched with `GetResource`, a callback whose glue
++address you already hold and want to invoke directly instead of through the
++Toolbox routine it was written for, or any other case where "which code
++runs" is decided at run time. Everything reachable by trap number stays a
++plain `= trap` declaration; `= ptr` is only for the entry points that
++aren't.
++
++The worked shape, end to end — fetch, lock, deref, call:
++
++```rust
++external func HLock(h: ptr) = trap 0xA029 reg              // toolbox/memory.cla
++external func HandleToPtr(h: ptr): ptr = inline deref       // Ch13, reference
++external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
++
++// h: ptr — a resource Handle from GetResource, e.g. GetResource('PLUG', 128)
++HLock(h)
++var code: ptr = HandleToPtr(h)
++var result: int = PluginMain(code, 1, pb)
++```
++
++`PluginMain`'s declaration is a calling contract, not a binding to this one
++`h` — the same declaration serves any handle whose contents match that
++entry-point shape, and a call site is free to swap in a different `code`
++value between calls with no change to the declaration itself.
++
++Two footguns:
++
++- **Keep the handle locked across every call into it.** `HLock` pins the
++  block so the Memory Manager can't relocate or purge it out from under
++  code the processor is actively executing; call `HandleToPtr` again (or
++  keep the `code` pointer alive) only while the handle stays locked for the
++  full duration any call might run. Unlocking (or letting the handle go)
++  while a call through `code` is still outstanding, or before the next
++  call, is a caller error the language does nothing to catch — `= ptr`
++  performs no check on the target, so a moved or purged block just means
++  the call jumps into whatever now occupies that address.
++- **One extern per distinct entry-point shape.** `= ptr`'s target parameter
++  carries no signature information of its own — the parameter list after
++  it IS the contract for what that entry point expects. A plugin family
++  with two different call shapes (say, a `(verb, param): int` shape and a
++  `(event): void` shape) needs two separate `= ptr` declarations, one per
++  shape, the same way two differently-shaped traps need two separate
++  `= trap` declarations. Calling a loaded routine through a declaration
++  whose parameter list doesn't match what that code actually expects
++  pushes the wrong arguments — the mismatch is entirely the caller's to
++  avoid, same as any other `= ptr` contract.
++
+ ---
+ 
+ *Everything in this document is a citation, not an assertion — see the
+ individual walkthroughs above for exact file and line references. Where a
+ mapping rule itself (rather than a worked example of applying it) is in
+ question, `docs/clarus-language-reference.md` Chapter 13 is the authority.*
