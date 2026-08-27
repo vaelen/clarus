@@ -81,6 +81,8 @@ func buildCoreCLI(t *testing.T) string {
 		filepath.Join(root, "testsuite", "core", "cases_textbinary.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_fileh.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_dirops.cla"),
+		// extern-ptr-call phase: runner.cla unconditionally calls casePtrCall().
+		filepath.Join(root, "testsuite", "core", "cases_ptrcall.cla"),
 		filepath.Join(root, "testsuite", "core", "cli.cla"),
 	}
 	args := append([]string{"emit", "--rtdir", rtDir, "-o", outC}, files...)
@@ -220,6 +222,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"IntToStr",
 			"FileHandleRW",
 			"DirOps",
+			"PtrCall",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

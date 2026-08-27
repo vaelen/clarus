@@ -138,6 +138,8 @@ var coreCLIFiles = []string{
 	// them with real File Manager calls -- same accepted/expected story
 	// as cases_textrange.cla's own comment above.
 	filepath.Join("testsuite", "core", "cases_dirops.cla"),
+	// extern-ptr-call phase: runner.cla unconditionally calls casePtrCall().
+	filepath.Join("testsuite", "core", "cases_ptrcall.cla"),
 }
 
 // coreCLIHostFiles/absFiles/BuildCoreCLIHost/RunCoreCLIHost (coreCLIFiles +

@@ -1,0 +1,74 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// casePtrCall: `= ptr` extern (conv 10) round trip through a
+// callback's decayed glue address (extern-ptr-call phase). On the
+// native lane the glue is real pascal-convention 68k code, so this
+// hardware-proves the marshalling -- word sign, bool high-byte-in-word,
+// ptr, int, and a signed word RESULT -- against the compiler's own
+// glue. On host it proves fpCallExt's cast-and-call.
+//
+// PtrCallFlag/pcIsPositive (controller amendment, Task 3 review) add a
+// second `= ptr` extern whose RESULT is bool, not word -- the native
+// bool/char RESULT-readback arm (CLR.L / MOVE.W (A7)+ / LSR.L #8, a
+// historic hardware-bug site) is otherwise unexercised by
+// PtrCallRound's word-returning call alone.
+//
+// NewPtr/DisposePtr here are the SAME trap declarations
+// toolbox/memory.cla carries (0xA11E/0xA01F, `reg` positional) -- the
+// core suite doesn't compose that file, so this case declares its own
+// copy under the identical name/signature/clause rather than a `Pc`-
+// prefixed duplicate, matching the reference's "identical repeat" extern
+// accommodation and picking up the host lane's existing
+// rt_ext_NewPtr/rt_ext_DisposePtr glue (runtime/host/rt_ext_host.inc)
+// for free.
+external func NewPtr(size: int): ptr = trap 0xA11E reg
+external func DisposePtr(p: ptr) = trap 0xA01F reg
+external func PtrCallRound(entry: ptr, w: word, flag: bool, out: ptr, n: int): word = ptr
+external func PtrCallFlag(entry: ptr, x: int): bool = ptr
+
+callback func pcMixed(w: word, flag: bool, out: ptr, n: int): word {
+    pokel(out, n + w)
+    if flag {
+        return w - 100
+    }
+    return w
+}
+
+callback func pcIsPositive(x: int): bool {
+    return x > 0
+}
+
+func casePtrCall(): TestResult {
+    var scratch: ptr
+    var r: int
+    var b: bool
+
+    scratch = NewPtr(4)
+
+    r = PtrCallRound(pcMixed, 7, true, scratch, 21)
+    if r != -93 {
+        return tkFail("PtrCall", "flag=true result = " + tkIntToStr(r))
+    }
+    if peekl(scratch) != 28 {
+        return tkFail("PtrCall", "peekl(scratch) = " + tkIntToStr(peekl(scratch)))
+    }
+
+    r = PtrCallRound(pcMixed, 7, false, scratch, 21)
+    if r != 7 {
+        return tkFail("PtrCall", "flag=false result = " + tkIntToStr(r))
+    }
+
+    b = PtrCallFlag(pcIsPositive, 5)
+    if not b {
+        return tkFail("PtrCall", "PtrCallFlag(pcIsPositive, 5) = false")
+    }
+
+    b = PtrCallFlag(pcIsPositive, -5)
+    if b {
+        return tkFail("PtrCall", "PtrCallFlag(pcIsPositive, -5) = true")
+    }
+
+    DisposePtr(scratch)
+    return tkPass("PtrCall")
+}

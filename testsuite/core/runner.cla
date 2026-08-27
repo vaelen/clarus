@@ -128,6 +128,13 @@
 // case so the folder it makes is torn down by the same steps it proves.
 // Host lane only in this task; Task 5 wires up the native lane (the
 // fileh_68k.cla rtFhDev* stubs added here all fail, by design).
+//
+// PtrCall (cases_ptrcall.cla, extern-ptr-call phase Task 4) is the 79th
+// real case: the new `= ptr` extern clause (conv 10) round-tripped
+// through a callback's own decayed glue address -- a word-returning
+// call proving signed-word/ptr/int marshalling both directions, plus a
+// bool-returning call proving the RESULT readback's bool/char arm
+// (unexercised by the word-returning call alone).
 
 enum CoreTest {
     All
@@ -209,16 +216,17 @@ enum CoreTest {
     IntToStr
     FileHandleRW
     DirOps
+    PtrCall
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 78 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 79 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 79
+const nCoreCases: int = 80
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -461,6 +469,9 @@ func coreCaseName(t: CoreTest): string {
     case DirOps {
         return "DirOps"
     }
+    case PtrCall {
+        return "PtrCall"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -559,6 +570,7 @@ func coreAllCases(): list of CoreTest {
     l.add(IntToStr)
     l.add(FileHandleRW)
     l.add(DirOps)
+    l.add(PtrCall)
     l.add(SelfCheck)
     return l
 }
@@ -907,6 +919,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, DirOps) {
         results.add(caseDirOps())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, PtrCall) {
+        results.add(casePtrCall())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

@@ -119,6 +119,8 @@ func segmentationFixture(root string) []string {
 		// (emit68k), it never boots the binary, so DirOps' own runtime
 		// failure on native (Task 5's job to fix) doesn't reach it.
 		filepath.Join("testsuite", "core", "cases_dirops.cla"),
+		// extern-ptr-call phase: runner.cla unconditionally calls casePtrCall().
+		filepath.Join("testsuite", "core", "cases_ptrcall.cla"),
 		filepath.Join("testsuite", "core", "cli_mac.cla"),
 	}
 	abs := make([]string, len(rel))

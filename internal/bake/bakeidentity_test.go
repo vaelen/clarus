@@ -1410,6 +1410,8 @@ var coreSuiteGUIFiles = []string{
 	// Manager calls. Same opt-in-only, not-a-T1-regression story as
 	// cases_fileh.cla's own note.
 	filepath.Join("testsuite", "core", "cases_dirops.cla"),
+	// extern-ptr-call phase: runner.cla unconditionally calls casePtrCall().
+	filepath.Join("testsuite", "core", "cases_ptrcall.cla"),
 	filepath.Join("testsuite", "core", "gui.cla"),
 }
 
