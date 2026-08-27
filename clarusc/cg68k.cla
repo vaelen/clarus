@@ -10332,39 +10332,28 @@ func cgCallExtRegMemErr(e: int, xi: int) {
 // SIGN-extended (EXT.L, not the bool/char AND-mask zero-extend) --
 // Toolbox INTEGER is a signed 16-bit quantity (e.g. LAddRow's row
 // number), unlike a byte-sized Pascal boolean/char result.
-func cgCallExtPascal(e: int, xi: int) {
+// cgPushPascalArgs pushes pascal-convention args starting at arg node
+// `a` with param index `j0` (extern-ptr-call phase: factored out of
+// cgCallExtPascal so cgCallExtPtr can push args 1.. against params 1..,
+// its arg 0 being the jump target, never pushed). Byte-identical
+// emission for conv 1/9 callers (j0 = 0, a = args head). Returns the
+// total bytes pushed (2 per bool/char/word slot, 4 otherwise), which
+// cgCallExtPtr needs to address the saved target below the args.
+func cgPushPascalArgs(a0: int, xi: int, j0: int): int {
     var a: int
     var t: int
-    var retTy: int
-    // Task 4/15 (native-5e) naming: retIsShortSlot means "this result
-    // occupies a padded WORD stack slot, not a plain .L" (bool/char/word
-    // all qualify); retIsSigned narrows that to "and the value read back
-    // is sign-extended, not zero-extended" (word only -- Toolbox INTEGER
-    // is signed, unlike a byte-sized Pascal bool/char result). Renamed
-    // from retIsWord/retIsWordType, which read as if only a `word`-typed
-    // extern qualified -- misleading, since bool/char share the slot-width
-    // arm too.
-    var retIsShortSlot: bool
-    var retIsSigned: bool
     var j: int
+    var bytes: int
 
-    retTy = irExternRet(xi)
-    retIsSigned = irtKind(retTy) == KWord
-    retIsShortSlot = irtKind(retTy) == KBool or irtKind(retTy) == KChar or retIsSigned
-    if irtKind(retTy) != KVoid {
-        if retIsShortSlot {
-            a68Emit(OpClr, 2, AmNone, 0, 0, AmPreDec, 7, 0)
-        } else {
-            a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
-        }
-    }
-    a = irCallExtArgsHead(e)
-    j = 0
+    a = a0
+    j = j0
+    bytes = 0
     while a != -1 {
         t = irExprType(a)
         if irtKind(t) == KStr or irtKind(t) == KText {
             cgExprAddr(a)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            bytes = bytes + 4
         } else if irtKind(t) == KBool or irtKind(t) == KChar {
             // Boolean/Char pascal params are padded to a full word on the
             // stack, but the callee (a ROM trap, e.g. NewWindow's
@@ -10383,16 +10372,46 @@ func cgCallExtPascal(e: int, xi: int) {
             cgExpr(a)
             a68Emit(OpLsl, 2, AmImm, 0, 8, AmDn, 0, 0)
             a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+            bytes = bytes + 2
         } else if irtKind(irExternParam(xi, j)) == KWord {
             cgExpr(a)
             a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+            bytes = bytes + 2
         } else {
             cgExpr(a)
             a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            bytes = bytes + 4
         }
         a = irExprNext(a)
         j = j + 1
     }
+    return bytes
+}
+
+func cgCallExtPascal(e: int, xi: int) {
+    var retTy: int
+    // Task 4/15 (native-5e) naming: retIsShortSlot means "this result
+    // occupies a padded WORD stack slot, not a plain .L" (bool/char/word
+    // all qualify); retIsSigned narrows that to "and the value read back
+    // is sign-extended, not zero-extended" (word only -- Toolbox INTEGER
+    // is signed, unlike a byte-sized Pascal bool/char result). Renamed
+    // from retIsWord/retIsWordType, which read as if only a `word`-typed
+    // extern qualified -- misleading, since bool/char share the slot-width
+    // arm too.
+    var retIsShortSlot: bool
+    var retIsSigned: bool
+
+    retTy = irExternRet(xi)
+    retIsSigned = irtKind(retTy) == KWord
+    retIsShortSlot = irtKind(retTy) == KBool or irtKind(retTy) == KChar or retIsSigned
+    if irtKind(retTy) != KVoid {
+        if retIsShortSlot {
+            a68Emit(OpClr, 2, AmNone, 0, 0, AmPreDec, 7, 0)
+        } else {
+            a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
+        }
+    }
+    cgPushPascalArgs(irCallExtArgsHead(e), xi, 0)
     // Task 14 (native-5e gate, popuptable.cla): a "Package 7"-style
     // selector-dispatch trap (irExternSel != -1 -- e.g. UiLNew's real
     // 0xA9E7, the List Manager's ONE shared trap) pushes the selector
@@ -10460,6 +10479,62 @@ func cgCallExtPascal(e: int, xi: int) {
             a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
         }
     }
+}
+
+// cgCallExtPtr implements `= ptr` (conv 10, extern-ptr-call phase):
+// pascal-convention call through a runtime pointer. Arg 0 is the jump
+// target: evaluated FIRST (declaration order), pushed as a saved long
+// BELOW the result slot -- never between the result slot and the args,
+// where it would break the pascal callee's result-write offset -- then
+// re-read into A0 at call time and discarded (ADDQ) after the callee
+// (which pops only its own declared args, pascal discipline) returns.
+// Marshalling of args 1.. and the result readback are cgCallExtPascal's
+// own, byte for byte (cgPushPascalArgs + the same retIsShortSlot/
+// retIsSigned readback arms).
+func cgCallExtPtr(e: int, xi: int) {
+    var retTy: int
+    var retIsShortSlot: bool
+    var retIsSigned: bool
+    var argBytes: int
+    var slotBytes: int
+
+    retTy = irExternRet(xi)
+    retIsSigned = irtKind(retTy) == KWord
+    retIsShortSlot = irtKind(retTy) == KBool or irtKind(retTy) == KChar or retIsSigned
+    // 1. target: evaluate arg 0, save it on the stack
+    cgExpr(irCallExtArgsHead(e))
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    // 2. result slot (same shapes as cgCallExtPascal)
+    slotBytes = 0
+    if irtKind(retTy) != KVoid {
+        if retIsShortSlot {
+            a68Emit(OpClr, 2, AmNone, 0, 0, AmPreDec, 7, 0)
+            slotBytes = 2
+        } else {
+            a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
+            slotBytes = 4
+        }
+    }
+    // 3. args 1.. against params 1..
+    argBytes = cgPushPascalArgs(irExprNext(irCallExtArgsHead(e)), xi, 1)
+    // 4. fetch saved target, call through it
+    a68Emit(OpMovea, 4, AmDisp16, 7, argBytes + slotBytes, AmAn, 0, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmInd, 0, 0)
+    // 5. result readback (same three arms as cgCallExtPascal's tail)
+    if irtKind(retTy) != KVoid {
+        if retIsSigned {
+            a68Emit(OpMove, 2, AmPostInc, 7, 0, AmDn, 0, 0)
+            a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+        } else if retIsShortSlot {
+            a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+            a68Emit(OpMove, 2, AmPostInc, 7, 0, AmDn, 0, 0)
+            a68Emit(OpLsr, 4, AmImm, 0, 8, AmDn, 0, 0)
+        } else {
+            a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
+        }
+    }
+    // 6. discard the saved target
+    a68Emit(OpAddq, 4, AmImm, 0, 4, AmAn, 7, 0)
 }
 
 // cgCallExtDeref implements `= inline deref`: MOVEA.L arg,A0; MOVE.L
@@ -10600,6 +10675,10 @@ func cgCallExt(e: int) {
         cgCallExtA5(e)
     } else if conv == 6 or conv == 8 {
         cgCallExtRegMemErr(e, xi)
+    } else if conv == 10 {
+        // extern-ptr-call phase: `= ptr` -- pascal call through a
+        // runtime-supplied jump target (arg 0), not a fixed trap word.
+        cgCallExtPtr(e, xi)
     } else {
         cgCallExtNatFallback(e)
     }
