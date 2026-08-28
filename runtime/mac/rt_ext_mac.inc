@@ -826,11 +826,135 @@ int32_t rt_ext_UiSFPutFile(void *suggested255, void *path255) {
  * Universal Interfaces declaration (Files.h), which IS the real Toolbox
  * trap; the ParmBlkPtr cast matches toolbox/files.cla's own FileParam
  * catalog comment (ioNamePtr/ioVRefNum/ioFDirIndex/fdType/fdCreator laid
- * out at the SAME offsets PBGetFInfoSync itself reads/writes). ponytail:
- * PBSetFInfoSync's own cprint-lane wrapper is still missing -- add it the
- * same way the moment a case calls it; toolbox/files.cla's declaration
- * already works native-side, untouched by this gap. */
+ * out at the SAME offsets PBGetFInfoSync itself reads/writes). */
 int32_t rt_ext_PBGetFInfoSync(void *pb) { return (int32_t)PBGetFInfoSync((ParmBlkPtr)pb); }
+
+/* ---- PB/SF/AE cprint-lane wrappers (filesystem-api/pack3-standardfile/
+ * appleevents catalogs, landing 2026-08-28 with the lane un-darking) ----
+ * toolbox/files.cla's directory/catalog family, toolbox/devices.cla's
+ * five serial-driver PB traps, toolbox/standardfile.cla's SF*, and
+ * toolbox/appleevents.cla's AE* all landed while this diagnostic lane
+ * (CLARUS_CPRINT_MAC_TESTS=1) was dark behind the ConnH* / PB* early-
+ * comment-close bug (2026-08-22..28, fixed in the cprint-Mac-lane-
+ * un-darked commit just before this one) -- same story as this file's
+ * FhH* stub block and UiValidRect/UiNewMenuStr above, but these five
+ * catalogs needed real Toolbox bodies (the native-68k lane already
+ * covers the same ground via cg68k's direct trap emission; this is
+ * purely the cprint/Retro68 diagnostic twin catching up). Every
+ * signature below is a one-line passthrough to the real Universal
+ * Interfaces routine (Retro68 toolchain's Files.h/Devices.h/
+ * StandardFile.h/AppleEvents.h/AEInteraction.h), cast from the
+ * `void *`/`int32_t`/`short` shape cpEmitExternProtos always uses for
+ * ptr/int/word params, to whatever pointer/struct type the real header
+ * declares; ret type matches each emitted `extern` line exactly (OSErr
+ * as `int32_t` for the PB family, `short` unchanged for AE, matching
+ * files.cla/devices.cla's `: int` and appleevents.cla's `: word`).
+ *
+ * Plain ParmBlkPtr family (toolbox/files.cla, one trap word each, no
+ * selector): PBSetVolSync/PBSetFInfoSync/PBCreateSync/PBOpenRFSync/
+ * PBWriteSync/PBCloseSync/PBGetEOFSync/PBSetEOFSync/PBGetFPosSync/
+ * PBSetFPosSync/PBFlushFileSync/PBFlushVolSync/PBAllocateSync. */
+int32_t rt_ext_PBSetVolSync(void *pb) { return (int32_t)PBSetVolSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBSetFInfoSync(void *pb) { return (int32_t)PBSetFInfoSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBCreateSync(void *pb) { return (int32_t)PBCreateSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBOpenRFSync(void *pb) { return (int32_t)PBOpenRFSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBWriteSync(void *pb) { return (int32_t)PBWriteSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBCloseSync(void *pb) { return (int32_t)PBCloseSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBGetEOFSync(void *pb) { return (int32_t)PBGetEOFSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBSetEOFSync(void *pb) { return (int32_t)PBSetEOFSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBGetFPosSync(void *pb) { return (int32_t)PBGetFPosSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBSetFPosSync(void *pb) { return (int32_t)PBSetFPosSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBFlushFileSync(void *pb) { return (int32_t)PBFlushFileSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBFlushVolSync(void *pb) { return (int32_t)PBFlushVolSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBAllocateSync(void *pb) { return (int32_t)PBAllocateSync((ParmBlkPtr)pb); }
+
+/* _HFSDispatch selector family (toolbox/files.cla): the real Universal
+ * Interfaces routines (Files.h) each bake their own selector into the
+ * trap sequence at compile time (`TWOWORDINLINE(0x70NN, 0xA260)` --
+ * literally `moveq #N,D0` ahead of the shared trap word) and so take
+ * ONLY the paramBlock in C, unlike files.cla's own extern shape (which
+ * exposes the selector as a live `reg` d0 parameter so cg68k's native
+ * lane can thread the SAME trap word through hfsSelGetCatInfo(9)/
+ * hfsSelSetCatInfo(10)/hfsSelDirCreate(6)/hfsSelCatMove(5) itself). Every
+ * call site in this catalog passes the matching literal selector for the
+ * function it's calling (files.cla ~line 305), so this passthrough
+ * discards the now-redundant runtime selector and dispatches straight to
+ * the one real header function that already bakes in the right selector
+ * -- correct as long as callers keep using the matching constant, same
+ * assumption the native lane's own direct trap emission relies on. */
+int32_t rt_ext_PBGetCatInfoSync(void *pb, int32_t selector) { (void)selector; return (int32_t)PBGetCatInfoSync((CInfoPBPtr)pb); }
+int32_t rt_ext_PBSetCatInfoSync(void *pb, int32_t selector) { (void)selector; return (int32_t)PBSetCatInfoSync((CInfoPBPtr)pb); }
+int32_t rt_ext_PBDirCreateSync(void *pb, int32_t selector) { (void)selector; return (int32_t)PBDirCreateSync((HParmBlkPtr)pb); }
+int32_t rt_ext_PBCatMoveSync(void *pb, int32_t selector) { (void)selector; return (int32_t)PBCatMoveSync((CMovePBPtr)pb); }
+
+/* PBH single-trap family (toolbox/files.cla): each owns a private trap
+ * word, no selector -- same ordinary-register shape as PBGetFInfoSync
+ * above, HParmBlkPtr instead of ParmBlkPtr. */
+int32_t rt_ext_PBHDeleteSync(void *pb) { return (int32_t)PBHDeleteSync((HParmBlkPtr)pb); }
+int32_t rt_ext_PBHRenameSync(void *pb) { return (int32_t)PBHRenameSync((HParmBlkPtr)pb); }
+int32_t rt_ext_PBHGetFInfoSync(void *pb) { return (int32_t)PBHGetFInfoSync((HParmBlkPtr)pb); }
+int32_t rt_ext_PBHSetFInfoSync(void *pb) { return (int32_t)PBHSetFInfoSync((HParmBlkPtr)pb); }
+int32_t rt_ext_PBHOpenRFSync(void *pb) { return (int32_t)PBHOpenRFSync((HParmBlkPtr)pb); }
+
+/* toolbox/devices.cla's five serial-driver PB traps (Device Manager,
+ * plain ParmBlkPtr, no selector) -- SerialOpenWrite's own case needs
+ * these on this lane the same way filesystem-api's DirOps/Catalog cases
+ * need the files.cla family above. */
+int32_t rt_ext_PBOpenSync(void *pb) { return (int32_t)PBOpenSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBReadSync(void *pb) { return (int32_t)PBReadSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBControlSync(void *pb) { return (int32_t)PBControlSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBStatusSync(void *pb) { return (int32_t)PBStatusSync((ParmBlkPtr)pb); }
+int32_t rt_ext_PBKillIOSync(void *pb) { return (int32_t)PBKillIOSync((ParmBlkPtr)pb); }
+
+/* toolbox/standardfile.cla's SF* family: `where: int` marshals as a
+ * packed Point (v in the high word, h in the low word -- cpEmitExternProtos'
+ * own by-value-Point convention, matching rt_ext_UiSFGetFile/
+ * rt_ext_UiSFPutFile's `where` construction just above); every other
+ * `ptr` param casts straight to the header's own UPP/string/reply type,
+ * same as every UPP-shaped `void *` elsewhere in this file (e.g.
+ * rt_ext_UiNoteAlert's `(ModalFilterUPP)modalFilter` above) -- the
+ * caller passes an already-UPP-shaped pointer (or NULL), no NewXxxUPP
+ * wrapping needed here. */
+void rt_ext_SFPutFile(int32_t where, void *prompt, void *origName, void *dlgHook, void *reply) {
+    Point p;
+    p.v = (short)(where >> 16);
+    p.h = (short)where;
+    SFPutFile(p, (ConstStr255Param)prompt, (ConstStr255Param)origName, (DlgHookUPP)dlgHook, (SFReply *)reply);
+}
+void rt_ext_SFGetFile(int32_t where, void *prompt, void *fileFilter, short numTypes, void *typeList, void *dlgHook, void *reply) {
+    Point p;
+    p.v = (short)(where >> 16);
+    p.h = (short)where;
+    SFGetFile(p, (ConstStr255Param)prompt, (FileFilterUPP)fileFilter, numTypes, (ConstSFTypeListPtr)typeList, (DlgHookUPP)dlgHook, (SFReply *)reply);
+}
+void rt_ext_SFPPutFile(int32_t where, void *prompt, void *origName, void *dlgHook, void *reply, short dlgID, void *filterProc) {
+    Point p;
+    p.v = (short)(where >> 16);
+    p.h = (short)where;
+    SFPPutFile(p, (ConstStr255Param)prompt, (ConstStr255Param)origName, (DlgHookUPP)dlgHook, (SFReply *)reply, dlgID, (ModalFilterUPP)filterProc);
+}
+void rt_ext_SFPGetFile(int32_t where, void *prompt, void *fileFilter, short numTypes, void *typeList, void *dlgHook, void *reply, short dlgID, void *filterProc) {
+    Point p;
+    p.v = (short)(where >> 16);
+    p.h = (short)where;
+    SFPGetFile(p, (ConstStr255Param)prompt, (FileFilterUPP)fileFilter, numTypes, (ConstSFTypeListPtr)typeList, (DlgHookUPP)dlgHook, (SFReply *)reply, dlgID, (ModalFilterUPP)filterProc);
+}
+
+/* toolbox/appleevents.cla's own user-callable AE* pair -- distinct from
+ * rt_ext_UiLaunchReal's internal AEInstallEventHandler calls above (those
+ * install this runtime's OWN oapp/odoc/pdoc/quit handlers; these wrap the
+ * catalog externs a Clarus program calls directly to install/dispatch ITS
+ * OWN handlers). `isSysHandler: bool`/`handler: ptr` marshal as
+ * `uint8_t`/`void *` per cpEmitExternProtos; the emitted extern's bool
+ * param is `int32_t` here (files.cla's `: word` neighbors return `short`,
+ * but appleevents.cla declares `isSysHandler: bool`, which marshals as
+ * the same width as every other cprint bool param -- matching the emitted
+ * `extern short rt_ext_AEInstallEventHandler(int32_t, int32_t, void *,
+ * int32_t, int32_t)` line exactly, non-zero true). */
+short rt_ext_AEInstallEventHandler(int32_t theAEEventClass, int32_t theAEEventID, void *handler, int32_t handlerRefcon, int32_t isSysHandler) {
+    return (short)AEInstallEventHandler((AEEventClass)theAEEventClass, (AEEventID)theAEEventID, (AEEventHandlerUPP)handler, (long)handlerRefcon, (Boolean)(isSysHandler != 0));
+}
+short rt_ext_AEProcessAppleEvent(void *theEventRecord) { return (short)AEProcessAppleEvent((const EventRecord *)theEventRecord); }
 
 static OSErr rt_ext_ui_ae_check_missed(const AppleEvent *evt) {
     DescType actualType;

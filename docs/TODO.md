@@ -148,10 +148,13 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   this lane permanent-failure FhH stubs while also adding suite cases
   that need real file I/O, so the twin can only go green via real
   C-side HFS FhH implementations for this lane, lane-aware case skips,
-  or accepting a documented 78/80; (2) `TestToolboxSuiteOnMac` still
-  fails at link — the toolbox suite's live `PB*Sync`/`SF*`/`AE*` trap
-  externs (~28 symbols) never got `rt_ext_` wrappers in
-  `rt_ext_mac.inc` (mechanical Universal-Interfaces pass-throughs).
+  or accepting a documented 78/80; (2) FIXED (2026-08-28) —
+  `TestToolboxSuiteOnMac` now compiles, links, boots, and runs 32/32
+  green. The toolbox suite's live `PB*Sync`/`SF*`/`AE*` trap externs (33
+  symbols: 27 `PB*Sync` from `toolbox/files.cla` + `toolbox/devices.cla`,
+  4 `SF*` from `toolbox/standardfile.cla`, 2 `AE*` from
+  `toolbox/appleevents.cla`) got mechanical Universal-Interfaces
+  pass-through `rt_ext_` wrappers in `rt_ext_mac.inc`.
 
 ## Compiler correctness / diagnostics
 
