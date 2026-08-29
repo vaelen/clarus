@@ -992,6 +992,20 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     UiSetPort(savedPort)
 }
 
+// rtUiPeekSw: a SIGNED 16-bit read -- peekw zero-extends (Ch12's
+// peek/poke table), but QuickDraw Rect fields are signed INTEGERs and a
+// scrolled TE's destRect.top goes negative, so a plain
+// peekw(viewRect.top) - peekw(destRect.top) is off by 65536 there.
+func rtUiPeekSw(p: ptr): int {
+    var v: int
+
+    v = peekw(p)
+    if v >= 32768 {
+        v = v - 65536
+    }
+    return v
+}
+
 // rtUiWidgetScrollToEnd (textview-scroll-to-end phase): `Widget.
 // scrollToEnd()` for a TEXTVIEW -- scrolls the view so its last line is
 // visible and pins the vertical scrollbar (if any) to the same offset.
@@ -1023,13 +1037,13 @@ func rtUiWidgetScrollToEnd(instV: ptr, wIdx: int) {
     UiSetPort(w.wp)
     rtUiTeScrollSync(instV, wIdx)
     teMp = UiHandleDeref(te) // AFTER the sync -- its Toolbox calls can move memory
-    viewH = peekw(teMp + rtUiTeViewRect + 4) - peekw(teMp + rtUiTeViewRect + 0)
+    viewH = rtUiPeekSw(teMp + rtUiTeViewRect + 4) - rtUiPeekSw(teMp + rtUiTeViewRect + 0)
     contentH = peekw(teMp + rtUiTeNLines) * peekw(teMp + rtUiTeLineHeight)
     maxScroll = contentH - viewH
     if maxScroll < 0 {
         maxScroll = 0
     }
-    offset = peekw(teMp + rtUiTeViewRect + 0) - peekw(teMp + rtUiTeDestRect + 0)
+    offset = rtUiPeekSw(teMp + rtUiTeViewRect + 0) - rtUiPeekSw(teMp + rtUiTeDestRect + 0)
     if offset < maxScroll {
         UiTEScroll(0, offset - maxScroll, te) // negative dv: content moves up
         sb = rtUiCtrlAt(w, wIdx)

@@ -344,5 +344,5 @@ func UiTestTextviewScroll(i: int): int {
         return -1
     }
     teMp = UiHandleDeref(te)
-    return peekw(teMp + rtUiTeViewRect + 0) - peekw(teMp + rtUiTeDestRect + 0)
+    return rtUiPeekSw(teMp + rtUiTeViewRect + 0) - rtUiPeekSw(teMp + rtUiTeDestRect + 0)
 }
