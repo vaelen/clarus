@@ -9910,13 +9910,13 @@ func cgCallFnScalar(e: int) {
     cgCallFunc(fi)
     cgCleanupStack(total)
     cgAbortCheckAfterCall(fi)
+    cgFlushArgReleases(savedReleases)
     retType = irFuncRet(fi)
     off = -1
     if cgNeedsRelease(retType) {
         off = cgNewTrackedTmp(retType)
         cgStoreD0At(6, off, retType)
     }
-    cgFlushArgReleases(savedReleases)
     if off != -1 {
         cgLastTrackedOff = off
     }
