@@ -254,8 +254,8 @@ detail: `docs/HISTORY.md` (once archived) or
 `.superpowers/sdd/2026-08-29-68k-call-result-release/`.
 
 **`textview-scroll-to-end` phase (branch `textview-scroll-to-end`,
-2026-08-29, based on `main` at `36b76ab`) is COMPLETE — full T2 green, NOT
-YET merged:** one new widget method, `textview.scrollToEnd()`
+2026-08-29, based on `main` at `36b76ab`) is COMPLETE — full T2 green,
+MERGED to local `main` 2026-08-29 (ff 36b76ab..8d4c2e5, NOT pushed):** one new widget method, `textview.scrollToEnd()`
 (`../68kbbs/docs/language-gaps.md` §9's log-window ask), wired along the
 canvas-method path (`check.cla` `textviewMethods` -> `lower.cla`
 `lowTextviewMethod` -> `ui_scroll_to_end` intrinsic -> `cg68k.cla`/

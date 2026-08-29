@@ -1,4 +1,4 @@
-# Session status — 2026-08-29 (textview-scroll-to-end: COMPLETE, T2 green, not merged)
+# Session status — 2026-08-29 (textview-scroll-to-end: COMPLETE, T2 green, MERGED to local main)
 
 Handoff summary. **The `textview-scroll-to-end` phase (branch
 `textview-scroll-to-end`, based on `main` at `36b76ab` — `68k-call-
@@ -30,7 +30,7 @@ scrolled past its own top was stranded off the end — fixed at the root by
 moving the three `destRect` readers (`uitext.cla`, `uiwidgets.cla`) onto
 `rtUiPeekSw` too, with a further golden rebless.
 
-Full T2 PASS. NOT merged, NOT pushed — merge only on Andrew's request.
+Full T2 PASS. MERGED to local `main` 2026-08-29 (ff 36b76ab..8d4c2e5, 9 commits; branch deleted); `main` is 36 commits ahead of `origin/main` (9b2eea8), NOT pushed — push only on Andrew's request.
 `68k-call-result-release` (this branch's own base) is itself merged to
 local `main` at `36b76ab`, also NOT pushed (local `main` is ahead of
 `origin/main` = `9b2eea8`). Next up per `docs/ROADMAP.md`: AppleTalk ->
