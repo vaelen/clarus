@@ -88,7 +88,7 @@ LBL_240:
         DC.W $A063  ; _MaxApplZone
         DC.W $A036  ; _MoreMasters
         BSR.W LBL_239
-        JSR 3170(A5)
+        JSR 3178(A5)
         ; UI startup: rtUiStartup / [App.launch] / rtUiLaunch / rtUiRun
         BSR.W LBL_194
         JSR 3370(A5)
@@ -96,7 +96,7 @@ LBL_240:
         JSR 1770(A5)
         BSR.W LBL_237
         CLR.L -(A7)
-        JSR 3194(A5)
+        JSR 3202(A5)
         RTS
 LBL_239:
         ; cg_init_globals
@@ -417,7 +417,7 @@ LBL_0:
         MOVE.L D0,-(A7)
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3210(A5)
+        JSR 3218(A5)
         ADDQ.L #8,A7
 LBL_246:
         UNLK A6
@@ -428,7 +428,7 @@ LBL_1:
         LINK A6,#-2196
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3202(A5)
+        JSR 3210(A5)
         ADDQ.L #4,A7
 LBL_247:
         UNLK A6
@@ -7940,7 +7940,7 @@ LBL_613:
         BEQ.W LBL_614
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2986(A5)
+        JSR 2994(A5)
         ADDQ.L #4,A7
         MOVEQ #1,D0
         BRA.W LBL_611
@@ -8520,7 +8520,7 @@ LBL_185:
         MOVE.B -44(A5),D0
         TST.L D0
         BEQ.W LBL_639
-        JSR 2634(A5)
+        JSR 2642(A5)
         BRA.W LBL_637
 LBL_639:
         BSR.W LBL_121
@@ -9102,7 +9102,7 @@ LBL_676:
         JSR 2618(A5)
         ADDQ.L #2,A7
 LBL_672:
-        JSR 2378(A5)
+        JSR 2626(A5)
 LBL_668:
         UNLK A6
         RTS
@@ -9110,7 +9110,7 @@ LBL_668:
 LBL_189:
         LINK A6,#-2196
         BSR.W LBL_188
-        JSR 2626(A5)
+        JSR 2634(A5)
 LBL_677:
         UNLK A6
         RTS
@@ -9611,7 +9611,7 @@ LBL_193:
         MOVE.B -44(A5),D0
         TST.L D0
         BEQ.W LBL_714
-        JSR 2834(A5)
+        JSR 2842(A5)
         BRA.W LBL_713
 LBL_714:
         MOVE.L -26(A5),D1
@@ -12160,7 +12160,7 @@ LBL_809:
         BEQ.W LBL_810
         MOVE.L 12(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2970(A5)
+        JSR 2978(A5)
         ADDQ.L #4,A7
         BRA.W LBL_811
 LBL_810:
@@ -12184,7 +12184,7 @@ LBL_813:
         BEQ.W LBL_814
         MOVE.L 12(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2986(A5)
+        JSR 2994(A5)
         ADDQ.L #4,A7
         BRA.W LBL_815
 LBL_814:

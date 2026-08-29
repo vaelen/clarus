@@ -350,7 +350,11 @@ func rtUiTeScrollSync(inst: ptr, wIdx: int) {
         }
         UiSetControlMaximum(sb, maxScroll)
         teMp = UiHandleDeref(te) // re-derive: SetControlMaximum can move memory
-        offset = peekw(teMp + rtUiTeViewRect + 0) - peekw(teMp + rtUiTeDestRect + 0)
+        // rtUiPeekSw (uiwidgets.cla): destRect.top goes negative once
+        // scrolled past the widget's own top; a zero-extended peekw here
+        // left a shrunk-while-scrolled view stranded off the end
+        // (textview-scroll-to-end phase, ScrollToEnd case).
+        offset = rtUiPeekSw(teMp + rtUiTeViewRect + 0) - rtUiPeekSw(teMp + rtUiTeDestRect + 0)
         if offset > maxScroll {
             UiTEScroll(0, offset - maxScroll, te) // positive dv: content back down
             offset = maxScroll
@@ -367,7 +371,7 @@ func rtUiTeScrollSync(inst: ptr, wIdx: int) {
         }
         UiSetControlMaximum(hb, maxScroll)
         teMp = UiHandleDeref(te) // re-derive: rtUiTeWidestLine (TextWidth) / SetControlMaximum can move memory
-        offset = peekw(teMp + rtUiTeViewRect + 2) - peekw(teMp + rtUiTeDestRect + 2)
+        offset = rtUiPeekSw(teMp + rtUiTeViewRect + 2) - rtUiPeekSw(teMp + rtUiTeDestRect + 2)
         if offset > maxScroll {
             UiTEScroll(offset - maxScroll, 0, te)
             offset = maxScroll

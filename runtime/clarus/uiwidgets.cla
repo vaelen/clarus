@@ -976,7 +976,7 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     teMp = UiHandleDeref(te)
     viewTop = peekw(teMp + rtUiTeViewRect + 0)
     viewBottom = peekw(teMp + rtUiTeViewRect + 4)
-    contentBottom = peekw(teMp + rtUiTeDestRect + 0) + peekw(teMp + rtUiTeNLines) * peekw(teMp + rtUiTeLineHeight)
+    contentBottom = rtUiPeekSw(teMp + rtUiTeDestRect + 0) + peekw(teMp + rtUiTeNLines) * peekw(teMp + rtUiTeLineHeight)
     if contentBottom < viewTop {
         contentBottom = viewTop
     }

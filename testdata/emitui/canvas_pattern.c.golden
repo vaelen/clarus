@@ -4979,7 +4979,7 @@ static void clar_fn_rtUiWidgetSetText(void * cv_instV, int32_t cv_wIdx, void * c
     cv_teMp = rt_ext_UiHandleDeref(cv_te);
     cv_viewTop = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0)));
     cv_viewBottom = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (4)));
-    cv_contentBottom = CLAR_ADD32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (0))), CLAR_MUL32(rt_peekw((void *)((char *)(cv_teMp) + (94))), rt_peekw((void *)((char *)(cv_teMp) + (24)))));
+    cv_contentBottom = CLAR_ADD32(clar_fn_rtUiPeekSw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (0))), CLAR_MUL32(rt_peekw((void *)((char *)(cv_teMp) + (94))), rt_peekw((void *)((char *)(cv_teMp) + (24)))));
     if (cv_contentBottom < cv_viewTop) {
         cv_contentBottom = cv_viewTop;
     }
@@ -5697,7 +5697,7 @@ static void clar_fn_rtUiTeScrollSync(void * cv_inst, int32_t cv_wIdx) {
         }
         rt_ext_UiSetControlMaximum(cv_sb, cv_maxScroll);
         cv_teMp = rt_ext_UiHandleDeref(cv_te);
-        cv_offset = CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0))), rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (0))));
+        cv_offset = CLAR_SUB32(clar_fn_rtUiPeekSw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0))), clar_fn_rtUiPeekSw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (0))));
         if (cv_offset > cv_maxScroll) {
             rt_ext_UiTEScroll(0, CLAR_SUB32(cv_offset, cv_maxScroll), cv_te);
             cv_offset = cv_maxScroll;
@@ -5714,7 +5714,7 @@ static void clar_fn_rtUiTeScrollSync(void * cv_inst, int32_t cv_wIdx) {
         }
         rt_ext_UiSetControlMaximum(cv_hb, cv_maxScroll);
         cv_teMp = rt_ext_UiHandleDeref(cv_te);
-        cv_offset = CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (2))), rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (2))));
+        cv_offset = CLAR_SUB32(clar_fn_rtUiPeekSw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (2))), clar_fn_rtUiPeekSw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (2))));
         if (cv_offset > cv_maxScroll) {
             rt_ext_UiTEScroll(CLAR_SUB32(cv_offset, cv_maxScroll), 0, cv_te);
             cv_offset = cv_maxScroll;
