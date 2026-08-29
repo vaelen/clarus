@@ -8943,6 +8943,7 @@ func cgIntrUi(e: int, nm: int) {
     var winName: string
     var winNameIdx: int
     var fi: int
+    var off: int
 
     a0 = irIntrArgsHead(e)
     a1 = -1
@@ -9226,6 +9227,15 @@ func cgIntrUi(e: int, nm: int) {
         cgJsrByName(rnUiWidgetGetText)
         cgCleanupStack(12)
         a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
+        // Producer-side tracking (68k-call-result-release phase, Task 3):
+        // the box popped above is a fresh rtTextNew birth (this arm's own
+        // header comment) -- track it exactly like Task 2's
+        // cgCallFnScalar pattern so a direct consumer (the `getter + x`
+        // concat-operand shape) is balanced at statement end, and let
+        // SAssign/SReturn hand it off same as any other tracked temp.
+        off = cgNewTrackedTmp(irTextT)
+        cgStoreD0At(6, off, irTextT)
+        cgLastTrackedOff = off
         return
     }
     if nm == IUiAskOpen() or nm == IUiAskSave() or nm == IUiAskSaveChanges() or nm == IUiFormIsNew() {

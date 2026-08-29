@@ -225,3 +225,87 @@ func TestCallResultRelease(t *testing.T) {
 		}
 	}
 }
+
+// getterFixture: a UI-shaped program exercising the ONE other untracked
+// +1 producer Task 1 found (probe item 5): cgIntrUi's IUiGetTextviewText
+// arm (`<textview>.text`). appendish's `w.LogView.text + filtered`
+// consumes the getter's fresh rtTextNew box directly as a cgIntrTextConcat
+// OPERAND -- never an SAssign/SReturn source in its own right -- which is
+// exactly the shape that leaked pre-fix: cgIntrTextConcat pushes a0e's
+// (the getter's) D0 result straight onto the stack as an arg to
+// rtTextConcat and nothing ever tracks/releases it. Real DSL, verified
+// against examples/menu-demo.cla (window/textview/on App.launch shape) and
+// testsuite/toolbox/harness.cla's TextWin (`textview Body { ... }`) +
+// cases_textwidgets.cla (`w.Body.text` read off a window-typed local var,
+// `got1 = w.Body.text`) -- window refs are legal function params (language
+// reference: "so it can be passed to functions that take a Doc"). Widget
+// text is `text`, not `string`, so the caller cannot `log(...)` the result
+// directly (log wants string); the call is discarded instead, matching
+// `cgCallFnScalar`'s own discard-consumer shape.
+const getterFixture = `window LogWin {
+    title: "L"
+    textview LogView { at: 20, 20; fill: both }
+}
+
+func appendish(w: LogWin, filtered: text): text {
+    var t: text
+    t = w.LogView.text + filtered
+    return t
+}
+
+on App.launch {
+    var w: LogWin
+    var extra: text
+    appendish(w, extra)
+}
+`
+
+// TestGetterResultRelease pins the release-call count inside appendish's
+// own body. NOTE (measure-then-pin, per the task's controller amendment):
+// pre-fix this listing has FOUR rtTextRelease calls (release __store2's
+// init-null before the concat store; release t's default-init box before
+// `t = __store2`; release __ret5's default-init box before `__ret5 = t`
+// (the SReturn synthetic return temp); release t itself at scope exit) --
+// confirmed leak: none of them target the getter's own fresh box. Post-fix
+// (producer-side tracking in the IUiGetTextviewText arm) adds exactly ONE
+// more: the getter's box, tracked via cgNewTrackedTmp+cgStoreD0At+
+// cgLastTrackedOff, consumed as a concat operand with no other handoff, so
+// it falls through to the ordinary end-of-statement cgFreeStmtTmps flush --
+// want is pinned at 5 (4+1).
+func TestGetterResultRelease(t *testing.T) {
+	exe := buildClarusc(t)
+	dir := t.TempDir()
+	src := filepath.Join(dir, "getter.cla")
+	if err := os.WriteFile(src, []byte(getterFixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outBin := filepath.Join(dir, "out.bin")
+	cmd := exec.Command(exe, "emit68k", "-o", outBin, "--listing",
+		"--rtdir", filepath.Join(repoRoot(t), "runtime", "clarus")+string(os.PathSeparator), src)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("emit68k: %v\n%s", err, out)
+	}
+
+	segs := readSegments(t, dir)
+	rel := findReleaseInfo(t, segs)
+
+	var body string
+	var segIdx int
+	found := false
+	for i, seg := range segs {
+		b, ok := findFuncInSeg(seg, "appendish")
+		if ok {
+			body, segIdx, found = b, i, true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("no segment defines func appendish")
+	}
+
+	const want = 5 // pinned: pre-fix 4 (confirmed leak), post-fix 4+1 (getter's box)
+	if got := countReleaseCalls(segIdx, body, rel); got != want {
+		t.Errorf("appendish: %d rtTextRelease calls, want %d\n%s", got, want, body)
+	}
+}
