@@ -10,7 +10,7 @@
         ;   local m : -128(A6)  size 24
         ;   local row : -140(A6)  size 12
 LBL_0:
-        LINK A6,#-2296
+        LINK A6,#-2336
         MOVEQ #0,D0
         MOVE.L D0,-16(A6)
         MOVEQ #0,D0

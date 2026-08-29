@@ -2,7 +2,7 @@
         ;   param args : 8(A6)  size 4
         ;   local n : -4(A6)  size 4
 LBL_0:
-        LINK A6,#-8304
+        LINK A6,#-8344
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         ADDA.L #-256,A7
@@ -14,7 +14,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -576(A6),A0
+        LEA -616(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -22,7 +22,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -576(A6),A0
+        LEA -616(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -33,7 +33,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -1088(A6),A0
+        LEA -1128(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -41,7 +41,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -1088(A6),A0
+        LEA -1128(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -52,7 +52,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -1600(A6),A0
+        LEA -1640(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -60,7 +60,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -1600(A6),A0
+        LEA -1640(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -71,7 +71,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -2112(A6),A0
+        LEA -2152(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -79,7 +79,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -2112(A6),A0
+        LEA -2152(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -90,7 +90,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -2624(A6),A0
+        LEA -2664(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -98,7 +98,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -2624(A6),A0
+        LEA -2664(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -109,7 +109,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -3136(A6),A0
+        LEA -3176(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -117,7 +117,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -3136(A6),A0
+        LEA -3176(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -128,7 +128,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -3648(A6),A0
+        LEA -3688(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -136,7 +136,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -3648(A6),A0
+        LEA -3688(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -147,7 +147,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -4160(A6),A0
+        LEA -4200(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -155,7 +155,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -4160(A6),A0
+        LEA -4200(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -166,7 +166,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -4672(A6),A0
+        LEA -4712(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -174,7 +174,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -4672(A6),A0
+        LEA -4712(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -185,7 +185,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -5184(A6),A0
+        LEA -5224(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -193,7 +193,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -5184(A6),A0
+        LEA -5224(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -204,7 +204,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -5696(A6),A0
+        LEA -5736(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -212,7 +212,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -5696(A6),A0
+        LEA -5736(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -223,7 +223,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -6208(A6),A0
+        LEA -6248(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -231,7 +231,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -6208(A6),A0
+        LEA -6248(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -242,7 +242,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -6720(A6),A0
+        LEA -6760(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -250,7 +250,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -6720(A6),A0
+        LEA -6760(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -261,7 +261,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -7232(A6),A0
+        LEA -7272(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -269,7 +269,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -7232(A6),A0
+        LEA -7272(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -280,7 +280,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -7744(A6),A0
+        LEA -7784(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -288,7 +288,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -7744(A6),A0
+        LEA -7784(A6),A0
         MOVE.L A0,-(A7)
         ADDA.L #-256,A7
         MOVEA.L A7,A1
@@ -299,7 +299,7 @@ LBL_0:
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDA.W #12,A7
-        LEA -8256(A6),A0
+        LEA -8296(A6),A0
         MOVEA.L A7,A1
         MOVE.L A0,-(A7)
         MOVE.L #255,-(A7)
@@ -307,7 +307,7 @@ LBL_0:
         JSR 90(A5)
         ADDA.W #12,A7
         ADDA.W #256,A7
-        LEA -8256(A6),A0
+        LEA -8296(A6),A0
         MOVE.L A0,-(A7)
         JSR 1346(A5)
         ADDA.W #64,A7

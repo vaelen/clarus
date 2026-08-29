@@ -1381,11 +1381,19 @@ var cgSerdescLabels: list of int
 // (self-hosting clarusc through emit68k hit the "too many tracked temps"
 // error -- a single statement in clarusc's own source, a call whose
 // arguments are 14 chained `list.pop()`s, needs 14 concurrently-tracked
-// small temps). Set to the exact observed need, not padded -- see the
+// small temps). 68k-call-result-release phase (Task 1 probe item 3):
+// bumped from 14 to 24 -- once cgCallFnScalar tracks every handle-typed
+// user-call result unconditionally (not just the discarded case), a real
+// in-tree statement (cprint.cla:3868, the IUiCanvasRect arm of
+// fpIntrCall12 -- 14 text-concat nodes plus 7 text-returning user calls)
+// needs 21 concurrently-tracked small temps, up from its pre-fix 14 (the
+// 14 concats alone; the 7 calls were untracked leaks before this phase).
+// 24 leaves headroom above the observed 21, not padded further -- see the
 // regression pin, testdata/run/smalltmp_ceiling.cla, which exercises
-// exactly 14 so an accidental future shrink fails there, loudly, instead
-// of only being caught by self-hosting clarusc again.
-const cgTmpSlots: int = 14
+// exactly 14 so an accidental future shrink still fails there, loudly,
+// before self-hosting clarusc (whose own worst statement now needs 21)
+// would catch it.
+const cgTmpSlots: int = 24
 
 // cgBigTmpFloor/cgBigTmpSize: a SEPARATE, smaller pool sized for a
 // KStr/KRec temp (cgTmpBaseOffs' own slots are a fixed 4 bytes, too

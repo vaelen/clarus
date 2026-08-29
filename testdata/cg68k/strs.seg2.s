@@ -1,7 +1,7 @@
         ; func clar_conn_fire_closed  (JT slot 173)
         ;   param slot : 8(A6)  size 4
 LBL_0:
-        LINK A6,#-2156
+        LINK A6,#-2196
         MOVE.L 8(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -49,7 +49,7 @@ LBL_21:
         ;   param msg : 8(A6)  size 4
         ;   local err : -260(A6)  size 260
 LBL_1:
-        LINK A6,#-2416
+        LINK A6,#-2456
         MOVEQ #0,D0
         MOVE.L D0,-260(A6)
         LEA -256(A6),A0
@@ -106,7 +106,7 @@ LBL_29:
         ;   param a : 12(A6)  size 4
         ;   param b : 8(A6)  size 4
 LBL_2:
-        LINK A6,#-2156
+        LINK A6,#-2196
         LEA LBL_11(PC),A0
         MOVE.L A0,-(A7)
         JSR 1178(A5)
@@ -123,7 +123,7 @@ LBL_38:
         ;   param handlerIdx : 12(A6)  size 4
         ;   param frontInstOrNil : 8(A6)  size 4
 LBL_3:
-        LINK A6,#-2156
+        LINK A6,#-2196
         LEA LBL_12(PC),A0
         MOVE.L A0,-(A7)
         JSR 1178(A5)
@@ -139,7 +139,7 @@ LBL_39:
         ; func clar_ui_fire_every  (JT slot 177)
         ;   param idx : 8(A6)  size 4
 LBL_4:
-        LINK A6,#-2156
+        LINK A6,#-2196
         LEA LBL_13(PC),A0
         MOVE.L A0,-(A7)
         JSR 1178(A5)
@@ -156,7 +156,7 @@ LBL_40:
         ;   param winIdx : 12(A6)  size 4
         ;   param inst : 8(A6)  size 4
 LBL_5:
-        LINK A6,#-2156
+        LINK A6,#-2196
         LEA LBL_14(PC),A0
         MOVE.L A0,-(A7)
         JSR 1178(A5)
@@ -172,7 +172,7 @@ LBL_41:
         ; func clar_ui_fire_staterows  (JT slot 179)
         ;   param rowsIdx : 8(A6)  size 4
 LBL_6:
-        LINK A6,#-2156
+        LINK A6,#-2196
         MOVE.L 8(A6),D1
         MOVEQ #64,D0
         CMP.L D0,D1
