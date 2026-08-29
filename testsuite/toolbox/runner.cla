@@ -118,7 +118,13 @@
 // (uiwidgets.cla's new rtUiKindPopup-with-label arm +
 // rtUiPopupBoxInto's defensive floor, uitable.cla) against a real
 // `width: 60` labeled popup (harness.cla's NarrowPopupWin) -- see that
-// case's own header comment.
+// case's own header comment. LeakCheck (cases_leak.cla) is
+// 68k-call-result-release Task 4's own addition: hardware-proves that a
+// user function's text result consumed directly (argument / operand /
+// receiver / builtin-method-argument) is released by the emit68k
+// call-result-release fix -- a real FreeMem-flat proof across thousands
+// of direct-consumption iterations on the emulator, complementing
+// internal/cg68k/callresult_release_test.go's listing-level pin.
 
 enum ToolboxTest {
     All
@@ -153,15 +159,16 @@ enum ToolboxTest {
     LivePaint
     SerialOpenWrite
     NarrowPopup
+    LeakCheck
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 31 real cases
+// nTbCases is ToolboxTest's member count minus All: the 32 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 32
+const nTbCases: int = 33
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -263,6 +270,9 @@ func tbCaseName(t: ToolboxTest): string {
     case NarrowPopup {
         return "NarrowPopup"
     }
+    case LeakCheck {
+        return "LeakCheck"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -305,6 +315,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(LivePaint)
     l.add(SerialOpenWrite)
     l.add(NarrowPopup)
+    l.add(LeakCheck)
     l.add(SelfCheck)
     return l
 }
@@ -465,6 +476,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, NarrowPopup) {
         results.add(caseNarrowPopup())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, LeakCheck) {
+        results.add(caseLeakCheck())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

@@ -1,0 +1,68 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_leak.cla: LeakCheck (68k-call-result-release phase, Task 4) --
+// hardware-proves that a user function's text result consumed DIRECTLY
+// (argument / operand / receiver / builtin-method-argument -- the
+// ../68kbbs/docs/memory-leak.md shapes, also pinned at the listing level
+// by internal/cg68k/callresult_release_test.go) is released by the
+// emit68k codegen fix (commits 49e1999..cbc1949: cgTmpSlots 14->24,
+// fpIntrCall12 split, cgCallFnScalar producer-side tracking,
+// IUiGetTextviewText tracking). Pre-fix, each loop iteration below leaked
+// one text box+handle per direct-consumption call site, so thousands of
+// iterations leak well over 100KB; FreeMem sampled before/after must stay
+// flat to within an allocator-jitter slack. TbFreeMem is declared
+// LOCALLY, same user-code-extern precedent as cases_gestalt.cla's own
+// TbGestaltErr/TbGestaltValue (the curated twin lives in
+// toolbox/memory.cla's FreeMem).
+external func TbFreeMem(): int = trap 0xA01C reg
+
+// tlkMake returns a fresh text result -- the "g()" of every shape below.
+func tlkMake(): text {
+    var t: text
+    t.append("0123456789abcdef")
+    return t
+}
+
+// tlkLen consumes its text argument by value -- the "f(t)" of the
+// argument-position shape below.
+func tlkLen(t: text): int {
+    return t.length
+}
+
+// caseLeakCheck: 1500 iterations of all four direct-consumption shapes,
+// FreeMem sampled before and after. `n` is checked nonzero (kept
+// observably live) so nothing above can be shaken out as dead code.
+func caseLeakCheck(): TestResult {
+    var before: int
+    var after: int
+    var i: int
+    var n: int
+    var acc: text
+    var detail: string
+
+    before = TbFreeMem()
+    i = 0
+    while i < 1500 {
+        // argument position: f(g())
+        n = n + tlkLen(tlkMake())
+        // receiver position: g().length
+        n = n + tlkMake().length
+        // operand position: g() + g() (both operands consumed too)
+        n = n + (tlkMake() + tlkMake()).length
+        // builtin-method argument: acc.append(g())
+        acc.append(tlkMake())
+        acc = ""
+        i = i + 1
+    }
+    after = TbFreeMem()
+
+    // Slack: Memory Manager fragmentation/rounding jitter, NOT leak
+    // headroom -- pre-fix these loops leak well over 100KB, so 8KB
+    // cleanly separates pass from fail.
+    if n > 0 and after > before - 8192 {
+        return tkPass("LeakCheck")
+    }
+    detail = "before " + tkIntToStr(before) + " after " + tkIntToStr(after) + " n " + tkIntToStr(n)
+    return tkFail("LeakCheck", detail)
+}

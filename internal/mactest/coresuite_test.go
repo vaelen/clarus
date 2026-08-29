@@ -262,7 +262,13 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // rtUiKindPopup-with-label arm + rtUiPopupBoxInto's defensive floor,
 // uitable.cla) against a real `width: 60` labeled popup (harness.cla's
 // NarrowPopupWin); cases_narrowpopup.cla joins the other cases_*.cla
-// files ahead of gui.cla.
+// files ahead of gui.cla. cases_leak.cla (LeakCheck) was added by
+// 68k-call-result-release Task 4 -- hardware-proves that a user
+// function's text result consumed directly (argument / operand /
+// receiver / builtin-method-argument) is released by the emit68k
+// call-result-release fix, via a real FreeMem-flat proof across
+// thousands of direct-consumption iterations; cases_leak.cla joins the
+// other cases_*.cla files ahead of gui.cla.
 
 // toolboxResourceBakeName MUST match testsuite/toolbox/cases_resources.cla's
 // own tbResBakeName constant, character for character: Get1NamedResource
@@ -310,6 +316,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_datetime.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_serial.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_narrowpopup.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_leak.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -445,8 +452,10 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // datetime-instrumentation Task 7's own DateTimeRoundTrip addition, then
 // to 30 by the live-log phase's own Task 1 LivePaint addition, then to 31
 // by the serial-connection phase's own Task 2 SerialOpenWrite addition,
-// then to 32 by correctness-cleanup Task 2's own NarrowPopup addition:
-// parses each of the 32 result lines (31 real cases +
+// then to 32 by correctness-cleanup Task 2's own NarrowPopup addition,
+// then to 33 by 68k-call-result-release Task 4's own LeakCheck addition
+// (a real FreeMem-flat proof for direct call-result consumption):
+// parses each of the 33 result lines (32 real cases +
 // SelfCheck) into its own t.Run subtest -- per-case CI reporting -- plus
 // the aggregate TOTAL line, regardless of which lane produced the
 // capture.
@@ -472,8 +481,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 32 {
-		t.Errorf("result lines: got %d, want 32\ncapture:\n%s", len(results), out)
+	if len(results) != 33 {
+		t.Errorf("result lines: got %d, want 33\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -483,7 +492,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 32 PASS 32 FAIL 0"; total != want {
+	if want := "TOTAL 33 PASS 33 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }
