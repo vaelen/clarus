@@ -2393,6 +2393,11 @@ func fpIntrCall(x: int): text {
     if fpIntrMatched {
         return t
     }
+    fpIntrMatched = true
+    t = fpIntrCall13(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
 
     // Task 4 review fix (Important 3): a real unhandled intrinsic name --
     // see cpFatal's own doc comment.
@@ -3899,6 +3904,24 @@ func fpIntrCall12(nm: int, x: int, a0: int, a1: int, a2: int): text {
         return "(*(clar_rec_" + poolGet(irtName(irExprType(x))) + " *)(" + fpExpr(a0) + "))"
     } else if nm == IUiAddrOfGlobal() {
         return "((void*)&(" + fpExpr(a0) + "))"
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+// fpIntrCall13 (68k-call-result-release phase, Task 2): mechanical split of
+// fpIntrCall12's second half into its own chain step -- same "fpIntrCall
+// split should have closed the last self-emit blocker" precedent as
+// fpIntrCall1..12 (see fpIntrCall8's own doc comment for the pattern this
+// repeats). Pure move, no logic change: cg68k's own call-result-release
+// fix (every handle-typed user-call result -- fpExpr returns text --
+// gets tracked/spilled now, not just discarded ones) adds enough code to
+// fpIntrCall12 across its many fpExpr(...) call sites that it no longer
+// fits in a fresh native-68k CODE segment (TestSelfEmit68k). Splitting
+// the ITextIntAtLE.. IIntToStr arms (already their own self-contained
+// group per the comment below) out restores headroom to both halves.
+func fpIntrCall13(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
 
     // binary-files phase, Task 3: intAtLE/wordAt/wordAtLE/crc16 (plain int
     // scalars, no rt_core.inc legacy equivalent, no raw-C fallback -- same
@@ -3914,7 +3937,7 @@ func fpIntrCall12(nm: int, x: int, a0: int, a1: int, a2: int): text {
     // reverse-waist synthesis intrinsics just above), so there's no
     // closer-knit family to land beside -- any chain step with headroom
     // works equally well.
-    } else if nm == ITextIntAtLE() {
+    if nm == ITextIntAtLE() {
         return "clar_fn_rtTextIntAtLE((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
     } else if nm == ITextWordAt() {
         return "clar_fn_rtTextWordAt((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
