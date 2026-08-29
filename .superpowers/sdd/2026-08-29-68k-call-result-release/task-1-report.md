@@ -250,13 +250,16 @@ from the same 14.
 **Post-fix demand = today's demand + one slot per `cgNeedsRelease`-returning
 user call in the statement.**
 
-**Measured worst case in-tree — and it is already exactly at the ceiling.**
-`clarusc/cprint.cla:3868` (`fpIntrCall4`'s `IUiCanvasRect` arm) is a single
-statement with **14 text-concat nodes** (each `cgIntrTextConcat`/
-`cgIntrTextConcatSl` takes a slot, cg68k.cla:7032/7062) **and 7
-text-returning user calls** (`fpExpr`). That function is compiled by cg68k
-in T1 today — `TestSelfEmit68k` emits `clarusc/main.cla` via `emit68k`, and
-`fpIntrCall4` lands in segment 30 of the self-emit listing (verified).
+**Worst case found in-tree (a targeted scan, not an exhaustive proof) — and
+it is already exactly at the ceiling.**
+`clarusc/cprint.cla:3868`, the `IUiCanvasRect` arm of `fpIntrCall12`
+(cprint.cla:3858-3986), is a single statement with **14 text-concat nodes**
+(each `cgIntrTextConcat`/`cgIntrTextConcatSl` takes a slot,
+cg68k.cla:7032/7062) **and 7 text-returning user calls** (`fpExpr`).
+That function is compiled by cg68k in T1 today — `TestSelfEmit68k`
+emits `clarusc/main.cla` via `emit68k`, and `fpIntrCall12` lands in
+segment 33 of the self-emit listing (verified:
+`; func fpIntrCall12  (JT slot 1622)` at self.seg33.s:1).
 
 Empirical proof (scratch probes, `build-run/clarusc emit68k`, tree
 unmodified):
@@ -462,10 +465,38 @@ cc -O1 -Iruntime/host -o build-run/clarusc clarusc/clarusc.c runtime/host/rt.c
 build-run/clarusc emit68k --rtdir runtime/clarus/ -o /tmp/p.bin /tmp/probe14.cla   # compiles
 build-run/clarusc emit68k --rtdir runtime/clarus/ -o /tmp/p.bin /tmp/probe15.cla   # ceiling abort
 build-run/clarusc emit68k --rtdir runtime/clarus/ -o /tmp/self.bin --listing clarusc/main.cla
-grep -l fpIntrCall4 /tmp/self.seg*.s                    # -> seg30: the 14/14 statement is emitted in T1
+grep -l fpIntrCall12 /tmp/self.seg*.s                   # -> seg33: the 14/14 statement is emitted in T1
 ```
 
 `probe14.cla` / `probe15.cla` are N-way text-concat statements
 (`n = f("a" + s + s + ...)`); the mimic probe reproduces
 `cprint.cla:3868`'s shape verbatim (14 concats + 7 text-returning calls).
 Both live in the session scratchpad, not the repo.
+
+---
+
+## Fix note (2026-08-29, post-review)
+
+Review finding (Important): the item-3 worst-case statement was attributed
+to the wrong function. `clarusc/cprint.cla:3868` is the `IUiCanvasRect` arm
+of **`fpIntrCall12`** (cprint.cla:3858-3986), not `fpIntrCall4`
+(2940-3254). Corrected in three places: the item-3 prose (twice) and the
+repro command at the bottom. The `fpIntrCall4` citation in item 1c's table
+(IListPush, cprint.cla:2952) is a different, correct citation and was left
+alone.
+
+The "which segment" claim was re-confirmed under the correct symbol:
+`grep -l fpIntrCall12 <scratch>/self.seg*.s` → `self.seg33.s`, whose first
+line is `; func fpIntrCall12  (JT slot 1622)` (segment 30 was
+`fpIntrCall4`). The repro command now greps for `fpIntrCall12`/seg33.
+
+Nothing else changed: the line number (cprint.cla:3868), the arithmetic
+(14 `+` at text type + 7 text-returning `fpExpr` calls = 21 concurrently
+tracked small temps), the empirical 14-compiles/15-aborts probes, the FAIL
+verdict, and the recommended `cgTmpSlots` 14 → 24 bump all stand. The
+item-3 heading now also says "worst case **found**" rather than implying an
+exhaustive corpus proof — it was a targeted scan (per-line count of
+text-concat operators plus calls to handle-returning functions across
+`clarusc/`, `runtime/clarus/`, `testsuite/`, `examples/`), which is strong
+evidence for the ceiling number but not a proof that no deeper statement
+exists.
