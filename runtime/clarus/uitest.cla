@@ -327,3 +327,22 @@ func UiTestPopupBoxRight(i: int): int {
     UiDisposePtr(out)
     return v
 }
+
+// UiTestTextviewScroll (textview-scroll-to-end phase): the FRONT window's
+// widget i's current vertical scroll offset -- viewRect.top - destRect.top
+// of its TE record, the same quantity rtUiTeScrollSync (uitext.cla) pins
+// the scrollbar to -- or -1 when widget i has no TE (not a field/
+// textview). Internal-only bridge for testsuite/toolbox's ScrollToEnd
+// case, same rtUiWinstOf(UiFrontWindow()) lookup UiTestPopupBoxLeft
+// above uses; Ch8 exposes no scroll position at the user-facing level.
+func UiTestTextviewScroll(i: int): int {
+    var te: ptr
+    var teMp: ptr
+
+    te = rtUiTeAt(RtUiWinst(rtUiWinstOf(UiFrontWindow())), i)
+    if te == ptr(0) {
+        return -1
+    }
+    teMp = UiHandleDeref(te)
+    return peekw(teMp + rtUiTeViewRect + 0) - peekw(teMp + rtUiTeDestRect + 0)
+}

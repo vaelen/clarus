@@ -992,6 +992,54 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     UiSetPort(savedPort)
 }
 
+// rtUiWidgetScrollToEnd (textview-scroll-to-end phase): `Widget.
+// scrollToEnd()` for a TEXTVIEW -- scrolls the view so its last line is
+// visible and pins the vertical scrollbar (if any) to the same offset.
+// Horizontal offset untouched; a no-op when the content already fits
+// (maxScroll == 0) or the view is already at the end; a programmatic
+// action, so no trace/`change` event, same as rtUiWidgetSetText. Runs
+// rtUiTeScrollSync first so the control's maximum and the TE's own
+// offset are consistent before the end offset is computed from the same
+// viewRect/destRect/nLines/lineHeight fields the sync reads. TEScroll
+// redraws the view itself (the thumb handlers in uitext.cla rely on the
+// same), so no TEUpdate/InvalRect is needed here.
+func rtUiWidgetScrollToEnd(instV: ptr, wIdx: int) {
+    var w: RtUiWinst
+    var te: ptr
+    var teMp: ptr
+    var sb: ptr
+    var savedPort: ptr
+    var viewH: int
+    var contentH: int
+    var maxScroll: int
+    var offset: int
+
+    w = RtUiWinst(instV)
+    te = rtUiTeAt(w, wIdx)
+    if uidWidgetKind(w.winIdx, wIdx) != rtUiKindTextview or te == ptr(0) {
+        return
+    }
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    rtUiTeScrollSync(instV, wIdx)
+    teMp = UiHandleDeref(te) // AFTER the sync -- its Toolbox calls can move memory
+    viewH = peekw(teMp + rtUiTeViewRect + 4) - peekw(teMp + rtUiTeViewRect + 0)
+    contentH = peekw(teMp + rtUiTeNLines) * peekw(teMp + rtUiTeLineHeight)
+    maxScroll = contentH - viewH
+    if maxScroll < 0 {
+        maxScroll = 0
+    }
+    offset = peekw(teMp + rtUiTeViewRect + 0) - peekw(teMp + rtUiTeDestRect + 0)
+    if offset < maxScroll {
+        UiTEScroll(0, offset - maxScroll, te) // negative dv: content moves up
+        sb = rtUiCtrlAt(w, wIdx)
+        if sb != ptr(0) {
+            UiSetControlValue(sb, maxScroll)
+        }
+    }
+    UiSetPort(savedPort)
+}
+
 func rtUiWidgetSetBool(instV: ptr, wIdx: int, prop: int, v: bool) {
     var w: RtUiWinst
     var winIdx: int
