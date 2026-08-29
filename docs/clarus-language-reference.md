@@ -1073,6 +1073,8 @@ Widget declarations appear inside a `window` body. Each widget has declaration-t
 
 `binds` connects a `field`, `check`, or `popup` to a record field inside a form window (Chapter 10); `default` and `cancel` on a `button` wire the Return and Escape keys respectively. A `field`'s `text` runtime property is a `string`; a `textview`'s is a `text`.
 
+A `textview` has one method, `scrollToEnd()`, callable as a statement from any handler (`Body.scrollToEnd()` inside the window's own `extend` block, or `w.Body.scrollToEnd()` through a window reference) — the same call shape a `canvas`'s drawing methods use (Chapter 11). It scrolls the view so its last line is visible and moves the vertical scrollbar to match; when the content already fits it does nothing, and the horizontal position is never changed. Like every programmatic write to a widget, it never fires `change`. A log window fed from `on App.log` (Chapter 7) assigns its `text` and then calls `scrollToEnd()` so the newest line is always the one on screen. It is a `textview` method only — on any other widget kind it is a check error.
+
 A `button`, `check`, `field`, `popup`, or `label` declared without its caption-like property (`caption`, `label`, or `text`, respectively) displays its own widget name instead — the same "member name when unlabeled" default Chapter 3 gives an enum member with no label. Appendix C's Bookmark Manager relies on this for its `EditForm` buttons: `button OK { default }` and `button Cancel { cancel }` give no `caption:` at all, so they display "OK" and "Cancel".
 
 **Mac note — textview capacity:** on the Macintosh, a `textview`'s `text` property holds at most 32,000 bytes (a classic TextEdit limit). Setting it (directly, or by reading a longer file into it) with more content than that truncates to the first 32,000 bytes and sets `lastError` (Chapter 12), the same as any other clamped string store; execution continues with the truncated content. A program that must reject an oversized document outright — rather than silently show a truncated one — reads the file into an uncapped local `text` (Chapter 3), checks its length, and only assigns it to the `textview` if it fits (Appendix C's Text Editor does this in `openPath`). Separately: pathological content shaped as one unbroken word of several tens of thousands of bytes (no spaces or line breaks at all) makes classic TextEdit's line-wrap search effectively quadratic — real text, which breaks on whitespace at normal intervals, does not hit this.
@@ -2046,7 +2048,7 @@ The following table is the complete per-resource inventory of every event handle
 | serviceBrowser | failed | `on b.failed(err: error) { }` |
 | (timer) | — | `every N ticks { }` |
 
-For `field`/`textview`/`check`/`popup`, `change` fires for a user edit — typing, cut, paste, or clear — and never for a program's own assignment to the widget's property (e.g. `Body.text = t`), the same "programmatic writes are silent" rule every other runtime property already follows.
+For `field`/`textview`/`check`/`popup`, `change` fires for a user edit — typing, cut, paste, or clear — and never for a program's own assignment to the widget's property (e.g. `Body.text = t`, or a `textview`'s `scrollToEnd()`), the same "programmatic writes are silent" rule every other runtime property already follows.
 
 ## Appendix C: Worked Examples
 

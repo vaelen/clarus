@@ -253,6 +253,35 @@ fixture has an and/or with a tracked birth in its right operand. Full
 detail: `docs/HISTORY.md` (once archived) or
 `.superpowers/sdd/2026-08-29-68k-call-result-release/`.
 
+**`textview-scroll-to-end` phase (branch `textview-scroll-to-end`,
+2026-08-29, based on `main` at `36b76ab`) is COMPLETE — full T2 green, NOT
+YET merged:** one new widget method, `textview.scrollToEnd()`
+(`../68kbbs/docs/language-gaps.md` §9's log-window ask), wired along the
+canvas-method path (`check.cla` `textviewMethods` -> `lower.cla`
+`lowTextviewMethod` -> `ui_scroll_to_end` intrinsic -> `cg68k.cla`/
+`cprint.cla` one-arm forwarders -> `rtUiWidgetScrollToEnd`,
+`uiwidgets.cla`), hardware-proved by the toolbox suite's new `ScrollToEnd`
+case (34 cases) via a new `UiTestTextviewScroll` probe; the shelved
+implicit follow-if-at-end setter semantics were rejected (ambiguous when
+content fits — spec §Problem). Three deviations from the plan: (1) `peekw`
+zero-extends but QuickDraw Rect fields are signed, so the plan's runtime
+code (copied from `rtUiTeScrollSync`'s shape) went wrong by 65536 once a
+scrolled TE's `destRect.top` goes negative — fixed with a new
+sign-extending helper, `rtUiPeekSw` (`uiwidgets.cla`), applied to every
+Rect-field read in both new functions; (2) the plan's Task 2 file list
+missed two required edits (a `shakeAddRoot` line in `lower.cla` and an
+`iUiScrollToEndIdx = -1` reset in `ir.cla`), both caught by failing tests,
+whose always-on root renumbered every UI program's jump table and forced
+a mechanical rebless of 3 `internal/cg68k` fixtures (12 `.s` files) and 12
+`emitui` `.c.golden` files; (3) the suite's first emulator boot exposed a
+pre-existing bug this phase's own code shares a root with: `rtUiTeScrollSync`'s
+clamp compared a zero-extended `destRect.top`, so any `textview` shrunk
+while scrolled past its own top was stranded off the end — fixed at the
+root by moving the three `destRect` readers (`uitext.cla`, `uiwidgets.cla`)
+onto `rtUiPeekSw` too, with a further golden rebless. Spec:
+`docs/superpowers/specs/2026-08-29-textview-scroll-to-end-design.md`;
+ledger `.superpowers/sdd/2026-08-29-textview-scroll-to-end/`.
+
 ## Roadmap
 
 Focus (Andrew, 2026-08-15): make the tools more usable — expand the set

@@ -119,7 +119,7 @@ enum + runner, not one boot per case.
   extern-ptr-call phase's `PtrCall` case, which hardware-proves the
   `= ptr` extern clause (pascal-convention call through a runtime
   pointer, including a bool-returning round trip) on both lanes) runs on
-  host and natively; `testsuite/toolbox/` (33 `ToolboxTest` cases: 32 real +
+  host and natively; `testsuite/toolbox/` (34 `ToolboxTest` cases: 33 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -139,7 +139,9 @@ enum + runner, not one boot per case.
   in `core` instead — then to 32 real by the 68k-call-result-release
   phase's `LeakCheck` case, which hardware-proves FreeMem stays exactly
   flat (3570496 -> 3570496) across 1500x4 direct-consumption shapes on
-  the emulated Mac Plus)
+  the emulated Mac Plus — then to 33 real by the textview-scroll-to-end
+  phase's `ScrollToEnd` case, which hardware-proves the new
+  `textview.scrollToEnd()` widget method on both lanes)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
