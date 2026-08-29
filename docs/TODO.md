@@ -392,6 +392,14 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   checksums the suite GUI's own table content would catch this defect
   class (and future instances of it) without needing a second bespoke
   case like `Popuptable`.
+- **`cgTmpSlots` 14 -> 24 costs +40 bytes of frame per function**
+  (final-review fix wave ledger) — the pool is reserved in EVERY
+  function's frame, whether or not that function births a single tracked
+  temp, so the bump is a flat per-frame tax, not a per-use one. Guarded
+  today by `cg68k.cla`'s own frame-size cap (~:5279), which hard-errors
+  rather than silently overflowing. Revisit (a per-function high-water
+  size, the way `cgFuncBigTmpNeed` already does it for the big-temp pool)
+  only if frames get tight.
 
 ## ABI / performance
 

@@ -226,7 +226,31 @@ sibling leak (one type-kind over, out of scope per spec); extending
 `testdata/cg68k/smalltmp_ceiling.cla` to pin the new 24-slot ceiling
 (optional polish); a host-lane parity note on `pop`/`shift` used as an
 operand or receiver (both lanes leak it identically — pre-existing,
-out of scope). Full detail: `docs/HISTORY.md` (once archived) or
+out of scope). **The whole-branch final review then found one Critical
+at a control-flow seam, also PRE-EXISTING** (this phase only made it
+routine): `cgAndOr` short-circuits the RIGHT operand with a real runtime
+branch, but tracked-temp registration is emission-time, so the
+end-of-statement flush emitted an UNCONDITIONAL release of the right
+operand's temp slot past the merge label — on the short-circuit path
+that slot was never written this statement, holding either a stale handle
+handed off earlier in the same statement (`s = h()` then `if flag and
+g().length > 0` — a DOUBLE release of `s`'s live box) or frame garbage
+(the pre-existing intrinsic-birth variant, `if flag and (a + a).length >
+0`, which bites on `main` too). Fixed by mirroring cprint's guarded temp
+scope: `cgAndOr` marks the tracked list before evaluating the right
+operand and releases + untracks everything born past that mark on the
+operand's own fall-through path, before the branch to the merge label
+(D0/D1 bracketed, since Y's bool result is live in D0). Both operands are
+bool-typed, so no temp born there can be the expression's own value — the
+early release is unconditionally safe, and nested `and`/`or` composes
+naturally (each level untracks only past its own, deeper, mark). Pinned
+at the listing level by `TestAndOrShortCircuitRelease` (asserts the
+release sits INSIDE the guarded region, not just that it happens once)
+and on hardware by a new short-circuit shape inside `LeakCheck`, whose
+FreeMem assertion is now flat in BOTH directions (a double release frees
+early — the opposite signature of a leak). No golden rebless: no `cg68k`
+fixture has an and/or with a tracked birth in its right operand. Full
+detail: `docs/HISTORY.md` (once archived) or
 `.superpowers/sdd/2026-08-29-68k-call-result-release/`.
 
 ## Roadmap

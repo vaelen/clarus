@@ -72,6 +72,23 @@ exactly flat (3570496 -> 3570496 bytes) across 1500x4 direct-consumption
 shapes on the emulated Mac Plus (System 6, Mini vMac,
 `TestToolboxSuiteOn68k`).
 
+**The whole-branch final review then found one Critical at a control-flow
+seam, also PRE-EXISTING** (this phase only made it routine): `cgAndOr`
+short-circuits the RIGHT operand with a real runtime branch, but
+tracked-temp registration is emission-time, so the end-of-statement flush
+emitted an UNCONDITIONAL release of the right operand's temp slot past the
+merge label — on the short-circuit path that slot was never written this
+statement, holding either a stale handle handed off earlier in the same
+statement (a DOUBLE release of a still-live box) or frame garbage. Fixed
+by mirroring cprint's guarded temp scope: `cgAndOr` marks the tracked list
+before evaluating the right operand and releases + untracks everything
+born past that mark before the branch to the merge label, D0/D1 bracketed.
+Pinned by `TestAndOrShortCircuitRelease` (asserts the release sits INSIDE
+the guarded region) and by a new short-circuit shape in `LeakCheck`, whose
+FreeMem assertion is now flat in BOTH directions. No golden rebless
+needed. Four doc-comment corrections and the `LeakCheck` getter shape the
+spec asked for landed in the same wave.
+
 Otherwise the phase is fully closed on the branch: snapshot regenerated
 and fixed-point-verified, T2 green (after the debug detour above), docs
 closed out.
@@ -143,7 +160,15 @@ detail in `.superpowers/sdd/2026-08-29-68k-call-result-release/`):
    goldens reblessed mechanically. Full detail above and in
    `.superpowers/sdd/2026-08-29-68k-call-result-release/
    task-debug-report.md`.
-6. **Close-out (Task 5, this commit)** — bootstrap snapshot regenerated
+6. **Final-review fix wave** — the `cgAndOr` short-circuit release hole
+   above (Critical, pre-existing, fixed TDD-first with a listing-level
+   placement pin plus a hardware pin), the `LeakCheck` textview-getter
+   shape the spec asked for, and four doc/tidy corrections
+   (`cgCallFnScalar`'s handoff paragraph had the discipline backwards;
+   `cgLastTrackedOff`'s module doc predated the ECallFn/getter arms; a
+   sentinel two-step and a stale "discard branch" phrase; the toolbox
+   runner's stale case count).
+7. **Close-out (Task 5)** — bootstrap snapshot regenerated
    (twice — once pre-fix, redone against `bff3268` after the debug task
    landed) and fixed-point-verified; full T2 green; `docs/TODO.md`/
    `docs/ROADMAP.md`/`CLAUDE.md` closed out (this file included).

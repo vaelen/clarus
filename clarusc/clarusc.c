@@ -71890,6 +71890,10 @@ static void clar_fn_cgAndOr(int32_t cv_e, int32_t cv_isAnd) {
     cv_shortLbl = 0;
     int32_t cv_doneLbl;
     cv_doneLbl = 0;
+    int32_t cv_mark;
+    cv_mark = 0;
+    int32_t cv_i;
+    cv_i = 0;
     cv_shortLbl = clar_fn_a68NewLabel();
     cv_doneLbl = clar_fn_a68NewLabel();
     clar_fn_cgExpr(clar_fn_irBinX(cv_e));
@@ -71900,8 +71904,28 @@ static void clar_fn_cgAndOr(int32_t cv_e, int32_t cv_isAnd) {
     } else {
         clar_fn_a68EmitBr(27, 6, cv_shortLbl);
     }
+    cv_mark = clar_fn_rtListCount((void*)cv_cgStmtTmpOffs);
     clar_fn_cgExpr(clar_fn_irBinY(cv_e));
     if (clar_aborting) goto bail;
+    if (clar_fn_rtListCount((void*)cv_cgStmtTmpOffs) > cv_mark) {
+        clar_fn_a68Emit(0, 4, 1, 0, 0, 5, 7, 0);
+        clar_fn_a68Emit(0, 4, 1, 1, 0, 5, 7, 0);
+        cv_i = cv_mark;
+        while (1) {
+            if (!((cv_i < clar_fn_rtListCount((void*)cv_cgStmtTmpOffs)))) break;
+            clar_fn_cgReleaseAt(6, (*(int32_t*)rt_list_at(cv_cgStmtTmpOffs, (int32_t)(cv_i))), (*(int32_t*)rt_list_at(cv_cgStmtTmpType, (int32_t)(cv_i))));
+            if (clar_aborting) goto bail;
+            cv_i = CLAR_ADD32(cv_i, 1);
+        }
+        clar_fn_a68Emit(0, 4, 4, 7, 0, 1, 1, 0);
+        clar_fn_a68Emit(0, 4, 4, 7, 0, 1, 0, 0);
+        while (1) {
+            if (!((clar_fn_rtListCount((void*)cv_cgStmtTmpOffs) > cv_mark))) break;
+            clar_fn_rtListRemove((void*)cv_cgStmtTmpOffs, (int32_t)(CLAR_SUB32(clar_fn_rtListCount((void*)cv_cgStmtTmpOffs), 1)));
+            clar_fn_rtListRemove((void*)cv_cgStmtTmpType, (int32_t)(CLAR_SUB32(clar_fn_rtListCount((void*)cv_cgStmtTmpType), 1)));
+        }
+        cv_cgLastTrackedOff = CLAR_NEG32(1);
+    }
     clar_fn_a68EmitBr(26, 0, cv_doneLbl);
     clar_fn_a68Bind(cv_shortLbl);
     if (cv_isAnd) {
@@ -76191,15 +76215,12 @@ static void clar_fn_cgCallFnScalar(int32_t cv_e) {
     clar_fn_cgFlushArgReleases(cv_savedReleases);
     if (clar_aborting) goto bail;
     cv_retType = clar_fn_irFuncRet(cv_fi);
-    cv_off = CLAR_NEG32(1);
     if (clar_fn_cgNeedsRelease(cv_retType)) {
         int32_t t9;
         t9 = clar_fn_cgNewTrackedTmp(cv_retType);
         if (clar_aborting) goto bail;
         cv_off = t9;
         clar_fn_cgStoreD0At(6, cv_off, cv_retType);
-    }
-    if (cv_off != CLAR_NEG32(1)) {
         cv_cgLastTrackedOff = cv_off;
     }
         clar_fn_rtListRelease((void*)cv_savedReleases);
