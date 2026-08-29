@@ -6166,10 +6166,20 @@ func cgLoadFieldScalar(e: int) {
 // reuses cgStoreScalarVar UNCHANGED (byte-identical to every existing
 // SAssign golden) rather than routing it through the generic
 // push/cgExprAddr/pop/store sequence the EFieldRef arm needs.
+//
+// 68k-call-result-release phase (Task 1 probe item 1a hardening):
+// cgExprAddr(dst), for a non-EVarRef dst, can itself birth a tracked temp
+// (e.g. an EIndexRef dst whose index expression is itself a tracked-temp-
+// producing call) and stomp cgLastTrackedOff before the caller (cgStmt's
+// SAssign arm) gets to read it. Latch src's own verdict before computing
+// dst's address and restore it after, so the module var always reflects
+// SRC's tracked temp (or none), never a temp born while resolving dst.
 func cgEmitStoreScalarAny(dst: int, src: int) {
     var sz: int
+    var srcTracked: int
 
     cgExpr(src)
+    srcTracked = cgLastTrackedOff
     if irExprKind(dst) == EVarRef {
         cgStoreScalarVar(dst)
         return
@@ -6183,6 +6193,7 @@ func cgEmitStoreScalarAny(dst: int, src: int) {
     } else {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmInd, 0, 0)
     }
+    cgLastTrackedOff = srcTracked
 }
 
 // cgEmitStoreRec stores a KRec-typed src into dst (EVarRef or EFieldRef,
@@ -7240,6 +7251,10 @@ func cgIntrListPushLike(e: int, nm: string) {
     cgExpr(a0e)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     scratchOff = cgAllocTmpOff(elemT)
+    // 68k-call-result-release phase (Task 1 probe item 1c hardening): the
+    // RECEIVER (a0e, just evaluated above) can itself birth a tracked temp
+    // -- only the VALUE's (a1e's) own verdict may be handed off below.
+    cgLastTrackedOff = -1
     cgStoreElemAt(scratchOff, elemT, a1e)
     if cgLastTrackedOff != -1 {
         cgHandoff(cgLastTrackedOff)
@@ -7415,6 +7430,11 @@ func cgIntrListSet(e: int, retainVariant: bool) {
     cgStoreD0At(6, lOff, irPtrT)
     cgExpr(a1e)
     cgStoreD0At(6, iOff, irIntT)
+    // 68k-call-result-release phase (Task 1 probe item 1c hardening): the
+    // RECEIVER/index (a0e/a1e, just evaluated above) can themselves birth
+    // a tracked temp -- only the VALUE's (a2e's) own verdict may be
+    // handed off below.
+    cgLastTrackedOff = -1
     cgStoreElemAt(vOff, elemT, a2e)
     if cgLastTrackedOff != -1 {
         cgHandoff(cgLastTrackedOff)
@@ -7511,6 +7531,11 @@ func cgIntrMapSet(e: int, retainVariant: bool, sorted: bool) {
     }
 
     vOff = cgAllocTmpOff(elemT)
+    // 68k-call-result-release phase (Task 1 probe item 1c hardening): the
+    // RECEIVER/key evaluated above (a0e, and a1e inside cgMapReleaseGuard)
+    // can themselves birth a tracked temp -- only the VALUE's (a2e's) own
+    // verdict may be handed off below.
+    cgLastTrackedOff = -1
     cgStoreElemAt(vOff, elemT, a2e)
     if cgLastTrackedOff != -1 {
         cgHandoff(cgLastTrackedOff)
@@ -7642,6 +7667,11 @@ func cgIntrMapGetDv(e: int, isBirth: bool, sorted: bool): int {
     cgStoreD0At(6, kAddrOff, irPtrT)
 
     dvOff = cgAllocTmpOff(elemT)
+    // 68k-call-result-release phase (Task 1 probe item 1c hardening): the
+    // RECEIVER/key evaluated above (a0e/a1e) can themselves birth a
+    // tracked temp -- only dv's (a2e's) own verdict may be handed off
+    // below.
+    cgLastTrackedOff = -1
     cgStoreElemAt(dvOff, elemT, a2e)
     if cgLastTrackedOff != -1 {
         // fpHandoff(dv): dv's own temp (if any) is about to alias into
@@ -7766,6 +7796,11 @@ func cgIntrIntMapSet(e: int, retainVariant: bool) {
     }
 
     vOff = cgAllocTmpOff(elemT)
+    // 68k-call-result-release phase (Task 1 probe item 1c hardening): the
+    // RECEIVER/key evaluated above (a0e/a1e) can themselves birth a
+    // tracked temp -- only the VALUE's (a2e's) own verdict may be handed
+    // off below.
+    cgLastTrackedOff = -1
     cgStoreElemAt(vOff, elemT, a2e)
     if cgLastTrackedOff != -1 {
         cgHandoff(cgLastTrackedOff)
@@ -7861,6 +7896,11 @@ func cgIntrIntMapGetDv(e: int, isBirth: bool): int {
     cgStoreD0At(6, kOff, irIntT)
 
     dvOff = cgAllocTmpOff(elemT)
+    // 68k-call-result-release phase (Task 1 probe item 1c hardening): the
+    // RECEIVER/key evaluated above (a0e/a1e) can themselves birth a
+    // tracked temp -- only dv's (a2e's) own verdict may be handed off
+    // below.
+    cgLastTrackedOff = -1
     cgStoreElemAt(dvOff, elemT, a2e)
     if cgLastTrackedOff != -1 {
         cgHandoff(cgLastTrackedOff)
@@ -9791,14 +9831,24 @@ func cgIsAddressableArgShape(a: int, tk: IRKind): bool {
 
 // cgCallFnScalar calls a user Clarus function whose return fits in D0
 // (void or <=4 bytes) -- the common ECallFn shape, used from cgExpr.
-// A bare, discarded call statement (`makeStr();`) whose return is a
-// handle-kind (cgNeedsRelease) type would otherwise leak: D0 is dropped on
-// the floor with nothing left to release it. Mirrors cgIntrListPopLike's
-// own discard-detection shape (`:3955`, cgDiscardExprIdx's own doc comment,
-// `:479-487`): route that ONE case through cgNewTrackedTmp + cgStoreD0At
-// instead, so the ordinary end-of-statement flush (cgFreeStmtTmps) releases
-// it. Every other call context (SAssign/SReturn/nested expr) is unaffected
-// -- D0 is left as-is, exactly as before (final-review T13).
+// 68k-call-result-release phase (Task 1 probe item 4): EVERY handle-kind
+// (cgNeedsRelease) result is unconditionally spilled to a tracked temp
+// (cgNewTrackedTmp + cgStoreD0At) and cgLastTrackedOff is set to name it,
+// regardless of context -- discard, argument, operand, or receiver. A
+// direct consumer (cgPushArgs' argument handoff, an enclosing cgIntr's
+// operand read, cgFieldRefAddr's receiver materialize) reads
+// cgLastTrackedOff right after this call's cgExpr and hands the temp off;
+// anything that does NOT consume it falls through to the ordinary
+// end-of-statement flush (cgFreeStmtTmps), which releases it. This
+// subsumes the old discard-only special case (`e == cgDiscardExprIdx`):
+// a discarded call's emitted bytes are unchanged, it just no longer needs
+// its own branch. SAssign/SReturn read cgLastTrackedOff the same way they
+// always have. The store happens AFTER cgAbortCheckAfterCall (so the
+// not-yet-written slot stays off THIS call's own abort path -- the abort
+// check snapshots cgStmtTmpOffs at emission time) and AFTER
+// cgFlushArgReleases (which brackets its own release walk with a D0/D1
+// save/restore, so the real return value is still in D0 when stored; no
+// reload is needed after -- cgStoreD0At doesn't disturb D0).
 func cgCallFnScalar(e: int) {
     var fi: int
     var total: int
@@ -9860,11 +9910,15 @@ func cgCallFnScalar(e: int) {
     cgCallFunc(fi)
     cgCleanupStack(total)
     cgAbortCheckAfterCall(fi)
-    cgFlushArgReleases(savedReleases)
     retType = irFuncRet(fi)
-    if e == cgDiscardExprIdx and cgNeedsRelease(retType) {
+    off = -1
+    if cgNeedsRelease(retType) {
         off = cgNewTrackedTmp(retType)
         cgStoreD0At(6, off, retType)
+    }
+    cgFlushArgReleases(savedReleases)
+    if off != -1 {
+        cgLastTrackedOff = off
     }
 }
 

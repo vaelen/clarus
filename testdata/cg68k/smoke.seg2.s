@@ -5801,6 +5801,7 @@ LBL_408:
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         BSR.W LBL_38
+        MOVE.L D0,-16(A6)
         MOVE.L D0,-12(A6)
         LEA -8(A6),A0
         MOVE.L 0(A0),D0
