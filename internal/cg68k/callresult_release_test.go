@@ -309,3 +309,161 @@ func TestGetterResultRelease(t *testing.T) {
 		t.Errorf("appendish: %d rtTextRelease calls, want %d\n%s", got, want, body)
 	}
 }
+
+// andOrFixture: the final-review Critical -- cgAndOr's short-circuit
+// branch skips the RIGHT operand at runtime, but cgNewTrackedTmp
+// registration is emission-time, so the end-of-statement flush emitted an
+// UNCONDITIONAL release of the right operand's temp slot after the merge
+// label. On the short-circuit path that slot was never written this
+// statement: it holds either a stale handle handed off earlier (`s = h()`
+// below -- releasing it again double-frees s's LIVE box) or, with no
+// earlier birth, frame garbage (`guardedIntr`, the pre-existing
+// intrinsic-birth variant this phase did not introduce). The fix mirrors
+// cprint's guarded scope: release AND untrack the right operand's own
+// temps before the branch to the merge label, so the release lives inside
+// the guarded region and never runs on the short-circuit path.
+const andOrFixture = `func g(): text {
+    var t: text
+    t.append("hello")
+    return t
+}
+
+func h(): text {
+    var t: text
+    t.append("world")
+    return t
+}
+
+func guarded(flag: bool): int {
+    var s: text
+    var n: int
+
+    n = 0
+    s = h()
+    if flag and g().length > 0 {
+        n = 1
+    }
+    return n + s.length
+}
+
+func guardedIntr(flag: bool, a: text): int {
+    var n: int
+
+    n = 0
+    if flag and (a + a).length > 0 {
+        n = 1
+    }
+    return n
+}
+
+on App.launch {
+    var a: text
+    log(string(guarded(false) + guardedIntr(false, a)))
+}
+`
+
+// shortCircuitRegion returns the guarded region of the FIRST short-circuit
+// branch in body -- the lines from `BEQ.W LBL_x` (the and's "left false ->
+// skip the right operand" branch) through the following `BRA.W LBL_y` (the
+// jump around the short arm) -- plus the short label it targets. Both
+// fixture functions below open with the and, so the first BEQ.W in the
+// body is always cgAndOr's own.
+func shortCircuitRegion(t *testing.T, body string) (region, shortLbl string) {
+	t.Helper()
+	lines := strings.Split(body, "\n")
+	beqRe := regexp.MustCompile(`^\s*BEQ\.W\s+(LBL_\d+)\s*$`)
+	start := -1
+	for i, ln := range lines {
+		if m := beqRe.FindStringSubmatch(ln); m != nil {
+			start, shortLbl = i, m[1]
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("no BEQ.W short-circuit branch in body:\n%s", body)
+	}
+	end := -1
+	for i := start + 1; i < len(lines); i++ {
+		if strings.Contains(lines[i], "BRA.W ") {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		t.Fatalf("no BRA.W closing the guarded region:\n%s", body)
+	}
+	// The short label must be bound AFTER the region -- proof we picked
+	// cgAndOr's own branch (an ordinary `if` binds its target after the
+	// then-arm too, but never has the BRA-around-short-arm shape with the
+	// binding past it that this check pins).
+	bindIdx := -1
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) == shortLbl+":" {
+			bindIdx = i
+			break
+		}
+	}
+	if bindIdx <= end {
+		t.Fatalf("%s bound at line %d, not past the guarded region (ends %d):\n%s",
+			shortLbl, bindIdx, end, body)
+	}
+	return strings.Join(lines[start:end+1], "\n"), shortLbl
+}
+
+// TestAndOrShortCircuitRelease pins that a tracked temp born inside an
+// and/or's RIGHT operand is released INSIDE the guarded region (before the
+// branch to the merge label), not by the unconditional end-of-statement
+// flush past it.
+func TestAndOrShortCircuitRelease(t *testing.T) {
+	exe := buildClarusc(t)
+	dir := t.TempDir()
+	src := filepath.Join(dir, "andor.cla")
+	if err := os.WriteFile(src, []byte(andOrFixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outBin := filepath.Join(dir, "out.bin")
+	cmd := exec.Command(exe, "emit68k", "-o", outBin, "--listing",
+		"--rtdir", filepath.Join(repoRoot(t), "runtime", "clarus")+string(os.PathSeparator), src)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("emit68k: %v\n%s", err, out)
+	}
+
+	segs := readSegments(t, dir)
+	rel := findReleaseInfo(t, segs)
+
+	cases := []struct {
+		fn        string
+		wantTotal int // releases in the whole function -- pins "moved, not added"
+	}{
+		// guarded: release __store2's init box, release s's old box before
+		// the store, release g()'s call-result temp (now guarded), release
+		// s at scope exit.
+		{"guarded", 4},
+		// guardedIntr: the concat temp only (pre-existing intrinsic birth).
+		{"guardedIntr", 1},
+	}
+	for _, c := range cases {
+		var body string
+		var segIdx int
+		found := false
+		for i, seg := range segs {
+			b, ok := findFuncInSeg(seg, c.fn)
+			if ok {
+				body, segIdx, found = b, i, true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("no segment defines func %s", c.fn)
+		}
+		if got := countReleaseCalls(segIdx, body, rel); got != c.wantTotal {
+			t.Errorf("%s: %d rtTextRelease calls total, want %d\n%s", c.fn, got, c.wantTotal, body)
+		}
+		region, shortLbl := shortCircuitRegion(t, body)
+		if got := countReleaseCalls(segIdx, region, rel); got != 1 {
+			t.Errorf("%s: %d rtTextRelease calls inside the %s-guarded region, want 1\n%s",
+				c.fn, got, shortLbl, region)
+		}
+	}
+}

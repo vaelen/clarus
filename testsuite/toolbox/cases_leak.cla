@@ -1,9 +1,12 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// cases_leak.cla: LeakCheck (68k-call-result-release phase, Task 4) --
+// cases_leak.cla: LeakCheck (68k-call-result-release phase, Task 4;
+// widened by the final-review fix wave) --
 // hardware-proves that a user function's text result consumed DIRECTLY
-// (argument / operand / receiver / builtin-method-argument -- the
+// (argument / operand / receiver / builtin-method-argument / and-right-
+// operand, plus a textview `.text` getter box read as a concat operand --
+// the
 // ../68kbbs/docs/memory-leak.md shapes, also pinned at the listing level
 // by internal/cg68k/callresult_release_test.go) is released by the
 // emit68k codegen fix (commits 49e1999..cbc1949: cgTmpSlots 14->24,
@@ -11,7 +14,11 @@
 // IUiGetTextviewText tracking). Pre-fix, each loop iteration below leaked
 // one text box+handle per direct-consumption call site, so thousands of
 // iterations leak well over 100KB; FreeMem sampled before/after must stay
-// flat to within an allocator-jitter slack. TbFreeMem is declared
+// flat to within an allocator-jitter slack -- in BOTH directions, since
+// the final-review short-circuit shape's own pre-fix symptom is the
+// opposite of a leak (a double release of a still-live box: memory freed
+// early, then freed again -- heap corruption, and a net FreeMem GAIN if
+// it survives at all). TbFreeMem is declared
 // LOCALLY, same user-code-extern precedent as cases_gestalt.cla's own
 // TbGestaltErr/TbGestaltValue (the curated twin lives in
 // toolbox/memory.cla's FreeMem).
@@ -30,16 +37,25 @@ func tlkLen(t: text): int {
     return t.length
 }
 
-// caseLeakCheck: 1500 iterations of all four direct-consumption shapes,
-// FreeMem sampled before and after. `n` is checked nonzero (kept
-// observably live) so nothing above can be shaken out as dead code.
+// caseLeakCheck: 1500 iterations of every direct-consumption shape plus
+// 300 of the textview-getter shape, FreeMem sampled before and after. `n`
+// is checked nonzero (kept observably live) so nothing above can be
+// shaken out as dead code.
 func caseLeakCheck(): TestResult {
     var before: int
     var after: int
     var i: int
     var n: int
     var acc: text
+    var s: text
+    var flag: bool
+    var w: LogWin
     var detail: string
+
+    // The getter shape needs a real textview; LogWin is the harness's own
+    // Add-button/Body fixture (also used by caseWinvar). Opened BEFORE and
+    // closed AFTER the FreeMem bracket, so only the loops are measured.
+    w = open LogWin
 
     before = TbFreeMem()
     i = 0
@@ -53,14 +69,41 @@ func caseLeakCheck(): TestResult {
         // builtin-method argument: acc.append(g())
         acc.append(tlkMake())
         acc = ""
+        // and-short-circuit right operand (final-review Critical 1): the
+        // right operand's own temp slot is the SAME frame slot `s`'s
+        // handed-off birth just used (the per-statement pool resets), and
+        // `flag` is always false, so the right operand never runs. Pre-fix
+        // the end-of-statement flush released that slot anyway -- dropping
+        // `s`'s still-live box, then dropping it AGAIN at the next
+        // iteration's assignment. `flag` is derived from the loop counter
+        // rather than written as a literal so nothing can fold the branch
+        // away; `s` is read after the `if` to keep it observably live
+        // across the statement.
+        flag = i < 0
+        s = tlkMake()
+        if flag and tlkMake().length > 99 {
+            n = n + 1
+        }
+        n = n + s.length
+        i = i + 1
+    }
+    // textview `.text` getter box consumed as a concat operand -- the one
+    // other untracked +1 producer this phase fixed (cgIntrUi's
+    // IUiGetTextviewText). Body is empty, so each read is a fresh
+    // constant-size box; only the count of un-released boxes can move
+    // FreeMem.
+    i = 0
+    while i < 300 {
+        acc = w.Body.text + "x"
         i = i + 1
     }
     after = TbFreeMem()
+    close w
 
     // Slack: Memory Manager fragmentation/rounding jitter, NOT leak
     // headroom -- pre-fix these loops leak well over 100KB, so 8KB
     // cleanly separates pass from fail.
-    if n > 0 and after > before - 8192 {
+    if n > 0 and after > before - 8192 and after < before + 8192 {
         return tkPass("LeakCheck")
     }
     detail = "before " + tkIntToStr(before) + " after " + tkIntToStr(after) + " n " + tkIntToStr(n)

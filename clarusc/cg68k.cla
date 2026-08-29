@@ -1462,11 +1462,16 @@ var cgSyntheticVarSeq: int
 
 // cgLastTrackedOff mirrors cprint's own string-identity handoff check
 // (fpHandoff(v): "v IS exactly that temp's own C name") in register-machine
-// terms: -1, or the frame offset cgExpr's OWN top-level EIntr arm JUST
-// tracked for its return value (set as the LAST action before returning,
-// by exactly the handful of cgIntr arms that produce one -- pop/shift's
-// discard-tracked path, first/last/get/getDv/getDvBirth -- every other arm,
-// and cgExpr's own non-EIntr branches, leaves it at -1). Consulted
+// terms: -1, or the frame offset cgExpr's OWN top-level arm JUST tracked
+// for its return value (set as the LAST action before returning, by
+// exactly the arms that produce one -- the handful of cgIntr arms
+// (pop/shift's discard-tracked path, first/last/get/getDv/getDvBirth, and
+// cgIntrUi's IUiGetTextviewText box) plus ECallFn's own cgCallFnScalar,
+// which since the 68k-call-result-release phase spills EVERY handle-kind
+// call result to a tracked temp and names it here; every other arm, and
+// cgExpr's own remaining branches, leaves it at -1, and cgAndOr clears it
+// back to -1 after releasing its right operand's guarded temps).
+// Consulted
 // immediately after a cgExpr(src) call in a handle-typed SAssign/SReturn
 // context (cgStmt/cgReturnStmt) to hand the freshly tracked temp off to its
 // new durable owner -- correct even though a NESTED cgExpr call (e.g. an
@@ -6464,6 +6469,8 @@ func cgCompare(e: int, op: int) {
 func cgAndOr(e: int, isAnd: bool) {
     var shortLbl: int
     var doneLbl: int
+    var mark: int
+    var i: int
 
     shortLbl = a68NewLabel()
     doneLbl = a68NewLabel()
@@ -6474,7 +6481,47 @@ func cgAndOr(e: int, isAnd: bool) {
     } else {
         a68EmitBr(OpBcc, 6, shortLbl)  // BNE: left true -> short-circuit true
     }
+    mark = cgStmtTmpOffs.count
     cgExpr(irBinY(e))
+    // Guarded scope for the RIGHT operand's own tracked temps (final-review
+    // Critical 1). cgNewTrackedTmp registration is EMISSION-time, but the
+    // branch above is a RUNTIME skip: leaving Y's temps on the tracked list
+    // makes cgFreeStmtTmps emit an UNCONDITIONAL release past the merge
+    // label, of a slot the short-circuit path never wrote this statement --
+    // a stale handle handed off earlier in the same statement (double
+    // release of a live box) or frame garbage. So release AND untrack every
+    // slot born past the mark right here, on Y's own fall-through path,
+    // before the branch to doneLbl -- mirroring cprint's guarded temp scope
+    // (fpAndOr). Safe unconditionally: both operands are bool-typed, so no
+    // temp born in Y can BE Y's own value. Nested and/or composes: the
+    // inner call untracks only past its own (deeper) mark, and an inner
+    // operand's temps born past THIS mark are still released here.
+    // cgStmtTmpNext (the pool's bump allocator) is deliberately untouched
+    // -- the slots stay reserved for the rest of the statement; only the
+    // tracking list shrinks. An abort check inside Y is unaffected: it
+    // snapshots the tracked list at ITS emission point, when these slots
+    // are still on it, so the abort path releases them and branches away
+    // before ever reaching this code.
+    if cgStmtTmpOffs.count > mark {
+        // Same D0/D1 bracket cgFlushArgReleases uses: each cgReleaseAt is
+        // an ordinary JSR under this file's no-callee-saved-registers rule,
+        // and Y's bool result is sitting in D0.
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
+        i = mark
+        while i < cgStmtTmpOffs.count {
+            cgReleaseAt(6, cgStmtTmpOffs[i], cgStmtTmpType[i])
+            i = i + 1
+        }
+        a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 1, 0)
+        a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
+        while cgStmtTmpOffs.count > mark {
+            cgStmtTmpOffs.remove(cgStmtTmpOffs.count - 1)
+            cgStmtTmpType.remove(cgStmtTmpType.count - 1)
+        }
+        // Nothing left for a caller to hand off -- these slots are gone.
+        cgLastTrackedOff = -1
+    }
     a68EmitBr(OpBra, 0, doneLbl)
     a68Bind(shortLbl)
     if isAnd {
@@ -9844,12 +9891,19 @@ func cgIsAddressableArgShape(a: int, tk: IRKind): bool {
 // 68k-call-result-release phase (Task 1 probe item 4): EVERY handle-kind
 // (cgNeedsRelease) result is unconditionally spilled to a tracked temp
 // (cgNewTrackedTmp + cgStoreD0At) and cgLastTrackedOff is set to name it,
-// regardless of context -- discard, argument, operand, or receiver. A
-// direct consumer (cgPushArgs' argument handoff, an enclosing cgIntr's
-// operand read, cgFieldRefAddr's receiver materialize) reads
-// cgLastTrackedOff right after this call's cgExpr and hands the temp off;
-// anything that does NOT consume it falls through to the ordinary
-// end-of-statement flush (cgFreeStmtTmps), which releases it. This
+// regardless of context -- discard, argument, operand, or receiver.
+// The handoff discipline (final-review fix wave, correcting this
+// paragraph's earlier claim that direct consumers hand the temp off --
+// none of them do): ONLY the durable-owner sites call cgHandoff --
+// SAssign (cgStmt), SReturn (cgReturnStmt), and the six container
+// set-value arms. Every OTHER consumer -- cgPushArgs' argument push, an
+// enclosing cgIntr's operand read, cgFieldRefAddr's receiver
+// materialize -- leaves the slot TRACKED and lets the end-of-statement
+// flush (cgFreeStmtTmps) release it once the consumer is done with it;
+// that flush is the whole point of the tracking, and the leak this phase
+// fixed. cgAndOr is the one early-release site: an and/or's RIGHT operand
+// runs under a runtime short-circuit branch, so its temps are released
+// and untracked inside the guarded region instead (see cgAndOr). This
 // subsumes the old discard-only special case (`e == cgDiscardExprIdx`):
 // a discarded call's emitted bytes are unchanged, it just no longer needs
 // its own branch. SAssign/SReturn read cgLastTrackedOff the same way they
@@ -9882,9 +9936,10 @@ func cgCallFnScalar(e: int) {
         // too -- cgExpr's ECallFn arm is the only route to this function,
         // and cgStmt's SExprStmt case calls cgExpr unconditionally on the
         // discarded expr, str/rec return or not. Below mirrors this same
-        // function's own scalar/handle-kind discard branch (further down,
-        // `cgNewTrackedTmp` + release) generalized to the >4-byte case,
-        // and mirrors cgMaterializeToTemp's own KRec/KStr dispatch --
+        // function's own scalar/handle-kind tracking (further down, the
+        // unconditional `cgNewTrackedTmp` every handle-kind result now
+        // gets) generalized to the >4-byte case, and mirrors
+        // cgMaterializeToTemp's own KRec/KStr dispatch --
         // just TRACKED (cgNewTrackedTmp, not cgMaterializeToTemp's
         // untracked cgAllocTmpOff) so cgFreeStmtTmps releases it at
         // end-of-statement like any other discarded owning value, instead
@@ -9922,12 +9977,9 @@ func cgCallFnScalar(e: int) {
     cgAbortCheckAfterCall(fi)
     cgFlushArgReleases(savedReleases)
     retType = irFuncRet(fi)
-    off = -1
     if cgNeedsRelease(retType) {
         off = cgNewTrackedTmp(retType)
         cgStoreD0At(6, off, retType)
-    }
-    if off != -1 {
         cgLastTrackedOff = off
     }
 }
