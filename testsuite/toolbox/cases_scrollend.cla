@@ -1,0 +1,65 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_scrollend.cla: ScrollToEnd (textview-scroll-to-end phase) --
+// hardware-proves `textview.scrollToEnd()` (rtUiWidgetScrollToEnd,
+// uiwidgets.cla) against harness.cla's TextWin, whose Body textview is
+// widget index 3 (Name 0, Fill32000 1, Fill32001 2, Body 3) and has a
+// vertical scrollbar. UiTestTextviewScroll(3) (uitest.cla) reads Body's
+// TE offset (viewRect.top - destRect.top) straight off the front window.
+//
+// Four assertions: (1) a fresh 100-line set leaves the view at the top
+// (offset 0 -- rtUiTeScrollSync never moves a view that is in range);
+// (2) scrollToEnd moves it to a strictly positive offset; (3) a second
+// scrollToEnd is idempotent (same offset); (4) after replacing the
+// content with 3 lines that fit, scrollToEnd leaves the offset at 0 (the
+// fits => no-op branch: maxScroll clamps to 0, never negative). Plus:
+// bodyChanges stays 0 throughout -- scrollToEnd is programmatic and must
+// never fire Body.change.
+const tbSeLines: int = 100
+
+func caseScrollToEnd(): TestResult {
+    var w: TextWin
+    var t: text
+    var i: int
+    var s0: int
+    var s1: int
+    var s2: int
+    var s3: int
+    var changes: int
+    var ok: bool
+    var detail: string
+
+    w = open TextWin
+
+    i = 0
+    while i < tbSeLines {
+        t.append("line\n")
+        i = i + 1
+    }
+    w.Body.text = t
+    s0 = UiTestTextviewScroll(3)
+    w.Body.scrollToEnd()
+    s1 = UiTestTextviewScroll(3)
+    w.Body.scrollToEnd()
+    s2 = UiTestTextviewScroll(3)
+    w.Body.text = "a\nb\nc\n"
+    w.Body.scrollToEnd()
+    s3 = UiTestTextviewScroll(3)
+    changes = w.bodyChanges
+
+    close w
+
+    ok = s0 == 0 and s1 > 0 and s2 == s1 and s3 == 0 and changes == 0
+    if ok {
+        return tkPass("ScrollToEnd")
+    }
+    // Built up piecewise, same native-68k per-statement temp-slot budget
+    // reason as cases_bigtext.cla's own detail string.
+    detail = "s0 " + tkIntToStr(s0)
+    detail = detail + " s1 " + tkIntToStr(s1)
+    detail = detail + " s2 " + tkIntToStr(s2)
+    detail = detail + " s3 " + tkIntToStr(s3)
+    detail = detail + " changes " + tkIntToStr(changes)
+    return tkFail("ScrollToEnd", detail)
+}

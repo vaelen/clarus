@@ -1454,6 +1454,7 @@ var toolboxSuiteGUIFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_serial.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_narrowpopup.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_leak.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_scrollend.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
