@@ -401,6 +401,39 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   size, the way `cgFuncBigTmpNeed` already does it for the big-temp pool)
   only if frames get tight.
 
+### textview-scroll-to-end phase (2026-08-29)
+
+- **Second `textview` method needs kind-based dispatch in `lowMethodCall`**
+  (`clarusc/lower.cla`, the `TyWidget` arm): today it routes by method
+  NAME (`"scrollToEnd"` -> `lowTextviewMethod`, else `lowCanvasMethod`)
+  because there is exactly one textview method; a second one would
+  misroute into `lowCanvasMethod` and fail with a misleading
+  `canvas method X` `lowUnsupported`. Fix when it happens: peel the
+  receiver once with `lowWidgetRecv` and switch on
+  `findWidgetKind(recv.winNameIdx, recv.wgName)`. Snapshot regen
+  required (it is a code change).
+- **Textview scroll range is a 16-bit ceiling** (pre-existing in
+  `rtUiTeScrollSync`, `runtime/clarus/uitext.cla`, inherited unchanged by
+  `rtUiWidgetScrollToEnd`): `maxScroll`/`contentH` are full `int`s but
+  `UiTEScroll`'s `dv` and `UiSetControlValue`'s value are `word`-typed
+  and truncate to 16 bits, so a textview near the 32,000-byte cap with a
+  small line height (content taller than 32767 px) scrolls wrong. No
+  user has hit it; noted so it is not rediscovered as a `scrollToEnd`
+  bug.
+- **The opt-in cprint-lane toolbox twin fails to link since `main`'s
+  `520f227`**: `CLARUS_MAC_TESTS=1 CLARUS_CPRINT_MAC_TESTS=1 go test
+  ./internal/mactest -run TestToolboxSuiteOnMac` dies in
+  `build-mac.sh` with `undefined reference to rt_ext_TbFreeMem` —
+  `testsuite/toolbox/cases_leak.cla` (68k-call-result-release's
+  `LeakCheck`) declares `external func TbFreeMem(): int = trap 0xA01C
+  reg`, and the cprint lane needs a hand-written `rt_ext_<Name>` C shim
+  in `runtime/mac/` for every extern trap (see the existing
+  `rt_ext_BlockMoveData`/`rt_ext_DateToSeconds` shims); none exists for
+  `TbFreeMem`. Pre-existing, found by the textview-scroll-to-end phase's
+  final review; the native lane (`TestToolboxSuiteOn68k`, the T2 gate) is
+  unaffected. Fix: add the shim (FreeMem returns the free byte count) or
+  gate the case off the cprint build.
+
 ## ABI / performance
 
 - **`KArr` param ABI** still copies arrays by value at call sites

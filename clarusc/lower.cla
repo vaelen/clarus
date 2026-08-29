@@ -1340,6 +1340,12 @@ func lowMethodCall(e: int, fn: int): int {
         // property read, so recv is never computed generically here.
         // Dispatch on the method name: the checker only admits
         // scrollToEnd on a textview and the drawing set on a canvas.
+        // Name-based dispatch assumes exactly ONE textview method. When a
+        // second textview method lands, switch this arm to dispatch on
+        // findWidgetKind(...) of the peeled receiver (see docs/TODO.md,
+        // textview-scroll-to-end phase) -- otherwise the new method falls
+        // into lowCanvasMethod and dies as a misleading "canvas method X"
+        // lowUnsupported.
         if poolGet(selectName(fn)) == "scrollToEnd" {
             return lowTextviewMethod(e, fn, ty)
         }

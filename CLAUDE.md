@@ -141,7 +141,9 @@ enum + runner, not one boot per case.
   flat (3570496 -> 3570496) across 1500x4 direct-consumption shapes on
   the emulated Mac Plus — then to 33 real by the textview-scroll-to-end
   phase's `ScrollToEnd` case, which hardware-proves the new
-  `textview.scrollToEnd()` widget method on both lanes)
+  `textview.scrollToEnd()` widget method on the native lane (the cprint
+  twin is wired into both file lists but blocked by `main`'s pre-existing
+  `TbFreeMem` shim gap — `docs/TODO.md`))
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
