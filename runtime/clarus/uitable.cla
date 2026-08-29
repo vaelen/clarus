@@ -430,8 +430,13 @@ func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr) {
             UiDisposePtr(chBuf)
         }
     } else if ftype == rtUiFtChar {
+        // Read the byte BEFORE the allocation (same relocation rule as
+        // the LDEF's own `rec` above, and as RtFtBool's arm just above
+        // already follows): UiNewPtr can compact the heap and move the
+        // rt_list element block `base` points into.
+        v = peekb(base)
         chBuf = UiNewPtr(1)
-        pokeb(chBuf, peekb(base))
+        pokeb(chBuf, v)
         UiDrawText(chBuf, 0, 1)
         UiDisposePtr(chBuf)
     } else if ftype == rtUiFtEnum {
@@ -575,7 +580,6 @@ callback func rtUiLdefDraw(msg: word, select: bool, rectPtr: ptr, cellPacked: in
         // Handle-backed and can move/grow between draws).
         row = rtUiHiWord(cellPacked)
         if row >= 0 and row < count {
-            rec = rtListAt(rows, row)
             fillW = rtUiTableFillWidth(colsOff, nCols, peekw(rectPtr + 6) - peekw(rectPtr + 2))
             x = peekw(rectPtr + 2)
             k = 0
@@ -590,6 +594,29 @@ callback func rtUiLdefDraw(msg: word, select: bool, rectPtr: ptr, cellPacked: in
                 saveClip = UiNewRgn()
                 UiGetClip(saveClip)
                 UiClipRect(colRect)
+                // Derive `rec` HERE -- after THIS column's own UiNewPtr/
+                // UiNewRgn/UiGetClip/UiClipRect calls -- never once above
+                // the loop. Every one of those allocates, and an
+                // allocation can compact the heap and RELOCATE the
+                // rt_list's own (unlocked, Handle-backed) element block,
+                // so a `rec` derived before them addresses freed/moved
+                // memory by the time rtUiTableDrawField reads the
+                // record's bytes: the cell then draws from whatever is
+                // there now (typically zeros -> a length-0 pstring and a
+                // false bool), i.e. BLANK, after this call's own
+                // UiEraseRect already wiped the cell. That failure is
+                // heap-layout sensitive (the block only actually moves
+                // for some arrangements), which is exactly why it hid for
+                // so long; the toolbox suite's jiggle gate
+                // (CompactMem at every UiNewPtr) caught it 2026-08-29
+                // when a one-case image-size change happened to arrange
+                // the heap so the block really did move mid-draw --
+                // Popuptable's freshly added row drew blank while its
+                // List Manager row, selection and data were all correct.
+                // Same "re-derive after any allocating call" rule
+                // rtUiTableRelayout/rtUiTableSyncOne state for their own
+                // ListRec master pointers.
+                rec = rtListAt(rows, row)
                 rtUiTableDrawField(rec, layoutOff, uidColFieldIndex(colsOff, k), colRect)
                 UiSetClip(saveClip)
                 UiDisposeRgn(saveClip)

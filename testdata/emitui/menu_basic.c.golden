@@ -6369,8 +6369,9 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
                     }
                 } else {
                     if (cv_ftype == 3) {
+                        cv_v = rt_peekb(cv_base);
                         cv_chBuf = clar_fn_UiNewPtr(1);
-                        rt_pokeb(cv_chBuf, rt_peekb(cv_base));
+                        rt_pokeb(cv_chBuf, cv_v);
                         rt_ext_UiDrawText(cv_chBuf, 0, 1);
                         rt_ext_UiDisposePtr(cv_chBuf);
                     } else {
@@ -6494,7 +6495,6 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
         cv_count = clar_fn_rtListCount(cv_rows);
         cv_row = clar_fn_rtUiHiWord(cv_cellPacked);
         if ((cv_row >= 0) && (cv_row < cv_count)) {
-            cv_rec = clar_fn_rtListAt(cv_rows, cv_row);
             cv_fillW = clar_fn_rtUiTableFillWidth(cv_colsOff, cv_nCols, CLAR_SUB32(rt_peekw((void *)((char *)(cv_rectPtr) + (6))), rt_peekw((void *)((char *)(cv_rectPtr) + (2)))));
             cv_x = rt_peekw((void *)((char *)(cv_rectPtr) + (2)));
             cv_k = 0;
@@ -6510,6 +6510,7 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
                 cv_saveClip = rt_ext_UiNewRgn();
                 rt_ext_UiGetClip(cv_saveClip);
                 rt_ext_UiClipRect(cv_colRect);
+                cv_rec = clar_fn_rtListAt(cv_rows, cv_row);
                 clar_fn_rtUiTableDrawField(cv_rec, cv_layoutOff, clar_fn_uidColFieldIndex(cv_colsOff, cv_k), cv_colRect);
                 rt_ext_UiSetClip(cv_saveClip);
                 rt_ext_UiDisposeRgn(cv_saveClip);

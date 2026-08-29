@@ -5599,6 +5599,11 @@ LBL_502:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_505
+        MOVE.L -4(A6),D0
+        MOVEA.L D0,A0
+        CLR.L D0
+        MOVE.B (A0),D0
+        MOVE.L D0,-12(A6)
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_78
@@ -5606,10 +5611,7 @@ LBL_502:
         MOVE.L D0,-20(A6)
         MOVE.L -20(A6),D0
         MOVE.L D0,-(A7)
-        MOVE.L -4(A6),D0
-        MOVEA.L D0,A0
-        CLR.L D0
-        MOVE.B (A0),D0
+        MOVE.L -12(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.B D0,(A0)
         MOVE.L -20(A6),D0
@@ -5882,13 +5884,6 @@ LBL_516:
 LBL_517:
         TST.L D0
         BEQ.W LBL_518
-        MOVE.L -32(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L -40(A6),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_24
-        ADDQ.L #8,A7
-        MOVE.L D0,-44(A6)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -20(A6),D0
@@ -5988,6 +5983,13 @@ LBL_522:
         MOVE.L -64(A6),D0
         MOVE.L D0,-(A7)
         DC.W $A87B  ; UiClipRect
+        MOVE.L -32(A6),D0
+        MOVE.L D0,-(A7)
+        MOVE.L -40(A6),D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_24
+        ADDQ.L #8,A7
+        MOVE.L D0,-44(A6)
         MOVE.L -44(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
