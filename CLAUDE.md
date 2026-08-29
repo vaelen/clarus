@@ -119,7 +119,7 @@ enum + runner, not one boot per case.
   extern-ptr-call phase's `PtrCall` case, which hardware-proves the
   `= ptr` extern clause (pascal-convention call through a runtime
   pointer, including a bool-returning round trip) on both lanes) runs on
-  host and natively; `testsuite/toolbox/` (32 `ToolboxTest` cases: 31 real +
+  host and natively; `testsuite/toolbox/` (33 `ToolboxTest` cases: 32 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -136,7 +136,10 @@ enum + runner, not one boot per case.
   `SerialOpenWrite` case — then to 31 real by the correctness-cleanup
   phase's `NarrowPopup` case, which pins the labeled-popup layout fix;
   unchanged by the binary-files phase, whose new suite coverage landed
-  in `core` instead)
+  in `core` instead — then to 32 real by the 68k-call-result-release
+  phase's `LeakCheck` case, which hardware-proves FreeMem stays exactly
+  flat (3570496 -> 3570496) across 1500x4 direct-consumption shapes on
+  the emulated Mac Plus)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -263,7 +266,12 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   above. The extern-ptr-call phase (2026-08-27) added `= ptr`, an
   `external func` clause for a pascal-convention call through a runtime
   pointer rather than a fixed trap number — the way to reach loaded code
-  (a plugin/door module fetched with `GetResource`), both lanes. See the
+  (a plugin/door module fetched with `GetResource`), both lanes. The
+  68k-call-result-release phase (2026-08-29) fixed an `emit68k` leak: a
+  user function's handle-typed result (or a textview `.text` getter box)
+  consumed directly as an argument/operand/receiver was never released;
+  producer-side tracking in `cg68k.cla` closes it, hardware-proved
+  FreeMem-flat by the toolbox suite's new `LeakCheck` case. See the
   reference for the full method lists.
 - Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
   `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.

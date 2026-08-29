@@ -320,6 +320,79 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   the bake drift guard; consolidate into one comment the others
   reference, after the wording fix (already applied, fix round 1).
 
+### 68k-call-result-release phase (2026-08-29)
+
+- **`makeRec().field` (handle-bearing `KRec` call result as receiver)
+  still leaks** (probe report item 2, `.superpowers/sdd/
+  2026-08-29-68k-call-result-release/task-1-report.md`) — `cgExprAddr`'s
+  generic fallback materializes a `KRec`-returning call via untracked
+  `cgAllocTmpOff` (cg68k.cla ~:5772, pre-phase numbering), not
+  `cgNewTrackedTmp`, so the record's handle-bearing fields are never
+  released. Same leak class this phase fixed, one type-kind over (a
+  `KRec` receiver/operand rather than a scalar handle result); the host
+  lane already materializes the equivalent `KRec` call result into a
+  tracked temp (`fpCallFn`, cprint.cla:1548-1554), so this is a lane
+  asymmetry. Deferred per the spec's out-of-scope line ("Any KRec-return
+  redesign beyond probe item 2's verification"). Suggested follow-up:
+  make `cgMaterializeToTemp` use `cgNewTrackedTmp` when
+  `irExprKind(e) == ECallFn and cgNeedsRelease(irExprType(e))`.
+- **`testdata/cg68k/smalltmp_ceiling.cla` still pins the old 14-slot
+  ceiling**, not the new 24-slot one (probe report item 3) — it exercises
+  14 concurrent untracked small temps via 14 `nums.pop()` args, which
+  still passes under the new ceiling (it pins "works at 14", not "==14"),
+  so the bump does not invalidate it. Extending the fixture to also pin
+  the new headroom is optional polish, not required for correctness.
+- **`pop`/`shift` used as an operand or receiver leaks on both lanes
+  identically** (probe report item 5, host-parity note) —
+  `lst.pop().length` / `lst.pop() + x` leave the popped value untracked
+  on the native lane (`cgIntrListPopLike`, tracked only in the discard
+  case) and the host lane does the same (cprint.cla:3036-3053
+  materializes into an untracked `fpNewTmp` then unconditionally calls
+  `fpHandoff(t)`, "Never auto-free/release t"). This phase's fix covers
+  only the call-argument position (native cg68k.cla:9739-9743, host
+  `fpCallFnArg` cprint.cla:1425-1431); the pop/shift-as-operand shape is
+  a distinct, pre-existing, lane-symmetric leak, report-only per the
+  spec, unscheduled.
+- **Four more stale-master-pointer sites of the same shape `bff3268`
+  fixed** (debug report §8, `.superpowers/sdd/
+  2026-08-29-68k-call-result-release/task-debug-report.md`) — an
+  unlocked master pointer handed to, or held across, an allocating
+  Toolbox call, the class the `rtUiLdefDraw` fix (this phase's
+  close-out) closed one instance of. None is implicated in the
+  `Popuptable` jiggle failure that surfaced the first instance; each
+  needs its own analysis before fixing:
+  - `runtime/clarus/uitable.cla:411` (`rtUiTableDrawField`'s `RtFtStr`
+    arm) — `UiDrawText(base + 1, 0, peekb(base))` passes the master
+    pointer INTO the trap, and `DrawText` itself can allocate (font
+    strike/resource load), so the relocation window is inside the call —
+    the one shape the `bff3268` re-derive-before-the-call rule can't
+    protect, and one the heap-jiggle gate can't exercise either (it only
+    hooks `UiNewPtr`, see the existing "Heap-jiggle stress mode only
+    hooks the `UiNewPtr` waist" entry above). Cheap fix when it comes
+    up: `UiHLock` around the read, the same shape
+    `rtUiMakeLdefStub` already uses at `uitable.cla:511`.
+  - `runtime/clarus/uitable.cla:887` (`rtUiTableSyncOne`) —
+    `UiInvalRect(lhMp + rtUiListRView)`, a master pointer into an
+    unlocked `ListRec` handed to an allocating trap. Explicitly RULED
+    OUT as the `Popuptable` failure's own cause (a fix/placebo swap on
+    this site alone did not change the failure), but still the same
+    defect shape.
+  - `runtime/clarus/uiwidgets.cla:853` and `:955` — `UiInvalRect(
+    UiHandleDeref(te) + rtUiTeViewRect)`, same shape on a `TERec`. These
+    two are paired with a matching `UiValidRect` in the live-paint path,
+    so widening the rect needs that pairing revisited first — why they
+    were left alone.
+  - `runtime/clarus/uiwidgets.cla:1093` (`table.selected` setter) —
+    `UiInvalRect(UiHandleDeref(lh) + rtUiListRView)`, same shape.
+- **The suite GUI's own case table draws through the same class of stale
+  pointer** (debug report §8) — a heap probe caught it reading a zeroed
+  record (`lastLen 0`, `lastCount 33`) in failing builds during this
+  phase's own debugging, but nothing in the suite asserts on the case
+  table's own pixels, so it never goes red. A future case that
+  checksums the suite GUI's own table content would catch this defect
+  class (and future instances of it) without needing a second bespoke
+  case like `Popuptable`.
+
 ## ABI / performance
 
 - **`KArr` param ABI** still copies arrays by value at call sites

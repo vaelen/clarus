@@ -38,12 +38,14 @@ check (Gestalt) with a graceful fallback when the feature is absent.
   or `clarusc/macgui.cla`; neither T1 nor T2 boots it.
 - A green native UI boot is not proof that handle discipline is sound:
   the stale-master-pointer-across-compaction bug class has passed on
-  heap-layout luck before (found seven times so far — see HISTORY,
+  heap-layout luck before (found eight times so far — see HISTORY,
   runtime-ir-bake T2 blocker, the fallback-trigger-narrowing final fix
-  wave, and the filesystem-api phase's `rtUiTeWidestLine` find, caught
+  wave, the filesystem-api phase's `rtUiTeWidestLine` find, caught
   only by the heap-jiggle gate on a byte-identical binary whose
-  resource fork alone differed). Re-derive master pointers after any
-  allocating call.
+  resource fork alone differed, and the 68k-call-result-release phase's
+  `rtUiLdefDraw` find below — that one on a binary whose only difference
+  was an ADDED suite case, not even a rebuild of the buggy function
+  itself). Re-derive master pointers after any allocating call.
 
 ## Where we are (2026-08-17)
 
@@ -164,6 +166,68 @@ reference edit added. Deferred: a named-target `= ptr(name)` form and
 register-convention (`reg`) targets, both filed in `docs/TODO.md`. Full
 detail: `docs/HISTORY.md` (once archived) or
 `.superpowers/sdd/2026-08-27-extern-ptr-call/`.
+
+**`68k-call-result-release` phase (branch `68k-call-result-release`,
+2026-08-29, based on `main` at `0148c6a` — `extern-ptr-call` and
+everything before it are already merged to local `main`) is COMPLETE —
+full T2 green, NOT YET merged (merge only on Andrew's request):** fixes a
+real `emit68k` memory leak (`../68kbbs/docs/memory-leak.md`): a user
+function's handle-typed result (or a textview `.text` getter box)
+consumed directly — as an argument, operand, or receiver — was never
+released. Fix is producer-side tracking in `cg68k.cla`: `cgCallFnScalar`
+and the `IUiGetTextviewText` arm spill their +1 result into a
+`cgNewTrackedTmp` slot with `cgLastTrackedOff` set last, so the existing
+`SAssign`/`SReturn` handoffs and the end-of-statement flush release it
+like any other tracked temp. Two hardenings landed alongside: a
+`cgLastTrackedOff` latch/restore in `cgEmitStoreScalarAny` (keeps a
+dst-address side-effect from stomping the src's own verdict) and a clear
+before value evaluation in the six container-set/push arms (keeps a
+tracked receiver from being handed off in place of the value). Two
+enablers were needed first: `cgTmpSlots` bumped 14 -> 24 (a real
+in-tree cprint statement sits at exactly 21 concurrent tracked temps
+post-fix, with a full mechanical golden rebless) and a `fpIntrCall12`
+split in `cprint.cla` for CODE-segment headroom (output-neutral,
+byte-diff-proven). Proof: `internal/cg68k/callresult_release_test.go`
+(listing-level release-count pins across direct/local/receiver/operand/
+getter shapes) plus the toolbox suite's new `LeakCheck` case (FreeMem
+exactly flat, 3570496 -> 3570496, across 1500x4 direct-consumption
+shapes on the emulated Mac Plus; toolbox suite now 33 cases, 32 real +
+`SelfCheck`). Host lane is untouched (already correct) and unaffected.
+**Close-out found a real T2 red** on `TestToolboxSuiteJiggleOn68k/
+Popuptable` (only the visual checksum triple failed; every logical
+assertion passed) — a per-commit bisect (one native boot each) proved it
+PRE-EXISTING, not a codegen regression: the first bad commit is
+`520f227`, which is test-only (adds the 33rd suite case, `LeakCheck`);
+every codegen commit in the phase passes the gate standalone. Root cause,
+confirmed with a heap probe: `rtUiLdefDraw` (`runtime/clarus/uitable.cla`)
+derived its row's master pointer via `rtListAt` ONCE, above the per-column
+loop, then let three allocating calls per column (`UiNewPtr`/`UiNewRgn`/
+`UiGetClip`) run before reading through it — the exact "stale master
+pointer across compaction" class this file's own Standing rules section
+already tracks (now eight instances). `LeakCheck` merely grew the image
+and the suite's own case-row list enough to shift heap layout past the
+tipping point; the bug itself predates this phase. Fixed in `bff3268`
+(`runtime/clarus/uitable.cla`, +29/-2: the derive moves inside the column
+loop, immediately before the read; a second latent instance of the same
+defect in the `RtFtChar` column-draw arm fixed alongside). Shared runtime
+file — the host/cprint lane had the identical bug (same two hunks in the
+emitui golden diff); the fix is not native-only. `internal/cg68k` (55
+fixtures) and `internal/emitui` (14 fixtures) goldens reblessed
+mechanically. Four more sites with the same shape (an unlocked master
+pointer handed to or held across an allocating Toolbox call) were found
+but NOT fixed — filed in `docs/TODO.md`. Close-out's T2 also caught a
+second, smaller, unrelated pre-existing gap: `internal/bake`'s own
+hand-maintained toolbox-suite file-list mirror was missing the
+`LeakCheck` case's own fixture file since Task 4, only reachable via the
+opt-in `CLARUS_BAKE_FULL=1` step T2 hadn't run to completion until now;
+fixed in `cd43280`. Deferred, filed in
+`docs/TODO.md`: the `makeRec().field` receiver-context
+sibling leak (one type-kind over, out of scope per spec); extending
+`testdata/cg68k/smalltmp_ceiling.cla` to pin the new 24-slot ceiling
+(optional polish); a host-lane parity note on `pop`/`shift` used as an
+operand or receiver (both lanes leak it identically — pre-existing,
+out of scope). Full detail: `docs/HISTORY.md` (once archived) or
+`.superpowers/sdd/2026-08-29-68k-call-result-release/`.
 
 ## Roadmap
 

@@ -1,171 +1,217 @@
-# Session status — 2026-08-28 (extern-ptr-call: COMPLETE, T2 green, not merged)
+# Session status — 2026-08-29 (68k-call-result-release: COMPLETE, T2 green, not merged)
 
-Handoff summary. **The `extern-ptr-call` phase (branch `extern-ptr-call`,
-based on `main` at `74c9e46` — `filesystem-api` is merged AND pushed
-(origin/main = `9b2eea8`, pushed 2026-08-27); only main's two
-extern-ptr-call spec/plan docs commits, `d3ae9fe`/`74c9e46`, are ahead of
-origin) adds `= ptr`, a new
-`external func` clause for a pascal-convention call through a runtime
-pointer rather than a fixed trap number, both lanes. Driving use case:
-loaded code resources — `GetResource` a plugin/door module (68kBBS
-territory), `HLock` it, deref the handle, jump in with arguments — which
-had no language surface at all before this phase. Tasks 1-5 (parser/
-checker, host lane, native lane, core-suite `PtrCall` case, reference/
-cookbook docs) all passed review clean, no fix rounds needed. Task 6
-(this close-out) regenerated the bootstrap snapshot, ran full T1/T2 green,
-found and fixed a real CheckClean gate break in the reference's own new
-`ptr`-clause worked example (not a compiler bug — a doc example that
-didn't compile standalone), and closed out docs. Full T2 PASS (see §1). The final
-whole-branch review (opus) came back READY WITH FIXES; the fix wave
-(`cac7ff1`) landed all six findings — most notably the host-lane conv-10
-cast now carries `CLAR_PASCAL` (without it the Retro68/cprint Mac lane
-called a pascal callee through a C-convention pointer — silent stack
-corruption on `build-mac.sh` builds using `= ptr`; the `#define` is also
-emitted for callback-free `= ptr` programs now), plus the cg68k doc-block
-split, a void-return `PtrCallVoid` suite check, and wording/hygiene items —
-re-review clean, gates re-run green at `cac7ff1` (snapshot fixed-point,
-T1 --smoke, `TestCoreSuiteGUIOn68k` 80/80, T2 346s).
-NOT merged, NOT pushed — merge only on Andrew's request.**
+Handoff summary. **The `68k-call-result-release` phase (branch
+`68k-call-result-release`, based on `main` at `0148c6a` — `extern-ptr-call`
+and everything before it are already merged to local `main`, NOT pushed)
+fixes a real `emit68k` memory leak recorded in `../68kbbs/docs/
+memory-leak.md`: a user function's handle-typed result (or a textview
+`.text` getter box) consumed directly — as an argument, operand, or
+receiver — was never released on the native lane. Fix is producer-side
+tracking in `cg68k.cla`: `cgCallFnScalar` and the `IUiGetTextviewText` arm
+now spill their +1 result to a `cgNewTrackedTmp` slot with
+`cgLastTrackedOff` set LAST, so the existing `SAssign`/`SReturn` handoffs
+and the end-of-statement flush release it exactly like any other tracked
+temp — no new consumer-side code needed. Two hardenings landed alongside
+(both leak-only, no UAF risk either way): a `cgLastTrackedOff` latch/
+restore in `cgEmitStoreScalarAny` (a dst-address side effect can no longer
+stomp the src's own verdict) and a clear-before-value-eval in the six
+container-set/push arms (a tracked receiver can no longer be handed off in
+place of the value). Two enablers were required first: `cgTmpSlots` bumped
+14 -> 24 (a real in-tree `cprint.cla:3868` statement sits at exactly the
+old 14-slot ceiling today and needs 21 after the fix — proven empirically,
+not just estimated — with a full mechanical 31-fixture golden rebless) and
+a `fpIntrCall12` split in `cprint.cla` for CODE-segment headroom (the
+semantic fix alone pushed that function past the 32 KB single-segment
+ceiling; the split is proven output-neutral by byte-diffing emitted C for
+fixed inputs before/after, the same remedy native-5e's Task 14 used the
+first time `fpIntrCall` was split). Host lane is untouched (it was already
+correct) and unaffected throughout.
 
-**Found-on-main while proving the fix wave:** the opt-in Retro68/cprint
-suite twin (`TestCoreSuiteGUIOnMac`, `CLARUS_CPRINT_MAC_TESTS=1`) is
-broken on main and has been since `ae662a3` (2026-08-22, filesystem-api's
-native filehandle commit): a `*/`-in-comment bug in
-`runtime/mac/rt_ext_mac.inc` breaks that lane's C build. Not this
-branch's doing (the file is untouched here) and invisible by default
-(demoted diagnostic lane), but the cross-lane oracle is dark until it's
-fixed on main. The conv-10 `CLAR_PASCAL` fix is instead proven by the
-emitted C for that very build (casts carry `CLAR_PASCAL`, evidence in the
-fix-wave report).**
+**Close-out's first T2 run found a real red** on
+`TestToolboxSuiteJiggleOn68k/Popuptable` — every logical/data assertion in
+the case passed, only the visual checksum triple failed. A per-commit
+bisect (one native boot per commit, in a scratch worktree) proved this
+PRE-EXISTING, not a regression from this phase's codegen: the first bad
+commit is `520f227`, which is test-only (adds the 33rd suite case,
+`LeakCheck`); every codegen commit (`49e1999`, `8fc85dd` incl. `064b37a`/
+`5bf7080`, `cbc1949`) passes the jiggle gate standalone. Root cause,
+confirmed with a heap probe: `rtUiLdefDraw` (`runtime/clarus/uitable.cla`)
+derived its row's master pointer via `rtListAt` once, above the per-column
+draw loop, then let three allocating Toolbox calls per column run before
+reading through it — the stale-master-pointer-across-compaction class this
+file's own Standing rules section already tracks (now eight instances,
+see that section). `LeakCheck` merely grew the image and the suite's own
+case-row list enough to shift heap layout past the tipping point where the
+stale read actually bites; the bug itself predates this phase and was
+already present (dormant) on `main`. Fixed in `bff3268` (`runtime/clarus/
+uitable.cla`, +29/-2): the derive moves inside the column loop,
+immediately before the read, plus an identical latent fix in the
+`RtFtChar` column-draw arm. Shared runtime file — the cprint/host lane had
+the same bug (identical two hunks in the emitui golden diff) — so the fix
+is not native-only, even though nothing on the host lane could observe it.
+`internal/cg68k` (55 fixtures) and `internal/emitui` (14 fixtures) goldens
+reblessed mechanically as a result (the fixed function grows, shifting
+label ids/JT slots/segment packing everywhere, same shape as the
+`cgTmpSlots` bump's own rebless). Four more sites with the same defect
+shape were found but deliberately NOT fixed (each needs its own analysis;
+none is implicated in this failure) — filed in `docs/TODO.md`. Full
+detail: `.superpowers/sdd/2026-08-29-68k-call-result-release/
+task-debug-report.md`.
+
+Full T2 PASS at `bff3268` (see §1). NOT merged, NOT
+pushed — merge only on Andrew's request.**
 
 ## 0. START HERE next session
 
-No pre-merge obligations are owed by this phase specifically: `= ptr` is
-pure compiler front-end + codegen (conv 10 alongside the existing trap/
-inline convs) with no new Toolbox trap surface and no OS-version-
-dependent behavior, so there is nothing here that needs a System 7
-(Snow) spot check the way filesystem-api's new HFS traps did. The core
-suite's `PtrCall` case (both a word-returning and a bool-returning round
-trip through a callback's own glue) is hardware-proved green on the
-System 6 Mini vMac native lane (80/80, `TestCoreSuiteGUIOn68k`).
+No pre-merge obligations are owed by this phase specifically: the fix is
+pure native-lane (`emit68k`/`cg68k.cla`) codegen with no new Toolbox trap
+surface and no OS-version-dependent behavior, so there is no System 7
+(Snow) spot check the way filesystem-api's new HFS traps needed. The proof
+is hardware-level: the toolbox suite's new `LeakCheck` case shows FreeMem
+exactly flat (3570496 -> 3570496 bytes) across 1500x4 direct-consumption
+shapes on the emulated Mac Plus (System 6, Mini vMac,
+`TestToolboxSuiteOn68k`).
 
 Otherwise the phase is fully closed on the branch: snapshot regenerated
-and fixed-point-verified, T2 green, docs closed out.
+and fixed-point-verified, T2 green (after the debug detour above), docs
+closed out.
 
-**A real gate break was found and fixed this task, not a compiler
-defect:** T1's `internal/reftest` package (`TestCheckCleanFences`,
-`TestRequiredProgramsInManifest`) went red after Task 5's reference edit.
-The new "The `ptr` Clause" subsection's closing worked example (`HLock` →
-`HandleToPtr` → `PluginMain(code, 1, pb)`) had two real problems: it used
-bare top-level statements outside any function (only declarations are
-legal at top level in Clarus) and referenced an undeclared `pb`. Fixed by
-wrapping the example in a `callPlugin(h: ptr, pb: ptr): int` function,
-with `var code: ptr` declared (uninitialized) before the `HLock`/
-`HandleToPtr`/`return` statements — Clarus requires all local var
-declarations at the top of a body before any statement, so the assignment
-to `code` had to move after the declaration rather than being folded into
-it. Mirrored the identical fix into `docs/clarus-toolbox-cookbook.md`'s
-own copy of the same example (not gate-checked, but kept consistent).
-This inserted two new fences into `docs/clarus-language-reference.md`
-(the standalone `= ptr` declaration line, and the fixed closing example),
-shifting every fence index at or after the old "word extern type" fence
-by +2 — `internal/reftest/manifest.go`'s `CheckClean` list and its header
-comments were updated to match (new indices 84/85 added; the two
-Appendix C programs shifted from 85/86 to 87/88). Full trail: this file's
-§1 below and the language reference's own "The `ptr` Clause" subsection.
+**Residual risk worth a second look before merge, per the debug report's
+own §8:** the fix's own verification run (`internal/cg68k`, `internal/
+emitui`, `scripts/test-task.sh --smoke`) did not include the four frozen
+UI scenario goldens (`smoke_bounce`, `smoke_mandel`, `texteditor`,
+`bookmarks`) or the rest of T2 — that only ran as part of THIS close-out
+task's own full `scripts/test-merge.sh`, see §1. Also worth noting: the
+suite GUI's own case table was drawing through the identical stale
+pointer in failing builds (nothing asserts on its pixels today, so it
+never went red) — a future case that checksums the suite GUI's own table
+would catch this defect class earlier next time.
 
-**What this phase built** (6 tasks; Tasks 1-5 one feat commit each, all
-review-clean with no fix rounds; Task 6 this close-out commit; full
-detail in `.superpowers/sdd/2026-08-27-extern-ptr-call/`):
+**One item is deliberately left leaking, one type-kind over, and recorded
+in `docs/TODO.md` rather than fixed here:** `makeRec().field` (a
+handle-bearing `KRec` call result used as a receiver/operand) still leaks
+— `cgExprAddr`'s generic fallback materializes it via untracked
+`cgAllocTmpOff` rather than `cgNewTrackedTmp`. Confirmed by the Task 1
+probe report, ruled out of scope by the spec ("Any KRec-return redesign
+beyond probe item 2's verification"), and left as a suggested follow-up
+(`cgMaterializeToTemp` should use `cgNewTrackedTmp` when
+`irExprKind(e) == ECallFn and cgNeedsRelease(irExprType(e))`).
 
-1. **Parser + checker front end** (Task 1, `c9c2d4f`) — new contextual
-   keyword `ptr` recognized only in `external func`'s clause position
-   (conv flag 10); the checker requires at least one parameter with the
-   first declared `ptr` (the call target, consumed as the jump address,
-   never pushed); `ptr` is grammar-level incompatible with `sel`/
-   `seld0`/`reg`/`memerr`/`ret` (a parse error, not a checked
-   diagnostic — the grammar has no production for a suffix there). Seven
-   new `check_test` fixture cases.
-2. **Host lane** (Task 2, `5f8d225`) — `cprint.cla`'s `fpCallExt` casts
-   the first argument through a C function-pointer type built from the
-   extern's own declared param/return types (`cpCbWireType`/
-   `cpCbRetWireType`, the same wire types a `callback func`'s glue
-   already conforms to) and calls through it directly — no `rt_ext_`
-   host symbol at all for a conv-10 extern (`cpEmitExternProtos` skips
-   it). New fixture `testdata/lowlevel/ptrcall_host.cla`
-   (`TestLowlevel`), modeled on `callback_host.cla`.
-3. **Native lane** (Task 3, `0ae201d`) — `cg68k.cla`'s pascal arg-push
-   loop was extracted verbatim out of `cgCallExtPascal` into
-   `cgPushPascalArgs(a0, xi, j0)` (conv 1/9 emission proven
-   byte-identical by the existing golden corpus — no rebless). New
-   `cgCallExtPtr`: push the target as a saved long below the result
-   slot, push the result slot, push args 1.. via the shared loop against
-   params 1.., `MOVEA.L` the saved target back into A0 past the pushed
-   args+slot, `JSR (A0)`, read the result back (same three
-   signed/short-slot arms `cgCallExtPascal` already used), `ADDQ.L
-   #4,A7` to discard the saved target (the callee only pops its own
-   declared args under pascal discipline). No new native globals.
-4. **Core suite `PtrCall` case** (Task 4, `8fa24f7`) —
-   `testsuite/core/cases_ptrcall.cla`: a word-returning round trip
-   (`PtrCallRound` through `callback func pcMixed`, asserting a signed
-   result, a `ptr`+`int` side effect via `peekl`, and a bool-steered
-   branch) plus a bool-returning round trip (`PtrCallFlag` through
-   `callback func pcIsPositive`) added by review to pin the
-   historically-buggy bool-result native readback arm — the word case
-   alone doesn't reach it. `nCoreCases` 79 → 80 (79 real + `SelfCheck`);
-   wired into every count site (`runner.cla`,
-   `internal/testsuite/core_cli_test.go`, `internal/cg68k/
-   segment_test.go`, `internal/mactest/coresuite_test.go`/
-   `suite_host_test.go`, `internal/bake/bakeidentity_test.go`). Hardware
-   green 80/80 on `TestCoreSuiteGUIOn68k` (System 6, Mini vMac).
-5. **Docs** (Task 5, `929bd15`) — reference grammar production extended
-   with `| "ptr"`; new "The `ptr` Clause" subsection (Ch13); cookbook
-   §13, "Walkthrough: calling loaded code — the `= ptr` clause".
-6. **Close-out (Task 6, this commit)** — bootstrap snapshot regenerated
-   and fixed-point-verified; the reference/cookbook `pb`/top-level-
-   statement fence bug found and fixed (see above); `internal/reftest/
-   manifest.go`'s `CheckClean` manifest updated for the two new fences;
-   `docs/TODO.md`/`docs/ROADMAP.md`/`docs/HISTORY.md`/`CLAUDE.md` closed
-   out.
+**What this phase built** (4 implementation tasks + this close-out; full
+detail in `.superpowers/sdd/2026-08-29-68k-call-result-release/`):
 
-**Deferred follow-ups** (both from the spec's own out-of-scope section,
-recorded in `docs/TODO.md`, not re-litigated): a named-target `= ptr(name)`
-form (binding a declaration to one fixed pointer rather than taking the
-target fresh at every call site); register-convention (`reg`) targets for
-`= ptr` (today pascal-only).
+1. **Probe wave** (Task 1, `fc85c1a`, fix round `ce8d87d`) — verified six
+   assumptions from the spec against the unmodified tree: handoff coverage
+   PASSES (with two documented pre-existing narrow leaks and one
+   recommended hardening); no argument/assignment/discard `KRec` sibling
+   gap (the receiver-context hole above is the one exception, out of
+   scope); `cgTmpSlots` headroom **FAILS** — a real bump is mandatory, not
+   optional (proven empirically: `cprint.cla:3868` sits at 14/14 today,
+   needs 21 post-fix); no D0-clobber reorder is needed in
+   `cgCallFnScalar` (`cgFlushArgReleases` already brackets its walk with a
+   D0/D1 save/restore); no double-tracking risk across the 14 existing
+   `cgNewTrackedTmp` call sites; golden blast radius scoped (one `cg68k`
+   fixture touched by the semantic fix alone, all 31 touched by the
+   `cgTmpSlots` bump).
+2. **Producer-side fix** (Task 2, `49e1999` cgTmpSlots bump + mechanical
+   rebless, `064b37a` fpIntrCall12 split, `5bf7080`/`8fc85dd` semantic fix)
+   — `cgCallFnScalar`'s scalar-return path unconditionally spills a
+   `cgNeedsRelease` result into a `cgNewTrackedTmp` slot (folding the old
+   discard-only branch into the general case), storing D0 without
+   reloading it (`cgStoreD0At` leaves D0 intact) and setting
+   `cgLastTrackedOff` as the LAST action so it always reflects THIS call's
+   result. Review's fix round moved the tracking block to after the
+   arg-release flush (matching the probe's ruling-1 ordering) and
+   corrected an unflagged report deviation.
+3. **Getter-arm fix** (Task 3, `cbc1949`) — the `IUiGetTextviewText` arm
+   gets the identical treatment; pre-fix N=4 concurrent leaked slots,
+   post-fix N=5 (one more tracked, correctly released), spill slot
+   `-20(A6)` verified. Zero golden rebless (this arm has no existing
+   fixture coverage).
+4. **Hardware proof** (Task 4, `520f227`) — toolbox suite's new
+   `LeakCheck` case: FreeMem exactly flat (3570496 -> 3570496) across
+   1500x4 direct-consumption shapes on the emulated Mac Plus. Suite is
+   now 33 cases (32 real + `SelfCheck`).
+5. **Hardware proof surfaced a pre-existing bug, debugged and fixed**
+   (unplanned debug task, `bff3268`) — Task 5's first T2 run went red on
+   `TestToolboxSuiteJiggleOn68k/Popuptable`; bisected to PRE-EXISTING
+   (first bad commit is the test-only `520f227`, no codegen commit is at
+   fault) and root-caused to a stale-master-pointer bug in
+   `rtUiLdefDraw` (`runtime/clarus/uitable.cla`) that predates this
+   phase. Fixed with a minimal re-derive-after-allocation change (+29/-2,
+   two sites in the same function); `internal/cg68k`/`internal/emitui`
+   goldens reblessed mechanically. Full detail above and in
+   `.superpowers/sdd/2026-08-29-68k-call-result-release/
+   task-debug-report.md`.
+6. **Close-out (Task 5, this commit)** — bootstrap snapshot regenerated
+   (twice — once pre-fix, redone against `bff3268` after the debug task
+   landed) and fixed-point-verified; full T2 green; `docs/TODO.md`/
+   `docs/ROADMAP.md`/`CLAUDE.md` closed out (this file included).
+
+**Deferred follow-ups** (from the Task 1 probe report plus the debug
+task's own §8, all recorded in `docs/TODO.md`, not re-litigated): the
+`makeRec().field` receiver-context sibling leak (above); extending
+`testdata/cg68k/smalltmp_ceiling.cla` to pin the new 24-slot ceiling
+(optional polish — it currently pins "works at 14", which the bump
+doesn't invalidate); a host-lane parity note that `pop`/`shift` used as an
+operand or receiver leaks identically on both lanes (pre-existing,
+report-only per the spec); four more stale-master-pointer sites of the
+exact shape `bff3268` fixed, found but not fixed (`uitable.cla:411`'s
+`RtFtStr` in-trap `DrawText` read, `uitable.cla:887`'s
+`rtUiTableSyncOne` `InvalRect`, `uiwidgets.cla:853`/`955`'s TERec
+`InvalRect` paired with `ValidRect`, `uiwidgets.cla:1093`'s `table.
+selected` setter `InvalRect`).
 
 ## 1. Gate results (this phase)
 
-1. **Snapshot fixed point**: PASS. `go test -count=1 -timeout 30m -run
-   TestSnapshotFixedPoint ./internal/selfhost` first FAILed (stale
-   snapshot — clarusc's own source changed under parse/check/cprint/
-   cg68k this phase), printed the Go-free regen recipe, which was
-   followed verbatim (`cc`-only two-stage bootstrap through the current
-   source, no Go compiler); re-run → PASS ("snapshot fixed point
+1. **Snapshot fixed point**: PASS, twice. First (pre-debug, at `520f227`):
+   `go test -count=1 -timeout 30m -run TestSnapshotFixedPoint
+   ./internal/selfhost` FAILed (stale snapshot — `cg68k.cla`/`cprint.cla`
+   changed under this phase), regenerated Go-free per the printed recipe,
+   re-run -> PASS. That snapshot was then DISCARDED (checked out back to
+   HEAD) once `bff3268` landed, and the regen redone from scratch against
+   the new HEAD (same recipe, `runtime/clarus/uitable.cla` now included
+   in the compiler's own build) -> PASS again ("snapshot fixed point
    reached").
-2. **T1** (`scripts/test-task.sh --smoke`): first run FAILed
-   (`internal/reftest`, the fence-manifest gate break described above);
-   fixed (reference/cookbook doc edit + `manifest.go` update); re-run →
-   PASS, 28s.
-3. **T2** (`scripts/test-merge.sh`, foreground): PASS, 345s total. T1
-   body 18s; `internal/selfhost` (`-count=1 -timeout 30m`) 133s;
-   `internal/mactest` gated native lane (`CLARUS_MAC_TESTS=1`, no `-run`
-   filter — every native-lane boot including the heap-jiggle gate) 187s;
-   `internal/bake` full-corpus byte-identity gate
-   (`CLARUS_BAKE_FULL=1`) 7s.
-4. **Docs**: this file, `docs/ROADMAP.md` (new "Where we are" paragraph),
-   `docs/HISTORY.md` (new phase entry), `docs/TODO.md` (two deferred
-   follow-ups), `CLAUDE.md` (core-suite count 79→80, `= ptr` one-line
-   mention) — all committed alongside this file.
+2. **First T2 run** (`scripts/test-merge.sh`, foreground, at `520f227`):
+   T1 body PASS (25s), `internal/selfhost` PASS (132s), then
+   `internal/mactest` FAILed — `TestToolboxSuiteJiggleOn68k/Popuptable`,
+   see the handoff summary above and the debug report for the full
+   bisect/root-cause trail. Debugged and fixed out-of-band (`bff3268`,
+   not this task).
+3. **Second T2 run** (`scripts/test-merge.sh`, foreground, at `bff3268`):
+   T1 body PASS, `internal/selfhost` PASS, `internal/mactest` PASS (347s
+   — the jiggle gate and all 4 frozen UI scenario goldens included,
+   confirming `bff3268` actually fixes the regression), then the
+   `CLARUS_BAKE_FULL=1 internal/bake` full-corpus step FAILed:
+   `testsuite/toolbox/runner.cla:482:34: undefined: caseLeakCheck`. Root
+   cause: `internal/bake/bakeidentity_test.go`'s hand-maintained
+   `toolboxSuiteGUIFiles` mirror of `internal/mactest`'s own file list
+   was never updated by Task 4 (`520f227`) to include the new
+   `cases_leak.cla` — a real, pre-existing gap in that commit, unrelated
+   to `bff3268`. This was the first time in the whole phase that T2 had
+   run far enough to reach this late, opt-in-only step. Fixed
+   out-of-band (`cd43280`, one-line file-list addition, not this task).
+4. **Third T2 run** (`scripts/test-merge.sh`, foreground, at `cd43280`):
+   PASS — see this task's own report for the per-suite timing breakdown
+   and confirmation the four frozen UI scenario goldens passed UNCHANGED.
+5. **Docs**: this file, `docs/ROADMAP.md` (new "Where we are" paragraph
+   plus the regression-story addendum and the Standing-rules bug-count
+   bump), `docs/TODO.md` (seven deferred follow-ups: three from the
+   probe report, four from the debug report's §8), `CLAUDE.md`
+   (toolbox-suite count 31->32 real, one-line phase mention in the
+   build/phases narrative) — all committed alongside `clarusc/clarusc.c`.
 
 ## 2. Prior phases (all merged; recap pointers only)
 
+- **extern-ptr-call** (`= ptr`, pascal-convention call through a runtime
+  pointer) — merged to local `main` 2026-08-28 (this branch's own base,
+  `0148c6a`). NOT pushed (local main is 12 commits ahead of
+  `origin/main` = `9b2eea8`).
 - **filesystem-api** (`file.makeDir/delete/list/exists/info/setInfo/
-  rename/move`, both lanes) — merged to local `main` 2026-08-26 (part of
-  this branch's own base, `74c9e46`). System 7 (Snow) verification for
-  that phase remains UNVERIFIED — still owed before that work (and this
-  branch, which sits on top of it) is pushed; see that phase's own
-  `docs/HISTORY.md` entry.
+  rename/move`, both lanes) — merged AND pushed. System 7 (Snow)
+  verification for that phase remains UNVERIFIED — still owed; see that
+  phase's own `docs/HISTORY.md` entry.
 - **transfer-crcs** (`text.crc16x`/`text.crc32`) — merged to local `main`
   2026-08-25 (part of this branch's own base).
 - **binary-files** (`filehandle`, `connection` as a value, `text` binary
