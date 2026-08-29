@@ -1331,6 +1331,7 @@ func irReset() {
     iUiGetLabelTextIdx = -1
     iUiGetTextviewTextIdx = -1
     iUiSetTextviewTextIdx = -1
+    iUiScrollToEndIdx = -1
     iUiGetCheckedIdx = -1
     iUiSetCheckedIdx = -1
     iUiGetEnabledIdx = -1
@@ -4684,6 +4685,17 @@ func IUiSetTextviewText(): int {
         iUiSetTextviewTextIdx = intern("ui_set_textview_text")
     }
     return iUiSetTextviewTextIdx
+}
+
+// IUiScrollToEnd (textview-scroll-to-end phase): `textview.scrollToEnd()`
+// -> rtUiWidgetScrollToEnd(inst, widgetIdx); void.
+var iUiScrollToEndIdx: int = -1
+
+func IUiScrollToEnd(): int {
+    if iUiScrollToEndIdx == -1 {
+        iUiScrollToEndIdx = intern("ui_scroll_to_end")
+    }
+    return iUiScrollToEndIdx
 }
 
 var iUiGetCheckedIdx: int = -1

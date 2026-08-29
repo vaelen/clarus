@@ -1,0 +1,20 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// textview-scroll-to-end phase: scrollToEnd takes no arguments -- the
+// shared checkTableMethod arity rule rejects any.
+window W {
+    title: "W"
+    size: 200, 100
+    textview Body { at: 20, 20; fill: both; scrollbar: vertical }
+}
+
+extend W {
+    on Body.change {
+        Body.scrollToEnd(1)
+    }
+}
+
+on App.launch {
+    open W
+}

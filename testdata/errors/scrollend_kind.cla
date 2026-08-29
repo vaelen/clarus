@@ -1,0 +1,21 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// textview-scroll-to-end phase: scrollToEnd is a TEXTVIEW method only --
+// on any other widget kind (a field here) it is "undefined", the same
+// diagnostic every non-canvas, non-textview widget method already gets.
+window W {
+    title: "W"
+    size: 200, 100
+    field Name { label: "Name:"; at: 20, 20; width: 100 }
+}
+
+extend W {
+    on Name.change {
+        Name.scrollToEnd()
+    }
+}
+
+on App.launch {
+    open W
+}

@@ -1334,10 +1334,15 @@ func lowMethodCall(e: int, fn: int): int {
     }
     xk = typeKind(exprTypeGet(selectX(fn)))
     if xk == TyWidget {
-        // Canvas drawing (Ch11): selectX(fn) is itself a widget-select
-        // (`w.Board`), never lowered as a standalone value -- lowCanvasMethod
+        // Widget methods: selectX(fn) is itself a widget-select
+        // (`w.Board`), never lowered as a standalone value -- each lowerer
         // peels both levels itself, same as lowWidgetPropGet does for a
         // property read, so recv is never computed generically here.
+        // Dispatch on the method name: the checker only admits
+        // scrollToEnd on a textview and the drawing set on a canvas.
+        if poolGet(selectName(fn)) == "scrollToEnd" {
+            return lowTextviewMethod(e, fn, ty)
+        }
         return lowCanvasMethod(e, fn, ty)
     }
     if xk == TyConnection {
@@ -1669,6 +1674,28 @@ func lowCanvasMethod(e: int, fn: int, ty: int): int {
         tail = irExprListAppend(tail, newIRIntConst(fillLit, irBoolT))
     }
     return newIRIntr(intrName, head, ty)
+}
+
+// lowTextviewMethod lowers `w.Body.scrollToEnd()` (Ch8: the textview's
+// one method, textview-scroll-to-end phase): receiver peeled exactly like
+// lowCanvasMethod, arg list = (instance, widget index), void result --
+// lowWidgetSetAssign's shape minus the value argument.
+func lowTextviewMethod(e: int, fn: int, ty: int): int {
+    var recv: LowWidgetRecv
+    var widgetIdx: int
+    var head: int
+    var nm: string
+
+    recv = lowWidgetRecv(selectX(fn))
+    widgetIdx = uiWidgetIndex(recv.winNameIdx, recv.wgName)
+    nm = poolGet(selectName(fn))
+    if nm != "scrollToEnd" {
+        lowUnsupported("textview method " + nm)
+        return -1
+    }
+    head = recv.instIR
+    irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
+    return newIRIntr(IUiScrollToEnd(), head, ty)
 }
 
 // lowFileCall lowers `file.fn(args)` (expr.go's lowerFileCall): readText/
@@ -8132,6 +8159,11 @@ func lowUiPortAddRoots() {
     shakeAddRoot(intern("rtUiWidgetGetStr"))
     shakeAddRoot(intern("rtUiWidgetGetText"))
     shakeAddRoot(intern("rtUiWidgetSetText"))
+    // textview-scroll-to-end phase: rtUiWidgetScrollToEnd, same
+    // hand-emitted-C-text reason as every other name in this list --
+    // IUiScrollToEnd's cprint/cg68k arms call it by NAME, never through
+    // an ordinary IR call node.
+    shakeAddRoot(intern("rtUiWidgetScrollToEnd"))
     shakeAddRoot(intern("rtUiWidgetGetBool"))
     shakeAddRoot(intern("rtUiWidgetSetBool"))
     shakeAddRoot(intern("rtUiWidgetGetInt"))

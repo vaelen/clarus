@@ -27,6 +27,12 @@
 // scalar handle-backed var (irtNeedsCtor recurses into KArr's element
 // type), and cpDefaultInit's existing Arr branch already emits the correct
 // per-element construction loop with no printer change needed.
+//
+// `Body.scrollToEnd()` (bare, in-handler) and `w.Body.scrollToEnd()`
+// (explicit instance) are the textview-scroll-to-end phase's fixture for
+// the textview's one method: lower.cla's lowTextviewMethod -> the
+// ui_scroll_to_end intrinsic -> clar_fn_rtUiWidgetScrollToEnd(inst, 1)
+// (Body is TextWin's widget index 1).
 
 window TextWin {
     title: "Text"
@@ -51,7 +57,9 @@ window NoteWin {
 }
 
 on App.launch {
-    open TextWin
+    var w: TextWin
+    w = open TextWin
+    w.Body.scrollToEnd()
     open NoteWin
 }
 
@@ -68,6 +76,7 @@ extend TextWin {
         bodyText = Body.text
         Body.text = bodyText
         Body.text = "from literal"
+        Body.scrollToEnd()
     }
 }
 

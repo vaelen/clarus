@@ -3860,8 +3860,12 @@ func fpIntrCall11(nm: int, x: int, a0: int, a1: int, a2: int): text {
 // the first fpIntrCall7 split. IUiCanvasClear through IUiAddrOfGlobal
 // move here verbatim; none of them touch any local var, so this
 // function needs no locals of its own, same as fpIntrCall11.
+// IUiScrollToEnd (textview-scroll-to-end phase) leads the chain.
 func fpIntrCall12(nm: int, x: int, a0: int, a1: int, a2: int): text {
-    if nm == IUiCanvasClear() {
+    if nm == IUiScrollToEnd() {
+        fpEmit("clar_fn_rtUiWidgetScrollToEnd(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        return toText("")
+    } else if nm == IUiCanvasClear() {
         fpEmit("clar_fn_rtUiCanvasClear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         return toText("")
     } else if nm == IUiCanvasLine() {

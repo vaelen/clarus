@@ -570,6 +570,7 @@ var fileFuncs: map of int
 var filehandleMethods: map of int
 var canvasMethods: map of int
 var canvasProperties: map of int
+var textviewMethods: map of int
 
 // ---- const values (Ch3: Constants) ----
 // CVal mirrors check.go's ConstVal: exactly one of intVal/strIdx holds the
@@ -1801,6 +1802,11 @@ func buildMethodTables() {
     sigStart()
     canvasMethods["clear"] = sigEnd(-1)
 
+    // textview (Ch8: Widgets) -- textview-scroll-to-end phase: the
+    // textview's one method, zero-arg, statement form.
+    sigStart()
+    textviewMethods["scrollToEnd"] = sigEnd(-1)
+
     sigStart()
     sigAdd(psPlain(IntT))
     sigAdd(psPlain(IntT))
@@ -2213,12 +2219,15 @@ func checkMethodCall(sel: int, argsHead: int): int {
         return checkTableMethod(serviceBrowserMethods, sel, argsHead)
     }
     case TyWidget {
-        // Only a canvas widget has methods (Ch11: Drawing); every other
-        // widget kind -- and window-ref/menu-item values -- has none, so it
-        // falls through to the "undefined" default below, matching
-        // expr.go's checkMethodCall switch exactly.
+        // canvas (Ch11: Drawing) and textview (Ch8: scrollToEnd) are the
+        // only widget kinds with methods; every other kind -- and
+        // window-ref/menu-item values -- has none, so it falls through
+        // to the "undefined" default below.
         if poolGet(typeNameIdx(xt)) == "canvas" {
             return checkTableMethod(canvasMethods, sel, argsHead)
+        }
+        if poolGet(typeNameIdx(xt)) == "textview" {
+            return checkTableMethod(textviewMethods, sel, argsHead)
         }
         emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
         return InvalidT

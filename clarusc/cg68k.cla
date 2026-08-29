@@ -356,6 +356,7 @@ var rnUiWidgetSetBool: int
 var rnUiWidgetSetInt: int
 var rnUiWidgetSetStr: int
 var rnUiWidgetSetText: int
+var rnUiWidgetScrollToEnd: int
 
 func rnInit() {
     if rnInited { return }
@@ -506,6 +507,7 @@ func rnInit() {
     rnUiWidgetSetInt = intern("rtUiWidgetSetInt")
     rnUiWidgetSetStr = intern("rtUiWidgetSetStr")
     rnUiWidgetSetText = intern("rtUiWidgetSetText")
+    rnUiWidgetScrollToEnd = intern("rtUiWidgetScrollToEnd")
 }
 
 // cgGlobalsBelowA5Size is the total (positive) byte extent of the whole
@@ -9180,6 +9182,10 @@ func cgIntrUi(e: int, nm: int) {
         // through it.
         a68Emit(OpMovea, 4, AmDisp16, 5, cgUiCurCancelOff, AmAn, 0, 0)
         a68Emit(OpMove, 4, AmImm, 0, 1, AmInd, 0, 0)
+        return
+    }
+    if nm == IUiScrollToEnd() {
+        cgIntrUiForward(e, rnUiWidgetScrollToEnd)
         return
     }
     if nm == IUiCanvasClear() {
