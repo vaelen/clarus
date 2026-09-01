@@ -1,40 +1,37 @@
-# Session status — 2026-08-29 (textview-scroll-to-end: COMPLETE, T2 green, MERGED to local main)
+# Session status — 2026-09-02 (string-perf: COMPLETE on branch, T2 pending below, NOT merged)
 
-Handoff summary. **The `textview-scroll-to-end` phase (branch
-`textview-scroll-to-end`, based on `main` at `36b76ab` — `68k-call-
-result-release` and everything before it are already merged to local
-`main`, NOT pushed) adds one new widget method, `textview.scrollToEnd()`
-(`../68kbbs/docs/language-gaps.md` §9's log-window ask), wired along the
-canvas-method path (`check.cla` `textviewMethods` -> `lower.cla`
-`lowTextviewMethod` -> `ui_scroll_to_end` intrinsic -> `cg68k.cla`/
-`cprint.cla` one-arm forwarders -> `rtUiWidgetScrollToEnd`,
-`uiwidgets.cla`), hardware-proved by the toolbox suite's new
-`ScrollToEnd` case (34 cases) via a new `UiTestTextviewScroll` probe; the
-shelved implicit follow-if-at-end setter semantics were rejected
-(ambiguous when content fits — spec §Problem).
+Handoff summary. **The `string-perf` phase (branch `string-perf`, based
+on `main` at `54292df` = `061dbd5` + this phase's spec/plan docs;
+`textview-scroll-to-end` and everything before it are already merged to
+local `main`, NOT pushed) removes the two dominant measured string
+costs on the native 68k lane and adds `text.clear()`/`text.reserve(n)`.**
+Origin: 68kbbs's Snow bench doc (temporary, their repo) blamed ~200
+ms/row table draws on string ops with a guessed mechanism; three code
+traces + a new calibration bench (`testdata/bench/strbench.cla`,
+`TestStrBench68k`, gated `CLARUS_BENCH68K=1`) replaced the model: the
+real costs were the full-capacity zero loop per string local per call
+(~0.48 ms/local, `cgEmitFunc`) and out-of-line `rtStrIndex`/`rtStrLen`
+calls per `s[i]`/`s.length` (~30 instructions each). `string` returns
+were already one BlockMove — the doc's per-char-return model was wrong.
 
-Three deviations from the plan, all found and fixed in-phase: (1) `peekw`
-zero-extends but QuickDraw Rect fields are signed, so the plan's runtime
-code (copied from `rtUiTeScrollSync`'s own shape) went wrong by 65536 once
-a scrolled TE's `destRect.top` goes negative — fixed with a new
-sign-extending helper, `rtUiPeekSw` (`uiwidgets.cla`), applied to every
-Rect-field read in both new functions; (2) the plan's Task 2 file list
-missed two required edits (a `shakeAddRoot` line in `lower.cla` and an
-`iUiScrollToEndIdx = -1` reset in `ir.cla`), both caught by failing tests,
-whose always-on root renumbered every UI program's jump table and forced
-a mechanical rebless of 3 `internal/cg68k` fixtures (12 `.s` files) and 12
-`emitui` `.c.golden` files; (3) Task 3's first emulator boot exposed a
-pre-existing bug sharing the same root cause: `rtUiTeScrollSync`'s clamp
-compared a zero-extended `destRect.top`, so any `textview` shrunk while
-scrolled past its own top was stranded off the end — fixed at the root by
-moving the three `destRect` readers (`uitext.cla`, `uiwidgets.cla`) onto
-`rtUiPeekSw` too, with a further golden rebless.
+Landed (5 commits over `54292df`): length-byte-only string-local init
+(`cgDefaultInitStrLenOnlyAt`, gated on the ledger's zeroed-tail probe —
+all consumers length-bounded on both lanes); inline `IStrLen`/
+`IStrIndex` (cold path delegates to `rtStrIndex` to avoid a second
+`cgRelClsPanicMsg` identity in the object/bake format); `clear()`/
+`reserve(n)` end to end (check/ir/lower/cg68k/cprint/shake/text.cla +
+reference; cprint arms in `fpIntrCall13` — `fpIntrCall3` trips the 32KB
+segment limit); suite pins `StrPerf` (core, now 81) and `ClearWarm`
+(toolbox, now 35 — FreeMem EXACTLY flat across 200 clear+refill
+cycles, hardware); snapshot regenerated to fixed point in one pass.
+After-bench: `mklocal4` 10549→1268 ticks (8.3x), `strindex` ~71→~24
+us/index; `echo*` unchanged (proven instruction-identical; Mini vMac
+bench rows are bimodal across runs — see ledger Task 7 and TODO.md).
 
-Full T2 PASS. MERGED to local `main` 2026-08-29 (ff 36b76ab..8d4c2e5, 9 commits; branch deleted); `main` is 36 commits ahead of `origin/main` (9b2eea8), NOT pushed — push only on Andrew's request.
-`68k-call-result-release` (this branch's own base) is itself merged to
-local `main` at `36b76ab`, also NOT pushed (local `main` is ahead of
-`origin/main` = `9b2eea8`). Next up per `docs/ROADMAP.md`: AppleTalk ->
-MacTCP.**
+Deviations/discoveries are in the ledger
+(`.superpowers/sdd/2026-09-02-string-perf/progress.md`). Next after
+merge: 68kbbs re-pins its toolchain and re-measures on Snow; then
+AppleTalk -> MacTCP per `docs/ROADMAP.md`.
 
 ## 0. START HERE next session
 

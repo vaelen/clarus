@@ -282,6 +282,41 @@ onto `rtUiPeekSw` too, with a further golden rebless. Spec:
 `docs/superpowers/specs/2026-08-29-textview-scroll-to-end-design.md`;
 ledger `.superpowers/sdd/2026-08-29-textview-scroll-to-end/`.
 
+**`string-perf` phase (branch `string-perf`, 2026-09-02, based on `main`
+at `54292df`) is COMPLETE on its branch — T1 green per task, full T2
+pending merge decision, NOT merged:** removes the two dominant measured
+string costs on the native lane and adds the warm-buffer text idiom.
+Origin: 68kbbs's Snow bench doc traced ~200 ms/row table draws to
+Clarus string ops; three read-only code traces plus a new in-repo
+calibration bench (`testdata/bench/strbench.cla` + `TestStrBench68k`,
+promoted as a permanent measurement instrument) replaced that doc's
+guessed model — no Memory Manager traps and no per-char copy on
+`string` returns (both hypotheses wrong); the real flat cost was
+`cgEmitFunc`'s full-capacity zero loop per string local per call
+(~0.48 ms/local measured), plus `s[i]`/`s.length` as out-of-line
+`rtStrIndex`/`rtStrLen` calls (~30 instructions of overhead each).
+Changes: (1) a plain string local's default-init is now a single
+length-byte clear (`cgDefaultInitStrLenOnlyAt`), gated on a zeroed-tail
+probe that verified every consumer on both lanes is length-bounded
+(ledger Task 1 — globals/record fields/array elements/error messages
+keep the whole-slot zero); (2) `IStrLen`/`IStrIndex` emit inline
+(unsigned CMP+BCS bounds check; the out-of-range cold path delegates to
+`rtStrIndex` for exact panic parity, deliberately avoiding a second
+`cgRelClsPanicMsg` identity in the object/bake format); (3) new `text`
+methods `clear()` (len=0, capacity kept, zero traps) and `reserve(n)`
+(public `rtTextGrow` wrapper), both lanes, reference documented.
+Proof: core suite grew to 81 cases (`StrPerf`), toolbox to 35
+(`ClearWarm` — FreeMem EXACTLY flat, no slack, across 200 clear+refill
+cycles on hardware); after-bench `mklocal4` 10549→1268 ticks (8.3x) and
+`strindex` ~71→~24 us/index; snapshot regenerated to fixed point in one
+pass. Notable finds: `fpIntrCall3` trips the 32KB segment limit with
+two more arms (clear/reserve landed in `fpIntrCall13` per its own
+precedent); Mini vMac bench rows are bimodal across runs of the same
+binary (TODO.md). Spec:
+`docs/superpowers/specs/2026-09-02-string-perf-design.md`; plan
+`docs/superpowers/plans/2026-09-02-string-perf.md`; ledger
+`.superpowers/sdd/2026-09-02-string-perf/`.
+
 ## Roadmap
 
 Focus (Andrew, 2026-08-15): make the tools more usable — expand the set

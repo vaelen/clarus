@@ -105,7 +105,7 @@ Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
 Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
-- `testsuite/core/` (80 `CoreTest` cases: 79 real + `SelfCheck`, grown
+- `testsuite/core/` (81 `CoreTest` cases: 80 real + `SelfCheck`, grown
   from 74 real (correctness-cleanup phase tip) by the binary-files
   phase's `TextBinary`/`Crc16`/`IntToStr`/`FileHandleRW` cases — the
   first three hardware-prove `text`'s new LE/word/setter binary
@@ -118,8 +118,11 @@ enum + runner, not one boot per case.
   inside the existing `Crc16` case; then to 79 real by the
   extern-ptr-call phase's `PtrCall` case, which hardware-proves the
   `= ptr` extern clause (pascal-convention call through a runtime
-  pointer, including a bool-returning round trip) on both lanes) runs on
-  host and natively; `testsuite/toolbox/` (34 `ToolboxTest` cases: 33 real +
+  pointer, including a bool-returning round trip) on both lanes — then
+  to 80 real by the string-perf phase's `StrPerf` case, which pins the
+  length-byte-only string-local init, the inline `s[i]`/`s.length`
+  codegen, and `text.clear()`/`reserve(n)` semantics) runs on
+  host and natively; `testsuite/toolbox/` (35 `ToolboxTest` cases: 34 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -143,7 +146,10 @@ enum + runner, not one boot per case.
   phase's `ScrollToEnd` case, which hardware-proves the new
   `textview.scrollToEnd()` widget method on the native lane (the cprint
   twin is wired into both file lists but blocked by `main`'s pre-existing
-  `TbFreeMem` shim gap — `docs/TODO.md`))
+  `TbFreeMem` shim gap — `docs/TODO.md` — then to 34 real by the
+  string-perf phase's `ClearWarm` case, which hardware-proves
+  `text.clear()`+warm reuse keeps FreeMem EXACTLY flat (zero Memory
+  Manager traffic) across 200 clear+refill cycles))
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -161,7 +167,7 @@ enum + runner, not one boot per case.
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
   `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract
-  design: it asserts all 79 other cases ran in the same invocation
+  design: it asserts all 80 other cases ran in the same invocation
   (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
   `all`), never alone.
   (Exact file list: `internal/mactest/suite_host_test.go`'s

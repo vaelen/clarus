@@ -58,6 +58,26 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   connection (deliberate, spec-out-of-scope this phase). Revisit with
   real modem control lines (RING/carrier) if a future BBS-target phase
   needs it.
+- **Host-lane `stdio` and `pty` transports for the serial ports**
+  (Andrew 2026-08-30, from 68kbbs's standalone BASIC interpreter):
+  `CLARUS_SERIAL_MODEM`/`CLARUS_SERIAL_PRINTER` accept only
+  `listen:PORT` and `connect:HOST:PORT` today (`runtime/host/
+  rt_serial.inc`'s `rt_ext_ConnHOpen`), so a host CLI program's only
+  terminal is a TCP peer — 68kbbs's `scripts/basic.sh` has to start the
+  binary listening and attach `nc` to it. Add two more spec values in
+  the same parser: `stdio` (read fd 0, write fd 1; optionally raw-mode
+  `tcsetattr` on open, restored at exit, for per-keystroke input) and
+  `pty` (`posix_openpt`/`grantpt`/`unlockpt`, print the slave path;
+  a master with no slave attached behaves like the `listening` state).
+  Same env-var-at-open mechanism, no build flag — one binary serves
+  any transport by how it is launched. The four functions that assume
+  a socket must branch for non-socket fds: `ReadByte`/`Write`
+  (`recv`/`send` → `read`/`write`, `ENOTSOCK` on a tty), and `Gone`,
+  whose `MSG_PEEK` trick has no tty/pipe equivalent — keep a per-slot
+  `gone` flag set when `read` returns 0. `FIONREAD` (`Avail`) and
+  `select` (`Idle`) already work on ttys and pipes. Roughly 100 lines of
+  C plus a `pipe()`-pair case in `rt_serial_test.c` and a spec
+  paragraph; then a deliberate re-pin in 68kbbs.
 
 ### binary-files phase (2026-08-22)
 
@@ -155,6 +175,33 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   4 `SF*` from `toolbox/standardfile.cla`, 2 `AE*` from
   `toolbox/appleevents.cla`) got mechanical Universal-Interfaces
   pass-through `rt_ext_` wrappers in `rt_ext_mac.inc`.
+
+### string-perf phase (2026-09-02)
+
+- **Record-local default-init elision** — record (and `error`) locals
+  still full-zero their string fields every call (`cgDefaultInitStrAt`
+  via `cgRecordCtorAt`/the KErr arm); the same zeroed-tail argument
+  applies but was out of the phase's approved scope. Measure first: a
+  record-heavy hot loop would show it.
+- **Concat/return-path inlining** — `a + b` and string returns still go
+  out of line (`rtStrConcat`/`rtStrStore`, ~0.25-0.5 ms/call class on
+  the Mini vMac lane); an order of magnitude below what the phase
+  removed, unscheduled without new evidence.
+- **Loop-invariant `&s`/length hoisting** — repeated `s[i]` in a loop
+  re-derives the string address and re-loads the length byte per
+  iteration even inlined; a real optimizer feature, not a patch.
+- **Second baked panic-message identity** — the object/bake format's
+  `cgRelClsPanicMsg` carries exactly one codegen-emitted message
+  (`cgListOobMsgIdx`, hardcoded at `cg68k.cla` record/resolve sites).
+  The phase's inline `s[i]` sidestepped it by delegating its cold path
+  to `rtStrIndex`; the next inline bounds check wanting its own message
+  must either do the same or extend the format.
+- **Mini vMac bench-row bimodality** — `TestStrBench68k` rows flip
+  between discrete speed states across runs of the SAME binary (ledger,
+  `.superpowers/sdd/2026-09-02-string-perf/progress.md` Task 7).
+  Cross-run per-row deltas under ~2x are not evidence; a future bench
+  phase wanting finer resolution needs a fixed-speed emulator lane (or
+  Snow).
 
 ## Compiler correctness / diagnostics
 
