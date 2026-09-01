@@ -1,0 +1,288 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// strbench.cla -- string-cost calibration micro-benchmark (string-perf
+// phase, 2026-09-02). Isolates the per-call costs of the native lane's
+// string machinery: call overhead, string returns, string-local
+// default-init, s[i] indexing, and the text append/growth family.
+// Follows parsebench.cla's shape exactly: non-UI App.launch boot,
+// TickCount() from toolbox/events.cla, results on the capture console
+// via alert() as
+//   BENCH <name> iters=<n> ticks=<t>
+// lines, ending with the `BENCH done` sentinel (so truncated output is
+// detectable). A measurement instrument, never a timing gate --
+// internal/mactest's TestStrBench68k (CLARUS_MAC_TESTS=1
+// CLARUS_BENCH68K=1) boots it and logs the lines. Build by hand:
+//   scripts/build-68k.sh StrBench toolbox/events.cla testdata/bench/strbench.cla
+//   toolchain/bin/LaunchAPPL -e minivmac build-68k/StrBench/StrBench.bin
+//
+// Pre-change baseline (Mini vMac lane, 2026-09-01; ms/call net of the
+// emptyloop baseline -- full table and analysis in
+// docs/superpowers/specs/2026-09-02-string-perf-design.md):
+//   callvoid 0.0015 | callint 0.0022 | echo80 0.204 | echo7 0.297
+//   mklocal 0.824 | mklocal4 2.195 | mk7 0.346 | concat 0.529
+//   strindex ~71us/index | appendchar_warm ~29us/append
+//   appendstr_warm 0.060 | appendchar_fresh 3.000 | textbirth 0.258
+// Interpretation keys: echo* is FLAT (length-independent one-BlockMove
+// return); mklocal* scales with declared string-local capacity x count
+// (the default-init cost string-perf Task 3 removes); strindex is the
+// out-of-line rtStrIndex call Task 4 inlines.
+
+var g80: string
+var g7: string
+var g8a: string
+var g8b: string
+var gt: text
+var gtWarm: text
+
+func nop() {
+}
+
+func seven(): int {
+    return 7
+}
+
+func echo(s: string): string {
+    return s
+}
+
+func mk(): string {
+    var out: string
+    out = "hi"
+    return out
+}
+
+func mk4(): string {
+    var out: string
+    var u1: string
+    var u2: string
+    var u3: string
+    out = "hi"
+    return out
+}
+
+func mk7(): string(7) {
+    var out: string(7)
+    out = "hi"
+    return out
+}
+
+func textbirth() {
+    var t: text
+    t.append('x')
+}
+
+func appendFresh(s: string, n: int) {
+    var t: text
+    var i: int
+    i = 0
+    while i < n {
+        t.append(s[i])
+        i = i + 1
+    }
+}
+
+on App.launch {
+    var i: int
+    var j: int
+    var n: int
+    var t0: int
+    var t1: int
+    var line: string
+    var acc: int
+    var rInt: int
+    var rStr: string
+    var idxSum: int
+
+    g80 = "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
+    g7 = "abcdefg"
+    g8a = "aaaaaaaa"
+    g8b = "bbbbbbbb"
+
+    // 1. emptyloop baseline
+    n = 200000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH emptyloop iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 2. callvoid
+    n = 200000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        nop()
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH callvoid iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 3. callint
+    n = 200000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        rInt = seven()
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH callint iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 4. echo80
+    n = 100000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        rStr = echo(g80)
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH echo80 iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 5. echo7
+    n = 200000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        rStr = echo(g7)
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH echo7 iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 6. mklocal
+    n = 150000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        rStr = mk()
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH mklocal iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 7. mklocal4
+    n = 80000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        rStr = mk4()
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH mklocal4 iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 8. mk7
+    n = 150000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        rStr = mk7()
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH mk7 iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 9. concat
+    n = 150000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        rStr = g8a + g8b
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH concat iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 10. strindex (80 indexes per outer iteration)
+    n = 8000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        j = 0
+        acc = 0
+        while j < 80 {
+            acc = acc + int(g80[j])
+            j = j + 1
+        }
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH strindex iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 11. appendchar_fresh -- text born and dies inside appendFresh each call
+    n = 100
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        appendFresh(g80, 80)
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH appendchar_fresh iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 12. appendchar_warm -- persistent text, pre-grown before timing
+    gtWarm = ""
+    j = 0
+    while j < 80 {
+        gtWarm.append(g80[j])
+        j = j + 1
+    }
+    n = 150
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        j = 0
+        while j < 80 {
+            gtWarm.append(g80[j])
+            j = j + 1
+        }
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH appendchar_warm iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 13. appendstr_warm -- persistent text, one 80-byte string appended per iter
+    gt = ""
+    gt.append(g80)
+    n = 5000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        gt.append(g80)
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH appendstr_warm iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    // 14. textbirth -- NewHandle/Dispose pair only (one char append)
+    n = 2000
+    t0 = TickCount()
+    i = 0
+    while i < n {
+        textbirth()
+        i = i + 1
+    }
+    t1 = TickCount()
+    line = "BENCH textbirth iters=" + string(n) + " ticks=" + string(t1 - t0)
+    alert(line)
+
+    alert("BENCH done")
+    quit 0
+}

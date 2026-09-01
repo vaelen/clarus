@@ -78,3 +78,54 @@ func TestParseBench68k(t *testing.T) {
 	}
 	t.Logf("parse benchmark: %s ticks", m[1])
 }
+
+// strBenchFiles is the string-cost calibration benchmark's composition
+// (string-perf phase, 2026-09-02): toolbox/events.cla (for TickCount) +
+// the bench app itself. See testdata/bench/strbench.cla's header for
+// what it measures and the recorded pre-change baseline.
+var strBenchFiles = []string{
+	filepath.Join("toolbox", "events.cla"),
+	filepath.Join("testdata", "bench", "strbench.cla"),
+}
+
+var strBenchLineRe = regexp.MustCompile(`BENCH [a-z0-9_]+ iters=\d+ ticks=\d+`)
+
+// TestStrBench68k boots the string-cost calibration benchmark
+// (testdata/bench/strbench.cla) on the native lane and LOGS every BENCH
+// line. Like TestParseBench68k above it is a measurement instrument,
+// not a gate: it fails only on build/boot/protocol errors (missing
+// `BENCH done` sentinel = truncated run), never on a timing value. Run:
+//
+//	CLARUS_MAC_TESTS=1 CLARUS_BENCH68K=1 go test ./internal/mactest -run TestStrBench68k -count=1 -v
+func TestStrBench68k(t *testing.T) {
+	if os.Getenv("CLARUS_BENCH68K") == "" {
+		t.Skip("set CLARUS_BENCH68K=1 (with CLARUS_MAC_TESTS=1) to run the string benchmark")
+	}
+	requireMac(t)
+	exe := buildNativeClarusc(t)
+	bin := filepath.Join(t.TempDir(), "strbench.bin")
+	args := []string{"emit68k", "-o", bin}
+	args = append(args, pkgRelFiles(strBenchFiles)...)
+	cmd := exec.Command(exe, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("clarusc %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	// 12 minutes: the 2026-09-01 baseline run measured ~562s of loop
+	// time plus boot overhead; post-string-perf runs should be much
+	// faster, but the budget covers a pre-change re-measure too.
+	runOut, _, exit := RunMac(t, bin, 12*time.Minute)
+	if exit != 0 {
+		t.Fatalf("bench app exited %d\n%s", exit, runOut)
+	}
+	if !strings.Contains(runOut, "BENCH done") {
+		t.Fatalf("no `BENCH done` sentinel (truncated run?):\n%s", runOut)
+	}
+	lines := strBenchLineRe.FindAllString(runOut, -1)
+	if len(lines) == 0 {
+		t.Fatalf("no BENCH lines in output:\n%s", runOut)
+	}
+	for _, l := range lines {
+		t.Logf("%s", l)
+	}
+}
