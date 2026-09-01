@@ -3426,6 +3426,25 @@ func cgDefaultInitStrAt(reg: int, off: int, t: int, strDefaultIdx: int) {
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
 
+// cgDefaultInitStrLenOnlyAt (string-perf Task 3): a LOCAL string's
+// default-init -- clear the Pascal length byte only (CLR.B (A0)), not
+// the full declared capacity. The zero value "empty string" is fully
+// represented by len=0, and the string-perf zeroed-tail probe
+// (.superpowers/sdd/2026-09-02-string-perf/progress.md, Task 1) verified
+// every consumer on both lanes is length-bounded, so the stale tail is
+// unobservable -- cgDefaultInitStrAt's "stale byte can never leak"
+// whole-slot zero (above) protected nothing reachable while costing a
+// 128-iteration CLR.W/DBRA loop per plain-string local per CALL
+// (measured 0.82 ms/call/local on the Mini vMac lane, the dominant flat
+// string cost). Globals, record fields, array elements, error message
+// fields, and UI state slots keep cgDefaultInitStrAt's whole-slot zero:
+// they either init once (globals, window state) or are out of the
+// string-perf phase's approved scope (records/arrays/error).
+func cgDefaultInitStrLenOnlyAt(reg: int, off: int) {
+    a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
+    a68Emit(OpClr, 1, AmNone, 0, 0, AmInd, 0, 0)
+}
+
 // cgWalkStashBase/cgWalkRestoreBase protect a multi-field/multi-element
 // reg=0 (A0-relative) walk against A0 DRIFT: any field/element whose own
 // processing overwrites A0 (a str default's zero-loop, whose CLR.W (A0)+
@@ -5334,6 +5353,13 @@ func cgEmitFunc(f: int) {
     while i < recLocalOffsets.count {
         if recLocalNoBirth[i] {
             cgZeroInitAt(6, recLocalOffsets[i], recLocalTypes[i])
+        } else if irtKind(recLocalTypes[i]) == KStr {
+            // string-perf Task 3: a plain string local's default-init
+            // is a length-byte clear, not a full-capacity zero loop --
+            // see cgDefaultInitStrLenOnlyAt's own doc comment. Locals
+            // always reach here with strDefaultIdx -1 (an initializer
+            // on a local is an ordinary assignment, not a default).
+            cgDefaultInitStrLenOnlyAt(6, recLocalOffsets[i])
         } else {
             cgDefaultInitAt(6, recLocalOffsets[i], recLocalTypes[i], 0, -1)
         }
@@ -6745,6 +6771,69 @@ func cgIntrPoke(e: int, nm: int) {
     cgExpr(a1e)
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
     a68Emit(OpMove, sz, AmDn, 0, 0, AmInd, 0, 0)
+}
+
+// cgIntrStrLenInline (string-perf Task 4): s.len as an inline unsigned
+// byte load -- the shape rtStrCmp already uses internally (peekb(s)) --
+// instead of a BSR to rtStrLen's LINK/UNLK frame (~30 instructions of
+// pure overhead for a 1-byte read, measured ~71 us/index-class on the
+// Mini vMac lane). rtStrLen itself stays in str.cla for the host lane;
+// shake's IStrLen arm still marks it, so a native binary carries its
+// (tiny) dead body -- accepted, the alternative is lane-forking shake.
+func cgIntrStrLenInline(e: int) {
+    cgExprAddr(irIntrArgsHead(e))
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 1, AmInd, 0, 0, AmDn, 0, 0)
+}
+
+// cgIntrStrIndexInline (string-perf Task 4): s[i] as an inline
+// bounds-checked byte load. Fast path: one unsigned CMP+BCS covers both
+// i < 0 and i >= len (a negative i is a huge unsigned value), then an
+// indexed MOVE.B -- no call, no LINK/UNLK, the string pointer derived
+// once (rtStrIndex derives it twice, once per bounds arm). Out-of-range
+// path: CALL rtStrIndex(&s, i), which re-checks and panics
+// "string index out of range" -- exact message/semantics parity with
+// the out-of-line path, and deliberately NOT an inline cgEmitPanic:
+// the object/bake path's cgRelClsPanicMsg promotion carries exactly one
+// codegen-emitted message identity (the hardcoded cgListOobMsgIdx
+// checks, cg68k.cla:14061/14461/14543 pre-phase), so a second inline
+// pool-string panic inside bakeable bodies would need an object-format
+// extension -- delegating the cold path to rtStrIndex (already marked
+// by shake's IStrIndex arm, already carrying the message as an ordinary
+// source literal) sidesteps that entirely. &s is evaluated FIRST
+// (language left-to-right order) and spilled to the stack across the
+// index expression, cgIntrPoke's documented discipline (above): A0 is
+// universal scratch, never carried across a cgExpr*.
+func cgIntrStrIndexInline(e: int) {
+    var a0e: int
+    var a1e: int
+    var okLbl: int
+    var fi: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    cgExprAddr(a0e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a1e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 1, AmInd, 0, 0, AmDn, 0, 0)
+    a68Emit(OpCmp, 4, AmDn, 0, 0, AmDn, 1, 0)
+    okLbl = a68NewLabel()
+    a68EmitBr(OpBcc, 5, okLbl)
+    fi = findIRFuncIdxByName(rnStrIndex)
+    if fi == -1 or not shakeReachable(fi) {
+        abort("cg68k: rtStrIndex not found/reachable")
+    }
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
+    cgCallFunc(fi)
+    cgCleanupStack(8)
+    a68Bind(okLbl)
+    a68Emit(OpAdda, 4, AmDn, 1, 0, AmAn, 0, 0)
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 1, AmDisp16, 0, 1, AmDn, 0, 0)
 }
 
 // ================================================================
@@ -8317,11 +8406,14 @@ func cgIntr(e: int) {
     // are UNREACHABLE from this value-context dispatch, matching every
     // other KStr-result gap this file already documents). ----
     if nm == IStrLen() {
-        cgIntr1(e, rnStrLen, true)
+        // string-perf Task 4: inline, not cgIntr1(e, rnStrLen, true).
+        cgIntrStrLenInline(e)
         return
     }
     if nm == IStrIndex() {
-        cgIntr2(e, rnStrIndex, true, false)
+        // string-perf Task 4: inline fast path, rtStrIndex cold path --
+        // not cgIntr2(e, rnStrIndex, true, false).
+        cgIntrStrIndexInline(e)
         return
     }
     if nm == IStrSetIndex() {
