@@ -94,3 +94,57 @@ func caseErrVarIsolation(): TestResult {
     }
     return tkPass("ErrVarIsolation")
 }
+
+// caseStrPerf (string-perf phase, 2026-09-02): pins the phase's
+// observable semantics. (1) A string local read before any assignment
+// is the empty string -- the same zero value the pre-phase
+// full-capacity zero-init produced, now guaranteed by the length-byte-
+// only default-init (cgDefaultInitStrLenOnlyAt, cg68k.cla). (2) The
+// inline s[i]/s.length codegen (cgIntrStrIndexInline/cgIntrStrLenInline)
+// produces the same values the out-of-line rtStrIndex/rtStrLen path
+// did, across a loop. (3) text.clear() resets length and the buffer
+// appends again correctly. (4) text.reserve(n) is semantically
+// invisible (capacity-only). The out-of-range s[i] panic path is NOT
+// pinned here: rtPanic is terminal (not attempt-catchable), and the
+// inline codegen delegates its cold path to the unchanged rtStrIndex,
+// whose panic behavior is unchanged by the phase.
+func caseStrPerf(): TestResult {
+    var probe: string
+    var s: string
+    var t: text
+    var acc: int
+    var i: int
+
+    if probe != "" {
+        return tkFail("StrPerf", "unassigned string local not empty")
+    }
+    if probe.length != 0 {
+        return tkFail("StrPerf", "unassigned local length " + tkIntToStr(probe.length))
+    }
+    s = "AZaz"
+    acc = 0
+    i = 0
+    while i < s.length {
+        acc = acc + int(s[i])
+        i = i + 1
+    }
+    if acc != 374 {
+        return tkFail("StrPerf", "s[i] sum " + tkIntToStr(acc) + ", want 374")
+    }
+    t = "hello"
+    t.clear()
+    if t.length != 0 {
+        return tkFail("StrPerf", "clear left length " + tkIntToStr(t.length))
+    }
+    t.append("abc")
+    if t != "abc" {
+        return tkFail("StrPerf", "append after clear mismatch")
+    }
+    t.reserve(1)
+    t.reserve(2000)
+    t.append('d')
+    if t != "abcd" {
+        return tkFail("StrPerf", "append after reserve mismatch")
+    }
+    return tkPass("StrPerf")
+}

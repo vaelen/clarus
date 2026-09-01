@@ -128,6 +128,10 @@
 // ScrollToEnd (cases_scrollend.cla) is the textview-scroll-to-end
 // phase's addition: hardware-proves `textview.scrollToEnd()` against
 // TextWin's Body -- see that case's own header comment.
+// ClearWarm (cases_clearwarm.cla) is the string-perf phase's addition:
+// hardware-proves text.clear()+warm reuse performs zero Memory Manager
+// traffic (FreeMem exactly flat across 200 clear+refill cycles) -- see
+// that case's own header comment.
 
 enum ToolboxTest {
     All
@@ -164,15 +168,16 @@ enum ToolboxTest {
     NarrowPopup
     LeakCheck
     ScrollToEnd
+    ClearWarm
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 33 real cases
+// nTbCases is ToolboxTest's member count minus All: the 34 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 34
+const nTbCases: int = 35
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -280,6 +285,9 @@ func tbCaseName(t: ToolboxTest): string {
     case ScrollToEnd {
         return "ScrollToEnd"
     }
+    case ClearWarm {
+        return "ClearWarm"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -324,6 +332,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(NarrowPopup)
     l.add(LeakCheck)
     l.add(ScrollToEnd)
+    l.add(ClearWarm)
     l.add(SelfCheck)
     return l
 }
@@ -492,6 +501,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, ScrollToEnd) {
         results.add(caseScrollToEnd())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, ClearWarm) {
+        results.add(caseClearWarm())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

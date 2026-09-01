@@ -1,0 +1,53 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_clearwarm.cla: ClearWarm (string-perf phase) -- hardware-proves
+// that the text.clear()+warm-buffer-reuse idiom performs ZERO Memory
+// Manager traffic once the buffer is grown: reserve(128) up front (one
+// SetHandleSize), then 200 cycles of clear() + 80 single-char appends
+// inside a FreeMem bracket that must come back EXACTLY equal -- no
+// slack, unlike caseLeakCheck's +/-8KB (that case's own loops churn
+// handles inside its bracket; this one's entire claim is that nothing
+// in the bracket touches the Memory Manager at all). clear() keeps
+// capacity by contract (rtTextClear, runtime/clarus/text.cla), so the
+// 80-byte refills never re-cross a growth boundary of the 128-byte
+// buffer. TbClearWarmFreeMem is declared locally, the same
+// user-code-extern precedent as cases_leak.cla's own TbFreeMem.
+external func TbClearWarmFreeMem(): int = trap 0xA01C reg
+
+func caseClearWarm(): TestResult {
+    var t: text
+    var before: int
+    var after: int
+    var i: int
+    var j: int
+    var detail: string
+
+    t.reserve(128)
+    before = TbClearWarmFreeMem()
+    i = 0
+    while i < 200 {
+        t.clear()
+        if t.length != 0 {
+            return tkFail("ClearWarm", "clear left length " + tkIntToStr(t.length))
+        }
+        j = 0
+        while j < 80 {
+            t.append('x')
+            j = j + 1
+        }
+        if t.length != 80 {
+            return tkFail("ClearWarm", "refill length " + tkIntToStr(t.length))
+        }
+        i = i + 1
+    }
+    after = TbClearWarmFreeMem()
+    if t[79] != 'x' {
+        return tkFail("ClearWarm", "refill content wrong")
+    }
+    if after != before {
+        detail = "FreeMem moved: before " + tkIntToStr(before) + " after " + tkIntToStr(after)
+        return tkFail("ClearWarm", detail)
+    }
+    return tkPass("ClearWarm")
+}

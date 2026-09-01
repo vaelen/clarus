@@ -223,6 +223,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"FileHandleRW",
 			"DirOps",
 			"PtrCall",
+			"StrPerf",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

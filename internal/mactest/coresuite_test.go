@@ -31,7 +31,7 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // assertions, below). A future case addition/removal updates this ONE
 // const plus runner.cla's own nCoreCases, instead of hunting down every
 // hardcoded copy.
-const wantCoreSuiteCases = 80
+const wantCoreSuiteCases = 81
 
 // TestCoreSuiteGUIOn68k is the core suite's Mac GUI front-end gate
 // (test-suite-review Task 10): one native 68k boot (buildNative68kUI --
@@ -84,7 +84,10 @@ const wantCoreSuiteCases = 80
 // until Task 5 replaces fileh_68k.cla's PLACEHOLDER stubs), then 80 by
 // the extern-ptr-call phase's own Task 4 PtrCall case (cases_ptrcall.cla
 // -- `= ptr` conv-10 round trip through a callback's decayed glue
-// address, both a word- and a bool-returning call) --
+// address, both a word- and a bool-returning call), then 81 by the
+// string-perf phase's own StrPerf case (cases_str.cla -- empty
+// unassigned string local, inline s[i]/s.length values, text.clear()/
+// reserve() semantics) --
 // the count now lives in the ONE wantCoreSuiteCases const above, not a
 // literal at every use site. Task 2 bumped runner.cla's
 // nCoreCases and internal/testsuite's own wantCases, but this file's
@@ -322,6 +325,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_narrowpopup.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_leak.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_scrollend.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_clearwarm.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -460,8 +464,9 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // then to 32 by correctness-cleanup Task 2's own NarrowPopup addition,
 // then to 33 by 68k-call-result-release Task 4's own LeakCheck addition
 // (a real FreeMem-flat proof for direct call-result consumption), then
-// to 34 by the textview-scroll-to-end phase's own ScrollToEnd addition:
-// parses each of the 34 result lines (33 real cases +
+// to 34 by the textview-scroll-to-end phase's own ScrollToEnd addition,
+// then to 35 by the string-perf phase's ClearWarm:
+// parses each of the 35 result lines (34 real cases +
 // SelfCheck) into its own t.Run subtest -- per-case CI reporting -- plus
 // the aggregate TOTAL line, regardless of which lane produced the
 // capture.
@@ -487,8 +492,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 34 {
-		t.Errorf("result lines: got %d, want 34\ncapture:\n%s", len(results), out)
+	if len(results) != 35 {
+		t.Errorf("result lines: got %d, want 35\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -498,7 +503,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 34 PASS 34 FAIL 0"; total != want {
+	if want := "TOTAL 35 PASS 35 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }
