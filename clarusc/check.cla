@@ -1535,6 +1535,17 @@ func buildMethodTables() {
     sigAdd(psOneOf3(TyStr, TyChar, TyText))
     textOnlyMethods["append"] = sigEnd(-1)
 
+    // clear/reserve (string-perf phase): warm-buffer reuse -- clear
+    // keeps capacity (no traps), reserve pre-grows once. Text-receiver
+    // only, same table placement as append above; zero-arg-void shape
+    // matches canvasMethods["clear"] below.
+    sigStart()
+    textOnlyMethods["clear"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["reserve"] = sigEnd(-1)
+
     // hashStep/intAt/stringAt/textAt (clir-load-perf Task 2, intAt
     // renamed post-review from u32At -- one signed int type, so the u32
     // name misdescribed the return): bulk range-read methods for a hot

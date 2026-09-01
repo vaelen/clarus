@@ -1224,6 +1224,8 @@ func irReset() {
     iTextIndexOfCharIdx = -1
     iTextAppendStrIdx = -1
     iTextAppendCharIdx = -1
+    iTextClearIdx = -1
+    iTextReserveIdx = -1
     iTextAppendTextIdx = -1
     iTextOfStrIdx = -1
     iTextFreeVarIdx = -1
@@ -3505,6 +3507,24 @@ func ITextAppendChar(): int {
         iTextAppendCharIdx = intern("text_append_char")
     }
     return iTextAppendCharIdx
+}
+
+var iTextClearIdx: int = -1
+
+func ITextClear(): int {
+    if iTextClearIdx == -1 {
+        iTextClearIdx = intern("text_clear")
+    }
+    return iTextClearIdx
+}
+
+var iTextReserveIdx: int = -1
+
+func ITextReserve(): int {
+    if iTextReserveIdx == -1 {
+        iTextReserveIdx = intern("text_reserve")
+    }
+    return iTextReserveIdx
 }
 
 var iTextAppendTextIdx: int = -1

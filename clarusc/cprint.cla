@@ -3939,7 +3939,20 @@ func fpIntrCall13(nm: int, x: int, a0: int, a1: int, a2: int): text {
     // reverse-waist synthesis intrinsics just above), so there's no
     // closer-knit family to land beside -- any chain step with headroom
     // works equally well.
-    if nm == ITextIntAtLE() {
+    if nm == ITextClear() {
+        // string-perf phase: clear/reserve land HERE rather than beside
+        // the ITextAppend* family in fpIntrCall3 for the same 32KB-
+        // per-function native-68k segment-limit reason this chain step's
+        // own header comment records (fpIntrCall3 trips it with two more
+        // arms added -- TestBakePathByteIdentity's self-compile). No
+        // non-ported fallback arm: cpTextPorted is unconditionally true
+        // (module header), matching this step's convention.
+        fpEmit("clar_fn_rtTextClear((void*)" + fpExpr(a0) + ");")
+        return toText("")
+    } else if nm == ITextReserve() {
+        fpEmit("clar_fn_rtTextReserve((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "));")
+        return toText("")
+    } else if nm == ITextIntAtLE() {
         return "clar_fn_rtTextIntAtLE((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
     } else if nm == ITextWordAt() {
         return "clar_fn_rtTextWordAt((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"

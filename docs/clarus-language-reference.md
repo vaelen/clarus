@@ -393,6 +393,8 @@ A `text` is an unbounded, resizable buffer of characters. A `string` value may b
 - Assignment: `t = "hello"`
 - Concatenation: `t = t + "world"`
 - `t.append(x)` — append `x` (a `string`, `char`, or `text`) in place. Unlike concatenation with `+`, which rebuilds the buffer, `append` grows it amortized (and accepts a `char` directly, which `+` does not) — the right tool for building large output in a loop.
+- `t.clear()` — reset length to 0 in place. Capacity and the underlying buffer are kept (no allocation, no shrink), so a reused buffer cleared each cycle appends again without re-growing — pair with `reserve` for trap-free hot loops.
+- `t.reserve(n)` — pre-grow capacity to at least `n` bytes (at most one underlying resize; a no-op when capacity already suffices; never shrinks). Fails the same way growth during `append` does if memory is exhausted. For producers that must append byte-at-a-time and cannot batch.
 - `t[i]` — the character at index `i` (returns `char`), 0-based; `t[i] = c` assigns in place
 - `t[start, len]` — slice, yielding a `string`; same strict-bounds rules as string slicing (above)
 - `t.indexOf(needle)` — first index of a `string` or `char`, or `-1` (as for strings)

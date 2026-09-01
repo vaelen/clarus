@@ -297,6 +297,8 @@ var rnStrToBytes: int
 var rnTextAppendChar: int
 var rnTextAppendStr: int
 var rnTextAppendText: int
+var rnTextClear: int
+var rnTextReserve: int
 var rnTextCmp: int
 var rnTextCmpStr: int
 var rnTextConcat: int
@@ -446,6 +448,8 @@ func rnInit() {
     rnStrStore = intern("rtStrStore")
     rnStrToBytes = intern("rtStrToBytes")
     rnTextAppendChar = intern("rtTextAppendChar")
+    rnTextClear = intern("rtTextClear")
+    rnTextReserve = intern("rtTextReserve")
     rnTextAppendStr = intern("rtTextAppendStr")
     rnTextAppendText = intern("rtTextAppendText")
     rnTextCmp = intern("rtTextCmp")
@@ -8468,6 +8472,14 @@ func cgIntr(e: int) {
     }
     if nm == ITextAppendChar() {
         cgIntr2(e, rnTextAppendChar, false, false)
+        return
+    }
+    if nm == ITextClear() {
+        cgIntr1(e, rnTextClear, false)
+        return
+    }
+    if nm == ITextReserve() {
+        cgIntr2(e, rnTextReserve, false, false)
         return
     }
     if nm == ITextAppendText() {

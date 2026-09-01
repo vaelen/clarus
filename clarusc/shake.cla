@@ -617,6 +617,10 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtTextAppendStr"))
     } else if nm == ITextAppendChar() {
         shakeMarkAndEnqueue(intern("rtTextAppendChar"))
+    } else if nm == ITextClear() {
+        shakeMarkAndEnqueue(intern("rtTextClear"))
+    } else if nm == ITextReserve() {
+        shakeMarkAndEnqueue(intern("rtTextReserve"))
     } else if nm == ITextAppendText() {
         shakeMarkAndEnqueue(intern("rtTextAppendText"))
     } else if nm == ITextOfStr() {

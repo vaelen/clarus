@@ -1113,6 +1113,31 @@ func rtTextAppendChar(t: ptr, c: int) {
     rt.len = len0 + 1
 }
 
+// rtTextClear (string-perf phase, text.clear()): len = 0; capacity and
+// handle untouched -- no traps, so a warm reused buffer resets for
+// free (the clear()+reuse idiom removes both birth/death and growth
+// traps from a hot per-line/per-draw loop). The bytes beyond len are
+// dead by the same length-bounded contract every text read path in
+// this module already honors.
+func rtTextClear(t: ptr) {
+    var rt: RtText
+
+    rt = RtText(t)
+    rt.len = 0
+}
+
+// rtTextReserve (string-perf phase, text.reserve(n)): pre-grow to at
+// least n bytes of capacity -- at most one SetHandleSize trap, vs. one
+// per doubling boundary when a per-char producer grows implicitly
+// (measured ~6 traps filling 0->128 one char at a time). No-op when
+// capacity already suffices; never shrinks; panics "out of memory" on
+// failure exactly like implicit growth (rtTextGrow above).
+func rtTextReserve(t: ptr, n: int) {
+    if n > 0 {
+        rtTextGrow(t, n)
+    }
+}
+
 // rtTextAppendText (rt_core.inc:452-464): src may alias t (self-append
 // doubles) -- n is captured before rtTextGrow can move t's block (which is
 // src's block too, when src == t); both master pointers are re-derived

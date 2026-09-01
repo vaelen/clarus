@@ -2119,6 +2119,12 @@ func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: i
         // textOnlyMethods (check.cla) only reaches here for a text
         // receiver -- isText is always true.
         return lowAppend(recv, arg0, ty)
+    } else if nm == "clear" {
+        // string-perf phase: textOnlyMethods, text receiver only --
+        // recv-only intrinsic shape, same as map's count above.
+        return newIRIntr(ITextClear(), recv, ty)
+    } else if nm == "reserve" {
+        return newIRIntr(ITextReserve(), lowMethodArgs2(recv, arg0), ty)
     } else if nm == "hashStep" {
         // textOnlyMethods (check.cla) only reaches here for a text
         // receiver -- isText is always true, same as append above.
