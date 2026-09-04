@@ -168,7 +168,7 @@ func extractHexBlocks(t *testing.T, out string) (icon, mask, iconRes []byte) {
 
 func TestPbm2Icn(t *testing.T) {
 	bin := buildPbm2Icn(t)
-	probe := filepath.Join(repoRoot(t), "internal", "mactest", "testdata", "icon_probe.pbm")
+	probe := filepath.Join(repoRoot(t), "tests", "mactest", "testdata", "icon_probe.pbm")
 
 	bits := readPbmP1Bits(t, probe)
 	wantIcon := bitsToICNBytes(bits)
