@@ -23,7 +23,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define READ_DEADLINE_MS 30000L /* per-step read deadline (expect/expect-sub) */
+#define READ_DEADLINE_MS 30000L /* default per-step read deadline; `deadline MS` overrides */
 #define ACCEPT_MS        30000L /* listen mode: wait this long for a peer */
 #define RBUF             65536
 #define MAXFILE          (4L * 1024 * 1024)
@@ -40,7 +40,7 @@ static const char USAGE[] =
 "\n"
 "SCRIPT is a line-oriented step list; blank lines and lines whose first\n"
 "non-space character is '#' are ignored. Steps:\n"
-"  expect FILE          read exactly size(FILE) bytes (30 s deadline) and\n"
+"  expect FILE          read exactly size(FILE) bytes (see `deadline`) and\n"
 "                       byte-compare them against FILE\n"
 "  expect-sub STRING N  read at most N bytes, succeeding as soon as STRING\n"
 "                       has been seen. Bytes BEFORE the match are discarded,\n"
@@ -50,6 +50,9 @@ static const char USAGE[] =
 "                       escapes \\r \\n \\t \\0 \\\\ \\\" -- e.g.\n"
 "                       expect-sub \"READY\\r\" 64\n"
 "  send FILE            write every byte of FILE\n"
+"  deadline MS          read deadline for every LATER expect/expect-sub step\n"
+"                       (default 30000; a slow peer -- an emulated Mac still\n"
+"                       booting -- needs more for its first line only)\n"
 "  sleep MS             wait MS milliseconds\n"
 "  close                orderly shutdown of our writing half\n"
 "  await-close SECS     the peer must close within SECS; bytes that arrive\n"
@@ -62,6 +65,7 @@ static int usage(void) { fputs(USAGE, stderr); return 2; }
 
 static int sock = -1;   /* the live connection */
 static int stepno;      /* 1-based, for the divergence line */
+static long read_ms = READ_DEADLINE_MS; /* current read deadline; `deadline MS` sets it */
 
 /* --- read buffer: everything received flows through here, so expect-sub
  * can over-read past its needle without losing bytes a later step needs. */
@@ -161,7 +165,7 @@ static unsigned char *load(const char *path, size_t *n) {
 static void step_expect(const char *path) {
     size_t n, i = 0;
     unsigned char *want = load(path, &n);
-    long deadline = now_ms() + READ_DEADLINE_MS;
+    long deadline = now_ms() + read_ms;
 
     while (i < n) {
         if (rpos == rlen) {
@@ -182,7 +186,7 @@ static void step_expect(const char *path) {
 static void step_expect_sub(const unsigned char *needle, size_t nlen, size_t maxbytes) {
     unsigned char *seen;
     size_t total = 0;
-    long deadline = now_ms() + READ_DEADLINE_MS;
+    long deadline = now_ms() + read_ms;
     char reason[128];
 
     if (nlen == 0 || nlen > maxbytes) { fprintf(stderr, "tcpdrive: bad expect-sub arguments\n"); exit(2); }
@@ -323,6 +327,8 @@ static void run_script(const char *path) {
                             (size_t)numarg(tok[2], "MAXBYTES"));
         } else if (!strcmp(tok[0], "send") && n == 2) {
             step_send(tok[1]);
+        } else if (!strcmp(tok[0], "deadline") && n == 2) {
+            read_ms = numarg(tok[1], "MS");
         } else if (!strcmp(tok[0], "sleep") && n == 2) {
             step_sleep(numarg(tok[1], "MS"));
         } else if (!strcmp(tok[0], "close") && n == 1) {
