@@ -21,6 +21,7 @@
 - C tools: one file each, `cc -std=c99 -Wall -Werror`, libc/POSIX only, no compiler code included or linked.
 - Commit after every task with the project's attribution trailer.
 - Subagents: `sonnet` for implementation and per-task review; never Fable for implementation.
+- `tests/lib.sh` is frozen after Task 1. Group-specific helpers (Tasks 3, 8, 9, 12, 13, 14) go in `tests/lib_<group>.sh`, sourced after `lib.sh` by that group's scripts, so parallel tasks never edit the same file. Where a task below says "add to `tests/lib.sh`", read it as "add to `tests/lib_<group>.sh`".
 
 ---
 
@@ -29,8 +30,8 @@
 ```
 Makefile                          # runner (Task 1)
 tests/
-  lib.sh                          # shared helpers (Task 1; extended in 8, 13, 14)
-  lib_snow.sh                     # Snow helpers (Task 14)
+  lib.sh                          # shared helpers (Task 1, frozen after)
+  lib_reftest.sh lib_bake.sh lib_selfhost.sh lib_mac.sh lib_snow.sh   # group helpers (Tasks 3, 8/9, 12, 13, 14)
   run1.sh                         # run one script → .result/.log (Task 1)
   summary.sh                      # aggregate .result files (Task 1)
   tools/timeout.c                 # Task 1
@@ -942,6 +943,18 @@ echo "test-task.sh: PASS in $(( $(date +%s) - START ))s (smoke=$SMOKE)"
 - [ ] **Step 7: Commit** `chore: delete the Go test harness; Make + shell + C tools are the gauntlet (go-retirement Task 15)`.
 
 ---
+
+## Parallel execution
+
+| Wave | Tasks | Constraint |
+|---|---|---|
+| 0 | 1 | everything sources `lib.sh` and the Makefile |
+| 1 | 2, 3, 4, 5, 6, 7, 8, 10, 11, 12 | independent; disjoint script dirs, disjoint Go-side fixture moves; run 4-5 at a time in worktrees |
+| 2 | 9, 13 | 9 needs Task 8's `clirhdr`/`bake_ir`; 13 owns the emulator screen, so no other task may run `--smoke` concurrently |
+| 3 | 14 | needs Task 10's `tcpdrive` and the screen; hours long |
+| 4 | 15 | needs all |
+
+Merge each task into `go-retirement` as its review clears. During waves 1-2 a `perfgate/tripwire` failure under a loaded host is re-run alone before being treated as red (Task 15 re-baselines it).
 
 ## Self-review
 
