@@ -1,4 +1,4 @@
-/* internal/mactest/uiprobe/events_text.c -- scripted verification of the
+/* tests/mactest/uiprobe/events_text.c -- scripted verification of the
    TextProbe window added in mac-target-4c Task 1 (field/textview widgets).
    An alternative strong rt_ui_test_script to events.c (Task 3,
    mac-target-4b), selected instead of it via CMakeLists.txt's UI_EVENTS

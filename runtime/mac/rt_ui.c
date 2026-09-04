@@ -4191,7 +4191,7 @@ static void rt_ui_script_key(unsigned char ch)
    backslash doubled by that same escaping pass and so decodes back to
    the two characters `\`+`r`, not a CR byte -- there is no way to name
    byte 13 in the FILE at all, only in hand-written C (e.g.
-   internal/mactest/uiprobe/events_text.c's `"...\r\n"`, a real source
+   tests/mactest/uiprobe/events_text.c's `"...\r\n"`, a real source
    escape, never routed through the shell-level pipeline). Decimal digits
    were never a valid literal-character spelling in any existing script
    (every current `key` line names a letter, e.g. buttons.events' `key

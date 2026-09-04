@@ -85,7 +85,7 @@ void rt_panic(const char *msg)
  *
  * LaunchAPPL only ever echoes back a file literally named `out` on the
  * boot volume once the emulated app quits (see
- * internal/mactest/probe/FINDINGS.md) -- there is no second output
+ * tests/mactest/probe/FINDINGS.md) -- there is no second output
  * channel -- so every stream this build produces multiplexes into that
  * one file:
  *
@@ -296,7 +296,7 @@ static void rt_test_flush_log(void)
  * taken as-is on the default volume (vRefNum 0): no cstr conversion, no
  * ':'-splitting -- ConstStr255Param has the same [len][bytes] layout a
  * strN value already has. Created files get type 'TEXT', creator 'MPS ',
- * the same File Manager pattern the probe (internal/mactest/probe/probe.c)
+ * the same File Manager pattern the probe (tests/mactest/probe/probe.c)
  * proved: Create/FSOpen/SetEOF/FSWrite/FSClose/FlushVol to write; GetEOF
  * + FSRead to read. */
 

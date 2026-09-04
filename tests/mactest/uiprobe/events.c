@@ -1,4 +1,4 @@
-/* internal/mactest/uiprobe/events.c -- committed sample event script for
+/* tests/mactest/uiprobe/events.c -- committed sample event script for
    Task 3 (mac-target-4b) manual verification of runtime/mac/rt_ui.c's
    scripted-event machinery. Strong definition of rt_ui_test_script:
    overrides rt_ui.c's weak empty default at link time (only linked in

@@ -1,4 +1,4 @@
-/* internal/mactest/uiprobe/events_table.c -- scripted verification of the
+/* tests/mactest/uiprobe/events_table.c -- scripted verification of the
    TableProbe window added in mac-target-4d Task 4 (RTUI_TABLE). An
    alternative strong rt_ui_test_script to events.c/events_text.c/
    events_popup.c, selected instead of them via CMakeLists.txt's UI_EVENTS
