@@ -102,7 +102,7 @@ func hexWindow(data []byte, off int) string {
 	return b.String()
 }
 
-// TestVasmRoundTrip builds internal/asm68k/exercise.cla with the
+// TestVasmRoundTrip builds tests/asm68k/exercise.cla with the
 // current-source clarusc (claruscboot), runs it to get asm68k.cla's own
 // listing (exer.s) and its own
 // encoded bytes (exer.dat) for the SAME exerciser stream
@@ -121,7 +121,7 @@ func TestVasmRoundTrip(t *testing.T) {
 	exerC := filepath.Join(runDir, "exercise.c")
 	rtdir := filepath.Join(root, "runtime", "clarus") + string(filepath.Separator)
 	emit := exec.Command(clarusc, "emit", "--rtdir", rtdir, "-o", exerC,
-		filepath.Join(root, "internal", "asm68k", "exercise.cla"))
+		filepath.Join(root, "tests", "asm68k", "exercise.cla"))
 	if out, err := emit.CombinedOutput(); err != nil {
 		t.Fatalf("clarusc emit exercise.cla: %v\n%s", err, out)
 	}
