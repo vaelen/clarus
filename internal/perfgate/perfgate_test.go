@@ -100,14 +100,14 @@ func TestEmitPerfTripwire(t *testing.T) {
 	sort.Slice(durs, func(i, j int) bool { return durs[i] < durs[j] })
 	median := durs[runs/2]
 
-	baseline := readBaseline(t, "baseline.txt")
+	baseline := readBaseline(t, "../../tests/perfgate/baseline.txt")
 	limit := 2 * baseline
 	t.Logf("emit runs: %v, median: %.3fs, baseline: %.3fs, limit (2x): %.3fs",
 		durs, median.Seconds(), baseline, limit)
 	if median.Seconds() > limit {
 		t.Fatalf("emit-time tripwire: median %.3fs exceeds 2x baseline %.3fs (limit %.3fs) -- "+
 			"either a real regression, or the baseline is stale: re-baseline by editing "+
-			"internal/perfgate/baseline.txt to the new median and justifying the change in "+
+			"tests/perfgate/baseline.txt to the new median and justifying the change in "+
 			"the commit message",
 			median.Seconds(), baseline, limit)
 	}
