@@ -141,7 +141,7 @@ func sweepBytes() []byte {
 // the close-driven lifetime rule (process exits on its own, no kill
 // needed).
 func TestConnectMode(t *testing.T) {
-	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "echo.cla"), "echo")
+	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "tests", "conntest", "testdata", "echo.cla"), "echo")
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -238,7 +238,7 @@ func TestConnectMode(t *testing.T) {
 // order-independent with no added latency in the (expected) common case
 // where nothing is waiting to peek at all.
 func TestListenMode(t *testing.T) {
-	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "echo.cla"), "echo_listen")
+	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "tests", "conntest", "testdata", "echo.cla"), "echo_listen")
 
 	// pickFreePort's own probe-close-reopen gap (its own doc comment)
 	// is a real race under a parallel `go test` run -- another package
@@ -326,7 +326,7 @@ func TestListenMode(t *testing.T) {
 // unset makes `open` fail environmentally (never a panic), the
 // `failed` handler logs and `quit 1`s.
 func TestEnvUnsetFailedPath(t *testing.T) {
-	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "echo.cla"), "echo")
+	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "tests", "conntest", "testdata", "echo.cla"), "echo")
 
 	cmd := exec.Command(exe)
 	// Explicitly drop any CLARUS_SERIAL_MODEM/_PRINTER the test process's
@@ -373,7 +373,7 @@ func TestEnvUnsetFailedPath(t *testing.T) {
 // connect-mode (per the finding): the process must exit 1 PROMPTLY, on
 // the abort alone, never depending on the peer.
 func TestAbortDuringPump(t *testing.T) {
-	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "echo_abort.cla"), "echo_abort")
+	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "tests", "conntest", "testdata", "echo_abort.cla"), "echo_abort")
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -441,7 +441,7 @@ func TestAbortDuringPump(t *testing.T) {
 // own contract -- never blocks, never panics) before useLocal() ever
 // runs, so this needs no TCP peer at all, unlike TestAbortDuringPump.
 func TestConnShadowedLocalIsNil(t *testing.T) {
-	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "internal", "conntest", "testdata", "conn_shadow_local.cla"), "conn_shadow_local")
+	exe := buildConnFixture(t, filepath.Join(repoRoot(t), "tests", "conntest", "testdata", "conn_shadow_local.cla"), "conn_shadow_local")
 
 	cmd := exec.Command(exe)
 	cmd.Env = os.Environ()
