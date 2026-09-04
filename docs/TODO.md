@@ -572,6 +572,23 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 
 ## Runtime / Toolbox robustness
 
+- **Buffered canvases blit every event-loop pass, flickering the mouse
+  pointer** (68kbbs canvas log window, Andrew 2026-09-02):
+  `rtUiFlushBufferedCanvases` (uiwidgets.cla:1329 / rt_ui.c:2172) does
+  a full CopyBits of EVERY buffered canvas with an offscreen
+  (`buf.port != 0`) on every rtUiRun iteration, drew or not. A program
+  with an `every 2 ticks` block therefore blits a static canvas ~30x/s;
+  each blit makes QuickDraw shield the cursor, so the pointer visibly
+  flickers over/near the window, and ~17 KB/blit of needless CopyBits
+  traffic burns real 68k CPU. Fix: a per-canvas dirty flag in
+  RtUiCanvasBuf -- set by every canvas drawing op (clear/line/rect/
+  fillRect/circle/fillCircle/drawText), tested by the flush (skip
+  clean canvases), cleared after the blit; the updateEvt path must
+  force-blit regardless of the flag so window exposure still repaints.
+  Both lanes (rt_ui.c mirrors the .cla module). ~10 lines. A static
+  canvas then costs zero per pass and the flicker disappears;
+  animation loops (the Bounce example) are unaffected since they draw
+  every frame anyway.
 - **`rtUiTableClick` scripted row math has no upper clamp** against the
   live row count — deliberate tripwire (runtime-ir-bake T2 blocker): a
   clamp would mask the next stale-master-pointer bug. Do not "fix"
