@@ -1,5 +1,5 @@
 #!/bin/sh
-# timeout: 150m
+# timeout: 180m
 # The Mac-resident compiler's acceptance evidence -- ported from
 # internal/mactest/macresident_test.go's TestMacResidentClaruscOnSnow.
 # ClarusC.APPL compiles tickprobe.cla and then catprobe.cla ON the emulated

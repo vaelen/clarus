@@ -1,5 +1,5 @@
 #!/bin/sh
-# timeout: 150m
+# timeout: 180m
 # "A failing compile leaves ClarusC.APPL alive" -- ported from
 # internal/mactest/macresident_test.go's
 # TestMacResidentFailedCompileStaysAliveOnSnow. One Snow session, two

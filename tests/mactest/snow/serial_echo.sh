@@ -18,6 +18,9 @@ DRIVE=$TOOLS/tcpdrive
 emit68k -o "$WORK/SerialEcho.bin" "$ROOT/examples/serialecho.cla" > "$WORK/build.log" 2>&1 \
     || die "clarusc emit68k examples/serialecho.cla: $(tail -5 "$WORK/build.log" | tr '\n' ' ')"
 
+snow_disk
+snow_put_bin "$WORK/SerialEcho.bin" SerialEcho
+
 # sweep256: every byte value 0-255 once, in order. The hex list through
 # `xxd -r -p` is the byte-safe way to do this in POSIX sh (awk's printf
 # "%c" goes via the locale's character set, so NUL and high bytes do not
@@ -34,16 +37,14 @@ printf 'QQQ' > "$WORK/qqq"
 
 PORT=$("$DRIVE" pick-port) || die "tcpdrive pick-port failed"
 
-# The exchange, as one tcpdrive script. Each expect/expect-sub step gets
-# tcpdrive's own fixed 30s read deadline == serialSnowOpBudget, the Go
-# per-operation budget. The leading `sleep` is how the GREETING gets more
-# than that one step's 30s: Go allows it serialSnowDialBudget (120s,
-# covering guest boot -- 4.7-22.2s observed across four clean boots),
-# and bytes that arrive during the sleep are buffered by TCP, not lost,
-# so sleep+deadline is the step's real budget (55s here).
+# The exchange, as one tcpdrive script. The greeting gets
+# serialSnowDialBudget (120s -- it has to cover guest boot, 4.7-22.2s
+# observed across four clean boots); every echo step after it gets
+# serialSnowOpBudget (30s, also tcpdrive's own default).
 cat > "$WORK/drive.txt" <<EOF
-sleep 25000
+deadline 120000
 expect-sub "READY\r" 4096
+deadline 30000
 send $WORK/sweep256
 expect $WORK/sweep256
 send $WORK/sustained

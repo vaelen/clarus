@@ -16,19 +16,20 @@ DRIVE=$TOOLS/tcpdrive
 emit68k -o "$WORK/PageFile.bin" "$ROOT/examples/pagefile.cla" > "$WORK/build.log" 2>&1 \
     || die "clarusc emit68k examples/pagefile.cla: $(tail -5 "$WORK/build.log" | tr '\n' ' ')"
 
+snow_disk
+snow_put_bin "$WORK/PageFile.bin" PageFile
+
 PORT=$("$DRIVE" pick-port) || die "tcpdrive pick-port failed"
 
 # One result line, CR-terminated (Clarus's `\n` escape emits CR, the Mac
 # newline). expect-sub tolerates the leading noise byte Snow's bridge
 # emits on a freshly launched bridge's first client connection, so this is
 # the same "scan a capped window for the substring" tolerance
-# readResultLine applies. The leading sleep buys the line more than
-# tcpdrive's own fixed 30s step deadline: Go allows it
-# pageFileResultBudget (120s), which has to cover guest boot PLUS the
-# whole 16-page write-ahead-journal pass inside App.launch (~27s observed
-# end to end); bytes arriving during the sleep are buffered, not lost.
+# readResultLine applies. pageFileResultBudget (120s) has to cover guest
+# boot PLUS the whole 16-page write-ahead-journal pass inside App.launch
+# (~27s observed end to end), so the step gets that as its read deadline.
 cat > "$WORK/drive.txt" <<EOF
-sleep 30000
+deadline 120000
 expect-sub "PASS 16\r" 4096
 sleep 5000
 EOF
