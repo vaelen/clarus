@@ -1,0 +1,109 @@
+# tests/reftest/manifest.txt -- indices (0-based, document order) of the
+# ```rust fences in docs/clarus-language-reference.md that check clean
+# standalone under clarusc. Transcribed from internal/reftest/manifest.go's
+# CheckClean; read it with `grep -v '^#'`. Each EXCLUDED index appears as a
+# "#" line at its own numeric position, carrying manifest.go's verbatim
+# reason.
+0
+# 1  (line 81): include "geometry.cla" — no such file
+2
+3
+# 4  (line 219): bare statements — indexing/in-place-assignment fragment
+# 5  (line 230): bare statement — string concat fragment
+6
+7
+# 8  (line 259): bare statements — string(n) fromBytes/toBytes byte-copy fragment
+9
+10
+11
+# 12 (line 312): undefined: EventKind, Drag (enum shown elsewhere in the chapter)
+# 13 (line 425): undefined: EventKind (const example; enum declared
+#     elsewhere) — the unresolved type also trips the const-type-must-be-
+#     int/fixed/char/bool/enum/string fallback error
+# 14 (line 472): undefined: Person
+# 15 (line 481): undefined: Person
+# 16 (line 492): bare statement — assignment fragment
+17
+18
+# 19 (line 524): bare statement — string(n) truncating-assignment fragment
+# 20 (line 539): undefined: Person (func param type)
+# 21 (line 551): bare statement — assignment fragment
+# 22 (line 560): bare fragment — top-level var decls + conn.open/names.add
+#     call statements — also references undeclared Person (list of Person /
+#     new Person)
+# 23 (line 573): bare if/else-if/else fragment — also references undeclared Person
+# 24 (line 588): bare while fragment — also references undeclared Person
+# 25 (line 601): bare for-in fragment (list form) — also references undeclared Person
+# 26 (line 610): bare for-in fragment (map form)
+# 27 (line 618): bare for-in fragment (range form)
+# 28 (line 631): undefined: Person (func param type)
+# 29 (line 638): undefined: Person (func param type)
+# 30 (line 651): bare open-statement fragment — also references undeclared Doc
+# 31 (line 663): bare close-statement fragment — also references undeclared Doc
+# 32 (line 673): bare edit-statement fragment — also references undeclared EditPerson, Person
+33
+34
+# 35 (line 705): bare closeRequest-handler fragment — unknown event outside a window extend block
+# 36 (line 717): bare while fragment — break-inside-loop example — also references undeclared Person
+# 37 (line 732): bare switch-statement fragment — references undeclared var tok
+38
+39
+# 40 (line 820): undefined: Type — func skeleton uses placeholder type names
+# 41 (line 828): undefined: Person (func param type)
+42
+# 43 (line 923): undefined: compile — startCLI example calls a function shown nowhere
+44
+45
+46
+47
+48
+49
+# 50 (line 1127): undefined: File (menu extend block, menu declared elsewhere)
+# 51 (line 1137): undefined: Doc (window extend block, window declared elsewhere)
+# 52 (line 1151): bare property-assignment fragment (File.Save.enabled = false)
+# 53 (line 1167): form for names an undefined record: Bookmark
+# 54 (line 1205): bare edit-statement fragment (table/form binds example)
+# 55 (line 1223): undefined: EditForm (window extend block)
+# 56 (line 1237): bare table-widget-declaration fragment (table outside a window)
+# 57 (line 1256): undefined: Main (window extend block)
+58
+59
+60
+61
+62
+# 63 (line 1464): bare fragment — filehandle open/create/nil-check idiom
+#     (binary-files phase) — also references undeclared var path
+64
+65
+# 66 (line 1568): bare statement — ptr peek/poke call fragment
+67
+# 68 (line 1601): overlay records — func f's body interleaves var decls
+# with statements (var n; h.rc = 5; h.data = p; var back; var same) for
+# expository clarity, genuinely violating "local variables ... are
+# declared at the top of the body before any statement" (see the
+# reference's variable-scoping prose) — a real check-time error, not a
+# missing-context fragment. Reordering the example to check clean is a
+# content change out of scope here.
+69
+70
+# 71 (line 1687): extern record — waitClick usage example calls
+# UiWaitNextEvent/nilPtr/handleAt, none declared in the fence itself
+# (same "references a name declared only in surrounding prose" class as
+# 12-15, 20, 28, 29, 40, 41, 43, 50, 51, 53, 55 above).
+72
+73
+74
+75
+76
+77
+78
+79
+80
+81
+82
+83
+84
+85
+86
+87
+88
