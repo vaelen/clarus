@@ -31,5 +31,13 @@ if [ "$SMOKE" = "1" ]; then
         -run 'TestSmokeBounceOn68k|TestRealEventLoopTickOn68k' \
         -count=1 -timeout 20m
 fi
+# transition: the new Make harness (go-retirement phase) runs alongside the
+# Go lane above until Task 15 deletes internal/. Both `|| true` guards come off
+# in Task 15, once the groups they name exist.
+make -j"$(sysctl -n hw.ncpu)" tools bootstrap
+make -j"$(sysctl -n hw.ncpu)" t1
+make test T=perfgate/ || true   # no perfgate scripts until Task 2
+if [ "$SMOKE" = "1" ]; then make smoke || true; fi   # no scripts until Task 13
+
 END=$(date +%s)
 echo "test-task.sh: PASS in $((END - START))s (smoke=$SMOKE)"

@@ -59,5 +59,8 @@ T2C_START=$(date +%s)
 CLARUS_BAKE_FULL=1 go test ./internal/bake -count=1 -timeout 10m
 echo "test-merge.sh: internal/bake full-corpus gate (CLARUS_BAKE_FULL=1) PASS in $(($(date +%s) - T2C_START))s"
 
+# transition: Make lane, hard-failing from Task 15
+make t2 || true
+
 END=$(date +%s)
 echo "test-merge.sh: PASS in $((END - START))s"
