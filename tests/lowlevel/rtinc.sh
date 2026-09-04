@@ -6,7 +6,7 @@
 #
 # Every "no runtime/clarus/ anywhere above this" cwd is a fresh dir under
 # $WORK (mktemp -d in $TMPDIR), the shell twin of Go's t.TempDir().
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 prog=$ROOT/testdata/rtinc/prog.cla
 noflag=$ROOT/testdata/rtinc/noflag.cla

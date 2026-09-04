@@ -3,7 +3,7 @@
 # the len>255 half of the strict-bounds check, which only bites text
 # (unbounded, so start+len can stay within the source while len alone still
 # exceeds what a str255 result can hold).
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 cat > "$WORK/main.c" <<'EOF'
 #include "rt.h"
 int main(void) {

@@ -11,8 +11,8 @@
 # body hash -- so the artifact's own body hash is genuinely correct for its
 # corrupted content, and this test cannot pass vacuously via
 # refuse_body.sh's generic mismatch path (asserted below).
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 CORRUPT=$WORK/corrupt-objcode-68k.clir
 "$CLARUSC" --bake-ir --lane 68k --corrupt-objcode-testonly -o "$CORRUPT" \

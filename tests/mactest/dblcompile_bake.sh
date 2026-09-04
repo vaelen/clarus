@@ -9,7 +9,7 @@
 # stays armed on every compile, the pending object staging never shrinks
 # below the runtime-function boundary, and the installed state is
 # identical on every compile.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$ROOT/tests/lib_mactest_host.sh" || die "helper lib failed to load"
 
 GROWTH_LIMIT=64

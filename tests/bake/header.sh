@@ -11,8 +11,8 @@
 # conn/fileh usage-gated, so neither pair is ever in its bake list).
 # sections 46 is bkSectionCount. version 7 is clir-load-perf Task 4's
 # format (hash swapped FNV-mul -> shift-add).
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 for lane in 68k c; do
     case $lane in

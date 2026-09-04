@@ -2,7 +2,7 @@
 # Port of internal/hostrt/rtsmoke_test.go TestRuntimeSmokeLog: rt_log writes
 # to stderr (never stdout) with a trailing newline, rendering embedded CR
 # bytes as LF.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 exe=$WORK/smokelog
 $CC -std=c99 -Wall -Werror -I "$HOSTRT" "$HOSTRT/rt_smoke_log_test.c" "$HOSTRT/rt.c" -o "$exe" || die "compile"
 "$exe" > "$WORK/out" 2> "$WORK/err" || die "run: $(cat "$WORK/err")"

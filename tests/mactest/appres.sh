@@ -10,7 +10,7 @@
 # The build deliberately omits a leading NAME arg (the first arg ends in
 # .cla), exercising build-mac.sh's appinfo-driven naming path: appres.cla's
 # `app AppResProbe` name sanitized to App-Res-Probe.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_CPRINT_MAC_TESTS
 

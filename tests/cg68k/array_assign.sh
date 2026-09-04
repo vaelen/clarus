@@ -11,7 +11,7 @@
 # TestSAssignWholeArrayHandleElemFailsClosed calls no requireVasm). The
 # t_done guard between them keeps a real fail-closed FAIL from being
 # masked by the exit-77 SKIP that require_vasm raises on a vasm-less box.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 # --- TestSAssignWholeArrayHandleElemFailsClosed (no assembler needed) --
 dir=$WORK/closed

@@ -3,7 +3,7 @@
 # cg68k/selfemit -- port of internal/cg68k/selfemit_test.go's
 # TestSelfEmit68k: clarusc emitting ITSELF (clarusc/main.cla) via emit68k
 # must succeed outright at the DEFAULT segment limit (no --seglimit).
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 run=$WORK/selfemit
 mkdir -p "$run" || die "mkdir $run"

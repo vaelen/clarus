@@ -2,7 +2,7 @@
 # lowlevel/incdedup.sh -- port of internal/lowlevel/incdedup_test.go
 # TestIncludeDedup: include-once identity is the LEXICALLY NORMALIZED path,
 # not the raw include spelling.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 main=$ROOT/testdata/incdedup/main.cla
 

@@ -3,8 +3,8 @@
 # TestEnvUnsetFailedPath: with no CLARUS_SERIAL_MODEM in the environment,
 # `conn.open(serial "modem:9600")` fails ENVIRONMENTALLY (never a panic) --
 # echo.cla's `on conn.failed` logs "failed: ..." and `quit 1`s.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_conntest.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_conntest.sh" || die "helper lib failed to load"
 
 conn_build echo || { t_fail build "$(cat "$WORK/echo.build")"; t_done; }
 t_pass build

@@ -13,7 +13,7 @@
 # the map's own end) plus the MacBinary framing ones (length a multiple of
 # 128, version byte 0, name length 1..63, fork fits, zero tail padding)
 # live in resfork.c and surface here as a "parse error: ..." exit 1.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 RESFORK=$TOOLS/resfork
 FIXTURE=$ROOT/testdata/cg68k/globals.cla

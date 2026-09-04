@@ -5,8 +5,8 @@
 # module; each pulls its module in via a relative `include "../X.cla"`) is
 # built with the CURRENT-source clarusc + `cc` and its stdout byte-compared
 # against the committed <base>.out golden. A nonzero exit is a failure.
-. "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_selfhost.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$ROOT/tests/lib_selfhost.sh" || die "helper lib failed to load"
 
 n=0
 for f in clarusc/test/*_test.cla; do

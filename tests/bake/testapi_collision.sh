@@ -8,8 +8,8 @@
 # bkInstallCheckerSymbolsForTestapi runs its preload before the user's own
 # checkPhase1 exactly as driveEarlySplice does. Asserts that parity
 # directly: the same "redeclaration of UiTestVerb" at the same file:line.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 BAKE=$WORK/rt68k.clir
 bake_ir 68k "$BAKE"

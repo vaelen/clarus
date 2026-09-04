@@ -7,7 +7,7 @@
 # SHARED testdata/run/emit_array.out golden (this lane predates the native
 # lane's own .out68k trailing-panic-line variant -- see abort_68k.sh) and
 # exit == its .exit golden.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_CPRINT_MAC_TESTS
 

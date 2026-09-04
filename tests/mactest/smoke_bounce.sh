@@ -5,7 +5,7 @@
 # bounce.cla + testdata/ui/smoke_bounce.events, built by `clarusc emit68k
 # --events`, no Retro68/cmake/C), compared byte-exact against the frozen
 # trace + PBM snap goldens. CLARUS_MAC_BLESS=1 rewrites them.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 

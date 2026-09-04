@@ -8,8 +8,8 @@
 # `undefined` there regardless of testapi; the bake path's own testapi
 # branch used to install checker visibility unconditionally on `testapi`
 # alone (driveIsUiProgram now gates it identically on both paths).
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 BAKE=$WORK/rt68k.clir
 bake_ir 68k "$BAKE"

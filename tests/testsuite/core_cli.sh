@@ -8,7 +8,7 @@
 #
 # The `all` case's expected case names, in order, are core_cases.txt (the
 # Go test's wantCases list).
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 cases=$ROOT/tests/testsuite/core_cases.txt
 ncases=$(wc -l < "$cases" | tr -d ' ')

@@ -4,7 +4,7 @@
 # not rebuild. Under the Make harness "a second ensure pass" is a second
 # `make bootstrap` (the Go stamp files are now mtime prerequisites), and the
 # artifact's mtime must be unchanged.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 exe=build-run/clarusc-current
 [ -x "$exe" ] || die "$exe missing: the bootstrap prerequisite did not run"
 before=$(stat -f %m "$exe") || die "stat before"

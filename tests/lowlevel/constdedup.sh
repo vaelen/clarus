@@ -4,7 +4,7 @@
 # DIFFERENT include routes in one compile (constdedup.cla's own explicit
 # `include "../../toolbox/files.cla"` plus the runtime's independent
 # uidialogs.cla -> toolbox/files.cla include) must not redeclaration-error.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 n=ConstDedupAcrossIncludePaths
 if "$CLARUSC" emit -o "$WORK/constdedup.c" "$ROOT/testdata/incdedup/constdedup.cla" \

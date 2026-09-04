@@ -2,8 +2,8 @@
 # Port of internal/reftest/reftest_test.go TestCheckCleanFences: every fence
 # index in tests/reftest/manifest.txt must check clean standalone under
 # clarusc -- exit 0 AND no output at all.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_reftest.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_reftest.sh" || die "helper lib failed to load"
 
 n=$(fences "$REFMD")
 for idx in $(manifest_indices); do

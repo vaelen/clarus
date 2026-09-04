@@ -16,7 +16,7 @@
 #
 # 15m boot budget (vs the plain suite's 5m): CompactMem before every
 # dispatch and every UiNewPtr call is a lot more heap walking.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 

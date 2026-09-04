@@ -5,7 +5,7 @@
 # must print OK, and a CLARUS_MEM_STRICT+PARANOID run must report live=0 --
 # the strict leak gate (the worst repeatable leak was rt_file_save/
 # rt_file_load leaking a whole rt_text per call).
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 exe=$WORK/sertest
 $CC -std=c99 -Wall -Werror -I "$HOSTRT" "$HOSTRT/rt_ser_test.c" "$HOSTRT/rt.c" -o "$exe" || die "compile"
 cd "$WORK" || die "cd $WORK"

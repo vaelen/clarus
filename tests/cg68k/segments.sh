@@ -10,7 +10,7 @@
 # which are separate Go tests that never touch vasm -- runs above the
 # `require_vasm` gate below. Without the vasm symlink this script still
 # reports those eight subcases, then exits 77 exactly where Go skips.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 RESFORK=$TOOLS/resfork
 

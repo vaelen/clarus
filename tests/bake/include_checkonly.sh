@@ -19,8 +19,8 @@
 # repo-root-relative and resolve against the FIXTURE's own location, not
 # the cwd. The EXIT trap is re-armed to remove them (and still $WORK,
 # lib.sh's own trap being replaced, not chained).
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 FX_CORE=$ROOT/checkonly_fixture_core.cla
 FX_TB=$ROOT/checkonly_fixture_toolbox_files.cla

@@ -9,7 +9,7 @@
 # cgListAddrFromRegs' INLINE bounds check + cgEmitPanic (the path whose
 # stale by-value-string ABI once printed an EMPTY message); divzero/modzero
 # through the integer-division guards.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 

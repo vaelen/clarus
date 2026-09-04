@@ -15,7 +15,7 @@
 #
 # The whole script skips without the m68k cross-compiler, exactly as the
 # Go test's m68kGCC(t) skipped.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 GCC=$ROOT/toolchain/bin/m68k-apple-macos-gcc
 require_tool "$GCC"

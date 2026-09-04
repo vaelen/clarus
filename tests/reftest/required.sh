@@ -3,8 +3,8 @@
 # four full worked programs must all be in the check-clean manifest, located
 # by the same distinctive content substrings the Go test uses (robust to index
 # shifts from future doc edits). All substrings of a program must match.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_reftest.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_reftest.sh" || die "helper lib failed to load"
 
 NFENCE=$(fences "$REFMD")
 

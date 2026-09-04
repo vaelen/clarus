@@ -11,7 +11,7 @@
 # No bless path: the Go test had none, and these three goldens are pinned
 # format baselines -- an env var that rewrites them and turns the test green is
 # exactly what must not exist here.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 # cc's warnings on the emitted C are pre-existing noise; show them only on a
 # build failure, the way the Go test's CombinedOutput did.

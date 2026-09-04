@@ -9,7 +9,7 @@
 # app68k/res68k regression. So these compare with a plain `cmp` and never
 # call golden_check -- there is no bless path to reach at all, not even an
 # unset variable name someone could export.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 RESFORK=$TOOLS/resfork
 GOLD=$ROOT/testdata/mac/resparity

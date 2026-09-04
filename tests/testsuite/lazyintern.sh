@@ -20,7 +20,7 @@
 # Limitation, inherited verbatim: convention-enforced, not exhaustive. A
 # guard spelled `< 0` instead of `== -1`, or a bool guard named anything
 # other than `*Inited`, slips through undetected.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 set -- clarusc/*.cla
 [ -f "$1" ] || die "glob clarusc/*.cla matched no files"

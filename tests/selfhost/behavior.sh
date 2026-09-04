@@ -10,8 +10,8 @@
 # since they are independent of the new golden. testdata/run additionally
 # runs under the strict+paranoid allocator and its live-leak count is
 # checked against an optional .leaks golden (default 0).
-. "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_selfhost.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$ROOT/tests/lib_selfhost.sh" || die "helper lib failed to load"
 
 runnable_fixtures > "$WORK/fixtures"
 

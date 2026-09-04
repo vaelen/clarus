@@ -9,8 +9,8 @@
 # coreCLIFiles and coresuite_test.go's coreGUIFiles if either changes.
 # runner.cla calls every cases_* family unconditionally, so a composition
 # that drops one fails to CHECK at all.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 require_env CLARUS_BAKE_FULL
 
 BAKE=$WORK/rt68k.clir

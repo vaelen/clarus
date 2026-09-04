@@ -4,7 +4,7 @@
 # source length (Ch3: "slice out of range"). Its C main stays inline here,
 # as it is in the Go test -- only the five OK-printing mains were extracted
 # to runtime/host/rt_smoke*_test.c.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 cat > "$WORK/main.c" <<'EOF'
 #include "rt.h"
 int main(void) {

@@ -1,18 +1,13 @@
 #!/bin/bash
 # test-task.sh [--smoke]
-# T1 gate (per-task): the ungated test gauntlet -- every package except
-# internal/selfhost (which alone needs the 30m timeout headroom, and is
-# reserved for the T2/merge gate; see test-merge.sh) -- run with
-# `-count=1` to bust the Go test cache. Plain `go test` caches a package's
-# result keyed on its .go inputs; it does NOT know about .cla fixtures a
-# test reads at runtime (e.g. emitui-style golden/snapshot tests), so an
-# edited .cla with unchanged .go can silently replay a stale PASS.
-# `-count=1` forces a real re-run every time, closing that silent-red hole.
+# T1 gate (per-task): the Make runner's t1 body (every tests/ group except
+# selfhost/ and perfgate/, in parallel), then perfgate alone (it flakes
+# under contention), then with --smoke the two native emulator boots
+# (CLARUS_MAC_TESTS=1, needs Retro68 + Mini vMac). No result cache: every
+# invocation re-runs every selected script.
 #
-# --smoke: additionally runs the two native-68k emulator smoke tests
-# (gated behind CLARUS_MAC_TESTS=1, needs the Retro68 toolchain + Mini
-# vMac). Opt-in because it's slow relative to the T1 body; pass it
-# whenever a task touches runtime/ or clarusc/.
+# --smoke is opt-in because it boots a whole emulated Mac; pass it whenever
+# a task touches runtime/ or clarusc/.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -25,19 +20,22 @@ for arg in "$@"; do
 done
 
 START=$(date +%s)
-go test $(go list ./... | grep -v /internal/selfhost) -count=1 -timeout 30m
-if [ "$SMOKE" = "1" ]; then
-    CLARUS_MAC_TESTS=1 go test ./internal/mactest \
-        -run 'TestSmokeBounceOn68k|TestRealEventLoopTickOn68k' \
-        -count=1 -timeout 20m
-fi
-# transition: the new Make harness (go-retirement phase) runs alongside the
-# Go lane above until Task 15 deletes internal/. The smoke line's `|| true`
-# guard comes off in Task 15, once the group it names exists.
-make -j"$(sysctl -n hw.ncpu)" tools bootstrap
-make -j"$(sysctl -n hw.ncpu)" t1
-make test T=perfgate/
-if [ "$SMOKE" = "1" ]; then make smoke || true; fi   # no scripts until Task 13
+J=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
-END=$(date +%s)
-echo "test-task.sh: PASS in $((END - START))s (smoke=$SMOKE)"
+# transition (go-retirement Task 15): the retiring Go lane still runs first
+# so the two harnesses stay side-by-side until this block is deleted.
+if [ "${GO_LANE:-1}" = 1 ]; then
+    go test $(go list ./... | grep -v /internal/selfhost) -count=1 -timeout 30m
+    if [ "$SMOKE" = "1" ]; then
+        CLARUS_MAC_TESTS=1 go test ./internal/mactest \
+            -run 'TestSmokeBounceOn68k|TestRealEventLoopTickOn68k' \
+            -count=1 -timeout 20m
+    fi
+fi
+
+make -j"$J" tools bootstrap
+make -j"$J" t1
+make test T=perfgate/
+if [ "$SMOKE" = "1" ]; then make smoke; fi
+
+echo "test-task.sh: PASS in $(( $(date +%s) - START ))s (smoke=$SMOKE)"

@@ -13,8 +13,8 @@
 # body byte lands on the module count's high byte, so the result is NOT
 # expected to still parse (Go's own byte patch behaves identically); all
 # this checks is that the flip is a single in-place byte at body_off.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 VALID=$WORK/valid-68k.clir
 bake_ir 68k "$VALID"

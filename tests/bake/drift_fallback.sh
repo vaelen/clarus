@@ -13,8 +13,8 @@
 # declFileTab's verbatim bake-time string, and the fixture -- placed at the
 # SAME tmpRoot the bake's --rtdir pointed into -- resolves its own
 # `include "toolbox/files.cla"` to that exact string.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 # Collapse doubled slashes first: TMPDIR usually ends in "/", so lib.sh's
 # own mktemp template leaves $WORK looking like ".../T//clarus-test.XXXX",

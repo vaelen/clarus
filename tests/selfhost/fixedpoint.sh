@@ -14,8 +14,8 @@
 # Neither emission passes --rtdir: clarusc searches runtime/clarus/ from the
 # cwd upward, and the runner's cwd is the repo root, so it lands on the same
 # runtime the Go test found by walking up from internal/selfhost.
-. "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_selfhost.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$ROOT/tests/lib_selfhost.sh" || die "helper lib failed to load"
 
 emit_gen() { # emit_gen COMPILER OUT.c
     if ! "$1" emit -o "$2" "$ROOT/clarusc/main.cla" > "$WORK/emit.log" 2>&1; then

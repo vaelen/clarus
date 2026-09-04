@@ -6,7 +6,7 @@
 # simplest real-mode trap shape), built through scripts/build-mac.sh
 # --test and booted. Must exit 3 with the fixture's own .err text in the
 # captured log.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_CPRINT_MAC_TESTS
 

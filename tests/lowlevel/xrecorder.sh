@@ -5,7 +5,7 @@
 # nonzero exit, not lowering's old "list index out of range" panic. Same
 # fixture as internal/selfhost's TestErrorGoldens (single source of truth),
 # but visible to the fast gate.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 n=XRecOrderDiagnoses
 "$CLARUSC" emit -o "$WORK/out.c" "$ROOT/testdata/errors/xrec_order.cla" \

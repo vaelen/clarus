@@ -9,8 +9,8 @@
 # PAIRFB=ignore because the Go original makes no "falling back" assertion
 # here (unlike runEmit68k's own callers); the flags are its own verbatim
 # `--rtdir runtime/clarus/ --testapi`.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 require_env CLARUS_BAKE_FULL
 
 BAKE=$WORK/rt68k.clir

@@ -11,8 +11,8 @@
 # clarusc echoes back -- because they were captured from internal/selfhost.
 # tests/selfhost is at the same nesting depth, so running from here makes
 # the path round-trip unchanged with no golden edits.
-. "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_selfhost.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$ROOT/tests/lib_selfhost.sh" || die "helper lib failed to load"
 
 cd "$ROOT/tests/selfhost" || die "cd $ROOT/tests/selfhost"
 

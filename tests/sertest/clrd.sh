@@ -8,7 +8,7 @@
 # live re-capture of clarusc's current output -- see clrdcompare_test.go's
 # package doc comment. CLRD_BLESS=1 rewrites them; only ever do that
 # deliberately.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 GDIR=testdata/sertest/clrd_goldens
 

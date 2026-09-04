@@ -9,7 +9,7 @@
 # is known by inspection -- a black ring with an enclosed white hole,
 # surrounded by border-reachable white -- and checks the specific mask
 # bits with od. Nothing here reimplements the flood fill.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 bin=$WORK/pbm2icn
 $CC -Wall -o "$bin" "$ROOT/scripts/pbm2icn.c" > "$WORK/cc.log" 2>&1 \

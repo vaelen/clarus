@@ -5,7 +5,7 @@
 # byte-for-byte, exit must be 0, and the mem report must show live=0.
 # (CLARUS_MEM_REPORT is left unset, so rt_mem_exit_check writes the
 # "##CLARUS-MEM## live=N" header to stderr -- see rt_mem_host.inc.)
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 for f in testdata/lowlevel/*.cla; do
     n=$(basename "$f" .cla)
     if ! host_build "$WORK/$n" "$f" > "$WORK/$n.build" 2>&1; then

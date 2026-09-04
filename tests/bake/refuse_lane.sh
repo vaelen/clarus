@@ -3,8 +3,8 @@
 # TestRtbakeLaneMismatchRefused: a c-lane bake fed to emit68k must be
 # refused -- a stamp-refusal-class error with a clear message, nonzero exit
 # (the controller's own resolution for "wrong lane").
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 CBAKE=$WORK/rtc.clir
 bake_ir c "$CBAKE"

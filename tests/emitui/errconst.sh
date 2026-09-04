@@ -5,7 +5,7 @@
 # not this value's shape), so `clarusc emit` must fail loudly
 # (lower.cla's lowRequireIntLit) instead of silently reading a wrong value:
 # nonzero exit, and the diagnostic on STDERR (not stdout).
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 fixture=testdata/emitui/err_const_at.cla
 want="window property requires an integer literal"

@@ -8,8 +8,8 @@
 # -O1+ used to prove the following mask dead and delete it, so a
 # HOST-written header carried the raw unmasked value the real 68k AND.L
 # never produces, which is what made the Mac refuse the artifact.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 for lane in 68k c; do
     bake_ir "$lane" "$WORK/$lane.clir"

@@ -24,8 +24,12 @@ start=$(date +%s)
 build-run/tools/timeout "$t" sh "$script" > "$log" 2>&1
 rc=$?
 secs=$(( $(date +%s) - start ))
-if [ $rc -eq 77 ]; then st=SKIP
-elif [ $rc -eq 124 ]; then st="FAIL(timeout ${t}s)"
-elif [ $rc -eq 0 ] && ! grep -q '^FAIL ' "$log"; then st=PASS
+# A FAIL line in the log beats every other verdict except a timeout: a
+# script that reported a failing subcase and THEN skipped (or exited 0) is
+# a FAIL, not a SKIP -- so the grep arm is tested before the rc 77 arm.
+if [ $rc -eq 124 ]; then st="FAIL(timeout ${t}s)"
+elif grep -q '^FAIL ' "$log"; then st="FAIL(exit $rc)"
+elif [ $rc -eq 77 ]; then st=SKIP
+elif [ $rc -eq 0 ]; then st=PASS
 else st="FAIL(exit $rc)"; fi
 echo "$st $name ${secs}s" | tee "$result"

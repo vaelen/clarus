@@ -9,7 +9,7 @@
 # No --bake on this lane (build-mac.sh has no such flag; the Go twin passes
 # none either), so cases_resources.cla's baked-resource lookup has nothing
 # to find here.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_CPRINT_MAC_TESTS
 

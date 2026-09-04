@@ -4,7 +4,7 @@
 # lowCheckSerializableFields) instead of silently emitting an unserializable
 # layout table -- nonzero exit, and the value-field message on stderr. No
 # golden: this fixture never successfully emits.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 WANT='file.save: record Note field body is not a value type'
 

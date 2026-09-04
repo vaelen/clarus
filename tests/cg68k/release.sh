@@ -12,7 +12,7 @@
 # 32 + slot*8 + 2), a same-segment call through `BSR.W LBL_n`/`JSR LBL_n`
 # -- and a68 label numbers restart at 0 per segment, so the label form is
 # only counted inside rtTextRelease's OWN segment.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 # --- helpers ---------------------------------------------------------
 

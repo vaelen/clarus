@@ -12,8 +12,8 @@
 # Arbiter rule: an INTENTIONAL behavior change in clarusc/*.cla is fixed by
 # re-blessing the affected .behavior goldens (selfhost/behavior), not here --
 # this script only ever compares the two live-built generations.
-. "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_selfhost.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$ROOT/tests/lib_selfhost.sh" || die "helper lib failed to load"
 
 runnable_fixtures > "$WORK/fixtures"
 

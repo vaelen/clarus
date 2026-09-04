@@ -8,8 +8,8 @@
 # script-side CorruptStampFixture (bake.go), because a committed blob
 # would go stale the moment clarusc/clarusc.c is regenerated and the real
 # stamp changes.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 VALID=$WORK/valid-68k.clir
 CORRUPT=$WORK/corrupt-stamp-68k.clir

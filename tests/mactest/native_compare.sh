@@ -8,7 +8,7 @@
 # byte-identical to the host binary's stdout, with both exit codes 0.
 # The CODE-segment count each build produced is logged (visible evidence
 # that packing really did or did not split the app).
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 

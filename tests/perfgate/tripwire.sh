@@ -6,7 +6,7 @@
 # being merely slow, only on being more than 2x the recorded baseline.
 # Excluded from `make t1` (timing under a parallel load is meaningless); run
 # by `make t2` / `make test T=perfgate/` on its own.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 base=$(grep -v '^#' tests/perfgate/baseline.txt | grep -v '^$' | head -1)
 [ -n "$base" ] || die "tests/perfgate/baseline.txt: no baseline value line found"
 i=1

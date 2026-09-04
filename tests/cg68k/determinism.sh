@@ -4,7 +4,7 @@
 # fixture, the one most likely to expose non-deterministic label numbering
 # or map-iteration-order dependence) and require the two out.seg1.dat byte
 # streams to be identical.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 fixture=$ROOT/testdata/cg68k/control.cla
 [ -f "$fixture" ] || die "missing fixture $fixture"

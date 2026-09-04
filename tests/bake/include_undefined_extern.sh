@@ -13,8 +13,8 @@
 #
 # The fixture must live at the repo root (repo-root-relative include); the
 # EXIT trap is re-armed to remove it, and still $WORK.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 NAME=checkonly_undefined_extern_fixture.cla
 FIXTURE=$ROOT/$NAME

@@ -9,7 +9,7 @@
 # stdout AND stderr are both matched, combined, exactly as the Go test did:
 # lower.cla's lowUnsupported diagnostics go to stderr, while check.cla's own
 # checker diagnostics print via `alert` (main.cla), i.e. stdout.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 # fixture|expected substring.  Comments on each case, keyed to the Go test:
 #   popup_unbound         lower.cla lowWidgetDesc popup guard: no `binds:`

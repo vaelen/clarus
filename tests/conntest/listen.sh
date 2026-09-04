@@ -28,8 +28,8 @@
 #     the only legitimate shapes are 1 byte (no greeting) and 7 bytes
 #     (greeting + echo), so this tolerates no more arbitrary leading
 #     garbage than Go's own two-byte-exact-shapes peek did.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_conntest.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_conntest.sh" || die "helper lib failed to load"
 
 conn_build echo || { t_fail build "$(cat "$WORK/echo.build")"; t_done; }
 t_pass build

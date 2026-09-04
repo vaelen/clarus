@@ -5,7 +5,7 @@
 # segment it emits, assemble the just-emitted out.segN.s with vasm and
 # require the result to be byte-identical to out.segN.dat (cg68k.cla's own
 # encoder, via asm68k.cla's a68Bytes()).
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 require_vasm
 

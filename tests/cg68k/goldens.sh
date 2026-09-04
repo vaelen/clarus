@@ -6,7 +6,7 @@
 # out.segN.s against its own committed golden (segment 1 keeps the
 # un-suffixed <name>.s; segment N>1 uses <name>.segN.s).
 # CLARUS_CG68K_BLESS=1 rewrites the goldens instead of comparing.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 GDIR=$ROOT/testdata/cg68k
 

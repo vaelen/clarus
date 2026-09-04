@@ -14,8 +14,8 @@
 # Unlike the emit68k halves, the C-lane forks are written side by side in
 # ONE directory under distinct names, exactly as the Go original does: no
 # MacBinary wrap, so no embedded output filename to diverge on.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 require_env CLARUS_BAKE_FULL
 
 BAKE=$WORK/rtc.clir

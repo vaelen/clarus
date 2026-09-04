@@ -19,7 +19,7 @@
 # script's emit + extraction by hand, write the bytes to
 # uiblob_probe.blob.golden, regenerate the dump with build-run/tools/uiblob,
 # and re-verify the dump against the format spec BY HAND.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 fixture=testdata/emitui/uiblob_probe.cla
 "$CLARUSC" emit -o "$WORK/probe.c" "$fixture" || die "clarusc emit $fixture"

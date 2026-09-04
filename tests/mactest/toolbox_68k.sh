@@ -7,7 +7,7 @@
 # case here calls a REAL Toolbox trap or reads the REAL screen framebuffer
 # in-process. Content-based gate, no trace/snap goldens; each of the 35
 # result lines is re-emitted so the runner reports per case.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 

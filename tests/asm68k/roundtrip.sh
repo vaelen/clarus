@@ -9,7 +9,7 @@
 # SKIPs (via require_vasm) when vasm/vasmm68k_mot is missing or was built
 # without the bin output module -- an environment gap, not a code bug. See
 # vasm_test.go's requireVasm doc comment for the rebuild recipe.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 require_vasm
 

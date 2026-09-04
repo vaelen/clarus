@@ -9,8 +9,8 @@
 # closes -- for longer than the deadline we hold the program to (`sleep
 # 4000` vs `timeout 2`), so an exit that only happened because this peer
 # went away could not pass this test.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_conntest.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_conntest.sh" || die "helper lib failed to load"
 
 conn_build echo_abort || { t_fail build "$(cat "$WORK/echo_abort.build")"; t_done; }
 t_pass build

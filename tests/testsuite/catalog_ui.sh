@@ -12,7 +12,7 @@
 # runtime/clarus/`, deliberately NOT lib.sh's absolute $RTDIR (nor its
 # emit68k helper) -- so the runtime's own "../../toolbox/standardfile.cla"
 # normalizes to exactly the positional spelling and the dedup fires.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 cat > "$WORK/compose.cla" <<'CLA_EOF'
 window Main {

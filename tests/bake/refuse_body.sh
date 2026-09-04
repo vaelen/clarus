@@ -9,8 +9,8 @@
 #
 # `clirhdr --flip-body` is the script-side CorruptBodyFixture (bake.go):
 # generated, not committed, same reasoning as refuse_stamp.sh's own note.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 VALID=$WORK/valid-body-68k.clir
 CORRUPT=$WORK/corrupt-body-68k.clir

@@ -3,7 +3,7 @@
 # the bootstrapped current-source clarusc must actually work -- run it in
 # default check mode over a known-clean corpus fixture and require a clean
 # exit with no output at all.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 "$CLARUSC" testdata/valid/bookmarks.cla > "$WORK/out" 2>&1; rc=$?
 [ $rc -eq 0 ] || die "clarusc check testdata/valid/bookmarks.cla not clean: exit $rc
 $(cat "$WORK/out")"

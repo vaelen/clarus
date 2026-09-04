@@ -6,7 +6,7 @@
 # `name:` property, the app section's label, the first file's basename),
 # the icon path's join against the DECLARING file's directory, and checker
 # errors passing straight through (exit 1 + diagnostic, no special-casing).
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 code=0
 run_appinfo() {

@@ -11,7 +11,7 @@
 # "runtime error: ..." trace line to `out` IMMEDIATELY via natAlert, ahead
 # of natQuit's buffered-log trailer, so on THIS lane only an aborting
 # fixture's `out` ends with that extra line.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 

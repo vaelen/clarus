@@ -9,7 +9,7 @@
 #                              2 and writes no output at all.
 #   TestBakeNoFlagByteIdentity two no-flag builds of the same fixture, in
 #                              two directories, are byte-identical.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 fixture=$ROOT/testdata/ui/about.cla
 bakefile=$ROOT/testdata/cg68k/tickprobe.cla

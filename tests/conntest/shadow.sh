@@ -8,8 +8,8 @@
 #
 # No TCP peer needed: `conn.open` on the GLOBAL takes the synchronous
 # env-unset `failed` path (envunset.sh's own contract) before useLocal() runs.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_conntest.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_conntest.sh" || die "helper lib failed to load"
 
 conn_build conn_shadow_local || { t_fail build "$(cat "$WORK/conn_shadow_local.build")"; t_done; }
 t_pass build

@@ -7,8 +7,8 @@
 # The slice is the six multi-segment testdata/cg68k fixtures the Go file
 # names verbatim; the exhaustive no-allowlist sweep is
 # full_corpus_cg68k.sh (CLARUS_BAKE_FULL=1).
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 BAKE=$WORK/rt68k.clir
 bake_ir 68k "$BAKE"

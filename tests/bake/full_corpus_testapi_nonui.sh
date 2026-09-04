@@ -9,8 +9,8 @@
 # `testapi` alone, so a non-UI --testapi build diverged (486 bytes
 # differing, 33152 vs 33024). Fixed by driveIsUiProgram gating both the
 # check-time and the IR-truncation installs on `testapi and isUiProg`.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 require_env CLARUS_BAKE_FULL
 
 BAKE=$WORK/rt68k.clir

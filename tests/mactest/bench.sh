@@ -11,7 +11,7 @@
 # sum to 20m, so the outer deadline has to clear them plus both builds.
 #
 # Run: CLARUS_MAC_TESTS=1 CLARUS_BENCH68K=1 make test T=mactest/bench
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_BENCH68K
 require_env CLARUS_MAC_TESTS

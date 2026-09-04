@@ -2,8 +2,8 @@
 # Port of internal/bake/bake_test.go's TestBakeTwiceIdentical: baking the
 # same lane twice must be byte-identical (the runtime-ir-bake design
 # spec's "Bake determinism gets its own check" success criterion).
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 for lane in 68k c; do
     bake_ir "$lane" "$WORK/a-$lane.clir"

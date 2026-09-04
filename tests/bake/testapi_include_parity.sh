@@ -12,8 +12,8 @@
 # The fixture must live at the repo root: `include "toolbox/files.cla"` is
 # repo-root-relative and resolves against the FIXTURE's own location, not
 # the cwd. The EXIT trap is re-armed to remove it, and still $WORK.
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_bake.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 NAME=testapi_include_parity_fixture.cla
 FIXTURE=$ROOT/$NAME

@@ -7,7 +7,7 @@
 # positional files) over driver + every catalog file.
 #
 # The driver text is copied verbatim from catalog_test.go's catalogDriver.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 
 cat > "$WORK/driver.cla" <<'CLA_EOF'
 on App.startCLI(args: list of string) {

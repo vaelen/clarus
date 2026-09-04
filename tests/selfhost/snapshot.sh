@@ -12,8 +12,8 @@
 # The samples are named with the same "../../testdata/..." relative paths the
 # Go test used, from the same nesting depth, so a diagnostic that echoes its
 # input path is compared like-for-like on both sides.
-. "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_selfhost.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$ROOT/tests/lib_selfhost.sh" || die "helper lib failed to load"
 
 stage=$WORK/snap
 mkdir -p "$stage"

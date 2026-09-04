@@ -3,7 +3,7 @@
 # overflow in slice bounds checking -- start=INT32_MAX, len=5 would wrap
 # start+len negative in the old code and bypass the check. The reordered
 # check (start > srclen-len) avoids the addition entirely.
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 cat > "$WORK/main.c" <<'EOF'
 #include "rt.h"
 #include <stdint.h>

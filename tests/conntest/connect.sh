@@ -6,8 +6,8 @@
 # a 0-255 sweep byte-exactly, echoes a SECOND write too (proving `received`
 # fires more than once), then closes itself on "QQQ" -- after which the
 # process must exit on its own, unkilled (the lifetime rule).
-. "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_conntest.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_conntest.sh" || die "helper lib failed to load"
 
 conn_build echo || { t_fail build "$(cat "$WORK/echo.build")"; t_done; }
 t_pass build

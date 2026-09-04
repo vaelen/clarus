@@ -1,5 +1,5 @@
 #!/bin/sh
-. "$(dirname "$0")/../lib.sh"
+. "$(dirname "$0")/../lib.sh" || exit 2
 "$TOOLS/timeout" 1 sleep 5; rc=$?
 [ $rc -eq 124 ] && t_pass expiry || t_fail expiry "exit $rc, want 124"
 "$TOOLS/timeout" 5 sh -c 'exit 7'; rc=$?
