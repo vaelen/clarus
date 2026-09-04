@@ -5,7 +5,7 @@
 # marker file at the volume root, install the roundtrip fixture into
 # Startup Items, boot, let it self-launch/read/write/quit, quit Snow, and
 # check everything that came back out.
-. "$(dirname "$0")/../../lib.sh"
+. "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
 

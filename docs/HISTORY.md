@@ -4926,10 +4926,12 @@ references verbatim: they were accurate when written, and this section is
 the record of what replaced them.
 
 **What it did.** The Go COMPILER was already deleted (tag
-`go-compiler-final`, 2026-08-05); the Go TEST harness was not. 53
-`internal/**/*_test.go` files (~14,000 lines) still drove every gate, so
-the project still needed a Go toolchain to be verified at all. This phase
-ported all of it and deleted `internal/` and `go.mod`.
+`go-compiler-final`, 2026-08-05); the Go TEST harness was not. 58 files and
+14,268 lines of Go under `internal/` (53 `*_test.go` plus five non-test
+helpers) still drove every gate, so the project still needed a Go toolchain
+to be verified at all. This phase ported all of it — into 117 test scripts,
+the frozen `lib.sh` plus seven group helpers, and five C tools — and
+deleted `internal/` and `go.mod`.
 
 **The replacement.**
 

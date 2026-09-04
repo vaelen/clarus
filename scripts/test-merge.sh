@@ -32,23 +32,6 @@ stage() {
     echo "test-merge.sh: $_name PASS in $(( $(date +%s) - _t0 ))s"
 }
 
-# transition (go-retirement Task 15): the retiring Go lane still runs first
-# so the two harnesses stay side-by-side until this block is deleted.
-if [ "${GO_LANE:-1}" = 1 ]; then
-    T0=$(date +%s)
-    go test $(go list ./... | grep -v /internal/selfhost) -count=1 -timeout 30m
-    echo "test-merge.sh: go T1 body PASS in $(( $(date +%s) - T0 ))s"
-    T0=$(date +%s)
-    go test ./internal/selfhost -count=1 -timeout 30m
-    echo "test-merge.sh: go internal/selfhost PASS in $(( $(date +%s) - T0 ))s"
-    T0=$(date +%s)
-    CLARUS_MAC_TESTS=1 go test ./internal/mactest -count=1 -timeout 90m
-    echo "test-merge.sh: go internal/mactest (gated) PASS in $(( $(date +%s) - T0 ))s"
-    T0=$(date +%s)
-    CLARUS_BAKE_FULL=1 go test ./internal/bake -count=1 -timeout 10m
-    echo "test-merge.sh: go internal/bake full corpus PASS in $(( $(date +%s) - T0 ))s"
-fi
-
 make -j"$J" tools bootstrap
 stage "t1 body"        make -j"$J" t1
 stage "perfgate/"      make test T=perfgate/

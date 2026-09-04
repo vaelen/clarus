@@ -11,7 +11,7 @@
 # exit, byte-identical fork) in 3302s (~55.0m), landing almost exactly on
 # this default. Overridable via CLARUS_MACRESIDENT_SETTLE, the same env var
 # macresident.sh reads (both tune the same kind of wait).
-. "$(dirname "$0")/../../lib.sh"
+. "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
 

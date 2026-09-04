@@ -320,17 +320,18 @@ binary (TODO.md). Spec:
 **`go-retirement` phase (branch `go-retirement`, 2026-09-05) is COMPLETE:**
 the project no longer depends on a Go toolchain at all. The Go compiler was
 already deleted (tag `go-compiler-final`); what remained was the TEST
-harness — 53 `internal/**/*_test.go` files, ~14,000 lines of Go, driving
-every gate from `hostrt` C unit checks to Mini vMac and Snow emulator
-boots. All of it is ported to a Make + POSIX-shell runner: a root
-`Makefile` (`make -j t1`, `make t2`, `make test T='<group>/<name>'`,
-`make smoke`), a frozen `tests/lib.sh` vocabulary plus per-group
-`tests/lib_<group>.sh` helpers, one script per former Go test, and five
-small C tools (`tests/tools/{timeout,uiblob,resfork,clirhdr,tcpdrive}.c`,
-~1,400 lines) replacing the Go-side helpers that could not be expressed in
-sh — a process-group-killing `timeout`, the UI-blob and resource-fork
-dumpers, the CLIR-header reader/corrupter, and the TCP driver the
-`connection` tests need. `internal/` and `go.mod` are deleted; the two
+harness — 58 files and 14,268 lines of Go under `internal/` (53
+`*_test.go` plus five non-test helpers), driving every gate from `hostrt`
+C unit checks to Mini vMac and Snow emulator boots. All of it is ported to
+a Make + POSIX-shell runner: a root `Makefile` (`make -j t1`, `make t2`,
+`make test T='<group>/<name>'`, `make smoke`), a frozen `tests/lib.sh`
+vocabulary plus per-group `tests/lib_<group>.sh` helpers, 117 test scripts
+(~7,300 lines of sh all in, helpers and runner included), and five small C
+tools (`tests/tools/{timeout,uiblob,resfork,clirhdr,tcpdrive}.c`, 1,442
+lines) replacing the Go-side helpers that could not be expressed in sh —
+a process-group-killing `timeout`, the UI-blob and resource-fork dumpers,
+the CLIR-header reader/corrupter, and the TCP driver the `connection`
+tests need. `internal/` and `go.mod` are deleted; the two
 wrappers (`scripts/test-task.sh`, `scripts/test-merge.sh`) now call Make
 stages and print a `PASS in Ns` line each.
 Notable design points: the runner has NO result cache (every invocation
@@ -347,7 +348,16 @@ produced a green PASS with zero assertions — every helper source line is
 now `... || die "helper lib failed to load"`. The perfgate tripwire's
 long-standing under-load flake (`docs/TODO.md`) is closed structurally:
 `perfgate/` is excluded from `t1` and run alone by both wrappers, and the
-baseline was re-measured on a quiet host at the end of the phase. Spec:
+baseline was re-measured on a quiet host at the end of the phase (and the
+idle host turned out ~40% SLOWER than a warm one on this single-threaded
+emit, which is why `tests/perfgate/baseline.txt` now records both
+regimes). The Snow (System 7 / Mac II) lane came across too, opt-in behind
+`CLARUS_SNOW_TESTS=1`; its `clarusc_bake` script PASSED on real hardware
+at 3303 s, discharging the standing `ClarusC.APPL` bake-path obligation
+earlier phases owed. Two Snow scripts (`macresident`,
+`macresident_failed_compile`) are ported but not yet live-validated, and
+`roundtrip` is red on this System 7 machine exactly as its Go twin was —
+both filed in `docs/TODO.md`. Spec:
 `docs/superpowers/specs/2026-09-05-go-retirement-design.md`; plan
 `docs/superpowers/plans/2026-09-05-go-retirement.md`; ledger
 `.superpowers/sdd/2026-09-05-go-retirement/`.

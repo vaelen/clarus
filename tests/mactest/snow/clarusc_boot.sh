@@ -6,7 +6,7 @@
 # installs it into Startup Items, boots Snow, and checks the captured
 # trace for a window-open line and a clean exit. Snow, not Mini vMac:
 # ClarusC.APPL's SIZE(-1) partition does not fit a 4MB Mac Plus.
-. "$(dirname "$0")/../../lib.sh"
+. "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
 

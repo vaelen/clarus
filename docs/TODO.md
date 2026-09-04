@@ -259,7 +259,7 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   (final review, noted alongside Important 3) — the abort-aware
   `while (!clar_aborting && clar_fn_rtConnAlive())` loop shape
   (`clarusc/cprint.cla`'s `cpEmitMain`) is behaviorally covered by
-  `internal/conntest`'s `TestAbortDuringPump` (drives the real compiled
+  `tests/conntest/abort.sh` (drives the real compiled
   binary through an abort mid-pump and asserts prompt exit), but there is
   no byte-level golden pinning the emitted C text itself — a future
   cprint.cla refactor could silently change the loop's shape (e.g. drop
@@ -296,9 +296,10 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 - **STILL LIVE: an `emit68k` build whose generated code references a
   runtime function that was NOT spliced into that build crashes
   clarusc** (`runtime error: list index out of range`, exit 3) instead
-  of emitting a diagnostic — found by Task 5 when
-  `internal/cg68k/segment_test.go`'s `segmentationFixture` (a native
-  composition of the whole core suite) tried composing
+  of emitting a diagnostic — found by Task 5 when the multi-segment
+  fixture (`segment_test.go`'s `segmentationFixture`, now
+  `tests/cg68k/segments.sh`'s core-CLI composition — a native composition
+  of the whole core suite) tried composing
   `cases_fileh.cla` before the native `filehandle` lane existed
   (`fileh_68k.cla` was Task 6's; at Task 5's own tip, `rtFh*` calls had
   no spliced module to resolve against). Task 5's report ("Golden churn
@@ -316,7 +317,8 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   untouched.
 - **Testing-strategy gap the FIXED item above exposed**: `--rtbake` (the
   fast baked-IR compile path `ClarusC.APPL` uses by default) was only
-  ever exercised by `internal/bake`'s `CLARUS_BAKE_FULL=1` gate, which
+  ever exercised by the `CLARUS_BAKE_FULL=1` full-corpus gate (now
+  `tests/bake/full_corpus_*.sh`), which
   is opt-in and runs only inside T2 (`scripts/test-merge.sh`) — not T1,
   not any individual task's `--smoke` run. A whole phase (8 tasks, one
   new type end-to-end) shipped with a `--rtbake`-breaking bug that
@@ -470,16 +472,19 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 - **The opt-in cprint-lane toolbox twin fails to link since `main`'s
   `520f227`**: `CLARUS_MAC_TESTS=1 CLARUS_CPRINT_MAC_TESTS=1 make test
   T=mactest/toolbox_mac` dies in
-  `build-mac.sh` with `undefined reference to rt_ext_TbFreeMem` —
+  `build-mac.sh` with `undefined reference to rt_ext_TbFreeMem` (and, since
+  the string-perf phase added the `ClearWarm` case,
+  `rt_ext_TbClearWarmFreeMem` too — same gap, one more symbol; both
+  observed on both lanes during go-retirement Task 15) —
   `testsuite/toolbox/cases_leak.cla` (68k-call-result-release's
   `LeakCheck`) declares `external func TbFreeMem(): int = trap 0xA01C
   reg`, and the cprint lane needs a hand-written `rt_ext_<Name>` C shim
   in `runtime/mac/` for every extern trap (see the existing
   `rt_ext_BlockMoveData`/`rt_ext_DateToSeconds` shims); none exists for
   `TbFreeMem`. Pre-existing, found by the textview-scroll-to-end phase's
-  final review; the native lane (`TestToolboxSuiteOn68k`, the T2 gate) is
-  unaffected. Fix: add the shim (FreeMem returns the free byte count) or
-  gate the case off the cprint build.
+  final review; the native lane (`tests/mactest/toolbox_68k.sh`, the T2
+  gate) is unaffected. Fix: add the shim (FreeMem returns the free byte
+  count) or gate the case off the cprint build.
 
 ## ABI / performance
 
@@ -650,8 +655,9 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   promised this phase.
 - **Task 7 leftover minors, all deferred**: `serial_snow_test.go`'s
   `done()` blocks ~34s inside `runSnow`'s poll loop, suspending
-  died-mid-run detection for that window; `internal/conntest`'s
-  `TestListenMode` has a stolen-port edge case; `examples/serialecho.cla`'s
+  died-mid-run detection for that window (now
+  `tests/lib_snow.sh`'s `snow_run`); `tests/conntest/listen.sh`
+  has a stolen-port edge case; `examples/serialecho.cla`'s
   quit-in-loop keeps scanning the rest of a chunk after the 3rd `Q`
   instead of returning immediately; `runtime/host/rt_serial_test.c` has
   three stale/contradictory comments (alarm numbers, a retry-loop
@@ -822,11 +828,14 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   host-side calls them); `rt_ext_mac.inc`'s Date-Time glue is
   header-verified but first really compiled whenever the opt-in cprint
   lane next runs.
-- **Suite bookkeeping minors**: `internal/mactest/coresuite_test.go`
-  carries the core case count as two literals (make it a const) and its
-  `TestToolboxSuiteOn68k` doc comment lags the real case count;
-  `caseIntMapGrowIter` lacks the masked-hash-collision partner pair a
-  fuller test would pin.
+- **Suite bookkeeping minors**: the expected case counts are hand-written
+  literals in the ported scripts too (`suite_report_check "$WORK/cap.out"
+  81` in `tests/mactest/coresuite_68k.sh`, `35` in `toolbox_68k.sh`, each
+  duplicated in that script's own doc comment), so adding a suite case
+  still means editing two places per lane — the original
+  `internal/mactest/coresuite_test.go` complaint, carried over by the
+  go-retirement port rather than fixed. `caseIntMapGrowIter` lacks the
+  masked-hash-collision partner pair a fuller test would pin.
 - **Transient `emit68k` extern-record-decay crash** (2026-08-06,
   unconfirmed): one observed crash, 0/28 repro attempts. Repro ladder
   archived in `.superpowers/sdd/2026-08-06-toolbox-cookbook/
@@ -852,21 +861,23 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 
 ### Serial/connection phase (2026-08-16)
 
-- **Toolbox-suite compose file list duplicated across `internal/bake`
-  and `internal/mactest`** — `internal/bake/bakeidentity_test.go`'s
-  `toolboxSuiteGUIFiles` and `internal/mactest/coresuite_test.go`'s
-  `toolboxFiles` are hand-maintained twins with a "keep in sync"
-  comment as the only enforcement; Task 2 updated one and missed the
-  other, undetected until this task's T2 run (see `STATUS.md` §3, fix
-  commit `0907364`). A shared source (one list, imported by both) or a
+- **Toolbox-suite compose file list duplicated across the `bake` and
+  `mactest` groups** — `tests/bake/full_corpus_suite_toolbox.sh`'s inline
+  list (still labelled `toolboxSuiteGUIFiles` after its Go origin) and
+  `tests/mactest/toolbox_files.txt` are hand-maintained twins with a
+  "keep in sync" comment as the only enforcement; Task 2 updated one and
+  missed the other, undetected until this task's T2 run (see `STATUS.md`
+  §3, fix commit `0907364`). A shared source (one list, imported by both) or a
   T1-level consistency check would prevent the next miss.
 - **No committed emit-time fixture pinning the unchanged
   `lowUnsupported` rejection for `appletalk`/local-receiver shapes**
   (Task 5) — those shapes still reject the same way pre-phase; nothing
   regresses that specifically today.
-- **`TestEnvUnsetFailedPath` rebuilds `echo.cla` instead of reusing
-  `TestConnectMode`'s binary** (`internal/conntest`, Task 5) — T1
-  hot-path cost, harmless but avoidable.
+- **`tests/conntest/envunset.sh` rebuilds `echo.cla` instead of reusing
+  `tests/conntest/connect.sh`'s binary** (Task 5) — T1
+  hot-path cost, harmless but avoidable. (Each script has its own `$WORK`,
+  so sharing now needs a cached build under `build-run/`, not just a
+  reordering.)
 - **No coverage for the >4-connections build error** (Task 5) — the
   cap exists and is enforced, just untested.
 
@@ -899,14 +910,20 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   which is EXCLUDED from `make -j t1` and run on its own
   (`make test T=perfgate/`) by both wrappers, so it is never timed under
   a parallel load; and `tests/perfgate/baseline.txt` was re-measured on a
-  quiet host (median of five isolated runs) at the end of the phase, with
-  the measurement recorded in the file's own comment history.
+  quiet host (median of five isolated runs, then re-measured against a
+  truly idle host once it was free -- see the file's own comment for why
+  cold and warm regimes differ by ~40% here) at the end of the phase,
+  with the measurement recorded in the file's own comment history.
+  Separately discharged in the same phase: the standing
+  `TestClarusCBakePathOnSnow` re-run owed by earlier phases -- its ported
+  twin `mactest/snow/clarusc_bake` PASSED on real Snow at **3303 s**
+  during Task 14, so that obligation is settled as of 2026-09-05.
 
 ### filesystem-api phase (2026-08-26)
 
 - **No test exercises `emit68k --rtbake [--testapi]` over a
   `file.info`-calling program** (Task 3's own deferred test gap) —
-  closing test: one `internal/bake` case asserting the bake path was
+  closing test: one `tests/bake/` script asserting the bake path was
   taken (`bkRuntimeFuncBoundary > 0`) and that its output matches the
   from-source build's. Task 3's own manual `--rtbake`/`--rtbake
   --testapi` experiments (task-3-report.md) are the only current
@@ -955,8 +972,16 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   (110-minute default settle, `CLARUS_MACRESIDENT_SETTLE` /
   `CLARUS_MACRESIDENT_DONE` overrides), but neither has been run to
   completion against real Snow: the Go twin needed ~12 h per run on this
-  host and the one Snow instance is contended. Everything else in the
-  Snow lane (`roundtrip`, `serial_echo`, `pagefile`, `clarusc_boot`,
-  `clarusc_bake`) has been booted. Closing action: run both once, opt-in
-  (`CLARUS_SNOW_TESTS=1 make test T=mactest/snow/macresident`), when the
-  screen and a long window are free, and record the durations.
+  host and the one Snow instance is contended. The rest of the Snow lane
+  (`serial_echo`, `pagefile`, `clarusc_boot`, `clarusc_bake`) has been
+  booted; `roundtrip` has too, and is red — see the next item. Closing
+  action: run both once, opt-in (`CLARUS_SNOW_TESTS=1 make test
+  T=mactest/snow/macresident`), when the screen and a long window are
+  free, and record the durations.
+- **Snow `roundtrip` is red on this System 7 machine** — the app halts
+  after its first native `alert()`: the trace stops at `read ok` and
+  `Copy.txt` is byte-exact, so the file round trip itself works and the
+  hang is in the alert path, not the I/O. NOT a port defect: Go's
+  `TestSnowRoundTrip` failed identically before deletion, so this is a
+  pre-existing System 7 bug the port faithfully reproduces. Needs its own
+  task (native `alert()` on System 7 / Mac II), not a harness fix.

@@ -18,7 +18,7 @@
 # actually meant to reach the byte-compare; CLARUS_MACRESIDENT_DONE names
 # a marker file an operator watching the emulator can create to end the
 # settle the moment the scripted `quit` visibly lands.
-. "$(dirname "$0")/../../lib.sh"
+. "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
 

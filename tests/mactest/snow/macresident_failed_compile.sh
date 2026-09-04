@@ -13,7 +13,7 @@
 # is not enough to finish both compiles on emulated hardware; set
 # CLARUS_MACRESIDENT_SETTLE (and CLARUS_MACRESIDENT_DONE) for a run meant
 # to reach the byte-compare.
-. "$(dirname "$0")/../../lib.sh"
+. "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
 

@@ -6,7 +6,7 @@
 # wiring and dial-with-retry as serial_echo.sh; the only added step is
 # reading pagefile's one CR-terminated result line, which must be exactly
 # "PASS 16".
-. "$(dirname "$0")/../../lib.sh"
+. "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
 

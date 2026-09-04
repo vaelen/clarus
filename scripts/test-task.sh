@@ -22,17 +22,6 @@ done
 START=$(date +%s)
 J=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
-# transition (go-retirement Task 15): the retiring Go lane still runs first
-# so the two harnesses stay side-by-side until this block is deleted.
-if [ "${GO_LANE:-1}" = 1 ]; then
-    go test $(go list ./... | grep -v /internal/selfhost) -count=1 -timeout 30m
-    if [ "$SMOKE" = "1" ]; then
-        CLARUS_MAC_TESTS=1 go test ./internal/mactest \
-            -run 'TestSmokeBounceOn68k|TestRealEventLoopTickOn68k' \
-            -count=1 -timeout 20m
-    fi
-fi
-
 make -j"$J" tools bootstrap
 make -j"$J" t1
 make test T=perfgate/

@@ -8,7 +8,7 @@
 # whole spec surface over that one connection while Snow is still running:
 # the READY\r greeting, a byte-exact 0-255 sweep, a larger sustained sweep,
 # then QQQ to make the guest quit itself.
-. "$(dirname "$0")/../../lib.sh"
+. "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
 
