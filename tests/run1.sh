@@ -12,6 +12,13 @@ case "$t" in
     *m) t=$(( ${t%m} * 60 )) ;;
     *s) t=${t%s} ;;
 esac
+# A malformed header must not silently disable the deadline: anything that
+# is not a positive decimal after unit conversion falls back to the default.
+# (This has to run AFTER the conversions -- "bogus" ends in "s", so the *s
+# arm above strips it to "bogu" rather than leaving it intact.)
+case "$t" in
+    ""|0|*[!0-9]*) t=600 ;;
+esac
 mkdir -p "$(dirname "$result")"
 start=$(date +%s)
 build-run/tools/timeout "$t" sh "$script" > "$log" 2>&1
