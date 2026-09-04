@@ -7,16 +7,17 @@
 # Deterministic and host-only; used to record before/after numbers for
 # every peephole pattern.
 #
-# The suite compositions below mirror internal/mactest/coresuite_test.go's
-# coreGUIFiles/toolboxFiles exactly (that file, plus suite_host_test.go's
-# coreCLIFiles, is the authoritative list -- not this script's own
-# earlier draft). Notably: toolboxFiles is NOT just
-# "kit.cla + runner.cla + cases_*.cla + gui.cla" -- it also threads in
-# five toolbox/*.cla catalog files and testsuite/toolbox/harness.cla
-# (harness.cla doesn't match the cases_*.cla glob), and the toolbox GUI
-# build needs --testapi (TestToolboxSuiteOn68k prepends it) while the
-# core GUI build does not (TestCoreSuiteGUIOn68k passes no such flag,
-# and no core/*.cla file references UiTest*).
+# The suite compositions below mirror tests/mactest/coregui_files.txt and
+# tests/mactest/toolbox_files.txt exactly (those two lists, plus
+# tests/testsuite/core_cli.sh's own core-CLI composition, are the
+# authoritative lists -- not this script's earlier draft). Notably:
+# toolbox_files.txt is NOT just "kit.cla + runner.cla + cases_*.cla +
+# gui.cla" -- it also threads in five toolbox/*.cla catalog files and
+# testsuite/toolbox/harness.cla (harness.cla doesn't match the cases_*.cla
+# glob), and the toolbox GUI build needs --testapi (tests/mactest/
+# toolbox_68k.sh prepends it) while the core GUI build does not
+# (tests/mactest/coresuite_68k.sh passes no such flag, and no core/*.cla
+# file references UiTest*).
 set -e
 cd "$(dirname "$0")/.."
 

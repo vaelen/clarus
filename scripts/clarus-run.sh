@@ -4,7 +4,7 @@
 # The day-to-day `clarus run` replacement, Go-free (test-suite-review Task
 # 6): snapshot-bootstrapped clarusc (built from the committed
 # clarusc/clarusc.c with `cc` alone, cached under build-run/, same recipe
-# as internal/selfhost/behavior_test.go's bootstrapSnapshotClarusc and
+# as the root Makefile's build-run/clarusc-snapshot rule and
 # build-68k.sh's own step 1) emits C for FILE.cla, `cc` compiles that
 # against the on-disk host runtime (runtime/host), and the resulting
 # binary runs with any args passed after `--`. No Go compiler anywhere in

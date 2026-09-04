@@ -31,9 +31,9 @@ Inside Macintosh declarations into Clarus `extern`/`callback` forms.
 ## Build and test
 
 ```sh
-scripts/clarus-run.sh FILE.cla [-- args...]  # Go-free day-to-day `clarus run`
-scripts/test-task.sh              # T1: per-task gate (~15s)
-scripts/test-merge.sh             # T2: per-merge gate (~5m, needs the emulator)
+scripts/clarus-run.sh FILE.cla [-- args...]  # day-to-day `clarus run`
+scripts/test-task.sh              # T1: per-task gate (~1-2m)
+scripts/test-merge.sh             # T2: per-merge gate (~15m + selfhost, needs the emulator)
 ```
 
 - `scripts/clarus-run.sh` is the Go-free replacement for `clarus run` day
@@ -43,42 +43,99 @@ scripts/test-merge.sh             # T2: per-merge gate (~5m, needs the emulator)
   on-disk host runtime (`runtime/host`), and execs the result with
   any args after `--`. No Go compiler involved.
 
+The test harness is Make + POSIX shell + a handful of small C tools —
+no Go anywhere (the Go harness was deleted in the go-retirement phase,
+2026-09-05; `tests/` replaces the old `internal/*_test.go` packages one
+script per Go test).
+
+- `make -j tools bootstrap` builds `build-run/tools/*` (the C helpers:
+  `timeout`, `uiblob`, `resfork`, `clirhdr`, `tcpdrive`) and the two-stage
+  `build-run/clarusc-{snapshot,current}` compilers. Every test depends on
+  both targets, so make's own scheduling serializes the bootstrap.
+- `make test T='<group>/<name> <group>/'` runs selected scripts. Each `T=`
+  word is a prefix matched against `tests/<prefix>`, so `T=bake/` is a
+  whole group and `T=cg68k/goldens` one script.
+- `make -j t1` runs every group except `selfhost/` and `perfgate/`.
+  `make t2` is the whole merge gate (t1, then perfgate alone, `selfhost/`,
+  the gated `mactest/` group at `-j1`, and the `bake/` full-corpus sweep).
+  `make smoke` is just the two native emulator boots.
+- Result lines are `PASS|SKIP|FAIL(...) <group>/<name> <secs>s`; per-test
+  logs land in `build-run/tests/<group>/<name>.log`, and `make` dumps the
+  tail of every failing log in its summary.
+- **There is no result cache** — every `make test`/`t1`/`t2` invocation
+  re-executes every selected script (the `.result` targets depend on
+  `FORCE`). Deliberate: the retired Go lane cached a package result keyed
+  on its `.go` inputs and knew nothing about the `.cla` fixtures a test
+  reads at runtime, so an edited `.cla` with unchanged `.go` could
+  silently replay a stale PASS. That silent-red hole cannot exist here.
+- A test script is `#!/bin/sh` plus
+  `. "$(dirname "$0")/../lib.sh" || exit 2`, POSIX sh only (no arrays,
+  `[[ ]]`, `local`, `echo -e`). It prints `PASS <name>` / `FAIL <name>:
+  <detail>` per subcase and exits 0 (pass), **77** (skip — a missing
+  toolchain or an unset gate variable), or anything else (fail). A `FAIL `
+  line in the log beats exit 0 *and* exit 77: a script that reports a
+  failing subcase and then skips is a FAIL. A `# timeout: 15m` header line
+  overrides the runner's 600 s default deadline (a malformed value falls
+  back to the default rather than disabling the deadline).
+- `tests/lib.sh` is FROZEN and defines the whole vocabulary — `t_pass`,
+  `t_fail`, `t_done`, `die`, `skip`, `require_env`, `require_tool`,
+  `require_vasm`, `golden_check`, `first_diff`, `host_build`, `emit68k`,
+  `run_c_test`, `mem_live`, and `ROOT BR TOOLS CLARUSC
+  CLARUSC_SNAPSHOT RTDIR HOSTRT CC WORK`. Group helpers live in
+  `tests/lib_<group>.sh`, sourced right after it as
+  `... || die "helper lib failed to load"` (an unguarded source of a
+  broken helper once produced a green PASS with zero assertions).
+  `tests/runner/{selfcheck,syntax,timeout}.sh` are the harness's own
+  self-checks: verdict precedence, `sh -n` over every `tests/**/*.sh`, and
+  the `timeout` tool's process-group kill.
+
 Tiered test gates:
 
-- `scripts/test-task.sh` — T1, run after every task. Every package except
-  `internal/selfhost`, with `-count=1` (see below). Add `--smoke` when a
-  task touches `runtime/` or `clarusc/`, which additionally runs the two
-  native-68k emulator smoke tests (`CLARUS_MAC_TESTS=1`,
-  `TestSmokeBounceOn68k` / `TestRealEventLoopTickOn68k` in
-  `internal/mactest`). The Go compiler was deleted in the Go-compiler-deletion
-  phase (tag `go-compiler-final`); the gauntlet is all-harness, no
-  compiler-unit packages remain.
-- `scripts/test-merge.sh` — T2, run before merging to main. T1's body plus
-  `internal/selfhost` (30m-timeout bootstrap suite) plus the gated
-  `internal/mactest` package's native (emit68k) lane (`CLARUS_MAC_TESTS=1`,
-  needs the Retro68 toolchain + Mini vMac). The Retro68/cprint-gcc lane
-  (pack3-standardfile phase, 2026-08-07) is demoted off this gate — it's an
-  opt-in diagnostic behind `CLARUS_CPRINT_MAC_TESTS=1`, kept as a
-  cross-lane localization oracle (the native lane already covers every
-  case it checks) rather than deleted; deletion is deferred to the 5f
-  Retro68-retirement phase. The C printer's remaining first-class role is
-  host builds (`clarusc emit` + `cc`).
-- Both pass `-count=1` to bust the Go test cache. Plain `go test` caches a
-  package's result keyed on its `.go` inputs; it does not know about
-  `.cla` fixtures a test reads at runtime (e.g. emitui-style
-  golden/snapshot tests), so an edited `.cla` with unchanged `.go` can
-  silently replay a stale PASS. `-count=1` forces a real re-run every
-  time, closing that silent-red hole.
-- `internal/selfhost` has outgrown `go test`'s default 10-minute
-  per-package timeout — always pass `-timeout 30m` when running it
-  directly, or it can spuriously fail on an otherwise-green tree.
+- `scripts/test-task.sh` — T1, run after every task: `make -j t1`, then
+  `make test T=perfgate/` on its own (timing under a parallel load is
+  meaningless, so perfgate is excluded from `t1` and run alone). Add
+  `--smoke` when a task touches `runtime/` or `clarusc/`, which
+  additionally runs `make smoke` — the two native-68k emulator boots
+  (`CLARUS_MAC_TESTS=1`, `tests/mactest/smoke_bounce.sh` and
+  `tests/mactest/tick.sh`; needs the Retro68 toolchain + Mini vMac).
+- `scripts/test-merge.sh` — T2, run before merging to main: T1's body plus
+  `selfhost/` (the bootstrap fixed-point + snapshot + cross-generation
+  differential oracles; each script carries its own `# timeout: 30m`
+  header, so there is no timeout flag to remember), the whole gated
+  `mactest/` group (`CLARUS_MAC_TESTS=1`, `-j1` — an emulator boot owns
+  the machine's screen, so those scripts can never run in parallel), and
+  the `bake/` full-corpus byte-identity sweep (`CLARUS_BAKE_FULL=1`).
+  Each stage prints its own `test-merge.sh: <stage> PASS in Ns` line.
+- Opt-in lanes, SKIPped by both gates:
+  - `CLARUS_CPRINT_MAC_TESTS=1` (alongside `CLARUS_MAC_TESTS=1`) enables
+    the Retro68/cprint-gcc twins — `tests/mactest/{coresuite_mac,
+    toolbox_mac,runerr_mac,abort_mac,appres}.sh`. Demoted off T2 by the
+    pack3-standardfile phase (2026-08-07) and kept only as a cross-lane
+    localization oracle: the native `emit68k` lane already covers every
+    case they check. Two known failures, unchanged from the retired Go
+    lane: `FileHandleRW: create failed` and `DirOps: exists("") false` in
+    the cprint core-suite boot (cprint-lane runtime gaps, same family as
+    the `TbFreeMem` shim gap `docs/TODO.md` records). Lane deletion is
+    deferred to the 5f Retro68-retirement phase; the C printer's remaining
+    first-class role is host builds (`clarusc emit` + `cc`).
+  - `CLARUS_SNOW_TESTS=1` enables the Snow (System 7 / Mac II) scripts
+    under `tests/mactest/snow/`. `CLARUS_SNOW_TESTS=1 make test
+    T=mactest/snow/clarusc_bake` (~55 min) is the standing rule after any
+    change to `clarusc/bake.cla` or `clarusc/macgui.cla` — it is the only
+    proof `ClarusC.APPL`'s default bake path works on real hardware, and
+    neither T1 nor T2 boots it.
+  - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
+    calibration bench, `tests/mactest/bench.sh`.
+- Golden blessing: `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap
+  goldens, `CLARUS_CG68K_BLESS=1` the `testdata/cg68k` `.s` goldens, and
+  `CLARUS_BLESS_BEHAVIOR=1` the `selfhost` `.behavior` blobs.
 
 - The Go compiler is DELETED (tag `go-compiler-final`). clarusc
   (`clarusc/*.cla`) is the only compiler; new language features land in the
   reference + clarusc.
 - `clarusc/clarusc.c` is the committed bootstrap snapshot. If
-  `TestSnapshotFixedPoint` (`internal/selfhost`) fails, it prints the
-  Go-free regeneration instructions.
+  `tests/selfhost/fixedpoint.sh` fails, its own header comment carries the
+  regeneration recipe.
 - Bootstrap from C alone:
   `cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c`
 - `--testapi` (`clarusc emit`/`emit68k`/`appinfo`, ui-scenario-retirement
@@ -170,28 +227,29 @@ enum + runner, not one boot per case.
   design: it asserts all 80 other cases ran in the same invocation
   (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
   `all`), never alone.
-  (Exact file list: `internal/mactest/suite_host_test.go`'s
-  `coreCLIFiles`.) `toolbox` has no host CLI by design
+  (Exact file list: `tests/testsuite/core_cli.sh`.) `toolbox` has no host
+  CLI by design
   (Toolbox/hardware-only) — it only runs via a Mac/native boot.
-- **The four gated suite-boot tests** (`internal/mactest/coresuite_test.go`),
-  one boot each, both platform lanes: `TestCoreSuiteGUIOn68k`/
-  `TestCoreSuiteGUIOnMac` (native `emit68k` / Retro68-cprint twins,
-  `core/gui.cla` + `--events`) and `TestToolboxSuiteOn68k`/
-  `TestToolboxSuiteOnMac` (same, `toolbox/gui.cla`). Each parses the
-  captured `tkReport` log and fans it out into one Go subtest per case
-  (`t.Run(caseName, ...)`) for per-case red/green. The `On68k` halves run
-  under T2's default `CLARUS_MAC_TESTS=1 go test ./internal/mactest`
-  (`scripts/test-merge.sh`); not part of T1. The `OnMac` twins are the
-  Retro68/cprint lane, demoted (pack3-standardfile phase, 2026-08-07) to
-  an opt-in diagnostic behind `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under
-  bare `CLARUS_MAC_TESTS=1`, so they no longer run as part of T2 by
-  default.
+- **The four gated suite-boot scripts**, one boot each, both platform
+  lanes: `tests/mactest/coresuite_68k.sh`/`tests/mactest/coresuite_mac.sh`
+  (native `emit68k` / Retro68-cprint twins, `core/gui.cla` + `--events`,
+  the file list in `tests/mactest/coregui_files.txt`) and
+  `tests/mactest/toolbox_68k.sh`/`tests/mactest/toolbox_mac.sh` (same,
+  `toolbox/gui.cla` + `tests/mactest/toolbox_files.txt`). Each parses the
+  captured `tkReport` log and asserts every case's own PASS line plus the
+  `TOTAL n PASS n FAIL 0` tally, reporting one `PASS <case>`/`FAIL <case>`
+  result line per case. The `_68k` halves run under T2's
+  `CLARUS_MAC_TESTS=1 make -j1 test T=mactest/` (`scripts/test-merge.sh`);
+  not part of T1. The `_mac` twins are the Retro68/cprint lane, demoted
+  (pack3-standardfile phase, 2026-08-07) to an opt-in diagnostic behind
+  `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under bare `CLARUS_MAC_TESTS=1`, so
+  they no longer run as part of T2 by default.
 - `toolbox/{memory,events,osutils,scrap,standardfile,files}.cla`
   (toolbox-cookbook phase; the last two added by pack3-standardfile) is a
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new
-  UI code instead of hand-declaring traps; `internal/testsuite/
-  catalog_test.go` is its T1 check. `files.cla` itself grew from
+  UI code instead of hand-declaring traps; `tests/testsuite/catalog.sh`
+  (plus `tests/testsuite/catalog_ui.sh`) is its T1 check. `files.cla` itself grew from
   pack3-standardfile's deliberately-thin SetVol-only scope to a full HFS
   catalog/directory family (`_HFSDispatch`'s `GetCatInfo`/`SetCatInfo`/
   `DirCreate`/`CatMove`, plus `PBH{Delete,Rename,Get/SetFInfo,OpenRF}Sync`)
@@ -284,22 +342,20 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   FreeMem-flat by the toolbox suite's new `LeakCheck` case. See the
   reference for the full method lists.
 - Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
-  `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.
+  `CLARUS_MAC_TESTS=1 make -j1 test T=mactest/`.
 - UI test scenarios live in `testdata/ui`, with blessed goldens (trace +
   PBM framebuffer snaps) under `testdata/uisnaps` — the snaps are viewable
   PBMs. `CLARUS_MAC_BLESS=1` regenerates both, via the **native** lane
-  (`internal/mactest/native_test.go`'s `clarusc emit68k` boots) — the
+  (`tests/mactest/smoke_bounce.sh` and `tests/mactest/ui_scenarios.sh`,
+  `clarusc emit68k` boots) — the
   test-consolidation phase's Task 7 (2026-08-06) retired the Retro68/cprint
-  scenario lane outright (`ui_test.go`'s per-scenario `TestSmokeBounceUIScenario`/
-  `TestSmokeMandelUIScenario`/`TestTexteditorUIScenario`/`TestBookmarksUIScenario`),
-  so the native lane is now the ONLY lane that boots these scenarios, and
-  the only place `CLARUS_MAC_BLESS=1` has any effect (`checkUIGoldens`,
-  shared by both lanes before Task 7, is now called only from
-  `native_test.go`). `scripts/build-68k.sh`/`clarusc emit68k --events FILE`
+  scenario lane outright (its per-scenario cprint boots), so the native
+  lane is now the ONLY lane that boots these scenarios, and the only place
+  `CLARUS_MAC_BLESS=1` has any effect (`ui_goldens`, `tests/lib_mac.sh`). `scripts/build-68k.sh`/`clarusc emit68k --events FILE`
   compile a scripted event sequence into a test build for deterministic UI
   driving (no real input needed); `scripts/build-mac.sh` still takes
   `--events FILE` too, for the two opt-in Retro68/cprint suite-gate
-  diagnostics (`TestCoreSuiteGUIOnMac`/`TestToolboxSuiteOnMac`, demoted
+  diagnostics (`tests/mactest/coresuite_mac.sh`/`toolbox_mac.sh`, demoted
   behind `CLARUS_CPRINT_MAC_TESTS=1` by the pack3-standardfile phase,
   2026-08-07) and any future Retro68-lane build, but no longer for
   scenario goldens. The

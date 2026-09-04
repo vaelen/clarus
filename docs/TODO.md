@@ -468,8 +468,8 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   user has hit it; noted so it is not rediscovered as a `scrollToEnd`
   bug.
 - **The opt-in cprint-lane toolbox twin fails to link since `main`'s
-  `520f227`**: `CLARUS_MAC_TESTS=1 CLARUS_CPRINT_MAC_TESTS=1 go test
-  ./internal/mactest -run TestToolboxSuiteOnMac` dies in
+  `520f227`**: `CLARUS_MAC_TESTS=1 CLARUS_CPRINT_MAC_TESTS=1 make test
+  T=mactest/toolbox_mac` dies in
   `build-mac.sh` with `undefined reference to rt_ext_TbFreeMem` —
   `testsuite/toolbox/cases_leak.cla` (68k-call-result-release's
   `LeakCheck`) declares `external func TbFreeMem(): int = trap 0xA01C
@@ -888,18 +888,19 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   return means a zero-length `writeAt` never reaches the device
   (correct, undocumented); `readAt`'s zero-length behavior is likewise
   unexercised.
-- **`internal/perfgate`'s `TestEmitPerfTripwire` flakes under parallel
-  `go test` on this host** — every task this phase saw it fail inside a
-  full `scripts/test-task.sh --smoke`/T2 run and PASS cleanly re-run
-  alone (`-p 1`); confirmed again at Task 10's own T2 run (T1 body:
-  FAIL, median 0.160s vs. a 0.124s limit; isolated re-run: PASS, medians
-  0.10-0.12s both times). Host-contention artifact of running the whole
-  gauntlet in parallel with itself, not a real regression — the
-  baseline itself is fine. Final-review wave (M7): the tripwire has
-  almost no headroom even isolated (0.110s median vs. the 0.124s limit)
-  and failed twice under T2 contention during this phase; a re-baseline
-  decision (longer warm-up, more samples, or a wider margin) is owed
-  before the next phase adds anything to the host emit path.
+- ~~**The emit-time perf tripwire flakes under a parallel gauntlet run on
+  this host**~~ (originally `internal/perfgate`'s `TestEmitPerfTripwire`)
+  — CLOSED by the go-retirement phase
+  (2026-09-05). Diagnosis stood: a host-contention artifact of running
+  the whole gauntlet in parallel with itself (it failed inside every full
+  `scripts/test-task.sh --smoke`/T2 run and passed re-run alone), plus a
+  baseline with almost no headroom even isolated. Both halves are fixed
+  structurally: the tripwire now lives in `tests/perfgate/tripwire.sh`,
+  which is EXCLUDED from `make -j t1` and run on its own
+  (`make test T=perfgate/`) by both wrappers, so it is never timed under
+  a parallel load; and `tests/perfgate/baseline.txt` was re-measured on a
+  quiet host (median of five isolated runs) at the end of the phase, with
+  the measurement recorded in the file's own comment history.
 
 ### filesystem-api phase (2026-08-26)
 
@@ -925,8 +926,8 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   hard-failure path (as opposed to the ordinary `fnfErr` end-of-listing
   case) has no fixture on real hardware.
 - **System 7 (Snow) is entirely unverified for this phase** — Task 1's
-  probe wave, Task 5's native `fileh_68k.cla` lane, and
-  `TestClarusCBakePathOnSnow` (owed after any runtime-module addition,
+  probe wave, Task 5's native `fileh_68k.cla` lane, and the
+  `mactest/snow/clarusc_bake` gate (owed after any runtime-module addition,
   deferred per the ledger's Task 7 ruling) all ran on Mini vMac/System 6
   only; a live 68kbbs session owned the one Snow instance throughout
   this phase. Every `PBH*`/`_HFSDispatch` trap predates System 7, so no
@@ -944,3 +945,18 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   one more T2 boot. Every UI program shares the same runtime the
   toolbox suite's jiggle boot exercises, so the gap is real, not
   hypothetical.
+
+### go-retirement phase (2026-09-05)
+
+- **The Snow `macresident` / `macresident_failed_compile` scripts are
+  ported but NOT live-validated** (Task 14) — `tests/mactest/snow/
+  macresident.sh` and `macresident_failed_compile.sh` are faithful ports
+  of `TestMacResidentClaruscOnSnow` / `...FailedCompileStaysAlive`
+  (110-minute default settle, `CLARUS_MACRESIDENT_SETTLE` /
+  `CLARUS_MACRESIDENT_DONE` overrides), but neither has been run to
+  completion against real Snow: the Go twin needed ~12 h per run on this
+  host and the one Snow instance is contended. Everything else in the
+  Snow lane (`roundtrip`, `serial_echo`, `pagefile`, `clarusc_boot`,
+  `clarusc_bake`) has been booted. Closing action: run both once, opt-in
+  (`CLARUS_SNOW_TESTS=1 make test T=mactest/snow/macresident`), when the
+  screen and a long window are free, and record the durations.

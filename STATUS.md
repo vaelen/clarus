@@ -40,7 +40,7 @@ new widget method with no new Toolbox trap surface and no OS-version-
 dependent behavior, so there is no System 7 (Snow) spot check the way
 filesystem-api's new HFS traps needed. The proof is hardware-level: the
 toolbox suite's new `ScrollToEnd` case exercises the method on the
-emulated Mac Plus (System 6, Mini vMac, `TestToolboxSuiteOn68k`). One
+emulated Mac Plus (System 6, Mini vMac, `tests/mactest/toolbox_68k.sh`). One
 optional minor was found and deliberately left as-is (not filed in
 `docs/TODO.md` — judged not worth tracking): `lowTextviewMethod`'s
 `nm != "scrollToEnd"` `lowUnsupported` branch is unreachable today (its
@@ -104,6 +104,8 @@ but none has its full write-up archived into `docs/HISTORY.md` yet
 note explaining the gap) — a future docs pass should catch HISTORY up
 through all three.
 
-**Standing rules:** `internal/selfhost` always gets `-count=1 -timeout
-30m`. Merge only on Andrew's request; main stays green (this branch does
-NOT touch main).
+**Standing rules:** the test harness is Make + shell (`scripts/test-task.sh`,
+`scripts/test-merge.sh`; `make test T='<group>/'` for a slice) — no result
+cache, and each script carries its own `# timeout:` header, so there are no
+cache-busting or timeout flags to remember. Merge only on Andrew's request;
+main stays green (this branch does NOT touch main).

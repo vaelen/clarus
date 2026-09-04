@@ -9,4 +9,15 @@
 # testdata/emitui/every.cla): 0.0618s, rounded up to 2 sig figs -> 0.062.
 # Full measurement detail: .superpowers/sdd/2026-08-11-layer1-compiler-perf/
 # progress.md's "Baseline (Task 0)" section.
-0.062
+# re-baselined 2026-09-05 (go-retirement phase, Task 15): the tripwire now
+# lives in tests/perfgate/tripwire.sh, is EXCLUDED from `make -j t1` and is
+# always run alone (`make test T=perfgate/`), which is what closed the old
+# under-load flake docs/TODO.md recorded -- so the baseline can be tight
+# again. Measured on this host with `make test T=perfgate/` five times, each
+# run its own median of 3 emits of testdata/emitui/every.cla by the -O1
+# build-run/clarusc-current: 45 42 46 44 48 ms -> median of medians 45ms,
+# recorded as 0.045 (limit 90ms). The drop from 0.062 is real, not a
+# measurement change: layer1-compiler-perf, clir-load-perf and string-perf
+# have all landed on the emit path since. Re-verified after the phase's
+# final quiet-host gate run.
+0.045

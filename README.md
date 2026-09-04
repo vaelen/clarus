@@ -66,7 +66,7 @@ cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c
 | Path | Contents |
 |---|---|
 | `docs/` | Language reference and roadmap |
-| `cmd/clarus`, `internal/` | The Go host compiler and runtime (frozen; kept as the differential-testing reference) |
+| `tests/` | The test harness: a Make + POSIX-shell runner plus its C tools |
 | `clarusc/` | The self-hosted compiler, written in Clarus, plus its committed C snapshot |
 | `testdata/` | Golden tests: valid programs, diagnostics, runtime behavior |
 

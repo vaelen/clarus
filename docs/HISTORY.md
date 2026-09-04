@@ -4916,3 +4916,89 @@ brief asked for it directly.
   `.superpowers/sdd/2026-08-06-toolbox-cookbook/repro-shape-corruption/`
   (superseded banner added); full trail in
   `.superpowers/sdd/2026-08-07-pack3-standardfile/task-5a-report.md`.
+
+## go-retirement phase (2026-09-05, branch `go-retirement`)
+
+Recorded here for the same reason the other phase entries are, though
+merging to `main` is Andrew's call and had not happened when this was
+written. Older entries above keep their `go test` / `internal/...`
+references verbatim: they were accurate when written, and this section is
+the record of what replaced them.
+
+**What it did.** The Go COMPILER was already deleted (tag
+`go-compiler-final`, 2026-08-05); the Go TEST harness was not. 53
+`internal/**/*_test.go` files (~14,000 lines) still drove every gate, so
+the project still needed a Go toolchain to be verified at all. This phase
+ported all of it and deleted `internal/` and `go.mod`.
+
+**The replacement.**
+
+- A root `Makefile`: `make -j tools bootstrap` (five C tools plus the
+  two-stage `build-run/clarusc-{snapshot,current}` compilers),
+  `make test T='<group>/<name> <group>/'`, `make -j t1` (everything but
+  `selfhost/` and `perfgate/`), `make t2` (the whole merge gate),
+  `make smoke` (the two native emulator boots). `tests/run1.sh` runs one
+  script under its deadline and writes a `PASS|SKIP|FAIL(...) <name>
+  <secs>s` result line; `tests/summary.sh` counts them and dumps failing
+  logs. No result cache: every invocation re-executes every selected
+  script, which is why nothing here needs `-count=1`'s stale-PASS patch.
+- `tests/lib.sh`, frozen, is the shared vocabulary: `t_pass`, `t_fail`,
+  `t_done`, `die`, `skip` (exit 77), `require_env`, `require_tool`,
+  `require_vasm`, `golden_check`, `first_diff`, `host_build`, `emit68k`,
+  `run_c_test`, `mem_live`. Per-group helpers are `tests/lib_<group>.sh`
+  (`lib_bake`, `lib_conntest`, `lib_mac`, `lib_mactest_host`, `lib_reftest`,
+  `lib_selfhost`, `lib_snow`), sourced immediately after it.
+- One script per former Go test, grouped by the package it came from:
+  `asm68k bake cg68k claruscboot conntest emitui hostrt lowlevel mactest
+  perfgate reftest runner selfhost sertest testsuite`, plus
+  `mactest/snow/` for the System 7 / Mac II lane.
+- Five C tools under `tests/tools/` (~1,400 lines) for what POSIX sh cannot
+  express: `timeout` (a deadline that kills the whole process group and
+  forwards signals, with `--elapsed` for the perf tripwire), `uiblob` and
+  `resfork` (UI-blob and resource-fork dumpers), `clirhdr` (CLIR header
+  reader plus the deliberate stamp/body corrupters the bake refusal tests
+  need), and `tcpdrive` (port picker, listener and client for the
+  `connection` tests).
+- Wrappers: `scripts/test-task.sh` = `make -j t1`, then
+  `make test T=perfgate/` alone, then `make smoke` under `--smoke`;
+  `scripts/test-merge.sh` = the five `t2` stages called one at a time so
+  each prints its own `PASS in Ns` line.
+
+**Rulings that are load-bearing, not incidental.**
+
+- **Exit 77 is SKIP, and a `FAIL ` line in the log beats it.** A script
+  that reports a failing subcase and then skips is a FAIL, not a SKIP —
+  otherwise a late `skip` could launder a real failure. `tests/runner/
+  selfcheck.sh` pins the whole precedence table (`pass`, `skip`, `failx`,
+  `failline`, `failskip`, `slow`, `minhdr`, `bogus`).
+- **A malformed `# timeout:` header falls back to the 600 s default**
+  rather than becoming `alarm(0)` — no deadline at all — and the `timeout`
+  tool rejects a non-numeric or zero deadline with exit 2.
+- **Every helper source line is guarded** (`. .../lib_<group>.sh || die
+  "helper lib failed to load"`; `lib.sh`'s own line gets `|| exit 2`).
+  An unguarded source of a syntactically broken helper once produced a
+  green PASS with zero assertions. `tests/runner/syntax.sh` runs `sh -n`
+  over every `tests/**/*.sh`, helper libs included, as the second layer.
+- **Emulator boots are serial by construction.** A Mini vMac or Snow boot
+  owns the machine's screen, so `mactest/` runs at `-j1`; the Snow lane's
+  `snow_run` polls a done-condition, quits Snow with `osascript`, and
+  fails loudly if Snow will not quit within 20 s (a killed emulator leaves
+  an untrustworthy disk image).
+- **`perfgate/` is excluded from `t1` and always run alone**, which closes
+  the long-standing under-load tripwire flake (`docs/TODO.md`) as a
+  structural matter rather than by widening the margin; the baseline was
+  re-measured on a quiet host at the end of the phase.
+
+**Opt-in lanes, unchanged in behavior from the Go gates.**
+`CLARUS_CPRINT_MAC_TESTS=1` for the Retro68/cprint twins (still carrying
+their two pre-existing cprint-runtime failures, `FileHandleRW: create
+failed` and `DirOps: exists("") false`), `CLARUS_SNOW_TESTS=1` for the
+Snow lane, `CLARUS_BENCH68K=1` for the 68k calibration bench,
+`CLARUS_BAKE_FULL=1` for the bake full-corpus sweep, and the three bless
+variables `CLARUS_MAC_BLESS` / `CLARUS_CG68K_BLESS` /
+`CLARUS_BLESS_BEHAVIOR`.
+
+Spec: `docs/superpowers/specs/2026-09-05-go-retirement-design.md`; plan
+`docs/superpowers/plans/2026-09-05-go-retirement.md`; per-task briefs,
+reports and the side-by-side parity proof in
+`.superpowers/sdd/2026-09-05-go-retirement/`.

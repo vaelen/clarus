@@ -112,7 +112,7 @@ Transcribing that into Clarus takes four steps:
    before being trusted on its own, and the FINAL word belongs to
    empirical boot verification (a
    real native `emit68k` boot on Mini vMac, or one of the gated
-   `internal/mactest` suites) whenever the two disagree or the stakes are
+   `tests/mactest/` suite boots) whenever the two disagree or the stakes are
    high enough to warrant it — a static header, however authoritative,
    still can't catch a ROM behaving differently than documented.
 

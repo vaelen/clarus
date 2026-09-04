@@ -32,10 +32,10 @@ check (Gestalt) with a graceful fallback when the feature is absent.
 
 **Standing rules:**
 
-- `TestClarusCBakePathOnSnow` (opt-in, `CLARUS_SNOW_TESTS=1`, ~55m) is
-  the only proof that `ClarusC.APPL`'s default bake path works on real
-  hardware — re-run it manually after any change to `clarusc/bake.cla`
-  or `clarusc/macgui.cla`; neither T1 nor T2 boots it.
+- `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (opt-in,
+  ~55m) is the only proof that `ClarusC.APPL`'s default bake path works on
+  real hardware — re-run it manually after any change to
+  `clarusc/bake.cla` or `clarusc/macgui.cla`; neither T1 nor T2 boots it.
 - A green native UI boot is not proof that handle discipline is sound:
   the stale-master-pointer-across-compaction bug class has passed on
   heap-layout luck before (found eight times so far — see HISTORY,
@@ -317,6 +317,41 @@ binary (TODO.md). Spec:
 `docs/superpowers/plans/2026-09-02-string-perf.md`; ledger
 `.superpowers/sdd/2026-09-02-string-perf/`.
 
+**`go-retirement` phase (branch `go-retirement`, 2026-09-05) is COMPLETE:**
+the project no longer depends on a Go toolchain at all. The Go compiler was
+already deleted (tag `go-compiler-final`); what remained was the TEST
+harness — 53 `internal/**/*_test.go` files, ~14,000 lines of Go, driving
+every gate from `hostrt` C unit checks to Mini vMac and Snow emulator
+boots. All of it is ported to a Make + POSIX-shell runner: a root
+`Makefile` (`make -j t1`, `make t2`, `make test T='<group>/<name>'`,
+`make smoke`), a frozen `tests/lib.sh` vocabulary plus per-group
+`tests/lib_<group>.sh` helpers, one script per former Go test, and five
+small C tools (`tests/tools/{timeout,uiblob,resfork,clirhdr,tcpdrive}.c`,
+~1,400 lines) replacing the Go-side helpers that could not be expressed in
+sh — a process-group-killing `timeout`, the UI-blob and resource-fork
+dumpers, the CLIR-header reader/corrupter, and the TCP driver the
+`connection` tests need. `internal/` and `go.mod` are deleted; the two
+wrappers (`scripts/test-task.sh`, `scripts/test-merge.sh`) now call Make
+stages and print a `PASS in Ns` line each.
+Notable design points: the runner has NO result cache (every invocation
+re-executes every selected script), which closes by construction the
+stale-PASS hole `-count=1` existed to patch; a script's verdict is
+`PASS|SKIP|FAIL(...)` with exit 77 = SKIP, and a `FAIL ` line in the log
+beats exit 0 AND exit 77, so a script that reports a failing subcase and
+then skips can never launder itself into a SKIP; each script carries its
+own `# timeout:` header instead of a remembered `-timeout 30m` flag; and
+`tests/runner/{selfcheck,syntax,timeout}.sh` are self-checks on the runner
+itself (verdict precedence, `sh -n` over every `tests/**/*.sh`, the
+timeout tool's process-group kill) after an unguarded helper source once
+produced a green PASS with zero assertions — every helper source line is
+now `... || die "helper lib failed to load"`. The perfgate tripwire's
+long-standing under-load flake (`docs/TODO.md`) is closed structurally:
+`perfgate/` is excluded from `t1` and run alone by both wrappers, and the
+baseline was re-measured on a quiet host at the end of the phase. Spec:
+`docs/superpowers/specs/2026-09-05-go-retirement-design.md`; plan
+`docs/superpowers/plans/2026-09-05-go-retirement.md`; ledger
+`.superpowers/sdd/2026-09-05-go-retirement/`.
+
 ## Roadmap
 
 Focus (Andrew, 2026-08-15): make the tools more usable — expand the set
@@ -386,8 +421,6 @@ later over MacTCP networking.
   builds through the native 68k backend (`emit68k`); the opt-in
   cprint/Retro68 Mac lane (kept until now as a cross-lane localization
   oracle) gets deleted.
-- **Retire Go** — port the test-harness infrastructure to C and Make so
-  the project no longer depends on a Go toolchain.
 
 More recorded candidates (`yield`/cancel, reciprocal packers, parking
 lot): `docs/TODO.md`.
