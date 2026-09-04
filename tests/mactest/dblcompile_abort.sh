@@ -8,7 +8,7 @@
 # leakfork_0.bin (tickprobe #1) must be byte-identical to leakfork_2.bin
 # (tickprobe #2, compiled right after the aborted compile).
 . "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_mactest_host.sh"
+. "$ROOT/tests/lib_mactest_host.sh" || die "helper lib failed to load"
 
 scratch_under_br mactest-dblcompile-abort
 

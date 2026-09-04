@@ -6,7 +6,7 @@
 # stronger alternating [tickprobe, catprobe, tickprobe], each compared
 # against a 1-compile baseline and each fork-byte-identity checked.
 . "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_mactest_host.sh"
+. "$ROOT/tests/lib_mactest_host.sh" || die "helper lib failed to load"
 
 GROWTH_LIMIT=64
 

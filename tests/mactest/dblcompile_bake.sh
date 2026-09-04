@@ -10,7 +10,7 @@
 # below the runtime-function boundary, and the installed state is
 # identical on every compile.
 . "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_mactest_host.sh"
+. "$ROOT/tests/lib_mactest_host.sh" || die "helper lib failed to load"
 
 GROWTH_LIMIT=64
 
@@ -56,7 +56,7 @@ check_states() {
         }
         END {
             if (failed) exit 1
-            if (n != want) { print "got " n " BAKESTATE lines, want " want; exit 1 }
+            if (n != want) { print "got " (n + 0) " BAKESTATE lines, want " want; exit 1 }
         }
     ' "$ERRLOG") || { t_fail "$1" "$_msg"; return 1; }
     return 0

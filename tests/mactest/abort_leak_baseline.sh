@@ -7,7 +7,7 @@
 # zero live heap blocks: an abort unwinds by ordinary ARC, so it is
 # exactly as leak-free as a normal return.
 . "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_mactest_host.sh"
+. "$ROOT/tests/lib_mactest_host.sh" || die "helper lib failed to load"
 
 scratch_under_br mactest-abort-leak-baseline
 

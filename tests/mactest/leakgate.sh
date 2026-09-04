@@ -4,7 +4,7 @@
 # heap blocks at exit under the CLARUS_MEM_STRICT ledger. The three
 # in-process double-compile subcases live in dblcompile{,_bake,_abort}.sh.
 . "$(dirname "$0")/../lib.sh"
-. "$ROOT/tests/lib_mactest_host.sh"
+. "$ROOT/tests/lib_mactest_host.sh" || die "helper lib failed to load"
 
 scratch_under_br mactest-leakgate
 
