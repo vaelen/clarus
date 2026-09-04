@@ -32,11 +32,11 @@ if [ "$SMOKE" = "1" ]; then
         -count=1 -timeout 20m
 fi
 # transition: the new Make harness (go-retirement phase) runs alongside the
-# Go lane above until Task 15 deletes internal/. Both `|| true` guards come off
-# in Task 15, once the groups they name exist.
+# Go lane above until Task 15 deletes internal/. The smoke line's `|| true`
+# guard comes off in Task 15, once the group it names exists.
 make -j"$(sysctl -n hw.ncpu)" tools bootstrap
 make -j"$(sysctl -n hw.ncpu)" t1
-make test T=perfgate/ || true   # no perfgate scripts until Task 2
+make test T=perfgate/
 if [ "$SMOKE" = "1" ]; then make smoke || true; fi   # no scripts until Task 13
 
 END=$(date +%s)
