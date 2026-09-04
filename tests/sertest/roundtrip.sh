@@ -8,8 +8,9 @@
 # two pin the on-disk format (magic/version/container header, BE ints,
 # zero-padded strings) exactly, not just "it round-trips".
 #
-# SER_BLESS=1 rewrites these three goldens (the Go test had no bless path;
-# golden_check needs a variable name, and hand-editing binary goldens is worse).
+# No bless path: the Go test had none, and these three goldens are pinned
+# format baselines -- an env var that rewrites them and turns the test green is
+# exactly what must not exist here.
 . "$(dirname "$0")/../lib.sh"
 
 # cc's warnings on the emitted C are pre-existing noise; show them only on a
@@ -25,18 +26,22 @@ if ! ( cd "$run" && "$WORK/roundtrip" ) > "$WORK/stdout" 2> "$WORK/stderr"; then
 fi
 
 G=testdata/sertest
-golden_check "$WORK/stdout" "$G/roundtrip.out.golden" SER_BLESS \
-    && t_pass stdout || t_fail stdout "mismatch vs $G/roundtrip.out.golden"
 
-# check_bytes SAVEDFILE GOLDEN
-check_bytes() {
-    if [ ! -f "$run/$1" ]; then
+# compare NAME GOT GOLDEN : byte-compare, with cmp's first-difference offset as
+# the failure detail (plus first_diff's line view, useful for the text golden).
+compare() {
+    if [ ! -f "$2" ]; then
         t_fail "$1" "not produced by the run"
         return
     fi
-    golden_check "$run/$1" "$G/$2" SER_BLESS \
-        && t_pass "$1" || t_fail "$1" "bytes mismatch vs $G/$2"
+    if cmp -s "$2" "$3"; then
+        t_pass "$1"
+    else
+        t_fail "$1" "mismatch vs $3: $(cmp "$2" "$3" 2>&1 | head -1)"
+        first_diff "$3" "$2"
+    fi
 }
-check_bytes rec.dat roundtrip.bytes.golden
-check_bytes pad.dat padprobe.bytes.golden
+compare stdout  "$WORK/stdout" "$G/roundtrip.out.golden"
+compare rec.dat "$run/rec.dat" "$G/roundtrip.bytes.golden"
+compare pad.dat "$run/pad.dat" "$G/padprobe.bytes.golden"
 t_done

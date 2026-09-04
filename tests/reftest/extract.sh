@@ -6,7 +6,7 @@
 
 n=$(fences "$REFMD")
 if [ "$n" -ge 20 ]; then
-    t_pass "count ($n fences)"
+    t_pass count
 else
     t_fail count "expected at least 20 rust fences, got $n"
 fi

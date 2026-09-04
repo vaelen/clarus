@@ -19,7 +19,9 @@ fences() {
 
 # REFMD is the reference document all three reftest scripts read.
 REFMD=$ROOT/docs/clarus-language-reference.md
-# MANIFEST holds the check-clean fence indices ("#" lines are comments).
+# MANIFEST holds the check-clean fence indices ("#" lines are comments). A
+# missing or empty manifest would make checkclean.sh a silent green, so die.
 MANIFEST=$ROOT/tests/reftest/manifest.txt
+[ -s "$MANIFEST" ] || die "manifest.txt missing"
 # manifest_indices : those indices, one per line, comments stripped.
 manifest_indices() { grep -v '^#' "$MANIFEST"; }
