@@ -5,8 +5,8 @@
 /build-mac/
 /build-68k/
 /build-run/
-internal/mactest/probe/build/
-internal/mactest/uiprobe/build/
+tests/mactest/probe/build/
+tests/mactest/uiprobe/build/
 /vasm
 /snow
 

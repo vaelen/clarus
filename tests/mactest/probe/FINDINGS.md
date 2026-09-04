@@ -19,7 +19,7 @@ captured stdout on the host.
 Build:
 
 ```sh
-cd internal/mactest/probe
+cd tests/mactest/probe
 cmake -B build -DCMAKE_TOOLCHAIN_FILE=$PWD/../../../toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
 make -C build
 ```
@@ -33,7 +33,7 @@ exits immediately and LaunchAPPL returns as soon as the emulated Mac shuts
 down):
 
 ```sh
-cd internal/mactest/probe
+cd tests/mactest/probe
 ../../../toolchain/bin/LaunchAPPL -e minivmac build/Probe.bin > launchappl.stdout 2>&1
 echo "exit: $?"
 cat launchappl.stdout
