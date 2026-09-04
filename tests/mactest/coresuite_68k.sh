@@ -12,7 +12,7 @@
 # `TOTAL n PASS p FAIL f`, and every case line is re-emitted here so the
 # runner reports per case (the Go test's per-case t.Run).
 . "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_mac.sh"
+. "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 
 # Word splitting is the point: the list has no spaces in it.

@@ -12,7 +12,7 @@
 #
 # Run: CLARUS_MAC_TESTS=1 CLARUS_BENCH68K=1 make test T=mactest/bench
 . "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_mac.sh"
+. "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_BENCH68K
 require_env CLARUS_MAC_TESTS
 

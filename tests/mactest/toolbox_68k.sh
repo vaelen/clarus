@@ -8,7 +8,7 @@
 # in-process. Content-based gate, no trace/snap goldens; each of the 35
 # result lines is re-emitted so the runner reports per case.
 . "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_mac.sh"
+. "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 
 toolbox_emit68k "$WORK/toolboxsuite_gui.bin" testdata/ui/toolboxsuite.events

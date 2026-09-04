@@ -1,4 +1,4 @@
-/* internal/mactest/uiprobe/events_popup.c -- scripted verification of the
+/* tests/mactest/uiprobe/events_popup.c -- scripted verification of the
    PopupProbe window added in mac-target-4d Task 3 (RTUI_POPUP). An
    alternative strong rt_ui_test_script to events.c/events_text.c (Task 3,
    mac-target-4b / mac-target-4c), selected instead of them via

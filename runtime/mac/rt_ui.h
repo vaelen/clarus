@@ -2,7 +2,7 @@
    widgets, menus, canvas, timers). This is the pinned contract from
    docs/superpowers/plans/2026-07-24-mac-target-4b.md ("Contracts pinned by
    this plan"): struct layouts and function names are consumed identically
-   by hand-written C (internal/mactest/uiprobe/probe_ui.c, Task 1) and by
+   by hand-written C (tests/mactest/uiprobe/probe_ui.c, Task 1) and by
    clarusc's emitted C (Tasks 4-5) -- do not rename or reorder fields
    without updating the plan.
 
@@ -453,7 +453,7 @@ void  rt_ui_canvas_draw_text(void *inst, short wIdx, short x, short y, const uns
  * empty in rt_ui.c -- an empty script means "no scripted input; run the
  * normal WaitNextEvent loop with real input" -- so a generated events.c
  * (scripts/build-mac.sh's `--events FILE`, or the committed sample at
- * internal/mactest/uiprobe/events.c) need only provide ONE strong,
+ * tests/mactest/uiprobe/events.c) need only provide ONE strong,
  * non-empty definition of this exact symbol to override it at link time;
  * declared here so that generated code has an authoritative signature to
  * match without including rt_ui.c or guessing the type. RT_MAC_TEST only:

@@ -1,4 +1,5 @@
 #!/bin/sh
+# timeout: 20m
 # mactest/appres -- port of internal/mactest/appres_test.go's
 # TestAppResNaming / TestAppResResources / TestAppResBundleBit. All three
 # inspect different artifacts of the SAME build (naming, appres.r +
@@ -10,7 +11,7 @@
 # .cla), exercising build-mac.sh's appinfo-driven naming path: appres.cla's
 # `app AppResProbe` name sanitized to App-Res-Probe.
 . "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_mac.sh"
+. "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_CPRINT_MAC_TESTS
 
 "$ROOT/scripts/build-mac.sh" testdata/ui/appres.cla --test \

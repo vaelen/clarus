@@ -7,7 +7,7 @@
 # fixture's `every 1 ticks` block counts to 60 and quits, so a regressed
 # timer path never fires and the boot deadline IS the failure signal.
 . "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_mac.sh"
+. "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 
 emit68k -o "$WORK/tickprobe.bin" testdata/cg68k/tickprobe.cla \

@@ -10,7 +10,7 @@
 # none either), so cases_resources.cla's baked-resource lookup has nothing
 # to find here.
 . "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_mac.sh"
+. "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_CPRINT_MAC_TESTS
 
 # Word splitting is the point: the list has no spaces in it.

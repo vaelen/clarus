@@ -12,7 +12,7 @@
 # smoke_bounce is NOT repeated here -- it has its own script, mirroring its
 # own standalone TestSmokeBounceOn68k.
 . "$(dirname "$0")/../lib.sh"
-. "$(dirname "$0")/../lib_mac.sh"
+. "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 
 # snaps_differ SCENARIO A B WHY : cmp two produced snaps; equal is a FAIL.

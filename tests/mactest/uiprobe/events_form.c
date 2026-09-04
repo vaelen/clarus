@@ -1,4 +1,4 @@
-/* internal/mactest/uiprobe/events_form.c -- scripted verification of the
+/* tests/mactest/uiprobe/events_form.c -- scripted verification of the
    FormProbe/FormLauncher windows added in mac-target-4d Task 6 (rt_ui_edit,
    the binding walker, and the modality filter), extended in Fix round 1 for
    the FIXED-bind bug (rt_ui_parse_fixed) and the quit-while-modal bug (a
