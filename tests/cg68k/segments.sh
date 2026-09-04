@@ -4,13 +4,13 @@
 # suite's CLI composition), TestSegmentationOversizedFunction and
 # TestSegmentationOversizedFrame (compile errors, not crashes).
 #
-# vasm is a hard precondition, mirroring segment_test.go's own
-# requireVasm(t) -- without it TestSegmentationMultiSegment skips whole.
-# (Consequence: the two oversized subcases below skip with it, where Go
-# would still run them. Accepted: the per-segment round trip is the point
-# of this script.)
+# Subcase order follows Go's own vasm dependency, not this file's reading
+# order: segment_test.go calls requireVasm(t) only at the round-trip step,
+# so everything it asserts before that -- plus the two oversized tests,
+# which are separate Go tests that never touch vasm -- runs above the
+# `require_vasm` gate below. Without the vasm symlink this script still
+# reports those eight subcases, then exits 77 exactly where Go skips.
 . "$(dirname "$0")/../lib.sh"
-require_vasm
 
 RESFORK=$TOOLS/resfork
 
@@ -159,34 +159,6 @@ fi
 # above aren't vacuous.
 echo "info: $segcount CODE segment(s), $nentries JT entries, $ncalls cross-segment JSR d16(A5) call site(s)"
 
-# -- per-segment vasm round trip on every .segN.s/.segN.dat pair --
-rtfail=
-n=1
-while [ "$n" -le "$segcount" ]; do
-    if ! "$VASM" -quiet -m68000 -no-opt -Fbin -o "$WORK/vasm_seg$n.bin" "$BASE.seg$n.s" > "$WORK/vasm_seg$n.log" 2>&1; then
-        rtfail="$rtfail segment $n: vasm assemble failed: $(tail -2 "$WORK/vasm_seg$n.log");"
-    elif ! cmp -s "$BASE.seg$n.dat" "$WORK/vasm_seg$n.bin"; then
-        rtfail="$rtfail segment $n: vasm round-trip diverged: $(cmp "$BASE.seg$n.dat" "$WORK/vasm_seg$n.bin" 2>&1 | head -1);"
-    fi
-    n=$(( n + 1 ))
-done
-if [ -z "$rtfail" ]; then
-    t_pass vasm_roundtrip
-else
-    t_fail vasm_roundtrip "$rtfail"
-fi
-
-# -- double-emit determinism on the multi-segment image itself --
-if ! emit68k -o "$D2/out.bin" "$@" > "$D2/emit.log" 2>&1; then
-    t_fail determinism "emit68k (run 2) failed: $(tail -5 "$D2/emit.log")"
-elif ! emit68k -o "$D3/out.bin" "$@" > "$D3/emit.log" 2>&1; then
-    t_fail determinism "emit68k (run 3) failed: $(tail -5 "$D3/emit.log")"
-elif cmp -s "$D2/out.bin" "$D3/out.bin"; then
-    t_pass determinism
-else
-    t_fail determinism "emit68k is non-deterministic on a multi-segment build: $(cmp "$D2/out.bin" "$D3/out.bin" 2>&1 | head -1)"
-fi
-
 # -- oversized function: a diagnostic, not a crash --
 OD=$WORK/oversized
 mkdir -p "$OD" || die "mkdir"
@@ -238,6 +210,42 @@ elif [ -e "$FD/out.bin" ]; then
     t_fail oversized_frame "emit68k left a .bin behind despite the oversized-frame error"
 else
     t_pass oversized_frame
+fi
+
+# -- vasm gate: everything above reproduces what Go asserts BEFORE
+# segment_test.go's own requireVasm(t) call, plus the two oversized tests
+# (separate Go tests that never touch vasm). Only the round trip and the
+# determinism check below sit after the gate, exactly as Go loses both --
+# and a FAIL already printed must never be hidden by exit 77.
+[ "$STATUS" = 0 ] || t_done
+require_vasm
+
+# -- per-segment vasm round trip on every .segN.s/.segN.dat pair --
+rtfail=
+n=1
+while [ "$n" -le "$segcount" ]; do
+    if ! "$VASM" -quiet -m68000 -no-opt -Fbin -o "$WORK/vasm_seg$n.bin" "$BASE.seg$n.s" > "$WORK/vasm_seg$n.log" 2>&1; then
+        rtfail="$rtfail segment $n: vasm assemble failed: $(tail -2 "$WORK/vasm_seg$n.log");"
+    elif ! cmp -s "$BASE.seg$n.dat" "$WORK/vasm_seg$n.bin"; then
+        rtfail="$rtfail segment $n: vasm round-trip diverged: $(cmp "$BASE.seg$n.dat" "$WORK/vasm_seg$n.bin" 2>&1 | head -1);"
+    fi
+    n=$(( n + 1 ))
+done
+if [ -z "$rtfail" ]; then
+    t_pass vasm_roundtrip
+else
+    t_fail vasm_roundtrip "$rtfail"
+fi
+
+# -- double-emit determinism on the multi-segment image itself --
+if ! emit68k -o "$D2/out.bin" "$@" > "$D2/emit.log" 2>&1; then
+    t_fail determinism "emit68k (run 2) failed: $(tail -5 "$D2/emit.log")"
+elif ! emit68k -o "$D3/out.bin" "$@" > "$D3/emit.log" 2>&1; then
+    t_fail determinism "emit68k (run 3) failed: $(tail -5 "$D3/emit.log")"
+elif cmp -s "$D2/out.bin" "$D3/out.bin"; then
+    t_pass determinism
+else
+    t_fail determinism "emit68k is non-deterministic on a multi-segment build: $(cmp "$D2/out.bin" "$D3/out.bin" 2>&1 | head -1)"
 fi
 
 t_done

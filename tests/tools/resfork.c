@@ -280,7 +280,10 @@ static void cmd_code0(void)
     n = (int)(jt_len / 8);
     if (n == 0)
         die("CODE 0 has no jump-table entries");
-    if (16 + jt_len > c0->len)
+    /* Written as a subtraction on the KNOWN-larger side: `16 + jt_len`
+     * wraps in u32, so a jt_len near UINT_MAX would pass that form and the
+     * loop below would read past the buffer. c0->len >= 16 above. */
+    if (jt_len > c0->len - 16)
         die("CODE 0 length %u cannot hold a %u-byte jump table at offset 16", c0->len, jt_len);
     printf("above_a5=%u below_a5=%u jt_size=%u jt_off=%u\n",
            be32(c0->data), be32(c0->data + 4), jt_len, jt_off);

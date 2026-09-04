@@ -6,13 +6,13 @@
 #
 # The testdata/mac/resparity/*.bin goldens are FROZEN, pinned once from a
 # real Retro68 build of the same two fixtures: any divergence is a real
-# app68k/res68k regression, so there is deliberately no bless variable
-# (golden_check's third argument is an always-unset name).
+# app68k/res68k regression. So these compare with a plain `cmp` and never
+# call golden_check -- there is no bless path to reach at all, not even an
+# unset variable name someone could export.
 . "$(dirname "$0")/../lib.sh"
 
 RESFORK=$TOOLS/resfork
 GOLD=$ROOT/testdata/mac/resparity
-NO_BLESS=RESPARITY_GOLDENS_ARE_FROZEN
 
 # build_probe DIR FIXTURE : emit68k FIXTURE to DIR/out.bin, log to DIR/emit.log
 build_probe() {
@@ -33,8 +33,9 @@ check_goldens() {
             _bad="$_bad $(cat "$WORK/get.err");"
             continue
         fi
-        golden_check "$_out" "$GOLD/${_prefix}_${_typ}_${_id}.bin" "$NO_BLESS" > "$WORK/gc.out" 2>&1 \
-            || _bad="$_bad ${_typ} ${_id}: $(head -2 "$WORK/gc.out" | tr '\n' ' ');"
+        _gold=$GOLD/${_prefix}_${_typ}_${_id}.bin
+        cmp -s "$_out" "$_gold" \
+            || _bad="$_bad ${_typ} ${_id}: $(cmp "$_out" "$_gold" 2>&1 | head -1);"
     done
     if [ -z "$_bad" ]; then
         t_pass "${_prefix}_goldens"
