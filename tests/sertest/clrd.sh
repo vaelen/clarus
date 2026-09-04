@@ -5,9 +5,9 @@
 # the pinned goldens in testdata/sertest/clrd_goldens.
 #
 # The goldens are a FROZEN baseline of the C serializer (rt_ser.inc), not a
-# live re-capture of clarusc's current output -- see clrdcompare_test.go's
-# package doc comment. CLRD_BLESS=1 rewrites them; only ever do that
-# deliberately.
+# live re-capture of clarusc's current output (history: the retired Go twin's
+# package doc, `git show go-harness-final^:internal/sertest/clrdcompare_test.go`).
+# CLRD_BLESS=1 rewrites them; only ever do that deliberately.
 . "$(dirname "$0")/../lib.sh" || exit 2
 
 GDIR=testdata/sertest/clrd_goldens
