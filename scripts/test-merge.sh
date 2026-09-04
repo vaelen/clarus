@@ -17,7 +17,8 @@
 # scripts are opt-in the same way, behind CLARUS_SNOW_TESTS=1.
 #
 # Slow (~15m plus selfhost) -- run before merging to main, not per-task.
-# This is `make t2` with a PASS-in-Ns line per stage.
+# This is `make t2` with a PASS-in-Ns line per stage -- keep the stage list
+# below in sync with `make t2`'s recipe in the Makefile.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -33,7 +34,10 @@ stage() {
 }
 
 make -j"$J" tools bootstrap
-stage "t1 body"        make -j"$J" t1
+# t1 is parallel and includes every gated mactest/ script; strip the gate
+# variables so an exported one can't boot emulators concurrently (the later
+# stages set them back explicitly, at -j1). See the Makefile's `t1:` comment.
+stage "t1 body"        env -u CLARUS_MAC_TESTS -u CLARUS_SNOW_TESTS -u CLARUS_CPRINT_MAC_TESTS -u CLARUS_BENCH68K make -j"$J" t1
 stage "perfgate/"      make test T=perfgate/
 stage "selfhost/"      make test T=selfhost/
 stage "mactest/"       env CLARUS_MAC_TESTS=1 make -j1 test T=mactest/

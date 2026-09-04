@@ -33,7 +33,9 @@ require_vasm() {
         || skip "vasm -Fbin probe failed"
     [ "$(od -An -tx1 "$WORK/probe.bin" | tr -d ' \n')" = 01020304 ] || skip "vasm -Fbin probe wrong bytes"
 }
-env_set() { eval "_v=\${$1:-}"; [ -n "$_v" ]; }
+# A bless variable counts only when set to exactly 1 -- same rule as
+# require_env above, so an exported 0 (or "no") never rewrites a golden.
+env_set() { eval "_v=\${$1:-}"; [ "$_v" = 1 ]; }
 
 # --- goldens ---------------------------------------------------------
 # golden_check FILE GOLDEN BLESSVAR : bless (copy) if $BLESSVAR is set,

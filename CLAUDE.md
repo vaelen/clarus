@@ -126,16 +126,22 @@ Tiered test gates:
     neither T1 nor T2 boots it.
   - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
     calibration bench, `tests/mactest/bench.sh`.
-- Golden blessing: `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap
-  goldens, `CLARUS_CG68K_BLESS=1` the `testdata/cg68k` `.s` goldens, and
-  `CLARUS_BLESS_BEHAVIOR=1` the `selfhost` `.behavior` blobs.
+- Golden blessing — four variables, and each must be set to exactly `1`
+  (`lib.sh`'s `env_set`; any other value, `0` included, is NOT a bless):
+  `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap goldens,
+  `CLARUS_CG68K_BLESS=1` the `testdata/cg68k` `.s` goldens,
+  `CLARUS_BLESS_BEHAVIOR=1` the `selfhost` `.behavior` blobs, and
+  `CLRD_BLESS=1` the frozen `testdata/sertest/clrd_goldens/` CLRD
+  stdout/`.dat` blobs — that last one is deliberate-only: those goldens
+  were pinned once from a verified run and nothing should rewrite them
+  incidentally.
 
 - The Go compiler is DELETED (tag `go-compiler-final`). clarusc
   (`clarusc/*.cla`) is the only compiler; new language features land in the
   reference + clarusc.
 - `clarusc/clarusc.c` is the committed bootstrap snapshot. If
-  `tests/selfhost/fixedpoint.sh` fails, its own header comment carries the
-  regeneration recipe.
+  `tests/selfhost/fixedpoint.sh` fails, its `snapshot_fresh` failure
+  message prints the Go-free regeneration recipe.
 - Bootstrap from C alone:
   `cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c`
 - `--testapi` (`clarusc emit`/`emit68k`/`appinfo`, ui-scenario-retirement
@@ -271,6 +277,15 @@ enum + runner, not one boot per case.
 - `toolchain/` → built cross-toolchain (`toolchain/bin`: gcc, Rez, LaunchAPPL,
   hfsutils h* tools). Prebuilt samples: `../Retro68-build/build-target/Samples/`.
 - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
+- `vasm/` → locally built `vasmm68k_mot` (the third-party 68000 assembler
+  used as an encoder oracle; rebuild recipe in
+  `tests/asm68k/roundtrip.sh`'s header). Missing or built without the bin
+  output module ⇒ `tests/asm68k/roundtrip.sh`, `tests/cg68k/vasm.sh` and
+  the round-trip halves of `tests/cg68k/array_assign.sh` and
+  `tests/cg68k/segments.sh` SKIP.
+- `snow/` → Snow emulator (`snow/Snow`) plus its `Clarus.snoww` workspace,
+  ROM and PRAM — the System 7 / Mac II lane. Missing ⇒ the whole
+  `tests/mactest/snow/` group SKIPs.
 
 To build a Mac app from C: `CMakeLists.txt` with `add_application(Name src.c)`, then
 

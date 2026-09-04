@@ -6,6 +6,12 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd); export ROOT; cd "$ROOT"
 log=${result%.result}.log
 name=${script#tests/}; name=${name%.sh}
 t=$(sed -n 's/^# timeout: *//p' "$script" | head -1)
+# Guard BEFORE the unit conversion: $(( )) on a header like "(m" is a shell
+# syntax error, which would abort the runner (no result line at all) rather
+# than fall back. Anything but digits and a trailing unit letter is bogus.
+case "$t" in
+    *[!0-9hms]*) t=600 ;;
+esac
 case "$t" in
     "") t=600 ;;
     *h) t=$(( ${t%h} * 3600 )) ;;
@@ -14,8 +20,8 @@ case "$t" in
 esac
 # A malformed header must not silently disable the deadline: anything that
 # is not a positive decimal after unit conversion falls back to the default.
-# (This has to run AFTER the conversions -- "bogus" ends in "s", so the *s
-# arm above strips it to "bogu" rather than leaving it intact.)
+# (This has to run AFTER the conversions -- "hms" passes the pre-guard, then
+# the *s arm strips it to "hm"; and "0m" converts to a 0 = no deadline.)
 case "$t" in
     ""|0|*[!0-9]*) t=600 ;;
 esac

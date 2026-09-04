@@ -15,10 +15,13 @@
 # business and is pinned separately, by emitui/goldens.sh's own
 # uiblob_probe.c.golden.
 #
-# To regenerate after an intentional uiblob.cla format change: rerun this
-# script's emit + extraction by hand, write the bytes to
-# uiblob_probe.blob.golden, regenerate the dump with build-run/tools/uiblob,
-# and re-verify the dump against the format spec BY HAND.
+# Both goldens are FROZEN: they compare with a plain `cmp` and have no
+# bless path at all, not even an unset variable name someone could export
+# (same rule as tests/mactest/resparity.sh). To regenerate after an
+# intentional uiblob.cla format change: rerun this script's emit +
+# extraction by hand, write the bytes to uiblob_probe.blob.golden,
+# regenerate the dump with build-run/tools/uiblob, and re-verify the dump
+# against the format spec BY HAND.
 . "$(dirname "$0")/../lib.sh" || exit 2
 
 fixture=testdata/emitui/uiblob_probe.cla
@@ -34,18 +37,18 @@ awk '/clar_ui_blob\[\] *= *\{/{f=1;next} f&&/\};/{exit} f' "$WORK/probe.c" \
   || die "extract clar_ui_blob[] from $WORK/probe.c"
 [ -s "$WORK/probe.blob" ] || die "clar_ui_blob[] array literal not found in $WORK/probe.c"
 
-if golden_check "$WORK/probe.blob" testdata/emitui/uiblob_probe.blob.golden NO_BLESS; then
+if cmp -s "$WORK/probe.blob" testdata/emitui/uiblob_probe.blob.golden; then
     t_pass blob_bytes
 else
-    t_fail blob_bytes "clar_ui_blob bytes differ from testdata/emitui/uiblob_probe.blob.golden ($(wc -c < "$WORK/probe.blob" | tr -d ' ') vs $(wc -c < testdata/emitui/uiblob_probe.blob.golden | tr -d ' ') bytes)"
+    t_fail blob_bytes "clar_ui_blob bytes differ from testdata/emitui/uiblob_probe.blob.golden ($(wc -c < "$WORK/probe.blob" | tr -d ' ') vs $(wc -c < testdata/emitui/uiblob_probe.blob.golden | tr -d ' ') bytes): $(cmp "$WORK/probe.blob" testdata/emitui/uiblob_probe.blob.golden 2>&1 | head -1)"
 fi
 
 # Structural decode of the COMMITTED golden (what the Go decoder walked).
 if "$TOOLS/uiblob" testdata/emitui/uiblob_probe.blob.golden > "$WORK/probe.dump" 2> "$WORK/probe.err"; then
-    if golden_check "$WORK/probe.dump" testdata/emitui/uiblob_probe.dump.golden NO_BLESS; then
+    if cmp -s "$WORK/probe.dump" testdata/emitui/uiblob_probe.dump.golden; then
         t_pass blob_structure
     else
-        t_fail blob_structure "decoded structure differs from testdata/emitui/uiblob_probe.dump.golden"
+        t_fail blob_structure "decoded structure differs from testdata/emitui/uiblob_probe.dump.golden: $(cmp "$WORK/probe.dump" testdata/emitui/uiblob_probe.dump.golden 2>&1 | head -1)"
     fi
 else
     t_fail blob_structure "uiblob decode failed: $(tr '\n' ' ' < "$WORK/probe.err")"

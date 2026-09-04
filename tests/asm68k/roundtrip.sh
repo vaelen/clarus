@@ -7,8 +7,20 @@
 # Neither side is trusted a priori; convergence is the evidence.
 #
 # SKIPs (via require_vasm) when vasm/vasmm68k_mot is missing or was built
-# without the bin output module -- an environment gap, not a code bug. See
-# vasm_test.go's requireVasm doc comment for the rebuild recipe.
+# without the bin output module -- an environment gap, not a code bug.
+# require_vasm's probe is a real assemble-and-check, not a banner grep: a
+# stale local binary built without the bin module (this repo has hit that)
+# must SKIP, not fail.
+#
+# vasm/ in this repo ships only vasm's doc plus a gitignored binary (like
+# the Retro68/toolchain symlinks -- see repo CLAUDE.md); the binary is NOT
+# committed and must be built locally from vasm 1.8g source with the bin
+# output module enabled:
+#
+#	cd <vasm-source-checkout>          # e.g. a sibling clone of vasm 1.8g
+#	make CPU=m68k SYNTAX=mot           # top-level Makefile; OUTFMTS in
+#	                                   # Makefile already includes -DOUTBIN
+#	cp vasmm68k_mot <clarus-repo>/vasm/vasmm68k_mot
 . "$(dirname "$0")/../lib.sh" || exit 2
 
 require_vasm

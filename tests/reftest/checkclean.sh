@@ -6,7 +6,12 @@
 . "$(dirname "$0")/../lib_reftest.sh" || die "helper lib failed to load"
 
 n=$(fences "$REFMD")
+# lib_reftest.sh's [ -s ] guard passes a comments-only manifest, which would
+# make this script a silent green with zero assertions -- so count what we
+# actually iterate (same idiom as tests/selfhost/diag.sh).
+count=0
 for idx in $(manifest_indices); do
+    count=$((count + 1))
     if [ "$idx" -ge "$n" ]; then
         t_fail "f$idx" "manifest index $idx out of range ($n fences)"
         continue
@@ -22,4 +27,5 @@ for idx in $(manifest_indices); do
         t_pass "f$idx"
     fi
 done
+[ "$count" -gt 0 ] || die "manifest has no indices"
 t_done

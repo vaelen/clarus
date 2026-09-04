@@ -4996,9 +4996,11 @@ deleted `internal/` and `go.mod`.
 their two pre-existing cprint-runtime failures, `FileHandleRW: create
 failed` and `DirOps: exists("") false`), `CLARUS_SNOW_TESTS=1` for the
 Snow lane, `CLARUS_BENCH68K=1` for the 68k calibration bench,
-`CLARUS_BAKE_FULL=1` for the bake full-corpus sweep, and the three bless
+`CLARUS_BAKE_FULL=1` for the bake full-corpus sweep, and the four bless
 variables `CLARUS_MAC_BLESS` / `CLARUS_CG68K_BLESS` /
-`CLARUS_BLESS_BEHAVIOR`.
+`CLARUS_BLESS_BEHAVIOR` / `CLRD_BLESS` — each recognized only when set to
+exactly `1`, and the last of those rewrites the frozen
+`testdata/sertest/clrd_goldens/` blobs, so it is deliberate-only.
 
 Spec: `docs/superpowers/specs/2026-09-05-go-retirement-design.md`; plan
 `docs/superpowers/plans/2026-09-05-go-retirement.md`; per-task briefs,

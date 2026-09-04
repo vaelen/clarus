@@ -23,7 +23,10 @@ START=$(date +%s)
 J=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
 make -j"$J" tools bootstrap
-make -j"$J" t1
+# The t1 body runs in parallel and includes every gated mactest/ script;
+# strip the gate variables so an exported one can't boot emulators
+# concurrently (see the Makefile's own comment above `t1:`).
+env -u CLARUS_MAC_TESTS -u CLARUS_SNOW_TESTS -u CLARUS_CPRINT_MAC_TESTS -u CLARUS_BENCH68K make -j"$J" t1
 make test T=perfgate/
 if [ "$SMOKE" = "1" ]; then make smoke; fi
 

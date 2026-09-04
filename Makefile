@@ -42,12 +42,22 @@ FORCE:
 
 test: $(call RES,$(SEL))
 	@tests/summary.sh $^
+# t1 runs every group but selfhost/ and perfgate/ IN PARALLEL -- every
+# tests/mactest/** script included. Those gated groups are MEANT to
+# self-skip here (require_env on CLARUS_MAC_TESTS / CLARUS_SNOW_TESTS /
+# CLARUS_CPRINT_MAC_TESTS / CLARUS_BENCH68K): an inherited gate variable
+# would boot several emulators at once, each fighting for the one screen.
+# So the wrappers (scripts/test-task.sh, scripts/test-merge.sh) and t2
+# below strip those four with `env -u` before the parallel body; the later
+# serial stages set them back explicitly and run -j1.
 t1: $(call RES,$(T1))
 	@tests/summary.sh $^
 smoke:
 	CLARUS_MAC_TESTS=1 $(MAKE) -j1 test T='mactest/smoke_bounce mactest/tick'
+# The wrappers duplicate these stages for per-stage timing -- keep in sync
+# with scripts/test-merge.sh.
 t2:
-	$(MAKE) -j$(J) t1
+	env -u CLARUS_MAC_TESTS -u CLARUS_SNOW_TESTS -u CLARUS_CPRINT_MAC_TESTS -u CLARUS_BENCH68K $(MAKE) -j$(J) t1
 	$(MAKE) test T=perfgate/
 	$(MAKE) test T=selfhost/
 	CLARUS_MAC_TESTS=1 $(MAKE) -j1 test T=mactest/
