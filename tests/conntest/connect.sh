@@ -13,17 +13,20 @@ conn_build echo || { t_fail build "$(cat "$WORK/echo.build")"; t_done; }
 t_pass build
 
 conn_sweep "$WORK/sweep"
+printf 'a second write, after the sweep' > "$WORK/second"
 printf 'QQQ' > "$WORK/qqq"
 
 # The peer script. `expect-sub "READY\r" 64` rather than a bare 6-byte
 # `expect`: leading garbage before the greeting is tolerated (Task 14's
-# Snow bridge emits a noise byte).
+# Snow bridge emits a noise byte). The second exchange sends a DIFFERENT
+# payload from the sweep on purpose -- a duplicated first echo could
+# otherwise masquerade as a second `received` firing.
 cat > "$WORK/peer.script" <<EOF
 expect-sub "READY\r" 64
 send $WORK/sweep
 expect $WORK/sweep
-send $WORK/sweep
-expect $WORK/sweep
+send $WORK/second
+expect $WORK/second
 send $WORK/qqq
 expect $WORK/qqq
 await-close 5

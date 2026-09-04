@@ -24,7 +24,10 @@
 #     earlier than that echo (rtConnPump drains `opened` before `received`,
 #     and the probe cannot be received before the accept), so after this
 #     step the stream is byte-aligned either way and the sweep comparison
-#     below stays exact.
+#     below stays exact. The window is capped at 8 bytes, not left wide:
+#     the only legitimate shapes are 1 byte (no greeting) and 7 bytes
+#     (greeting + echo), so this tolerates no more arbitrary leading
+#     garbage than Go's own two-byte-exact-shapes peek did.
 . "$(dirname "$0")/../lib.sh"
 . "$(dirname "$0")/../lib_conntest.sh"
 
@@ -37,7 +40,7 @@ printf 'QQQ' > "$WORK/qqq"
 
 cat > "$WORK/client.script" <<EOF
 send $WORK/probe
-expect-sub "!" 64
+expect-sub "!" 8
 send $WORK/sweep
 expect $WORK/sweep
 send $WORK/qqq
