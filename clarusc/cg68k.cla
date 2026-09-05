@@ -4310,9 +4310,11 @@ func cgEmitPanic(msgLitIdx: int) {
     cgCallFunc(panicFi)
 }
 
-// cgAllocTmpOff reserves the next free statement-temp slot (this
-// STATEMENT's own high-water mark, cgStmtTmpNext -- cgStmt resets it to 0
-// at every statement's start) WITHOUT tracking it for release -- the raw
+// cgAllocTmpOff reserves the next free statement-temp slot (cgStmtTmpNext,
+// which cgStmt saves on entry and restores on exit but -- since Task 12b
+// of the language-runtime-cleanup phase -- does NOT reset, so a nested
+// statement allocates above its enclosing statement's still-live slots and
+// siblings still reuse them) WITHOUT tracking it for release -- the raw
 // bump allocator every out-param-needing container intrinsic arm uses for
 // its own scratch (pop/shift/first/last/get/getDv/getDvBirth all need
 // SOME address to hand the runtime call as its out-param, tracked or not).
@@ -12474,17 +12476,20 @@ func cgCopyElemFrom(srcReg: int, srcOff: int, elemT: int) {
 // machine stack (three `-(A7)` pushes at entry, addressed by FIXED
 // small offsets from the CURRENT A7 for the loop's whole duration -- same
 // precedent cgForRangeStmt's own single `to` value already establishes,
-// widened to three slots), NOT this file's own statement-temp pool: that
-// pool's bump allocator resets to 0 at the START OF EVERY STATEMENT
-// (cgStmt's own save/fresh/restore wrapper), including each of THIS loop's
-// own body statements -- reusing it here would let the body's first nested
-// statement's own temp allocation silently alias the SAME physical slot
-// this loop is using for its own persistent index/count, corrupting the
-// loop the moment its body needs even one temp of its own. The real stack
-// has no such per-statement reset: every value pushed here survives the
-// body's own arbitrarily many balanced push/JSR/cleanup sequences (the
-// SAME invariant cgForRangeStmt's own doc comment already established),
-// exactly as long as this loop's own 12 bytes stay reserved.
+// widened to three slots), NOT this file's own statement-temp pool. The
+// real stack needs no cooperation from the pool's bump allocator at all:
+// every value pushed here survives the body's own arbitrarily many
+// balanced push/JSR/cleanup sequences (the SAME invariant cgForRangeStmt's
+// own doc comment already established), exactly as long as this loop's own
+// 12 bytes stay reserved.
+//
+// The list EXPRESSION's own tracked temp (cgExpr below, for a call result
+// that must be released) does live in the statement-temp pool, and is live
+// across the whole body -- Task 12b of the language-runtime-cleanup phase
+// is what makes that safe: cgStmt no longer resets the bump allocator per
+// statement, so a body statement's own scratch can no longer alias it.
+// Before that fix the release at the end of this statement ran on
+// whatever the body last stored in the slot.
 func cgForListStmt(s: int) {
     var elemT: int
     var vOff: int
@@ -12792,8 +12797,24 @@ func cgStmt(s: int) {
     savedBigNext = cgStmtBigTmpNext
     cgStmtTmpOffs = cgFreshIntList()
     cgStmtTmpType = cgFreshIntList()
-    cgStmtTmpNext = 0
-    cgStmtBigTmpNext = 0
+    // language-runtime-cleanup Task 12b: the two bump allocators are NOT
+    // reset here -- a nested statement allocates ABOVE the enclosing
+    // statement's slots and the save/restore below hands them back when it
+    // ends, so siblings still reuse them. Resetting to 0 (what this did
+    // through the compiler-cleanup phase) aliased a compound statement's
+    // OWN live temp onto its body's first temp: `for x in f()` parks f()'s
+    // handle in slot 0 and releases it AFTER the loop (cgFreeStmtTmps at
+    // this function's tail), but every body statement started its own pool
+    // at slot 0 too, so the first body statement needing a scratch slot
+    // (any list/map push of a scalar, which passes its argument by
+    // address) overwrote the parked handle -- and the release at the end
+    // then ran rtListRelease on whatever integer the body last stored
+    // there. Hardware-reproduced on the toolbox suite: the value happened
+    // to be the last enum ordinal added, benign at 37 and a hang at 38.
+    // Same hazard for SIf/SWhile/SForMap/SAttempt, whose condition/subject
+    // temps are likewise live across their bodies.
+    // The tracked-temp LISTS above stay fresh per statement -- release
+    // scope is still per statement, only the offset allocator nests.
     // cgLastTrackedOff resets fresh per statement -- see its own doc
     // comment (module-state block): every consuming check reads it
     // IMMEDIATELY after the one cgExpr call it cares about, so a plain
