@@ -1,0 +1,35 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// karr_abi.cla (language-runtime-cleanup, spec %3.4): fixed arrays pass by
+// address when the callee cannot observe a mutation (plain borrow), by copy
+// when the argument aliases a global the callee writes, and forwarded
+// borrows stay borrows.
+var g: int[4]
+
+func sum4(a: int[4]): int {
+    return a[0] + a[1] + a[2] + a[3]
+}
+
+func fwd(a: int[4]): int {
+    return sum4(a)
+}
+
+func bump(a: int[4]): int {
+    g[0] = 100
+    return a[0]
+}
+
+on App.launch {
+    var l: int[4]
+
+    l[0] = 1
+    l[1] = 2
+    l[2] = 3
+    l[3] = 4
+    g[0] = 7
+    alert("sum = " + string(sum4(l)))
+    alert("fwd = " + string(fwd(l)))
+    alert("bump = " + string(bump(g)))
+    alert("g0 = " + string(g[0]))
+}

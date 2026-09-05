@@ -1,0 +1,51 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// karr_param.cla (language-runtime-cleanup, spec %3.4): the KArr borrow
+// ABI's own `.s` golden -- testdata/run/karr_abi.cla without the alerts,
+// so the listing shows the ABI itself and nothing else.
+//
+// Three argument shapes, one per rule:
+//   - sum4(l): a plain LOCAL -- borrow. The caller LEAs the local's own
+//     frame slot and pushes that one pointer (cgArgSlotSize == 4); the
+//     callee's `a` frame slot is marked by-ref, so `a[0]` MOVEAs the slot
+//     (deref) instead of LEAing it.
+//   - fwd(a) -> sum4(a): a forwarded BORROW -- `a` is a param EVarRef,
+//     never a global, so lowArgNeedsCopy leaves it a borrow and the
+//     already-borrowed pointer is simply re-pushed (MOVEA, not a copy).
+//   - bump(g): the argument aliases the very global the callee WRITES --
+//     lowArgNeedsCopy's root walk returns true, so the caller block-copies
+//     `g` into a big-pool temp first and pushes the TEMP's address; `bump`
+//     therefore still reads the pre-write 7.
+
+var g: int[4]
+
+func sum4(a: int[4]): int {
+    return a[0] + a[1] + a[2] + a[3]
+}
+
+func fwd(a: int[4]): int {
+    return sum4(a)
+}
+
+func bump(a: int[4]): int {
+    g[0] = 100
+    return a[0]
+}
+
+func runKarrParam(): int {
+    var l: int[4]
+
+    l[0] = 1
+    l[1] = 2
+    l[2] = 3
+    l[3] = 4
+    g[0] = 7
+    return sum4(l) + fwd(l) + bump(g) + g[0]
+}
+
+on App.launch {
+    if runKarrParam() == 0 {
+        return
+    }
+}
