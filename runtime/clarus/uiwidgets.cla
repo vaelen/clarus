@@ -818,6 +818,7 @@ func rtUiWidgetSetStr(instV: ptr, wIdx: int, prop: int, s: ptr) {
     var ctrl: ptr
     var te: ptr
     var len: int
+    var hstate: int
 
     w = RtUiWinst(instV)
     winIdx = w.winIdx
@@ -850,7 +851,16 @@ func rtUiWidgetSetStr(instV: ptr, wIdx: int, prop: int, s: ptr) {
         }
         UiTESetText(s + 1, len, te)
         UiTECalText(te)
+        // compiler-cleanup: InvalRect allocates (update-region growth) with
+        // the TERec's master pointer already evaluated as its argument, so
+        // the relocation window is INSIDE the trap -- lock te across the
+        // call. TECalText (which CAN resize the TERec, growing its
+        // lineStarts array) stays OUTSIDE the lock, deliberately. Prior
+        // state restored, not a bare HUnlock.
+        hstate = UiHGetState(te)
+        UiHLock(te)
         UiInvalRect(UiHandleDeref(te) + rtUiTeViewRect)
+        UiHSetState(te, hstate)
         rtUiTeMutated(instV, wIdx, false) // PROGRAMMATIC set -- no trace/event
     }
     UiSetPort(savedPort)
@@ -931,6 +941,7 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     var viewTop: int
     var viewBottom: int
     var eraseRect: ptr
+    var hstate: int
 
     w = RtUiWinst(instV)
     kind = uidWidgetKind(w.winIdx, wIdx)
@@ -952,6 +963,20 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     UiTESetText(buf, copied, te)
     UiDisposePtr(buf)
     UiTECalText(te)
+    // compiler-cleanup: te's master pointer is handed INTO InvalRect here
+    // and, after rtUiTeMutated's own clamp/scroll sync, into TEUpdate and
+    // ValidRect below (teMp) -- every one of those allocates with the
+    // pointer already evaluated as an argument, the shape a re-derive
+    // before the call cannot fix. Lock the TERec for the whole region.
+    // Safe: the TERec is resized only when its lineStarts array grows, and
+    // the sole recalc in reach is rtUiTeClamp's TESetText, which cannot
+    // fire here (a textview's cap IS rtUiTeMax and rtTextToBytes above
+    // already clamped to it, so the clamp returns early). TECalText -- the
+    // one call that really does recalc -- is deliberately left ABOVE the
+    // lock. TextEdit's text lives in its own hText handle, so TEUpdate is
+    // unaffected. Prior state restored, not a bare HUnlock.
+    hstate = UiHGetState(te)
+    UiHLock(te)
     UiInvalRect(UiHandleDeref(te) + rtUiTeViewRect)
     rtUiTeMutated(instV, wIdx, false) // PROGRAMMATIC set -- no trace/event
     // Live paint (live-log phase): draw the fresh content NOW. The
@@ -989,6 +1014,7 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     }
     UiTEUpdate(teMp + rtUiTeViewRect, te)
     UiValidRect(teMp + rtUiTeViewRect)
+    UiHSetState(te, hstate) // compiler-cleanup: end of the locked region
     UiSetPort(savedPort)
 }
 
@@ -1109,6 +1135,7 @@ func rtUiWidgetSetInt(instV: ptr, wIdx: int, prop: int, v: int) {
     var count: int
     var sel: int
     var lh: ptr
+    var hstate: int
     var tableOff: int
     var rowsIdx: int
     var rowsAddr: ptr
@@ -1152,7 +1179,14 @@ func rtUiWidgetSetInt(instV: ptr, wIdx: int, prop: int, v: int) {
             row = count - 1
         }
         rtUiTableSelectExclusive(lh, row)
+        // compiler-cleanup: InvalRect allocates (update-region growth) with
+        // the ListRec master pointer already evaluated as its argument --
+        // the relocation window is INSIDE the trap. Lock lh across the
+        // call; prior state restored, not a bare HUnlock.
+        hstate = UiHGetState(lh)
+        UiHLock(lh)
         UiInvalRect(UiHandleDeref(lh) + rtUiListRView)
+        UiHSetState(lh, hstate)
         rtUiTraceSetInt(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), prop, row)
     }
     UiSetPort(savedPort)
