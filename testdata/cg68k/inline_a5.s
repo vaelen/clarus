@@ -5869,6 +5869,20 @@ LBL_625:
         CLR.L D0
         MOVE.W (A0),D0
         MOVE.L D0,-60(A6)
+        MOVE.L -32(A6),D0
+        MOVEA.L D0,A0
+        LEA 4(A0),A0
+        MOVE.L (A0),D0
+        MOVE.L D0,-48(A6)
+        MOVE.L -48(A6),D0
+        MOVE.L D0,-(A7)
+        MOVEA.L (A7)+,A0
+        DC.W $A069  ; UiHGetState
+        MOVE.L D0,-52(A6)
+        MOVE.L -48(A6),D0
+        MOVE.L D0,-(A7)
+        MOVEA.L (A7)+,A0
+        DC.W $A029  ; UiHLock
         MOVEQ #0,D0
         MOVE.L D0,-64(A6)
 LBL_627:
@@ -5944,20 +5958,6 @@ LBL_630:
         BSR.W LBL_23
         ADDQ.L #8,A7
         MOVE.L D0,-44(A6)
-        MOVE.L -32(A6),D0
-        MOVEA.L D0,A0
-        LEA 4(A0),A0
-        MOVE.L (A0),D0
-        MOVE.L D0,-48(A6)
-        MOVE.L -48(A6),D0
-        MOVE.L D0,-(A7)
-        MOVEA.L (A7)+,A0
-        DC.W $A069  ; UiHGetState
-        MOVE.L D0,-52(A6)
-        MOVE.L -48(A6),D0
-        MOVE.L D0,-(A7)
-        MOVEA.L (A7)+,A0
-        DC.W $A029  ; UiHLock
         MOVE.L -44(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
@@ -5973,13 +5973,6 @@ LBL_630:
         MOVE.L D0,-(A7)
         BSR.W LBL_105
         ADDA.W #16,A7
-        MOVE.L -48(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L -52(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L (A7)+,D0
-        MOVEA.L (A7)+,A0
-        DC.W $A06A  ; UiHSetState
         MOVE.L -76(A6),D0
         MOVE.L D0,-(A7)
         DC.W $A879  ; UiSetClip
@@ -6000,6 +5993,13 @@ LBL_630:
         MOVE.L D0,-64(A6)
         BRA.W LBL_627
 LBL_628:
+        MOVE.L -48(A6),D0
+        MOVE.L D0,-(A7)
+        MOVE.L -52(A6),D0
+        MOVE.L D0,-(A7)
+        MOVE.L (A7)+,D0
+        MOVEA.L (A7)+,A0
+        DC.W $A06A  ; UiHSetState
 LBL_626:
         CLR.L D0
         MOVE.B 28(A6),D0
