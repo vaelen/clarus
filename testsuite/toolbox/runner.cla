@@ -132,6 +132,10 @@
 // hardware-proves text.clear()+warm reuse performs zero Memory Manager
 // traffic (FreeMem exactly flat across 200 clear+refill cycles) -- see
 // that case's own header comment.
+// CasesTable (cases_casestable.cla) is the compiler-cleanup phase's
+// addition: hardware-proves the suite GUI's own `Cases` table paints real
+// ink into every visible row band, and that a second read of row 0 is
+// stable -- see that case's own header comment.
 
 enum ToolboxTest {
     All
@@ -169,15 +173,16 @@ enum ToolboxTest {
     LeakCheck
     ScrollToEnd
     ClearWarm
+    CasesTable
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 34 real cases
+// nTbCases is ToolboxTest's member count minus All: the 35 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 35
+const nTbCases: int = 36
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -288,6 +293,9 @@ func tbCaseName(t: ToolboxTest): string {
     case ClearWarm {
         return "ClearWarm"
     }
+    case CasesTable {
+        return "CasesTable"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -333,6 +341,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(LeakCheck)
     l.add(ScrollToEnd)
     l.add(ClearWarm)
+    l.add(CasesTable)
     l.add(SelfCheck)
     return l
 }
@@ -351,7 +360,7 @@ func tbHas(l: list of ToolboxTest, want: ToolboxTest): bool {
 // runToolboxTests dedupes sel, then runs every selected case's branch --
 // same dedupe/wantAll/branch shape as testsuite/core/runner.cla's
 // runCoreTests. Each dispatch arm is its own statement, so the per-statement
-// temp-slot budget holds regardless of case count -- 32 real cases here,
+// temp-slot budget holds regardless of case count -- one arm per real case,
 // and this dispatch never approaches the budget. (Unlike core's cli.cla
 // arg-matching loop, which needs careful iteration to stay within budget;
 // see coreMatchAndAdd's doc comment in testsuite/core/cli.cla. Moot here
@@ -505,6 +514,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, ClearWarm) {
         results.add(caseClearWarm())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, CasesTable) {
+        results.add(caseCasesTable())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
