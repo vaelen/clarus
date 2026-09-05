@@ -12243,12 +12243,12 @@ func cgReturnStmt(s: int) {
         }
     } else {
         cgExpr(x)
-        rk = irtKind(irExprType(x))
+        retT = irExprType(x)
+        rk = irtKind(retT)
         if (rk == KText or rk == KList or rk == KMap or rk == KSortedMap or rk == KIntMap) and cgLastTrackedOff != -1 {
             cgHandoff(cgLastTrackedOff)
         }
         if cgStmtTmpOffs.count > 0 {
-            retT = irExprType(x)
             // final-review wave, I2: cgRetSaveOff is this function's OWN
             // dedicated slot (cgEmitFunc), not cgAllocTmpOff -- drawing
             // from the shared 14-slot small pool here could abort a
