@@ -1069,6 +1069,12 @@ func rtUiWidgetScrollToEnd(instV: ptr, wIdx: int) {
     if maxScroll < 0 {
         maxScroll = 0
     }
+    // compiler-cleanup: same 16-bit ceiling as rtUiTeScrollSync's own
+    // clamp (uitext.cla) -- this function re-derives maxScroll itself
+    // instead of reading the synced value, so it needs its own copy.
+    if maxScroll > 32767 {
+        maxScroll = 32767
+    }
     offset = rtUiPeekSw(teMp + rtUiTeViewRect + 0) - rtUiPeekSw(teMp + rtUiTeDestRect + 0)
     if offset < maxScroll {
         UiTEScroll(0, offset - maxScroll, te) // negative dv: content moves up
