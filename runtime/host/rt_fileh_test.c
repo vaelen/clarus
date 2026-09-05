@@ -26,11 +26,13 @@
 #include "rt.h"
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
 extern int32_t rt_ext_FhHOpen(const uint8_t *path);
+extern int32_t rt_ext_FhHOpenRF(const uint8_t *path);
 extern int32_t rt_ext_FhHCreate(const uint8_t *path);
 extern int32_t rt_ext_FhHReadAt(int32_t h, int32_t pos, void *p, int32_t n);
 extern int32_t rt_ext_FhHWriteAt(int32_t h, int32_t pos, void *p, int32_t n);
@@ -402,6 +404,48 @@ static void test_long_names(void) {
     rmdir("fileh_test_longname");
 }
 
+/* test_openrf: a data-fork file gets a resource fork written, reopened,
+ * and read back; the data fork is untouched. Runs twice on macOS -- once
+ * through the native fork, once forced onto the AppleDouble sidecar -- and
+ * once elsewhere. */
+static void test_openrf_once(const char *label) {
+    uint8_t path[256]; int32_t h; unsigned char rs[4] = "RSRC", buf[8]; int32_t got;
+    mkpath(path, "fileh_test_rf.dat");
+    h = rt_ext_FhHCreate(path);
+    CHECK(h != 0, label);
+    CHECK(rt_ext_FhHWriteAt(h, 0, (void *)"data!", 5) == 0, label);
+    rt_ext_FhHClose(h);
+    h = rt_ext_FhHOpenRF(path);
+    CHECK(h != 0, label);
+    CHECK(rt_ext_FhHWriteAt(h, 0, rs, 4) == 0, label);
+    CHECK(rt_ext_FhHFlush(h) == 0, label);
+    rt_ext_FhHClose(h);
+    h = rt_ext_FhHOpenRF(path);
+    CHECK(h != 0, label);
+    CHECK(rt_ext_FhHSize(h) == 4, label);
+    memset(buf, 0, sizeof buf);
+    got = rt_ext_FhHReadAt(h, 0, buf, 4);
+    CHECK(got == 4 && memcmp(buf, rs, 4) == 0, label);
+    rt_ext_FhHClose(h);
+    h = rt_ext_FhHOpen(path);
+    CHECK(h != 0 && rt_ext_FhHSize(h) == 5, label);
+    rt_ext_FhHClose(h);
+    CHECK(rt_ext_FhHOpenRF((const uint8_t *)"\x07no.such") == 0, "openRF on a missing file fails");
+    unlink("fileh_test_rf.dat"); unlink("._fileh_test_rf.dat");
+}
+static void test_openrf(void) {
+    test_openrf_once("openRF native");
+    setenv("CLARUS_FORCE_APPLEDOUBLE", "1", 1);
+    test_openrf_once("openRF sidecar");
+    { FILE *f; unsigned char m[4]; uint8_t path[256]; int32_t h;
+      mkpath(path, "fileh_test_rf.dat"); h = rt_ext_FhHCreate(path); rt_ext_FhHClose(h);
+      h = rt_ext_FhHOpenRF(path); rt_ext_FhHWriteAt(h, 0, (void *)"x", 1); rt_ext_FhHClose(h);
+      f = fopen("._fileh_test_rf.dat", "rb"); CHECK(f != NULL, "sidecar written");
+      if (f) { CHECK(fread(m, 1, 4, f) == 4 && m[0] == 0 && m[1] == 5 && m[2] == 0x16 && m[3] == 7, "AppleDouble magic"); fclose(f); }
+      unlink("fileh_test_rf.dat"); unlink("._fileh_test_rf.dat"); }
+    unsetenv("CLARUS_FORCE_APPLEDOUBLE");
+}
+
 int main(void) {
     test_round_trip();
     test_open_failure();
@@ -413,6 +457,7 @@ int main(void) {
     test_delete_dir();
     test_set_times();
     test_long_names();
+    test_openrf();
     if (failed) {
         fprintf(stderr, "FAILED\n");
         return 1;

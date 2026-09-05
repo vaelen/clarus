@@ -1722,6 +1722,16 @@ func buildMethodTables() {
     sigAdd(psPlain(strT(255)))
     fileFuncs["open"] = sigEnd(fileHandleT)
 
+    // file.openRF(path) (language-runtime-cleanup, spec %6): file.open's
+    // resource-fork twin -- same signature, same `filehandle` result, same
+    // nil-plus-lastError failure contract; only the fork differs. Needs no
+    // separate usesFileh wiring: the hook in checkMethodCall is a generic
+    // fileFuncs.has(name) test with a fixed seven-name exclusion list of
+    // the pre-fileh intrinsics, and openRF is not one of them.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["openRF"] = sigEnd(fileHandleT)
+
     sigStart()
     sigAdd(psPlain(strT(255)))
     sigAdd(psPlain(strT(255)))

@@ -103,6 +103,30 @@ func rtFhDevOpen(path: string): int {
     return pb.ioRefNum
 }
 
+// rtFhDevOpenRF (language-runtime-cleanup, spec %6): rtFhDevOpen verbatim
+// with PBOpenRFSync (_OpenRF, trap 0xA00A -- toolbox/files.cla, already
+// declared there since the filesystem-api phase) in place of PBOpenSync.
+// Same IOParam, same fsRdWrPerm; the refNum it hands back feeds the
+// existing positioned read/write/flush/close path with no fork-specific
+// code below this point -- to the File Manager a resource-fork refNum is
+// just another open file.
+func rtFhDevOpenRF(path: string): int {
+    var pb: IOParam
+    var namePtr: ptr
+
+    namePtr = rtFh68kName(path)
+    pb.ioNamePtr = namePtr
+    pb.ioVRefNum = 0
+    pb.ioPermssn = fsRdWrPerm
+    rtFh68kLastErr = PBOpenRFSync(pb)
+    SerDisposePtr(namePtr)
+
+    if rtFh68kLastErr != 0 {
+        return 0
+    }
+    return pb.ioRefNum
+}
+
 // rtFhDevCreate: PBCreateSync's own result is deliberately ignored for
 // the dupFNErr case (the file already existing, the one error
 // filehandle.create treats as fine) -- the PBOpenSync below is the

@@ -1775,6 +1775,10 @@ func lowFileCall(e: int, fn: int, ty: int): int {
         // cg68k-hardwired intrinsic, so this is an ordinary runtime CALL
         // (newIRCallFn), not newIRIntr.
         return newIRCallFn(intern("rtFhOpen"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "openRF" {
+        // file.openRF(path) (language-runtime-cleanup, spec %6): the same
+        // ordinary runtime call as "open" just above, a different fork.
+        return newIRCallFn(intern("rtFhOpenRF"), lowArgs(callArgsHead(e)), ty)
     } else if nm == "create" {
         // file.create(path, type, creator) -- same mandatory-literal-4CC
         // rule as writeText above (lowCheckLiteral4CCArg).

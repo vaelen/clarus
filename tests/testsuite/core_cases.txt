@@ -78,4 +78,5 @@ FileHandleRW
 DirOps
 PtrCall
 StrPerf
+OpenRF
 SelfCheck
