@@ -1372,13 +1372,20 @@ func rtUiBuildMenus() {
 
 // rtUiSyncMenuBar (language-runtime-cleanup, spec 5.2): the bar shows
 // Apple + the app-scope menus (unclaimed by any window) + the FRONT
-// window's own `menus:` set, in declaration order. Menus leaving the bar
-// are deleted, arriving ones appended in index order (InsertMenu beforeID
-// 0 = append), then one DrawMenuBar -- skipped entirely when nothing
-// changes, so ordinary activation stays free. Every MenuHandle lives for
-// the whole run; only bar membership changes.
+// window's own `menus:` set, in declaration order. Unchanged set -> one
+// mask compare and out, so ordinary activation stays free.
+//
+// On the change path EVERY claimed menu currently in the bar is deleted
+// and the target's claimed set is re-inserted in index order (InsertMenu
+// beforeID 0 = append), not just the ones leaving/arriving: a RETAINED
+// menu would otherwise keep the bar slot it got last time, so
+// `WinA{M2,M4}` -> `WinB{M3,M4}` would leave M4 sitting ahead of M3 and
+// break the declaration-order promise (fix round 1). App-scope menus are
+// never touched -- they are in the bar for the whole run, ahead of every
+// claimed one, and the unclaimed half of `target` is a constant. Still
+// one DrawMenuBar. Every MenuHandle lives for the whole run; only bar
+// membership changes.
 func rtUiSyncMenuBar() {
-    var front: ptr
     var inst: ptr
     var target: int
     var i: int
@@ -1388,13 +1395,13 @@ func rtUiSyncMenuBar() {
     if rtUiMenuHandlesArr == ptr(0) or rtUiClaimedMask == 0 {
         return
     }
+    // The `0x7FFFFFFF ^` term also clears bit 31, so the `1 <<
+    // rtUiNMenusVal` at the checker's 31-menu ceiling (which is the sign
+    // bit, minus 1 -> 0x7FFFFFFF) stays a plain positive mask.
     target = ((1 << rtUiNMenusVal) - 1) & (0x7FFFFFFF ^ rtUiClaimedMask)
-    front = UiFrontWindow()
-    if front != ptr(0) and peekw(front + 108) == rtUiWindowKind {
-        inst = rtUiWinstOf(front)
-        if inst != ptr(0) {
-            target = target | uidWinMenuMask(RtUiWinst(inst).winIdx)
-        }
+    inst = rtUiWinstOf(UiFrontWindow())
+    if inst != ptr(0) {
+        target = target | uidWinMenuMask(RtUiWinst(inst).winIdx)
     }
     if target == rtUiBarMask {
         return
@@ -1402,7 +1409,7 @@ func rtUiSyncMenuBar() {
     i = 0
     while i < rtUiNMenusVal {
         bit = 1 << i
-        if (rtUiBarMask & bit) != 0 and (target & bit) == 0 {
+        if (rtUiBarMask & bit) != 0 and (rtUiClaimedMask & bit) != 0 {
             UiDeleteMenu(rtUiMenuIdBase + i)
         }
         i = i + 1
@@ -1410,7 +1417,7 @@ func rtUiSyncMenuBar() {
     i = 0
     while i < rtUiNMenusVal {
         bit = 1 << i
-        if (target & bit) != 0 and (rtUiBarMask & bit) == 0 {
+        if (target & bit) != 0 and (rtUiClaimedMask & bit) != 0 {
             mh = ptr(peekl(rtUiMenuHandlesArr + i * 4))
             UiInsertMenu(mh, 0)
         }
