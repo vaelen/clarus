@@ -1,0 +1,1 @@
+../../testdata/errors/int_conv_identity.cla:10:12: int() expects a fixed, char, enum, or ptr, got int

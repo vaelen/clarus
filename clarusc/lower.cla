@@ -1272,6 +1272,14 @@ func lowCall(e: int): int {
             // Conversions) -- IIntToStr is a KStr-producing conversion,
             // lowered the same shape as any other single-arg conversion
             // just above.
+            if typeKind(exprTypeGet(callArgsHead(e))) == TyChar {
+                // compiler-cleanup: string(c) is the one-character string
+                // -- the SAME IR `"" + c` produces (IStrConcatChar over an
+                // empty literal), so no new intrinsic, runtime function, or
+                // backend arm. lowMethodArgs2 is the mixed-source arg
+                // chainer (already-lowered IR head + one raw AST arg).
+                return newIRIntr(IStrConcatChar(), lowMethodArgs2(newIRStrConst(lowInternStr(""), irStrType(255)), callArgsHead(e)), ty)
+            }
             return newIRIntr(IIntToStr(), lowArgs(callArgsHead(e)), ty)
         } else if name == "askOpen" {
             // askOpen(path, types) -- native-gaps-cleanup Task 2: types is

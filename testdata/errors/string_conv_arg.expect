@@ -1,1 +1,1 @@
-../../testdata/errors/string_conv_arg.cla:8:11: cannot convert string to string
+../../testdata/errors/string_conv_arg.cla:8:11: string() expects an int or char, got string

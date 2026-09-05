@@ -5610,6 +5610,7 @@ func checkConversion(e: int, target: int, name: string): int {
     var argsHead: int
     var at: int
     var ok: bool
+    var accepted: string
 
     argsHead = callArgsHead(e)
     if exprListCount(argsHead) != 1 {
@@ -5621,27 +5622,40 @@ func checkConversion(e: int, target: int, name: string): int {
         return InvalidT
     }
     ok = false
+    accepted = ""
     if name == "string" {
         // string(n) (Task 3): strT(255)'s own index is non-singleton (one
         // per distinct string length), unlike IntT/FixedT/CharT/PtrT
         // below, so this arm keys on the conversion NAME rather than
-        // `target == ...`.
-        ok = typeKind(at) == TyInt
+        // `target == ...`. TyChar joins TyInt in the compiler-cleanup
+        // phase: string(c) is the one-character string.
+        accepted = "an int or char"
+        ok = typeKind(at) == TyInt or typeKind(at) == TyChar
     } else if target == IntT {
+        accepted = "a fixed, char, enum, or ptr"
         ok = typeKind(at) == TyFixed or typeKind(at) == TyChar or typeKind(at) == TyEnum or typeKind(at) == TyPtr
     } else if target == FixedT {
+        accepted = "an int"
         ok = typeKind(at) == TyInt
     } else if target == CharT {
+        accepted = "an int"
         ok = typeKind(at) == TyInt
     } else if target == PtrT {
+        accepted = "an int or overlay"
         ok = typeKind(at) == TyInt or typeKind(at) == TyOverlay
     } else if typeKind(target) == TyEnum {
+        accepted = "an int"
         ok = typeKind(at) == TyInt
     } else if typeKind(target) == TyOverlay {
+        accepted = "a ptr"
         ok = typeKind(at) == TyPtr
     }
     if not ok {
-        emitDiag(exprLine(e), exprCol(e), "cannot convert " + typeName(at) + " to " + name)
+        // compiler-cleanup: name what the conversion ACCEPTS, not just
+        // that the argument's own type was refused -- "cannot convert int
+        // to int" said nothing about why an identity conversion is an
+        // error (it is: every conversion is an explicit change of type).
+        emitDiag(exprLine(e), exprCol(e), name + "() expects " + accepted + ", got " + typeName(at))
         return InvalidT
     }
     return target
