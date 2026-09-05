@@ -1,0 +1,1 @@
+../../testdata/errors/transport_misuse_col.cla:9:7: serial is only valid on connection.open with a single string argument

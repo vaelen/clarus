@@ -5829,7 +5829,7 @@ func checkCall(e: int, expected: int): int {
     argsHead = callArgsHead(e)
     transport = callTransport(e)
     if transport != 0 and not callIsSingleArgOpen(fn, argsHead) {
-        emitDiag(exprLine(e), exprCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
+        emitDiag(callTransportLine(e), callTransportCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
         return InvalidT
     }
     if exprKind(fn) == ExIdent {
@@ -5841,7 +5841,7 @@ func checkCall(e: int, expected: int): int {
         return InvalidT
     }
     if transport != 0 and t != InvalidT and typeKind(exprTypeGet(argsHead)) != TyStr {
-        emitDiag(exprLine(e), exprCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
+        emitDiag(callTransportLine(e), callTransportCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
         return InvalidT
     }
     return t
