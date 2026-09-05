@@ -1197,7 +1197,18 @@ func lowCallArgs(argsHead: int, sig: int, isUserCall: bool): int {
             }
             if isUserCall {
                 k = irtKind(irExprType(le))
-                if (k == KStr or k == KRec) and lowArgNeedsCopy(le) {
+                // language-runtime-cleanup (spec %3.4): KArr joins the
+                // copy classification -- a fixed array now passes by
+                // ADDRESS too (cgParamByRef/cpParamByRef, the ONE
+                // per-lane predicate), so an argument aliasing storage
+                // the callee writes needs the same snapshot copy a
+                // KStr/KRec argument does. No handle-bearing gate is
+                // needed HERE: a handle-bearing array stays by VALUE on
+                // both lanes (that same predicate's `not
+                // cgNeedsRelease(t)` clause), and irArgNeedsCopy is only
+                // ever consulted on the by-ADDRESS path, so the mark is
+                // simply inert for one.
+                if (k == KStr or k == KRec or k == KArr) and lowArgNeedsCopy(le) {
                     irArgMarkCopy(le)
                 }
             }

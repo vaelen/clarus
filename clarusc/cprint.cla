@@ -286,6 +286,28 @@ var cpLoopN: int
 // fpExpr/fpVarText outside any function body.
 var cpByRefParams: map of int
 
+// cpParamByRef (language-runtime-cleanup, spec %3.4) is cg68k's
+// cgParamByRef on this lane: the ONE predicate the caller (fpCallFnArg),
+// the callee's prototype (cpFuncProto) and the deref set (cpByRefParams'
+// fill loop) all consult for "this parameter kind passes by address".
+// KStr/KRec are the param-abi phase's original pair; KArr joins them when
+// its element carries no handle (fpNeedsRelease -- which already recurses
+// through nested arrays and answers irRecHasHandleField for a record
+// element, so a `text`/`list`/`map` anywhere inside makes it true), because
+// a handle-bearing array's copy path would owe a retain walk and stays by
+// value. KErr is deliberately NOT here: this lane has never passed `error`
+// by reference (cpFuncProto's own by-value arm), and widening it is a
+// separate ABI change with no fixture behind it.
+func cpParamByRef(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KStr or k == KRec {
+        return true
+    }
+    return k == KArr and not fpNeedsRelease(t)
+}
+
 // ================================================================
 // funcPrinter (funcprint.go): one function body's lines, temp counter, and
 // indent. Modeled as module state -- one function is printed at a time and
@@ -1439,7 +1461,14 @@ func fpCallFnArg(a: int): text {
 
     t = irExprType(a)
     k = irtKind(t)
-    if k != KStr and k != KRec {
+    // language-runtime-cleanup (spec %3.4): cpParamByRef, the one shared
+    // predicate -- a handle-free KArr argument now takes the by-address
+    // path too (borrow: `&(<addrable>)` via fpAddrable, which already
+    // prints a var/`.field`/`[i]` array lvalue; copy: the untracked
+    // fpNewTmp struct-assign just below, since `clar_arr_KEY` is a plain
+    // struct wrapper and its element carries no handle by construction).
+    // A handle-bearing array still fails this test and stays by value.
+    if not cpParamByRef(t) {
         // compiler-cleanup: a bare pop/shift result passed DIRECTLY as a
         // call argument needs nothing extra here -- Task 8 (memory-bug
         // pair) had to re-materialize it into its own tracked temp because
@@ -4969,7 +4998,6 @@ func cpFuncProto(f: int): text {
     var first: bool
     var linkage: string
     var pt: int
-    var pk: IRKind
 
     params = toText("")
     first = true
@@ -4980,7 +5008,6 @@ func cpFuncProto(f: int): text {
         }
         first = false
         pt = irLocalType(p)
-        pk = irtKind(pt)
         // param-abi phase Task 5: a KStr/KRec param prints BY-REFERENCE
         // (`const T *`), not cpCType's ordinary by-value struct -- every
         // read site derefs via fpVarText. `const` is load-bearing, not
@@ -4988,7 +5015,10 @@ func cpFuncProto(f: int): text {
         // no callee code ever writes through this pointer, and marking it
         // const lets a borrowed argument's OWN const-qualified storage
         // (a caller-side literal, e.g.) pass without a cast either.
-        if pk == KStr or pk == KRec {
+        // language-runtime-cleanup (spec %3.4): cpParamByRef, the one
+        // shared predicate (KArr with a handle-free element joins
+        // KStr/KRec) -- see its own doc comment.
+        if cpParamByRef(pt) {
             params = params + "const " + cpCType(pt) + " *cv_" + poolGet(irLocalName(p))
         } else {
             params = params + cpCType(pt) + " cv_" + poolGet(irLocalName(p))
@@ -5829,7 +5859,10 @@ func cpEmitFunc(f: int) {
     cpByRefParams.clear()
     p = irFuncParamsHead(f)
     while p != -1 {
-        if irtKind(irLocalType(p)) == KStr or irtKind(irLocalType(p)) == KRec {
+        // language-runtime-cleanup (spec %3.4): cpParamByRef, the one
+        // shared predicate -- this deref set, cpFuncProto's `const T *`
+        // arm and fpCallFnArg's caller side read the SAME test now.
+        if cpParamByRef(irLocalType(p)) {
             cpByRefParams[poolGet(irLocalName(p))] = 1
         }
         p = irLocalNext(p)

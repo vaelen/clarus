@@ -4238,7 +4238,12 @@ func cgAllocBigTmpOff(t: int): int {
     var newOff: int
 
     if cgSizeOf(t) > cgBigTmpSize {
-        abort("cg68k: str/rec temp >" + numToStr(cgBigTmpSize) + " bytes not supported by this backend's scratch pool")
+        // language-runtime-cleanup (spec %3.4): arrays now reach this pool
+        // too -- an array argument that ALIASES a global the callee writes
+        // is snapshot-copied into a big temp (cgMaterializeToTemp's KArr
+        // arm), so the ceiling is a real, reachable user-facing limit for
+        // arrays and the message names the way out.
+        abort("cg68k: str/rec/array temp >" + numToStr(cgBigTmpSize) + " bytes not supported by this backend's scratch pool -- an array argument that aliases a global the callee writes needs a copy; pass a smaller array or a `list`")
     }
     if cgStmtBigTmpNext >= cgBigTmpBaseOffs.count {
         if cgRecMode != 1 {
@@ -5228,7 +5233,10 @@ func cgEmitFunc(f: int) {
         // (LEA 8(A6),A0 -- treating the slot as the struct itself -- instead
         // of MOVEA 8(A6),A0 -- loading the pointer the caller actually
         // pushed) until this line joined the caller-side fix.
-        frameIsRef.add(irtKind(irLocalType(params[i])) == KStr or irtKind(irLocalType(params[i])) == KRec or irtKind(irLocalType(params[i])) == KErr)
+        // language-runtime-cleanup (spec %3.4): cgParamByRef, the one
+        // shared predicate -- the caller (cgPushArgs/cgArgSlotSize) and
+        // this callee-side bit can no longer be edited apart.
+        frameIsRef.add(cgParamByRef(irLocalType(params[i])))
         i = i + 1
     }
 
@@ -5830,6 +5838,21 @@ func cgRetNeedsHidden(retTy: int): bool {
     return irtKind(retTy) == KStr or irtKind(retTy) == KRec or irtKind(retTy) == KErr
 }
 
+// cgParamByRef (language-runtime-cleanup, spec %3.4): the ONE predicate both
+// the caller (cgPushArgs/cgArgSlotSize) and the callee (cgEmitFunc's frame
+// ref bit) consult for "this parameter kind passes by address". KArr joins
+// KStr/KRec/KErr when its element carries no handle -- a handle-bearing
+// array would need a retain walk on the copy path and stays by value.
+func cgParamByRef(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KStr or k == KRec or k == KErr {
+        return true
+    }
+    return k == KArr and not cgNeedsRelease(t)
+}
+
 // cgArgSlotSize (param-abi phase, Task 6) is the bytes a call ARGUMENT of
 // type t occupies on the stack -- distinct from cgSlotSizeOf (a param's/
 // local's/global's own FRAME/storage width): a KStr/KRec argument now
@@ -5843,8 +5866,11 @@ func cgArgSlotSize(t: int): int {
     // KErr joins KStr/KRec here for the same reason as cgPushArgs' own
     // gate (serial-connection Task 7 gap fix, see its doc comment) -- a
     // by-address arg always pushes one 4-byte pointer, regardless of the
-    // pointee's real size.
-    if irtKind(t) == KStr or irtKind(t) == KRec or irtKind(t) == KErr {
+    // pointee's real size. language-runtime-cleanup: the kind test is
+    // cgParamByRef now, the single authority shared with cgPushArgs and
+    // cgEmitFunc's frame ref bit -- no hand-rolled kind chain survives at
+    // any of the three call-ABI sites.
+    if cgParamByRef(t) {
         return 4
     }
     return cgSlotSizeOf(t)
@@ -5909,6 +5935,16 @@ func cgMaterializeToTemp(e: int): int {
         cgEmitStoreRec(dst, e)
     } else if irtKind(t) == KStr {
         cgEmitStoreStr(dst, e)
+    } else if irtKind(t) == KArr {
+        // language-runtime-cleanup (spec %3.4): a fixed array argument
+        // that needs a COPY (it aliases storage the callee writes) is
+        // materialized here, whole-array block-copy via cgEmitStoreArr --
+        // the same helper SAssign's `b = a` arm uses. Safe without any ARC
+        // awareness for exactly the reason cgEmitStoreArr's own doc
+        // comment gives: cgParamByRef only ever routes a NON-handle-
+        // bearing array down the by-address path, so nothing reaching here
+        // has an element to retain.
+        cgEmitStoreArr(dst, e)
     } else if irtKind(t) == KErr {
         // correctness-cleanup Task 6: KErr is non-scalar (cgIsScalarKind),
         // so it must NOT fall to cgEmitStoreScalarAny below -- that arm
@@ -10004,7 +10040,13 @@ func cgPushArgs(argsHead: int): int {
         // plain addressable local (EVarRef), so this reuses the exact
         // same cgExprAddr push cgIsAddressableArgShape's EVarRef arm
         // already grants KStr/KRec.
-        if irtKind(t) == KStr or irtKind(t) == KRec or irtKind(t) == KErr {
+        //
+        // language-runtime-cleanup (spec %3.4): the gate is cgParamByRef
+        // now (which also admits a handle-free KArr) -- the same predicate
+        // cgArgSlotSize and cgEmitFunc's frame ref bit read, so caller and
+        // callee cannot drift. A copied KArr needs no retain, so every
+        // retain/schedule sub-arm below stays KRec-only.
+        if cgParamByRef(t) {
             sz = cgArgSlotSize(t)
             if cgIsAddressableArgShape(a, irtKind(t)) and not irArgNeedsCopy(a) {
                 cgExprAddr(a)

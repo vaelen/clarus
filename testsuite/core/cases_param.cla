@@ -105,11 +105,57 @@ func paramBorrowChain1(s: string): string {
     return paramBorrowChain2(s)
 }
 
+// language-runtime-cleanup (spec %3.4): the fixed-array arm of this same
+// case -- a handle-free `int[4]` param passes by ADDRESS now
+// (cgParamByRef/cpParamByRef), so the three argument shapes that decide
+// borrow-vs-copy all have to keep the old by-value ANSWERS:
+//   - pgParamArrSum(loc): a plain local, borrowed -- 10.
+//   - pgParamArrFwd(loc): a forwarded borrow (the param is re-pushed as
+//     the already-borrowed pointer, never re-copied) -- still 10.
+//   - pgParamArrBump(pgParamArr): the argument aliases the very global
+//     the callee WRITES, so lowArgNeedsCopy forces a snapshot copy and
+//     the callee must still read the PRE-write 7, with the global left
+//     at 100 afterwards. Without the copy this reads 100 (proved on the
+//     host lane with the gate deliberately un-flipped).
+var pgParamArr: int[4]
+
+func pgParamArrSum(a: int[4]): int {
+    return a[0] + a[1] + a[2] + a[3]
+}
+
+func pgParamArrFwd(a: int[4]): int {
+    return pgParamArrSum(a)
+}
+
+func pgParamArrBump(a: int[4]): int {
+    pgParamArr[0] = 100
+    return a[0]
+}
+
 func caseParamBorrowChain(): TestResult {
     var loc: string
+    var arr: int[4]
+
     loc = "chained"
     if paramBorrowChain1(loc) != "chained" {
         return tkFail("ParamBorrowChain", "borrow chain corrupted value")
+    }
+    arr[0] = 1
+    arr[1] = 2
+    arr[2] = 3
+    arr[3] = 4
+    pgParamArr[0] = 7
+    if pgParamArrSum(arr) != 10 {
+        return tkFail("ParamBorrowChain", "array borrow read wrong sum")
+    }
+    if pgParamArrFwd(arr) != 10 {
+        return tkFail("ParamBorrowChain", "forwarded array borrow read wrong sum")
+    }
+    if pgParamArrBump(pgParamArr) != 7 {
+        return tkFail("ParamBorrowChain", "aliased array arg saw the callee's write")
+    }
+    if pgParamArr[0] != 100 {
+        return tkFail("ParamBorrowChain", "callee's global array write was lost")
     }
     return tkPass("ParamBorrowChain")
 }
