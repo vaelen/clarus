@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// compiler-cleanup: a bad escape inside a double-quoted string is ONE
+// `invalid escape sequence` diagnostic -- not `unterminated string
+// literal`, and no second cascaded diagnostic scanning to EOF.
+func f() {
+    var s: string
+    s = "a\qb"
+    s = "second literal, must not become a phantom unterminated string"
+}
