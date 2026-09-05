@@ -356,6 +356,52 @@ static void test_set_times(void) {
     unlink((const char *)(path + 1));
 }
 
+/* test_long_names: the over-long-name guards (language-runtime-cleanup
+ * Task 4). Only FhHListNext's is reachable through the public API -- a
+ * Pascal Str255 argument caps `path` and `newName` at 255 bytes each, and
+ * FhHRename/FhHMove's target[512] holds 255 + '/' + 255 + NUL exactly, so
+ * their snprintf guards can never fire from here and are defensive only.
+ * readdir() by contrast hands back whatever the filesystem stored: APFS
+ * counts its 255-name limit in CHARACTERS, so 150 two-byte UTF-8 glyphs
+ * make a legal 300-BYTE dirent that cannot fit a Str255. On a filesystem
+ * that counts bytes (ext4, HFS+) the setup fopen() fails and this case
+ * reports itself skipped instead of failing. */
+static void test_long_names(void) {
+    uint8_t dir[256], buf[256];
+    char name[512];
+    char path[1024];
+    FILE *f;
+    int i;
+    int32_t got;
+
+    mkpath(dir, "fileh_test_longname");
+    CHECK(rt_ext_FhHMakeDir(dir) == 0, "makeDir(longname dir) should succeed");
+
+    for (i = 0; i < 150; i++) {          /* U+0416, 2 bytes, no NFD form */
+        name[i * 2] = (char)0xD0;
+        name[i * 2 + 1] = (char)0x96;
+    }
+    name[300] = '\0';
+    snprintf(path, sizeof path, "fileh_test_longname/%s", name);
+
+    f = fopen(path, "w");
+    if (!f) {
+        fprintf(stderr, "SKIP: this filesystem rejects a 300-byte name (%s)\n", strerror(errno));
+        rmdir("fileh_test_longname");
+        return;
+    }
+    fclose(f);
+
+    CHECK(rt_ext_FhHListBegin(dir) == 0, "listBegin(longname dir) should succeed");
+    got = rt_ext_FhHListNext(buf);
+    CHECK(got == -1, "listNext should fail on an entry too long for a Str255");
+    CHECK(rt_ext_FhHErrno() == ENAMETOOLONG, "FhHErrno should report ENAMETOOLONG for an over-long entry");
+    rt_ext_FhHListEnd();
+
+    unlink(path);
+    rmdir("fileh_test_longname");
+}
+
 int main(void) {
     test_round_trip();
     test_open_failure();
@@ -366,6 +412,7 @@ int main(void) {
     test_rename_move();
     test_delete_dir();
     test_set_times();
+    test_long_names();
     if (failed) {
         fprintf(stderr, "FAILED\n");
         return 1;

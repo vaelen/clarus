@@ -379,11 +379,17 @@ int32_t rt_ext_TickCount(void) {
  * current UTC offset (tm_gmtoff) is applied. */
 #define RT_MAC_EPOCH_DELTA 2082844800UL
 
-static uint32_t rt_dt_now_mac(void) {
-    time_t now = time(NULL);
+/* rt_unix_to_mac_secs: Unix seconds -> Mac-epoch LOCAL seconds (the Mac
+ * clock is local time). Shared by rt_dt_now_mac ("now") and rt_fileh.inc's
+ * rt_fh_mac_time (a file's stat times). */
+static uint32_t rt_unix_to_mac_secs(time_t t) {
     struct tm tmv;
-    localtime_r(&now, &tmv);
-    return (uint32_t)((unsigned long)now + (unsigned long)tmv.tm_gmtoff + RT_MAC_EPOCH_DELTA);
+    localtime_r(&t, &tmv);
+    return (uint32_t)((unsigned long)t + (unsigned long)tmv.tm_gmtoff + RT_MAC_EPOCH_DELTA);
+}
+
+static uint32_t rt_dt_now_mac(void) {
+    return rt_unix_to_mac_secs(time(NULL));
 }
 
 /* rt_ext_DtReadDateTime: C-lane twin of _ReadDateTime (0xA039) -- writes
