@@ -1334,6 +1334,8 @@ func lowMethodCall(e: int, fn: int): int {
     var ty: int
     var xk: TypeKind
     var recv: int
+    var wr: LowWidgetRecv
+    var wkind: string
 
     ty = lowMustType(e)
     if exprKind(selectX(fn)) == ExIdent and poolGet(identName(selectX(fn))) == "file" {
@@ -1342,21 +1344,28 @@ func lowMethodCall(e: int, fn: int): int {
     xk = typeKind(exprTypeGet(selectX(fn)))
     if xk == TyWidget {
         // Widget methods: selectX(fn) is itself a widget-select
-        // (`w.Board`), never lowered as a standalone value -- each lowerer
-        // peels both levels itself, same as lowWidgetPropGet does for a
-        // property read, so recv is never computed generically here.
-        // Dispatch on the method name: the checker only admits
-        // scrollToEnd on a textview and the drawing set on a canvas.
-        // Name-based dispatch assumes exactly ONE textview method. When a
-        // second textview method lands, switch this arm to dispatch on
-        // findWidgetKind(...) of the peeled receiver (see docs/TODO.md,
-        // textview-scroll-to-end phase) -- otherwise the new method falls
-        // into lowCanvasMethod and dies as a misleading "canvas method X"
-        // lowUnsupported.
-        if poolGet(selectName(fn)) == "scrollToEnd" {
-            return lowTextviewMethod(e, fn, ty)
+        // (`w.Board`), never lowered as a standalone value.
+        //
+        // compiler-cleanup: dispatch on the WIDGET KIND, not the method
+        // name. Name dispatch assumed exactly ONE textview method, so a
+        // second one would have fallen into lowCanvasMethod and died as a
+        // misleading "canvas method X" lowUnsupported.
+        //
+        // The receiver is peeled ONCE, here, and passed down. lowWidgetRecv
+        // lowers the instance sub-expression (lowExpr/lowWinInstRef), so
+        // peeling it here AND letting the two lowerers peel it again would
+        // emit that instance's IR twice -- a correctness hazard, not just
+        // waste.
+        wr = lowWidgetRecv(selectX(fn))
+        wkind = findWidgetKind(wr.winNameIdx, wr.wgName)
+        if wkind == "textview" {
+            return lowTextviewMethod(e, fn, ty, wr)
         }
-        return lowCanvasMethod(e, fn, ty)
+        if wkind == "canvas" {
+            return lowCanvasMethod(e, fn, ty, wr)
+        }
+        lowUnsupported("method on " + wkind + " widget")
+        return -1
     }
     if xk == TyConnection {
         // Connection methods (Task 4, binary-files phase): lowConnMethod
@@ -1612,6 +1621,10 @@ record LowWidgetRecv {
 // widget-receiver call sites (lowCanvasMethod, lowWidgetPropGet,
 // lowWidgetSetAssign) peeled this exact shape inline; Task 5 centralizes it
 // here since all three need the identical bare-vs-explicit branch.
+// compiler-cleanup: the method-call site moved UP to lowMethodCall's own
+// TyWidget arm, which needs the peeled widget name to look the kind up
+// before it can choose between lowCanvasMethod and lowTextviewMethod --
+// both take the result as a parameter now, so the instance is lowered once.
 func lowWidgetRecv(recvAst: int): LowWidgetRecv {
     var r: LowWidgetRecv
 
@@ -1628,16 +1641,15 @@ func lowWidgetRecv(recvAst: int): LowWidgetRecv {
 }
 
 // lowCanvasMethod lowers `w.Board.name(args)` (Ch11: Drawing) -- fn is the
-// method select (`w.Board.name`); selectX(fn) (`w.Board`) is the
-// widget-select, peeled directly for the instance + widget index exactly
-// like lowWidgetPropGet's TyWidget case. `rect`/`fillRect` are Clarus's two
+// method select (`w.Board.name`) and recv is selectX(fn) (`w.Board`)
+// ALREADY peeled by lowMethodCall, which needs the widget kind to pick
+// this lowerer at all and must not lower the instance twice (see its own
+// TyWidget arm). `rect`/`fillRect` are Clarus's two
 // distinct method names for rt_ui_canvas_rect's single runtime function
 // (see rt_ui.h's own comment on this collapse) -- the trailing fill literal
 // (0/1) is picked here by WHICH method was called, never exposed as a
 // Clarus-level argument.
-func lowCanvasMethod(e: int, fn: int, ty: int): int {
-    var wgSel: int
-    var recv: LowWidgetRecv
+func lowCanvasMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
     var widgetIdx: int
     var head: int
     var tail: int
@@ -1646,8 +1658,6 @@ func lowCanvasMethod(e: int, fn: int, ty: int): int {
     var a: int
     var fillLit: int
 
-    wgSel = selectX(fn)
-    recv = lowWidgetRecv(wgSel)
     widgetIdx = uiWidgetIndex(recv.winNameIdx, recv.wgName)
 
     nm = poolGet(selectName(fn))
@@ -1690,16 +1700,15 @@ func lowCanvasMethod(e: int, fn: int, ty: int): int {
 }
 
 // lowTextviewMethod lowers `w.Body.scrollToEnd()` (Ch8: the textview's
-// one method, textview-scroll-to-end phase): receiver peeled exactly like
-// lowCanvasMethod, arg list = (instance, widget index), void result --
-// lowWidgetSetAssign's shape minus the value argument.
-func lowTextviewMethod(e: int, fn: int, ty: int): int {
-    var recv: LowWidgetRecv
+// one method, textview-scroll-to-end phase): recv is the already-peeled
+// receiver, same contract as lowCanvasMethod; arg list = (instance, widget
+// index), void result -- lowWidgetSetAssign's shape minus the value
+// argument.
+func lowTextviewMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
     var widgetIdx: int
     var head: int
     var nm: string
 
-    recv = lowWidgetRecv(selectX(fn))
     widgetIdx = uiWidgetIndex(recv.winNameIdx, recv.wgName)
     nm = poolGet(selectName(fn))
     if nm != "scrollToEnd" {
