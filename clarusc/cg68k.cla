@@ -4191,7 +4191,12 @@ func cgAllocTmpOff(t: int): int {
     }
     if cgStmtTmpNext >= cgTmpBaseOffs.count {
         if cgRecMode != 1 {
-            abort("cg68k: small-temp need mismatch between measure and emit passes")
+            // Two ways here: code emitted OUTSIDE a laid-out function frame
+            // (cgEmitInitGlobalsStub's global initializers -- pre-existing,
+            // it died as "list index out of range" before this pool was
+            // per-function), or a real measure/emit disagreement about a
+            // function's statement shape.
+            abort("cg68k: small-temp pool exhausted -- emitted outside a laid-out function frame, or measure/emit disagreed")
         }
         if cgTmpBaseOffs.count == 0 {
             newOff = cgSmallTmpFirstOff
@@ -7522,6 +7527,7 @@ func cgIntrListPopLike(e: int, nm: string): int {
     var elemT: int
     var off: int
     var nameIdx: int
+    var tracked: bool
 
     a0e = irIntrArgsHead(e)
     elemT = irExprType(e)
@@ -7545,9 +7551,10 @@ func cgIntrListPopLike(e: int, nm: string): int {
     // still using: a use-after-free, strictly worse than the leak. The
     // bare-discard statement stays the one KRec position that IS tracked,
     // unchanged -- there, nothing copies the scratch anywhere.
+    tracked = false
     if cgIsHandleKind(irtKind(elemT)) {
         off = cgNewTrackedTmp(elemT)
-        cgLastTrackedOff = off
+        tracked = true
     } else if e == cgDiscardExprIdx and cgNeedsRelease(elemT) {
         off = cgNewTrackedTmp(elemT)
     } else {
@@ -7561,6 +7568,14 @@ func cgIntrListPopLike(e: int, nm: string): int {
     }
     cgJsrByName(nameIdx)
     cgCleanupStack(8)
+    // Named as the LAST action before returning, the invariant every other
+    // producing arm keeps (cgIntrListFirstLast just below, cgIntrTextConcat,
+    // cgCallFnScalar) -- see cgLastTrackedOff's own doc comment: a nested
+    // cgExpr can stomp the module var mid-flight, so only a set that happens
+    // after all recursion is guaranteed to be this expression's own verdict.
+    if tracked {
+        cgLastTrackedOff = off
+    }
     if cgSizeOf(elemT) <= 4 {
         cgIntrLoadScratch(off, elemT)
     }
@@ -10000,7 +10015,19 @@ func cgPushArgs(argsHead: int): int {
                 if irtKind(t) == KRec {
                     recNameIdx = irtName(t)
                     if irRecHasHandleField(recNameIdx) {
-                        if ak == ECallFn or ak == ENewRec {
+                        if ak == ENewRec {
+                            // compiler-cleanup fix round 1: ECallFn dropped
+                            // from this arm. cgMaterializeToTemp TRACKS a
+                            // handle-bearing ECallFn result now (item a), so
+                            // cgFreeStmtTmps already releases this exact slot
+                            // at end of statement -- scheduling it here too
+                            // walked the record twice, an rc underflow on
+                            // `take(mk())`. End-of-statement is later than
+                            // cgFlushArgReleases and just as safe: the callee
+                            // borrows the record by address and cannot
+                            // outlive the call. ENewRec stays: item a's gate
+                            // is ECallFn-only, so `new R` is still untracked
+                            // and this is its only release.
                             cgPendingArgReleases.add(cgVarOff(tmpRef))
                             cgPendingArgReleases.add(recNameIdx)
                         } else if ak == EVarRef or ak == EFieldRef or ak == EIndexRef {

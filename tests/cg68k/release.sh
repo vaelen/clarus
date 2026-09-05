@@ -336,6 +336,81 @@ else
     done
 fi
 
+# ==== handle-bearing record call result (compiler-cleanup item a) =====
+# A record with a text field returned BY VALUE and consumed directly gets
+# materialized into a scratch temp by cgExprAddr's own fallback
+# (cgMaterializeToTemp). That temp is TRACKED now, so the record's release
+# walk runs exactly ONCE: pre-item-a the receiver shape ran it zero times (a
+# leak), and once tracking landed the ARGUMENT shape ran it twice, because
+# cgPushArgs still scheduled cgPendingArgReleases for the same slot -- an rc
+# underflow, not a leak (fix round 1). Counted on cg_release_R, the record's
+# own walk, which cgEmitRcWalks emits as a bare label carrying a
+# `; cg_release_R(rec ptr at 8(A6))` comment rather than a `; func` marker.
+DIR=$WORK/recmaterialize
+mkdir -p "$DIR" || die "mkdir $DIR"
+cat > "$DIR/src.cla" <<'EOF'
+record R {
+    n: int
+    s: text
+}
+
+func mk(): R {
+    var r: R
+    r.s = "hello"
+    r.n = 1
+    return r
+}
+
+func take(r: R): int {
+    return r.n
+}
+
+func recArg(): int {
+    return take(mk())
+}
+
+func recRecv(): int {
+    return mk().s.length
+}
+
+on App.launch {
+    log(string(recArg() + recRecv()))
+}
+EOF
+if ! emit_fixture "$DIR"; then
+    t_fail recmaterialize_emit "emit68k failed on the record-materialize fixture"
+elif [ "$(seg_count "$DIR")" != 1 ]; then
+    # The walk is duplicated glue in every segment, so a same-segment BSR is
+    # the only call form this fixture can see -- keep it to one segment.
+    t_fail recmaterialize_seg "fixture packed into $(seg_count "$DIR") segments, want 1"
+else
+    # The LBL_n: bound immediately before cg_release_R's own comment line.
+    rlbl=$(awk '
+        match($0, /LBL_[0-9]+:/) { lbl = substr($0, RSTART, RLENGTH - 1) }
+        index($0, "; cg_release_R(") > 0 { print lbl; exit }
+    ' "$DIR/out.seg1.s")
+    if [ -z "$rlbl" ]; then
+        t_fail recmaterialize_walk "no cg_release_R walk in the listing"
+    else
+        for pair in recArg:1 recRecv:1; do
+            fn=${pair%:*}
+            want=${pair#*:}
+            seg=$(func_seg "$DIR" "$fn") || { t_fail "recmaterialize_$fn" "no segment defines func $fn"; continue; }
+            body=$(func_body "$DIR" "$seg" "$fn")
+            got=$(printf '%s\n' "$body" | awk -v lbl="$rlbl" '
+                BEGIN { re = "(BSR\\.W|JSR)[ \t]+" lbl "[^0-9A-Za-z_]" }
+                { line = $0 " "; while (match(line, re)) { n++; line = substr(line, RSTART + RLENGTH) } }
+                END { print n + 0 }')
+            if [ "$got" != "$want" ]; then
+                t_fail "recmaterialize_$fn" "$fn: $got $rlbl (cg_release_R) calls, want $want"
+                printf '%s\n' "$body"
+            else
+                t_pass "recmaterialize_$fn"
+            fi
+        done
+    fi
+fi
+
 # ==== pop/shift tracked in every position (compiler-cleanup) ==========
 # pop/shift TRANSFER a freshly-owned text out of the list. Before the
 # compiler-cleanup phase cg68k tracked that transfer only inside a bare
