@@ -10449,10 +10449,12 @@ func cgPushArgs(argsHead: int): int {
     return total
 }
 
-// cgIsAddressableArgShape reports whether a KStr/KRec argument expr `a` is
-// an lvalue `cgExprAddr` genuinely resolves to a real address -- EVarRef/
-// EFieldRef/EIndexRef (any kind, both str and record), or EStrConst (str
-// only -- a literal pool entry has a real address too). Anything else
+// cgIsAddressableArgShape reports whether a KStr/KRec/KArr argument expr
+// `a` is an lvalue `cgExprAddr` genuinely resolves to a real address --
+// EVarRef/EFieldRef/EIndexRef (any kind, str, record and array alike),
+// EStrConst (str only -- a literal pool entry has a real address too), or
+// EArrLit (arr only -- likewise a constant-pool entry, reached by
+// cgExprAddr's own `LEA <pool label>(PC)` arm). Anything else
 // (`ECallFn`, `ENewRec`, any other `EIntr`) is a VALUE-PRODUCING shape with
 // no existing storage to take the address of -- cgPushArgs' own materialize
 // branch (cgMaterializeToTemp) handles those, rather than asking
@@ -10467,6 +10469,13 @@ func cgIsAddressableArgShape(a: int, tk: IRKind): bool {
         return true
     }
     if ak == EStrConst and tk == KStr {
+        return true
+    }
+    // EArrLit (Task 7 / Task 9 seam): a `const` array literal lives in the
+    // constant pool, so a KArr argument spelled as one BORROWS the pool
+    // address (LEA d16(PC)) instead of copying into a big temp -- exactly
+    // the host lane's `&(clar_arrlit_N)` (fpAddrable, spec %4.2).
+    if ak == EArrLit and tk == KArr {
         return true
     }
     // ui_value_at_ptr (Task 14, native-5e): a raw pointer dereference --

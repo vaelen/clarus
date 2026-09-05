@@ -9,14 +9,12 @@
 // from the pool by cg_init_globals, and a local var array block-copied at
 // function entry.
 //
-// Deliberately WITHOUT the host fixture's own `sumOf(squares)` call: an
-// array passed by value to a function does not compile on the native lane
-// at all yet (an ordinary `var v: int[5]; sumOf(v)` aborts with "EVarRef
-// non-scalar (str/rec/arr) reached in value context" on this branch's
-// base commit too, with no array literal anywhere in sight). That is the
-// KArr borrow ABI, this phase's own separate task; the host fixture
-// testdata/run/arrlit.cla does cover a const array as a KArr argument,
-// since the C lane passes the wrapper struct by value.
+// Includes the host fixture's own `sumOf(squares)` call -- a `const
+// int[5]` borrowed as a KArr argument. Task 9's KArr borrow ABI passes a
+// handle-free fixed array by address, and cgIsAddressableArgShape accepts
+// EArrLit, so the call site is a `LEA <pool label>(PC)` of the array
+// literal's own constant-pool entry followed by the push: no copy, no
+// big-temp slot.
 enum Mode { Off, On, Auto }
 
 const squares: int[5] = [0, 1, 4, 9, 16]
@@ -28,6 +26,18 @@ const three: int = 3
 const withConst: int[2] = [three, 0x7FFFFFFF]
 
 var table: int[4] = [10, 20, 30, 40]
+
+func sumOf(a: int[5]): int {
+    var i: int
+    var s: int
+
+    i = 0
+    while i < 5 {
+        s = s + a[i]
+        i = i + 1
+    }
+    return s
+}
 
 func probe(): int {
     var local: int[3] = [7, 8, 9]
@@ -48,7 +58,7 @@ func probe(): int {
     }
     table[1] = table[1] + 1
     local[0] = local[0] + local[2]
-    return n + table[1] + local[0]
+    return n + table[1] + local[0] + sumOf(squares)
 }
 
 on App.startCLI(args: list of string) {
