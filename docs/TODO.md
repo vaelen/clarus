@@ -974,30 +974,20 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   completion against real Snow: the Go twin needed ~12 h per run on this
   host and the one Snow instance is contended. The rest of the Snow lane
   (`serial_echo`, `pagefile`, `clarusc_boot`, `clarusc_bake`) has been
-  booted; `roundtrip` has too, and is red — see the next item. Closing
+  booted; `roundtrip` has too (red until 2026-09-05, fixed — see the
+  next item). Closing
   action: run both once, opt-in (`CLARUS_SNOW_TESTS=1 make test
   T=mactest/snow/macresident`), when the screen and a long window are
   free, and record the durations.
-- **Snow `roundtrip` is red on this System 7 machine** — the app dies in
-  the SECOND alert branch: the trace is `T OPEN Main 1` / `T FRONT Main 1`
-  / `read ok` and then nothing (no panic trailer, so a crash or hang, not
-  a runtime error). Both file ops run before either alert and `Copy.txt`
-  comes back byte-exact, so the round trip itself works and the first
-  `alert("read ok")` returned; the only code between it and the missing
-  line is `if ok2 { alert("write ok") } else { alert("write FAILED: " +
-  lastError.message) }`. Two candidates: (a) `file.writeText` returns
-  false from its tail on System 7 (the post-data `could not write file`
-  path or the post-create `PBSetFInfoSync` stamp) and the else branch's
-  concat of a literal with the handle-returning `lastError.message` —
-  exactly the direct-argument shape 68k-call-result-release (2026-08-29)
-  changed — crashes; (b) `ok2` is true and the identical second `alert`
-  stub hangs (less likely). Last green 2026-08-09 on this same image;
-  Snow was last exercised 2026-08-16, and binary-files (writeText
-  stamping), filesystem-api (System 7 spot check left owed) and
-  68k-call-result-release all landed after that without a Snow run. NOT
-  a port defect: Go's `TestSnowRoundTrip` failed identically before
-  deletion. Closing action: a probe fixture that alerts `ok2` and
-  `lastError.message` in separate calls (no concat) plus `hdir` on
-  `Copy.txt`'s type/creator settles (a) vs (b) in one 32 s boot; then
-  bisect `d71a24f..main` with `CLARUS_SNOW_TESTS=1 make test
-  T=mactest/snow/roundtrip` (32 s per step; needs the Snow screen).
+- **Snow `roundtrip` red — RESOLVED 2026-09-05.** Not a crash and not a
+  runtime bug: a probe boot's screenshot showed the app parked on a real
+  modal alert (`read ok` + OK button). The attempt-abort phase (be75375,
+  2026-08-14) made a UI program's `alert()` show a real dialog on any
+  unscripted native build (the reference documents this), and the
+  fixture, last green 2026-08-09, still used `alert` as a headless
+  trace line. `Copy.txt` was stamped `TEXT/SNRT` and byte-exact, so the
+  earlier `writeText`-returns-false / concat-crash candidates were both
+  wrong. Fix: the fixture's four trace calls are now `log()`
+  (buffered into `out` by `natQuit`'s trailer). Standing rule this
+  exposes: an unscripted native UI fixture must never call `alert()`
+  for trace output.

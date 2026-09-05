@@ -43,19 +43,22 @@ on App.launch {
     open Main
     ok1 = file.readText(":::Marker.txt", t)
     ok2 = file.writeText(":::Copy.txt", t, app.doctype, app.id)
-    // alert() on the native (emit68k) lane never blocks for real user
-    // input -- it's a capture-only stub (native.cla's natAlert) that logs
-    // straight into the "out" file, so these are cheap extra signal for
-    // the harness to assert on, not a real modal dialog.
+    // log() on the native (emit68k) lane is a capture-only stub (native.cla's
+    // natLog) buffered into the "out" file by natQuit's own trailer, so
+    // these are cheap extra signal for the harness to assert on. NOT alert():
+    // since the attempt-abort phase (be75375, 2026-08-14) a UI program's
+    // alert() shows a REAL modal dialog on an unscripted native build,
+    // and this fixture is never scripted -- the first alert would block
+    // forever on its OK button (that was the 2026-09-05 "roundtrip red").
     if ok1 {
-        alert("read ok")
+        log("read ok")
     } else {
-        alert("read FAILED: " + lastError.message)
+        log("read FAILED: " + lastError.message)
     }
     if ok2 {
-        alert("write ok")
+        log("write ok")
     } else {
-        alert("write FAILED: " + lastError.message)
+        log("write FAILED: " + lastError.message)
     }
     quit
 }
