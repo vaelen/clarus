@@ -4286,6 +4286,7 @@ func bkInstallArenas(testapi: bool) {
     var arrElemT: list of int
     var arrN: list of int
     var arrVals: list of int
+    var freshArrLitMemo: intmap of int
 
     // Every assignment in this function COPIES its pending container
     // (clir-load-perf Task 7, design B -- see bkParsedValid's own doc
@@ -4406,6 +4407,22 @@ func bkInstallArenas(testapi: bool) {
     irArrLitStart = arrStart
     irArrLitN = arrN
     irArrLitVals = arrVals
+    // Task 7 fix round 1: the install just REPLACED irArrLits, so every
+    // IR index lowArrLitIrIdx memoized is now meaningless -- and unlike
+    // lowStrIdx (which the bake deliberately saves and RESTORES, so the
+    // baked prefix's string dedup continues) there is nothing here to
+    // carry over: lowArrLitIrIdx is keyed by the CHECKER literal index,
+    // which restarts at 0 every checkReset, so the memo must simply be
+    // EMPTY at the start of every compile. lowerProgram's own reset does
+    // not cover this path -- drive.cla sets lowResumeFromBake = true for
+    // the user-code lowering that follows an install (drive.cla:2390),
+    // which is exactly the block that reset lives in. Without this, a
+    // ClarusC.APPL session compiling a second program reuses compile #1's
+    // irArrLits index against compile #2's freshly installed arena --
+    // the same "list index out of range" crash mac-resident-clarusc Task
+    // 11 fix round 1 root-caused for lowStrIdx (see its own doc comment,
+    // lower.cla).
+    lowArrLitIrIdx = freshArrLitMemo
     irExternNames = bkLdIrExternNames.clone()
     irExternRetTys = bkLdIrExternRetTys.clone()
     irExternParamStart = bkLdIrExternParamStart.clone()

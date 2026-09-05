@@ -19,7 +19,8 @@
 # 12 (line 312): undefined: EventKind, Drag (enum shown elsewhere in the chapter)
 # 13 (line 425): undefined: EventKind (const example; enum declared
 #     elsewhere) — the unresolved type also trips the const-type-must-be-
-#     int/fixed/char/bool/enum/string fallback error
+#     int/fixed/char/bool/enum/string/fixed-array fallback error
+14
 # 15 (line 472): undefined: Person
 # 16 (line 481): undefined: Person
 # 17 (line 492): bare statement — assignment fragment
@@ -107,4 +108,3 @@
 87
 88
 89
-14
