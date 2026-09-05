@@ -65,6 +65,15 @@ func tlkMakeRec(): TlkRec {
 // used as a receiver and as an operand -- each of which leaked one text
 // block per iteration before that phase (~3 x 1500 blocks, far outside the
 // 8KB slack below).
+// tlkLenRec consumes a handle-bearing record BY VALUE -- the argument
+// position of the pop/shift shape. cgPushArgs used to schedule its own
+// release for that arg because the materialized copy was untracked; the
+// copy is tracked now and that scheduling is gone, so a regression here is
+// a DOUBLE release (a FreeMem gain / heap corruption), not a leak.
+func tlkLenRec(r: TlkRec): int {
+    return r.body.length
+}
+
 func caseLeakCheck(): TestResult {
     var before: int
     var after: int
@@ -75,6 +84,7 @@ func caseLeakCheck(): TestResult {
     var flag: bool
     var w: LogWin
     var pool: list of text
+    var recs: list of TlkRec
     var detail: string
 
     // The getter shape needs a real textview; LogWin is the harness's own
@@ -123,6 +133,21 @@ func caseLeakCheck(): TestResult {
         n = n + pool.pop().length
         pool.push(tlkMake())
         n = n + (pool.pop() + "x").length
+        // pop()/shift() of a handle-bearing RECORD in receiver and operand
+        // position (language-runtime-cleanup, spec 3.1): pop/shift
+        // deliberately leave their KRec scratch untracked (every other
+        // consumer block-copies the bytes out into a destination that then
+        // owns them), so native leaked one text block per evaluation until
+        // cgMaterializeToTemp's tracked-temp gate covered the copy it
+        // allocates for a receiver/operand use.
+        recs.push(tlkMakeRec())
+        n = n + recs.pop().body.length
+        recs.push(tlkMakeRec())
+        n = n + recs.pop().n
+        recs.push(tlkMakeRec())
+        n = n + recs.shift().body.length
+        recs.push(tlkMakeRec())
+        n = n + tlkLenRec(recs.pop())
         i = i + 1
     }
     // textview `.text` getter box consumed as a concat operand -- the one

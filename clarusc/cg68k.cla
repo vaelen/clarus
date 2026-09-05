@@ -6207,7 +6207,22 @@ func cgMaterializeToTemp(e: int): int {
     // KRec-returning call used as a receiver) must be TRACKED so its
     // handle fields are released at end of statement -- the native mirror
     // of cprint.cla fpCallFn's fpNewTrackedTmp shape.
-    if irExprKind(e) == ECallFn and cgNeedsRelease(t) {
+    //
+    // language-runtime-cleanup (spec 3.1): the same treatment for a
+    // popped/shifted handle-bearing RECORD consumed as a receiver or an
+    // operand (`lst.pop().t.length`, `lst.pop().n + 1`), which also lands
+    // in cgExprAddr's fallback here. cgIntrListPopLike deliberately leaves
+    // its KRec scratch UNTRACKED (see its own gate comment: every other
+    // consumer block-copies the bytes out into a destination that then
+    // owns them, and cannot untrack the scratch), so in receiver/operand
+    // position nothing owned the record at all and its handle fields
+    // leaked one block per evaluation. The temp allocated here is the
+    // block copy's destination, so tracking it makes it the record's ONE
+    // owner and the end-of-statement flush (cgFreeStmtTmps) walks its
+    // fields. Handle KINDS are excluded from this second arm on purpose:
+    // cgIntrListPopLike already tracks those at the producer, and
+    // double-tracking would double-release.
+    if (irExprKind(e) == ECallFn and cgNeedsRelease(t)) or (irExprKind(e) == EIntr and irtKind(t) == KRec and cgNeedsRelease(t) and lowIntrIsOwningContainerRead(irIntrName(e))) {
         off = cgNewTrackedTmp(t)
     } else {
         off = cgAllocTmpOff(t)
@@ -10403,17 +10418,20 @@ func cgPushArgs(argsHead: int): int {
                             cgEmitRecWalkCall(true, 6, cgVarOff(tmpRef), recNameIdx)
                             cgPendingArgReleases.add(cgVarOff(tmpRef))
                             cgPendingArgReleases.add(recNameIdx)
-                        } else if ak == EIntr and lowIntrIsOwningContainerRead(irIntrName(a)) {
-                            // final-review fix wave (UAF fix, owning half):
-                            // list_pop/list_shift already transferred the +1
-                            // out of the list (no retain needed), but a bare
-                            // pop/shift used directly as a call argument still
-                            // needs its own release once the call returns --
-                            // same tracked-release-only shape as ECallFn/
-                            // ENewRec above.
-                            cgPendingArgReleases.add(cgVarOff(tmpRef))
-                            cgPendingArgReleases.add(recNameIdx)
                         }
+                        // language-runtime-cleanup (spec 3.1): the
+                        // `ak == EIntr and lowIntrIsOwningContainerRead`
+                        // arm that used to sit here is GONE, for exactly
+                        // the reason ECallFn was dropped from the ENewRec
+                        // arm above. cgMaterializeToTemp now TRACKS a
+                        // handle-bearing KRec pop/shift result, so
+                        // cgFreeStmtTmps already releases this very slot at
+                        // end of statement; scheduling it here too walked
+                        // the record twice (an rc underflow on
+                        // `take(lst.pop())`). End-of-statement is later
+                        // than cgFlushArgReleases and just as safe -- the
+                        // callee borrows the record by address and cannot
+                        // outlive the call.
                     }
                 }
                 cgExprAddr(tmpRef)
@@ -10431,10 +10449,11 @@ func cgPushArgs(argsHead: int): int {
             // tracked in every position (see its own doc comment), and this
             // argument position simply never hands it off, so the ordinary
             // end-of-statement flush releases it -- one temp instead of two,
-            // and one fewer store. The KRec sub-branch above keeps its own
-            // cgPendingArgReleases scheduling: a KRec pop scratch is still
-            // deliberately untracked (block-copied out by
-            // cgMaterializeToTemp, which owns the copy).
+            // and one fewer store. A KRec pop scratch is still deliberately
+            // untracked (block-copied out by cgMaterializeToTemp), but the
+            // COPY cgMaterializeToTemp allocates is tracked now
+            // (language-runtime-cleanup, spec 3.1), so the KRec sub-branch
+            // above no longer schedules its own release either.
             if sz == 2 {
                 cgExpr(a)
                 a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
