@@ -2796,7 +2796,10 @@ func constSymMatches(a: Symbol, b: Symbol): bool {
 // already there by the time a same-name duplicate is checked) -- no new
 // decl-indexed side table (funcSigByDecl's own idiom) is needed to
 // compare against, scopeLookup reads the first decl's Symbol straight
-// back.
+// back. A genuine mismatch emits TWO "redeclaration of X (also declared
+// at L:C)" diagnostics, one at each site (compiler-cleanup phase) --
+// emitConflictingExtern's own shape, since lib.cla's Diag carries a
+// single position.
 func checkConstDecl(d: int) {
     var t: int
     var k: TypeKind
@@ -2834,7 +2837,10 @@ func checkConstDecl(d: int) {
     } else {
         symIdx = scopeLookup(curScope, sym.nameIdx)
         if symIdx == -1 or not constSymMatches(symbols[symIdx], sym) {
-            emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+            // compiler-cleanup: cite BOTH sites, emitConflictingExtern's
+            // shape (Diag carries one position, so two diagnostics).
+            emitDiag(declLine(firstDecl), declCol(firstDecl), "redeclaration of " + poolGet(sym.nameIdx) + " (also declared at " + numToStr(declLine(d)) + ":" + numToStr(declCol(d)) + ")")
+            emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx) + " (also declared at " + numToStr(declLine(firstDecl)) + ":" + numToStr(declCol(firstDecl)) + ")")
         }
     }
 }
