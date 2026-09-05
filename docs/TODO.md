@@ -32,46 +32,6 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   cases install menus they never tear down; a multi-window app may want
   its own menu set swapped on activate. Needs a design.
 
-### Serial/connection phase (2026-08-16)
-
-- **Host-lane `stdio` and `pty` transports for the serial ports**
-  (Andrew 2026-08-30, from 68kbbs's standalone BASIC interpreter):
-  `CLARUS_SERIAL_MODEM`/`CLARUS_SERIAL_PRINTER` accept only
-  `listen:PORT` and `connect:HOST:PORT` today (`runtime/host/
-  rt_serial.inc`'s `rt_ext_ConnHOpen`), so a host CLI program's only
-  terminal is a TCP peer — 68kbbs's `scripts/basic.sh` has to start the
-  binary listening and attach `nc` to it. Add two more spec values in
-  the same parser: `stdio` (read fd 0, write fd 1; optionally raw-mode
-  `tcsetattr` on open, restored at exit, for per-keystroke input) and
-  `pty` (`posix_openpt`/`grantpt`/`unlockpt`, print the slave path;
-  a master with no slave attached behaves like the `listening` state).
-  Same env-var-at-open mechanism, no build flag — one binary serves
-  any transport by how it is launched. The four functions that assume
-  a socket must branch for non-socket fds: `ReadByte`/`Write`
-  (`recv`/`send` → `read`/`write`, `ENOTSOCK` on a tty), and `Gone`,
-  whose `MSG_PEEK` trick has no tty/pipe equivalent — keep a per-slot
-  `gone` flag set when `read` returns 0. `FIONREAD` (`Avail`) and
-  `select` (`Idle`) already work on ttys and pipes. Roughly 100 lines of
-  C plus a `pipe()`-pair case in `rt_serial_test.c` and a spec
-  paragraph; then a deliberate re-pin in 68kbbs.
-
-### binary-files phase (2026-08-22)
-
-- **UI/non-UI connection-pump lane gap** (Task 9's report) — the native
-  lane only pumps `connection` traffic (`nat_UiConnPump`) for
-  UI-classified programs (window/menu/`every` present); the host C lane
-  only ever compiles NON-UI programs (`cprint` emits `#include
-  "rt_ui.h"`, which lives only under `runtime/mac/`, so `cc` against
-  `runtime/host` fails outright for any program with a `window`/`menu`).
-  There is no single program shape that both boots on the host dev lane
-  AND pumps connections on native — a serial/BBS-style program has to
-  carry at least one throwaway status window purely to get native
-  pumping (`examples/pagefile.cla`'s workaround). Serial-connection
-  phase's own spec §3/§7 promised one program shape on both lanes; it
-  doesn't hold today. Also affects `examples/serialecho.cla`'s doc
-  comment, fixed this task to state the real constraint instead of
-  claiming host-lane runnability it never had.
-
 ### filesystem-api phase (2026-08-26)
 
 - **Resource-fork-as-bytes / `file.openRF`** (Andrew 2026-09-05, moved
@@ -97,6 +57,68 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   `file.setInfo` already covers restamping type/creator/dates after a
   decode. Named out of scope by the filesystem-api spec (§7),
   unscheduled.
+
+## Serial / connection
+
+Grouped (Andrew, 2026-09-05) so they can be addressed together in one
+serial/connection follow-up phase. The originating phase is the
+sub-heading.
+
+### Serial/connection phase (2026-08-16)
+
+- **Host-lane `stdio` and `pty` transports for the serial ports**
+  (Andrew 2026-08-30, from 68kbbs's standalone BASIC interpreter):
+  `CLARUS_SERIAL_MODEM`/`CLARUS_SERIAL_PRINTER` accept only
+  `listen:PORT` and `connect:HOST:PORT` today (`runtime/host/
+  rt_serial.inc`'s `rt_ext_ConnHOpen`), so a host CLI program's only
+  terminal is a TCP peer — 68kbbs's `scripts/basic.sh` has to start the
+  binary listening and attach `nc` to it. Add two more spec values in
+  the same parser: `stdio` (read fd 0, write fd 1; optionally raw-mode
+  `tcsetattr` on open, restored at exit, for per-keystroke input) and
+  `pty` (`posix_openpt`/`grantpt`/`unlockpt`, print the slave path;
+  a master with no slave attached behaves like the `listening` state).
+  Same env-var-at-open mechanism, no build flag — one binary serves
+  any transport by how it is launched. The four functions that assume
+  a socket must branch for non-socket fds: `ReadByte`/`Write`
+  (`recv`/`send` → `read`/`write`, `ENOTSOCK` on a tty), and `Gone`,
+  whose `MSG_PEEK` trick has no tty/pipe equivalent — keep a per-slot
+  `gone` flag set when `read` returns 0. `FIONREAD` (`Avail`) and
+  `select` (`Idle`) already work on ttys and pipes. Roughly 100 lines of
+  C plus a `pipe()`-pair case in `rt_serial_test.c` and a spec
+  paragraph; then a deliberate re-pin in 68kbbs.
+
+- **Host `every`-timer gap in the CLI pump** (design doc
+  `docs/superpowers/specs/2026-08-15-serial-connection-design.md` §6/§7)
+  — `every` machinery is UI-runtime-entangled today; the host CLI pump
+  services open connections only, not `every` timers. Deliberately not
+  promised this phase.
+
+- **Task 7 leftover minors, all deferred**: `serial_snow_test.go`'s
+  `done()` blocks ~34s inside `runSnow`'s poll loop, suspending
+  died-mid-run detection for that window (now
+  `tests/lib_snow.sh`'s `snow_run`); `tests/conntest/listen.sh`
+  has a stolen-port edge case; `examples/serialecho.cla`'s
+  quit-in-loop keeps scanning the rest of a chunk after the 3rd `Q`
+  instead of returning immediately; `runtime/host/rt_serial_test.c` has
+  three stale/contradictory comments (alarm numbers, a retry-loop
+  reference, and `set_recv_timeout`'s stated rationale).
+
+### binary-files phase (2026-08-22)
+
+- **UI/non-UI connection-pump lane gap** (Task 9's report) — the native
+  lane only pumps `connection` traffic (`nat_UiConnPump`) for
+  UI-classified programs (window/menu/`every` present); the host C lane
+  only ever compiles NON-UI programs (`cprint` emits `#include
+  "rt_ui.h"`, which lives only under `runtime/mac/`, so `cc` against
+  `runtime/host` fails outright for any program with a `window`/`menu`).
+  There is no single program shape that both boots on the host dev lane
+  AND pumps connections on native — a serial/BBS-style program has to
+  carry at least one throwaway status window purely to get native
+  pumping (`examples/pagefile.cla`'s workaround). Serial-connection
+  phase's own spec §3/§7 promised one program shape on both lanes; it
+  doesn't hold today. Also affects `examples/serialecho.cla`'s doc
+  comment, fixed this task to state the real constraint instead of
+  claiming host-lane runnability it never had.
 
 ## Compiler correctness / cleanup
 
@@ -264,24 +286,6 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   ui.cla:1192,1203`, Task 1): marks the two About-box helpers as new
   relative to the file's inherited `rt_ui.c`-heritage citation style;
   cosmetic, not reused anywhere else in the runtime.
-
-### Serial/connection phase (2026-08-16)
-
-- **Host `every`-timer gap in the CLI pump** (design doc
-  `docs/superpowers/specs/2026-08-15-serial-connection-design.md` §6/§7)
-  — `every` machinery is UI-runtime-entangled today; the host CLI pump
-  services open connections only, not `every` timers. Deliberately not
-  promised this phase.
-
-- **Task 7 leftover minors, all deferred**: `serial_snow_test.go`'s
-  `done()` blocks ~34s inside `runSnow`'s poll loop, suspending
-  died-mid-run detection for that window (now
-  `tests/lib_snow.sh`'s `snow_run`); `tests/conntest/listen.sh`
-  has a stolen-port edge case; `examples/serialecho.cla`'s
-  quit-in-loop keeps scanning the rest of a chunk after the 3rd `Q`
-  instead of returning immediately; `runtime/host/rt_serial_test.c` has
-  three stale/contradictory comments (alarm numbers, a retry-loop
-  reference, and `set_recv_timeout`'s stated rationale).
 
 ### binary-files phase (2026-08-22)
 
