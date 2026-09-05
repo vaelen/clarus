@@ -37,10 +37,34 @@ func tlkLen(t: text): int {
     return t.length
 }
 
+// tlkRec/tlkMakeRec: a handle-bearing record returned BY VALUE and
+// consumed as a RECEIVER (`tlkMakeRec().body`) -- the makeRec().field
+// shape cgMaterializeToTemp now tracks (compiler-cleanup item a). Pre-fix
+// the materialized record's `body` handle was never released: one leaked
+// text block per evaluation.
+record TlkRec {
+    n: int
+    body: text
+}
+
+func tlkMakeRec(): TlkRec {
+    var r: TlkRec
+
+    r.n = 1
+    r.body = "rec body"
+    return r
+}
+
 // caseLeakCheck: 1500 iterations of every direct-consumption shape plus
 // 300 of the textview-getter shape, FreeMem sampled before and after. `n`
 // is checked nonzero (kept observably live) so nothing above can be
 // shaken out as dead code.
+//
+// compiler-cleanup widened the loop with three more shapes -- a
+// handle-bearing record call result used as a receiver, and a list pop
+// used as a receiver and as an operand -- each of which leaked one text
+// block per iteration before that phase (~3 x 1500 blocks, far outside the
+// 8KB slack below).
 func caseLeakCheck(): TestResult {
     var before: int
     var after: int
@@ -50,6 +74,7 @@ func caseLeakCheck(): TestResult {
     var s: text
     var flag: bool
     var w: LogWin
+    var pool: list of text
     var detail: string
 
     // The getter shape needs a real textview; LogWin is the harness's own
@@ -85,6 +110,19 @@ func caseLeakCheck(): TestResult {
             n = n + 1
         }
         n = n + s.length
+        // handle-bearing record call result as receiver (compiler-cleanup
+        // item a): the record is materialized into a scratch temp by
+        // cgExprAddr's generic fallback, and its `body` handle is released
+        // at end of statement only because that temp is now tracked.
+        n = n + tlkMakeRec().body.length
+        // pop/shift as receiver and as operand (compiler-cleanup item b):
+        // each iteration pushes one fresh text and pops it back in a
+        // NON-argument position, where pop's transferred +1 used to be
+        // claimed by nothing at all.
+        pool.push(tlkMake())
+        n = n + pool.pop().length
+        pool.push(tlkMake())
+        n = n + (pool.pop() + "x").length
         i = i + 1
     }
     // textview `.text` getter box consumed as a concat operand -- the one
