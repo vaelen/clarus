@@ -511,6 +511,10 @@ func driveReset() {
     libReset()
     rnInited = false
     seenPaths = driveFreshIntMap()
+    // compiler-cleanup: same seam as seenPaths -- drvRuntimeFiles is keyed
+    // by pool index, and a stale index from a previous compile would
+    // misclassify this one's decls.
+    drvRuntimeFiles.clear()
     asmHeads = driveFreshIntList()
     asmTails = driveFreshIntList()
     dedupHits = driveFreshIntList()
@@ -764,6 +768,26 @@ var drvEntryName: string
 // loop's own entry argument (entryFailed semantics are load-bearing).
 var drvSpliceActive: bool
 
+// drvRuntimeFiles (compiler-cleanup): the pool index of every source file
+// read while drvSpliceActive was true -- i.e. every runtime module.
+// lower.cla's declIsRuntimeOrigin consults THIS instead of comparing a
+// decl's path string against rtDir (lexical normalizePath could not see
+// through a symlink; there is nothing to compare now).
+//
+// The flag is INHERITED by expand()'s own include recursion, so a
+// toolbox/*.cla file whose FIRST read happens under a runtime splice
+// (runtime/clarus/{ui,uidialogs,conn_68k,fileh_68k}.cla each
+// `include "../../toolbox/*.cla"`) is recorded runtime-origin too --
+// deliberate: it is part of the runtime's transitive closure for that
+// compile. FIRST read is what decides, because seenPaths dedups every
+// later read of the same path, so a toolbox file the user composes
+// positionally BEFORE the splice runs stays user-origin. That asymmetry
+// is invisible today and can only ever matter if a toolbox/ module gains
+// a `func` BODY: declIsRuntimeOrigin has exactly one caller (lower.cla's
+// lowFuncDecl, for a func declaration), and the catalog is
+// `external func`/`const`/`record` only -- no bodies at all.
+var drvRuntimeFiles: intmap of bool
+
 // driveProgress: timestamp-prefix msg and hand it to the front end; a
 // no-op unless want68k (block comment above).
 func driveProgress(msg: string) {
@@ -1014,6 +1038,9 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     // Record each top-level decl's owning file so the single check pass can
     // attribute a check diagnostic to the file its decl came from (Go's
     // per-decl c.f), not the entry path.
+    if drvSpliceActive {
+        drvRuntimeFiles[pathIdx] = true
+    }
     d = head
     while d != -1 {
         setDeclFile(d, pathIdx)
