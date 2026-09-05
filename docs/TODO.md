@@ -978,10 +978,26 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   action: run both once, opt-in (`CLARUS_SNOW_TESTS=1 make test
   T=mactest/snow/macresident`), when the screen and a long window are
   free, and record the durations.
-- **Snow `roundtrip` is red on this System 7 machine** — the app halts
-  after its first native `alert()`: the trace stops at `read ok` and
-  `Copy.txt` is byte-exact, so the file round trip itself works and the
-  hang is in the alert path, not the I/O. NOT a port defect: Go's
-  `TestSnowRoundTrip` failed identically before deletion, so this is a
-  pre-existing System 7 bug the port faithfully reproduces. Needs its own
-  task (native `alert()` on System 7 / Mac II), not a harness fix.
+- **Snow `roundtrip` is red on this System 7 machine** — the app dies in
+  the SECOND alert branch: the trace is `T OPEN Main 1` / `T FRONT Main 1`
+  / `read ok` and then nothing (no panic trailer, so a crash or hang, not
+  a runtime error). Both file ops run before either alert and `Copy.txt`
+  comes back byte-exact, so the round trip itself works and the first
+  `alert("read ok")` returned; the only code between it and the missing
+  line is `if ok2 { alert("write ok") } else { alert("write FAILED: " +
+  lastError.message) }`. Two candidates: (a) `file.writeText` returns
+  false from its tail on System 7 (the post-data `could not write file`
+  path or the post-create `PBSetFInfoSync` stamp) and the else branch's
+  concat of a literal with the handle-returning `lastError.message` —
+  exactly the direct-argument shape 68k-call-result-release (2026-08-29)
+  changed — crashes; (b) `ok2` is true and the identical second `alert`
+  stub hangs (less likely). Last green 2026-08-09 on this same image;
+  Snow was last exercised 2026-08-16, and binary-files (writeText
+  stamping), filesystem-api (System 7 spot check left owed) and
+  68k-call-result-release all landed after that without a Snow run. NOT
+  a port defect: Go's `TestSnowRoundTrip` failed identically before
+  deletion. Closing action: a probe fixture that alerts `ok2` and
+  `lastError.message` in separate calls (no concat) plus `hdir` on
+  `Copy.txt`'s type/creator settles (a) vs (b) in one 32 s boot; then
+  bisect `d71a24f..main` with `CLARUS_SNOW_TESTS=1 make test
+  T=mactest/snow/roundtrip` (32 s per step; needs the Snow screen).
