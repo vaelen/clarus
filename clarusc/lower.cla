@@ -149,8 +149,8 @@ var lowConnSlotOf: map of int
 // lowConnHandlerFn maps "<slot>|<event>" (event one of opened/received/
 // closed/failed) to the interned C name of that slot's minted handler
 // IRFunc -- absent (map default -1) when no `on <var>.<event>` handler
-// was declared for that slot, which lowSynthConnFireOpened/Received/
-// Closed/Failed (below) read as "no-op arm", per the brief's own rule
+// was declared for that slot, which lowSynthConnFireSimple/Received/
+// Failed (below) read as "no-op arm", per the brief's own rule
 // ("a slot with no handler for an event is a no-op").
 var lowConnHandlerFn: map of int
 
@@ -7389,8 +7389,9 @@ func lowSynthAppLog() {
 // Connection dispatcher synthesis (serial-connection phase, Task 5)
 // ================================================================
 //
-// The four lowSynthConnFireXxx functions below build clar_conn_fire_
-// opened/received/closed/failed -- the exact extern names conn.cla
+// The three lowSynthConnFireXxx builders below build clar_conn_fire_
+// opened/received/closed/failed (opened and closed share one --
+// lowSynthConnFireSimple, parameterized by event key and C name) -- the exact extern names conn.cla
 // already declares (Task 4) and rtConnPump calls -- as ordinary IRFuncs,
 // following lowSynthFireWinEvent's own if-chain-over-index shape
 // (lower.cla, above): one arm per SLOT (0..3, matching conn.cla's own
@@ -7425,8 +7426,11 @@ func lowSynthAppLog() {
 // extern-prototype pass route the call to `clar_fn_NAME` instead of a
 // nonexistent `rt_ext_NAME` shim.
 
-// lowSynthConnFireOpened builds clar_conn_fire_opened(slot: int).
-func lowSynthConnFireOpened() {
+// lowSynthConnFireSimple builds clar_conn_fire_<eventKey>(slot: int) for
+// the two argument-less events (opened/closed) -- compiler-cleanup folded
+// the two former copies, which differed only in the event-key and C-name
+// strings. Received/Failed carry extra params and stay separate.
+func lowSynthConnFireSimple(eventKey: string, cName: string) {
     var paramsHead: int
     var conds: list of int
     var bodies: list of int
@@ -7439,7 +7443,7 @@ func lowSynthConnFireOpened() {
 
     i = 0
     while i < 4 {
-        fnName = lowConnHandlerFn.get(numToStr(i) + "|opened", -1)
+        fnName = lowConnHandlerFn.get(numToStr(i) + "|" + eventKey, -1)
         conds.add(lowSynthEqInt("slot", i))
         if fnName != -1 {
             bodies.add(newIRExprStmt(newIRCallFn(fnName, -1, irVoidT)))
@@ -7450,38 +7454,7 @@ func lowSynthConnFireOpened() {
     }
 
     chain = lowSynthFoldIfChain(conds, bodies, -1)
-    fnameIdx = intern("clar_conn_fire_opened")
-    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
-    shakeAddRoot(fnameIdx)
-}
-
-// lowSynthConnFireClosed builds clar_conn_fire_closed(slot: int) --
-// same shape as lowSynthConnFireOpened, different event key.
-func lowSynthConnFireClosed() {
-    var paramsHead: int
-    var conds: list of int
-    var bodies: list of int
-    var i: int
-    var fnName: int
-    var chain: int
-    var fnameIdx: int
-
-    paramsHead = newIRLocal(intern("slot"), irIntT)
-
-    i = 0
-    while i < 4 {
-        fnName = lowConnHandlerFn.get(numToStr(i) + "|closed", -1)
-        conds.add(lowSynthEqInt("slot", i))
-        if fnName != -1 {
-            bodies.add(newIRExprStmt(newIRCallFn(fnName, -1, irVoidT)))
-        } else {
-            bodies.add(-1)
-        }
-        i = i + 1
-    }
-
-    chain = lowSynthFoldIfChain(conds, bodies, -1)
-    fnameIdx = intern("clar_conn_fire_closed")
+    fnameIdx = intern(cName)
     newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
     shakeAddRoot(fnameIdx)
 }
@@ -7563,14 +7536,30 @@ func lowSynthConnFireFailed() {
     var setMsg: int
     var callStmt: int
     var body: int
+    var anyFailed: bool
 
     paramsHead = newIRLocal(intern("slot"), irIntT)
     paramsTail = irLocalListAppend(paramsHead, newIRLocal(intern("code"), irIntT))
     irLocalListAppend(paramsTail, newIRLocal(intern("msg"), irPtrT))
 
+    // compiler-cleanup: `err` is only ever referenced from a MATCHED arm,
+    // so a program with no `failed` handler at all was declaring a dead
+    // 260-byte error local in every build (the four empty arms reference
+    // nothing). Declare it only when some slot actually has a handler.
+    anyFailed = false
+    i = 0
+    while i < 4 {
+        if lowConnHandlerFn.has(numToStr(i) + "|failed") {
+            anyFailed = true
+        }
+        i = i + 1
+    }
+
     lowLocalsHead = -1
     lowLocalsTail = -1
-    lowAddLocal(intern("err"), irErrT)
+    if anyFailed {
+        lowAddLocal(intern("err"), irErrT)
+    }
 
     i = 0
     while i < 4 {
@@ -7600,9 +7589,11 @@ func lowSynthConnFireFailed() {
 // lowSynthConnDispatchers is this section's one entry point (called from
 // lowerProgram's tail, only when usesConn).
 func lowSynthConnDispatchers() {
-    lowSynthConnFireOpened()
+    // ORDER MATTERS: IR function order drives emission order, so keeping
+    // opened/received/closed/failed pins every existing golden.
+    lowSynthConnFireSimple("opened", "clar_conn_fire_opened")
     lowSynthConnFireReceived()
-    lowSynthConnFireClosed()
+    lowSynthConnFireSimple("closed", "clar_conn_fire_closed")
     lowSynthConnFireFailed()
 }
 
