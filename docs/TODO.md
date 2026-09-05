@@ -185,14 +185,8 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   this lane permanent-failure FhH stubs while also adding suite cases
   that need real file I/O, so the twin can only go green via real
   C-side HFS FhH implementations for this lane, lane-aware case skips,
-  or accepting a documented 78/80; (2) FIXED (2026-08-28) —
-  `TestToolboxSuiteOnMac` now compiles, links, boots, and runs green
-  (32/32 then; 36/36 as of the compiler-cleanup phase, 2026-09-05, once
-  its `TbFreeMem`/`TbClearWarmFreeMem` shims landed). The toolbox suite's live `PB*Sync`/`SF*`/`AE*` trap externs (33
-  symbols: 27 `PB*Sync` from `toolbox/files.cla` + `toolbox/devices.cla`,
-  4 `SF*` from `toolbox/standardfile.cla`, 2 `AE*` from
-  `toolbox/appleevents.cla`) got mechanical Universal-Interfaces
-  pass-through `rt_ext_` wrappers in `rt_ext_mac.inc`.
+  or accepting a documented 78/80. (The toolbox twin itself runs green,
+  36/36 as of 2026-09-05.)
 
 ### string-perf phase (2026-09-02)
 
@@ -229,24 +223,7 @@ deleted as obsolete, or closed with evidence in that one phase. The full
 disposition list is `docs/HISTORY.md`'s "compiler-cleanup phase
 (2026-09-05)" entry; the design is
 `docs/superpowers/specs/2026-09-05-compiler-cleanup-design.md` §1. Only
-the FIXED record below (kept as a worked root-cause trail) and the one
-new entry the phase itself opened survive.
-
-### binary-files phase (2026-08-22)
-
-- **FIXED (Task 9c): `--rtbake` + `connection`/`filehandle` method calls
-  used to crash clarusc** (`list index out of range`) — found by Task
-  10's own T2 run, root-caused via `lldb` to `lower.cla`'s
-  `lowRtCoerceArg`, which looked up the target runtime function's
-  DECLARED param type by NAME through the checker's live symbol table
-  at lowering time, a table `--rtbake` never populates for baked
-  runtime functions (it skips their parse+check for performance). Fixed
-  by `lowCoerceTo`, which passes the statically-known target IR type
-  (`irTextT`/`irStrType(255)`) directly at each of the 7 call sites
-  instead of looking anything up — the coercion target was always fixed
-  at compile time, no lookup was ever actually needed. Full trail:
-  `.superpowers/sdd/2026-08-22-binary-files/task-10-report.md`'s "Task
-  9c" section.
+the entries the phase itself opened survive.
 
 ### compiler-cleanup phase (2026-09-05)
 
@@ -748,15 +725,6 @@ new entry the phase itself opened survive.
 
 ### binary-files phase (2026-08-22)
 
-- **FIXED (final-review wave, M6): no fixture pinned the native D0-save
-  fix for a `text`-typed `return call(...)`** (Task 9b minor) — Task
-  9b's native `cgReturnStmt` D0-clobber-by-release fix was only
-  exercised by `FileHandleRW`'s bool-returning paths.
-  `testdata/run/ret_text_tmp_release.cla` (host behavior golden + native
-  `scripts/build-68k.sh` build) and `testsuite/core/cases_textbinary.cla`'s
-  `TextBinaryAccessors` case (internal check bump, same case count) now
-  both exercise a `text`-returning `return call(...)` whose call
-  argument is a coerced temp.
 - **No fixture asserts `readAt`/`writeAt` with `count == 0`** (Task 5
   minor; final-review wave M5) — the `pos == EOF` case IS covered
   (`readAt(600,10)` past EOF, `readAt(512,100)` crossing EOF); only a
@@ -844,25 +812,3 @@ new entry the phase itself opened survive.
   T=mactest/snow/macresident`), when the screen and a long window are
   free, and record the durations.
 
-### compiler-cleanup phase (2026-09-05)
-
-- **`tests/conntest/abort.sh` flaked under `make -j` load three separate
-  times this phase** (Task 1, Task 9, and Task 10's pre-docs `make -j
-  t1` runs), green alone and on immediate rerun each time — its
-  `prompt_exit1` subcase has a 2 s peer-dependent deadline (`exit 124 =
-  still running after 2s, peer-dependent`), which is load-sensitive
-  under parallel test execution. Not a phase defect; recorded nowhere
-  but the ledger and `task-10-report.md` until now. Fix: widen the
-  deadline or replace it with a deterministic readiness handshake
-  between the test and its peer process; follow-up, unscheduled.
-
-  **Hardened 2026-09-05 (Task 11): the `prompt_exit1` deadline is now
-  10 s (was 2 s).** A readiness handshake was considered first and does
-  not apply on the side that flakes: the PEER already has one (the test
-  polls tcpdrive's `port ` line before connecting), and the program side
-  has nothing to hand-shake on, because promptness itself is what the
-  subcase asserts — it can only be a deadline. Nothing was weakened: the
-  peer still stalls for 4000 s after accepting, so 10 s remains 400x
-  short of any exit the peer could cause, and a program that waits on
-  the peer still expires as exit 124. Verified green 3x alone, in a
-  12-script parallel run, and under the full `make -j t1`.

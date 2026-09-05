@@ -77,7 +77,7 @@ for entry in "$ROOT"/testdata/emitui/*.cla; do
     for sym in clar_fn_rtConnOpen clar_fn_rtFhOpen; do
         if grep -q "^static[^;]*$sym" "$srcout" &&
                 ! grep -q "^static[^;]*$sym" "$bakeout" &&
-                grep -q "$sym(" "$bakeout"; then
+                grep -qF "$sym(" "$bakeout"; then
             gap=$sym
             break
         fi
