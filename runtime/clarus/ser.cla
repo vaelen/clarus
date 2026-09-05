@@ -314,16 +314,15 @@ func rtSerGetByte(t: text): char {
 }
 
 func rtSerGetI32(t: text): int {
-    var b0: int
-    var b1: int
-    var b2: int
-    var b3: int
+    var v: int
 
-    b0 = int(rtSerGetByte(t))
-    b1 = int(rtSerGetByte(t))
-    b2 = int(rtSerGetByte(t))
-    b3 = int(rtSerGetByte(t))
-    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+    if rtSerBad or rtSerPos > t.length - 4 {
+        rtSerBad = true
+        return 0
+    }
+    v = t.intAt(rtSerPos)
+    rtSerPos = rtSerPos + 4
+    return v
 }
 
 // rtSerZeroPtr zero-fills n bytes at p -- rtFileLoad's LIST/MAP scratch is

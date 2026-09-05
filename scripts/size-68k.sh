@@ -7,17 +7,14 @@
 # Deterministic and host-only; used to record before/after numbers for
 # every peephole pattern.
 #
-# The suite compositions below mirror tests/mactest/coregui_files.txt and
-# tests/mactest/toolbox_files.txt exactly (those two lists, plus
-# tests/testsuite/core_cli.sh's own core-CLI composition, are the
-# authoritative lists -- not this script's earlier draft). Notably:
-# toolbox_files.txt is NOT just "kit.cla + runner.cla + cases_*.cla +
-# gui.cla" -- it also threads in five toolbox/*.cla catalog files and
-# testsuite/toolbox/harness.cla (harness.cla doesn't match the cases_*.cla
-# glob), and the toolbox GUI build needs --testapi (tests/mactest/
-# toolbox_68k.sh prepends it) while the core GUI build does not
-# (tests/mactest/coresuite_68k.sh passes no such flag, and no core/*.cla
-# file references UiTest*).
+# The suite compositions below are read straight from
+# tests/mactest/coregui_files.txt and tests/mactest/toolbox_files.txt
+# (those two lists, plus tests/testsuite/core_cli.sh's own core-CLI
+# composition, are the authoritative lists) -- no inline file list to
+# drift out of sync with them. The toolbox GUI build needs --testapi
+# (tests/mactest/toolbox_68k.sh prepends it) while the core GUI build
+# does not (tests/mactest/coresuite_68k.sh passes no such flag, and no
+# core/*.cla file references UiTest*).
 set -e
 cd "$(dirname "$0")/.."
 
@@ -43,31 +40,11 @@ measure() {
         "$name" "$bytes" "$segs" "$(wc -c < "$out.bin")"
 }
 
-measure coregui testsuite/kit.cla testsuite/core/runner.cla \
-    testsuite/core/cases_arr.cla testsuite/core/cases_enumfix.cla \
-    testsuite/core/cases_list.cla testsuite/core/cases_map.cla \
-    testsuite/core/cases_sortedmap.cla testsuite/core/cases_intmap.cla \
-    testsuite/core/cases_misc.cla testsuite/core/cases_rec.cla \
-    testsuite/core/cases_ser.cla testsuite/core/cases_str.cla \
-    testsuite/core/cases_text.cla testsuite/core/cases_xrec.cla \
-    testsuite/core/gui.cla
-
-measure toolboxgui --testapi testsuite/kit.cla \
-    toolbox/memory.cla toolbox/events.cla toolbox/osutils.cla \
-    toolbox/scrap.cla toolbox/files.cla \
-    testsuite/toolbox/runner.cla \
-    testsuite/toolbox/cases_events.cla testsuite/toolbox/cases_draw.cla \
-    testsuite/toolbox/cases_a5.cla testsuite/toolbox/cases_gestalt.cla \
-    testsuite/toolbox/cases_event.cla testsuite/toolbox/harness.cla \
-    testsuite/toolbox/cases_uitest.cla testsuite/toolbox/cases_pattern.cla \
-    testsuite/toolbox/cases_buttons.cla testsuite/toolbox/cases_winvar.cla \
-    testsuite/toolbox/cases_textwidgets.cla testsuite/toolbox/cases_menus.cla \
-    testsuite/toolbox/cases_editmenu.cla testsuite/toolbox/cases_canvas.cla \
-    testsuite/toolbox/cases_zoomwin.cla testsuite/toolbox/cases_hscroll.cla \
-    testsuite/toolbox/cases_popuptable.cla testsuite/toolbox/cases_dialogs.cla \
-    testsuite/toolbox/cases_hdim.cla testsuite/toolbox/cases_formedit.cla \
-    testsuite/toolbox/cases_bigtext.cla testsuite/toolbox/cases_catalog.cla \
-    testsuite/toolbox/cases_finfo.cla testsuite/toolbox/gui.cla
+files_from() { tr '\n' ' ' < "$1"; }
+# shellcheck disable=SC2046
+measure coregui $(files_from tests/mactest/coregui_files.txt)
+# shellcheck disable=SC2046
+measure toolboxgui --testapi $(files_from tests/mactest/toolbox_files.txt)
 
 # clarusc measured last: mac-resident-clarusc Task 3 closed every codegen
 # gap self-hosting clarusc/main.cla through emit68k used to hit (the old
