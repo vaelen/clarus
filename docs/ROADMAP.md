@@ -4,7 +4,8 @@ Living document — the authoritative record of sequencing and strategy
 going forward. Updated 2026-09-05. Lists only unfinished work.
 
 - Completed phases are archived verbatim in `docs/HISTORY.md`.
-- Recorded-but-unscheduled follow-ups and phase debt: `docs/TODO.md`.
+- Recorded-but-unscheduled debt and needed improvements: `docs/TODO.md`.
+- Ideas and if-it-ever-bites levers, not debt: `docs/FUTURE.md`.
 - `docs/clarus-language-reference.md` is the normative spec; where any
   other doc disagrees, the reference wins.
 - Current-session state: `STATUS.md`. Per-task execution history lives in
@@ -73,6 +74,11 @@ pushed (`c5d447b`). In brief:
   `reserve(n)`).
 - `docs/TODO.md`'s "Compiler correctness / diagnostics" section was
   emptied by `compiler-cleanup`; what remains there is recorded debt.
+- **The Mac-resident compiler (`ClarusC.APPL`) is on hold** (Andrew,
+  2026-09-05). It works and stays tested, but its compile-time
+  performance, the bake/CLIR machinery behind it, and its Snow boots
+  are not being advanced; that debt sits in `docs/TODO.md`'s own
+  "Compiler-on-Mac" section until the target resumes.
 
 Owed, not yet done (details in `docs/TODO.md`): a live run of the Snow
 `macresident` scripts; a System 7 spot check of the filesystem-api
@@ -125,7 +131,7 @@ later over MacTCP networking.
   oracle) gets deleted.
 
 More recorded candidates (`yield`/cancel, reciprocal packers, parking
-lot): `docs/TODO.md`.
+lot): `docs/FUTURE.md`.
 
 ## Process conventions that worked (for future sessions)
 

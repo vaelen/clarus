@@ -3,8 +3,9 @@
 Clarus is a compiled, event-driven language for System 6/7 68k Macs.
 Read `docs/ROADMAP.md` first — it is the authoritative record of sequencing
 and strategy; completed (merged-to-main) phases are archived verbatim in
-`docs/HISTORY.md`, and recorded-but-unscheduled follow-ups live in
-`docs/TODO.md`. `docs/clarus-language-reference.md` is the normative
+`docs/HISTORY.md`, recorded technical debt lives in `docs/TODO.md`, and
+maybe-someday ideas / if-it-ever-bites levers in `docs/FUTURE.md`.
+`docs/clarus-language-reference.md` is the normative
 language spec; where any other doc disagrees, the reference wins.
 `docs/clarus-toolbox-cookbook.md` is a how-to companion for transcribing
 Inside Macintosh declarations into Clarus `extern`/`callback` forms.
