@@ -5795,12 +5795,19 @@ func checkIdentCall(e: int, fn: int): int {
 
 // transportName renders a call's transport tag (see ast.cla's callTransport)
 // as the contextual keyword that produced it -- used only to build the
-// misuse diagnostic below.
+// misuse diagnostic below. Tag 0 (no prefix) never reaches here: every
+// caller pre-filters on `transport != 0`, so anything but 1/2 is a
+// compiler invariant violation, not a user error (compiler-cleanup: the
+// old fall-through silently rendered ANY unknown tag as "serial").
 func transportName(tag: int): string {
     if tag == 1 {
         return "appletalk"
     }
-    return "serial"
+    if tag == 2 {
+        return "serial"
+    }
+    abort("clarusc: unknown transport tag " + numToStr(tag))
+    return ""
 }
 
 // callIsSingleArgOpen reports whether e is `X.open(ARG)` -- exactly one
