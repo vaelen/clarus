@@ -5256,3 +5256,8 @@ Spec: `docs/superpowers/specs/2026-09-05-compiler-cleanup-design.md`;
 plan `docs/superpowers/plans/2026-09-05-compiler-cleanup.md`; per-task
 briefs, reports, reviews and the `progress.md` ledger (every `Ruling:`
 line) in `.superpowers/sdd/2026-09-05-compiler-cleanup/`.
+
+The final whole-branch review's as-built corrections live in the spec's
+§8, and its `conntest/abort` under-`-j` flake is recorded in
+`docs/TODO.md`'s "Test coverage gaps" section under this phase's own
+heading.

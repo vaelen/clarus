@@ -280,6 +280,19 @@ new entry the phase itself opened survive.
   record today. Full analysis:
   `.superpowers/sdd/2026-09-05-compiler-cleanup/task-6-report.md`'s
   "Concern 2, restated precisely".
+- **Pre-existing, not introduced by this phase: a global `text`
+  initializer with a non-literal expression is unsupported on BOTH
+  lanes** (final-review wave, Minor 11) — `var g: text = mk()` aborts
+  natively with the new named message (`clarusc/cg68k.cla`'s
+  `cgAllocTmpOff` abort, ~line 4193; the big-pool sibling `big-temp need
+  mismatch` fires the same way for `var h: text = "ab" + "c"`, identical
+  on the pre-phase 311af68 compiler), and the host lane (`cprint`) emits
+  the initializer call before the function's own prototype, so `cc`
+  fails with `clar_fn_mk` undeclared. Found by the final whole-branch
+  review's live probe, not by any task; no fixture pins it. Follow-up:
+  support global-initializer temps (native) and hoist prototypes ahead
+  of global initializers (host), or diagnose it cleanly at check time
+  until then.
 
 ## ABI / performance
 
@@ -573,6 +586,18 @@ new entry the phase itself opened survive.
   exists, at the cost of a full recompile for those programs. `usesConn`/
   `usesFileh` are already set at that point (the user program is checked
   before the `haveRtbake` branch).
+  **Repro** (runnable from this entry alone, from the repo root, using
+  the snapshot-bootstrapped `build-run/clarusc-current`):
+  ```
+  $ build-run/clarusc-current --bake-ir --lane c -o RTC.clir
+  $ build-run/clarusc-current emit --rtdir runtime/clarus/ -o SRC tests/conntest/testdata/echo.cla
+  $ build-run/clarusc-current emit --rtdir runtime/clarus/ --rtbake RTC.clir -o BAKE tests/conntest/testdata/echo.cla
+  $ wc -c SRC BAKE
+     74570 SRC
+     57795 BAKE
+  $ grep -c 'clar_fn_rtConnOpen' BAKE
+  1                       # one CALL, zero definitions -- BAKE does not compile
+  ```
 
 - **Stamp-proxy gap** (runtime-ir-bake, still open): the CLIR stamp
   hashes the committed `clarusc/clarusc.c` snapshot, not the live
@@ -702,6 +727,10 @@ new entry the phase itself opened survive.
   missed the other, undetected until this task's T2 run (see `STATUS.md`
   §3, fix commit `0907364`). A shared source (one list, imported by both) or a
   T1-level consistency check would prevent the next miss.
+  Recurred 2026-09-05 (compiler-cleanup Task 10: `cases_casestable.cla`
+  was added to `toolbox_files.txt` but not
+  `full_corpus_suite_toolbox.sh`; only T2's full sweep caught it) — have
+  the bake script read `tests/mactest/toolbox_files.txt` directly.
 - **No committed emit-time fixture pinning the unchanged
   `lowUnsupported` rejection for `appletalk`/local-receiver shapes**
   (Task 5) — those shapes still reject the same way pre-phase; nothing
@@ -811,3 +840,15 @@ new entry the phase itself opened survive.
   action: run both once, opt-in (`CLARUS_SNOW_TESTS=1 make test
   T=mactest/snow/macresident`), when the screen and a long window are
   free, and record the durations.
+
+### compiler-cleanup phase (2026-09-05)
+
+- **`tests/conntest/abort.sh` flaked under `make -j` load three separate
+  times this phase** (Task 1, Task 9, and Task 10's pre-docs `make -j
+  t1` runs), green alone and on immediate rerun each time — its
+  `prompt_exit1` subcase has a 2 s peer-dependent deadline (`exit 124 =
+  still running after 2s, peer-dependent`), which is load-sensitive
+  under parallel test execution. Not a phase defect; recorded nowhere
+  but the ledger and `task-10-report.md` until now. Fix: widen the
+  deadline or replace it with a deterministic readiness handshake
+  between the test and its peer process; follow-up, unscheduled.

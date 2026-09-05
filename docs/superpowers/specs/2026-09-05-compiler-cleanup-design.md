@@ -485,3 +485,31 @@ c. **Prelude comment consolidation (20).** Four restatements:
 - **Diagnostic wording changes** (§4.2c) touch one committed `.expect`;
   any downstream project pinning `cannot convert` text (68kbbs does
   not) would need updating.
+
+## 8. As-built notes (2026-09-05)
+
+Recorded by the final whole-branch review; nothing here changed code,
+tests, or goldens.
+
+- **§4.2b's checker `edit` target set is a superset of the spec
+  prose.** The implemented `checkEditStmt` (`check.cla` ~5081-5083)
+  also accepts a window-scoped per-instance variable — an `ExSelect`
+  whose base is `TyWindowRef` — matching the shape `lowEditStmt`
+  already supported before this phase. The spec text above lists
+  identifier / list element / map element / `new` only; read it as
+  that superset, not a narrower rule.
+- **§4.2c's reference example reads `"*"`, not `"a"`.** The prose
+  above says `string(c)` produces `"a"`; `docs/clarus-language-
+  reference.md:212` actually reads `var s2: string = string(c) //
+  char to string, "*"`, reusing the block's existing `c = char(42)`
+  local. Accepted at task review; recorded here the way §3.2's
+  correction is.
+- **The Mac-resident CLFS read path is proven by audit only.**
+  §4.4a's provenance change reaches `drive.cla`'s Mac-lane CLFS
+  key reads (the same `drvSpliceActive`-guarded `expand()` calls used
+  everywhere else), so the classification is consistent by inspection,
+  but `clarusc/bake.cla` and `clarusc/macgui.cla` are untouched and the
+  Snow `clarusc_bake` gate was deliberately not run this phase (the
+  55-minute rule only fires on a change to those two files). Treat the
+  CLFS-resource read path as audited, not hardware-proved, until the
+  next `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake`.
