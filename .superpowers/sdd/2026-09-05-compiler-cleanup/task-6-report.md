@@ -500,3 +500,183 @@ $ xargs build-run/clarusc-current emit68k --testapi --rtdir runtime/clarus/ \
 5. **Two `.superpowers`-adjacent environment changes I made** and did not commit (they are
    gitignored): the `Retro68` / `toolchain` / `macplus` symlinks in this worktree. Harmless,
    but worth knowing they exist if the worktree is inspected or reused.
+
+---
+
+# Fix round 1 — review findings addressed
+
+Review: `.superpowers/sdd/2026-09-05-compiler-cleanup/task-6-review.md` (base `311af68` →
+head `ad76fa4`). All five findings addressed in one commit, `e6f8564`.
+
+**Status after this round: DONE_WITH_CONCERNS**, unchanged in shape — the only red is the
+un-blessed `cg68k/goldens` (31/31) and `selfhost/fixedpoint`'s `snapshot_fresh`. Still no
+bless. Native proof still deferred: the emulator is busy.
+
+## Critical 1 — double release of a handle-bearing record in argument position
+
+Confirmed and fixed at the root. `cgPushArgs`' KRec-copy arm scheduled
+`cgPendingArgReleases` for `ak == ECallFn or ak == ENewRec`, but item a made
+`cgMaterializeToTemp` TRACK the ECallFn case, so `take(mk())` walked `cg_release_R` twice
+on the same slot — an rc underflow, not a leak, and invisible to every host gate because
+item a never touched `cprint.cla`.
+
+**Fix: drop the `ECallFn` half, keep `ENewRec`** (`clarusc/cg68k.cla` ~10002). The tracked
+temp's end-of-statement release via `cgFreeStmtTmps` is the single owner now. That is
+*later* than `cgFlushArgReleases` but just as safe: the callee borrows the record by
+address and cannot outlive the call, and the big-temp pool is bump-allocated per statement
+(`cgStmtBigTmpNext` resets only at statement start), so nothing reuses the slot in
+between. `ENewRec` stays on the pending path because item a's gate is `ECallFn`-only, so a
+`new R` argument is still untracked and this is its only release.
+
+I took the "drop the scheduling" option rather than `cgHandoff` there: one fewer moving
+part, and it keeps the producer as the single owner, which is the invariant item a
+established everywhere else.
+
+**Grep for other double-schedulers, as asked — there are none.** `cgMaterializeToTemp` has
+exactly two callers:
+
+| caller | schedules its own release? |
+|---|---|
+| `cgExprAddr`'s generic fallback (`cg68k.cla:5984`) — the receiver shape | no |
+| `cgPushArgs` (`cg68k.cla:9999`) — the argument shape | yes; this is the one fixed |
+
+And the other consumers of an `ECallFn`-produced KRec never materialize at all:
+`cgEmitStoreRec`'s `sk == ECallFn` arm routes straight through `cgCallFnInto` into `dst`
+(hidden-result-pointer convention, no temp), and `cgReturnStmt` / `cgStmt`'s SAssign hand
+off through `cgLastTrackedOff`, which a KRec never sets.
+
+Before / after on the reviewer's own shape (`recArg` = `return take(mk())`):
+
+```
+pre-fix:   BSR.W LBL_227   (cg_release_R)      <- twice
+           BSR.W LBL_227
+post-fix:  BSR.W LBL_227                       <- once
+```
+
+## Important 1 — native oracle for item a
+
+`tests/cg68k/release.sh` gains a `recmaterialize` section, in the same style as the three
+that were already there. It counts calls to `cg_release_R` — the record's own release walk,
+which `cgEmitRcWalks` emits as a bare label carrying a `; cg_release_R(rec ptr at 8(A6))`
+comment rather than a `; func` marker, so the section resolves the label from that comment
+instead of through `func_seg`.
+
+| case | shape | want |
+|---|---|---|
+| `recmaterialize_recArg` | `return take(mk())` | 1 |
+| `recmaterialize_recRecv` | `return mk().s.length` | 1 |
+
+**RED check.** Against this branch's own pre-fix compiler (`git stash` of just the
+`cg68k.cla` fix, rebuild):
+
+```
+FAIL recmaterialize_recArg: recArg: 2 LBL_227 (cg_release_R) calls, want 1
+PASS recmaterialize_recRecv
+```
+
+i.e. exactly the regression Critical 1 names. Against the **task base** (`311af68`
+`clarusc/` + `runtime/clarus/native.cla`, rebuilt) the section reports
+`FAIL recmaterialize_seg: fixture packed into 2 segments, want 1` instead — the base
+compiler still carries the whole conn runtime, so item e's shrink is what makes this
+fixture single-segment. The single-segment assertion is deliberate and stays: the walk is
+duplicated glue in every segment, so a same-segment `BSR.W` is the only call form the
+counter can see, and a cross-segment `JSR d(A5)` would silently count 0. The pin therefore
+guards the invariant going forward and is red on the exact bug it closes; it cannot also
+serve as a base-vs-head oracle for item a's original leak. (`poprelease_recv` 0→1 and
+`poprelease_operand` 1→2 do measure cleanly against the task base.)
+
+## Minor 1 — `cgLastTrackedOff` set last
+
+`cgIntrListPopLike` now records `tracked` at the allocation gate and sets
+`cgLastTrackedOff = off` after `cgJsrByName`/`cgCleanupStack`, immediately before the
+return — the invariant `cgIntrListFirstLast`, `cgIntrTextConcat` and `cgCallFnScalar` all
+keep, and the one `cgLastTrackedOff`'s own doc comment states. Behaviour is unchanged
+(nothing between the two points touches the var); the point is that the invariant is now
+literal rather than incidentally true. Goldens unmoved.
+
+## Minor 2 — abort message no longer misattributes
+
+The reviewer is right that a small temp allocated outside `cgEmitFunc`'s layout
+(`cgEmitInitGlobalsStub` → `cgEmitGlobalInitExpr` → `cgExpr`, e.g. `var g: text = mk()`)
+now lands in `cgAllocTmpOff`'s abort. New text, verified on exactly that fixture:
+
+```
+$ clarusc emit68k -o gi.bin gi.cla        # var g: text = mk()
+cg68k: small-temp pool exhausted -- emitted outside a laid-out function frame, or measure/emit disagreed
+```
+
+with a comment above it recording both causes and that the first one is pre-existing (the
+same fixture dies as `runtime error: list index out of range` on the pre-change compiler).
+Kept short because Clarus string literals cap at 255 bytes.
+
+## Minor 3 — not done here, by instruction
+
+The native/host asymmetry is not added to `docs/TODO.md` — Task 10 owns docs. Concern 2
+below is restated precisely for that purpose.
+
+## Tests
+
+```
+$ make test T='cg68k/release cg68k/goldens emitui/goldens lowlevel/ mactest/leakgate hostrt/'
+PASS cg68k/release 1s          <- incl. recmaterialize_recArg, recmaterialize_recRecv
+FAIL(exit 1) cg68k/goldens 2s  <- un-blessed, 31/31, attribution unchanged
+PASS emitui/goldens 2s
+PASS lowlevel/{constdedup,incdedup,rtinc,run,xrecorder}
+PASS mactest/leakgate 2s
+PASS hostrt/{fileh,mem,rc,ser_leak,serial,slice_overflow,smoke,smoke_args,
+              smoke_collections,smoke_log,smoke_slice_index_append,smoke_slice_oob,
+              smoke_text_slice_len}
+
+$ scripts/test-task.sh
+tests: 75 passed, 34 skipped, 1 failed
+FAIL(exit 1) cg68k/goldens 3s        <- the only failure in the whole t1 body
+make: *** [t1] Error 1
+
+$ make test T=perfgate/               # set -e stops test-task.sh before this stage
+PASS perfgate/tripwire 0s
+```
+
+Golden attribution is unchanged by this round — the Critical 1 fix removes a release from
+`cgPushArgs`' ECallFn path, which no `testdata/cg68k` fixture exercises (that is why it
+needed the new `recmaterialize` pin). Still 31/31 red, still these 17 `*.seg2.s` goldens
+stale and needing DELETION at bless time:
+
+```
+abort_bake  argmat_intr  argmat_nested  arith  bigtmp16  callback  calls  control
+enums  gapclose3  mutrec  peep_pushpop  recs  smalltmp_ceiling  strs  traps  xrec
+```
+
+## Native proof — still deferred, emulator busy
+
+`pgrep -x minivmac` returned **93979** during Step 10 and **38339** now (a different
+process, so something is actively booting — the coordinator says Task 5 owns it). No boot
+attempted. Still owed, and the reviewer is right that it matters more after Critical 1:
+
+```
+CLARUS_MAC_TESTS=1 make -j1 test T=mactest/toolbox_68k
+```
+
+## Concern 2, restated precisely (for Task 10's TODO entry)
+
+**Shape:** `lst.pop().field` / `lst.pop() + x` — a `list of R` where `R` is a record with
+at least one handle field (`text`/`list`/`map`), popped and consumed in a receiver or
+operand position rather than assigned, returned, or passed as an argument.
+
+**Lane:** native (`emit68k`) only. The host lane (`cprint`) releases it correctly.
+
+**Why:** `cgIntrListPopLike`'s always-track gate is `cgIsHandleKind`, which excludes KRec
+deliberately. A handle-bearing KRec element is >4 bytes, so the pop writes into a big-pool
+scratch whose OFFSET is handed back to `cgEmitStoreRec` / `cgEmitReturnRec` /
+`cgMaterializeToTemp`; those block-copy the bytes out with `cgCopyScratchToDst` (no
+retain) into a destination that then owns them, and none can untrack the scratch because
+`cgLastTrackedOff` is consulted only for a handle kind. Tracking the scratch would
+double-release. In a receiver/operand position nothing takes ownership, so the record's
+handle fields leak — one block per evaluation. The host has no such hazard: `fpStmt`'s
+SAssign hands a KRec temp off by name and SReturn hands off unconditionally, so
+`fpNeedsRelease` can gate the whole thing there.
+
+**Fix when scheduled:** extend item a's `cgMaterializeToTemp` gate to
+`irExprKind(e) == EIntr and lowIntrIsOwningContainerRead(irIntrName(e))` **for KRec
+only** — extending it to handle kinds would double-track against item b, which already
+tracks those at the producer. Plus a `LeakCheck` shape, since no fixture in the tree pops a
+handle-bearing record today.
