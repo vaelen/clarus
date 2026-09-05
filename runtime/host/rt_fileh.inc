@@ -65,7 +65,21 @@ int32_t rt_ext_FhHOpen(const uint8_t *path) {
  * layout macOS writes on non-native volumes, so a sidecar written here is a
  * real fork to a Mac reading the same share. It is mirrored into an
  * unlinked temp file at open (so readAt/writeAt/size/setSize need no
- * fork-specific code) and written back on flush and close. */
+ * fork-specific code) and written back on flush and close.
+ *
+ * The sidecar rewrite is NOT lossless: it emits a fresh two-entry header
+ * carrying only the Finder-info (id 9) and resource-fork (id 2) entries, so
+ * any OTHER entry a pre-existing macOS-written sidecar happened to carry
+ * (id 3 file dates, id 4 Finder comment, id 8 the older date field, ...) is
+ * dropped on the first flush or close. The two entries preserved are the
+ * two a Mac needs to see a real fork with its real type/creator; the rest
+ * are metadata a Clarus program has no way to author anyway.
+ *
+ * EFTYPE is BSD/macOS-only (glibc does not define it) and this block is the
+ * one written FOR non-Apple hosts, so it gets the usual fallback. */
+#ifndef EFTYPE
+#define EFTYPE EINVAL
+#endif
 #define RT_FH_RF_MAX 32
 static struct { int fd; char sidecar[1024]; unsigned char finfo[32]; int hasFinfo; } rt_fh_rf[RT_FH_RF_MAX];
 
@@ -105,7 +119,8 @@ static int rt_fh_sidecar_load(int slot, int fd) {
 
 /* rt_fh_sidecar_store: rewrite the sidecar from fd's current contents --
  * header (26 bytes), two entries (Finder info at 50, resource fork at 82).
- * An empty fork with no Finder info removes the sidecar instead. */
+ * An empty fork with no Finder info removes the sidecar instead. Only those
+ * two entries survive a rewrite; see this block's own header comment. */
 static int rt_fh_sidecar_store(int slot, int fd) {
     unsigned char hdr[82], buf[4096]; struct stat st; FILE *f; off_t pos; ssize_t got;
     if (fstat(fd, &st) != 0) return -1;
