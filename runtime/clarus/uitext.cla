@@ -85,7 +85,14 @@ const rtUiTeWidthChunk: int = 1024
 // Retro68/InterfacesAndLibraries/Interfaces/CIncludes/TextEdit.h and
 // toolchain/multiversal/CIncludes/Multiverse.h (both agree; each cited to
 // the line actually checked). ----
-external func UiTENew(dst: ptr, view: ptr): ptr = trap 0xA9D2
+external func UiTENewRaw(dst: ptr, view: ptr): ptr = trap 0xA9D2
+
+// UiTENew: allocation-waist wrapper, see ui.cla's UiNewPtr.
+func UiTENew(dst: ptr, view: ptr): ptr {
+    rtUiJiggleTick()
+    return UiTENewRaw(dst, view)
+}
+
 external func UiTEDispose(te: ptr) = trap 0xA9CD
 external func UiTESetText(text: ptr, length: int, te: ptr) = trap 0xA9CF
 external func UiTECalText(te: ptr) = trap 0xA9D0

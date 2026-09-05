@@ -62,7 +62,14 @@
 // any window ever shows) finished construction. Point/Cell by-value
 // params pack v (high 16) / h (low 16) into one `int`, same convention as
 // every other by-value Point/Cell this port uses (ui.cla's rt_ext_ui_pt). ----
-external func UiLNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: word, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7 sel 0x0044
+external func UiLNewRaw(rView: ptr, dataBounds: ptr, cSize: int, theProc: word, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7 sel 0x0044
+
+// UiLNew: allocation-waist wrapper, see ui.cla's UiNewPtr.
+func UiLNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: int, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr {
+    rtUiJiggleTick()
+    return UiLNewRaw(rView, dataBounds, cSize, theProc, theWindow, drawIt, hasGrow, scrollHoriz, scrollVert)
+}
+
 external func UiLDispose(lHandle: ptr) = trap 0xA9E7 sel 0x0028
 external func UiLAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7 sel 0x0008
 external func UiLDelRow(count: word, rowNum: word, lHandle: ptr) = trap 0xA9E7 sel 0x0024

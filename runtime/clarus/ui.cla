@@ -197,8 +197,23 @@ func UiNewPtr(size: int): ptr {
     return UiNewPtrRaw(size)
 }
 
-external func UiNewPtrClear(size: int): ptr = trap 0xA31E reg
-external func UiNewHandleClear(size: int): ptr = trap 0xA322 reg
+external func UiNewPtrClearRaw(size: int): ptr = trap 0xA31E reg
+
+// UiNewPtrClear/UiNewHandleClear: same allocation-waist wrapper shape as
+// UiNewPtr above (language-runtime-cleanup Task 2 widened the waist from
+// UiNewPtr alone to every allocating Toolbox wrapper in the runtime).
+func UiNewPtrClear(size: int): ptr {
+    rtUiJiggleTick()
+    return UiNewPtrClearRaw(size)
+}
+
+external func UiNewHandleClearRaw(size: int): ptr = trap 0xA322 reg
+
+func UiNewHandleClear(size: int): ptr {
+    rtUiJiggleTick()
+    return UiNewHandleClearRaw(size)
+}
+
 external func UiDisposeHandle(h: ptr) = trap 0xA023 reg
 external func UiDisposePtr(p: ptr) = trap 0xA01F reg
 external func UiHLock(h: ptr) = trap 0xA029 reg
@@ -225,7 +240,14 @@ external func UiSetPort(port: ptr) = trap 0xA873
 // lane and rt_ui_script_click (:2760-2782, 4102-4173, DrawGrowIcon/
 // FindWindow).
 external func UiFrontWindow(): ptr = trap 0xA924
-external func UiNewWindow(wStorage: ptr, boundsRect: ptr, title: ptr, visible: bool, procId: word, behind: ptr, goAwayFlag: bool, refCon: int): ptr = trap 0xA913
+external func UiNewWindowRaw(wStorage: ptr, boundsRect: ptr, title: ptr, visible: bool, procId: word, behind: ptr, goAwayFlag: bool, refCon: int): ptr = trap 0xA913
+
+// UiNewWindow: allocation-waist wrapper, see UiNewPtr above.
+func UiNewWindow(wStorage: ptr, boundsRect: ptr, title: ptr, visible: bool, procId: int, behind: ptr, goAwayFlag: bool, refCon: int): ptr {
+    rtUiJiggleTick()
+    return UiNewWindowRaw(wStorage, boundsRect, title, visible, procId, behind, goAwayFlag, refCon)
+}
+
 external func UiShowWindow(theWindow: ptr) = trap 0xA915
 external func UiDisposeWindow(theWindow: ptr) = trap 0xA914
 external func UiSetWRefCon(theWindow: ptr, data: int) = trap 0xA918
@@ -254,7 +276,14 @@ external func UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C
 // popup KIND itself being out of scope), rt_ui_table_draw_field/friends'
 // CountMItems use is out of scope (table kind), but rt_ui_widget_get_int's
 // popup SELECTED-count use (:5339-5723, in the produces list) needs it.
-external func UiNewMenu(menuId: word, menuTitle: ptr): ptr = trap 0xA931
+external func UiNewMenuRaw(menuId: word, menuTitle: ptr): ptr = trap 0xA931
+
+// UiNewMenu: allocation-waist wrapper, see UiNewPtr above.
+func UiNewMenu(menuId: int, menuTitle: ptr): ptr {
+    rtUiJiggleTick()
+    return UiNewMenuRaw(menuId, menuTitle)
+}
+
 external func UiDisposeMenu(theMenu: ptr) = trap 0xA932
 external func UiAppendMenu(theMenu: ptr, data: ptr) = trap 0xA933
 external func UiInsertMenu(theMenu: ptr, beforeId: word) = trap 0xA935
@@ -1137,7 +1166,6 @@ func rtUiLoWord(v: int): int {
 // with blob-sourced name bytes) still need the manual `ptr`+pokeb/
 // BlockMoveData approach -- see rtUiBuildAppleMenu.
 // ================================================================
-external func UiNewMenuStr(menuId: word, menuTitle: string): ptr = trap 0xA931
 external func UiAppendMenuStr(theMenu: ptr, data: string) = trap 0xA933
 
 func rtUiAboutPrefixPtr(): ptr {
@@ -1206,7 +1234,7 @@ func rtUiBuildAppleMenu() {
     UiInsertMenu(rtUiAppleMenuHandle, 0)
 }
 
-// rtUiAboutParam (new). Substitutes the cached empty Pascal string for
+// rtUiAboutParam. Substitutes the cached empty Pascal string for
 // an absent `uidApp*` property (each getter returns `ptr(0)` when the
 // `app` section omits that field) so UiParamText always gets a real
 // Pascal-string pointer.
@@ -1217,7 +1245,7 @@ func rtUiAboutParam(p: ptr): ptr {
     return p
 }
 
-// rtUiAboutAlert (new). Real About display for an app-declared program:
+// rtUiAboutAlert. Real About display for an app-declared program:
 // ALRT/DITL 129's ParamText slots are ^0=name, ^1=version, ^2=author,
 // ^3=about (see clarusc/cg68k.cla:12386-12393 / scripts/build-mac.sh:103-110
 // for where 129 is emitted on each lane).
