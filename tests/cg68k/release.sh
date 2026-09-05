@@ -336,4 +336,52 @@ else
     done
 fi
 
+# ==== pop/shift tracked in every position (compiler-cleanup) ==========
+# pop/shift TRANSFER a freshly-owned text out of the list. Before the
+# compiler-cleanup phase cg68k tracked that transfer only inside a bare
+# discarded `l.pop();` statement, so a receiver or operand use leaked one
+# text block per evaluation. Pinned here by rtTextRelease call count.
+DIR=$WORK/poprelease
+mkdir -p "$DIR" || die "mkdir $DIR"
+cat > "$DIR/src.cla" <<'EOF'
+func f(t: text): int {
+    return t.length
+}
+
+func popRecv(l: list of text): int {
+    return l.pop().length
+}
+
+func popOperand(l: list of text): int {
+    return (l.shift() + "x").length
+}
+
+func popArg(l: list of text): int {
+    return f(l.pop())
+}
+
+on App.launch {
+    var l: list of text
+    l.push("a")
+    l.push("b")
+    l.push("c")
+    log(string(popRecv(l) + popOperand(l) + popArg(l)))
+}
+EOF
+if ! emit_fixture "$DIR"; then
+    t_fail poprelease_emit "emit68k failed on the pop/shift-release fixture"
+else
+    find_release_info "$DIR"
+    # popRecv: the popped text, released after .length reads it (0 before
+    # the fix -- the leak this pins).
+    check_count poprelease_recv popRecv 1
+    # popOperand: the shifted text plus the concat's own destination temp
+    # (1 before the fix).
+    check_count poprelease_operand popOperand 2
+    # popArg: unchanged by the fix -- the argument position always got a
+    # release, first through cgPushArgs' own tracked temp and now through
+    # cgIntrListPopLike's.
+    check_count poprelease_arg popArg 1
+fi
+
 t_done

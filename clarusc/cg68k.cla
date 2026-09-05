@@ -7451,7 +7451,28 @@ func cgIntrListPopLike(e: int, nm: string): int {
     elemT = irExprType(e)
     cgExpr(a0e)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    if e == cgDiscardExprIdx and cgNeedsRelease(elemT) {
+    // compiler-cleanup: pop/shift TRANSFER a freshly-owned handle out of
+    // the list. Track that handle in EVERY position, not just the bare-
+    // discard statement -- a consumer that takes ownership (assign dst,
+    // return, call arg) hands it off via cgLastTrackedOff/cgHandoff,
+    // exactly as cgIntrListFirstLast does just below; an operand or
+    // receiver use (`lst.pop().length`, `lst.pop() + x`) then gets
+    // released by the end-of-statement flush instead of leaking.
+    //
+    // Handle KINDS only, deliberately NOT the whole cgNeedsRelease set: a
+    // handle-bearing KRec element is >4 bytes, so this scratch offset is
+    // handed BACK to cgEmitStoreRec/cgEmitReturnRec/cgPushArgs, which
+    // block-copy the bytes into a destination that then owns them
+    // (cgCopyScratchToDst -- a raw copy, no retain) and cannot untrack the
+    // scratch (cgLastTrackedOff is only ever consulted for a handle kind).
+    // Tracking a KRec scratch would release fields the destination is
+    // still using: a use-after-free, strictly worse than the leak. The
+    // bare-discard statement stays the one KRec position that IS tracked,
+    // unchanged -- there, nothing copies the scratch anywhere.
+    if cgIsHandleKind(irtKind(elemT)) {
+        off = cgNewTrackedTmp(elemT)
+        cgLastTrackedOff = off
+    } else if e == cgDiscardExprIdx and cgNeedsRelease(elemT) {
         off = cgNewTrackedTmp(elemT)
     } else {
         off = cgAllocTmpOff(elemT)
@@ -9875,7 +9896,6 @@ func cgPushArgs(argsHead: int): int {
     var ak: IRExprKind
     var tmpRef: int
     var recNameIdx: int
-    var off: int
 
     total = 0
     a = argsHead
@@ -9942,30 +9962,20 @@ func cgPushArgs(argsHead: int): int {
         } else {
             sz = cgSlotSizeOf(t)
             ak = irExprKind(a)
-            // Task 8 (memory-bug pair): the KRec sub-branch above (its own
-            // final-review fix wave comment, `ak == EIntr and
-            // lowIntrIsOwningContainerRead(...)`) schedules a release for a
-            // bare pop/shift record used directly as a call argument, but a
-            // non-KRec handle kind (KText/KList/KMap/KSortedMap/KIntMap)
-            // falls through to this plain scalar-slot arm instead, which
-            // used to push the popped/shifted value with no release ever
-            // scheduled -- a leak on every call, mirroring the host-lane
-            // gap this same task closes in cprint.cla's fpCallFnArg.
-            // cgPendingArgReleases can't hold this (cgFlushArgReleases only
-            // knows how to walk a KRec via cgEmitRecWalkCall), so this
-            // reuses the same general tracked-temp facility
-            // cgCallFnScalar's own discard-detection branch already uses
-            // for a bare scalar/handle return: store the just-evaluated
-            // value into a fresh tracked temp (cgFreeStmtTmps releases it
-            // at end of statement -- after this call has long since
-            // returned and consumed the pushed copy) without disturbing D0,
-            // then push D0 as the argument exactly as before.
-            if sz == 4 and ak == EIntr and lowIntrIsOwningContainerRead(irIntrName(a)) and cgNeedsRelease(t) {
-                cgExpr(a)
-                off = cgNewTrackedTmp(t)
-                cgStoreD0At(6, off, t)
-                a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-            } else if sz == 2 {
+            // compiler-cleanup: a bare pop/shift of a non-KRec handle kind
+            // (KText/KList/KMap/KSortedMap/KIntMap) used directly as a call
+            // argument needs no special handling here anymore -- Task 8
+            // (memory-bug pair) used to re-store the D0 result into its own
+            // tracked temp on this arm, because cgIntrListPopLike's scratch
+            // was untracked outside a bare-discard statement. It is now
+            // tracked in every position (see its own doc comment), and this
+            // argument position simply never hands it off, so the ordinary
+            // end-of-statement flush releases it -- one temp instead of two,
+            // and one fewer store. The KRec sub-branch above keeps its own
+            // cgPendingArgReleases scheduling: a KRec pop scratch is still
+            // deliberately untracked (block-copied out by
+            // cgMaterializeToTemp, which owns the copy).
+            if sz == 2 {
                 cgExpr(a)
                 a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
             } else {

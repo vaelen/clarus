@@ -1423,19 +1423,14 @@ func fpCallFnArg(a: int): text {
     t = irExprType(a)
     k = irtKind(t)
     if k != KStr and k != KRec {
-        // Task 8 (memory-bug pair): a bare pop/shift result passed DIRECTLY
-        // as a call argument transfers ownership out of the list with no
-        // retain (same as the KRec case below), but for a non-KStr/KRec
-        // handle kind (KText/KList/KMap/KSortedMap/KIntMap) this early
-        // return used to hand the raw fpExpr(a) straight to the callee
-        // with no release ever scheduled -- a leak on every call. Route it
-        // through the same tracked-temp machinery as the KRec branch below
-        // so fpStmt's end-of-statement flush releases it.
-        if irExprKind(a) == EIntr and lowIntrIsOwningContainerRead(irIntrName(a)) and fpNeedsRelease(t) {
-            name = fpNewTrackedTmp(t)
-            fpEmit(name + " = " + fpExpr(a) + ";")
-            return name
-        }
+        // compiler-cleanup: a bare pop/shift result passed DIRECTLY as a
+        // call argument needs nothing extra here -- Task 8 (memory-bug
+        // pair) had to re-materialize it into its own tracked temp because
+        // the pop/shift printer only tracked its result inside a bare
+        // discard statement. It is tracked in every position now (see the
+        // IListPop/IListShift arm), so fpExpr(a) already IS a tracked temp
+        // this argument position simply never hands off, and the
+        // end-of-statement flush releases it.
         return fpExpr(a)
     }
     if not irArgNeedsCopy(a) {
@@ -1469,13 +1464,13 @@ func fpCallFnArg(a: int): text {
         // (see IListPop/IListShift's own printer above) -- when the popped/
         // shifted value is itself a handle-bearing record used directly as
         // a call argument, that ownership still needs a release once the
-        // call returns (nothing else will ever claim it), same tracked-temp
-        // shape as the ENewRec branch just above, but with NO extra retain
-        // (the pop/shift already transferred the +1).
+        // call returns (nothing else will ever claim it). compiler-cleanup:
+        // the printer already materialized it into a tracked temp, so this
+        // reuses that name as-is for exactly the reason the ECallFn branch
+        // above does -- routing it through fpAddrable would fpHandoff
+        // (untrack) it and put the leak back.
         if ak == EIntr and lowIntrIsOwningContainerRead(irIntrName(a)) and fpNeedsRelease(t) {
-            name = fpNewTrackedTmp(t)
-            fpEmit(name + " = " + fpExpr(a) + ";")
-            return "&(" + name + ")"
+            return "&(" + fpExpr(a) + ")"
         }
         return "&(" + fpAddrable(a) + ")"
     }
@@ -3016,44 +3011,30 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fn = "rt_list_shift"
             }
         }
-        if x == fpDiscardExprIdx and fpNeedsRelease(irExprType(x)) {
-            // ARC Task 8 review round 2 (Important finding): a bare
-            // `lst.pop();`/`lst.shift();` STATEMENT -- the popped value
-            // used nowhere, not an assign dst/return/call argument -- still
-            // transfers ownership out of the list (same no-retain contract
-            // as below) but nothing else ever claims it, so it leaks unless
-            // released HERE. fpDiscardExprIdx (set by fpStmt's own
-            // SExprStmt case, see its doc comment) identifies exactly this
-            // shape and no other -- a NESTED pop/shift (a call argument,
-            // `f(lst.pop())`) never matches, so that position's behavior is
-            // untouched. fpNewTrackedTmp (not fpNewTmp) so the ordinary
-            // end-of-statement flush (fpFreeStmtTmps) releases it -- also
-            // covers a handle-backed record element, via the SAME
-            // release-walk shape (`clar_release_NAME`) fpNewTrackedTmp
-            // already gives every other tracked record temp (ARC Task 7).
+        // memory-audit Task 6 / ARC Task 3: pop/shift TRANSFER ownership --
+        // this copies the ELEMENT'S bytes (a text element's bytes ARE its
+        // handle -- Ch3 reference semantics) out of l's backing store into
+        // t AND removes l's slot, so the count doesn't change: no retain.
+        //
+        // compiler-cleanup: that transferred handle is TRACKED in every
+        // position now, not just the bare-discard statement fpDiscardExprIdx
+        // used to single out. A consumer that takes ownership (assign dst,
+        // return, call argument) untracks it itself via fpHandoff, exactly
+        // as it does for an ECallFn result; an operand or receiver use
+        // (`lst.pop().length`, `lst.pop() + x`) claims nothing, so the
+        // end-of-statement flush (fpFreeStmtTmps) releases it instead of
+        // leaking it. The record shape rides along on fpNewTrackedTmp's own
+        // `clar_release_NAME` walk, same as before.
+        if fpNeedsRelease(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
-            if cpListPorted {
-                fpEmit(fn + "((void*)" + l + ", (void*)&" + t + ");")
-            } else {
-                fpEmit(fn + "(" + l + ", &" + t + ");")
-            }
-            return t
+        } else {
+            t = fpNewTmp(cpCType(irExprType(x)))
         }
-        t = fpNewTmp(cpCType(irExprType(x)))
         if cpListPorted {
             fpEmit(fn + "((void*)" + l + ", (void*)&" + t + ");")
         } else {
             fpEmit(fn + "(" + l + ", &" + t + ");")
         }
-        // memory-audit Task 6 / ARC Task 3: pop/shift TRANSFER ownership --
-        // this copies the ELEMENT'S bytes (a text element's bytes ARE its
-        // handle -- Ch3 reference semantics) out of l's backing store into
-        // t AND removes l's slot, so the count doesn't change: no retain.
-        // Never auto-free/release t -- untrack it unconditionally, same as
-        // any other "the caller must reason about this" handle (assign
-        // dst/return/call-argument -- the ONE other position, a bare
-        // discarded statement, is handled above instead).
-        fpHandoff(t)
         return t
     } else if nm == IListFirst() or nm == IListLast() {
         l = fpExpr(a0)
