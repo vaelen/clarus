@@ -4,7 +4,10 @@
 // cases_misc.cla: the core suite's catch-all family -- arithmetic, control
 // flow, user functions, and the remaining ARC probes that don't fit the
 // other families (test-suite-review Task 9). Case -> source:
-//   MiscArithBasic          <- arith.cla
+//   MiscArithBasic          <- arith.cla, plus the language-runtime-cleanup
+//                              phase's `var g: text = mk()` global-
+//                              initializer-calls-a-function check
+//                              (coreMkInitText/coreInitViaCall, below)
 //   MiscBreakContWhile      <- breakcont.cla (while: break)
 //   MiscCrc8Smbus           <- crc8.cla (CRC-8/SMBUS of "123456789" == 244)
 //   MiscEmitArithAddMul     <- emit_arith.cla ("int add/mul ok" / "int sub ok")
@@ -37,7 +40,29 @@
 //                              by the untouched lib fixture in the run
 //                              corpus, not by this functional case)
 
+// coreMkInitText/coreInitViaCall (language-runtime-cleanup, spec %3.2):
+// a top-level initializer that CALLS a function -- the reference (Ch1,
+// initialization order) has always allowed it, but until this phase it
+// aborted the native build (cg_init_globals had no temp pool) and failed
+// to compile on the host (the call was printed above its prototype).
+// Asserted in caseMiscArithBasic below, so both suite lanes -- the host
+// CLI and the native 68k GUI boot -- prove the initializer actually ran
+// and left a correctly-owned handle behind (a wrong ownership decision
+// here shows up as a released-out-from-under-us text, not as a value that
+// merely differs).
+func coreMkInitText(): text {
+    var t: text
+
+    t.append("init-call")
+    return t
+}
+
+var coreInitViaCall: text = coreMkInitText()
+
 func caseMiscArithBasic(): TestResult {
+    if coreInitViaCall != "init-call" {
+        return tkFail("MiscArithBasic", "global initialized by a call != init-call")
+    }
     if 3 + 4*5 != 23 {
         return tkFail("MiscArithBasic", "add/mul wrong")
     }

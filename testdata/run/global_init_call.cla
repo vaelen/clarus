@@ -1,0 +1,38 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// global_init_call.cla (language-runtime-cleanup, spec %3.2): a top-level
+// initializer may call a function (reference, Ch1 initialization order).
+// Pre-phase this aborted natively (no temp pool in cg_init_globals) and
+// failed to compile on the host (the call was printed before its prototype).
+// `alert` takes a `string`, so the two `text` globals are reported through
+// the testdata/run compare idiom rather than concatenated into the message.
+func mk(): text {
+    var t: text
+
+    t.append("made")
+    return t
+}
+
+func readsLater(): int {
+    return later + 1
+}
+
+var g: text = mk()
+var h: text = "ab" + "c"
+var early: int = readsLater()
+var later: int = 41
+
+on App.launch {
+    if g == "made" {
+        alert("g = made")
+    } else {
+        alert("g = FAIL")
+    }
+    if h == "abc" {
+        alert("h = abc")
+    } else {
+        alert("h = FAIL")
+    }
+    alert("early = " + string(early))
+}

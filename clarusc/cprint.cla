@@ -1594,20 +1594,10 @@ func fpCallFn(e: int): text {
     return call
 }
 
-// fpExternIdxByName finds the IR extern table entry for an ECallExt's
-// callee name, or -1 (extern-ptr-call phase -- fpCallExt needs the
-// conv flag; mirrors cg68k.cla's cgExternIdxByName).
+// fpExternIdxByName is ir.cla's irExternLookup under this file's own name
+// (its callers are unchanged).
 func fpExternIdxByName(nameIdx: int): int {
-    var i: int
-
-    i = 0
-    while i < irExternCount() {
-        if irExternName(i) == nameIdx {
-            return i
-        }
-        i = i + 1
-    }
-    return -1
+    return irExternLookup(nameIdx)
 }
 
 // fpCallExt renders a call to an `external func` as `rt_ext_NAME(args...)`
@@ -5701,7 +5691,7 @@ func cpEmitRetain(dst: text, cexpr: string, t: int) {
 // container-element helpers) consults this SAME predicate before ever
 // emitting a call, so a marked-but-scalar-only type can't happen.
 //
-// ARC Task 7: emitProgram() now calls this AFTER cpEmitFuncs()/
+// ARC Task 7: emitProgram() now calls this AFTER cpEmitFuncBodies()/
 // cpEmitGlobalsInit() (moved from right after cpEmitRecords, its original
 // Task 2 position) -- irMarkRcWalkNeeded only ever fires from INSIDE
 // fpIntrCall's IRetain/IRelease dispatch while PRINTING a function/handler
@@ -5959,11 +5949,12 @@ func cpEmitFunc(f: int) {
 
 // cpEmitExternProtos emits one `extern` C prototype per registered
 // `external func` (Task 3, Ch13) into cpTypeBuf -- an external has no
-// clar_fn_NAME definition (cpEmitFuncs only ever iterates irFuncs, which
+// clar_fn_NAME definition (cpEmitFuncBodies only ever iterates irFuncs, which
 // lowFuncDecl -- never lowExternDecl -- populates), only this forward
 // declaration of its host symbol rt_ext_NAME, defined in
 // rt_ext_host.inc/rt.c. Must run before anything that could CALL an
-// extern gets printed -- emitProgram calls it just ahead of cpEmitFuncs.
+// extern gets printed -- emitProgram calls it just ahead of
+// cpEmitFuncProtos.
 // A KStr param prints as `const uint8_t *` (Plan 5b Task 3), NOT cpCType's
 // ordinary by-value `clar_str_N` -- an extern receives a string's address,
 // same convention as fpStrAddr's builtin-call marshalling -- so this skips
@@ -6017,12 +6008,18 @@ func cpEmitExternProtos() {
     }
 }
 
-// cpEmitFuncs prints every prototype up front, then every definition
-// (cprint.go's emitFuncs). Plan native-5d Task 1: skips the proto+body of
-// any function shake.cla's shakeProgram proved unreachable from the
-// program's real entry points -- shakeReachable(i) is always available
-// here since main.cla calls shakeProgram() before emitProgram ever runs.
-func cpEmitFuncs() {
+// cpEmitFuncProtos prints every reachable function's prototype up front
+// (the first half of what used to be one cpEmitFuncs; cprint.go's
+// emitFuncs). Plan native-5d Task 1: skips the proto+body of any function
+// shake.cla's shakeProgram proved unreachable from the program's real
+// entry points -- shakeReachable(i) is always available here since
+// main.cla calls shakeProgram() before emitProgram ever runs.
+//
+// language-runtime-cleanup (spec %3.2): split from cpEmitFuncBodies so
+// emitProgram can run the prototype block BEFORE cpEmitGlobalsInit. A
+// global initializer may call a function (`var g: text = mk()`), and
+// clar_init_globals' emitted call needs mk's prototype already in scope.
+func cpEmitFuncProtos() {
     var i: int
 
     i = 0
@@ -6033,6 +6030,15 @@ func cpEmitFuncs() {
         i = i + 1
     }
     cpRestBuf.add(toText(""))
+}
+
+// cpEmitFuncBodies prints every reachable function's definition -- the
+// second half of the old cpEmitFuncs (see cpEmitFuncProtos above). Must
+// stay AFTER cpEmitGlobalsInit, which is what declares the `static T
+// cv_g;` globals the bodies reference.
+func cpEmitFuncBodies() {
+    var i: int
+
     i = 0
     while i < irFuncs.count {
         if shakeReachable(i) {
@@ -6148,7 +6154,7 @@ func cpCbSignature(fIdx: int, paramsOut: list of text, argsOut: list of text): t
 
 // cpCbGlueProto renders one callback's glue wrapper FORWARD DECLARATION
 // (Task 7) -- emitted early (cpEmitCallbackGlueProtos, before
-// cpEmitFuncs' own body pass) so any OTHER function's body -- an extern
+// cpEmitFuncBodies) so any OTHER function's body -- an extern
 // call site decaying this callback -- can reference clar_cb_<name>
 // however early in the program it's called, C's own declare-before-use
 // rule.
@@ -6230,13 +6236,14 @@ func cpAnyPtrCallExtern(): bool {
 // A program with a conv-10 extern but zero `callback func`s still needs
 // the macro (final-review fix wave: fpCallExt's cast is CLAR_PASCAL) --
 // cpAnyPtrCallExtern's scan catches that case even with the proto loop
-// below never firing. Runs BEFORE cpEmitFuncs (emitProgram's own call
-// order): a decay can appear in ANY function's body, including one
-// cpEmitFuncs itself is about to print, so the prototype must already
-// be visible before ANY body prints, not merely before the WRAPPER's
-// own definition (see the task-7 report for the `clar_cb_double_it`
-// used-before-declared bug this fixes -- placing the whole glue block
-// after cpEmitFuncs, prototype and body together, compiled clean on a
+// below never firing. Runs BEFORE cpEmitFuncBodies (emitProgram's own
+// call order): a decay can appear in ANY function's body, including one
+// cpEmitFuncBodies itself is about to print, so the prototype must
+// already be visible before ANY body prints, not merely before the
+// WRAPPER's own definition (see the task-7 report for the
+// `clar_cb_double_it` used-before-declared bug this fixes -- placing the
+// whole glue block after the bodies, prototype and body together,
+// compiled clean on a
 // callback-only program but failed the moment a decay call site's own
 // enclosing function printed first).
 func cpEmitCallbackGlueProtos() {
@@ -6269,8 +6276,8 @@ func cpEmitCallbackGlueProtos() {
 // same needed-and-reachable set cpEmitCallbackGlueProtos already forward-
 // declared (recomputed identically, both walk irCbGlueNames+shakeReachable
 // the same way -- no separate bookkeeping to keep in sync). Runs AFTER
-// cpEmitFuncs, so every callback's own clar_fn_<name> prototype (printed
-// by cpEmitFuncs' own up-front proto loop) is already visible when a
+// cpEmitFuncBodies, so every callback's own clar_fn_<name> prototype
+// (printed by cpEmitFuncProtos) is already visible when a
 // wrapper body calls it.
 func cpEmitCallbackGlueBodies() {
     var i: int
@@ -6295,14 +6302,15 @@ func cpEmitCallbackGlueBodies() {
 // arm) and rtTextNew/rtTextStore (KText's unconditional birth + optional
 // string-default arms). Every OTHER clar_fn_rtXxx call happens inside a
 // real function/handler BODY (fpIntrCall), always printed by cpEmitFunc
-// AFTER cpEmitFuncs's own up-front prototype loop -- safe already, no
+// AFTER cpEmitFuncProtos's up-front prototype loop -- safe already, no
 // forward decl needed there.
 //
 // Why this exists: cpDefaultInit's callers are cpEmitRecords' clar_new_NAME
 // constructors (cpRecBuf) and cpEmitGlobalsInit's clar_init_globals
-// (cpRestBuf, appended before cpEmitFuncs's own prototype+definition
-// block) -- BOTH land, in the final assembled file, before cpEmitFuncs ever
-// runs its prototype loop. Text's cpDefaultInit arm calls clar_fn_rtTextNew
+// (cpRestBuf) -- cpRecBuf lands, in the final assembled file, before the
+// prototype loop ever runs. (clar_init_globals no longer does, since
+// language-runtime-cleanup moved cpEmitFuncProtos ahead of
+// cpEmitGlobalsInit, but cpRecBuf alone still needs these decls.) Text's cpDefaultInit arm calls clar_fn_rtTextNew
 // UNCONDITIONALLY (every Text field/global needs its birth handle,
 // regardless of whether it has a literal default) -- Task 8's str.cla
 // redirect never hit this ordering gap because a KStr default with no
@@ -7717,13 +7725,19 @@ func emitProgram(): text {
     cpEmitUiDescs()
     cpEmitAppInfo()
     cpEmitAbortGlobals()
-    cpEmitGlobalsInit()
+    // language-runtime-cleanup (spec %3.2): the prototype block runs
+    // BEFORE cpEmitGlobalsInit so a global initializer that calls a
+    // function has that function's prototype already in scope; the
+    // bodies stay after it, since they reference the `static T cv_g;`
+    // declarations cpEmitGlobalsInit is what emits.
     cpEmitExternProtos()
+    cpEmitFuncProtos()
+    cpEmitGlobalsInit()
     cpEmitCallbackGlueProtos()
-    cpEmitFuncs()
+    cpEmitFuncBodies()
     cpEmitCallbackGlueBodies()
     cpEmitMain()
-    // ARC Task 7: cpEmitRcWalks must run AFTER cpEmitFuncs()/
+    // ARC Task 7: cpEmitRcWalks must run AFTER cpEmitFuncBodies()/
     // cpEmitGlobalsInit() -- see its own doc comment. It still populates
     // cpRecBuf, which the assembly below still places right after
     // cpEmitRecords' own output (position in the FINAL file is controlled
