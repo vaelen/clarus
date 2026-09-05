@@ -14,7 +14,7 @@ require_env CLARUS_BAKE_FULL
 BAKE=$WORK/rt68k.clir
 bake_ir 68k "$BAKE"
 
-for base in abort_bake.cla arc.cla argmat_intr.cla argmat_nested.cla arith.cla arr_whole_assign.cla \
+for base in abort_bake.cla arc.cla argmat_intr.cla argmat_nested.cla arith.cla arrlit.cla arr_whole_assign.cla \
         bigtmp16.cla bounce.cla callback.cla calls.cla clear_deep.cla \
         control.cla enums.cla gapclose3.cla globals.cla inline_a5.cla mutrec.cla \
         peep_clr.cla peep_pushpop.cla peep_quick.cla peep_shuffle.cla recs.cla \

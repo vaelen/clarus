@@ -1391,7 +1391,43 @@ func parseFieldDecl(): int {
     return newField(name.nameIdx, typ, defaultExpr, line, col)
 }
 
-// parseConstDecl parses `"const" IDENT ":" type "=" ( literal | IDENT )`.
+// parseArrLit parses `"[" (literalOrIdent ("," literalOrIdent)*)? "]"` --
+// legal ONLY as a const/var initializer whose declared type is T[n]
+// (checked by the checker, not here). Elements follow parseLiteralOrIdent's
+// own palette: a literal, an enum member, or a previously declared const.
+func parseArrLit(): int {
+    var line: int
+    var col: int
+    var head: int
+    var tail: int
+    var e: int
+    var n: int
+
+    line = curLine()
+    col = curCol()
+    expect(TkLBracket)
+    head = -1
+    tail = -1
+    n = 0
+    while curKind() != TkRBracket and not parseAborted {
+        e = parseLiteralOrIdent()
+        if head == -1 {
+            head = e
+        }
+        tail = exprListAppend(tail, e)
+        n = n + 1
+        if curKind() == TkComma {
+            advance()
+        } else if curKind() != TkRBracket {
+            expect(TkRBracket)
+        }
+    }
+    advance() // ']'
+    return newArrLit(head, n, line, col)
+}
+
+// parseConstDecl parses `"const" IDENT ":" type "=" ( literal | IDENT |
+// arrayLiteral )`.
 func parseConstDecl(): int {
     var line: int
     var col: int
@@ -1406,7 +1442,11 @@ func parseConstDecl(): int {
     expect(TkColon)
     typ = parseType()
     expect(TkAssign)
-    val = parseLiteralOrIdent()
+    if curKind() == TkLBracket {
+        val = parseArrLit()
+    } else {
+        val = parseLiteralOrIdent()
+    }
     return newConstDecl(name.nameIdx, typ, val, line, col)
 }
 
@@ -1537,7 +1577,10 @@ func parseEnumMember(): int {
     return newEnumMember(name.nameIdx, value, hasValue, label, line, col)
 }
 
-// parseVarDecl parses `"var" IDENT ":" type [ "=" expr ]`.
+// parseVarDecl parses `"var" IDENT ":" type [ "=" ( expr | arrayLiteral ) ]`
+// -- an array literal (language-runtime-cleanup, spec %4.3) is recognized
+// here rather than inside parseExpr, since `[` is not a legal expression
+// prefix anywhere else in the grammar.
 func parseVarDecl(): int {
     var line: int
     var col: int
@@ -1554,7 +1597,11 @@ func parseVarDecl(): int {
     initExpr = -1
     if curKind() == TkAssign {
         advance()
-        initExpr = parseExpr()
+        if curKind() == TkLBracket {
+            initExpr = parseArrLit()
+        } else {
+            initExpr = parseExpr()
+        }
     }
     return newVarDecl(name.nameIdx, typ, initExpr, line, col)
 }

@@ -42,6 +42,15 @@ var lowScopes: list of LowScope
 // (lower.go's strIdx): identical literals share one clar_lit_K slot.
 var lowStrIdx: map of int
 
+// lowArrLitIrIdx (language-runtime-cleanup, spec %4) memoizes one CHECKER
+// array-literal index (check.cla's litIdx) to the irArrLits entry it was
+// given -- the array counterpart of lowStrIdx, keyed by source literal
+// rather than by content, so a `const` array read from N places
+// references ONE pool entry. Reset alongside lowStrIdx in lowerProgram
+// (and, like it, NOT reset on a lowResumeFromBake pass, which continues
+// the same compile's numbering).
+var lowArrLitIrIdx: intmap of int
+
 // lowResumeFromBake (runtime-ir-bake Task 4) tells lowerProgram (below) it
 // is lowering USER code only, on top of an already-installed baked
 // runtime image (bake.cla's bkInstallArenas), rather than starting a
@@ -534,6 +543,35 @@ func lowInternStr(s: string): int {
     return idx
 }
 
+// lowArrLitFromChecker turns one CHECKER array literal (litIdx, into
+// check.cla's arrLitElemT/arrLitStart/arrLitLen/arrLitVals tables) into an
+// EArrLit reference to the IR pool entry for it, adding that entry the
+// first time and memoizing per source literal afterwards -- a `const`
+// array read from ten places must reference ONE pool entry, not ten
+// copies (language-runtime-cleanup, spec %4.2).
+func lowArrLitFromChecker(litIdx: int, ty: int): int {
+    var vals: list of int
+    var j: int
+    var irIdx: int
+
+    if lowArrLitIrIdx.has(litIdx) {
+        return newIRArrLit(lowArrLitIrIdx.get(litIdx, -1), ty)
+    }
+    j = 0
+    while j < arrLitLen[litIdx] {
+        vals.add(arrLitVals[arrLitStart[litIdx] + j])
+        j = j + 1
+    }
+    // The element IR type comes off `ty` itself (irtElem), not from
+    // check.cla's arrLitElemT: that table holds a CHECKER type-arena
+    // index, and lowering has no position to hand lowTypeAt here --
+    // while `ty` is already the resolved KArr type for this very
+    // literal, so its element is the same type by construction.
+    irIdx = irAddArrLit(irtElem(ty), vals)
+    lowArrLitIrIdx[litIdx] = irIdx
+    return newIRArrLit(irIdx, ty)
+}
+
 // lowUnsupported reports that `lower` hit an AST construct Task 4+ hasn't
 // implemented yet, and aborts -- so an unimplemented construct fails loudly
 // (a clear message, non-zero exit) instead of either silently dropping the
@@ -621,6 +659,13 @@ func lowExpr(e: int): int {
     }
     case ExAppConst {
         return lowAppConst(e)
+    }
+    case ExArrLit {
+        // language-runtime-cleanup, spec %4: the literal ITSELF, i.e. a
+        // `var`'s own initializer (a `const`'s never reaches lowering --
+        // checkConstDecl folds it into the symbol, and every READ of the
+        // name goes through lowIdent's constUseArr branch below).
+        return lowArrLitFromChecker(arrLitIdxOf.get(e, -1), lowMustType(e))
     }
     }
     lowUnsupported("expression kind " + numToStr(int(exprKind(e))))
@@ -966,6 +1011,13 @@ func lowIdent(e: int): int {
     key = e
     if enumConstOf.has(key) {
         return newIRIntConst(enumConstOf.get(key, 0), ty)
+    }
+    if constUseArr.has(key) {
+        // A `const` ARRAY name (language-runtime-cleanup, spec %4.2):
+        // the name IS its constant-pool entry, so every read -- `tab[i]`,
+        // a whole-array argument -- lowers to the same EArrLit reference
+        // rather than to a VarRef against storage that does not exist.
+        return lowArrLitFromChecker(constUseArr.get(key, -1), ty)
     }
     if constUseIsStr.has(key) {
         if intToBool(constUseIsStr.get(key, 0)) {
@@ -7727,6 +7779,7 @@ func lowUiSynthExternName(externNameIdx: int): int {
 func lowerProgram(declHead: int): int {
     var d: int
     var freshStrIdx: map of int
+    var freshArrLitIrIdx: intmap of int
     var freshUiMenuItemIdx: map of int
     var freshConnSlot: map of int
     var freshConnHandlerFn: map of int
@@ -7747,6 +7800,7 @@ func lowerProgram(declHead: int): int {
         lowSwitchN = 0
         uiMenuCount = 0
         lowStrIdx = freshStrIdx
+        lowArrLitIrIdx = freshArrLitIrIdx
     }
     lowCurWinType = -1
     lowCurHandlerEvent = -1

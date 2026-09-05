@@ -1,0 +1,60 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arrlit.cla (language-runtime-cleanup, spec %4): const and var array
+// literals -- pool-backed const reads, a var global block-copied from the
+// pool, a local likewise, a const array borrowed as a KArr argument, and
+// every element kind the phase admits (int, bool, char, fixed, enum).
+enum Mode { Off, On, Auto }
+
+const squares: int[5] = [0, 1, 4, 9, 16]
+const flags: bool[3] = [true, false, true]
+const letters: char[3] = ['a', 'b', 'c']
+const modes: Mode[2] = [Auto, Off]
+const rates: fixed[2] = [1.5, 2.25]
+const three: int = 3
+const withConst: int[2] = [three, 0x7FFFFFFF]
+
+var table: int[4] = [10, 20, 30, 40]
+
+func sumOf(a: int[5]): int {
+    var i: int
+    var s: int
+
+    i = 0
+    while i < 5 {
+        s = s + a[i]
+        i = i + 1
+    }
+    return s
+}
+
+// flagDigit renders one bool element as "0"/"1" -- the reference's own
+// int() conversion family is fixed/char/enum/ptr, never bool, so a bool
+// element is stringified by branching on it rather than converting.
+func flagDigit(b: bool): string {
+    if b {
+        return "1"
+    }
+    return "0"
+}
+
+on App.launch {
+    var local: int[3] = [7, 8, 9]
+
+    alert("squares[4] = " + string(squares[4]))
+    alert("sum = " + string(sumOf(squares)))
+    alert("flags = " + flagDigit(flags[0]) + flagDigit(flags[1]) + flagDigit(flags[2]))
+    alert("letters[1] = " + string(letters[1]))
+    if modes[0] == Auto and modes[1] == Off {
+        alert("modes ok")
+    }
+    if rates[1] > rates[0] and rates[0] > 1.0 {
+        alert("rates ok")
+    }
+    alert("withConst = " + string(withConst[0]) + " " + string(withConst[1]))
+    table[1] = table[1] + 1
+    alert("table = " + string(table[0]) + " " + string(table[1]) + " " + string(table[3]))
+    local[0] = local[0] + local[2]
+    alert("local = " + string(local[0]) + " " + string(local[1]))
+}

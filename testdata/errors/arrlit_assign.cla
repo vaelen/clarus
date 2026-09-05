@@ -1,0 +1,12 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// language-runtime-cleanup, spec %4.2: a `const` array lives in the
+// program's constant pool, so assigning to one of its ELEMENTS is the
+// same "cannot assign to constant" error a whole-constant assignment
+// already gets.
+const t: int[2] = [1, 2]
+
+func f() {
+    t[0] = 5
+}

@@ -64,6 +64,15 @@
 //                LITERAL (irAppDoctype/irAppId or their "TEXT"/"????"
 //                defaults) -- no backend past lower.cla ever sees this
 //                kind.
+//   ExArrLit     a=elements list head (each chained via its own .next);
+//                intVal=element count -- `[e1, e2, ...]`
+//                (language-runtime-cleanup, spec %4.1). Legal ONLY as a
+//                `const`/`var` initializer whose declared type is a
+//                fixed array T[n]; parseArrLit builds it, checkArrLit
+//                (check.cla) validates it and folds every element to a
+//                compile-time value, and lowArrLitFromChecker
+//                (lower.cla) turns it into an EArrLit constant-pool
+//                reference.
 //
 // ---- StmtKind (stmts arena) ----
 //   StBlock      a=vars list head (decls arena, DkVar chain via
@@ -209,6 +218,7 @@ enum ExprKind {
     ExNew
     ExOpen
     ExAppConst
+    ExArrLit
 }
 
 enum StmtKind {
@@ -731,6 +741,33 @@ func indexX(i: int): int {
 
 func indexI(i: int): int {
     return exprs[i].b
+}
+
+// newArrLit builds an ExArrLit node (language-runtime-cleanup, spec %4.1)
+// -- elemsHead is the first element expression (each subsequent one
+// chained through exprListAppend's own .next link, exactly like a call's
+// argument list), count its length. The checker owns every rule about
+// what the elements may be and how many there must be; this constructor
+// just records the chain.
+func newArrLit(elemsHead: int, count: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExArrLit
+    n.a = elemsHead
+    n.intVal = count
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func arrLitElemsHead(i: int): int {
+    return exprs[i].a
+}
+
+func arrLitCount(i: int): int {
+    return exprs[i].intVal
 }
 
 func newSlice(x: int, start: int, sliceLen: int, line: int, col: int): int {

@@ -1314,6 +1314,13 @@ func fpExpr(e: int): text {
     case EStrConst {
         return toText("clar_lit_" + numToStr(irStrConstIdx(e)))
     }
+    case EArrLit {
+        // language-runtime-cleanup, spec %4: the `static const` wrapper
+        // struct cpEmitArrLits printed. Assignable as a whole (a `var`
+        // initializer prints `cv_table = clar_arrlit_0;`) and indexable
+        // through fpIndexRef's ordinary `.e[...]` shape.
+        return toText("clar_arrlit_" + numToStr(irArrLitIdx(e)))
+    }
     case EVarRef {
         return fpVarText(irVarRefName(e))
     }
@@ -2132,7 +2139,10 @@ func fpAddrable(e: int): text {
     var k: IRExprKind
 
     k = irExprKind(e)
-    if k == EVarRef or k == EFieldRef or k == EIndexRef or k == EStrConst or k == EIntr {
+    // EArrLit joins the list for the same reason EStrConst is on it: it
+    // prints to a named `static const` (clar_arrlit_<i>), already an
+    // lvalue, so `&` applies directly with no copy.
+    if k == EVarRef or k == EFieldRef or k == EIndexRef or k == EStrConst or k == EArrLit or k == EIntr {
         return fpExpr(e)
     }
     return fpCopyToTemp(e)
@@ -2376,6 +2386,11 @@ func fpIntrCall(x: int): text {
     }
     fpIntrMatched = true
     t = fpIntrCall3(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall3b(nm, x, a0, a1, a2)
     if fpIntrMatched {
         return t
     }
@@ -2883,7 +2898,33 @@ func fpIntrCall3(nm: int, x: int, a0: int, a1: int, a2: int): text {
             return "clar_fn_rtTextIndexOfChar((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
         }
         return "rt_text_index_of_char(" + fpExpr(a0) + ", (uint8_t)(" + fpExpr(a1) + "))"
-    } else if nm == ITextAppendStr() {
+
+    // The rest of the text family continues in fpIntrCall3b -- see its own
+    // doc comment for why this one chain is split in two.
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+// fpIntrCall3b is fpIntrCall3's second half, split off (language-runtime-
+// cleanup, Task 7) purely for CODE SIZE: fpIntrCall3 had grown to ~20.5KB of
+// emitted 68k, and cg68ProgramFork's per-segment budget is 32760 minus the
+// per-segment glue bundle -- whose cg_free_globals stub scales with
+// irGlobals.count, so ANY new compiler global shrinks every segment, and
+// this task's own new globals tipped this one function past the ceiling
+// ("function fpIntrCall3 exceeds the 32KB segment limit") when clarusc
+// self-compiles natively. The file already carries this exact split idiom
+// eight times over (fpIntrCall1..fpIntrCall8, chained through fpIntrMatched
+// by fpIntrCall); this is the ninth link, in the same position in that
+// chain, with the same contract: leave fpIntrMatched true on a match, clear
+// it and return empty otherwise.
+func fpIntrCall3b(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+    var s0: text
+    var s1: text
+    var cap1: int
+
+    if nm == ITextAppendStr() {
         if cpTextPorted {
             fpEmit("clar_fn_rtTextAppendStr((void*)" + fpExpr(a0) + ", (void*)" + fpStrAddr(a1) + ");")
         } else {
@@ -7506,6 +7547,35 @@ func cpEmitStrLits() {
     }
 }
 
+// cpEmitArrLits prints the array-literal pool (language-runtime-cleanup,
+// spec %4) as `static const clar_arr_<elem>_<N>` initializers -- the host
+// lane's counterpart of cg68k's own constant-pool section. Written into
+// cpRecBuf, not cpLitBuf, because cpEnsureArr emits the wrapper typedef
+// there and the literal must follow it in the output.
+func cpEmitArrLits() {
+    var i: int
+    var j: int
+    var body: text
+    var ty: int
+
+    i = 0
+    while i < irArrLitCount() {
+        ty = irArrType(irArrLitElemT[i], irArrLitN[i])
+        cpEnsureArr(ty)
+        body = ""
+        j = 0
+        while j < irArrLitN[i] {
+            if j > 0 {
+                body = body + ", "
+            }
+            body = body + numToStr(irArrLitVal(i, j))
+            j = j + 1
+        }
+        cpRecBuf.add("static const " + cpCTypeName(ty) + " clar_arrlit_" + numToStr(i) + " = {{" + body + "}};")
+        i = i + 1
+    }
+}
+
 // cpEmitAbortDefaultCheck (attempt-abort phase Task 3 fix round 1, C1+I1)
 // appends the synthesized top-level default (design doc %3.5): if
 // clar_aborting is still set, write the message on the log channel
@@ -7749,6 +7819,7 @@ func emitProgram(): text {
     cpRecBuf.add(toText(""))
 
     cpEmitStrLits()
+    cpEmitArrLits()
     cpEmitDefaultInitFnProtos()
     cpEmitRecords()
     cpEmitLayouts()

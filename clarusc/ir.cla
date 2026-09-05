@@ -66,6 +66,7 @@
 // ---- IRExprKind (irExprs arena; every kind also carries ty=IRType index) ----
 //   EIntConst  intVal=V (int/bool(0|1)/char/enum-value/fixed-raw constant)
 //   EStrConst  intVal=Idx (irStrLits index -- the literal pool)
+//   EArrLit    intVal=Idx (irArrLits index -- the array-literal pool)
 //   EVarRef    name=Name (interned); global=Global
 //   EFieldRef  a=X expr; name=Name (interned)
 //   EIndexRef  a=X expr; b=I expr
@@ -257,6 +258,16 @@ enum IRExprKind {
     // address is not itself a CALL, so without this arm the callback's own
     // body would never be discovered through the ordinary call-graph walk.
     ECbAddr
+
+    // EArrLit (language-runtime-cleanup, spec %4.4) is a constant-pool
+    // ARRAY literal's own address-yielding reference -- intVal=irArrLits
+    // index, ty=the KArr type. Like EStrConst it is never a scalar
+    // VALUE: both backends only ever take its address (cg68k's
+    // cgExprAddr emits `LEA d16(PC),An` against the literal's own pool
+    // label; cprint's fpExpr names the `clar_arrlit_<i>` static), and
+    // reaching cgExpr's value context with one is a compile abort, the
+    // same failure mode a whole record/array EVarRef already gets.
+    EArrLit
 }
 
 // IRConvOp: the 6 checked/unchecked scalar conversions (ir.go:182-191), plus
@@ -781,6 +792,14 @@ var irEveryCount: int
 // indexes THIS list, not strPool directly, matching the brief's contract.
 var irStrLits: list of int
 
+// irArrLits (language-runtime-cleanup, spec %4.4): array literals, one
+// constant-pool entry each -- element IR type, first index into the flat
+// irArrLitVals, element count. Parallel to irStrLits, and reset with it.
+var irArrLitElemT: list of int
+var irArrLitStart: list of int
+var irArrLitN: list of int
+var irArrLitVals: list of int
+
 // Program-level flags (ir.go's Program.HasLaunch/HasStartEmpty/HasStartCLI).
 var irHasLaunch: bool
 var irHasStartEmpty: bool
@@ -1132,6 +1151,10 @@ func irReset() {
     irMenuHandlerEntries.clear()
     irEveryEntries.clear()
     irStrLits.clear()
+    irArrLitElemT.clear()
+    irArrLitStart.clear()
+    irArrLitN.clear()
+    irArrLitVals.clear()
     irExternNames.clear()
     irExternRetTys.clear()
     irExternParamStart.clear()
@@ -3245,6 +3268,54 @@ func irAddStrLit(strPoolIdx: int): int {
 
 func irStrLitPoolIdx(i: int): int {
     return irStrLits[i]
+}
+
+// ================================================================
+// irArrLits (array-literal pool) constructors and accessors
+// ================================================================
+
+// irAddArrLit appends one array literal -- element IR type plus its
+// already-folded element values -- to the pool and returns its irArrLits
+// index, the value an EArrLit's intVal stores. No dedup by content:
+// lower.cla memoizes per SOURCE literal (lowArrLitIrIdx), exactly the
+// granularity a `const` array's own many read sites need, and two
+// distinct source literals with identical bytes are rare enough not to
+// be worth a content hash.
+func irAddArrLit(elemT: int, vals: list of int): int {
+    var i: int
+
+    irArrLitElemT.add(elemT)
+    irArrLitStart.add(irArrLitVals.count)
+    irArrLitN.add(vals.count)
+    i = 0
+    while i < vals.count {
+        irArrLitVals.add(vals[i])
+        i = i + 1
+    }
+    return irArrLitElemT.count - 1
+}
+
+func irArrLitCount(): int {
+    return irArrLitElemT.count
+}
+
+func irArrLitVal(i: int, j: int): int {
+    return irArrLitVals[irArrLitStart[i] + j]
+}
+
+func newIRArrLit(idx: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EArrLit
+    n.intVal = idx
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irArrLitIdx(e: int): int {
+    return irExprs[e].intVal
 }
 
 // ================================================================

@@ -5,7 +5,18 @@
 // suite-review Task 9). Case -> source:
 //   ArrHolderElementStore <- arc_fixwave_arrays.cla ("holder-store1-ok" /
 //                             "holder-store2-ok": array-of-record element
-//                             store, then use, then OVERWRITE)
+//                             store, then use, then OVERWRITE), plus the
+//                             array-literal initializers (language-runtime-
+//                             cleanup, spec %4): a module-level `const`
+//                             array read out of the constant pool and a
+//                             local `var` array block-copied from it, both
+//                             hardware-proved on the native lane by
+//                             tests/mactest/coresuite_68k.sh.
+
+// coreArrLitTab is a `const` array: no storage, no startup cost -- reads
+// index the constant pool directly (PC-relative on 68k, a `static const`
+// C array on the host lane).
+const coreArrLitTab: int[4] = [3, 1, 4, 1]
 
 record caseArrItem {
     name: text
@@ -23,6 +34,10 @@ func caseArrMakeItem(n: string): caseArrItem {
 
 func caseArrHolderElementStore(): TestResult {
     var h: caseArrHolder
+    var lit: int[3] = [7, 8, 9]
+    var i: int
+    var sum: int
+    var local: int
 
     h.items[0] = caseArrMakeItem("first")
     if h.items[0].name != "first" {
@@ -31,6 +46,37 @@ func caseArrHolderElementStore(): TestResult {
     h.items[0] = caseArrMakeItem("second")
     if h.items[0].name != "second" {
         return tkFail("ArrHolderElementStore", "overwrite store wrong")
+    }
+
+    // Array literals (language-runtime-cleanup, spec %4). The const array
+    // is read straight from the pool; the local is block-copied out of a
+    // second pool entry at function entry and is then MUTATED, which also
+    // proves the copy is a copy (the pool entry itself stays intact --
+    // coreArrLitTab is re-read afterwards).
+    if coreArrLitTab[0] != 3 or coreArrLitTab[1] != 1 or coreArrLitTab[2] != 4 or coreArrLitTab[3] != 1 {
+        return tkFail("ArrHolderElementStore", "const array literal wrong")
+    }
+    sum = 0
+    i = 0
+    while i < 4 {
+        sum = sum + coreArrLitTab[i]
+        i = i + 1
+    }
+    if sum != 9 {
+        return tkFail("ArrHolderElementStore", "const array sum " + string(sum) + " want 9")
+    }
+    local = 0
+    lit[0] = lit[0] + lit[2]
+    i = 0
+    while i < 3 {
+        local = local + lit[i]
+        i = i + 1
+    }
+    if local != 33 {
+        return tkFail("ArrHolderElementStore", "var array literal sum " + string(local) + " want 33")
+    }
+    if coreArrLitTab[0] != 3 {
+        return tkFail("ArrHolderElementStore", "const array clobbered by var copy")
     }
     return tkPass("ArrHolderElementStore")
 }

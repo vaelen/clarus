@@ -1,0 +1,56 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arrlit.cla (language-runtime-cleanup, spec %4): the native-lane golden
+// for array-literal initializers -- testdata/run/arrlit.cla minus the
+// alert noise. Pins the new constant-pool class (cgRelClsPoolArr): a
+// const array read through the pool at its element's native stride
+// (int/bool/char/fixed/enum all present), a global var array block-copied
+// from the pool by cg_init_globals, and a local var array block-copied at
+// function entry.
+//
+// Deliberately WITHOUT the host fixture's own `sumOf(squares)` call: an
+// array passed by value to a function does not compile on the native lane
+// at all yet (an ordinary `var v: int[5]; sumOf(v)` aborts with "EVarRef
+// non-scalar (str/rec/arr) reached in value context" on this branch's
+// base commit too, with no array literal anywhere in sight). That is the
+// KArr borrow ABI, this phase's own separate task; the host fixture
+// testdata/run/arrlit.cla does cover a const array as a KArr argument,
+// since the C lane passes the wrapper struct by value.
+enum Mode { Off, On, Auto }
+
+const squares: int[5] = [0, 1, 4, 9, 16]
+const flags: bool[3] = [true, false, true]
+const letters: char[3] = ['a', 'b', 'c']
+const modes: Mode[2] = [Auto, Off]
+const rates: fixed[2] = [1.5, 2.25]
+const three: int = 3
+const withConst: int[2] = [three, 0x7FFFFFFF]
+
+var table: int[4] = [10, 20, 30, 40]
+
+func probe(): int {
+    var local: int[3] = [7, 8, 9]
+    var n: int
+
+    n = squares[3] + squares[4] + withConst[0] + withConst[1]
+    if flags[0] {
+        n = n + 1
+    }
+    if letters[1] == 'b' {
+        n = n + 2
+    }
+    if modes[0] == Auto {
+        n = n + 4
+    }
+    if rates[1] > rates[0] {
+        n = n + 8
+    }
+    table[1] = table[1] + 1
+    local[0] = local[0] + local[2]
+    return n + table[1] + local[0]
+}
+
+on App.startCLI(args: list of string) {
+    log(string(probe()))
+}

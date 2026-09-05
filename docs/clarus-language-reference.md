@@ -156,7 +156,7 @@ Clarus is statically typed. All types are known at compile time; values are eith
 | `string(n)` | n+1 bytes | inline | length-prefixed Pascal string, n ≤ 255; `string` alone = `string(255)`; inside an aggregate it occupies n+1 rounded up to even bytes (Ch13 packing rule) |
 | enum | 2 bytes | inline | named type declared with `enum Name { … }` (see Enums below) |
 | `record` | sum of fields | inline | plain data aggregate; no methods |
-| `T[n]` | n × size(T) | inline* | fixed array, 0-indexed |
+| `T[n]` | n × size(T) | inline* | fixed array, 0-indexed; literal initializer `[…]` for `const`/`var` declarations (Constants) |
 | `text` | 4-byte handle | heap | unbounded text buffer |
 | `list of T` | 4-byte handle | heap | growable sequence of fixed-size T |
 | `map of T` | 4-byte handle | heap | hashtable, string keys ≤ 255 bytes, values fixed-size |
@@ -437,6 +437,15 @@ const startState: EventKind = Click
 ```
 
 The initializer must be a literal, an enum member, or a previously declared constant — no expressions. Assigning to a constant is a compile error. Constants follow declare-before-use like every other declaration, and they are valid as `switch` case labels (Chapter 5).
+
+A `const` or `var` whose declared type is a fixed array `T[n]` may be initialized from an **array literal**:
+
+```rust
+const kermitTab: int[4] = [0x0000, 0x1189, 0x2312, 0x329B]
+var keymap: char[3] = ['a', 'b', 'c']
+```
+
+An **array literal** `[e1, e2, …]` is legal only as the initializer of a `const` or `var` whose declared type is a fixed array `T[n]`. Its elements follow the `const` rule above (a literal, an enum member, or a previously declared constant — no expressions), `T` must be `int`, `fixed`, `char`, `bool`, or an enum, and the element count must equal `n` exactly; a mismatch is a compile error naming both counts. A `const` array lives in the program's constant pool: reading `tab[i]` costs one bounds-checked load and nothing at startup, and passing it to a function borrows it in place. A `var` array with a literal is copied from the pool once, when the variable is initialized. Assigning to an element of a `const` array is a compile error. Nested literals, `string(n)` or record elements, and array literals in any other expression position are not supported.
 
 ### Runtime Errors
 
