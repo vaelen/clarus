@@ -5814,7 +5814,16 @@ func cgMaterializeToTemp(e: int): int {
     var dst: int
 
     t = irExprType(e)
-    off = cgAllocTmpOff(t)
+    // compiler-cleanup (TODO: makeRec().field leak): a handle-bearing
+    // call result materialized here (cgExprAddr's generic fallback for a
+    // KRec-returning call used as a receiver) must be TRACKED so its
+    // handle fields are released at end of statement -- the native mirror
+    // of cprint.cla fpCallFn's fpNewTrackedTmp shape.
+    if irExprKind(e) == ECallFn and cgNeedsRelease(t) {
+        off = cgNewTrackedTmp(t)
+    } else {
+        off = cgAllocTmpOff(t)
+    }
     dst = cgVarRefAt(off, t)
     if irtKind(t) == KRec {
         cgEmitStoreRec(dst, e)
