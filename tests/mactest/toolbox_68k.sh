@@ -5,7 +5,7 @@
 # (toolbox_files.txt, `--testapi` + `--bake`), driven by
 # testdata/ui/toolboxsuite.events (one click on Run All, then quit). Every
 # case here calls a REAL Toolbox trap or reads the REAL screen framebuffer
-# in-process. Content-based gate, no trace/snap goldens; each of the 36
+# in-process. Content-based gate, no trace/snap goldens; each of the 37
 # result lines is re-emitted so the runner reports per case.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
