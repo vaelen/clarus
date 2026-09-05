@@ -645,6 +645,18 @@ record Symbol {
     // same "every other symbol construction site leaves it unset"
     // reasoning as isExtern's own comment above.
     isCallback: bool
+    // constArrIdx (language-runtime-cleanup, spec %4.2) is a `const`
+    // ARRAY's own array-literal index PLUS ONE -- 0 means "not a const
+    // array", which is why the +1 bias exists at all: literal index 0 is
+    // a perfectly real literal, so a plain index could not be told apart
+    // from the zero value every OTHER Symbol construction site in
+    // check.cla leaves here (same "every other site leaves it unset"
+    // reasoning as isExtern/isCallback above, and the same reason none
+    // of them needed touching). Written only by checkConstDecl's own
+    // TyArr arm; read by checkIdent, which routes a const-array name to
+    // constUseArr (the pool reference) instead of the scalar
+    // constUseIsStr/constUseInt bookkeeping.
+    constArrIdx: int
 }
 
 var symbols: list of Symbol

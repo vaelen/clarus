@@ -1,0 +1,1 @@
+../../testdata/errors/arrlit_count.cla:7:19: array literal has 2 elements, type has 3

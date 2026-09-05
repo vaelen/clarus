@@ -79,7 +79,11 @@ const bkMagic: string = "CLIR"
 // loader refuses any other version outright (no compat shim), per this
 // phase's own controller resolution.
 // v7: body/stamp/manifest hash switched from FNV-mul to shift-add -- layout unchanged.
-const bkFormatVersion: int = 7
+// v8 (language-runtime-cleanup, spec %4.4): added bkSecIrArrLits (the
+// array-literal constant pool) and one extra U32 in bkSecUitestBounds
+// (that pool's own base/uitest boundary, bkGenBaseIrArrLitsCount); the
+// object-code relocation dispatch gained cgRelClsPoolArr.
+const bkFormatVersion: int = 8
 
 // bkClirResourceName/bkStampResourceName (runtime-ir-bake Task 6, Mac
 // integration): reserved 'CLFS' resource names ClarusC.APPL's own build
@@ -225,7 +229,15 @@ const bkSecFieldInfo: int = 47
 const bkSecObjCode: int = 48
 const bkSecObjMeta: int = 49
 
-const bkSectionCount: int = 46
+// bkSecIrArrLits (format version 8, language-runtime-cleanup spec %4.4):
+// ir.cla's own array-literal pool (irArrLitElemT/irArrLitN/irArrLitVals --
+// irArrLitStart is derived on load, being a plain prefix sum). Parallel
+// to bkSecIrStrLits in every respect; a baked runtime module that
+// declares a `const` array (the CRC tables) needs its contents to survive
+// the round trip, and cgRelClsPoolArr relocations name entries in it.
+const bkSecIrArrLits: int = 50
+
+const bkSectionCount: int = 47
 
 // ================================================================
 // Byte-buffer primitives -- explicit one-byte-at-a-time big-endian
@@ -474,6 +486,9 @@ func bakeModuleList(lane: int): list of string {
 // compile would have produced. See bkSecUitestBounds' own doc comment.
 var bkGenBaseIrFuncsCount: int
 var bkGenBaseIrStrLitsCount: int
+// bkGenBaseIrArrLitsCount (format version 8): the array-literal pool's own
+// base/uitest boundary, the exact twin of bkGenBaseIrStrLitsCount above.
+var bkGenBaseIrArrLitsCount: int
 
 // bkGenEarlyFuncSigsCount/bkGenEarlySymbolsCount (runtime-ir-bake Task 5,
 // fix round 2): funcSigs.count/symbols.count captured right after
@@ -749,6 +764,7 @@ func bakeGenerateChain(lane: int): bool {
     }
     bkGenBaseIrFuncsCount = irFuncs.count
     bkGenBaseIrStrLitsCount = irStrLits.count
+    bkGenBaseIrArrLitsCount = irArrLitCount()
 
     lowResumeFromBake = true
     if uitHead != -1 {
@@ -1183,6 +1199,30 @@ func bkWriteIrStrLits(): text {
 // (irExternNames.. irExternRetRegs), each a plain `list of int` -- one
 // section per arena (task-1-report.md's inventory rows 24-33), same
 // count-then-elements shape as irStrLits/irCbGlueNames.
+// bkWriteIrArrLits (format version 8, language-runtime-cleanup spec
+// %4.4): count, then per literal its element IR-TYPE index (a bkSecIrTypes
+// arena index, installed verbatim by bkInstallArenas so it stays valid at
+// load time), its element count, and its values.
+func bkWriteIrArrLits(): text {
+    var sec: text
+    var i: int
+    var j: int
+
+    bkPutU32(sec, irArrLitCount())
+    i = 0
+    while i < irArrLitCount() {
+        bkPutU32(sec, irArrLitElemT[i])
+        bkPutU32(sec, irArrLitN[i])
+        j = 0
+        while j < irArrLitN[i] {
+            bkPutU32(sec, irArrLitVal(i, j))
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return sec
+}
+
 func bkWriteIntList(l: list of int): text {
     var sec: text
     var i: int
@@ -1447,6 +1487,7 @@ func bkWriteUitestBounds(): text {
 
     bkPutU32(sec, bkGenBaseIrFuncsCount)
     bkPutU32(sec, bkGenBaseIrStrLitsCount)
+    bkPutU32(sec, bkGenBaseIrArrLitsCount)
     return sec
 }
 
@@ -1777,6 +1818,7 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     bkEmitSection(body, bkSecIrMenuHandlerEntries, bkWriteIrMenuHandlerEntries())
     bkEmitSection(body, bkSecIrEveryEntries, bkWriteIrEveryEntries())
     bkEmitSection(body, bkSecIrStrLits, bkWriteIrStrLits())
+    bkEmitSection(body, bkSecIrArrLits, bkWriteIrArrLits())
     bkEmitSection(body, bkSecIrExternNames, bkWriteIntList(irExternNames))
     bkEmitSection(body, bkSecIrExternRetTys, bkWriteIntList(irExternRetTys))
     bkEmitSection(body, bkSecIrExternParamStart, bkWriteIntList(irExternParamStart))
@@ -2088,6 +2130,36 @@ func bkGetStrShort(): string {
 // int` / `intmap of int` section (bkWriteIntList's own read-side twin,
 // generalized to cover irCbGlueNames/irStrLits/declFileTab too, all the
 // same shape).
+// bkReadIrArrLits (format version 8) is bkWriteIrArrLits' reader --
+// fills the three bkLdIrArrLit* lists in place (unlike bkReadIntList's
+// return-a-list shape, since one section carries three parallel arenas).
+func bkReadIrArrLits() {
+    var n: int
+    var i: int
+    var j: int
+    var cnt: int
+    var elemT: list of int
+    var lens: list of int
+    var vals: list of int
+
+    n = bkGetU32()
+    i = 0
+    while i < n {
+        elemT.add(bkGetU32())
+        cnt = bkGetU32()
+        lens.add(cnt)
+        j = 0
+        while j < cnt {
+            vals.add(bkGetU32())
+            j = j + 1
+        }
+        i = i + 1
+    }
+    bkLdIrArrLitElemT = elemT
+    bkLdIrArrLitN = lens
+    bkLdIrArrLitVals = vals
+}
+
 func bkReadIntList(): list of int {
     var n: int
     var i: int
@@ -2152,6 +2224,12 @@ var bkLdIrWidgetHandlerEntries: list of IRWidgetHandlerEntry
 var bkLdIrMenuHandlerEntries: list of IRMenuHandlerEntry
 var bkLdIrEveryEntries: list of IREveryEntry
 var bkLdIrStrLits: list of int
+// bkLdIrArrLit* (format version 8): the loaded array-literal pool -- three
+// parallel lists exactly as ir.cla holds them, minus irArrLitStart (a
+// derived prefix sum, rebuilt by bkInstallArenas).
+var bkLdIrArrLitElemT: list of int
+var bkLdIrArrLitN: list of int
+var bkLdIrArrLitVals: list of int
 var bkLdIrExternNames: list of int
 var bkLdIrExternRetTys: list of int
 var bkLdIrExternParamStart: list of int
@@ -2231,6 +2309,7 @@ var bkLoadedRecFieldsHeadByName: intmap of int
 // testapi install back to -- see bkSecUitestBounds' own doc comment.
 var bkLdBaseIrFuncsCount: int
 var bkLdBaseIrStrLitsCount: int
+var bkLdBaseIrArrLitsCount: int
 
 // bkLdEarlyFuncSigsCount/bkLdEarlySymbolsCount (format version 3, Task 5
 // fix round 2): the testapi-visible checker-symbol boundary --
@@ -3067,6 +3146,7 @@ func bkReadFieldInfo() {
 func bkReadUitestBounds() {
     bkLdBaseIrFuncsCount = bkGetU32()
     bkLdBaseIrStrLitsCount = bkGetU32()
+    bkLdBaseIrArrLitsCount = bkGetU32()
 }
 
 // bkReadCheckerVisibility (format version 3, Task 5 fix round 2): the
@@ -3120,6 +3200,9 @@ func bkObjRelocSymValid(kind: int, cls: int, sym: int): bool {
     // kind == cgHoleLabel
     if cls == cgRelClsPoolStr {
         return sym >= 0 and sym < bkLdIrStrLits.count
+    }
+    if cls == cgRelClsPoolArr {
+        return sym >= 0 and sym < bkLdIrArrLitElemT.count
     }
     if cls == cgRelClsPoolEnum {
         return sym >= 0 and sym < bkLdIrEnums.count
@@ -3491,6 +3574,8 @@ func bkLoadSections(): bool {
             bkLdIrEveryEntries = bkReadIrEveryEntries()
         } else if id == bkSecIrStrLits {
             bkLdIrStrLits = bkReadIntList()
+        } else if id == bkSecIrArrLits {
+            bkReadIrArrLits()
         } else if id == bkSecIrExternNames {
             bkLdIrExternNames = bkReadIntList()
         } else if id == bkSecIrExternRetTys {
@@ -4194,6 +4279,13 @@ func bkInstallArenas(testapi: bool) {
     var srcStrLits: list of int
     var truncFuncs: list of IRFunc
     var truncStrLits: list of int
+    var j: int
+    var nArrLits: int
+    var startSum: int
+    var arrStart: list of int
+    var arrElemT: list of int
+    var arrN: list of int
+    var arrVals: list of int
 
     // Every assignment in this function COPIES its pending container
     // (clir-load-perf Task 7, design B -- see bkParsedValid's own doc
@@ -4242,6 +4334,33 @@ func bkInstallArenas(testapi: bool) {
         srcStrLits = truncStrLits
     }
 
+    // Array literals (format version 8, language-runtime-cleanup spec
+    // %4.4): the same base/uitest truncation srcStrLits just got --
+    // uitest.cla's own literals are not part of a non-testapi install.
+    // irArrLitStart is rebuilt here as the prefix sum of the surviving
+    // lengths rather than baked, so a truncation can never leave a stale
+    // offset behind.
+    nArrLits = bkLdIrArrLitElemT.count
+    if not testapi {
+        if bkLdBaseIrArrLitsCount < nArrLits {
+            nArrLits = bkLdBaseIrArrLitsCount
+        }
+    }
+    startSum = 0
+    i = 0
+    while i < nArrLits {
+        arrElemT.add(bkLdIrArrLitElemT[i])
+        arrN.add(bkLdIrArrLitN[i])
+        arrStart.add(startSum)
+        j = 0
+        while j < bkLdIrArrLitN[i] {
+            arrVals.add(bkLdIrArrLitVals[startSum + j])
+            j = j + 1
+        }
+        startSum = startSum + bkLdIrArrLitN[i]
+        i = i + 1
+    }
+
     // No by-name filter needed any more (see this function's own doc
     // comment) -- srcFuncs (already truncated above for non-testapi)
     // installs verbatim; irFuncIdxByName still needs its own fresh
@@ -4283,6 +4402,10 @@ func bkInstallArenas(testapi: bool) {
     irMenuHandlerEntries = bkLdIrMenuHandlerEntries.clone()
     irEveryEntries = bkLdIrEveryEntries.clone()
     irStrLits = srcStrLits
+    irArrLitElemT = arrElemT
+    irArrLitStart = arrStart
+    irArrLitN = arrN
+    irArrLitVals = arrVals
     irExternNames = bkLdIrExternNames.clone()
     irExternRetTys = bkLdIrExternRetTys.clone()
     irExternParamStart = bkLdIrExternParamStart.clone()

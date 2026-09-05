@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// language-runtime-cleanup, spec %4.1: an array literal's element count
+// must equal the declared type's length EXACTLY -- no partial fill, since
+// zero-fill would hide the likeliest typo in a long table (a miscount).
+const t: int[3] = [1, 2]
+
+func f(): int {
+    return 0
+}

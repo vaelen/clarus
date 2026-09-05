@@ -27,8 +27,8 @@ for lane in 68k c; do
     fi
 
     got=$(clir_field version "$WORK/$lane.hdr")
-    [ "$got" = 7 ] && t_pass "$lane/version" \
-        || t_fail "$lane/version" "version = $got, want 7 (clir-load-perf Task 4: hash swapped FNV-mul -> shift-add)"
+    [ "$got" = 8 ] && t_pass "$lane/version" \
+        || t_fail "$lane/version" "version = $got, want 8 (language-runtime-cleanup: +bkSecIrArrLits, +bkSecUitestBounds arrlit boundary)"
 
     got=$(clir_field lane "$WORK/$lane.hdr")
     [ "$got" = "$lane" ] && t_pass "$lane/lanetag" \
@@ -43,8 +43,8 @@ for lane in 68k c; do
         || t_fail "$lane/modules" "modules = $got, want $modules; keys: $(sed -n 's/^module //p' "$WORK/$lane.hdr" | tr '\n' ' ')"
 
     got=$(clir_field sections "$WORK/$lane.hdr")
-    [ "$got" = 46 ] && t_pass "$lane/sections" \
-        || t_fail "$lane/sections" "sections = $got, want 46 (bkSectionCount, object-code-linker Task 2: +bkSecObjCode +bkSecObjMeta)"
+    [ "$got" = 47 ] && t_pass "$lane/sections" \
+        || t_fail "$lane/sections" "sections = $got, want 47 (bkSectionCount, language-runtime-cleanup: +bkSecIrArrLits)"
 
     # Every module key follows rtModuleKey's "runtime/clarus/NAME" scheme
     # (Go: filepath.Dir(m) == "runtime/clarus", i.e. exactly one path

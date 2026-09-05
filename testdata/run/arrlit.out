@@ -1,0 +1,9 @@
+squares[4] = 16
+sum = 30
+flags = 101
+letters[1] = b
+modes ok
+rates ok
+withConst = 3 2147483647
+table = 10 21 40
+local = 16 8

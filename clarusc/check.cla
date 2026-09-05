@@ -701,6 +701,30 @@ var enumConstOf: intmap of int
 var constUseIsStr: intmap of int
 var constUseInt: intmap of int
 var constUseStr: intmap of string
+
+// Array literals (language-runtime-cleanup, spec %4): per-literal element
+// type / start / count into the flat arrLitVals, keyed by the literal's own
+// ExprNode index (arrLitIdxOf) for lower.cla to pick up. constUseArr is
+// the same idea for a const-array NAME's own Ident node: identExprIdx ->
+// literal index, the const-array counterpart of constUseIsStr/constUseInt
+// (a const array has no scalar value to fold, only a pool address).
+// All six are cleared in checkReset, same fresh-container idiom as every
+// other module-global here -- arrLitIdxOf/constUseArr for exactly the
+// reason checkReset's own doc comment gives for enumConstOf and friends
+// (written only CONDITIONALLY, so a stale entry at a recycled AST index
+// would read back as a genuine array-literal reference in a second
+// in-process compile).
+// (arrLitLen, not `arrLitCount`: every clarusc module shares one global
+// scope, and ast.cla already owns `arrLitCount(i)` as the ExArrLit node's
+// own element-count ACCESSOR -- a same-named list global here would be a
+// straight redeclaration.)
+var arrLitElemT: list of int
+var arrLitStart: list of int
+var arrLitLen: list of int
+var arrLitVals: list of int
+var arrLitIdxOf: intmap of int
+var constUseArr: intmap of int
+
 // exprTypeOf is keyed by expr arena index; lower.cla/cprint.cla (the emit
 // path) read it via exprTypeGet AFTER checkProgram, in the SAME process, with
 // no astReset in between -- `clarusc emit` runs one program per process, so
@@ -2762,6 +2786,73 @@ func constValue(val: int, t: int): CVal {
     return literalConstVal(val)
 }
 
+// checkArrLit checks an array literal against its declared type `want`
+// (language-runtime-cleanup, spec %4.1) and folds every element to a
+// compile-time value, registering the whole thing as one entry in the
+// per-literal tables above. `want` is always the DECLARED type -- the
+// literal has no type of its own to infer from, which is exactly why the
+// grammar admits one only in a const/var initializer position.
+//
+// Every element goes through constValue, the same folding authority a
+// scalar `const` initializer already uses: a literal, an enum member, or
+// a previously declared constant, with constValue's own compatibility
+// diagnostics. A bool element folds to 0/1 there (literalConstVal's own
+// ExBoolLit arm).
+func checkArrLit(e: int, want: int): int {
+    var et: int
+    var ek: TypeKind
+    var n: int
+    var x: int
+    var cv: CVal
+    var litIdx: int
+
+    if want == -1 or typeKind(want) != TyArr {
+        emitDiag(exprLine(e), exprCol(e), "array literal needs a fixed-array declared type")
+        return InvalidT
+    }
+    et = typeElem(want)
+    ek = typeKind(et)
+    if ek != TyInt and ek != TyFixed and ek != TyChar and ek != TyBool and ek != TyEnum {
+        emitDiag(exprLine(e), exprCol(e), "array literal element type must be int, fixed, char, bool, or enum")
+        return InvalidT
+    }
+    n = typeN(want)
+    if arrLitCount(e) != n {
+        emitDiag(exprLine(e), exprCol(e), "array literal has " + numToStr(arrLitCount(e)) + " elements, type has " + numToStr(n))
+        return InvalidT
+    }
+    litIdx = arrLitElemT.count
+    arrLitElemT.add(et)
+    arrLitStart.add(arrLitVals.count)
+    arrLitLen.add(n)
+    x = arrLitElemsHead(e)
+    while x != -1 {
+        cv = constValue(x, et)
+        arrLitVals.add(cv.intVal)
+        x = exprNext(x)
+    }
+    arrLitIdxOf[e] = litIdx
+    return want
+}
+
+// constArrValsMatch reports whether two array-literal indices hold the
+// same element values -- constSymMatches' own array arm (see below).
+func constArrValsMatch(a: int, b: int): bool {
+    var i: int
+
+    if arrLitLen[a] != arrLitLen[b] {
+        return false
+    }
+    i = 0
+    while i < arrLitLen[a] {
+        if arrLitVals[arrLitStart[a] + i] != arrLitVals[arrLitStart[b] + i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
 // constSymMatches (binary-files phase Task 2, checkConstDecl dedup)
 // reports whether two `const` decls sharing a name are byte-identical:
 // same checked type (typesEqual, not raw == -- a `string`-typed const's
@@ -2777,6 +2868,19 @@ func constValue(val: int, t: int): CVal {
 func constSymMatches(a: Symbol, b: Symbol): bool {
     if not typesEqual(a.typeIdx, b.typeIdx) {
         return false
+    }
+    // language-runtime-cleanup, spec %4.2: a const ARRAY carries its
+    // value in the per-literal tables, not in constInt/constStrIdx (both
+    // stay at their zero default for one), so without this arm two
+    // same-named const arrays with DIFFERENT contents would compare
+    // equal and the second would be silently accepted with the first
+    // winning. Compared element-by-element, the array analogue of the
+    // constInt/constStrIdx compares below.
+    if (a.constArrIdx != 0) != (b.constArrIdx != 0) {
+        return false
+    }
+    if a.constArrIdx != 0 {
+        return constArrValsMatch(a.constArrIdx - 1, b.constArrIdx - 1)
     }
     if a.constIsStr != b.constIsStr {
         return false
@@ -2824,11 +2928,28 @@ func checkConstDecl(d: int) {
 
     t = resolveType(constDeclType(d))
     k = typeKind(t)
-    if k != TyInt and k != TyFixed and k != TyChar and k != TyBool and k != TyEnum and k != TyStr {
-        emitDiag(declLine(d), declCol(d), "const type must be int, fixed, char, bool, enum, or string")
+    if k != TyInt and k != TyFixed and k != TyChar and k != TyBool and k != TyEnum and k != TyStr and k != TyArr {
+        emitDiag(declLine(d), declCol(d), "const type must be int, fixed, char, bool, enum, string, or a fixed array")
         return
     }
-    cv = constValue(constDeclValue(d), t)
+    // language-runtime-cleanup, spec %4.2: a `const` array's value lives
+    // in the constant pool, not in a scalar CVal -- checkArrLit does the
+    // whole job (element-type gate, exact-count rule, per-element
+    // folding) and constArrIdx (literal index + 1) is the symbol's own
+    // payload. constValue's scalar path is skipped entirely.
+    if k == TyArr {
+        if exprKind(constDeclValue(d)) != ExArrLit {
+            emitDiag(declLine(d), declCol(d), "const array initializer must be an array literal")
+            return
+        }
+        if checkExpr(constDeclValue(d), t) == InvalidT {
+            return
+        }
+        sym.constArrIdx = arrLitIdxOf.get(constDeclValue(d), -1) + 1
+        cv = cvZero()
+    } else {
+        cv = constValue(constDeclValue(d), t)
+    }
     sym.nameIdx = constDeclName(d)
     sym.typeIdx = t
     sym.isFunc = false
@@ -5151,6 +5272,17 @@ func checkIdent(e: int, expected: int): int {
             return InvalidT
         }
         if symbols[symIdx].isConst {
+            // language-runtime-cleanup, spec %4.2: a const ARRAY name is
+            // a constant-pool ADDRESS, not a folded scalar -- record the
+            // literal index for lowIdent and return before the
+            // constUseIsStr/constUseInt bookkeeping below, whose payload
+            // (constIsStr/constInt, both at their zero default for an
+            // array const) would otherwise fold every read of the name
+            // into the integer 0.
+            if symbols[symIdx].constArrIdx != 0 {
+                constUseArr[e] = symbols[symIdx].constArrIdx - 1
+                return symbols[symIdx].typeIdx
+            }
             key = e
             constUseIsStr[key] = boolToInt(symbols[symIdx].constIsStr)
             constUseInt[key] = symbols[symIdx].constInt
@@ -6002,6 +6134,13 @@ func checkExprInner(e: int, expected: int): int {
     case ExAppConst {
         return checkAppConstExpr(e)
     }
+    case ExArrLit {
+        // language-runtime-cleanup, spec %4.1: `expected` here is the
+        // DECLARED type checkVarDecl/checkConstDecl passed down -- the
+        // only two positions the grammar admits an array literal in, so
+        // a -1 expectation is already a diagnostic inside checkArrLit.
+        return checkArrLit(e, expected)
+    }
     }
     emitDiag(exprLine(e), exprCol(e), "internal: unhandled expression type")
     return InvalidT
@@ -6082,6 +6221,8 @@ func checkReset() {
     var freshMenuItems: map of int
     var freshExternFirstDeclByName: map of int
     var freshConstFirstDeclByName: map of int
+    var freshArrLitIdxOf: intmap of int
+    var freshConstUseArr: intmap of int
 
     // cnInit's own guard (cnInited) is a process-lifetime lazy-init idiom
     // (see its own decl comment) -- reset here, right before calling it,
@@ -6095,6 +6236,19 @@ func checkReset() {
     constUseIsStr = freshConstUseIsStr
     constUseInt = freshConstUseInt
     constUseStr = freshConstUseStr
+    // Array literals (language-runtime-cleanup, spec %4): arrLitIdxOf/
+    // constUseArr are the same CONDITIONALLY-written, AST-index-keyed
+    // shape as enumConstOf/constUseIsStr just above -- a stale entry at
+    // a recycled index in a second in-process compile would read back as
+    // a genuine array-literal reference and hand lowering a bogus pool
+    // index. The four parallel value tables reset alongside them (they
+    // are indexed by litIdx, which restarts at 0 every compile).
+    arrLitIdxOf = freshArrLitIdxOf
+    constUseArr = freshConstUseArr
+    arrLitElemT.clear()
+    arrLitStart.clear()
+    arrLitLen.clear()
+    arrLitVals.clear()
     exprTypeOf = freshExprTypeOf
     // recFieldsHeadByName (Task 6, layer1-compiler-perf: re-keyed from a
     // poolGet(nameIdx) string to nameIdx itself) is keyed by an
