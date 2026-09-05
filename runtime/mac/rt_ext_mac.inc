@@ -40,6 +40,11 @@
 void *rt_ext_NewHandle(int32_t size) { return (void *)NewHandle((Size)size); }
 void rt_ext_DisposeHandle(void *h) { DisposeHandle((Handle)h); }
 int32_t rt_ext_GetHandleSize(void *h) { return (int32_t)GetHandleSize((Handle)h); }
+/* compiler-cleanup: testsuite/toolbox's LeakCheck/ClearWarm cases bind
+   FreeMem (trap 0xA01C) under two Clarus extern names; cprint emits one
+   rt_ext_<Name> call per extern, so each needs its own shim. */
+int32_t rt_ext_TbFreeMem(void) { return (int32_t)FreeMem(); }
+int32_t rt_ext_TbClearWarmFreeMem(void) { return (int32_t)FreeMem(); }
 int32_t rt_ext_SetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_BlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
 void *rt_ext_NewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
