@@ -227,7 +227,7 @@
 // doubles as the C reference's own "is this canvas buffered and
 // allocated" flag (`ptr(0)` for every non-canvas widget and every
 // unbuffered canvas) -- same convention, ported as-is. `rtUiCanvasBufSize`
-// (36 bytes = 9 fields x 4, see above for why int/ptr fields are exactly 4
+// (44 bytes = 11 fields x 4, see above for why int/ptr fields are exactly 4
 // bytes each) is a STRIDE for indexing `canvases[i]`, not an allocation
 // safety margin like rtUiWinstBoxSize -- it must stay EXACT (no slack),
 // or every `canvases + i*rtUiCanvasBufSize` computation later steps make
@@ -868,13 +868,15 @@ overlay record RtUiCanvasBuf {
     bitsBoundsRight: int
     pixels: ptr                  // the offscreen pixel data block
     patLevel: int                  // gray-pattern animation level
+    dirty: int                     // language-runtime-cleanup: 1 = drawn since last blit
+    blits: int                     // language-runtime-cleanup: blit counter (UiTestCanvasBlits)
 }
 
 // rtUiCanvasBufSize is the per-element STRIDE for indexing an
 // RtUiWinst.canvases array (`canvases + i*rtUiCanvasBufSize`) -- unlike
-// rtUiWinstBoxSize above, this MUST stay exact (9 fields x 4 = 36, no
+// rtUiWinstBoxSize above, this MUST stay exact (11 fields x 4 = 44, no
 // slack): padding it would misalign every element after the first.
-const rtUiCanvasBufSize: int = 36
+const rtUiCanvasBufSize: int = 44
 
 // rtUiRectSize is the per-element stride for an RtUiWinst.rects array (a
 // real Toolbox Rect, 8 bytes: top/left/bottom/right, each a 16-bit SHORT

@@ -346,3 +346,16 @@ func UiTestTextviewScroll(i: int): int {
     teMp = UiHandleDeref(te)
     return rtUiPeekSw(teMp + rtUiTeViewRect + 0) - rtUiPeekSw(teMp + rtUiTeDestRect + 0)
 }
+
+// UiTestCanvasBlits (language-runtime-cleanup): the FRONT window's widget
+// i's blit counter (RtUiCanvasBuf.blits), or -1 when widget i is not a
+// buffered canvas. Bridge for testsuite/toolbox's CanvasIdle case.
+func UiTestCanvasBlits(i: int): int {
+    var buf: RtUiCanvasBuf
+
+    buf = RtUiCanvasBuf(rtUiCanvasBufAt(RtUiWinst(rtUiWinstOf(UiFrontWindow())), i))
+    if buf.port == ptr(0) {
+        return -1
+    }
+    return buf.blits
+}

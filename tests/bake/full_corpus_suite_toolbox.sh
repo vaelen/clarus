@@ -54,6 +54,7 @@ if detail=$(emit68k_pair toolbox \
         testsuite/toolbox/cases_menus.cla \
         testsuite/toolbox/cases_editmenu.cla \
         testsuite/toolbox/cases_canvas.cla \
+        testsuite/toolbox/cases_canvasidle.cla \
         testsuite/toolbox/cases_zoomwin.cla \
         testsuite/toolbox/cases_hscroll.cla \
         testsuite/toolbox/cases_popuptable.cla \

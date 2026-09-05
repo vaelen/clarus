@@ -136,6 +136,10 @@
 // addition: hardware-proves the suite GUI's own `Cases` table paints real
 // ink into every visible row band, and that a second read of row 0 is
 // stable -- see that case's own header comment.
+// CanvasIdle (cases_canvasidle.cla) is the language-runtime-cleanup
+// phase's addition: hardware-proves a buffered canvas drawn once blits
+// once and then costs nothing per event-loop pass (the dirty flag, spec
+// 2.1) -- see that case's own header comment.
 
 enum ToolboxTest {
     All
@@ -174,15 +178,16 @@ enum ToolboxTest {
     ScrollToEnd
     ClearWarm
     CasesTable
+    CanvasIdle
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 35 real cases
+// nTbCases is ToolboxTest's member count minus All: the 36 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 36
+const nTbCases: int = 37
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -296,6 +301,9 @@ func tbCaseName(t: ToolboxTest): string {
     case CasesTable {
         return "CasesTable"
     }
+    case CanvasIdle {
+        return "CanvasIdle"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -342,6 +350,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(ScrollToEnd)
     l.add(ClearWarm)
     l.add(CasesTable)
+    l.add(CanvasIdle)
     l.add(SelfCheck)
     return l
 }
@@ -518,6 +527,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, CasesTable) {
         results.add(caseCasesTable())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, CanvasIdle) {
+        results.add(caseCanvasIdle())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
