@@ -1481,6 +1481,24 @@ var cgFuncBigTmpHigh: int
 // the end of the measure pass's call.
 var cgFuncSmallTmpHigh: int
 
+// cgInitGlobalsSmallNeed/cgInitGlobalsBigNeed are cg_init_globals' own
+// recorded small/big temp high-water marks -- cgFuncSmallTmpNeed[f]/
+// cgFuncBigTmpNeed[f]'s exact counterpart for the ONE routine that has no
+// irFuncs index to key on (language-runtime-cleanup, spec %3.2: a global
+// initializer may call a function, so cg_init_globals needs a real temp
+// pool like any function body). The stub runs twice, same two-pass
+// contract as cgEmitFunc: on its MEASURE pass (cgRecMode == 2 -- NOT 1;
+// cg68Measure's mode-2 stream is the seg1 startup+cg_init_globals bucket,
+// see cgRecMode's own doc comment) these are still 0, so the pool lays out
+// empty/at-floor and cgAllocTmpOff/cgAllocBigTmpOff grow it on demand,
+// recording the true need here at the end of that same call; on the real
+// pass they already hold that max, so the pool is laid out exactly right
+// up front and neither allocator reaches its growth branch. Reset to 0 in
+// cg68Measure alongside cgFuncSmallTmpNeed/cgFuncBigTmpNeed, so a second
+// compile in the same process (the Mac-resident compiler) starts clean.
+var cgInitGlobalsSmallNeed: int
+var cgInitGlobalsBigNeed: int
+
 // cgSmallTmpFirstOff is the A6-relative offset cgAllocTmpOff's growth
 // branch starts from when the CURRENT function's small pool was laid out
 // empty -- recorded by cgEmitFunc's frame layout below the whole rest of
@@ -4271,8 +4289,9 @@ func cgEmitPanic(msgLitIdx: int) {
 // function at exactly cgFuncSmallTmpNeed[f] slots (cgEmitFunc's frame
 // layout); when a statement needs one more than currently reserved, this
 // grows the pool by one 4-byte slot -- but ONLY during the measure pass
-// (cgRecMode == 1), whose bytes are thrown away, so growing costs nothing
-// real and simply records the true need. The real pass had that recorded
+// (a function's cgRecMode == 1, or cg_init_globals' own cgRecMode == 2),
+// whose bytes are thrown away, so growing costs nothing real and simply
+// records the true need. The real pass had that recorded
 // max laid out up front, so it must NEVER reach the growth branch; if it
 // does, the two passes disagreed about this function's statement shape,
 // which can only be a codegen bug (both walk the identical IR), hence the
@@ -4285,13 +4304,16 @@ func cgAllocTmpOff(t: int): int {
         return cgAllocBigTmpOff(t)
     }
     if cgStmtTmpNext >= cgTmpBaseOffs.count {
-        if cgRecMode != 1 {
-            // Two ways here: code emitted OUTSIDE a laid-out function frame
-            // (cgEmitInitGlobalsStub's global initializers -- pre-existing,
-            // it died as "list index out of range" before this pool was
-            // per-function), or a real measure/emit disagreement about a
-            // function's statement shape.
-            abort("cg68k: small-temp pool exhausted -- emitted outside a laid-out function frame, or measure/emit disagreed")
+        if cgRecMode != 1 and cgRecMode != 2 {
+            // language-runtime-cleanup (spec %3.2): the "emitted outside a
+            // laid-out function frame" half of this message is gone --
+            // cg_init_globals, the one caller that could reach here with no
+            // pool, now lays out a real one (cgEmitInitGlobalsStub), and
+            // cgRecMode 2 (its own measure stream) is admitted to the
+            // growth branch alongside a function's cgRecMode 1. What is
+            // left can only be a measure/emit disagreement about statement
+            // shape.
+            abort("cg68k: small-temp pool exhausted -- measure/emit disagreed")
         }
         if cgTmpBaseOffs.count == 0 {
             newOff = cgSmallTmpFirstOff
@@ -4320,8 +4342,9 @@ func cgAllocTmpOff(t: int): int {
 // (cgEmitFunc's frame layout); when a statement needs one more slot than
 // currently reserved, this function grows the pool by one more
 // cgBigTmpSize-wide offset below the last -- but ONLY during the measure
-// pass (cgRecMode == 1), whose bytes are thrown away, so growing here
-// costs nothing real and simply records the true need. The real pass
+// pass (a function's cgRecMode == 1, or cg_init_globals' own cgRecMode ==
+// 2), whose bytes are thrown away, so growing here costs nothing real and
+// simply records the true need. The real pass
 // (cgRecMode == 0) already had cgFuncBigTmpNeed[f]'s recorded max laid
 // out up front by cgEmitFunc, so it must NEVER hit this growth branch --
 // if it does, the two passes disagreed about how many big temps this
@@ -4336,7 +4359,7 @@ func cgAllocBigTmpOff(t: int): int {
         abort("cg68k: str/rec temp >" + numToStr(cgBigTmpSize) + " bytes not supported by this backend's scratch pool")
     }
     if cgStmtBigTmpNext >= cgBigTmpBaseOffs.count {
-        if cgRecMode != 1 {
+        if cgRecMode != 1 and cgRecMode != 2 {
             abort("cg68k: big-temp need mismatch between measure and emit passes")
         }
         newOff = cgBigTmpBaseOffs[cgBigTmpBaseOffs.count - 1] - cgBigTmpSize
@@ -5120,6 +5143,21 @@ func cgEmitGlobalInitExpr(i: int, gt: int, initE: int) {
     }
     if irtNeedsCtor(gt) and not irGlobalInitBirth(i) {
         cgRetainAt(5, off, gt)
+    } else if cgIsHandleKind(irtKind(gt)) and cgLastTrackedOff != -1 {
+        // language-runtime-cleanup (spec %3.2): cgStmt's SAssign arm's
+        // handoff, verbatim -- now that the stub flushes tracked temps per
+        // initializer (cgEmitInitGlobalsStub), a BIRTH store of a handle
+        // (`var g: text = mk()`: cgCallFnScalar parked mk's +1 result in a
+        // tracked temp and cgStoreD0At above just aliased it into the
+        // global) must untrack that temp, or the flush would release the
+        // handle the global now owns and cg_free_globals would release it
+        // again. cgIsHandleKind gates it to exactly the scalar-handle
+        // shape SAssign gates on: KRec/KStr inits never leave an aliasing
+        // +1 temp behind (cgCallFnInto writes straight into the global),
+        // and for a non-handle gt cgLastTrackedOff may still hold a temp
+        // born while evaluating the ARGUMENTS, which cgFreeStmtTmps must
+        // keep and release.
+        cgHandoff(cgLastTrackedOff)
     }
 }
 
@@ -5137,6 +5175,11 @@ func cgEmitInitGlobalsStub(lbl: int) {
     var initE: int
     var fullReplace: bool
     var frameSize: int
+    var runningNeg: int
+    var tmpOffs: list of int
+    var bigTmpOffs: list of int
+    var bigTmpCount: int
+    var j: int
 
     a68Bind(lbl)
     if a68ListingOn {
@@ -5144,12 +5187,95 @@ func cgEmitInitGlobalsStub(lbl: int) {
     } else {
         a68CommentMarker()
     }
-    frameSize = 0 - cgReserveDeepScratch(0)
+    // language-runtime-cleanup (spec %3.2): cg_init_globals gets its own
+    // small/big temp pool, laid out exactly the way cgEmitFunc lays out a
+    // real function's -- the function's per-index need tables swapped for
+    // cgInitGlobalsSmallNeed/cgInitGlobalsBigNeed (see their own doc
+    // comment for the two-pass contract). Before this, the stub LINKed a
+    // frame holding nothing but the deep-release scratch, so ANY temp an
+    // initializer needed hit cgAllocTmpOff's exhausted-pool abort -- which
+    // is every initializer that calls a function (`var g: text = mk()`),
+    // a shape the reference (Ch1, initialization order) has always
+    // promised. cgRetSaveOff is deliberately NOT reserved here: it is
+    // cgReturnStmt's slot alone, and an initializer expression contains no
+    // `return`.
+    runningNeg = 0
+    tmpOffs = cgFreshIntList()
+    j = 0
+    while j < cgInitGlobalsSmallNeed {
+        runningNeg = runningNeg - 4
+        tmpOffs.add(runningNeg)
+        j = j + 1
+    }
+    cgTmpBaseOffs = tmpOffs
+    // The cgBigTmpFloor floor applies on the MEASURE pass only, where it
+    // is purely cgAllocBigTmpOff's growth anchor (that branch reads the
+    // list's last slot, so the list must not be empty). The real pass lays
+    // out the exact recorded need instead of max(floor, need) as
+    // cgEmitFunc does -- cg_init_globals is emitted once per program and
+    // most programs' initializers need no big temp at all, so the floor
+    // would put 2048 bytes of never-touched frame on the 68k stack in
+    // every single program (and move every cg68k golden's LINK line) to
+    // buy nothing. Measure and emit still agree on SIZE, which is all the
+    // measure pass exists to compute: LINK's displacement is a 16-bit
+    // immediate and every frame reference is AmDisp16, both encoding to
+    // the same byte count whatever the offsets are.
+    bigTmpCount = cgInitGlobalsBigNeed
+    if cgRecMode == 2 and bigTmpCount < cgBigTmpFloor {
+        bigTmpCount = cgBigTmpFloor
+    }
+    bigTmpOffs = cgFreshIntList()
+    j = 0
+    while j < bigTmpCount {
+        runningNeg = runningNeg - cgBigTmpSize
+        bigTmpOffs.add(runningNeg)
+        j = j + 1
+    }
+    cgBigTmpBaseOffs = bigTmpOffs
+    cgStmtTmpNext = 0
+    cgStmtBigTmpNext = 0
+    cgFuncSmallTmpHigh = 0
+    cgFuncBigTmpHigh = 0
+    // cgEmitFunc's own two per-function abort-state assignments, which
+    // this routine must make too now that an initializer can CALL a
+    // function and so reach cgAbortCheckAfterCall. Both false:
+    // cg_init_globals is neither a synthesized UI dispatcher nor a
+    // function with a bail chain, so it takes that dispatcher's third
+    // arm -- no check at all, exactly what cprint emits inside
+    // clar_init_globals. Left unset they held whatever function
+    // cg68Measure's loop emitted LAST, which for a UI-dispatcher-bearing
+    // program meant emitting the UI abort default (an rtUiAlertMsg call)
+    // into the cg_init_globals of a program that has no UI runtime --
+    // "runtime function rtUiAlertMsg not found/reachable", found by
+    // tests/cg68k/segments.sh on the core suite's non-UI CLI composition.
+    cgCurFuncHasBail = false
+    cgCurFuncIsUiDispatcher = false
+    runningNeg = cgReserveDeepScratch(runningNeg)
+    cgSmallTmpFirstOff = runningNeg - 4
+    frameSize = 0 - runningNeg
+    // Same 16-bit d16(A6)/LINK ceiling cgEmitFunc guards, for the same
+    // reason: the pools above grow without bound, so a wrapped frame is
+    // reachable from ordinary initializer shape and must fail loudly.
+    if frameSize > 32767 {
+        abort("cg68k: cg_init_globals needs a " + numToStr(frameSize) + "-byte frame; the 68000 d16(A6) frame addressing this backend uses caps frames at 32767 bytes -- move the work out of the global initializers")
+    }
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     i = 0
     while i < irGlobals.count {
         gt = irGlobalType(i)
         initE = irGlobalInit(i)
+        // Each global's default-init + initializer is one STATEMENT, with
+        // cgStmt's own per-statement scope around it: a fresh tracked-temp
+        // list, both bump allocators rewound (so initializer N+1 reuses
+        // initializer N's slots instead of piling up a frame per global),
+        // cgLastTrackedOff cleared so cgEmitGlobalInitExpr's handoff reads
+        // only THIS initializer's verdict, and cgFreeStmtTmps at the tail
+        // to release whatever intermediate the expression still owns.
+        cgStmtTmpOffs = cgFreshIntList()
+        cgStmtTmpType = cgFreshIntList()
+        cgStmtTmpNext = 0
+        cgStmtBigTmpNext = 0
+        cgLastTrackedOff = -1
         fullReplace = initE != -1 and irtNeedsCtor(gt) and not (irtKind(gt) == KText and irtKind(irExprType(initE)) == KStr)
         if not fullReplace and not cgDefaultIsAllZero(gt, 0, -1) {
             cgDefaultInitAt(5, cgGlobalOffsets[i], gt, 0, -1)
@@ -5157,7 +5283,17 @@ func cgEmitInitGlobalsStub(lbl: int) {
         if initE != -1 {
             cgEmitGlobalInitExpr(i, gt, initE)
         }
+        cgFreeStmtTmps()
         i = i + 1
+    }
+    // Record this routine's own high-water marks on the measure pass --
+    // cgEmitFunc's `cgFuncSmallTmpNeed[f] = cgFuncSmallTmpHigh` pair,
+    // keyed on the mode instead of a function index. cgRecMode == 2 is
+    // cg_init_globals' measure stream (cg68Measure); the real pass runs at
+    // cgRecMode == 0 and must leave these alone.
+    if cgRecMode == 2 {
+        cgInitGlobalsSmallNeed = cgFuncSmallTmpHigh
+        cgInitGlobalsBigNeed = cgFuncBigTmpHigh
     }
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
@@ -10523,23 +10659,10 @@ func cgAbortCheckAfterCall(fi: int) {
 // (by clause instead of by intrinsic name).
 // ================================================================
 
-// cgExternIdxByName is irExternCount()'s own linear scan (ir.cla's
-// irIsExtern runs the identical scan for its bool-only answer, but this
-// file needs the INDEX too, to read back irExternConv/irExternTrap/
-// irExternParam/irExternRet -- the Task 9 brief's file list only names
-// cg68k.cla as a code file to touch, so the scan is re-run locally here
-// rather than widening ir.cla's public surface for one caller).
+// cgExternIdxByName is ir.cla's irExternLookup under this file's own name
+// (its callers are unchanged).
 func cgExternIdxByName(nameIdx: int): int {
-    var i: int
-
-    i = 0
-    while i < irExternCount() {
-        if irExternName(i) == nameIdx {
-            return i
-        }
-        i = i + 1
-    }
-    return -1
+    return irExternLookup(nameIdx)
 }
 
 // cgCallExtReg implements the locked REG rule (plan doc, 2026-07-30,
@@ -13622,6 +13745,13 @@ func cg68Measure(): bool {
         cgFuncSmallTmpNeed.add(0)
         i = i + 1
     }
+
+    // language-runtime-cleanup (spec %3.2): cg_init_globals' own pair of
+    // the same, reset for the same reason -- 0 here means "no recorded
+    // need yet", so the cgRecMode-2 stub call just below lays out an
+    // empty/at-floor pool and grows it on demand.
+    cgInitGlobalsSmallNeed = 0
+    cgInitGlobalsBigNeed = 0
 
     startupLbl = a68NewLabel()
     initGlobalsLbl = a68NewLabel()
