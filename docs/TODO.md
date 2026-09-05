@@ -113,12 +113,29 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 
 ### filesystem-api phase (2026-08-26)
 
-- **Resource-fork-as-bytes / `file.openRF`** — this phase's `file.*`
-  family covers the data fork only; `readResource`/`writeRes`
-  (binary-files phase) remain the only resource-fork surface. A
-  `file.openRF(path): filehandle` giving positioned I/O against the
-  resource fork (mirroring `file.open`'s data-fork `filehandle`) was
-  named out of scope (design spec §7), unscheduled.
+- **Resource-fork-as-bytes / `file.openRF`** (Andrew 2026-09-05, moved
+  here from 68kbbs's since-retired `docs/language-gaps.md`, item 4 — the
+  last unshipped ask on that list) — this phase's `file.*` family covers the data fork
+  only; `readResource`/`writeRes` (binary-files phase) remain the only
+  resource-fork surface, and both are narrower than what 68kbbs needs:
+  `writeRes` writes a fork but leaves the data fork EMPTY (whole-file),
+  and `readResource` reads a *named resource from the current resource
+  chain*, not an arbitrary file's fork as a blob. Ask: read a named
+  file's entire resource fork into a `text`, and write a `text` as a
+  file's resource fork alongside an existing data fork. Unlocks
+  MacBinary encode on download / decode on upload — transferring real
+  Mac files (applications, documents with icons/preferences) faithfully;
+  without it BBS file areas can only carry flat data-fork content, which
+  rules out most period Mac software. Shape, either: the fork-level
+  counterparts to `readText`/`writeText` — `file.readResFork(path, out):
+  bool` / `file.writeResFork(path, fork): bool` (data fork preserved) —
+  or `file.openRF(path): filehandle` giving positioned I/O against the
+  resource fork (mirroring `file.open`'s data-fork `filehandle`), with
+  the blob forms built on top. Toolbox: `PBHOpenRF` (already declared in
+  `toolbox/files.cla`) + the existing positioned read/write path;
+  `file.setInfo` already covers restamping type/creator/dates after a
+  decode. Named out of scope by the filesystem-api spec (§7),
+  unscheduled.
 - **`list of string(31)` element capacity** — `file.list`'s `names`
   param is `list of string`, whose element is the general (255-byte)
   `string`; a caller who wants a narrower-capacity element (31 chars is
