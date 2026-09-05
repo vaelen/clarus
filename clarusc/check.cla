@@ -4999,6 +4999,8 @@ func checkEditStmt(s: int) {
     var target: int
     var tt: int
     var rootIdent: int
+    var shapeOk: bool
+    var xk: TypeKind
 
     formNameIdx = editForm(s)
     symIdx = scopeLookup(curScope, formNameIdx)
@@ -5047,8 +5049,31 @@ func checkEditStmt(s: int) {
         }
     }
     tt = checkExpr(target, formRecType)
-    if tt != InvalidT and not (typeKind(tt) == TyRec and typeNameIdx(tt) == typeNameIdx(formRecType)) {
+    if tt == InvalidT {
+        return
+    }
+    if not (typeKind(tt) == TyRec and typeNameIdx(tt) == typeNameIdx(formRecType)) {
         emitDiag(exprLine(target), exprCol(target), "cannot use " + typeName(tt) + " where " + recName + " is expected")
+        return
+    }
+    // compiler-cleanup: the SHAPE restriction lowEditStmt used to enforce
+    // via a hard abort -- a variable (global, or window-scoped per-instance
+    // through a TyWindowRef select), a list element, or a (plain) map
+    // element -- is a checker diagnostic now. sortedmap/intmap elements and
+    // nested fields are rejected here, at the target's own position. The
+    // test runs AFTER checkExpr(target) because exprTypeGet on the
+    // container sub-expression is only meaningful once that sub-expression
+    // has been checked.
+    shapeOk = exprKind(target) == ExIdent
+    if exprKind(target) == ExSelect and typeKind(exprTypeGet(selectX(target))) == TyWindowRef {
+        shapeOk = true
+    }
+    if exprKind(target) == ExIndex {
+        xk = typeKind(exprTypeGet(indexX(target)))
+        shapeOk = xk == TyList or xk == TyMap
+    }
+    if not shapeOk {
+        emitDiag(exprLine(target), exprCol(target), "edit target must be a variable, list element, or map element")
     }
 }
 

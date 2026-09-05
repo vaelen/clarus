@@ -3447,16 +3447,15 @@ func lowEditEmit(winNameIdx: int, kind: int, opA: int, opB: int): int {
 
 // lowEditStmt lowers `edit F, target` / `edit F, new T` (Ch10: The Edit
 // Statement). checkEditStmt already guarantees F is a form window and
-// (isNew case) T matches its form record, or (target case) target's type
-// equals the form record type -- but NOT that target is one of the four
-// runtime-supported lvalue shapes (checkExpr accepts any expr of the right
-// TYPE, including a shape like `xs[i].nested` that happens to select a
-// field of the form record's own type nested inside another record): this
-// function is what actually restricts target to a bare variable (global or
-// window-scoped per-instance, both via lowExpr -- lowIdent/lowSelect's
-// TyWindowRef case already produce an addressable FieldRef/VarRef either
-// way), a list element, or a map element, rejecting anything else with the
-// brief's own pinned message.
+// (isNew case) T matches its form record, and -- since the compiler-cleanup
+// phase -- that target is one of the four runtime-supported lvalue shapes:
+// a bare variable (global or window-scoped per-instance, both via lowExpr
+// -- lowIdent/lowSelect's TyWindowRef case already produce an addressable
+// FieldRef/VarRef either way), a list element, or a map element. The
+// lowUnsupported at the bottom is the defensive fallback for a shape the
+// checker somehow let through; it used to be the ONLY thing rejecting a
+// sortedmap/intmap element or a nested field like `xs[i].nested`, which
+// made a plain user error an `unsupported construct` abort.
 func lowEditStmt(s: int): int {
     var winNameIdx: int
     var target: int
@@ -3484,6 +3483,7 @@ func lowEditStmt(s: int): int {
             return lowEditEmit(winNameIdx, 3, lowExpr(indexX(target)), lowExpr(indexI(target)))
         }
     }
+    // unreachable: checkEditStmt rejects every other shape (compiler-cleanup)
     lowUnsupported("edit target must be a variable, list element, or map element")
     return -1
 }
