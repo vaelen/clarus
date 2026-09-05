@@ -247,6 +247,18 @@ func rtUiCanvasBufAt(w: RtUiWinst, i: int): ptr {
     return w.canvases + i * rtUiCanvasBufSize
 }
 
+// rtUiCanvasMarkDirty (language-runtime-cleanup, spec 2.1): every drawing
+// op calls this so rtUiFlushBufferedCanvases only blits canvases that
+// changed since their last blit.
+func rtUiCanvasMarkDirty(instV: ptr, wIdx: int) {
+    var buf: RtUiCanvasBuf
+
+    buf = RtUiCanvasBuf(rtUiCanvasBufAt(RtUiWinst(instV), wIdx))
+    if buf.port != ptr(0) {
+        buf.dirty = 1
+    }
+}
+
 // rtUiTeAt/rtUiSetTeAt/rtUiHbarAt/rtUiSetHbarAt (Task 8): same
 // per-instance array-slot idiom as rtUiCtrlAt/rtUiSetCtrlAt above, over the
 // tes/hbars arrays uidesc.cla's RtUiWinst gained this task.
@@ -1335,6 +1347,10 @@ func rtUiCanvasMake(cb: ptr, ww: int, hh: int) {
     UiSetPortBits(bm)
     UiPortSize(w2, h2)
     UiSetOrigin(0, 0)
+    // language-runtime-cleanup: a fresh canvas must blit once so the
+    // window shows its cleared content even if nothing draws into it.
+    buf.dirty = 1
+    buf.blits = 0
 }
 
 func rtUiCanvasReallocAll(inst: ptr) {
@@ -1362,11 +1378,20 @@ func rtUiCanvasReallocAll(inst: ptr) {
     }
 }
 
-// rtUiFlushBufferedCanvases (rt_ui.c:2172-2187): blits every buffered
-// canvas's offscreen content to its window, once per rtUiRun iteration
-// (Ch11's "single copy when the current handler or timer returns to the
-// event loop") and also covers redrawing after an updateEvt.
-func rtUiFlushBufferedCanvases(inst: ptr) {
+// rtUiFlushBufferedCanvases (heritage: rt_ui.c:2172-2187): blits every
+// buffered canvas's offscreen content to its window, once per rtUiRun
+// iteration (Ch11's "single copy when the current handler or timer
+// returns to the event loop") and also covers redrawing after an
+// updateEvt.
+//
+// language-runtime-cleanup (spec 2.1): the blit is now DIRTY-GATED --
+// only a canvas some drawing op touched since its last blit is copied.
+// `force` overrides that for the updateEvt path (ui.cla's
+// rtUiHandleUpdate), where the window's own pixels were just erased by
+// the Window Manager and every canvas must repaint whether or not the
+// program drew into it. The per-pass caller (rtUiFlushAllBuffered)
+// passes false, so a static canvas costs nothing per event-loop pass.
+func rtUiFlushBufferedCanvases(inst: ptr, force: bool) {
     var w: RtUiWinst
     var winIdx: int
     var n: int
@@ -1383,7 +1408,7 @@ func rtUiFlushBufferedCanvases(inst: ptr) {
     i = 0
     while i < n {
         buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, i))
-        if buf.port != ptr(0) {
+        if buf.port != ptr(0) and (force or buf.dirty != 0) {
             UiSetPort(w.wp)
             bm = rtUiBitMapFill(buf)
             // dstBits = &((GrafPtr)wp)->portBits -- portBits is GrafPort's
@@ -1393,6 +1418,8 @@ func rtUiFlushBufferedCanvases(inst: ptr) {
             // srcRect = &cb->bits.bounds = the scratch BitMap's own
             // bounds sub-field, offset 6 within its 14-byte layout.
             UiCopyBits(bm, w.wp + 2, bm + 6, rtUiRectAt(w, i), 0, ptr(0))
+            buf.dirty = 0
+            buf.blits = buf.blits + 1
         }
         i = i + 1
     }
@@ -1534,6 +1561,7 @@ func rtUiCanvasPattern(instV: ptr, wIdx: int, level: int) {
     var buf: RtUiCanvasBuf
     var lv: int
 
+    rtUiCanvasMarkDirty(instV, wIdx)
     lv = level
     if lv < 0 {
         lv = 0
@@ -1552,6 +1580,7 @@ func rtUiCanvasClear(instV: ptr, wIdx: int) {
     var buf: RtUiCanvasBuf
     var scratch: ptr
 
+    rtUiCanvasMarkDirty(instV, wIdx)
     w = RtUiWinst(instV)
     t = rtUiCanvasBegin(instV, wIdx)
     buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, wIdx))
@@ -1569,6 +1598,7 @@ func rtUiCanvasClear(instV: ptr, wIdx: int) {
 func rtUiCanvasLine(instV: ptr, wIdx: int, x0: int, y0: int, x1: int, y1: int) {
     var t: RtUiCanvasTarget
 
+    rtUiCanvasMarkDirty(instV, wIdx)
     t = rtUiCanvasBegin(instV, wIdx)
     UiMoveTo(x0 + t.dx, y0 + t.dy)
     UiLineTo(x1 + t.dx, y1 + t.dy)
@@ -1582,6 +1612,7 @@ func rtUiCanvasRect(instV: ptr, wIdx: int, x: int, y: int, ww: int, hh: int, fil
     var r: ptr
     var pats: ptr
 
+    rtUiCanvasMarkDirty(instV, wIdx)
     t = rtUiCanvasBegin(instV, wIdx)
     w = RtUiWinst(instV)
     r = UiNewPtr(rtUiRectSize)
@@ -1604,6 +1635,7 @@ func rtUiCanvasFillCircle(instV: ptr, wIdx: int, x: int, y: int, radius: int) {
     var box: ptr
     var pats: ptr
 
+    rtUiCanvasMarkDirty(instV, wIdx)
     t = rtUiCanvasBegin(instV, wIdx)
     w = RtUiWinst(instV)
     box = UiNewPtr(rtUiRectSize)
@@ -1619,6 +1651,7 @@ func rtUiCanvasCircle(instV: ptr, wIdx: int, x: int, y: int, radius: int) {
     var t: RtUiCanvasTarget
     var box: ptr
 
+    rtUiCanvasMarkDirty(instV, wIdx)
     t = rtUiCanvasBegin(instV, wIdx)
     box = UiNewPtr(rtUiRectSize)
     UiSetRect(box, x + t.dx - radius, y + t.dy - radius, x + t.dx + radius, y + t.dy + radius)
@@ -1630,6 +1663,7 @@ func rtUiCanvasCircle(instV: ptr, wIdx: int, x: int, y: int, radius: int) {
 func rtUiCanvasDrawText(instV: ptr, wIdx: int, x: int, y: int, s: ptr) {
     var t: RtUiCanvasTarget
 
+    rtUiCanvasMarkDirty(instV, wIdx)
     t = rtUiCanvasBegin(instV, wIdx)
     UiMoveTo(x + t.dx, y + t.dy)
     UiDrawString(s)

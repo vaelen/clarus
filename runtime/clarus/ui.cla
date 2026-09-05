@@ -1632,7 +1632,7 @@ func rtUiFlushAllBuffered() {
     wp = UiFrontWindow()
     while wp != ptr(0) {
         if peekw(wp + 108) == rtUiWindowKind {
-            rtUiFlushBufferedCanvases(ptr(UiGetWRefCon(wp)))
+            rtUiFlushBufferedCanvases(ptr(UiGetWRefCon(wp)), false)
         }
         wp = ptr(peekl(wp + 144))
     }
@@ -1846,7 +1846,7 @@ func rtUiHandleUpdate(wp: ptr) {
             }
             i = i + 1
         }
-        rtUiFlushBufferedCanvases(inst)
+        rtUiFlushBufferedCanvases(inst, true)
     }
     UiEndUpdate(wp)
 }

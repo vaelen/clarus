@@ -1,0 +1,40 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_canvasidle.cla: CanvasIdle (language-runtime-cleanup, spec 2.1).
+// A buffered canvas drawn once must blit exactly once and then cost
+// nothing per event-loop pass: 200 idle ticks may not advance its blit
+// counter, and FreeMem stays exactly flat (no CopyBits scratch churn).
+//
+// TbFreeMem is declared LOCALLY, the same user-code-extern precedent
+// cases_leak.cla and cases_gestalt.cla set (an identical `external func`
+// redeclaration is legal; the curated twin lives in toolbox/memory.cla).
+external func TbFreeMem(): int = trap 0xA01C reg
+
+func caseCanvasIdle(): TestResult {
+    var w: IdleCanvasWin
+    var b0: int
+    var b1: int
+    var m0: int
+    var m1: int
+
+    w = open IdleCanvasWin
+    UiTestTick(2)
+    b0 = UiTestCanvasBlits(0)
+    if b0 < 1 {
+        close w
+        return tkFail("CanvasIdle", "no initial blit (got " + tkIntToStr(b0) + ")")
+    }
+    m0 = TbFreeMem()
+    UiTestTick(200)
+    m1 = TbFreeMem()
+    b1 = UiTestCanvasBlits(0)
+    close w
+    if b1 != b0 {
+        return tkFail("CanvasIdle", "idle ticks blitted: " + tkIntToStr(b0) + " -> " + tkIntToStr(b1))
+    }
+    if m1 != m0 {
+        return tkFail("CanvasIdle", "FreeMem moved: " + tkIntToStr(m0) + " -> " + tkIntToStr(m1))
+    }
+    return tkPass("CanvasIdle")
+}

@@ -435,6 +435,23 @@ every 4 ticks {
     }
 }
 
+// IdleCanvasWin (language-runtime-cleanup, cases_canvasidle.cla): a
+// buffered canvas drawn ONCE on open and never again -- the shape whose
+// per-pass re-blit flickered the cursor before the dirty flag (spec 2.1).
+window IdleCanvasWin {
+    title: "IdleCanvas"
+    size: 200, 120
+
+    canvas Idle { at: 10, 10; buffered }
+}
+
+extend IdleCanvasWin {
+    on opened {
+        Idle.clear()
+        Idle.fillRect(20, 20, 40, 40)
+    }
+}
+
 // ZoomWin (Task 7, ui-scenario-retirement batch): transcription of the
 // retired testdata/ui/zoomwin.cla -- Panel renamed ZoomWin (same
 // global-uniqueness reason as above), same single `textview Body { ...
