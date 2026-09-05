@@ -5283,3 +5283,177 @@ unterminated string literal; reports: an addendum on `task-5-report.md`
 pointing at where the raw native `TOTAL` lines are pasted. The snapshot
 was regenerated and the `cg68k`/`emitui` goldens reblessed for the
 runtime change, and full T2 re-run.
+
+## Archived from ROADMAP, 2026-09-05 (verbatim)
+
+The "Where we are" paragraphs for four merged phases that had no entry of
+their own here (`correctness-cleanup`, `68k-call-result-release`,
+`textview-scroll-to-end`, `string-perf`), moved verbatim when ROADMAP was
+trimmed to unfinished work only. Ledgers: `.superpowers/sdd/<date>-<phase>/`.
+
+**`correctness-cleanup` phase (an interleaved detour, not on the
+language-usability list below) is COMPLETE — merged to `main` (ff
+`48a4696..3a4c054`) and pushed 2026-08-18:** the About box
+now shows real app info in unscripted runs; a labeled `popup` with a
+narrow declared width no longer collapses to an unclickable box;
+div-by-zero (and INT_MIN/-1) is pinned as a runtime error on both lanes;
+a new heap-jiggle stress mode + stale-master-pointer audit (3 real bugs
+fixed, `TestToolboxSuiteJiggleOn68k` gated native boot added) make that
+bug class deterministically testable instead of heap-layout luck; the
+`error`-return hidden-pointer ABI gap is closed; `get(k, dv)`'s
+evaluation order now matches host on native; two memory leaks/fd-reuse
+gaps are closed; three checker guards (widget-property fill-in-place,
+`toBytes` receiver-kind keying, xrec forward-reference) are tightened;
+the PBM icon parser accepts CR/CRLF; and the Bookmark Manager reference
+erratum is fixed. Full detail: `STATUS.md` §1, or (once merged)
+`docs/HISTORY.md`.
+
+**`68k-call-result-release` phase (branch `68k-call-result-release`,
+2026-08-29, based on `main` at `0148c6a` — `extern-ptr-call` and
+everything before it are already merged to local `main`) is COMPLETE —
+full T2 green, NOT YET merged (merge only on Andrew's request):** fixes a
+real `emit68k` memory leak (`../68kbbs/docs/memory-leak.md`): a user
+function's handle-typed result (or a textview `.text` getter box)
+consumed directly — as an argument, operand, or receiver — was never
+released. Fix is producer-side tracking in `cg68k.cla`: `cgCallFnScalar`
+and the `IUiGetTextviewText` arm spill their +1 result into a
+`cgNewTrackedTmp` slot with `cgLastTrackedOff` set last, so the existing
+`SAssign`/`SReturn` handoffs and the end-of-statement flush release it
+like any other tracked temp. Two hardenings landed alongside: a
+`cgLastTrackedOff` latch/restore in `cgEmitStoreScalarAny` (keeps a
+dst-address side-effect from stomping the src's own verdict) and a clear
+before value evaluation in the six container-set/push arms (keeps a
+tracked receiver from being handed off in place of the value). Two
+enablers were needed first: `cgTmpSlots` bumped 14 -> 24 (a real
+in-tree cprint statement sits at exactly 21 concurrent tracked temps
+post-fix, with a full mechanical golden rebless) and a `fpIntrCall12`
+split in `cprint.cla` for CODE-segment headroom (output-neutral,
+byte-diff-proven). Proof: `internal/cg68k/callresult_release_test.go`
+(listing-level release-count pins across direct/local/receiver/operand/
+getter shapes) plus the toolbox suite's new `LeakCheck` case (FreeMem
+exactly flat, 3570496 -> 3570496, across 1500x4 direct-consumption
+shapes on the emulated Mac Plus; toolbox suite now 33 cases, 32 real +
+`SelfCheck`). Host lane is untouched (already correct) and unaffected.
+**Close-out found a real T2 red** on `TestToolboxSuiteJiggleOn68k/
+Popuptable` (only the visual checksum triple failed; every logical
+assertion passed) — a per-commit bisect (one native boot each) proved it
+PRE-EXISTING, not a codegen regression: the first bad commit is
+`520f227`, which is test-only (adds the 33rd suite case, `LeakCheck`);
+every codegen commit in the phase passes the gate standalone. Root cause,
+confirmed with a heap probe: `rtUiLdefDraw` (`runtime/clarus/uitable.cla`)
+derived its row's master pointer via `rtListAt` ONCE, above the per-column
+loop, then let three allocating calls per column (`UiNewPtr`/`UiNewRgn`/
+`UiGetClip`) run before reading through it — the exact "stale master
+pointer across compaction" class this file's own Standing rules section
+already tracks (now eight instances). `LeakCheck` merely grew the image
+and the suite's own case-row list enough to shift heap layout past the
+tipping point; the bug itself predates this phase. Fixed in `bff3268`
+(`runtime/clarus/uitable.cla`, +29/-2: the derive moves inside the column
+loop, immediately before the read; a second latent instance of the same
+defect in the `RtFtChar` column-draw arm fixed alongside). Shared runtime
+file — the host/cprint lane had the identical bug (same two hunks in the
+emitui golden diff); the fix is not native-only. `internal/cg68k` (55
+fixtures) and `internal/emitui` (14 fixtures) goldens reblessed
+mechanically. Four more sites with the same shape (an unlocked master
+pointer handed to or held across an allocating Toolbox call) were found
+but NOT fixed — filed in `docs/TODO.md`. Close-out's T2 also caught a
+second, smaller, unrelated pre-existing gap: `internal/bake`'s own
+hand-maintained toolbox-suite file-list mirror was missing the
+`LeakCheck` case's own fixture file since Task 4, only reachable via the
+opt-in `CLARUS_BAKE_FULL=1` step T2 hadn't run to completion until now;
+fixed in `cd43280`. Deferred, filed in
+`docs/TODO.md`: the `makeRec().field` receiver-context
+sibling leak (one type-kind over, out of scope per spec); extending
+`testdata/cg68k/smalltmp_ceiling.cla` to pin the new 24-slot ceiling
+(optional polish); a host-lane parity note on `pop`/`shift` used as an
+operand or receiver (both lanes leak it identically — pre-existing,
+out of scope). **The whole-branch final review then found one Critical
+at a control-flow seam, also PRE-EXISTING** (this phase only made it
+routine): `cgAndOr` short-circuits the RIGHT operand with a real runtime
+branch, but tracked-temp registration is emission-time, so the
+end-of-statement flush emitted an UNCONDITIONAL release of the right
+operand's temp slot past the merge label — on the short-circuit path
+that slot was never written this statement, holding either a stale handle
+handed off earlier in the same statement (`s = h()` then `if flag and
+g().length > 0` — a DOUBLE release of `s`'s live box) or frame garbage
+(the pre-existing intrinsic-birth variant, `if flag and (a + a).length >
+0`, which bites on `main` too). Fixed by mirroring cprint's guarded temp
+scope: `cgAndOr` marks the tracked list before evaluating the right
+operand and releases + untracks everything born past that mark on the
+operand's own fall-through path, before the branch to the merge label
+(D0/D1 bracketed, since Y's bool result is live in D0). Both operands are
+bool-typed, so no temp born there can be the expression's own value — the
+early release is unconditionally safe, and nested `and`/`or` composes
+naturally (each level untracks only past its own, deeper, mark). Pinned
+at the listing level by `TestAndOrShortCircuitRelease` (asserts the
+release sits INSIDE the guarded region, not just that it happens once)
+and on hardware by a new short-circuit shape inside `LeakCheck`, whose
+FreeMem assertion is now flat in BOTH directions (a double release frees
+early — the opposite signature of a leak). No golden rebless: no `cg68k`
+fixture has an and/or with a tracked birth in its right operand. Full
+detail: `docs/HISTORY.md` (once archived) or
+`.superpowers/sdd/2026-08-29-68k-call-result-release/`.
+
+**`textview-scroll-to-end` phase (branch `textview-scroll-to-end`,
+2026-08-29, based on `main` at `36b76ab`) is COMPLETE — full T2 green,
+MERGED to local `main` 2026-08-29 (ff 36b76ab..8d4c2e5, NOT pushed):** one new widget method, `textview.scrollToEnd()`
+(`../68kbbs/docs/language-gaps.md` §9's log-window ask), wired along the
+canvas-method path (`check.cla` `textviewMethods` -> `lower.cla`
+`lowTextviewMethod` -> `ui_scroll_to_end` intrinsic -> `cg68k.cla`/
+`cprint.cla` one-arm forwarders -> `rtUiWidgetScrollToEnd`,
+`uiwidgets.cla`), hardware-proved by the toolbox suite's new `ScrollToEnd`
+case (34 cases) via a new `UiTestTextviewScroll` probe; the shelved
+implicit follow-if-at-end setter semantics were rejected (ambiguous when
+content fits — spec §Problem). Three deviations from the plan: (1) `peekw`
+zero-extends but QuickDraw Rect fields are signed, so the plan's runtime
+code (copied from `rtUiTeScrollSync`'s shape) went wrong by 65536 once a
+scrolled TE's `destRect.top` goes negative — fixed with a new
+sign-extending helper, `rtUiPeekSw` (`uiwidgets.cla`), applied to every
+Rect-field read in both new functions; (2) the plan's Task 2 file list
+missed two required edits (a `shakeAddRoot` line in `lower.cla` and an
+`iUiScrollToEndIdx = -1` reset in `ir.cla`), both caught by failing tests,
+whose always-on root renumbered every UI program's jump table and forced
+a mechanical rebless of 3 `internal/cg68k` fixtures (12 `.s` files) and 12
+`emitui` `.c.golden` files; (3) the suite's first emulator boot exposed a
+pre-existing bug this phase's own code shares a root with: `rtUiTeScrollSync`'s
+clamp compared a zero-extended `destRect.top`, so any `textview` shrunk
+while scrolled past its own top was stranded off the end — fixed at the
+root by moving the three `destRect` readers (`uitext.cla`, `uiwidgets.cla`)
+onto `rtUiPeekSw` too, with a further golden rebless. Spec:
+`docs/superpowers/specs/2026-08-29-textview-scroll-to-end-design.md`;
+ledger `.superpowers/sdd/2026-08-29-textview-scroll-to-end/`.
+
+**`string-perf` phase (branch `string-perf`, 2026-09-02, based on `main`
+at `54292df`) is COMPLETE on its branch — T1 green per task, full T2
+pending merge decision, NOT merged:** removes the two dominant measured
+string costs on the native lane and adds the warm-buffer text idiom.
+Origin: 68kbbs's Snow bench doc traced ~200 ms/row table draws to
+Clarus string ops; three read-only code traces plus a new in-repo
+calibration bench (`testdata/bench/strbench.cla` + `TestStrBench68k`,
+promoted as a permanent measurement instrument) replaced that doc's
+guessed model — no Memory Manager traps and no per-char copy on
+`string` returns (both hypotheses wrong); the real flat cost was
+`cgEmitFunc`'s full-capacity zero loop per string local per call
+(~0.48 ms/local measured), plus `s[i]`/`s.length` as out-of-line
+`rtStrIndex`/`rtStrLen` calls (~30 instructions of overhead each).
+Changes: (1) a plain string local's default-init is now a single
+length-byte clear (`cgDefaultInitStrLenOnlyAt`), gated on a zeroed-tail
+probe that verified every consumer on both lanes is length-bounded
+(ledger Task 1 — globals/record fields/array elements/error messages
+keep the whole-slot zero); (2) `IStrLen`/`IStrIndex` emit inline
+(unsigned CMP+BCS bounds check; the out-of-range cold path delegates to
+`rtStrIndex` for exact panic parity, deliberately avoiding a second
+`cgRelClsPanicMsg` identity in the object/bake format); (3) new `text`
+methods `clear()` (len=0, capacity kept, zero traps) and `reserve(n)`
+(public `rtTextGrow` wrapper), both lanes, reference documented.
+Proof: core suite grew to 81 cases (`StrPerf`), toolbox to 35
+(`ClearWarm` — FreeMem EXACTLY flat, no slack, across 200 clear+refill
+cycles on hardware); after-bench `mklocal4` 10549→1268 ticks (8.3x) and
+`strindex` ~71→~24 us/index; snapshot regenerated to fixed point in one
+pass. Notable finds: `fpIntrCall3` trips the 32KB segment limit with
+two more arms (clear/reserve landed in `fpIntrCall13` per its own
+precedent); Mini vMac bench rows are bimodal across runs of the same
+binary (TODO.md). Spec:
+`docs/superpowers/specs/2026-09-02-string-perf-design.md`; plan
+`docs/superpowers/plans/2026-09-02-string-perf.md`; ledger
+`.superpowers/sdd/2026-09-02-string-perf/`.
