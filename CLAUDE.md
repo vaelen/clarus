@@ -135,11 +135,14 @@ Tiered test gates:
     neither T1 nor T2 boots it.
   - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
     calibration bench, `tests/mactest/bench.sh`.
-- Golden blessing — four variables, and each must be set to exactly `1`
+- Golden blessing — five variables, and each must be set to exactly `1`
   (`lib.sh`'s `env_set`; any other value, `0` included, is NOT a bless):
   `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap goldens,
   `CLARUS_CG68K_BLESS=1` the `testdata/cg68k` `.s` goldens,
-  `CLARUS_BLESS_BEHAVIOR=1` the `selfhost` `.behavior` blobs, and
+  `CLARUS_BLESS_BEHAVIOR=1` the `selfhost` `.behavior` blobs,
+  `CLARUS_MODULES_BLESS=1` the `clarusc/test/*.out` module-driver stdout
+  goldens (`tests/selfhost/modules.sh`; added by the compiler-cleanup
+  phase's follow-up sweep, 2026-09-05), and
   `CLRD_BLESS=1` the frozen `testdata/sertest/clrd_goldens/` CLRD
   stdout/`.dat` blobs — that last one is deliberate-only: those goldens
   were pinned once from a verified run and nothing should rewrite them

@@ -570,7 +570,10 @@ new entry the phase itself opened survive.
   `bake/full_corpus_emitui` sweep to declare a `connection`. That sweep
   now SKIPs the shape with an explicit reason naming this entry, and the
   skip retires itself when the gap closes (it only fires when the
-  from-source fork declares the entry point and the bake fork does not).
+  from-source fork declares the entry point, the bake fork does not, AND
+  the bake fork still CALLS it -- that third clause added by Task 11,
+  2026-09-05, so a fixture that merely dropped an unused declaration
+  cannot take the SKIP).
   **Two candidate fixes**, neither taken here (this phase's spec forbids
   touching `clarusc/bake.cla`, which would fire the 55-minute Snow
   `clarusc_bake` gate):
@@ -852,3 +855,14 @@ new entry the phase itself opened survive.
   but the ledger and `task-10-report.md` until now. Fix: widen the
   deadline or replace it with a deterministic readiness handshake
   between the test and its peer process; follow-up, unscheduled.
+
+  **Hardened 2026-09-05 (Task 11): the `prompt_exit1` deadline is now
+  10 s (was 2 s).** A readiness handshake was considered first and does
+  not apply on the side that flakes: the PEER already has one (the test
+  polls tcpdrive's `port ` line before connecting), and the program side
+  has nothing to hand-shake on, because promptness itself is what the
+  subcase asserts — it can only be a deadline. Nothing was weakened: the
+  peer still stalls for 4000 s after accepting, so 10 s remains 400x
+  short of any exit the peer could cause, and a program that waits on
+  the peer still expires as exit 124. Verified green 3x alone, in a
+  12-script parallel run, and under the full `make -j t1`.

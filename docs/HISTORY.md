@@ -5261,3 +5261,25 @@ The final whole-branch review's as-built corrections live in the spec's
 §8, and its `conntest/abort` under-`-j` flake is recorded in
 `docs/TODO.md`'s "Test coverage gaps" section under this phase's own
 heading.
+
+**Follow-up sweep (Task 11, 2026-09-05): all 16 remaining final-review
+minors fixed** — compiler: the two lexer resync helpers now skip an
+escaped quote instead of ending on it, `checkConversion` gains an
+`accepted` fallback, `checkEditStmt`'s three shape tests become one
+`else if` chain, `lower.cla`'s `lowConnSlotOf` comment stops implying
+`usesConn` ⇒ a slot exists, and the transport keyword's position packs
+into `ExprNode`'s ExCall-spare `c` field so the record returns to its
+pre-transport size (declaration byte-identical to `311af68`); runtime:
+`rtUiLdefDraw` takes ONE `HGetState`/`HLock`/`HSetState` triple per row
+instead of one per column; tests: per-subcase exact diagnostics and a
+single runtime-tree copy in `cg68k/unspliced_guard.sh`, if/then/else in
+`conntest/fieldonly.sh`, the `conntest/abort` deadline hardened to 10 s,
+`rtdir_symlink`/`include_retry` moved from `selfhost/` to `cg68k/` so
+both tripwires run in T1, the bake gap gate additionally requiring the
+bake fork to CALL the symbol, `CLARUS_MODULES_BLESS=1` for the
+`clarusc/test/*.out` goldens (the fifth bless variable), plus two new
+`testdata/errors` fixtures — an escaped-quote bad escape and a genuine
+unterminated string literal; reports: an addendum on `task-5-report.md`
+pointing at where the raw native `TOTAL` lines are pasted. The snapshot
+was regenerated and the `cg68k`/`emitui` goldens reblessed for the
+runtime change, and full T2 re-run.
