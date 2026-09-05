@@ -26,7 +26,14 @@
 // DrawControls). rt_ui_widget_set_int/get_int's popup SELECTED prop also
 // uses SetControlValue/GetControlValue -- in the produces list (rtUiWidget
 // SetInt/GetInt) even though no popup widget can be CREATED this slice.
-external func UiNewControl(owningWindow: ptr, boundsRect: ptr, controlTitle: ptr, initiallyVisible: bool, initialValue: word, minimumValue: word, maximumValue: word, procId: word, controlReference: int): ptr = trap 0xA954
+external func UiNewControlRaw(owningWindow: ptr, boundsRect: ptr, controlTitle: ptr, initiallyVisible: bool, initialValue: word, minimumValue: word, maximumValue: word, procId: word, controlReference: int): ptr = trap 0xA954
+
+// UiNewControl: allocation-waist wrapper, see ui.cla's UiNewPtr.
+func UiNewControl(owningWindow: ptr, boundsRect: ptr, controlTitle: ptr, initiallyVisible: bool, initialValue: int, minimumValue: int, maximumValue: int, procId: int, controlReference: int): ptr {
+    rtUiJiggleTick()
+    return UiNewControlRaw(owningWindow, boundsRect, controlTitle, initiallyVisible, initialValue, minimumValue, maximumValue, procId, controlReference)
+}
+
 external func UiMoveControl(theControl: ptr, h: word, v: word) = trap 0xA959
 external func UiSizeControl(theControl: ptr, w: word, h: word) = trap 0xA95C
 external func UiHiliteControl(theControl: ptr, hiliteState: word) = trap 0xA95D
@@ -78,7 +85,14 @@ external func UiPenNormal() = trap 0xA89E
 external func UiFrameRoundRect(r: ptr, ovalWidth: word, ovalHeight: word) = trap 0xA8B0
 external func UiDrawString(s: ptr) = trap 0xA884
 external func UiCopyBits(srcBits: ptr, dstBits: ptr, srcRect: ptr, dstRect: ptr, mode: word, maskRgn: ptr) = trap 0xA8EC
-external func UiNewRgn(): ptr = trap 0xA8D8
+external func UiNewRgnRaw(): ptr = trap 0xA8D8
+
+// UiNewRgn: allocation-waist wrapper, see ui.cla's UiNewPtr.
+func UiNewRgn(): ptr {
+    rtUiJiggleTick()
+    return UiNewRgnRaw()
+}
+
 external func UiDisposeRgn(rgn: ptr) = trap 0xA8D9
 external func UiClipRect(r: ptr) = trap 0xA87B
 external func UiSetClip(rgn: ptr) = trap 0xA879
@@ -453,7 +467,6 @@ func rtUiLayout(inst: ptr) {
     var flushR: bool
     var flushB: bool
     var ctrl: ptr
-    var ctrlMp: ptr
 
     w = RtUiWinst(inst)
     winIdx = w.winIdx
@@ -577,7 +590,6 @@ func rtUiLayout(inst: ptr) {
         } else {
             ctrl = rtUiCtrlAt(w, i)
             if ctrl != ptr(0) {
-                ctrlMp = UiHandleDeref(ctrl)
                 UiMoveControl(ctrl, x, y)
                 UiSizeControl(ctrl, ww, hh)
             }

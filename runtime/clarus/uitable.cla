@@ -62,7 +62,14 @@
 // any window ever shows) finished construction. Point/Cell by-value
 // params pack v (high 16) / h (low 16) into one `int`, same convention as
 // every other by-value Point/Cell this port uses (ui.cla's rt_ext_ui_pt). ----
-external func UiLNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: word, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7 sel 0x0044
+external func UiLNewRaw(rView: ptr, dataBounds: ptr, cSize: int, theProc: word, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7 sel 0x0044
+
+// UiLNew: allocation-waist wrapper, see ui.cla's UiNewPtr.
+func UiLNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: int, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr {
+    rtUiJiggleTick()
+    return UiLNewRaw(rView, dataBounds, cSize, theProc, theWindow, drawIt, hasGrow, scrollHoriz, scrollVert)
+}
+
 external func UiLDispose(lHandle: ptr) = trap 0xA9E7 sel 0x0028
 external func UiLAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7 sel 0x0008
 external func UiLDelRow(count: word, rowNum: word, lHandle: ptr) = trap 0xA9E7 sel 0x0024
@@ -111,27 +118,72 @@ external func UiInvertRect(r: ptr) = trap 0xA8A4
 external func UiDrawText(textBuf: ptr, firstByte: word, byteCount: word) = trap 0xA885
 external func UiGetFontInfo(info: ptr) = trap 0xA88B
 external func UiLocalToGlobal(pt: ptr) = trap 0xA870
-// UiNumToString (Task 14 fix, native-5e gate, formedit.cla): NOT a plain
-// stack-based Pascal trap despite Inside Macintosh's own `pascal void
-// NumToString(long theNum, Str255 theString)` signature -- it is one of
-// the "Binary/Decimal Conversion Package" (Package 7) routines, which
-// (like the Memory Manager's SetHandleSize-family this session's own `reg
-// memerr` extern clause already fixed) pass BOTH args in REGISTERS
-// (theNum in D0, theString in A0), never via a real stack push -- a plain
-// `trap` declaration pushed both args onto the stack and executed the
-// $A9EE trap word anyway, which the REAL Package 7 dispatcher (reading
-// its args from D0/A0, never the stack) simply ignored, silently leaving
-// `theString` untouched. First real exercise: formedit.cla's second `edit`
-// session (kind=2, `bookmarks[i]`) is the first scenario that both fills
-// AND validates a pre-populated INT field WITHOUT the user retyping it --
-// a `new T`-kind edit's int field defaults happened to survive unnoticed
-// because the user always retyped Port before ever hitting OK. `reg`
-// (cgRegPassArgsAndTrap's generic by-kind register assignment: first
-// non-ptr arg -> D0, first ptr arg -> A0) matches this routine's own
-// convention exactly, no `sel` needed ($A9EE is NumToString's own
+// UiNumToString is GONE (language-runtime-cleanup Task 2). It used to be
+// declared `external func UiNumToString(theNum: int, theString: ptr) =
+// trap 0xA9EE reg`, on the reading that $A9EE is "NumToString's own
 // dedicated trap word, not a shared Package-Manager dispatch point the
-// way the List Manager's 0xA9E7 is).
-external func UiNumToString(theNum: int, theString: ptr) = trap 0xA9EE reg
+// way the List Manager's 0xA9E7 is". That reading is WRONG: $A9EE is
+// _Pack7, the Binary/Decimal Conversion Package's shared dispatch trap,
+// and Multiverse.h:12342-12344 spells NumToString's own glue
+// M68K_INLINE(0x3F3C, 0x0000, 0xA9EE) -- `MOVE.W #0,-(SP)` (the
+// selector) BEFORE the trap, on top of the `#pragma parameter
+// NumToString(__D0, __A0)` register convention the old declaration did
+// get right. `reg` pushes nothing, so the package read whatever 16-bit
+// word happened to sit at 0(SP) as its selector and dispatched
+// wherever that pointed: sometimes NumToString (right answer),
+// sometimes another Pack7 entry (theString left untouched, or clobbered
+// with a zero length byte). Latent and heap-layout-dependent -- the
+// widened jiggle waist made it deterministic, see this phase's Task 2
+// report. cg68k has no clause shape for "push a selector word AND pass
+// args in registers", so rather than grow one, the four call sites now
+// use rtUiIntToPStr below: plain Clarus, no package, no selector, and
+// identical on both lanes.
+
+// rtUiIntToPStr: signed decimal into a Pascal string at out255 -- the
+// pure-Clarus replacement for the Package 7 NumToString call above.
+// ponytail: `0 - n` on the most-negative int32 overflows; unguarded, for
+// the same reason rtUiFixedToStr's own `0 - v` is (display helper, not a
+// trust boundary) and matching what NumToString itself did here before.
+func rtUiIntToPStr(n: int, out255: ptr) {
+    var u: int
+    var neg: bool
+    var len: int
+    var i: int
+    var j: int
+    var t: int
+
+    neg = n < 0
+    if neg {
+        u = 0 - n
+    } else {
+        u = n
+    }
+    len = 0
+    if u == 0 {
+        pokeb(out255 + 1, int('0'))
+        len = 1
+    }
+    while u > 0 {
+        pokeb(out255 + 1 + len, int('0') + (u mod 10))
+        len = len + 1
+        u = u / 10
+    }
+    if neg {
+        pokeb(out255 + 1 + len, int('-'))
+        len = len + 1
+    }
+    // digits went in least-significant first (and the sign last): reverse
+    i = 0
+    j = len - 1
+    while i < j {
+        t = peekb(out255 + 1 + i)
+        pokeb(out255 + 1 + i, peekb(out255 + 1 + j))
+        pokeb(out255 + 1 + j, t)
+        i = i + 1
+        j = j - 1
+    }
+    pokeb(out255, len)
+}
 
 // ---- Reverse-waist / per-backend glue externs this file consumes ----
 // UiTableRows: synthesized by clarusc/lower.cla's lowSynthTableRows (Task
@@ -327,7 +379,7 @@ func rtUiTableFillWidth(colsOff: int, nCols: int, totalW: int): int {
 
 // rtUiFixedToStr (rt_ui.c:1039-1068): Fixed's raw runtime representation is
 // a plain 16.16 signed value -- formats as "-123.4567" (4 fraction digits,
-// zero-padded), built only from UiNumToString (no libc). ponytail: `0 - v`
+// zero-padded), built only from rtUiIntToPStr (no libc). ponytail: `0 - v`
 // on the most-negative int32 would overflow; not guarded -- a fixed value
 // that extreme is not a realistic table cell and this is a display helper,
 // not a trust boundary (verbatim from the C reference's own disclosure).
@@ -349,9 +401,9 @@ func rtUiFixedToStr(v: int, out255: ptr) {
     }
     ibuf = UiNewPtr(256)
     fbuf = UiNewPtr(256)
-    UiNumToString(uv >> 16, ibuf)
+    rtUiIntToPStr(uv >> 16, ibuf)
     frac = ((uv & 0xFFFF) * 10000) / 65536
-    UiNumToString(frac, fbuf)
+    rtUiIntToPStr(frac, fbuf)
 
     n = 0
     if neg {
@@ -412,7 +464,7 @@ func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr) {
     } else if ftype == rtUiFtInt {
         v = peekl(base)
         numbuf = UiNewPtr(256)
-        UiNumToString(v, numbuf)
+        rtUiIntToPStr(v, numbuf)
         UiDrawText(numbuf + 1, 0, peekb(numbuf))
         UiDisposePtr(numbuf)
     } else if ftype == rtUiFtFixed {

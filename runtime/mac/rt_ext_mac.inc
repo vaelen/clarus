@@ -358,11 +358,13 @@ static Point rt_ext_ui_pt(int32_t packed) {
     return p;
 }
 void *rt_ext_UiHandleDeref(void *h) { return *(void **)h; }
-/* rt_ext_UiNewPtrRaw: renamed from rt_ext_UiNewPtr (heap-jiggle-stress-mode
- * phase, correctness-cleanup Task 3) -- ui.cla's own `UiNewPtr` is now a
- * plain (non-extern) Clarus wrapper around `UiNewPtrRaw` that ticks the
- * jiggle hook first, so it needs no C glue of its own on this lane; only
- * the raw trap call still does. */
+/* rt_ext_Ui*Raw: renamed from rt_ext_Ui* (heap-jiggle-stress-mode
+ * phase, correctness-cleanup Task 3; widened to the whole allocating
+ * family -- NewPtrClear/NewHandleClear/NewWindow/NewMenu/NewControl/
+ * NewRgn/TENew/LNew -- by language-runtime-cleanup Task 2). Each
+ * ui.cla `UiXxx` is now a plain (non-extern) Clarus wrapper around
+ * `UiXxxRaw` that ticks the jiggle hook first, so it needs no C glue
+ * of its own on this lane; only the raw trap call still does. */
 void *rt_ext_UiNewPtrRaw(int32_t size) { return (void *)NewPtr((Size)size); }
 /* rt_ext_UiCompactMem: ponytail -- deliberate no-op (return 0), not a real
  * CompactMem() call. Apple's own Universal Interfaces headers (this
@@ -375,8 +377,8 @@ void *rt_ext_UiNewPtrRaw(int32_t size) { return (void *)NewPtr((Size)size); }
  * (inline asm `dc.w 0xA04C` or equivalent) if/when a jiggle-mode test
  * targets the Retro68/cprint lane. */
 int32_t rt_ext_UiCompactMem(int32_t cbNeeded) { (void)cbNeeded; return 0; }
-void *rt_ext_UiNewPtrClear(int32_t size) { return (void *)NewPtrClear((Size)size); }
-void *rt_ext_UiNewHandleClear(int32_t size) { return (void *)NewHandleClear((Size)size); }
+void *rt_ext_UiNewPtrClearRaw(int32_t size) { return (void *)NewPtrClear((Size)size); }
+void *rt_ext_UiNewHandleClearRaw(int32_t size) { return (void *)NewHandleClear((Size)size); }
 void rt_ext_UiDisposeHandle(void *h) { DisposeHandle((Handle)h); }
 void rt_ext_UiDisposePtr(void *p) { DisposePtr((Ptr)p); }
 void rt_ext_UiHLock(void *h) { HLock((Handle)h); }
@@ -387,7 +389,7 @@ void rt_ext_UiGetPort(void *port) { GetPort((GrafPtr *)port); }
 void rt_ext_UiSetPort(void *port) { SetPort((GrafPtr)port); }
 
 void *rt_ext_UiFrontWindow(void) { return (void *)FrontWindow(); }
-void *rt_ext_UiNewWindow(void *wStorage, void *boundsRect, void *title, int32_t visible, short procId, void *behind, int32_t goAwayFlag, int32_t refCon) {
+void *rt_ext_UiNewWindowRaw(void *wStorage, void *boundsRect, void *title, int32_t visible, short procId, void *behind, int32_t goAwayFlag, int32_t refCon) {
     return (void *)NewWindow(wStorage, (const Rect *)boundsRect, (ConstStr255Param)title, (Boolean)visible, procId, (WindowRef)behind, (Boolean)goAwayFlag, (long)refCon);
 }
 void rt_ext_UiShowWindow(void *window) { ShowWindow((WindowRef)window); }
@@ -405,7 +407,7 @@ int32_t rt_ext_UiTrackBox(void *window, int32_t thePt, short partCode) { return 
 int32_t rt_ext_UiTrackGoAway(void *window, int32_t thePt) { return (int32_t)TrackGoAway((WindowRef)window, rt_ext_ui_pt(thePt)); }
 short rt_ext_UiFindWindow(int32_t pt, void *wpOut) { return (short)FindWindow(rt_ext_ui_pt(pt), (WindowRef *)wpOut); }
 
-void *rt_ext_UiNewMenu(short menuId, void *menuTitle) { return (void *)NewMenu(menuId, (ConstStr255Param)menuTitle); }
+void *rt_ext_UiNewMenuRaw(short menuId, void *menuTitle) { return (void *)NewMenu(menuId, (ConstStr255Param)menuTitle); }
 /* rt_ext_UiNewMenuStr: same NewMenu trap behind ui.cla's string-param
  * variant (str marshals as the Str255's address -- const uint8_t *, per
  * cpEmitExternProtos). Added while the lane was dark; see UiValidRect. */
@@ -459,7 +461,7 @@ void rt_ext_UiParamText(void *param0, void *param1, void *param2, void *param3) 
 short rt_ext_UiNoteAlert(short alertId, void *modalFilter) { return NoteAlert(alertId, (ModalFilterUPP)modalFilter); }
 short rt_ext_UiAlert(short alertId, void *modalFilter) { return Alert(alertId, (ModalFilterUPP)modalFilter); }
 
-void *rt_ext_UiNewControl(void *owningWindow, void *boundsRect, void *controlTitle, int32_t initiallyVisible, short initialValue, short minimumValue, short maximumValue, short procId, int32_t controlReference) {
+void *rt_ext_UiNewControlRaw(void *owningWindow, void *boundsRect, void *controlTitle, int32_t initiallyVisible, short initialValue, short minimumValue, short maximumValue, short procId, int32_t controlReference) {
     return (void *)NewControl((WindowRef)owningWindow, (const Rect *)boundsRect, (ConstStr255Param)controlTitle, (Boolean)initiallyVisible, initialValue, minimumValue, maximumValue, procId, (SInt32)controlReference);
 }
 void rt_ext_UiMoveControl(void *theControl, short h, short v) { MoveControl((ControlRef)theControl, h, v); }
@@ -502,7 +504,7 @@ void rt_ext_UiDrawString(void *s) { DrawString((ConstStr255Param)s); }
 void rt_ext_UiCopyBits(void *srcBits, void *dstBits, void *srcRect, void *dstRect, short mode, void *maskRgn) {
     CopyBits((const BitMap *)srcBits, (const BitMap *)dstBits, (const Rect *)srcRect, (const Rect *)dstRect, mode, (RgnHandle)maskRgn);
 }
-void *rt_ext_UiNewRgn(void) { return (void *)NewRgn(); }
+void *rt_ext_UiNewRgnRaw(void) { return (void *)NewRgn(); }
 void rt_ext_UiDisposeRgn(void *rgn) { DisposeRgn((RgnHandle)rgn); }
 void rt_ext_UiClipRect(void *r) { ClipRect((const Rect *)r); }
 void rt_ext_UiSetClip(void *rgn) { SetClip((RgnHandle)rgn); }
@@ -526,7 +528,7 @@ void rt_ext_UiSetPortBits(void *bm) { SetPortBits((const BitMap *)bm); }
  * scrollbar extern block. One rt_ext_Ui<Name> wrapper per `external func
  * Ui<Name>` declared there -- same thin cast-and-call convention as the
  * Task 7 block just above. */
-void *rt_ext_UiTENew(void *dst, void *view) { return (void *)TENew((const Rect *)dst, (const Rect *)view); }
+void *rt_ext_UiTENewRaw(void *dst, void *view) { return (void *)TENew((const Rect *)dst, (const Rect *)view); }
 void rt_ext_UiTEDispose(void *te) { TEDispose((TEHandle)te); }
 void rt_ext_UiTESetText(void *text, int32_t length, void *te) { TESetText(text, (long)length, (TEHandle)te); }
 void rt_ext_UiTECalText(void *te) { TECalText((TEHandle)te); }
@@ -574,7 +576,7 @@ void rt_ext_UiSetControlMaximum(void *theControl, short newMaximum) { SetControl
  * `external func Ui<Name>` declared there -- same thin cast-and-call
  * convention as the Task 7/8 blocks above. Point/Cell by-value params
  * arrive packed (rt_ext_ui_pt, already declared above this file). */
-void *rt_ext_UiLNew(void *rView, void *dataBounds, int32_t cSize, short theProc, void *theWindow, int32_t drawIt, int32_t hasGrow, int32_t scrollHoriz, int32_t scrollVert) {
+void *rt_ext_UiLNewRaw(void *rView, void *dataBounds, int32_t cSize, short theProc, void *theWindow, int32_t drawIt, int32_t hasGrow, int32_t scrollHoriz, int32_t scrollVert) {
     return (void *)LNew((const Rect *)rView, (const Rect *)dataBounds, rt_ext_ui_pt(cSize), theProc, (WindowRef)theWindow, (Boolean)drawIt, (Boolean)hasGrow, (Boolean)scrollHoriz, (Boolean)scrollVert);
 }
 void rt_ext_UiLDispose(void *lHandle) { LDispose((ListHandle)lHandle); }
