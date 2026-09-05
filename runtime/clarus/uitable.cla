@@ -584,6 +584,26 @@ callback func rtUiLdefDraw(msg: word, select: bool, rectPtr: ptr, cellPacked: in
         if row >= 0 and row < count {
             fillW = rtUiTableFillWidth(colsOff, nCols, peekw(rectPtr + 6) - peekw(rectPtr + 2))
             x = peekw(rectPtr + 2)
+            // Task 11 (item 11): ONE lock triple per ROW, hoisted out of
+            // the column loop below (it used to be taken and released
+            // once per column). The reason the lock exists at all is
+            // unchanged: rtUiTableDrawField's RtFtStr arm hands
+            // `base + 1` -- an address INSIDE this relocatable rt_list
+            // element block -- straight into UiDrawText, and DrawText
+            // itself allocates (font strike load), so the relocation
+            // window is INSIDE the trap, the one shape bff3268's
+            // re-derive-before-the-call rule cannot cover. The callee
+            // takes only `rec`, not the handle, so the lock must live
+            // here. Nothing in the loop needs the block RELOCATABLE --
+            // it only allocates (UiNewPtr/UiNewRgn) and never resizes
+            // this handle -- so holding the lock across all the columns
+            // is safe. Restore the handle's PRIOR state rather than a
+            // bare HUnlock: a caller may already hold it locked. There
+            // is no `return`/`break` inside the loop, so the single
+            // UiHSetState below the loop is on every path out.
+            recH = RtList(rows).data
+            hstate = UiHGetState(recH)
+            UiHLock(recH)
             k = 0
             while k < nCols {
                 if uidColWidthFill(colsOff, k) {
@@ -618,29 +638,20 @@ callback func rtUiLdefDraw(msg: word, select: bool, rectPtr: ptr, cellPacked: in
                 // Same "re-derive after any allocating call" rule
                 // rtUiTableRelayout/rtUiTableSyncOne state for their own
                 // ListRec master pointers.
+                // The block is locked for the whole row (above), so this
+                // re-derive can no longer observe a move -- it is kept as
+                // the cheap, local statement of the rule bff3268 pinned:
+                // never cache an rt_list element pointer across
+                // allocating calls.
                 rec = rtListAt(rows, row)
-                // compiler-cleanup: re-deriving `rec` above is necessary but
-                // NOT sufficient. rtUiTableDrawField's RtFtStr arm hands
-                // `base + 1` -- an address INSIDE this same relocatable
-                // rt_list element block -- straight into UiDrawText, and
-                // DrawText itself allocates (font strike load), so the
-                // relocation window is INSIDE the trap: the one shape
-                // bff3268's re-derive-before-the-call rule cannot cover.
-                // Lock the element block for the whole field draw (the
-                // callee takes only `rec`, not the handle, so the lock must
-                // live here); restore the handle's PRIOR state rather than
-                // a bare HUnlock -- a caller may already hold it locked.
-                recH = RtList(rows).data
-                hstate = UiHGetState(recH)
-                UiHLock(recH)
                 rtUiTableDrawField(rec, layoutOff, uidColFieldIndex(colsOff, k), colRect)
-                UiHSetState(recH, hstate)
                 UiSetClip(saveClip)
                 UiDisposeRgn(saveClip)
                 UiDisposePtr(colRect)
                 x = x + w
                 k = k + 1
             }
+            UiHSetState(recH, hstate)
         }
         if select {
             UiInvertRect(rectPtr)
