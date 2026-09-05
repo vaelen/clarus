@@ -139,6 +139,18 @@ Real debt and needed improvements stay in `docs/TODO.md`.
 
 ## Runtime / Toolbox (if it ever bites)
 
+- **Re-evaluate how window-owned menu sets are drawn** (Andrew,
+  2026-09-06; language-runtime-cleanup design §5): the first
+  implementation rebuilds the menu bar on every activate/close that
+  changes the front window's menu set — a few `InsertMenu`/`DeleteMenu`
+  calls plus one `DrawMenuBar`, skipped when the target set equals the
+  current one. Revisit once real multi-window apps use it: whether the
+  redraw is visibly slow on a Mac Plus, whether the bar should instead
+  be swapped as a whole (per-window `MenuList` handles via
+  `SetMenuBar`/`GetMenuBar`, the System 6 idiom for exactly this), and
+  whether the app-scope menus should stay on the left or the right of a
+  window's set.
+
 - **Unreproduced live-input popup anomaly** (mac-target-4d): Protocol
   popup failed to open once; 20+ repro attempts failed. Guarded by the
   `rt_ui_popup_assert_alive` tripwire in both scripted popup lanes — if
