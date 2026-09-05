@@ -6502,9 +6502,31 @@ func cgEmitStoreErr(dst: int, src: int) {
 // clobber discipline -- src's address is computed and pushed BEFORE dst's
 // address computation touches A0/D-scratch, so no intervening JSR can
 // clobber either address once both are live in A0/A1). No ENewRec/ECallFn
-// fast-path needed here (unlike cgEmitStoreRec): there is no array
-// constructor expr in the IR, and cgExprAddr's own materialize fallback
-// already covers any non-addressable src generically. dst is always
+// fast-path exists here (unlike cgEmitStoreRec): there is no array
+// constructor expr in the IR, and -- unlike KStr/KRec -- there is no
+// "build the value straight into this destination" primitive for a KArr
+// either, because a function CANNOT return an array through the hidden
+// result pointer on this backend (cgRetNeedsHidden is KStr/KRec/KErr).
+//
+// language-runtime-cleanup Task 9, fix round 1: src must therefore ALREADY
+// be addressable, and this function asserts it. The doc comment used to
+// claim "cgExprAddr's own materialize fallback covers any non-addressable
+// src generically" -- true for KStr/KRec, FALSE for KArr and the exact
+// "infinite re-materialization" bug class cgEmitStoreRec's own doc comment
+// names: cgExprAddr(value-producing src) falls to cgMaterializeToTemp,
+// whose KArr arm (Task 9) calls back into THIS function with the SAME src,
+// forever -- a SIGSEGV (exit 139, no diagnostic) where the pre-task
+// compiler printed a build error. Both call sites can reach it, and which
+// one fires depends on DEFINITION ORDER (with the array-returning callee
+// defined first, its own `return a` aborts before the caller is emitted;
+// with the caller first, the recursion wins):
+//   - cgPushArgs -> cgMaterializeToTemp: `sum4(mk())`
+//   - cgStmt's SAssign arm:              `b = mk()`
+// One guard here, at the single function both route through, rather than
+// one at each call site. cgIsAddressableArgShape is reused deliberately:
+// when Task 7 lands EArrLit (a pool-backed array literal, a real address),
+// making a pool literal borrowable is then one arm in THAT predicate and
+// nothing here changes. dst is always
 // EVarRef/EFieldRef/EIndexRef -- cgStmt's SAssign arm only calls this for
 // those three, cgExprAddr handles all three (cgIndexRefAddr included).
 // cgSizeOf(KArr) is already the element-padded full array size (the file
@@ -6516,6 +6538,9 @@ func cgEmitStoreErr(dst: int, src: int) {
 func cgEmitStoreArr(dst: int, src: int) {
     var sz: int
 
+    if not cgIsAddressableArgShape(src, KArr) {
+        abort("cg68k: an array-valued call/expression result has no address on this backend -- a fixed array can only be assigned or passed from a variable, field or element, never straight from a call; return a `list` instead of an array")
+    }
     sz = cgSizeOf(irExprType(dst))
     cgExprAddr(src)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
