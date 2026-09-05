@@ -680,3 +680,180 @@ SAssign hands a KRec temp off by name and SReturn hands off unconditionally, so
 only** — extending it to handle kinds would double-track against item b, which already
 tracks those at the producer. Plus a `LeakCheck` shape, since no fixture in the tree pops a
 handle-bearing record today.
+
+---
+
+# Step 12 — merge, bless, native proof
+
+Head after this step: **`aad630f`** (`test(cg68k): bless #2 (codegen) ...`), on branch
+`worktree-agent-a754435bff73efac3`, which now contains `6b6764e`.
+
+## 1. Merge
+
+`git merge compiler-cleanup` → `38709dd`, **clean, zero conflicts**. None of the other
+tasks' regions (`lower.cla` ~1270 / ~5077, `check.cla`'s checker entry points, `drive.cla`,
+the runtime `ui*.cla` files) overlap the hunks this task owns (`lower.cla`'s conn-dispatcher
+section ~7390-7660 and `lowMethodCall`'s `TyWidget` arm, all of `cg68k.cla`,
+`cprint.cla`'s pop/shift + `fpNewTrackedTmp` + `fpCallFnArg`). `make -j tools bootstrap`
+clean afterwards.
+
+## 2. Re-attribution before blessing
+
+31 of 31 `cg68k` fixtures moved, unchanged in count from before the merge. Every hunk class
+present in the diff, and each is one of mine:
+
+| hunk class | count / evidence | item |
+|---|---|---|
+| `LINK A6,#-2196` → `-2100`, `-2226` → `-2130`, … | ~96 B and ~260 B frame drops throughout | **d** (24×4 small slots) and **g** (`sizeof(error)`) |
+| `ADDA.L #-108078` → `#-103498` (and 3 more pairs) | the stack-heuristic reserve shrinks with the frames | **d**, **e** |
+| `- ; func rtConnDevGone` / `- ; func rtConnDevClose` | the only two functions *removed* in the whole diff | **e** |
+| added `BSR.W <release>` sequences | the end-of-statement release walk | **a**, **b** |
+| `LBL_n` renumbering, functions crossing segment boundaries | cascade from the three above | — |
+
+Cross-check on `; func` markers: every other name in the diff appears on **both** the `+`
+and `-` side, or only on the `-` side of a `seg2` file that no longer exists — i.e. code
+moving between segments, not disappearing. Only `rtConnDevGone`/`rtConnDevClose` are truly
+gone, which is item e's own acceptance.
+
+**`emitui/goldens` now FAILs on exactly one fixture, and it is mine.** The other 20 emitui
+goldens are byte-identical, as before the merge. `connpump_abort.c.golden` is NEW — added
+and blessed by Tasks 7/8/9 on a tree that did not yet contain items e and g — and its whole
+diff is those two items:
+
+```
+FAIL connpump_abort.cla: emitted C does not match testdata/emitui/connpump_abort.c.golden:
+  ... differ: char 43009, line 781;
+  780a781 > static void clar_fn_clar_conn_pump(void);     <- item e
+  1639,1641d1639 <     clar_rec_Err cv_err; <  cv_err.code = 0;   <- item g
+```
+
+**Not regenerated, per instruction — recorded here for Task 10.** (Item e's `clar_conn_pump`
+is dead-but-harmless C on the host: `lowSynthConnDispatchers` runs there only when
+`usesConn`, and `cpEmitMain` never calls it. Item g's `err` elision is correct on both
+lanes — that fixture declares no `failed` handler.)
+
+`selfhost/diag`, `lowlevel/*` and `cg68k/release` all PASS after the merge.
+
+## 3. Bless
+
+```
+$ CLARUS_CG68K_BLESS=1 make test T=cg68k/goldens
+PASS cg68k/goldens 1s
+tests: 1 passed, 0 skipped, 0 failed
+```
+
+**18 stale `*.seg2.s` goldens deleted** — those programs pack into a single CODE segment now
+that items e and g removed enough code to fit the budget, so the runner no longer reads a
+second listing for them:
+
+```
+abort_bake.seg2.s   argmat_intr.seg2.s   argmat_nested.seg2.s  arith.seg2.s
+bigtmp16.seg2.s     callback.seg2.s      calls.seg2.s          control.seg2.s
+enums.seg2.s        gapclose3.seg2.s     mutrec.seg2.s         peep_pushpop.seg2.s
+peep_quick.seg2.s   peep_shuffle.seg2.s  smalltmp_ceiling.seg2.s
+strs.seg2.s         traps.seg2.s         xrec.seg2.s
+```
+
+(Two of those — `peep_quick.seg2.s`, `peep_shuffle.seg2.s` — were *created* by wave 1's
+bless #1 and are stale again after this task's shrink. `recs.seg2.s` is no longer on the
+list: after the merge that fixture still packs into two segments, so its seg2 was
+re-blessed rather than deleted.)
+
+Bless commit `aad630f`: 64 files, +94692 / −117094.
+
+Un-blessed re-run:
+
+```
+$ make test T=cg68k/
+SKIP cg68k/array_assign 0s     (no vasm/ symlink)
+PASS cg68k/determinism 0s
+PASS cg68k/goldens 1s
+PASS cg68k/image 0s
+PASS cg68k/release 0s
+SKIP cg68k/segments 1s         (no vasm/)
+PASS cg68k/selfemit 0s
+PASS cg68k/unspliced_guard 0s
+SKIP cg68k/vasm 0s             (no vasm/)
+```
+
+## 4. Native proof — GREEN, and `LeakCheck` is flat
+
+Emulator free (`pgrep -x minivmac` empty). Run one script at a time: a single
+`make -j1 test T='a b c'` invocation SKIPped all three (`require_env CLARUS_MAC_TESTS`
+did not see the variable through that form), so each was re-run on its own line and all
+three booted for real.
+
+```
+$ CLARUS_MAC_TESTS=1 make -j1 test T=mactest/toolbox_68k
+PASS mactest/toolbox_68k 197s
+
+$ CLARUS_MAC_TESTS=1 make -j1 test T=mactest/toolbox_jiggle
+PASS mactest/toolbox_jiggle 196s
+
+$ CLARUS_MAC_TESTS=1 make -j1 test T=mactest/coresuite_68k
+PASS mactest/coresuite_68k 4s
+```
+
+`toolbox_68k.log` — 36 lines, every case, both boots identical:
+
+```
+PASS TickCountAdvances   PASS MenuKeyMatches   PASS CanvasChecksum   PASS A5Live
+PASS GestaltNamed        PASS EventXRec        PASS UiTestVerbSmoke  PASS PostEventClick
+PASS Pattern             PASS Buttons          PASS Winvar           PASS Textwidgets
+PASS Menus               PASS Editmenu         PASS Canvas           PASS Zoomwin
+PASS Hscroll             PASS Popuptable       PASS Dialogs          PASS Hdim
+PASS FormEdit            PASS FieldCap         PASS BigText          PASS Catalog
+PASS FInfoStamp          PASS ResourceBake     PASS WriteResStamp    PASS DateTimeRoundTrip
+PASS LivePaint           PASS SerialOpenWrite  PASS NarrowPopup      PASS LeakCheck
+PASS ScrollToEnd         PASS ClearWarm        PASS CasesTable       PASS SelfCheck
+```
+
+**`PASS LeakCheck` and `PASS ClearWarm`**, 36/36 (the script's own
+`suite_report_check "$WORK/cap.out" 36` asserts the captured
+`TOTAL 36 PASS 36 FAIL 0` tally, so the PASS verdict is that assertion holding). The
+`LeakCheck` case is the one this task widened with three new shapes — the record-call
+receiver and the two pop positions — so FreeMem stayed exactly flat across 1500 iterations
+of all of them on the emulated Mac Plus. **No slack was widened.** That also clears the
+reviewer's note that the fix-round-1 double release would have surfaced here as a crash
+rather than a FreeMem delta: it did not, because it is fixed.
+
+`coresuite_68k.log`: 81 lines, all PASS including `SelfCheck`.
+
+## 5. Gates
+
+```
+$ scripts/test-task.sh --smoke
+tests: 78 passed, 34 skipped, 1 failed
+FAIL connpump_abort.cla: ... > static void clar_fn_clar_conn_pump(void); ... < clar_rec_Err cv_err;
+make: *** [t1] Error 1
+```
+
+The one failure is the emitui golden described in section 2 — Task 10's to regenerate, not
+mine. `cg68k/goldens` is green. `set -e` stops the script there, so the last two stages
+were run directly:
+
+```
+$ make test T=perfgate/
+PASS perfgate/tripwire 0s
+
+$ make smoke
+CLARUS_MAC_TESTS=1 make -j1 test T='mactest/smoke_bounce mactest/tick'
+PASS mactest/smoke_bounce 6s
+PASS mactest/tick 4s
+tests: 2 passed, 0 skipped, 0 failed
+```
+
+`make smoke` is the meaningful one for this task: the blessed UI trace + PBM framebuffer
+goldens are unchanged, so the per-function frames, the tracked releases and the missing
+conn runtime all produce pixel-identical behaviour.
+
+`selfhost/fixedpoint`'s `snapshot_fresh` remains the expected red (Task 10 regenerates
+`clarusc/clarusc.c`).
+
+## Open items after Step 12
+
+1. `testdata/emitui/connpump_abort.c.golden` needs regenerating by Task 10 (two hunks, both
+   listed above).
+2. `docs/TODO.md` entry for the native-only KRec-pop-as-receiver leak — Task 10 owns docs;
+   the precise wording is in the fix-round-1 section above.
+3. `snapshot_fresh` — Task 10.
