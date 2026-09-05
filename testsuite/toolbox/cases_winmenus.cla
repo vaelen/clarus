@@ -1,0 +1,128 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_winmenus.cla: WindowMenus (language-runtime-cleanup, spec 5.4).
+// Two window types each claim one menu via the new `menus:` window
+// property. A claimed menu is created at startup like any other but is
+// NOT inserted into the app-scope bar -- rtUiSyncMenuBar (ui.cla) puts it
+// there only while a claiming window is frontmost. So the menu-bar band's
+// checksum must change when each window becomes front, change again when
+// the other one does, revert when that one closes, and revert all the way
+// to the app-scope bar when the last one closes. A claimed menu's own item
+// must still dispatch while its window is front.
+//
+// Menu ID derivation (the `menu M I` verb's M is a MenuID, not a bar
+// position -- ui.cla's rtUiMenuDispatch computes menuIdx = M -
+// rtUiMenuIdBase with rtUiMenuIdBase == 2; cases_menus.cla's tbMenuOpsBar
+// comment reads it as a "bar position" only because the two coincide for
+// an unclaimed menu). This file sits between harness.cla and gui.cla in
+// tests/mactest/toolbox_files.txt, so whole-program menu declaration order
+// is Ops(0), Edit(1), WmAlpha(2), WmBeta(3), File(4) -- WmAlpha's MenuID
+// is 2 + 2 = 4. File's own declaration index moved 2 -> 4, which nothing
+// pins (cases_events.cla's MenuKeyMatches asserts only "nonzero menuID");
+// Ops and Edit keep indices 0/1, so tbMenuOpsBar/tbEditBar are unchanged.
+// The app-scope BAR is still Apple, Ops, Edit, File -- WmAlpha/WmBeta are
+// claimed, so they never join it, and an arriving claimed menu is appended
+// (InsertMenu beforeID 0), landing after File.
+//
+// The two menu titles are the declaration names themselves (lowMenuDecl
+// passes nameIdx as both name and title), so "WmAlpha" and "WmBeta" differ
+// in both glyphs and width -- the bar band's byte sum cannot collide by
+// accident the way two same-width titles might.
+
+menu WmAlpha {
+    item WmOne "One"
+}
+
+menu WmBeta {
+    item WmTwo "Two"
+}
+
+window WmWinA {
+    title: "WmA"
+    size: 200, 100
+    menus: WmAlpha
+}
+
+window WmWinB {
+    title: "WmB"
+    size: 200, 100
+    menus: WmBeta
+}
+
+// tbWmOneCount: a GLOBAL dispatch counter, same "read a global, not a
+// torn-down window's own var" convention as cases_menus.cla's own
+// counters.
+var tbWmOneCount: int
+
+extend WmAlpha {
+    on WmOne.select {
+        tbWmOneCount = tbWmOneCount + 1
+    }
+}
+
+// The bar band: y 0..19 (rtUiMenubarH), full screen width. x/w are
+// multiples of 8 per UiTestChecksum's alignment contract, and the summed
+// byte count (20 * 512/8 = 1280) is well inside its 8192 cap.
+const tbWmBarX: int = 0
+const tbWmBarY: int = 0
+const tbWmBarW: int = 512
+const tbWmBarH: int = 20
+const tbWmAlphaMenuId: int = 4
+const tbWmOneItem: int = 1
+
+func caseWindowMenus(): TestResult {
+    var a: WmWinA
+    var b: WmWinB
+    var c0: int
+    var c1: int
+    var c2: int
+    var c3: int
+
+    tbWmOneCount = 0
+
+    c0 = UiTestChecksum(tbWmBarX, tbWmBarY, tbWmBarW, tbWmBarH)
+    if c0 == -1 {
+        return tkFail("WindowMenus", "checksum alignment rejected")
+    }
+
+    a = open WmWinA
+    UiTestTick(1)
+    c1 = UiTestChecksum(tbWmBarX, tbWmBarY, tbWmBarW, tbWmBarH)
+    if c1 == c0 {
+        close a
+        return tkFail("WindowMenus", "bar unchanged with WmWinA front")
+    }
+    if not UiTestMenu(tbWmAlphaMenuId, tbWmOneItem) {
+        close a
+        return tkFail("WindowMenus", "menu verb rejected")
+    }
+    if tbWmOneCount != 1 {
+        close a
+        return tkFail("WindowMenus", "WmOne did not dispatch: " + tkIntToStr(tbWmOneCount))
+    }
+
+    b = open WmWinB
+    UiTestTick(1)
+    c2 = UiTestChecksum(tbWmBarX, tbWmBarY, tbWmBarW, tbWmBarH)
+    if c2 == c1 or c2 == c0 {
+        close b
+        close a
+        return tkFail("WindowMenus", "bar unchanged with WmWinB front")
+    }
+
+    close b
+    UiTestTick(1)
+    c3 = UiTestChecksum(tbWmBarX, tbWmBarY, tbWmBarW, tbWmBarH)
+    if c3 != c1 {
+        close a
+        return tkFail("WindowMenus", "bar did not revert to WmWinA's set")
+    }
+
+    close a
+    UiTestTick(1)
+    if UiTestChecksum(tbWmBarX, tbWmBarY, tbWmBarW, tbWmBarH) != c0 {
+        return tkFail("WindowMenus", "bar did not revert to the app-scope set")
+    }
+    return tkPass("WindowMenus")
+}

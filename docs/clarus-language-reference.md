@@ -1011,6 +1011,7 @@ A `window` block is a declaration, not code: it compiles to a real resource (WIN
 | `title` | `title: "Untitled"` | initial title; assignable at runtime (`w.title = ...`) |
 | `size` | `size: 400, 300` | content size in pixels |
 | `resizable` | `resizable` or `resizable: min(300, 200)` | grow box + zoom box + optional minimum |
+| `menus` | `menus: File, Edit` | the menus shown (after the app-wide ones) while a window of this type is frontmost; each must be declared above this window |
 | `form for T` | `form for Bookmark` | marks a form window (Chapter 10) |
 
 One additional window declaration — the document file-type declaration for Finder integration — is described in Chapter 12; its syntax is settled alongside the toolchain.
@@ -1162,6 +1163,8 @@ extend Doc {
 ```
 
 The nesting means "these commands apply when a Doc is frontmost." The runtime automatically enables such menu items only while a window of that type is frontmost, and dims them otherwise — menu enabling requires no user code — and a handler nested this way can never fire without a valid `window`. Scopes compose lexically: the inner `extend` resolves menu items, the outer resolves widgets and fields.
+
+**Window-owned menus.** A window declaration may claim menus with `menus: A, B` (Chapter 8). A menu claimed by any window is not part of the application-wide menu bar; it appears, after the application-wide menus and in declaration order, only while a window of a claiming type is frontmost, and leaves the bar when that window closes or another window comes to the front. Menus no window claims form the application-wide bar, exactly as before. Item enabling and window-scoped dimming are unaffected: every menu exists for the whole run, only its presence in the bar changes. At most 31 menus may be declared.
 
 ### Runtime Menu-Item Property
 

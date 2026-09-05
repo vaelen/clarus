@@ -9,8 +9,9 @@
 # conn.cla + conn_68k.cla + fileh.cla + fileh_68k.cla + native.cla on the
 # 68k lane's unconditional full-superset splice (the c lane keeps
 # conn/fileh usage-gated, so neither pair is ever in its bake list).
-# sections 46 is bkSectionCount. version 7 is clir-load-perf Task 4's
-# format (hash swapped FNV-mul -> shift-add).
+# sections 46 is bkSectionCount. version 8 is language-runtime-cleanup's
+# format (IRWindowDesc gained menuMask; v7 was clir-load-perf Task 4's
+# hash swap, FNV-mul -> shift-add).
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
@@ -28,7 +29,7 @@ for lane in 68k c; do
 
     got=$(clir_field version "$WORK/$lane.hdr")
     [ "$got" = 8 ] && t_pass "$lane/version" \
-        || t_fail "$lane/version" "version = $got, want 8 (language-runtime-cleanup: +bkSecIrArrLits, +bkSecUitestBounds arrlit boundary)"
+        || t_fail "$lane/version" "version = $got, want 8 (language-runtime-cleanup: +bkSecIrArrLits, +bkSecUitestBounds arrlit boundary, +IRWindowDesc.menuMask)"
 
     got=$(clir_field lane "$WORK/$lane.hdr")
     [ "$got" = "$lane" ] && t_pass "$lane/lanetag" \

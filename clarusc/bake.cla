@@ -79,10 +79,11 @@ const bkMagic: string = "CLIR"
 // loader refuses any other version outright (no compat shim), per this
 // phase's own controller resolution.
 // v7: body/stamp/manifest hash switched from FNV-mul to shift-add -- layout unchanged.
-// v8 (language-runtime-cleanup, spec %4.4): added bkSecIrArrLits (the
-// array-literal constant pool) and one extra U32 in bkSecUitestBounds
-// (that pool's own base/uitest boundary, bkGenBaseIrArrLitsCount); the
-// object-code relocation dispatch gained cgRelClsPoolArr.
+// v8 (language-runtime-cleanup): added bkSecIrArrLits (the array-literal
+// constant pool, spec %4.4) and one extra U32 in bkSecUitestBounds (that
+// pool's base/uitest boundary, bkGenBaseIrArrLitsCount); the object-code
+// relocation dispatch gained cgRelClsPoolArr; IRWindowDesc gained menuMask
+// -- one more u32 per window-desc entry in bkSecIrUi.
 const bkFormatVersion: int = 8
 
 // bkClirResourceName/bkStampResourceName (runtime-ir-bake Task 6, Mac
@@ -1067,6 +1068,7 @@ func bkWriteIrWindowDescs(): text {
         bkPutU32(sec, irWindowDescs[i].stateFieldsHead)
         bkPutU32(sec, irWindowDescs[i].formRecNameIdx)
         bkPutU32(sec, irWindowDescs[i].formBindsHead)
+        bkPutU32(sec, irWindowDescs[i].menuMask)
         i = i + 1
     }
     return sec
@@ -2829,6 +2831,7 @@ func bkReadIrWindowDescs(): list of IRWindowDesc {
         e.stateFieldsHead = bkGetU32()
         e.formRecNameIdx = bkGetU32()
         e.formBindsHead = bkGetU32()
+        e.menuMask = bkGetU32()
         l.add(e)
         i = i + 1
     }

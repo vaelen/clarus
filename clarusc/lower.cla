@@ -5901,6 +5901,9 @@ func lowWindowDecl(d: int) {
     var bFieldNameIdx: int
     var bFieldIdx: int
     var nb: int
+    var menuMask: int
+    var mIdx: int
+    var v: int
 
     winNameIdx = windowDeclName(d)
     winName = poolGet(winNameIdx)
@@ -5910,6 +5913,7 @@ func lowWindowDecl(d: int) {
     resizable = false
     minW = 0
     minH = 0
+    menuMask = 0
     widgetsHead = -1
     widgetsTail = -1
     stateHead = -1
@@ -5940,6 +5944,23 @@ func lowWindowDecl(d: int) {
                 if vh != -1 {
                     minW = lowRequireIntLit(callArgsHead(vh))
                     minH = lowRequireIntLit(exprNext(callArgsHead(vh)))
+                }
+            } else if pname == "menus" {
+                // `menus: A, B` (spec 5.3) -> a bit per claimed menu, at
+                // the menu's WHOLE-PROGRAM declaration index -- exactly
+                // uiMenuIdx's own key (lowMenuDecl records it), and the
+                // same order rtUiBuildMenus creates handles in. Every
+                // named menu is declared ABOVE this window (checker rule),
+                // and this walk is source-ordered, so its uiMenuIdx entry
+                // already exists; a -1 miss can only follow a checker
+                // error already reported, and contributes no bit.
+                v = vh
+                while v != -1 {
+                    mIdx = uiMenuIdx.get(numToStr(progGen) + "|" + poolGet(identName(v)), -1)
+                    if mIdx >= 0 {
+                        menuMask = menuMask | (1 << mIdx)
+                    }
+                    v = exprNext(v)
                 }
             }
         } else if declKind(item) == DkVar {
@@ -5999,7 +6020,7 @@ func lowWindowDecl(d: int) {
         }
     }
 
-    newIRWindowDesc(winNameIdx, titleIdx, w, h, resizable, minW, minH, widgetsHead, stateHead, formRecNameIdx, bindsHead)
+    newIRWindowDesc(winNameIdx, titleIdx, w, h, resizable, minW, minH, widgetsHead, stateHead, formRecNameIdx, bindsHead, menuMask)
 }
 
 // lowMenuDecl lowers `menu M { ... }` (Ch9) into an IRMenuDesc, and records

@@ -926,7 +926,7 @@ func uibBuild(): list of int {
     // entryCount * itsOwnFieldCount * 4; Layout/EnumArrays use the
     // sizing pre-pass's totals above.
     uibBaseWindows = 44
-    uibBaseWidgets = uibBaseWindows + irWindowDescs.count * 48
+    uibBaseWidgets = uibBaseWindows + irWindowDescs.count * 52
     uibBaseMenus = uibBaseWidgets + irWidgetDescs.count * 52
     uibBaseItems = uibBaseMenus + irMenuDescs.count * 20
     uibBaseMenuHandlers = uibBaseItems + irMenuItemDescs.count * 16
@@ -988,6 +988,7 @@ func uibBuild(): list of int {
         uibI32(uibWindows, stateSize)
         uibI32(uibWindows, handlerMask)
         uibI32(uibWindows, formOff)
+        uibI32(uibWindows, irWindowDescMenuMask(i))
 
         i = i + 1
     }

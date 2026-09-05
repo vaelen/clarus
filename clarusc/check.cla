@@ -937,6 +937,7 @@ func buildUiTables() {
     windowTopProps["title"] = 1
     windowTopProps["size"] = 1
     windowTopProps["resizable"] = 1
+    windowTopProps["menus"] = 1
 
     appProps["name"] = 1
     appProps["version"] = 1
@@ -3579,6 +3580,9 @@ func checkWindowDecl(d: int) {
     var widgetsHead: int
     var widgetsTail: int
     var sym: Symbol
+    var vh: int
+    var mname: string
+    var seenMenus: map of int
 
     winNameIdx = windowDeclName(d)
     winName = poolGet(winNameIdx)
@@ -3623,6 +3627,37 @@ func checkWindowDecl(d: int) {
         if k == DkProperty {
             if not windowTopProps.has(poolGet(propertyName(item))) {
                 emitDiag(declLine(item), declCol(item), "unknown property " + poolGet(propertyName(item)) + " for window")
+            }
+            // `menus: A, B` (language-runtime-cleanup, spec 5.1) -- the
+            // parser already produced the ordinary `name: v1, v2` value
+            // list; validating that each value is an IDENTIFIER naming an
+            // already-declared menu is entirely a checker concern. A menu
+            // declared BELOW this window does not resolve here (phase-1
+            // source-order checking, this function's own doc comment) and
+            // so reports as "not a declared menu" -- the declare-before-use
+            // rule the language reference states for `menus:`.
+            if poolGet(propertyName(item)) == "menus" {
+                vh = propertyValuesHead(item)
+                if vh == -1 {
+                    emitDiag(declLine(item), declCol(item), "menus: needs at least one menu name")
+                }
+                seenMenus.clear()
+                while vh != -1 {
+                    if exprKind(vh) != ExIdent {
+                        emitDiag(exprLine(vh), exprCol(vh), "menus: expects menu names")
+                    } else {
+                        mname = poolGet(identName(vh))
+                        symIdx = scopeLookup(curScope, identName(vh))
+                        if symIdx == -1 or not symbols[symIdx].isMenu {
+                            emitDiag(exprLine(vh), exprCol(vh), mname + " is not a declared menu")
+                        } else if seenMenus.has(mname) {
+                            emitDiag(exprLine(vh), exprCol(vh), "menus: " + mname + " listed twice")
+                        } else {
+                            seenMenus[mname] = 1
+                        }
+                    }
+                    vh = exprNext(vh)
+                }
             }
         } else if k == DkColumn {
             emitDiag(declLine(item), declCol(item), "unknown property column for window")
@@ -3991,6 +4026,13 @@ func checkBindsProperty(p: int, kind: string, formRecType: int): int {
     return identName(vh)
 }
 
+// menuDeclCount counts the program's `menu` declarations, for the 31-menu
+// cap the window `menus:` mask enforces (language-runtime-cleanup, spec
+// 5.3: IRWindowDesc.menuMask is one int32, bit i = declaration index i, so
+// index 31 would collide with the sign bit). Reset in checkReset, like
+// every other cross-decl checker state.
+var menuDeclCount: int
+
 // checkMenuDecl builds a menu's item set (Ch9) and declares its name as a
 // menu symbol -- entry shape is already validated by the parser; only
 // duplicate item names are a checker concern.
@@ -4002,6 +4044,10 @@ func checkMenuDecl(d: int) {
     var seen: map of int
     var sym: Symbol
 
+    menuDeclCount = menuDeclCount + 1
+    if menuDeclCount == 32 {
+        emitDiag(declLine(d), declCol(d), "at most 31 menus per program")
+    }
     nameIdx = menuDeclName(d)
     menuName = poolGet(nameIdx)
     e = menuDeclEntriesHead(d)
@@ -6240,6 +6286,7 @@ func checkReset() {
     // generation every compile, not just the first one in the process.
     cnInited = false
     cnInit()
+    menuDeclCount = 0
     typesReset()
     scopesReset()
     enumConstOf = freshEnumConstOf

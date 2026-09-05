@@ -140,6 +140,11 @@
 // phase's addition: hardware-proves a buffered canvas drawn once blits
 // once and then costs nothing per event-loop pass (the dirty flag, spec
 // 2.1) -- see that case's own header comment.
+// WindowMenus (cases_winmenus.cla) is the language-runtime-cleanup
+// phase's addition too: hardware-proves the `menus:` window property
+// (spec 5) -- a claimed menu joins the bar only while a claiming window
+// is frontmost, and leaves again when it closes -- see that case's own
+// header comment.
 
 enum ToolboxTest {
     All
@@ -179,15 +184,16 @@ enum ToolboxTest {
     ClearWarm
     CasesTable
     CanvasIdle
+    WindowMenus
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 36 real cases
+// nTbCases is ToolboxTest's member count minus All: the 37 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 37
+const nTbCases: int = 38
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -304,6 +310,9 @@ func tbCaseName(t: ToolboxTest): string {
     case CanvasIdle {
         return "CanvasIdle"
     }
+    case WindowMenus {
+        return "WindowMenus"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -351,6 +360,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(ClearWarm)
     l.add(CasesTable)
     l.add(CanvasIdle)
+    l.add(WindowMenus)
     l.add(SelfCheck)
     return l
 }
@@ -531,6 +541,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, CanvasIdle) {
         results.add(caseCanvasIdle())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, WindowMenus) {
+        results.add(caseWindowMenus())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

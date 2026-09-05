@@ -33,9 +33,11 @@
 // accessors, needed by uitable.cla's table/popup code:
 //   Header (11 int32 @ 0,4,..,40): magic, version, nWins, winsOff, nMenus,
 //     menusOff, nMenuHandlers, mhOff, nEvery, everyOff, appOff.
-//   Window (12 int32, 48 bytes, base = winsOff + winIdx*48): nameOff,
+//   Window (13 int32, 52 bytes, base = winsOff + winIdx*52): nameOff,
 //     titleOff, w, h, resizable, minW, minH, nWidgets, widgetsOff,
-//     stateSize, handlerMask, formOff (-1 if the window has no `form for T`).
+//     stateSize, handlerMask, formOff (-1 if the window has no `form for T`),
+//     menuMask (bit i = declared menu i is claimed by this window type via
+//     `menus:`; 0 for a window with no such clause).
 //   Widget (13 int32, 52 bytes, base = widgetsOff + widgetIdx*52): kind,
 //     nameOff, captionOff, atKind, x, yIsBottom, y, widthIsFill, width,
 //     fillBoth, flags, eventMask, tableOff (-1 unless kind == table).
@@ -302,11 +304,11 @@ func uidAppOff(): int {
 }
 
 // ================================================================
-// Window (12 int32, 48 bytes/entry, base = winsOff + winIdx*48)
+// Window (13 int32, 52 bytes/entry, base = winsOff + winIdx*52)
 // ================================================================
 
 func uidWinBase(winIdx: int): ptr {
-    return UiProgDesc() + uidWinsOff() + winIdx * 48
+    return UiProgDesc() + uidWinsOff() + winIdx * 52
 }
 
 func uidWinNameOff(winIdx: int): int {
@@ -363,6 +365,14 @@ func uidWinHandlerMask(winIdx: int): int {
 
 func uidWinFormOff(winIdx: int): int {
     return uidI32(uidWinBase(winIdx) + 44)
+}
+
+// uidWinMenuMask (language-runtime-cleanup, spec 5.3): the set of menus
+// this window TYPE claims via `menus:`, as a bitmask over whole-program
+// menu declaration indices. rtUiSyncMenuBar ORs the front window's mask
+// onto the app-scope set.
+func uidWinMenuMask(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 48)
 }
 
 // ================================================================

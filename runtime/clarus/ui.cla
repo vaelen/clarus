@@ -605,6 +605,15 @@ const rtUiTitlebarH: int = 19
 // ----
 var rtUiMenuHandlesArr: ptr = ptr(0)
 var rtUiNMenusVal: int = 0
+// rtUiClaimedMask/rtUiBarMask (language-runtime-cleanup, spec 5.2): the
+// set of menus some window type claims via `menus:` (OR of every window
+// descriptor's own menuMask, computed once in rtUiBuildMenus), and the
+// set currently INSERTED in the bar. Both are bitmasks over whole-program
+// menu declaration indices; a program with no `menus:` clause anywhere
+// leaves rtUiClaimedMask 0 and rtUiBarMask "every menu", exactly today's
+// bar.
+var rtUiClaimedMask: int = 0
+var rtUiBarMask: int = 0
 var rtUiAppleMenuHandle: ptr = ptr(0)
 var rtUiStdEditMenuIdx: int = -1
 var rtUiSys7: bool = false
@@ -1286,6 +1295,7 @@ func rtUiAppleSelect(itemNum: int) {
 // rtUiBuildMenus (rt_ui.c:2308-2373).
 func rtUiBuildMenus() {
     var nMenus: int
+    var nWins: int
     var i: int
     var j: int
     var mh: ptr
@@ -1300,6 +1310,19 @@ func rtUiBuildMenus() {
         rtUiMenuHandlesArr = UiNewPtrClear(nMenus * 4)
     } else {
         rtUiMenuHandlesArr = ptr(0)
+    }
+    // Claimed set first (spec 5.2): a menu some window type names in its
+    // `menus:` clause is created here like any other, but is NOT inserted
+    // into the bar -- rtUiSyncMenuBar puts it there while a claiming
+    // window is frontmost. With no `menus:` clause anywhere the mask is 0
+    // and every menu is inserted, exactly as before.
+    rtUiClaimedMask = 0
+    rtUiBarMask = 0
+    nWins = uidNWins()
+    i = 0
+    while i < nWins {
+        rtUiClaimedMask = rtUiClaimedMask | uidWinMenuMask(i)
+        i = i + 1
     }
     i = 0
     while i < nMenus {
@@ -1337,10 +1360,63 @@ func rtUiBuildMenus() {
                 j = j + 1
             }
         }
-        UiInsertMenu(mh, 0)
+        if (rtUiClaimedMask & (1 << i)) == 0 {
+            UiInsertMenu(mh, 0)
+            rtUiBarMask = rtUiBarMask | (1 << i)
+        }
         pokel(rtUiMenuHandlesArr + i * 4, int(mh))
         i = i + 1
     }
+    UiDrawMenuBar()
+}
+
+// rtUiSyncMenuBar (language-runtime-cleanup, spec 5.2): the bar shows
+// Apple + the app-scope menus (unclaimed by any window) + the FRONT
+// window's own `menus:` set, in declaration order. Menus leaving the bar
+// are deleted, arriving ones appended in index order (InsertMenu beforeID
+// 0 = append), then one DrawMenuBar -- skipped entirely when nothing
+// changes, so ordinary activation stays free. Every MenuHandle lives for
+// the whole run; only bar membership changes.
+func rtUiSyncMenuBar() {
+    var front: ptr
+    var inst: ptr
+    var target: int
+    var i: int
+    var bit: int
+    var mh: ptr
+
+    if rtUiMenuHandlesArr == ptr(0) or rtUiClaimedMask == 0 {
+        return
+    }
+    target = ((1 << rtUiNMenusVal) - 1) & (0x7FFFFFFF ^ rtUiClaimedMask)
+    front = UiFrontWindow()
+    if front != ptr(0) and peekw(front + 108) == rtUiWindowKind {
+        inst = rtUiWinstOf(front)
+        if inst != ptr(0) {
+            target = target | uidWinMenuMask(RtUiWinst(inst).winIdx)
+        }
+    }
+    if target == rtUiBarMask {
+        return
+    }
+    i = 0
+    while i < rtUiNMenusVal {
+        bit = 1 << i
+        if (rtUiBarMask & bit) != 0 and (target & bit) == 0 {
+            UiDeleteMenu(rtUiMenuIdBase + i)
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < rtUiNMenusVal {
+        bit = 1 << i
+        if (target & bit) != 0 and (rtUiBarMask & bit) == 0 {
+            mh = ptr(peekl(rtUiMenuHandlesArr + i * 4))
+            UiInsertMenu(mh, 0)
+        }
+        i = i + 1
+    }
+    rtUiBarMask = target
     UiDrawMenuBar()
 }
 
@@ -1396,6 +1472,7 @@ func rtUiMenuRecomputeDim() {
 }
 
 func rtUiAfterFrontChange() {
+    rtUiSyncMenuBar()
     rtUiMenuRecomputeDim()
     rtUiTraceFrontCheck()
 }

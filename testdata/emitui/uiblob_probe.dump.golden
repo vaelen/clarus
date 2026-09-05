@@ -1,37 +1,37 @@
-header magic=0x434C5549 version=1 nWins=2 winsOff=44 nMenus=2 menusOff=764 nMenuHandlers=2 mhOff=852 nEvery=1 everyOff=900 appOff=904
-window 0 name="Main" title="Main" w=400 h=300 resizable=1 minW=400 minH=300 nWidgets=7 widgetsOff=140 stateSize=8 handlerMask=287 formOff=-1
+header magic=0x434C5549 version=1 nWins=2 winsOff=44 nMenus=2 menusOff=772 nMenuHandlers=2 mhOff=860 nEvery=1 everyOff=908 appOff=912
+window 0 name="Main" title="Main" w=400 h=300 resizable=1 minW=400 minH=300 nWidgets=7 widgetsOff=148 stateSize=8 handlerMask=287 formOff=-1 menuMask=0
 widget 0 0 kind=0 name="Go" caption="Go" atKind=0 x=10 yIsBottom=0 y=10 widthIsFill=0 width=0 fillBoth=0 flags=1 eventMask=1 tableOff=-1
 widget 0 1 kind=1 name="Flag" caption="Flag" atKind=2 x=0 yIsBottom=0 y=10 widthIsFill=0 width=0 fillBoth=0 flags=0 eventMask=2 tableOff=-1
 widget 0 2 kind=2 name="Board" caption=- atKind=1 x=0 yIsBottom=1 y=0 widthIsFill=0 width=0 fillBoth=0 flags=4 eventMask=5 tableOff=-1
 widget 0 3 kind=3 name="Lbl" caption="Status" atKind=1 x=0 yIsBottom=1 y=0 widthIsFill=0 width=0 fillBoth=0 flags=0 eventMask=0 tableOff=-1
 widget 0 4 kind=4 name="Name" caption="Name:" atKind=3 x=0 yIsBottom=0 y=0 widthIsFill=0 width=0 fillBoth=0 flags=0 eventMask=8 tableOff=-1
 widget 0 5 kind=5 name="Body" caption=- atKind=1 x=0 yIsBottom=1 y=0 widthIsFill=0 width=0 fillBoth=1 flags=8 eventMask=0 tableOff=-1
-widget 0 6 kind=7 name="Rows" caption=- atKind=1 x=0 yIsBottom=1 y=0 widthIsFill=1 width=0 fillBoth=0 flags=0 eventMask=48 tableOff=956
-table 0 6 rowsIdx=47 layoutOff=1004 nCols=2 colsOff=972
+widget 0 6 kind=7 name="Rows" caption=- atKind=1 x=0 yIsBottom=1 y=0 widthIsFill=1 width=0 fillBoth=0 flags=0 eventMask=48 tableOff=964
+table 0 6 rowsIdx=49 layoutOff=1012 nCols=2 colsOff=980
 col 0 6 0 header="Name" widthPx=140 widthFill=0 fieldIndex=0
 col 0 6 1 header="Count" widthPx=0 widthFill=1 fieldIndex=1
 layout table0.6 recSize=68 nFields=2
 field table0.6 0 ftype=4 offset=0 strCap=63 enumCount=0 enumLabelsOff=-1 enumValuesOff=-1
 field table0.6 1 ftype=0 offset=64 strCap=0 enumCount=0 enumLabelsOff=-1 enumValuesOff=-1
-window 1 name="EditForm" title="Edit" w=300 h=200 resizable=0 minW=0 minH=0 nWidgets=5 widgetsOff=504 stateSize=0 handlerMask=96 formOff=920
+window 1 name="EditForm" title="Edit" w=300 h=200 resizable=0 minW=0 minH=0 nWidgets=5 widgetsOff=512 stateSize=0 handlerMask=96 formOff=928 menuMask=0
 widget 1 0 kind=4 name="FLabel" caption="Label:" atKind=3 x=0 yIsBottom=0 y=0 widthIsFill=0 width=0 fillBoth=0 flags=0 eventMask=0 tableOff=-1
 widget 1 1 kind=6 name="FStatus" caption="Status:" atKind=3 x=0 yIsBottom=0 y=0 widthIsFill=0 width=0 fillBoth=0 flags=0 eventMask=0 tableOff=-1
 widget 1 2 kind=1 name="FFlag" caption="Flag" atKind=3 x=0 yIsBottom=0 y=0 widthIsFill=0 width=0 fillBoth=0 flags=0 eventMask=0 tableOff=-1
 widget 1 3 kind=0 name="OK" caption="OK" atKind=3 x=0 yIsBottom=0 y=0 widthIsFill=0 width=0 fillBoth=0 flags=1 eventMask=0 tableOff=-1
 widget 1 4 kind=0 name="Cancel" caption="Cancel" atKind=3 x=0 yIsBottom=0 y=0 widthIsFill=0 width=0 fillBoth=0 flags=2 eventMask=0 tableOff=-1
-form 1 layoutOff=1060 nBinds=3 bindsOff=932
+form 1 layoutOff=1068 nBinds=3 bindsOff=940
 bind 1 0 widgetIndex=0 fieldIndex=0
 bind 1 1 widgetIndex=1 fieldIndex=2
 bind 1 2 widgetIndex=2 fieldIndex=3
 layout form1 recSize=74 nFields=4
 field form1 0 ftype=4 offset=0 strCap=63 enumCount=0 enumLabelsOff=-1 enumValuesOff=-1
 field form1 1 ftype=0 offset=64 strCap=0 enumCount=0 enumLabelsOff=-1 enumValuesOff=-1
-field form1 2 ftype=5 offset=68 strCap=0 enumCount=3 enumLabelsOff=1164 enumValuesOff=1176
+field form1 2 ftype=5 offset=68 strCap=0 enumCount=3 enumLabelsOff=1172 enumValuesOff=1184
 enum form1 2 0 label="Open" value=0
 enum form1 2 1 label="Closed" value=1
 enum form1 2 2 label="Pending" value=2
 field form1 3 ftype=2 offset=72 strCap=0 enumCount=0 enumLabelsOff=-1 enumValuesOff=-1
-menu 0 name="File" title="File" nItems=3 itemsOff=804 isStd=0
+menu 0 name="File" title="File" nItems=3 itemsOff=812 isStd=0
 item 0 0 name="New" caption="New" key=78 separator=0
 item 0 1 name=- caption=- key=0 separator=1
 item 0 2 name="Quit" caption="Quit" key=81 separator=0

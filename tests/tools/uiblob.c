@@ -47,7 +47,7 @@
 
 /* Record sizes, in bytes, from uiblob.cla's own emission order. */
 #define HEADER_SIZE 44 /* 11 int32 */
-#define WINDOW_SIZE 48 /* 12 int32 */
+#define WINDOW_SIZE 52 /* 13 int32 */
 #define WIDGET_SIZE 52 /* 13 int32 */
 #define MENU_SIZE 20   /*  5 int32 */
 #define ITEM_SIZE 16   /*  4 int32 */
@@ -191,10 +191,11 @@ int main(int argc, char **argv) {
         printf(" title=");
         putStr(i32(base + 4));
         printf(" w=%ld h=%ld resizable=%ld minW=%ld minH=%ld nWidgets=%ld"
-               " widgetsOff=%ld stateSize=%ld handlerMask=%ld formOff=%ld\n",
+               " widgetsOff=%ld stateSize=%ld handlerMask=%ld formOff=%ld"
+               " menuMask=%ld\n",
                i32(base + 8), i32(base + 12), i32(base + 16), i32(base + 20),
                i32(base + 24), nWidgets, widgetsOff, i32(base + 36),
-               i32(base + 40), formOff);
+               i32(base + 40), formOff, i32(base + 48));
 
         if (nWidgets < 0) bad(base + 28, "negative nWidgets");
         for (wi = 0; wi < nWidgets; wi++) {

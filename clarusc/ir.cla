@@ -603,6 +603,13 @@ record IRBindDesc {
 // formRecNameIdx is its `form for T`'s T (interned); formBindsHead chains
 // IRBindDesc, built once in lowWindowDecl by walking the already-lowered
 // widgetsHead for any widget with a checker-resolved `binds:` (bindsIdx).
+//
+// menuMask (language-runtime-cleanup, spec 5.3): bit i set = the menu at
+// whole-program declaration index i is claimed by this window type via its
+// `menus:` property; 0 for a window with no `menus:` clause (every
+// pre-existing program), so every existing blob field value is unchanged
+// and only the entry stride grows. Bit 31 is unused -- the checker caps a
+// program at 31 declared menus.
 record IRWindowDesc {
     nameIdx: int
     titleIdx: int
@@ -615,6 +622,7 @@ record IRWindowDesc {
     stateFieldsHead: int
     formRecNameIdx: int
     formBindsHead: int
+    menuMask: int
 }
 
 // IRMenuItemDesc: one entry in a menu's rt_ui_item_desc[] (Ch9) -- a real
@@ -2837,7 +2845,7 @@ func irColumnDescNext(i: int): int {
     return irColumnDescs[i].next
 }
 
-func newIRWindowDesc(nameIdx: int, titleIdx: int, w: int, h: int, resizable: bool, minW: int, minH: int, widgetsHead: int, stateFieldsHead: int, formRecNameIdx: int, formBindsHead: int): int {
+func newIRWindowDesc(nameIdx: int, titleIdx: int, w: int, h: int, resizable: bool, minW: int, minH: int, widgetsHead: int, stateFieldsHead: int, formRecNameIdx: int, formBindsHead: int, menuMask: int): int {
     var n: IRWindowDesc
 
     n.nameIdx = nameIdx
@@ -2851,6 +2859,7 @@ func newIRWindowDesc(nameIdx: int, titleIdx: int, w: int, h: int, resizable: boo
     n.stateFieldsHead = stateFieldsHead
     n.formRecNameIdx = formRecNameIdx
     n.formBindsHead = formBindsHead
+    n.menuMask = menuMask
     irWindowDescs.add(n)
     return irWindowDescs.count - 1
 }
@@ -2897,6 +2906,10 @@ func irWindowDescFormRecName(i: int): int {
 
 func irWindowDescFormBindsHead(i: int): int {
     return irWindowDescs[i].formBindsHead
+}
+
+func irWindowDescMenuMask(i: int): int {
+    return irWindowDescs[i].menuMask
 }
 
 func irBindDescListAppend(tailIdx: int, idx: int): int {
