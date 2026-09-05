@@ -7586,8 +7586,37 @@ func lowSynthConnFireFailed() {
     lowLocalsTail = -1
 }
 
+// lowSynthConnPump builds clar_conn_pump(): the UI event loop's pump
+// hook (runtime/clarus/native.cla's nat_UiConnPump forwards to it).
+// Body is rtConnPump() when usesConn, EMPTY otherwise -- the one place a
+// conn-less native build is cut off from the conn runtime's reachability.
+//
+// compiler-cleanup: root-gating alone could not do this. ui.cla's event
+// loop calls UiConnPump() unconditionally, nat_UiConnPump resolved that
+// to a direct rtConnPump() call, and cg68AddRoots roots every nat_*
+// function -- so rtConnPump and everything under it (rtConnAlive, the
+// serial driver, ...) was reachable in EVERY native binary whether or not
+// the program ever opened a connection. Routing the hook through a
+// synthesized function whose body lowering controls is the same seam the
+// four clar_conn_fire_* dispatchers above already use.
+func lowSynthConnPump() {
+    var fnameIdx: int
+    var body: int
+
+    body = -1
+    if usesConn {
+        // newIRCallFn takes an INTERNED NAME, not an irFuncs index, so
+        // rtConnPump needs no lookup here -- conn.cla is spliced whenever
+        // usesConn, and shake resolves the edge by name.
+        body = newIRExprStmt(newIRCallFn(intern("rtConnPump"), -1, irVoidT))
+    }
+    fnameIdx = intern("clar_conn_pump")
+    newIRFunc(fnameIdx, -1, irVoidT, -1, body)
+    shakeAddRoot(fnameIdx)
+}
+
 // lowSynthConnDispatchers is this section's one entry point (called from
-// lowerProgram's tail, only when usesConn).
+// lowerProgram's tail, when usesConn or want68k).
 func lowSynthConnDispatchers() {
     // ORDER MATTERS: IR function order drives emission order, so keeping
     // opened/received/closed/failed pins every existing golden.
@@ -7595,6 +7624,7 @@ func lowSynthConnDispatchers() {
     lowSynthConnFireReceived()
     lowSynthConnFireSimple("closed", "clar_conn_fire_closed")
     lowSynthConnFireFailed()
+    lowSynthConnPump()
 }
 
 // lowUiSynthExternName maps a reverse-waist extern's OWN declared Clarus
@@ -7633,6 +7663,7 @@ func lowUiSynthExternName(externNameIdx: int): int {
     if nm == "clar_conn_fire_received" { return intern("clar_conn_fire_received") }
     if nm == "clar_conn_fire_closed" { return intern("clar_conn_fire_closed") }
     if nm == "clar_conn_fire_failed" { return intern("clar_conn_fire_failed") }
+    if nm == "clar_conn_pump" { return intern("clar_conn_pump") }
     return -1
 }
 

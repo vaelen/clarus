@@ -1467,10 +1467,21 @@ func nat_UiScreenBits(baseAddrOut: ptr, rowBytesOut: ptr, boundsOut: ptr) {
 // 6, see that extern's own doc comment for why it's an extern at all
 // rather than a plain call). native.cla is spliced only under want68k,
 // where conn.cla + conn_68k.cla are now ALSO unconditionally spliced
-// (drive.cla), so rtConnPump always exists here to forward to -- a plain
-// one-line pass-through, resolved automatically by cg68k's existing
+// (drive.cla), so the pump hook always exists here to forward to -- a
+// plain one-line pass-through, resolved automatically by cg68k's existing
 // clause-less-extern fallback (cgCallExtNatFallback), no special-casing
 // needed anywhere in cg68k.cla itself.
+//
+// compiler-cleanup: forwards through the compiler-synthesized
+// clar_conn_pump() (lower.cla's lowSynthConnPump), whose body is
+// rtConnPump() only when the program uses a connection and EMPTY
+// otherwise -- so a conn-less native build no longer carries rtConnPump
+// and everything under it. Calling rtConnPump directly here made the
+// whole conn runtime reachable from a nat_* root in every native binary,
+// which no amount of root-gating could undo. Same link-time-loud seam the
+// four clar_conn_fire_* stubs conn.cla calls already use.
+external func clar_conn_pump()
+
 func nat_UiConnPump() {
-    rtConnPump()
+    clar_conn_pump()
 }
