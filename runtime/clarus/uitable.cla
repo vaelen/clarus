@@ -553,6 +553,8 @@ callback func rtUiLdefDraw(msg: word, select: bool, rectPtr: ptr, cellPacked: in
     var count: int
     var row: int
     var rec: ptr
+    var recH: ptr
+    var hstate: int
     var fillW: int
     var x: int
     var k: int
@@ -617,7 +619,22 @@ callback func rtUiLdefDraw(msg: word, select: bool, rectPtr: ptr, cellPacked: in
                 // rtUiTableRelayout/rtUiTableSyncOne state for their own
                 // ListRec master pointers.
                 rec = rtListAt(rows, row)
+                // compiler-cleanup: re-deriving `rec` above is necessary but
+                // NOT sufficient. rtUiTableDrawField's RtFtStr arm hands
+                // `base + 1` -- an address INSIDE this same relocatable
+                // rt_list element block -- straight into UiDrawText, and
+                // DrawText itself allocates (font strike load), so the
+                // relocation window is INSIDE the trap: the one shape
+                // bff3268's re-derive-before-the-call rule cannot cover.
+                // Lock the element block for the whole field draw (the
+                // callee takes only `rec`, not the handle, so the lock must
+                // live here); restore the handle's PRIOR state rather than
+                // a bare HUnlock -- a caller may already hold it locked.
+                recH = RtList(rows).data
+                hstate = UiHGetState(recH)
+                UiHLock(recH)
                 rtUiTableDrawField(rec, layoutOff, uidColFieldIndex(colsOff, k), colRect)
+                UiHSetState(recH, hstate)
                 UiSetClip(saveClip)
                 UiDisposeRgn(saveClip)
                 UiDisposePtr(colRect)
@@ -859,6 +876,7 @@ func rtUiTableSyncOne(inst: ptr, wIdx: int) {
     var rows: ptr
     var dataCount: int
     var lmCount: int
+    var hstate: int
     var savedPort: ptr
 
     w = RtUiWinst(inst)
@@ -883,8 +901,15 @@ func rtUiTableSyncOne(inst: ptr, wIdx: int) {
     } else {
         UiLDelRow(lmCount - dataCount, dataCount, lh)
     }
-    lhMp = UiHandleDeref(lh) // re-derive: LAddRow/LDelRow can move memory
-    UiInvalRect(lhMp + rtUiListRView)
+    // compiler-cleanup: re-deriving after LAddRow/LDelRow is necessary but
+    // NOT sufficient -- InvalRect itself allocates (update-region growth)
+    // while holding the ListRec's master pointer as its argument, so the
+    // relocation window is INSIDE the trap. Lock lh across the call; prior
+    // state restored, never blindly unlocked (a caller may hold it locked).
+    hstate = UiHGetState(lh)
+    UiHLock(lh)
+    UiInvalRect(UiHandleDeref(lh) + rtUiListRView)
+    UiHSetState(lh, hstate)
     UiSetPort(savedPort)
 }
 

@@ -1,0 +1,10 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// compiler-cleanup: a mismatched duplicate const cites BOTH declarations,
+// the same two-diagnostic shape emitConflictingExtern uses.
+const limit: int = 10
+const limit: int = 20
+func f(): int {
+    return limit
+}

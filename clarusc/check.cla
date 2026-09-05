@@ -758,11 +758,13 @@ var usesSortedMap: bool
 // retired that gate, so this flag is now set-but-unread by the splice.
 var usesDateTime: bool
 
-// usesConn is true once the program under check has declared a global
-// `var` of type `connection` (checkTopDeclPhase1's DkVar arm sets it,
-// right after delegating to checkVarDecl -- see that call site's own
-// comment for why the check lives THERE and not inside checkVarDecl
-// itself, which is also called for ordinary local var decls). UNLIKE
+// usesConn is true once the program under check has named the `connection`
+// type ANYWHERE a type may appear -- local, param, record field, return
+// type, list/map element (resolveType's TxNamed arm sets it, beside the
+// identical usesFileh hook). It was global-var-only until compiler-cleanup
+// (checkTopDeclPhase1's DkVar arm), which meant a program whose only
+// connection was a field or a param never got conn.cla spliced and failed
+// to link on rtConn* -- tests/conntest/fieldonly.sh pins that. UNLIKE
 // usesSortedMap/usesDateTime/usesFileSaveLoad above, this flag is still
 // READ: drive.cla's manifest splice (2026-08-15 serial-connection spec,
 // Task 4) gates conn.cla + conn_c.cla on it, on the host lane only --
@@ -2301,6 +2303,17 @@ func resolveType(te: int): int {
         if symbols[symIdx].typeIdx == fileHandleT {
             usesFileh = true
         }
+        // usesConn (compiler-cleanup, spec %4.3c): the same rule, for the
+        // same reason -- `connection` named in ANY type position (local,
+        // param, record field, return type, list/map element) has to pull
+        // conn.cla in on the host lane. This used to be global-var-only
+        // (checkTopDeclPhase1's DkVar arm, now deleted), so a program whose
+        // only connection was a field or a param never got the module
+        // spliced and failed to link on rtConn* -- exactly the gap the
+        // usesFileh hook right above was added to avoid.
+        if symbols[symIdx].typeIdx == connectionT {
+            usesConn = true
+        }
         return symbols[symIdx].typeIdx
     }
     case TxWord {
@@ -2796,7 +2809,10 @@ func constSymMatches(a: Symbol, b: Symbol): bool {
 // already there by the time a same-name duplicate is checked) -- no new
 // decl-indexed side table (funcSigByDecl's own idiom) is needed to
 // compare against, scopeLookup reads the first decl's Symbol straight
-// back.
+// back. A genuine mismatch emits TWO "redeclaration of X (also declared
+// at L:C)" diagnostics, one at each site (compiler-cleanup phase) --
+// emitConflictingExtern's own shape, since lib.cla's Diag carries a
+// single position.
 func checkConstDecl(d: int) {
     var t: int
     var k: TypeKind
@@ -2834,7 +2850,10 @@ func checkConstDecl(d: int) {
     } else {
         symIdx = scopeLookup(curScope, sym.nameIdx)
         if symIdx == -1 or not constSymMatches(symbols[symIdx], sym) {
-            emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+            // compiler-cleanup: cite BOTH sites, emitConflictingExtern's
+            // shape (Diag carries one position, so two diagnostics).
+            emitDiag(declLine(firstDecl), declCol(firstDecl), "redeclaration of " + poolGet(sym.nameIdx) + " (also declared at " + numToStr(declLine(d)) + ":" + numToStr(declCol(d)) + ")")
+            emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx) + " (also declared at " + numToStr(declLine(firstDecl)) + ":" + numToStr(declCol(firstDecl)) + ")")
         }
     }
 }
@@ -4993,6 +5012,8 @@ func checkEditStmt(s: int) {
     var target: int
     var tt: int
     var rootIdent: int
+    var shapeOk: bool
+    var xk: TypeKind
 
     formNameIdx = editForm(s)
     symIdx = scopeLookup(curScope, formNameIdx)
@@ -5041,8 +5062,31 @@ func checkEditStmt(s: int) {
         }
     }
     tt = checkExpr(target, formRecType)
-    if tt != InvalidT and not (typeKind(tt) == TyRec and typeNameIdx(tt) == typeNameIdx(formRecType)) {
+    if tt == InvalidT {
+        return
+    }
+    if not (typeKind(tt) == TyRec and typeNameIdx(tt) == typeNameIdx(formRecType)) {
         emitDiag(exprLine(target), exprCol(target), "cannot use " + typeName(tt) + " where " + recName + " is expected")
+        return
+    }
+    // compiler-cleanup: the SHAPE restriction lowEditStmt used to enforce
+    // via a hard abort -- a variable (global, or window-scoped per-instance
+    // through a TyWindowRef select), a list element, or a (plain) map
+    // element -- is a checker diagnostic now. sortedmap/intmap elements and
+    // nested fields are rejected here, at the target's own position. The
+    // test runs AFTER checkExpr(target) because exprTypeGet on the
+    // container sub-expression is only meaningful once that sub-expression
+    // has been checked.
+    shapeOk = exprKind(target) == ExIdent
+    if exprKind(target) == ExSelect and typeKind(exprTypeGet(selectX(target))) == TyWindowRef {
+        shapeOk = true
+    }
+    if exprKind(target) == ExIndex {
+        xk = typeKind(exprTypeGet(indexX(target)))
+        shapeOk = xk == TyList or xk == TyMap
+    }
+    if not shapeOk {
+        emitDiag(exprLine(target), exprCol(target), "edit target must be a variable, list element, or map element")
     }
 }
 
@@ -5610,6 +5654,7 @@ func checkConversion(e: int, target: int, name: string): int {
     var argsHead: int
     var at: int
     var ok: bool
+    var accepted: string
 
     argsHead = callArgsHead(e)
     if exprListCount(argsHead) != 1 {
@@ -5621,27 +5666,40 @@ func checkConversion(e: int, target: int, name: string): int {
         return InvalidT
     }
     ok = false
+    accepted = ""
     if name == "string" {
         // string(n) (Task 3): strT(255)'s own index is non-singleton (one
         // per distinct string length), unlike IntT/FixedT/CharT/PtrT
         // below, so this arm keys on the conversion NAME rather than
-        // `target == ...`.
-        ok = typeKind(at) == TyInt
+        // `target == ...`. TyChar joins TyInt in the compiler-cleanup
+        // phase: string(c) is the one-character string.
+        accepted = "an int or char"
+        ok = typeKind(at) == TyInt or typeKind(at) == TyChar
     } else if target == IntT {
+        accepted = "a fixed, char, enum, or ptr"
         ok = typeKind(at) == TyFixed or typeKind(at) == TyChar or typeKind(at) == TyEnum or typeKind(at) == TyPtr
     } else if target == FixedT {
+        accepted = "an int"
         ok = typeKind(at) == TyInt
     } else if target == CharT {
+        accepted = "an int"
         ok = typeKind(at) == TyInt
     } else if target == PtrT {
+        accepted = "an int or overlay"
         ok = typeKind(at) == TyInt or typeKind(at) == TyOverlay
     } else if typeKind(target) == TyEnum {
+        accepted = "an int"
         ok = typeKind(at) == TyInt
     } else if typeKind(target) == TyOverlay {
+        accepted = "a ptr"
         ok = typeKind(at) == TyPtr
     }
     if not ok {
-        emitDiag(exprLine(e), exprCol(e), "cannot convert " + typeName(at) + " to " + name)
+        // compiler-cleanup: name what the conversion ACCEPTS, not just
+        // that the argument's own type was refused -- "cannot convert int
+        // to int" said nothing about why an identity conversion is an
+        // error (it is: every conversion is an explicit change of type).
+        emitDiag(exprLine(e), exprCol(e), name + "() expects " + accepted + ", got " + typeName(at))
         return InvalidT
     }
     return target
@@ -5795,12 +5853,19 @@ func checkIdentCall(e: int, fn: int): int {
 
 // transportName renders a call's transport tag (see ast.cla's callTransport)
 // as the contextual keyword that produced it -- used only to build the
-// misuse diagnostic below.
+// misuse diagnostic below. Tag 0 (no prefix) never reaches here: every
+// caller pre-filters on `transport != 0`, so anything but 1/2 is a
+// compiler invariant violation, not a user error (compiler-cleanup: the
+// old fall-through silently rendered ANY unknown tag as "serial").
 func transportName(tag: int): string {
     if tag == 1 {
         return "appletalk"
     }
-    return "serial"
+    if tag == 2 {
+        return "serial"
+    }
+    abort("clarusc: unknown transport tag " + numToStr(tag))
+    return ""
 }
 
 // callIsSingleArgOpen reports whether e is `X.open(ARG)` -- exactly one
@@ -5829,7 +5894,7 @@ func checkCall(e: int, expected: int): int {
     argsHead = callArgsHead(e)
     transport = callTransport(e)
     if transport != 0 and not callIsSingleArgOpen(fn, argsHead) {
-        emitDiag(exprLine(e), exprCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
+        emitDiag(callTransportLine(e), callTransportCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
         return InvalidT
     }
     if exprKind(fn) == ExIdent {
@@ -5841,7 +5906,7 @@ func checkCall(e: int, expected: int): int {
         return InvalidT
     }
     if transport != 0 and t != InvalidT and typeKind(exprTypeGet(argsHead)) != TyStr {
-        emitDiag(exprLine(e), exprCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
+        emitDiag(callTransportLine(e), callTransportCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
         return InvalidT
     }
     return t
@@ -6096,8 +6161,6 @@ func checkReset() {
 // phase 2, so they can target any window/menu/function regardless of source
 // order (Ch6: Scope).
 func checkTopDeclPhase1(d: int) {
-    var symIdx: int
-
     switch declKind(d) {
     case DkRecord {
         checkRecordDecl(d)
@@ -6106,21 +6169,11 @@ func checkTopDeclPhase1(d: int) {
         checkEnumDecl(d)
     }
     case DkVar {
+        // usesConn used to be set here, from the GLOBAL var decl only
+        // (2026-08-15 serial-connection spec, Task 4). It now lives in
+        // resolveType's TxNamed arm, beside usesFileh's own hook, so every
+        // type position sets it -- see that comment (compiler-cleanup).
         checkVarDecl(d)
-        // usesConn (2026-08-15 serial-connection spec, Task 4): only a
-        // GLOBAL var decl reaches here -- checkBlock's own local-var loop
-        // calls checkVarDecl directly, never through this top-level
-        // switch -- matching spec %3.3's "global connection vars only"
-        // receiver scope exactly. Reads the type back off the symbol
-        // checkVarDecl just declared (scopeLookup, not a second
-        // resolveType call): resolveType emits its own "undefined: NAME"
-        // diagnostic on an unresolvable type expr, so calling it again
-        // here would double that diagnostic for every global var with a
-        // bad type -- scopeLookup is a plain, side-effect-free read.
-        symIdx = scopeLookup(curScope, varDeclName(d))
-        if symIdx != -1 and symbols[symIdx].typeIdx == connectionT {
-            usesConn = true
-        }
     }
     case DkConst {
         checkConstDecl(d)

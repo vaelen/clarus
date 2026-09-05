@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// compiler-cleanup: an identity conversion is still an error, and the
+// message names what int() expects instead of "cannot convert int to int".
+func f() {
+    var i: int
+    var j: int
+    i = 1
+    j = int(i)
+}

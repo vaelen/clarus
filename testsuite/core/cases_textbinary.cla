@@ -147,8 +147,12 @@ func caseCrc16(): TestResult {
 
 // caseIntToStr: `string(n)` (Ch3: Numeric Conversions) -- zero, an
 // ordinary positive/negative value, and both int extremes (int.min
-// exercises rtIntToStr's int.min-safe digit-by-digit shape).
+// exercises rtIntToStr's int.min-safe digit-by-digit shape), plus
+// `string(c)` for a char (compiler-cleanup phase: the one-character
+// string, lowered as the same IStrConcatChar IR `"" + c` produces).
 func caseIntToStr(): TestResult {
+    var c: char
+
     if string(0) != "0" {
         return tkFail("IntToStr", "0 wrong")
     }
@@ -163,6 +167,13 @@ func caseIntToStr(): TestResult {
     }
     if string(-2147483648) != "-2147483648" {
         return tkFail("IntToStr", "int.min wrong")
+    }
+    c = 'q'
+    if string('a') != "a" {
+        return tkFail("IntToStr", "string('a') wrong")
+    }
+    if string(c) != "q" {
+        return tkFail("IntToStr", "string(c) wrong")
     }
     return tkPass("IntToStr")
 }

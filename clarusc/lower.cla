@@ -1279,6 +1279,14 @@ func lowCall(e: int): int {
             // Conversions) -- IIntToStr is a KStr-producing conversion,
             // lowered the same shape as any other single-arg conversion
             // just above.
+            if typeKind(exprTypeGet(callArgsHead(e))) == TyChar {
+                // compiler-cleanup: string(c) is the one-character string
+                // -- the SAME IR `"" + c` produces (IStrConcatChar over an
+                // empty literal), so no new intrinsic, runtime function, or
+                // backend arm. lowMethodArgs2 is the mixed-source arg
+                // chainer (already-lowered IR head + one raw AST arg).
+                return newIRIntr(IStrConcatChar(), lowMethodArgs2(newIRStrConst(lowInternStr(""), irStrType(255)), callArgsHead(e)), ty)
+            }
             return newIRIntr(IIntToStr(), lowArgs(callArgsHead(e)), ty)
         } else if name == "askOpen" {
             // askOpen(path, types) -- native-gaps-cleanup Task 2: types is
@@ -3455,16 +3463,15 @@ func lowEditEmit(winNameIdx: int, kind: int, opA: int, opB: int): int {
 
 // lowEditStmt lowers `edit F, target` / `edit F, new T` (Ch10: The Edit
 // Statement). checkEditStmt already guarantees F is a form window and
-// (isNew case) T matches its form record, or (target case) target's type
-// equals the form record type -- but NOT that target is one of the four
-// runtime-supported lvalue shapes (checkExpr accepts any expr of the right
-// TYPE, including a shape like `xs[i].nested` that happens to select a
-// field of the form record's own type nested inside another record): this
-// function is what actually restricts target to a bare variable (global or
-// window-scoped per-instance, both via lowExpr -- lowIdent/lowSelect's
-// TyWindowRef case already produce an addressable FieldRef/VarRef either
-// way), a list element, or a map element, rejecting anything else with the
-// brief's own pinned message.
+// (isNew case) T matches its form record, and -- since the compiler-cleanup
+// phase -- that target is one of the four runtime-supported lvalue shapes:
+// a bare variable (global or window-scoped per-instance, both via lowExpr
+// -- lowIdent/lowSelect's TyWindowRef case already produce an addressable
+// FieldRef/VarRef either way), a list element, or a map element. The
+// lowUnsupported at the bottom is the defensive fallback for a shape the
+// checker somehow let through; it used to be the ONLY thing rejecting a
+// sortedmap/intmap element or a nested field like `xs[i].nested`, which
+// made a plain user error an `unsupported construct` abort.
 func lowEditStmt(s: int): int {
     var winNameIdx: int
     var target: int
@@ -3492,6 +3499,7 @@ func lowEditStmt(s: int): int {
             return lowEditEmit(winNameIdx, 3, lowExpr(indexX(target)), lowExpr(indexI(target)))
         }
     }
+    // unreachable: checkEditStmt rejects every other shape (compiler-cleanup)
     lowUnsupported("edit target must be a variable, list element, or map element")
     return -1
 }
@@ -5064,55 +5072,52 @@ func lowBuildAbortBailBlock(ret: int): int {
 // trailing `/` is restored after normalizing before comparing, matching
 // the directory-prefix shape `rtDir` always denotes.
 //
-// Two comparisons remain, matching how the two lanes actually record a
-// runtime-module decl's path (read from expand()/driveKeyResolve in
-// drive.cla before choosing either):
+// Fix round 3's two remaining comparisons (host: prefix-match the decl
+// path against normalizePath(rtDir) + '/'; Mac: prefix-match the baked
+// resource key against the literal "runtime/clarus/") are BOTH gone as of
+// round 4.
 //
-//   - Host lane (hostPaths true): normalize `rtDir` (findRtDir's search
-//     result or an explicit --rtdir, whatever its own spelling), restore
-//     the trailing '/' normalizePath dropped, and prefix-match the decl
-//     path against THAT -- correct for every `--rtdir` spelling that
-//     denotes the same real directory (with or without `./`, with or
-//     without a trailing slash), and still correct for the default
-//     upward-search case (already lexically clean, so normalizing is a
-//     no-op there). A user file would need to sit inside that EXACT
-//     resolved directory to collide -- i.e., it would genuinely BE a
-//     runtime module for this compile, not a false positive.
-//   - Mac lane (hostPaths false): `rtDir` is never populated on this
-//     lane -- runtime-module identity there is always the baked-resource
-//     KEY string (rtModuleKey/driveKeyResolve), a '/'-separated
-//     "runtime/clarus/<file>" form, stored verbatim via setDeclFile
-//     (expand()'s `path = ... key2 ...`/`path = key2` arms) -- distinct
-//     BY CONSTRUCTION from ordinary Mac disk paths, which drivePathJoin/
-//     driveMacDirOf always spell in HFS colon form (":Volume:Dir:file.cla")
-//     and can therefore never contain a '/' at all, let alone this exact
-//     substring. A literal prefix match against the key-space constant
-//     is exactly right here, and was ALREADY correct before any Task 8
-//     fix round -- neither the substring-widening risk (fix round 1) nor
-//     the raw-vs-normalized gap (fix round 2) ever applied to this lane.
+// Fix round 4 (compiler-cleanup, 2026-09-05): no path comparison at all --
+// origin is recorded by drive.cla at splice time (drvRuntimeFiles, marked
+// in expand() for every file read while drvSpliceActive is true).
+// Symlinks, relative spellings, and Mac aliases are all irrelevant: two
+// --rtdir spellings that denote the same directory only via a symlink
+// were the residual round 3 left behind, and there is nothing left to
+// compare. The predicate is now a lookup, and the lane split disappears
+// with it -- host paths and Mac resource keys are both just pool indices
+// the driver already stamped.
+//
+// One deliberate widening: expand()'s include recursion inherits
+// drvSpliceActive, so a toolbox/*.cla file first read under a runtime
+// splice (ui.cla and friends `include "../../toolbox/*.cla"`) now
+// classifies runtime-origin where the path compare called it user code.
+// That is the intended semantics -- it IS part of the runtime's
+// transitive closure for that compile -- and it is unobservable today:
+// this predicate is only ever asked about a `func` DECLARATION (the one
+// call site below), and no toolbox/ module declares a func body.
+//
+// The same first-read rule runs the other way too, and that direction
+// DOES have func bodies in it: driveCompile's entry loop runs before
+// driveEarlySplice/driveManifestSplice, so a runtime module pulled in by
+// a user `include` naming its path is read with drvSpliceActive false and
+// classifies user-origin -- where the rtDir prefix compare called it
+// runtime. Accepted semantics (ruled 2026-09-05): including runtime
+// source by path is composing it as user code. Consequence: those
+// functions lose the abort-propagation exemption -- lowComputeCanAbort
+// (below) walks them for the abort intrinsic and its call-graph
+// propagation like any user function, the log() dispatcher edge included
+// (lowSynthAppLog's own "side effect worth knowing" note), and cg68k
+// emits the bail-block/__retN scaffolding for whatever that marks.
+// Correctness is unaffected (the exemption only ever suppresses
+// propagation, never introduces it); the module is simply treated the
+// way it would be if the user had written it.
+// See drvRuntimeFiles' own doc comment (drive.cla) for the first-read
+// rule that decides both directions.
 func declIsRuntimeOrigin(d: int): bool {
     var p: int
-    var path: string
-    var want: string
-    var normRtDir: string
 
     p = getDeclFile(d)
-    if p == -1 {
-        return false
-    }
-    path = poolGet(p)
-    if hostPaths {
-        if rtDir == "" {
-            return false
-        }
-        normRtDir = normalizePath(rtDir)
-        if normRtDir == "" or normRtDir[normRtDir.length - 1] != '/' {
-            normRtDir = normRtDir + "/"
-        }
-        return path.length >= normRtDir.length and path[0, normRtDir.length] == normRtDir
-    }
-    want = "runtime/clarus/"
-    return path.length >= want.length and path[0, want.length] == want
+    return p != -1 and drvRuntimeFiles.has(p)
 }
 
 // lowFuncDecl lowers a user `func` declaration into an ir.Func (stmt.go's

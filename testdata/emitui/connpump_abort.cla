@@ -1,0 +1,20 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// connpump_abort.cla (compiler-cleanup phase): pins cpEmitMain's host-lane
+// pump loop TEXT -- `while (!clar_aborting && clar_fn_rtConnAlive())` --
+// which only emits when the program uses BOTH a connection (irUsesConn)
+// and abort (lowUsesAbort). tests/conntest/abort.sh proves the loop's
+// BEHAVIOR; this golden is the byte-level tripwire a cprint.cla refactor
+// that dropped the clar_aborting short-circuit would otherwise slip past.
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    attempt {
+        conn.open(serial "modem:9600")
+        conn.send("hello")
+        abort("stop")
+    } aborted msg {
+        conn.close()
+    }
+}

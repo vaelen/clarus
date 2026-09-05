@@ -511,6 +511,10 @@ func driveReset() {
     libReset()
     rnInited = false
     seenPaths = driveFreshIntMap()
+    // compiler-cleanup: same seam as seenPaths -- drvRuntimeFiles is keyed
+    // by pool index, and a stale index from a previous compile would
+    // misclassify this one's decls.
+    drvRuntimeFiles.clear()
     asmHeads = driveFreshIntList()
     asmTails = driveFreshIntList()
     dedupHits = driveFreshIntList()
@@ -764,6 +768,42 @@ var drvEntryName: string
 // loop's own entry argument (entryFailed semantics are load-bearing).
 var drvSpliceActive: bool
 
+// drvRuntimeFiles (compiler-cleanup): the pool index of every source file
+// read while drvSpliceActive was true -- i.e. every runtime module.
+// lower.cla's declIsRuntimeOrigin consults THIS instead of comparing a
+// decl's path string against rtDir (lexical normalizePath could not see
+// through a symlink; there is nothing to compare now).
+//
+// The flag is INHERITED by expand()'s own include recursion, so a
+// toolbox/*.cla file whose FIRST read happens under a runtime splice
+// (runtime/clarus/{ui,uidialogs,conn_68k,fileh_68k}.cla each
+// `include "../../toolbox/*.cla"`) is recorded runtime-origin too --
+// deliberate: it is part of the runtime's transitive closure for that
+// compile. FIRST read is what decides, because seenPaths dedups every
+// later read of the same path, so a toolbox file the user composes
+// positionally BEFORE the splice runs stays user-origin. That asymmetry
+// is invisible today and can only ever matter if a toolbox/ module gains
+// a `func` BODY: declIsRuntimeOrigin has exactly one caller (lower.cla's
+// lowFuncDecl, for a func declaration), and the catalog is
+// `external func`/`const`/`record` only -- no bodies at all.
+//
+// The first-read rule cuts BOTH ways, and the other direction is the one
+// with live func bodies in it: driveCompile runs its entry loop BEFORE
+// driveEarlySplice/driveManifestSplice, so a runtime module a user names
+// in an `include` by path is read with the flag FALSE and records as
+// user-origin -- where the old rtDir prefix compare called it runtime.
+// Accepted semantics (ruled 2026-09-05): a user who includes runtime
+// source by path is composing it as user code, and it should be checked
+// as such. Consequence: those functions lose the abort-propagation
+// exemption -- lowComputeCanAbort walks them for the abort intrinsic and
+// its call-graph propagation like any user function (the log() dispatcher
+// edge included, see lowSynthAppLog), and cg68k emits the bail-block/
+// __retN scaffolding for whatever that marks. Correctness is unaffected
+// (the exemption only ever suppresses propagation, never introduces it);
+// the module is simply treated the way it would be if the user had
+// written it.
+var drvRuntimeFiles: intmap of bool
+
 // driveProgress: timestamp-prefix msg and hand it to the front end; a
 // no-op unless want68k (block comment above).
 func driveProgress(msg: string) {
@@ -973,11 +1013,6 @@ func expand(rawPath: string, entry: bool, key: string): bool {
         dedupHits.add(seenPaths[altPath] - 1)
         return false
     }
-    seenPaths[path] = 0
-    if altPath != "" {
-        seenPaths[altPath] = 0
-    }
-
     src = ""
     if haveDiskSrc {
         src = diskSrc
@@ -990,6 +1025,15 @@ func expand(rawPath: string, entry: bool, key: string): bool {
             entryFailed = true
         }
         return true
+    }
+
+    // compiler-cleanup: marked only once the read SUCCEEDED -- a failed
+    // attempt must not make a later include of the same path dedupe against
+    // a file never loaded. Still marked BEFORE the include-recursion loop
+    // below, so a cyclic include still terminates on the dedup above.
+    seenPaths[path] = 0
+    if altPath != "" {
+        seenPaths[altPath] = 0
     }
 
     if entry and not drvSpliceActive {
@@ -1010,6 +1054,9 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     // Record each top-level decl's owning file so the single check pass can
     // attribute a check diagnostic to the file its decl came from (Go's
     // per-decl c.f), not the entry path.
+    if drvSpliceActive {
+        drvRuntimeFiles[pathIdx] = true
+    }
     d = head
     while d != -1 {
         setDeclFile(d, pathIdx)
@@ -1504,24 +1551,14 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         driveResolveAppName(entries)
     }
 
-    // filesystem-api Task 3: when driveCompile's own early splice
-    // actually spliced prelude.cla (drvPreludeHead != -1 -- it may not
-    // have, e.g. no runtime/clarus/ reachable at all, or a --rtbake
-    // manifest-hash false positive deferred to a from-source fallback;
-    // see that splice's own doc comment), `combined`'s own head is
-    // ALWAYS drvPreludeHead (the splice runs before every
-    // entries.count > 0 parse, unconditionally), so declNext(
-    // drvPreludeHead) is "combined minus its own prelude.cla head" --
-    // the plain user-code chain, exactly what every use of `combined`
-    // below wanted BEFORE this task. drvPreludeHead itself is
-    // re-prepended once, unconditionally, right before checkProgram(
-    // combined2) below -- see driveCompile's own splice-point doc
-    // comment for why combined2 needs this surgery instead of just
-    // carrying `combined` through unchanged. When it IS -1, this
-    // function behaves exactly as it did before this task (entriesOnlyHead
-    // == combined, drvPreludeAsmIdx == -1 so the two `i != drvPreludeAsmIdx`
-    // guards below never skip anything, and the final re-prepend is
-    // itself skipped).
+    // prelude.cla is spliced first and detached/re-prepended -- see
+    // driveCompile's prelude splice comment (the one telling of why) and
+    // drvPreludeHead's own doc comment; that comment is also where the
+    // drvPreludeHead == -1 cases are enumerated. When it IS -1, this
+    // function behaves exactly as it did before filesystem-api Task 3:
+    // entriesOnlyHead == combined, drvPreludeAsmIdx == -1 so the two
+    // `i != drvPreludeAsmIdx` guards below never skip anything, and the
+    // final re-prepend is itself skipped.
     if drvPreludeHead == -1 {
         entriesOnlyHead = combined
     } else {

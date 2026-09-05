@@ -1,0 +1,2 @@
+../../testdata/errors/const_dup.cla:6:1: redeclaration of limit (also declared at 7:1)
+../../testdata/errors/const_dup.cla:7:1: redeclaration of limit (also declared at 6:1)

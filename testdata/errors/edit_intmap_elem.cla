@@ -1,0 +1,26 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// compiler-cleanup: `edit F, im[k]` over an INTMAP is not one of the four
+// runtime-supported target shapes (variable, list element, map element,
+// `new T`). It used to die in lowering via lowUnsupported's hard abort
+// (exit 3); it is a checker diagnostic at the target's own position now.
+record NoteRec {
+    name: string(63)
+}
+
+var im: intmap of NoteRec
+
+window NoteForm {
+    title: "Edit"
+    size: 200, 100
+    form for NoteRec
+
+    field Name { binds: name; label: "Name:" }
+    button OK { default }
+    button Cancel { cancel }
+}
+
+func f() {
+    edit NoteForm, im[3]
+}

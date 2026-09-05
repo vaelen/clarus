@@ -209,9 +209,10 @@ var j: int = int(f)          // fixed to int (truncates toward zero)
 var c: char = char(i)        // int to char (takes low byte, 0–255)
 var k: int = int(c)          // char to int
 var s: string = string(i)    // int to string, decimal, "42"
+var s2: string = string(c)   // char to string, "*"
 ```
 
-Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric truncation: it keeps only the low byte of `i` — `char(-1)` yields 255. `string(n)` renders an `int` in decimal, negative values included (e.g. `string(-7)` is `"-7"`); it is unrelated to the type-position use of `string(n)` as a capacity declaration (e.g. `var s: string(20)`) — the two are told apart positionally (a call expression vs. a type), never ambiguously.
+Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric truncation: it keeps only the low byte of `i` — `char(-1)` yields 255. `string()` takes an `int` (rendered in decimal, negative values included, e.g. `string(-7)` is `"-7"`) or a `char` (the one-character string); it is unrelated to the type-position use of `string(n)` as a capacity declaration (e.g. `var s: string(20)`) — the two are told apart positionally (a call expression vs. a type), never ambiguously.
 
 ### Strings
 

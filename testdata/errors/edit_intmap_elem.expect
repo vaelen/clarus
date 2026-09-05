@@ -1,0 +1,1 @@
+../../testdata/errors/edit_intmap_elem.cla:25:22: edit target must be a variable, list element, or map element

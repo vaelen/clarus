@@ -1,0 +1,38 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fieldonly.cla (compiler-cleanup, spec %4.3c): the ONLY `connection`-typed
+// things here are a record FIELD and a function PARAM -- there is no global
+// `var x: connection` anywhere. That used to leave check.cla's usesConn
+// false (its only setter was checkTopDeclPhase1's DkVar arm), so drive.cla
+// never spliced conn.cla/conn_c.cla and the host build failed at LINK time
+// on the rtConn* symbols `c.send` below lowers to. usesConn is now set from
+// resolveType, i.e. from any type position at all.
+//
+// The `c.send` call is statically reachable (shake.cla keeps it, so the
+// linker really does have to resolve it) but never executed: `s.id` is 1
+// and the guard needs it negative. Nothing is ever opened, so a run of this
+// program just logs and quits.
+record Session {
+    id: int
+    link: connection
+}
+
+func describe(c: connection): string {
+    if id() < 0 {
+        c.send("unreachable at runtime, still linked")
+    }
+    return "conn"
+}
+
+func id(): int {
+    return 1
+}
+
+on App.startCLI(args: list of string) {
+    var s: Session
+
+    s.id = id()
+    log(describe(s.link))
+    quit 0
+}

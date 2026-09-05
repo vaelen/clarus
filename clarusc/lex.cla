@@ -480,6 +480,21 @@ func lexResyncCharLit() {
     }
 }
 
+// lexResyncStringLit advances past a malformed string literal's closing
+// quote on the current line -- or to end of line/EOF if there is none --
+// so a bad escape ("a\qb") never leaves the rest of the literal to be
+// re-lexed as tokens and its closing quote to open a phantom string that
+// runs unterminated to EOF (the old cascade). Mirrors lexResyncCharLit.
+func lexResyncStringLit() {
+    while lexOff < lexLen and not lexIsNewline(lexSrc[lexOff]) {
+        if lexSrc[lexOff] == '"' {
+            lexAdvance()
+            return
+        }
+        lexAdvance()
+    }
+}
+
 func lexChar(line: int, col: int): Token {
     var v: char
     var ok: bool
@@ -542,7 +557,8 @@ func lexString(line: int, col: int): Token {
             lexAdvance()
             ok = lexDecodeEscape('"')
             if not ok {
-                emitDiag(line, col, "unterminated string literal")
+                emitDiag(line, col, "invalid escape sequence")
+                lexResyncStringLit()
                 break
             }
             out.append(lexEscByte)
