@@ -270,6 +270,7 @@ func mapIndexFindSlot(m: ptr, hash: int, key: ptr): int {
     var klen: int
     var slot: int
     var v: int
+    var steps: int
 
     indexcap = RtMap(m).indexcap
     if indexcap == 0 {
@@ -277,6 +278,7 @@ func mapIndexFindSlot(m: ptr, hash: int, key: ptr): int {
     }
     klen = peekb(key)
     slot = hash & (indexcap - 1)
+    steps = 0
     while true {
         v = peekl(mapIndexSlot(m, slot))
         if v == INDEX_EMPTY {
@@ -288,6 +290,10 @@ func mapIndexFindSlot(m: ptr, hash: int, key: ptr): int {
             }
         }
         slot = (slot + 1) & (indexcap - 1)
+        steps = steps + 1
+        if steps > indexcap {
+            rtPanic("map: index corrupt")
+        }
     }
 }
 
@@ -322,10 +328,12 @@ func mapIndexSlotFor(m: ptr, hash: int, key: ptr): int {
     var slot: int
     var firstTomb: int
     var v: int
+    var steps: int
 
     indexcap = RtMap(m).indexcap
     slot = hash & (indexcap - 1)
     firstTomb = -1
+    steps = 0
     while true {
         v = peekl(mapIndexSlot(m, slot))
         if v == INDEX_EMPTY {
@@ -338,6 +346,10 @@ func mapIndexSlotFor(m: ptr, hash: int, key: ptr): int {
             firstTomb = slot
         }
         slot = (slot + 1) & (indexcap - 1)
+        steps = steps + 1
+        if steps > indexcap {
+            rtPanic("map: index corrupt")
+        }
     }
 }
 
@@ -381,9 +393,11 @@ func mapIndexRepoint(m: ptr, hash: int, oldIdx: int, newIdx: int) {
     var indexcap: int
     var slot: int
     var v: int
+    var steps: int
 
     indexcap = RtMap(m).indexcap
     slot = hash & (indexcap - 1)
+    steps = 0
     while true {
         v = peekl(mapIndexSlot(m, slot))
         if v == oldIdx {
@@ -391,6 +405,10 @@ func mapIndexRepoint(m: ptr, hash: int, oldIdx: int, newIdx: int) {
             return
         }
         slot = (slot + 1) & (indexcap - 1)
+        steps = steps + 1
+        if steps > indexcap {
+            rtPanic("map: index corrupt")
+        }
     }
 }
 
@@ -463,98 +481,66 @@ func mapEnsureIndexCapacity(m: ptr) {
     }
 }
 
-// mapGrowEntries (Interfaces: mapGrowEntries(m, need)) -- the entry-meta
-// array's own amortized-doubling grower, same shape as the old sorted
-// implementation's rtMapGrowKeys (doubles cap from 4 if currently empty,
-// until it covers `need`, then MapSetHandleSize once, in bytes,
-// newcap*MAP_ENTRY_STRIDE). Callers that hold a master pointer derived
+// mapGrowHandle: amortized-doubling SetHandleSize for a per-entry Handle
+// (language-runtime-cleanup, spec %2.3 -- the three near-identical growers
+// collapsed). Doubles `cap` from 4 if currently empty, until it covers
+// `need`, then MapSetHandleSize once, in bytes (newcap*unit). Returns the
+// new capacity in `unit`s; callers that hold a master pointer derived
 // before calling this MUST re-derive it afterward (relocation discipline,
 // module header comment above) -- growth can move the block.
+func mapGrowHandle(h: ptr, cap: int, need: int, unit: int): int {
+    var newcap: int
+    var err: int
+
+    if cap > 0 {
+        newcap = cap
+    } else {
+        newcap = 4
+    }
+    while newcap < need {
+        newcap = newcap * 2
+    }
+    err = MapSetHandleSize(h, newcap * unit)
+    if err != 0 {
+        rtPanic("out of memory")
+    }
+    return newcap
+}
+
+// mapGrowEntries (Interfaces: mapGrowEntries(m, need)) -- the entry-meta
+// array's own grower, via mapGrowHandle above.
 func mapGrowEntries(m: ptr, need: int) {
     var rm: RtMap
-    var cap: int
-    var newcap: int
-    var err: int
 
     rm = RtMap(m)
-    cap = rm.cap
-    if need <= cap {
-        return
+    if need > rm.cap {
+        rm.cap = mapGrowHandle(rm.keys, rm.cap, need, MAP_ENTRY_STRIDE)
     }
-    if cap > 0 {
-        newcap = cap
-    } else {
-        newcap = 4
-    }
-    while newcap < need {
-        newcap = newcap * 2
-    }
-    err = MapSetHandleSize(rm.keys, newcap * MAP_ENTRY_STRIDE)
-    if err != 0 {
-        rtPanic("out of memory")
-    }
-    rm.cap = newcap
 }
 
-// mapGrowVals: the vals Handle's own amortized-doubling grower --
-// otherwise identical in structure to mapGrowEntries above (unchanged role
-// and shape from the old sorted implementation's rtMapGrowVals).
+// mapGrowVals: the vals Handle's own grower, via mapGrowHandle above --
+// otherwise identical in role to mapGrowEntries above (unchanged from the
+// old sorted implementation's rtMapGrowVals).
 func mapGrowVals(m: ptr, need: int) {
     var rm: RtMap
-    var cap: int
-    var newcap: int
-    var valsize: int
-    var err: int
 
     rm = RtMap(m)
-    cap = rm.valcap
-    if need <= cap {
-        return
+    if need > rm.valcap {
+        rm.valcap = mapGrowHandle(rm.vals, rm.valcap, need, rm.valsize)
     }
-    valsize = rm.valsize
-    if cap > 0 {
-        newcap = cap
-    } else {
-        newcap = 4
-    }
-    while newcap < need {
-        newcap = newcap * 2
-    }
-    err = MapSetHandleSize(rm.vals, newcap * valsize)
-    if err != 0 {
-        rtPanic("out of memory")
-    }
-    rm.valcap = newcap
 }
 
-// mapGrowPool: the keypool Handle's own amortized-doubling grower, in
-// BYTES rather than entries -- same doubling-from-4 shape as
+// mapGrowPool: the keypool Handle's own grower, via mapGrowHandle above, in
+// BYTES rather than entries (unit 1) -- same doubling-from-4 shape as
 // mapGrowEntries/mapGrowVals (shared design constants: "Entry/vals/
 // keypool arrays grow by the existing doubling-SetHandleSize pattern").
 func mapGrowPool(m: ptr, need: int) {
     var rm: RtMap
-    var cap: int
-    var newcap: int
-    var err: int
 
     rm = RtMap(m)
-    cap = rm.poolcap
-    if need <= cap {
-        return
+    if need > rm.poolcap {
+        rm.poolcap = mapGrowHandle(rm.keypool, rm.poolcap, need, 1)
     }
-    if cap > 0 {
-        newcap = cap
-    } else {
-        newcap = 4
-    }
-    while newcap < need {
-        newcap = newcap * 2
-    }
-    err = MapSetHandleSize(rm.keypool, newcap)
-    if err != 0 {
-        rtPanic("out of memory")
-    }
-    rm.poolcap = newcap
 }
 
 // mapPoolAppend (Interfaces: mapPoolAppend(m, key) -> keyOff): grows the

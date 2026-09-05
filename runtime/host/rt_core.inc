@@ -620,10 +620,6 @@ int32_t rt_list_count(const rt_list *l) { return l->count; }
  * different. */
 
 #define MAP_ENTRY_STRIDE 12   /* {hash:int32, keyOff:int32, keyLen:int32} */
-#define MAP_KEYBLOCK 256      /* rt_map_key_at's out buffer is still a full
-                                  Str255 (1 len byte + up to 255 content
-                                  bytes) -- this constant now only names
-                                  that width, not an on-disk key-slot size. */
 #define MAP_INDEX_EMPTY (-1)
 #define MAP_INDEX_TOMB  (-2)
 
@@ -648,8 +644,33 @@ struct rt_map {
  * compile (a negative array size) if that ever drifts. Same placement/
  * reasoning as rt_list_layout_check/rt_text_layout_check above: fires for
  * every consumer of rt_core.inc (host rt.c, Mac 68k rt_mac.c, and both
- * rt_mem_test.c/rt_rc_test.c memory harnesses). */
-typedef char rt_map_layout_check[(sizeof(rt_map) == sizeof(struct { int32_t a; void *b; void *c; int32_t d; int32_t e; int32_t f; int32_t g; void *h; int32_t i2; int32_t j2; void *k2; int32_t l2; int32_t n2; })) ? 1 : -1];
+ * rt_mem_test.c/rt_rc_test.c memory harnesses).
+ *
+ * The overall-size check is rt_list_layout_check's own sizeof-against-a-
+ * matching-struct-literal trick (Handle/pointer fields spelled `void *`
+ * there so the literal's layout tracks the real struct's padding on any
+ * pointer width). That alone cannot catch two same-size fields swapped in
+ * order, so this also asserts every field's OFFSET is strictly increasing
+ * in `map.cla`'s own read order -- the property the `.cla` overlay
+ * actually depends on. Plan-time absolute offsets (map.cla:151's
+ * overlay) assumed 4-byte pointers and do not hold on this 64-bit host
+ * (Handle is 8 bytes here), so this uses offsetof() ORDER comparisons
+ * instead of absolute numbers -- the variant that compiles identically on
+ * both the host and the 68k lane. */
+#include <stddef.h>
+typedef char rt_map_layout_check_rc_keys[(offsetof(rt_map, keys) > offsetof(rt_map, rc)) ? 1 : -1];
+typedef char rt_map_layout_check_keys_vals[(offsetof(rt_map, vals) > offsetof(rt_map, keys)) ? 1 : -1];
+typedef char rt_map_layout_check_vals_valsize[(offsetof(rt_map, valsize) > offsetof(rt_map, vals)) ? 1 : -1];
+typedef char rt_map_layout_check_valsize_count[(offsetof(rt_map, count) > offsetof(rt_map, valsize)) ? 1 : -1];
+typedef char rt_map_layout_check_count_cap[(offsetof(rt_map, cap) > offsetof(rt_map, count)) ? 1 : -1];
+typedef char rt_map_layout_check_cap_valcap[(offsetof(rt_map, valcap) > offsetof(rt_map, cap)) ? 1 : -1];
+typedef char rt_map_layout_check_valcap_keypool[(offsetof(rt_map, keypool) > offsetof(rt_map, valcap)) ? 1 : -1];
+typedef char rt_map_layout_check_keypool_poolused[(offsetof(rt_map, poolused) > offsetof(rt_map, keypool)) ? 1 : -1];
+typedef char rt_map_layout_check_poolused_poolcap[(offsetof(rt_map, poolcap) > offsetof(rt_map, poolused)) ? 1 : -1];
+typedef char rt_map_layout_check_poolcap_index[(offsetof(rt_map, index) > offsetof(rt_map, poolcap)) ? 1 : -1];
+typedef char rt_map_layout_check_index_indexcap[(offsetof(rt_map, indexcap) > offsetof(rt_map, index)) ? 1 : -1];
+typedef char rt_map_layout_check_indexcap_tombs[(offsetof(rt_map, tombs) > offsetof(rt_map, indexcap)) ? 1 : -1];
+typedef char rt_map_layout_check_size[(sizeof(rt_map) == sizeof(struct { int32_t a; void *b; void *c; int32_t d; int32_t e; int32_t f; int32_t g; void *h; int32_t i2; int32_t j2; void *k2; int32_t l2; int32_t n2; })) ? 1 : -1];
 
 rt_map *rt_map_new(int32_t valsize)
 {
