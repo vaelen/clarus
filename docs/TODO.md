@@ -974,20 +974,7 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   completion against real Snow: the Go twin needed ~12 h per run on this
   host and the one Snow instance is contended. The rest of the Snow lane
   (`serial_echo`, `pagefile`, `clarusc_boot`, `clarusc_bake`) has been
-  booted; `roundtrip` has too (red until 2026-09-05, fixed — see the
-  next item). Closing
+  booted; `roundtrip` has too. Closing
   action: run both once, opt-in (`CLARUS_SNOW_TESTS=1 make test
   T=mactest/snow/macresident`), when the screen and a long window are
   free, and record the durations.
-- **Snow `roundtrip` red — RESOLVED 2026-09-05.** Not a crash and not a
-  runtime bug: a probe boot's screenshot showed the app parked on a real
-  modal alert (`read ok` + OK button). The attempt-abort phase (be75375,
-  2026-08-14) made a UI program's `alert()` show a real dialog on any
-  unscripted native build (the reference documents this), and the
-  fixture, last green 2026-08-09, still used `alert` as a headless
-  trace line. `Copy.txt` was stamped `TEXT/SNRT` and byte-exact, so the
-  earlier `writeText`-returns-false / concat-crash candidates were both
-  wrong. Fix: the fixture's four trace calls are now `log()`
-  (buffered into `out` by `natQuit`'s trailer). Standing rule this
-  exposes: an unscripted native UI fixture must never call `alert()`
-  for trace output.
