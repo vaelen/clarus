@@ -1,0 +1,80 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// openrf.cla (language-runtime-cleanup, spec %6): file.openRF's host-lane
+// round trip -- create a data fork, open the RESOURCE fork of the same
+// file, write it, close, reopen, read the whole fork back, and confirm the
+// data fork is still its original 5 bytes and content. Deliberately
+// storage-agnostic: the same output is expected whether rt_fileh.inc took
+// macOS's ..namedfork/rsrc pseudo-path or the AppleDouble `._name` sidecar
+// (CLARUS_FORCE_APPLEDOUBLE=1), so this fixture is run BOTH ways and pins
+// one .out for both.
+//
+// Every assertion is an ok/FAIL alert rather than a value dump, matching
+// fileh_basic.cla's own shape -- a `text` has no string conversion in the
+// language (Chapter 3: `+` on a string and a text yields a text, not a
+// string), so a read-back fork's CONTENT can only be surfaced by comparing
+// it, not by printing it. Runs in the behavior harness's own per-test temp
+// cwd, but cleans up anyway so a by-hand run in a scratch dir leaves
+// nothing behind.
+on App.launch {
+    var f: filehandle
+    var t: text
+    var out: text
+
+    f = file.create("rf.dat", "TEXT", "CLRS")
+    f.writeAt(0, "data!")
+    f.close()
+
+    t = "RSRC"
+    f = file.openRF("rf.dat")
+    if f == nil {
+        alert("openRF FAIL")
+    } else {
+        alert("openRF ok")
+    }
+    f.writeAt(0, t)
+    f.flush()
+    f.close()
+
+    f = file.openRF("rf.dat")
+    if f.size() == 4 {
+        alert("fork size ok")
+    } else {
+        alert("fork size FAIL")
+    }
+    f.readAt(0, f.size(), out)
+    if out == "RSRC" {
+        alert("fork content ok")
+    } else {
+        alert("fork content FAIL")
+    }
+    f.close()
+
+    f = file.open("rf.dat")
+    if f.size() == 5 {
+        alert("data fork size ok")
+    } else {
+        alert("data fork size FAIL")
+    }
+    f.readAt(0, 5, out)
+    if out == "data!" {
+        alert("data fork content ok")
+    } else {
+        alert("data fork content FAIL")
+    }
+    f.close()
+
+    f = file.openRF("rf_does_not_exist.dat")
+    if f == nil and lastError.message == "open failed" {
+        alert("openRF missing ok")
+    } else {
+        alert("openRF missing FAIL")
+    }
+
+    file.delete("rf.dat")
+    if file.exists("._rf.dat") {
+        file.delete("._rf.dat")
+    }
+    quit 0
+}

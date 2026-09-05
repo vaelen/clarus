@@ -127,3 +127,74 @@ record FhDB {
     dat: filehandle
     jnl: filehandle
 }
+
+// caseOpenRF (language-runtime-cleanup, spec %6): file.openRF's own round
+// trip, in caseFileHandleRW's shape -- create a data fork, open the
+// RESOURCE fork of the same file, write/flush/close/reopen/size/read back,
+// and confirm the data fork is untouched. Both lanes: natively
+// PBOpenRFSync on a real HFS resource fork, on the host either the
+// ..namedfork/rsrc pseudo-path or an AppleDouble `._name` sidecar
+// (rt_fileh.inc picks). The sidecar cleanup at the end is exists()-guarded
+// because only one of those two host storage paths writes one, and neither
+// lane's native fork leaves a file behind.
+func caseOpenRF(): TestResult {
+    var f: filehandle
+    var out: text
+
+    f = file.create("core_openrf.dat", "TEXT", "CLRS")
+    if f == nil {
+        return tkFail("OpenRF", "create failed")
+    }
+    if not f.writeAt(0, "data!") {
+        return tkFail("OpenRF", "data writeAt failed")
+    }
+    f.close()
+
+    f = file.openRF("core_openrf.dat")
+    if f == nil {
+        return tkFail("OpenRF", "openRF failed")
+    }
+    if not f.writeAt(0, "RSRC") {
+        return tkFail("OpenRF", "fork writeAt failed")
+    }
+    if not f.flush() {
+        return tkFail("OpenRF", "fork flush failed")
+    }
+    f.close()
+
+    f = file.openRF("core_openrf.dat")
+    if f == nil {
+        return tkFail("OpenRF", "reopenRF failed")
+    }
+    if f.size() != 4 {
+        return tkFail("OpenRF", "fork size wrong")
+    }
+    if not f.readAt(0, 4, out) or out != "RSRC" {
+        return tkFail("OpenRF", "fork readAt wrong")
+    }
+    f.close()
+
+    // The data fork is untouched by all of the above.
+    f = file.open("core_openrf.dat")
+    if f == nil {
+        return tkFail("OpenRF", "data fork reopen failed")
+    }
+    if f.size() != 5 {
+        return tkFail("OpenRF", "data fork size disturbed")
+    }
+    if not f.readAt(0, 5, out) or out != "data!" {
+        return tkFail("OpenRF", "data fork content wrong")
+    }
+    f.close()
+
+    f = file.openRF("core_openrf_missing.dat")
+    if f != nil or lastError.message != "open failed" {
+        return tkFail("OpenRF", "openRF of nonexistent file wrong")
+    }
+
+    file.delete("core_openrf.dat")
+    if file.exists("._core_openrf.dat") {
+        file.delete("._core_openrf.dat")
+    }
+    return tkPass("OpenRF")
+}

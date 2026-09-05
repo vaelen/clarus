@@ -67,6 +67,18 @@ func rtFhOpen(path: string): int {
     return h
 }
 
+// rtFhOpenRF (language-runtime-cleanup, spec %6): the resource-fork twin of
+// rtFhOpen -- same handle, same positioned I/O, a different fork.
+func rtFhOpenRF(path: string): int {
+    var h: int
+
+    h = rtFhDevOpenRF(path)
+    if h == 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "open failed")
+    }
+    return h
+}
+
 // rtFhCreate: type/creator are mandatory compile-time-literal 4-character
 // strings (lowFileCall's own lowCheckLiteral4CCArg, exactly like
 // file.writeText) -- stamped on the Mac lane, ignored on the host (the

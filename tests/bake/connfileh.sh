@@ -33,6 +33,8 @@ on App.startCLI(args: list of string) {
     fh.append("str tail")
     fh.append(t)
     fh.close()
+    fh = file.openRF("scratch.dat")
+    fh.close()
     quit 0
 }
 CLA

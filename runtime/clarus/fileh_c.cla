@@ -29,6 +29,7 @@
 // as file.writeText's own C-lane behavior).
 
 external func FhHOpen(path: string): int
+external func FhHOpenRF(path: string): int
 external func FhHCreate(path: string): int
 external func FhHReadAt(h: int, pos: int, p: ptr, n: int): int
 external func FhHWriteAt(h: int, pos: int, p: ptr, n: int): int
@@ -49,6 +50,15 @@ external func FhHStatField(which: int): int
 
 func rtFhDevOpen(path: string): int {
     return FhHOpen(path)
+}
+
+// rtFhDevOpenRF (language-runtime-cleanup, spec %6): the host lane's
+// resource fork -- macOS's ..namedfork/rsrc pseudo-path, or an
+// AppleDouble `._name` sidecar materialized into an unlinked temp fd
+// elsewhere (rt_fileh.inc owns the choice). Either way the result is an
+// ordinary fd + 1, so every other rtFhDev* below works unchanged.
+func rtFhDevOpenRF(path: string): int {
+    return FhHOpenRF(path)
 }
 
 func rtFhDevCreate(path: string, ftype: string, fcreator: string): int {

@@ -1443,7 +1443,7 @@ on browser.failed(err: error) { }
 
 ### Files
 
-The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, `file.create`, and `file.info` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong — except `file.exists`, whose `false` just means the path doesn't exist, never a failure. `open`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O; `info` returns a `FileInfo` record (Chapter 3), zeroed with `lastError` set on failure.
+The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, `file.openRF`, `file.create`, and `file.info` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong — except `file.exists`, whose `false` just means the path doesn't exist, never a failure. `open`/`openRF`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O; `info` returns a `FileInfo` record (Chapter 3), zeroed with `lastError` set on failure.
 
 | Function | Signature | Notes |
 |---|---|---|
@@ -1455,6 +1455,7 @@ The `file` namespace covers documents and preferences. Every function but `file.
 | `readResource` | `file.readResource(name: string, out: text): bool` | fills `out` from the named resource; Macintosh only |
 | `writeRes` | `file.writeRes(path: string, fork: text, doctype: string, creator: string): bool` | writes `fork`'s contents as `path`'s resource fork, stamped with `doctype`/`creator`; Macintosh only |
 | `open` | `file.open(path: string): filehandle` | opens an existing file read/write; `nil` + `lastError` if it doesn't exist or can't be opened |
+| `openRF` | `file.openRF(path: string): filehandle` | opens an existing file's resource fork read/write; `nil` + `lastError` if the file does not exist |
 | `create` | `file.create(path: string, type: string, creator: string): filehandle` | creates the file if missing, truncates it to 0 bytes if it already exists, opens it read/write, stamped with `type`/`creator`; `nil` + `lastError` on failure |
 | `exists` | `file.exists(path: string): bool` | `true` for an existing file or folder; never sets `lastError` |
 | `info` | `file.info(path: string): FileInfo` | on failure returns a zeroed record and sets `lastError` |
@@ -1507,6 +1508,7 @@ if f == nil { alert(lastError.message) }
 - `flush()` is a durability barrier: on the Macintosh, `_FlushFile` followed by `_FlushVol`; on a host build, `fsync`. Nothing else in this reference forces bytes to stable storage before the OS gets around to it on its own.
 - `close()` is idempotent — closing a `nil` handle is a no-op, and closing an already-closed handle does nothing further. After `close`, every OTHER copy of the same value is stale, with the same hazard a closed C file descriptor has: an operation through it usually fails with `false` + `lastError`, but if the underlying platform has since reused that same handle number for a different file, it silently reaches that different file instead. This is documented, not guarded — a generation counter that could detect it is out of scope for this release. A program that assigns `f = nil` right after `f.close()` protects that one variable; the runtime has no way to reach into a record field, array element, or other copy that also held the same value and clear it too.
 - Any method other than `close` called on a `nil` handle is a runtime error (`use of nil filehandle`) — a program bug, the same category as indexing a string out of range, not an environmental failure to inspect `lastError` for.
+- `file.openRF(path)` opens the resource fork of an existing file; the returned `filehandle` is identical in every way to `file.open`'s, so a whole-fork read is `f.readAt(0, f.size(), out)` and a fork written alongside an existing data fork is `file.create` (or an existing file), `openRF`, `writeAt`, `close`. On a host build the fork is stored where the host keeps it: on macOS as the file's `com.apple.ResourceFork` attribute (a real fork on APFS/HFS+, an AppleDouble `._name` sidecar on FAT/NFS/SMB volumes — the kernel chooses); on other hosts as that same AppleDouble sidecar beside the file, written on `flush` and `close`. `readResource`/`writeRes` are unchanged.
 - Every `filehandle` operation is synchronous: there are no `filehandle` events, and nothing here interacts with the event-loop pump `connection`/`listener`/`serviceBrowser` use.
 - No Gestalt gating: every Toolbox trap `filehandle` uses is available on the original 1984 Macintosh File Manager (System 6-era), so there is no fallback path to document.
 
