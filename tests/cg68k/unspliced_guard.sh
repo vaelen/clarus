@@ -1,5 +1,5 @@
 #!/bin/sh
-# tests/cg68k/unspliced_guard.sh (compiler-cleanup, spec §4.3d; docs/TODO.md
+# tests/cg68k/unspliced_guard.sh (compiler-cleanup, spec %4.3d; docs/TODO.md
 # "STILL LIVE unspliced-runtime-function crash"): a native build whose
 # program reaches a runtime function that is NOT in the build must fail with
 # a NAMED diagnostic and a nonzero exit -- never `runtime error: list index

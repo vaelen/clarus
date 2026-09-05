@@ -1,7 +1,7 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// fieldonly.cla (compiler-cleanup, spec §4.3c): the ONLY `connection`-typed
+// fieldonly.cla (compiler-cleanup, spec %4.3c): the ONLY `connection`-typed
 // things here are a record FIELD and a function PARAM -- there is no global
 // `var x: connection` anywhere. That used to leave check.cla's usesConn
 // false (its only setter was checkTopDeclPhase1's DkVar arm), so drive.cla

@@ -1,5 +1,5 @@
 #!/bin/sh
-# tests/conntest/fieldonly.sh (compiler-cleanup, spec §4.3c): a program
+# tests/conntest/fieldonly.sh (compiler-cleanup, spec %4.3c): a program
 # whose ONLY connection-typed things are a record field and a parameter (no
 # global `var x: connection`) must still splice conn.cla/conn_c.cla on the
 # host lane -- usesConn is set from resolveType now, i.e. from ANY type
