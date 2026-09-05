@@ -38,4 +38,5 @@ testsuite/toolbox/cases_narrowpopup.cla
 testsuite/toolbox/cases_leak.cla
 testsuite/toolbox/cases_scrollend.cla
 testsuite/toolbox/cases_clearwarm.cla
+testsuite/toolbox/cases_casestable.cla
 testsuite/toolbox/gui.cla

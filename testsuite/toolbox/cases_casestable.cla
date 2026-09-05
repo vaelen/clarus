@@ -1,0 +1,50 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_casestable.cla (compiler-cleanup phase): the suite GUI's OWN
+// `Cases` table is drawn through the same List-Manager LDEF path as every
+// other table widget. During the 68k-call-result-release phase a heap
+// probe caught it reading a zeroed record (lastLen 0, lastCount 33) in a
+// failing build -- every row name drew EMPTY -- and nothing went red,
+// because no case looked at those pixels. This case does: every visible
+// row band must contain ink (a checksum of 0 is an all-white band), and
+// a second read of row 0 must equal the first (the table is not being
+// repainted with different content between two reads).
+//
+// Geometry (gui.cla's own header derivation): table global rect
+// (46,54)-(346,174); List Manager row pitch 16 (cases_popuptable.cla's
+// tbPtRow0Y/tbPtRow1Y); 7 visible rows. Band x0/w are multiples of 8 per
+// UiTestChecksum's alignment contract.
+const tbCtRowX0: int = 48
+const tbCtRowW: int = 288
+const tbCtRowY0: int = 57
+const tbCtRowPitch: int = 16
+const tbCtRowH: int = 12
+const tbCtVisibleRows: int = 7
+
+func caseCasesTable(): TestResult {
+    var r: int
+    var c: int
+    var c0: int
+    var again: int
+
+    r = 0
+    while r < tbCtVisibleRows {
+        c = UiTestChecksum(tbCtRowX0, tbCtRowY0 + r * tbCtRowPitch, tbCtRowW, tbCtRowH)
+        if c == -1 {
+            return tkFail("CasesTable", "checksum alignment rejected at row " + tkIntToStr(r))
+        }
+        if c == 0 {
+            return tkFail("CasesTable", "row " + tkIntToStr(r) + " band is blank")
+        }
+        if r == 0 {
+            c0 = c
+        }
+        r = r + 1
+    }
+    again = UiTestChecksum(tbCtRowX0, tbCtRowY0, tbCtRowW, tbCtRowH)
+    if again != c0 {
+        return tkFail("CasesTable", "row 0 unstable: " + tkIntToStr(c0) + " then " + tkIntToStr(again))
+    }
+    return tkPass("CasesTable")
+}
