@@ -5071,8 +5071,24 @@ func lowBuildAbortBailBlock(ret: int): int {
 // transitive closure for that compile -- and it is unobservable today:
 // this predicate is only ever asked about a `func` DECLARATION (the one
 // call site below), and no toolbox/ module declares a func body.
+//
+// The same first-read rule runs the other way too, and that direction
+// DOES have func bodies in it: driveCompile's entry loop runs before
+// driveEarlySplice/driveManifestSplice, so a runtime module pulled in by
+// a user `include` naming its path is read with drvSpliceActive false and
+// classifies user-origin -- where the rtDir prefix compare called it
+// runtime. Accepted semantics (ruled 2026-09-05): including runtime
+// source by path is composing it as user code. Consequence: those
+// functions lose the abort-propagation exemption -- lowComputeCanAbort
+// (below) walks them for the abort intrinsic and its call-graph
+// propagation like any user function, the log() dispatcher edge included
+// (lowSynthAppLog's own "side effect worth knowing" note), and cg68k
+// emits the bail-block/__retN scaffolding for whatever that marks.
+// Correctness is unaffected (the exemption only ever suppresses
+// propagation, never introduces it); the module is simply treated the
+// way it would be if the user had written it.
 // See drvRuntimeFiles' own doc comment (drive.cla) for the first-read
-// rule that decides it.
+// rule that decides both directions.
 func declIsRuntimeOrigin(d: int): bool {
     var p: int
 

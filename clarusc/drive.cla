@@ -786,6 +786,22 @@ var drvSpliceActive: bool
 // a `func` BODY: declIsRuntimeOrigin has exactly one caller (lower.cla's
 // lowFuncDecl, for a func declaration), and the catalog is
 // `external func`/`const`/`record` only -- no bodies at all.
+//
+// The first-read rule cuts BOTH ways, and the other direction is the one
+// with live func bodies in it: driveCompile runs its entry loop BEFORE
+// driveEarlySplice/driveManifestSplice, so a runtime module a user names
+// in an `include` by path is read with the flag FALSE and records as
+// user-origin -- where the old rtDir prefix compare called it runtime.
+// Accepted semantics (ruled 2026-09-05): a user who includes runtime
+// source by path is composing it as user code, and it should be checked
+// as such. Consequence: those functions lose the abort-propagation
+// exemption -- lowComputeCanAbort walks them for the abort intrinsic and
+// its call-graph propagation like any user function (the log() dispatcher
+// edge included, see lowSynthAppLog), and cg68k emits the bail-block/
+// __retN scaffolding for whatever that marks. Correctness is unaffected
+// (the exemption only ever suppresses propagation, never introduces it);
+// the module is simply treated the way it would be if the user had
+// written it.
 var drvRuntimeFiles: intmap of bool
 
 // driveProgress: timestamp-prefix msg and hand it to the front end; a

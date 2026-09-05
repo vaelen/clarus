@@ -5,14 +5,18 @@
 # "../../toolbox/*.cla", so a link planted directly on runtime/clarus would
 # strand those two-levels-up includes and test nothing but a broken tree.
 #
-# This is the tripwire for runtime-origin provenance (declIsRuntimeOrigin,
-# lower.cla): while origin is decided by comparing the decl's path string
-# against rtDir, any spelling divergence between the two within one run
-# misclassifies runtime decls as user code and silently drops their
-# abort-propagation exemption. It passes today (with --rtdir, decl paths
-# are derived FROM rtDir, so they cannot diverge); it is here so that a
-# future change to how origin is decided cannot quietly break the
-# invariant.
+# This is the tripwire for runtime-origin provenance. declIsRuntimeOrigin
+# (lower.cla) no longer compares path strings at all: drive.cla records
+# each file's origin when expand() reads it (drvRuntimeFiles, keyed by
+# pool index, marked while drvSpliceActive is true), so no spelling of
+# --rtdir -- symlinked, relative, or aliased -- can change the answer.
+# The predecessor mechanism could: a lexical prefix match against rtDir
+# saw two spellings of one directory as two directories, misclassified
+# runtime decls as user code, and silently dropped their abort-propagation
+# exemption. This passes before and after that change (with --rtdir, decl
+# paths are derived FROM rtDir, so within one run they cannot diverge);
+# it is here so a future return to deciding origin by path cannot quietly
+# reintroduce the gap.
 . "$(dirname "$0")/../lib.sh" || exit 2
 
 ln -s "$ROOT" "$WORK/rootlink" || die "symlink"
