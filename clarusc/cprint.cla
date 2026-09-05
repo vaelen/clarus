@@ -769,12 +769,27 @@ func fpNewTrackedTmp(t: int): text {
     fpTmpN = fpTmpN + 1
     name = "t" + numToStr(fpTmpN)
     isRec = irtKind(t) == KRec
-    if isRec {
+    // compiler-cleanup: a KRec temp's C type is a struct and a KArr temp's
+    // is an array typedef (clar_arr_text_3) -- neither is a pointer, so
+    // `= NULL` is a hard C type error on both. Declare BOTH uninitialized,
+    // safe for the same reason (the very next emitted statement fills the
+    // temp; nothing reads it before that). The release SHAPE still splits
+    // on KRec alone: fpStmtTmpIsRec picks `clar_release_NAME(&(t))` for a
+    // record, while a KArr routes through fpEmitTmpRelease's element walk
+    // like any other container. Latent before this phase -- fpNeedsRelease
+    // is true for a text-element KArr, so a bare discarded `l.pop();` on a
+    // `list of text[3]` already emitted the bad declaration; nothing in
+    // the corpus wrote one until pop/shift started tracking in every
+    // position (testdata/leakgate/arrelem.cla's popAssignCase).
+    if irtKind(t) == KRec or irtKind(t) == KArr {
         fpEmit(ctype + " " + name + ";")
+    } else {
+        fpEmit(ctype + " " + name + " = NULL;")
+    }
+    if isRec {
         fpStmtTmpRel.add(toText("clar_release_" + poolGet(irtName(t))))
         irMarkRcWalkNeeded(irtName(t))
     } else {
-        fpEmit(ctype + " " + name + " = NULL;")
         // Plan 5c wave2a Task 2/3/4: same stem-storage gate as fpNewTmp
         // above -- KText/KList/KMap all redirect to their own Clarus-ported
         // release now that map.cla grows rtMapRelease too.
@@ -3027,7 +3042,20 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
         // end-of-statement flush (fpFreeStmtTmps) releases it instead of
         // leaking it. The record shape rides along on fpNewTrackedTmp's own
         // `clar_release_NAME` walk, same as before.
-        if fpNeedsRelease(irExprType(x)) {
+        // KArr is the ONE type fpNeedsRelease covers that must still be
+        // tracked only in the bare-discard position, for the same reason
+        // cg68k's own gate excludes KRec (see cgIntrListPopLike): a
+        // `list of text[3]` element is copied out of this temp by a plain
+        // C array assignment, and fpStmt's SAssign handoff fires only for
+        // fpIsHandleType or KRec -- so the destination takes ownership and
+        // nothing can untrack the temp. Releasing it anyway is an
+        // over-release of live handles, not a leak
+        // (testdata/leakgate/arrelem.cla's popAssignCase catches it). In a
+        // discarded statement nothing copies the temp anywhere, so there
+        // it is both safe and necessary. KRec needs no such carve-out
+        // here: SAssign hands a KRec temp off by name, and SReturn hands
+        // off unconditionally.
+        if fpNeedsRelease(irExprType(x)) and (irtKind(irExprType(x)) != KArr or x == fpDiscardExprIdx) {
             t = fpNewTrackedTmp(irExprType(x))
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
