@@ -1059,12 +1059,19 @@ func lowIntrIsNonOwningContainerRead(nm: int): bool {
 // ownership out of the container (list_pop/list_shift -- the only two;
 // no map/sortedmap/intmap kind has a remove-and-return op). These stay
 // classified as borrow (lowArgNeedsCopy never marks them COPY -- nothing
-// else can alias a just-removed element), but a bare pop/shift used
-// directly as a call argument still needs its own release scheduled once
-// the call returns (the popped/shifted handle is real and freshly owned,
-// with no other owner) -- both backends (cprint.cla's fpCallFnArg,
-// cg68k.cla's cgPushArgs) consult this to add release-only scheduling,
-// mirroring how an ECallFn/ENewRec result is tracked.
+// else can alias a just-removed element), but the removed handle is real
+// and freshly owned, with no other owner, so every backend position that
+// does not hand it to a durable owner has to release it -- the same rule
+// an ECallFn/ENewRec result already follows.
+//
+// compiler-cleanup: BOTH backends' pop/shift dispatch arms call THIS
+// predicate (cprint.cla's fpIntrCall4, cg68k.cla's cgIntr), not their own
+// re-spelled `nm == IListPop() or nm == IListShift()` chain -- a third
+// transfer intrinsic is added here and nowhere else, and the ownership
+// arms follow by construction. cg68k.cla's cgPushArgs still consults it
+// separately for the handle-bearing RECORD argument shape, whose scratch
+// is block-copied out and so is deliberately not tracked by the dispatch
+// arm itself (see cgIntrListPopLike's own doc comment).
 func lowIntrIsOwningContainerRead(nm: int): bool {
     return nm == IListPop() or nm == IListShift()
 }

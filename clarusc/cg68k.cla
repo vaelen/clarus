@@ -8618,7 +8618,7 @@ func cgIntr(e: int) {
         cgIntrListPushLike(e, poolGet(nm))
         return
     }
-    if nm == IListPop() or nm == IListShift() {
+    if lowIntrIsOwningContainerRead(nm) {
         cgIntrListPopLike(e, poolGet(nm))
         return
     }

@@ -2995,7 +2995,7 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
             fpEmit(fn + "(" + l + ", &(" + v + "));")
         }
         return toText("")
-    } else if nm == IListPop() or nm == IListShift() {
+    } else if lowIntrIsOwningContainerRead(nm) {
         l = fpExpr(a0)
         // Plan 5b Task 10: cpListPorted redirects both emission points below
         // (the discard-statement release branch and the ordinary
