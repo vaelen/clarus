@@ -9,8 +9,10 @@
 # source tree ($WORK/rtroot/{runtime/clarus,toolbox} -- the toolbox half is
 # required because fileh_68k.cla `include`s it through the
 # <rtdir>/../../toolbox/ fallback, so a bare runtime/clarus copy fails for
-# the wrong reason entirely). `baseline` proves the untouched copy builds,
-# so neither failure below can be an artifact of the copy itself.
+# the wrong reason entirely). `baseline` builds against that untouched tree,
+# so neither failure below can be an artifact of the copy itself; each
+# variant is a `cp -R` of that ONE copy, not a fresh sweep of $ROOT
+# (Task 11, final-review item 6).
 #
 #   missing_module   -- datetime_68k.cla deleted, program calls now():
 #                       drive.cla's manifest splice names the module.
@@ -19,32 +21,45 @@
 #                       the whole-program check and reaches cg68k's own
 #                       cgJsrByName/cgCallFnScalar guard family
 #                       (cg68k.cla ~10035, ~11829), which names the function.
+#
+# Task 11 (final-review item 5): each subcase asserts its OWN exact
+# diagnostic text, not a shared alternation -- a checker that regressed to
+# a generic `undefined: rtStrStore` now FAILS missing_function instead of
+# passing on the `rtStrStore` alternative.
 . "$(dirname "$0")/../lib.sh" || exit 2
 
-# guard_check NAME RTDIR PROG : emit68k must exit nonzero with a named
-# diagnostic and no runtime-error crash.
+# guard_check NAME RTDIR PROG WANT : emit68k must exit nonzero with WANT
+# (a fixed string) in its output and no runtime-error crash.
 guard_check() {
     _name=$1
     _rt=$2
     _prog=$3
+    _want=$4
     "$CLARUSC" emit68k --rtdir "$_rt" -o "$WORK/$_name.bin" "$_prog" > "$WORK/$_name.out" 2>&1
     _rc=$?
     if [ $_rc -eq 0 ]; then
         t_fail "$_name" "want nonzero exit, got 0"
     elif grep -q 'list index out of range' "$WORK/$_name.out"; then
         t_fail "$_name" "crashed instead of diagnosing: $(tail -3 "$WORK/$_name.out")"
-    elif grep -Eq 'datetime|rtStrStore|rtDt|not found|not spliced' "$WORK/$_name.out"; then
+    elif grep -Fq "$_want" "$WORK/$_name.out"; then
         t_pass "$_name"
     else
-        t_fail "$_name" "exit $_rc but no named diagnostic: $(tail -3 "$WORK/$_name.out")"
+        t_fail "$_name" "exit $_rc but not the expected diagnostic \"$_want\": $(tail -3 "$WORK/$_name.out")"
     fi
 }
 
-rtroot_copy() {
+# The ONE full copy of the compiler's source tree. Every variant below is a
+# cp -R of this, so $ROOT is swept exactly once.
+rtbase="$WORK/rtroot"
+rm -rf "$rtbase"
+mkdir -p "$rtbase/runtime/clarus" "$rtbase/toolbox" || die "mkdir $rtbase"
+cp "$ROOT"/runtime/clarus/*.cla "$rtbase/runtime/clarus/" || die "cp runtime"
+cp "$ROOT"/toolbox/*.cla "$rtbase/toolbox/" || die "cp toolbox"
+
+# rtroot_variant DEST : a fresh derivative of the one base tree.
+rtroot_variant() {
     rm -rf "$1"
-    mkdir -p "$1/runtime/clarus" "$1/toolbox" || die "mkdir $1"
-    cp "$ROOT"/runtime/clarus/*.cla "$1/runtime/clarus/" || die "cp runtime"
-    cp "$ROOT"/toolbox/*.cla "$1/toolbox/" || die "cp toolbox"
+    cp -R "$rtbase" "$1" || die "cp -R $rtbase $1"
 }
 
 cat > "$WORK/needs_dt.cla" <<'CLA'
@@ -64,9 +79,8 @@ on App.startCLI(args: list of string) {
 }
 CLA
 
-# baseline: an untouched copy builds both programs clean.
-rtroot_copy "$WORK/ok"
-if "$CLARUSC" emit68k --rtdir "$WORK/ok/runtime/clarus/" -o "$WORK/ok.bin" \
+# baseline: the untouched copy builds the program clean.
+if "$CLARUSC" emit68k --rtdir "$rtbase/runtime/clarus/" -o "$WORK/ok.bin" \
         "$WORK/needs_ss.cla" > "$WORK/ok.out" 2>&1; then
     t_pass baseline
 else
@@ -74,16 +88,18 @@ else
     t_done
 fi
 
-rtroot_copy "$WORK/nomod"
+rtroot_variant "$WORK/nomod"
 rm -f "$WORK/nomod/runtime/clarus/datetime_68k.cla"
-guard_check missing_module "$WORK/nomod/runtime/clarus/" "$WORK/needs_dt.cla"
+guard_check missing_module "$WORK/nomod/runtime/clarus/" "$WORK/needs_dt.cla" \
+    'runtime module datetime_68k.cla not found'
 
-rtroot_copy "$WORK/nofn"
-LC_ALL=C sed '/^func rtStrStore(/,/^}$/d' "$WORK/nofn/runtime/clarus/str.cla" > "$WORK/str.stripped" \
+rtroot_variant "$WORK/nofn"
+LC_ALL=C sed '/^func rtStrStore(/,/^}$/d' "$rtbase/runtime/clarus/str.cla" > "$WORK/str.stripped" \
     || die "sed str.cla"
 grep -q 'func rtStrStore(' "$WORK/str.stripped" \
     && die "sed did not remove rtStrStore from str.cla"
 cp "$WORK/str.stripped" "$WORK/nofn/runtime/clarus/str.cla"
-guard_check missing_function "$WORK/nofn/runtime/clarus/" "$WORK/needs_ss.cla"
+guard_check missing_function "$WORK/nofn/runtime/clarus/" "$WORK/needs_ss.cla" \
+    'cg68k: rtStrStore not found/reachable'
 
 t_done

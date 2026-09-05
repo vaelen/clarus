@@ -15,19 +15,28 @@
 conn_build fieldonly || { t_fail build "$(cat "$WORK/fieldonly.build")"; t_done; }
 t_pass build
 
-grep -q 'clar_fn_rtConnPump' "$WORK/fieldonly.c" && t_pass conn_spliced \
-    || t_fail conn_spliced "emitted C never mentions clar_fn_rtConnPump: conn.cla was not spliced"
+if grep -q 'clar_fn_rtConnPump' "$WORK/fieldonly.c"; then
+    t_pass conn_spliced
+else
+    t_fail conn_spliced "emitted C never mentions clar_fn_rtConnPump: conn.cla was not spliced"
+fi
 
 "$WORK/fieldonly" > "$WORK/out" 2> "$WORK/err"
 rc=$?
-[ $rc -eq 0 ] && t_pass run \
-    || t_fail run "exit $rc, want 0 (stdout: $(cat "$WORK/out"), stderr: $(cat "$WORK/err"))"
+if [ $rc -eq 0 ]; then
+    t_pass run
+else
+    t_fail run "exit $rc, want 0 (stdout: $(cat "$WORK/out"), stderr: $(cat "$WORK/err"))"
+fi
 
 # The native lane splices conn.cla unconditionally (drive.cla's want68k
 # arm), so this half never depended on usesConn -- pinned anyway so a
 # future narrowing of that arm cannot silently reintroduce the same gap.
-emit68k -o "$WORK/fieldonly.bin" "$ROOT/tests/conntest/testdata/fieldonly.cla" \
-    > "$WORK/emit68k.log" 2>&1 && t_pass native_emit \
-    || t_fail native_emit "emit68k failed: $(tail -20 "$WORK/emit68k.log")"
+if emit68k -o "$WORK/fieldonly.bin" "$ROOT/tests/conntest/testdata/fieldonly.cla" \
+        > "$WORK/emit68k.log" 2>&1; then
+    t_pass native_emit
+else
+    t_fail native_emit "emit68k failed: $(tail -20 "$WORK/emit68k.log")"
+fi
 
 t_done

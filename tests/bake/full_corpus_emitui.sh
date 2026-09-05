@@ -64,15 +64,20 @@ for entry in "$ROOT"/testdata/emitui/*.cla; do
     # host lane -- but the --rtbake path bypasses driveManifestSplice
     # entirely, so nothing ever splices them and the emitted C CALLS
     # rtConnOpen/rtFhOpen without defining them. Detected, not
-    # allowlisted by name: the from-source fork declares the entry point
-    # and the bake fork does not. Reproduces on `main` with
-    # tests/conntest/testdata/echo.cla, which predates this corpus entry;
-    # this check retires itself the moment the gap is closed, because the
-    # forks then match and never reach here.
+    # allowlisted by name: the from-source fork declares the entry point,
+    # the bake fork does not, AND the bake fork still CALLS it -- the
+    # third clause (Task 11, final-review item 18) is what pins this to
+    # the actual undefined-symbol gap. Without it a fixture whose bake
+    # fork merely dropped an unused declaration would take the SKIP too,
+    # so a real regression could hide behind this message. Reproduces on
+    # `main` with tests/conntest/testdata/echo.cla, which predates this
+    # corpus entry; this check retires itself the moment the gap is
+    # closed, because the forks then match and never reach here.
     gap=
     for sym in clar_fn_rtConnOpen clar_fn_rtFhOpen; do
         if grep -q "^static[^;]*$sym" "$srcout" &&
-                ! grep -q "^static[^;]*$sym" "$bakeout"; then
+                ! grep -q "^static[^;]*$sym" "$bakeout" &&
+                grep -q "$sym(" "$bakeout"; then
             gap=$sym
             break
         fi
