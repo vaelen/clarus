@@ -1,21 +1,24 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// smalltmp_ceiling.cla: mac-resident-clarusc Task 3 -- regression pin for
-// cgTmpSlots (clarusc/cg68k.cla). clarusc's own self-emit needs 14
-// concurrently-live small (<=4-byte) tracked temps within ONE statement
-// -- a call whose OWN 14 arguments are each an `l.pop()` (cgIntrListPopLike's
-// own out-param scratch, cgNewTrackedTmp), all evaluated left-to-right and
-// tracked until the call itself fires (cgFreeStmtTmps only runs at
-// end-of-statement, Task 13's own per-statement, not per-flush, lifetime).
-// Discovered alongside bigtmp_ceiling.cla's own big-pool ceiling while
-// self-hosting clarusc; the const is now set to the exact observed need
-// (14), and THIS fixture exercises exactly that many at once -- a future
-// accidental shrink of cgTmpSlots below 14 fails HERE, as a loud test
-// failure, instead of only being discovered later self-hosting clarusc
-// itself (a field error).
-func sum14(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int, k: int, l: int, m: int, n: int): int {
-    return a + b + c + d + e + f + g + h + i + j + k + l + m + n
+// smalltmp_ceiling.cla: regression pin for the small (<=4-byte) statement
+// temp pool (clarusc/cg68k.cla's cgAllocTmpOff / cgFuncSmallTmpNeed).
+//
+// mac-resident-clarusc Task 3 added this fixture when that pool was a flat
+// per-frame const and clarusc's own self-emit hit its ceiling: it pinned
+// "works at 14", the exact const of the day. The compiler-cleanup phase
+// sized the pool PER FUNCTION off cg68Measure's throwaway pass, so there
+// is no const and no ceiling left to shrink -- what needs pinning now is
+// that NO per-statement ceiling exists at all. 30 concurrently-live small
+// temps in ONE statement: a call whose own 30 arguments are each an
+// `l.pop()` (cgIntrListPopLike's out-param scratch, cgAllocTmpOff), all
+// evaluated left-to-right and held until the call itself fires
+// (cgFreeStmtTmps only runs at end-of-statement -- Task 13's per-statement,
+// not per-flush, lifetime). 30 is comfortably past the old 24-slot const,
+// so a future reintroduction of any flat ceiling fails HERE, loudly,
+// instead of being discovered self-hosting clarusc (a field error).
+func sum30(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int, k: int, l: int, m: int, n: int, o: int, p: int, q: int, r: int, s: int, t: int, u: int, v: int, w: int, x: int, y: int, z: int, aa: int, bb: int, cc: int, dd: int): int {
+    return a + b + c + d + e + f + g + h + i + j + k + l + m + n + o + p + q + r + s + t + u + v + w + x + y + z + aa + bb + cc + dd
 }
 on App.startCLI(args: list of string) {
     var nums: list of int
@@ -23,12 +26,12 @@ on App.startCLI(args: list of string) {
     var total: int
 
     i = 1
-    while i <= 14 {
+    while i <= 30 {
         nums.push(i)
         i = i + 1
     }
-    total = sum14(nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop())
-    if total == 105 {
+    total = sum30(nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop())
+    if total == 465 {
         alert("smalltmp ceiling ok")
     } else {
         alert("smalltmp ceiling FAIL")

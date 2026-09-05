@@ -270,7 +270,7 @@ func app68BuildCodeN(seg: text, jtFirstSlot: int, jtCount: int): text {
 // natInit-created "out" file even appears) on a plain UI program
 // (testdata/valid/bounce.cla) at 384KB, root-caused to stack/heap
 // headroom: cgEmitFunc's own per-function LINK frame floor was ~8.3KB AT
-// THE TIME (cgTmpSlots/cgBigTmpSlots/cgBigTmpSize's fixed per-function
+// THE TIME (the then-flat cgTmpSlots/cgBigTmpSlots/cgBigTmpSize
 // scratch pools, cg68k.cla's own header comment as it read then), and the
 // early boot call chain alone (rtUiStartup -> App.launch -> rtUiLaunch ->
 // UiLaunchReal -> nat_UiLaunchReal, each its own ~8.3KB+ frame) already

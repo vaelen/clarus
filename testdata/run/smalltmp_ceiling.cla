@@ -1,19 +1,19 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// smalltmp_ceiling.cla: mac-resident-clarusc Task 3 -- regression pin for
-// cgTmpSlots (clarusc/cg68k.cla). clarusc's own self-emit needs 14
-// concurrently-live small (<=4-byte) tracked temps within ONE statement
-// -- a call whose OWN 14 arguments are each an `l.pop()` (cgIntrListPopLike's
-// own out-param scratch, cgNewTrackedTmp), all evaluated left-to-right and
-// tracked until the call itself fires (cgFreeStmtTmps only runs at
-// end-of-statement, Task 13's own per-statement, not per-flush, lifetime).
-// Discovered alongside bigtmp_ceiling.cla's own big-pool ceiling while
-// self-hosting clarusc; the const is now set to the exact observed need
-// (14), and THIS fixture exercises exactly that many at once -- a future
-// accidental shrink of cgTmpSlots below 14 fails HERE, as a loud test
-// failure, instead of only being discovered later self-hosting clarusc
-// itself (a field error).
+// smalltmp_ceiling.cla: the RUN-lane (behavior-oracle) twin of
+// testdata/cg68k/smalltmp_ceiling.cla -- 14 concurrently-live small
+// (<=4-byte) statement temps in ONE statement, a call whose OWN 14
+// arguments are each an `l.pop()` (cgIntrListPopLike's out-param scratch,
+// cgAllocTmpOff), all evaluated left-to-right and held until the call
+// itself fires (cgFreeStmtTmps only runs at end-of-statement -- Task 13's
+// per-statement, not per-flush, lifetime).
+//
+// mac-resident-clarusc Task 3 wrote this to pin the then-flat pool const
+// at the exact need clarusc's own self-emit had found. compiler-cleanup
+// sized that pool PER FUNCTION, so there is no const left to shrink; the
+// "no ceiling at all" pin lives in the cg68k twin, which was widened to 30
+// temps. This one stays at 14 as a plain cross-lane behavior oracle.
 func sum14(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int, k: int, l: int, m: int, n: int): int {
     return a + b + c + d + e + f + g + h + i + j + k + l + m + n
 }

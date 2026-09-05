@@ -352,13 +352,15 @@ var fpStmtTmpType: list of int
 // arena indices are monotonic and never reused (same invariant
 // lowRetTempN/lowStoreTempN rely on, lower.cla), so a STALE value could
 // never accidentally match a later node even without the explicit clear;
-// cleared anyway for hygiene. Consulted by exactly one site so far
-// (fpIntrCall's IListPop/IListShift branch): `x == fpDiscardExprIdx`
-// is true ONLY when x is that exact top-level node, never a NESTED one
-// (e.g. `f(lst.pop())`'s inner pop -- a different arena index than the
-// outer ECallFn node fpDiscardExprIdx would hold for that statement), so a
-// call-argument/assign-dst/return position is never mistaken for a
-// discarded one.
+// cleared anyway for hygiene. `x == fpDiscardExprIdx` is true ONLY when x
+// is that exact top-level node, never a NESTED one (e.g. `f(lst.pop())`'s
+// inner pop -- a different arena index than the outer ECallFn node
+// fpDiscardExprIdx would hold for that statement), so a call-argument/
+// assign-dst/return position is never mistaken for a discarded one.
+// compiler-cleanup removed the pop/shift consumer this was originally
+// written for (that arm tracks its result in every position now, so it
+// needs no discard test at all); fpStmt's own SExprStmt printing is the
+// remaining reader.
 var fpDiscardExprIdx: int
 
 // fpBailTargets (attempt-abort phase Task 3, design doc %3.2/%3.3) is a

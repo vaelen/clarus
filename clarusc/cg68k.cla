@@ -1154,6 +1154,20 @@ var cgFuncFrameSizes: list of int
 // never consults this list).
 var cgFuncBigTmpNeed: list of int
 
+// cgFuncSmallTmpNeed[i] is irFuncs index i's own high-water SMALL-temp
+// (4-byte statement scratch) slot count -- the exact sibling of
+// cgFuncBigTmpNeed just above, added by compiler-cleanup when the small
+// pool stopped being a flat per-frame const: the measure pass's cgEmitFunc
+// call records the max concurrent cgAllocTmpOff need any ONE statement in
+// i's body reached (cgFuncSmallTmpHigh, index-assigned), and the real
+// pass's cgEmitFunc call reads it back to size that function's own pool.
+// Pre-sized to irFuncs.count zeros by cg68Measure before either pass runs;
+// 0 is also the correct final value for a function that never allocates a
+// small temp (it reserves no slots at all -- there is no floor) and for an
+// object-code-linker pasted function (cgObjPasteFunc replays captured
+// bytes and never consults this list).
+var cgFuncSmallTmpNeed: list of int
+
 // cgCurFuncSegment is the segment number of whatever code unit is
 // CURRENTLY being emitted (a packed function, or 1 while emitting
 // startup/cg_init_globals/any duplicated-glue routine) -- cgCallFunc's
@@ -1368,38 +1382,32 @@ var cgSerdescLabels: list of int
 // free slot, cgStmt resets the pool's high-water mark to 0 at the START of
 // every statement (mirroring fpStmt's own fresh-list swap: a slot only
 // needs to stay live for ONE statement, same as a C temp's declared-once-
-// per-statement lifetime), so a function never runs out of slots as long
-// as no SINGLE statement needs more than cgTmpSlots concurrently live
-// temps (cgNewTrackedTmp hard-errors, loud, if it does -- bump the const).
+// per-statement lifetime), so the pool only ever has to hold the single
+// widest statement in the function's body.
 // A6-relative (not A7-relative/stack-scratch) specifically because it stays
 // valid across every nested call's own argument push/cleanup sequence
 // (cgForRangeStmt's `to`-on-the-stack precedent works ONLY because nothing
 // between its one push and its one read can itself push -- not true here,
 // where a tracked temp's value can flow through an arbitrary nested call).
 //
+// compiler-cleanup: the pool is sized PER FUNCTION now, from cg68Measure's
+// throwaway pass, exactly like the big pool below (cgFuncSmallTmpNeed/
+// cgFuncSmallTmpHigh, cgAllocTmpOff's own grow-on-measure branch). It used
+// to be one flat const of slots reserved in EVERY frame -- 8, then 14,
+// then 24 slots as successive phases found one more statement that needed
+// more (self-hosting clarusc's 14 chained `list.pop()` arguments; then
+// cprint.cla's IUiCanvasRect arm, 14 text concats plus 7 text-returning
+// calls, needing 21 once cgCallFnScalar started tracking every handle-typed
+// call result). Every bump was a 96-byte tax on every function in every
+// program, and every bump was still a CEILING that a big enough statement
+// could hit ("too many tracked temps in one statement"). Per-function
+// sizing removes both: a function reserves exactly its own high-water need,
+// floor 0, and no statement shape can exhaust the pool. The frame-size cap
+// (cgEmitFunc) is the one remaining limit, and it is a real machine limit.
+//
 // cgStmtTmpOffs[i]/cgStmtTmpType[i] mirror fpStmtTmps/fpStmtTmpType (no
 // fpStmtTmpRel/fpStmtTmpIsRec sibling: cgFreeStmtTmps re-derives the right
-// release call from the type directly via cgReleaseAt, and KRec temps
-// aren't built by this task -- cgNewTrackedTmp hard-errors on any
-// cgSizeOf(t)>4 result, same "not exercised by this task's fixtures"
-// scope note the rest of this file already uses for KRec/KStr/KArr
-// container elements). mac-resident-clarusc Task 3: bumped from 8 to 14
-// (self-hosting clarusc through emit68k hit the "too many tracked temps"
-// error -- a single statement in clarusc's own source, a call whose
-// arguments are 14 chained `list.pop()`s, needs 14 concurrently-tracked
-// small temps). 68k-call-result-release phase (Task 1 probe item 3):
-// bumped from 14 to 24 -- once cgCallFnScalar tracks every handle-typed
-// user-call result unconditionally (not just the discarded case), a real
-// in-tree statement (cprint.cla:3868, the IUiCanvasRect arm of
-// fpIntrCall12 -- 14 text-concat nodes plus 7 text-returning user calls)
-// needs 21 concurrently-tracked small temps, up from its pre-fix 14 (the
-// 14 concats alone; the 7 calls were untracked leaks before this phase).
-// 24 leaves headroom above the observed 21, not padded further -- see the
-// regression pin, testdata/run/smalltmp_ceiling.cla, which exercises
-// exactly 14 so an accidental future shrink still fails there, loudly,
-// before self-hosting clarusc (whose own worst statement now needs 21)
-// would catch it.
-const cgTmpSlots: int = 24
+// release call from the type directly via cgReleaseAt).
 
 // cgBigTmpFloor/cgBigTmpSize: a SEPARATE, smaller pool sized for a
 // KStr/KRec temp (cgTmpBaseOffs' own slots are a fixed 4 bytes, too
@@ -1442,18 +1450,19 @@ var cgStmtBigTmpNext: int
 
 // cgRetSaveOff (final-review wave, I2): cgReturnStmt's own dedicated
 // 4-byte A6-relative frame slot, reserved once per function right next to
-// the cgTmpSlots small pool (cgEmitFunc), NOT drawn from that pool via
-// cgAllocTmpOff. The D0 save Task 9b added to cgReturnStmt only runs when
-// the statement's OWN cgStmtTmpOffs is non-empty -- i.e. exactly when the
-// small pool may already be fully spoken for by the return expression's
-// own evaluation, so sharing the pool means a `return` whose operand
-// alone needs all cgTmpSlots temps aborts ("too many tracked temps") on a
-// save that has nothing to do with the operand's own temp need. The
-// save's lifetime never overlaps any statement-pool temp's lifetime (it
-// is written after cgExpr(x) and cgHandoff have both finished consuming
-// the pool, and read back only after cgFreeStmtTmps has released
-// everything) -- a separate, non-shared slot removes the false ceiling
-// entirely rather than growing it.
+// the small pool (cgEmitFunc), NOT drawn from that pool via cgAllocTmpOff.
+// The D0 save Task 9b added to cgReturnStmt only runs when the statement's
+// OWN cgStmtTmpOffs is non-empty -- i.e. exactly when the small pool may
+// already be fully spoken for by the return expression's own evaluation.
+// Back when the pool was a flat const that meant a `return` whose operand
+// alone used every slot aborted ("too many tracked temps") on a save that
+// had nothing to do with the operand's own need; compiler-cleanup's
+// per-function sizing removed that ceiling, but the separate slot stays
+// correct and costs the same 4 bytes, and keeping it out of the pool keeps
+// the recorded high-water an honest measure of statement shape. The save's
+// lifetime never overlaps any statement-pool temp's lifetime anyway (it is
+// written after cgExpr(x) and cgHandoff have both finished consuming the
+// pool, and read back only after cgFreeStmtTmps has released everything).
 var cgRetSaveOff: int
 
 // cgFuncBigTmpHigh is the CURRENT function's own big-temp high-water
@@ -1464,6 +1473,27 @@ var cgRetSaveOff: int
 // per-statement peak need, written into cgFuncBigTmpNeed[f] for the
 // real pass to read back.
 var cgFuncBigTmpHigh: int
+
+// cgFuncSmallTmpHigh is the CURRENT function's own small-temp high-water
+// mark -- cgFuncBigTmpHigh's sibling exactly: reset to 0 at the top of
+// every cgEmitFunc call (both passes), bumped in cgAllocTmpOff whenever
+// cgStmtTmpNext grows past it, and written into cgFuncSmallTmpNeed[f] at
+// the end of the measure pass's call.
+var cgFuncSmallTmpHigh: int
+
+// cgSmallTmpFirstOff is the A6-relative offset cgAllocTmpOff's growth
+// branch starts from when the CURRENT function's small pool was laid out
+// empty -- recorded by cgEmitFunc's frame layout below the whole rest of
+// the frame, so a measure-pass slot grown here can never collide with
+// cgRetSaveOff, the big pool or the deep scratch. (The big pool needs no
+// such anchor: cgBigTmpFloor keeps it non-empty, so it always has a last
+// slot to grow below.) Growth only ever happens on the measure pass, whose
+// bytes are discarded, so an offset past frameSize there is harmless --
+// every frame reference is AmDisp16 and encodes to the same size either
+// way -- but keeping it disjoint means the measure pass never emits two
+// different temps at the SAME displacement, which the peephole pass could
+// otherwise fold and mis-measure.
+var cgSmallTmpFirstOff: int
 var cgSyntheticVarSeq: int
 
 // cgLastTrackedOff mirrors cprint's own string-identity handoff check
@@ -1495,15 +1525,15 @@ var cgLastTrackedOff: int
 // cgDiscardExprIdx mirrors fpDiscardExprIdx exactly (cprint.cla): the exact
 // IR expr index of the CURRENT bare, discarded SExprStmt's own top-level
 // expression, or -1 -- set immediately before, cleared immediately after,
-// cgStmt's own SExprStmt cgExpr call. Consulted by two sites: cgIntr's
-// IListPop/IListShift arm (pop/shift transfer ownership WITHOUT retaining --
-// a plain materialize-and-untrack, like cprint's fpNewTmp+fpHandoff -- so a
-// bare `lst.pop();` statement, the popped value used nowhere, would
-// otherwise leak) and cgCallFnScalar (a bare, discarded call statement
-// returning a fresh handle -- `makeStr();` -- drops D0 with nothing left to
-// release it). Both route that ONE discarded shape through cgNewTrackedTmp
-// instead of the ordinary untracked path, so the end-of-statement flush
-// (cgFreeStmtTmps) releases it (final-review T13).
+// cgStmt's own SExprStmt cgExpr call. Consulted by two sites:
+// cgCallFnScalar (a bare, discarded call statement returning a fresh
+// handle -- `makeStr();` -- drops D0 with nothing left to release it) and
+// cgIntrListPopLike's RECORD arm (a handle-bearing KRec element is
+// block-copied out of the pop scratch by every other consumer, so the
+// scratch is only safe to track when the statement discards it -- see that
+// function's own gate comment). Both route that ONE discarded shape
+// through cgNewTrackedTmp instead of the ordinary untracked path, so the
+// end-of-statement flush (cgFreeStmtTmps) releases it (final-review T13).
 var cgDiscardExprIdx: int
 
 // cgMaterializeDepth/cgMaterializeMaxDepth (final-review I1 guard,
@@ -2550,8 +2580,8 @@ const cgToolboxHeadroom: int = 8192
 // adds on top of each function's own cgFuncFrameSizes weight: 4 bytes
 // return address (the caller's JSR/BSR push) + 4 bytes saved A6 (the
 // callee's own LINK) -- frameSize itself already counts everything
-// BELOW A6 (locals + the cgTmpSlots pool + this function's OWN
-// per-function-sized cgBigTmpFloor/cgFuncBigTmpNeed pool +
+// BELOW A6 (locals + this function's OWN per-function-sized small
+// (cgFuncSmallTmpNeed) and big (cgBigTmpFloor/cgFuncBigTmpNeed) pools +
 // cgDeepLevels), so this is the only per-call cost frameSize doesn't
 // already include.
 const cgHeurCallOverhead: int = 8
@@ -4140,17 +4170,41 @@ func cgEmitPanic(msgLitIdx: int) {
 // e.g. `list of string`) routes to cgAllocBigTmpOff instead (Task 14.7 --
 // was a hard error here through Task 13, "not exercised by this task's
 // fixtures"; the 5d corpus sweep exercises it directly).
+//
+// compiler-cleanup: no more per-statement ceiling, the same shape
+// cgAllocBigTmpOff below already had. The pool (cgTmpBaseOffs) starts each
+// function at exactly cgFuncSmallTmpNeed[f] slots (cgEmitFunc's frame
+// layout); when a statement needs one more than currently reserved, this
+// grows the pool by one 4-byte slot -- but ONLY during the measure pass
+// (cgRecMode == 1), whose bytes are thrown away, so growing costs nothing
+// real and simply records the true need. The real pass had that recorded
+// max laid out up front, so it must NEVER reach the growth branch; if it
+// does, the two passes disagreed about this function's statement shape,
+// which can only be a codegen bug (both walk the identical IR), hence the
+// hard abort rather than growing there too.
 func cgAllocTmpOff(t: int): int {
     var off: int
+    var newOff: int
 
     if cgSizeOf(t) > 4 {
         return cgAllocBigTmpOff(t)
     }
-    if cgStmtTmpNext >= cgTmpSlots {
-        abort("cg68k: too many tracked temps in one statement (Task 13 pool exhausted -- bump cgTmpSlots)")
+    if cgStmtTmpNext >= cgTmpBaseOffs.count {
+        if cgRecMode != 1 {
+            abort("cg68k: small-temp need mismatch between measure and emit passes")
+        }
+        if cgTmpBaseOffs.count == 0 {
+            newOff = cgSmallTmpFirstOff
+        } else {
+            newOff = cgTmpBaseOffs[cgTmpBaseOffs.count - 1] - 4
+        }
+        cgTmpBaseOffs.add(newOff)
     }
     off = cgTmpBaseOffs[cgStmtTmpNext]
     cgStmtTmpNext = cgStmtTmpNext + 1
+    if cgStmtTmpNext > cgFuncSmallTmpHigh {
+        cgFuncSmallTmpHigh = cgStmtTmpNext
+    }
     return off
 }
 
@@ -5060,6 +5114,7 @@ func cgEmitFunc(f: int) {
     var tmpOffs: list of int
     var bigTmpOffs: list of int
     var bigTmpCount: int
+    var smallTmpCount: int
     var startIdx: int
 
     // Task 9 (toolbox-integration Feature C): the hand-built LDEF/
@@ -5241,16 +5296,27 @@ func cgEmitFunc(f: int) {
         loc = irLocalNext(loc)
     }
 
-    // ---- Task 13: the statement-temp pool (cgTmpSlots anonymous 4-byte
-    // slots) + the container deep-release-walk scratch (cgDeepLevels
+    // ---- Task 13: the statement-temp pool (anonymous 4-byte slots) + the
+    // container deep-release-walk scratch (cgDeepLevels
     // {ptr,count,index,value} quadruples) -- reserved below every named
-    // local, same contiguous-negative-offset discipline, unconditionally
-    // (cheap; ignored cost if this function never uses container ARC at
-    // all). See this file's own Task 13 module-state doc comment for why
-    // these live on the A6 frame rather than the real machine stack.
+    // local, same contiguous-negative-offset discipline. See this file's
+    // own Task 13 module-state doc comment for why these live on the A6
+    // frame rather than the real machine stack.
+    //
+    // compiler-cleanup: sized to this function's OWN recorded need
+    // (cgFuncSmallTmpNeed[f], pre-sized to 0 by cg68Measure before either
+    // pass runs), with NO floor -- a function that never allocates a small
+    // temp reserves no slots at all, where the old flat const reserved 24
+    // in every frame. Same two-pass contract as the big pool just below: on
+    // the MEASURE pass cgFuncSmallTmpNeed[f] is still 0 here, so this lays
+    // out an empty pool and cgAllocTmpOff grows it on demand (recording the
+    // true high-water in cgFuncSmallTmpHigh, reset below); on the REAL pass
+    // it already holds that max, so the pool is the exact right size up
+    // front and cgAllocTmpOff never grows.
+    smallTmpCount = cgFuncSmallTmpNeed[f]
     tmpOffs = cgFreshIntList()
     i = 0
-    while i < cgTmpSlots {
+    while i < smallTmpCount {
         runningNeg = runningNeg - 4
         tmpOffs.add(runningNeg)
         i = i + 1
@@ -5260,7 +5326,7 @@ func cgEmitFunc(f: int) {
     // final-review wave, I2: cgReturnStmt's own dedicated 4-byte save
     // slot, reserved unconditionally right next to the small pool above --
     // see cgRetSaveOff's own doc comment for why this must NOT be one of
-    // the cgTmpSlots slots cgAllocTmpOff hands out.
+    // the slots cgAllocTmpOff hands out.
     runningNeg = runningNeg - 4
     cgRetSaveOff = runningNeg
 
@@ -5292,8 +5358,15 @@ func cgEmitFunc(f: int) {
     cgBigTmpBaseOffs = bigTmpOffs
     cgStmtBigTmpNext = 0
     cgFuncBigTmpHigh = 0
+    cgFuncSmallTmpHigh = 0
 
     runningNeg = cgReserveDeepScratch(runningNeg)
+    // compiler-cleanup: the anchor cgAllocTmpOff's growth branch starts
+    // from when the small pool above was laid out empty -- BELOW the whole
+    // rest of the frame, so a grown measure-pass slot can never share a
+    // displacement with cgRetSaveOff, a big-pool slot or deep scratch. See
+    // cgSmallTmpFirstOff's own doc comment.
+    cgSmallTmpFirstOff = runningNeg - 4
     frameSize = 0 - runningNeg
     // final-review wave, I1: every frame offset below is emitted through
     // AmDisp16 (a68PutWord truncates silently to 16 bits -- see its own
@@ -5400,6 +5473,8 @@ func cgEmitFunc(f: int) {
     // identical value from the same IR): a no-op re-write on the real
     // pass, the actual recording on the measure pass.
     cgFuncBigTmpNeed[f] = cgFuncBigTmpHigh
+    // compiler-cleanup: same recording, for the small pool.
+    cgFuncSmallTmpNeed[f] = cgFuncSmallTmpHigh
     a68Bind(cgCurEpilogueLabel)
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
@@ -7424,15 +7499,16 @@ func cgIntrListPushLike(e: int, nm: string) {
 }
 
 // cgIntrListPopLike mirrors fpIntrCall's IListPop/IListShift arm
-// (cprint.cla:1918-1972): pop/shift TRANSFER ownership -- no retain, and
-// the result is normally left UNTRACKED (the caller, if any, decides what
-// to do with it -- SAssign's own cgLastTrackedOff check never fires for
-// pop/shift, matching fpHandoff's unconditional untrack there) EXCEPT the
-// one ARC Task 8 review shape: a bare discarded `lst.pop();` statement,
-// detected via cgDiscardExprIdx (cgStmt's own SExprStmt case), whose
-// result would otherwise leak with nothing left to release it -- that ONE
-// case routes through cgNewTrackedTmp instead, so the ordinary
-// end-of-statement flush (cgFreeStmtTmps) catches it.
+// (cprint.cla): pop/shift TRANSFER ownership -- no retain, since the
+// element's own +1 moves out of the list. compiler-cleanup made that
+// transferred handle TRACKED in every position (see the gate's own comment
+// in the body below); a consumer that takes ownership -- an assign dst, a
+// return, a call argument -- unTRACKS it through cgLastTrackedOff/
+// cgHandoff, and any other position (receiver, operand, bare discarded
+// statement) gets the end-of-statement release from cgFreeStmtTmps that it
+// used to be missing. Through the 68k-call-result-release phase only the
+// bare-discard shape (cgDiscardExprIdx) was tracked, so
+// `lst.pop().length` leaked one block per evaluation.
 // Returns the scratch offset the result was written to (Task 14.7): a
 // scalar-kind elemT also gets the ordinary D0 load (cgIntrLoadScratch,
 // this func's own historical void contract, every existing value-context
@@ -12250,10 +12326,9 @@ func cgReturnStmt(s: int) {
         }
         if cgStmtTmpOffs.count > 0 {
             // final-review wave, I2: cgRetSaveOff is this function's OWN
-            // dedicated slot (cgEmitFunc), not cgAllocTmpOff -- drawing
-            // from the shared 14-slot small pool here could abort a
-            // `return` whose own operand already used all 14 (see
-            // cgRetSaveOff's doc comment).
+            // dedicated slot (cgEmitFunc), not cgAllocTmpOff -- see
+            // cgRetSaveOff's own doc comment for why it stays out of the
+            // statement pool even now that the pool has no ceiling.
             saveOff = cgRetSaveOff
             cgStoreD0At(6, saveOff, retT)
             saved = true
@@ -13413,6 +13488,16 @@ func cg68Measure(): bool {
     i = 0
     while i < irFuncs.count {
         cgFuncBigTmpNeed.add(0)
+        i = i + 1
+    }
+
+    // compiler-cleanup: cgFuncSmallTmpNeed pre-sized the same way and for
+    // the same reason -- on THIS (measure) pass 0 means "no recorded need
+    // yet", so the pool starts empty and cgAllocTmpOff grows it on demand.
+    cgFuncSmallTmpNeed = cgFreshIntList()
+    i = 0
+    while i < irFuncs.count {
+        cgFuncSmallTmpNeed.add(0)
         i = i + 1
     }
 
