@@ -9,3 +9,12 @@ func f() {
     s = "a\qb"
     s = "second literal, must not become a phantom unterminated string"
 }
+
+// Task 11 (item 1): the resync must not mistake an ESCAPED quote for the
+// literal's closing quote. One diagnostic for the bad escape, and the
+// following valid literal must still lex as a literal.
+func g() {
+    var s: string
+    s = "a\qb\"c"
+    s = "third literal, must not become a phantom unterminated string"
+}

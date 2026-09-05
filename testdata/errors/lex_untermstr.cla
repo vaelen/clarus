@@ -1,0 +1,13 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Task 11 (item 4): a genuinely unterminated double-quoted string is ONE
+// `unterminated string literal` diagnostic, and the valid statement that
+// follows it must not cascade into a second one. The fixture the
+// compiler-cleanup phase deleted was inert (its literal was closed), so
+// this message had no golden of its own until now.
+func f() {
+    var s: string
+    s = "never closed
+    s = "a closed literal on the next line"
+}

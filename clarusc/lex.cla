@@ -472,6 +472,14 @@ func lexDecodeEscape(quote: char): bool {
 // literal ('ab', '\q) never leaves stray tokens for the caller to trip over.
 func lexResyncCharLit() {
     while lexOff < lexLen and not lexIsNewline(lexSrc[lexOff]) {
+        if lexSrc[lexOff] == '\\' and lexOff + 1 < lexLen and not lexIsNewline(lexSrc[lexOff + 1]) {
+            // An escaped quote does not close the literal: skip the backslash
+            // AND the character it escapes, so "a\qb\"c" resyncs at the real
+            // closing quote instead of the escaped one.
+            lexAdvance()
+            lexAdvance()
+            continue
+        }
         if lexSrc[lexOff] == '\'' {
             lexAdvance()
             return
@@ -487,6 +495,14 @@ func lexResyncCharLit() {
 // runs unterminated to EOF (the old cascade). Mirrors lexResyncCharLit.
 func lexResyncStringLit() {
     while lexOff < lexLen and not lexIsNewline(lexSrc[lexOff]) {
+        if lexSrc[lexOff] == '\\' and lexOff + 1 < lexLen and not lexIsNewline(lexSrc[lexOff + 1]) {
+            // An escaped quote does not close the literal: skip the backslash
+            // AND the character it escapes, so "a\qb\"c" resyncs at the real
+            // closing quote instead of the escaped one.
+            lexAdvance()
+            lexAdvance()
+            continue
+        }
         if lexSrc[lexOff] == '"' {
             lexAdvance()
             return

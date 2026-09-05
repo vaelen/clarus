@@ -5186,12 +5186,16 @@ func lowTopHandler(d: int) {
         symIdx = scopeLookup(curScope, intern(root))
         if symIdx != -1 and symbols[symIdx].typeIdx == connectionT {
             // lowConnSlotOf is guaranteed to already carry `root`:
-            // lowerProgram's own pre-pass (usesConn-gated, same as this
-            // whole branch's premise -- symbols[symIdx].typeIdx ==
-            // connectionT can only hold true when usesConn is true) walks
-            // every global connection var BEFORE the main decl walk that
-            // reaches this function ever starts. An `on <var>.<event>`
-            // handler's target can only ever be a global per spec %3.3
+            // lowerProgram's own pre-pass walks every global connection
+            // var BEFORE the main decl walk that reaches this function
+            // ever starts. Task 11 (item 8): the implication runs ONE way
+            // only -- since 2026-09-05 usesConn can be true with ZERO
+            // global slots (a function-local connection alone sets it),
+            // so usesConn does NOT imply a slot exists. What guarantees
+            // the slot here is that this branch runs only for a GLOBAL
+            // connection var, and the pre-pass slots every global. An
+            // `on <var>.<event>` handler's target can only ever be a
+            // global per spec %3.3
             // (checkTopHandlerDecl enforces it), so -- unlike
             // lowConnMethod's receiver, which can be shadowed by a local
             // of the same name (final-review Important 2) -- `root` here

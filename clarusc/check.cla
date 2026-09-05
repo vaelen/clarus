@@ -5077,11 +5077,16 @@ func checkEditStmt(s: int) {
     // test runs AFTER checkExpr(target) because exprTypeGet on the
     // container sub-expression is only meaningful once that sub-expression
     // has been checked.
-    shapeOk = exprKind(target) == ExIdent
-    if exprKind(target) == ExSelect and typeKind(exprTypeGet(selectX(target))) == TyWindowRef {
+    // Task 11 (item 3): one `else if` chain, so shapeOk is assigned
+    // exactly once per shape -- the ExIndex arm used to overwrite the
+    // ExIdent/ExSelect verdict unconditionally, which was harmless only
+    // because the three kinds are mutually exclusive.
+    shapeOk = false
+    if exprKind(target) == ExIdent {
         shapeOk = true
-    }
-    if exprKind(target) == ExIndex {
+    } else if exprKind(target) == ExSelect and typeKind(exprTypeGet(selectX(target))) == TyWindowRef {
+        shapeOk = true
+    } else if exprKind(target) == ExIndex {
         xk = typeKind(exprTypeGet(indexX(target)))
         shapeOk = xk == TyList or xk == TyMap
     }
@@ -5695,6 +5700,13 @@ func checkConversion(e: int, target: int, name: string): int {
         ok = typeKind(at) == TyPtr
     }
     if not ok {
+        // Task 11 (item 2): unreachable today -- every arm above sets
+        // `accepted`, and the dispatcher gates named targets to enum or
+        // overlay -- but a future arm that forgets it would otherwise
+        // print "expects , got ...". One line beats a silent bad message.
+        if accepted == "" {
+            accepted = "a different type"
+        }
         // compiler-cleanup: name what the conversion ACCEPTS, not just
         // that the argument's own type was refused -- "cannot convert int
         // to int" said nothing about why an identity conversion is an
