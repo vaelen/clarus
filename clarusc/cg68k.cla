@@ -3548,6 +3548,64 @@ func cgWalkRestoreBase(reg: int) {
     }
 }
 
+// cgDefaultIsAllZero (language-runtime-cleanup, spec %3.5): true when t's
+// default value is all-zero bytes, so a GLOBAL of that type needs no
+// cg_init_globals store at all -- cgEmitStartup's below-A5 sweep (the
+// `zloopLbl` LEA/MOVE.W/CLR.W-(A0)+/DBRA loop over cgGlobalsBelowA5Size
+// bytes, cg68k.cla ~3163-3170, emitted BEFORE the `bsr cg_init_globals`
+// further down that same function) already zeroed it, and every irGlobals
+// cell lives inside that swept range by construction
+// (cgAssignGlobalOffsets sums cgSlotSizeOf contributions down from A5 and
+// cgGlobalsBelowA5Size is that same running total, negated). Locals are
+// NOT pre-zeroed and keep their explicit default-init -- this predicate's
+// second job is telling cgArrDefaultAt when a large local array can be
+// block-cleared in a loop instead of unrolled per element.
+//
+// KText/KList/KMap/KSortedMap/KIntMap need a real birth call, KErr keeps
+// its explicit init for safety, and KUiState is the unsupported-kind
+// placeholder -- all false.
+func cgDefaultIsAllZero(t: int, scalarDefault: int, strDefaultIdx: int): bool {
+    var k: IRKind
+    var ri: int
+    var f: int
+
+    k = irtKind(t)
+    if k == KInt or k == KBool or k == KFixed or k == KChar or k == KEnum {
+        return scalarDefault == 0
+    }
+    if k == KPtr or k == KWinRef or k == KOverlay {
+        return true
+    }
+    if k == KStr {
+        // cgDefaultInitStrAt's no-default arm is a whole-slot zero.
+        return strDefaultIdx == -1
+    }
+    if k == KArr {
+        // cgArrDefaultAt always recurses with 0/-1, never a named default.
+        return cgDefaultIsAllZero(irtElem(t), 0, -1)
+    }
+    if k == KRec {
+        ri = cgFindRecordByName(irtName(t))
+        if ri == -1 {
+            // cgRecordCtorAt aborts on this; let it, rather than
+            // silently skipping the init.
+            return false
+        }
+        // The record's LAYOUT fields (the same walk cgRecordCtorAt
+        // itself drives), not the AST -- inter-field padding is zeroed by
+        // the sweep either way, and cgRecordCtorAt never writes it.
+        f = irRecordLayoutFieldsHead(ri)
+        while f != -1 {
+            if not cgDefaultIsAllZero(irFieldSlotType(f), irFieldSlotDefault(f), irFieldSlotDefaultStr(f)) {
+                return false
+            }
+            f = irFieldSlotNext(f)
+        }
+        return true
+    }
+    return false
+}
+
 // cgArrDefaultAt default-inits a KArr slot at off(reg): N copies of the
 // element type, each at its own cgArrElemStride-spaced offset -- UNROLLED at
 // compile time (N is always a compile-time constant, ir.cla's own KArr.n)
@@ -3569,10 +3627,47 @@ func cgArrDefaultAt(reg: int, off: int, t: int) {
     var n: int
     var esz: int
     var i: int
+    var total: int
+    var words: int
+    var tail: int
+    var loopLbl: int
 
     et = irtElem(t)
     n = irtN(t)
     esz = cgArrElemStride(et)
+    total = n * esz
+    // language-runtime-cleanup (spec %3.5): a large all-zero array local
+    // -- one CLR.L loop instead of n unrolled stores. Only reg == 6 (a
+    // frame-relative local): the unrolled path stays for reg == 0's
+    // mid-expression walks (where A0 IS the base being walked and D0/A0
+    // are not free) and for reg == 5, whose only caller,
+    // cgEmitInitGlobalsStub, now skips an all-zero default entirely.
+    // `off mod 2 == 0` is the 68000 address-bus precondition for the
+    // word/long writes -- always true for a >32-byte array here
+    // (cgAlignOf is 2 for anything 2+ bytes wide, and every local slot
+    // base is a sum of even cgSlotSizeOf contributions), checked rather
+    // than assumed because an odd-based long write is a real address
+    // error on hardware and merely silent on the host lane. The upper
+    // bound keeps `words - 1` inside DBRA's 16-bit counter; a frame that
+    // large cannot exist anyway.
+    if reg == 6 and off mod 2 == 0 and total > 32 and total <= 262144 and cgDefaultIsAllZero(et, 0, -1) {
+        a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
+        words = total / 4
+        a68Emit(OpMove, 2, AmImm, 0, words - 1, AmDn, 0, 0)
+        loopLbl = a68NewLabel()
+        a68Bind(loopLbl)
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmPostInc, 0, 0)
+        a68Emit(OpDbra, 2, AmDn, 0, 0, AmPCLabel, 0, loopLbl)
+        tail = total - words * 4
+        if tail >= 2 {
+            a68Emit(OpClr, 2, AmNone, 0, 0, AmPostInc, 0, 0)
+            tail = tail - 2
+        }
+        if tail == 1 {
+            a68Emit(OpClr, 1, AmNone, 0, 0, AmInd, 0, 0)
+        }
+        return
+    }
     cgWalkStashBase(reg)
     i = 0
     while i < n {
@@ -5056,7 +5151,7 @@ func cgEmitInitGlobalsStub(lbl: int) {
         gt = irGlobalType(i)
         initE = irGlobalInit(i)
         fullReplace = initE != -1 and irtNeedsCtor(gt) and not (irtKind(gt) == KText and irtKind(irExprType(initE)) == KStr)
-        if not fullReplace {
+        if not fullReplace and not cgDefaultIsAllZero(gt, 0, -1) {
             cgDefaultInitAt(5, cgGlobalOffsets[i], gt, 0, -1)
         }
         if initE != -1 {
