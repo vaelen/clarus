@@ -209,12 +209,11 @@ static struct stat rt_fh_stat_buf;
 
 /* rt_fh_mac_time: Unix seconds -> Mac-epoch LOCAL seconds, the identical
  * conversion rt_dt_now_mac (rt_ext_host.inc, included earlier in rt.c so
- * RT_MAC_EPOCH_DELTA is already visible here) uses for "now" -- applied
- * here to a file's stat times instead of the current time. */
+ * the shared rt_unix_to_mac_secs helper is already visible here) uses for
+ * "now" -- applied here to a file's stat times instead of the current
+ * time. */
 static int32_t rt_fh_mac_time(time_t t) {
-    struct tm tmv;
-    localtime_r(&t, &tmv);
-    return (int32_t)((unsigned long)t + (unsigned long)tmv.tm_gmtoff + RT_MAC_EPOCH_DELTA);
+    return (int32_t)rt_unix_to_mac_secs(t);
 }
 
 /* rt_fh_unix_time: rt_fh_mac_time's inverse (filesystem-api Task 4,
@@ -331,7 +330,15 @@ int32_t rt_ext_FhHListNext(void *buf) {
         }
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
         n = strlen(de->d_name);
-        if (n > 255) n = 255;
+        /* A name too long for a Pascal Str255 is a real failure, not a
+         * silently truncated entry (a truncated name would name a
+         * DIFFERENT file to every caller that used it). rtFhDevListNext
+         * (fileh_c.cla) maps this -1 to rtFhListFailed exactly like the
+         * readdir() error path above, so rtFhList surfaces it as
+         * false + lastError. Reachable on any filesystem whose name
+         * limit counts characters rather than bytes (APFS: 255 UTF-8
+         * characters, up to ~1KB). */
+        if (n > 255) { rt_fh_errno = ENAMETOOLONG; return -1; }
         ((uint8_t *)buf)[0] = (uint8_t)n;
         memcpy((uint8_t *)buf + 1, de->d_name, n);
         return 0;
@@ -369,7 +376,15 @@ int32_t rt_ext_FhHRename(const uint8_t *path, const uint8_t *newName) {
     path_to_cstr(cpath, path);
     path_to_cstr(cnew, newName);
     strcpy(dirbuf, cpath);
-    snprintf(target, sizeof target, "%s/%s", dirname(dirbuf), cnew);
+    /* Refuse rather than silently rename to a truncated target. Belt and
+     * braces: path_to_cstr caps each half at a Str255's own 255 bytes, so
+     * "dir/leaf" cannot exceed 511 + NUL today -- the guard is here so a
+     * later widening of either buffer can't turn into a silent
+     * mis-rename. */
+    if (snprintf(target, sizeof target, "%s/%s", dirname(dirbuf), cnew) >= (int)sizeof target) {
+        rt_fh_errno = ENAMETOOLONG;
+        return -1;
+    }
     if (rename(cpath, target) != 0) { rt_fh_errno = errno; return -1; }
     return 0;
 }
@@ -380,7 +395,11 @@ int32_t rt_ext_FhHMove(const uint8_t *path, const uint8_t *dirPath) {
     path_to_cstr(cdir, dirPath);
     if (cdir[0] == '\0') { cdir[0] = '.'; cdir[1] = '\0'; }
     strcpy(basebuf, cpath);
-    snprintf(target, sizeof target, "%s/%s", cdir, basename(basebuf));
+    /* Same guard as FhHRename above, same reasoning. */
+    if (snprintf(target, sizeof target, "%s/%s", cdir, basename(basebuf)) >= (int)sizeof target) {
+        rt_fh_errno = ENAMETOOLONG;
+        return -1;
+    }
     if (rename(cpath, target) != 0) { rt_fh_errno = errno; return -1; }
     return 0;
 }

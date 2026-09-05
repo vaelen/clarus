@@ -216,7 +216,13 @@ func caseCatalog(): TestResult {
     // under this same suite's busy heap.
     fpb.ioNamePtr = UiStrAddr("IOCatalog.dat")
     fpb.ioVRefNum = 0
-    PBCreateSync(fpb) // dupFNErr on a rerun is fine; PBOpenSync below is the real gate
+    // dupFNErr (-48) on a rerun is fine -- the file is left behind by the
+    // previous boot; anything else is a real failure worth naming.
+    err = PBCreateSync(fpb)
+    if err != 0 and err != -48 {
+        detail = "PBCreateSync " + tkIntToStr(err)
+        return tkFail("Catalog", detail)
+    }
 
     fpb.ioNamePtr = UiStrAddr("IOCatalog.dat")
     fpb.ioVRefNum = 0
