@@ -1,4 +1,4 @@
-        ; func handler_App_startCLI  (JT slot 180)
+        ; func handler_App_startCLI  (JT slot 176)
         ;   param args : 8(A6)  size 4
         ;   local a : -16(A6)  size 16
         ;   local b : -32(A6)  size 16
@@ -10,7 +10,7 @@
         ;   local m : -128(A6)  size 24
         ;   local row : -140(A6)  size 12
 LBL_0:
-        LINK A6,#-2336
+        LINK A6,#-2240
         MOVEQ #0,D0
         MOVE.L D0,-16(A6)
         MOVEQ #0,D0
@@ -348,13 +348,13 @@ LBL_20:
         BEQ.W LBL_25
         LEA LBL_1(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
         BRA.W LBL_26
 LBL_25:
         LEA LBL_2(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
 LBL_26:
         MOVEQ #120,D0
@@ -551,13 +551,13 @@ LBL_28:
         BEQ.W LBL_31
         LEA LBL_3(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
         BRA.W LBL_32
 LBL_31:
         LEA LBL_4(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
 LBL_32:
         LEA -32(A6),A0
@@ -680,13 +680,13 @@ LBL_34:
         BEQ.W LBL_39
         LEA LBL_5(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
         BRA.W LBL_40
 LBL_39:
         LEA LBL_6(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
 LBL_40:
         MOVE.L #555,D0
@@ -732,13 +732,13 @@ LBL_40:
         BEQ.W LBL_41
         LEA LBL_7(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
         BRA.W LBL_42
 LBL_41:
         LEA LBL_8(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
 LBL_42:
         MOVEQ #1,D0
@@ -1062,13 +1062,13 @@ LBL_45:
         BEQ.W LBL_54
         LEA LBL_9(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
         BRA.W LBL_55
 LBL_54:
         LEA LBL_10(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
 LBL_55:
         MOVEQ #11,D0
@@ -1414,13 +1414,13 @@ LBL_57:
         BEQ.W LBL_62
         LEA LBL_11(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
         BRA.W LBL_63
 LBL_62:
         LEA LBL_12(PC),A0
         MOVE.L A0,-(A7)
-        JSR 1162(A5)
+        JSR 1122(A5)
         ADDQ.L #4,A7
 LBL_63:
 LBL_18:
