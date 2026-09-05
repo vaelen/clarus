@@ -1,0 +1,49 @@
+// pop_rec -- a handle-bearing record popped out of a list and consumed
+// directly as a RECEIVER (`lst.pop().t.length`), as an OPERAND
+// (`lst.pop().n + 1`) and as a call ARGUMENT (`popTake(lst.pop())`). All
+// three land in cgExprAddr's generic materialize fallback
+// (cgMaterializeToTemp), whose tracked-temp gate makes the materialized
+// copy the record's one owner so the end-of-statement flush walks its
+// `text` field (language-runtime-cleanup, spec 3.1; pre-fix the receiver
+// and operand evaluations each leaked one text block).
+// tests/cg68k/pop_rec_release.sh counts the release-walk calls in
+// App.launch's body -- three, one per pop() consumption.
+//
+// `lst` is a GLOBAL on purpose: a local `list of PopRec` would add a
+// scope-exit cleanup walk over its remaining elements to the same body,
+// which is a different release site and would muddy that count.
+record PopRec {
+    n: int
+    t: text
+}
+
+var lst: list of PopRec
+
+func popMk(): PopRec {
+    var r: PopRec
+
+    r.n = 3
+    r.t.append("abc")
+    return r
+}
+
+// popTake pins the ARGUMENT position too: cgPushArgs used to schedule its
+// own cgPendingArgReleases entry for a pop/shift KRec arg because the
+// materialized copy was untracked. It is tracked now, so that scheduling
+// was removed -- had it stayed, this statement would release the record
+// TWICE and the release count below would be 4 instead of 3.
+func popTake(r: PopRec): int {
+    return r.t.length
+}
+
+on App.launch {
+    var k: int
+
+    lst.push(popMk())
+    k = lst.pop().t.length
+    lst.push(popMk())
+    k = k + lst.pop().n + 1
+    lst.push(popMk())
+    k = k + popTake(lst.pop())
+    alert(string(k))
+}
