@@ -327,6 +327,17 @@ record ExprNode {
     intVal: int
     line: int
     col: int
+    // tLine/tCol (compiler-cleanup): ExCall only -- the source position of
+    // the `appletalk`/`serial` transport keyword itself (0 when intVal, the
+    // transport tag, is 0), so checkCall's misuse diagnostic can point AT
+    // the keyword instead of at the call's `(` (which is what line/col
+    // hold). Two new fields rather than reused generic slots: `c` and
+    // `nameIdx` are unset for ExCall today, but a column number hiding in
+    // `nameIdx` is exactly the kind of thing that misleads a later reader.
+    // Costs every ExprNode 8 bytes; the arena is a few tens of thousands of
+    // nodes even self-hosting, so this is noise.
+    tLine: int
+    tCol: int
 }
 
 record StmtNode {
@@ -661,7 +672,7 @@ func binRight(i: int): int {
     return exprs[i].b
 }
 
-func newCall(fn: int, argsHead: int, transport: int, line: int, col: int): int {
+func newCall(fn: int, argsHead: int, transport: int, tLine: int, tCol: int, line: int, col: int): int {
     var n: ExprNode
 
     n.kind = ExCall
@@ -671,6 +682,8 @@ func newCall(fn: int, argsHead: int, transport: int, line: int, col: int): int {
     n.next = -1
     n.line = line
     n.col = col
+    n.tLine = tLine
+    n.tCol = tCol
     exprs.add(n)
     return exprs.count - 1
 }
@@ -687,6 +700,17 @@ func callArgsHead(i: int): int {
 // prefix), or 2 (`serial` prefix) -- see parse.cla's parseArgsTransport.
 func callTransport(i: int): int {
     return exprs[i].intVal
+}
+
+// callTransportLine/callTransportCol return the source position of the
+// transport keyword itself (see ExprNode's tLine/tCol) -- meaningful only
+// when callTransport(i) != 0; both are 0 otherwise.
+func callTransportLine(i: int): int {
+    return exprs[i].tLine
+}
+
+func callTransportCol(i: int): int {
+    return exprs[i].tCol
 }
 
 func newIndex(x: int, idx: int, line: int, col: int): int {

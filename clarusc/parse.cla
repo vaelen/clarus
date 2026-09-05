@@ -59,6 +59,14 @@ var parseSawNonInclude: bool
 // call runs.
 var parseArgsTransport: int
 
+// parseArgsTransportLine/parseArgsTransportCol are the same out-parameter
+// idiom for the transport keyword's OWN line/col, for the checker's
+// diagnostic (compiler-cleanup): checkCall's transport-misuse message
+// points at `serial`/`appletalk` itself, not at the call's `(`. Both are 0
+// whenever parseArgsTransport is 0.
+var parseArgsTransportLine: int
+var parseArgsTransportCol: int
+
 // Contextual-keyword name indices, pre-interned once PER COMPILE and
 // cached in module globals (see the doc comment for why this can't be a
 // plain global initializer): curIsIdentIdx below compares against these
@@ -555,7 +563,7 @@ func parsePostfix(): int {
             col = curCol()
             advance()
             argsHead = parseArgs()
-            x = newCall(x, argsHead, parseArgsTransport, line, col)
+            x = newCall(x, argsHead, parseArgsTransport, parseArgsTransportLine, parseArgsTransportCol, line, col)
         } else {
             return x
         }
@@ -614,20 +622,30 @@ func parseArgs(): int {
     var head: int
     var tail: int
     var transport: int
+    var tLine: int
+    var tCol: int
     var argIdx: int
 
     if curKind() == TkRParen {
         advance()
         parseArgsTransport = 0
+        parseArgsTransportLine = 0
+        parseArgsTransportCol = 0
         return -1
     }
 
     transport = 0
+    tLine = 0
+    tCol = 0
     if isPrimaryStart(peekKind()) {
         if curIsIdentIdx(cwAppletalk) {
+            tLine = curLine()
+            tCol = curCol()
             advance()
             transport = 1
         } else if curIsIdentIdx(cwSerial) {
+            tLine = curLine()
+            tCol = curCol()
             advance()
             transport = 2
         }
@@ -645,6 +663,8 @@ func parseArgs(): int {
     }
     expect(TkRParen)
     parseArgsTransport = transport
+    parseArgsTransportLine = tLine
+    parseArgsTransportCol = tCol
     return head
 }
 
