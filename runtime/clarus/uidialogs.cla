@@ -520,7 +520,7 @@ func rtUiFormFill(inst: ptr) {
                 pokeb(text, baseLen)
                 UiBlockMoveData(base + 1, text + 1, baseLen)
             } else if ftype == rtUiFtInt {
-                UiNumToString(peekl(base), text)
+                rtUiIntToPStr(peekl(base), text)
             } else if ftype == rtUiFtFixed {
                 rtUiFixedToStr(peekl(base), text)
             } else if ftype == rtUiFtChar {
