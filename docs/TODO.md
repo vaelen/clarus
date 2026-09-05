@@ -362,10 +362,41 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   in practice (no non-nil connection without a global) but ugly.
   `usesFileh` does the equivalent gating correctly (any `filehandle`
   use, not just a global, sets it) — port that discipline over.
-- **`string("x")` diagnostic reads "cannot convert string to string"**
-  (Task 3 minor; `clarusc/check.cla` ~5372) — mirrors the pre-existing
-  `int()` path's wording; source and target type names coincide for
-  this one conversion, so the message is technically true but useless.
+- **Conversion diagnostics are tautological on identity, and
+  `string(char)` is missing** (Task 3 minor, redefined Andrew
+  2026-09-05; `clarusc/check.cla`'s `checkConversion`, ~5605-5648) —
+  two changes, one fix:
+  - **Diagnostic wording.** The template `"cannot convert " + at + " to "
+    + name` reads `cannot convert string to string` for `string("x")`,
+    and identically uselessly `cannot convert int to int` / `cannot
+    convert fixed to fixed` (verified on the current compiler). Decided:
+    identity conversions STAY errors (every conversion in the family is
+    an explicit change of type; a `string(s)` no-op would be the one
+    identity conversion in the language, and a copying form buys
+    nothing since `var t: string = s` already copies an inline Pascal
+    string). Fix the message shape instead, for every arm at once: say
+    what the conversion expects, then what it got —
+    `string() expects an int or char, got string`, `int() expects a
+    fixed, char, enum, or ptr, got int`, `fixed() expects an int, got
+    fixed`, and so on (one accepted-source-names string per target
+    arm; `EnumName()`/overlay arms included). "expects", not "takes":
+    it names the expectation AND the actual in one line.
+  - **`string(c)` for a `char`.** Accept `TyChar` in the `name ==
+    "string"` arm alongside `TyInt`, producing the one-character
+    string; the reference's Numeric Conversions section gains the line
+    (`var s: string = string(c)  // char to string, "a"`). Lowering
+    (`clarusc/lower.cla` ~1270, the `name == "string"` arm) branches on
+    the checked arg kind: `TyInt` keeps `IIntToStr`; `TyChar` emits the
+    SAME IR the checker-accepted `"" + c` already does —
+    `IStrConcatChar` (lower.cla ~808) over an empty string literal and
+    the arg — so no new intrinsic, no runtime function, and no cg68k/
+    cprint arm. `string(c)` and `"" + c` become two spellings of one IR
+    shape by construction.
+  - **Fixtures/cost.** `testdata/errors/string_conv_arg.expect` (the
+    only golden pinning a `cannot convert` line) is reblessed to the new
+    wording; add one `.expect` for an `int(int)` identity and one
+    positive `string('a')` case in `testsuite/core` (`IntToStr` is the
+    natural home). Snapshot regen required (checker + lowering change).
 - **Duplicate-`const` diagnostic cites only the second declaration's
   position** (Task 2 minor; final-review wave M5; `clarusc/check.cla`'s
   `checkConstDecl`, ~2705/2710) — both `emitDiag` calls use `declLine(d)/
