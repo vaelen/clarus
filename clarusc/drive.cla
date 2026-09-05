@@ -973,11 +973,6 @@ func expand(rawPath: string, entry: bool, key: string): bool {
         dedupHits.add(seenPaths[altPath] - 1)
         return false
     }
-    seenPaths[path] = 0
-    if altPath != "" {
-        seenPaths[altPath] = 0
-    }
-
     src = ""
     if haveDiskSrc {
         src = diskSrc
@@ -990,6 +985,15 @@ func expand(rawPath: string, entry: bool, key: string): bool {
             entryFailed = true
         }
         return true
+    }
+
+    // compiler-cleanup: marked only once the read SUCCEEDED -- a failed
+    // attempt must not make a later include of the same path dedupe against
+    // a file never loaded. Still marked BEFORE the include-recursion loop
+    // below, so a cyclic include still terminates on the dedup above.
+    seenPaths[path] = 0
+    if altPath != "" {
+        seenPaths[altPath] = 0
     }
 
     if entry and not drvSpliceActive {
