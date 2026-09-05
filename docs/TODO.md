@@ -186,8 +186,9 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   that need real file I/O, so the twin can only go green via real
   C-side HFS FhH implementations for this lane, lane-aware case skips,
   or accepting a documented 78/80; (2) FIXED (2026-08-28) —
-  `TestToolboxSuiteOnMac` now compiles, links, boots, and runs 32/32
-  green. The toolbox suite's live `PB*Sync`/`SF*`/`AE*` trap externs (33
+  `TestToolboxSuiteOnMac` now compiles, links, boots, and runs green
+  (32/32 then; 36/36 as of the compiler-cleanup phase, 2026-09-05, once
+  its `TbFreeMem`/`TbClearWarmFreeMem` shims landed). The toolbox suite's live `PB*Sync`/`SF*`/`AE*` trap externs (33
   symbols: 27 `PB*Sync` from `toolbox/files.cla` + `toolbox/devices.cla`,
   4 `SF*` from `toolbox/standardfile.cla`, 2 `AE*` from
   `toolbox/appleevents.cla`) got mechanical Universal-Interfaces
@@ -222,78 +223,14 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 
 ## Compiler correctness / diagnostics
 
-- **Lexer diagnostic quality** (decided 2026-07-23): a bad escape in a
-  double-quoted string (`"a\qb"`) should report `invalid escape
-  sequence`, not `unterminated string literal`, and the eager `lexAll`
-  should not cascade a second spurious diagnostic scanning to EOF.
-  Message fix is small; cascade fix is architectural (lazy lexing or
-  truncate-after-first). Land both together with a triggering fixture.
-- **`edit F, sm[k]` / `im[k]`** dies in lowering with a generic "edit
-  target" message instead of a checker diagnostic naming the map-only
-  restriction (map-hashtable).
-- **`declIsRuntimeOrigin` symlink-equivalence residual** (attempt-abort
-  Task 8): two `--rtdir` spellings equal only via a symlink can still
-  misclassify — shared limitation with `expand()`'s key comparison.
-- **Discard-tracking generality** (ARC Tasks 8-9): only `pop`/`shift`
-  use transfer-convention discard release (`fpDiscardExprIdx`); a future
-  transfer-semantics intrinsic needs the same explicit wiring — nothing
-  audits for it automatically.
-- **Parameter-escape-summary precision upgrade** (4e follow-on): only if
-  leak analysis ever proves noisy in practice.
-
-### Serial/connection phase (2026-08-16)
-
-- **`transportName(tag)` falls through any non-1 tag to `"serial"`**
-  (`clarusc/check.cla`, Task 3) — an explicit `tag == 2` branch would be
-  safer for a future third transport tag.
-- **Transport-misuse diagnostic column points at the call's `(`**
-  (`clarusc/check.cla`, Task 3), not the `serial`/`appletalk` token
-  itself — existing `ExCall` convention, just noted as a future
-  precision upgrade.
-- **Three connection-dispatcher builders share ~25 near-identical
-  lines** (Task 5) — folding the `Opened`/`Closed` builders into one
-  helper alongside `Received`/`Failed` was deferred; same file as
-  `lowSynthConnFireFailed` below.
-- **`lowSynthConnFireFailed` declares an `err` local even when no
-  `failed` handler exists** (Task 5) — unused C var under `-Wall`,
-  harmless but sloppy.
-- **Every native binary carries the conn runtime, `connection` or not**
-  (final review, Important 3, confirmed as PLANNED, not a bug) —
-  `cg68AddRoots` (`clarusc/cg68k.cla`) roots every `nat*`-named function
-  unconditionally, no `irUsesConn` gate; `nat_UiConnPump`
-  (`runtime/clarus/native.cla`) matches that prefix, so it (and
-  everything it pulls in transitively via shake.cla's reachability walk)
-  ships in every native build's `.s` output, not just conn-using ones —
-  the final review measured +5-7% `.s` lines. The narrowing lever, if
-  size ever matters: gate `cg68AddRoots`'s conn-specific roots on
-  `irUsesConn` the same way other conn-only surfaces are gated, while
-  keeping the EMPTY dispatcher stubs (the no-op seam Task 6's review
-  verdicted SOUND+DISCOVERABLE — a bad config fails at link time, not
-  silently) unconditional so a non-conn program that somehow still
-  references a conn symbol still gets a loud link error instead of an
-  unreachable-callee crash.
-- **No host-lane emitted-C golden for `cpEmitMain`'s pump loop**
-  (final review, noted alongside Important 3) — the abort-aware
-  `while (!clar_aborting && clar_fn_rtConnAlive())` loop shape
-  (`clarusc/cprint.cla`'s `cpEmitMain`) is behaviorally covered by
-  `tests/conntest/abort.sh` (drives the real compiled
-  binary through an abort mid-pump and asserts prompt exit), but there is
-  no byte-level golden pinning the emitted C text itself — a future
-  cprint.cla refactor could silently change the loop's shape (e.g. drop
-  the `clar_aborting` short-circuit) and every existing gate would still
-  pass as long as the behavior it happens to exercise still works. A
-  golden (or a narrower text-contains assertion) over the emitted C
-  around `cpEmitMain`'s pump loop would close that tripwire gap.
-
-### Correctness-cleanup phase (2026-08-17)
-
-- **`cgLastTrackedOff` aliasing hazard in `cgIntrMapGetDv` widened by one
-  arg position** — the key is now evaluated before the dv handoff
-  consult, widening the pre-existing hazard window by one arg position.
-  Unreachable today (the checker rejects text-typed keys; the same
-  hazard already existed for the map expression itself). Defensive fix
-  is `cgLastTrackedOff = -1` before the dv store; deferred because it
-  forces a snapshot regen.
+The compiler-cleanup phase (2026-09-05) emptied this section: all 29 open
+entries recorded here between 2026-07-23 and 2026-08-29 were fixed,
+deleted as obsolete, or closed with evidence in that one phase. The full
+disposition list is `docs/HISTORY.md`'s "compiler-cleanup phase
+(2026-09-05)" entry; the design is
+`docs/superpowers/specs/2026-09-05-compiler-cleanup-design.md` §1. Only
+the FIXED record below (kept as a worked root-cause trail) and the one
+new entry the phase itself opened survive.
 
 ### binary-files phase (2026-08-22)
 
@@ -310,229 +247,39 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
   at compile time, no lookup was ever actually needed. Full trail:
   `.superpowers/sdd/2026-08-22-binary-files/task-10-report.md`'s "Task
   9c" section.
-- **STILL LIVE: an `emit68k` build whose generated code references a
-  runtime function that was NOT spliced into that build crashes
-  clarusc** (`runtime error: list index out of range`, exit 3) instead
-  of emitting a diagnostic — found by Task 5 when the multi-segment
-  fixture (`segment_test.go`'s `segmentationFixture`, now
-  `tests/cg68k/segments.sh`'s core-CLI composition — a native composition
-  of the whole core suite) tried composing
-  `cases_fileh.cla` before the native `filehandle` lane existed
-  (`fileh_68k.cla` was Task 6's; at Task 5's own tip, `rtFh*` calls had
-  no spliced module to resolve against). Task 5's report ("Golden churn
-  / known gaps") worked around it by leaving `cases_fileh.cla` out of
-  `segmentationFixture` rather than fixing the underlying gap — DISTINCT
-  from the FIXED item just above: there, the runtime function WAS
-  spliced and the crash was a checker-symbol-table lookup that
-  `--rtbake` never populates; here, the function is genuinely absent
-  from the build (a real, ordinary "undefined" situation any other
-  unresolved reference gets a clean diagnostic for) and the compiler
-  crashes instead of saying so. Same crash text, different code path,
-  still live — Task 6 landing `fileh_68k.cla` only removed the ONE
-  trigger `cases_fileh.cla` happened to hit; the general robustness gap
-  (any unspliced runtime-function reference in a native build) is
-  untouched.
-- **Testing-strategy gap the FIXED item above exposed**: `--rtbake` (the
-  fast baked-IR compile path `ClarusC.APPL` uses by default) was only
-  ever exercised by the `CLARUS_BAKE_FULL=1` full-corpus gate (now
-  `tests/bake/full_corpus_*.sh`), which
-  is opt-in and runs only inside T2 (`scripts/test-merge.sh`) — not T1,
-  not any individual task's `--smoke` run. A whole phase (8 tasks, one
-  new type end-to-end) shipped with a `--rtbake`-breaking bug that
-  nothing caught until the FINAL close-out task happened to run T2 for
-  the first time. Task 9c added ONE targeted T1-speed regression
-  (`TestRtbakeConnFilehByteIdentity`) for this specific bug class, but
-  the broader gap stands: `--rtbake` as a WHOLE has no T1-speed smoke at
-  all, only the opt-in full-corpus gate. A cheap general fix: promote
-  one or two representative `--rtbake` fixtures (a self-compile, one
-  fixture using each "unusual" runtime module) into T1's default run,
-  the same way `TestBakePathByteIdentity` already does for the cg68k
-  corpus slice — `connection`/`filehandle` are now covered by Task 9c's
-  own test, but a FUTURE new value-typed runtime module (the same shape
-  as `connection`/`filehandle`) could reintroduce a sibling gap with no
-  T1 tripwire.
-- **`expand()` marks `seenPaths` before a successful read** (Task 7
-  re-review; `clarusc/drive.cla` ~950-953) — a failed dir-relative
-  attempt poisons that raw path for later calls; benign in every
-  reachable case today, hardening candidate (mark on success only).
-- **A program whose only `connection`-typed things are record
-  fields/params (no global) never sets `usesConn`** (Task 4 minor;
-  `clarusc/check.cla` ~5850-5865) — so `conn.cla` isn't spliced and the
-  program fails with a link error instead of a diagnostic; unreachable
-  in practice (no non-nil connection without a global) but ugly.
-  `usesFileh` does the equivalent gating correctly (any `filehandle`
-  use, not just a global, sets it) — port that discipline over.
-- **Conversion diagnostics are tautological on identity, and
-  `string(char)` is missing** (Task 3 minor, redefined Andrew
-  2026-09-05; `clarusc/check.cla`'s `checkConversion`, ~5605-5648) —
-  two changes, one fix:
-  - **Diagnostic wording.** The template `"cannot convert " + at + " to "
-    + name` reads `cannot convert string to string` for `string("x")`,
-    and identically uselessly `cannot convert int to int` / `cannot
-    convert fixed to fixed` (verified on the current compiler). Decided:
-    identity conversions STAY errors (every conversion in the family is
-    an explicit change of type; a `string(s)` no-op would be the one
-    identity conversion in the language, and a copying form buys
-    nothing since `var t: string = s` already copies an inline Pascal
-    string). Fix the message shape instead, for every arm at once: say
-    what the conversion expects, then what it got —
-    `string() expects an int or char, got string`, `int() expects a
-    fixed, char, enum, or ptr, got int`, `fixed() expects an int, got
-    fixed`, and so on (one accepted-source-names string per target
-    arm; `EnumName()`/overlay arms included). "expects", not "takes":
-    it names the expectation AND the actual in one line.
-  - **`string(c)` for a `char`.** Accept `TyChar` in the `name ==
-    "string"` arm alongside `TyInt`, producing the one-character
-    string; the reference's Numeric Conversions section gains the line
-    (`var s: string = string(c)  // char to string, "a"`). Lowering
-    (`clarusc/lower.cla` ~1270, the `name == "string"` arm) branches on
-    the checked arg kind: `TyInt` keeps `IIntToStr`; `TyChar` emits the
-    SAME IR the checker-accepted `"" + c` already does —
-    `IStrConcatChar` (lower.cla ~808) over an empty string literal and
-    the arg — so no new intrinsic, no runtime function, and no cg68k/
-    cprint arm. `string(c)` and `"" + c` become two spellings of one IR
-    shape by construction.
-  - **Fixtures/cost.** `testdata/errors/string_conv_arg.expect` (the
-    only golden pinning a `cannot convert` line) is reblessed to the new
-    wording; add one `.expect` for an `int(int)` identity and one
-    positive `string('a')` case in `testsuite/core` (`IntToStr` is the
-    natural home). Snapshot regen required (checker + lowering change).
-- **Duplicate-`const` diagnostic cites only the second declaration's
-  position** (Task 2 minor; final-review wave M5; `clarusc/check.cla`'s
-  `checkConstDecl`, ~2705/2710) — both `emitDiag` calls use `declLine(d)/
-  declCol(d)` (the redeclaration), never the first decl's own position;
-  `externFirstDeclByName`/`xrecFirstDeclByName`'s sibling diagnostics
-  cite both. Cosmetic (the message still names the right identifier).
-- **`cgReturnStmt` computes `irExprType(x)` twice** (Task 9b minor;
-  final-review wave M5; `clarusc/cg68k.cla`'s `cgReturnStmt`) — once for
-  `rk = irtKind(irExprType(x))`, again a few lines later for
-  `retT = irExprType(x)`; pure polish, same result both times.
 
-### filesystem-api phase (2026-08-26)
+### compiler-cleanup phase (2026-09-05)
 
-- **`drive.cla`'s prelude-splice rationale is restated at 4 sites**
-  (Task 3 minor, deferred) — `clarusc/drive.cla:63-73,1516-1531,
-  1996-2077` and `clarusc/bake.cla:404-417` each carry their own telling
-  of why `prelude.cla` is spliced from source first and excluded from
-  the bake drift guard; consolidate into one comment the others
-  reference, after the wording fix (already applied, fix round 1).
-
-### 68k-call-result-release phase (2026-08-29)
-
-- **`makeRec().field` (handle-bearing `KRec` call result as receiver)
-  still leaks** (probe report item 2, `.superpowers/sdd/
-  2026-08-29-68k-call-result-release/task-1-report.md`) — `cgExprAddr`'s
-  generic fallback materializes a `KRec`-returning call via untracked
-  `cgAllocTmpOff` (cg68k.cla ~:5772, pre-phase numbering), not
-  `cgNewTrackedTmp`, so the record's handle-bearing fields are never
-  released. Same leak class this phase fixed, one type-kind over (a
-  `KRec` receiver/operand rather than a scalar handle result); the host
-  lane already materializes the equivalent `KRec` call result into a
-  tracked temp (`fpCallFn`, cprint.cla:1548-1554), so this is a lane
-  asymmetry. Deferred per the spec's out-of-scope line ("Any KRec-return
-  redesign beyond probe item 2's verification"). Suggested follow-up:
-  make `cgMaterializeToTemp` use `cgNewTrackedTmp` when
-  `irExprKind(e) == ECallFn and cgNeedsRelease(irExprType(e))`.
-- **`testdata/cg68k/smalltmp_ceiling.cla` still pins the old 14-slot
-  ceiling**, not the new 24-slot one (probe report item 3) — it exercises
-  14 concurrent untracked small temps via 14 `nums.pop()` args, which
-  still passes under the new ceiling (it pins "works at 14", not "==14"),
-  so the bump does not invalidate it. Extending the fixture to also pin
-  the new headroom is optional polish, not required for correctness.
-- **`pop`/`shift` used as an operand or receiver leaks on both lanes
-  identically** (probe report item 5, host-parity note) —
-  `lst.pop().length` / `lst.pop() + x` leave the popped value untracked
-  on the native lane (`cgIntrListPopLike`, tracked only in the discard
-  case) and the host lane does the same (cprint.cla:3036-3053
-  materializes into an untracked `fpNewTmp` then unconditionally calls
-  `fpHandoff(t)`, "Never auto-free/release t"). This phase's fix covers
-  only the call-argument position (native cg68k.cla:9739-9743, host
-  `fpCallFnArg` cprint.cla:1425-1431); the pop/shift-as-operand shape is
-  a distinct, pre-existing, lane-symmetric leak, report-only per the
-  spec, unscheduled.
-- **Four more stale-master-pointer sites of the same shape `bff3268`
-  fixed** (debug report §8, `.superpowers/sdd/
-  2026-08-29-68k-call-result-release/task-debug-report.md`) — an
-  unlocked master pointer handed to, or held across, an allocating
-  Toolbox call, the class the `rtUiLdefDraw` fix (this phase's
-  close-out) closed one instance of. None is implicated in the
-  `Popuptable` jiggle failure that surfaced the first instance; each
-  needs its own analysis before fixing:
-  - `runtime/clarus/uitable.cla:411` (`rtUiTableDrawField`'s `RtFtStr`
-    arm) — `UiDrawText(base + 1, 0, peekb(base))` passes the master
-    pointer INTO the trap, and `DrawText` itself can allocate (font
-    strike/resource load), so the relocation window is inside the call —
-    the one shape the `bff3268` re-derive-before-the-call rule can't
-    protect, and one the heap-jiggle gate can't exercise either (it only
-    hooks `UiNewPtr`, see the existing "Heap-jiggle stress mode only
-    hooks the `UiNewPtr` waist" entry above). Cheap fix when it comes
-    up: `UiHLock` around the read, the same shape
-    `rtUiMakeLdefStub` already uses at `uitable.cla:511`.
-  - `runtime/clarus/uitable.cla:887` (`rtUiTableSyncOne`) —
-    `UiInvalRect(lhMp + rtUiListRView)`, a master pointer into an
-    unlocked `ListRec` handed to an allocating trap. Explicitly RULED
-    OUT as the `Popuptable` failure's own cause (a fix/placebo swap on
-    this site alone did not change the failure), but still the same
-    defect shape.
-  - `runtime/clarus/uiwidgets.cla:853` and `:955` — `UiInvalRect(
-    UiHandleDeref(te) + rtUiTeViewRect)`, same shape on a `TERec`. These
-    two are paired with a matching `UiValidRect` in the live-paint path,
-    so widening the rect needs that pairing revisited first — why they
-    were left alone.
-  - `runtime/clarus/uiwidgets.cla:1093` (`table.selected` setter) —
-    `UiInvalRect(UiHandleDeref(lh) + rtUiListRView)`, same shape.
-- **The suite GUI's own case table draws through the same class of stale
-  pointer** (debug report §8) — a heap probe caught it reading a zeroed
-  record (`lastLen 0`, `lastCount 33`) in failing builds during this
-  phase's own debugging, but nothing in the suite asserts on the case
-  table's own pixels, so it never goes red. A future case that
-  checksums the suite GUI's own table content would catch this defect
-  class (and future instances of it) without needing a second bespoke
-  case like `Popuptable`.
-- **`cgTmpSlots` 14 -> 24 costs +40 bytes of frame per function**
-  (final-review fix wave ledger) — the pool is reserved in EVERY
-  function's frame, whether or not that function births a single tracked
-  temp, so the bump is a flat per-frame tax, not a per-use one. Guarded
-  today by `cg68k.cla`'s own frame-size cap (~:5279), which hard-errors
-  rather than silently overflowing. Revisit (a per-function high-water
-  size, the way `cgFuncBigTmpNeed` already does it for the big-temp pool)
-  only if frames get tight.
-
-### textview-scroll-to-end phase (2026-08-29)
-
-- **Second `textview` method needs kind-based dispatch in `lowMethodCall`**
-  (`clarusc/lower.cla`, the `TyWidget` arm): today it routes by method
-  NAME (`"scrollToEnd"` -> `lowTextviewMethod`, else `lowCanvasMethod`)
-  because there is exactly one textview method; a second one would
-  misroute into `lowCanvasMethod` and fail with a misleading
-  `canvas method X` `lowUnsupported`. Fix when it happens: peel the
-  receiver once with `lowWidgetRecv` and switch on
-  `findWidgetKind(recv.winNameIdx, recv.wgName)`. Snapshot regen
-  required (it is a code change).
-- **Textview scroll range is a 16-bit ceiling** (pre-existing in
-  `rtUiTeScrollSync`, `runtime/clarus/uitext.cla`, inherited unchanged by
-  `rtUiWidgetScrollToEnd`): `maxScroll`/`contentH` are full `int`s but
-  `UiTEScroll`'s `dv` and `UiSetControlValue`'s value are `word`-typed
-  and truncate to 16 bits, so a textview near the 32,000-byte cap with a
-  small line height (content taller than 32767 px) scrolls wrong. No
-  user has hit it; noted so it is not rediscovered as a `scrollToEnd`
-  bug.
-- **The opt-in cprint-lane toolbox twin fails to link since `main`'s
-  `520f227`**: `CLARUS_MAC_TESTS=1 CLARUS_CPRINT_MAC_TESTS=1 make test
-  T=mactest/toolbox_mac` dies in
-  `build-mac.sh` with `undefined reference to rt_ext_TbFreeMem` (and, since
-  the string-perf phase added the `ClearWarm` case,
-  `rt_ext_TbClearWarmFreeMem` too — same gap, one more symbol; both
-  observed on both lanes during go-retirement Task 15) —
-  `testsuite/toolbox/cases_leak.cla` (68k-call-result-release's
-  `LeakCheck`) declares `external func TbFreeMem(): int = trap 0xA01C
-  reg`, and the cprint lane needs a hand-written `rt_ext_<Name>` C shim
-  in `runtime/mac/` for every extern trap (see the existing
-  `rt_ext_BlockMoveData`/`rt_ext_DateToSeconds` shims); none exists for
-  `TbFreeMem`. Pre-existing, found by the textview-scroll-to-end phase's
-  final review; the native lane (`tests/mactest/toolbox_68k.sh`, the T2
-  gate) is unaffected. Fix: add the shim (FreeMem returns the free byte
-  count) or gate the case off the cprint build.
+- **Native and host now differ on `pop`/`shift` tracking for a
+  handle-bearing RECORD element** (Task 6 review, Minor 3) — the shape is
+  `lst.pop().field` / `lst.pop() + x` where `lst` is a `list of R` and
+  `R` is a record with at least one handle field (`text`/`list`/`map`),
+  popped and consumed in a receiver or operand position rather than
+  assigned, returned, or passed as an argument. **Lane: native
+  (`emit68k`) only** — the host lane (`cprint`) releases it correctly, so
+  this is a lane asymmetry, not a symmetric leak. **Why:** this phase's
+  §4.1b fix made `cgIntrListPopLike` (`clarusc/cg68k.cla`) track its
+  result in every position, but gated on `cgIsHandleKind(irtKind(elemT))`
+  rather than the spec's literal `cgNeedsRelease` — deliberately, because
+  `cgNeedsRelease` is additionally true for a handle-bearing `KRec`, and
+  a `KRec` element is >4 bytes, so the pop writes into a big-pool scratch
+  whose OFFSET is handed back to `cgEmitStoreRec` / `cgEmitReturnRec` /
+  `cgMaterializeToTemp`; those `cgCopyScratchToDst` the bytes (a raw
+  block copy, no retain) into a destination that then owns them, and none
+  can untrack the scratch because `cgLastTrackedOff` is only ever
+  consulted for a handle kind. Tracking a `KRec` scratch would
+  double-release fields the destination is still using. In a
+  receiver/operand position nothing takes ownership, so the record's
+  handle fields leak — one block per evaluation. The bare-discard arm
+  stays as the one `KRec` position that IS tracked.
+  **Fix when scheduled:** extend §4.1a's `cgMaterializeToTemp` gate to
+  `irExprKind(e) == EIntr and lowIntrIsOwningContainerRead(irIntrName(e))`
+  **for `KRec` only** — extending it to handle kinds would double-track
+  against §4.1b, which already tracks those at the producer. Plus a
+  `LeakCheck` shape, since no fixture in the tree pops a handle-bearing
+  record today. Full analysis:
+  `.superpowers/sdd/2026-09-05-compiler-cleanup/task-6-report.md`'s
+  "Concern 2, restated precisely".
 
 ## ABI / performance
 
@@ -783,6 +530,50 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 
 ## Bake / CLIR artifact machinery
 
+### compiler-cleanup phase (2026-09-05)
+
+- **`--rtbake --lane c` silently drops the `connection`/`filehandle`
+  runtime** — a HOST program that uses either type compiles under
+  `--rtbake` to C that CALLS `clar_fn_rtConnOpen`/`clar_fn_rtFhOpen`
+  (etc.) without ever declaring or defining them, so the emitted C does
+  not compile. **Pre-existing, not introduced by this phase**, and
+  reproducible on `main`: `tests/conntest/testdata/echo.cla` (unchanged
+  since go-retirement) forks 74,570 bytes from source vs 57,795 from the
+  bake, the difference being the entire `rtConn*` family; a minimal
+  `file.create`/`append`/`close` program forks 59,282 vs 52,371 the same
+  way. **Why:** `bake.cla`'s `bakeModuleList` deliberately leaves
+  `conn.cla`/`conn_c.cla` and `fileh.cla`/`fileh_c.cla` out of the
+  **C-lane** baked chain (its own comment says so) because
+  `driveManifestSplice` gates that pair on `usesConn`/`usesFileh` for the
+  host lane, keeping every non-conn host program's manifest and IR
+  indices byte-identical. But `driveCompile`'s `haveRtbake` branch
+  **bypasses `driveManifestSplice` entirely**, so on the bake path
+  nothing ever consults `usesConn`/`usesFileh` and nothing ever splices
+  the pair. The 68k lane is unaffected — it splices conn/fileh
+  unconditionally on both sides, which is why `tests/bake/connfileh.sh`
+  (an `emit68k_pair`) has always passed.
+  **Found by** the compiler-cleanup phase's close-out T2: spec §3.5's new
+  `testdata/emitui/connpump_abort.cla` is the first fixture in the C-lane
+  `bake/full_corpus_emitui` sweep to declare a `connection`. That sweep
+  now SKIPs the shape with an explicit reason naming this entry, and the
+  skip retires itself when the gap closes (it only fires when the
+  from-source fork declares the entry point and the bake fork does not).
+  **Two candidate fixes**, neither taken here (this phase's spec forbids
+  touching `clarusc/bake.cla`, which would fire the 55-minute Snow
+  `clarusc_bake` gate):
+  (a) add `conn.cla`/`conn_c.cla` and `fileh.cla`/`fileh_c.cla` to the
+  C-lane `bakeModuleList` unconditionally, mirroring the 68k lane —
+  correct and simple, but it moves every existing host program's baked
+  manifest and IR indices, so it needs its own bless;
+  (b) extend the existing from-source fallback in `drive.cla` (the
+  `bkManifestDriftPath` site that logs "falling back to a from-source
+  compile" and re-enters `driveCompile` with `haveRtbake = false`) with
+  `haveRtbake and not want68k and (usesConn or usesFileh)` — no
+  `bake.cla` edit, no golden movement, reuses machinery that already
+  exists, at the cost of a full recompile for those programs. `usesConn`/
+  `usesFileh` are already set at that point (the user program is checked
+  before the `haveRtbake` branch).
+
 - **Stamp-proxy gap** (runtime-ir-bake, still open): the CLIR stamp
   hashes the committed `clarusc/clarusc.c` snapshot, not the live
   runtime source set; the per-module drift hashes close only the
@@ -894,12 +685,6 @@ committed — scheduling is `docs/ROADMAP.md`'s job.
 
 ### Correctness-cleanup phase (2026-08-17)
 
-- **`runner.cla:326`'s "24 real cases here" comment is stale**
-  (`testsuite/toolbox/runner.cla`'s `runToolboxTests`, pre-existing
-  drift noted during Task 2): the real count has moved several times
-  since (now 31 real cases, `nTbCases` = 32). Candidate fix: derive the
-  message from `nTbCases` instead of a hand-written number, or delete
-  the count from the comment entirely.
 - **`rt_ext_UiCompactMem` (Task 3's cprint-lane no-op stub for
   `CompactMem`) is unexercised** — no jiggle test targets the Retro68/
   cprint Mac lane (`TestToolboxSuiteJiggleOn68k` is native-68k-only), so

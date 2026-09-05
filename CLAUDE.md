@@ -106,6 +106,13 @@ Tiered test gates:
   the machine's screen, so those scripts can never run in parallel), and
   the `bake/` full-corpus byte-identity sweep (`CLARUS_BAKE_FULL=1`).
   Each stage prints its own `test-merge.sh: <stage> PASS in Ns` line.
+- **Standing rule (compiler-cleanup phase, 2026-09-05).** A phase that
+  adds a new value-typed runtime module (the `connection`/`filehandle`/
+  datetime shape) adds its `tests/bake/<module>.sh` `emit68k_pair` twin
+  in the same task — `--rtbake` byte-identity for that module then fails
+  in T1, not only in the opt-in full-corpus sweep. The binary-files
+  phase shipped eight tasks `--rtbake`-broken because nothing but the
+  T2-only sweep exercised that path.
 - Opt-in lanes, SKIPped by both gates:
   - `CLARUS_CPRINT_MAC_TESTS=1` (alongside `CLARUS_MAC_TESTS=1`) enables
     the Retro68/cprint-gcc twins — `tests/mactest/{coresuite_mac,
@@ -114,8 +121,10 @@ Tiered test gates:
     localization oracle: the native `emit68k` lane already covers every
     case they check. Two known failures, unchanged from the retired Go
     lane: `FileHandleRW: create failed` and `DirOps: exists("") false` in
-    the cprint core-suite boot (cprint-lane runtime gaps, same family as
-    the `TbFreeMem` shim gap `docs/TODO.md` records). Lane deletion is
+    the cprint CORE-suite boot (cprint-lane runtime gaps). The cprint
+    TOOLBOX twin is green — 36/36 since the compiler-cleanup phase
+    (2026-09-05) added the `rt_ext_TbFreeMem`/`rt_ext_TbClearWarmFreeMem`
+    shims whose absence used to make it fail to link. Lane deletion is
     deferred to the 5f Retro68-retirement phase; the C printer's remaining
     first-class role is host builds (`clarusc emit` + `cc`).
   - `CLARUS_SNOW_TESTS=1` enables the Snow (System 7 / Mac II) scripts
@@ -185,7 +194,7 @@ enum + runner, not one boot per case.
   to 80 real by the string-perf phase's `StrPerf` case, which pins the
   length-byte-only string-local init, the inline `s[i]`/`s.length`
   codegen, and `text.clear()`/`reserve(n)` semantics) runs on
-  host and natively; `testsuite/toolbox/` (35 `ToolboxTest` cases: 34 real +
+  host and natively; `testsuite/toolbox/` (36 `ToolboxTest` cases: 35 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -208,11 +217,17 @@ enum + runner, not one boot per case.
   the emulated Mac Plus — then to 33 real by the textview-scroll-to-end
   phase's `ScrollToEnd` case, which hardware-proves the new
   `textview.scrollToEnd()` widget method on the native lane (the cprint
-  twin is wired into both file lists but blocked by `main`'s pre-existing
-  `TbFreeMem` shim gap — `docs/TODO.md` — then to 34 real by the
+  twin passes too, 36/36, since the compiler-cleanup phase added the
+  `rt_ext_TbFreeMem`/`rt_ext_TbClearWarmFreeMem` shims that used to block
+  it) — then to 34 real by the
   string-perf phase's `ClearWarm` case, which hardware-proves
   `text.clear()`+warm reuse keeps FreeMem EXACTLY flat (zero Memory
-  Manager traffic) across 200 clear+refill cycles))
+  Manager traffic) across 200 clear+refill cycles — then to 35 real by
+  the compiler-cleanup phase's `CasesTable` case, which checksums the
+  suite GUI's OWN case table (the one stale-master-pointer instance
+  nothing in the suite asserted on: a band over one row of `gui.cla`'s
+  `Cases` table, non-blank while a row is present and stable across two
+  paints))
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -337,7 +352,13 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   hardware-proved on System 6 and System 7), `string(n)` (the
   int-to-decimal-string conversion, `string(i)`, joining `int()`/
   `fixed()`/`char()`/`ptr()` -- not the pre-existing bounded-capacity
-  TYPE syntax of the same name), and `text`'s LE/word/setter binary accessors
+  TYPE syntax of the same name; the compiler-cleanup phase, 2026-09-05,
+  extended it to `string(c)` for a `char` -- the same IR `"" + c`
+  already produced -- and reshaped every conversion diagnostic in the
+  family from the tautological `cannot convert X to X` to
+  `X() expects <accepted>, got <actual>`, e.g. `string() expects an int
+  or char, got string`; identity conversions stay errors by decision),
+  and `text`'s LE/word/setter binary accessors
   plus `crc16`/`crc16x`/`crc32` (the last two from the transfer-crcs
   phase, 2026-08-25; `crc32`'s table is built lazily on first call);
   `emit68k` also now sizes a function's string/record temp

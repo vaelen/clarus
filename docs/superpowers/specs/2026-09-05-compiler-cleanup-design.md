@@ -134,8 +134,11 @@ and `UiSetControlValue`'s values are `word`. Fix: after each existing
 `if maxScroll < 0 { maxScroll = 0 }` (vertical ~347-351, horizontal
 ~368-372) add `if maxScroll > 32767 { maxScroll = 32767 }`; the existing
 `offset > maxScroll` clamp then bounds `offset` transitively.
-`rtUiWidgetScrollToEnd` (`uiwidgets.cla` ~1020) calls the sync and
-inherits the clamp. Straight clamp, not proportional remapping: no user
+`rtUiWidgetScrollToEnd` (`uiwidgets.cla` ~1020) re-derives its OWN
+`maxScroll` and therefore does NOT inherit the sync's clamp, so it needs
+the same `> 32767` clamp added independently (corrected 2026-09-05,
+Task 2 review; the sentence here previously said it "calls the sync and
+inherits the clamp", which is false). Straight clamp, not proportional remapping: no user
 has hit the ceiling, fidelity at it is not a requirement. No test — a
 >32767-px textview needs >32 KB of text, over TextEdit's cap.
 

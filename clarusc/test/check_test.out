@@ -9,7 +9,7 @@ check_test.cla:4:9: undefined: missingName
 === redeclaration ===
 check_test.cla:3:5: redeclaration of a
 === cannot-convert ===
-check_test.cla:6:13: cannot convert bool to char
+check_test.cla:6:13: char() expects an int, got bool
 === enums-not-ordered ===
 check_test.cla:13:11: enums are not ordered
 === duplicate-enum-value ===
@@ -84,7 +84,7 @@ check_test.cla:6:11: invalid operands to +: ptr and fixed
 === ptr-container-element ===
 check_test.cla:2:13: ptr cannot be a container element
 === ptr-from-string ===
-check_test.cla:4:12: cannot convert string to ptr
+check_test.cla:4:12: ptr() expects an int or overlay, got string
 === extern-clean ===
 clean
 === extern-bad-param-type ===

@@ -5006,3 +5006,253 @@ Spec: `docs/superpowers/specs/2026-09-05-go-retirement-design.md`; plan
 `docs/superpowers/plans/2026-09-05-go-retirement.md`; per-task briefs,
 reports and the side-by-side parity proof in
 `.superpowers/sdd/2026-09-05-go-retirement/`.
+
+## compiler-cleanup phase (2026-09-05, branch `compiler-cleanup`)
+
+Recorded here on the same terms as the go-retirement entry above: merging
+to `main` is Andrew's call and had not happened when this was written.
+
+**What it did.** `docs/TODO.md`'s "Compiler correctness / diagnostics"
+section had accumulated 30 entries across seven phases (2026-07-23 to
+2026-08-29) — one FIXED record and **29 open**. Several forced the same
+expensive regeneration (every `testdata/cg68k/*.s` golden, the
+`clarusc/clarusc.c` snapshot), so fixing them a phase at a time meant
+paying that cost repeatedly. Andrew's direction: clear the whole section
+in ONE phase, structured so goldens are blessed at most twice and the
+snapshot regenerated once. All 29 are disposed of; the section now holds
+only its FIXED record and the one new entry this phase itself opened
+(below).
+
+**The 29 dispositions.**
+
+- **26 fixed.** Lexer bad-escape diagnostic + string-literal resync (no
+  cascade); `edit F, sm[k]`/`im[k]` rejected by the checker instead of a
+  lowering `abort`; `declIsRuntimeOrigin` symlink residual (removed by
+  construction — provenance is now recorded at splice time, not
+  reconstructed from path strings); discard-tracking generality (one
+  predicate, `lowIntrIsOwningContainerRead`, two call sites); exhaustive
+  `transportName(tag)`; transport-misuse diagnostic column now points at
+  the `serial`/`appletalk` keyword; the three connection-dispatcher
+  builders folded; `lowSynthConnFireFailed`'s unused `err` local elided
+  when no slot has a `failed` handler; the conn runtime cut out of
+  conn-less native builds; an emitted-C golden for `cpEmitMain`'s pump
+  loop (`testdata/emitui/connpump_abort.{cla,c.golden}`); a `--rtbake`
+  T1 smoke for `datetime` (`tests/bake/datetime.sh`); `expand()` marks
+  `seenPaths` only after a successful read; `usesConn` set from ANY
+  `connection` type position (locals, params, return types, record
+  fields, list/map elements — not just a global `var`); the conversion
+  diagnostics reshaped to `X() expects ..., got ...` plus `string(char)`;
+  duplicate-`const` cites both declarations; `cgReturnStmt` computes
+  `irExprType(x)` once; `makeRec().field` no longer leaks on the native
+  lane; `pop`/`shift` as operand/receiver tracked on both lanes;
+  `smalltmp_ceiling.cla` extended to 30 concurrent temps and the flat
+  24-slot pool replaced by a per-function high-water; the four remaining
+  stale-master-pointer sites bracketed with `UiHLock`/`UiHUnlock`; the
+  suite GUI's own case table pinned by a new `CasesTable` checksum case;
+  `textview` method dispatch switched from method NAME to widget KIND;
+  the textview 16-bit scroll ceiling clamped; the cprint-lane toolbox
+  twin's link failure fixed with `rt_ext_TbFreeMem` /
+  `rt_ext_TbClearWarmFreeMem` shims; the `drive.cla` prelude-splice
+  rationale collapsed to one telling.
+- **1 already fixed — deleted.** The `cgLastTrackedOff` aliasing hazard
+  in `cgIntrMapGetDv` (recorded by the correctness-cleanup phase,
+  2026-08-17): the defensive `cgLastTrackedOff = -1` reset it asked for
+  had already landed in the **68k-call-result-release phase**
+  (`cg68k.cla`, comment "Task 1 probe item 1c hardening"). The TODO
+  entry outlived its own fix.
+- **1 obsolete — deleted.** "Parameter-escape-summary precision upgrade":
+  the static escape analysis it proposed refining was DELETED in
+  `e4b592f`; scope-exit release is unconditional now, so there is nothing
+  left to make more precise. Reviving an escape analysis is a new phase
+  with its own numbers, not a follow-up (spec §6).
+- **1 closed with evidence.** The entry recorded since the binary-files
+  phase as "**STILL LIVE**: an `emit68k` build referencing a runtime
+  function that was not spliced crashes clarusc (`list index out of
+  range`, exit 3)". It does not reproduce. Every native name-resolution
+  site now guards with a clean abort, `drive.cla` catches a missing
+  module pre-splice, and the checker catches an undeclared name; the one
+  remaining shape was the `usesConn` gap, fixed in this phase. Task 8
+  built the fixture that pins the guard —
+  `tests/cg68k/unspliced_guard.sh` — and the observed behavior is
+  `cg68k: rtStrStore not found/reachable` with **exit 1**, a clean
+  diagnostic, never a runtime crash and never exit 3.
+
+**Structure: two waves, two blesses, one snapshot.** Wave 1 (runtime and
+harness, no `clarusc/` change) ended with **bless #1** — a mechanical
+rebless of **77 golden files** (63 `testdata/cg68k/*.s` + 14
+`testdata/emitui/*.c.golden`), every hunk attributable to the wave-1
+runtime edits alone. A differential oracle confirmed the attribution: the
+post-wave-1 compiler against the PRE-wave-1 runtime reproduces all
+goldens byte-for-byte, i.e. the diagnostics and driver tracks moved zero
+output. Wave 2 (the compiler) ended with **bless #2** — **64 golden
+files** in `testdata/cg68k/` alone: 46 rewritten and **18 stale
+`*.seg2.s` DELETED**, because the smaller frames and the absent conn
+runtime shrank several fixtures back below their segment-2 boundary.
+Then one snapshot regeneration, and `tests/selfhost/fixedpoint.sh`
+reports `PASS snapshot_fresh` / `PASS fixed_point`.
+
+**The `.s` line delta.** Across the whole `testdata/cg68k` corpus:
+**501,110 → 478,983 lines, −4.42%**. Item **e** alone (the synthesized
+`clar_conn_pump()` stub, empty unless `irUsesConn`, called by
+`nat_UiConnPump` instead of `rtConnPump` directly) accounts for
+**−4.30%** — `rtConnPump`, `rtConnDevGone`, `rtConnDevClose` and
+everything under them drop out of a non-conn build's reachability walk.
+The TODO entry that recorded this as a cost had measured it at +5-7%;
+−4.30% is the same tax, paid back. Item **d** (the per-function
+small-temp high-water replacing the flat 24-slot pool) contributes about
+**95 bytes of frame per function**. Root-gating `cg68AddRoots` alone
+would NOT have worked and was not the lever: `runtime/clarus/ui.cla`'s
+event loop calls `UiConnPump()` unconditionally, so the conn runtime was
+reachable through the UI runtime regardless of roots.
+
+**Two deliberate deviations in the codegen track, both accepted by
+review.**
+
+1. **The always-track gate is `cgIsHandleKind`, not `cgNeedsRelease`.**
+   The spec and brief both said "track whenever `cgNeedsRelease(elemT)`";
+   taken literally that introduces a use-after-free on each lane, in a
+   different type. `cgNeedsRelease` is additionally true for a
+   handle-bearing `KRec`, whose >4-byte scratch is block-copied out by
+   `cgCopyScratchToDst` into a destination that then owns it — tracking
+   it would double-release. (The spec's own cross-reference points at
+   `cgIntrListFirstLast`, whose gate IS `cgIsHandleKind`.) The host lane
+   needed the mirror-image restriction for `KArr`, found not by reading
+   but by `mactest/leakgate` going red: `fpNewTrackedTmp` was declaring
+   every non-`KRec` temp `<ctype> t = NULL`, which does not compile for
+   an array type, and once that was fixed, tracking a `KArr` pop in every
+   position over-released. `KArr` now tracks only in the bare-discard
+   position (`53c60a0`).
+2. **`cgSmallTmpFirstOff` is recorded below the whole frame**, after
+   `cgReserveDeepScratch`, not "at the point where slot 0 would go". At
+   the brief's position, an empty pool (every function, on the measure
+   pass — exactly when growth happens) aliases the return-save slot;
+   harmless for correctness, but `peepFunc` runs at the end of every
+   `cgEmitFunc` and two temps at one displacement is foldable, which
+   would make the measure pass under-count and mis-pack segments.
+
+**The honest note on the four stale-master-pointer sites (spec §3.1).**
+All four are the shape `bff3268`'s "re-derive immediately before the
+call" rule CANNOT fix — the master pointer is passed INTO an allocating
+Toolbox trap, so the relocation window is inside the call — and the
+heap-jiggle harness hooks only the `UiNewPtr` waist, so it cannot
+exercise any of them. **No deterministic red-to-green test exists for
+this class, and none was manufactured.** The proof is (a) the full native
+suite green — `toolbox_68k`, `toolbox_jiggle`, `coresuite_68k`, the four
+frozen scenarios — and (b) reviewer verification that no master pointer
+is live across an allocating trap at any of the four sites. Recorded as a
+limit of the evidence, not as a passing test.
+
+**The `--rtbake` lesson, made a standing rule.** A whole phase
+(binary-files, eight tasks, one new type end-to-end) shipped
+`--rtbake`-broken because `--rtbake` was only ever exercised by the
+opt-in `CLARUS_BAKE_FULL=1` full-corpus gate, which runs in T2 and
+nowhere else. The general fix is not another one-off regression but a
+rule, now in `CLAUDE.md`: **a phase that adds a new value-typed runtime
+module adds its `tests/bake/<module>.sh` `emit68k_pair` twin in the same
+task**, so `--rtbake` byte-identity for it fails in T1, not only in the
+opt-in sweep. `tests/bake/datetime.sh` closes the one module that had no
+twin.
+
+**The first-read rule cuts both ways (Task 9).** `declIsRuntimeOrigin`
+no longer compares path strings; `drive.cla` records
+`drvRuntimeFiles[pathIdx] = true` in `expand()` whenever
+`drvSpliceActive`, and origin is that lookup. Because `seenPaths` dedupes
+on first read, **whoever reads a file first decides its origin**, in both
+directions: a `toolbox/*.cla` pulled in by a runtime module's own
+`include` classifies **runtime** (harmless — those files have no `func`
+bodies, and classification only affects bodies), and a runtime module a
+user names in an `include` by path classifies **user**, because
+`driveCompile`'s entry loop runs BEFORE both splices. The second
+direction is the one with live bodies in it, and it is accepted
+semantics: a user who includes runtime source by path is composing it as
+user code. Its only consequence is that such a program's runtime funcs
+lose the abort-propagation exemption — one extra post-call check each,
+correctness unaffected. Both directions are documented in
+`drvRuntimeFiles`' and `declIsRuntimeOrigin`'s comments.
+
+**One spec sentence corrected.** Spec §3.2 said `rtUiWidgetScrollToEnd`
+"calls the sync and inherits the clamp". It does not — it re-derives its
+own `maxScroll` and needed the same `> 32767` clamp added independently
+(`af5d749`). The spec text is amended in place, marked "(corrected
+2026-09-05, Task 2 review)"; the spec's INTENT (no `int`→`word`
+truncation on any textview scroll path) was binding and is what shipped.
+
+**New follow-up this phase opened.** Native and host now differ on
+`pop`/`shift` tracking for a handle-bearing RECORD element:
+`lst.pop().field` on a `list of R` where `R` has a handle field leaks on
+the NATIVE lane only, as a direct consequence of deviation 1 above. Full
+entry, with the fix direction, in `docs/TODO.md`'s "Compiler correctness
+/ diagnostics" section — the only thing left in it besides the FIXED
+record.
+
+**One golden the phase's own T2 caught at close-out.**
+`clarusc/test/check_test.out` and `clarusc/test/lex_test.out` — the
+hand-maintained stdout goldens for clarusc's per-module driver programs —
+still pinned the OLD diagnostic text (`cannot convert bool to char`,
+`cannot convert string to ptr`; and the lexer cascade's phantom `IDENT
+ZZ` / second `STRINGLIT` tokens plus its two `unterminated string
+literal` lines). They are driven only by `tests/selfhost/modules.sh`,
+which is a T2-only script, so nothing in T1 saw them move; the
+diagnostics track's own `testdata/errors` fixtures were all updated and
+all green. Reblessed at close-out — the new bytes are exactly what
+§4.2a/§4.2c specify (`char() expects an int, got bool`,
+`ptr() expects an int or overlay, got string`, and exactly ONE
+`invalid escape sequence` with no phantom tokens). Same coverage-gap
+CLASS as the `--rtbake` lesson above, one lane over: a T2-only golden is
+a golden a task cannot see itself break.
+
+**Two more things close-out's T2 caught, both pre-existing, neither
+fixed here.**
+
+1. **`tests/bake/full_corpus_suite_toolbox.sh`'s hand-maintained file
+   list was missing `testsuite/toolbox/cases_casestable.cla`**, so the
+   toolbox suite's own `--rtbake` byte-identity check could not even
+   compile from source. Exactly the defect the 68k-call-result-release
+   phase hit with `LeakCheck` and the same list's `internal/bake`
+   ancestor — a hand-mirrored file list drifts the moment a case is
+   added, and only the T2-only full-corpus sweep sees it. Fixed by
+   adding the file; the list is now `diff`-identical to
+   `tests/mactest/toolbox_files.txt`, which is the check worth
+   automating some day.
+2. **`--rtbake --lane c` silently drops the `connection`/`filehandle`
+   runtime.** `bake.cla`'s `bakeModuleList` leaves `conn.cla`/`conn_c.cla`
+   and `fileh.cla`/`fileh_c.cla` out of the C-lane baked chain on
+   purpose (the host lane gates that pair on `usesConn`/`usesFileh` to
+   keep every non-conn program's manifest byte-identical), but
+   `driveCompile`'s `haveRtbake` branch bypasses `driveManifestSplice`
+   entirely, so on the bake path nothing consults those flags and nothing
+   splices the pair — the emitted C calls `rtConnOpen`/`rtFhOpen` without
+   declaring them. **Pre-existing on `main`** (reproduced with
+   `tests/conntest/testdata/echo.cla`, unchanged since go-retirement, and
+   with a minimal `file.create` program); the 68k lane is unaffected,
+   which is why `tests/bake/connfileh.sh` always passed. §3.5's new
+   `connpump_abort.cla` is simply the first C-lane bake-corpus fixture to
+   declare a `connection`. NOT fixed here: both candidate fixes are out
+   of this phase's scope (one needs `clarusc/bake.cla`, which the spec
+   forbids touching so the Snow gate stays unfired; the other changes
+   `--rtbake` fallback behavior). Filed in `docs/TODO.md` under "Bake /
+   CLIR artifact machinery" with both candidates worked out, and the
+   sweep SKIPs the shape with an explicit reason that retires itself once
+   the gap closes.
+
+**Also cleared incidentally.** The cprint-lane toolbox twin now boots
+**36/36** (`CLARUS_MAC_TESTS=1 CLARUS_CPRINT_MAC_TESTS=1 make test
+T=mactest/toolbox_mac`), including `ScrollToEnd`, which `CLAUDE.md` and
+`docs/TODO.md` both recorded as blocked by `main`'s `TbFreeMem` shim gap;
+both are corrected. `testsuite/toolbox/runner.cla`'s stale "N real cases
+here" comment is gone (§3.4), closing that TODO entry too. The two
+pre-existing cprint failures `CLAUDE.md` records — `FileHandleRW: create
+failed` and `DirOps: exists("") false` — are in the CORE twin and are
+untouched.
+
+**Untouched by design.** `clarusc/bake.cla` (verified: its diff against
+`main` is empty), so the 55-minute Snow `clarusc_bake` standing rule did
+not fire and that gate was not run. Every other `docs/TODO.md` section. A
+canonical-path primitive — §4.4a removed the need instead of adding
+surface. A general `cg68AddRoots` `irUsesConn` gate. Proportional
+scrollbar remapping above the 16-bit ceiling.
+
+Spec: `docs/superpowers/specs/2026-09-05-compiler-cleanup-design.md`;
+plan `docs/superpowers/plans/2026-09-05-compiler-cleanup.md`; per-task
+briefs, reports, reviews and the `progress.md` ledger (every `Ruling:`
+line) in `.superpowers/sdd/2026-09-05-compiler-cleanup/`.

@@ -778,6 +778,7 @@ static void clar_fn_clar_conn_fire_opened(int32_t cv_slot);
 static void clar_fn_clar_conn_fire_received(int32_t cv_slot, rt_text * cv_data);
 static void clar_fn_clar_conn_fire_closed(int32_t cv_slot);
 static void clar_fn_clar_conn_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg);
+static void clar_fn_clar_conn_pump(void);
 static void clar_fn_clar_ui_fire_winevent(int32_t cv_winIdx, void * cv_inst, int32_t cv_ev, int32_t cv_a, int32_t cv_b);
 static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b);
 static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil);
@@ -1636,9 +1637,6 @@ static void clar_fn_clar_conn_fire_closed(int32_t cv_slot) {
 }
 
 static void clar_fn_clar_conn_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg) {
-    clar_rec_Err cv_err;
-    cv_err.code = 0;
-    cv_err.message = (clar_str_255){0};
     if (cv_slot == 0) {
     } else {
         if (cv_slot == 1) {
@@ -1650,6 +1648,10 @@ static void clar_fn_clar_conn_fire_failed(int32_t cv_slot, int32_t cv_code, void
             }
         }
     }
+}
+
+static void clar_fn_clar_conn_pump(void) {
+    clar_fn_rtConnPump();
 }
 
 static void clar_fn_clar_ui_fire_winevent(int32_t cv_winIdx, void * cv_inst, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {

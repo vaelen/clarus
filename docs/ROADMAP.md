@@ -362,6 +362,68 @@ both filed in `docs/TODO.md`. Spec:
 `docs/superpowers/plans/2026-09-05-go-retirement.md`; ledger
 `.superpowers/sdd/2026-09-05-go-retirement/`.
 
+**`compiler-cleanup` phase (branch `compiler-cleanup`, 2026-09-05, based
+on `main` at `311af68` = `a1f9899` + this phase's own spec/plan/TODO
+docs; `go-retirement` and everything before it are already merged to
+local `main`, NOT pushed) is COMPLETE — full T2 green, NOT YET merged
+(merge only on Andrew's request):** clears `docs/TODO.md`'s "Compiler
+correctness / diagnostics" section outright. It had grown to 30 entries
+across seven phases (2026-07-23 to 2026-08-29) — one FIXED record and 29
+open — and several of them forced the same expensive regeneration (every
+`testdata/cg68k/*.s` golden, the `clarusc/clarusc.c` snapshot), so
+fixing them a phase at a time meant paying that cost repeatedly. All 29
+are disposed of in one phase, structured as two waves so the goldens are
+blessed exactly twice and the snapshot regenerated exactly once: **26
+fixed**, **1 already fixed** (the `cgLastTrackedOff` reset had landed in
+the 68k-call-result-release phase; the TODO entry outlived its own fix),
+**1 obsolete** (parameter-escape precision — the analysis it refined was
+deleted in `e4b592f`), and **1 closed with evidence** (the entry recorded
+since binary-files as "STILL LIVE: an unspliced runtime function crashes
+clarusc" does not reproduce; `tests/cg68k/unspliced_guard.sh` pins the
+actual behavior, `cg68k: rtStrStore not found/reachable` with exit 1 — a
+clean diagnostic, never exit 3). Wave 1 (runtime + harness) blessed 77
+golden files, with a differential oracle proving every hunk was a
+runtime-edit ripple; wave 2 (the compiler) blessed 64, of which 18 were
+stale `*.seg2.s` files DELETED because the fixtures shrank back below
+their segment boundary. The `.s` corpus went **501,110 → 478,983 lines,
+−4.42%** — item e alone (a synthesized `clar_conn_pump()` stub, empty
+unless the program uses `connection`) is −4.30%, paying back the +5-7%
+conn-runtime tax the TODO had recorded as a cost; the per-function
+small-temp high-water contributes ~95 bytes of frame per function. Also
+closes the three follow-ups 68k-call-result-release deferred
+(`makeRec().field`, the `smalltmp_ceiling` fixture, `pop`/`shift` as
+operand/receiver), brings the toolbox suite to 36 cases (`CasesTable`,
+which checksums the suite GUI's own case table — the one stale-pointer
+class nothing asserted on), and unblocks the opt-in cprint toolbox twin,
+now 36/36. Honest limit, recorded rather than papered over: the four
+remaining stale-master-pointer sites have **no deterministic
+red-to-green test** — the master pointer is passed INTO an allocating
+trap, so the jiggle harness's `UiNewPtr` waist cannot see it; proof is
+the green native suite plus reviewer verification of each site. One new
+follow-up opened, filed in `docs/TODO.md`: native and host now differ on
+`pop`/`shift` tracking for a handle-bearing RECORD element
+(`lst.pop().field` leaks on the native lane only), a deliberate
+consequence of gating the native always-track on `cgIsHandleKind` rather
+than `cgNeedsRelease` — the literal spec wording would have
+double-released a block-copied `KRec` scratch. `clarusc/bake.cla` is
+untouched, so the 55-minute Snow `clarusc_bake` gate did not fire.
+Close-out's own T2 turned up two PRE-EXISTING defects, both filed rather
+than fixed: `tests/bake/full_corpus_suite_toolbox.sh`'s hand-maintained
+file list had drifted (missing `cases_casestable.cla`, the same
+hand-mirrored-list defect `LeakCheck` hit in the 68k-call-result-release
+phase — fixed in place, the list is now `diff`-identical to
+`tests/mactest/toolbox_files.txt`), and `--rtbake --lane c` silently
+drops the `connection`/`filehandle` runtime, so a HOST program using
+either type bakes to C that calls `rtConnOpen`/`rtFhOpen` without
+defining them (reproduced on `main` with
+`tests/conntest/testdata/echo.cla`; the 68k lane is unaffected). The
+second is `docs/TODO.md`'s new "Bake / CLIR artifact machinery" entry
+with both candidate fixes worked out — neither is in this phase's scope,
+one of them needs `bake.cla`. Spec:
+`docs/superpowers/specs/2026-09-05-compiler-cleanup-design.md`; plan
+`docs/superpowers/plans/2026-09-05-compiler-cleanup.md`; ledger
+`.superpowers/sdd/2026-09-05-compiler-cleanup/`.
+
 ## Roadmap
 
 Focus (Andrew, 2026-08-15): make the tools more usable — expand the set

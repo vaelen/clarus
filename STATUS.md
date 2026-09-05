@@ -1,4 +1,9 @@
-# Session status — 2026-09-02 (string-perf: COMPLETE on branch, T2 pending below, NOT merged)
+# Session status — 2026-09-05 (compiler-cleanup: COMPLETE on branch, full T2 green, NOT merged)
+
+See §0 below for the current phase. The `string-perf` summary that
+follows is kept as the prior phase's handoff; `go-retirement` (also
+COMPLETE, not merged) is recorded in `docs/HISTORY.md` and
+`docs/ROADMAP.md` rather than here.
 
 Handoff summary. **The `string-perf` phase (branch `string-perf`, based
 on `main` at `54292df` = `061dbd5` + this phase's spec/plan docs;
@@ -35,34 +40,57 @@ AppleTalk -> MacTCP per `docs/ROADMAP.md`.
 
 ## 0. START HERE next session
 
-No pre-merge obligations are owed by this phase specifically: it's one
-new widget method with no new Toolbox trap surface and no OS-version-
-dependent behavior, so there is no System 7 (Snow) spot check the way
-filesystem-api's new HFS traps needed. The proof is hardware-level: the
-toolbox suite's new `ScrollToEnd` case exercises the method on the
-emulated Mac Plus (System 6, Mini vMac, `tests/mactest/toolbox_68k.sh`). One
-optional minor was found and deliberately left as-is (not filed in
-`docs/TODO.md` — judged not worth tracking): `lowTextviewMethod`'s
-`nm != "scrollToEnd"` `lowUnsupported` branch is unreachable today (its
-only caller already gates on that name), kept as the same house-style
-guard `lowCanvasMethod` carries.
+**Current branch: `compiler-cleanup` (2026-09-05, based on `main` at
+`311af68` = `a1f9899` + this phase's own spec/plan/TODO docs).
+COMPLETE — full T2 green, NOT merged (merge only on Andrew's
+request).** It cleared `docs/TODO.md`'s whole "Compiler correctness /
+diagnostics" section: 29 open entries accumulated across seven phases,
+disposed of in one phase as **26 fixed / 1 already fixed / 1 obsolete /
+1 closed with evidence**. Two waves, two golden blesses (wave 1: 77
+files, a pure runtime-edit ripple proved by a differential oracle; wave
+2: 64 files, 18 of them stale `*.seg2.s` DELETED), one snapshot
+regeneration. The `.s` corpus went **501,110 → 478,983 lines (−4.42%)**,
+of which −4.30% is the synthesized `clar_conn_pump()` stub keeping the
+conn runtime out of conn-less native builds. Suites: toolbox 36 (new
+`CasesTable`), core 81. Full detail: `docs/HISTORY.md`'s
+"compiler-cleanup phase (2026-09-05)" entry, `docs/ROADMAP.md`'s
+"Where we are", and `.superpowers/sdd/2026-09-05-compiler-cleanup/`.
 
-**What this phase built** (3 implementation tasks + this close-out; full
-detail in `.superpowers/sdd/2026-08-29-textview-scroll-to-end/`):
+**Obligations this phase leaves.**
 
-1. **Runtime** (`071be61`, fix `2fdfb91`) — `rtUiWidgetScrollToEnd` +
-   `UiTestTextviewScroll` probe (`uiwidgets.cla`); fix round sign-extends
-   the new functions' own Rect reads.
-2. **Compiler, both lanes** (`1ca7929`) — `check.cla`/`lower.cla`/
-   `cg68k.cla`/`cprint.cla` wiring, shake root, snapshot regen, mechanical
-   golden rebless for the jump-table renumber.
-3. **Runtime fix** (`65eaa5a`) — sign-extends `rtUiTeScrollSync`'s and
-   `rtUiWidgetSetText`'s own `destRect` reads, closing the pre-existing
-   shrunk-while-scrolled bug Task 3's first boot exposed.
-4. **Hardware proof** (`88a9323`) — toolbox suite's new `ScrollToEnd`
-   case (34 cases, 33 real + `SelfCheck`).
-5. **Close-out (this task)** — reference/CLAUDE.md/ROADMAP/STATUS/68kbbs
-   docs closed out; full T2 green.
+- **No Snow gate was run, deliberately.** `clarusc/bake.cla` is
+  untouched (its diff against `main` is empty), so the 55-minute
+  `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` standing
+  rule does not fire.
+- **The four stale-master-pointer fixes have no red-to-green test**, and
+  none was manufactured — the master pointer is passed INTO an
+  allocating trap, so the jiggle harness's `UiNewPtr` waist cannot see
+  it. Proof is the green native suite plus per-site review. Recorded as
+  a limit of the evidence, not as a passing test.
+- **Three new follow-ups filed** in `docs/TODO.md`. (1) `lst.pop().field`
+  on a handle-bearing record element leaks on the NATIVE lane only, a
+  deliberate consequence of gating the native always-track on
+  `cgIsHandleKind` rather than `cgNeedsRelease`. (2) **`--rtbake --lane c`
+  silently drops the `connection`/`filehandle` runtime** — a HOST program
+  using either type bakes to C that calls `rtConnOpen`/`rtFhOpen` without
+  defining them. PRE-EXISTING on `main` (reproduced with
+  `tests/conntest/testdata/echo.cla`), found by this phase's close-out
+  T2, NOT fixed: one candidate fix needs `clarusc/bake.cla` (Snow gate),
+  the other changes `--rtbake` fallback behavior; both are written up in
+  the TODO entry. The C-lane bake sweep SKIPs the shape with an explicit
+  reason that retires itself when the gap closes. (3) — no separate
+  entry, but worth knowing — `tests/bake/full_corpus_suite_toolbox.sh`'s
+  hand-maintained file list had drifted (missing `cases_casestable.cla`);
+  fixed in place, and it is now `diff`-identical to
+  `tests/mactest/toolbox_files.txt`. Automating that comparison is the
+  obvious next hardening.
+- **Carried over, unchanged, from earlier phases** (nothing here is
+  discharged by this phase): the `macresident` /
+  `macresident_failed_compile` Snow scripts are ported but not
+  live-validated; the System 7 spot check filesystem-api owed; 68kbbs
+  needs to re-pin its toolchain and re-measure on Snow after
+  `string-perf`.
+- **Next on the roadmap after merge:** AppleTalk → MacTCP.
 
 ## 1. Prior phases (all merged; recap pointers only)
 

@@ -70,6 +70,7 @@ if detail=$(emit68k_pair toolbox \
         testsuite/toolbox/cases_leak.cla \
         testsuite/toolbox/cases_scrollend.cla \
         testsuite/toolbox/cases_clearwarm.cla \
+        testsuite/toolbox/cases_casestable.cla \
         testsuite/toolbox/gui.cla); then
     t_pass toolbox_suite
 else

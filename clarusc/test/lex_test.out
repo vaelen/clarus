@@ -26,10 +26,7 @@ NEWLINE 6:13
 IDENT 7:1 t
 ASSIGN 7:3
 STRINGLIT 7:5 
-IDENT 7:8 ZZ
-STRINGLIT 7:10 
 NEWLINE 7:11
 EOF 7:11
 lex_test.cla:2:5: hex literal has no digits
-lex_test.cla:7:5: unterminated string literal
-lex_test.cla:7:10: unterminated string literal
+lex_test.cla:7:5: invalid escape sequence
