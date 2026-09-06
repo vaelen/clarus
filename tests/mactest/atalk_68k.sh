@@ -26,8 +26,12 @@
 # that fixture's header -- scripted mode never waits in real time, and
 # every round trip here needs real seconds.
 #
-# .XPP/.DSP are absent from LaunchAPPL's stripped boot disk, so this uses
-# NBP + ATP only -- no zones() assertion, no listener, no ADSP.
+# .XPP/.DSP are absent from LaunchAPPL's stripped boot disk, so every
+# ASSERTION here is NBP + ATP only: no listener, no ADSP, and nothing
+# checks the zone list. The example does call `browser.zones()` for its
+# own window label, which is safe on this disk -- with no .XPP (and no
+# router) it degrades to the single zone ["*"], the same noBridgeErr path
+# atalk_selfserve.sh pins as `zones 1 *`.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
@@ -44,10 +48,13 @@ srvpid=
 hostpid=
 # Only OUR OWN two host processes are ever killed here: a blanket
 # `pkill -f minivmac` would take down a concurrent two-boot test's
-# emulators as well.
+# emulators as well. This trap REPLACES lib.sh's own
+# `trap 'rm -rf "$WORK"' EXIT`, so it has to sweep $WORK too -- a boot
+# leaves the LaunchAPPL disk build, the capture and the .bin in there.
 cleanup() {
     [ -n "$hostpid" ] && kill "$hostpid" 2>/dev/null
     [ -n "$srvpid" ] && kill "$srvpid" 2>/dev/null
+    rm -rf "$WORK"
     return 0
 }
 trap cleanup EXIT INT TERM
@@ -77,8 +84,28 @@ emit68k -o "$WORK/atalkclock.bin" examples/atalkclock.cla testdata/atalk/clockdr
 # group, so the match is anchored on the all-digits suffix AND on a node
 # that is not this script's own peer. Foreign entities are otherwise
 # tolerated (spec %8.4).
+# at_call OP IN OUT ERR : `atalkdrive call $_obj $TYPE OP`, retried up to
+# three times when the tool's OWN NBP lookup of the name comes back empty.
+# The name is known to exist -- the discovery loop below just saw it, and
+# the same_entity subcase proves it is this boot's app -- so a "not found"
+# here is a lost lookup on a shared, lossy multicast group (Andrew's live
+# sessions and any concurrent emulator boot share it), not a verdict. A
+# real failure (no answer, a nonzero code) is returned on the first try.
+at_call() {
+    _i=0
+    while : ; do
+        "$DRIVE" call "$_obj" "$TYPE" "$1" < "$2" > "$3" 2> "$4"
+        _rc=$?
+        grep -q '^not found: ' "$4" || return $_rc
+        _i=$(( _i + 1 ))
+        [ $_i -ge 3 ] && return $_rc
+        sleep 2
+    done
+}
+
 atalk_host_half() {
-    _end=$(( $(date +%s) + 120 ))
+    _t0=$(date +%s)
+    _end=$(( _t0 + 170 ))
     _ent=
     _node=
     while [ "$(date +%s)" -lt "$_end" ]; do
@@ -94,20 +121,21 @@ atalk_host_half() {
         fi
         sleep 2
     done
+    _took=$(( $(date +%s) - _t0 ))
     if [ -z "$_ent" ]; then
-        echo "discover FAIL no Clock-<digits>:$TYPE at a foreign node in 120s; last lookup: $(tr '\n' '|' < "$WORK/lk.out")"
+        echo "discover FAIL no Clock-<digits>:$TYPE at a foreign node in ${_took}s; last lookup: $(tr '\n' '|' < "$WORK/lk.out")"
         return 0
     fi
     if [ "$_node" = 0 ]; then
         echo "discover FAIL $_ent answered at node 0"
         return 0
     fi
-    echo "discover OK $_ent node=$_node"
+    echo "discover OK $_ent node=$_node (${_took}s)"
     _obj=${_ent%%:*}
 
     # op 2 -- byte-exact echo of a 578-byte request (ATP's own ceiling),
     # answered by the ROM's ATP responder through the runtime's waist.
-    "$DRIVE" call "$_obj" "$TYPE" 2 < "$WORK/req578" > "$WORK/echo.out" 2> "$WORK/echo.err"
+    at_call 2 "$WORK/req578" "$WORK/echo.out" "$WORK/echo.err"
     _rc=$?
     if [ $_rc != 0 ]; then
         echo "echo578 FAIL exit $_rc ($(tr '\n' '|' < "$WORK/echo.err"))"
@@ -118,7 +146,7 @@ atalk_host_half() {
     fi
 
     # op 1 -- the Mac's own clock, as dateTimeStr formats it.
-    "$DRIVE" call "$_obj" "$TYPE" 1 < /dev/null > "$WORK/time.out" 2> "$WORK/time.err"
+    at_call 1 /dev/null "$WORK/time.out" "$WORK/time.err"
     _rc=$?
     _n=$(wc -c < "$WORK/time.out" | tr -d ' ')
     if [ $_rc = 0 ] && [ "$_n" -gt 0 ]; then
@@ -132,7 +160,7 @@ atalk_sweep "$WORK/req578" 578
 atalk_host_half > "$WORK/host.out" 2>&1 &
 hostpid=$!
 
-# The app quits itself ~150 s in (clockdrive.cla); the budget is deliberately
+# The app quits itself ~200 s in (clockdrive.cla); the budget is deliberately
 # far past that, because run_mac's OWN expiry path pkills every minivmac on
 # the machine -- which would take a concurrent two-boot test down with it.
 run_mac "$WORK/atalkclock.bin" 420
@@ -174,8 +202,28 @@ want_line serving "serving Clock-"
 # reply back through the ROM's ATP requester.
 want_line remote_call "remote $HOSTOBJ:$TYPE HOSTTIME"
 # clockdrive.cla's own last line -- the app ended on its own, not on a
-# watchdog or an alert.
-want_line done_line "done"
+# watchdog or an alert. ANCHORED (`grep -x`): the example logs
+# `browse done N` seconds after launch, which a substring match would
+# have accepted forever.
+if grep -qx "done" "$LOG"; then
+    t_pass done_line
+else
+    t_fail done_line "no bare \"done\" line: $(tr '\n' '|' < "$LOG")"
+fi
+
+# The group is shared (spec %8.4): Andrew's live sessions can hold a
+# Clock-<digits> name of their own, and every host-side check above would
+# be satisfied by one of those with this boot's app never touched. The
+# entity the host discovered has to be the one the app says it is
+# serving.
+HOSTENT=$(sed -n 's/^discover OK \([^ ]*\) .*/\1/p' "$WORK/host.out")
+if [ -z "$HOSTENT" ]; then
+    t_fail same_entity "the host half discovered nothing: $(tr '\n' '|' < "$WORK/host.out")"
+elif grep -qx "serving $HOSTENT" "$LOG"; then
+    t_pass same_entity
+else
+    t_fail same_entity "host called $HOSTENT, app logged $(grep '^serving ' "$LOG" || echo 'nothing')"
+fi
 
 if grep -q '^clock failed \|^browse failed ' "$LOG"; then
     t_fail no_failures "$(grep '^clock failed \|^browse failed ' "$LOG")"

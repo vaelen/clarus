@@ -69,21 +69,22 @@ func atClockRepaint() {
     var i: int = 0
     var line: string = "Zones:"
 
+    if w == nil {
+        return
+    }
     shown.clear()
     while i < peers.count {
         shown.append(peers[i])
         shown.append("\n")
         i = i + 1
     }
-    if w != nil {
-        w.Peers.text = shown
-        i = 0
-        while i < zoneNames.count {
-            line = line + " " + zoneNames[i]
-            i = i + 1
-        }
-        w.Zones.text = line
+    w.Peers.text = shown
+    i = 0
+    while i < zoneNames.count {
+        line = line + " " + zoneNames[i]
+        i = i + 1
     }
+    w.Zones.text = line
 }
 
 // atClockFind: start a fresh browse of the zone. `find` returns at once;
@@ -99,11 +100,23 @@ func atClockFind() {
 // a button and not something the browse does on its own.
 func atClockCall() {
     var i: int = 0
+    var n: int = 0
 
     while i < peers.count {
         if peers[i] != myEntity {
             if clock.call(peers[i], 1, "", reply) {
-                log("remote " + peers[i] + " " + reply[0, reply.length])
+                // A reply is a `text` and may be up to 4624 bytes; a
+                // `string` holds 255, and slicing past the end is a
+                // runtime error, not a truncation. A clock's answer is a
+                // couple of dozen characters, so clamp to 60 and log
+                // that -- never `reply[0, reply.length]`, which raises
+                // "slice out of range" the first time a peer answers
+                // with something long.
+                n = reply.length
+                if n > 60 {
+                    n = 60
+                }
+                log("remote " + peers[i] + " " + reply[0, n])
             } else {
                 log("remote " + peers[i] + " failed " + string(lastError.code) + " " + lastError.message)
             }

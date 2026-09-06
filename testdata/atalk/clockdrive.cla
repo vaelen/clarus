@@ -27,9 +27,14 @@
 //                 browse is enough to see it
 //   25   Call   -- ATP to every peer the browse turned up; the `remote
 //                 ...` line the script asserts on comes from here
-//  150   Quit   -- the boot's own end. The host side polls for the app's
-//                 name and calls it while all this is going on, so the
-//                 app has to stay up well past its own work.
+//  200   Quit   -- the boot's own end, logged as the bare line `done`
+//                 (the script matches it with `grep -x`, so the app's
+//                 own `browse done N` line cannot stand in for it). The
+//                 host side spends up to ~170 s discovering the app's
+//                 name and calling it -- LaunchAPPL builds its boot disk
+//                 before the app ever runs, and that comes out of the
+//                 same window -- so the app has to stay up well past its
+//                 own work.
 var cdBeats: int = 0
 
 every 60 ticks {
@@ -39,7 +44,7 @@ every 60 ticks {
     } else if cdBeats == 25 {
         atClockCall()
         log("called")
-    } else if cdBeats >= 150 {
+    } else if cdBeats >= 200 {
         log("done")
         quit
     }
