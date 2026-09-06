@@ -1,0 +1,722 @@
+# Review package: bb6e1e8..HEAD
+
+## Commits
+078b389 fix(runtime): atalk fix round 1 -- name-call lookup slot, single arm, ADSP open contract
+
+## Files changed
+ runtime/clarus/atalk.cla                | 114 +++++++++++++++++++++++---------
+ runtime/clarus/atalk_68k.cla            |   5 +-
+ runtime/host/rt_atalk.h                 |   7 +-
+ runtime/host/rt_atalk.inc               |   4 +-
+ runtime/host/rt_atalk_test.c            |  10 +++
+ testdata/emitui/connpump_abort.c.golden |   8 +--
+ tests/atalk/splice.sh                   |   8 +--
+ 7 files changed, 112 insertions(+), 44 deletions(-)
+
+## Diff
+diff --git a/runtime/clarus/atalk.cla b/runtime/clarus/atalk.cla
+index 0ef9d2e..217db76 100644
+--- a/runtime/clarus/atalk.cla
++++ b/runtime/clarus/atalk.cla
+@@ -37,28 +37,29 @@
+ // Native contract (Task 1 probe findings, binding on atalk_68k.cla, which
+ // records them in full): every per-slot parameter block is fully re-zeroed
+ // before each reuse (a reused NBP parameter block hung the Mac), and NBP
+ // registers the socket number verbatim -- which is why rtAtDevRegister
+ // takes `sock` and rtLsnDevSocket exists at all.
+ 
+ const rtLsnMax: int = 2
+ const rtBrsMax: int = 2
+ const rtSvcMax: int = 2
+ 
+-// Lookup slots (rt_atalk.inc's RT_AT_NLK / the native lookup PB table):
+-// 0-1 belong to the two browsers (lk == browser slot), 2-9 to the eight
+-// connection slots' name-form ADSP opens (lk == conn slot + 2), and 9 is
+-// ALSO the sync slot rtSvcCallName borrows -- a `call("Name:Type", ...)`
+-// is synchronous, so it cannot overlap with conn slot 7's own async open
+-// within one program pass.
+-const rtAtLookupMax: int = 10
+-const rtAtNameCallLk: int = 9
++// Lookup slots (rt_atalk.inc's RT_AT_NLK / the native lookup PB table),
++// eleven of them: 0-1 the two browsers (lk == browser slot), 2-9 the eight
++// connection slots' name-form ADSP opens (lk == conn slot + 2), and 10
++// rtSvcCallName's own synchronous slot. 10 and not 9 (fix round 1): an
++// ADSP name-open sits in rtAdspLookup ACROSS pump passes, so a
++// `call("Name:Type", ...)` made during that window would have restarted
++// conn slot 7's live lookup on top of it.
++const rtAtLookupMax: int = 11
++const rtAtNameCallLk: int = 10
+ 
+ // errOpenDenied, reused as "this lane has no streams" -- the host twin's
+ // whole rtAdspDev*/rtLsnDev* family returns it (spec %4.6: AppleTalk
+ // stream open, register and therefore accepted fail with an event on the
+ // host this phase).
+ const rtAtErrNoHost: int = -1273
+ 
+ // ATP's own hard limits (Inside AppleTalk 2nd ed.; RT_AT_MAXREQ /
+ // RT_AT_MAXRESP). Enforced, never truncated (spec %4.4).
+ const rtAtMaxReq: int = 578
+@@ -105,28 +106,31 @@ external func clar_svc_fire_failed(slot: int, code: int, msg: string)
+ // service never opens a socket (and never calls into a null host stack).
+ var rtAtUp: bool
+ 
+ var rtLsnState: int[2]
+ var rtLsnPendFailedCode: int[2]
+ var rtLsnPendFailedMsg: string[2]
+ 
+ var rtBrsState: int[2]
+ var rtBrsPendFailedCode: int[2]
+ var rtBrsPendFailedMsg: string[2]
+-// rtBrsPendDone: the lookup window closed and every `found` has fired;
+-// `done` itself fires from the NEXT pump pass. Keeping it staged (rather
+-// than firing inline after the founds) is what makes rtAtalkAlive() hold
+-// the host CLI loop open across the gap.
+-var rtBrsPendDone: bool[2]
+ 
+ var rtSvcState: int[2]
+ var rtSvcSock: int[2]
++// rtSvcArmed: a get-request is outstanding on this slot. The pump arms
++// only when it is false and clears it the moment a request is dequeued, so
++// rtAtDevAtpArm is called EXACTLY ONCE per outstanding get-request -- a
++// re-issue into a parameter block with a live async call is the reused-PB
++// hang the Task 1 probe recorded. (Added in fix round 1; still the initial
++// declaration of this table, since atalk.cla is not on the 68k lane yet
++// and no golden pins its globals.)
++var rtSvcArmed: bool[2]
+ var rtSvcInHandler: bool[2]
+ var rtSvcReplied: bool[2]
+ var rtSvcPendFailedCode: int[2]
+ var rtSvcPendFailedMsg: string[2]
+ 
+ // rtSvcName/rtSvcType/rtLsnName/rtLsnType: the registered NBP entity, kept
+ // so stop() can call rtAtDevRemove(obj, typ) -- that waist signature takes
+ // the name from its caller (the native PRemoveName needs a fresh NTE), so
+ // the name has to live somewhere, and nothing else on either lane
+ // remembers it. (Deviation from the task brief's global table, which
+@@ -192,20 +196,29 @@ func rtSvcSetFailed(slot: int, code: int, msg: string) {
+ }
+ 
+ func rtBrsSetFailed(slot: int, code: int, msg: string) {
+     if rtBrsPendFailedCode[slot] == 0 {
+         rtBrsPendFailedCode[slot] = code
+         rtBrsPendFailedMsg[slot] = msg
+     }
+     rtAtLastErr = code
+ }
+ 
++// rtAdspFailed: put a connection slot back to "no AppleTalk here" -- no
++// pending phase and no transport tag. Every rtAdsp* failure path and
++// rtAdspClose route through it (fix round 1): a leftover tag would send a
++// later SERIAL open on the same variable down the ADSP waist.
++func rtAdspFailed(slot: int) {
++    rtAdspPhase[slot] = rtAdspNone
++    rtConnSlotTransport[slot] = 0
++}
++
+ func rtLsnSetFailed(slot: int, code: int, msg: string) {
+     if rtLsnPendFailedCode[slot] == 0 {
+         rtLsnPendFailedCode[slot] = code
+         rtLsnPendFailedMsg[slot] = msg
+     }
+     rtAtLastErr = code
+ }
+ 
+ // rtAtTextToPtr: copy a text's bytes into a fresh scratch block, the
+ // pokeb marshal rtConnSendText uses (the caller disposes). ptr(0) on a
+@@ -285,25 +298,28 @@ func rtSvcServe(h: int, name: string, typ: string) {
+     e = rtAtDevRegister(name, typ, sock)
+     if e != 0 {
+         rtAtDevAtpClose(sock)
+         rtSvcSetFailed(slot, e, rtAtRegMsg(e))
+         return
+     }
+     rtSvcSock[slot] = sock
+     rtSvcName[slot] = name
+     rtSvcType[slot] = typ
+     rtSvcState[slot] = rtAtActive
++    rtSvcArmed[slot] = false
+     e = rtAtDevAtpArm(slot, sock)
+     if e != 0 {
+         // The socket and the name are live; only the receive arm failed.
+         // Stay serving and let the pump retry the arm each pass.
+         rtSvcSetFailed(slot, e, "could not receive requests")
++    } else {
++        rtSvcArmed[slot] = true
+     }
+ }
+ 
+ // rtSvcReply: the ONE contract-checked entry point in this file besides
+ // the nil checks -- calling it outside a request handler, or twice inside
+ // one, is a program bug (spec %4.4), so both panic. A reply over ATP's
+ // 4624-byte ceiling is not a bug though: it is weather (a `failed` event)
+ // PLUS the automatic -1 reply, so the requester never waits out its
+ // timeout (spec %4.4's own wording).
+ func rtSvcReply(h: int, code: int, data: text) {
+@@ -368,20 +384,21 @@ func rtSvcStop(h: int) {
+     if h == 0 {
+         rtPanic("use of nil service")
+     }
+     slot = h - 1
+     if rtSvcState[slot] != rtAtActive {
+         return
+     }
+     rtAtDevRemove(rtSvcName[slot], rtSvcType[slot])
+     rtAtDevAtpClose(rtSvcSock[slot])
+     rtSvcState[slot] = rtAtIdle
++    rtSvcArmed[slot] = false
+     rtSvcSock[slot] = 0
+     rtSvcName[slot] = ""
+     rtSvcType[slot] = ""
+ }
+ 
+ // rtSvcCallAddr: the synchronous requester (spec %4.4, Q3). true only when
+ // a response arrived AND its code is 0; `reply` holds the payload either
+ // way. Uses the requester's own socket, so a serving variable may call.
+ func rtSvcCallAddr(h: int, addr: int, op: int, req: text, reply: text): bool {
+     var e: int
+@@ -396,21 +413,21 @@ func rtSvcCallAddr(h: int, addr: int, op: int, req: text, reply: text): bool {
+         rtSetLastErr(rtAtErrLenErr, "request too long")
+         return false
+     }
+     e = rtAtEnsureUp()
+     if e != 0 {
+         rtSetLastErr(e, "AppleTalk unavailable")
+         return false
+     }
+     p = rtAtTextToPtr(req)
+     if p == ptr(0) and req.length > 0 {
+-        rtSetLastErr(rtAtErrMemFull, "request too long")
++        rtSetLastErr(rtAtErrMemFull, "out of memory")
+         return false
+     }
+     // Blocks up to timeout x retries (2 s x 3, fixed this phase). Incoming
+     // requests queue while it blocks; they are answered from the pump.
+     n = rtAtDevAtpCall(addr, op, p, req.length)
+     if p != ptr(0) {
+         SerDisposePtr(p)
+     }
+     if n < 0 {
+         rtAtLastErr = n
+@@ -497,21 +514,20 @@ func rtBrsFind(h: int, typ: string, zone: string) {
+     if e != 0 {
+         rtBrsSetFailed(slot, e, "AppleTalk unavailable")
+         return
+     }
+     e = rtAtDevLookupStart(slot, "=", typ, z)
+     if e != 0 {
+         rtBrsSetFailed(slot, e, "lookup failed")
+         return
+     }
+     rtBrsState[slot] = rtAtActive
+-    rtBrsPendDone[slot] = false
+ }
+ 
+ // rtBrsZones: synchronous, and never fails from the caller's point of
+ // view -- a routerless LocalTalk net (noBridgeErr), a missing .XPP, or any
+ // other error all yield the one-element list ["*"], so programs never
+ // special-case the routerless case (spec %4.3). The host lane always takes
+ // that path: its stack has no ZIP at all.
+ func rtBrsZones(h: int, out: list of string) {
+     if h == 0 {
+         rtPanic("use of nil serviceBrowser")
+@@ -589,96 +605,105 @@ func rtLsnStop(h: int) {
+     rtLsnState[slot] = rtAtIdle
+     rtLsnName[slot] = ""
+     rtLsnType[slot] = ""
+ }
+ 
+ // ---- ADSP: connection transport 1 (spec %4.1, %5.3) ----
+ 
+ // rtAdspOpenName: `c.open(appletalk "Name:Type")`. Starts the NBP lookup
+ // on the connection slot's own lookup slot (slot + 2); rtAdspPoll drives
+ // the rest. 0 means "started", not "open".
++//
++// Both rtAdspOpen* own the slot's transport tag: they set it to 1 only
++// once the attempt is actually under way, and every failure path here and
++// in rtAdspPoll puts it (and the phase) back to 0/none, so a caller that
++// stages a `failed` and later reopens the same variable over SERIAL is
++// never dispatched to ADSP by a leftover tag.
+ func rtAdspOpenName(slot: int, spec: string): int {
+     var e: int
+     var idx: int
+ 
+     idx = spec.indexOf(':')
+     if idx < 0 {
+         return rtAtErrNoConfirm
+     }
+     e = rtAtEnsureUp()
+     if e != 0 {
+         return e
+     }
+     e = rtAtDevLookupStart(slot + 2, spec[0, idx], spec[idx + 1, spec.length - idx - 1], "*")
+     if e != 0 {
+         rtAtLastErr = e
++        rtAdspFailed(slot)
+         return e
+     }
+     rtAdspPhase[slot] = rtAdspLookup
++    rtConnSlotTransport[slot] = 1
+     return 0
+ }
+ 
+ // rtAdspOpenAddr: `c.open(addr)` -- no lookup step, straight to the ADSP
+ // open (spec %5.3).
+ func rtAdspOpenAddr(slot: int, addr: int): int {
+     var e: int
+ 
+     e = rtAtEnsureUp()
+     if e != 0 {
+         return e
+     }
+     e = rtAdspDevOpen(slot, addr)
+     if e != 0 {
+         rtAtLastErr = e
+-        rtAdspPhase[slot] = rtAdspNone
++        rtAdspFailed(slot)
+         return e
+     }
+     rtAdspPhase[slot] = rtAdspOpening
++    rtConnSlotTransport[slot] = 1
+     return 0
+ }
+ 
+ // rtAdspPoll: one step of the per-slot open state machine, called from
+ // conn.cla's pump (Task 9) for every slot whose transport is 1. 1 once the
+ // connection BECAME open (reported exactly once -- an already-open slot
+ // answers 0, so the pump cannot fire `opened` twice), 0 while pending,
+ // the device error code (< 0) on failure.
+ func rtAdspPoll(slot: int): int {
+     var e: int
+     var addr: int
+ 
+     if rtAdspPhase[slot] == rtAdspLookup {
+         if not rtAtDevLookupDone(slot + 2) {
+             return 0
+         }
+         if rtAtDevLookupCount(slot + 2) == 0 {
+-            rtAdspPhase[slot] = rtAdspNone
++            rtAdspFailed(slot)
+             return rtAtErrNoConfirm
+         }
+         addr = rtAtDevLookupAddr(slot + 2, 0)
+         e = rtAdspDevOpen(slot, addr)
+         if e != 0 {
+             rtAtLastErr = e
+-            rtAdspPhase[slot] = rtAdspNone
++            rtAdspFailed(slot)
+             return e
+         }
+         rtAdspPhase[slot] = rtAdspOpening
+         return 0
+     }
+     if rtAdspPhase[slot] == rtAdspOpening {
+         e = rtAdspDevOpenPoll(slot)
+         if e == 1 {
+             rtAdspPhase[slot] = rtAdspOpen
+             return 1
+         }
+         if e < 0 {
+             rtAtLastErr = e
+-            rtAdspPhase[slot] = rtAdspNone
++            rtAdspFailed(slot)
+             return e
+         }
+         return 0
+     }
+     return 0
+ }
+ 
+ func rtAdspAvail(slot: int): int {
+     return rtAdspDevAvail(slot)
+ }
+@@ -713,41 +738,48 @@ func rtAdspReadInto(slot: int, t: text): int {
+     SerDisposePtr(scratch)
+     return got
+ }
+ 
+ func rtAdspWrite(slot: int, p: ptr, n: int): int {
+     return rtAdspDevWrite(slot, p, n)
+ }
+ 
+ func rtAdspClose(slot: int) {
+     rtAdspDevClose(slot)
+-    rtAdspPhase[slot] = rtAdspNone
++    rtAdspFailed(slot)
+ }
+ 
+ func rtAdspGone(slot: int): bool {
+     return rtAdspDevGone(slot)
+ }
+ 
+ // rtConnOpenAddr: `connection.open(addr)` -- the address form of an
+ // AppleTalk open, tagged transport 1 so conn.cla's pump (Task 9) polls
+ // rtAdspPoll for this slot. An immediate failure stages conn.cla's own
+ // pending `failed`; success is reported by that pump, never from here
+ // (conn.cla's "not inside open itself" rule).
+ func rtConnOpenAddr(h: int, addr: int) {
+     var slot: int
+     var e: int
+ 
+     if h == 0 {
+         rtPanic("use of nil connection")
+     }
+     slot = h - 1
+-    rtConnSlotTransport[slot] = 1
++    // Same contract as rtConnOpen (conn.cla): reopening an already-open
++    // slot is weather, not a bug.
++    if rtConnState[slot] == stOpen {
++        rtConnSetFailed(slot, rtConnErrAlreadyOpen, "connection already open")
++        return
++    }
++    // rtAdspOpenAddr owns the slot's transport tag and phase, including
++    // putting both back on failure -- see its own comment.
+     e = rtAdspOpenAddr(slot, addr)
+     if e != 0 {
+         rtConnSetFailed(slot, e, "could not open connection")
+     }
+ }
+ 
+ // ---- The pump ----
+ 
+ // rtAtalkPump: one event-loop pass. Called from the compiler-synthesized
+ // clar_conn_pump() beside rtConnPump (spec %5.7), so neither the native UI
+@@ -781,69 +813,77 @@ func rtAtalkPump() {
+             code = rtSvcPendFailedCode[i]
+             rtSvcPendFailedCode[i] = 0
+             clar_svc_fire_failed(i, code, rtSvcPendFailedMsg[i])
+             rtSvcPendFailedMsg[i] = ""
+         }
+         if rtSvcState[i] == rtAtActive and not rtAtDevAtpRespBusy(i) {
+             pr = rtAtDevAtpPoll(i)
+             if pr < 0 {
+                 rtSvcSetFailed(i, pr, "request failed")
+             } else if pr == 1 {
++                rtSvcArmed[i] = false
+                 n = rtAtDevAtpReqLen(i)
+                 if n > rtAtMaxReq {
+                     n = rtAtMaxReq
+                 }
+                 req = ""
+                 rtAtAppendBytes(req, rtAtDevAtpReqPtr(i), n)
+                 rtSvcInHandler[i] = true
+                 rtSvcReplied[i] = false
+                 clar_svc_fire_request(i, rtAtDevAtpReqOp(i), req, rtAtDevAtpReqFrom(i))
+                 rtSvcInHandler[i] = false
+                 if not rtSvcReplied[i] {
+                     // Spec %4.4: a handler that returns without replying
+                     // gets an automatic empty reply with code -1, so the
+                     // requester never waits out its timeout.
+                     rtSvcReplied[i] = true
+                     rtAtDevAtpRespond(i, -1, ptr(0), 0)
+                 }
+             }
+-            // Re-arm only once the reply is off the wire; the native lane
+-            // sends responses asynchronously, so this is checked fresh.
+-            if not rtAtDevAtpRespBusy(i) {
+-                rtAtDevAtpArm(i, rtSvcSock[i])
++            // Re-arm only once the reply is off the wire (the native lane
++            // sends responses asynchronously, so this is checked fresh) AND
++            // only when nothing is armed already: rtAtDevAtpArm re-issues
++            // into the slot's own parameter block, and doing that while an
++            // async PGetRequest is live is the reused-PB hang.
++            if not rtSvcArmed[i] and not rtAtDevAtpRespBusy(i) {
++                if rtAtDevAtpArm(i, rtSvcSock[i]) == 0 {
++                    rtSvcArmed[i] = true
++                }
+             }
+         }
+         i = i + 1
+     }
+ 
+     // ---- browsers ----
+     i = 0
+     while i < rtBrsMax {
+         if rtBrsPendFailedCode[i] != 0 {
+             code = rtBrsPendFailedCode[i]
+             rtBrsPendFailedCode[i] = 0
+             clar_brs_fire_failed(i, code, rtBrsPendFailedMsg[i])
+             rtBrsPendFailedMsg[i] = ""
+-        } else if rtBrsPendDone[i] {
+-            rtBrsPendDone[i] = false
+-            clar_brs_fire_done(i)
+         } else if rtBrsState[i] == rtAtActive and rtAtDevLookupDone(i) {
+             rtBrsState[i] = rtAtIdle
+             n = rtAtDevLookupCount(i)
+             j = 0
+             while j < n {
+                 clar_brs_fire_found(i, rtAtDevLookupName(i, j), rtAtDevLookupAddr(i, j))
+                 j = j + 1
+             }
+-            // `done` fires from the NEXT pass (spec %4.3's "then done"),
+-            // which also keeps rtAtalkAlive() true across the gap.
+-            rtBrsPendDone[i] = true
++            // `done` in the SAME pass, right after the founds (spec %4.3's
++            // "then done") -- unless a `found` handler started a NEW search
++            // on this browser, which owns the slot from here and gets its
++            // own `done` when ITS window closes. Firing this one anyway
++            // would be a spurious early `done` for that search.
++            if rtBrsState[i] == rtAtIdle {
++                clar_brs_fire_done(i)
++            }
+         }
+         i = i + 1
+     }
+ 
+     // ---- listeners ----
+     i = 0
+     while i < rtLsnMax {
+         if rtLsnPendFailedCode[i] != 0 {
+             code = rtLsnPendFailedCode[i]
+             rtLsnPendFailedCode[i] = 0
+@@ -895,21 +935,31 @@ func rtAtalkAlive(): bool {
+ 
+     i = 0
+     while i < rtSvcMax {
+         if rtSvcState[i] == rtAtActive or rtSvcPendFailedCode[i] != 0 {
+             return true
+         }
+         i = i + 1
+     }
+     i = 0
+     while i < rtBrsMax {
+-        if rtBrsState[i] == rtAtActive or rtBrsPendFailedCode[i] != 0 or rtBrsPendDone[i] {
++        if rtBrsState[i] == rtAtActive or rtBrsPendFailedCode[i] != 0 {
++            return true
++        }
++        i = i + 1
++    }
++    // A connection slot mid-ADSP-open still owes an `opened` or a `failed`,
++    // and neither rtConnAlive (the slot is not stOpen yet, and conn.cla has
++    // nothing staged) nor anything above would hold the loop open for it.
++    i = 0
++    while i < rtConnMax {
++        if rtAdspPhase[i] != rtAdspNone and rtAdspPhase[i] != rtAdspOpen {
+             return true
+         }
+         i = i + 1
+     }
+     i = 0
+     while i < rtLsnMax {
+         if rtLsnState[i] == rtAtActive or rtLsnPendFailedCode[i] != 0 {
+             return true
+         }
+         i = i + 1
+diff --git a/runtime/clarus/atalk_68k.cla b/runtime/clarus/atalk_68k.cla
+index f9ce9da..1ac7427 100644
+--- a/runtime/clarus/atalk_68k.cla
++++ b/runtime/clarus/atalk_68k.cla
+@@ -22,21 +22,24 @@
+ //   - NBP registers the socket number VERBATIM, so a service writes its
+ //     own ATP socket into the NTE before PRegisterName (which is why
+ //     rtAtDevRegister takes `sock`), and a listener registers its own DDP
+ //     socket (rtLsnDevSocket). A program's own address is read back out of
+ //     the NTE after registerName.
+ //   - Services: POpenATPSkt, PRegisterName (verify on), async PGetRequest
+ //     into the slot's 578-byte buffer; PSendResponse async with the XO
+ //     flag (a sync XO PSendResponse only completes on the requester's TRel
+ //     or the 30 s release timer), which is what rtAtDevAtpRespBusy is for
+ //     -- the pump does not re-arm PGetRequest while a response is still
+-//     outstanding.
++//     outstanding. rtAtDevAtpArm is called EXACTLY ONCE per outstanding
++//     get-request (atalk.cla's rtSvcArmed guards it), so this body may
++//     assume the slot's PGetRequest parameter block is free -- but it
++//     still re-zeroes the whole block before every reuse, per the probe.
+ //   - Browsers: async PLookupName, maxToGet 32, interval 8 (1 s), count 3;
+ //     rtAtDevLookupName/-Addr parse the return buffer's tuples (the
+ //     runtime does its own NBPExtract). Zones: sync GetZoneList over .XPP
+ //     until zipLastFlag, ["*"] on noBridgeErr/reqFailed/no .XPP.
+ //   - ADSP: per slot a 242-byte CCB, 1 KB send and receive queues and a
+ //     570-byte attention buffer; avail = dspStatus.recvQPending, read =
+ //     sync dspRead into the caller's scratch, gone = CCB state >=
+ //     sClosing, write = sync dspWrite with flush.
+ //   - Listener: dspCLInit + PRegisterName + async dspCLListen; on
+ //     completion dspInit + dspOpen(ocAccept) into the free connection
+diff --git a/runtime/host/rt_atalk.h b/runtime/host/rt_atalk.h
+index b1ba873..e700f0d 100644
+--- a/runtime/host/rt_atalk.h
++++ b/runtime/host/rt_atalk.h
+@@ -44,21 +44,26 @@ typedef struct {
+ } rt_at_req;
+ 
+ /* --- lifecycle ---------------------------------------------------- */
+ rt_atalk *rt_at_open(const char *iface_ip); /* NULL + errno; joins the group, acquires a node id */
+ void      rt_at_close(rt_atalk *a);
+ int       rt_at_fd(const rt_atalk *a);      /* for select() */
+ uint8_t   rt_at_node(const rt_atalk *a);
+ void      rt_at_poll(rt_atalk *a);          /* drain UDP, run timers; never blocks */
+ 
+ /* --- NBP ----------------------------------------------------------- */
+-#define RT_AT_NLK 10                        /* lookup slots, 0..9 */
++/* Public lookup slots 0..RT_AT_NLK-1 (RT_AT_NLK itself is register's own
++ * private verify slot). The Clarus runtime's map: 0-1 browsers, 2-9 the
++ * eight connection slots' ADSP name-opens, 10 synchronous name-calls --
++ * which is why this is 11 and not 10 (a name-call during a live ADSP
++ * name-open on conn slot 7 used to collide on slot 9). */
++#define RT_AT_NLK 11
+ int  rt_at_nbp_register(rt_atalk *a, const char *obj, const char *type, uint8_t socket); /* 0, or -1027 */
+ int  rt_at_nbp_remove(rt_atalk *a, const char *obj, const char *type);                   /* 0, or -1028 */
+ int  rt_at_nbp_lookup_start(rt_atalk *a, int lk, const char *obj, const char *type, const char *zone);
+ int  rt_at_nbp_lookup_done(rt_atalk *a, int lk);   /* 1 once the 3x1s window has elapsed */
+ int  rt_at_nbp_lookup_count(rt_atalk *a, int lk);
+ const rt_at_tuple *rt_at_nbp_lookup_get(rt_atalk *a, int lk, int i);
+ 
+ /* --- ATP responder ------------------------------------------------- */
+ int  rt_at_atp_open(rt_atalk *a);                   /* socket 128..254, or negative OSErr */
+ void rt_at_atp_close(rt_atalk *a, int sock);
+diff --git a/runtime/host/rt_atalk.inc b/runtime/host/rt_atalk.inc
+index bd1a028..4fdbc61 100644
+--- a/runtime/host/rt_atalk.inc
++++ b/runtime/host/rt_atalk.inc
+@@ -157,22 +157,22 @@ struct rt_atalk {
+     int                fd;
+     uint8_t            sender[4];  /* LToUDP sender id; our own datagrams are dropped */
+     uint8_t            node;       /* 0 while unacquired */
+     int                acquiring;  /* 1 inside rt_at_acquire: lapENQ means "collision" */
+     int                collided;
+     struct sockaddr_in group;
+ 
+     rt_at_name         names[RT_AT_NNAMES];
+     uint8_t            enum_next;
+     uint8_t            nbp_id;
+-    /* Slot RT_AT_NLK is register's private verify-lookup; 0..9 are the
+-     * caller's. */
++    /* Slot RT_AT_NLK is register's private verify-lookup; 0..RT_AT_NLK-1
++     * are the caller's. */
+     rt_at_lookup       lk[RT_AT_NLK + 1];
+ 
+     rt_at_sockslot     socks[RT_AT_NSOCK];
+     uint8_t            sock_next;  /* round-robin hint into 128..254 */
+ 
+     rt_at_rqstate      rq;
+     uint16_t           tid_next;
+ 
+     /* test hooks (see rt_atalk.h) */
+     long               tx_count;
+diff --git a/runtime/host/rt_atalk_test.c b/runtime/host/rt_atalk_test.c
+index 3f2fc55..9ca959a 100644
+--- a/runtime/host/rt_atalk_test.c
++++ b/runtime/host/rt_atalk_test.c
+@@ -315,20 +315,30 @@ static void test_ext(void) {
+         memset(name, 0, sizeof(name));
+         rt_ext_AtalkHLookupName(0, i, name);
+         if (name[0] == (uint8_t)strlen(want) && memcmp(name + 1, want, strlen(want)) == 0) {
+             seen = 1;
+             CHECK(((addr >> 16) & 0xFFFF) == 0, "packed address has a nonzero net");
+             CHECK(((addr >> 8) & 0xFF) == rt_at_node(A), "packed address has the wrong node");
+             CHECK((addr & 0xFF) == 200, "packed address has the wrong socket");
+         }
+     }
+     CHECK(seen, "AtalkHLookupName never produced \"obj:ClarusTest\"");
++
++    /* Slot 10 is public (the Clarus runtime's synchronous name-call slot,
++     * fix round 1: it used to collide with conn slot 7's ADSP name-open on
++     * slot 9), and RT_AT_NLK itself is not -- it is register's own private
++     * verify slot. No wait: that a lookup STARTS on 10 is the whole claim. */
++    CHECK(rt_ext_AtalkHLookupStart(10, po, pt, pz) == 0,
++          "lookup slot 10 is not usable");
++    CHECK(rt_ext_AtalkHLookupStart(RT_AT_NLK, po, pt, pz) != 0,
++          "lookup slot RT_AT_NLK (register's private verify slot) is public");
++
+     rt_at_nbp_remove(A, nbp_obj, "ClarusTest");
+ 
+     /* A SendResponse with no live request must be refused: without the
+      * guard it would answer the PREVIOUS transaction a second time and
+      * re-arm a fresh 30 s XO entry under that old TID. */
+     {
+         int32_t sk = rt_ext_AtalkHAtpOpen();
+         uint8_t body[8];
+         CHECK(sk >= 128 && sk <= 254, "AtalkHAtpOpen did not return a dynamic socket");
+         if (sk >= 0) {
+diff --git a/testdata/emitui/connpump_abort.c.golden b/testdata/emitui/connpump_abort.c.golden
+index 0cecdb3..d97b981 100644
+--- a/testdata/emitui/connpump_abort.c.golden
++++ b/testdata/emitui/connpump_abort.c.golden
+@@ -727,23 +727,23 @@ static clar_arr_int_4 cv_rtConnPendFailedCode;
+ static clar_arr_str255_4 cv_rtConnPendFailedMsg;
+ static int32_t cv_rtConnParsePortIdx;
+ static int32_t cv_rtConnParseBaud;
+ static int32_t cv_rtAtUp;
+ static clar_arr_int_2 cv_rtLsnState;
+ static clar_arr_int_2 cv_rtLsnPendFailedCode;
+ static clar_arr_str255_2 cv_rtLsnPendFailedMsg;
+ static clar_arr_int_2 cv_rtBrsState;
+ static clar_arr_int_2 cv_rtBrsPendFailedCode;
+ static clar_arr_str255_2 cv_rtBrsPendFailedMsg;
+-static clar_arr_bool_2 cv_rtBrsPendDone;
+ static clar_arr_int_2 cv_rtSvcState;
+ static clar_arr_int_2 cv_rtSvcSock;
++static clar_arr_bool_2 cv_rtSvcArmed;
+ static clar_arr_bool_2 cv_rtSvcInHandler;
+ static clar_arr_bool_2 cv_rtSvcReplied;
+ static clar_arr_int_2 cv_rtSvcPendFailedCode;
+ static clar_arr_str255_2 cv_rtSvcPendFailedMsg;
+ static clar_arr_str255_2 cv_rtSvcName;
+ static clar_arr_str255_2 cv_rtSvcType;
+ static clar_arr_str255_2 cv_rtLsnName;
+ static clar_arr_str255_2 cv_rtLsnType;
+ static clar_arr_int_8 cv_rtAdspPhase;
+ static clar_arr_int_8 cv_rtConnSlotTransport;
+@@ -881,27 +881,27 @@ static void clar_init_globals(void) {
+     for (int32_t ix8 = 0; ix8 < 2; ix8++) {
+         cv_rtBrsState.e[ix8] = 0;
+     }
+     for (int32_t ix9 = 0; ix9 < 2; ix9++) {
+         cv_rtBrsPendFailedCode.e[ix9] = 0;
+     }
+     for (int32_t ix10 = 0; ix10 < 2; ix10++) {
+         cv_rtBrsPendFailedMsg.e[ix10] = (clar_str_255){0};
+     }
+     for (int32_t ix11 = 0; ix11 < 2; ix11++) {
+-        cv_rtBrsPendDone.e[ix11] = 0;
++        cv_rtSvcState.e[ix11] = 0;
+     }
+     for (int32_t ix12 = 0; ix12 < 2; ix12++) {
+-        cv_rtSvcState.e[ix12] = 0;
++        cv_rtSvcSock.e[ix12] = 0;
+     }
+     for (int32_t ix13 = 0; ix13 < 2; ix13++) {
+-        cv_rtSvcSock.e[ix13] = 0;
++        cv_rtSvcArmed.e[ix13] = 0;
+     }
+     for (int32_t ix14 = 0; ix14 < 2; ix14++) {
+         cv_rtSvcInHandler.e[ix14] = 0;
+     }
+     for (int32_t ix15 = 0; ix15 < 2; ix15++) {
+         cv_rtSvcReplied.e[ix15] = 0;
+     }
+     for (int32_t ix16 = 0; ix16 < 2; ix16++) {
+         cv_rtSvcPendFailedCode.e[ix16] = 0;
+     }
+diff --git a/tests/atalk/splice.sh b/tests/atalk/splice.sh
+index 4cbc370..9cec908 100755
+--- a/tests/atalk/splice.sh
++++ b/tests/atalk/splice.sh
+@@ -3,24 +3,24 @@
+ # splice of atalk.cla + atalk_c.cla, and the C-lane --rtbake gap that
+ # splice would otherwise widen.
+ #
+ # A program that merely DECLARES `service`/`serviceBrowser` sets the
+ # checker's usesAtalk, which now pulls conn.cla + conn_c.cla + atalk.cla +
+ # atalk_c.cla into the host manifest as one unit. Every AppleTalk method is
+ # still fenced in lowering (Task 8), so the fixture calls none: what is
+ # asserted here is that all four modules check, lower, emit compilable C
+ # and link, and that the runtime globals actually reached the output.
+ #
+-# Function-level coverage of atalk.cla's own bodies arrives with Task 8:
+-# shake.cla drops every runtime function nothing roots, and rtAtalkPump is
+-# rooted (beside rtConnPump/rtConnAlive) only once lowering wires the pump.
+-# The globals below are the available splice witness until then.
++# What this does NOT prove: atalk.cla's function BODIES. shake.cla drops
++# every runtime function nothing roots, and rtAtalkPump is rooted (beside
++# rtConnPump/rtConnAlive) only once Task 8's lowering wires the pump -- so
++# until then the checked-and-spliced globals below are the whole witness.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ 
+ FIX=$ROOT/tests/atalk/testdata/splice.cla
+ 
+ # --- 1. the host build ------------------------------------------------
+ if host_build "$WORK/splice" "$FIX" > "$WORK/build.log" 2>&1; then
+     t_pass build
+ else
+     t_fail build "$(tail -20 "$WORK/build.log")"
+ fi

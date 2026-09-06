@@ -1,0 +1,681 @@
+# Review package: 9468eb7..HEAD
+
+## Commits
+e68df5f test(bake): retire the C-lane rtbake SKIP branch
+f529b6e docs: AppleTalk phase documentation moves
+
+## Files changed
+ docs/FUTURE.md                                     |  62 ++++++
+ docs/ROADMAP.md                                    |   4 +-
+ docs/TODO.md                                       | 118 ----------
+ docs/clarus-toolbox-cookbook.md                    | 248 +++++++++++++++++++++
+ .../specs/2026-09-06-appletalk-design.md           |   3 +
+ tests/bake/full_corpus_emitui.sh                   |  38 +---
+ 6 files changed, 318 insertions(+), 155 deletions(-)
+
+## Diff
+diff --git a/docs/FUTURE.md b/docs/FUTURE.md
+index 92c5fa9..8d13bd7 100644
+--- a/docs/FUTURE.md
++++ b/docs/FUTURE.md
+@@ -192,20 +192,71 @@ Real debt and needed improvements stay in `docs/TODO.md`.
+ 
+ - **`natItoa`/`rtUiIntToText` stay unmerged** (Task 3 ruling, reverted a
+   same-body collapse) — three near-identical int-to-string bodies live
+   in the runtime (`natItoa`, `rtUiIntToText`, and `string(n)`'s own
+   `rtIntToStr`) rather than one shared routine, because collapsing them
+   pulled `str.cla` into every native binary's always-reachable set
+   (`globals.cla` 2→3 CODE segments) for no user benefit. Duplication
+   only, no functional gap; revisit if a future phase needs the shared
+   body for another reason anyway.
+ 
++- **UI/non-UI connection-pump lane gap** (Task 9's report) — the native
++  lane only pumps `connection` traffic (`nat_UiConnPump`) for
++  UI-classified programs (window/menu/`every` present); the host C lane
++  only ever compiles NON-UI programs (`cprint` emits `#include
++  "rt_ui.h"`, which lives only under `runtime/mac/`, so `cc` against
++  `runtime/host` fails outright for any program with a `window`/`menu`).
++  There is no single program shape that both boots on the host dev lane
++  AND pumps connections on native — a serial/BBS-style program has to
++  carry at least one throwaway status window purely to get native
++  pumping (`examples/pagefile.cla`'s workaround). Serial-connection
++  phase's own spec §3/§7 promised one program shape on both lanes; it
++  doesn't hold today. Also affects `examples/serialecho.cla`'s doc
++  comment, fixed this task to state the real constraint instead of
++  claiming host-lane runnability it never had.
++
++  Moved here verbatim from `docs/TODO.md` on 2026-09-07 (Andrew's ruling
++  during the AppleTalk phase): the gap is a lane-shape consequence of how
++  the two backends classify programs, not debt anyone owes. That phase
++  also narrowed it — `every` alone no longer classifies a HOST
++  program as a UI program (`irIsUiProgram`'s `irEveryCount > 0 and
++  want68k`, `clarusc/cprint.cla`; spec §6.4), while the native lane
++  still treats an every-only program as a real UI program, so the shape
++  that both compiles on the host AND pumps natively is now "carry one
++  `every` timer" rather than "carry a throwaway window". A single shape
++  that needs neither still does not exist.
++
++### AppleTalk phase (2026-09-07)
++
++- **Host-lane ADSP** (spec §11, out of scope this phase) — the host
++  stack drops DDP type 7 on the floor, and the whole `rtAdspDev*`/
++  `rtLsnDev*` waist in `runtime/clarus/atalk_c.cla` returns
++  `rtAtErrNoHost`, so `connection.open(appletalk ...)` and
++  `listener.register` are native-only. Implementing it is roughly
++  800-1500 lines of C in `runtime/host/rt_atalk.inc` (which is 1252
++  lines today) mirroring the ATP layer already there: connection state
++  machine, sequenced send/receive queues, open/close handshake,
++  retransmit and forward reset. The payoff is a host lane that can serve
++  and dial ADSP — and `system.hasADSP()` (recorded in `docs/TODO.md`)
++  could then answer true on the host instead of always false. Pull it
++  only if host-side ADSP development (or a host end of a two-peer test)
++  is actually wanted; the emulator lane covers ADSP today.
++
++- **A `service.call` retry knob** (spec §4.4, out of scope this phase)
++  — request timeout and retry count are fixed at 2 s × 3, and the NBP
++  lookup at 1 s × 3, with no way for a program to widen them for a slow
++  or busy peer or tighten them for a snappy UI. Shape if it ever bites:
++  optional named arguments on `serve`/`call`, or a `svc.timeout(ms,
++  retries)` setter — both are pure plumbing down to the `timeOutVal`@45
++  / `retryCount`@47 ATP fields (`toolbox/appletalk.cla`) the native lane
++  already writes.
++
+ ## Hardening candidates
+ 
+ ### binary-files phase (2026-08-22)
+ 
+ - **Handle generation-counter idea (spec §7, out of scope this phase)**
+   — `filehandle`/`connection` values are bare small ints (slot+1); a
+   closed-then-reused slot number is indistinguishable from the original
+   handle at the type level (no staleness detection). A generation
+   counter packed into the value (or a parallel generation table checked
+   by every `rtFh*`/`rtConn*` call) would catch use-after-close bugs
+@@ -245,10 +296,21 @@ Real debt and needed improvements stay in `docs/TODO.md`.
+ ### compiler-cleanup phase (2026-09-05)
+ 
+ - **Smart linking / IR-body removal from the 68k lane + link-time
+   layout improvements**: gated behind a future oracle-relaxation
+   decision (object-code-linker design boundary).
+ 
+ ## Tooling
+ 
+ - **Host CLI progress bar** (clarusc-live-log follow-up): reuse the
+   `feProgressStep`/`feProgressTick` seams for a stderr bar/spinner.
++
++### AppleTalk phase (2026-09-07)
++
++- **`hostrt/atalk` costs ~23 s of T1** (Task 2's report) — three NBP
++  registers, each paying a 3 × 1 s verify lookup, plus the lookups the
++  test itself makes. It is the slowest host test. A ~3 s trim exists if
++  T1 wall time ever matters: `rt_atalk_test.c`'s third register (in
++  `test_ext`, which only exists to give the `rt_ext` lookup something to
++  find) could reuse a name an earlier subtest already registered instead
++  of registering its own. Not taken — the verify window is the ruled
++  behavior, and one register per subtest keeps the subtests independent.
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index a44b29a..64bc6cc 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -148,21 +148,23 @@ Focus (Andrew, 2026-08-15): make the tools more usable — expand the set
+ of Toolbox managers Clarus programs can reach, add the language features
+ that work needs, and retire old parts of the toolchain. The user-module
+ compilation cache is deliberately de-prioritized (see "Later").
+ 
+ ### Next: language usability
+ 
+ Items 1 (binary streams and files) and 2 (serial ports) of the original
+ list are DONE — `binary-files`, `transfer-crcs`, `filesystem-api`, and
+ `serial-connection` in `docs/HISTORY.md`. Remaining, in order:
+ 
+-1. **AppleTalk.**
++1. **AppleTalk.** In progress on branch `appletalk` (spec
++   `docs/superpowers/specs/2026-09-06-appletalk-design.md`, plan
++   `docs/superpowers/plans/2026-09-07-appletalk.md`). Not merged.
+ 2. **MacTCP.**
+ 
+ Environment note: `snow/MacII.snoww` + its hdd image are already
+ configured (2026-08-15): AppleTalk on the Printer port, a TCP listener
+ (port 1984) bridging the Modem port, and a DaynaPORT SCSI Ethernet
+ adapter running a NATted MacTCP instance (the emulated Mac is 10.0.0.2,
+ gateway 10.0.0.1). Caveat: on a modern Mac the emulator cannot attach to
+ a tap device, so it can't reach the real Ethernet — AppleTalk runs over
+ UDP instead, which means two Snow instances running simultaneously can
+ see each other over AppleTalk (the way to test AppleTalk peer-to-peer).
+diff --git a/docs/TODO.md b/docs/TODO.md
+index 963c4bd..5643f13 100644
+--- a/docs/TODO.md
++++ b/docs/TODO.md
+@@ -3,72 +3,20 @@
+ Condensed from completed phases' deferred/debt lists. The verbatim
+ context for every item is the originating phase's entry in
+ `docs/HISTORY.md` (named in the sub-heading or in parentheses) and that
+ phase's `.superpowers/sdd/<date>-<phase>/` ledger. Items here are
+ recorded, not committed — scheduling is `docs/ROADMAP.md`'s job. This is
+ a to-do list, not a history: a fixed item is deleted, not struck through.
+ 
+ Ideas, "if it ever bites" levers, and other maybe-someday items live in
+ `docs/FUTURE.md` instead (split 2026-09-05).
+ 
+-## Serial / connection
+-
+-Grouped (Andrew, 2026-09-05) so they can be addressed together in one
+-serial/connection follow-up phase. The originating phase is the
+-sub-heading.
+-
+-### Serial/connection phase (2026-08-16)
+-
+-- **Host-lane `stdio` and `pty` transports for the serial ports**
+-  (Andrew 2026-08-30, from 68kbbs's standalone BASIC interpreter):
+-  `CLARUS_SERIAL_MODEM`/`CLARUS_SERIAL_PRINTER` accept only
+-  `listen:PORT` and `connect:HOST:PORT` today (`runtime/host/
+-  rt_serial.inc`'s `rt_ext_ConnHOpen`), so a host CLI program's only
+-  terminal is a TCP peer — 68kbbs's `scripts/basic.sh` has to start the
+-  binary listening and attach `nc` to it. Add two more spec values in
+-  the same parser: `stdio` (read fd 0, write fd 1; optionally raw-mode
+-  `tcsetattr` on open, restored at exit, for per-keystroke input) and
+-  `pty` (`posix_openpt`/`grantpt`/`unlockpt`, print the slave path;
+-  a master with no slave attached behaves like the `listening` state).
+-  Same env-var-at-open mechanism, no build flag — one binary serves
+-  any transport by how it is launched. The four functions that assume
+-  a socket must branch for non-socket fds: `ReadByte`/`Write`
+-  (`recv`/`send` → `read`/`write`, `ENOTSOCK` on a tty), and `Gone`,
+-  whose `MSG_PEEK` trick has no tty/pipe equivalent — keep a per-slot
+-  `gone` flag set when `read` returns 0. `FIONREAD` (`Avail`) and
+-  `select` (`Idle`) already work on ttys and pipes. Roughly 100 lines of
+-  C plus a `pipe()`-pair case in `rt_serial_test.c` and a spec
+-  paragraph; then a deliberate re-pin in 68kbbs.
+-
+-- **Host `every`-timer gap in the CLI pump** (design doc
+-  `docs/superpowers/specs/2026-08-15-serial-connection-design.md` §6/§7)
+-  — `every` machinery is UI-runtime-entangled today; the host CLI pump
+-  services open connections only, not `every` timers. Deliberately not
+-  promised this phase.
+-
+-### binary-files phase (2026-08-22)
+-
+-- **UI/non-UI connection-pump lane gap** (Task 9's report) — the native
+-  lane only pumps `connection` traffic (`nat_UiConnPump`) for
+-  UI-classified programs (window/menu/`every` present); the host C lane
+-  only ever compiles NON-UI programs (`cprint` emits `#include
+-  "rt_ui.h"`, which lives only under `runtime/mac/`, so `cc` against
+-  `runtime/host` fails outright for any program with a `window`/`menu`).
+-  There is no single program shape that both boots on the host dev lane
+-  AND pumps connections on native — a serial/BBS-style program has to
+-  carry at least one throwaway status window purely to get native
+-  pumping (`examples/pagefile.cla`'s workaround). Serial-connection
+-  phase's own spec §3/§7 promised one program shape on both lanes; it
+-  doesn't hold today. Also affects `examples/serialecho.cla`'s doc
+-  comment, fixed this task to state the real constraint instead of
+-  claiming host-lane runnability it never had.
+-
+ ## Test coverage gaps (recorded by audits, mostly need real input/hardware)
+ 
+ - **cprint-lane `UiLaunchReal`** (real AppleEvent glue in
+   `rt_ext_mac.inc`) has no test — every Retro68 build uses `--events`;
+   needs a no-events Mac-lane smoke or real Finder launch.
+ 
+ - **Real modal halves** (`rtUiAskSaveChanges`'s `Alert(130)`,
+   `rtUiAskOpen`/`rtUiAskSave`'s real SF halves) and **real
+   mouse-tracking continuations** (`TrackControl`/`LClick`/
+   `UiPopUpMenuSelect` branches) are `rtUiScripted`-gated and never
+@@ -295,77 +243,20 @@ it. Recorded so the work is not lost, not scheduled.
+ 
+ - **Second baked panic-message identity** — the object/bake format's
+   `cgRelClsPanicMsg` carries exactly one codegen-emitted message
+   (`cgListOobMsgIdx`, hardcoded at `cg68k.cla` record/resolve sites).
+   The phase's inline `s[i]` sidestepped it by delegating its cold path
+   to `rtStrIndex`; the next inline bounds check wanting its own message
+   must either do the same or extend the format.
+ 
+ #### compiler-cleanup phase (2026-09-05)
+ 
+-- **`--rtbake --lane c` silently drops the `connection`/`filehandle`
+-  runtime** — a HOST program that uses either type compiles under
+-  `--rtbake` to C that CALLS `clar_fn_rtConnOpen`/`clar_fn_rtFhOpen`
+-  (etc.) without ever declaring or defining them, so the emitted C does
+-  not compile. **Pre-existing, not introduced by this phase**, and
+-  reproducible on `main`: `tests/conntest/testdata/echo.cla` (unchanged
+-  since go-retirement) forks 74,570 bytes from source vs 57,795 from the
+-  bake, the difference being the entire `rtConn*` family; a minimal
+-  `file.create`/`append`/`close` program forks 59,282 vs 52,371 the same
+-  way. **Why:** `bake.cla`'s `bakeModuleList` deliberately leaves
+-  `conn.cla`/`conn_c.cla` and `fileh.cla`/`fileh_c.cla` out of the
+-  **C-lane** baked chain (its own comment says so) because
+-  `driveManifestSplice` gates that pair on `usesConn`/`usesFileh` for the
+-  host lane, keeping every non-conn host program's manifest and IR
+-  indices byte-identical. But `driveCompile`'s `haveRtbake` branch
+-  **bypasses `driveManifestSplice` entirely**, so on the bake path
+-  nothing ever consults `usesConn`/`usesFileh` and nothing ever splices
+-  the pair. The 68k lane is unaffected — it splices conn/fileh
+-  unconditionally on both sides, which is why `tests/bake/connfileh.sh`
+-  (an `emit68k_pair`) has always passed.
+-  **Found by** the compiler-cleanup phase's close-out T2: spec §3.5's new
+-  `testdata/emitui/connpump_abort.cla` is the first fixture in the C-lane
+-  `bake/full_corpus_emitui` sweep to declare a `connection`. That sweep
+-  now SKIPs the shape with an explicit reason naming this entry, and the
+-  skip retires itself when the gap closes (it only fires when the
+-  from-source fork declares the entry point, the bake fork does not, AND
+-  the bake fork still CALLS it -- that third clause added by Task 11,
+-  2026-09-05, so a fixture that merely dropped an unused declaration
+-  cannot take the SKIP).
+-  **Two candidate fixes**, neither taken here (this phase's spec forbids
+-  touching `clarusc/bake.cla`, which would fire the 55-minute Snow
+-  `clarusc_bake` gate):
+-  (a) add `conn.cla`/`conn_c.cla` and `fileh.cla`/`fileh_c.cla` to the
+-  C-lane `bakeModuleList` unconditionally, mirroring the 68k lane —
+-  correct and simple, but it moves every existing host program's baked
+-  manifest and IR indices, so it needs its own bless;
+-  (b) extend the existing from-source fallback in `drive.cla` (the
+-  `bkManifestDriftPath` site that logs "falling back to a from-source
+-  compile" and re-enters `driveCompile` with `haveRtbake = false`) with
+-  `haveRtbake and not want68k and (usesConn or usesFileh)` — no
+-  `bake.cla` edit, no golden movement, reuses machinery that already
+-  exists, at the cost of a full recompile for those programs. `usesConn`/
+-  `usesFileh` are already set at that point (the user program is checked
+-  before the `haveRtbake` branch).
+-  **Repro** (runnable from this entry alone, from the repo root, using
+-  the snapshot-bootstrapped `build-run/clarusc-current`):
+-  ```
+-  $ build-run/clarusc-current --bake-ir --lane c -o RTC.clir
+-  $ build-run/clarusc-current emit --rtdir runtime/clarus/ -o SRC tests/conntest/testdata/echo.cla
+-  $ build-run/clarusc-current emit --rtdir runtime/clarus/ --rtbake RTC.clir -o BAKE tests/conntest/testdata/echo.cla
+-  $ wc -c SRC BAKE
+-     74570 SRC
+-     57795 BAKE
+-  $ grep -c 'clar_fn_rtConnOpen' BAKE
+-  1                       # one CALL, zero definitions -- BAKE does not compile
+-  ```
+-
+ - **Stamp-proxy gap** (runtime-ir-bake, still open): the CLIR stamp
+   hashes the committed `clarusc/clarusc.c` snapshot, not the live
+   runtime source set; the per-module drift hashes close only the
+   include-collision slice. Longer-term fix: hash the live runtime
+   module sources.
+ 
+ - **Drift log can mislead under a `--rtdir` override**
+   (fallback-trigger-narrowing): "absent hash entry" doesn't distinguish
+   not-in-manifest from hashed-under-a-different-`--rtdir`; wants a
+   `--rtdir`-mismatch test.
+@@ -410,29 +301,20 @@ it. Recorded so the work is not lost, not scheduled.
+ - **`bkReadObjCode` spins on a corrupt `nHoles` count** before the
+   framing check fires (pre-existing).
+ 
+ - **Comment-drift minors** (clir-load-perf): `bkParsedValid` should
+   state "lane cannot change mid-session"; `bkLoadOverrun` names only
+   `bkGetByte` as a setter (four exist); `rtTextStringAt` cites a moved
+   idiom; `bkCheckRtbakeHeader`'s header doc still names
+   `bkHashTextFrom`; `drive.cla`'s "rtbakeBytes still held"
+   parenthetical is wrong for the memoized drift-interleaving case.
+ 
+-#### filesystem-api phase (2026-08-26)
+-
+-- **Pre-existing: the C (host) lane's `--rtbake` cannot compile any
+-  `filehandle` program** — `fileh*.cla` is not in `clarusc/bake.cla`'s
+-  `bakeModuleList` on that lane (found by Task 3's reviewer while
+-  checking the `prelude.cla` bake path; not introduced by this phase,
+-  not fixed by it either — the native/`emit68k` `--rtbake` lane is
+-  unaffected).
+-
+ ### Test coverage
+ 
+ - **No automated test of the 10-stage progress sequence**
+   (clarusc-live-log) — order/count/`total` growth only exercised by
+   real compile boots; the "Checking Whole Program" stage placement
+   depends on the unconditional `native.cla` splice (comment not added).
+ 
+ - **`/tmp/l1src` frozen-source byte-identity procedure is stale**
+   (predates param-abi's immutable-params rule); any future phase using
+   it needs a fresh re-freeze.
+diff --git a/docs/clarus-toolbox-cookbook.md b/docs/clarus-toolbox-cookbook.md
+index c0a7b8c..26d8d62 100644
+--- a/docs/clarus-toolbox-cookbook.md
++++ b/docs/clarus-toolbox-cookbook.md
+@@ -957,16 +957,264 @@ Two footguns:
+   carries no signature information of its own — the parameter list after
+   it IS the contract for what that entry point expects. A plugin family
+   with two different call shapes (say, a `(verb, param): int` shape and a
+   `(event): void` shape) needs two separate `= ptr` declarations, one per
+   shape, the same way two differently-shaped traps need two separate
+   `= trap` declarations. Calling a loaded routine through a declaration
+   whose parameter list doesn't match what that code actually expects
+   pushes the wrong arguments — the mismatch is entirely the caller's to
+   avoid, same as any other `= ptr` contract.
+ 
++## 14. Walkthrough: a driver Control call — NBP `lookupName`
++
++`toolbox/appletalk.cla` transcribes a family with no traps of its own.
++Every AppleTalk routine — LAP, DDP, NBP, ATP, ZIP, ADSP — is an ordinary
++Device Manager `Control` or `Status` call against one of four named
++drivers (`.MPP`, `.ATP`, `.XPP`, `.DSP`), dispatched on a `csCode` field
++inside the parameter block. There is nothing to apply §1's bit-11 test to
++per routine: the only traps in play are `PBOpenSync`/`PBControlSync`/
++`PBStatusSync`/`PBKillIOSync` from `toolbox/devices.cla`, plus the one new
++trap this catalog adds, `PBControlAsync` (`0xA404 reg` — `PBControlSync`'s
++`0xA004` with the Device Manager's async bit 10 set). So transcribing an
++AppleTalk call means transcribing a **record layout** and a **constant**,
++not a trap.
++
++### The extern record
++
++Universal Interfaces spells the NBP blocks as one `NBPparms` struct with a
++`union NBPPtrs` at offset 30 and a `union LookupConfirmParams` at 34
++(`AppleTalk.h:545-580`). `extern record` has neither unions nor array field
++types, so §11's "one record per payload shape" rule applies again —
++`NBPLookupParam` is the LookupName arm, spelled out field by field with the
++union arms it actually uses:
++
++```rust
++extern record NBPLookupParam {
++    qLink: ptr          //  0  driver-owned queue link
++    qType: word         //  4
++    ioTrap: word        //  6
++    ioCmdAddr: ptr      //  8
++    ioCompletion: ptr   // 12
++    ioResult: word      // 16  1 (ioInProgress) until an async call finishes
++    userData: int       // 18  NOT ioNamePtr — see below
++    reqTID: word        // 22
++    ioRefNum: word      // 24  the .MPP refNum PBOpenSync handed back
++    csCode: word        // 26  the call selector: lookupName = 251
++    interval: byte      // 28
++    count: byte         // 29
++    entityPtr: ptr      // 30  union NBPPtrs, Lookup arm
++    retBuffPtr: ptr     // 34  union LookupConfirmParams, Lookup arm
++    retBuffSize: word   // 38
++    maxToGet: word      // 40
++    numGotten: word     // 42
++    pad[8]              //     44 → 52, per Rule 1 below
++}
++```
++
++Two things there are not obvious from the header:
++
++- **The Device Manager prefix is not `IOParam`'s.** Where `toolbox/
++  files.cla`'s `IOParam` and `toolbox/devices.cla`'s `CntrlParam` carry
++  `ioNamePtr`@18 + `ioVRefNum`@22, the MPP/ATP blocks carry `userData`@18
++  (the ATP user bytes) and `reqTID`@22. Copying the File Manager prefix
++  wholesale would put every field from offset 18 onward in the wrong place
++  — silently, because the widths happen to match.
++- **`pad[8]` is load-bearing.** Real `NBPparms` is 44 bytes; the record is
++  padded to 52. See Rule 1.
++
++### The entity is packed, not a struct
++
++`AppleTalk.h:305-310` says so in the header's own words: `struct
++EntityName`'s three `Str32Field` slots are "correct looking interfaces for
++Pascal and C, but they will not be the same, which is OK since they are not
++used." The driver wants object, type and zone as three Pascal strings back
++to back, each exactly `1 + length` bytes long — so the entity is built with
++`NewPtrClear` + `pokeb`, the same technique `toolbox/devices.cla` documents
++for `ioNamePtr`:
++
++```rust
++include "toolbox/memory.cla"     // NewPtrClear, DisposePtr
++include "toolbox/files.cla"      // IOParam
++include "toolbox/devices.cla"    // PBOpenSync, PBControlSync
++include "toolbox/appletalk.cla"  // NBPLookupParam, lookupName, mppRefNum, ...
++
++// atPStr writes `s` as a Pascal string at `p` and returns the address one
++// byte past its end, so three back-to-back calls build the packed entity.
++func atPStr(p: ptr, s: string): ptr {
++    var i: int
++    pokeb(p, s.length)
++    i = 0
++    while i < s.length {
++        pokeb(p + 1 + i, int(s[i]))
++        i = i + 1
++    }
++    return p + 1 + s.length
++}
++```
++
++### The synchronous call
++
++Open `.MPP` by name, fill a fresh block, `PBControlSync`. The whole call is
++in the block; the trap only carries its address:
++
++```rust
++func lookupType(typ: string): int {
++    var mppPb: IOParam
++    var pb: NBPLookupParam
++    var nm: ptr
++    var end: ptr
++    var entity: ptr
++    var buf: ptr
++    var err: int
++
++    // .MPP is ROM-resident on any AppleTalk-capable Mac, so this succeeds
++    // with no AppleTalk System file present and hands back the documented
++    // static refNum.
++    nm = NewPtrClear(8)
++    end = atPStr(nm, ".MPP")
++    mppPb.ioNamePtr = nm
++    err = PBOpenSync(mppPb)
++    if err != 0 or mppPb.ioRefNum != mppRefNum {
++        return err
++    }
++
++    entity = NewPtrClear(64)
++    end = atPStr(entity, "=")   // any object name
++    end = atPStr(end, typ)      // this type
++    end = atPStr(end, "*")      // this zone
++
++    // A reply tuple is AddrBlock(4) + enumerator(1) + three packed Pascal
++    // strings — at most 104 bytes — so maxToGet and retBuffSize must agree:
++    // 8 × 104 = 832 fits in 1024; 16 would not (1664), and NBP would answer
++    // nbpBuffOvr instead of filling the buffer.
++    buf = NewPtrClear(1024)
++    pb.ioRefNum = mppPb.ioRefNum
++    pb.csCode = lookupName
++    pb.interval = 8             // 8 ticks between retries
++    pb.count = 3                // 3 retries
++    pb.entityPtr = entity
++    pb.retBuffPtr = buf
++    pb.retBuffSize = 1024
++    pb.maxToGet = 8
++    err = PBControlSync(pb)
++    if err != 0 {
++        return err
++    }
++    return pb.numGotten         // tuples now sitting in `buf`
++}
++```
++
++`pb` is an ordinary `extern record` LOCAL: zero-initialized on declaration
++(the reference's "extern record" entry), and passed to `PBControlSync`'s
++`ptr` parameter by the implicit address-of every `external func` call site
++gives an extern record. `testsuite/toolbox/cases_atalk.cla`'s `AtalkSelf`
++case is this same sequence, hardware-proved against real ROM AppleTalk.
++
++### The asynchronous variant
++
++`lookupName` costs about `count × interval × 8` ticks — roughly 3.2 s at
++interval 8 / count 3 — **whether or not** an answer arrives early, so a UI
++program cannot afford the sync form. The async form is the same block with
++`PBControlAsync` instead, which returns immediately (0 = "queued") and
++leaves the real result in the block's own `ioResult`@16.
++
++That changes how the block is allocated. An `extern record` is a local with
++no address-of operator outside a call site, so it cannot outlive the
++function that declared it — and the driver owns an async block until it
++completes. Async code therefore allocates with `NewPtrClear` and reaches
++fields through the offset constants at the bottom of `toolbox/appletalk.cla`
++(`pbIoResult`, `pbCsCode`, `nbpNtQElPtr`, `nbpLookupRetBuffPtr`, …), which
++name the same byte offsets the record fields occupy:
++
++```rust
++const nbpPbSize: int = 52       // Rule 1's floor; the block IS the call
++const nbpInterval: int = 28     // interval / count sit right after csCode@26
++const nbpCount: int = 29
++
++func lookupBegin(mppRef: int, entity: ptr, buf: ptr): ptr {
++    var pb: ptr
++
++    pb = NewPtrClear(nbpPbSize)
++    pokew(pb + pbIoRefNum, mppRef)
++    pokew(pb + pbCsCode, lookupName)
++    pokeb(pb + nbpInterval, 8)
++    pokeb(pb + nbpCount, 3)
++    pokel(pb + nbpNtQElPtr, int(entity))       // union NBPPtrs, Lookup arm
++    pokel(pb + nbpLookupRetBuffPtr, int(buf))
++    pokew(pb + nbpLookupRetBuffSize, 1024)
++    pokew(pb + nbpLookupMaxToGet, 8)
++    if PBControlAsync(pb) != 0 {
++        DisposePtr(pb)
++        return ptr(0)
++    }
++    return pb                                  // the driver owns it now
++}
++
++// atOSErr: peekw ZERO-extends (Ch13, peek/poke), so a negative OSErr read
++// out of a word field comes back as 65497, not -39. Every OSErr read this
++// way needs the same correction 's own
++// nat_UiScreenBits applies to QuickDraw's rowBytes.
++func atOSErr(v: int): int {
++    if v >= 32768 {
++        return v - 65536
++    }
++    return v
++}
++
++// Poll from an `every` block or between other work — never busy-wait; the
++// driver completes the request on its own interrupt-time schedule.
++func lookupDone(pb: ptr): bool {
++    return peekw(pb + pbIoResult) != 1          // 1 = ioInProgress
++}
++
++// 0 or more = the tuple count; negative = the OSErr the driver reported.
++func lookupResult(pb: ptr): int {
++    var err: int
++
++    err = atOSErr(peekw(pb + pbIoResult))
++    if err != 0 {
++        return err
++    }
++    return peekw(pb + nbpLookupNumGotten)
++}
++```
++
++### The three rules the catalog header states
++
++`toolbox/appletalk.cla`'s own header opens with three rules, each of which
++cost real emulator boots to learn. They are not style preferences:
++
++1. **Every AppleTalk parameter block is at least 52 bytes.** The Device
++   Manager's `ParamBlockRec` union is wider than the fields any one
++   AppleTalk call names, and the driver writes into fields the caller never
++   set (ATP's `SendReqparms` alone is 52 bytes, `AppleTalk.h:816-841`).
++   Every `extern record` in the catalog is padded to 52 even where its named
++   fields stop far short — same discipline `toolbox/devices.cla` states for
++   `CntrlParam`'s 50, raised to 52 for this family. A short record is a
++   stack overrun waiting to stomp its neighbours.
++2. **Never reuse a parameter block without re-zeroing the WHOLE block.**
++   The phase's probe wave hung the emulated Mac hard — three boots in a row,
++   no bomb, no error — by issuing a second `lookupName` on the block a first
++   `lookupName` had just completed on, rewriting only the call fields. The
++   stale queue fields (`qLink`@0 / `qType`@4, which the driver owns) are the
++   likely culprit. A fresh `extern record` local per call satisfies this by
++   construction; a long-lived `NewPtrClear` block must be cleared in full
++   between calls, not just in the fields being set.
++3. **NBP registers the socket you give it, verbatim.** `registerName` fills
++   in the NTE's `nteAddress` net and node itself but copies the socket byte
++   at NTE+7 (`nteAddress + 3`) straight through. A real service must write
++   its own listening socket — the one `openATPSkt` handed back, or its ADSP
++   socket — into NTE+7 *before* calling `registerName`, or every client that
++   looks the name up gets an address with socket 0 and cannot connect
++   (observed on the wire, not deduced).
++
++The same probe recorded a fourth fact worth keeping: after `registerName`,
++NTE+4..7 holds the node's own net(2), node(1) and socket(1). That is the
++cheapest way for a program to learn its own AppleTalk address — no
++`GetNodeAddress` glue, no low-memory poking.
++
+ ---
+ 
+ *Everything in this document is a citation, not an assertion — see the
+ individual walkthroughs above for exact file and line references. Where a
+ mapping rule itself (rather than a worked example of applying it) is in
+ question, `docs/clarus-language-reference.md` Chapter 13 is the authority.*
+diff --git a/docs/superpowers/specs/2026-09-06-appletalk-design.md b/docs/superpowers/specs/2026-09-06-appletalk-design.md
+index 7562a2f..80fdca8 100644
+--- a/docs/superpowers/specs/2026-09-06-appletalk-design.md
++++ b/docs/superpowers/specs/2026-09-06-appletalk-design.md
+@@ -349,20 +349,23 @@ stack) so a unit test can run two peers in one process.
+ - **LLAP node acquisition.** Random node id in 1–127 (workstation
+   range), `lapENQ` ($81) several times, move on to another id on
+   `lapACK` ($82). Acquired on the first open.
+ - **DDP.** Short header only (LLAP type 1, 5 bytes, net 0, no
+   checksum). Dynamic sockets 128–254. Extended-header packets (type 2)
+   are accepted; replies never route to a non-zero net (no router
+   support on this lane).
+ - **NBP.** Local names table answering `LkUp` for our names; `LkUp`
+   broadcast (node 255, socket 2) with reply collection for lookups;
+   verify-lookup before register. Retry 3 × 1 s. Zone always `*`.
++  `register` blocks for its 3 × 1 s verify lookup (controller ruling
++  2026-09-07: parity with the Mac's own `registerName` verify at
++  interval 8 / count 3).
+ - **ATP.** Requester: XO, TID, bitmap, retransmit on timeout, `TRel`
+   on completion. Responder: XO transactions list with duplicate
+   replay, 30 s release timer; `STS` unused. Same 578/4624 limits.
+ - **No ADSP.** DDP type 7 dropped; the `rtAdsp*` waist fails at open.
+ - Non-blocking throughout except `call` and `zones`, which loop on
+   `select` under their own deadline. `rt_ext_ConnHIdle` adds the UDP
+   socket to its `select` set so a host server sleeps until traffic or
+   the next timer.
+ 
+ ### 6.2 Driver tool
+diff --git a/tests/bake/full_corpus_emitui.sh b/tests/bake/full_corpus_emitui.sh
+index 5c4145e..cb6e97a 100755
+--- a/tests/bake/full_corpus_emitui.sh
++++ b/tests/bake/full_corpus_emitui.sh
+@@ -46,49 +46,15 @@ for entry in "$ROOT"/testdata/emitui/*.cla; do
+         t_fail "$base" "exit mismatch (from-source rc=$srcrc, bake ok): $(head -3 "$WORK/src.log" | tr '\n' ' ')"
+         continue
+     fi
+     if [ "$srcrc" -ne 0 ]; then
+         echo "SKIP $base: fixture errors identically on both sides -- no compiled output to compare"
+         continue
+     fi
+ 
+     if cmp -s "$srcout" "$bakeout"; then
+         t_pass "$base"
+-        continue
++    else
++        t_fail "$base" "--rtbake fork ($(wc -c < "$bakeout" | tr -d ' ') bytes) != from-source fork ($(wc -c < "$srcout" | tr -d ' ') bytes): $(cmp "$srcout" "$bakeout" 2>&1 | head -1)"
+     fi
+-
+-    # Known, PRE-EXISTING C-lane limitation (docs/TODO.md, "Bake / CLIR
+-    # artifact machinery": `--rtbake --lane c` drops the conn/filehandle
+-    # runtime). bake.cla's bakeModuleList leaves conn.cla/conn_c.cla and
+-    # fileh.cla/fileh_c.cla out of the C-lane baked chain on purpose --
+-    # driveManifestSplice gates that pair on usesConn/usesFileh for the
+-    # host lane -- but the --rtbake path bypasses driveManifestSplice
+-    # entirely, so nothing ever splices them and the emitted C CALLS
+-    # rtConnOpen/rtFhOpen without defining them. Detected, not
+-    # allowlisted by name: the from-source fork declares the entry point,
+-    # the bake fork does not, AND the bake fork still CALLS it -- the
+-    # third clause (Task 11, final-review item 18) is what pins this to
+-    # the actual undefined-symbol gap. Without it a fixture whose bake
+-    # fork merely dropped an unused declaration would take the SKIP too,
+-    # so a real regression could hide behind this message. Reproduces on
+-    # `main` with tests/conntest/testdata/echo.cla, which predates this
+-    # corpus entry; this check retires itself the moment the gap is
+-    # closed, because the forks then match and never reach here.
+-    gap=
+-    for sym in clar_fn_rtConnOpen clar_fn_rtFhOpen; do
+-        if grep -q "^static[^;]*$sym" "$srcout" &&
+-                ! grep -q "^static[^;]*$sym" "$bakeout" &&
+-                grep -qF "$sym(" "$bakeout"; then
+-            gap=$sym
+-            break
+-        fi
+-    done
+-    if [ -n "$gap" ]; then
+-        echo "SKIP $base: known pre-existing gap -- --rtbake --lane c omits the" \
+-             "conn/filehandle runtime ($gap declared from source, absent from the" \
+-             "bake); see docs/TODO.md, Bake / CLIR artifact machinery"
+-        continue
+-    fi
+-
+-    t_fail "$base" "--rtbake fork ($(wc -c < "$bakeout" | tr -d ' ') bytes) != from-source fork ($(wc -c < "$srcout" | tr -d ' ') bytes): $(cmp "$srcout" "$bakeout" 2>&1 | head -1)"
+ done
+ t_done

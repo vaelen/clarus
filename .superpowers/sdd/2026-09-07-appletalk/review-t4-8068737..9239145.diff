@@ -1,0 +1,1019 @@
+# Review package: 8068737..HEAD
+
+## Commits
+9239145 feat(host): stdio and pty serial transports
+
+## Files changed
+ docs/clarus-language-reference.md |   2 +-
+ runtime/host/rt_serial.inc        | 256 +++++++++++++++++++++++++++++++++++---
+ runtime/host/rt_serial_test.c     | 184 ++++++++++++++++++++++++++-
+ tests/conntest/pty.sh             | 147 ++++++++++++++++++++++
+ tests/conntest/stdio.sh           |  68 ++++++++++
+ 5 files changed, 637 insertions(+), 20 deletions(-)
+
+## Diff
+diff --git a/docs/clarus-language-reference.md b/docs/clarus-language-reference.md
+index 90cccc8..04c0fb5 100644
+--- a/docs/clarus-language-reference.md
++++ b/docs/clarus-language-reference.md
+@@ -1381,21 +1381,21 @@ on conn.failed(err: error) {
+ 
+ `c.open(serial "modem:9600")` opens a Macintosh serial port directly, with no AppleTalk or TCP involved: `"modem"` is the modem port (SCC channel A), `"printer"` is the printer port (channel B), and the baud rate follows the colon. The rate must be one of the Serial Driver's standard values — 300, 600, 1200, 1800, 2400, 3600, 4800, 7200, 9600, 19200, or 57600. Framing is fixed at 8 data bits, no parity, one stop bit, no handshake; any other configuration is out of scope for `connection` and goes through the `toolbox/` catalog instead, the same escape hatch every other 80/20 abstraction in this reference falls back to.
+ 
+ A serial connection's events follow `connection`'s ordinary shape, with these transport-specific rules:
+ 
+ - `opened` fires on the event loop's next pass after a successful open, never synchronously inside `open` itself.
+ - `received(data: text)` fires once per pass when bytes are waiting; `data` is freshly allocated and binary-safe — no CR/LF translation, every byte value 0-255 passes through unchanged.
+ - `closed` fires only when the underlying channel itself goes away. A raw Mac serial line has no carrier-detect signal in this release, so `closed` never fires for a serial connection — a transport property, not a missing feature. A local `c.close()` never fires `closed`, on any transport.
+ - `send` on a connection that was never opened, or has since closed, is a runtime error — a program bug, not an environmental failure. Environmental failures (a bad port spec, a driver I/O error) arrive as `failed(err: error)` instead.
+ 
+-On a command-line host, two environment variables map the ports to TCP for development instead of real hardware: `CLARUS_SERIAL_MODEM` and `CLARUS_SERIAL_PRINTER`, each either `listen:PORT` (open becomes a listening accept) or `connect:HOST:PORT` (open dials out); the baud rate is accepted but ignored. An unset variable makes `open` fail with `failed`, not a crash. This host lane is also where the command-line lifetime rule matters: after `App.startCLI` returns, the program stays alive while any connection remains open or an event is pending, pumping them, and only exits once neither is true — `quit` still works at any point regardless.
++On a command-line host, two environment variables map the ports to TCP for development instead of real hardware: `CLARUS_SERIAL_MODEM` and `CLARUS_SERIAL_PRINTER`, each one of `listen:PORT` (open becomes a listening accept), `connect:HOST:PORT` (open dials out), `stdio`, or `pty`; the baud rate is accepted but ignored. `stdio` makes the program itself the terminal program — it reads fd 0 and writes fd 1, with no socket involved; when fd 0 is a tty the terminal is put in raw mode at open and the saved settings are restored at exit, and under a pipe there is nothing to set and that step is skipped. `pty` allocates a pseudo-terminal and announces its slave path on stderr as `pty /dev/ttys003`, for a client such as `screen` to attach to; until a client sends its first byte the connection behaves like a bound-but-unconnected `listen:PORT` — writes are discarded, not failed — and the client owns the slave's line discipline, so a client that wants the byte transparency above sets raw mode on the slave itself, and closing the connection discards anything the client has not yet read. An unset variable makes `open` fail with `failed`, not a crash. This host lane is also where the command-line lifetime rule matters: after `App.startCLI` returns, the program stays alive while any connection remains open or an event is pending, pumping them, and only exits once neither is true — `quit` still works at any point regardless.
+ 
+ Servicing a connection is cooperative: the runtime only drains waiting bytes between event-loop passes, so a handler that runs long starves every open connection's pump, not just its own. The driver's receive buffer is grown to 8KB at open to absorb a burst while a handler runs, but that is headroom, not immunity — a handler blocked for long enough can still overrun it and lose data.
+ 
+ ```rust
+ var conn: connection
+ 
+ on App.startCLI(args: list of string) {
+     conn.open(serial "modem:9600")
+ }
+ 
+diff --git a/runtime/host/rt_serial.inc b/runtime/host/rt_serial.inc
+index 79ddfe8..61f343e 100644
+--- a/runtime/host/rt_serial.inc
++++ b/runtime/host/rt_serial.inc
+@@ -9,68 +9,132 @@
+  * restated as this runtime's own transport: a Clarus program that opens
+  * `serial "modem:9600"` on the host maps port -> TCP endpoint via an env
+  * var instead of touching a real SCC. Two ports (portIdx 0 "modem" / 1
+  * "printer"), read from CLARUS_SERIAL_MODEM / CLARUS_SERIAL_PRINTER, each
+  * holding one of:
+  *   "listen:PORT"      -- bind+listen (nonblocking); accept is deferred to
+  *                          the first rt_ext_ConnHAvail poll, so open itself
+  *                          never blocks waiting for a peer.
+  *   "connect:HOST:PORT" -- ordinary blocking connect (fine: open happens
+  *                          once, not on every pump pass).
++ *   "stdio"            -- read fd 0, write fd 1: the program IS the
++ *                          terminal program (appletalk phase, Task 4).
++ *   "pty"              -- a fresh pty master, its slave path announced
++ *                          on stderr for a client to attach to.
+  * Unset or unparseable -> rt_ext_ConnHOpen returns a nonzero code, which
+  * conn.cla surfaces verbatim as the `failed` event's error code -- no
+  * panic, per spec ("environmental failures are events").
+  *
+  * conn_c.cla's own six rtConnDev* waist functions are thin wrappers over
+  * the seven rt_ext_ConnH* externs declared there (ConnH family prefix,
+  * see ser.cla's own header comment for why runtime externs need one at
+  * all); baud is accepted by rtConnDevOpen but never reaches here -- TCP
+  * has no baud rate, the host lane ignores it exactly as the spec says.
+  *
+  * fd blocking discipline (deliberately simple): the LISTEN fd alone is
+  * O_NONBLOCK, so ConnHAvail's accept() poll never blocks the pump when no
+  * peer has connected yet. Every OTHER fd (an accepted client, or a
+  * connect-mode socket) stays plain blocking for its whole life --
+  * ConnHReadByte is only ever called after ConnHAvail confirmed bytes are
+  * already waiting (so recv() can't block), and ConnHWrite's "loop send()
+  * to completion" is then free to be a genuinely blocking loop with no
+  * EAGAIN/retry dance. ConnHGone's peek uses MSG_DONTWAIT explicitly since
+  * IT must never block regardless of the fd's own mode.
++ *
++ * The two NON-socket kinds (stdio, pty) keep that same discipline with
++ * read()/write() in place of recv()/send() -- a pipe and a pty master are
++ * not sockets, so recv/send/MSG_PEEK are all unavailable on them. What
++ * changes is two things. First, "how many bytes are ready" cannot use
++ * FIONREAD: on macOS a pty master answers 0 to FIONREAD even with bytes
++ * genuinely waiting (verified directly -- poll() says readable, FIONREAD
++ * says 0, read() then hands over the bytes). So the non-socket kinds get
++ * a small per-slot read buffer instead: rt_conn_fd_avail poll()s, read()s
++ * what is there into the buffer, and reports the buffer's depth, and
++ * ConnHReadByte pops from it. Second, "the channel went away": there is
++ * no MSG_PEEK on a pipe or pty either, so EOF is that same read() coming
++ * back 0 (or failing hard), latched in the slot's own `gone` flag, which
++ * ConnHGone reports once the buffer has also been drained -- deliberately
++ * the same "all data first, THEN gone" ordering the socket path gets from
++ * MSG_PEEK. select() (ConnHIdle) needs no change: it works on pipes,
++ * ttys and pty masters as it does on sockets.
+  */
+ #include <sys/types.h>
+ #include <sys/socket.h>
+ #include <sys/ioctl.h>
+ #include <sys/select.h>
+ #include <netinet/in.h>
+ #include <netdb.h>
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <errno.h>
++#include <poll.h>
++#include <termios.h>
+ #include <signal.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 
+ #define RT_CONN_MAX 4
+ 
++/* Read buffer for the non-socket kinds (see the header comment: FIONREAD
++ * is useless on a pty master). One pump pass hands the program at most
++ * this many bytes; the next pass picks up the rest, exactly as a slow
++ * reader already behaves on the socket path. 512 is a serial line's worth
++ * of burst, not a tuning knob anyone has needed to turn.
++ * ponytail: fixed size, grow it if a real workload starves. */
++#define RT_CONN_BUFSZ 512
++
++/* kind: which of the three transports the slot's fd is. Everything that
++ * differs between them (recv/send vs read/write, how "the other end went
++ * away" is detected, whether close() may touch the fd at all) switches on
++ * this one field; kind 0 keeps the original socket paths byte-identical. */
++#define RT_CONN_SOCKET 0
++#define RT_CONN_STDIO  1
++#define RT_CONN_PTY    2
++
+ typedef struct {
+-    int fd;         /* -1 = closed/never opened */
+-    int listening;  /* 1 = fd is a listen socket, accept still pending */
++    int fd;         /* -1 = closed/never opened; stdio reads 0, writes 1 */
++    int listening;  /* kind 0: fd is a listen socket, accept still pending.
++                     * kind 2: no pty slave has attached yet -- deliberately
++                     * the SAME state (writes discarded, Avail 0, Gone 0),
++                     * per spec 4.7: an unattached pty is an unplugged
++                     * cable, exactly like a bound-but-unaccepted socket. */
++    int kind;       /* RT_CONN_SOCKET / RT_CONN_STDIO / RT_CONN_PTY */
++    int gone;       /* kinds 1-2: EOF seen (rt_conn_fd_avail latches it) */
++    int bufLen;     /* kinds 1-2: bytes held in buf */
++    int bufPos;     /* kinds 1-2: how many of those are already popped */
++    unsigned char buf[RT_CONN_BUFSZ];
+ } rt_conn_slot_t;
+ 
+ static rt_conn_slot_t rt_conn_slots[RT_CONN_MAX] = {
+-    { -1, 0 }, { -1, 0 }, { -1, 0 }, { -1, 0 }
++    { -1, 0, 0, 0 }, { -1, 0, 0, 0 }, { -1, 0, 0, 0 }, { -1, 0, 0, 0 }
+ };
+ 
+ static int rt_conn_slot_ok(int32_t slot) {
+     return slot >= 0 && slot < RT_CONN_MAX;
+ }
+ 
++/* rt_conn_slot_clear: reset a slot to its never-opened state, closing the
++ * fd only when the slot actually OWNS it -- the stdio kind's fds are the
++ * process's own inherited stdin/stdout, and closing those would take the
++ * whole program's console down with the connection. Both ConnHClose and
++ * every ConnHOpen branch's belt go through here, so no path can reset
++ * half the fields or close somebody else's fd. */
++static void rt_conn_slot_clear(rt_conn_slot_t *s) {
++    if (s->fd >= 0 && s->kind != RT_CONN_STDIO) close(s->fd);
++    s->fd = -1;
++    s->listening = 0;
++    s->kind = RT_CONN_SOCKET;
++    s->gone = 0;
++    s->bufLen = 0;
++    s->bufPos = 0;
++}
++
+ /* rt_conn_listen: bind+listen on port, nonblocking, backlog 1 (a serial
+  * line has exactly one peer). Returns the fd, or -1 on any failure. */
+ static int rt_conn_listen(int port) {
+     int fd = socket(AF_INET, SOCK_STREAM, 0);
+     if (fd < 0) return -1;
+     int yes = 1;
+     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+     struct sockaddr_in addr;
+     memset(&addr, 0, sizeof(addr));
+     addr.sin_family = AF_INET;
+@@ -101,20 +165,121 @@ static int rt_conn_connect(const char *host, int port) {
+         fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+         if (fd < 0) continue;
+         if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) break;
+         close(fd);
+         fd = -1;
+     }
+     freeaddrinfo(res);
+     return fd;
+ }
+ 
++/* rt_conn_stdio_raw / rt_conn_stdio_restore: put the terminal in raw mode
++ * for the "stdio" transport, so the program sees every keystroke byte
++ * as it is typed instead of the tty's cooked line discipline eating
++ * control characters and holding bytes until Return. Only when fd 0 is
++ * genuinely a tty -- under a pipe (a test harness, a shell pipeline)
++ * there is no termios to set and the whole step is skipped silently.
++ * The saved termios is restored by an atexit handler, which covers both
++ * a normal return from main and Clarus's own `quit`; a program killed by
++ * an uncaught signal still leaves the terminal raw, the standard cost of
++ * the atexit approach (a full sigaction net is out of scope here). */
++static struct termios rt_conn_tty_saved;
++static int rt_conn_tty_raw = 0;
++
++static void rt_conn_stdio_restore(void) {
++    if (rt_conn_tty_raw) {
++        tcsetattr(0, TCSANOW, &rt_conn_tty_saved);
++        rt_conn_tty_raw = 0;
++    }
++}
++
++static void rt_conn_stdio_raw(void) {
++    struct termios t;
++    if (rt_conn_tty_raw || !isatty(0)) return;
++    if (tcgetattr(0, &rt_conn_tty_saved) != 0) return;
++    t = rt_conn_tty_saved;
++    cfmakeraw(&t);
++    if (tcsetattr(0, TCSANOW, &t) != 0) return;
++    rt_conn_tty_raw = 1;
++    atexit(rt_conn_stdio_restore);
++}
++
++/* rt_conn_open_pty: a fresh pty master, its slave path announced on
++ * stderr ("pty /dev/ttysNNN") so a client can attach with `screen`, a
++ * test driver, or anything else that opens a serial device. Returns the
++ * master fd, or -1.
++ *
++ * The runtime deliberately does NOT open the slave itself: holding one
++ * open would make the master permanently "attached" (no unattached state,
++ * and no EOF when the real client leaves), and on macOS the master fd is
++ * not a tty at all -- tcgetattr on it fails with ENOTTY -- so the runtime
++ * cannot set the pair's line discipline from this side either. The client
++ * owns the slave's termios, exactly as it owns a real serial device's,
++ * and a client that wants the byte transparency `connection` promises
++ * sets raw mode itself on the slave before sending anything (a cooked pty
++ * echoes the master's own writes back at it and rewrites CR/LF). */
++static int rt_conn_open_pty(void) {
++    int fd = posix_openpt(O_RDWR | O_NOCTTY);
++    const char *path;
++    if (fd < 0) return -1;
++    if (grantpt(fd) != 0 || unlockpt(fd) != 0) { close(fd); return -1; }
++    path = ptsname(fd);
++    if (path == NULL) { close(fd); return -1; }
++    fprintf(stderr, "pty %s\n", path);
++    fflush(stderr);
++    return fd;
++}
++
++/* rt_conn_fd_avail: the non-socket kinds' ConnHAvail step, and the only
++ * place their fd is ever read or their EOF ever detected. Compacts what
++ * the caller has already popped, tops the buffer up from the fd, and
++ * reports the depth.
++ *
++ * poll() with a zero timeout keeps this off the pump's critical path, and
++ * makes the following read() safe on a plain blocking fd: poll said
++ * readable, so read() either hands over bytes or reports EOF, and cannot
++ * park. A pty master with NO slave attached yet polls as nothing at all
++ * (verified on macOS: no POLLIN, no POLLHUP), which is exactly what keeps
++ * the unattached state (s->listening, spec 4.7's "like listening") from
++ * being mistaken for a hangup. Once a slave closes again, the master
++ * polls readable and read() returns 0 (macOS) -- and any hard read error
++ * is treated as EOF too rather than left to spin, since there is no
++ * recovery path for a serial line whose fd has broken. */
++static int32_t rt_conn_fd_avail(rt_conn_slot_t *s) {
++    struct pollfd p;
++    ssize_t k;
++
++    if (s->bufPos > 0) {
++        if (s->bufPos < s->bufLen)
++            memmove(s->buf, s->buf + s->bufPos, (size_t)(s->bufLen - s->bufPos));
++        s->bufLen -= s->bufPos;
++        s->bufPos = 0;
++    }
++    if (s->bufLen < RT_CONN_BUFSZ) {
++        p.fd = s->fd;
++        p.events = POLLIN;
++        p.revents = 0;
++        if (poll(&p, 1, 0) > 0) {
++            k = read(s->fd, s->buf + s->bufLen, (size_t)(RT_CONN_BUFSZ - s->bufLen));
++            if (k > 0) {
++                s->bufLen += (int)k;
++                s->listening = 0;   /* a pty slave is unmistakably attached */
++            } else if (k == 0) {
++                s->gone = 1;
++            } else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
++                s->gone = 1;
++            }
++        }
++    }
++    return (int32_t)(s->bufLen - s->bufPos);
++}
++
+ /* rt_conn_ignore_sigpipe: one-time process-wide SIGPIPE suppression
+  * (review fix, Task 4 follow-up). Without this, ConnHWrite's send() to a
+  * peer that already closed its end raises SIGPIPE, which terminates the
+  * whole process by default -- the BBS's routine "user hung up mid-write"
+  * case, not an exceptional one. SIG_IGN here (rather than SO_NOSIGPIPE
+  * per fd, the macOS-only alternative) is portable to both build targets
+  * this runtime cares about (macOS/BSD and Linux) in one line; every
+  * send()/write() in the process silently returns EPIPE instead of
+  * signaling from this point on, which is exactly what ConnHWrite already
+  * checks for via its `k <= 0` test. Guarded so a slot's Nth open doesn't
+@@ -140,30 +305,49 @@ int32_t rt_ext_ConnHOpen(int32_t slot, int32_t portIdx) {
+     if (!rt_conn_slot_ok(slot)) return 1;
+     if (portIdx == 0) {
+         spec = getenv("CLARUS_SERIAL_MODEM");
+     } else if (portIdx == 1) {
+         spec = getenv("CLARUS_SERIAL_PRINTER");
+     } else {
+         spec = NULL;
+     }
+     if (spec == NULL) return 1;
+ 
++    if (strcmp(spec, "stdio") == 0) {
++        /* No fd is opened at all: fd 0 is read, fd 1 is written, both
++         * inherited. Stored as fd 0 so ConnHAvail/ConnHIdle poll the
++         * right one; ConnHWrite is the only place fd 1 appears. */
++        rt_conn_stdio_raw();
++        rt_conn_slot_clear(&rt_conn_slots[slot]);
++        rt_conn_slots[slot].fd = 0;
++        rt_conn_slots[slot].kind = RT_CONN_STDIO;
++        return 0;
++    }
++    if (strcmp(spec, "pty") == 0) {
++        fd = rt_conn_open_pty();
++        if (fd < 0) return errno != 0 ? errno : 1;
++        rt_conn_slot_clear(&rt_conn_slots[slot]);
++        rt_conn_slots[slot].fd = fd;
++        rt_conn_slots[slot].listening = 1;   /* no slave attached yet */
++        rt_conn_slots[slot].kind = RT_CONN_PTY;
++        return 0;
++    }
+     if (strncmp(spec, "listen:", 7) == 0) {
+         int port = atoi(spec + 7);
+         if (port <= 0) return 1;
+         fd = rt_conn_listen(port);
+         if (fd < 0) return errno != 0 ? errno : 1;
+         /* Belt, not currently reachable: conn.cla's rtConnOpen only ever
+          * calls down here when rtConnState[slot] != stOpen, so slot's fd
+          * should already be -1 here. Close it first anyway in case that
+          * invariant ever loosens (e.g. a future direct-reopen path). */
+-        if (rt_conn_slots[slot].fd >= 0) close(rt_conn_slots[slot].fd);
++        rt_conn_slot_clear(&rt_conn_slots[slot]);
+         rt_conn_slots[slot].fd = fd;
+         rt_conn_slots[slot].listening = 1;
+         return 0;
+     }
+     if (strncmp(spec, "connect:", 8) == 0) {
+         const char *rest = spec + 8;
+         const char *colon = strrchr(rest, ':');
+         char host[256];
+         size_t hlen;
+         int port;
+@@ -171,57 +355,66 @@ int32_t rt_ext_ConnHOpen(int32_t slot, int32_t portIdx) {
+         if (colon == NULL) return 1;
+         hlen = (size_t)(colon - rest);
+         if (hlen == 0 || hlen >= sizeof(host)) return 1;
+         memcpy(host, rest, hlen);
+         host[hlen] = '\0';
+         port = atoi(colon + 1);
+         if (port <= 0) return 1;
+         fd = rt_conn_connect(host, port);
+         if (fd < 0) return errno != 0 ? errno : 1;
+         /* Belt, not currently reachable -- see the listen: branch above. */
+-        if (rt_conn_slots[slot].fd >= 0) close(rt_conn_slots[slot].fd);
++        rt_conn_slot_clear(&rt_conn_slots[slot]);
+         rt_conn_slots[slot].fd = fd;
+-        rt_conn_slots[slot].listening = 0;
+         return 0;
+     }
+-    return 1; /* garbled: neither listen: nor connect: */
++    return 1; /* garbled: none of stdio, pty, listen:, connect: */
+ }
+ 
+ /* rt_ext_ConnHAvail: accepts a pending client first (if still listening),
+  * then reports bytes ready via FIONREAD. 0 whenever there's genuinely
+  * nothing to read yet (including "still listening, no peer"). */
+ int32_t rt_ext_ConnHAvail(int32_t slot) {
+     rt_conn_slot_t *s;
+     int n;
+ 
+     if (!rt_conn_slot_ok(slot)) return 0;
+     s = &rt_conn_slots[slot];
+     if (s->fd < 0) return 0;
++    if (s->kind != RT_CONN_SOCKET) return rt_conn_fd_avail(s);
+     if (s->listening) {
+         int c = accept(s->fd, NULL, NULL);
+         if (c < 0) return 0; /* no peer yet */
+         close(s->fd);
+         s->fd = c;
+         s->listening = 0;
+     }
+     n = 0;
+     if (ioctl(s->fd, FIONREAD, &n) != 0) return 0;
+     return (int32_t)n;
+ }
+ 
+ /* rt_ext_ConnHReadByte: next byte, 0-255. Only ever called right after
+  * ConnHAvail reported > 0, so this can't block. */
+ int32_t rt_ext_ConnHReadByte(int32_t slot) {
+     unsigned char b;
+     ssize_t n;
+ 
+     if (!rt_conn_slot_ok(slot) || rt_conn_slots[slot].fd < 0) return 0;
++    if (rt_conn_slots[slot].kind != RT_CONN_SOCKET) {
++        rt_conn_slot_t *s = &rt_conn_slots[slot];
++        /* Pops the buffer rt_conn_fd_avail filled. The refill here is
++         * belt: the documented contract is ConnHAvail first, and the
++         * pump honours it, but a bare ReadByte should still work. */
++        if (s->bufPos >= s->bufLen) rt_conn_fd_avail(s);
++        if (s->bufPos >= s->bufLen) return 0;
++        return (int32_t)s->buf[s->bufPos++];
++    }
+     n = recv(rt_conn_slots[slot].fd, &b, 1, 0);
+     if (n <= 0) return 0;
+     return (int32_t)b;
+ }
+ 
+ /* rt_ext_ConnHWrite: loops send() to completion (the fd is plain blocking
+  * -- see the header comment). Returns 0 on success, nonzero on any
+  * send failure (peer gone is then caught on the next ConnHGone poll).
+  * SIGPIPE is neutralized process-wide by rt_conn_ignore_sigpipe (called
+  * from ConnHOpen, guaranteed to have run before this can) -- a send() to
+@@ -233,57 +426,90 @@ int32_t rt_ext_ConnHReadByte(int32_t slot) {
+  * Task 5's own review: `opened` firing at successful bind is correct
+  * (open success is transport-invisible; a raw serial cable has no
+  * peer-arrival signal either -- carrier detect is out of scope this
+  * phase), so a write in that window is not an error -- physical bytes
+  * sent into an unplugged cable just go nowhere. Discard and report
+  * success (0), exactly as a real SCC write would; once a peer IS
+  * accepted (rt_conn_slots[slot].listening flips false, ConnHAvail's own
+  * accept step), writes flow normally through the branch below,
+  * unchanged. */
+ int32_t rt_ext_ConnHWrite(int32_t slot, void *p, int32_t n) {
++    rt_conn_slot_t *s;
+     const unsigned char *buf;
+     int32_t sent;
+     ssize_t k;
++    int wfd;
+ 
+     if (!rt_conn_slot_ok(slot)) return 1;
+-    if (rt_conn_slots[slot].fd < 0) return 1;
+-    if (rt_conn_slots[slot].listening) return 0;
++    s = &rt_conn_slots[slot];
++    if (s->fd < 0) return 1;
++    /* Unattached: a listening socket with no peer, or a pty with no
++     * slave. Same ruling either way -- discard, report success. */
++    if (s->listening) return 0;
++    if (s->kind != RT_CONN_SOCKET && s->gone) return 1;
+     buf = (const unsigned char *)p;
+     sent = 0;
++    /* stdio reads fd 0 but writes fd 1; every other kind writes its own
++     * fd. write() rather than send() for both non-socket kinds -- send()
++     * is a socket call and fails with ENOTSOCK on a pipe or pty. */
++    wfd = (s->kind == RT_CONN_STDIO) ? 1 : s->fd;
+     while (sent < n) {
+-        k = send(rt_conn_slots[slot].fd, buf + sent, (size_t)(n - sent), 0);
++        k = (s->kind == RT_CONN_SOCKET)
++            ? send(s->fd, buf + sent, (size_t)(n - sent), 0)
++            : write(wfd, buf + sent, (size_t)(n - sent));
+         if (k <= 0) return 1;
+         sent += (int32_t)k;
+     }
+     return 0;
+ }
+ 
+ /* rt_ext_ConnHClose: idempotent -- closes the fd (if any) and resets the
+  * slot. Callable on an already-closed slot (conn.cla's own rtConnClose is
+- * idempotent; this is its device-level half). */
++ * idempotent; this is its device-level half).
++ *
++ * One transport-visible wart, worth knowing rather than papering over:
++ * closing a pty MASTER discards whatever the client has not read yet, so
++ * a program that sends a goodbye and closes in the same breath may hand
++ * its client a truncated one. There is no fix from this side on macOS --
++ * the queued bytes sit in the SLAVE's input queue, which the master can
++ * neither count (TIOCOUTQ answers 0) nor drain (tcdrain is a no-op there,
++ * the master not being a tty at all) -- so it is documented, in the
++ * language reference too, instead. Sockets and stdio have no such wart. */
+ void rt_ext_ConnHClose(int32_t slot) {
+     if (!rt_conn_slot_ok(slot)) return;
+-    if (rt_conn_slots[slot].fd >= 0) close(rt_conn_slots[slot].fd);
+-    rt_conn_slots[slot].fd = -1;
+-    rt_conn_slots[slot].listening = 0;
++    rt_conn_slot_clear(&rt_conn_slots[slot]);
+ }
+ 
+ /* rt_ext_ConnHGone: orderly peer close, detected the standard way -- a
+  * MSG_PEEK recv returning exactly 0. MSG_DONTWAIT is mandatory here
+  * regardless of the fd's own blocking mode: this call must never block.
+- * A still-listening slot (no peer yet) isn't "gone", just not there. */
++ * A still-listening slot (no peer yet) isn't "gone", just not there.
++ * The non-socket kinds have no MSG_PEEK; they report the `gone` flag
++ * rt_conn_fd_avail latches instead (see that function). */
+ int32_t rt_ext_ConnHGone(int32_t slot) {
+     unsigned char b;
+     ssize_t n;
+ 
+     if (!rt_conn_slot_ok(slot)) return 0;
+     if (rt_conn_slots[slot].fd < 0 || rt_conn_slots[slot].listening) return 0;
++    if (rt_conn_slots[slot].kind != RT_CONN_SOCKET) {
++        /* Non-socket kinds: the latched EOF flag. Polled here as well as
++         * from ConnHAvail so a caller that only ever asks "gone?" (the
++         * pump's own order is Avail first, but nothing requires that)
++         * still sees the hangup. */
++        rt_conn_slot_t *s = &rt_conn_slots[slot];
++        if (!s->gone) rt_conn_fd_avail(s);
++        /* Buffered bytes outrank the hangup: the socket path's MSG_PEEK
++         * only reports 0 once the receive queue is drained too, so `gone`
++         * waits for the last byte here as well. */
++        return (s->gone && s->bufPos >= s->bufLen) ? 1 : 0;
++    }
+     n = recv(rt_conn_slots[slot].fd, &b, 1, MSG_PEEK | MSG_DONTWAIT);
+     if (n == 0) return 1;
+     if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) return 1;
+     return 0;
+ }
+ 
+ /* rt_ext_ConnHIdle: select()-with-timeout across every open slot's fd, so
+  * Task 5's host pump loop blocks efficiently instead of spinning. Plain
+  * usleep when no slot is open at all (select() with an empty fd_set and a
+  * timeout is portable but this reads more plainly). */
+diff --git a/runtime/host/rt_serial_test.c b/runtime/host/rt_serial_test.c
+index aefb835..c53a67e 100644
+--- a/runtime/host/rt_serial_test.c
++++ b/runtime/host/rt_serial_test.c
+@@ -35,21 +35,24 @@
+  * write's send() would raise SIGPIPE and kill the whole process with the
+  * default disposition; the assertion IS the process still being alive to
+  * check ConnHWrite's return value at all.
+  */
+ #include "rt.h"
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+ #include <errno.h>
++#include <fcntl.h>
++#include <poll.h>
+ #include <signal.h>
++#include <termios.h>
+ #include <sys/types.h>
+ #include <sys/socket.h>
+ #include <sys/time.h>
+ #include <netinet/in.h>
+ #include <arpa/inet.h>
+ 
+ extern int32_t rt_ext_ConnHOpen(int32_t slot, int32_t portIdx);
+ extern int32_t rt_ext_ConnHAvail(int32_t slot);
+ extern int32_t rt_ext_ConnHReadByte(int32_t slot);
+ extern int32_t rt_ext_ConnHWrite(int32_t slot, void *p, int32_t n);
+@@ -474,62 +477,235 @@ static void test_open_failure(void) {
+     unsetenv("CLARUS_SERIAL_MODEM");
+     CHECK(rt_ext_ConnHOpen(2, 0) != 0, "ConnHOpen with unset env var should fail");
+ 
+     setenv("CLARUS_SERIAL_MODEM", "garbled-not-a-spec", 1);
+     CHECK(rt_ext_ConnHOpen(2, 0) != 0, "ConnHOpen with a garbled spec should fail");
+ 
+     setenv("CLARUS_SERIAL_MODEM", "listen:0", 1);
+     CHECK(rt_ext_ConnHOpen(2, 0) != 0, "ConnHOpen with a zero port should fail");
+ }
+ 
++/* ---------------------------------------------------------------------
++ * stdio / pty transports (appletalk phase, Task 4; spec 4.7 + 6.3).
++ * Both are non-socket fds, so these scenarios drive the glue against
++ * ordinary pipes / a real pty pair rather than the loopback sockets
++ * above: read()/write() instead of recv()/send(), and EOF (read returning
++ * 0) instead of a MSG_PEEK of 0 as the "channel went away" signal.
++ * ------------------------------------------------------------------- */
++
++/* fd_read_all: plain_recv_all's read() twin -- recv() only works on
++ * sockets, and neither a pipe nor a pty master is one. Bounded by poll()
++ * so a missing byte fails this test fast instead of parking in read()
++ * until main()'s own watchdog fires. */
++static int fd_read_all(int fd, unsigned char *buf, int n, int seconds) {
++    int got = 0;
++    while (got < n) {
++        struct pollfd p;
++        ssize_t k;
++        p.fd = fd;
++        p.events = POLLIN;
++        p.revents = 0;
++        if (poll(&p, 1, seconds * 1000) <= 0) return 0;
++        k = read(fd, buf + got, (size_t)(n - got));
++        if (k <= 0) return 0;
++        got += (int)k;
++    }
++    return 1;
++}
++
++/* test_stdio: CLARUS_SERIAL_MODEM=stdio, slot 0 (closed again by
++ * test_listen_mode above). A pipe pair stands in for the terminal: the
++ * read end is dup2'd onto fd 0 (what the glue reads) and a second pipe's
++ * write end onto fd 1 (what the glue writes), with the real fd 0/1 saved
++ * and restored around the whole scenario -- printf("OK") in main() only
++ * reaches the harness at all if that restore works, and if
++ * rt_ext_ConnHClose left fd 1 alone rather than closing the process's own
++ * stdout. fd 0 is a pipe here, never a tty, so the isatty()-gated raw
++ * mode is deliberately NOT exercised (that path needs a real terminal;
++ * the atexit restore is the reason it is safe to skip). */
++static void test_stdio(void) {
++    int inPipe[2], outPipe[2];
++    int save0, save1;
++    unsigned char out[300], got[300], sweep[256], back[256];
++    int rc;
++
++    CHECK(pipe(inPipe) == 0, "stdio: input pipe() should succeed");
++    CHECK(pipe(outPipe) == 0, "stdio: output pipe() should succeed");
++    save0 = dup(0);
++    save1 = dup(1);
++    CHECK(save0 >= 0 && save1 >= 0, "stdio: saving fd 0/1 should succeed");
++    CHECK(dup2(inPipe[0], 0) == 0, "stdio: dup2 onto fd 0 should succeed");
++    CHECK(dup2(outPipe[1], 1) == 1, "stdio: dup2 onto fd 1 should succeed");
++
++    setenv("CLARUS_SERIAL_MODEM", "stdio", 1);
++    unsetenv("CLARUS_SERIAL_PRINTER");
++    rc = rt_ext_ConnHOpen(0, 0);
++    CHECK(rc == 0, "stdio: ConnHOpen should succeed");
++
++    /* terminal -> program: 300 bytes (more than one 256-byte pattern, so
++       the count itself is not a coincidence of the pattern length). */
++    fill_pattern(out, (int)sizeof(out), 0);
++    CHECK(write(inPipe[1], out, sizeof(out)) == (ssize_t)sizeof(out), "stdio: feeding the input pipe should succeed");
++    CHECK(wait_avail(0, (int)sizeof(out)), "stdio: ConnHAvail should report the 300 fed bytes");
++    glue_read_all(0, got, (int)sizeof(got));
++    CHECK(memcmp(out, got, sizeof(out)) == 0, "stdio: terminal->program bytes match, in order");
++    CHECK(!rt_ext_ConnHGone(0), "stdio: not gone while the input pipe's writer is still open");
++
++    /* program -> terminal: the full 0-255 sweep, byte-exact on fd 1. */
++    fill_pattern(sweep, (int)sizeof(sweep), 0);
++    CHECK(rt_ext_ConnHWrite(0, sweep, (int32_t)sizeof(sweep)) == 0, "stdio: ConnHWrite should succeed");
++    CHECK(fd_read_all(outPipe[0], back, (int)sizeof(back), 5), "stdio: the sweep should reach the output pipe");
++    CHECK(memcmp(sweep, back, sizeof(sweep)) == 0, "stdio: program->terminal bytes match");
++
++    /* EOF on fd 0 is the terminal going away. */
++    close(inPipe[1]);
++    CHECK(wait_gone(0), "stdio: ConnHGone should fire once the input pipe's writer closes");
++
++    rt_ext_ConnHClose(0);
++    CHECK(dup2(save0, 0) == 0, "stdio: restoring fd 0 should succeed");
++    CHECK(dup2(save1, 1) == 1, "stdio: restoring fd 1 should succeed");
++    close(save0);
++    close(save1);
++    close(inPipe[0]);
++    close(outPipe[0]);
++    close(outPipe[1]);
++}
++
++/* test_pty: CLARUS_SERIAL_MODEM=pty, slot 1 (closed again by
++ * test_connect_mode above). stderr is captured over a pipe just for the
++ * ConnHOpen call so the announced slave path can be parsed back out (and
++ * so it never pollutes run_c_test's own "expect exactly OK" capture),
++ * then this test plays the CONSUMER: opens /dev/ttysNNN itself, puts the
++ * line discipline in raw mode (a real client's job -- see
++ * rt_serial.inc's own pty comment), and round-trips bytes each way.
++ * Also pins the "no slave attached yet" state (Avail 0, Write discarded
++ * with success, Gone 0) before opening the slave, and Gone once the slave
++ * closes again. */
++static void test_pty(void) {
++    int errPipe[2];
++    int save2;
++    char line[160];
++    char path[128];
++    ssize_t n;
++    int slave;
++    struct termios tio;
++    unsigned char out[256], got[256], back[256];
++    int rc;
++
++    CHECK(pipe(errPipe) == 0, "pty: stderr pipe() should succeed");
++    save2 = dup(2);
++    CHECK(save2 >= 0, "pty: saving fd 2 should succeed");
++    fflush(stderr);
++    CHECK(dup2(errPipe[1], 2) == 2, "pty: dup2 onto fd 2 should succeed");
++
++    setenv("CLARUS_SERIAL_MODEM", "pty", 1);
++    rc = rt_ext_ConnHOpen(1, 0);
++    fflush(stderr);
++    CHECK(dup2(save2, 2) == 2, "pty: restoring fd 2 should succeed");
++    close(save2);
++    close(errPipe[1]);
++    CHECK(rc == 0, "pty: ConnHOpen should succeed");
++
++    memset(line, 0, sizeof(line));
++    n = read(errPipe[0], line, sizeof(line) - 1);
++    close(errPipe[0]);
++    path[0] = '\0';
++    CHECK(n > 0 && sscanf(line, "pty %127s", path) == 1 && strncmp(path, "/dev/", 5) == 0,
++        "pty: open should announce `pty /dev/...` on stderr");
++    if (path[0] == '\0') { rt_ext_ConnHClose(1); return; }
++
++    /* No slave attached yet: the `listening` state, per spec 4.7. */
++    fill_pattern(out, (int)sizeof(out), 0);
++    CHECK(rt_ext_ConnHAvail(1) == 0, "pty: nothing available before a slave attaches");
++    CHECK(rt_ext_ConnHWrite(1, out, 8) == 0, "pty: a write with no slave attached discards and reports success");
++    CHECK(!rt_ext_ConnHGone(1), "pty: not gone before a slave has ever attached");
++
++    slave = open(path, O_RDWR | O_NOCTTY);
++    CHECK(slave >= 0, "pty: opening the announced slave should succeed");
++    if (slave < 0) { rt_ext_ConnHClose(1); return; }
++    /* Raw the slave BEFORE anything is written through it: a cooked pty
++       echoes what the master writes straight back at the master and
++       translates CR/LF, which would corrupt both byte sweeps below. */
++    CHECK(tcgetattr(slave, &tio) == 0, "pty: tcgetattr on the slave should succeed");
++    cfmakeraw(&tio);
++    CHECK(tcsetattr(slave, TCSANOW, &tio) == 0, "pty: tcsetattr(raw) on the slave should succeed");
++
++    /* consumer -> program: the full 0-255 sweep. */
++    CHECK(write(slave, out, sizeof(out)) == (ssize_t)sizeof(out), "pty: writing the sweep into the slave should succeed");
++    CHECK(wait_avail(1, (int)sizeof(out)), "pty: ConnHAvail should see the slave's bytes");
++    glue_read_all(1, got, (int)sizeof(got));
++    CHECK(memcmp(out, got, sizeof(out)) == 0, "pty: consumer->program bytes match");
++
++    /* program -> consumer: a DIFFERENT pattern, so an echoed copy of the
++       sweep above could never pass for it. */
++    fill_pattern(out, (int)sizeof(out), 128);
++    CHECK(rt_ext_ConnHWrite(1, out, (int32_t)sizeof(out)) == 0, "pty: ConnHWrite with a slave attached should succeed");
++    CHECK(fd_read_all(slave, back, (int)sizeof(back), 5), "pty: the written bytes should reach the slave");
++    CHECK(memcmp(out, back, sizeof(out)) == 0, "pty: program->consumer bytes match");
++
++    CHECK(!rt_ext_ConnHGone(1), "pty: not gone while the slave is still open");
++    close(slave);
++    CHECK(wait_gone(1), "pty: ConnHGone should fire once the slave closes");
++
++    rt_ext_ConnHClose(1);
++}
++
+ /* on_alarm: process-wide watchdog (see wait_accept_and_write's own
+  * comment for the specific race this whole file used to be vulnerable
+  * to) -- if ANY blocking call anywhere in this file ever hangs for a
+  * reason not already covered by a bounded retry or a socket timeout,
+  * this converts that hang into a fast, loud failure instead of stalling
+  * the whole `go test -timeout 30m` gate for half an hour. */
+ static void on_alarm(int sig) {
+     (void)sig;
+-    fprintf(stderr, "FAIL: watchdog fired -- a call hung past the 240s bound\n");
++    fprintf(stderr, "FAIL: watchdog fired -- a call hung past the 270s bound\n");
+     fprintf(stderr, "FAILED\n");
+     _exit(1);
+ }
+ 
+ int main(void) {
+     signal(SIGALRM, on_alarm);
+     /* 240s (up from 20s, port-hygiene fix round, serial-connection Task 7,
+      * fix round 1): headroom above the HONEST worst-case sequential sum of
+      * every bounded blocking call in this file, computed per scenario
+      * (review fix round 1, Important 4 -- the original 90s bound and its
+      * comment undercounted this):
+      *   test_listen_mode:         wait_accept_and_write 30s + plain_recv_all
+      *                              (set_recv_timeout) 30s + wait_avail 2s +
+      *                              wait_gone 2s               = 64s
+      *   test_connect_mode:        plain_recv_all 30s + wait_avail 2s = 32s
+      *   test_sigpipe:              wait_accept_and_write 30s +
+      *                              write_until_fails 10s      = 40s
+      *   test_write_before_accept: wait_accept_and_write 30s +
+      *                              plain_recv_all 30s          = 60s
+      *   test_open_failure:                                     = 0s
++     *   test_stdio:               wait_avail 2s + fd_read_all 5s +
++     *                              wait_gone 2s                = 9s
++     *   test_pty:                 wait_avail 2s + fd_read_all 5s +
++     *                              wait_gone 2s                = 9s
+      *   ------------------------------------------------------------
+-     *   sum                                                    = 196s
+-     * 240s leaves ~44s of headroom above that honest sum. Still loud and
++     *   sum                                                    = 214s
++     * 270s (up from 240s, appletalk Task 4, which added the two
++     * non-socket scenarios above) leaves ~56s of headroom above that
++     * honest sum. Still loud and
+      * fast in the overwhelmingly common case (a clean run finishes in well
+      * under a second); this only matters on the rare, deeply pathological
+      * run where every single one of these hit its own worst case at once. */
+-    alarm(240);
++    alarm(270);
+ 
+     test_listen_mode();
+     test_connect_mode();
+     test_sigpipe();
+     test_write_before_accept();
+     test_open_failure();
++    test_stdio();
++    test_pty();
+     /* ConnHIdle: just prove it returns promptly with nothing open (all
+        slots were closed by their own tests above) rather than hanging --
+        the select()-vs-usleep branch's cheap half. */
+     rt_ext_ConnHIdle(1);
+     if (failed) {
+         fprintf(stderr, "FAILED\n");
+         return 1;
+     }
+     printf("OK\n");
+     return 0;
+diff --git a/tests/conntest/pty.sh b/tests/conntest/pty.sh
+new file mode 100755
+index 0000000..7c3418f
+--- /dev/null
++++ b/tests/conntest/pty.sh
+@@ -0,0 +1,147 @@
++#!/bin/sh
++# tests/conntest/pty.sh -- the `pty` serial transport (appletalk phase,
++# Task 4; spec 4.7): CLARUS_SERIAL_MODEM=pty allocates a pty master and
++# announces the slave path on stderr, so a terminal program can be driven
++# by anything that opens a serial device. The same echo.cla fixture the
++# socket scripts use; the client half is a short python3 driver (there is
++# no TCP here for $TOOLS/tcpdrive to speak).
++#
++# Two shapes worth knowing, both rt_serial.inc's documented behaviour:
++#  1. a pty with no slave attached is the `listening` state -- the
++#     program's `on conn.opened { conn.send("READY\n") }` greeting is
++#     DISCARDED, exactly as a write into an unplugged cable is. The
++#     runtime only counts a slave as attached once bytes arrive FROM it,
++#     so the driver's own first byte is always the first thing that can
++#     provoke a write back. Like listen.sh, the driver therefore sends a
++#     one-byte probe ("!", a byte that appears neither in "READY\r" nor in
++#     the QQQ terminator) and consumes through its echo before the exact
++#     sweep comparison, tolerating a greeting that did make it out.
++#  2. the client owns the slave's line discipline, as it owns a real
++#     serial device's -- the driver raws the slave BEFORE sending anything
++#     (rule 1 guarantees it wins that race), because a cooked pty echoes
++#     the master's own writes back at it, which would turn an echo server
++#     into an infinite loop.
++# A third: closing a pty master discards anything the client has not read
++# yet, so the driver asserts the hangup after "QQQ" rather than the echo
++# of "QQQ" itself (see the driver's own comment).
++. "$(dirname "$0")/../lib.sh" || exit 2
++. "$(dirname "$0")/../lib_conntest.sh" || die "helper lib failed to load"
++
++command -v python3 >/dev/null 2>&1 || skip "python3 not found"
++
++conn_build echo || { t_fail build "$(cat "$WORK/echo.build")"; t_done; }
++t_pass build
++
++cat > "$WORK/driver.py" <<'PY'
++import os, sys, termios, time, tty
++
++path = sys.argv[1]
++fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
++tty.setraw(fd, termios.TCSAFLUSH)   # cfmakeraw + drop anything already queued
++deadline = time.time() + 20
++
++def fail(msg):
++    sys.stderr.write(msg + "\n")
++    sys.exit(1)
++
++def write_all(data):
++    off = 0
++    while off < len(data):
++        try:
++            off += os.write(fd, data[off:])
++        except BlockingIOError:
++            time.sleep(0.01)
++
++def read_n(n, what):
++    buf = b""
++    while len(buf) < n:
++        if time.time() > deadline:
++            fail("timeout reading %s: got %d of %d bytes (%r)" % (what, len(buf), n, buf[:32]))
++        try:
++            b = os.read(fd, n - len(buf))
++        except BlockingIOError:
++            b = b""
++        except OSError as e:
++            fail("read failed reading %s: %s" % (what, e))
++        if b:
++            buf += b
++        else:
++            time.sleep(0.01)
++    return buf
++
++write_all(b"!")
++seen = b""
++while True:
++    seen += read_n(1, "probe echo")
++    if seen.endswith(b"!"):
++        break
++    if len(seen) > 8:
++        fail("no probe echo within 8 bytes: %r" % seen)
++
++sweep = bytes(range(256))
++write_all(sweep)
++got = read_n(len(sweep), "sweep echo")
++if got != sweep:
++    bad = next(i for i in range(len(sweep)) if got[i] != sweep[i])
++    fail("sweep echo differs at byte %d: got %d want %d" % (bad, got[bad], sweep[bad]))
++
++# "QQQ" makes echo.cla close its side. Closing a pty master DISCARDS
++# whatever the client has not read yet (macOS: no TIOCOUTQ, no tcdrain on
++# a master -- rt_serial.inc says so too), so the echo of QQQ itself may or
++# may not survive the close that follows it in the same handler; what is
++# guaranteed, and what this asserts, is that the hangup reaches the client
++# and that anything that DID arrive is a prefix of the echo, never stray
++# bytes.
++write_all(b"QQQ")
++tail = b""
++while True:
++    if time.time() > deadline:
++        fail("no hangup after QQQ (trailing bytes so far: %r)" % tail)
++    try:
++        b = os.read(fd, 16)
++    except BlockingIOError:
++        time.sleep(0.01)
++        continue
++    except OSError:
++        break       # EIO: the master went away
++    if not b:
++        break       # EOF: the master closed
++    tail += b
++if tail not in (b"", b"Q", b"QQ", b"QQQ"):
++    fail("unexpected trailing bytes after QQQ: %r" % tail)
++sys.exit(0)
++PY
++
++CLARUS_SERIAL_MODEM=pty "$WORK/echo" > "$WORK/prog.out" 2> "$WORK/prog.err" &
++prog=$!
++
++# The announcement is fprintf(stderr)+fflush at open, so polling the file
++# is a real synchronisation point rather than a sleep.
++dev=
++i=0
++while [ $i -lt 10 ]; do
++    dev=$(sed -n 's/^pty //p' "$WORK/prog.err" 2>/dev/null | head -1)
++    [ -n "$dev" ] && break
++    sleep 1
++    i=$((i + 1))
++done
++if [ -z "$dev" ]; then
++    kill "$prog" 2>/dev/null
++    wait "$prog" 2>/dev/null
++    t_fail announce "no 'pty /dev/...' line on stderr within 10s: $(cat "$WORK/prog.err")"
++    t_done
++fi
++case "$dev" in
++    /dev/*) t_pass announce ;;
++    *) kill "$prog" 2>/dev/null; wait "$prog" 2>/dev/null
++       t_fail announce "announced path is not a device: $dev"; t_done ;;
++esac
++
++if python3 "$WORK/driver.py" "$dev" > "$WORK/driver.out" 2>&1; then
++    t_pass exchange
++else
++    t_fail exchange "driver: $(cat "$WORK/driver.out")"
++fi
++
++conn_wait_self_exit "$prog" lifetime || echo "prog stderr: $(cat "$WORK/prog.err")"
++t_done
+diff --git a/tests/conntest/stdio.sh b/tests/conntest/stdio.sh
+new file mode 100755
+index 0000000..b80c027
+--- /dev/null
++++ b/tests/conntest/stdio.sh
+@@ -0,0 +1,68 @@
++#!/bin/sh
++# tests/conntest/stdio.sh -- the `stdio` serial transport (appletalk phase,
++# Task 4; spec 4.7): CLARUS_SERIAL_MODEM=stdio makes the program itself the
++# terminal program -- it reads fd 0 and writes fd 1, no socket anywhere.
++# The same echo.cla fixture connect.sh/listen.sh use, driven through a FIFO
++# on stdin with stdout captured to a file.
++#
++# stdio is never "unattached" the way a listening socket or an unattached
++# pty is (fd 0 and fd 1 exist from the moment the process starts), so the
++# `on conn.opened { conn.send("READY\n") }` greeting cannot be discarded
++# here -- unlike listen.sh, this script can and does assert the whole
++# stream byte-exactly, greeting included: "READY\r" (a Clarus "\n" literal
++# is CR on the wire), then the 0-255 sweep echoed back, then the "QQQ"
++# terminator echoed back before the program closes itself.
++. "$(dirname "$0")/../lib.sh" || exit 2
++. "$(dirname "$0")/../lib_conntest.sh" || die "helper lib failed to load"
++
++conn_build echo || { t_fail build "$(cat "$WORK/echo.build")"; t_done; }
++t_pass build
++
++conn_sweep "$WORK/sweep"
++printf 'QQQ' > "$WORK/qqq"
++printf 'READY\r' > "$WORK/expect"
++cat "$WORK/sweep" "$WORK/qqq" >> "$WORK/expect"
++want=$(wc -c < "$WORK/expect")
++
++mkfifo "$WORK/in" || die "mkfifo failed"
++CLARUS_SERIAL_MODEM=stdio "$WORK/echo" < "$WORK/in" > "$WORK/out" 2> "$WORK/prog.err" &
++prog=$!
++# Read-write open: never blocks waiting for a reader, and our own read end
++# keeps the FIFO from signalling EOF if a `cat` below finishes early.
++exec 3<> "$WORK/in"
++
++# The greeting is written with a bare write(1, ...), so it lands in the
++# output file as soon as the pump's first pass fires `opened` -- polling
++# the file's size is a real synchronisation point, not a sleep.
++i=0
++while [ $i -lt 10 ] && [ "$(wc -c < "$WORK/out")" -lt 6 ]; do
++    sleep 1
++    i=$((i + 1))
++done
++if [ "$(wc -c < "$WORK/out")" -lt 6 ]; then
++    exec 3>&-
++    kill "$prog" 2>/dev/null
++    wait "$prog" 2>/dev/null
++    t_fail greeting "no READY on stdout within 10s: $(cat "$WORK/prog.err")"
++    t_done
++fi
++t_pass greeting
++
++cat "$WORK/sweep" >&3
++cat "$WORK/qqq" >&3
++
++i=0
++while [ $i -lt 10 ] && [ "$(wc -c < "$WORK/out")" -lt "$want" ]; do
++    sleep 1
++    i=$((i + 1))
++done
++head -c "$want" "$WORK/out" > "$WORK/got"
++if cmp -s "$WORK/expect" "$WORK/got"; then
++    t_pass exchange
++else
++    t_fail exchange "stdout differs: $(cmp "$WORK/expect" "$WORK/got" 2>&1 | head -1)"
++fi
++
++exec 3>&-
++conn_wait_self_exit "$prog" lifetime || echo "prog stderr: $(cat "$WORK/prog.err")"
++t_done

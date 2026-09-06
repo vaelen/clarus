@@ -1,0 +1,351 @@
+# Review package: 7d2add1..HEAD
+
+## Commits
+f646322 fix(host): stale-request replay, spec NBP verify window, three review minors
+
+## Files changed
+ runtime/host/rt_atalk.inc    | 62 +++++++++++++++++++++++++++++++-------------
+ runtime/host/rt_atalk_test.c | 26 ++++++++++++++++---
+ 2 files changed, 67 insertions(+), 21 deletions(-)
+
+## Diff
+diff --git a/runtime/host/rt_atalk.inc b/runtime/host/rt_atalk.inc
+index bb8becc..bd1a028 100644
+--- a/runtime/host/rt_atalk.inc
++++ b/runtime/host/rt_atalk.inc
+@@ -41,20 +41,21 @@
+ #include <sys/types.h>
+ #include <sys/socket.h>
+ #include <sys/select.h>
+ #include <sys/time.h>
+ #include <netinet/in.h>
+ #include <arpa/inet.h>
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <errno.h>
+ #include <stdlib.h>
++#include <stdio.h>
+ #include <string.h>
+ #include <strings.h>
+ #include <time.h>
+ 
+ /* ==================== (a) constants and the instance struct ========= */
+ 
+ #define RT_AT_GROUP    "239.192.76.84"
+ #define RT_AT_PORT     1954
+ #define RT_AT_DGRAM    1024      /* an LToUDP datagram never exceeds 4+3+586 */
+ 
+@@ -82,20 +83,22 @@
+ #define RT_AT_ERR_BADENTRY (-1029)  /* nbpBadEntry: our own table is full */
+ #define RT_AT_ERR_REQFAIL  (-1096)  /* reqFailed: retransmit count exhausted */
+ #define RT_AT_ERR_LEN      (-3106)  /* atpLenErr */
+ #define RT_AT_ERR_NOSOCK   (-1024)  /* ddpSktErr: no free dynamic socket */
+ 
+ #define RT_AT_NNAMES 4           /* local NBP names table */
+ #define RT_AT_NTUPLE 32          /* tuples collected per lookup */
+ #define RT_AT_NSOCK  4           /* bound ATP responder sockets */
+ #define RT_AT_NQ     4           /* pending requests per socket */
+ #define RT_AT_NXO    8           /* XO transactions remembered per socket */
++#define RT_AT_LK_INT 1.0         /* NBP retry interval; 3 x 1 s is the spec's window */
++#define RT_AT_LK_TRY 3
+ #define RT_AT_NPKT   8           /* ATP response packets per transaction */
+ #define RT_AT_XO_SECS 30.0       /* XO release timer */
+ 
+ typedef struct {
+     int     used;
+     char    obj[33], type[33];
+     uint8_t socket;
+     uint8_t enumerator;
+ } rt_at_name;
+ 
+@@ -409,52 +412,54 @@ static void rt_at_lookup_tx(rt_atalk *a, rt_at_lookup *L) {
+     rt_at_addr me, bcast;
+     int n;
+ 
+     me.net = 0; me.node = a->node; me.socket = RT_AT_SOCK_NIS;
+     n = rt_at_tuple_put(body, (int)sizeof(body), me, 0, L->obj, L->type, L->zone);
+     if (n == 0) return;
+     bcast.net = 0; bcast.node = RT_AT_BROADCAST; bcast.socket = RT_AT_SOCK_NIS;
+     rt_at_nbp_send(a, bcast, RT_AT_SOCK_NIS, RT_AT_NBP_LKUP, 1, L->nbpid, body, n);
+ }
+ 
+-/* rt_at_lookup_begin: shared by the public lookup_start (3 x 1 s, the
+- * spec's window) and by register's own verify lookup, which uses a
+- * shorter 3 x 250 ms window -- a register that took 3 s would make every
+- * service start feel broken, and 750 ms is long enough on a LAN. */
++/* rt_at_lookup_begin: shared by the public lookup_start and by register's
++ * own verify lookup. Both use the spec's 3 x 1 s window: the Mac's
++ * registerName blocks ~3.2 s for the same verify (interval 8, count 3), so
++ * host parity is right, and duplicate detection is the one NBP path that
++ * must not be hurried on a network with 8 MHz peers. A register therefore
++ * blocks for that window -- accepted, controller ruling 2026-09-07. */
+ static int rt_at_lookup_begin(rt_atalk *a, int lk, const char *obj, const char *type,
+-                              const char *zone, double interval, int ntx) {
++                              const char *zone) {
+     rt_at_lookup *L;
+ 
+     if (a == NULL || lk < 0 || lk > RT_AT_NLK) return -1;
+     L = &a->lk[lk];
+     memset(L, 0, sizeof(*L));
+     L->active = 1;
+     a->nbp_id++;
+     if (a->nbp_id == 0) a->nbp_id = 1;
+     L->nbpid = a->nbp_id;
+     rt_at_cstr(L->obj, sizeof(L->obj), obj);
+     rt_at_cstr(L->type, sizeof(L->type), type);
+     rt_at_cstr(L->zone, sizeof(L->zone), (zone != NULL && zone[0] != '\0') ? zone : "*");
+-    L->interval = interval;
+-    L->tx_left = ntx;
+-    L->deadline = rt_at_now() + interval * ntx;
++    L->interval = RT_AT_LK_INT;
++    L->tx_left = RT_AT_LK_TRY;
++    L->deadline = rt_at_now() + RT_AT_LK_INT * RT_AT_LK_TRY;
+ 
+     rt_at_lookup_tx(a, L);
+     L->tx_left--;
+-    L->next_tx = rt_at_now() + interval;
++    L->next_tx = rt_at_now() + RT_AT_LK_INT;
+     return 0;
+ }
+ 
+ int rt_at_nbp_lookup_start(rt_atalk *a, int lk, const char *obj, const char *type,
+                            const char *zone) {
+     if (lk < 0 || lk >= RT_AT_NLK) return -1;
+-    return rt_at_lookup_begin(a, lk, obj, type, zone, 1.0, 3);
++    return rt_at_lookup_begin(a, lk, obj, type, zone);
+ }
+ 
+ int rt_at_nbp_lookup_done(rt_atalk *a, int lk) {
+     if (a == NULL || lk < 0 || lk > RT_AT_NLK) return 1;
+     if (!a->lk[lk].active) return 1;
+     return rt_at_now() >= a->lk[lk].deadline;
+ }
+ 
+ int rt_at_nbp_lookup_count(rt_atalk *a, int lk) {
+     if (a == NULL || lk < 0 || lk > RT_AT_NLK) return 0;
+@@ -557,21 +562,21 @@ int rt_at_nbp_register(rt_atalk *a, const char *obj, const char *type, uint8_t s
+     if (a == NULL) return RT_AT_ERR_BADENTRY;
+     for (i = 0; i < RT_AT_NNAMES; i++) {
+         if (!a->names[i].used) { if (free_slot < 0) free_slot = i; continue; }
+         if (strcasecmp(a->names[i].obj, obj) == 0 && strcasecmp(a->names[i].type, type) == 0)
+             return RT_AT_ERR_DUP;
+     }
+     if (free_slot < 0) return RT_AT_ERR_BADENTRY;
+ 
+     /* Verify-lookup first: NBP has no registry, so "is this name taken?"
+      * is literally "does anyone answer a lookup for it?". */
+-    if (rt_at_lookup_begin(a, RT_AT_NLK, obj, type, "*", 0.25, 3) == 0) {
++    if (rt_at_lookup_begin(a, RT_AT_NLK, obj, type, "*") == 0) {
+         while (!rt_at_nbp_lookup_done(a, RT_AT_NLK)) rt_at_tick(a, 10);
+         a->lk[RT_AT_NLK].active = 0;
+         if (a->lk[RT_AT_NLK].count > 0) return RT_AT_ERR_DUP;
+     }
+ 
+     a->enum_next++;
+     if (a->enum_next == 0) a->enum_next = 1;
+     a->names[free_slot].used = 1;
+     rt_at_cstr(a->names[free_slot].obj, 33, obj);
+     rt_at_cstr(a->names[free_slot].type, 33, type);
+@@ -842,43 +847,50 @@ static void rt_at_atp_in(rt_atalk *a, rt_at_addr from, uint8_t dstsock,
+     if (n < 8) return;
+     ctl = d[0];
+     func = (ctl >> 6) & 3;
+     tid = (uint16_t)((d[2] << 8) | d[3]);
+     ub = (int32_t)(((uint32_t)d[4] << 24) | ((uint32_t)d[5] << 16) |
+                    ((uint32_t)d[6] << 8) | (uint32_t)d[7]);
+ 
+     if (func == RT_AT_ATP_TRESP) {
+         rt_at_rqstate *r = &a->rq;
+         int seq = d[1];
++        /* The sender check matters on a shared multicast group: without it
++         * a foreign peer that happens to reuse our TID could splice bytes
++         * into the response. (net is 0 on both sides on this routerless
++         * lane -- see rt_at_ddp_send.) */
+         if (!r->active || dstsock != r->mysock || tid != r->tid) return;
++        if (!rt_at_same_peer(from, r->to)) return;
+         if (seq >= RT_AT_NPKT) return;
+         if (!r->got[seq]) {
+             int k = n - 8;
+             if (k > RT_AT_MAXREQ) k = RT_AT_MAXREQ;
+             if (k > 0) memcpy(r->data[seq], d + 8, (size_t)k);
+             r->len[seq] = k;
+             r->got[seq] = 1;
+             if (seq == 0) r->resp_userbytes = ub;
+         }
+         if (ctl & 0x10) r->eom_seq = seq;
+         return;
+     }
+ 
+     {
+         rt_at_sockslot *s = rt_at_sock_find(a, dstsock);
+         if (s == NULL) return;
+ 
+         if (func == RT_AT_ATP_TREL) {
+-            rt_at_xo *x;
+-            if (a->drop_rx_trel) { a->drop_rx_trel = 0; return; }  /* test hook */
+-            x = rt_at_xo_find(s, tid, from);
+-            if (x != NULL) x->used = 0;
++            rt_at_xo *x = rt_at_xo_find(s, tid, from);
++            if (x == NULL) return;
++            /* Test hook, checked here and not earlier so a foreign peer's
++             * TRel on the shared group cannot eat the arm. */
++            if (a->drop_rx_trel) { a->drop_rx_trel = 0; return; }
++            x->used = 0;
+             return;
+         }
+         if (func != RT_AT_ATP_TREQ) return;
+         {
+             rt_at_xo *x = rt_at_xo_find(s, tid, from);
+             int i, k;
+             if (x != NULL) { rt_at_xo_replay(a, x, d[1]); return; }
+             /* Already queued and not yet answered: a retransmit, not a
+              * second transaction. */
+             for (i = 0; i < s->qcount; i++) {
+@@ -1090,20 +1102,21 @@ void rt_at_close(rt_atalk *a) {
+     if (a->fd >= 0) close(a->fd);
+     free(a);
+ }
+ 
+ /* ==================== (h) the Clarus rt_ext_AtalkH* layer ============
+  * One lazily opened process-global instance. `string` parameters arrive
+  * as Pascal strings; addresses cross as net<<16 | node<<8 | socket. */
+ 
+ static rt_atalk *rt_at_g;
+ static rt_at_req rt_at_g_req;      /* the last request AtpGetRequest dequeued */
++static int       rt_at_g_req_live; /* 0 once answered or once a dequeue came up empty */
+ static int32_t   rt_at_g_code;     /* the last AtpCall's response user bytes */
+ 
+ /* rt_at_pstr: a Clarus Pascal string to a C string. Deliberately NOT
+  * rt.c's path_to_cstr -- that one rewrites ':' to '/' for HFS paths, and
+  * ':' is meaningful in an NBP name. */
+ static void rt_at_pstr(char *buf, size_t cap, const uint8_t *p) {
+     size_t n;
+     if (p == NULL) { buf[0] = '\0'; return; }
+     n = p[0];
+     if (n > cap - 1) n = cap - 1;
+@@ -1179,34 +1192,47 @@ void rt_ext_AtalkHLookupName(int32_t lk, int32_t i, void *out) {
+ int32_t rt_ext_AtalkHAtpOpen(void) {
+     if (rt_at_g == NULL) return RT_AT_ERR_NOSOCK;
+     return rt_at_atp_open(rt_at_g);
+ }
+ 
+ void rt_ext_AtalkHAtpClose(int32_t sock) { rt_at_atp_close(rt_at_g, (int)sock); }
+ 
+ int32_t rt_ext_AtalkHAtpGetRequest(int32_t sock, void *buf, int32_t cap) {
+     int n;
+     if (rt_at_g == NULL) return -1;
+-    if (!rt_at_atp_get_request(rt_at_g, (int)sock, &rt_at_g_req)) return -1;
++    if (!rt_at_atp_get_request(rt_at_g, (int)sock, &rt_at_g_req)) {
++        /* Nothing dequeued: drop the previous transaction on the floor, or
++         * a SendResponse after an empty poll would send a second, unasked-
++         * for response and re-arm a fresh 30 s XO entry under the old TID. */
++        rt_at_g_req_live = 0;
++        return -1;
++    }
++    rt_at_g_req_live = 1;
+     n = rt_at_g_req.len;
+     if (n > (int)cap) n = (int)cap;
+     if (n > 0 && buf != NULL) memcpy(buf, rt_at_g_req.data, (size_t)n);
+     return n;
+ }
+ 
+ int32_t rt_ext_AtalkHAtpReqOp(void)   { return rt_at_g_req.userbytes; }
+ int32_t rt_ext_AtalkHAtpReqFrom(void) { return rt_at_pack(rt_at_g_req.from); }
+ 
++/* rt_ext_AtalkHAtpSendResponse: answers the request the last successful
++ * AtalkHAtpGetRequest dequeued, once. */
+ int32_t rt_ext_AtalkHAtpSendResponse(int32_t sock, int32_t code, void *buf, int32_t n) {
++    int32_t rc;
+     if (rt_at_g == NULL) return RT_AT_ERR_NOSOCK;
+-    return rt_at_atp_send_response(rt_at_g, (int)sock, &rt_at_g_req, code,
+-                                   (const uint8_t *)buf, (int)n);
++    if (!rt_at_g_req_live) return RT_AT_ERR_REQFAIL;
++    rc = rt_at_atp_send_response(rt_at_g, (int)sock, &rt_at_g_req, code,
++                                 (const uint8_t *)buf, (int)n);
++    if (rc == 0) rt_at_g_req_live = 0;
++    return rc;
+ }
+ 
+ int32_t rt_ext_AtalkHAtpCall(int32_t addr, int32_t op, void *req, int32_t reqLen,
+                              void *resp, int32_t respCap) {
+     rt_at_addr to;
+     int rlen = 0, rc;
+     if (rt_at_g == NULL) return RT_AT_ERR_REQFAIL;
+     to.net = (uint16_t)((addr >> 16) & 0xFFFF);
+     to.node = (uint8_t)((addr >> 8) & 0xFF);
+     to.socket = (uint8_t)(addr & 0xFF);
+diff --git a/runtime/host/rt_atalk_test.c b/runtime/host/rt_atalk_test.c
+index d7874bf..3f2fc55 100644
+--- a/runtime/host/rt_atalk_test.c
++++ b/runtime/host/rt_atalk_test.c
+@@ -258,20 +258,24 @@ static void test_idle_wake(void) {
+ extern int32_t rt_ext_AtalkHUp(void);
+ extern int32_t rt_ext_AtalkHNode(void);
+ extern int32_t rt_ext_AtalkHFd(void);
+ extern void    rt_ext_AtalkHPoll(void);
+ extern int32_t rt_ext_AtalkHLookupStart(int32_t lk, const uint8_t *obj,
+                                         const uint8_t *type, const uint8_t *zone);
+ extern int32_t rt_ext_AtalkHLookupDone(int32_t lk);
+ extern int32_t rt_ext_AtalkHLookupCount(int32_t lk);
+ extern int32_t rt_ext_AtalkHLookupAddr(int32_t lk, int32_t i);
+ extern void    rt_ext_AtalkHLookupName(int32_t lk, int32_t i, void *out);
++extern int32_t rt_ext_AtalkHAtpOpen(void);
++extern void    rt_ext_AtalkHAtpClose(int32_t sock);
++extern int32_t rt_ext_AtalkHAtpGetRequest(int32_t sock, void *buf, int32_t cap);
++extern int32_t rt_ext_AtalkHAtpSendResponse(int32_t sock, int32_t code, void *buf, int32_t n);
+ 
+ /* pstr: a C string as the Pascal string a Clarus `string` argument is. */
+ static void pstr(uint8_t *p, const char *s) {
+     size_t n = strlen(s);
+     if (n > 63) n = 63;
+     p[0] = (uint8_t)n;
+     memcpy(p + 1, s, n);
+ }
+ 
+ static void test_ext(void) {
+@@ -312,26 +316,42 @@ static void test_ext(void) {
+         rt_ext_AtalkHLookupName(0, i, name);
+         if (name[0] == (uint8_t)strlen(want) && memcmp(name + 1, want, strlen(want)) == 0) {
+             seen = 1;
+             CHECK(((addr >> 16) & 0xFFFF) == 0, "packed address has a nonzero net");
+             CHECK(((addr >> 8) & 0xFF) == rt_at_node(A), "packed address has the wrong node");
+             CHECK((addr & 0xFF) == 200, "packed address has the wrong socket");
+         }
+     }
+     CHECK(seen, "AtalkHLookupName never produced \"obj:ClarusTest\"");
+     rt_at_nbp_remove(A, nbp_obj, "ClarusTest");
++
++    /* A SendResponse with no live request must be refused: without the
++     * guard it would answer the PREVIOUS transaction a second time and
++     * re-arm a fresh 30 s XO entry under that old TID. */
++    {
++        int32_t sk = rt_ext_AtalkHAtpOpen();
++        uint8_t body[8];
++        CHECK(sk >= 128 && sk <= 254, "AtalkHAtpOpen did not return a dynamic socket");
++        if (sk >= 0) {
++            CHECK(rt_ext_AtalkHAtpGetRequest(sk, body, (int32_t)sizeof(body)) == -1,
++                  "AtalkHAtpGetRequest invented a request");
++            CHECK(rt_ext_AtalkHAtpSendResponse(sk, 0, body, 0) == -1096,
++                  "AtalkHAtpSendResponse answered a stale request");
++            rt_ext_AtalkHAtpClose(sk);
++        }
++    }
+ }
+ 
+ int main(void) {
+-    /* Watchdog: three NBP lookups at 3 s each, three registers at 0.75 s,
+-     * a handful of ATP calls with a 1 s retransmit timer, plus the opens.
+-     * A clean run is ~14 s. */
++    /* Watchdog: three NBP lookups at 3 s each, three registers whose own
++     * verify-lookup is another 3 s each, a handful of ATP calls with a 1 s
++     * retransmit timer, plus the opens. A clean run is ~24 s. */
+     alarm(120);
+ 
+     A = rt_at_open(NULL);
+     if (A == NULL) {
+         if (errno == ENODEV || errno == EADDRNOTAVAIL || errno == EPERM ||
+             errno == EAFNOSUPPORT) {
+             fprintf(stderr, "SKIP: multicast unavailable (%s)\n", strerror(errno));
+             return 77;
+         }
+         fprintf(stderr, "FAIL: rt_at_open(A): %s\n", strerror(errno));

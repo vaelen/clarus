@@ -1,0 +1,177 @@
+# Review package: 9468eb7..HEAD
+
+## Commits
+747c4bd fix(bake): filter lowStrIdx to the installed pool on a truncating install
+
+## Files changed
+ clarusc/bake.cla        | 36 ++++++++++++++++++++-----------
+ tests/bake/every_cli.sh | 57 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 81 insertions(+), 12 deletions(-)
+
+## Diff
+diff --git a/clarusc/bake.cla b/clarusc/bake.cla
+index f38eac6..c9235ab 100644
+--- a/clarusc/bake.cla
++++ b/clarusc/bake.cla
+@@ -3995,31 +3995,20 @@ func bkCopyIntmapInt(src: intmap of int): intmap of int {
+     var dst: intmap of int
+     var k: int
+     var v: int
+ 
+     for k, v in src {
+         dst[k] = v
+     }
+     return dst
+ }
+ 
+-func bkCopyMapInt(src: map of int): map of int {
+-    var dst: map of int
+-    var k: string
+-    var v: int
+-
+-    for k, v in src {
+-        dst[k] = v
+-    }
+-    return dst
+-}
+-
+ // bkCopyListScope is the one deep copy: Scope.names is an `intmap of
+ // int`, i.e. a REFERENCE field that a plain `.add` would share with the
+ // pending parse -- and types.cla's scopeDeclare writes
+ // `scopes[scope].names[key] = idx` on every top-level declaration a
+ // user program makes, which without this would land inside the pending
+ // scope and stay visible to every later compile in the session (Task 6
+ // audit finding F4).
+ func bkCopyListScope(src: list of Scope): list of Scope {
+     var dst: list of Scope
+     var s: Scope
+@@ -4283,20 +4272,23 @@ func bkInstallArenas(testapi: bool) {
+     var truncFuncs: list of IRFunc
+     var truncStrLits: list of int
+     var j: int
+     var nArrLits: int
+     var startSum: int
+     var arrStart: list of int
+     var arrElemT: list of int
+     var arrN: list of int
+     var arrVals: list of int
+     var freshArrLitMemo: intmap of int
++    var freshStrIdx: map of int
++    var strKey: string
++    var strVal: int
+ 
+     // Every assignment in this function COPIES its pending container
+     // (clir-load-perf Task 7, design B -- see bkParsedValid's own doc
+     // comment): ir.cla appends to, element-mutates, and finally
+     // .clear()s each of these arenas every compile, so aliasing them to
+     // the memoized parse would destroy it. Field measurement on real
+     // emulated Mac II hardware (post-Task-10 phase debt) clocked the
+     // per-element `.add()` loops this used to route through at 4m21s
+     // (15706 guest ticks) per compile -- every arena below is a FLAT
+     // record type (int/bool/enum fields only, ir.cla's own record
+@@ -4467,21 +4459,41 @@ func bkInstallArenas(testapi: bool) {
+     irCharT = bkLdIrCharT
+     irTextT = bkLdIrTextT
+     irErrT = bkLdIrErrT
+     irPtrT = bkLdIrPtrT
+     irWordT = bkLdIrWordT
+ 
+     lowSwitchN = bkLdLowSwitchN
+     uiMenuCount = bkLdUiMenuCount
+     lowStoreTempN = bkLdLowStoreTempN
+     lowRetTempN = bkLdLowRetTempN
+-    lowStrIdx = bkCopyMapInt(bkLdLowStrIdx)
++    // NOT a straight copy: a non-testapi install TRUNCATED irStrLits back
++    // to the base boundary above, but bkLdLowStrIdx is the GENERATOR's
++    // WHOLE by-value dedup map -- so every entry it carries for a
++    // uitest.cla literal now points PAST the installed pool. A user
++    // program whose source happens to contain that same string then dedups
++    // to a dead index and the emitted C references a clar_lit_K nothing
++    // defines. (Found by the AppleTalk phase's Task 5:
++    // testdata/emitui/every_cli.cla logs "tick ", which uitest.cla also
++    // uses, and its --rtbake fork emitted `clar_lit_129` into a pool of
++    // 126 -- a full corpus of fixtures had simply never collided before.)
++    // Filtered here for exactly the reason irFuncIdxByName is REBUILT
++    // rather than copied a few lines above: same truncation, same stale-
++    // index hazard, and the two maps are the only by-name/by-value
++    // indexes into a truncatable arena. Cheap: one pass over a map with a
++    // few hundred entries, once per compile.
++    for strKey, strVal in bkLdLowStrIdx {
++        if strVal < irStrLits.count {
++            freshStrIdx[strKey] = strVal
++        }
++    }
++    lowStrIdx = freshStrIdx
+ }
+ 
+ // bkInstallObjCode is GONE (clir-load-perf Task 7, design B). It used to
+ // truncate the four per-function object-staging arrays (bkLdObjValid/
+ // RunFirst/HoleFirst/NHoles) down to bkRuntimeFuncBoundary IN PLACE,
+ // which is exactly the destructive-consume-of-pending-state design B
+ // cannot have (Task 6 audit findings F1/F2): under memoization there is
+ // no re-parse to rebuild what the truncation ate, and a session mixing a
+ // non-testapi compile with a later --testapi one would permanently lose
+ // the uitest functions' own paste eligibility. The truncation is now a
+diff --git a/tests/bake/every_cli.sh b/tests/bake/every_cli.sh
+new file mode 100755
+index 0000000..6b3cbb2
+--- /dev/null
++++ b/tests/bake/every_cli.sh
+@@ -0,0 +1,57 @@
++#!/bin/sh
++# tests/bake/every_cli.sh -- T1-speed regression for a C-LANE --rtbake
++# byte-identity bug the opt-in T2 sweep (full_corpus_emitui.sh, behind
++# CLARUS_BAKE_FULL) was the only thing that could catch.
++#
++# The bug: bkInstallArenas TRUNCATES irStrLits back to the base boundary on
++# a non-testapi install (dropping uitest.cla's literals) but restored the
++# baked lowStrIdx -- lowering's string-literal-BY-VALUE dedup map -- whole.
++# Every entry that map carried for a uitest.cla literal then pointed PAST
++# the installed pool, so a user program whose own source contained that
++# same string deduped to a dead index: the --rtbake fork emitted a
++# reference to a clar_lit_K nothing defines, and would not even have
++# compiled. Fixed by filtering the map to the installed pool on load,
++# exactly as irFuncIdxByName is rebuilt rather than copied for the very
++# same truncation.
++#
++# testdata/emitui/every_cli.cla is the fixture because it is the first
++# corpus program to hit it: it logs "tick ", which uitest.cla also uses as
++# a literal. **Keep that string** -- change it and this test still passes
++# while proving nothing. (It is also the whole `every`-on-the-host-lane
++# shape, so this doubles as the AppleTalk phase Task 5 bake pair CLAUDE.md's
++# standing rule asks for.)
++#
++# C lane, so no MacBinary wrap and no embedded output filename: the two
++# forks can be written side by side under distinct names in one directory,
++# the way full_corpus_emitui.sh does it (emit68k_pair's separate-directory
++# dance is for the 68k lane's header only).
++. "$(dirname "$0")/../lib.sh" || exit 2
++. "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
++
++BAKE=$WORK/rtc.clir
++bake_ir c "$BAKE"
++
++ENTRY=testdata/emitui/every_cli.cla
++grep -q '"tick "' "$ENTRY" || die "$ENTRY no longer contains the uitest.cla-colliding literal this test exists for"
++
++if ! "$CLARUSC" emit --rtdir runtime/clarus/ -o "$WORK/src.c" "$ENTRY" > "$WORK/src.log" 2>&1; then
++    t_fail every_cli "from-source compile failed: $(head -3 "$WORK/src.log" | tr '\n' ' ')"
++    t_done
++fi
++if ! "$CLARUSC" emit --rtdir runtime/clarus/ --rtbake "$BAKE" -o "$WORK/bake.c" "$ENTRY" > "$WORK/bake.log" 2>&1; then
++    t_fail every_cli "--rtbake compile failed: $(head -3 "$WORK/bake.log" | tr '\n' ' ')"
++    t_done
++fi
++# A silent from-source fallback would make the comparison pass VACUOUSLY --
++# emit68k_pair's own PAIRFB=forbid check, for the same reason.
++if grep -q 'falling back' "$WORK/bake.log"; then
++    t_fail every_cli "unexpectedly fell back to from-source -- expected the real bake path: $(grep 'falling back' "$WORK/bake.log" | head -1)"
++    t_done
++fi
++
++if cmp -s "$WORK/src.c" "$WORK/bake.c"; then
++    t_pass every_cli
++else
++    t_fail every_cli "--rtbake fork ($(wc -c < "$WORK/bake.c" | tr -d ' ') bytes) != from-source fork ($(wc -c < "$WORK/src.c" | tr -d ' ') bytes): $(cmp "$WORK/src.c" "$WORK/bake.c" 2>&1 | head -1); $(first_diff "$WORK/src.c" "$WORK/bake.c" | tr '\n' ' ')"
++fi
++t_done

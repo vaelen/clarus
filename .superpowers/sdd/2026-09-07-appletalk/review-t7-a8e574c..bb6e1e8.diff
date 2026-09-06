@@ -1,0 +1,2190 @@
+# Review package: a8e574c..HEAD
+
+## Commits
+bb6e1e8 feat(runtime): atalk.cla with host twin over the LToUDP stack; host splice; rtbake C-lane fallback
+
+## Files changed
+ clarusc/drive.cla                       | 101 +++-
+ runtime/clarus/atalk.cla                | 924 ++++++++++++++++++++++++++++++++
+ runtime/clarus/atalk_68k.cla            | 195 +++++++
+ runtime/clarus/atalk_c.cla              | 313 +++++++++++
+ testdata/emitui/connpump_abort.c.golden | 199 ++++++-
+ tests/atalk/splice.sh                   | 126 +++++
+ tests/atalk/testdata/splice.cla         |  16 +
+ 7 files changed, 1832 insertions(+), 42 deletions(-)
+
+## Diff
+diff --git a/clarusc/drive.cla b/clarusc/drive.cla
+index 631be0a..5a3abab 100644
+--- a/clarusc/drive.cla
++++ b/clarusc/drive.cla
+@@ -1639,26 +1639,44 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
+     // own precedent: lower.cla's dispatcher synthesis (lowSynthConnDispatchers)
+     // runs unconditionally under want68k too, so conn.cla's own
+     // `clar_conn_fire_*` externs must always resolve on this lane,
+     // dormant program or not -- conn_68k.cla is what answers conn.cla's
+     // rtConnDev* calls once it's there. conn.cla itself must come after
+     // core/str/text (rtPanic/rtSetLastErr, text values) and after ser.cla
+     // (reuses its SerNewPtr/SerDisposePtr scratch externs) -- both
+     // already spliced above unconditionally on every lane, so simply
+     // appending here satisfies both regardless of which branch below is
+     // taken.
++    //
++    // AppleTalk (2026-09-06 appletalk spec %7, Task 7): on the HOST lane
++    // atalk.cla + atalk_c.cla travel WITH conn.cla, spliced together
++    // whenever `usesConn or usesAtalk`. The two modules are one unit:
++    // atalk.cla owns the ADSP transport conn.cla dispatches to and reads
++    // conn.cla's own rtConnState slot table for listener accepts, so
++    // neither is useful alone. A serial-only host program therefore
++    // carries the atalk_c.cla wrappers as dead weight -- the same "cheap
++    // dead weight" argument rt.c already makes for its unconditional
++    // .inc includes, and it keeps every AppleTalk program's manifest
++    // identical to every connection program's.
++    // The 68k lane is deliberately UNTOUCHED here: Task 9 adds
++    // atalk.cla/atalk_68k.cla to the unconditional native superset once
++    // the native twin has real bodies, in the golden-rebless wave that
++    // change earns. Splicing them today would move every native
++    // program's global numbering for a module nothing calls yet.
+     if want68k {
+         neededMods.add("conn.cla")
+         neededMods.add("conn_68k.cla")
+-    } else if usesConn {
++    } else if usesConn or usesAtalk {
+         neededMods.add("conn.cla")
+         neededMods.add("conn_c.cla")
++        neededMods.add("atalk.cla")
++        neededMods.add("atalk_c.cla")
+     }
+     if want68k {
+         neededMods.add("native.cla")
+     }
+ 
+     // filehandle (2026-08-22 binary-files spec, Task 5/6): shared
+     // fileh.cla + exactly one per-lane rtFhDev* waist, same lane-split
+     // shape as conn.cla just above. The 68k lane (Task 6) now joins the
+     // unconditional full-superset splice, matching conn.cla/conn_68k.cla's
+     // own precedent: fileh.cla's own rtFh* entry points must resolve on
+@@ -1930,27 +1948,59 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
+ // first (and only, for a check-only/appinfo caller) checkProgram pass,
+ // then -- ONLY when the front end set wantEmit -- the runtime-manifest
+ // splice, a second checkProgram pass, and lowerProgram.
+ //
+ // Returns false on any diagnostic (or an unreadable entry file --
+ // entryFailed, checked by the front end BEFORE `diags`, exactly
+ // reproducing the old "cannot open entry file" message's precedence).
+ // Diagnostics stay in the existing `diags`/`diagPaths` stores exactly as
+ // before this task; driveCompile itself never prints or quits -- every
+ // front end renders them and decides its own exit code.
++// driveRtbakeFallback: abandon the --rtbake path for THIS compile and
++// re-run driveCompile from source. Two callers, both in driveCompile
++// below: a provable manifest drift (Phase A), and a host program that
++// uses one of the usage-gated runtime pairs the C-lane bake omits (after
++// the check pass, which is what sets usesConn/usesFileh/usesAtalk).
++// The caller logs its own reason first -- this is just the machinery.
++func driveRtbakeFallback(entries: list of string, testapi: bool): bool {
++    var ok: bool
++
++    haveRtbake = false
++    // clir-load-perf Task 7 (design B): a fallen-back session must
++    // RE-PARSE if the bake becomes usable again -- the pending state
++    // describes a runtime whose sources have since changed on disk, so
++    // nothing may be installed from it again without a fresh parse (and
++    // rtbakeBytes is deliberately still held: macgui only frees the
++    // buffer while bkParsedValid holds, so the next compile's
++    // gcResolveBakePath re-reads the resource and this one's own re-parse
++    // has bytes to work from).
++    bkParsedValid = false
++    bkManifestDriftPath = ""
++    driveReset()
++    resetDiags()
++    astReset()
++    ok = driveCompile(entries, testapi)
++    // Restored (not left false) so a LATER, unrelated compile in the same
++    // long-running process (macgui.cla's Mac-resident compiler, the one
++    // front end that calls driveCompile more than once) still tries the
++    // bake path fresh -- this fallback is scoped to "for that compile"
++    // only, per the design spec's own wording.
++    haveRtbake = true
++    return ok
++}
++
+ func driveCompile(entries: list of string, testapi: bool): bool {
+     var i: int
+     var h: int
+     var tail: int
+     var earlySpliceDone: bool
+     var wantLane: int
+-    var fallbackOk: bool
+     var isUiProg: bool
+     var earlySkip: list of int
+ 
+     // findings 1.4 fix round 1: invalidate cg68k.cla's cgFindRecordByName/
+     // cgSizeOf lookup caches (cgRecIdxByName, cgSizeMemo) HERE, not only on
+     // cg68Measure's own 68k-lane path -- driveCompile is the one entry
+     // BOTH backends share (main.cla's emitMode/appinfoMode C-print path
+     // calls cgFindRecordByName straight from cprint.cla/uiblob.cla,
+     // WITHOUT ever running cg68Measure/cg68ProgramFork), and it's also the
+     // one macgui.cla (the Mac-resident compiler) calls repeatedly, once
+@@ -2130,42 +2180,21 @@ func driveCompile(entries: list of string, testapi: bool): bool {
+     // match the baked copy's own source hash (expand()'s own haveRtbake-
+     // gated check, above in this file, sets bkManifestDriftPath) -- a
+     // hash-EQUAL collision no longer reaches here at all (it took the
+     // check-only-include path instead, see below). Provable drift only:
+     // the from-source fallback this used to trigger unconditionally on
+     // ANY manifest collision now only fires when the disk copy is
+     // genuinely stale, naming the drifted file so the log line is
+     // actionable instead of generic.
+     if haveRtbake and bkManifestDriftPath != "" {
+         log("clarusc --rtbake: " + bkManifestDriftPath + " differs from the baked copy; falling back to a from-source compile")
+-        haveRtbake = false
+-        // clir-load-perf Task 7 (design B): a drifted session must
+-        // RE-PARSE if the bake becomes usable again -- the pending state
+-        // describes a runtime whose sources have since changed on disk,
+-        // so nothing may be installed from it again without a fresh
+-        // parse (and rtbakeBytes is deliberately still held: macgui only
+-        // frees the buffer while bkParsedValid holds, so the next
+-        // compile's gcResolveBakePath re-reads the resource and this
+-        // one's own re-parse has bytes to work from).
+-        bkParsedValid = false
+-        bkManifestDriftPath = ""
+-        driveReset()
+-        resetDiags()
+-        astReset()
+-        fallbackOk = driveCompile(entries, testapi)
+-        // Restored (not left false) so a LATER, unrelated compile in the
+-        // same long-running process (macgui.cla's Mac-resident compiler,
+-        // the one front end that calls driveCompile more than once) still
+-        // tries the bake path fresh -- this fallback is scoped to "for
+-        // that compile" only, per the design spec's own wording.
+-        haveRtbake = true
+-        return fallbackOk
++        return driveRtbakeFallback(entries, testapi)
+     }
+     driveProgressPhase("Parsed user program")
+     // Everything expanded so far is the user program's own; everything a
+     // runtime-module splice expands from here on is runtime-side.
+     userHeadCount = asmHeads.count
+     i = 0
+     while i < userHeadCount {
+         hoistedHead.add(false)
+         i = i + 1
+     }
+@@ -2310,20 +2339,44 @@ func driveCompile(entries: list of string, testapi: bool): bool {
+     }
+     if diags.count > 0 {
+         return false
+     }
+     driveProgressPhase("Checked user program")
+ 
+     if not wantEmit {
+         return true
+     }
+ 
++    // C-lane --rtbake gap, closed (appletalk spec %7, docs/TODO.md's own
++    // fix (b)): bakeModuleList deliberately leaves the usage-gated HOST
++    // pairs (conn.cla/conn_c.cla, fileh.cla/fileh_c.cla and now
++    // atalk.cla/atalk_c.cla) out of the C-lane baked chain, and the
++    // haveRtbake branch below bypasses driveManifestSplice entirely -- so
++    // a host program using any of the three compiled to C that CALLED
++    // clar_fn_rtConnOpen/rtFhOpen/rtSvcServe without ever defining them,
++    // and the emitted C did not compile. Reusing the same from-source
++    // fallback the drift check uses costs those programs a full recompile
++    // and moves no golden (fix (a), adding the pairs to the C-lane
++    // bakeModuleList, would move every host program's baked manifest and
++    // IR indices).
++    //
++    // HERE, not beside the drift check up in Phase A (where docs/TODO.md's
++    // own write-up of fix (b) assumed usesConn/usesFileh were "already
++    // set"): they are not. checkReset() clears all three and the user
++    // program's own check pass is what sets them, which is the `Checked
++    // user program` phase just above. Placed after the wantEmit gate too,
++    // since a check-only run splices no runtime and has no gap to close.
++    if haveRtbake and not want68k and (usesConn or usesFileh or usesAtalk) {
++        log("clarusc --rtbake: host program uses connection/filehandle/AppleTalk; falling back to a from-source compile")
++        return driveRtbakeFallback(entries, testapi)
++    }
++
+     // runtime-ir-bake Task 4: the bake path branches here -- combined2/
+     // driveManifestSplice/check#2 are all bypassed (the brief's own
+     // pipeline order: load+verify stamp -> [check user, above,
+     // unchanged] -> install -> lower user). irReset() first (creates the
+     // singleton IRType entries at their fixed low indices, resets every
+     // lazy-intern iXxxIdx guard, matches a from-source compile's own
+     // reset discipline exactly), THEN bkInstallArenas() REPLACES those
+     // just-reset arenas with the baked equivalents -- see bkInstallArenas'
+     // own doc comment (bake.cla) for why installing the eight reverse-
+     // waist dispatcher stubs verbatim would be wrong (their baked bodies
+diff --git a/runtime/clarus/atalk.cla b/runtime/clarus/atalk.cla
+new file mode 100644
+index 0000000..0ef9d2e
+--- /dev/null
++++ b/runtime/clarus/atalk.cla
+@@ -0,0 +1,924 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// atalk.cla: the shared AppleTalk runtime (2026-09-06 appletalk spec,
++// %5.2-%5.7 -- docs/superpowers/specs/2026-09-06-appletalk-design.md).
++// Fixed slot tables for the three resource kinds the spec caps (2
++// listeners, 2 browsers, 2 services), a pump that turns device state into
++// the reverse-waist `clar_*_fire_*` events, and the ADSP waist conn.cla
++// dispatches to for transport 1. Lane-neutral: every device-facing
++// operation goes through the rtAtDev*/rtAdspDev*/rtLsnDev* functions
++// below, which atalk_c.cla (host, real, over runtime/host/rt_atalk.inc's
++// LToUDP stack) and atalk_68k.cla (native; stubs until Task 9) answer --
++// the conn.cla/conn_c.cla/conn_68k.cla precedent exactly.
++//
++// DORMANT this task: lowering (Task 8) is what routes `svc.serve`,
++// `b.find`, `l.register`, `c.open(appletalk ...)` and the event dispatch
++// here, and what roots rtAtalkPump/rtAtalkAlive in shake.cla the way
++// irUsesConn already roots rtConnPump/rtConnAlive. Nothing in the tree
++// calls any function below yet.
++//
++// Spliced (drive.cla) on the HOST lane whenever `usesConn or usesAtalk`,
++// after conn.cla (this file reads conn.cla's own rtConnState slot table
++// for listener accepts, and calls rtConnSetFailed), after ser.cla (reuses
++// its already-declared SerNewPtr/SerDisposePtr scratch externs rather
++// than redeclaring a duplicate pair) and after text.cla/core.cla
++// (text values, rtPanic/rtSetLastErr). NOT on the 68k lane this task --
++// Task 9 adds it there with the real atalk_68k.cla bodies.
++//
++// Error principle (spec %4.5, inherited from conn.cla): contract
++// violations are runtime errors -- use of a nil resource, `reply` outside
++// a handler, `reply` twice. Everything environmental (AppleTalk down, a
++// name already in use, no response, slot table full, ADSP absent) is a
++// `failed` event or `false` + `lastError`, never a panic. Events NEVER
++// fire from the call that caused them: failures are staged per slot and
++// drained by the next rtAtalkPump pass, exactly as conn.cla does it.
++//
++// Native contract (Task 1 probe findings, binding on atalk_68k.cla, which
++// records them in full): every per-slot parameter block is fully re-zeroed
++// before each reuse (a reused NBP parameter block hung the Mac), and NBP
++// registers the socket number verbatim -- which is why rtAtDevRegister
++// takes `sock` and rtLsnDevSocket exists at all.
++
++const rtLsnMax: int = 2
++const rtBrsMax: int = 2
++const rtSvcMax: int = 2
++
++// Lookup slots (rt_atalk.inc's RT_AT_NLK / the native lookup PB table):
++// 0-1 belong to the two browsers (lk == browser slot), 2-9 to the eight
++// connection slots' name-form ADSP opens (lk == conn slot + 2), and 9 is
++// ALSO the sync slot rtSvcCallName borrows -- a `call("Name:Type", ...)`
++// is synchronous, so it cannot overlap with conn slot 7's own async open
++// within one program pass.
++const rtAtLookupMax: int = 10
++const rtAtNameCallLk: int = 9
++
++// errOpenDenied, reused as "this lane has no streams" -- the host twin's
++// whole rtAdspDev*/rtLsnDev* family returns it (spec %4.6: AppleTalk
++// stream open, register and therefore accepted fail with an event on the
++// host this phase).
++const rtAtErrNoHost: int = -1273
++
++// ATP's own hard limits (Inside AppleTalk 2nd ed.; RT_AT_MAXREQ /
++// RT_AT_MAXRESP). Enforced, never truncated (spec %4.4).
++const rtAtMaxReq: int = 578
++const rtAtMaxResp: int = 4624
++
++// The OSErrs the spec names by number.
++const rtAtErrNoConfirm: int = -1025    // nbpNoConfirm: no such name
++const rtAtErrDuplicate: int = -1027    // nbpDuplicate: name already in use
++const rtAtErrLenErr: int = -3106       // atpLenErr: request/reply over the limit
++const rtAtErrNoBridge: int = -93       // noBridgeErr: routerless net, zone is "*"
++const rtAtErrMemFull: int = -108       // memFullErr: scratch allocation failed
++
++// Slot states. Deliberately not conn.cla's stClosed/stOpen: those name a
++// device channel, these name "this resource variable is doing something"
++// (registered / searching / serving).
++const rtAtIdle: int = 0
++const rtAtActive: int = 1
++
++// ADSP per-slot open phases (rtAdspPhase below).
++const rtAdspNone: int = 0
++const rtAdspLookup: int = 1
++const rtAdspOpening: int = 2
++const rtAdspOpen: int = 3
++
++// ---- Reverse-waist synthesized dispatchers (Task 8 synthesizes their
++// bodies, self-rooted, exactly like conn.cla's own clar_conn_fire_*
++// family -- see that module's comment for the pattern). Bare externs with
++// literal names: these are the fixed cross-task interface. ----
++external func clar_lsn_fire_accepted(slot: int, c: int)
++external func clar_lsn_fire_failed(slot: int, code: int, msg: string)
++external func clar_brs_fire_found(slot: int, name: string, addr: int)
++external func clar_brs_fire_done(slot: int)
++external func clar_brs_fire_failed(slot: int, code: int, msg: string)
++external func clar_svc_fire_request(slot: int, op: int, req: text, from: int)
++external func clar_svc_fire_failed(slot: int, code: int, msg: string)
++
++// ---- State. Parallel fixed arrays (literal sizes -- parseType's array
++// grammar needs an int LITERAL, not a named const), conn.cla's own
++// convention. Every default (0/false/"") is already the correct rest
++// state. ----
++
++// rtAtUp: the stack has been brought up at least once. rtAtalkPump does
++// nothing at all until it is true, so a program that merely DECLARES a
++// service never opens a socket (and never calls into a null host stack).
++var rtAtUp: bool
++
++var rtLsnState: int[2]
++var rtLsnPendFailedCode: int[2]
++var rtLsnPendFailedMsg: string[2]
++
++var rtBrsState: int[2]
++var rtBrsPendFailedCode: int[2]
++var rtBrsPendFailedMsg: string[2]
++// rtBrsPendDone: the lookup window closed and every `found` has fired;
++// `done` itself fires from the NEXT pump pass. Keeping it staged (rather
++// than firing inline after the founds) is what makes rtAtalkAlive() hold
++// the host CLI loop open across the gap.
++var rtBrsPendDone: bool[2]
++
++var rtSvcState: int[2]
++var rtSvcSock: int[2]
++var rtSvcInHandler: bool[2]
++var rtSvcReplied: bool[2]
++var rtSvcPendFailedCode: int[2]
++var rtSvcPendFailedMsg: string[2]
++
++// rtSvcName/rtSvcType/rtLsnName/rtLsnType: the registered NBP entity, kept
++// so stop() can call rtAtDevRemove(obj, typ) -- that waist signature takes
++// the name from its caller (the native PRemoveName needs a fresh NTE), so
++// the name has to live somewhere, and nothing else on either lane
++// remembers it. (Deviation from the task brief's global table, which
++// listed no name storage: without these, `stop` could close the socket but
++// never remove the name, and spec %4.4/%5.4 both say stop removes it --
++// a restarted server would then fail with nbpDuplicate.)
++var rtSvcName: string[2]
++var rtSvcType: string[2]
++var rtLsnName: string[2]
++var rtLsnType: string[2]
++
++// rtAdspPhase: per CONNECTION slot (8, spec %4.1's grown slot table), not
++// per listener/browser/service. 0 none, 1 lookup pending, 2 open pending,
++// 3 open.
++var rtAdspPhase: int[8]
++// rtConnSlotTransport: 0 serial (or unused), 1 ADSP. Declared HERE rather
++// than in conn.cla so conn.cla gains no global of its own for a transport
++// it cannot reach without this module; conn.cla reads it from Task 9 on
++// (this module is always spliced alongside conn.cla, both lanes).
++var rtConnSlotTransport: int[8]
++
++// rtAtLastErr: the last device-layer error this module saw, kept for
++// diagnosis on both lanes (the native twin's own PB ioResult goes here
++// too). Never part of a public contract -- every user-visible failure
++// travels as a `failed` event or lastError.
++var rtAtLastErr: int
++
++// ---- Helpers ----
++
++// rtAtEnsureUp: lazily bring the stack up (host: open the LToUDP socket
++// and acquire a node; native: OpenDriver(".MPP"), never closed). 0 on
++// success. Cheap to call repeatedly -- both lanes short-circuit once up.
++func rtAtEnsureUp(): int {
++    var e: int
++
++    e = rtAtDevUp()
++    if e != 0 {
++        rtAtLastErr = e
++        return e
++    }
++    rtAtUp = true
++    return 0
++}
++
++// rtAtRegMsg: the message for a failed NBP registration. nbpDuplicate is
++// the one the spec names ("name in use"); anything else is generic.
++func rtAtRegMsg(code: int): string {
++    if code == rtAtErrDuplicate {
++        return "name in use"
++    }
++    return "could not register name"
++}
++
++func rtSvcSetFailed(slot: int, code: int, msg: string) {
++    // Keep-first, conn.cla's own rule: the EARLIEST undrained failure is
++    // the useful one. A 0 code is never a real failure on either lane, so
++    // the code field doubles as its own "nothing pending" flag.
++    if rtSvcPendFailedCode[slot] == 0 {
++        rtSvcPendFailedCode[slot] = code
++        rtSvcPendFailedMsg[slot] = msg
++    }
++    rtAtLastErr = code
++}
++
++func rtBrsSetFailed(slot: int, code: int, msg: string) {
++    if rtBrsPendFailedCode[slot] == 0 {
++        rtBrsPendFailedCode[slot] = code
++        rtBrsPendFailedMsg[slot] = msg
++    }
++    rtAtLastErr = code
++}
++
++func rtLsnSetFailed(slot: int, code: int, msg: string) {
++    if rtLsnPendFailedCode[slot] == 0 {
++        rtLsnPendFailedCode[slot] = code
++        rtLsnPendFailedMsg[slot] = msg
++    }
++    rtAtLastErr = code
++}
++
++// rtAtTextToPtr: copy a text's bytes into a fresh scratch block, the
++// pokeb marshal rtConnSendText uses (the caller disposes). ptr(0) on a
++// zero-length text OR on an allocation failure -- callers that must tell
++// the two apart check the length themselves first.
++func rtAtTextToPtr(t: text): ptr {
++    var p: ptr
++    var i: int
++    var n: int
++
++    n = t.length
++    if n == 0 {
++        return ptr(0)
++    }
++    p = SerNewPtr(n)
++    if p == ptr(0) {
++        return ptr(0)
++    }
++    i = 0
++    while i < n {
++        pokeb(p + i, int(t[i]))
++        i = i + 1
++    }
++    return p
++}
++
++// rtAtAppendBytes: append n bytes from p to t, one Toolbox-free byte at a
++// time. ponytail: per-byte append -- the batched alternative
++// (rtTextFromBytes) takes a raw text POINTER and is not reachable from a
++// `text` value, so this loop is the whole vocabulary available here. At
++// ATP sizes (<= 4624) it is bounded and cheap.
++func rtAtAppendBytes(t: text, p: ptr, n: int) {
++    var i: int
++
++    if p == ptr(0) {
++        return
++    }
++    i = 0
++    while i < n {
++        t.append(char(peekb(p + i)))
++        i = i + 1
++    }
++}
++
++// ---- Services (spec %4.4, %5.5) ----
++
++// rtSvcServe: open an ATP socket, register the NBP name pointing AT that
++// socket (the Task 1 probe finding: NBP registers the socket verbatim),
++// then arm the first get-request. Every failure is a staged `failed`
++// event -- serving is environmental from end to end.
++func rtSvcServe(h: int, name: string, typ: string) {
++    var slot: int
++    var e: int
++    var sock: int
++
++    if h == 0 {
++        rtPanic("use of nil service")
++    }
++    slot = h - 1
++    if rtSvcState[slot] == rtAtActive {
++        // Re-serving a serving variable would leak the old socket and the
++        // old name. Weather, not a bug (conn.cla treats a reopen the same
++        // way), so it stages a `failed` instead of panicking.
++        rtSvcSetFailed(slot, rtConnErrAlreadyOpen, "service already serving")
++        return
++    }
++    e = rtAtEnsureUp()
++    if e != 0 {
++        rtSvcSetFailed(slot, e, "AppleTalk unavailable")
++        return
++    }
++    sock = rtAtDevAtpOpen()
++    if sock <= 0 {
++        rtSvcSetFailed(slot, rtAtDevLastErr(), "could not open socket")
++        return
++    }
++    e = rtAtDevRegister(name, typ, sock)
++    if e != 0 {
++        rtAtDevAtpClose(sock)
++        rtSvcSetFailed(slot, e, rtAtRegMsg(e))
++        return
++    }
++    rtSvcSock[slot] = sock
++    rtSvcName[slot] = name
++    rtSvcType[slot] = typ
++    rtSvcState[slot] = rtAtActive
++    e = rtAtDevAtpArm(slot, sock)
++    if e != 0 {
++        // The socket and the name are live; only the receive arm failed.
++        // Stay serving and let the pump retry the arm each pass.
++        rtSvcSetFailed(slot, e, "could not receive requests")
++    }
++}
++
++// rtSvcReply: the ONE contract-checked entry point in this file besides
++// the nil checks -- calling it outside a request handler, or twice inside
++// one, is a program bug (spec %4.4), so both panic. A reply over ATP's
++// 4624-byte ceiling is not a bug though: it is weather (a `failed` event)
++// PLUS the automatic -1 reply, so the requester never waits out its
++// timeout (spec %4.4's own wording).
++func rtSvcReply(h: int, code: int, data: text) {
++    var slot: int
++    var n: int
++    var e: int
++    var scratch: ptr
++
++    if h == 0 {
++        rtPanic("use of nil service")
++    }
++    slot = h - 1
++    if not rtSvcInHandler[slot] {
++        rtPanic("reply outside a request handler")
++    }
++    if rtSvcReplied[slot] {
++        rtPanic("reply already sent")
++    }
++    // Set BEFORE any early return below: every path from here answers the
++    // request exactly once, and the pump's own auto-reply must not add a
++    // second response on top of the -1 the over-length path sends.
++    rtSvcReplied[slot] = true
++    n = data.length
++    if n > rtAtMaxResp {
++        rtSvcSetFailed(slot, rtAtErrLenErr, "reply too long")
++        rtAtDevAtpRespond(slot, -1, ptr(0), 0)
++        return
++    }
++    if n == 0 {
++        e = rtAtDevAtpRespond(slot, code, ptr(0), 0)
++        if e != 0 {
++            rtSvcSetFailed(slot, e, "reply failed")
++        }
++        return
++    }
++    scratch = rtAtTextToPtr(data)
++    if scratch == ptr(0) {
++        rtSvcSetFailed(slot, rtAtErrMemFull, "reply failed")
++        rtAtDevAtpRespond(slot, -1, ptr(0), 0)
++        return
++    }
++    // rtAtDevAtpRespond copies into the slot's own reply buffer (native:
++    // the async PSendResponse reads from THAT buffer, not from here), so
++    // the scratch goes back immediately.
++    e = rtAtDevAtpRespond(slot, code, scratch, n)
++    SerDisposePtr(scratch)
++    if e != 0 {
++        rtSvcSetFailed(slot, e, "reply failed")
++    }
++}
++
++// rtSvcReplyStr: `string` converts to `text` at a call argument (Ch3), so
++// the string form is the text form with no second marshal path.
++func rtSvcReplyStr(h: int, code: int, s: string) {
++    rtSvcReply(h, code, s)
++}
++
++// rtSvcStop: remove the name, close the socket. Idempotent (spec %4.4).
++func rtSvcStop(h: int) {
++    var slot: int
++
++    if h == 0 {
++        rtPanic("use of nil service")
++    }
++    slot = h - 1
++    if rtSvcState[slot] != rtAtActive {
++        return
++    }
++    rtAtDevRemove(rtSvcName[slot], rtSvcType[slot])
++    rtAtDevAtpClose(rtSvcSock[slot])
++    rtSvcState[slot] = rtAtIdle
++    rtSvcSock[slot] = 0
++    rtSvcName[slot] = ""
++    rtSvcType[slot] = ""
++}
++
++// rtSvcCallAddr: the synchronous requester (spec %4.4, Q3). true only when
++// a response arrived AND its code is 0; `reply` holds the payload either
++// way. Uses the requester's own socket, so a serving variable may call.
++func rtSvcCallAddr(h: int, addr: int, op: int, req: text, reply: text): bool {
++    var e: int
++    var n: int
++    var code: int
++    var p: ptr
++
++    if h == 0 {
++        rtPanic("use of nil service")
++    }
++    if req.length > rtAtMaxReq {
++        rtSetLastErr(rtAtErrLenErr, "request too long")
++        return false
++    }
++    e = rtAtEnsureUp()
++    if e != 0 {
++        rtSetLastErr(e, "AppleTalk unavailable")
++        return false
++    }
++    p = rtAtTextToPtr(req)
++    if p == ptr(0) and req.length > 0 {
++        rtSetLastErr(rtAtErrMemFull, "request too long")
++        return false
++    }
++    // Blocks up to timeout x retries (2 s x 3, fixed this phase). Incoming
++    // requests queue while it blocks; they are answered from the pump.
++    n = rtAtDevAtpCall(addr, op, p, req.length)
++    if p != ptr(0) {
++        SerDisposePtr(p)
++    }
++    if n < 0 {
++        rtAtLastErr = n
++        rtSetLastErr(n, "no response")
++        return false
++    }
++    code = rtAtDevAtpCallCode()
++    reply.clear()
++    rtAtAppendBytes(reply, rtAtDevAtpCallPtr(), n)
++    if code != 0 {
++        rtSetLastErr(code, "service")
++        return false
++    }
++    return true
++}
++
++// rtSvcCallName: the "Name:Type" target form -- a SYNCHRONOUS NBP lookup
++// (lookup slot 9, borrowed for exactly the duration of this call) and then
++// the address form. The spin is what makes it synchronous: the host's
++// lookup window is 3 x 1 s of real time driven by rtAtDevPoll; the native
++// twin's PLookupName is issued sync and comes back done on the first
++// LookupDone call, so the loop body never runs there.
++//
++// A program can never call its OWN registered name on the host lane: the
++// LToUDP stack drops its own datagrams (rt_atalk.inc's sender id), so the
++// lookup finds nothing and this returns false with nbpNoConfirm. Call by
++// address, or from a second process, to reach a local service on the host.
++func rtSvcCallName(h: int, name: string, op: int, req: text, reply: text): bool {
++    var e: int
++    var addr: int
++    var idx: int
++
++    if h == 0 {
++        rtPanic("use of nil service")
++    }
++    // "Name:Type" -- split at the first colon (Clarus has no by-reference
++    // string out-params, and two locals beat a pair of scratch globals).
++    idx = name.indexOf(':')
++    if idx < 0 {
++        rtSetLastErr(rtAtErrNoConfirm, "name not found")
++        return false
++    }
++    e = rtAtEnsureUp()
++    if e != 0 {
++        rtSetLastErr(e, "AppleTalk unavailable")
++        return false
++    }
++    e = rtAtDevLookupStart(rtAtNameCallLk, name[0, idx], name[idx + 1, name.length - idx - 1], "*")
++    if e != 0 {
++        rtAtLastErr = e
++        rtSetLastErr(e, "name not found")
++        return false
++    }
++    while not rtAtDevLookupDone(rtAtNameCallLk) {
++        rtAtDevPoll()
++    }
++    if rtAtDevLookupCount(rtAtNameCallLk) == 0 {
++        rtSetLastErr(rtAtErrNoConfirm, "name not found")
++        return false
++    }
++    addr = rtAtDevLookupAddr(rtAtNameCallLk, 0)
++    return rtSvcCallAddr(h, addr, op, req, reply)
++}
++
++// ---- Service browsers (spec %4.3, %5.6) ----
++
++// rtBrsFind: an NBP lookup of "=:typ@zone" on the browser's own lookup
++// slot. `zone` is "*" from the one-argument form (lowering passes it);
++// an empty string is treated the same way rather than reaching the wire.
++func rtBrsFind(h: int, typ: string, zone: string) {
++    var slot: int
++    var e: int
++    var z: string
++
++    if h == 0 {
++        rtPanic("use of nil serviceBrowser")
++    }
++    slot = h - 1
++    z = zone
++    if z == "" {
++        z = "*"
++    }
++    e = rtAtEnsureUp()
++    if e != 0 {
++        rtBrsSetFailed(slot, e, "AppleTalk unavailable")
++        return
++    }
++    e = rtAtDevLookupStart(slot, "=", typ, z)
++    if e != 0 {
++        rtBrsSetFailed(slot, e, "lookup failed")
++        return
++    }
++    rtBrsState[slot] = rtAtActive
++    rtBrsPendDone[slot] = false
++}
++
++// rtBrsZones: synchronous, and never fails from the caller's point of
++// view -- a routerless LocalTalk net (noBridgeErr), a missing .XPP, or any
++// other error all yield the one-element list ["*"], so programs never
++// special-case the routerless case (spec %4.3). The host lane always takes
++// that path: its stack has no ZIP at all.
++func rtBrsZones(h: int, out: list of string) {
++    if h == 0 {
++        rtPanic("use of nil serviceBrowser")
++    }
++    out.clear()
++    if rtAtEnsureUp() != 0 or rtAtDevZones(out) != 0 or out.count == 0 {
++        out.clear()
++        out.add("*")
++    }
++}
++
++// ---- Listeners (spec %4.2, %5.4) ----
++
++// rtLsnRegister: an ADSP connection listener plus the NBP registration of
++// its own DDP socket. On the host lane rtLsnDevInit returns rtAtErrNoHost
++// and this stages the spec's own "streams not available on this lane"
++// failure before any name is registered.
++func rtLsnRegister(h: int, name: string, typ: string) {
++    var slot: int
++    var e: int
++
++    if h == 0 {
++        rtPanic("use of nil listener")
++    }
++    slot = h - 1
++    if rtLsnState[slot] == rtAtActive {
++        rtLsnSetFailed(slot, rtConnErrAlreadyOpen, "listener already registered")
++        return
++    }
++    e = rtAtEnsureUp()
++    if e != 0 {
++        rtLsnSetFailed(slot, e, "AppleTalk unavailable")
++        return
++    }
++    e = rtLsnDevInit(slot)
++    if e != 0 {
++        if e == rtAtErrNoHost {
++            rtLsnSetFailed(slot, e, "streams not available on this lane")
++        } else {
++            rtLsnSetFailed(slot, e, "could not start listener")
++        }
++        return
++    }
++    e = rtAtDevRegister(name, typ, rtLsnDevSocket(slot))
++    if e != 0 {
++        rtLsnDevRemove(slot)
++        rtLsnSetFailed(slot, e, rtAtRegMsg(e))
++        return
++    }
++    e = rtLsnDevListen(slot)
++    if e != 0 {
++        rtAtDevRemove(name, typ)
++        rtLsnDevRemove(slot)
++        rtLsnSetFailed(slot, e, "could not start listener")
++        return
++    }
++    rtLsnName[slot] = name
++    rtLsnType[slot] = typ
++    rtLsnState[slot] = rtAtActive
++}
++
++// rtLsnStop: remove the name and the listener. Idempotent (spec %4.2).
++func rtLsnStop(h: int) {
++    var slot: int
++
++    if h == 0 {
++        rtPanic("use of nil listener")
++    }
++    slot = h - 1
++    if rtLsnState[slot] != rtAtActive {
++        return
++    }
++    rtAtDevRemove(rtLsnName[slot], rtLsnType[slot])
++    rtLsnDevRemove(slot)
++    rtLsnState[slot] = rtAtIdle
++    rtLsnName[slot] = ""
++    rtLsnType[slot] = ""
++}
++
++// ---- ADSP: connection transport 1 (spec %4.1, %5.3) ----
++
++// rtAdspOpenName: `c.open(appletalk "Name:Type")`. Starts the NBP lookup
++// on the connection slot's own lookup slot (slot + 2); rtAdspPoll drives
++// the rest. 0 means "started", not "open".
++func rtAdspOpenName(slot: int, spec: string): int {
++    var e: int
++    var idx: int
++
++    idx = spec.indexOf(':')
++    if idx < 0 {
++        return rtAtErrNoConfirm
++    }
++    e = rtAtEnsureUp()
++    if e != 0 {
++        return e
++    }
++    e = rtAtDevLookupStart(slot + 2, spec[0, idx], spec[idx + 1, spec.length - idx - 1], "*")
++    if e != 0 {
++        rtAtLastErr = e
++        return e
++    }
++    rtAdspPhase[slot] = rtAdspLookup
++    return 0
++}
++
++// rtAdspOpenAddr: `c.open(addr)` -- no lookup step, straight to the ADSP
++// open (spec %5.3).
++func rtAdspOpenAddr(slot: int, addr: int): int {
++    var e: int
++
++    e = rtAtEnsureUp()
++    if e != 0 {
++        return e
++    }
++    e = rtAdspDevOpen(slot, addr)
++    if e != 0 {
++        rtAtLastErr = e
++        rtAdspPhase[slot] = rtAdspNone
++        return e
++    }
++    rtAdspPhase[slot] = rtAdspOpening
++    return 0
++}
++
++// rtAdspPoll: one step of the per-slot open state machine, called from
++// conn.cla's pump (Task 9) for every slot whose transport is 1. 1 once the
++// connection BECAME open (reported exactly once -- an already-open slot
++// answers 0, so the pump cannot fire `opened` twice), 0 while pending,
++// the device error code (< 0) on failure.
++func rtAdspPoll(slot: int): int {
++    var e: int
++    var addr: int
++
++    if rtAdspPhase[slot] == rtAdspLookup {
++        if not rtAtDevLookupDone(slot + 2) {
++            return 0
++        }
++        if rtAtDevLookupCount(slot + 2) == 0 {
++            rtAdspPhase[slot] = rtAdspNone
++            return rtAtErrNoConfirm
++        }
++        addr = rtAtDevLookupAddr(slot + 2, 0)
++        e = rtAdspDevOpen(slot, addr)
++        if e != 0 {
++            rtAtLastErr = e
++            rtAdspPhase[slot] = rtAdspNone
++            return e
++        }
++        rtAdspPhase[slot] = rtAdspOpening
++        return 0
++    }
++    if rtAdspPhase[slot] == rtAdspOpening {
++        e = rtAdspDevOpenPoll(slot)
++        if e == 1 {
++            rtAdspPhase[slot] = rtAdspOpen
++            return 1
++        }
++        if e < 0 {
++            rtAtLastErr = e
++            rtAdspPhase[slot] = rtAdspNone
++            return e
++        }
++        return 0
++    }
++    return 0
++}
++
++func rtAdspAvail(slot: int): int {
++    return rtAdspDevAvail(slot)
++}
++
++// rtAdspReadInto: drain up to 1024 currently-available bytes into t with
++// ONE device read (spec %5.3's batched-read upgrade to conn.cla's
++// byte-at-a-time ponytail note). Returns the number of bytes appended.
++// The 1024 ceiling matches the per-slot ADSP receive queue.
++func rtAdspReadInto(slot: int, t: text): int {
++    var n: int
++    var got: int
++    var scratch: ptr
++
++    n = rtAdspDevAvail(slot)
++    if n <= 0 {
++        return 0
++    }
++    if n > 1024 {
++        n = 1024
++    }
++    scratch = SerNewPtr(n)
++    if scratch == ptr(0) {
++        rtAtLastErr = rtAtErrMemFull
++        return 0
++    }
++    got = rtAdspDevRead(slot, scratch, n)
++    if got < 0 {
++        rtAtLastErr = got
++        got = 0
++    }
++    rtAtAppendBytes(t, scratch, got)
++    SerDisposePtr(scratch)
++    return got
++}
++
++func rtAdspWrite(slot: int, p: ptr, n: int): int {
++    return rtAdspDevWrite(slot, p, n)
++}
++
++func rtAdspClose(slot: int) {
++    rtAdspDevClose(slot)
++    rtAdspPhase[slot] = rtAdspNone
++}
++
++func rtAdspGone(slot: int): bool {
++    return rtAdspDevGone(slot)
++}
++
++// rtConnOpenAddr: `connection.open(addr)` -- the address form of an
++// AppleTalk open, tagged transport 1 so conn.cla's pump (Task 9) polls
++// rtAdspPoll for this slot. An immediate failure stages conn.cla's own
++// pending `failed`; success is reported by that pump, never from here
++// (conn.cla's "not inside open itself" rule).
++func rtConnOpenAddr(h: int, addr: int) {
++    var slot: int
++    var e: int
++
++    if h == 0 {
++        rtPanic("use of nil connection")
++    }
++    slot = h - 1
++    rtConnSlotTransport[slot] = 1
++    e = rtAdspOpenAddr(slot, addr)
++    if e != 0 {
++        rtConnSetFailed(slot, e, "could not open connection")
++    }
++}
++
++// ---- The pump ----
++
++// rtAtalkPump: one event-loop pass. Called from the compiler-synthesized
++// clar_conn_pump() beside rtConnPump (spec %5.7), so neither the native UI
++// loop nor the host CLI loop needs a new hook.
++//
++// Per slot, in this order: drain a staged `failed` first (so a failure
++// always precedes whatever the device does next), then service the slot.
++// Services answer at most ONE request per pass and always answer it before
++// the next slot is polled -- the device layer answers "the last dequeued
++// request", so dequeuing a second one before replying would strand the
++// first (reqFailed, -1096).
++func rtAtalkPump() {
++    var i: int
++    var code: int
++    var pr: int
++    var n: int
++    var req: text
++    var free: int
++    var j: int
++    var e: int
++
++    if not rtAtUp {
++        return
++    }
++    rtAtDevPoll()
++
++    // ---- services ----
++    i = 0
++    while i < rtSvcMax {
++        if rtSvcPendFailedCode[i] != 0 {
++            code = rtSvcPendFailedCode[i]
++            rtSvcPendFailedCode[i] = 0
++            clar_svc_fire_failed(i, code, rtSvcPendFailedMsg[i])
++            rtSvcPendFailedMsg[i] = ""
++        }
++        if rtSvcState[i] == rtAtActive and not rtAtDevAtpRespBusy(i) {
++            pr = rtAtDevAtpPoll(i)
++            if pr < 0 {
++                rtSvcSetFailed(i, pr, "request failed")
++            } else if pr == 1 {
++                n = rtAtDevAtpReqLen(i)
++                if n > rtAtMaxReq {
++                    n = rtAtMaxReq
++                }
++                req = ""
++                rtAtAppendBytes(req, rtAtDevAtpReqPtr(i), n)
++                rtSvcInHandler[i] = true
++                rtSvcReplied[i] = false
++                clar_svc_fire_request(i, rtAtDevAtpReqOp(i), req, rtAtDevAtpReqFrom(i))
++                rtSvcInHandler[i] = false
++                if not rtSvcReplied[i] {
++                    // Spec %4.4: a handler that returns without replying
++                    // gets an automatic empty reply with code -1, so the
++                    // requester never waits out its timeout.
++                    rtSvcReplied[i] = true
++                    rtAtDevAtpRespond(i, -1, ptr(0), 0)
++                }
++            }
++            // Re-arm only once the reply is off the wire; the native lane
++            // sends responses asynchronously, so this is checked fresh.
++            if not rtAtDevAtpRespBusy(i) {
++                rtAtDevAtpArm(i, rtSvcSock[i])
++            }
++        }
++        i = i + 1
++    }
++
++    // ---- browsers ----
++    i = 0
++    while i < rtBrsMax {
++        if rtBrsPendFailedCode[i] != 0 {
++            code = rtBrsPendFailedCode[i]
++            rtBrsPendFailedCode[i] = 0
++            clar_brs_fire_failed(i, code, rtBrsPendFailedMsg[i])
++            rtBrsPendFailedMsg[i] = ""
++        } else if rtBrsPendDone[i] {
++            rtBrsPendDone[i] = false
++            clar_brs_fire_done(i)
++        } else if rtBrsState[i] == rtAtActive and rtAtDevLookupDone(i) {
++            rtBrsState[i] = rtAtIdle
++            n = rtAtDevLookupCount(i)
++            j = 0
++            while j < n {
++                clar_brs_fire_found(i, rtAtDevLookupName(i, j), rtAtDevLookupAddr(i, j))
++                j = j + 1
++            }
++            // `done` fires from the NEXT pass (spec %4.3's "then done"),
++            // which also keeps rtAtalkAlive() true across the gap.
++            rtBrsPendDone[i] = true
++        }
++        i = i + 1
++    }
++
++    // ---- listeners ----
++    i = 0
++    while i < rtLsnMax {
++        if rtLsnPendFailedCode[i] != 0 {
++            code = rtLsnPendFailedCode[i]
++            rtLsnPendFailedCode[i] = 0
++            clar_lsn_fire_failed(i, code, rtLsnPendFailedMsg[i])
++            rtLsnPendFailedMsg[i] = ""
++        }
++        if rtLsnState[i] == rtAtActive {
++            pr = rtLsnDevPoll(i)
++            if pr < 0 {
++                rtLsnSetFailed(i, pr, "listener failed")
++            } else if pr == 1 {
++                free = -1
++                j = 0
++                while j < rtConnMax {
++                    if free < 0 and rtConnState[j] == stClosed and rtAdspPhase[j] == rtAdspNone {
++                        free = j
++                    }
++                    j = j + 1
++                }
++                if free < 0 {
++                    // Spec %4.2: all slots taken -> deny, and the client's
++                    // own open fails. Not a failure of THIS program.
++                    rtLsnDevDeny(i)
++                } else {
++                    e = rtLsnDevAccept(i, free)
++                    if e != 0 {
++                        rtLsnSetFailed(i, e, "could not accept connection")
++                    } else {
++                        rtConnState[free] = stOpen
++                        rtConnSlotTransport[free] = 1
++                        rtAdspPhase[free] = rtAdspOpen
++                        // spec %4.2: no `opened` fires for an accepted
++                        // connection -- `accepted` IS the event.
++                        clar_lsn_fire_accepted(i, free + 1)
++                    }
++                }
++                rtLsnDevListen(i)
++            }
++        }
++        i = i + 1
++    }
++}
++
++// rtAtalkAlive: the host CLI pump loop's own lifetime condition (spec
++// %5.7) -- any service serving, any listener registered, any browser
++// searching, or any event still waiting to be drained.
++func rtAtalkAlive(): bool {
++    var i: int
++
++    i = 0
++    while i < rtSvcMax {
++        if rtSvcState[i] == rtAtActive or rtSvcPendFailedCode[i] != 0 {
++            return true
++        }
++        i = i + 1
++    }
++    i = 0
++    while i < rtBrsMax {
++        if rtBrsState[i] == rtAtActive or rtBrsPendFailedCode[i] != 0 or rtBrsPendDone[i] {
++            return true
++        }
++        i = i + 1
++    }
++    i = 0
++    while i < rtLsnMax {
++        if rtLsnState[i] == rtAtActive or rtLsnPendFailedCode[i] != 0 {
++            return true
++        }
++        i = i + 1
++    }
++    return false
++}
++
++// rtAtalkAddrStr: `string(addr)` (spec %4.3) -- "net.node.socket" from the
++// packed net<<16 | node<<8 | socket the whole waist passes addresses as.
++func rtAtalkAddrStr(addr: int): string {
++    return string((addr >> 16) & 0xFFFF) + "." + string((addr >> 8) & 0xFF) + "." + string(addr & 0xFF)
++}
+diff --git a/runtime/clarus/atalk_68k.cla b/runtime/clarus/atalk_68k.cla
+new file mode 100644
+index 0000000..f9ce9da
+--- /dev/null
++++ b/runtime/clarus/atalk_68k.cla
+@@ -0,0 +1,195 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// atalk_68k.cla: the native (68k) AppleTalk waist -- atalk_c.cla's twin,
++// same rtAtDev*/rtAdspDev*/rtLsnDev* names, one file spliced per lane
++// (the conn_68k.cla/conn_c.cla precedent).
++//
++// STUBS this task (2026-09-06 appletalk spec, Task 7). Every function
++// below reports "unavailable" (rtAtErrNoHost / 0 / false / ""), and this
++// module is spliced NOWHERE yet: drive.cla adds atalk.cla + atalk_c.cla to
++// the host lane only, and the 68k lane stays untouched (zero cg68k golden
++// churn). Task 9 replaces the BODIES -- no signature here moves.
++//
++// What Task 9 puts in these bodies (spec %5.2-%5.6, and the Task 1 probe
++// findings, which are binding):
++//   - .MPP/.ATP/.XPP/.DSP opened lazily with OpenDriver and never closed
++//     (Apple's warning: other processes may be using them); every call is
++//     a _Control with a csCode through toolbox/devices.cla.
++//   - EVERY per-slot parameter block must be fully re-zeroed before each
++//     reuse. A reused NBP parameter block hung the Mac in the probe --
++//     this is not a tidiness rule.
++//   - NBP registers the socket number VERBATIM, so a service writes its
++//     own ATP socket into the NTE before PRegisterName (which is why
++//     rtAtDevRegister takes `sock`), and a listener registers its own DDP
++//     socket (rtLsnDevSocket). A program's own address is read back out of
++//     the NTE after registerName.
++//   - Services: POpenATPSkt, PRegisterName (verify on), async PGetRequest
++//     into the slot's 578-byte buffer; PSendResponse async with the XO
++//     flag (a sync XO PSendResponse only completes on the requester's TRel
++//     or the 30 s release timer), which is what rtAtDevAtpRespBusy is for
++//     -- the pump does not re-arm PGetRequest while a response is still
++//     outstanding.
++//   - Browsers: async PLookupName, maxToGet 32, interval 8 (1 s), count 3;
++//     rtAtDevLookupName/-Addr parse the return buffer's tuples (the
++//     runtime does its own NBPExtract). Zones: sync GetZoneList over .XPP
++//     until zipLastFlag, ["*"] on noBridgeErr/reqFailed/no .XPP.
++//   - ADSP: per slot a 242-byte CCB, 1 KB send and receive queues and a
++//     570-byte attention buffer; avail = dspStatus.recvQPending, read =
++//     sync dspRead into the caller's scratch, gone = CCB state >=
++//     sClosing, write = sync dspWrite with flush.
++//   - Listener: dspCLInit + PRegisterName + async dspCLListen; on
++//     completion dspInit + dspOpen(ocAccept) into the free connection
++//     slot, then re-arm; dspCLDeny when no slot is free.
++
++func rtAtDevUp(): int {
++    return rtAtErrNoHost
++}
++
++func rtAtDevRegister(obj: string, typ: string, sock: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAtDevRemove(obj: string, typ: string): int {
++    return rtAtErrNoHost
++}
++
++func rtAtDevLookupStart(lk: int, obj: string, typ: string, zone: string): int {
++    return rtAtErrNoHost
++}
++
++func rtAtDevLookupDone(lk: int): bool {
++    return true
++}
++
++func rtAtDevLookupCount(lk: int): int {
++    return 0
++}
++
++func rtAtDevLookupAddr(lk: int, i: int): int {
++    return 0
++}
++
++func rtAtDevLookupName(lk: int, i: int): string {
++    return ""
++}
++
++func rtAtDevZones(out: list of string): int {
++    return rtAtErrNoBridge
++}
++
++func rtAtDevAtpOpen(): int {
++    return 0
++}
++
++func rtAtDevAtpClose(sock: int) {
++}
++
++func rtAtDevAtpArm(slot: int, sock: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAtDevAtpPoll(slot: int): int {
++    return 0
++}
++
++func rtAtDevAtpReqOp(slot: int): int {
++    return 0
++}
++
++func rtAtDevAtpReqFrom(slot: int): int {
++    return 0
++}
++
++func rtAtDevAtpReqLen(slot: int): int {
++    return 0
++}
++
++func rtAtDevAtpReqPtr(slot: int): ptr {
++    return ptr(0)
++}
++
++func rtAtDevAtpRespond(slot: int, code: int, p: ptr, n: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAtDevAtpRespBusy(slot: int): bool {
++    return false
++}
++
++func rtAtDevAtpCall(addr: int, op: int, req: ptr, reqLen: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAtDevAtpCallCode(): int {
++    return 0
++}
++
++func rtAtDevAtpCallPtr(): ptr {
++    return ptr(0)
++}
++
++// rtAtDevLastErr: the stub's own "why AtpOpen returned 0" answer.
++func rtAtDevLastErr(): int {
++    return rtAtErrNoHost
++}
++
++// rtAtDevPoll: a no-op natively even once Task 9 lands -- the Toolbox
++// drivers run their own async parameter blocks, so there is nothing to
++// drain here; the pump polls ioResult per slot instead.
++func rtAtDevPoll() {
++}
++
++func rtAdspDevOpen(slot: int, addr: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAdspDevOpenPoll(slot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAdspDevAvail(slot: int): int {
++    return 0
++}
++
++func rtAdspDevRead(slot: int, p: ptr, n: int): int {
++    return 0
++}
++
++func rtAdspDevWrite(slot: int, p: ptr, n: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAdspDevClose(slot: int) {
++}
++
++func rtAdspDevGone(slot: int): bool {
++    return true
++}
++
++func rtLsnDevInit(slot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtLsnDevListen(slot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtLsnDevPoll(slot: int): int {
++    return 0
++}
++
++func rtLsnDevAccept(slot: int, connSlot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtLsnDevDeny(slot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtLsnDevRemove(slot: int) {
++}
++
++func rtLsnDevSocket(slot: int): int {
++    return 0
++}
+diff --git a/runtime/clarus/atalk_c.cla b/runtime/clarus/atalk_c.cla
+new file mode 100644
+index 0000000..4c26aa3
+--- /dev/null
++++ b/runtime/clarus/atalk_c.cla
+@@ -0,0 +1,313 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// atalk_c.cla: the C-lane AppleTalk waist (2026-09-06 appletalk spec %6),
++// eighteen `AtalkH`-prefixed externs (the family-prefix convention
++// conn_c.cla/ser.cla explain: a bare short name could collide with a user
++// program's own `external func` once everything is one translation unit)
++// rendering as rt_ext_AtalkH* in runtime/host/rt_atalk.inc -- a real
++// LocalTalk-over-UDP peer, so a host program is a genuine peer of the
++// emulators. atalk_68k.cla is this file's native twin: same rtAtDev*/
++// rtAdspDev*/rtLsnDev* names, real Toolbox _Control calls.
++//
++// What this lane does NOT have (spec %4.6, %6.1): ADSP and therefore
++// streams. Every rtAdspDev*/rtLsnDev* function below returns
++// rtAtErrNoHost, so `connection.open(appletalk ...)`, `listener.register`
++// and `accepted` fail with an event on the host, exactly as specified.
++// Zones are the same story: no ZIP, no router, so rtAtDevZones always
++// reports noBridgeErr and atalk.cla substitutes ["*"].
++//
++// Never spliced onto the native lane (drive.cla adds this module only for
++// non-68k builds), so it can freely assume the host stack.
++
++external func AtalkHUp(): int
++external func AtalkHNode(): int
++external func AtalkHRegister(obj: string, typ: string, sock: int): int
++external func AtalkHRemove(obj: string, typ: string): int
++external func AtalkHLookupStart(lk: int, obj: string, typ: string, zone: string): int
++external func AtalkHLookupDone(lk: int): int
++external func AtalkHLookupCount(lk: int): int
++external func AtalkHLookupAddr(lk: int, i: int): int
++external func AtalkHLookupName(lk: int, i: int, out: ptr)
++external func AtalkHAtpOpen(): int
++external func AtalkHAtpClose(sock: int)
++external func AtalkHAtpGetRequest(sock: int, buf: ptr, cap: int): int
++external func AtalkHAtpReqOp(): int
++external func AtalkHAtpReqFrom(): int
++external func AtalkHAtpSendResponse(sock: int, code: int, buf: ptr, n: int): int
++external func AtalkHAtpCall(addr: int, op: int, req: ptr, reqLen: int, resp: ptr, respCap: int): int
++external func AtalkHAtpCallCode(): int
++external func AtalkHPoll()
++
++// Scratch buffers, allocated once on the first successful Up (SerNewPtr /
++// SerDisposePtr are ser.cla's already-spliced NewPtr/DisposePtr externs --
++// conn.cla's own precedent for reusing them rather than redeclaring a
++// duplicate pair). One 578-byte request buffer per service slot, one
++// shared 4624-byte response buffer for the requester (rtSvcCallAddr is
++// synchronous, so one is enough), and a 68-byte Pascal-string buffer for
++// lookup names. `ptr` cannot be a container element, so the two request
++// buffers are two scalars behind rtAtCReqBuf() rather than an array.
++var rtAtCReqBuf0: ptr
++var rtAtCReqBuf1: ptr
++var rtAtCRespBuf: ptr
++var rtAtCNameBuf: ptr
++var rtAtCBufsOk: bool
++
++// Per-service-slot device state. The host stack's own request state is
++// process-global ("the LAST request AtalkHAtpGetRequest dequeued"), so
++// each slot snapshots op/from/len at poll time and atalk.cla's pump
++// answers one request before polling the next slot.
++var rtAtCSock: int[2]
++var rtAtCReqLen: int[2]
++var rtAtCReqOp: int[2]
++var rtAtCReqFrom: int[2]
++
++// rtAtCLastErr: the AtpOpen failure code, since that waist entry reports
++// "0 plus rtAtDevLastErr()" rather than returning the OSErr itself.
++var rtAtCLastErr: int
++
++func rtAtCReqBuf(slot: int): ptr {
++    if slot == 0 {
++        return rtAtCReqBuf0
++    }
++    return rtAtCReqBuf1
++}
++
++func rtAtDevUp(): int {
++    var e: int
++
++    e = AtalkHUp()
++    if e != 0 {
++        rtAtCLastErr = e
++        return e
++    }
++    if not rtAtCBufsOk {
++        if rtAtCReqBuf0 == ptr(0) {
++            rtAtCReqBuf0 = SerNewPtr(578)
++        }
++        if rtAtCReqBuf1 == ptr(0) {
++            rtAtCReqBuf1 = SerNewPtr(578)
++        }
++        if rtAtCRespBuf == ptr(0) {
++            rtAtCRespBuf = SerNewPtr(4624)
++        }
++        if rtAtCNameBuf == ptr(0) {
++            rtAtCNameBuf = SerNewPtr(68)
++        }
++        if rtAtCReqBuf0 == ptr(0) or rtAtCReqBuf1 == ptr(0) or rtAtCRespBuf == ptr(0) or rtAtCNameBuf == ptr(0) {
++            // memFullErr. Whatever DID allocate is kept, so a retry only
++            // asks for the blocks still missing.
++            rtAtCLastErr = -108
++            return -108
++        }
++        rtAtCBufsOk = true
++    }
++    return 0
++}
++
++func rtAtDevRegister(obj: string, typ: string, sock: int): int {
++    // Blocks ~3 s: the stack runs a verify lookup before claiming the
++    // name, exactly as the Mac's PRegisterName with verify does.
++    return AtalkHRegister(obj, typ, sock)
++}
++
++func rtAtDevRemove(obj: string, typ: string): int {
++    return AtalkHRemove(obj, typ)
++}
++
++func rtAtDevLookupStart(lk: int, obj: string, typ: string, zone: string): int {
++    return AtalkHLookupStart(lk, obj, typ, zone)
++}
++
++func rtAtDevLookupDone(lk: int): bool {
++    return AtalkHLookupDone(lk) != 0
++}
++
++func rtAtDevLookupCount(lk: int): int {
++    return AtalkHLookupCount(lk)
++}
++
++func rtAtDevLookupAddr(lk: int, i: int): int {
++    return AtalkHLookupAddr(lk, i)
++}
++
++// rtAtDevLookupName: "obj:type" as a Pascal string in the 68-byte scratch
++// buffer, read back byte by byte -- fileh_c.cla's rtFhDevListNext idiom.
++func rtAtDevLookupName(lk: int, i: int): string {
++    var s: string
++    var n: int
++    var j: int
++
++    if rtAtCNameBuf == ptr(0) {
++        return ""
++    }
++    AtalkHLookupName(lk, i, rtAtCNameBuf)
++    n = peekb(rtAtCNameBuf)
++    j = 0
++    while j < n {
++        s = s + char(peekb(rtAtCNameBuf + 1 + j))
++        j = j + 1
++    }
++    return s
++}
++
++// rtAtDevZones: this lane has no ZIP and no router, so the answer is
++// always noBridgeErr and atalk.cla substitutes ["*"] (spec %4.6). `out` is
++// deliberately untouched.
++func rtAtDevZones(out: list of string): int {
++    return rtAtErrNoBridge
++}
++
++func rtAtDevAtpOpen(): int {
++    var sock: int
++
++    sock = AtalkHAtpOpen()
++    if sock <= 0 {
++        rtAtCLastErr = sock
++        return 0
++    }
++    return sock
++}
++
++func rtAtDevAtpClose(sock: int) {
++    AtalkHAtpClose(sock)
++}
++
++// rtAtDevAtpArm: nothing to arm on this lane -- the host get-request is a
++// non-blocking poll, not an async parameter block -- so this only records
++// which socket rtAtDevAtpPoll should drain for the slot.
++func rtAtDevAtpArm(slot: int, sock: int): int {
++    rtAtCSock[slot] = sock
++    return 0
++}
++
++// rtAtDevAtpPoll: -1 from the glue means "nothing queued". A 0 is a
++// genuine ZERO-LENGTH request and must be dispatched like any other, so
++// the test is `< 0`, never `<= 0`.
++func rtAtDevAtpPoll(slot: int): int {
++    var n: int
++
++    if rtAtCSock[slot] == 0 {
++        return 0
++    }
++    n = AtalkHAtpGetRequest(rtAtCSock[slot], rtAtCReqBuf(slot), 578)
++    if n < 0 {
++        return 0
++    }
++    rtAtCReqLen[slot] = n
++    rtAtCReqOp[slot] = AtalkHAtpReqOp()
++    rtAtCReqFrom[slot] = AtalkHAtpReqFrom()
++    return 1
++}
++
++func rtAtDevAtpReqOp(slot: int): int {
++    return rtAtCReqOp[slot]
++}
++
++func rtAtDevAtpReqFrom(slot: int): int {
++    return rtAtCReqFrom[slot]
++}
++
++func rtAtDevAtpReqLen(slot: int): int {
++    return rtAtCReqLen[slot]
++}
++
++func rtAtDevAtpReqPtr(slot: int): ptr {
++    return rtAtCReqBuf(slot)
++}
++
++// rtAtDevAtpRespond: answers the request the last successful poll
++// dequeued (the glue's own contract), synchronously -- so a response is
++// never outstanding once this returns and rtAtDevAtpRespBusy is always
++// false on this lane.
++func rtAtDevAtpRespond(slot: int, code: int, p: ptr, n: int): int {
++    return AtalkHAtpSendResponse(rtAtCSock[slot], code, p, n)
++}
++
++func rtAtDevAtpRespBusy(slot: int): bool {
++    return false
++}
++
++// rtAtDevAtpCall: blocks up to 2 s x 3 retries inside the glue; incoming
++// requests queue meanwhile but are not answered until the next pump pass.
++func rtAtDevAtpCall(addr: int, op: int, req: ptr, reqLen: int): int {
++    return AtalkHAtpCall(addr, op, req, reqLen, rtAtCRespBuf, 4624)
++}
++
++func rtAtDevAtpCallCode(): int {
++    return AtalkHAtpCallCode()
++}
++
++func rtAtDevAtpCallPtr(): ptr {
++    return rtAtCRespBuf
++}
++
++func rtAtDevLastErr(): int {
++    return rtAtCLastErr
++}
++
++// rtAtDevPoll: drain the UDP socket and run the stack's timers. Guarded on
++// rtAtCBufsOk so it can never reach a stack that was never opened.
++func rtAtDevPoll() {
++    if rtAtCBufsOk {
++        AtalkHPoll()
++    }
++}
++
++// ---- ADSP + listener: absent on this lane (spec %4.6). Every entry
++// reports rtAtErrNoHost / 0 / false, which atalk.cla turns into the
++// "streams not available on this lane" failed event. ----
++
++func rtAdspDevOpen(slot: int, addr: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAdspDevOpenPoll(slot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAdspDevAvail(slot: int): int {
++    return 0
++}
++
++func rtAdspDevRead(slot: int, p: ptr, n: int): int {
++    return 0
++}
++
++func rtAdspDevWrite(slot: int, p: ptr, n: int): int {
++    return rtAtErrNoHost
++}
++
++func rtAdspDevClose(slot: int) {
++}
++
++func rtAdspDevGone(slot: int): bool {
++    return true
++}
++
++func rtLsnDevInit(slot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtLsnDevListen(slot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtLsnDevPoll(slot: int): int {
++    return 0
++}
++
++func rtLsnDevAccept(slot: int, connSlot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtLsnDevDeny(slot: int): int {
++    return rtAtErrNoHost
++}
++
++func rtLsnDevRemove(slot: int) {
++}
++
++func rtLsnDevSocket(slot: int): int {
++    return 0
++}
+diff --git a/testdata/emitui/connpump_abort.c.golden b/testdata/emitui/connpump_abort.c.golden
+index 4da4914..0cecdb3 100644
+--- a/testdata/emitui/connpump_abort.c.golden
++++ b/testdata/emitui/connpump_abort.c.golden
+@@ -268,20 +268,45 @@ extern int32_t rt_ext_SerFileReadTextInto(void *, rt_text *);
+ extern void rt_ext_SerBlockMoveData(void *, void *, int32_t);
+ extern void * rt_ext_SerNewPtr(int32_t);
+ extern void rt_ext_SerDisposePtr(void *);
+ extern int32_t rt_ext_ConnHOpen(int32_t, int32_t);
+ extern int32_t rt_ext_ConnHAvail(int32_t);
+ extern int32_t rt_ext_ConnHReadByte(int32_t);
+ extern int32_t rt_ext_ConnHWrite(int32_t, void *, int32_t);
+ extern void rt_ext_ConnHClose(int32_t);
+ extern int32_t rt_ext_ConnHGone(int32_t);
+ extern void rt_ext_ConnHIdle(int32_t);
++extern void rt_ext_clar_lsn_fire_accepted(int32_t, int32_t);
++extern void rt_ext_clar_lsn_fire_failed(int32_t, int32_t, const uint8_t *);
++extern void rt_ext_clar_brs_fire_found(int32_t, const uint8_t *, int32_t);
++extern void rt_ext_clar_brs_fire_done(int32_t);
++extern void rt_ext_clar_brs_fire_failed(int32_t, int32_t, const uint8_t *);
++extern void rt_ext_clar_svc_fire_request(int32_t, int32_t, rt_text *, int32_t);
++extern void rt_ext_clar_svc_fire_failed(int32_t, int32_t, const uint8_t *);
++extern int32_t rt_ext_AtalkHUp(void);
++extern int32_t rt_ext_AtalkHNode(void);
++extern int32_t rt_ext_AtalkHRegister(const uint8_t *, const uint8_t *, int32_t);
++extern int32_t rt_ext_AtalkHRemove(const uint8_t *, const uint8_t *);
++extern int32_t rt_ext_AtalkHLookupStart(int32_t, const uint8_t *, const uint8_t *, const uint8_t *);
++extern int32_t rt_ext_AtalkHLookupDone(int32_t);
++extern int32_t rt_ext_AtalkHLookupCount(int32_t);
++extern int32_t rt_ext_AtalkHLookupAddr(int32_t, int32_t);
++extern void rt_ext_AtalkHLookupName(int32_t, int32_t, void *);
++extern int32_t rt_ext_AtalkHAtpOpen(void);
++extern void rt_ext_AtalkHAtpClose(int32_t);
++extern int32_t rt_ext_AtalkHAtpGetRequest(int32_t, void *, int32_t);
++extern int32_t rt_ext_AtalkHAtpReqOp(void);
++extern int32_t rt_ext_AtalkHAtpReqFrom(void);
++extern int32_t rt_ext_AtalkHAtpSendResponse(int32_t, int32_t, void *, int32_t);
++extern int32_t rt_ext_AtalkHAtpCall(int32_t, int32_t, void *, int32_t, void *, int32_t);
++extern int32_t rt_ext_AtalkHAtpCallCode(void);
++extern void rt_ext_AtalkHPoll(void);
+ 
+ static const clar_str_255 clar_lit_0 = {24, {97, 114, 114, 97, 121, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+ static const clar_str_255 clar_lit_1 = {25, {110, 111, 32, 101, 110, 117, 109, 32, 109, 101, 109, 98, 101, 114, 32, 119, 105, 116, 104, 32, 118, 97, 108, 117, 101}};
+ static const clar_str_255 clar_lit_2 = {16, {100, 105, 118, 105, 115, 105, 111, 110, 32, 98, 121, 32, 122, 101, 114, 111}};
+ static const clar_str_255 clar_lit_3 = {16, {115, 116, 114, 105, 110, 103, 32, 116, 114, 117, 110, 99, 97, 116, 101, 100}};
+ static const clar_str_255 clar_lit_4 = {25, {115, 116, 114, 105, 110, 103, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+ static const clar_str_255 clar_lit_5 = {1, {48}};
+ static const clar_str_255 clar_lit_6 = {0, {}};
+ static const clar_str_255 clar_lit_7 = {1, {45}};
+ static const clar_str_255 clar_lit_8 = {18, {115, 108, 105, 99, 101, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+@@ -396,29 +421,55 @@ static const clar_str_255 clar_lit_116 = {20, {99, 111, 117, 108, 100, 32, 110,
+ static const clar_str_255 clar_lit_117 = {15, {98, 97, 100, 32, 102, 105, 108, 101, 32, 102, 111, 114, 109, 97, 116}};
+ static const clar_str_255 clar_lit_118 = {19, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 97, 100, 32, 102, 105, 108, 101}};
+ static const clar_str_255 clar_lit_119 = {5, {109, 111, 100, 101, 109}};
+ static const clar_str_255 clar_lit_120 = {7, {112, 114, 105, 110, 116, 101, 114}};
+ static const clar_str_255 clar_lit_121 = {21, {117, 115, 101, 32, 111, 102, 32, 110, 105, 108, 32, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110}};
+ static const clar_str_255 clar_lit_122 = {23, {99, 111, 110, 110, 101, 99, 116, 105, 111, 110, 32, 97, 108, 114, 101, 97, 100, 121, 32, 111, 112, 101, 110}};
+ static const clar_str_255 clar_lit_123 = {23, {105, 110, 118, 97, 108, 105, 100, 32, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110, 32, 115, 112, 101, 99}};
+ static const clar_str_255 clar_lit_124 = {25, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 111, 112, 101, 110, 32, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110}};
+ static const clar_str_255 clar_lit_125 = {19, {99, 111, 110, 110, 101, 99, 116, 105, 111, 110, 32, 110, 111, 116, 32, 111, 112, 101, 110}};
+ static const clar_str_255 clar_lit_126 = {12, {119, 114, 105, 116, 101, 32, 102, 97, 105, 108, 101, 100}};
+-static const clar_str_255 clar_lit_127 = {10, {109, 111, 100, 101, 109, 58, 57, 54, 48, 48}};
+-static const clar_str_255 clar_lit_128 = {5, {104, 101, 108, 108, 111}};
+-static const clar_str_255 clar_lit_129 = {4, {115, 116, 111, 112}};
+-static const clar_str_255 clar_lit_130 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+-static const clar_str_255 clar_lit_131 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+-static const clar_str_255 clar_lit_132 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+-static const clar_str_255 clar_lit_133 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+-static const clar_str_255 clar_lit_134 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+-static const clar_str_255 clar_lit_135 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
++static const clar_str_255 clar_lit_127 = {11, {110, 97, 109, 101, 32, 105, 110, 32, 117, 115, 101}};
++static const clar_str_255 clar_lit_128 = {23, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 103, 105, 115, 116, 101, 114, 32, 110, 97, 109, 101}};
++static const clar_str_255 clar_lit_129 = {18, {117, 115, 101, 32, 111, 102, 32, 110, 105, 108, 32, 115, 101, 114, 118, 105, 99, 101}};
++static const clar_str_255 clar_lit_130 = {23, {115, 101, 114, 118, 105, 99, 101, 32, 97, 108, 114, 101, 97, 100, 121, 32, 115, 101, 114, 118, 105, 110, 103}};
++static const clar_str_255 clar_lit_131 = {21, {65, 112, 112, 108, 101, 84, 97, 108, 107, 32, 117, 110, 97, 118, 97, 105, 108, 97, 98, 108, 101}};
++static const clar_str_255 clar_lit_132 = {21, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 111, 112, 101, 110, 32, 115, 111, 99, 107, 101, 116}};
++static const clar_str_255 clar_lit_133 = {26, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 99, 101, 105, 118, 101, 32, 114, 101, 113, 117, 101, 115, 116, 115}};
++static const clar_str_255 clar_lit_134 = {31, {114, 101, 112, 108, 121, 32, 111, 117, 116, 115, 105, 100, 101, 32, 97, 32, 114, 101, 113, 117, 101, 115, 116, 32, 104, 97, 110, 100, 108, 101, 114}};
++static const clar_str_255 clar_lit_135 = {18, {114, 101, 112, 108, 121, 32, 97, 108, 114, 101, 97, 100, 121, 32, 115, 101, 110, 116}};
++static const clar_str_255 clar_lit_136 = {14, {114, 101, 112, 108, 121, 32, 116, 111, 111, 32, 108, 111, 110, 103}};
++static const clar_str_255 clar_lit_137 = {12, {114, 101, 112, 108, 121, 32, 102, 97, 105, 108, 101, 100}};
++static const clar_str_255 clar_lit_138 = {16, {114, 101, 113, 117, 101, 115, 116, 32, 116, 111, 111, 32, 108, 111, 110, 103}};
++static const clar_str_255 clar_lit_139 = {11, {110, 111, 32, 114, 101, 115, 112, 111, 110, 115, 101}};
++static const clar_str_255 clar_lit_140 = {7, {115, 101, 114, 118, 105, 99, 101}};
++static const clar_str_255 clar_lit_141 = {14, {110, 97, 109, 101, 32, 110, 111, 116, 32, 102, 111, 117, 110, 100}};
++static const clar_str_255 clar_lit_142 = {1, {42}};
++static const clar_str_255 clar_lit_143 = {25, {117, 115, 101, 32, 111, 102, 32, 110, 105, 108, 32, 115, 101, 114, 118, 105, 99, 101, 66, 114, 111, 119, 115, 101, 114}};
++static const clar_str_255 clar_lit_144 = {1, {61}};
++static const clar_str_255 clar_lit_145 = {13, {108, 111, 111, 107, 117, 112, 32, 102, 97, 105, 108, 101, 100}};
++static const clar_str_255 clar_lit_146 = {19, {117, 115, 101, 32, 111, 102, 32, 110, 105, 108, 32, 108, 105, 115, 116, 101, 110, 101, 114}};
++static const clar_str_255 clar_lit_147 = {27, {108, 105, 115, 116, 101, 110, 101, 114, 32, 97, 108, 114, 101, 97, 100, 121, 32, 114, 101, 103, 105, 115, 116, 101, 114, 101, 100}};
++static const clar_str_255 clar_lit_148 = {34, {115, 116, 114, 101, 97, 109, 115, 32, 110, 111, 116, 32, 97, 118, 97, 105, 108, 97, 98, 108, 101, 32, 111, 110, 32, 116, 104, 105, 115, 32, 108, 97, 110, 101}};
++static const clar_str_255 clar_lit_149 = {24, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 115, 116, 97, 114, 116, 32, 108, 105, 115, 116, 101, 110, 101, 114}};
++static const clar_str_255 clar_lit_150 = {14, {114, 101, 113, 117, 101, 115, 116, 32, 102, 97, 105, 108, 101, 100}};
++static const clar_str_255 clar_lit_151 = {15, {108, 105, 115, 116, 101, 110, 101, 114, 32, 102, 97, 105, 108, 101, 100}};
++static const clar_str_255 clar_lit_152 = {27, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 97, 99, 99, 101, 112, 116, 32, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110}};
++static const clar_str_255 clar_lit_153 = {10, {109, 111, 100, 101, 109, 58, 57, 54, 48, 48}};
++static const clar_str_255 clar_lit_154 = {5, {104, 101, 108, 108, 111}};
++static const clar_str_255 clar_lit_155 = {4, {115, 116, 111, 112}};
++static const clar_str_255 clar_lit_156 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
++static const clar_str_255 clar_lit_157 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
++static const clar_str_255 clar_lit_158 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
++static const clar_str_255 clar_lit_159 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
++static const clar_str_255 clar_lit_160 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
++static const clar_str_255 clar_lit_161 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+ 
+ typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
+ 
+ typedef struct { int32_t e[256]; } clar_arr_int_256;
+ static const clar_arr_int_256 clar_arrlit_0 = {{0, 4489, 8978, 12955, 17956, 22445, 25910, 29887, 35912, 40385, 44890, 48851, 51820, 56293, 59774, 63735, 4225, 264, 13203, 8730, 22181, 18220, 30135, 25662, 40137, 36160, 49115, 44626, 56045, 52068, 63999, 59510, 8450, 12427, 528, 5017, 26406, 30383, 17460, 21949, 44362, 48323, 36440, 40913, 60270, 64231, 51324, 55797, 12675, 8202, 4753, 792, 30631, 26158, 21685, 17724, 48587, 44098, 40665, 36688, 64495, 60006, 55549, 51572, 16900, 21389, 24854, 28831, 1056, 5545, 10034, 14011, 52812, 57285, 60766, 64727, 34920, 39393, 43898, 47859, 21125, 17164, 29079, 24606, 5281, 1320, 14259, 9786, 57037, 53060, 64991, 60502, 39145, 35168, 48123, 43634, 25350, 29327, 16404, 20893, 9506, 13483, 1584, 6073, 61262, 65223, 52316, 56789, 43370, 47331, 35448, 39921, 29575, 25102, 20629, 16668, 13731, 9258, 5809, 1848, 65487, 60998, 56541, 52564, 47595, 43106, 39673, 35696, 33800, 38273, 42778, 46739, 49708, 54181, 57662, 61623, 2112, 6601, 11090, 15067, 20068, 24557, 28022, 31999, 38025, 34048, 47003, 42514, 53933, 49956, 61887, 57398, 6337, 2376, 15315, 10842, 24293, 20332, 32247, 27774, 42250, 46211, 34328, 38801, 58158, 62119, 49212, 53685, 10562, 14539, 2640, 7129, 28518, 32495, 19572, 24061, 46475, 41986, 38553, 34576, 62383, 57894, 53437, 49460, 14787, 10314, 6865, 2904, 32743, 28270, 23797, 19836, 50700, 55173, 58654, 62615, 32808, 37281, 41786, 45747, 19012, 23501, 26966, 30943, 3168, 7657, 12146, 16123, 54925, 50948, 62879, 58390, 37033, 33056, 46011, 41522, 23237, 19276, 31191, 26718, 7393, 3432, 16371, 11898, 59150, 63111, 50204, 54677, 41258, 45219, 33336, 37809, 27462, 31439, 18516, 23005, 11618, 15595, 3696, 8185, 63375, 58886, 54429, 50452, 45483, 40994, 37561, 33584, 31687, 27214, 22741, 18780, 15843, 11370, 7921, 3960}};
+ static const clar_arr_int_256 clar_arrlit_1 = {{0, 4129, 8258, 12387, 16516, 20645, 24774, 28903, 33032, 37161, 41290, 45419, 49548, 53677, 57806, 61935, 4657, 528, 12915, 8786, 21173, 17044, 29431, 25302, 37689, 33560, 45947, 41818, 54205, 50076, 62463, 58334, 9314, 13379, 1056, 5121, 25830, 29895, 17572, 21637, 42346, 46411, 34088, 38153, 58862, 62927, 50604, 54669, 13907, 9842, 5649, 1584, 30423, 26358, 22165, 18100, 46939, 42874, 38681, 34616, 63455, 59390, 55197, 51132, 18628, 22757, 26758, 30887, 2112, 6241, 10242, 14371, 51660, 55789, 59790, 63919, 35144, 39273, 43274, 47403, 23285, 19156, 31415, 27286, 6769, 2640, 14899, 10770, 56317, 52188, 64447, 60318, 39801, 35672, 47931, 43802, 27814, 31879, 19684, 23749, 11298, 15363, 3168, 7233, 60846, 64911, 52716, 56781, 44330, 48395, 36200, 40265, 32407, 28342, 24277, 20212, 15891, 11826, 7761, 3696, 65439, 61374, 57309, 53244, 48923, 44858, 40793, 36728, 37256, 33193, 45514, 41451, 53516, 49453, 61774, 57711, 4224, 161, 12482, 8419, 20484, 16421, 28742, 24679, 33721, 37784, 41979, 46042, 49981, 54044, 58239, 62302, 689, 4752, 8947, 13010, 16949, 21012, 25207, 29270, 46570, 42443, 38312, 34185, 62830, 58703, 54572, 50445, 13538, 9411, 5280, 1153, 29798, 25671, 21540, 17413, 42971, 47098, 34713, 38840, 59231, 63358, 50973, 55100, 9939, 14066, 1681, 5808, 26199, 30326, 17941, 22068, 55628, 51565, 63758, 59695, 39368, 35305, 47498, 43435, 22596, 18533, 30726, 26663, 6336, 2273, 14466, 10403, 52093, 56156, 60223, 64286, 35833, 39896, 43963, 48026, 19061, 23124, 27191, 31254, 2801, 6864, 10931, 14994, 64814, 60687, 56684, 52557, 48554, 44427, 40424, 36297, 31782, 27655, 23652, 19525, 15522, 11395, 7392, 3265, 61215, 65342, 53085, 57212, 44955, 49082, 36825, 40952, 28183, 32310, 20053, 24180, 11923, 16050, 3793, 7920}};
+ static const clar_arr_int_256 clar_arrlit_2 = {{0, 1996959894, -301047508, -1727442502, 124634137, 1886057615, -379345611, -1637575261, 249268274, 2044508324, -522852066, -1747789432, 162941995, 2125561021, -407360249, -1866523247, 498536548, 1789927666, -205950648, -2067906082, 450548861, 1843258603, -187386543, -2083289657, 325883990, 1684777152, -43845254, -1973040660, 335633487, 1661365465, -99664541, -1928851979, 997073096, 1281953886, -715111964, -1570279054, 1006888145, 1258607687, -770865667, -1526024853, 901097722, 1119000684, -608450090, -1396901568, 853044451, 1172266101, -589951537, -1412350631, 651767980, 1373503546, -925412992, -1076862698, 565507253, 1454621731, -809855591, -1195530993, 671266974, 1594198024, -972236366, -1324619484, 795835527, 1483230225, -1050600021, -1234817731, 1994146192, 31158534, -1731059524, -271249366, 1907459465, 112637215, -1614814043, -390540237, 2013776290, 251722036, -1777751922, -519137256, 2137656763, 141376813, -1855689577, -429695999, 1802195444, 476864866, -2056965928, -228458418, 1812370925, 453092731, -2113342271, -183516073, 1706088902, 314042704, -1950435094, -54949764, 1658658271, 366619977, -1932296973, -69972891, 1303535960, 984961486, -1547960204, -725929758, 1256170817, 1037604311, -1529756563, -740887301, 1131014506, 879679996, -1385723834, -631195440, 1141124467, 855842277, -1442165665, -586318647, 1342533948, 654459306, -1106571248, -921952122, 1466479909, 544179635, -1184443383, -832445281, 1591671054, 702138776, -1328506846, -942167884, 1504918807, 783551873, -1212326853, -1061524307, -306674912, -1698712650, 62317068, 1957810842, -355121351, -1647151185, 81470997, 1943803523, -480048366, -1805370492, 225274430, 2053790376, -468791541, -1828061283, 167816743, 2097651377, -267414716, -2029476910, 503444072, 1762050814, -144550051, -2140837941, 426522225, 1852507879, -19653770, -1982649376, 282753626, 1742555852, -105259153, -1900089351, 397917763, 1622183637, -690576408, -1580100738, 953729732, 1340076626, -776247311, -1497606297, 1068828381, 1219638859, -670225446, -1358292148, 906185462, 1090812512, -547295293, -1469587627, 829329135, 1181335161, -882789492, -1134132454, 628085408, 1382605366, -871598187, -1156888829, 570562233, 1426400815, -977650754, -1296233688, 733239954, 1555261956, -1026031705, -1244606671, 752459403, 1541320221, -1687895376, -328994266, 1969922972, 40735498, -1677130071, -351390145, 1913087877, 83908371, -1782625662, -491226604, 2075208622, 213261112, -1831694693, -438977011, 2094854071, 198958881, -2032938284, -237706686, 1759359992, 534414190, -2118248755, -155638181, 1873836001, 414664567, -2012718362, -15766928, 1711684554, 285281116, -1889165569, -127750551, 1634467795, 376229701, -1609899400, -686959890, 1308918612, 956543938, -1486412191, -799009033, 1231636301, 1047427035, -1362007478, -640263460, 1088359270, 936918000, -1447252397, -558129467, 1202900863, 817233897, -1111625188, -893730166, 1404277552, 615818150, -1160759803, -841546093, 1423857449, 601450431, -1285129682, -1000256840, 1567103746, 711928724, -1274298825, -1022587231, 1510334235, 755167117}};
+ typedef struct {
+     int32_t cv_size;
+     int32_t cv_rsrcSize;
+@@ -531,20 +582,24 @@ typedef struct {
+     void * cv_keys;
+     void * cv_vals;
+     int32_t cv_valsize;
+     int32_t cv_count;
+     int32_t cv_cap;
+     int32_t cv_valcap;
+ } clar_rec_RtSortedMap;
+ typedef struct { int32_t e[4]; } clar_arr_int_4;
+ typedef struct { uint8_t e[4]; } clar_arr_bool_4;
+ typedef struct { clar_str_255 e[4]; } clar_arr_str255_4;
++typedef struct { int32_t e[2]; } clar_arr_int_2;
++typedef struct { clar_str_255 e[2]; } clar_arr_str255_2;
++typedef struct { uint8_t e[2]; } clar_arr_bool_2;
++typedef struct { int32_t e[8]; } clar_arr_int_8;
+ 
+ static const int32_t clar_enum_saveChoice[] __attribute__((unused)) = {0, 1, 2};
+ static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
+ 
+ static int clar_aborting = 0;
+ static clar_str_255 clar_abort_msg;
+ static void clar_fn_rtSetLastErr(int32_t cv_code, const clar_str_255 *cv_msg);
+ static void clar_fn_rtPanic(const clar_str_255 *cv_msg);
+ static int32_t clar_fn_rtArrCheck(int32_t cv_i, int32_t cv_n);
+ static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
+@@ -665,20 +720,51 @@ static int32_t cv_rtUiModalIdx;
+ static void * cv_rtUiModalMp;
+ static void * cv_rtUiModalKey255;
+ static int32_t cv_rtSerPos;
+ static int32_t cv_rtSerBad;
+ static clar_arr_int_4 cv_rtConnState;
+ static clar_arr_bool_4 cv_rtConnPendOpened;
+ static clar_arr_int_4 cv_rtConnPendFailedCode;
+ static clar_arr_str255_4 cv_rtConnPendFailedMsg;
+ static int32_t cv_rtConnParsePortIdx;
+ static int32_t cv_rtConnParseBaud;
++static int32_t cv_rtAtUp;
++static clar_arr_int_2 cv_rtLsnState;
++static clar_arr_int_2 cv_rtLsnPendFailedCode;
++static clar_arr_str255_2 cv_rtLsnPendFailedMsg;
++static clar_arr_int_2 cv_rtBrsState;
++static clar_arr_int_2 cv_rtBrsPendFailedCode;
++static clar_arr_str255_2 cv_rtBrsPendFailedMsg;
++static clar_arr_bool_2 cv_rtBrsPendDone;
++static clar_arr_int_2 cv_rtSvcState;
++static clar_arr_int_2 cv_rtSvcSock;
++static clar_arr_bool_2 cv_rtSvcInHandler;
++static clar_arr_bool_2 cv_rtSvcReplied;
++static clar_arr_int_2 cv_rtSvcPendFailedCode;
++static clar_arr_str255_2 cv_rtSvcPendFailedMsg;
++static clar_arr_str255_2 cv_rtSvcName;
++static clar_arr_str255_2 cv_rtSvcType;
++static clar_arr_str255_2 cv_rtLsnName;
++static clar_arr_str255_2 cv_rtLsnType;
++static clar_arr_int_8 cv_rtAdspPhase;
++static clar_arr_int_8 cv_rtConnSlotTransport;
++static int32_t cv_rtAtLastErr;
++static void * cv_rtAtCReqBuf0;
++static void * cv_rtAtCReqBuf1;
++static void * cv_rtAtCRespBuf;
++static void * cv_rtAtCNameBuf;
++static int32_t cv_rtAtCBufsOk;
++static clar_arr_int_2 cv_rtAtCSock;
++static clar_arr_int_2 cv_rtAtCReqLen;
++static clar_arr_int_2 cv_rtAtCReqOp;
++static clar_arr_int_2 cv_rtAtCReqFrom;
++static int32_t cv_rtAtCLastErr;
+ static int32_t cv_conn;
+ static void clar_init_globals(void) {
+     cv_rtUiMenuHandlesArr = 0;
+     cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
+     cv_rtUiNMenusVal = 0;
+     cv_rtUiNMenusVal = 0;
+     cv_rtUiClaimedMask = 0;
+     cv_rtUiClaimedMask = 0;
+     cv_rtUiBarMask = 0;
+     cv_rtUiBarMask = 0;
+@@ -775,20 +861,97 @@ static void clar_init_globals(void) {
+         cv_rtConnPendOpened.e[ix2] = 0;
+     }
+     for (int32_t ix3 = 0; ix3 < 4; ix3++) {
+         cv_rtConnPendFailedCode.e[ix3] = 0;
+     }
+     for (int32_t ix4 = 0; ix4 < 4; ix4++) {
+         cv_rtConnPendFailedMsg.e[ix4] = (clar_str_255){0};
+     }
+     cv_rtConnParsePortIdx = 0;
+     cv_rtConnParseBaud = 0;
++    cv_rtAtUp = 0;
++    for (int32_t ix5 = 0; ix5 < 2; ix5++) {
++        cv_rtLsnState.e[ix5] = 0;
++    }
++    for (int32_t ix6 = 0; ix6 < 2; ix6++) {
++        cv_rtLsnPendFailedCode.e[ix6] = 0;
++    }
++    for (int32_t ix7 = 0; ix7 < 2; ix7++) {
++        cv_rtLsnPendFailedMsg.e[ix7] = (clar_str_255){0};
++    }
++    for (int32_t ix8 = 0; ix8 < 2; ix8++) {
++        cv_rtBrsState.e[ix8] = 0;
++    }
++    for (int32_t ix9 = 0; ix9 < 2; ix9++) {
++        cv_rtBrsPendFailedCode.e[ix9] = 0;
++    }
++    for (int32_t ix10 = 0; ix10 < 2; ix10++) {
++        cv_rtBrsPendFailedMsg.e[ix10] = (clar_str_255){0};
++    }
++    for (int32_t ix11 = 0; ix11 < 2; ix11++) {
++        cv_rtBrsPendDone.e[ix11] = 0;
++    }
++    for (int32_t ix12 = 0; ix12 < 2; ix12++) {
++        cv_rtSvcState.e[ix12] = 0;
++    }
++    for (int32_t ix13 = 0; ix13 < 2; ix13++) {
++        cv_rtSvcSock.e[ix13] = 0;
++    }
++    for (int32_t ix14 = 0; ix14 < 2; ix14++) {
++        cv_rtSvcInHandler.e[ix14] = 0;
++    }
++    for (int32_t ix15 = 0; ix15 < 2; ix15++) {
++        cv_rtSvcReplied.e[ix15] = 0;
++    }
++    for (int32_t ix16 = 0; ix16 < 2; ix16++) {
++        cv_rtSvcPendFailedCode.e[ix16] = 0;
++    }
++    for (int32_t ix17 = 0; ix17 < 2; ix17++) {
++        cv_rtSvcPendFailedMsg.e[ix17] = (clar_str_255){0};
++    }
++    for (int32_t ix18 = 0; ix18 < 2; ix18++) {
++        cv_rtSvcName.e[ix18] = (clar_str_255){0};
++    }
++    for (int32_t ix19 = 0; ix19 < 2; ix19++) {
++        cv_rtSvcType.e[ix19] = (clar_str_255){0};
++    }
++    for (int32_t ix20 = 0; ix20 < 2; ix20++) {
++        cv_rtLsnName.e[ix20] = (clar_str_255){0};
++    }
++    for (int32_t ix21 = 0; ix21 < 2; ix21++) {
++        cv_rtLsnType.e[ix21] = (clar_str_255){0};
++    }
++    for (int32_t ix22 = 0; ix22 < 8; ix22++) {
++        cv_rtAdspPhase.e[ix22] = 0;
++    }
++    for (int32_t ix23 = 0; ix23 < 8; ix23++) {
++        cv_rtConnSlotTransport.e[ix23] = 0;
++    }
++    cv_rtAtLastErr = 0;
++    cv_rtAtCReqBuf0 = 0;
++    cv_rtAtCReqBuf1 = 0;
++    cv_rtAtCRespBuf = 0;
++    cv_rtAtCNameBuf = 0;
++    cv_rtAtCBufsOk = 0;
++    for (int32_t ix24 = 0; ix24 < 2; ix24++) {
++        cv_rtAtCSock.e[ix24] = 0;
++    }
++    for (int32_t ix25 = 0; ix25 < 2; ix25++) {
++        cv_rtAtCReqLen.e[ix25] = 0;
++    }
++    for (int32_t ix26 = 0; ix26 < 2; ix26++) {
++        cv_rtAtCReqOp.e[ix26] = 0;
++    }
++    for (int32_t ix27 = 0; ix27 < 2; ix27++) {
++        cv_rtAtCReqFrom.e[ix27] = 0;
++    }
++    cv_rtAtCLastErr = 0;
+     cv_conn = 0;
+     cv_conn = 1;
+ }
+ 
+ static void cl_free_globals(void) {
+ 
+ }
+ 
+ 
+ #if defined(__m68k__) || defined(macintosh)
+@@ -1582,23 +1745,23 @@ static void clar_fn_rtConnDevClose(int32_t cv_slot) {
+ }
+ 
+ static int32_t clar_fn_rtConnDevGone(int32_t cv_slot) {
+     return rt_ext_ConnHGone(cv_slot);
+     return 0;
+ }
+ 
+ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
+     clar_str_255 cv_msg;
+     cv_msg = (clar_str_255){0};
+-    clar_fn_rtConnOpen(cv_conn, 2, &(clar_lit_127));
+-    clar_fn_rtConnSendStr(cv_conn, &(clar_lit_128));
+-    clar_fn_rtStrStore((void*)&(clar_abort_msg), 255, (void*)(const uint8_t*)&(clar_lit_129));
++    clar_fn_rtConnOpen(cv_conn, 2, &(clar_lit_153));
++    clar_fn_rtConnSendStr(cv_conn, &(clar_lit_154));
++    clar_fn_rtStrStore((void*)&(clar_abort_msg), 255, (void*)(const uint8_t*)&(clar_lit_155));
+     clar_aborting = 1;
+     goto att0_h;
+     goto att0_a;
+     att0_h:;
+     clar_aborting = 0;
+     cv_msg = clar_abort_msg;
+     clar_fn_rtConnClose(cv_conn);
+     att0_a:;
+     return;
+ }
+@@ -1657,46 +1820,46 @@ static void clar_fn_clar_conn_fire_failed(int32_t cv_slot, int32_t cv_code, void
+             }
+         }
+     }
+ }
+ 
+ static void clar_fn_clar_conn_pump(void) {
+     clar_fn_rtConnPump();
+ }
+ 
+ static void clar_fn_clar_ui_fire_winevent(int32_t cv_winIdx, void * cv_inst, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
+-    rt_log((const uint8_t*)&(clar_lit_130));
++    rt_log((const uint8_t*)&(clar_lit_156));
+     rt_quit((int32_t)(1));
+ }
+ 
+ static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
+-    rt_log((const uint8_t*)&(clar_lit_131));
++    rt_log((const uint8_t*)&(clar_lit_157));
+     rt_quit((int32_t)(1));
+ }
+ 
+ static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil) {
+-    rt_log((const uint8_t*)&(clar_lit_132));
++    rt_log((const uint8_t*)&(clar_lit_158));
+     rt_quit((int32_t)(1));
+ }
+ 
+ static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
+-    rt_log((const uint8_t*)&(clar_lit_133));
++    rt_log((const uint8_t*)&(clar_lit_159));
+     rt_quit((int32_t)(1));
+ }
+ 
+ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) {
+-    rt_log((const uint8_t*)&(clar_lit_134));
++    rt_log((const uint8_t*)&(clar_lit_160));
+     rt_quit((int32_t)(1));
+ }
+ 
+ static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
+-    rt_log((const uint8_t*)&(clar_lit_135));
++    rt_log((const uint8_t*)&(clar_lit_161));
+     rt_quit((int32_t)(1));
+     return 0;
+     return 0;
+ }
+ 
+ void clar_fn_clar_ui_fire_launchdoc(void * cv_path) {
+ }
+ 
+ void clar_fn_clar_ui_fire_startempty(void) {
+ }
+diff --git a/tests/atalk/splice.sh b/tests/atalk/splice.sh
+new file mode 100755
+index 0000000..4cbc370
+--- /dev/null
++++ b/tests/atalk/splice.sh
+@@ -0,0 +1,126 @@
++#!/bin/sh
++# tests/atalk/splice.sh (2026-09-06 appletalk spec %7, Task 7): the host
++# splice of atalk.cla + atalk_c.cla, and the C-lane --rtbake gap that
++# splice would otherwise widen.
++#
++# A program that merely DECLARES `service`/`serviceBrowser` sets the
++# checker's usesAtalk, which now pulls conn.cla + conn_c.cla + atalk.cla +
++# atalk_c.cla into the host manifest as one unit. Every AppleTalk method is
++# still fenced in lowering (Task 8), so the fixture calls none: what is
++# asserted here is that all four modules check, lower, emit compilable C
++# and link, and that the runtime globals actually reached the output.
++#
++# Function-level coverage of atalk.cla's own bodies arrives with Task 8:
++# shake.cla drops every runtime function nothing roots, and rtAtalkPump is
++# rooted (beside rtConnPump/rtConnAlive) only once lowering wires the pump.
++# The globals below are the available splice witness until then.
++. "$(dirname "$0")/../lib.sh" || exit 2
++
++FIX=$ROOT/tests/atalk/testdata/splice.cla
++
++# --- 1. the host build ------------------------------------------------
++if host_build "$WORK/splice" "$FIX" > "$WORK/build.log" 2>&1; then
++    t_pass build
++else
++    t_fail build "$(tail -20 "$WORK/build.log")"
++fi
++
++for g in cv_rtAtUp cv_rtSvcState cv_rtAdspPhase cv_rtConnSlotTransport cv_rtConnState; do
++    if grep -q "$g" "$WORK/splice.c" 2>/dev/null; then
++        t_pass "spliced_$g"
++    else
++        t_fail "spliced_$g" "emitted C never mentions $g: the atalk/conn splice did not happen"
++    fi
++done
++
++if [ -x "$WORK/splice" ]; then
++    # log() writes to stderr on the host lane.
++    "$WORK/splice" > "$WORK/out" 2> "$WORK/err"
++    rc=$?
++    if [ $rc -eq 0 ] && grep -q 'atalk splice fixture' "$WORK/err"; then
++        t_pass run
++    else
++        t_fail run "exit $rc (stdout: $(cat "$WORK/out"), stderr: $(cat "$WORK/err"))"
++    fi
++else
++    t_fail run "no binary to run"
++fi
++
++# --- 2. the C-lane --rtbake gap (docs/TODO.md's fix (b)) --------------
++# bakeModuleList leaves the usage-gated host pairs out of the C-lane baked
++# chain, and the bake path bypasses driveManifestSplice, so a host program
++# using connection/filehandle/AppleTalk used to emit C that CALLED
++# clar_fn_rtConnOpen/rtSvcServe with no definition anywhere. drive.cla now
++# falls back to a from-source compile for exactly those programs.
++if "$CLARUSC" --bake-ir --lane c -o "$WORK/RTC.clir" > "$WORK/bakeir.log" 2>&1; then
++    t_pass bake_ir
++else
++    t_fail bake_ir "$(tail -20 "$WORK/bakeir.log")"
++fi
++
++rtbake_fork() {   # rtbake_fork NAME FILE.cla
++    "$CLARUSC" emit --rtdir "$RTDIR" --rtbake "$WORK/RTC.clir" \
++        -o "$WORK/$1.c" "$2" > "$WORK/$1.log" 2>&1
++}
++
++if rtbake_fork bake "$FIX"; then
++    if grep -q 'falling back to a from-source compile' "$WORK/bake.log"; then
++        t_pass bake_fallback_logged
++    else
++        t_fail bake_fallback_logged "no fallback line: $(cat "$WORK/bake.log")"
++    fi
++    if grep -q cv_rtAtUp "$WORK/bake.c"; then
++        t_pass bake_spliced
++    else
++        t_fail bake_spliced "the baked fork never spliced atalk.cla"
++    fi
++    if $CC -O1 -I "$HOSTRT" -o "$WORK/bake" "$WORK/bake.c" "$HOSTRT/rt.c" > "$WORK/bake.cc" 2>&1; then
++        t_pass bake_compiles
++    else
++        t_fail bake_compiles "$(tail -20 "$WORK/bake.cc")"
++    fi
++else
++    t_fail bake_fallback_logged "emit --rtbake failed: $(tail -20 "$WORK/bake.log")"
++    t_fail bake_spliced "no output"
++    t_fail bake_compiles "no output"
++fi
++
++# The same gap for a plain SERIAL connection program -- the shape
++# docs/TODO.md's repro used, and the reason conn programs now carry
++# atalk.cla too.
++if rtbake_fork echo "$ROOT/tests/conntest/testdata/echo.cla"; then
++    if grep -q 'falling back to a from-source compile' "$WORK/echo.log" \
++        && grep -q 'clar_fn_rtConnOpen(int32_t' "$WORK/echo.c"; then
++        t_pass bake_conn_defined
++    else
++        t_fail bake_conn_defined "rtConnOpen still undefined in the baked fork"
++    fi
++    if $CC -O1 -I "$HOSTRT" -o "$WORK/echo" "$WORK/echo.c" "$HOSTRT/rt.c" > "$WORK/echo.cc" 2>&1; then
++        t_pass bake_conn_compiles
++    else
++        t_fail bake_conn_compiles "$(tail -20 "$WORK/echo.cc")"
++    fi
++else
++    t_fail bake_conn_defined "emit --rtbake failed: $(tail -20 "$WORK/echo.log")"
++    t_fail bake_conn_compiles "no output"
++fi
++
++# ...and the negative: an ordinary host program must still take the bake
++# path. Without this, a fallback condition that over-triggers (or is left
++# unconditional) would silently retire the whole --rtbake fast path.
++cat > "$WORK/plain.cla" <<'EOF'
++on App.startCLI(args: list of string) {
++    log("plain")
++}
++EOF
++if rtbake_fork plain "$WORK/plain.cla"; then
++    if grep -q 'falling back to a from-source compile' "$WORK/plain.log"; then
++        t_fail bake_plain_no_fallback "a runtime-free program fell back: $(cat "$WORK/plain.log")"
++    else
++        t_pass bake_plain_no_fallback
++    fi
++else
++    t_fail bake_plain_no_fallback "emit --rtbake failed: $(tail -20 "$WORK/plain.log")"
++fi
++
++t_done
+diff --git a/tests/atalk/testdata/splice.cla b/tests/atalk/testdata/splice.cla
+new file mode 100644
+index 0000000..0206b68
+--- /dev/null
++++ b/tests/atalk/testdata/splice.cla
+@@ -0,0 +1,16 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// AppleTalk phase, Task 7: the splice fixture. Declares the two resource
++// types that set the checker's usesAtalk and NOTHING else -- no method
++// call, because lowering every AppleTalk method is still fenced until
++// Task 8. That is enough to require the whole host splice (conn.cla,
++// conn_c.cla, atalk.cla, atalk_c.cla), so tests/atalk/splice.sh's build
++// is the proof that all four modules check and compile together.
++
++var svc: service
++var brs: serviceBrowser
++
++on App.startCLI(args: list of string) {
++    log("atalk splice fixture")
++}

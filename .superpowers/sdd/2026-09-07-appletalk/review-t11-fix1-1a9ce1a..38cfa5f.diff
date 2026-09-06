@@ -1,0 +1,1871 @@
+# Review package: 1a9ce1a..HEAD
+
+## Commits
+38cfa5f test(mactest): Task 11 review fix round 1
+
+## Files changed
+ examples/atalkchat.cla              |  43 +-
+ testdata/ui/atalkchat_client.events | 800 ++++++++++++++++++------------------
+ testdata/ui/atalkchat_server.events | 800 ++++++++++++++++++------------------
+ tests/lib_mac.sh                    |  16 +-
+ tests/mactest/adsp_68k.sh           |  29 +-
+ 5 files changed, 861 insertions(+), 827 deletions(-)
+
+## Diff
+diff --git a/examples/atalkchat.cla b/examples/atalkchat.cla
+index d643334..36ed5b8 100644
+--- a/examples/atalkchat.cla
++++ b/examples/atalkchat.cla
+@@ -66,40 +66,40 @@ window Chat {
+     label Status   { at: 10, 45; width: 280; text: "idle" }
+     label Peer     { at: 10, 70; width: 280; text: "" }
+ }
+ 
+ menu File {
+     item Quit "Quit" key "Q"
+ }
+ 
+ var chatType: string = "ClarusChat"
+ 
+-var roleIdle: int = 0
+-var roleServer: int = 1
+-var roleClient: int = 2
++const roleIdle: int = 0
++const roleServer: int = 1
++const roleClient: int = 2
+ 
+ var lsn: listener
+ var brs: serviceBrowser
+ var chat: connection
+ 
+ var role: int = 0
+ var dialed: bool = false
+ var tries: int = 0
+ var sent: text
+ var out: text
+ var beats: int = 0
+ var quitAt: int = 0
+ 
+-// The watchdog exists for the same reason selfserve.cla's does: every
+-// end state here is reached by a network event, so a waist body that
+-// never completes would otherwise sit in the event loop until the boot
+-// deadline -- a timeout instead of a readable log line.
++// The watchdog exists for the same reason testdata/atalk/selfserve.cla's
++// does: every end state here is reached by a network event, so a waist
++// body that never completes would otherwise sit in the event loop until
++// the boot deadline -- a timeout instead of a readable log line.
+ var maxBeats: int = 380
+ 
+ func setStatus(s: string) {
+     var w: Chat = Chat.front
+ 
+     if w != nil {
+         w.Status.text = s
+     }
+ }
+ 
+@@ -267,31 +267,38 @@ on chat.closed {
+     setStatus("peer closed")
+     quit
+ }
+ 
+ on chat.failed(err: error) {
+     log("failed " + string(err.code) + " " + err.message)
+     setStatus("failed: " + err.message)
+     quit
+ }
+ 
+-// The Delay is what makes a `--events` build take real time. A scripted
+-// boot's ticks are VIRTUAL (uiscript.cla's rtUiVirtualTicks: the real
+-// clock is never consulted), so without it the whole event script would
+-// run out in well under a second -- before the peer has even finished
+-// booting -- and the program would quit with nothing to show. A sixth
+-// of a second per beat turns a 400-line script into ~66 s of real
+-// overlap between the two boots. In a real interactive build it costs
+-// only that much latency on a beat the app spends waiting for the
+-// network anyway.
+-every 4 ticks {
+-    var slept: int
++// A REAL app would not have this Delay. It exists only because a
++// `--events` build's ticks are VIRTUAL (uiscript.cla's rtUiVirtualTicks:
++// the real clock is never consulted in scripted mode, and each script
++// line does exactly one pump pass), so without it the whole event script
++// would run out in well under a second -- before the peer has even
++// finished booting -- and the program would quit with nothing to show.
++// Delay(10) is a sixth of a second, so a 400-line `tick 12` script is
++// ~66 s of real overlap between the two boots.
++//
++// The 12-tick period is deliberately LONGER than the 10-tick Delay:
++// blocking for longer than the beat's own period would peg the duty
++// cycle at 100% and starve WaitNextEvent outright. As written the beat
++// blocks 10 ticks out of every 12 -- ~83% -- which in a real
++// interactive build means the event loop sees ~5 free ticks a second
++// and a click can wait up to ~167 ms. That is the honest cost, and it
++// is paid on a beat the app spends waiting for the network anyway.
++every 12 ticks {
++    var slept: int // result ignored; Delay is called for its blocking
+ 
+     slept = Delay(10)
+     beats = beats + 1
+     if quitAt != 0 and beats >= quitAt {
+         quit
+     }
+     if beats >= maxBeats {
+         log("watchdog role " + string(role))
+         quit
+     }
+diff --git a/testdata/ui/atalkchat_client.events b/testdata/ui/atalkchat_client.events
+index 14f9c67..3403e0c 100644
+--- a/testdata/ui/atalkchat_client.events
++++ b/testdata/ui/atalkchat_client.events
+@@ -1,401 +1,401 @@
+ click 246 64
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
+diff --git a/testdata/ui/atalkchat_server.events b/testdata/ui/atalkchat_server.events
+index f30c065..9eecb01 100644
+--- a/testdata/ui/atalkchat_server.events
++++ b/testdata/ui/atalkchat_server.events
+@@ -1,401 +1,401 @@
+ click 156 64
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
+-tick 4
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
++tick 12
+diff --git a/tests/lib_mac.sh b/tests/lib_mac.sh
+index 80d858b..8a70569 100644
+--- a/tests/lib_mac.sh
++++ b/tests/lib_mac.sh
+@@ -34,24 +34,25 @@ run_mac() {
+ MAC_EXIT1=
+ MAC_EXIT2=
+ 
+ # run_mac_pair BIN1 BIN2 SECS (2026-09-06 appletalk spec 8.2, Task 11):
+ # TWO Mini vMac boots at once -- BIN1 on macplus/ (the ~/.LaunchAPPL.cfg
+ # default) and, 5 s later, BIN2 on macplus2/ via LaunchAPPL's own
+ # per-invocation overrides, no second config file (spec 8.4). Each boot
+ # gets its OWN cwd under $WORK, because LaunchAPPL makes its temp dir --
+ # and the copy of the emulator app it actually runs -- in cwd; that cwd
+ # string is also the only safe kill key. run_mac's own blanket
+-# `pkill -f minivmac.app` must NOT be reused here: it would take out the
+-# other half of this pair and any UNRELATED session's emulator too (Task
+-# 1 P4; Andrew runs boots of his own alongside the gate), and it does not
+-# even match the second instance, whose app copy is named MacPlus2.app.
++# `pkill -f minivmac.app` must NOT be reused here: MiniVMac.cc copies
++# whatever bundle it is handed to a fixed `minivmac.app` name (Task 1 P4
++# (c)), so that one pattern matches BOTH halves of this pair and any
++# UNRELATED session's emulator as well -- and Andrew runs boots of his
++# own alongside the gate.
+ #
+ # Both boots run under the same SECS deadline, so the second can outlive
+ # the first by at most the 5 s stagger. Either one failing (a timeout, or
+ # LaunchAPPL itself erroring) sweeps up BOTH cwds and dies -- a surviving
+ # detached emulator owns the machine's screen and would poison every
+ # later boot in the group.
+ #
+ # The captures land in $WORK/cap{1,2}.raw and are split by capture_split
+ # into $WORK/cap1.{out,log} / $WORK/cap2.{out,log} with MAC_EXIT1 /
+ # MAC_EXIT2 -- capture_split itself writes the un-numbered cap.* names,
+@@ -69,23 +70,28 @@ run_mac_pair() {
+         "$ROOT/toolchain/bin/LaunchAPPL" -e minivmac \
+         --minivmac-dir "$ROOT/macplus2" --minivmac-path ./MacPlus2.app \
+         --system-image ./disk1.dsk --autoquit-image ./autoquit-1.1.1.dsk \
+         "$2" > "$WORK/cap2.raw" 2> "$WORK/cap2.err" ) &
+     _pidB=$!
+     wait "$_pidA"; _rcA=$?
+     wait "$_pidB"; _rcB=$?
+     if [ $_rcA -ne 0 ] || [ $_rcB -ne 0 ]; then
+         pkill -f "$WORK/launchA"
+         pkill -f "$WORK/launchB"
++        # The guest's own partial stdout (cap*.raw) is the only evidence
++        # of how far a timed-out boot actually got -- LaunchAPPL's stderr
++        # says nothing about it.
+         die "LaunchAPPL pair failed (rc $_rcA/$_rcB, 124 = timed out after $3s):
+   $1: $(head -5 "$WORK/cap1.err")
+-  $2: $(head -5 "$WORK/cap2.err")"
++  $1 capture tail: $(tail -5 "$WORK/cap1.raw" | tr '\n' '|')
++  $2: $(head -5 "$WORK/cap2.err")
++  $2 capture tail: $(tail -5 "$WORK/cap2.raw" | tr '\n' '|')"
+     fi
+     capture_split "$WORK/cap1.raw"
+     MAC_EXIT1=$MAC_EXIT
+     mv "$WORK/cap.out" "$WORK/cap1.out"
+     mv "$WORK/cap.log" "$WORK/cap1.log"
+     capture_split "$WORK/cap2.raw"
+     MAC_EXIT2=$MAC_EXIT
+     mv "$WORK/cap.out" "$WORK/cap2.out"
+     mv "$WORK/cap.log" "$WORK/cap2.log"
+ }
+diff --git a/tests/mactest/adsp_68k.sh b/tests/mactest/adsp_68k.sh
+index c3ad341..7c4d4c2 100755
+--- a/tests/mactest/adsp_68k.sh
++++ b/tests/mactest/adsp_68k.sh
+@@ -22,26 +22,38 @@
+ # gets ">hello" (6) back. `echo ok` is the client's own byte-for-byte
+ # check of both echoes -- the length lines alone would pass on a stream
+ # that dropped or reordered bytes.
+ #
+ # There is no multicast/no-peer skip: both peers here are emulators this
+ # script boots itself, so either the pair runs or the environment gate
+ # (CLARUS_MAC_TESTS) already declined.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
+ require_env CLARUS_MAC_TESTS
++[ -d "$ROOT/macplus2" ] || skip "macplus2 not present"
++
++# The NBP TYPE is made per-run here rather than in the committed example
++# (spec 8.4's "register names with a per-run suffix"): the example's own
++# per-run suffix is on the NAME, but the client can only search by type,
++# so a concurrent ClarusChat on the group -- Andrew's own session, or a
++# second gate run -- would otherwise be a live false-failure vector. The
++# client connects to the first match, and with a PID-stamped type the
++# only match is this run's own server. The committed example keeps the
++# plain "ClarusChat" so it stays a readable demo.
++sed "s/ClarusChat/ClarusChat$$/g" examples/atalkchat.cla > "$WORK/atalkchat.cla" \
++    || die "could not stamp a per-run NBP type into the example"
+ 
+ emit68k -o "$WORK/chatsrv.bin" --events testdata/ui/atalkchat_server.events \
+-    examples/atalkchat.cla > "$WORK/emit_srv.log" 2>&1 \
++    "$WORK/atalkchat.cla" > "$WORK/emit_srv.log" 2>&1 \
+     || die "clarusc emit68k atalkchat (server): $(tail -10 "$WORK/emit_srv.log")"
+ emit68k -o "$WORK/chatcli.bin" --events testdata/ui/atalkchat_client.events \
+-    examples/atalkchat.cla > "$WORK/emit_cli.log" 2>&1 \
++    "$WORK/atalkchat.cla" > "$WORK/emit_cli.log" 2>&1 \
+     || die "clarusc emit68k atalkchat (client): $(tail -10 "$WORK/emit_cli.log")"
+ 
+ run_mac_pair "$WORK/chatsrv.bin" "$WORK/chatcli.bin" 420
+ 
+ SRV=$WORK/cap1.log
+ CLI=$WORK/cap2.log
+ 
+ # Both logs, verbatim, into this test's own log -- the server's name
+ # suffix and the entity the client actually picked are only visible here,
+ # and a failure is unreadable without them. Prefixed so no line of guest
+@@ -57,22 +69,31 @@ want_line() {
+     if grep -qxF "$3" "$2"; then
+         t_pass "$1"
+     else
+         t_fail "$1" "log has no \"$3\" line: $(tr '\n' '|' < "$2")"
+     fi
+ }
+ 
+ [ "$MAC_EXIT1" = 0 ] && t_pass server_exit || t_fail server_exit "exit $MAC_EXIT1, want 0"
+ [ "$MAC_EXIT2" = 0 ] && t_pass client_exit || t_fail client_exit "exit $MAC_EXIT2, want 0"
+ 
+-# Server: the listener registered, NBP advertised it, and the incoming
+-# ADSP request was accepted as an already-open connection (spec 4.2).
++# Server: the Serve click landed and `lsn.register` was reached -- the
++# half that still works on a boot disk with no AppleTalk file, and the
++# only proof the scripted click hit the right widget. The name carries
++# the example's own per-run suffix, so only the prefix is fixed.
++if grep -q '^serving Chat-' "$SRV"; then
++    t_pass server_registered
++else
++    t_fail server_registered "server log has no \"serving Chat-...\" line: $(tr '\n' '|' < "$SRV")"
++fi
++# NBP advertised it, and the incoming ADSP request was accepted as an
++# already-open connection (spec 4.2).
+ want_line server_accepted "$SRV" "accepted"
+ # The 256-byte sweep, delivered in one piece.
+ want_line server_sweep "$SRV" "received 256"
+ # "hello", after the client saw the sweep's echo -- the lock step.
+ want_line server_hello "$SRV" "received 5"
+ # spec 4.1: on ADSP, `closed` is a real event -- the peer's close.
+ want_line server_closed "$SRV" "closed"
+ 
+ # Client: the NBP lookup found the server's name and the ADSP open to it
+ # completed (spec 4.1's "opened fires on a later pump pass").

@@ -1,0 +1,1014 @@
+# Fix-wave package (code-only): a43b522..40ce5ef
+
+## Commits
+40ce5ef test(atalk): tests/atalk/examples.sh (lost from the previous commit)
+4245fdc docs: host-lane AppleTalk in the reference, plus the phase's owed edits
+1095a85 runtime(host): AppleTalk fd in ConnHIdle's select set; every-timer arming
+1df154d test(atalk): narrow the LToUDP lock, ungate runerr's network-free halves
+87e2a1d runtime(atalk): a listener that fails a listen is torn down, not left deaf
+5b055d5 check: svc.call's reply out-parameter must be a text, not a string
+84b8f5d test(mactest): adsp_68k SKIPs on a boot disk with no .DSP
+
+## Files changed (all)
+ 35 files changed, 8521 insertions(+), 7539 deletions(-)
+
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 440408f..2c27e64 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -107,20 +107,45 @@ Tiered test gates:
+   the machine's screen, so those scripts can never run in parallel), and
+   the `bake/` full-corpus byte-identity sweep (`CLARUS_BAKE_FULL=1`).
+   Each stage prints its own `test-merge.sh: <stage> PASS in Ns` line.
+ - **Standing rule (compiler-cleanup phase, 2026-09-05).** A phase that
+   adds a new value-typed runtime module (the `connection`/`filehandle`/
+   datetime shape) adds its `tests/bake/<module>.sh` `emit68k_pair` twin
+   in the same task — `--rtbake` byte-identity for that module then fails
+   in T1, not only in the opt-in full-corpus sweep. The binary-files
+   phase shipped eight tasks `--rtbake`-broken because nothing but the
+   T2-only sweep exercised that path.
++- **AppleTalk test groups (AppleTalk phase, 2026-09-07).** Three T1
++  groups put a real LocalTalk-over-UDP (LToUDP) stack on the loopback
++  multicast group `239.192.76.84:1954`: `tests/atalk/` (end-to-end
++  Clarus programs against the `atalkdrive` peer tool — `call`, `find`,
++  `serve`, `zones`, `runerr`, plus `splice`/`examples`, which need no
++  network), `tests/atalkdrive/` (the tool talking to itself) and
++  `tests/hostrt/atalk.sh` (the C unit test over `rt_atalk.inc`). That
++  group is shared with any Mini vMac/Snow session running on the same
++  machine, so every script that puts a stack on it takes
++  `tests/lib_atalk.sh`'s `atalk_lock` first — a `mkdir` mutex under
++  `build-run/`, holder pid inside, stolen if the holder died. A dozen
++  stacks racing for 127 node ids under `make -j` is flaky in a way no
++  protocol hardening fixes. The lock is taken as late as possible:
++  fixture COMPILES run outside it (they need no group), and
++  `tests/atalk/runerr.sh`'s panic and build-error sections run before it
++  and without the multicast gate at all. A machine with no multicast
++  makes the network scripts SKIP (`atalk_skip_unless_multicast`, whose
++  probe is `atalkdrive`'s own exit 77). `CLARUS_ATALK_IFACE=<ipv4>`
++  picks the interface to join the group on when the host is multi-homed;
++  unset, the system chooses. `runtime/clarus/atalk.cla` +
++  `atalk_68k.cla` are in the 68k superset — spliced into EVERY native
++  build, not usage-gated like the host `atalk.cla`/`atalk_c.cla` pair —
++  so they are in `bake.cla`'s 68k module list and any edit to
++  `atalk.cla` moves `testdata/cg68k/atalk_{server,client}.s` and
++  `testdata/emitui/atalk_listener.c.golden`.
+ - Opt-in lanes, SKIPped by both gates:
+   - `CLARUS_CPRINT_MAC_TESTS=1` (alongside `CLARUS_MAC_TESTS=1`) enables
+     the Retro68/cprint-gcc twins — `tests/mactest/{coresuite_mac,
+     toolbox_mac,runerr_mac,abort_mac,appres}.sh`. Demoted off T2 by the
+     pack3-standardfile phase (2026-08-07) and kept only as a cross-lane
+     localization oracle: the native `emit68k` lane already covers every
+     case they check. Two known failures, unchanged from the retired Go
+     lane: `FileHandleRW: create failed` and `DirOps: exists("") false` in
+     the cprint CORE-suite boot (cprint-lane runtime gaps). The cprint
+     TOOLBOX twin is green — 38/38 since the compiler-cleanup phase
+@@ -312,22 +337,24 @@ enum + runner, not one boot per case.
+   An `include "toolbox/..."` path that isn't found relative to the
+   including file falls back to the compiler's own `toolbox/` directory
+   (`<rtdir>/../../toolbox/<rest>`, since `<rtdir>` is `runtime/clarus/`)
+   — usable from a program tree outside this repo, not just in-tree;
+   `--rtdir DIR` is honored in check-only mode too (`clarusc FILE.cla
+   --rtdir DIR`), not just `emit`/`emit68k` (binary-files phase,
+   2026-08-22).
+ 
+ ## Retro68 / Mac toolchain (symlinks, not in git)
+ 
+-- `Retro68/` → Retro68 source; Universal Interfaces in
+-  `Retro68/InterfacesAndLibraries`.
++- `Retro68/` → Retro68 source. The Universal Interfaces headers the
++  `toolbox/` catalog is transcribed from are `toolchain/universal/CIncludes`
++  (CR-only line endings and MacRoman bytes — read them through
++  `LC_ALL=C tr '\r' '\n'`, a plain `grep -n` reports nothing).
+ - `toolchain/` → built cross-toolchain (`toolchain/bin`: gcc, Rez, LaunchAPPL,
+   hfsutils h* tools). Prebuilt samples: `../Retro68-build/build-target/Samples/`.
+ - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
+ - `vasm/` → locally built `vasmm68k_mot` (the third-party 68000 assembler
+   used as an encoder oracle; rebuild recipe in
+   `tests/asm68k/roundtrip.sh`'s header). Missing or built without the bin
+   output module ⇒ `tests/asm68k/roundtrip.sh`, `tests/cg68k/vasm.sh` and
+   the round-trip halves of `tests/cg68k/array_assign.sh` and
+   `tests/cg68k/segments.sh` SKIP.
+ - `snow/` → Snow emulator (`snow/Snow`) plus its `Clarus.snoww` workspace,
+diff --git a/clarusc/check.cla b/clarusc/check.cla
+index c0fab1e..a00bda9 100644
+--- a/clarusc/check.cla
++++ b/clarusc/check.cla
+@@ -2220,20 +2220,22 @@ func checkMapMethod(mt: int, sel: int, argsHead: int, keyT: int): int {
+     emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
+     return InvalidT
+ }
+ 
+ // checkMethodCall dispatches `x.name(args)` by the receiver's kind.
+ func checkMethodCall(sel: int, argsHead: int): int {
+     var x: int
+     var xt: int
+     var name: string
+     var result: int
++    var arg4: int
++    var t4: int
+ 
+     x = selectX(sel)
+     if exprKind(x) == ExIdent and identName(x) == cnFile {
+         name = poolGet(selectName(sel))
+         if name == "save" or name == "load" {
+             // Marks the program as needing the serialization runtime
+             // module (main.cla's implicit-inclusion manifest consults this
+             // at emit time; Task 7 wires the real module in).
+             usesFileSaveLoad = true
+         }
+@@ -2367,21 +2369,38 @@ func checkMethodCall(sel: int, argsHead: int): int {
+         return result
+     }
+     case TyService {
+         // svc.call(target, op, req, reply) fills `reply` -- the fourth
+         // argument -- in place (spec %4.4), so it gets the same guard.
+         // Here the widget-property half is NOT redundant: `reply` is a
+         // text, and `d.Body.text` would otherwise compile clean and throw
+         // the server's answer away.
+         result = checkTableMethod(serviceMethods, sel, argsHead)
+         if name == "call" and argsHead != -1 and exprNext(argsHead) != -1 and exprNext(exprNext(argsHead)) != -1 and exprNext(exprNext(exprNext(argsHead))) != -1 {
+-            checkRejectParamFill(exprNext(exprNext(exprNext(argsHead))))
++            arg4 = exprNext(exprNext(exprNext(argsHead)))
++            checkRejectParamFill(arg4)
++            // ...and `reply` must be a text, not a string. The signature
++            // above is psPlain(TextT), which ACCEPTS a string by the
++            // ordinary string->text call-argument coercion -- fine for an
++            // in-parameter, wrong here: lowServiceMethod passes an
++            // out-parameter through uncoerced, so a `string` argument
++            // reaches clar_fn_rtSvcCallName's `rt_text *` as a
++            // clar_str_255 *, which cc only WARNS about, and the runtime
++            // then writes the reply through it. (The same hole exists at
++            // every text out-parameter -- file.readText, filehandle.readAt
++            // -- but there the callee is an intrinsic taking rt_text by
++            // value, so cc errors and the user is stopped; see
++            // docs/TODO.md's "text out-parameters accept a string".)
++            t4 = exprTypeGet(arg4)
++            if t4 != InvalidT and typeKind(t4) != TyText {
++                emitDiag(exprLine(arg4), exprCol(arg4), "call: reply must be a text variable")
++            }
+         }
+         return result
+     }
+     case TyWidget {
+         // canvas (Ch11: Drawing) and textview (Ch8: scrollToEnd) are the
+         // only widget kinds with methods; every other kind -- and
+         // window-ref/menu-item values -- has none, so it falls through
+         // to the "undefined" default below.
+         if poolGet(typeNameIdx(xt)) == "canvas" {
+             return checkTableMethod(canvasMethods, sel, argsHead)
+diff --git a/clarusc/drive.cla b/clarusc/drive.cla
+index cc6a08d..82eae08 100644
+--- a/clarusc/drive.cla
++++ b/clarusc/drive.cla
+@@ -2344,35 +2344,38 @@ func driveCompile(entries: list of string, testapi: bool): bool {
+     }
+     if diags.count > 0 {
+         return false
+     }
+     driveProgressPhase("Checked user program")
+ 
+     if not wantEmit {
+         return true
+     }
+ 
+-    // C-lane --rtbake gap, closed (appletalk spec %7, docs/TODO.md's own
+-    // fix (b)): bakeModuleList deliberately leaves the usage-gated HOST
++    // C-lane --rtbake gap, closed (appletalk spec %7; the gap itself was
++    // recorded by the compiler-cleanup phase -- docs/HISTORY.md's entry
++    // for it -- with two candidate fixes, (a) and (b), and the TODO line
++    // naming them was deleted when this closed it):
++    // bakeModuleList deliberately leaves the usage-gated HOST
+     // pairs (conn.cla/conn_c.cla, fileh.cla/fileh_c.cla and now
+     // atalk.cla/atalk_c.cla) out of the C-lane baked chain, and the
+     // haveRtbake branch below bypasses driveManifestSplice entirely -- so
+     // a host program using any of the three compiled to C that CALLED
+     // clar_fn_rtConnOpen/rtFhOpen/rtSvcServe without ever defining them,
+     // and the emitted C did not compile. Reusing the same from-source
+     // fallback the drift check uses costs those programs a full recompile
+     // and moves no golden (fix (a), adding the pairs to the C-lane
+     // bakeModuleList, would move every host program's baked manifest and
+     // IR indices).
+     //
+-    // HERE, not beside the drift check up in Phase A (where docs/TODO.md's
+-    // own write-up of fix (b) assumed usesConn/usesFileh were "already
++    // HERE, not beside the drift check up in Phase A (where that
++    // write-up of fix (b) assumed usesConn/usesFileh were "already
+     // set"): they are not. checkReset() clears all three and the user
+     // program's own check pass is what sets them, which is the `Checked
+     // user program` phase just above. Placed after the wantEmit gate too,
+     // since a check-only run splices no runtime and has no gap to close.
+     if haveRtbake and not want68k and (usesConn or usesFileh or usesAtalk) {
+         log("clarusc --rtbake: host program uses connection/filehandle/AppleTalk; falling back to a from-source compile")
+         return driveRtbakeFallback(entries, testapi)
+     }
+ 
+     // runtime-ir-bake Task 4: the bake path branches here -- combined2/
+diff --git a/docs/TODO.md b/docs/TODO.md
+index 5643f13..b81fe11 100644
+--- a/docs/TODO.md
++++ b/docs/TODO.md
+@@ -146,20 +146,45 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
+   0555 `rf_ro_dir` left by a killed run surfaces as a confusing
+   `close errno: openRF` failure rather than naming the directory. Two
+   lines each.
+ 
+ - **`ArrReturn`'s independence-failure message is a 167-character source
+   line** (`testsuite/core/cases_arr.cla`, the `assigned copy not
+   independent` `tkFail`) in a file wrapped at ~72 columns — the same wave
+   wrapped a 190-character comment for the same reason. Cosmetic; split
+   the concatenation across two lines.
+ 
++## Compiler: type checking
++
++### AppleTalk phase (2026-09-07)
++
++- **Text out-parameters accept a `string`, and nothing but `cc` catches
++  it.** Every `text` out-parameter in the language -- `file.readText(path,
++  t)`, `fh.readAt(pos, n, t)`, `svc.call(target, op, req, reply)` -- is
++  registered in `clarusc/check.cla` as an ordinary `psPlain(TextT)`
++  parameter, and a `string` argument is admitted there by the ordinary
++  string->text call-argument coercion. Lowering then passes an
++  out-parameter through UNCOERCED (deliberately -- the callee must write
++  into the caller's own storage), so a `string` argument arrives at a
++  `rt_text *` parameter as a `clar_str_255 *`. For `readText`/`readAt`
++  the callee is an intrinsic whose prototype takes `rt_text` by value, so
++  `cc` errors and the user is stopped; for `svc.call` the callee is a
++  lowered Clarus function, so `cc` only WARNS and the program ships with
++  a wild write into the string's storage. The AppleTalk phase's fix wave
++  put a one-off `typeKind(...) != TyText` guard on `svc.call`'s fourth
++  argument (`testdata/errors/svc_call_reply.{cla,expect}`) because that
++  was the site with the silent failure mode; the general fix is real
++  out-parameter typing in the checker -- a parameter-shape flag that
++  suppresses the coercion and rejects any argument whose kind is not the
++  declared one -- applied to the whole family at once, so the next
++  `text` out-parameter added does not have to remember the guard.
++
+ ## Language: feature-support queries (after the AppleTalk release)
+ 
+ - **A `system.has*()` family for optional platform features** (Andrew,
+   2026-09-07, during the AppleTalk brainstorm). A program running on
+   System 6 without the `.DSP` driver should be able to learn that and
+   disable its ADSP features itself, rather than discovering it through
+   a `failed` event. Shape: `system.hasADSP(): bool` first, then
+   whatever other optional things need a check later (`.XPP`/zone
+   calls, MacTCP, Gestalt-gated System 7 features). Mostly syntactic
+   sugar over the corresponding Toolbox calls (`OpenDriver` probes,
+diff --git a/docs/clarus-language-reference.md b/docs/clarus-language-reference.md
+index f25e01f..043ca10 100644
+--- a/docs/clarus-language-reference.md
++++ b/docs/clarus-language-reference.md
+@@ -1544,21 +1544,23 @@ on clock.request(op: int, req: text, from: address) {
+         clock.reply(0, req)
+     }
+     }
+ }
+ 
+ on clock.failed(err: error) {
+     alert(err.message)
+ }
+ ```
+ 
+-A client holding an `address` from a browser calls that server with `clock.call(addr, 1, "", answer)`, where `answer` is a `text` the reply lands in; the `"Name:Type"` form, `clock.call("Clock:ClockSrv", 1, "", answer)`, looks the name up first and costs one extra round trip.
++A client holding an `address` from a browser calls that server with `clock.call(addr, 1, "", answer)`, where `answer` is a `text` the reply lands in; the `"Name:Type"` form, `clock.call("Clock:ClockSrv", 1, "", answer)`, looks the name up first and costs one extra round trip. `answer` must be a `text` variable, not a `string`: `call` fills it in place, so it is an out-parameter and the compiler rejects anything else.
++
++**AppleTalk on a command-line host.** A host build is a real LocalTalk peer, not a stub: the runtime carries its own LocalTalk-over-UDP stack on the multicast group `239.192.76.84:1954`, which is the same wire a Mini vMac or Snow emulator on the machine is on — so a host program and a Macintosh program can discover and call each other. Everything in *Service Discovery* and *Services* above works for real there: `find`, `zones`, `serve`, `reply`, and `call`, with the same events, the same limits, and the same `lastError`. The ADSP stream half does not: `connection.open(appletalk "Name:Type")`, `connection.open(addr)`, and `listener.register` all fail with `failed(err: error)` on a host in this release — streams are Macintosh-only, the same environmental-failure path a System 6 machine without the `.DSP` driver takes. `zones(out)` on a host always comes back holding the single name `"*"`, since there is no router to ask. On a machine with more than one network interface, `CLARUS_ATALK_IFACE` names the IPv4 address of the one to join the group on (`CLARUS_ATALK_IFACE=192.168.1.20`); unset, the system picks.
+ 
+ ### Files
+ 
+ The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, `file.openRF`, `file.create`, and `file.info` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong — except `file.exists`, whose `false` just means the path doesn't exist, never a failure. `open`/`openRF`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O; `info` returns a `FileInfo` record (Chapter 3), zeroed with `lastError` set on failure.
+ 
+ | Function | Signature | Notes |
+ |---|---|---|
+ | `readText` | `file.readText(path: string, t: text): bool` | fills `t` in place |
+ | `writeText` | `file.writeText(path: string, t: text, type: string, creator: string): bool` | writes `t`'s contents to `path`, stamped with `type`/`creator` |
+ | `save` | `file.save(path: string, data, type: string, creator: string): bool` | `data`: any `record`, `list of` record, or `map of` record; stamped with `type`/`creator` |
+diff --git a/docs/superpowers/specs/2026-09-06-appletalk-design.md b/docs/superpowers/specs/2026-09-06-appletalk-design.md
+index acf8ffb..0c749ac 100644
+--- a/docs/superpowers/specs/2026-09-06-appletalk-design.md
++++ b/docs/superpowers/specs/2026-09-06-appletalk-design.md
+@@ -306,21 +306,22 @@ slot → `dspCLDeny`, re-arm. `stop`: `PRemoveName`, `dspCLRemove`.
+   second if a busy server measurably drops requests).
+ - `call`: sync `PSendRequest`, XO, `timeOutVal` 2, `retryCount` 3,
+   BDS over a shared 4624-byte response buffer; on completion the
+   `numOfResps` entries' `dataSize` bytes are concatenated into the
+   caller's `reply` text and `code` = the first response's `userBytes`.
+   The string target form does a sync NBP lookup first.
+ - `stop`: `PRemoveName`, `PCloseATPSkt`.
+ 
+ ### 5.6 Browser
+ 
+-`find`: async `PLookupName` with a 2 KB return buffer, `maxToGet` 32,
++`find`: async `PLookupName` with a 4 KB return buffer (`rtAt68LkBufSz`
++= 4096 -- 32 tuples at up to 104 bytes each), `maxToGet` 32,
+ interval 8 (1 s), count 3. The pump fires `found` per extracted tuple
+ (runtime `NBPExtract` equivalent) then `done`. `zones`: sync
+ `GetZoneList` loop over `.XPP` until `zipLastFlag`; `["*"]` on
+ `noBridgeErr`, `reqFailed`, or `.XPP` failing to open.
+ 
+ ### 5.7 Pump
+ 
+ The compiler-synthesized `clar_conn_pump()` (what the native UI loop's
+ `UiConnPump` hook and the host CLI loop both reach) gains a call to
+ `rtAtalkPump()` whenever the program uses AppleTalk, beside its
+diff --git a/runtime/clarus/atalk.cla b/runtime/clarus/atalk.cla
+index 70eaea9..093b53a 100644
+--- a/runtime/clarus/atalk.cla
++++ b/runtime/clarus/atalk.cla
+@@ -906,21 +906,37 @@ func rtAtalkPump() {
+     while i < rtLsnMax {
+         if rtLsnPendFailedCode[i] != 0 {
+             code = rtLsnPendFailedCode[i]
+             rtLsnPendFailedCode[i] = 0
+             clar_lsn_fire_failed(i, code, rtLsnPendFailedMsg[i])
+             rtLsnPendFailedMsg[i] = ""
+         }
+         if rtLsnState[i] == rtAtActive {
+             pr = rtLsnDevPoll(i)
+             if pr < 0 {
++                // The listen request itself failed. The re-arm below
++                // lives only in the pr == 1 arm, and natively the poll
++                // has already cleared rtAt68LsnLive[i] -- so without
++                // this the slot would stay rtAtActive with nothing
++                // armed: deaf forever, NBP name still advertised, and
++                // rtAtalkAlive still holding a CLI program open. Tearing
++                // the listener down is the smaller of the two correct
++                // fixes and the honest one: the program has just been
++                // told the listener failed, so the state must match, and
++                // re-arming instead would refire `failed` on every pump
++                // pass for as long as the cause persisted. rtLsnStop
++                // does the whole teardown (NBP name, device slot, state)
++                // and is idempotent; the staged failed event still
++                // reaches the program, because rtAtalkAlive counts
++                // rtLsnPendFailedCode too.
+                 rtLsnSetFailed(i, pr, "listener failed")
++                rtLsnStop(i + 1)
+             } else if pr == 1 {
+                 free = -1
+                 j = 0
+                 while j < rtConnMax {
+                     if free < 0 and rtConnState[j] == stClosed and rtAdspPhase[j] == rtAdspNone {
+                         free = j
+                     }
+                     j = j + 1
+                 }
+                 if free < 0 {
+diff --git a/runtime/host/rt_ext_host.inc b/runtime/host/rt_ext_host.inc
+index 041ea82..92ec536 100644
+--- a/runtime/host/rt_ext_host.inc
++++ b/runtime/host/rt_ext_host.inc
+@@ -380,22 +380,24 @@ int32_t rt_ext_TickCount(void) {
+  * passes where timer idx has come due, re-arming it for the next period.
+  *
+  * The first call for an idx only ARMS it (returns 0), so a timer's first
+  * fire is one full period after the program reaches the pump loop -- the
+  * Mac lane's own behavior (rt_ui_every_desc[]'s deadline is likewise set
+  * at startup, not fired at it).
+  *
+  * The deadline compare is the Toolbox's own signed-difference idiom, done
+  * through uint32_t exactly the way rt_ext_TickCount above builds its
+  * result: unsigned subtraction wraps by definition, so the comparison
+- * stays correct across the 2^32-tick (~2.3 year) wrap with no signed
+- * overflow anywhere.
++ * stays correct across the 2^32-tick (~2.3 year) wrap. The two ARMINGS
++ * go through uint32_t for the same reason -- `now + periodTicks` as
++ * signed int32_t is undefined behaviour within periodTicks ticks of the
++ * wrap, and the wrapped value is exactly what the compare below wants.
+  * A missed period is dropped, not caught up: the next deadline is measured
+  * from now, so a slow handler cannot build a backlog of instant refires.
+  *
+  * 16 slots, a deliberate ceiling: `every` blocks are top-level
+  * declarations and no plausible program writes more than a handful, so a
+  * fixed array beats any allocation here. A program past the ceiling gets
+  * no timer for the extra slots (the range guard returns 0) rather than
+  * corrupting memory -- raise RT_EVERY_MAX if one ever needs 17. */
+ #define RT_EVERY_MAX 16
+ 
+@@ -406,25 +408,25 @@ int32_t rt_ext_EveryDue(int32_t idx, int32_t periodTicks) {
+ 
+     if (idx < 0 || idx >= RT_EVERY_MAX) {
+         return 0;
+     }
+     if (periodTicks < 1) {
+         periodTicks = 1;
+     }
+     now = rt_ext_TickCount();
+     if (!armed[idx]) {
+         armed[idx] = 1;
+-        due[idx] = now + periodTicks;
++        due[idx] = (int32_t)((uint32_t)now + (uint32_t)periodTicks);
+         return 0;
+     }
+     if ((int32_t)((uint32_t)now - (uint32_t)due[idx]) >= 0) {
+-        due[idx] = now + periodTicks;
++        due[idx] = (int32_t)((uint32_t)now + (uint32_t)periodTicks);
+         return 1;
+     }
+     return 0;
+ }
+ 
+ /* Mac epoch (1904-01-01 00:00:00 LOCAL) vs Unix epoch (1970-01-01 UTC):
+  * 24,107 days. The Mac clock stores local-time seconds, so the host's
+  * current UTC offset (tm_gmtoff) is applied. */
+ #define RT_MAC_EPOCH_DELTA 2082844800UL
+ 
+diff --git a/runtime/host/rt_serial.inc b/runtime/host/rt_serial.inc
+index f77c11d..f82e5ec 100644
+--- a/runtime/host/rt_serial.inc
++++ b/runtime/host/rt_serial.inc
+@@ -553,38 +553,55 @@ int32_t rt_ext_ConnHGone(int32_t slot) {
+     if (rt_conn_slots[slot].listening) return 0;
+     n = recv(rt_conn_slots[slot].fd, &b, 1, MSG_PEEK | MSG_DONTWAIT);
+     if (n == 0) return 1;
+     if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) return 1;
+     return 0;
+ }
+ 
+ /* rt_ext_ConnHIdle: select()-with-timeout across every open slot's fd, so
+  * Task 5's host pump loop blocks efficiently instead of spinning. Plain
+  * usleep when no slot is open at all (select() with an empty fd_set and a
+- * timeout is portable but this reads more plainly). */
++ * timeout is portable but this reads more plainly).
++ *
++ * The AppleTalk stack's UDP socket joins the set too (appletalk spec
++ * %6.1): without it an AppleTalk-only host server -- a `service` with no
++ * connection open anywhere -- would take the usleep arm and wake 50
++ * times a second to poll a socket that select could have waited on.
++ * Forward-declared rather than included, because rt.c includes this file
++ * BEFORE rt_atalk.inc; a host build with no AppleTalk in it never calls
++ * ConnHIdle either, so the reference costs nothing there. */
++int32_t rt_ext_AtalkHFd(void);
++
+ void rt_ext_ConnHIdle(int32_t ms) {
+     fd_set rfds;
+     struct timeval tv;
+     int maxfd;
+     int i;
+     int any;
++    int32_t afd;
+ 
+     FD_ZERO(&rfds);
+     maxfd = -1;
+     any = 0;
+     for (i = 0; i < RT_CONN_MAX; i++) {
+         int fd = rt_conn_slots[i].fd;
+         if (fd >= 0) {
+             FD_SET(fd, &rfds);
+             if (fd > maxfd) maxfd = fd;
+             any = 1;
+         }
+     }
++    afd = rt_ext_AtalkHFd();
++    if (afd >= 0) {
++        FD_SET((int)afd, &rfds);
++        if ((int)afd > maxfd) maxfd = (int)afd;
++        any = 1;
++    }
+     if (ms < 0) ms = 0;
+     if (!any) {
+         usleep((useconds_t)ms * 1000);
+         return;
+     }
+     tv.tv_sec = ms / 1000;
+     tv.tv_usec = (ms % 1000) * 1000;
+     select(maxfd + 1, &rfds, NULL, NULL, &tv);
+ }
+diff --git a/testdata/errors/svc_call_reply.cla b/testdata/errors/svc_call_reply.cla
+new file mode 100644
+index 0000000..6974ecb
+--- /dev/null
++++ b/testdata/errors/svc_call_reply.cla
+@@ -0,0 +1,17 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// AppleTalk phase, final fix wave: svc.call's fourth argument is an
++// OUT-parameter the runtime fills in place, so it must be a `text`. The
++// signature accepts a string by the ordinary call-argument coercion, but
++// lowering passes an out-parameter through uncoerced -- so without this
++// diagnostic the emitted C hands a clar_str_255 * to an rt_text * and
++// only cc's warning stands between the user and a heap write.
++var caller: service
++var answer: string
++
++on App.startCLI(args: list of string) {
++    if caller.call("Clock:ClockSrv", 1, "", answer) {
++        log(answer)
++    }
++}
+diff --git a/testdata/errors/svc_call_reply.expect b/testdata/errors/svc_call_reply.expect
+new file mode 100644
+index 0000000..25e6b63
+--- /dev/null
++++ b/testdata/errors/svc_call_reply.expect
+@@ -0,0 +1 @@
++../../testdata/errors/svc_call_reply.cla:14:45: call: reply must be a text variable
+diff --git a/tests/atalk/call.sh b/tests/atalk/call.sh
+index efa8d28..db4cf29 100755
+--- a/tests/atalk/call.sh
++++ b/tests/atalk/call.sh
+@@ -1,33 +1,36 @@
+ #!/bin/sh
+ # tests/atalk/call.sh (2026-09-06 appletalk spec %4.4, %8.1, Task 8): the
+ # mirror of serve.sh -- a Clarus `service.call` program as the CLIENT,
+ # `atalkdrive serve` as the server. Pins all four documented outcomes of
+ # `call`: true with a 4000-byte multi-packet reply, false with lastError
+ # { 5, "service" } for a nonzero server code, false with nbpNoConfirm
+ # (-1025) for a name that resolves to nothing, and false with atpLenErr
+ # (-3106) for a request over ATP's 578-byte ceiling.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
+-atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+-atalk_skip_unless_multicast
+ 
+ if atalk_build caller; then
+     t_pass build
+ else
+     t_fail build "$(tail -20 "$WORK/caller.build")"
+     t_done
+ fi
+ 
++atalk_lock   # one LToUDP script on the group at a time -- taken HERE,
++             # after the build above: `clarusc emit` + `cc` need no group
++             # and serializing them was most of this group's T1 cost.
++atalk_skip_unless_multicast
++
+ OBJ=$(atalk_name Echo)
+ TYPE=ClarusEcho
+ 
+ # 4000 bytes = 7 ATP packets, well past the single-packet case.
+ atalk_sweep "$WORK/reply.bin" 4000
+ printf '1 0 %s\n2 5 -\n' "$WORK/reply.bin" > "$WORK/script"
+ 
+ "$DRIVE" serve "$OBJ" "$TYPE" 40 "$WORK/script" > "$WORK/srv.out" 2> "$WORK/srv.err" &
+ srvpid=$!
+ if atalk_wait_line "$WORK/srv.out" '^serving node=' $srvpid; then
+diff --git a/tests/atalk/examples.sh b/tests/atalk/examples.sh
+new file mode 100755
+index 0000000..2d8f6d9
+--- /dev/null
++++ b/tests/atalk/examples.sh
+@@ -0,0 +1,19 @@
++#!/bin/sh
++# tests/atalk/examples.sh (2026-09-07 appletalk final fix wave): the three
++# AppleTalk examples must keep compiling. Each is otherwise built only
++# inside a gated emulator boot -- atalkclock.cla by mactest/atalk_68k.sh,
++# atalkchat.cla by mactest/adsp_68k.sh, atalkfind.cla by nothing at all --
++# so a language or runtime change could rot them and no T1 run would say
++# so. Check-only (`clarusc FILE --rtdir DIR`), which is enough to catch
++# every front-end and lowering-fence break: no network, no lock, no cc.
++. "$(dirname "$0")/../lib.sh" || exit 2
++
++for f in atalkclock atalkchat atalkfind; do
++    if "$CLARUSC" "$ROOT/examples/$f.cla" --rtdir "$RTDIR" > "$WORK/$f.log" 2>&1; then
++        t_pass "$f"
++    else
++        t_fail "$f" "$(tail -20 "$WORK/$f.log")"
++    fi
++done
++
++t_done
+diff --git a/tests/atalk/find.sh b/tests/atalk/find.sh
+index 73ec6e6..1fd886e 100755
+--- a/tests/atalk/find.sh
++++ b/tests/atalk/find.sh
+@@ -5,33 +5,36 @@
+ # names: the one-argument form (which supplies the "*" zone at the
+ # lowering seam), the explicit two-argument form, and a type nobody has
+ # registered -- which must still fire `done`, since "a search that matches
+ # nothing is done with no found, not a failure".
+ #
+ # The group is shared with whatever else is on this machine, so nothing
+ # asserts an entity COUNT -- only that our own name is among the hits with
+ # the address the tool itself printed, and that `done` is the last line.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
+-atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+-atalk_skip_unless_multicast
+ 
+ if atalk_build finder; then
+     t_pass build
+ else
+     t_fail build "$(tail -20 "$WORK/finder.build")"
+     t_done
+ fi
+ 
++atalk_lock   # one LToUDP script on the group at a time -- taken HERE,
++             # after the build above: `clarusc emit` + `cc` need no group
++             # and serializing them was most of this group's T1 cost.
++atalk_skip_unless_multicast
++
+ OBJ=$(atalk_name Svc)
+ TYPE=ClarusFind
+ 
+ "$DRIVE" register "$OBJ" "$TYPE" 40 > "$WORK/reg.out" 2> "$WORK/reg.err" &
+ regpid=$!
+ if atalk_wait_line "$WORK/reg.out" '^registered node=' $regpid; then
+     t_pass peer_registered
+ else
+     kill $regpid 2>/dev/null; wait $regpid 2>/dev/null
+     t_fail peer_registered "atalkdrive register never announced itself: $(cat "$WORK/reg.err")"
+diff --git a/tests/atalk/runerr.sh b/tests/atalk/runerr.sh
+index 066e38f..6c20e08 100755
+--- a/tests/atalk/runerr.sh
++++ b/tests/atalk/runerr.sh
+@@ -1,25 +1,34 @@
+ #!/bin/sh
+ # tests/atalk/runerr.sh (2026-09-06 appletalk spec %4.5, %8.1, Task 8):
+ # the error-principle fences. Contract violations -- `reply` outside a
+ # request handler, `reply` twice in one handler, `send` on a connection
+ # whose (asynchronous) open has not completed -- are RUNTIME ERRORS, and
+ # a resource-variable count past its cap is a BUILD error naming the cap.
+ # Everything environmental stays a `failed` event, which the other four
+ # scripts in this group cover.
++#
++# Section order is gate order, not narrative order: the two network-free
++# sections run first and unconditionally, the peer-needing one last.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
+-atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+-atalk_skip_unless_multicast
++
++# Sections 1 and 2 below need neither the multicast group nor the lock:
++# section 1 runs two programs that panic essentially at once (one before
++# any device call at all), and section 2 only runs `clarusc emit`. Only
++# section 3 needs a peer, so the probe and the lock sit immediately above
++# it -- on a machine without multicast the error-principle fences still
++# run, which was the whole point of writing them down. (Before this the
++# gate was at the top and a no-multicast host silently lost all five.)
+ 
+ # --- 1. runtime errors that need no peer -----------------------------
+ check_panic() {   # check_panic NAME TEXT
+     if ! atalk_build "$1"; then
+         t_fail "$1" "build failed: $(tail -20 "$WORK/$1.build")"
+         return
+     fi
+     "$TOOLS/timeout" 10 "$WORK/$1" > "$WORK/$1.out" 2> "$WORK/$1.err"
+     _rc=$?
+     if [ $_rc = 0 ]; then
+@@ -29,21 +38,41 @@ check_panic() {   # check_panic NAME TEXT
+     else
+         t_fail "$1" "exit $_rc, stderr [$(tr '\n' '|' < "$WORK/$1.err")], want [runtime error: $2]"
+     fi
+ }
+ check_panic reply_outside 'reply outside a request handler'
+ # `open(appletalk ...)` is asynchronous like every other open, so the very
+ # next line's `send` runs on a connection that is not open (and, on the
+ # host lane this phase, never will be -- spec %4.6).
+ check_panic send_unopened_adsp 'connection not open'
+ 
+-# --- 2. reply twice: needs a real request to reach the handler --------
++# --- 2. the three caps, at BUILD time --------------------------------
++check_cap() {   # check_cap NAME DIAGNOSTIC
++    if "$CLARUSC" emit --rtdir "$RTDIR" -o "$WORK/$1.c" \
++            "$ROOT/tests/atalk/testdata/$1.cla" > "$WORK/$1.emit" 2>&1; then
++        t_fail "$1" "clarusc emit succeeded; expected [$2]"
++    elif grep -q "$2" "$WORK/$1.emit"; then
++        t_pass "$1"
++    else
++        t_fail "$1" "emit failed without [$2]: $(tr '\n' '|' < "$WORK/$1.emit")"
++    fi
++}
++check_cap too_many_lsn 'too many listener variables (max 2)'
++check_cap too_many_brs 'too many serviceBrowser variables (max 2)'
++check_cap too_many_svc 'too many service variables (max 2)'
++
++# --- 3. reply twice: needs a real request to reach the handler --------
++# The only section with a peer, so the group gate and the LToUDP lock are
++# taken here rather than at the top of the script.
++atalk_lock   # one LToUDP script on the group at a time
++atalk_skip_unless_multicast
++
+ if atalk_build reply_twice; then
+     t_pass reply_twice_build
+ else
+     t_fail reply_twice_build "$(tail -20 "$WORK/reply_twice.build")"
+     t_done
+ fi
+ 
+ NAME=$(atalk_name Twice)
+ TYPE=ClarusTwice
+ "$WORK/reply_twice" "$NAME" > "$WORK/twice.out" 2> "$WORK/twice.err" &
+@@ -79,25 +108,11 @@ if kill -0 $pid 2>/dev/null; then
+ else
+     wait $pid
+     rc=$?
+     if [ $rc != 0 ] && grep -q 'runtime error: reply already sent' "$WORK/twice.err"; then
+         t_pass reply_twice
+     else
+         t_fail reply_twice "exit $rc, stderr [$(tr '\n' '|' < "$WORK/twice.err")]"
+     fi
+ fi
+ 
+-# --- 3. the three caps, at BUILD time --------------------------------
+-check_cap() {   # check_cap NAME DIAGNOSTIC
+-    if "$CLARUSC" emit --rtdir "$RTDIR" -o "$WORK/$1.c" \
+-            "$ROOT/tests/atalk/testdata/$1.cla" > "$WORK/$1.emit" 2>&1; then
+-        t_fail "$1" "clarusc emit succeeded; expected [$2]"
+-    elif grep -q "$2" "$WORK/$1.emit"; then
+-        t_pass "$1"
+-    else
+-        t_fail "$1" "emit failed without [$2]: $(tr '\n' '|' < "$WORK/$1.emit")"
+-    fi
+-}
+-check_cap too_many_lsn 'too many listener variables (max 2)'
+-check_cap too_many_brs 'too many serviceBrowser variables (max 2)'
+-check_cap too_many_svc 'too many service variables (max 2)'
+ t_done
+diff --git a/tests/atalk/serve.sh b/tests/atalk/serve.sh
+index cc7c6a2..2b77333 100755
+--- a/tests/atalk/serve.sh
++++ b/tests/atalk/serve.sh
+@@ -5,33 +5,36 @@
+ # call its own registered name (the LToUDP stack drops its own datagrams),
+ # so the peer has to be the tool.
+ #
+ # Covers every reply shape the spec names: a fixed payload, a byte-exact
+ # echo at ATP's 578-byte request ceiling, the runtime's automatic -1 empty
+ # reply for a handler that returns without replying, a nonzero application
+ # code, the program's own unknown-op arm, and `stop()` followed by the
+ # host CLI lifetime rule ending the process on its own.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
+-atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+-atalk_skip_unless_multicast
+ 
+ if atalk_build clock; then
+     t_pass build
+ else
+     t_fail build "$(tail -20 "$WORK/clock.build")"
+     t_done
+ fi
+ 
++atalk_lock   # one LToUDP script on the group at a time -- taken HERE,
++             # after the build above: `clarusc emit` + `cc` need no group
++             # and serializing them was most of this group's T1 cost.
++atalk_skip_unless_multicast
++
+ NAME=$(atalk_name Clock)
+ TYPE=ClarusClock
+ 
+ "$WORK/clock" "$NAME" > "$WORK/srv.out" 2> "$WORK/srv.err" &
+ pid=$!
+ 
+ # The name is findable once serve()'s own NBP registration completes
+ # (~3 s). Poll the tool rather than sleeping a guessed interval.
+ i=0
+ seen=0
+diff --git a/tests/atalk/splice.sh b/tests/atalk/splice.sh
+index 9cec908..14a87d0 100755
+--- a/tests/atalk/splice.sh
++++ b/tests/atalk/splice.sh
+@@ -39,21 +39,21 @@ if [ -x "$WORK/splice" ]; then
+     rc=$?
+     if [ $rc -eq 0 ] && grep -q 'atalk splice fixture' "$WORK/err"; then
+         t_pass run
+     else
+         t_fail run "exit $rc (stdout: $(cat "$WORK/out"), stderr: $(cat "$WORK/err"))"
+     fi
+ else
+     t_fail run "no binary to run"
+ fi
+ 
+-# --- 2. the C-lane --rtbake gap (docs/TODO.md's fix (b)) --------------
++# --- 2. the C-lane --rtbake gap (appletalk spec %7's fix (b)) --------
+ # bakeModuleList leaves the usage-gated host pairs out of the C-lane baked
+ # chain, and the bake path bypasses driveManifestSplice, so a host program
+ # using connection/filehandle/AppleTalk used to emit C that CALLED
+ # clar_fn_rtConnOpen/rtSvcServe with no definition anywhere. drive.cla now
+ # falls back to a from-source compile for exactly those programs.
+ if "$CLARUSC" --bake-ir --lane c -o "$WORK/RTC.clir" > "$WORK/bakeir.log" 2>&1; then
+     t_pass bake_ir
+ else
+     t_fail bake_ir "$(tail -20 "$WORK/bakeir.log")"
+ fi
+@@ -78,23 +78,23 @@ if rtbake_fork bake "$FIX"; then
+         t_pass bake_compiles
+     else
+         t_fail bake_compiles "$(tail -20 "$WORK/bake.cc")"
+     fi
+ else
+     t_fail bake_fallback_logged "emit --rtbake failed: $(tail -20 "$WORK/bake.log")"
+     t_fail bake_spliced "no output"
+     t_fail bake_compiles "no output"
+ fi
+ 
+-# The same gap for a plain SERIAL connection program -- the shape
+-# docs/TODO.md's repro used, and the reason conn programs now carry
+-# atalk.cla too.
++# The same gap for a plain SERIAL connection program -- the shape the
++# compiler-cleanup phase's own repro used (docs/HISTORY.md), and the
++# reason conn programs now carry atalk.cla too.
+ if rtbake_fork echo "$ROOT/tests/conntest/testdata/echo.cla"; then
+     if grep -q 'falling back to a from-source compile' "$WORK/echo.log" \
+         && grep -q 'clar_fn_rtConnOpen(int32_t' "$WORK/echo.c"; then
+         t_pass bake_conn_defined
+     else
+         t_fail bake_conn_defined "rtConnOpen still undefined in the baked fork"
+     fi
+     if $CC -O1 -I "$HOSTRT" -o "$WORK/echo" "$WORK/echo.c" "$HOSTRT/rt.c" > "$WORK/echo.cc" 2>&1; then
+         t_pass bake_conn_compiles
+     else
+diff --git a/tests/atalk/zones.sh b/tests/atalk/zones.sh
+index adc2231..12fa3f3 100755
+--- a/tests/atalk/zones.sh
++++ b/tests/atalk/zones.sh
+@@ -1,31 +1,34 @@
+ #!/bin/sh
+ # tests/atalk/zones.sh (2026-09-06 appletalk spec %4.3, %8.1, Task 8):
+ # `serviceBrowser.zones(out)` is SYNCHRONOUS -- it returns with `out`
+ # already filled, no event and no pump pass. A network with no router has
+ # no zone list to fetch, and the spec's answer is the one-element list
+ # ["*"], so a program never special-cases the routerless case. Every host
+ # lane run is routerless, so "zones 1 *" is the whole contract here.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
+-atalk_lock   # one LToUDP script on the group at a time
+ 
+ require_tool "$TOOLS/atalkdrive"
+-atalk_skip_unless_multicast
+ 
+ if atalk_build zones; then
+     t_pass build
+ else
+     t_fail build "$(tail -20 "$WORK/zones.build")"
+     t_done
+ fi
+ 
++atalk_lock   # one LToUDP script on the group at a time -- taken HERE,
++             # after the build above: `clarusc emit` + `cc` need no group
++             # and serializing them was most of this group's T1 cost.
++atalk_skip_unless_multicast
++
+ "$TOOLS/timeout" 30 "$WORK/zones" > "$WORK/out" 2> "$WORK/log"
+ rc=$?
+ if [ $rc != 0 ]; then
+     t_fail zones "exit $rc: $(tr '\n' '|' < "$WORK/log")"
+ elif [ "$(cat "$WORK/log")" = 'zones 1 *' ]; then
+     t_pass zones
+ else
+     t_fail zones "log was [$(tr '\n' '|' < "$WORK/log")], want [zones 1 *]"
+ fi
+ t_done
+diff --git a/tests/lib_atalk.sh b/tests/lib_atalk.sh
+index 90721d7..4147aea 100644
+--- a/tests/lib_atalk.sh
++++ b/tests/lib_atalk.sh
+@@ -1,12 +1,14 @@
+-# tests/lib_atalk.sh -- helpers shared by tests/atalk/*.sh (sourced right
+-# after lib.sh). The AppleTalk end-to-end scripts all have the same three
++# tests/lib_atalk.sh -- helpers shared by the three groups that put an
++# LToUDP stack on the loopback multicast group: tests/atalk/*.sh,
++# tests/atalkdrive/*.sh and tests/hostrt/atalk.sh (sourced right after
++# lib.sh). The AppleTalk end-to-end scripts all have the same three
+ # needs: build a fixture, refuse to run without multicast, and register
+ # names that cannot collide with another run (or with Andrew's live
+ # emulator sessions, which share the loopback group -- spec %8.4).
+ 
+ # atalk_build NAME : host-build tests/atalk/testdata/NAME.cla into
+ # $WORK/NAME with the CURRENT-source clarusc (the committed snapshot
+ # cannot lower AppleTalk); build output lands in $WORK/NAME.build.
+ atalk_build() {
+     host_build "$WORK/$1" "$ROOT/tests/atalk/testdata/$1.cla" > "$WORK/$1.build" 2>&1
+ }
+@@ -101,25 +103,31 @@ atalk_sweep() {
+ atalk_lock() {
+     _lk=$BR/atalk.lock
+     _i=0
+     mkdir -p "$BR"
+     while ! mkdir "$_lk" 2>/dev/null; do
+         _owner=$(cat "$_lk/pid" 2>/dev/null)
+         if [ -n "$_owner" ] && ! kill -0 "$_owner" 2>/dev/null; then
+             rm -rf "$_lk"          # holder died without releasing; steal it
+             continue
+         fi
+-        [ "$_i" -ge 300 ] && die "atalk_lock: $_lk still held after 300s"
++        [ "$_i" -ge 600 ] && die "atalk_lock: $_lk still held after 600s"
+         sleep 1
+         _i=$((_i + 1))
+     done
+     echo $$ > "$_lk/pid"
+     ATALK_LOCK=$_lk
+     trap 'atalk_unlock; rm -rf "$WORK"' EXIT
+     trap 'atalk_unlock; rm -rf "$WORK"; exit 2' INT TERM
+ }
+ 
+ atalk_unlock() {
+     [ -n "${ATALK_LOCK:-}" ] || return 0
++    # Only the holder may remove it. Without this check, a waiter that
++    # stole a dead holder's lock and then exited could delete the
++    # directory a SECOND waiter had since legitimately created -- two
++    # scripts on the group at once, which is the one thing the lock
++    # exists to prevent.
++    [ "$(cat "$ATALK_LOCK/pid" 2>/dev/null)" = "$$" ] || return 0
+     rm -rf "$ATALK_LOCK"
+     ATALK_LOCK=
+ }
+diff --git a/tests/mactest/adsp_68k.sh b/tests/mactest/adsp_68k.sh
+index 7c4d4c2..a3512a7 100755
+--- a/tests/mactest/adsp_68k.sh
++++ b/tests/mactest/adsp_68k.sh
+@@ -16,23 +16,24 @@
+ # unrelated session's emulator -- and splits each capture into
+ # $WORK/cap{1,2}.log with MAC_EXIT1/MAC_EXIT2.
+ #
+ # The lengths asserted below are the lock-step exchange the example
+ # performs: the client sends a 256-byte 0..255 sweep, the server echoes
+ # it with a '>' prepended (257), the client then sends "hello" (5) and
+ # gets ">hello" (6) back. `echo ok` is the client's own byte-for-byte
+ # check of both echoes -- the length lines alone would pass on a stream
+ # that dropped or reordered bytes.
+ #
+-# There is no multicast/no-peer skip: both peers here are emulators this
++# There is no multicast/no-peer skip -- both peers here are emulators this
+ # script boots itself, so either the pair runs or the environment gate
+-# (CLARUS_MAC_TESTS) already declined.
++# (CLARUS_MAC_TESTS) already declined -- but there IS a boot-disk skip:
++# see the -1273 check after run_mac_pair below.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
+ require_env CLARUS_MAC_TESTS
+ [ -d "$ROOT/macplus2" ] || skip "macplus2 not present"
+ 
+ # The NBP TYPE is made per-run here rather than in the committed example
+ # (spec 8.4's "register names with a per-run suffix"): the example's own
+ # per-run suffix is on the NAME, but the client can only search by type,
+ # so a concurrent ClarusChat on the group -- Andrew's own session, or a
+ # second gate run -- would otherwise be a live false-failure vector. The
+@@ -54,20 +55,34 @@ run_mac_pair "$WORK/chatsrv.bin" "$WORK/chatcli.bin" 420
+ SRV=$WORK/cap1.log
+ CLI=$WORK/cap2.log
+ 
+ # Both logs, verbatim, into this test's own log -- the server's name
+ # suffix and the entity the client actually picked are only visible here,
+ # and a failure is unreadable without them. Prefixed so no line of guest
+ # output can ever look like a result line to the runner.
+ sed 's/^/  server: /' "$SRV"
+ sed 's/^/  client: /' "$CLI"
+ 
++# The boot disk LaunchAPPL builds is System + AutoQuit + the app and
++# nothing else -- in particular no `AppleTalk` system file, so the .DSP
++# driver is absent and `lsn.register` fails with -1273 (the example logs
++# it as "failed -1273 ..."). Without ADSP there is no stream stack to
++# test, so the run is a SKIP, not a failure. This check runs BEFORE the
++# first t_fail/want_line on purpose: a FAIL line in the log beats exit 77
++# in this harness, so a single assertion ahead of it would turn the skip
++# into a red result. Task 13's out-of-repo LaunchAPPL patch (carry the
++# AppleTalk file onto the disk) is what makes this script run for real;
++# every assertion below is kept intact for that lane.
++if grep -q '^failed -1273 ' "$SRV"; then
++    skip "boot disk lacks .DSP (AppleTalk system file not carried by LaunchAPPL)"
++fi
++
+ # want_line NAME FILE TEXT : FILE must contain TEXT as a WHOLE line. The
+ # log lines asserted here are all complete lines the example emits, and
+ # an exact match is what keeps "received 5" from being satisfied by a
+ # "received 57".
+ want_line() {
+     if grep -qxF "$3" "$2"; then
+         t_pass "$1"
+     else
+         t_fail "$1" "log has no \"$3\" line: $(tr '\n' '|' < "$2")"
+     fi
+diff --git a/toolbox/appletalk.cla b/toolbox/appletalk.cla
+index 893114c..e7c7c3a 100644
+--- a/toolbox/appletalk.cla
++++ b/toolbox/appletalk.cla
+@@ -8,23 +8,23 @@
+ // drivers, dispatched on the parameter block's own `csCode` field, NOT a
+ // trap of its own: the routines that issue them are PBOpenSync /
+ // PBControlSync / PBStatusSync / PBKillIOSync from toolbox/devices.cla
+ // (compose both files), plus the ONE new form this file adds,
+ // PBControlAsync. Inside Macintosh II ch. 10 ("The AppleTalk Manager"),
+ // Inside Macintosh V ch. 28, Inside Macintosh VI ch. 32 (ADSP + ZIP) and
+ // Inside Macintosh: Networking (1994) are the prose sources; the numbers
+ // come from the headers cited per declaration.
+ //
+ // Every constant and struct layout below is confirmed directly against
+-// Apple's own Universal Interfaces 3.4 (Retro68/InterfacesAndLibraries/
+-// Interfaces/CIncludes/{AppleTalk,ADSP,MacErrors,Devices}.h), read via
+-// `LC_ALL=C tr '\r' '\n' < AppleTalk.h` -- those headers have CR-only
++// Apple's own Universal Interfaces 3.4
++// (toolchain/universal/CIncludes/{AppleTalk,ADSP,MacErrors,Devices}.h),
++// read via `LC_ALL=C tr '\r' '\n' < AppleTalk.h` -- those headers have CR-only
+ // line endings and MacRoman bytes, so a plain `grep -n` silently reports
+ // nothing against them (toolbox/devices.cla's header comment records the
+ // same trap). Line numbers below are from that reflow, matching the
+ // headers' own native numbering 1:1. Read on 2026-09-07.
+ //
+ // ---- THREE RULES a caller must follow (all three cost real boots) ----
+ //
+ // 1. **Every AppleTalk parameter block is at least 52 bytes.** The
+ //    Device Manager's ParamBlockRec union is larger than the fields any
+ //    one AppleTalk call names, and the driver writes into fields the

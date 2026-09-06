@@ -1,0 +1,319 @@
+# Review package: e68df5f..HEAD
+
+## Commits
+65ac054 docs: Task 12 review fix round 1
+
+## Files changed
+ docs/FUTURE.md                                     | 26 +++++++++++----------
+ docs/clarus-toolbox-cookbook.md                    | 27 ++++++++++++++--------
+ .../specs/2026-09-06-appletalk-design.md           |  8 +++----
+ examples/pagefile.cla                              |  7 +++---
+ examples/serialecho.cla                            |  7 +++---
+ 5 files changed, 43 insertions(+), 32 deletions(-)
+
+## Diff
+diff --git a/docs/FUTURE.md b/docs/FUTURE.md
+index 8d13bd7..46878b7 100644
+--- a/docs/FUTURE.md
++++ b/docs/FUTURE.md
+@@ -221,24 +221,25 @@ Real debt and needed improvements stay in `docs/TODO.md`.
+   program as a UI program (`irIsUiProgram`'s `irEveryCount > 0 and
+   want68k`, `clarusc/cprint.cla`; spec §6.4), while the native lane
+   still treats an every-only program as a real UI program, so the shape
+   that both compiles on the host AND pumps natively is now "carry one
+   `every` timer" rather than "carry a throwaway window". A single shape
+   that needs neither still does not exist.
+ 
+ ### AppleTalk phase (2026-09-07)
+ 
+ - **Host-lane ADSP** (spec §11, out of scope this phase) — the host
+-  stack drops DDP type 7 on the floor, and the whole `rtAdspDev*`/
+-  `rtLsnDev*` waist in `runtime/clarus/atalk_c.cla` returns
+-  `rtAtErrNoHost`, so `connection.open(appletalk ...)` and
+-  `listener.register` are native-only. Implementing it is roughly
++  stack drops DDP type 7 on the floor, and every `rtAdspDev*`/`rtLsnDev*`
++  entry point in `runtime/clarus/atalk_c.cla` is a stub reporting
++  "unavailable" — `rtAtErrNoHost` / 0 / false, per its own header note —
++  so `connection.open(appletalk ...)` and `listener.register` are
++  native-only. Implementing it is roughly
+   800-1500 lines of C in `runtime/host/rt_atalk.inc` (which is 1252
+   lines today) mirroring the ATP layer already there: connection state
+   machine, sequenced send/receive queues, open/close handshake,
+   retransmit and forward reset. The payoff is a host lane that can serve
+   and dial ADSP — and `system.hasADSP()` (recorded in `docs/TODO.md`)
+   could then answer true on the host instead of always false. Pull it
+   only if host-side ADSP development (or a host end of a two-peer test)
+   is actually wanted; the emulator lane covers ADSP today.
+ 
+ - **A `service.call` retry knob** (spec §4.4, out of scope this phase)
+@@ -299,18 +300,19 @@ Real debt and needed improvements stay in `docs/TODO.md`.
+   layout improvements**: gated behind a future oracle-relaxation
+   decision (object-code-linker design boundary).
+ 
+ ## Tooling
+ 
+ - **Host CLI progress bar** (clarusc-live-log follow-up): reuse the
+   `feProgressStep`/`feProgressTick` seams for a stderr bar/spinner.
+ 
+ ### AppleTalk phase (2026-09-07)
+ 
+-- **`hostrt/atalk` costs ~23 s of T1** (Task 2's report) — three NBP
+-  registers, each paying a 3 × 1 s verify lookup, plus the lookups the
+-  test itself makes. It is the slowest host test. A ~3 s trim exists if
+-  T1 wall time ever matters: `rt_atalk_test.c`'s third register (in
+-  `test_ext`, which only exists to give the `rt_ext` lookup something to
+-  find) could reuse a name an earlier subtest already registered instead
+-  of registering its own. Not taken — the verify window is the ruled
+-  behavior, and one register per subtest keeps the subtests independent.
++- **`hostrt/atalk` costs ~24 s of T1** (Task 2's report; `rt_atalk_test.c`
++  `main`'s own watchdog comment says the same) — three NBP registers,
++  each paying a 3 × 1 s verify lookup, plus the lookups the test itself
++  makes. It is the slowest host test. The only ~3 s lever is to drop one
++  of the three registers (there is no cheaper register: re-registering a
++  name that is still live answers `nbpDuplicate`, and `test_ext` already
++  re-registers the one `test_nbp` removed). Not taken — the verify
++  window is the ruled behavior, and one register per subtest keeps the
++  subtests independent.
+diff --git a/docs/clarus-toolbox-cookbook.md b/docs/clarus-toolbox-cookbook.md
+index 26d8d62..ced13e9 100644
+--- a/docs/clarus-toolbox-cookbook.md
++++ b/docs/clarus-toolbox-cookbook.md
+@@ -976,23 +976,26 @@ per routine: the only traps in play are `PBOpenSync`/`PBControlSync`/
+ trap this catalog adds, `PBControlAsync` (`0xA404 reg` — `PBControlSync`'s
+ `0xA004` with the Device Manager's async bit 10 set). So transcribing an
+ AppleTalk call means transcribing a **record layout** and a **constant**,
+ not a trap.
+ 
+ ### The extern record
+ 
+ Universal Interfaces spells the NBP blocks as one `NBPparms` struct with a
+ `union NBPPtrs` at offset 30 and a `union LookupConfirmParams` at 34
+ (`AppleTalk.h:545-580`). `extern record` has neither unions nor array field
+-types, so §11's "one record per payload shape" rule applies again —
+-`NBPLookupParam` is the LookupName arm, spelled out field by field with the
+-union arms it actually uses:
++types, so a single record cannot name every arm at its own offset. The
++catalog answers that the way `toolbox/files.cla` answers it for
++`IOParam`/`FileParam`/`VolumeParam` (§11): one record per payload shape,
++each carrying the identical Device Manager prefix (`toolbox/appletalk.cla`
++says so in its own "Parameter blocks" note). `NBPLookupParam` is the
++LookupName arm, spelled out field by field with the union arms it uses:
+ 
+ ```rust
+ extern record NBPLookupParam {
+     qLink: ptr          //  0  driver-owned queue link
+     qType: word         //  4
+     ioTrap: word        //  6
+     ioCmdAddr: ptr      //  8
+     ioCompletion: ptr   // 12
+     ioResult: word      // 16  1 (ioInProgress) until an async call finishes
+     userData: int       // 18  NOT ioNamePtr — see below
+@@ -1050,63 +1053,67 @@ func atPStr(p: ptr, s: string): ptr {
+     return p + 1 + s.length
+ }
+ ```
+ 
+ ### The synchronous call
+ 
+ Open `.MPP` by name, fill a fresh block, `PBControlSync`. The whole call is
+ in the block; the trap only carries its address:
+ 
+ ```rust
+-func lookupType(typ: string): int {
++// `buf` is the caller's: at least 1024 bytes, and it must outlive this
++// call, since the reply tuples land in it. Everything this function
++// allocates, it disposes before returning — both blocks are copied or
++// consumed by the synchronous call they are handed to.
++func lookupType(typ: string, buf: ptr): int {
+     var mppPb: IOParam
+     var pb: NBPLookupParam
+     var nm: ptr
+     var end: ptr
+     var entity: ptr
+-    var buf: ptr
+     var err: int
+ 
+     // .MPP is ROM-resident on any AppleTalk-capable Mac, so this succeeds
+     // with no AppleTalk System file present and hands back the documented
+     // static refNum.
+     nm = NewPtrClear(8)
+     end = atPStr(nm, ".MPP")
+     mppPb.ioNamePtr = nm
+     err = PBOpenSync(mppPb)
++    DisposePtr(nm)              // PBOpenSync is done with the name
+     if err != 0 or mppPb.ioRefNum != mppRefNum {
+         return err
+     }
+ 
+     entity = NewPtrClear(64)
+     end = atPStr(entity, "=")   // any object name
+     end = atPStr(end, typ)      // this type
+     end = atPStr(end, "*")      // this zone
+ 
+     // A reply tuple is AddrBlock(4) + enumerator(1) + three packed Pascal
+     // strings — at most 104 bytes — so maxToGet and retBuffSize must agree:
+     // 8 × 104 = 832 fits in 1024; 16 would not (1664), and NBP would answer
+     // nbpBuffOvr instead of filling the buffer.
+-    buf = NewPtrClear(1024)
+     pb.ioRefNum = mppPb.ioRefNum
+     pb.csCode = lookupName
+-    pb.interval = 8             // 8 ticks between retries
++    pb.interval = 8             // retry interval in 8-TICK units: 8 ≈ 1 s
+     pb.count = 3                // 3 retries
+     pb.entityPtr = entity
+     pb.retBuffPtr = buf
+     pb.retBuffSize = 1024
+     pb.maxToGet = 8
+     err = PBControlSync(pb)
++    DisposePtr(entity)          // the sync call is over; NBP kept no ref
+     if err != 0 {
+         return err
+     }
+-    return pb.numGotten         // tuples now sitting in `buf`
++    return pb.numGotten         // tuples now sitting in the caller's buf
+ }
+ ```
+ 
+ `pb` is an ordinary `extern record` LOCAL: zero-initialized on declaration
+ (the reference's "extern record" entry), and passed to `PBControlSync`'s
+ `ptr` parameter by the implicit address-of every `external func` call site
+ gives an extern record. `testsuite/toolbox/cases_atalk.cla`'s `AtalkSelf`
+ case is this same sequence, hardware-proved against real ROM AppleTalk.
+ 
+ ### The asynchronous variant
+@@ -1129,36 +1136,36 @@ name the same byte offsets the record fields occupy:
+ const nbpPbSize: int = 52       // Rule 1's floor; the block IS the call
+ const nbpInterval: int = 28     // interval / count sit right after csCode@26
+ const nbpCount: int = 29
+ 
+ func lookupBegin(mppRef: int, entity: ptr, buf: ptr): ptr {
+     var pb: ptr
+ 
+     pb = NewPtrClear(nbpPbSize)
+     pokew(pb + pbIoRefNum, mppRef)
+     pokew(pb + pbCsCode, lookupName)
+-    pokeb(pb + nbpInterval, 8)
++    pokeb(pb + nbpInterval, 8)   // 8-tick units: 8 ≈ 1 s
+     pokeb(pb + nbpCount, 3)
+     pokel(pb + nbpNtQElPtr, int(entity))       // union NBPPtrs, Lookup arm
+     pokel(pb + nbpLookupRetBuffPtr, int(buf))
+     pokew(pb + nbpLookupRetBuffSize, 1024)
+     pokew(pb + nbpLookupMaxToGet, 8)
+     if PBControlAsync(pb) != 0 {
+         DisposePtr(pb)
+         return ptr(0)
+     }
+     return pb                                  // the driver owns it now
+ }
+ 
+ // atOSErr: peekw ZERO-extends (Ch13, peek/poke), so a negative OSErr read
+ // out of a word field comes back as 65497, not -39. Every OSErr read this
+-// way needs the same correction 's own
++// way needs the same correction `runtime/clarus/native.cla`'s own
+ // nat_UiScreenBits applies to QuickDraw's rowBytes.
+ func atOSErr(v: int): int {
+     if v >= 32768 {
+         return v - 65536
+     }
+     return v
+ }
+ 
+ // Poll from an `every` block or between other work — never busy-wait; the
+ // driver completes the request on its own interrupt-time schedule.
+diff --git a/docs/superpowers/specs/2026-09-06-appletalk-design.md b/docs/superpowers/specs/2026-09-06-appletalk-design.md
+index 80fdca8..acf8ffb 100644
+--- a/docs/superpowers/specs/2026-09-06-appletalk-design.md
++++ b/docs/superpowers/specs/2026-09-06-appletalk-design.md
+@@ -356,24 +356,24 @@ stack) so a unit test can run two peers in one process.
+ - **NBP.** Local names table answering `LkUp` for our names; `LkUp`
+   broadcast (node 255, socket 2) with reply collection for lookups;
+   verify-lookup before register. Retry 3 × 1 s. Zone always `*`.
+   `register` blocks for its 3 × 1 s verify lookup (controller ruling
+   2026-09-07: parity with the Mac's own `registerName` verify at
+   interval 8 / count 3).
+ - **ATP.** Requester: XO, TID, bitmap, retransmit on timeout, `TRel`
+   on completion. Responder: XO transactions list with duplicate
+   replay, 30 s release timer; `STS` unused. Same 578/4624 limits.
+ - **No ADSP.** DDP type 7 dropped; the `rtAdsp*` waist fails at open.
+-- Non-blocking throughout except `call` and `zones`, which loop on
+-  `select` under their own deadline. `rt_ext_ConnHIdle` adds the UDP
+-  socket to its `select` set so a host server sleeps until traffic or
+-  the next timer.
++- Non-blocking throughout except `register`, `call` and `zones`, which
++  loop on `select` under their own deadline (`register` for the verify
++  lookup above). `rt_ext_ConnHIdle` adds the UDP socket to its `select`
++  set so a host server sleeps until traffic or the next timer.
+ 
+ ### 6.2 Driver tool
+ 
+ `build-run/tools/atalkdrive`, a sibling of `tcpdrive`: the same
+ `rt_atalk.inc` compiled standalone with a small CLI — `lookup TYPE`,
+ `register NAME TYPE`, `call NAME TYPE OP` (request on stdin, reply on
+ stdout, code on stderr/exit), `serve NAME TYPE` (echo with a scripted
+ op table). Tests and the T2 emulator scripts drive it.
+ 
+ ### 6.3 Serial roll-in, `rt_serial.inc`
+diff --git a/examples/pagefile.cla b/examples/pagefile.cla
+index b23ebef..a46d71c 100644
+--- a/examples/pagefile.cla
++++ b/examples/pagefile.cla
+@@ -36,23 +36,24 @@
+ // Consequence: THIS committed (windowed) program builds and runs on the
+ // NATIVE lane only -- `scripts/build-68k.sh`/`clarusc emit68k`, which is
+ // what `internal/mactest/pagefile_snow_test.go` and Mini vMac both use.
+ // It does NOT compile on the plain host `cc` lane at all
+ // (`scripts/clarus-run.sh` / bare `clarusc emit`): cprint.cla emits an
+ // unconditional `#include "rt_ui.h"` for any UI-classified program, and
+ // that header exists only under `runtime/mac/` -- not on
+ // `scripts/clarus-run.sh`'s `-I runtime/host` include path. This is a
+ // real, pre-existing runtime gap (confirmed here to affect
+ // examples/serialecho.cla's own host-lane doc-comment claim too, not
+-// just this program) -- see docs/TODO.md for the follow-up entry. It is
+-// not fixed here; this task's brief is scoped to this app + its Snow
+-// test, not compiler/runtime changes.
++// just this program) -- see docs/FUTURE.md for the entry (moved there
++// from docs/TODO.md 2026-09-07). It is not fixed here; this task's
++// brief is scoped to this app + its Snow test, not compiler/runtime
++// changes.
+ //
+ // To exercise `runPageFile`'s file work (create/write/flush/commit/
+ // verify -- everything this task actually adds) on the plain host `cc`
+ // lane, use a MANUAL, uncommitted variant: delete the `window Status`
+ // block, the `var conn: connection` global, `report`, and the whole
+ // `on conn.*`/`open Status`/`Status.front` machinery from `on App.launch`/
+ // `on conn.opened`, leaving just `on App.launch { resultMsg =
+ // runPageFile() }` -- then `scripts/clarus-run.sh` builds and runs it,
+ // and `resultMsg`/PageFile.dat/PageFile.jnl are directly inspectable.
+ // That is not a supported build mode of this file; it is a manual
+diff --git a/examples/serialecho.cla b/examples/serialecho.cla
+index 3ce4c9b..63f82c2 100644
+--- a/examples/serialecho.cla
++++ b/examples/serialecho.cla
+@@ -8,23 +8,24 @@
+ // three consecutive 'Q' bytes. The status window's two labels (bytes
+ // in/bytes out) give a live, at-a-glance signal that the connection is
+ // actually flowing -- useful both for the gated Snow test
+ // (internal/mactest/serial_snow_test.go, TestSerialEchoOnSnow) and for
+ // Andrew's own manual demo: build for real Mac hardware via
+ // scripts/build-mac.sh or scripts/build-68k.sh. NOT runnable on the
+ // plain host cc lane -- this is a UI program (window + menu), and the
+ // host C lane only ever compiles non-UI programs: cprint emits
+ // `#include "rt_ui.h"`, which lives only under runtime/mac/, so `cc`
+ // against runtime/host fails with "rt_ui.h file not found" (the same
+-// UI/non-UI connection-pump lane gap docs/TODO.md's binary-files phase
+-// entry records). CLARUS_SERIAL_MODEM=listen:1984 + `nc localhost 1984`
+-// is real, but only for the NON-UI host dev-lane fixture,
++// UI/non-UI connection-pump lane gap docs/FUTURE.md's binary-files
++// phase entry records; moved there from docs/TODO.md 2026-09-07).
++// CLARUS_SERIAL_MODEM=listen:1984 + `nc localhost 1984` is real, but
++// only for the NON-UI host dev-lane fixture,
+ // internal/conntest/testdata/echo.cla -- not this app.
+ //
+ // Kept Appendix-C-plain, matching examples/menu-demo.cla's own minimal
+ // style: no `app` section (not needed for a double-clickable demo), just
+ // one window, one menu, the connection, and the echo logic itself.
+ 
+ window Echo {
+     title: "Serial Echo"
+     size: 260, 100
+ 

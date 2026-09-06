@@ -1,0 +1,2225 @@
+# Review package: 8068737..HEAD
+
+## Commits
+7d2add1 feat(host): LocalTalk-over-UDP stack (LLAP/DDP/NBP/ATP) with unit test and atalkdrive tool
+
+## Files changed
+ Makefile                     |    7 +
+ runtime/host/rt.c            |   10 +
+ runtime/host/rt_atalk.h      |   89 +++
+ runtime/host/rt_atalk.inc    | 1226 ++++++++++++++++++++++++++++++++++++++++++
+ runtime/host/rt_atalk_test.c |  364 +++++++++++++
+ tests/atalkdrive/call.sh     |   92 ++++
+ tests/atalkdrive/lookup.sh   |   60 +++
+ tests/hostrt/atalk.sh        |   27 +
+ tests/tools/atalkdrive.c     |  250 +++++++++
+ 9 files changed, 2125 insertions(+)
+
+## Diff
+diff --git a/Makefile b/Makefile
+index dbfd969..0c325e1 100644
+--- a/Makefile
++++ b/Makefile
+@@ -12,20 +12,27 @@ CLA_SRC := $(wildcard clarusc/*.cla) $(wildcard runtime/clarus/*.cla)
+ TESTS := $(shell find tests -name '*.sh' ! -name 'lib*.sh' ! -name run1.sh ! -name summary.sh | sort)
+ T ?=
+ SEL := $(foreach p,$(T),$(filter tests/$(p)%,$(TESTS)))
+ T1 := $(filter-out tests/selfhost/% tests/perfgate/%,$(TESTS))
+ RES = $(patsubst tests/%.sh,$(BR)/tests/%.result,$(1))
+ 
+ .PHONY: tools bootstrap test t1 t2 smoke
+ tools: $(TOOLS)
+ bootstrap: $(BR)/clarusc-current
+ 
++# atalkdrive is the one tool that links the host runtime: it drives
++# rt_atalk.inc's LToUDP stack (Task 2), which lives inside rt.c. Explicit
++# rule, above the generic one, so `make -j tools` still builds every tool.
++$(BR)/tools/atalkdrive: tests/tools/atalkdrive.c runtime/host/rt.c $(RT_HOST)
++	@mkdir -p $(BR)/tools
++	$(CC) -std=c99 -Wall -Werror -I runtime/host -o $@ $< runtime/host/rt.c
++
+ $(BR)/tools/%: tests/tools/%.c
+ 	@mkdir -p $(BR)/tools
+ 	$(CC) -std=c99 -Wall -Werror -o $@ $<
+ 
+ # Two-stage bootstrap, mirroring internal/claruscboot: the committed C
+ # snapshot builds clarusc-snapshot; that emits the current .cla source to
+ # C, which builds clarusc-current. mtime deps replace the Go stamp files;
+ # make's scheduling replaces the flock (every test depends on bootstrap).
+ $(BR)/clarusc-snapshot: clarusc/clarusc.c $(RT_HOST)
+ 	@mkdir -p $(BR)
+diff --git a/runtime/host/rt.c b/runtime/host/rt.c
+index 9c1c065..43a345e 100644
+--- a/runtime/host/rt.c
++++ b/runtime/host/rt.c
+@@ -245,10 +245,20 @@ static int rt_file_write_data(const uint8_t *path, const rt_text *t, const uint8
+ #include "rt_serial.inc"
+ 
+ /* Filehandle glue (2026-08-22 binary-files spec, Task 5): host pread/pwrite
+  * stand-in for the `filehandle` type's positioned file I/O, only spliced
+  * into a build that actually calls it (fileh.cla + fileh_c.cla, usage-
+  * gated by drive.cla) -- unconditionally included here regardless, same as
+  * rt_serial.inc above: cheap dead weight in an unused build, and every
+  * rt_ext_FhH* symbol only gets referenced (and thus only gets linked) when
+  * the Clarus side actually calls it. */
+ #include "rt_fileh.inc"
++
++/* AppleTalk glue (2026-09-06 appletalk spec %6.1, Task 2): the host's own
++ * LocalTalk-over-UDP stack -- LLAP/DDP/NBP/ATP over multicast
++ * 239.192.76.84:1954, the same wire the Mini vMac and Snow emulators are
++ * on. Included after rt_serial.inc (whose CLARUS_ATALK_IFACE-less serial
++ * slots it shares nothing with) and unconditionally, same as every .inc
++ * above: cheap dead weight in a build that never calls it, since each
++ * rt_ext_AtalkH* symbol is only referenced -- and so only linked -- when
++ * the Clarus side actually calls it. */
++#include "rt_atalk.inc"
+diff --git a/runtime/host/rt_atalk.h b/runtime/host/rt_atalk.h
+new file mode 100644
+index 0000000..b1ba873
+--- /dev/null
++++ b/runtime/host/rt_atalk.h
+@@ -0,0 +1,89 @@
++/* runtime/host/rt_atalk.h -- the instance-level C API of rt_atalk.inc
++ * (2026-09-06 appletalk spec %6.1, Task 2), split into a header for the
++ * ONE reason a header ever earns its place here: three translation units
++ * need the same struct layouts. rt_atalk.inc defines them, and
++ * rt_atalk_test.c plus tests/tools/atalkdrive.c both link against rt.c
++ * and must agree byte-for-byte -- three hand-copied copies of
++ * rt_at_req/rt_at_tuple would be a silent ABI bug waiting to happen.
++ *
++ * The rt_ext_AtalkH* Clarus-facing externs are deliberately NOT declared
++ * here: they follow rt.h's own rule (see its header comment) that no
++ * rt_ext_* symbol is ever centrally prototyped -- callers declare their
++ * own extern. This header is only the rt_at_* instance API.
++ *
++ * Include AFTER rt.h (it needs int32_t/uint8_t, which rt.h pulls in).
++ */
++#ifndef RT_ATALK_H
++#define RT_ATALK_H
++
++#include <stdint.h>
++
++/* Hard protocol limits (Inside AppleTalk 2nd ed.): one ATP request packet
++ * carries at most 578 data bytes, and a response is at most 8 of them. */
++#define RT_AT_MAXREQ  578
++#define RT_AT_MAXRESP 4624
++
++typedef struct rt_atalk rt_atalk;
++
++typedef struct { uint16_t net; uint8_t node, socket; } rt_at_addr;
++
++/* An NBP tuple as it comes back from a lookup. The three name fields are
++ * NUL-terminated C strings (32 chars max each, the NBP limit, + NUL). */
++typedef struct { rt_at_addr addr; char obj[33], type[33], zone[33]; } rt_at_tuple;
++
++/* One dequeued ATP request. `userbytes` is the transaction's 32-bit user
++ * bytes field -- what Clarus calls the operation code. */
++typedef struct {
++    rt_at_addr from;
++    uint16_t   tid;
++    uint8_t    bitmap;
++    int        xo;
++    int32_t    userbytes;
++    uint8_t    data[RT_AT_MAXREQ];
++    int        len;
++} rt_at_req;
++
++/* --- lifecycle ---------------------------------------------------- */
++rt_atalk *rt_at_open(const char *iface_ip); /* NULL + errno; joins the group, acquires a node id */
++void      rt_at_close(rt_atalk *a);
++int       rt_at_fd(const rt_atalk *a);      /* for select() */
++uint8_t   rt_at_node(const rt_atalk *a);
++void      rt_at_poll(rt_atalk *a);          /* drain UDP, run timers; never blocks */
++
++/* --- NBP ----------------------------------------------------------- */
++#define RT_AT_NLK 10                        /* lookup slots, 0..9 */
++int  rt_at_nbp_register(rt_atalk *a, const char *obj, const char *type, uint8_t socket); /* 0, or -1027 */
++int  rt_at_nbp_remove(rt_atalk *a, const char *obj, const char *type);                   /* 0, or -1028 */
++int  rt_at_nbp_lookup_start(rt_atalk *a, int lk, const char *obj, const char *type, const char *zone);
++int  rt_at_nbp_lookup_done(rt_atalk *a, int lk);   /* 1 once the 3x1s window has elapsed */
++int  rt_at_nbp_lookup_count(rt_atalk *a, int lk);
++const rt_at_tuple *rt_at_nbp_lookup_get(rt_atalk *a, int lk, int i);
++
++/* --- ATP responder ------------------------------------------------- */
++int  rt_at_atp_open(rt_atalk *a);                   /* socket 128..254, or negative OSErr */
++void rt_at_atp_close(rt_atalk *a, int sock);
++int  rt_at_atp_get_request(rt_atalk *a, int sock, rt_at_req *out);  /* 1 if one was dequeued */
++int  rt_at_atp_send_response(rt_atalk *a, int sock, const rt_at_req *req,
++                             int32_t userbytes, const uint8_t *data, int len); /* len <= 4624 */
++
++/* --- ATP requester (blocking; polls with select internally) -------- */
++int  rt_at_atp_call(rt_atalk *a, rt_at_addr to, int32_t userbytes,
++                    const uint8_t *req, int reqlen,
++                    uint8_t *resp, int respcap, int *resplen, int32_t *resp_userbytes,
++                    int timeout_s, int retries); /* 0, -1096 reqFailed, -3106 atpLenErr */
++
++/* --- test-only hooks ------------------------------------------------
++ * Exposed unconditionally (rt.c is its own translation unit, so an
++ * #ifdef in the test cannot reach it) but named rt_at_test_* and used by
++ * nothing outside runtime/host/rt_atalk_test.c. */
++#define RT_AT_DROP_TREL 1
++void rt_at_test_force_node(rt_atalk *a, uint8_t node);  /* re-acquire starting from `node` */
++void rt_at_test_idle_hook(void (*fn)(void));            /* called from every internal wait loop */
++void rt_at_test_drop_next_tx(rt_atalk *a, int n);       /* drop the (n+1)-th outgoing datagram, once */
++void rt_at_test_drop_next_rx(rt_atalk *a, int what);    /* RT_AT_DROP_TREL: ignore the next TRel */
++/* Re-inject the last TReq verbatim and re-run its wait loop -- the XO
++ * duplicate-replay probe. (The plan wrote this as a bare `(b)`; it needs
++ * the response out-params to be observable at all.) */
++int  rt_at_test_resend_last_treq(rt_atalk *a, uint8_t *resp, int respcap, int *resplen);
++
++#endif /* RT_ATALK_H */
+diff --git a/runtime/host/rt_atalk.inc b/runtime/host/rt_atalk.inc
+new file mode 100644
+index 0000000..bb8becc
+--- /dev/null
++++ b/runtime/host/rt_atalk.inc
+@@ -0,0 +1,1226 @@
++/* runtime/host/rt_atalk.inc -- host LocalTalk-over-UDP stack (2026-09-06
++ * appletalk spec %6.1, Task 2). #included at the bottom of rt.c, exactly
++ * like rt_serial.inc above it -- never a separate translation unit.
++ *
++ * The point: a host Clarus program (and the atalkdrive test tool) becomes
++ * a GENUINE AppleTalk peer of the Mini vMac / Snow emulators, which are
++ * LocalTalk-over-UDP builds. One UDP socket joined to multicast
++ * 239.192.76.84:1954 carries LLAP frames; on top of that sit short-header
++ * DDP, NBP (name registration + lookup) and ATP (the request/response
++ * transaction protocol Clarus `service`/`call` is built on). No ADSP on
++ * this lane (spec Q2: Macs only), no routers, no extended nets: the zone
++ * is always "*" and replies never leave net 0.
++ *
++ * Written INSTANCE-able -- rt_at_open returns a heap struct, and two
++ * peers can live in one process -- because that is the only way
++ * rt_atalk_test.c can test a protocol against itself. The Clarus-facing
++ * rt_ext_AtalkH* layer at the bottom is a thin shim over one lazily
++ * opened process-global instance (section h).
++ *
++ * Everything here is non-blocking except rt_at_atp_call and NBP register's
++ * verify-lookup, which loop on select() under their own deadline. Those
++ * loops call rt_at_tick, which also invokes the test idle hook -- the
++ * single-threaded way rt_atalk_test.c drives its second peer.
++ *
++ * Wire formats are Inside AppleTalk 2nd ed. (DDP ch. 4, NBP ch. 7,
++ * ATP ch. 9); the LToUDP envelope (4-byte sender id + LLAP frame) is the
++ * emulators' own convention.
++ *
++ * Sections, in order:
++ *   (a) constants and the instance struct
++ *   (b) LToUDP I/O
++ *   (c) LLAP node acquisition
++ *   (d) DDP short header
++ *   (e) NBP
++ *   (f) ATP requester
++ *   (g) ATP responder + rt_at_poll
++ *   (h) the rt_ext_AtalkH* Clarus layer
++ */
++#include "rt_atalk.h"
++
++#include <sys/types.h>
++#include <sys/socket.h>
++#include <sys/select.h>
++#include <sys/time.h>
++#include <netinet/in.h>
++#include <arpa/inet.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <errno.h>
++#include <stdlib.h>
++#include <string.h>
++#include <strings.h>
++#include <time.h>
++
++/* ==================== (a) constants and the instance struct ========= */
++
++#define RT_AT_GROUP    "239.192.76.84"
++#define RT_AT_PORT     1954
++#define RT_AT_DGRAM    1024      /* an LToUDP datagram never exceeds 4+3+586 */
++
++/* LLAP frame types. */
++#define RT_AT_LLAP_SHORT 0x01
++#define RT_AT_LLAP_LONG  0x02
++#define RT_AT_LLAP_ENQ   0x81
++#define RT_AT_LLAP_ACK   0x82
++
++/* DDP protocol types we care about. 6 (ZIP) and 7 (ADSP) are dropped. */
++#define RT_AT_DDP_NBP  2
++#define RT_AT_DDP_ATP  3
++
++#define RT_AT_SOCK_NIS 2         /* the Names Information Socket */
++#define RT_AT_BROADCAST 255
++
++/* NBP functions. */
++#define RT_AT_NBP_BRRQ  1
++#define RT_AT_NBP_LKUP  2
++#define RT_AT_NBP_REPLY 3
++
++/* OSErrs this file can produce (Inside Macintosh). */
++#define RT_AT_ERR_DUP      (-1027)  /* nbpDuplicate */
++#define RT_AT_ERR_NOTFOUND (-1028)  /* nbpNotFound */
++#define RT_AT_ERR_BADENTRY (-1029)  /* nbpBadEntry: our own table is full */
++#define RT_AT_ERR_REQFAIL  (-1096)  /* reqFailed: retransmit count exhausted */
++#define RT_AT_ERR_LEN      (-3106)  /* atpLenErr */
++#define RT_AT_ERR_NOSOCK   (-1024)  /* ddpSktErr: no free dynamic socket */
++
++#define RT_AT_NNAMES 4           /* local NBP names table */
++#define RT_AT_NTUPLE 32          /* tuples collected per lookup */
++#define RT_AT_NSOCK  4           /* bound ATP responder sockets */
++#define RT_AT_NQ     4           /* pending requests per socket */
++#define RT_AT_NXO    8           /* XO transactions remembered per socket */
++#define RT_AT_NPKT   8           /* ATP response packets per transaction */
++#define RT_AT_XO_SECS 30.0       /* XO release timer */
++
++typedef struct {
++    int     used;
++    char    obj[33], type[33];
++    uint8_t socket;
++    uint8_t enumerator;
++} rt_at_name;
++
++typedef struct {
++    int         active;
++    uint8_t     nbpid;
++    char        obj[33], type[33], zone[33];
++    double      next_tx;
++    double      deadline;
++    int         tx_left;
++    double      interval;
++    int         count;
++    rt_at_tuple tuples[RT_AT_NTUPLE];
++} rt_at_lookup;
++
++/* One completed exactly-once transaction, kept so a retransmitted TReq is
++ * answered from here instead of running the service a second time. */
++typedef struct {
++    int        used;
++    uint16_t   tid;
++    rt_at_addr from;
++    uint8_t    mysock;           /* the responder socket the reply goes out from */
++    int        npkt;
++    int32_t    userbytes;
++    int        len[RT_AT_NPKT];
++    uint8_t    data[RT_AT_NPKT][RT_AT_MAXREQ];
++    double     expiry;
++} rt_at_xo;
++
++typedef struct {
++    int       used;
++    uint8_t   sock;
++    rt_at_req q[RT_AT_NQ];
++    int       qhead, qcount;
++    rt_at_xo  xo[RT_AT_NXO];
++} rt_at_sockslot;
++
++/* The single outstanding ATP request. `reqdata` is kept after completion
++ * so rt_at_test_resend_last_treq can re-inject it verbatim. */
++typedef struct {
++    int        active;
++    uint16_t   tid;
++    rt_at_addr to;
++    uint8_t    mysock;
++    int32_t    userbytes;
++    uint8_t    reqdata[RT_AT_MAXREQ];
++    int        reqlen;
++    uint8_t    got[RT_AT_NPKT];
++    int        len[RT_AT_NPKT];
++    uint8_t    data[RT_AT_NPKT][RT_AT_MAXREQ];
++    int        eom_seq;          /* -1 until an EOM packet arrives */
++    int32_t    resp_userbytes;
++} rt_at_rqstate;
++
++struct rt_atalk {
++    int                fd;
++    uint8_t            sender[4];  /* LToUDP sender id; our own datagrams are dropped */
++    uint8_t            node;       /* 0 while unacquired */
++    int                acquiring;  /* 1 inside rt_at_acquire: lapENQ means "collision" */
++    int                collided;
++    struct sockaddr_in group;
++
++    rt_at_name         names[RT_AT_NNAMES];
++    uint8_t            enum_next;
++    uint8_t            nbp_id;
++    /* Slot RT_AT_NLK is register's private verify-lookup; 0..9 are the
++     * caller's. */
++    rt_at_lookup       lk[RT_AT_NLK + 1];
++
++    rt_at_sockslot     socks[RT_AT_NSOCK];
++    uint8_t            sock_next;  /* round-robin hint into 128..254 */
++
++    rt_at_rqstate      rq;
++    uint16_t           tid_next;
++
++    /* test hooks (see rt_atalk.h) */
++    long               tx_count;
++    long               drop_tx_at;  /* -1 = off */
++    int                drop_rx_trel;
++};
++
++static void (*rt_at_idle_fn)(void);
++
++void rt_at_test_idle_hook(void (*fn)(void)) { rt_at_idle_fn = fn; }
++
++static double rt_at_now(void) {
++    struct timeval tv;
++    gettimeofday(&tv, NULL);
++    return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;
++}
++
++/* rt_at_seed: one process-wide srand, so two instances in one process do
++ * not draw the same node id and sender id from a fresh identical seed. */
++static void rt_at_seed(void) {
++    static int done = 0;
++    if (!done) {
++        srand((unsigned)(time(NULL) ^ (getpid() << 8)));
++        done = 1;
++    }
++}
++
++/* rt_at_cstr: copy at most cap-1 chars, always NUL-terminated. */
++static void rt_at_cstr(char *dst, size_t cap, const char *src) {
++    size_t n = 0;
++    if (src != NULL) while (src[n] != '\0' && n + 1 < cap) { dst[n] = src[n]; n++; }
++    dst[n] = '\0';
++}
++
++int     rt_at_fd(const rt_atalk *a)   { return a != NULL ? a->fd : -1; }
++uint8_t rt_at_node(const rt_atalk *a) { return a != NULL ? a->node : 0; }
++
++/* ==================== (b) LToUDP I/O ================================
++ * Datagram = 4-byte sender id + LLAP frame (dst node, src node, LLAP
++ * type, payload). Our own datagrams come back through IP_MULTICAST_LOOP
++ * and are dropped on the sender id. */
++
++/* rt_at_tx: one LLAP frame onto the group. The drop_tx_at test hook
++ * silently discards the (n+1)-th call after it is armed, once. */
++static void rt_at_tx(rt_atalk *a, uint8_t dst, uint8_t type,
++                     const uint8_t *payload, int len) {
++    uint8_t buf[RT_AT_DGRAM];
++    int drop;
++
++    if (a == NULL || a->fd < 0 || len < 0 || len + 7 > (int)sizeof(buf)) return;
++    drop = (a->drop_tx_at >= 0 && a->tx_count == a->drop_tx_at);
++    a->tx_count++;
++    if (drop) { a->drop_tx_at = -1; return; }
++
++    memcpy(buf, a->sender, 4);
++    buf[4] = dst;
++    buf[5] = a->node;
++    buf[6] = type;
++    if (len > 0) memcpy(buf + 7, payload, (size_t)len);
++    sendto(a->fd, buf, (size_t)len + 7, 0,
++           (struct sockaddr *)&a->group, sizeof(a->group));
++}
++
++void rt_at_test_drop_next_tx(rt_atalk *a, int n) {
++    if (a == NULL) return;
++    a->tx_count = 0;
++    a->drop_tx_at = n;
++}
++
++void rt_at_test_drop_next_rx(rt_atalk *a, int what) {
++    if (a != NULL && what == RT_AT_DROP_TREL) a->drop_rx_trel = 1;
++}
++
++/* ==================== (c) LLAP node acquisition =====================
++ * Random id in the 1..127 workstation range, lapENQ it three times 20 ms
++ * apart, move on to another id if anyone lapACKs (or probes the same id
++ * at the same moment). 20 tries, then EADDRINUSE. */
++
++static void rt_at_drain(rt_atalk *a);
++
++/* rt_at_tick: the one wait primitive. Runs the test idle hook (which is
++ * how a second in-process peer gets serviced at all), then blocks in
++ * select for at most `ms`, then drains whatever arrived. */
++static void rt_at_tick(rt_atalk *a, int ms) {
++    fd_set r;
++    struct timeval tv;
++
++    if (rt_at_idle_fn != NULL) rt_at_idle_fn();
++    if (a == NULL || a->fd < 0) return;
++    FD_ZERO(&r);
++    FD_SET(a->fd, &r);
++    tv.tv_sec = ms / 1000;
++    tv.tv_usec = (ms % 1000) * 1000;
++    select(a->fd + 1, &r, NULL, NULL, &tv);
++    rt_at_drain(a);
++}
++
++/* rt_at_acquire: claim a node id, starting from `first` (1..127) or a
++ * random one when first <= 0. Returns 0, or -1 with errno EADDRINUSE. */
++static int rt_at_acquire(rt_atalk *a, int first) {
++    int try_;
++
++    for (try_ = 0; try_ < 20; try_++) {
++        int cand = (try_ == 0 && first > 0 && first < 128) ? first : (rand() % 127) + 1;
++        int probe;
++
++        a->node = (uint8_t)cand;
++        a->acquiring = 1;
++        a->collided = 0;
++        for (probe = 0; probe < 3 && !a->collided; probe++) {
++            rt_at_tx(a, (uint8_t)cand, RT_AT_LLAP_ENQ, NULL, 0);
++            rt_at_tick(a, 20);
++        }
++        a->acquiring = 0;
++        if (!a->collided) return 0;
++    }
++    a->node = 0;
++    errno = EADDRINUSE;
++    return -1;
++}
++
++void rt_at_test_force_node(rt_atalk *a, uint8_t node) {
++    if (a != NULL) rt_at_acquire(a, node);
++}
++
++/* ==================== (d) DDP short header ==========================
++ * [hop/len hi][len lo][dst socket][src socket][DDP type], length counting
++ * the header itself. We only ever SEND short headers (net 0, no
++ * checksum); long ones are accepted on receipt. */
++
++static void rt_at_ddp_send(rt_atalk *a, rt_at_addr to, uint8_t srcsock,
++                           uint8_t ddptype, const uint8_t *data, int dlen) {
++    uint8_t p[5 + 586];
++    int total = 5 + dlen;
++
++    if (dlen < 0 || dlen > 586) return;
++    p[0] = (uint8_t)((total >> 8) & 0x03);
++    p[1] = (uint8_t)(total & 0xFF);
++    p[2] = to.socket;
++    p[3] = srcsock;
++    p[4] = ddptype;
++    if (dlen > 0) memcpy(p + 5, data, (size_t)dlen);
++    rt_at_tx(a, to.node, RT_AT_LLAP_SHORT, p, total);
++}
++
++/* rt_at_sock_alloc: next free dynamic socket in 128..254 not already
++ * bound here. (A number in use on ANOTHER node is fine -- sockets are
++ * per-node.) Returns 0 when everything local is taken. */
++static uint8_t rt_at_sock_alloc(rt_atalk *a) {
++    int n;
++    for (n = 0; n < 127; n++) {
++        uint8_t cand = (uint8_t)(128 + ((a->sock_next + n) % 127));
++        int i, taken = 0;
++        for (i = 0; i < RT_AT_NSOCK; i++)
++            if (a->socks[i].used && a->socks[i].sock == cand) taken = 1;
++        if (a->rq.mysock == cand) taken = 1;
++        if (!taken) {
++            a->sock_next = (uint8_t)((cand - 128 + 1) % 127);
++            return cand;
++        }
++    }
++    return 0;
++}
++
++/* ==================== (e) NBP =======================================
++ * Header [func<<4 | tuple count][NBP id], then tuples of
++ * AddrBlock(4) enumerator(1) obj type zone (packed Pascal strings). */
++
++/* rt_at_put_pstr / rt_at_get_pstr: the packed Pascal strings inside a
++ * tuple. get returns the number of bytes consumed, or 0 on overrun. */
++static int rt_at_put_pstr(uint8_t *p, int cap, const char *s) {
++    size_t n = strlen(s);
++    if (n > 32) n = 32;
++    if ((int)n + 1 > cap) return 0;
++    p[0] = (uint8_t)n;
++    memcpy(p + 1, s, n);
++    return (int)n + 1;
++}
++
++static int rt_at_get_pstr(const uint8_t *p, int avail, char *out) {
++    int n;
++    if (avail < 1) return 0;
++    n = p[0];
++    if (n > 32 || n + 1 > avail) return 0;
++    memcpy(out, p + 1, (size_t)n);
++    out[n] = '\0';
++    return n + 1;
++}
++
++/* rt_at_name_match: NBP matching, case-insensitive, with "=" as the full
++ * wildcard. ponytail: the partial-wildcard character (0xC5 in MacRoman)
++ * is not implemented -- nothing in the Clarus surface exposes it. */
++static int rt_at_name_match(const char *pat, const char *s) {
++    if (pat[0] == '=' && pat[1] == '\0') return 1;
++    return strcasecmp(pat, s) == 0;
++}
++
++/* Our lane has exactly one zone, "*" (no router -- spec %2). */
++static int rt_at_zone_match(const char *pat) {
++    return pat[0] == '\0' || strcmp(pat, "*") == 0 || strcasecmp(pat, "local") == 0;
++}
++
++/* rt_at_nbp_send: one NBP packet with `count` tuples already encoded in
++ * `body` (of `blen` bytes). */
++static void rt_at_nbp_send(rt_atalk *a, rt_at_addr to, uint8_t srcsock,
++                           int func, int count, uint8_t nbpid,
++                           const uint8_t *body, int blen) {
++    uint8_t p[586];
++    if (blen + 2 > (int)sizeof(p)) return;
++    p[0] = (uint8_t)(((func & 0x0F) << 4) | (count & 0x0F));
++    p[1] = nbpid;
++    if (blen > 0) memcpy(p + 2, body, (size_t)blen);
++    rt_at_ddp_send(a, to, srcsock, RT_AT_DDP_NBP, p, blen + 2);
++}
++
++/* rt_at_tuple_put: encode one tuple into `p`. Returns bytes written. */
++static int rt_at_tuple_put(uint8_t *p, int cap, rt_at_addr addr, uint8_t enumerator,
++                           const char *obj, const char *type, const char *zone) {
++    int at = 0, k;
++    if (cap < 5) return 0;
++    p[0] = (uint8_t)(addr.net >> 8);
++    p[1] = (uint8_t)(addr.net & 0xFF);
++    p[2] = addr.node;
++    p[3] = addr.socket;
++    p[4] = enumerator;
++    at = 5;
++    k = rt_at_put_pstr(p + at, cap - at, obj);  if (k == 0) return 0; at += k;
++    k = rt_at_put_pstr(p + at, cap - at, type); if (k == 0) return 0; at += k;
++    k = rt_at_put_pstr(p + at, cap - at, zone); if (k == 0) return 0; at += k;
++    return at;
++}
++
++/* rt_at_lookup_tx: one LkUp broadcast for slot `lk` (node 255, socket 2 --
++ * the NIS), asking for replies at our own NIS socket. */
++static void rt_at_lookup_tx(rt_atalk *a, rt_at_lookup *L) {
++    uint8_t body[256];
++    rt_at_addr me, bcast;
++    int n;
++
++    me.net = 0; me.node = a->node; me.socket = RT_AT_SOCK_NIS;
++    n = rt_at_tuple_put(body, (int)sizeof(body), me, 0, L->obj, L->type, L->zone);
++    if (n == 0) return;
++    bcast.net = 0; bcast.node = RT_AT_BROADCAST; bcast.socket = RT_AT_SOCK_NIS;
++    rt_at_nbp_send(a, bcast, RT_AT_SOCK_NIS, RT_AT_NBP_LKUP, 1, L->nbpid, body, n);
++}
++
++/* rt_at_lookup_begin: shared by the public lookup_start (3 x 1 s, the
++ * spec's window) and by register's own verify lookup, which uses a
++ * shorter 3 x 250 ms window -- a register that took 3 s would make every
++ * service start feel broken, and 750 ms is long enough on a LAN. */
++static int rt_at_lookup_begin(rt_atalk *a, int lk, const char *obj, const char *type,
++                              const char *zone, double interval, int ntx) {
++    rt_at_lookup *L;
++
++    if (a == NULL || lk < 0 || lk > RT_AT_NLK) return -1;
++    L = &a->lk[lk];
++    memset(L, 0, sizeof(*L));
++    L->active = 1;
++    a->nbp_id++;
++    if (a->nbp_id == 0) a->nbp_id = 1;
++    L->nbpid = a->nbp_id;
++    rt_at_cstr(L->obj, sizeof(L->obj), obj);
++    rt_at_cstr(L->type, sizeof(L->type), type);
++    rt_at_cstr(L->zone, sizeof(L->zone), (zone != NULL && zone[0] != '\0') ? zone : "*");
++    L->interval = interval;
++    L->tx_left = ntx;
++    L->deadline = rt_at_now() + interval * ntx;
++
++    rt_at_lookup_tx(a, L);
++    L->tx_left--;
++    L->next_tx = rt_at_now() + interval;
++    return 0;
++}
++
++int rt_at_nbp_lookup_start(rt_atalk *a, int lk, const char *obj, const char *type,
++                           const char *zone) {
++    if (lk < 0 || lk >= RT_AT_NLK) return -1;
++    return rt_at_lookup_begin(a, lk, obj, type, zone, 1.0, 3);
++}
++
++int rt_at_nbp_lookup_done(rt_atalk *a, int lk) {
++    if (a == NULL || lk < 0 || lk > RT_AT_NLK) return 1;
++    if (!a->lk[lk].active) return 1;
++    return rt_at_now() >= a->lk[lk].deadline;
++}
++
++int rt_at_nbp_lookup_count(rt_atalk *a, int lk) {
++    if (a == NULL || lk < 0 || lk > RT_AT_NLK) return 0;
++    return a->lk[lk].count;
++}
++
++const rt_at_tuple *rt_at_nbp_lookup_get(rt_atalk *a, int lk, int i) {
++    if (a == NULL || lk < 0 || lk > RT_AT_NLK) return NULL;
++    if (i < 0 || i >= a->lk[lk].count) return NULL;
++    return &a->lk[lk].tuples[i];
++}
++
++/* rt_at_lookup_add: de-duplicated by (address, obj, type) -- the same
++ * entity answers all three broadcasts. (The plan said (address,
++ * enumerator); the name is the finer key, and it survives a peer that
++ * re-registers with a fresh enumerator mid-window.) */
++static void rt_at_lookup_add(rt_at_lookup *L, rt_at_addr addr,
++                             const char *obj, const char *type, const char *zone) {
++    int i;
++    for (i = 0; i < L->count; i++) {
++        rt_at_tuple *t = &L->tuples[i];
++        if (t->addr.net == addr.net && t->addr.node == addr.node &&
++            t->addr.socket == addr.socket && strcasecmp(t->obj, obj) == 0 &&
++            strcasecmp(t->type, type) == 0)
++            return;
++    }
++    if (L->count >= RT_AT_NTUPLE) return;
++    L->tuples[L->count].addr = addr;
++    rt_at_cstr(L->tuples[L->count].obj, 33, obj);
++    rt_at_cstr(L->tuples[L->count].type, 33, type);
++    rt_at_cstr(L->tuples[L->count].zone, 33, zone);
++    L->count++;
++}
++
++/* rt_at_nbp_in: an NBP packet arrived. LkUp/BrRq get answered from the
++ * local names table; LkUp-Reply feeds whichever lookup slot owns the id. */
++static void rt_at_nbp_in(rt_atalk *a, rt_at_addr from, const uint8_t *d, int n) {
++    int func, count, at, i;
++    uint8_t nbpid;
++
++    if (n < 2) return;
++    func = d[0] >> 4;
++    count = d[0] & 0x0F;
++    nbpid = d[1];
++    at = 2;
++
++    for (i = 0; i < count; i++) {
++        rt_at_addr taddr;
++        char obj[33], type[33], zone[33];
++        int k;
++
++        if (at + 5 > n) return;
++        taddr.net = (uint16_t)((d[at] << 8) | d[at + 1]);
++        taddr.node = d[at + 2];
++        taddr.socket = d[at + 3];
++        at += 5;                     /* d[at+4] is the enumerator: unused on receipt */
++        k = rt_at_get_pstr(d + at, n - at, obj);  if (k == 0) return; at += k;
++        k = rt_at_get_pstr(d + at, n - at, type); if (k == 0) return; at += k;
++        k = rt_at_get_pstr(d + at, n - at, zone); if (k == 0) return; at += k;
++
++        if (func == RT_AT_NBP_LKUP || func == RT_AT_NBP_BRRQ) {
++            uint8_t body[586];
++            rt_at_addr reply;
++            int matches = 0, blen = 0, j;
++
++            if (!rt_at_zone_match(zone)) continue;
++            for (j = 0; j < RT_AT_NNAMES && matches < 15; j++) {
++                rt_at_name *nm = &a->names[j];
++                rt_at_addr mine;
++                int w;
++                if (!nm->used) continue;
++                if (!rt_at_name_match(obj, nm->obj) || !rt_at_name_match(type, nm->type))
++                    continue;
++                mine.net = 0; mine.node = a->node; mine.socket = nm->socket;
++                w = rt_at_tuple_put(body + blen, (int)sizeof(body) - blen, mine,
++                                    nm->enumerator, nm->obj, nm->type, "*");
++                if (w == 0) break;
++                blen += w;
++                matches++;
++            }
++            if (matches == 0) continue;
++            /* Replies go to the address IN THE TUPLE (NBP's own rule), not
++             * to the DDP source -- a router would differ. Fall back to the
++             * DDP source if the tuple carries no node. */
++            reply = taddr.node != 0 ? taddr : from;
++            rt_at_nbp_send(a, reply, RT_AT_SOCK_NIS, RT_AT_NBP_REPLY,
++                           matches, nbpid, body, blen);
++        } else if (func == RT_AT_NBP_REPLY) {
++            int lk;
++            for (lk = 0; lk <= RT_AT_NLK; lk++)
++                if (a->lk[lk].active && a->lk[lk].nbpid == nbpid)
++                    rt_at_lookup_add(&a->lk[lk], taddr, obj, type, zone);
++        }
++    }
++}
++
++int rt_at_nbp_register(rt_atalk *a, const char *obj, const char *type, uint8_t socket) {
++    int i, free_slot = -1;
++
++    if (a == NULL) return RT_AT_ERR_BADENTRY;
++    for (i = 0; i < RT_AT_NNAMES; i++) {
++        if (!a->names[i].used) { if (free_slot < 0) free_slot = i; continue; }
++        if (strcasecmp(a->names[i].obj, obj) == 0 && strcasecmp(a->names[i].type, type) == 0)
++            return RT_AT_ERR_DUP;
++    }
++    if (free_slot < 0) return RT_AT_ERR_BADENTRY;
++
++    /* Verify-lookup first: NBP has no registry, so "is this name taken?"
++     * is literally "does anyone answer a lookup for it?". */
++    if (rt_at_lookup_begin(a, RT_AT_NLK, obj, type, "*", 0.25, 3) == 0) {
++        while (!rt_at_nbp_lookup_done(a, RT_AT_NLK)) rt_at_tick(a, 10);
++        a->lk[RT_AT_NLK].active = 0;
++        if (a->lk[RT_AT_NLK].count > 0) return RT_AT_ERR_DUP;
++    }
++
++    a->enum_next++;
++    if (a->enum_next == 0) a->enum_next = 1;
++    a->names[free_slot].used = 1;
++    rt_at_cstr(a->names[free_slot].obj, 33, obj);
++    rt_at_cstr(a->names[free_slot].type, 33, type);
++    a->names[free_slot].socket = socket;
++    a->names[free_slot].enumerator = a->enum_next;
++    return 0;
++}
++
++int rt_at_nbp_remove(rt_atalk *a, const char *obj, const char *type) {
++    int i;
++    if (a == NULL) return RT_AT_ERR_NOTFOUND;
++    for (i = 0; i < RT_AT_NNAMES; i++)
++        if (a->names[i].used && strcasecmp(a->names[i].obj, obj) == 0 &&
++            strcasecmp(a->names[i].type, type) == 0) {
++            a->names[i].used = 0;
++            return 0;
++        }
++    return RT_AT_ERR_NOTFOUND;
++}
++
++/* ==================== (f) ATP requester =============================
++ * Header (8 bytes): [control][bitmap or seq][TID hi][TID lo][user bytes x4].
++ * control = func<<6 | XO 0x20 | EOM 0x10 | STS 0x08. STS is never set. */
++
++#define RT_AT_ATP_TREQ  1
++#define RT_AT_ATP_TRESP 2
++#define RT_AT_ATP_TREL  3
++
++static void rt_at_atp_hdr(uint8_t *p, int func, int flags, uint8_t seqmap,
++                          uint16_t tid, int32_t ub) {
++    p[0] = (uint8_t)(((func & 3) << 6) | flags);
++    p[1] = seqmap;
++    p[2] = (uint8_t)(tid >> 8);
++    p[3] = (uint8_t)(tid & 0xFF);
++    p[4] = (uint8_t)((ub >> 24) & 0xFF);
++    p[5] = (uint8_t)((ub >> 16) & 0xFF);
++    p[6] = (uint8_t)((ub >> 8) & 0xFF);
++    p[7] = (uint8_t)(ub & 0xFF);
++}
++
++/* rt_at_rq_bitmap: bits still wanted. Before EOM is known, every packet
++ * we have not got; after, only those up to the EOM sequence. */
++static uint8_t rt_at_rq_bitmap(const rt_at_rqstate *r) {
++    int last = r->eom_seq >= 0 ? r->eom_seq : RT_AT_NPKT - 1;
++    uint8_t m = 0;
++    int i;
++    for (i = 0; i <= last; i++) if (!r->got[i]) m |= (uint8_t)(1 << i);
++    return m;
++}
++
++static int rt_at_rq_complete(const rt_at_rqstate *r) {
++    return r->eom_seq >= 0 && rt_at_rq_bitmap(r) == 0;
++}
++
++static void rt_at_rq_treq(rt_atalk *a, uint8_t bitmap) {
++    uint8_t p[8 + RT_AT_MAXREQ];
++    rt_at_rqstate *r = &a->rq;
++    rt_at_atp_hdr(p, RT_AT_ATP_TREQ, 0x20, bitmap, r->tid, r->userbytes);
++    if (r->reqlen > 0) memcpy(p + 8, r->reqdata, (size_t)r->reqlen);
++    rt_at_ddp_send(a, r->to, r->mysock, RT_AT_DDP_ATP, p, 8 + r->reqlen);
++}
++
++/* rt_at_rq_wait: send the TReq, then poll until every response packet is
++ * in or the retransmit budget runs out; TRel on success. */
++static int rt_at_rq_wait(rt_atalk *a, uint8_t *resp, int respcap, int *resplen,
++                         int timeout_s, int retries) {
++    rt_at_rqstate *r = &a->rq;
++    int tries;
++
++    if (timeout_s < 1) timeout_s = 1;
++    if (retries < 0) retries = 0;
++    r->active = 1;
++    rt_at_rq_treq(a, rt_at_rq_bitmap(r));
++
++    for (tries = 0; tries <= retries; tries++) {
++        double deadline = rt_at_now() + timeout_s;
++        while (rt_at_now() < deadline) {
++            if (rt_at_rq_complete(r)) goto done;
++            rt_at_tick(a, 10);
++        }
++        if (rt_at_rq_complete(r)) goto done;
++        if (tries < retries) rt_at_rq_treq(a, rt_at_rq_bitmap(r));
++    }
++    r->active = 0;
++    return RT_AT_ERR_REQFAIL;
++
++done:
++    {
++        uint8_t p[8];
++        int total = 0, i, at = 0;
++        rt_at_atp_hdr(p, RT_AT_ATP_TREL, 0x20, 0, r->tid, 0);
++        rt_at_ddp_send(a, r->to, r->mysock, RT_AT_DDP_ATP, p, 8);
++        for (i = 0; i <= r->eom_seq; i++) total += r->len[i];
++        r->active = 0;
++        if (total > respcap) return RT_AT_ERR_LEN;
++        for (i = 0; i <= r->eom_seq; i++) {
++            if (r->len[i] > 0) memcpy(resp + at, r->data[i], (size_t)r->len[i]);
++            at += r->len[i];
++        }
++        if (resplen != NULL) *resplen = total;
++        return 0;
++    }
++}
++
++int rt_at_atp_call(rt_atalk *a, rt_at_addr to, int32_t userbytes,
++                   const uint8_t *req, int reqlen,
++                   uint8_t *resp, int respcap, int *resplen, int32_t *resp_userbytes,
++                   int timeout_s, int retries) {
++    rt_at_rqstate *r;
++    int rc;
++
++    if (a == NULL) return RT_AT_ERR_REQFAIL;
++    if (reqlen < 0 || reqlen > RT_AT_MAXREQ) return RT_AT_ERR_LEN;
++    r = &a->rq;
++    if (r->mysock == 0) {
++        r->mysock = rt_at_sock_alloc(a);
++        if (r->mysock == 0) return RT_AT_ERR_NOSOCK;
++    }
++    memset(r->got, 0, sizeof(r->got));
++    memset(r->len, 0, sizeof(r->len));
++    r->eom_seq = -1;
++    r->resp_userbytes = 0;
++    r->to = to;
++    r->userbytes = userbytes;
++    r->reqlen = reqlen;
++    if (reqlen > 0) memcpy(r->reqdata, req, (size_t)reqlen);
++    a->tid_next++;
++    if (a->tid_next == 0) a->tid_next = 1;
++    r->tid = a->tid_next;
++
++    rc = rt_at_rq_wait(a, resp, respcap, resplen, timeout_s, retries);
++    if (resp_userbytes != NULL) *resp_userbytes = r->resp_userbytes;
++    return rc;
++}
++
++int rt_at_test_resend_last_treq(rt_atalk *a, uint8_t *resp, int respcap, int *resplen) {
++    rt_at_rqstate *r;
++    if (a == NULL || a->rq.tid == 0) return RT_AT_ERR_REQFAIL;
++    r = &a->rq;
++    memset(r->got, 0, sizeof(r->got));
++    memset(r->len, 0, sizeof(r->len));
++    r->eom_seq = -1;
++    return rt_at_rq_wait(a, resp, respcap, resplen, 2, 3);
++}
++
++/* ==================== (g) ATP responder + rt_at_poll ================ */
++
++static rt_at_sockslot *rt_at_sock_find(rt_atalk *a, uint8_t sock) {
++    int i;
++    for (i = 0; i < RT_AT_NSOCK; i++)
++        if (a->socks[i].used && a->socks[i].sock == sock) return &a->socks[i];
++    return NULL;
++}
++
++int rt_at_atp_open(rt_atalk *a) {
++    int i;
++    uint8_t sock;
++    if (a == NULL) return RT_AT_ERR_NOSOCK;
++    for (i = 0; i < RT_AT_NSOCK; i++) if (!a->socks[i].used) break;
++    if (i == RT_AT_NSOCK) return RT_AT_ERR_NOSOCK;
++    sock = rt_at_sock_alloc(a);
++    if (sock == 0) return RT_AT_ERR_NOSOCK;
++    memset(&a->socks[i], 0, sizeof(a->socks[i]));
++    a->socks[i].used = 1;
++    a->socks[i].sock = sock;
++    return (int)sock;
++}
++
++void rt_at_atp_close(rt_atalk *a, int sock) {
++    rt_at_sockslot *s;
++    if (a == NULL || sock < 0 || sock > 255) return;
++    s = rt_at_sock_find(a, (uint8_t)sock);
++    if (s != NULL) memset(s, 0, sizeof(*s));
++}
++
++int rt_at_atp_get_request(rt_atalk *a, int sock, rt_at_req *out) {
++    rt_at_sockslot *s;
++    if (a == NULL || sock < 0 || sock > 255) return 0;
++    s = rt_at_sock_find(a, (uint8_t)sock);
++    if (s == NULL || s->qcount == 0) return 0;
++    if (out != NULL) *out = s->q[s->qhead];
++    s->qhead = (s->qhead + 1) % RT_AT_NQ;
++    s->qcount--;
++    return 1;
++}
++
++static int rt_at_same_peer(rt_at_addr x, rt_at_addr y) {
++    return x.net == y.net && x.node == y.node && x.socket == y.socket;
++}
++
++/* rt_at_xo_find: the remembered transaction for (tid, peer), or NULL. */
++static rt_at_xo *rt_at_xo_find(rt_at_sockslot *s, uint16_t tid, rt_at_addr from) {
++    int i;
++    for (i = 0; i < RT_AT_NXO; i++)
++        if (s->xo[i].used && s->xo[i].tid == tid && rt_at_same_peer(s->xo[i].from, from))
++            return &s->xo[i];
++    return NULL;
++}
++
++/* rt_at_xo_replay: resend exactly the packets `bitmap` still asks for. */
++static void rt_at_xo_replay(rt_atalk *a, rt_at_xo *x, uint8_t bitmap) {
++    int i;
++    for (i = 0; i < x->npkt; i++) {
++        uint8_t p[8 + RT_AT_MAXREQ];
++        int eom = (i == x->npkt - 1) ? 0x10 : 0;
++        if (!((bitmap >> i) & 1)) continue;
++        rt_at_atp_hdr(p, RT_AT_ATP_TRESP, eom, (uint8_t)i, x->tid, x->userbytes);
++        if (x->len[i] > 0) memcpy(p + 8, x->data[i], (size_t)x->len[i]);
++        rt_at_ddp_send(a, x->from, x->mysock, RT_AT_DDP_ATP, p, 8 + x->len[i]);
++    }
++}
++
++int rt_at_atp_send_response(rt_atalk *a, int sock, const rt_at_req *req,
++                            int32_t userbytes, const uint8_t *data, int len) {
++    rt_at_sockslot *s;
++    rt_at_xo *x = NULL;
++    int npkt, i, at, oldest = 0;
++    double now, oldest_t;
++
++    if (a == NULL || req == NULL) return RT_AT_ERR_REQFAIL;
++    if (len < 0 || len > RT_AT_MAXRESP) return RT_AT_ERR_LEN;
++    s = rt_at_sock_find(a, (uint8_t)sock);
++    if (s == NULL) return RT_AT_ERR_NOSOCK;
++
++    npkt = (len + RT_AT_MAXREQ - 1) / RT_AT_MAXREQ;
++    if (npkt == 0) npkt = 1;
++
++    /* Store first (so a retransmitted TReq can be replayed even if it
++     * arrives before our own packets are all on the wire), then replay
++     * against the request's bitmap -- which IS the first transmission. */
++    now = rt_at_now();
++    oldest_t = 0;
++    for (i = 0; i < RT_AT_NXO; i++) {
++        if (!s->xo[i].used) { x = &s->xo[i]; break; }
++        if (oldest_t == 0 || s->xo[i].expiry < oldest_t) { oldest_t = s->xo[i].expiry; oldest = i; }
++    }
++    if (x == NULL) x = &s->xo[oldest];
++    memset(x, 0, sizeof(*x));
++    x->used = 1;
++    x->tid = req->tid;
++    x->from = req->from;
++    x->mysock = s->sock;
++    x->npkt = npkt;
++    x->userbytes = userbytes;
++    x->expiry = now + RT_AT_XO_SECS;
++    at = 0;
++    for (i = 0; i < npkt; i++) {
++        int k = len - at;
++        if (k > RT_AT_MAXREQ) k = RT_AT_MAXREQ;
++        if (k > 0) memcpy(x->data[i], data + at, (size_t)k);
++        x->len[i] = k;
++        at += k;
++    }
++    rt_at_xo_replay(a, x, req->bitmap != 0 ? req->bitmap : 0xFF);
++    /* A non-XO request needs no memory of the transaction. */
++    if (!req->xo) x->used = 0;
++    return 0;
++}
++
++/* rt_at_atp_in: one ATP packet. TReq -> XO replay or the request queue;
++ * TResp -> the single outstanding requester state; TRel -> forget. */
++static void rt_at_atp_in(rt_atalk *a, rt_at_addr from, uint8_t dstsock,
++                         const uint8_t *d, int n) {
++    int func, ctl;
++    uint16_t tid;
++    int32_t ub;
++
++    if (n < 8) return;
++    ctl = d[0];
++    func = (ctl >> 6) & 3;
++    tid = (uint16_t)((d[2] << 8) | d[3]);
++    ub = (int32_t)(((uint32_t)d[4] << 24) | ((uint32_t)d[5] << 16) |
++                   ((uint32_t)d[6] << 8) | (uint32_t)d[7]);
++
++    if (func == RT_AT_ATP_TRESP) {
++        rt_at_rqstate *r = &a->rq;
++        int seq = d[1];
++        if (!r->active || dstsock != r->mysock || tid != r->tid) return;
++        if (seq >= RT_AT_NPKT) return;
++        if (!r->got[seq]) {
++            int k = n - 8;
++            if (k > RT_AT_MAXREQ) k = RT_AT_MAXREQ;
++            if (k > 0) memcpy(r->data[seq], d + 8, (size_t)k);
++            r->len[seq] = k;
++            r->got[seq] = 1;
++            if (seq == 0) r->resp_userbytes = ub;
++        }
++        if (ctl & 0x10) r->eom_seq = seq;
++        return;
++    }
++
++    {
++        rt_at_sockslot *s = rt_at_sock_find(a, dstsock);
++        if (s == NULL) return;
++
++        if (func == RT_AT_ATP_TREL) {
++            rt_at_xo *x;
++            if (a->drop_rx_trel) { a->drop_rx_trel = 0; return; }  /* test hook */
++            x = rt_at_xo_find(s, tid, from);
++            if (x != NULL) x->used = 0;
++            return;
++        }
++        if (func != RT_AT_ATP_TREQ) return;
++        {
++            rt_at_xo *x = rt_at_xo_find(s, tid, from);
++            int i, k;
++            if (x != NULL) { rt_at_xo_replay(a, x, d[1]); return; }
++            /* Already queued and not yet answered: a retransmit, not a
++             * second transaction. */
++            for (i = 0; i < s->qcount; i++) {
++                rt_at_req *q = &s->q[(s->qhead + i) % RT_AT_NQ];
++                if (q->tid == tid && rt_at_same_peer(q->from, from)) return;
++            }
++            if (s->qcount >= RT_AT_NQ) return;  /* full: drop, the peer retransmits */
++            {
++                rt_at_req *q = &s->q[(s->qhead + s->qcount) % RT_AT_NQ];
++                memset(q, 0, sizeof(*q));
++                q->from = from;
++                q->tid = tid;
++                q->bitmap = d[1];
++                q->xo = (ctl & 0x20) ? 1 : 0;
++                q->userbytes = ub;
++                k = n - 8;
++                if (k > RT_AT_MAXREQ) k = RT_AT_MAXREQ;
++                if (k > 0) memcpy(q->data, d + 8, (size_t)k);
++                q->len = k;
++                s->qcount++;
++            }
++        }
++    }
++}
++
++/* rt_at_frame_in: one received LToUDP datagram, already stripped of the
++ * sender id. */
++static void rt_at_frame_in(rt_atalk *a, const uint8_t *f, int n) {
++    uint8_t dst, src, type;
++    const uint8_t *p;
++    int plen;
++
++    if (n < 3) return;
++    dst = f[0];
++    src = f[1];
++    type = f[2];
++    p = f + 3;
++    plen = n - 3;
++
++    if (type == RT_AT_LLAP_ENQ) {
++        if (dst != a->node) return;
++        /* Someone is probing the id we hold -- or, mid-acquisition, the id
++         * we are trying to hold, in which case we yield rather than both
++         * claiming it. */
++        if (a->acquiring) a->collided = 1;
++        else rt_at_tx(a, dst, RT_AT_LLAP_ACK, NULL, 0);
++        return;
++    }
++    if (type == RT_AT_LLAP_ACK) {
++        if (a->acquiring && dst == a->node) a->collided = 1;
++        return;
++    }
++    if (a->node != 0 && dst != a->node && dst != RT_AT_BROADCAST) return;
++
++    {
++        rt_at_addr from;
++        uint8_t dstsock, ddptype;
++        const uint8_t *data;
++        int len, dlen;
++
++        if (type == RT_AT_LLAP_SHORT) {
++            if (plen < 5) return;
++            len = ((p[0] & 0x03) << 8) | p[1];
++            if (len < 5 || len > plen) return;
++            dstsock = p[2];
++            from.net = 0; from.node = src; from.socket = p[3];
++            ddptype = p[4];
++            data = p + 5;
++            dlen = len - 5;
++        } else if (type == RT_AT_LLAP_LONG) {
++            if (plen < 13) return;
++            len = ((p[0] & 0x03) << 8) | p[1];
++            if (len < 13 || len > plen) return;
++            from.net = (uint16_t)((p[6] << 8) | p[7]);
++            dstsock = p[10];
++            from.node = p[9];
++            from.socket = p[11];
++            ddptype = p[12];
++            data = p + 13;
++            dlen = len - 13;
++        } else {
++            return;
++        }
++
++        if (ddptype == RT_AT_DDP_NBP) rt_at_nbp_in(a, from, data, dlen);
++        else if (ddptype == RT_AT_DDP_ATP) rt_at_atp_in(a, from, dstsock, data, dlen);
++        /* ZIP (6) and ADSP (7) are dropped: no router, no ADSP on this lane. */
++    }
++}
++
++/* rt_at_drain: read every datagram the socket has, dropping our own. */
++static void rt_at_drain(rt_atalk *a) {
++    uint8_t buf[RT_AT_DGRAM];
++    ssize_t n;
++    int guard;
++
++    if (a == NULL || a->fd < 0) return;
++    for (guard = 0; guard < 256; guard++) {
++        n = recv(a->fd, buf, sizeof(buf), 0);
++        if (n < 0) return;
++        if (n < 7) continue;
++        if (memcmp(buf, a->sender, 4) == 0) continue;   /* our own echo */
++        rt_at_frame_in(a, buf + 4, (int)n - 4);
++    }
++}
++
++void rt_at_poll(rt_atalk *a) {
++    double now;
++    int lk, i, j;
++
++    if (a == NULL) return;
++    rt_at_drain(a);
++    now = rt_at_now();
++
++    for (lk = 0; lk <= RT_AT_NLK; lk++) {
++        rt_at_lookup *L = &a->lk[lk];
++        if (!L->active || L->tx_left <= 0) continue;
++        if (now >= L->next_tx) {
++            rt_at_lookup_tx(a, L);
++            L->tx_left--;
++            L->next_tx = now + L->interval;
++        }
++    }
++    for (i = 0; i < RT_AT_NSOCK; i++) {
++        if (!a->socks[i].used) continue;
++        for (j = 0; j < RT_AT_NXO; j++)
++            if (a->socks[i].xo[j].used && now >= a->socks[i].xo[j].expiry)
++                a->socks[i].xo[j].used = 0;
++    }
++}
++
++/* ==================== open / close =================================== */
++
++rt_atalk *rt_at_open(const char *iface_ip) {
++    rt_atalk *a;
++    struct sockaddr_in bindaddr;
++    struct ip_mreq mreq;
++    int yes = 1, flags;
++    unsigned char loop = 1;
++    struct in_addr iface;
++
++    rt_at_seed();
++    a = (rt_atalk *)calloc(1, sizeof(*a));
++    if (a == NULL) { errno = ENOMEM; return NULL; }
++    a->fd = -1;
++    a->drop_tx_at = -1;
++
++    iface.s_addr = htonl(INADDR_ANY);
++    if (iface_ip != NULL && iface_ip[0] != '\0') {
++        in_addr_t v = inet_addr(iface_ip);
++        if (v == INADDR_NONE) { free(a); errno = EINVAL; return NULL; }
++        iface.s_addr = v;
++    }
++
++    a->fd = socket(AF_INET, SOCK_DGRAM, 0);
++    if (a->fd < 0) { free(a); return NULL; }
++    setsockopt(a->fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
++#ifdef SO_REUSEPORT
++    /* Mandatory for two instances in one process (and for coexisting with
++     * a Mini vMac on the same machine). */
++    setsockopt(a->fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
++#endif
++    memset(&bindaddr, 0, sizeof(bindaddr));
++    bindaddr.sin_family = AF_INET;
++    bindaddr.sin_addr.s_addr = htonl(INADDR_ANY);
++    bindaddr.sin_port = htons(RT_AT_PORT);
++    if (bind(a->fd, (struct sockaddr *)&bindaddr, sizeof(bindaddr)) != 0) goto fail;
++
++    memset(&mreq, 0, sizeof(mreq));
++    mreq.imr_multiaddr.s_addr = inet_addr(RT_AT_GROUP);
++    mreq.imr_interface = iface;
++    if (setsockopt(a->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) != 0)
++        goto fail;
++    setsockopt(a->fd, IPPROTO_IP, IP_MULTICAST_LOOP, &loop, sizeof(loop));
++    if (iface.s_addr != htonl(INADDR_ANY))
++        setsockopt(a->fd, IPPROTO_IP, IP_MULTICAST_IF, &iface, sizeof(iface));
++
++    flags = fcntl(a->fd, F_GETFL, 0);
++    fcntl(a->fd, F_SETFL, flags | O_NONBLOCK);
++
++    memset(&a->group, 0, sizeof(a->group));
++    a->group.sin_family = AF_INET;
++    a->group.sin_addr.s_addr = inet_addr(RT_AT_GROUP);
++    a->group.sin_port = htons(RT_AT_PORT);
++
++    a->sender[0] = (uint8_t)(rand() & 0xFF);
++    a->sender[1] = (uint8_t)(rand() & 0xFF);
++    a->sender[2] = (uint8_t)(rand() & 0xFF);
++    a->sender[3] = (uint8_t)((rand() & 0xFE) | 1);   /* never all-zero */
++    a->sock_next = (uint8_t)(rand() % 127);
++    a->tid_next = (uint16_t)(rand() & 0xFFFF);
++    a->rq.eom_seq = -1;
++
++    if (rt_at_acquire(a, 0) != 0) goto fail;
++    return a;
++
++fail:
++    {
++        int e = errno;
++        close(a->fd);
++        free(a);
++        errno = e;
++        return NULL;
++    }
++}
++
++void rt_at_close(rt_atalk *a) {
++    if (a == NULL) return;
++    if (a->fd >= 0) close(a->fd);
++    free(a);
++}
++
++/* ==================== (h) the Clarus rt_ext_AtalkH* layer ============
++ * One lazily opened process-global instance. `string` parameters arrive
++ * as Pascal strings; addresses cross as net<<16 | node<<8 | socket. */
++
++static rt_atalk *rt_at_g;
++static rt_at_req rt_at_g_req;      /* the last request AtpGetRequest dequeued */
++static int32_t   rt_at_g_code;     /* the last AtpCall's response user bytes */
++
++/* rt_at_pstr: a Clarus Pascal string to a C string. Deliberately NOT
++ * rt.c's path_to_cstr -- that one rewrites ':' to '/' for HFS paths, and
++ * ':' is meaningful in an NBP name. */
++static void rt_at_pstr(char *buf, size_t cap, const uint8_t *p) {
++    size_t n;
++    if (p == NULL) { buf[0] = '\0'; return; }
++    n = p[0];
++    if (n > cap - 1) n = cap - 1;
++    memcpy(buf, p + 1, n);
++    buf[n] = '\0';
++}
++
++static int32_t rt_at_pack(rt_at_addr x) {
++    return (int32_t)(((uint32_t)x.net << 16) | ((uint32_t)x.node << 8) | x.socket);
++}
++
++int32_t rt_ext_AtalkHUp(void) {
++    if (rt_at_g != NULL) return 0;
++    errno = 0;
++    rt_at_g = rt_at_open(getenv("CLARUS_ATALK_IFACE"));
++    if (rt_at_g == NULL) return errno != 0 ? (int32_t)errno : 1;
++    return 0;
++}
++
++int32_t rt_ext_AtalkHNode(void) { return (int32_t)rt_at_node(rt_at_g); }
++
++int32_t rt_ext_AtalkHRegister(const uint8_t *obj, const uint8_t *type, int32_t sock) {
++    char o[64], t[64];
++    if (rt_at_g == NULL) return RT_AT_ERR_BADENTRY;
++    rt_at_pstr(o, sizeof(o), obj);
++    rt_at_pstr(t, sizeof(t), type);
++    return rt_at_nbp_register(rt_at_g, o, t, (uint8_t)sock);
++}
++
++int32_t rt_ext_AtalkHRemove(const uint8_t *obj, const uint8_t *type) {
++    char o[64], t[64];
++    if (rt_at_g == NULL) return RT_AT_ERR_NOTFOUND;
++    rt_at_pstr(o, sizeof(o), obj);
++    rt_at_pstr(t, sizeof(t), type);
++    return rt_at_nbp_remove(rt_at_g, o, t);
++}
++
++int32_t rt_ext_AtalkHLookupStart(int32_t lk, const uint8_t *obj, const uint8_t *type,
++                                 const uint8_t *zone) {
++    char o[64], t[64], z[64];
++    if (rt_at_g == NULL) return -1;
++    rt_at_pstr(o, sizeof(o), obj);
++    rt_at_pstr(t, sizeof(t), type);
++    rt_at_pstr(z, sizeof(z), zone);
++    return rt_at_nbp_lookup_start(rt_at_g, (int)lk, o, t, z);
++}
++
++int32_t rt_ext_AtalkHLookupDone(int32_t lk)  { return rt_at_nbp_lookup_done(rt_at_g, (int)lk); }
++int32_t rt_ext_AtalkHLookupCount(int32_t lk) { return rt_at_nbp_lookup_count(rt_at_g, (int)lk); }
++
++int32_t rt_ext_AtalkHLookupAddr(int32_t lk, int32_t i) {
++    const rt_at_tuple *t = rt_at_nbp_lookup_get(rt_at_g, (int)lk, (int)i);
++    return t != NULL ? rt_at_pack(t->addr) : 0;
++}
++
++/* rt_ext_AtalkHLookupName: "obj:type" as a Pascal string in a 68-byte
++ * buffer (1 length + 32 + 1 + 32 + slack). */
++void rt_ext_AtalkHLookupName(int32_t lk, int32_t i, void *out) {
++    const rt_at_tuple *t = rt_at_nbp_lookup_get(rt_at_g, (int)lk, (int)i);
++    uint8_t *p = (uint8_t *)out;
++    char joined[80];
++    size_t n;
++
++    if (p == NULL) return;
++    if (t == NULL) { p[0] = 0; return; }
++    snprintf(joined, sizeof(joined), "%s:%s", t->obj, t->type);
++    n = strlen(joined);
++    if (n > 67) n = 67;
++    p[0] = (uint8_t)n;
++    memcpy(p + 1, joined, n);
++}
++
++int32_t rt_ext_AtalkHAtpOpen(void) {
++    if (rt_at_g == NULL) return RT_AT_ERR_NOSOCK;
++    return rt_at_atp_open(rt_at_g);
++}
++
++void rt_ext_AtalkHAtpClose(int32_t sock) { rt_at_atp_close(rt_at_g, (int)sock); }
++
++int32_t rt_ext_AtalkHAtpGetRequest(int32_t sock, void *buf, int32_t cap) {
++    int n;
++    if (rt_at_g == NULL) return -1;
++    if (!rt_at_atp_get_request(rt_at_g, (int)sock, &rt_at_g_req)) return -1;
++    n = rt_at_g_req.len;
++    if (n > (int)cap) n = (int)cap;
++    if (n > 0 && buf != NULL) memcpy(buf, rt_at_g_req.data, (size_t)n);
++    return n;
++}
++
++int32_t rt_ext_AtalkHAtpReqOp(void)   { return rt_at_g_req.userbytes; }
++int32_t rt_ext_AtalkHAtpReqFrom(void) { return rt_at_pack(rt_at_g_req.from); }
++
++int32_t rt_ext_AtalkHAtpSendResponse(int32_t sock, int32_t code, void *buf, int32_t n) {
++    if (rt_at_g == NULL) return RT_AT_ERR_NOSOCK;
++    return rt_at_atp_send_response(rt_at_g, (int)sock, &rt_at_g_req, code,
++                                   (const uint8_t *)buf, (int)n);
++}
++
++int32_t rt_ext_AtalkHAtpCall(int32_t addr, int32_t op, void *req, int32_t reqLen,
++                             void *resp, int32_t respCap) {
++    rt_at_addr to;
++    int rlen = 0, rc;
++    if (rt_at_g == NULL) return RT_AT_ERR_REQFAIL;
++    to.net = (uint16_t)((addr >> 16) & 0xFFFF);
++    to.node = (uint8_t)((addr >> 8) & 0xFF);
++    to.socket = (uint8_t)(addr & 0xFF);
++    rt_at_g_code = 0;
++    rc = rt_at_atp_call(rt_at_g, to, op, (const uint8_t *)req, (int)reqLen,
++                        (uint8_t *)resp, (int)respCap, &rlen, &rt_at_g_code, 2, 3);
++    return rc != 0 ? rc : rlen;
++}
++
++int32_t rt_ext_AtalkHAtpCallCode(void) { return rt_at_g_code; }
++
++void rt_ext_AtalkHPoll(void) { rt_at_poll(rt_at_g); }
++
++/* rt_ext_AtalkHFd: the stack's UDP fd for a host pump's select set, or -1
++ * while the stack is down. (Wiring it into rt_ext_ConnHIdle's set is a
++ * later task's job -- that pump's 20 ms idle already bounds latency.) */
++int32_t rt_ext_AtalkHFd(void) { return (int32_t)rt_at_fd(rt_at_g); }
+diff --git a/runtime/host/rt_atalk_test.c b/runtime/host/rt_atalk_test.c
+new file mode 100644
+index 0000000..d7874bf
+--- /dev/null
++++ b/runtime/host/rt_atalk_test.c
+@@ -0,0 +1,364 @@
++/* runtime/host/rt_atalk_test.c -- hand-written C harness for the host
++ * LocalTalk-over-UDP stack (2026-09-06 appletalk spec %6.1/%8.1, Task 2:
++ * runtime/host/rt_atalk.inc, #included at the bottom of rt.c). Mirrors
++ * rt_serial_test.c's style: CHECK macro, "OK\n" on success.
++ *
++ * Compile + run by hand:
++ *   cc -std=c99 -Wall -Werror -I runtime/host \
++ *      runtime/host/rt_atalk_test.c runtime/host/rt.c -o /tmp/atalktest
++ *   /tmp/atalktest
++ * (tests/hostrt/atalk.sh does exactly this via lib.sh's run_c_test.)
++ *
++ * Two stack instances, `A` and `B`, in ONE process, talking to each other
++ * over loopback multicast (239.192.76.84:1954, IP_MULTICAST_LOOP on) --
++ * i.e. the same wire the Mini vMac/Snow LToUDP builds are on. Everything
++ * is single-threaded: the requester's internal wait loop calls the global
++ * idle hook (rt_at_test_idle_hook) once per iteration, and this test's
++ * hook is what drives A -- poll it, and answer any ATP request that has
++ * arrived. That is also how A gets polled during B's node acquisition and
++ * during B's NBP verify-lookup.
++ *
++ * The multicast group is shared with whatever else is on this machine's
++ * network (Andrew's live emulator sessions, an EtherTalk bridge), so
++ * nothing here asserts an exact entity count and every registered name
++ * carries the pid.
++ *
++ * A sandbox with no multicast is not a failure: if rt_at_open fails with
++ * ENODEV/EADDRNOTAVAIL/EPERM/EAFNOSUPPORT the test prints
++ * "SKIP: multicast unavailable" and exits 77, the harness's own skip code
++ * (tests/hostrt/atalk.sh propagates it). Exit 0 + "OK" means it really ran.
++ */
++#include "rt.h"
++#include "rt_atalk.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <errno.h>
++#include <sys/select.h>
++#include <sys/time.h>
++
++static int failed = 0;
++#define CHECK(cond, msg) \
++    do { if (!(cond)) { fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); failed = 1; } } while (0)
++
++static rt_atalk *A, *B;
++static int      a_sock = -1;     /* A's ATP responder socket */
++static int      a_reqs;          /* successful rt_at_atp_get_request calls on A */
++static int32_t  a_last_op;       /* userbytes of the last request A dequeued */
++static uint8_t  a_reply[4000];   /* 4000 bytes => 7 response packets */
++
++#define A_REPLY_CODE 9
++
++/* drive_a: the global idle hook. Every internal wait loop in rt_atalk.inc
++ * calls this once per iteration, which is the only reason A ever runs at
++ * all while B is blocked inside a call. */
++static void drive_a(void) {
++    rt_at_req req;
++    if (A == NULL) return;
++    rt_at_poll(A);
++    if (a_sock >= 0 && rt_at_atp_get_request(A, a_sock, &req)) {
++        a_reqs++;
++        a_last_op = req.userbytes;
++        rt_at_atp_send_response(A, a_sock, &req, A_REPLY_CODE, a_reply, (int)sizeof(a_reply));
++    }
++}
++
++/* pump: hand-drive both stacks for `ms` milliseconds. Used where the test
++ * itself is the wait loop (NBP lookups), rather than rt_atalk.inc's. */
++static void pump(int ms) {
++    int i;
++    for (i = 0; i < ms / 10; i++) {
++        drive_a();
++        if (B != NULL) rt_at_poll(B);
++        usleep(10000);
++    }
++}
++
++static double now_s(void) {
++    struct timeval tv;
++    gettimeofday(&tv, NULL);
++    return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;
++}
++
++/* wait_lookup: pump until the lookup's own 3 x 1 s window closes. */
++static void wait_lookup(rt_atalk *a, int lk) {
++    double deadline = now_s() + 8.0;
++    while (!rt_at_nbp_lookup_done(a, lk) && now_s() < deadline) pump(50);
++}
++
++/* found_obj: 1 if lookup `lk` on `a` returned a tuple with obj == name. */
++static int found_obj(rt_atalk *a, int lk, const char *name) {
++    int i, n = rt_at_nbp_lookup_count(a, lk);
++    for (i = 0; i < n; i++) {
++        const rt_at_tuple *t = rt_at_nbp_lookup_get(a, lk, i);
++        if (t != NULL && strcmp(t->obj, name) == 0) return 1;
++    }
++    return 0;
++}
++
++/* --- 1/2: node acquisition ------------------------------------------ */
++static void test_nodes(void) {
++    uint8_t na = rt_at_node(A), nb = rt_at_node(B);
++    CHECK(na >= 1 && na <= 127, "A node out of the 1..127 workstation range");
++    CHECK(nb >= 1 && nb <= 127, "B node out of the 1..127 workstation range");
++    CHECK(na != nb, "A and B acquired the same node id");
++
++    /* Forced collision: make B re-acquire starting from A's id. A answers
++     * the lapENQ with a lapACK (via the idle hook), so B must move on. */
++    rt_at_test_force_node(B, na);
++    nb = rt_at_node(B);
++    CHECK(nb >= 1 && nb <= 127, "B node out of range after forced collision");
++    CHECK(nb != na, "forced collision left B on A's node id");
++}
++
++/* --- 3: NBP --------------------------------------------------------- */
++static char nbp_obj[40];
++
++static void test_nbp(void) {
++    int rc;
++
++    snprintf(nbp_obj, sizeof(nbp_obj), "Unit-%ld", (long)getpid());
++    rc = rt_at_nbp_register(A, nbp_obj, "ClarusTest", 200);
++    CHECK(rc == 0, "register on A failed");
++
++    rt_at_nbp_lookup_start(B, 0, "=", "ClarusTest", "*");
++    wait_lookup(B, 0);
++    CHECK(rt_at_nbp_lookup_count(B, 0) >= 1, "wildcard lookup found nothing");
++    CHECK(found_obj(B, 0, nbp_obj), "wildcard lookup missed A's registered name");
++
++    rc = rt_at_nbp_register(B, nbp_obj, "ClarusTest", 201);
++    CHECK(rc == -1027, "duplicate register did not return nbpDuplicate");
++
++    rc = rt_at_nbp_remove(A, nbp_obj, "ClarusTest");
++    CHECK(rc == 0, "remove on A failed");
++    rc = rt_at_nbp_remove(A, nbp_obj, "ClarusTest");
++    CHECK(rc == -1028, "second remove did not return nbpNotFound");
++
++    rt_at_nbp_lookup_start(B, 1, "=", "ClarusTest", "*");
++    wait_lookup(B, 1);
++    CHECK(!found_obj(B, 1, nbp_obj), "removed name still answered a lookup");
++}
++
++/* --- 4/5/6: ATP ----------------------------------------------------- */
++static rt_at_addr a_addr(void) {
++    rt_at_addr to;
++    to.net = 0;
++    to.node = rt_at_node(A);
++    to.socket = (uint8_t)a_sock;
++    return to;
++}
++
++/* one_call: the shared "B calls A, A answers 4000 bytes" assertion body. */
++static void one_call(const char *what) {
++    uint8_t resp[RT_AT_MAXRESP];
++    int rlen = 0, i, bad = 0, rc;
++    int32_t rub = 0;
++
++    rc = rt_at_atp_call(B, a_addr(), 7, (const uint8_t *)"ping", 4,
++                        resp, (int)sizeof(resp), &rlen, &rub, 1, 4);
++    if (rc != 0) {
++        fprintf(stderr, "FAIL: %s: atp_call rc=%d\n", what, rc);
++        failed = 1;
++        return;
++    }
++    CHECK(rlen == 4000, "response length is not 4000");
++    CHECK(rub == A_REPLY_CODE, "response user bytes wrong");
++    for (i = 0; i < rlen && i < 4000; i++) if (resp[i] != (uint8_t)(i & 0xFF)) bad++;
++    CHECK(bad == 0, "response body bytes wrong");
++    CHECK(a_last_op == 7, "responder saw the wrong request user bytes");
++    /* The requester's TRel is on the wire but A has not looked at it yet;
++     * settle it here so the next case's drop_next_rx arms against ITS OWN
++     * TRel and not this one's. */
++    pump(100);
++}
++
++static void test_atp(void) {
++    unsigned i;
++    uint8_t big[RT_AT_MAXRESP + 1];
++    rt_at_req dummy;
++    int rlen = 0, rc;
++    int32_t rub = 0;
++
++    for (i = 0; i < sizeof(a_reply); i++) a_reply[i] = (uint8_t)(i & 0xFF);
++
++    a_sock = rt_at_atp_open(A);
++    CHECK(a_sock >= 128 && a_sock <= 254, "atp_open did not return a dynamic socket");
++    if (a_sock < 0) return;
++
++    /* 4: plain 4000-byte transaction (7 response packets). */
++    a_reqs = 0;
++    one_call("plain call");
++    CHECK(a_reqs == 1, "responder dequeued other than one request");
++
++    /* 5: drop A's 4th outgoing datagram once -- the bitmap retransmit must
++     * still bring the transaction home. */
++    a_reqs = 0;
++    rt_at_test_drop_next_tx(A, 3);
++    one_call("call with a dropped response packet");
++    CHECK(a_reqs == 1, "dropped-packet call re-entered the request queue");
++
++    /* 6: XO duplicate replay. A ignores the TRel, so the transaction stays
++     * in its XO list; B re-injects the same TReq and must be answered from
++     * that list, WITHOUT the request reaching get_request a second time. */
++    a_reqs = 0;
++    rt_at_test_drop_next_rx(A, RT_AT_DROP_TREL);
++    one_call("call whose TRel is dropped");
++    CHECK(a_reqs == 1, "TRel-dropped call did not dequeue exactly one request");
++    {
++        uint8_t resp2[RT_AT_MAXRESP];
++        int rlen2 = 0, bad = 0, j;
++        rc = rt_at_test_resend_last_treq(B, resp2, (int)sizeof(resp2), &rlen2);
++        CHECK(rc == 0, "replayed TReq was not answered");
++        CHECK(rlen2 == 4000, "replayed response length is not 4000");
++        for (j = 0; j < rlen2 && j < 4000; j++) if (resp2[j] != (uint8_t)(j & 0xFF)) bad++;
++        CHECK(bad == 0, "replayed response body bytes wrong");
++        CHECK(a_reqs == 1, "XO replay reached get_request instead of the XO list");
++    }
++
++    /* 7: oversize both ways. */
++    rc = rt_at_atp_call(B, a_addr(), 1, big, RT_AT_MAXREQ + 1,
++                        big, (int)sizeof(big), &rlen, &rub, 1, 1);
++    CHECK(rc == -3106, "579-byte request did not return atpLenErr");
++    memset(&dummy, 0, sizeof(dummy));
++    dummy.from = a_addr();
++    dummy.tid = 1;
++    dummy.bitmap = 0xFF;
++    rc = rt_at_atp_send_response(A, a_sock, &dummy, 0, big, RT_AT_MAXRESP + 1);
++    CHECK(rc == -3106, "4625-byte response did not return atpLenErr");
++}
++
++/* --- 8: select() idle wake ------------------------------------------ */
++static void test_idle_wake(void) {
++    fd_set r;
++    struct timeval tv;
++    double t0;
++    int n;
++
++    pump(100);                       /* drain anything already queued on A */
++    rt_at_nbp_lookup_start(B, 2, "=", "ClarusTest", "*");
++    t0 = now_s();
++    FD_ZERO(&r);
++    FD_SET(rt_at_fd(A), &r);
++    tv.tv_sec = 2;
++    tv.tv_usec = 0;
++    n = select(rt_at_fd(A) + 1, &r, NULL, NULL, &tv);
++    CHECK(n > 0, "select on the AppleTalk fd did not wake on B's lookup");
++    CHECK(now_s() - t0 < 0.5, "select took longer than 500 ms to wake");
++}
++
++/* --- 9: the Clarus-facing rt_ext_AtalkH* layer ----------------------
++ * A THIRD stack instance, the process-global one those wrappers own.
++ * Everything above tests the rt_at_* instance API directly; this pins the
++ * shim Task 7's atalk_c.cla actually calls -- the Pascal-string
++ * conversions, the packed net<<16|node<<8|socket address, and the
++ * "obj:type" name buffer. Runs last so the extra node on the wire cannot
++ * perturb anything else. */
++extern int32_t rt_ext_AtalkHUp(void);
++extern int32_t rt_ext_AtalkHNode(void);
++extern int32_t rt_ext_AtalkHFd(void);
++extern void    rt_ext_AtalkHPoll(void);
++extern int32_t rt_ext_AtalkHLookupStart(int32_t lk, const uint8_t *obj,
++                                        const uint8_t *type, const uint8_t *zone);
++extern int32_t rt_ext_AtalkHLookupDone(int32_t lk);
++extern int32_t rt_ext_AtalkHLookupCount(int32_t lk);
++extern int32_t rt_ext_AtalkHLookupAddr(int32_t lk, int32_t i);
++extern void    rt_ext_AtalkHLookupName(int32_t lk, int32_t i, void *out);
++
++/* pstr: a C string as the Pascal string a Clarus `string` argument is. */
++static void pstr(uint8_t *p, const char *s) {
++    size_t n = strlen(s);
++    if (n > 63) n = 63;
++    p[0] = (uint8_t)n;
++    memcpy(p + 1, s, n);
++}
++
++static void test_ext(void) {
++    uint8_t po[64], pt[64], pz[64], name[68];
++    char want[80];
++    int32_t rc, node, i, n;
++    double deadline;
++    int seen = 0;
++
++    rc = rt_ext_AtalkHUp();
++    CHECK(rc == 0, "AtalkHUp failed");
++    if (rc != 0) return;
++    CHECK(rt_ext_AtalkHUp() == 0, "AtalkHUp is not idempotent");
++    node = rt_ext_AtalkHNode();
++    CHECK(node >= 1 && node <= 127, "AtalkHNode out of the workstation range");
++    CHECK(rt_ext_AtalkHFd() >= 0, "AtalkHFd is negative while the stack is up");
++
++    /* A re-registers the name test_nbp removed, and the global instance
++     * finds it through the Clarus-facing wrappers. */
++    CHECK(rt_at_nbp_register(A, nbp_obj, "ClarusTest", 200) == 0, "re-register on A failed");
++    pstr(po, "=");
++    pstr(pt, "ClarusTest");
++    pstr(pz, "*");
++    CHECK(rt_ext_AtalkHLookupStart(0, po, pt, pz) == 0, "AtalkHLookupStart failed");
++    deadline = now_s() + 8.0;
++    while (!rt_ext_AtalkHLookupDone(0) && now_s() < deadline) {
++        drive_a();
++        rt_at_poll(B);
++        rt_ext_AtalkHPoll();
++        usleep(10000);
++    }
++    n = rt_ext_AtalkHLookupCount(0);
++    CHECK(n >= 1, "AtalkHLookupCount found nothing");
++    snprintf(want, sizeof(want), "%s:ClarusTest", nbp_obj);
++    for (i = 0; i < n; i++) {
++        int32_t addr = rt_ext_AtalkHLookupAddr(0, i);
++        memset(name, 0, sizeof(name));
++        rt_ext_AtalkHLookupName(0, i, name);
++        if (name[0] == (uint8_t)strlen(want) && memcmp(name + 1, want, strlen(want)) == 0) {
++            seen = 1;
++            CHECK(((addr >> 16) & 0xFFFF) == 0, "packed address has a nonzero net");
++            CHECK(((addr >> 8) & 0xFF) == rt_at_node(A), "packed address has the wrong node");
++            CHECK((addr & 0xFF) == 200, "packed address has the wrong socket");
++        }
++    }
++    CHECK(seen, "AtalkHLookupName never produced \"obj:ClarusTest\"");
++    rt_at_nbp_remove(A, nbp_obj, "ClarusTest");
++}
++
++int main(void) {
++    /* Watchdog: three NBP lookups at 3 s each, three registers at 0.75 s,
++     * a handful of ATP calls with a 1 s retransmit timer, plus the opens.
++     * A clean run is ~14 s. */
++    alarm(120);
++
++    A = rt_at_open(NULL);
++    if (A == NULL) {
++        if (errno == ENODEV || errno == EADDRNOTAVAIL || errno == EPERM ||
++            errno == EAFNOSUPPORT) {
++            fprintf(stderr, "SKIP: multicast unavailable (%s)\n", strerror(errno));
++            return 77;
++        }
++        fprintf(stderr, "FAIL: rt_at_open(A): %s\n", strerror(errno));
++        return 1;
++    }
++    rt_at_test_idle_hook(drive_a);   /* set BEFORE B opens: A must answer B's lapENQ */
++    B = rt_at_open(NULL);
++    if (B == NULL) {
++        fprintf(stderr, "FAIL: rt_at_open(B): %s\n", strerror(errno));
++        return 1;
++    }
++
++    test_nodes();
++    test_nbp();
++    test_atp();
++    test_idle_wake();
++    test_ext();
++
++    if (a_sock >= 0) rt_at_atp_close(A, a_sock);
++    rt_at_test_idle_hook(NULL);
++    rt_at_close(B);
++    rt_at_close(A);
++
++    if (failed) {
++        fprintf(stderr, "FAILED\n");
++        return 1;
++    }
++    printf("OK\n");
++    return 0;
++}
+diff --git a/tests/atalkdrive/call.sh b/tests/atalkdrive/call.sh
+new file mode 100755
+index 0000000..b807384
+--- /dev/null
++++ b/tests/atalkdrive/call.sh
+@@ -0,0 +1,92 @@
++#!/bin/sh
++# atalkdrive/call -- an ATP transaction between two atalkdrive processes:
++# one `serve`s a two-op script, the other `call`s it. Covers the multi-
++# packet response path (4096 bytes = 8 ATP packets, the protocol maximum
++# per transaction) byte-exactly, a nonzero response code, and a call to a
++# name nobody registered.
++. "$(dirname "$0")/../lib.sh" || exit 2
++
++DRIVE=$TOOLS/atalkdrive
++require_tool "$DRIVE"
++
++OBJ=Serve-$$
++TYPE=ClarusServe$$
++
++# reply.bin: a 0..255 byte sweep repeated 16 times = 4096 bytes, i.e. the
++# ATP maximum of 8 packets x 578 rounded down to something readable in a
++# hex dump. Built with printf's octal escapes because POSIX sh cannot hold
++# a NUL in a variable and awk's printf "%c" would emit UTF-8 above 127.
++i=0
++while [ $i -lt 256 ]; do
++    printf "\\$(printf '%03o' $i)"
++    i=$((i + 1))
++done > "$WORK/sweep"
++r=0
++while [ $r -lt 16 ]; do cat "$WORK/sweep"; r=$((r + 1)); done > "$WORK/reply.bin"
++[ "$(wc -c < "$WORK/reply.bin" | tr -d ' ')" = 4096 ] || die "reply.bin is not 4096 bytes"
++
++printf '1 0 %s\n2 5 -\n' "$WORK/reply.bin" > "$WORK/script"
++
++"$DRIVE" serve "$OBJ" "$TYPE" 25 "$WORK/script" > "$WORK/srv.out" 2> "$WORK/srv.err" &
++srvpid=$!
++
++i=0
++while [ $i -lt 20 ]; do
++    grep -q '^serving node=' "$WORK/srv.out" 2>/dev/null && break
++    if ! kill -0 $srvpid 2>/dev/null; then break; fi
++    sleep 1
++    i=$((i + 1))
++done
++
++if grep -q '^SKIP: multicast unavailable' "$WORK/srv.err" 2>/dev/null; then
++    wait $srvpid 2>/dev/null
++    skip "multicast unavailable"
++fi
++if ! grep -q '^serving node=' "$WORK/srv.out"; then
++    kill $srvpid 2>/dev/null; wait $srvpid 2>/dev/null
++    cat "$WORK/srv.err"
++    t_fail serve "atalkdrive serve never announced itself"
++    t_done
++fi
++t_pass serve
++
++# op 1: code 0, the 4096-byte sweep, byte-exact.
++: > "$WORK/req.bin"
++"$DRIVE" call "$OBJ" "$TYPE" 1 < "$WORK/req.bin" > "$WORK/got.bin" 2> "$WORK/call1.err"
++rc=$?
++if [ "$rc" != 0 ]; then
++    cat "$WORK/call1.err"
++    t_fail call_ok "exit $rc, expected 0"
++elif cmp -s "$WORK/got.bin" "$WORK/reply.bin"; then
++    t_pass call_ok
++else
++    cmp "$WORK/got.bin" "$WORK/reply.bin" 2>&1 | head -1
++    t_fail call_ok "reply differs from reply.bin"
++fi
++
++# op 2: code 5, empty reply -> exit 3.
++"$DRIVE" call "$OBJ" "$TYPE" 2 < "$WORK/req.bin" > "$WORK/got2.bin" 2> "$WORK/call2.err"
++rc=$?
++if [ "$rc" = 3 ] && grep -q '^code 5$' "$WORK/call2.err"; then
++    t_pass call_code
++else
++    cat "$WORK/call2.err"
++    t_fail call_code "exit $rc (expected 3) / code line missing"
++fi
++
++kill $srvpid 2>/dev/null
++wait $srvpid 2>/dev/null
++
++# A name nobody registered: the NBP lookup finds nothing and the tool must
++# give up (exit 1) well inside 8 s -- its lookup window is 3 s.
++start=$(date +%s)
++"$DRIVE" call "Nobody-$$" "$TYPE" 1 < "$WORK/req.bin" > /dev/null 2> "$WORK/call3.err"
++rc=$?
++elapsed=$(( $(date +%s) - start ))
++if [ "$rc" = 1 ] && [ "$elapsed" -lt 8 ]; then
++    t_pass call_missing
++else
++    cat "$WORK/call3.err"
++    t_fail call_missing "exit $rc after ${elapsed}s (expected 1 within 8s)"
++fi
++t_done
+diff --git a/tests/atalkdrive/lookup.sh b/tests/atalkdrive/lookup.sh
+new file mode 100755
+index 0000000..38f4419
+--- /dev/null
++++ b/tests/atalkdrive/lookup.sh
+@@ -0,0 +1,60 @@
++#!/bin/sh
++# atalkdrive/lookup -- two atalkdrive processes as two AppleTalk peers on
++# the loopback multicast group: one registers a name for 8 s, the other
++# NBP-looks the type up and must see it. Proves register + LkUp answering
++# + lookup collection end to end through the real wire, which the in-
++# process unit test (hostrt/atalk) cannot: these are separate processes.
++#
++# The group is shared with whatever else is on this machine (Andrew's live
++# emulator sessions, an EtherTalk bridge), so the name carries this
++# script's pid and nothing asserts an entity count.
++. "$(dirname "$0")/../lib.sh" || exit 2
++
++DRIVE=$TOOLS/atalkdrive
++require_tool "$DRIVE"
++
++OBJ=Drive-$$
++TYPE=ClarusDrive$$
++
++"$DRIVE" register "$OBJ" "$TYPE" 8 > "$WORK/reg.out" 2> "$WORK/reg.err" &
++regpid=$!
++
++# The registrar's own verify-lookup runs before it prints; wait for the
++# line rather than a fixed sleep. (sleep 1, not a fractional sleep: POSIX
++# only defines integer seconds.)
++i=0
++while [ $i -lt 20 ]; do
++    grep -q '^registered node=' "$WORK/reg.out" 2>/dev/null && break
++    if ! kill -0 $regpid 2>/dev/null; then break; fi
++    sleep 1
++    i=$((i + 1))
++done
++
++if grep -q '^SKIP: multicast unavailable' "$WORK/reg.err" 2>/dev/null; then
++    wait $regpid 2>/dev/null
++    skip "multicast unavailable"
++fi
++if ! grep -q '^registered node=' "$WORK/reg.out"; then
++    kill $regpid 2>/dev/null
++    wait $regpid 2>/dev/null
++    cat "$WORK/reg.err"
++    t_fail register "atalkdrive register never announced itself"
++    t_done
++fi
++t_pass register
++
++"$DRIVE" lookup "$TYPE" > "$WORK/look.out" 2> "$WORK/look.err"
++rc=$?
++kill $regpid 2>/dev/null
++wait $regpid 2>/dev/null
++
++if [ "$rc" != 0 ]; then
++    cat "$WORK/look.err"
++    t_fail lookup "atalkdrive lookup exited $rc"
++elif grep -q "[0-9]\.[0-9]* $OBJ:$TYPE@" "$WORK/look.out"; then
++    t_pass lookup
++else
++    echo "--- lookup output ---"; cat "$WORK/look.out"
++    t_fail lookup "registered name $OBJ:$TYPE not in the lookup results"
++fi
++t_done
+diff --git a/tests/hostrt/atalk.sh b/tests/hostrt/atalk.sh
+new file mode 100755
+index 0000000..41121d1
+--- /dev/null
++++ b/tests/hostrt/atalk.sh
+@@ -0,0 +1,27 @@
++#!/bin/sh
++# hostrt/atalk -- compile rt_atalk_test.c against rt.c (which #includes
++# rt_atalk.inc) and run it: two LToUDP stack instances on loopback
++# multicast, exercising LLAP node acquisition, NBP and ATP against each
++# other.
++#
++# Not lib.sh's run_c_test, for one reason: a sandbox with no multicast must
++# SKIP, and the binary reports that as exit 77 (the harness's own skip
++# code). run_c_test only knows exit 0 + stdout "OK", so it would turn an
++# environmental skip into a FAIL. The compile line below is run_c_test's,
++# verbatim.
++. "$(dirname "$0")/../lib.sh" || exit 2
++
++exe=$WORK/rt_atalk_test
++$CC -std=c99 -Wall -Werror -I "$HOSTRT" runtime/host/rt_atalk_test.c \
++    "$HOSTRT/rt.c" -o "$exe" || die "rt_atalk_test failed to compile"
++
++out=$("$exe" 2>&1)
++rc=$?
++[ "$rc" = 77 ] && skip "multicast unavailable"
++if [ "$rc" = 0 ] && [ "$out" = OK ]; then
++    t_pass atalk
++else
++    echo "$out"
++    t_fail atalk "exit $rc"
++fi
++t_done
+diff --git a/tests/tools/atalkdrive.c b/tests/tools/atalkdrive.c
+new file mode 100644
+index 0000000..1568108
+--- /dev/null
++++ b/tests/tools/atalkdrive.c
+@@ -0,0 +1,250 @@
++/* tests/tools/atalkdrive.c -- a real AppleTalk peer for the test scripts
++ * and the T2 emulator boots (2026-09-06 appletalk spec %6.2, Task 2), the
++ * sibling of tcpdrive. One process, no threads: it links the host's own
++ * LocalTalk-over-UDP stack (runtime/host/rt_atalk.inc, via rt.c) and
++ * drives it from a small CLI, so a test can register a name, look one up,
++ * call a service or BE a service without any Clarus program involved.
++ *
++ * usage: atalkdrive lookup TYPE [ZONE]
++ *        atalkdrive register OBJ TYPE SECS
++ *        atalkdrive call OBJ TYPE OP [--timeout S] [--retries N]
++ *        atalkdrive serve OBJ TYPE SECS SCRIPT
++ *
++ * Exit 0 on success, 1 on a transaction failure (reqFailed / name not
++ * found), 2 on a usage or argument error, 3 when `call` completed but the
++ * service answered a nonzero code (the reply is still written out), and 77
++ * with "SKIP: multicast unavailable" when the stack cannot open at all --
++ * the harness's own skip code, which the scripts propagate.
++ *
++ * CLARUS_ATALK_IFACE selects the interface on a multi-homed host, exactly
++ * as it does for a Clarus program.
++ */
++#include "rt.h"
++#include "rt_atalk.h"
++
++#include <errno.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <sys/time.h>
++
++#define MAXOPS 32
++
++static const char USAGE[] =
++"usage: atalkdrive lookup TYPE [ZONE]\n"
++"       atalkdrive register OBJ TYPE SECS\n"
++"       atalkdrive call OBJ TYPE OP [--timeout S] [--retries N]\n"
++"       atalkdrive serve OBJ TYPE SECS SCRIPT\n"
++"\n"
++"lookup   prints one line per entity: \"net.node.socket obj:type@zone\"\n"
++"register registers OBJ:TYPE on a fresh ATP socket, prints\n"
++"         \"registered node=N sock=S\", idles SECS, then removes it\n"
++"call     request body on stdin, reply on stdout, \"code N\" on stderr\n"
++"serve    SCRIPT lines are \"OP CODE REPLYFILE\"; an op the script does not\n"
++"         name is answered with code -1 and an empty reply. Each request is\n"
++"         logged to stderr as \"request op=N len=L from=A\".\n"
++"\n"
++"exit 0 = ok; 1 = transaction failed; 2 = usage; 3 = call answered a\n"
++"nonzero code; 77 = multicast unavailable (SKIP).\n";
++
++static int usage(void) { fputs(USAGE, stderr); return 2; }
++
++static rt_atalk *A;
++
++static double now_s(void) {
++    struct timeval tv;
++    gettimeofday(&tv, NULL);
++    return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;
++}
++
++/* pump: poll the stack for `secs` seconds (10 ms granularity). */
++static void pump(double secs) {
++    double end = now_s() + secs;
++    do {
++        rt_at_poll(A);
++        usleep(10000);
++    } while (now_s() < end);
++}
++
++static int open_stack(void) {
++    A = rt_at_open(getenv("CLARUS_ATALK_IFACE"));
++    if (A == NULL) {
++        fprintf(stderr, "SKIP: multicast unavailable (%s)\n", strerror(errno));
++        return 77;
++    }
++    return 0;
++}
++
++/* wait_lookup: pump until the lookup's own 3 x 1 s window closes. */
++static void wait_lookup(int lk) {
++    double guard = now_s() + 10.0;
++    while (!rt_at_nbp_lookup_done(A, lk) && now_s() < guard) pump(0.05);
++}
++
++static int cmd_lookup(const char *type, const char *zone) {
++    int i, n;
++    rt_at_nbp_lookup_start(A, 0, "=", type, zone);
++    wait_lookup(0);
++    n = rt_at_nbp_lookup_count(A, 0);
++    for (i = 0; i < n; i++) {
++        const rt_at_tuple *t = rt_at_nbp_lookup_get(A, 0, i);
++        printf("%u.%u.%u %s:%s@%s\n", (unsigned)t->addr.net, (unsigned)t->addr.node,
++               (unsigned)t->addr.socket, t->obj, t->type, t->zone);
++    }
++    fflush(stdout);
++    return 0;
++}
++
++static int cmd_register(const char *obj, const char *type, double secs) {
++    int sock = rt_at_atp_open(A), rc;
++    if (sock < 0) { fprintf(stderr, "atp_open: %d\n", sock); return 1; }
++    rc = rt_at_nbp_register(A, obj, type, (uint8_t)sock);
++    if (rc != 0) { fprintf(stderr, "register: %d\n", rc); return 1; }
++    printf("registered node=%u sock=%d\n", (unsigned)rt_at_node(A), sock);
++    fflush(stdout);
++    pump(secs);
++    rt_at_nbp_remove(A, obj, type);
++    return 0;
++}
++
++/* find_one: NBP-resolve obj:type to a single address. 0 on success. */
++static int find_one(const char *obj, const char *type, rt_at_addr *out) {
++    const rt_at_tuple *t;
++    rt_at_nbp_lookup_start(A, 0, obj, type, "*");
++    wait_lookup(0);
++    if (rt_at_nbp_lookup_count(A, 0) < 1) return -1;
++    t = rt_at_nbp_lookup_get(A, 0, 0);
++    *out = t->addr;
++    return 0;
++}
++
++static int cmd_call(const char *obj, const char *type, int op, int timeout_s, int retries) {
++    uint8_t req[RT_AT_MAXREQ], resp[RT_AT_MAXRESP];
++    rt_at_addr to;
++    size_t reqlen;
++    int rlen = 0, rc;
++    int32_t code = 0;
++
++    reqlen = fread(req, 1, sizeof(req), stdin);
++    if (find_one(obj, type, &to) != 0) {
++        fprintf(stderr, "not found: %s:%s\n", obj, type);
++        return 1;
++    }
++    rc = rt_at_atp_call(A, to, op, req, (int)reqlen, resp, (int)sizeof(resp),
++                        &rlen, &code, timeout_s, retries);
++    if (rc != 0) {
++        fprintf(stderr, "call failed: %d\n", rc);
++        return 1;
++    }
++    if (rlen > 0) fwrite(resp, 1, (size_t)rlen, stdout);
++    fflush(stdout);
++    fprintf(stderr, "code %d\n", (int)code);
++    return code != 0 ? 3 : 0;
++}
++
++/* --- serve: the op table ------------------------------------------- */
++typedef struct {
++    int     op;
++    int32_t code;
++    uint8_t body[RT_AT_MAXRESP];
++    int     len;
++} op_entry;
++
++static op_entry ops[MAXOPS];
++static int nops;
++
++/* load_script: lines "OP CODE REPLYFILE"; blanks and #-comments ignored.
++ * REPLYFILE "-" means an empty reply. */
++static int load_script(const char *path) {
++    char line[1024];
++    FILE *f = fopen(path, "r");
++    if (f == NULL) { fprintf(stderr, "cannot open script %s\n", path); return 2; }
++    while (fgets(line, sizeof(line), f) != NULL) {
++        char file[512];
++        int op, code;
++        if (line[0] == '#' || line[0] == '\n' || line[0] == '\0') continue;
++        if (sscanf(line, "%d %d %511s", &op, &code, file) != 3) continue;
++        if (nops >= MAXOPS) { fprintf(stderr, "too many ops\n"); fclose(f); return 2; }
++        ops[nops].op = op;
++        ops[nops].code = code;
++        ops[nops].len = 0;
++        if (strcmp(file, "-") != 0) {
++            FILE *r = fopen(file, "rb");
++            if (r == NULL) { fprintf(stderr, "cannot open reply %s\n", file); fclose(f); return 2; }
++            ops[nops].len = (int)fread(ops[nops].body, 1, sizeof(ops[nops].body), r);
++            fclose(r);
++        }
++        nops++;
++    }
++    fclose(f);
++    return 0;
++}
++
++static int cmd_serve(const char *obj, const char *type, double secs, const char *script) {
++    int sock, rc, i;
++    double end;
++
++    rc = load_script(script);
++    if (rc != 0) return rc;
++    sock = rt_at_atp_open(A);
++    if (sock < 0) { fprintf(stderr, "atp_open: %d\n", sock); return 1; }
++    rc = rt_at_nbp_register(A, obj, type, (uint8_t)sock);
++    if (rc != 0) { fprintf(stderr, "register: %d\n", rc); return 1; }
++    printf("serving node=%u sock=%d\n", (unsigned)rt_at_node(A), sock);
++    fflush(stdout);
++
++    end = now_s() + secs;
++    while (now_s() < end) {
++        rt_at_req req;
++        rt_at_poll(A);
++        while (rt_at_atp_get_request(A, sock, &req)) {
++            const op_entry *e = NULL;
++            fprintf(stderr, "request op=%d len=%d from=%u.%u.%u\n",
++                    (int)req.userbytes, req.len, (unsigned)req.from.net,
++                    (unsigned)req.from.node, (unsigned)req.from.socket);
++            for (i = 0; i < nops; i++) if (ops[i].op == (int)req.userbytes) e = &ops[i];
++            if (e != NULL) rt_at_atp_send_response(A, sock, &req, e->code, e->body, e->len);
++            else           rt_at_atp_send_response(A, sock, &req, -1, NULL, 0);
++        }
++        usleep(10000);
++    }
++    rt_at_nbp_remove(A, obj, type);
++    rt_at_atp_close(A, sock);
++    return 0;
++}
++
++int main(int argc, char **argv) {
++    int rc;
++
++    if (argc < 2) return usage();
++
++    if (strcmp(argv[1], "lookup") == 0) {
++        if (argc < 3 || argc > 4) return usage();
++        rc = open_stack(); if (rc != 0) return rc;
++        rc = cmd_lookup(argv[2], argc == 4 ? argv[3] : "*");
++    } else if (strcmp(argv[1], "register") == 0) {
++        if (argc != 5) return usage();
++        rc = open_stack(); if (rc != 0) return rc;
++        rc = cmd_register(argv[2], argv[3], atof(argv[4]));
++    } else if (strcmp(argv[1], "call") == 0) {
++        int timeout_s = 2, retries = 3, i;
++        if (argc < 5) return usage();
++        for (i = 5; i < argc; i++) {
++            if (strcmp(argv[i], "--timeout") == 0 && i + 1 < argc) timeout_s = atoi(argv[++i]);
++            else if (strcmp(argv[i], "--retries") == 0 && i + 1 < argc) retries = atoi(argv[++i]);
++            else return usage();
++        }
++        rc = open_stack(); if (rc != 0) return rc;
++        rc = cmd_call(argv[2], argv[3], atoi(argv[4]), timeout_s, retries);
++    } else if (strcmp(argv[1], "serve") == 0) {
++        if (argc != 6) return usage();
++        rc = open_stack(); if (rc != 0) return rc;
++        rc = cmd_serve(argv[2], argv[3], atof(argv[4]), argv[5]);
++    } else {
++        return usage();
++    }
++
++    rt_at_close(A);
++    return rc;
++}

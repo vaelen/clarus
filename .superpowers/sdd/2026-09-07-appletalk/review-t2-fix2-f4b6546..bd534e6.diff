@@ -1,0 +1,418 @@
+# Review package: f4b6546..HEAD
+
+## Commits
+bd534e6 fix(host): LLAP node acquisition waited on a select, not a clock; serialize the LToUDP tests
+
+## Files changed
+ runtime/host/rt_atalk.inc  | 34 ++++++++++++++++++++++++++++++----
+ tests/atalk/call.sh        |  1 +
+ tests/atalk/find.sh        |  1 +
+ tests/atalk/runerr.sh      |  1 +
+ tests/atalk/serve.sh       |  1 +
+ tests/atalk/zones.sh       |  1 +
+ tests/atalkdrive/call.sh   |  2 ++
+ tests/atalkdrive/lookup.sh |  2 ++
+ tests/hostrt/atalk.sh      |  2 ++
+ tests/lib_atalk.sh         | 41 +++++++++++++++++++++++++++++++++++++++++
+ 10 files changed, 82 insertions(+), 4 deletions(-)
+
+## Diff
+diff --git a/runtime/host/rt_atalk.inc b/runtime/host/rt_atalk.inc
+index 4fdbc61..dadd953 100644
+--- a/runtime/host/rt_atalk.inc
++++ b/runtime/host/rt_atalk.inc
+@@ -264,34 +264,46 @@ static void rt_at_tick(rt_atalk *a, int ms) {
+     if (a == NULL || a->fd < 0) return;
+     FD_ZERO(&r);
+     FD_SET(a->fd, &r);
+     tv.tv_sec = ms / 1000;
+     tv.tv_usec = (ms % 1000) * 1000;
+     select(a->fd + 1, &r, NULL, NULL, &tv);
+     rt_at_drain(a);
+ }
+ 
+ /* rt_at_acquire: claim a node id, starting from `first` (1..127) or a
+- * random one when first <= 0. Returns 0, or -1 with errno EADDRINUSE. */
++ * random one when first <= 0. Returns 0, or -1 with errno EADDRINUSE.
++ * Eight lapENQ probes, not three: Inside AppleTalk sends up to 20, and a
++ * peer only answers ENQ while something is polling it, so a lone ACK
++ * inside a 60 ms window is easy to miss when the group is busy.
++ *
++ * Each probe waits on a CLOCK, not on one rt_at_tick: tick's select
++ * returns the instant ANY datagram lands, so on a busy group the whole
++ * probe loop used to finish in about a millisecond -- far quicker than
++ * the ACK round trip -- and the id was claimed while its real owner was
++ * still answering. That is the T1 interference bug (2026-09-07): the
++ * duplicate node ids it minted are what let one process's NBP replies be
++ * delivered to another's lookups. */
+ static int rt_at_acquire(rt_atalk *a, int first) {
+     int try_;
+ 
+     for (try_ = 0; try_ < 20; try_++) {
+         int cand = (try_ == 0 && first > 0 && first < 128) ? first : (rand() % 127) + 1;
+         int probe;
+ 
+         a->node = (uint8_t)cand;
+         a->acquiring = 1;
+         a->collided = 0;
+-        for (probe = 0; probe < 3 && !a->collided; probe++) {
++        for (probe = 0; probe < 8 && !a->collided; probe++) {
++            double until = rt_at_now() + 0.025;
+             rt_at_tx(a, (uint8_t)cand, RT_AT_LLAP_ENQ, NULL, 0);
+-            rt_at_tick(a, 20);
++            while (rt_at_now() < until && !a->collided) rt_at_tick(a, 5);
+         }
+         a->acquiring = 0;
+         if (!a->collided) return 0;
+     }
+     a->node = 0;
+     errno = EADDRINUSE;
+     return -1;
+ }
+ 
+ void rt_at_test_force_node(rt_atalk *a, uint8_t node) {
+@@ -468,24 +480,31 @@ int rt_at_nbp_lookup_count(rt_atalk *a, int lk) {
+ 
+ const rt_at_tuple *rt_at_nbp_lookup_get(rt_atalk *a, int lk, int i) {
+     if (a == NULL || lk < 0 || lk > RT_AT_NLK) return NULL;
+     if (i < 0 || i >= a->lk[lk].count) return NULL;
+     return &a->lk[lk].tuples[i];
+ }
+ 
+ /* rt_at_lookup_add: de-duplicated by (address, obj, type) -- the same
+  * entity answers all three broadcasts. (The plan said (address,
+  * enumerator); the name is the finer key, and it survives a peer that
+- * re-registers with a fresh enumerator mid-window.) */
++ * re-registers with a fresh enumerator mid-window.)
++ *
++ * The pattern re-check is not belt-and-braces: an NBP id is 8 bits and a
++ * LkUp-Reply is unicast to the requester's NODE, so on a busy group a
++ * reply meant for somebody else's lookup can land here (two hosts holding
++ * the same node id, ids colliding). A lookup must only ever report
++ * entities matching what IT asked for. */
+ static void rt_at_lookup_add(rt_at_lookup *L, rt_at_addr addr,
+                              const char *obj, const char *type, const char *zone) {
+     int i;
++    if (!rt_at_name_match(L->obj, obj) || !rt_at_name_match(L->type, type)) return;
+     for (i = 0; i < L->count; i++) {
+         rt_at_tuple *t = &L->tuples[i];
+         if (t->addr.net == addr.net && t->addr.node == addr.node &&
+             t->addr.socket == addr.socket && strcasecmp(t->obj, obj) == 0 &&
+             strcasecmp(t->type, type) == 0)
+             return;
+     }
+     if (L->count >= RT_AT_NTUPLE) return;
+     L->tuples[L->count].addr = addr;
+     rt_at_cstr(L->tuples[L->count].obj, 33, obj);
+@@ -1046,20 +1065,26 @@ rt_atalk *rt_at_open(const char *iface_ip) {
+     }
+ 
+     a->fd = socket(AF_INET, SOCK_DGRAM, 0);
+     if (a->fd < 0) { free(a); return NULL; }
+     setsockopt(a->fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+ #ifdef SO_REUSEPORT
+     /* Mandatory for two instances in one process (and for coexisting with
+      * a Mini vMac on the same machine). */
+     setsockopt(a->fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
+ #endif
++    {   /* Best-effort: an instance is drained once per pump pass, and the
++         * default receive buffer overflows on a group with a dozen live
++         * peers -- a dropped lapACK there costs a duplicate node id. */
++        int rcvbuf = 256 * 1024;
++        setsockopt(a->fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
++    }
+     memset(&bindaddr, 0, sizeof(bindaddr));
+     bindaddr.sin_family = AF_INET;
+     bindaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+     bindaddr.sin_port = htons(RT_AT_PORT);
+     if (bind(a->fd, (struct sockaddr *)&bindaddr, sizeof(bindaddr)) != 0) goto fail;
+ 
+     memset(&mreq, 0, sizeof(mreq));
+     mreq.imr_multiaddr.s_addr = inet_addr(RT_AT_GROUP);
+     mreq.imr_interface = iface;
+     if (setsockopt(a->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) != 0)
+@@ -1074,20 +1099,21 @@ rt_atalk *rt_at_open(const char *iface_ip) {
+     memset(&a->group, 0, sizeof(a->group));
+     a->group.sin_family = AF_INET;
+     a->group.sin_addr.s_addr = inet_addr(RT_AT_GROUP);
+     a->group.sin_port = htons(RT_AT_PORT);
+ 
+     a->sender[0] = (uint8_t)(rand() & 0xFF);
+     a->sender[1] = (uint8_t)(rand() & 0xFF);
+     a->sender[2] = (uint8_t)(rand() & 0xFF);
+     a->sender[3] = (uint8_t)((rand() & 0xFE) | 1);   /* never all-zero */
+     a->sock_next = (uint8_t)(rand() % 127);
++    a->nbp_id = (uint8_t)(rand() & 0xFF);   /* not 1 in every fresh instance */
+     a->tid_next = (uint16_t)(rand() & 0xFFFF);
+     a->rq.eom_seq = -1;
+ 
+     if (rt_at_acquire(a, 0) != 0) goto fail;
+     return a;
+ 
+ fail:
+     {
+         int e = errno;
+         close(a->fd);
+diff --git a/tests/atalk/call.sh b/tests/atalk/call.sh
+index 9ff823d..efa8d28 100755
+--- a/tests/atalk/call.sh
++++ b/tests/atalk/call.sh
+@@ -1,20 +1,21 @@
+ #!/bin/sh
+ # tests/atalk/call.sh (2026-09-06 appletalk spec %4.4, %8.1, Task 8): the
+ # mirror of serve.sh -- a Clarus `service.call` program as the CLIENT,
+ # `atalkdrive serve` as the server. Pins all four documented outcomes of
+ # `call`: true with a 4000-byte multi-packet reply, false with lastError
+ # { 5, "service" } for a nonzero server code, false with nbpNoConfirm
+ # (-1025) for a name that resolves to nothing, and false with atpLenErr
+ # (-3106) for a request over ATP's 578-byte ceiling.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
++atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+ atalk_skip_unless_multicast
+ 
+ if atalk_build caller; then
+     t_pass build
+ else
+     t_fail build "$(tail -20 "$WORK/caller.build")"
+     t_done
+diff --git a/tests/atalk/find.sh b/tests/atalk/find.sh
+index e1b55b6..73ec6e6 100755
+--- a/tests/atalk/find.sh
++++ b/tests/atalk/find.sh
+@@ -5,20 +5,21 @@
+ # names: the one-argument form (which supplies the "*" zone at the
+ # lowering seam), the explicit two-argument form, and a type nobody has
+ # registered -- which must still fire `done`, since "a search that matches
+ # nothing is done with no found, not a failure".
+ #
+ # The group is shared with whatever else is on this machine, so nothing
+ # asserts an entity COUNT -- only that our own name is among the hits with
+ # the address the tool itself printed, and that `done` is the last line.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
++atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+ atalk_skip_unless_multicast
+ 
+ if atalk_build finder; then
+     t_pass build
+ else
+     t_fail build "$(tail -20 "$WORK/finder.build")"
+     t_done
+diff --git a/tests/atalk/runerr.sh b/tests/atalk/runerr.sh
+index c21470a..066e38f 100755
+--- a/tests/atalk/runerr.sh
++++ b/tests/atalk/runerr.sh
+@@ -1,20 +1,21 @@
+ #!/bin/sh
+ # tests/atalk/runerr.sh (2026-09-06 appletalk spec %4.5, %8.1, Task 8):
+ # the error-principle fences. Contract violations -- `reply` outside a
+ # request handler, `reply` twice in one handler, `send` on a connection
+ # whose (asynchronous) open has not completed -- are RUNTIME ERRORS, and
+ # a resource-variable count past its cap is a BUILD error naming the cap.
+ # Everything environmental stays a `failed` event, which the other four
+ # scripts in this group cover.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
++atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+ atalk_skip_unless_multicast
+ 
+ # --- 1. runtime errors that need no peer -----------------------------
+ check_panic() {   # check_panic NAME TEXT
+     if ! atalk_build "$1"; then
+         t_fail "$1" "build failed: $(tail -20 "$WORK/$1.build")"
+         return
+diff --git a/tests/atalk/serve.sh b/tests/atalk/serve.sh
+index ed3f895..cc7c6a2 100755
+--- a/tests/atalk/serve.sh
++++ b/tests/atalk/serve.sh
+@@ -5,20 +5,21 @@
+ # call its own registered name (the LToUDP stack drops its own datagrams),
+ # so the peer has to be the tool.
+ #
+ # Covers every reply shape the spec names: a fixed payload, a byte-exact
+ # echo at ATP's 578-byte request ceiling, the runtime's automatic -1 empty
+ # reply for a handler that returns without replying, a nonzero application
+ # code, the program's own unknown-op arm, and `stop()` followed by the
+ # host CLI lifetime rule ending the process on its own.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
++atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+ atalk_skip_unless_multicast
+ 
+ if atalk_build clock; then
+     t_pass build
+ else
+     t_fail build "$(tail -20 "$WORK/clock.build")"
+     t_done
+diff --git a/tests/atalk/zones.sh b/tests/atalk/zones.sh
+index 2e693e9..adc2231 100755
+--- a/tests/atalk/zones.sh
++++ b/tests/atalk/zones.sh
+@@ -1,19 +1,20 @@
+ #!/bin/sh
+ # tests/atalk/zones.sh (2026-09-06 appletalk spec %4.3, %8.1, Task 8):
+ # `serviceBrowser.zones(out)` is SYNCHRONOUS -- it returns with `out`
+ # already filled, no event and no pump pass. A network with no router has
+ # no zone list to fetch, and the spec's answer is the one-element list
+ # ["*"], so a program never special-cases the routerless case. Every host
+ # lane run is routerless, so "zones 1 *" is the whole contract here.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
++atalk_lock   # one LToUDP script on the group at a time
+ 
+ require_tool "$TOOLS/atalkdrive"
+ atalk_skip_unless_multicast
+ 
+ if atalk_build zones; then
+     t_pass build
+ else
+     t_fail build "$(tail -20 "$WORK/zones.build")"
+     t_done
+ fi
+diff --git a/tests/atalkdrive/call.sh b/tests/atalkdrive/call.sh
+index b807384..d9d3518 100755
+--- a/tests/atalkdrive/call.sh
++++ b/tests/atalkdrive/call.sh
+@@ -1,17 +1,19 @@
+ #!/bin/sh
+ # atalkdrive/call -- an ATP transaction between two atalkdrive processes:
+ # one `serve`s a two-op script, the other `call`s it. Covers the multi-
+ # packet response path (4096 bytes = 8 ATP packets, the protocol maximum
+ # per transaction) byte-exactly, a nonzero response code, and a call to a
+ # name nobody registered.
+ . "$(dirname "$0")/../lib.sh" || exit 2
++. "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
++atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+ 
+ OBJ=Serve-$$
+ TYPE=ClarusServe$$
+ 
+ # reply.bin: a 0..255 byte sweep repeated 16 times = 4096 bytes, i.e. the
+ # ATP maximum of 8 packets x 578 rounded down to something readable in a
+ # hex dump. Built with printf's octal escapes because POSIX sh cannot hold
+diff --git a/tests/atalkdrive/lookup.sh b/tests/atalkdrive/lookup.sh
+index 38f4419..19fdef8 100755
+--- a/tests/atalkdrive/lookup.sh
++++ b/tests/atalkdrive/lookup.sh
+@@ -2,20 +2,22 @@
+ # atalkdrive/lookup -- two atalkdrive processes as two AppleTalk peers on
+ # the loopback multicast group: one registers a name for 8 s, the other
+ # NBP-looks the type up and must see it. Proves register + LkUp answering
+ # + lookup collection end to end through the real wire, which the in-
+ # process unit test (hostrt/atalk) cannot: these are separate processes.
+ #
+ # The group is shared with whatever else is on this machine (Andrew's live
+ # emulator sessions, an EtherTalk bridge), so the name carries this
+ # script's pid and nothing asserts an entity count.
+ . "$(dirname "$0")/../lib.sh" || exit 2
++. "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
++atalk_lock   # one LToUDP script on the group at a time
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+ 
+ OBJ=Drive-$$
+ TYPE=ClarusDrive$$
+ 
+ "$DRIVE" register "$OBJ" "$TYPE" 8 > "$WORK/reg.out" 2> "$WORK/reg.err" &
+ regpid=$!
+ 
+diff --git a/tests/hostrt/atalk.sh b/tests/hostrt/atalk.sh
+index 41121d1..bdc254a 100755
+--- a/tests/hostrt/atalk.sh
++++ b/tests/hostrt/atalk.sh
+@@ -3,20 +3,22 @@
+ # rt_atalk.inc) and run it: two LToUDP stack instances on loopback
+ # multicast, exercising LLAP node acquisition, NBP and ATP against each
+ # other.
+ #
+ # Not lib.sh's run_c_test, for one reason: a sandbox with no multicast must
+ # SKIP, and the binary reports that as exit 77 (the harness's own skip
+ # code). run_c_test only knows exit 0 + stdout "OK", so it would turn an
+ # environmental skip into a FAIL. The compile line below is run_c_test's,
+ # verbatim.
+ . "$(dirname "$0")/../lib.sh" || exit 2
++. "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
++atalk_lock   # one LToUDP script on the group at a time
+ 
+ exe=$WORK/rt_atalk_test
+ $CC -std=c99 -Wall -Werror -I "$HOSTRT" runtime/host/rt_atalk_test.c \
+     "$HOSTRT/rt.c" -o "$exe" || die "rt_atalk_test failed to compile"
+ 
+ out=$("$exe" 2>&1)
+ rc=$?
+ [ "$rc" = 77 ] && skip "multicast unavailable"
+ if [ "$rc" = 0 ] && [ "$out" = OK ]; then
+     t_pass atalk
+diff --git a/tests/lib_atalk.sh b/tests/lib_atalk.sh
+index 92b7d8b..90721d7 100644
+--- a/tests/lib_atalk.sh
++++ b/tests/lib_atalk.sh
+@@ -75,10 +75,51 @@ atalk_wait_exit() {
+ # sweep. printf's octal escapes, not awk's "%c" -- awk goes through the
+ # locale's character set and mangles NUL and everything above 127.
+ atalk_sweep() {
+     _i=0
+     while [ $_i -lt "$2" ]; do
+         printf "\\$(printf '%03o' $((_i % 256)))"
+         _i=$((_i + 1))
+     done > "$1"
+     [ "$(wc -c < "$1" | tr -d ' ')" = "$2" ] || die "atalk_sweep: $1 is not $2 bytes"
+ }
++
++# atalk_lock / atalk_unlock : serialize every script that puts an LToUDP
++# stack on the loopback multicast group -- tests/hostrt/atalk.sh,
++# tests/atalkdrive/*.sh and the network half of tests/atalk/*.sh. Under
++# `make -j` those otherwise start within the same seconds, and a dozen
++# stacks racing for 127 node ids is a source of flakiness that no amount
++# of protocol hardening removes (a peer can only defend its node id while
++# something is polling it, which a test process between operations is not).
++#
++# mkdir is the lock: it is the one atomic create POSIX sh has (macOS has no
++# flock). The holder's pid goes inside, so a killed holder's lock is stolen
++# rather than blocking every later run until the wait bound expires.
++#
++# The EXIT trap re-does lib.sh's own `rm -rf "$WORK"`: lib.sh is frozen, so
++# there is no way to CHAIN a handler onto it, and replacing it without the
++# rm would leak the work directory.
++atalk_lock() {
++    _lk=$BR/atalk.lock
++    _i=0
++    mkdir -p "$BR"
++    while ! mkdir "$_lk" 2>/dev/null; do
++        _owner=$(cat "$_lk/pid" 2>/dev/null)
++        if [ -n "$_owner" ] && ! kill -0 "$_owner" 2>/dev/null; then
++            rm -rf "$_lk"          # holder died without releasing; steal it
++            continue
++        fi
++        [ "$_i" -ge 300 ] && die "atalk_lock: $_lk still held after 300s"
++        sleep 1
++        _i=$((_i + 1))
++    done
++    echo $$ > "$_lk/pid"
++    ATALK_LOCK=$_lk
++    trap 'atalk_unlock; rm -rf "$WORK"' EXIT
++    trap 'atalk_unlock; rm -rf "$WORK"; exit 2' INT TERM
++}
++
++atalk_unlock() {
++    [ -n "${ATALK_LOCK:-}" ] || return 0
++    rm -rf "$ATALK_LOCK"
++    ATALK_LOCK=
++}

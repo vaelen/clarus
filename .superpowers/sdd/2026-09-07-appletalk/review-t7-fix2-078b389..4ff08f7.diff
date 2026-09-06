@@ -1,0 +1,135 @@
+# Review package: 078b389..HEAD
+
+## Commits
+4ff08f7 fix(runtime): atalk fix round 2 -- clear rtSvcArmed on a poll error; two test/loop minors
+
+## Files changed
+ runtime/clarus/atalk.cla     | 14 +++++++++++++-
+ runtime/host/rt_atalk_test.c | 22 +++++++++++++---------
+ 2 files changed, 26 insertions(+), 10 deletions(-)
+
+## Diff
+diff --git a/runtime/clarus/atalk.cla b/runtime/clarus/atalk.cla
+index 217db76..cd81dc6 100644
+--- a/runtime/clarus/atalk.cla
++++ b/runtime/clarus/atalk.cla
+@@ -811,20 +811,26 @@ func rtAtalkPump() {
+     while i < rtSvcMax {
+         if rtSvcPendFailedCode[i] != 0 {
+             code = rtSvcPendFailedCode[i]
+             rtSvcPendFailedCode[i] = 0
+             clar_svc_fire_failed(i, code, rtSvcPendFailedMsg[i])
+             rtSvcPendFailedMsg[i] = ""
+         }
+         if rtSvcState[i] == rtAtActive and not rtAtDevAtpRespBusy(i) {
+             pr = rtAtDevAtpPoll(i)
+             if pr < 0 {
++                // The get-request completed WITH an error, so the slot's
++                // parameter block is free again -- clearing armed is what
++                // lets the arm below re-issue it. Without this the slot
++                // silently stops serving after one native PGetRequest
++                // error (the host lane never returns < 0 here).
++                rtSvcArmed[i] = false
+                 rtSvcSetFailed(i, pr, "request failed")
+             } else if pr == 1 {
+                 rtSvcArmed[i] = false
+                 n = rtAtDevAtpReqLen(i)
+                 if n > rtAtMaxReq {
+                     n = rtAtMaxReq
+                 }
+                 req = ""
+                 rtAtAppendBytes(req, rtAtDevAtpReqPtr(i), n)
+                 rtSvcInHandler[i] = true
+@@ -858,21 +864,27 @@ func rtAtalkPump() {
+     while i < rtBrsMax {
+         if rtBrsPendFailedCode[i] != 0 {
+             code = rtBrsPendFailedCode[i]
+             rtBrsPendFailedCode[i] = 0
+             clar_brs_fire_failed(i, code, rtBrsPendFailedMsg[i])
+             rtBrsPendFailedMsg[i] = ""
+         } else if rtBrsState[i] == rtAtActive and rtAtDevLookupDone(i) {
+             rtBrsState[i] = rtAtIdle
+             n = rtAtDevLookupCount(i)
+             j = 0
+-            while j < n {
++            // The state test is the loop's real bound: a `found` handler may
++            // call find() again on this browser, which restarts THIS lookup
++            // slot (the device layer zeroes it), so every remaining tuple of
++            // the old search is already gone -- firing them would deliver
++            // empty names and address 0. They are dropped instead, and the
++            // new search owns the slot from here.
++            while j < n and rtBrsState[i] == rtAtIdle {
+                 clar_brs_fire_found(i, rtAtDevLookupName(i, j), rtAtDevLookupAddr(i, j))
+                 j = j + 1
+             }
+             // `done` in the SAME pass, right after the founds (spec %4.3's
+             // "then done") -- unless a `found` handler started a NEW search
+             // on this browser, which owns the slot from here and gets its
+             // own `done` when ITS window closes. Firing this one anyway
+             // would be a spurious early `done` for that search.
+             if rtBrsState[i] == rtAtIdle {
+                 clar_brs_fire_done(i)
+diff --git a/runtime/host/rt_atalk_test.c b/runtime/host/rt_atalk_test.c
+index 9ca959a..6ed143d 100644
+--- a/runtime/host/rt_atalk_test.c
++++ b/runtime/host/rt_atalk_test.c
+@@ -316,46 +316,50 @@ static void test_ext(void) {
+         rt_ext_AtalkHLookupName(0, i, name);
+         if (name[0] == (uint8_t)strlen(want) && memcmp(name + 1, want, strlen(want)) == 0) {
+             seen = 1;
+             CHECK(((addr >> 16) & 0xFFFF) == 0, "packed address has a nonzero net");
+             CHECK(((addr >> 8) & 0xFF) == rt_at_node(A), "packed address has the wrong node");
+             CHECK((addr & 0xFF) == 200, "packed address has the wrong socket");
+         }
+     }
+     CHECK(seen, "AtalkHLookupName never produced \"obj:ClarusTest\"");
+ 
+-    /* Slot 10 is public (the Clarus runtime's synchronous name-call slot,
+-     * fix round 1: it used to collide with conn slot 7's ADSP name-open on
+-     * slot 9), and RT_AT_NLK itself is not -- it is register's own private
+-     * verify slot. No wait: that a lookup STARTS on 10 is the whole claim. */
+-    CHECK(rt_ext_AtalkHLookupStart(10, po, pt, pz) == 0,
+-          "lookup slot 10 is not usable");
+-    CHECK(rt_ext_AtalkHLookupStart(RT_AT_NLK, po, pt, pz) != 0,
+-          "lookup slot RT_AT_NLK (register's private verify slot) is public");
+-
+     rt_at_nbp_remove(A, nbp_obj, "ClarusTest");
+ 
+     /* A SendResponse with no live request must be refused: without the
+      * guard it would answer the PREVIOUS transaction a second time and
+      * re-arm a fresh 30 s XO entry under that old TID. */
+     {
+         int32_t sk = rt_ext_AtalkHAtpOpen();
+         uint8_t body[8];
+         CHECK(sk >= 128 && sk <= 254, "AtalkHAtpOpen did not return a dynamic socket");
+         if (sk >= 0) {
+             CHECK(rt_ext_AtalkHAtpGetRequest(sk, body, (int32_t)sizeof(body)) == -1,
+                   "AtalkHAtpGetRequest invented a request");
+             CHECK(rt_ext_AtalkHAtpSendResponse(sk, 0, body, 0) == -1096,
+                   "AtalkHAtpSendResponse answered a stale request");
+             rt_ext_AtalkHAtpClose(sk);
+         }
+     }
++
++    /* Slot 10 is public (the Clarus runtime's synchronous name-call slot,
++     * fix round 1: it used to collide with conn slot 7's ADSP name-open on
++     * slot 9), and RT_AT_NLK itself is not -- it is register's own private
++     * verify slot. That a lookup STARTS on 10 is the whole claim, so there
++     * is no wait -- which is why this sits LAST: the started lookup stays
++     * active, retransmitting its LkUp for the rest of its 3 s window, and
++     * `rt_at_g` is a static inside rt.c that this translation unit cannot
++     * reach to clear. Nothing follows it to perturb. */
++    CHECK(rt_ext_AtalkHLookupStart(10, po, pt, pz) == 0,
++          "lookup slot 10 is not usable");
++    CHECK(rt_ext_AtalkHLookupStart(RT_AT_NLK, po, pt, pz) != 0,
++          "lookup slot RT_AT_NLK (register's private verify slot) is public");
+ }
+ 
+ int main(void) {
+     /* Watchdog: three NBP lookups at 3 s each, three registers whose own
+      * verify-lookup is another 3 s each, a handful of ATP calls with a 1 s
+      * retransmit timer, plus the opens. A clean run is ~24 s. */
+     alarm(120);
+ 
+     A = rt_at_open(NULL);
+     if (A == NULL) {

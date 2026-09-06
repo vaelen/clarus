@@ -1,0 +1,1314 @@
+# Review package: f4b6546..HEAD
+
+## Commits
+1a9ce1a test(mactest): two-boot ADSP echo between macplus and macplus2; atalkchat example
+
+## Files changed
+ examples/atalkchat.cla              | 298 +++++++++++++++++++++++++++
+ testdata/ui/atalkchat_client.events | 401 ++++++++++++++++++++++++++++++++++++
+ testdata/ui/atalkchat_server.events | 401 ++++++++++++++++++++++++++++++++++++
+ tests/lib_mac.sh                    |  59 ++++++
+ tests/mactest/adsp_68k.sh           |  92 +++++++++
+ 5 files changed, 1251 insertions(+)
+
+## Diff
+diff --git a/examples/atalkchat.cla b/examples/atalkchat.cla
+new file mode 100644
+index 0000000..d643334
+--- /dev/null
++++ b/examples/atalkchat.cla
+@@ -0,0 +1,298 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// atalkchat.cla (2026-09-06 appletalk spec 8.5, Task 11): the AppleTalk
++// phase's STREAM acceptance app -- one program that is either end of an
++// ADSP conversation, and the subject of tests/mactest/adsp_68k.sh's two
++// Mini vMac boots.
++//
++// Which end it is, is chosen at runtime by the button clicked:
++//
++//   Serve    lsn.register("Chat-<n>", "ClarusChat"), then echo every
++//            chunk that arrives back to the client with a '>' prepended,
++//            and quit when the client closes the stream.
++//   Connect  brs.find("ClarusChat"), then open(appletalk "Name:Type") to
++//            the first match, send a 0..255 byte sweep, check the echo
++//            byte for byte, send "hello", check that echo too, close.
++//
++// The registered name carries a per-run suffix (spec 8.4: multicast
++// LocalTalk sees every other session on the machine, so a fixed name
++// would collide with Andrew's own running copies), and the client takes
++// the FIRST "ClarusChat" entity NBP hands it -- it cannot know the
++// server's suffix, so it logs the name it picked and the test reads that
++// back.
++//
++// Both ends write the same shaped log, which is what adsp_68k.sh parses
++// out of the boot capture:
++//
++//   server   serving <name> / accepted / received 256 / received 5 /
++//            closed
++//   client   connecting / found <name> <net.node.socket> / opened /
++//            received 257 / echo ok / received 6 / echo ok / closing
++//
++// The exchange is deliberately LOCK-STEP -- the client sends "hello"
++// only after the sweep's echo has come back -- so each `received` length
++// is deterministic. Sending both up front would let ADSP coalesce them
++// into one 261-byte delivery on a slow pass, which is a legal stream
++// behavior but makes the per-chunk lengths unassertable.
++//
++// Not runnable on the host `cc` lane: this is a UI program, and the host
++// C lane only compiles non-UI programs (see examples/serialecho.cla's
++// own header for that gap). Build it with scripts/build-68k.sh, or with
++// `--events` for the scripted two-boot test.
++include "toolbox/osutils.cla"
++
++app AtalkChat {
++    name: "AtalkChat"
++    version: "1.0"
++    author: "Andrew C. Young <andrew@vaelen.org>"
++    about: "Two-Mac AppleTalk chat over ADSP."
++    id: "ACHT"
++}
++
++// Content top-left = ((512 - width) / 2, 44) for a window that fits on
++// screen unclamped (ui.cla's rtUiOpen), so (106, 44) here; a button's
++// default size is 80x20 (testsuite/toolbox/gui.cla's own derivation).
++// -> Serve   (116,54)-(196,74), center (156,64)
++//    Connect (206,54)-(286,74), center (246,64)
++// which is exactly what testdata/ui/atalkchat_{server,client}.events
++// click.
++window Chat {
++    title: "AppleTalk Chat"
++    size: 300, 160
++
++    button Serve   { at: 10, 10;  caption: "Serve" }
++    button Connect { at: 100, 10; caption: "Connect" }
++    label Status   { at: 10, 45; width: 280; text: "idle" }
++    label Peer     { at: 10, 70; width: 280; text: "" }
++}
++
++menu File {
++    item Quit "Quit" key "Q"
++}
++
++var chatType: string = "ClarusChat"
++
++var roleIdle: int = 0
++var roleServer: int = 1
++var roleClient: int = 2
++
++var lsn: listener
++var brs: serviceBrowser
++var chat: connection
++
++var role: int = 0
++var dialed: bool = false
++var tries: int = 0
++var sent: text
++var out: text
++var beats: int = 0
++var quitAt: int = 0
++
++// The watchdog exists for the same reason selfserve.cla's does: every
++// end state here is reached by a network event, so a waist body that
++// never completes would otherwise sit in the event loop until the boot
++// deadline -- a timeout instead of a readable log line.
++var maxBeats: int = 380
++
++func setStatus(s: string) {
++    var w: Chat = Chat.front
++
++    if w != nil {
++        w.Status.text = s
++    }
++}
++
++func setPeer(s: string) {
++    var w: Chat = Chat.front
++
++    if w != nil {
++        w.Peer.text = s
++    }
++}
++
++on App.launch {
++    open Chat
++}
++
++extend Chat {
++    on Serve.click {
++        var name: string
++
++        if role == roleIdle {
++            role = roleServer
++            // `mod` is a remainder, and a Mac whose clock was never
++            // set reads back a NEGATIVE `now()` (the stripped LaunchAPPL
++            // boot disk does exactly that -- the first real run of this
++            // registered "Chat--8422"), so fold it back into 0..9999.
++            name = "Chat-" + string(((now() mod 10000) + 10000) mod 10000)
++            lsn.register(name, chatType)
++            log("serving " + name)
++            Status.text = "serving " + name
++        }
++    }
++    on Connect.click {
++        if role == roleIdle {
++            role = roleClient
++            log("connecting")
++            Status.text = "looking for a chat server"
++            brs.find(chatType)
++        }
++    }
++}
++
++extend File {
++    on Quit.select { quit }
++}
++
++// ---- server side ----
++
++on lsn.accepted(c: connection) {
++    // spec 4.2: the connection arrives already open, so no `opened`
++    // fires for it. It lands in the program's one connection slot --
++    // `chat` is the only `connection` global, so slot 0 is both what the
++    // pre-pass gave `chat` and the free slot the accept picks, which is
++    // what makes the `on chat.received` handler below fire for it.
++    chat = c
++    log("accepted")
++    setStatus("client connected")
++}
++
++on lsn.failed(err: error) {
++    log("failed " + string(err.code) + " " + err.message)
++    setStatus("listener failed: " + err.message)
++    quit
++}
++
++// ---- client side ----
++
++on brs.found(name: string, addr: address) {
++    if not dialed {
++        dialed = true
++        log("found " + name + " " + string(addr))
++        setPeer(name + " " + string(addr))
++        chat.open(appletalk name + ":" + chatType)
++    }
++}
++
++on brs.done {
++    if not dialed {
++        // The server may not have finished registering its name yet --
++        // it boots first, but NBP registration is itself a couple of
++        // seconds of network traffic. Each retry is a full lookup, so
++        // this is self-paced, not a spin.
++        tries = tries + 1
++        if tries >= 8 {
++            log("no server found")
++            quit
++        }
++        brs.find(chatType)
++    }
++}
++
++on brs.failed(err: error) {
++    log("failed " + string(err.code) + " " + err.message)
++    quit
++}
++
++on chat.opened {
++    var i: int = 0
++
++    log("opened")
++    setStatus("connected")
++    sent.clear()
++    sent.reserve(256)
++    while i < 256 {
++        sent.append(char(i))
++        i = i + 1
++    }
++    chat.send(sent)
++}
++
++// ---- shared ----
++
++// echoOk: the server's echo of `sent` is those same bytes with a '>'
++// prepended. This is the byte-exactness half of spec 8.2's "byte-exact
++// echo both ways" -- a length check alone would pass on a stream that
++// dropped or reordered bytes.
++func echoOk(data: text): bool {
++    var i: int = 0
++
++    if data.length != sent.length + 1 {
++        return false
++    }
++    if data[0] != '>' {
++        return false
++    }
++    while i < sent.length {
++        if data[i + 1] != sent[i] {
++            return false
++        }
++        i = i + 1
++    }
++    return true
++}
++
++on chat.received(data: text) {
++    log("received " + string(data.length))
++    if role == roleServer {
++        out.clear()
++        out.append('>')
++        out.append(data)
++        chat.send(out)
++    } else {
++        if echoOk(data) {
++            log("echo ok")
++        } else {
++            log("echo bad")
++        }
++        if sent.length == 256 {
++            sent.clear()
++            sent.append("hello")
++            chat.send(sent)
++        } else {
++            chat.close()
++            log("closing")
++            setStatus("done")
++            // Not `quit` outright: the close has to reach the server for
++            // its own `closed` to fire, and quitting inside this handler
++            // would tear the slot down first.
++            quitAt = beats + 6
++        }
++    }
++}
++
++on chat.closed {
++    log("closed")
++    setStatus("peer closed")
++    quit
++}
++
++on chat.failed(err: error) {
++    log("failed " + string(err.code) + " " + err.message)
++    setStatus("failed: " + err.message)
++    quit
++}
++
++// The Delay is what makes a `--events` build take real time. A scripted
++// boot's ticks are VIRTUAL (uiscript.cla's rtUiVirtualTicks: the real
++// clock is never consulted), so without it the whole event script would
++// run out in well under a second -- before the peer has even finished
++// booting -- and the program would quit with nothing to show. A sixth
++// of a second per beat turns a 400-line script into ~66 s of real
++// overlap between the two boots. In a real interactive build it costs
++// only that much latency on a beat the app spends waiting for the
++// network anyway.
++every 4 ticks {
++    var slept: int
++
++    slept = Delay(10)
++    beats = beats + 1
++    if quitAt != 0 and beats >= quitAt {
++        quit
++    }
++    if beats >= maxBeats {
++        log("watchdog role " + string(role))
++        quit
++    }
++}
+diff --git a/testdata/ui/atalkchat_client.events b/testdata/ui/atalkchat_client.events
+new file mode 100644
+index 0000000..14f9c67
+--- /dev/null
++++ b/testdata/ui/atalkchat_client.events
+@@ -0,0 +1,401 @@
++click 246 64
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
+diff --git a/testdata/ui/atalkchat_server.events b/testdata/ui/atalkchat_server.events
+new file mode 100644
+index 0000000..f30c065
+--- /dev/null
++++ b/testdata/ui/atalkchat_server.events
+@@ -0,0 +1,401 @@
++click 156 64
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
++tick 4
+diff --git a/tests/lib_mac.sh b/tests/lib_mac.sh
+index 1e2feb1..80d858b 100644
+--- a/tests/lib_mac.sh
++++ b/tests/lib_mac.sh
+@@ -24,20 +24,79 @@ run_mac() {
+         > "$WORK/cap.raw" 2> "$WORK/cap.err" )
+     _rc=$?
+     if [ $_rc -eq 124 ]; then
+         pkill -f minivmac.app
+         die "LaunchAPPL $1 timed out after $2s (emulator killed): $(head -5 "$WORK/cap.err")"
+     fi
+     [ $_rc -eq 0 ] || die "LaunchAPPL $1 failed ($_rc): $(head -5 "$WORK/cap.err")"
+     capture_split "$WORK/cap.raw"
+ }
+ 
++MAC_EXIT1=
++MAC_EXIT2=
++
++# run_mac_pair BIN1 BIN2 SECS (2026-09-06 appletalk spec 8.2, Task 11):
++# TWO Mini vMac boots at once -- BIN1 on macplus/ (the ~/.LaunchAPPL.cfg
++# default) and, 5 s later, BIN2 on macplus2/ via LaunchAPPL's own
++# per-invocation overrides, no second config file (spec 8.4). Each boot
++# gets its OWN cwd under $WORK, because LaunchAPPL makes its temp dir --
++# and the copy of the emulator app it actually runs -- in cwd; that cwd
++# string is also the only safe kill key. run_mac's own blanket
++# `pkill -f minivmac.app` must NOT be reused here: it would take out the
++# other half of this pair and any UNRELATED session's emulator too (Task
++# 1 P4; Andrew runs boots of his own alongside the gate), and it does not
++# even match the second instance, whose app copy is named MacPlus2.app.
++#
++# Both boots run under the same SECS deadline, so the second can outlive
++# the first by at most the 5 s stagger. Either one failing (a timeout, or
++# LaunchAPPL itself erroring) sweeps up BOTH cwds and dies -- a surviving
++# detached emulator owns the machine's screen and would poison every
++# later boot in the group.
++#
++# The captures land in $WORK/cap{1,2}.raw and are split by capture_split
++# into $WORK/cap1.{out,log} / $WORK/cap2.{out,log} with MAC_EXIT1 /
++# MAC_EXIT2 -- capture_split itself writes the un-numbered cap.* names,
++# so each split is renamed before the next one overwrites it.
++run_mac_pair() {
++    mkdir -p "$WORK/launchA" "$WORK/launchB"
++    ( cd "$WORK/launchA" && "$TOOLS/timeout" "$3" \
++        "$ROOT/toolchain/bin/LaunchAPPL" -e minivmac "$1" \
++        > "$WORK/cap1.raw" 2> "$WORK/cap1.err" ) &
++    _pidA=$!
++    # The stagger is what makes the pair a server/client pair: BIN1 is
++    # listening (or at least booting) before BIN2 starts looking for it.
++    sleep 5
++    ( cd "$WORK/launchB" && "$TOOLS/timeout" "$3" \
++        "$ROOT/toolchain/bin/LaunchAPPL" -e minivmac \
++        --minivmac-dir "$ROOT/macplus2" --minivmac-path ./MacPlus2.app \
++        --system-image ./disk1.dsk --autoquit-image ./autoquit-1.1.1.dsk \
++        "$2" > "$WORK/cap2.raw" 2> "$WORK/cap2.err" ) &
++    _pidB=$!
++    wait "$_pidA"; _rcA=$?
++    wait "$_pidB"; _rcB=$?
++    if [ $_rcA -ne 0 ] || [ $_rcB -ne 0 ]; then
++        pkill -f "$WORK/launchA"
++        pkill -f "$WORK/launchB"
++        die "LaunchAPPL pair failed (rc $_rcA/$_rcB, 124 = timed out after $3s):
++  $1: $(head -5 "$WORK/cap1.err")
++  $2: $(head -5 "$WORK/cap2.err")"
++    fi
++    capture_split "$WORK/cap1.raw"
++    MAC_EXIT1=$MAC_EXIT
++    mv "$WORK/cap.out" "$WORK/cap1.out"
++    mv "$WORK/cap.log" "$WORK/cap1.log"
++    capture_split "$WORK/cap2.raw"
++    MAC_EXIT2=$MAC_EXIT
++    mv "$WORK/cap.out" "$WORK/cap2.out"
++    mv "$WORK/cap.log" "$WORK/cap2.log"
++}
++
+ # capture_split RAW : split the capture at the LAST "##CLARUS-EXIT## "
+ # line (the record may legitimately start at byte 0 for an alert-free
+ # program) into $WORK/cap.out (everything before it, byte-exact), the
+ # integer after the marker (-> MAC_EXIT) and $WORK/cap.log (everything
+ # after the mandatory "##CLARUS-LOG##" line that follows it). Mirrors
+ # parseCapture, including its three malformed-trailer fatals.
+ capture_split() {
+     : > "$WORK/cap.out"
+     : > "$WORK/cap.log"
+     # `lg`, not `log`: awk has a BUILT-IN log() function, and one-true-awk
+diff --git a/tests/mactest/adsp_68k.sh b/tests/mactest/adsp_68k.sh
+new file mode 100755
+index 0000000..c3ad341
+--- /dev/null
++++ b/tests/mactest/adsp_68k.sh
+@@ -0,0 +1,92 @@
++#!/bin/sh
++# timeout: 25m
++# mactest/adsp_68k (2026-09-06 appletalk spec 8.2, Task 11): TWO native
++# Mini vMac boots of examples/atalkchat.cla at once -- macplus/ as the
++# ADSP listener, macplus2/ as the client -- proving the whole stream
++# stack against real ROM AppleTalk and a real second machine:
++# lsn.register + NBP advertisement, brs.find of that name, an
++# open(appletalk "Name:Type") that resolves it, `accepted` handing over
++# an already-open connection, a byte-exact echo in both directions, and
++# `closed` firing on the peer's close.
++#
++# The two boots are the SAME binary source with two different --events
++# scripts; the only difference is which button the script clicks (spec
++# 8.5). run_mac_pair (tests/lib_mac.sh) staggers them by 5 s, kills both
++# by cwd on any failure -- never by app name, which would take out an
++# unrelated session's emulator -- and splits each capture into
++# $WORK/cap{1,2}.log with MAC_EXIT1/MAC_EXIT2.
++#
++# The lengths asserted below are the lock-step exchange the example
++# performs: the client sends a 256-byte 0..255 sweep, the server echoes
++# it with a '>' prepended (257), the client then sends "hello" (5) and
++# gets ">hello" (6) back. `echo ok` is the client's own byte-for-byte
++# check of both echoes -- the length lines alone would pass on a stream
++# that dropped or reordered bytes.
++#
++# There is no multicast/no-peer skip: both peers here are emulators this
++# script boots itself, so either the pair runs or the environment gate
++# (CLARUS_MAC_TESTS) already declined.
++. "$(dirname "$0")/../lib.sh" || exit 2
++. "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
++require_env CLARUS_MAC_TESTS
++
++emit68k -o "$WORK/chatsrv.bin" --events testdata/ui/atalkchat_server.events \
++    examples/atalkchat.cla > "$WORK/emit_srv.log" 2>&1 \
++    || die "clarusc emit68k atalkchat (server): $(tail -10 "$WORK/emit_srv.log")"
++emit68k -o "$WORK/chatcli.bin" --events testdata/ui/atalkchat_client.events \
++    examples/atalkchat.cla > "$WORK/emit_cli.log" 2>&1 \
++    || die "clarusc emit68k atalkchat (client): $(tail -10 "$WORK/emit_cli.log")"
++
++run_mac_pair "$WORK/chatsrv.bin" "$WORK/chatcli.bin" 420
++
++SRV=$WORK/cap1.log
++CLI=$WORK/cap2.log
++
++# Both logs, verbatim, into this test's own log -- the server's name
++# suffix and the entity the client actually picked are only visible here,
++# and a failure is unreadable without them. Prefixed so no line of guest
++# output can ever look like a result line to the runner.
++sed 's/^/  server: /' "$SRV"
++sed 's/^/  client: /' "$CLI"
++
++# want_line NAME FILE TEXT : FILE must contain TEXT as a WHOLE line. The
++# log lines asserted here are all complete lines the example emits, and
++# an exact match is what keeps "received 5" from being satisfied by a
++# "received 57".
++want_line() {
++    if grep -qxF "$3" "$2"; then
++        t_pass "$1"
++    else
++        t_fail "$1" "log has no \"$3\" line: $(tr '\n' '|' < "$2")"
++    fi
++}
++
++[ "$MAC_EXIT1" = 0 ] && t_pass server_exit || t_fail server_exit "exit $MAC_EXIT1, want 0"
++[ "$MAC_EXIT2" = 0 ] && t_pass client_exit || t_fail client_exit "exit $MAC_EXIT2, want 0"
++
++# Server: the listener registered, NBP advertised it, and the incoming
++# ADSP request was accepted as an already-open connection (spec 4.2).
++want_line server_accepted "$SRV" "accepted"
++# The 256-byte sweep, delivered in one piece.
++want_line server_sweep "$SRV" "received 256"
++# "hello", after the client saw the sweep's echo -- the lock step.
++want_line server_hello "$SRV" "received 5"
++# spec 4.1: on ADSP, `closed` is a real event -- the peer's close.
++want_line server_closed "$SRV" "closed"
++
++# Client: the NBP lookup found the server's name and the ADSP open to it
++# completed (spec 4.1's "opened fires on a later pump pass").
++want_line client_opened "$CLI" "opened"
++# The echoes, ">"-prefixed by the server: 256+1 and 5+1.
++want_line client_sweep_echo "$CLI" "received 257"
++want_line client_hello_echo "$CLI" "received 6"
++# The byte-for-byte half of the echo proof; the client logs one per echo,
++# so a single `echo bad` anywhere is a failure.
++want_line client_echo_exact "$CLI" "echo ok"
++if grep -qxF "echo bad" "$CLI"; then
++    t_fail client_echo_bytes "client reported a byte mismatch in an echo"
++else
++    t_pass client_echo_bytes
++fi
++
++t_done

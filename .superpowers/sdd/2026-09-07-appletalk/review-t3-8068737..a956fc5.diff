@@ -1,0 +1,1318 @@
+# Review package: 8068737..HEAD
+
+## Commits
+a956fc5 feat(check): service resource type, browser zones/done/find(type, zone), listener.stop, string(addr); reference text
+
+## Files changed
+ clarusc/check.cla                      | 145 +++++++++++++++++++++++++++++++--
+ clarusc/lower.cla                      |  20 +++++
+ clarusc/types.cla                      |   1 +
+ docs/clarus-language-reference.md      | 121 +++++++++++++++++++++++++--
+ testdata/errors/addr_string.cla        |  14 ++++
+ testdata/errors/addr_string.expect     |   1 +
+ testdata/errors/brs_find3.cla          |  10 +++
+ testdata/errors/brs_find3.expect       |   1 +
+ testdata/errors/string_conv_arg.expect |   2 +-
+ testdata/errors/svc_reply_type.cla     |  11 +++
+ testdata/errors/svc_reply_type.expect  |   2 +
+ testdata/valid/atalk_ok.cla            | 101 +++++++++++++++++++++++
+ tests/conntest/atalk_check.sh          |  18 ++++
+ tests/reftest/manifest.txt             |  89 ++++++++++----------
+ 14 files changed, 475 insertions(+), 61 deletions(-)
+
+## Diff
+diff --git a/clarusc/check.cla b/clarusc/check.cla
+index 3517c62..c0fab1e 100644
+--- a/clarusc/check.cla
++++ b/clarusc/check.cla
+@@ -40,20 +40,25 @@ include "types.cla"
+ // type indices. types.cla's typesInit seeds Invalid/Int/Bool/Fixed/Char/
+ // Text/Void/Address/ErrorType/saveChoice only -- these three are check.cla's
+ // own (builtins.go has no *types.Type package var for them either; see
+ // builtins.go's own comment). Rebuilt by checkReset every program, since
+ // typesReset empties typeArena and a stale index here would silently
+ // alias whatever the NEXT program allocates at that slot.
+ var connectionT: int
+ var listenerT: int
+ var serviceBrowserT: int
+ 
++// serviceT (AppleTalk phase, spec %4.4) is the singleton `service` type --
++// the request/response resource. Same shape, and the same stale-index
++// hazard, as connectionT above: reallocated by checkReset every program.
++var serviceT: int
++
+ // fileHandleT (2026-08-22 binary-files spec, Task 5) is the singleton
+ // `filehandle` type -- same TyFileHandle-resource-kind shape connectionT
+ // above already established. Reallocated in checkReset (typesReset empties
+ // typeArena each run), same "stale index here would silently alias" hazard
+ // this file's own header comment already warns about for connectionT.
+ var fileHandleT: int
+ 
+ // Built-in-name index cache, pre-interned once per compile and cached in
+ // module globals (parse.cla's cwInit pattern -- see its own doc comment
+ // for why this can't be a plain global initializer): every hot-path spot
+@@ -559,20 +564,21 @@ func sigEndNamed(retNameIdx: int): int {
+     methodSigs[idx].retNameIdx = retNameIdx
+     return idx
+ }
+ 
+ // ---- built-in method tables (name -> methodSigs index) ----
+ var stringTextMethods: map of int
+ var textOnlyMethods: map of int
+ var connectionMethods: map of int
+ var listenerMethods: map of int
+ var serviceBrowserMethods: map of int
++var serviceMethods: map of int
+ var fileFuncs: map of int
+ var filehandleMethods: map of int
+ var canvasMethods: map of int
+ var canvasProperties: map of int
+ var textviewMethods: map of int
+ 
+ // ---- const values (Ch3: Constants) ----
+ // CVal mirrors check.go's ConstVal: exactly one of intVal/strIdx holds the
+ // value, per isStr -- the same flattened shape types.cla's Symbol already
+ // uses for a *declared* const's own payload (constIsStr/constInt/
+@@ -791,20 +797,30 @@ var usesDateTime: bool
+ // to link on rtConn* -- tests/conntest/fieldonly.sh pins that. UNLIKE
+ // usesSortedMap/usesDateTime/usesFileSaveLoad above, this flag is still
+ // READ: drive.cla's manifest splice (2026-08-15 serial-connection spec,
+ // Task 4) gates conn.cla + conn_c.cla on it, on the host lane only --
+ // the one runtime family that stays usage-gated rather than joining the
+ // unconditional full-superset splice, specifically so every existing
+ // (non-conn) program's manifest, and thus its IR indices and goldens,
+ // stays byte-identical. Reset alongside its siblings in checkReset().
+ var usesConn: bool
+ 
++// usesAtalk (AppleTalk phase, spec %4) is true once the program under
++// check has named an AppleTalk-only type ANYWHERE a type may appear --
++// `listener`, `serviceBrowser`, `service`, or `address` (resolveType's
++// TxNamed arm, exactly like usesConn/usesFileh beside it) -- or has used
++// the `appletalk` transport prefix on connection.open (checkCall). The
++// `address` name counts because string(addr) alone needs the runtime.
++// Set-but-unread until the runtime modules land; drive.cla's manifest
++// splice is what will read it, the same way usesConn gates conn.cla.
++var usesAtalk: bool
++
+ // usesFileh (2026-08-22 binary-files spec, Task 5) is true once the
+ // program under check either names the `filehandle` type ANYWHERE a type
+ // may appear (resolveType's TxNamed arm sets it -- unlike usesConn above,
+ // this is not restricted to global vars: a record field, a param, or a
+ // function return type must ALSO pull in the runtime, or a program that
+ // only ever passes a `filehandle` around never gets the module spliced
+ // and fails to link, the exact gap Task 4 documented for connection) OR
+ // calls `file.open`/`file.create` (checkMethodCall's `x == file` arm sets
+ // it there, since a program that never names the TYPE but still calls
+ // `open`/`create` -- e.g. immediately discarding the result -- needs the
+@@ -1048,20 +1064,21 @@ func addEvent(key: string, paramsHead: int, count: int) {
+ func makeSpec1(nameIdx: int, typeIdx: int): int {
+     return newEventSpec(newEventParam(nameIdx, typeIdx, -1), 1)
+ }
+ 
+ // buildEventsTable transcribes Appendix B whole. Rebuilt every checkReset
+ // since every param type (and connectionT/AddressT/...) is a type-arena
+ // index invalidated by typesReset.
+ func buildEventsTable() {
+     var p1: int
+     var p2: int
++    var p3: int
+ 
+     addEvent("app.launch", -1, 0)
+     addEvent("app.startEmpty", -1, 0)
+     addEvent("app.openDocument", newEventParam(intern("path"), strT(255), -1), 1)
+     addEvent("app.startCLI", newEventParam(intern("args"), listT(strT(255)), -1), 1)
+     // `on App.log(line: string)` (onlog phase): the generic per-line log
+     // subscriber -- fires once per `log()` call, AFTER the line has
+     // already reached the persistent channel (host stderr / the native
+     // ##CLARUS-LOG## trailer). Duplicate declarations follow the SAME
+     // (non-)rule every other App handler already follows here: the table
+@@ -1102,21 +1119,31 @@ func buildEventsTable() {
+     addEvent("connection.received", newEventParam(intern("data"), TextT, -1), 1)
+     addEvent("connection.closed", -1, 0)
+     addEvent("connection.failed", newEventParam(intern("err"), ErrTIndex, -1), 1)
+ 
+     addEvent("listener.accepted", newEventParam(intern("c"), connectionT, -1), 1)
+     addEvent("listener.failed", newEventParam(intern("err"), ErrTIndex, -1), 1)
+ 
+     p2 = newEventParam(intern("addr"), AddressT, -1)
+     p1 = newEventParam(intern("name"), strT(255), p2)
+     addEvent("serviceBrowser.found", p1, 2)
++    addEvent("serviceBrowser.done", -1, 0)
+     addEvent("serviceBrowser.failed", newEventParam(intern("err"), ErrTIndex, -1), 1)
++
++    // service.request(op, req, from) (AppleTalk phase, spec %4.4): the
++    // params chain is built last-to-first, same as serviceBrowser.found
++    // right above.
++    p3 = newEventParam(intern("from"), AddressT, -1)
++    p2 = newEventParam(intern("req"), TextT, p3)
++    p1 = newEventParam(intern("op"), IntT, p2)
++    addEvent("service.request", p1, 3)
++    addEvent("service.failed", newEventParam(intern("err"), ErrTIndex, -1), 1)
+ }
+ 
+ // formatEventParams renders an event spec's params for a "takes (...)"
+ // diagnostic (events.go's formatParams) -- "name: type, ..." or "" for a
+ // no-param event.
+ func formatEventParams(specIdx: int): string {
+     var s: string
+     var ep: int
+     var first: bool
+ 
+@@ -1201,20 +1228,23 @@ func typeName(t: int): string {
+     }
+     case TyConnection {
+         return "connection"
+     }
+     case TyListener {
+         return "listener"
+     }
+     case TyServiceBrowser {
+         return "serviceBrowser"
+     }
++    case TyService {
++        return "service"
++    }
+     case TyFileHandle {
+         return "filehandle"
+     }
+     case TyEnum {
+         return poolGet(typeNameIdx(t))
+     }
+     case TyRec {
+         return poolGet(typeNameIdx(t))
+     }
+     case TyOverlay {
+@@ -1280,20 +1310,23 @@ func kindName(k: TypeKind): string {
+     }
+     case TyConnection {
+         return "connection"
+     }
+     case TyListener {
+         return "listener"
+     }
+     case TyServiceBrowser {
+         return "serviceBrowser"
+     }
++    case TyService {
++        return "service"
++    }
+     case TyFileHandle {
+         return "filehandle"
+     }
+     case TyEnum {
+         return "enum"
+     }
+     case TyRec {
+         return "record"
+     }
+     case TyWindowRef {
+@@ -1328,21 +1361,21 @@ func kindsList(k1: TypeKind, k2: TypeKind, k3: TypeKind, count: int): string {
+     }
+     if count == 2 {
+         return kindName(k1) + " or " + kindName(k2)
+     }
+     return kindName(k1) + ", " + kindName(k2) + ", or " + kindName(k3)
+ }
+ 
+ // isResourceKind reports whether k is a window ref or one of the network
+ // resource kinds -- the only kinds `nil` is valid for.
+ func isResourceKind(k: TypeKind): bool {
+-    return k == TyWindowRef or k == TyConnection or k == TyListener or k == TyServiceBrowser or k == TyFileHandle
++    return k == TyWindowRef or k == TyConnection or k == TyListener or k == TyServiceBrowser or k == TyService or k == TyFileHandle
+ }
+ 
+ func isTextish(t: int): bool {
+     return typeKind(t) == TyStr or typeKind(t) == TyText
+ }
+ 
+ // compatible is the checker's own assignability wrapper (expr.go's
+ // compatible), kept as a distinct name for parity with the Go source even
+ // though it is presently a bare alias for assignable.
+ func compatible(src: int, dst: int): bool {
+@@ -1480,20 +1513,21 @@ func declBuiltinFunc2(scope: int, name: string, p1: int, p2: int, ret: int) {
+     scopeDeclare(scope, sym)
+ }
+ 
+ // registerUniverse populates scope with the built-in dialogs, resource/
+ // error/saveChoice type names, and lastError -- a byte-exact port of
+ // builtins.go's registerBuiltins.
+ func registerUniverse(scope: int) {
+     declBuiltinType(scope, "connection", connectionT)
+     declBuiltinType(scope, "listener", listenerT)
+     declBuiltinType(scope, "serviceBrowser", serviceBrowserT)
++    declBuiltinType(scope, "service", serviceT)
+     declBuiltinType(scope, "filehandle", fileHandleT)
+     declBuiltinType(scope, "address", AddressT)
+     declBuiltinType(scope, "error", ErrTIndex)
+     declBuiltinType(scope, "saveChoice", SaveChoiceT)
+ 
+     declBuiltinFunc1(scope, "alert", strT(255), -1)
+     // abort(msg) (attempt-abort phase Task 2, design doc %3.1) -- handled
+     // EXACTLY like alert: a statement-position builtin, one string arg,
+     // no return value. checkArgsCall (below) already gives this the same
+     // arity check ("wrong number of arguments" for 0 or 2+ args) and the
+@@ -1665,24 +1699,69 @@ func buildMethodTables() {
+ 
+     sigStart()
+     sigAdd(psPlain(IntT))
+     listenerMethods["listen"] = sigEnd(-1)
+ 
+     sigStart()
+     sigAdd(psPlain(strT(255)))
+     sigAdd(psPlain(strT(255)))
+     listenerMethods["register"] = sigEnd(-1)
+ 
++    sigStart()
++    listenerMethods["stop"] = sigEnd(-1)
++
+     sigStart()
+     sigAdd(psPlain(strT(255)))
+     serviceBrowserMethods["find"] = sigEnd(-1)
+ 
++    // find(type, zone) (AppleTalk phase, spec %4.3): the two-argument
++    // overload. checkTableMethod has no notion of overloading, so the
++    // wider arity is registered under the "<name>/<argc>" key it tries
++    // FIRST -- see its own comment. Registering it as an ordinary "find"
++    // would silently replace the one-argument form.
++    sigStart()
++    sigAdd(psPlain(strT(255)))
++    sigAdd(psPlain(strT(255)))
++    serviceBrowserMethods["find/2"] = sigEnd(-1)
++
++    // zones(out) fills `out` in place (spec %4.3): it empties the list and
++    // appends the router's zone names, or the single element "*" on a
++    // routerless network, so a program never special-cases having no
++    // router.
++    sigStart()
++    sigAdd(psPlain(listT(strT(255))))
++    serviceBrowserMethods["zones"] = sigEnd(-1)
++
++    // service (AppleTalk phase, spec %4.4): serve/reply/stop/call. reply's
++    // payload takes text or string, exactly like connection.send above;
++    // call's target takes a "Name:Type" string or an `address` from a
++    // browser, exactly like connection.open.
++    sigStart()
++    sigAdd(psPlain(strT(255)))
++    sigAdd(psPlain(strT(255)))
++    serviceMethods["serve"] = sigEnd(-1)
++
++    sigStart()
++    sigAdd(psPlain(IntT))
++    sigAdd(psOneOf2(TyText, TyStr))
++    serviceMethods["reply"] = sigEnd(-1)
++
++    sigStart()
++    serviceMethods["stop"] = sigEnd(-1)
++
++    sigStart()
++    sigAdd(psOneOf2(TyStr, TyAddress))
++    sigAdd(psPlain(IntT))
++    sigAdd(psPlain(TextT))
++    sigAdd(psPlain(TextT))
++    serviceMethods["call"] = sigEnd(BoolT)
++
+     sigStart()
+     sigAdd(psPlain(strT(255)))
+     sigAdd(psPlain(TextT))
+     fileFuncs["readText"] = sigEnd(BoolT)
+ 
+     // file.writeText(path, text, type, creator) -- native-gaps-cleanup
+     // Task 2: type/creator are mandatory (no defaults/sentinels); see
+     // lowFileCall's "writeText" arm for the literal-argument validation
+     // and runtime/clarus/native.cla's natFileWriteText (native lane) /
+     // runtime/mac/rt_mac.c's rt_file_write_text (C lane) for the
+@@ -1958,29 +2037,38 @@ func checkParamArg(arg: int, specIdx: int) {
+ func checkTableMethod(table: map of int, sel: int, argsHead: int): int {
+     var name: string
+     var sigIdx: int
+     var wantCount: int
+     var haveCount: int
+     var a: int
+     var p: int
+     var symIdx: int
+ 
+     name = poolGet(selectName(sel))
++    haveCount = exprListCount(argsHead)
++    // Overloading (AppleTalk phase, spec %4.3: serviceBrowser.find takes a
++    // type, or a type and a zone). A table entry keyed "<name>/<argc>" is
++    // an arity-specific overload and wins for exactly that argument count;
++    // the bare "<name>" entry stays the one that reports arity errors, so
++    // a wrong count still says "wrong number of arguments to find" rather
++    // than "undefined: find/7".
++    if table.has(name + "/" + numToStr(haveCount)) {
++        name = name + "/" + numToStr(haveCount)
++    }
+     if not table.has(name) {
+-        emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
++        emitDiag(exprLine(sel), exprCol(sel), "undefined: " + poolGet(selectName(sel)))
+         return InvalidT
+     }
+     sigIdx = table.get(name, -1)
+     wantCount = methodSigs[sigIdx].paramCount
+-    haveCount = exprListCount(argsHead)
+     if haveCount != wantCount {
+-        emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
++        emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + poolGet(selectName(sel)))
+     } else {
+         a = argsHead
+         p = methodSigs[sigIdx].paramsHead
+         while a != -1 {
+             checkParamArg(a, p)
+             a = exprNext(a)
+             p = paramSpecs[p].next
+         }
+     }
+     if methodSigs[sigIdx].ret == -1 {
+@@ -2257,21 +2345,45 @@ func checkMethodCall(sel: int, argsHead: int): int {
+         result = checkTableMethod(filehandleMethods, sel, argsHead)
+         if name == "readAt" and argsHead != -1 and exprNext(argsHead) != -1 and exprNext(exprNext(argsHead)) != -1 {
+             checkRejectParamFill(exprNext(exprNext(argsHead)))
+         }
+         return result
+     }
+     case TyListener {
+         return checkTableMethod(listenerMethods, sel, argsHead)
+     }
+     case TyServiceBrowser {
+-        return checkTableMethod(serviceBrowserMethods, sel, argsHead)
++        // b.zones(out) fills `out` in place -- same fill-argument guard
++        // every other out-param call gets (file.readText's `out` above),
++        // and like file.list's own it is a no-op in practice (a list is a
++        // reference type, so the value-kind gate always passes it), kept
++        // for consistency. Runs AFTER dispatch for the same reason
++        // readText's does: the widget-property half needs the argument's
++        // own type memo warm, which only checkTableMethod's checkParamArg
++        // walk guarantees.
++        result = checkTableMethod(serviceBrowserMethods, sel, argsHead)
++        if name == "zones" and argsHead != -1 {
++            checkRejectParamFill(argsHead)
++        }
++        return result
++    }
++    case TyService {
++        // svc.call(target, op, req, reply) fills `reply` -- the fourth
++        // argument -- in place (spec %4.4), so it gets the same guard.
++        // Here the widget-property half is NOT redundant: `reply` is a
++        // text, and `d.Body.text` would otherwise compile clean and throw
++        // the server's answer away.
++        result = checkTableMethod(serviceMethods, sel, argsHead)
++        if name == "call" and argsHead != -1 and exprNext(argsHead) != -1 and exprNext(exprNext(argsHead)) != -1 and exprNext(exprNext(exprNext(argsHead))) != -1 {
++            checkRejectParamFill(exprNext(exprNext(exprNext(argsHead))))
++        }
++        return result
+     }
+     case TyWidget {
+         // canvas (Ch11: Drawing) and textview (Ch8: scrollToEnd) are the
+         // only widget kinds with methods; every other kind -- and
+         // window-ref/menu-item values -- has none, so it falls through
+         // to the "undefined" default below.
+         if poolGet(typeNameIdx(xt)) == "canvas" {
+             return checkTableMethod(canvasMethods, sel, argsHead)
+         }
+         if poolGet(typeNameIdx(xt)) == "textview" {
+@@ -2342,20 +2454,27 @@ func resolveType(te: int): int {
+         // same reason -- `connection` named in ANY type position (local,
+         // param, record field, return type, list/map element) has to pull
+         // conn.cla in on the host lane. This used to be global-var-only
+         // (checkTopDeclPhase1's DkVar arm, now deleted), so a program whose
+         // only connection was a field or a param never got the module
+         // spliced and failed to link on rtConn* -- exactly the gap the
+         // usesFileh hook right above was added to avoid.
+         if symbols[symIdx].typeIdx == connectionT {
+             usesConn = true
+         }
++        // usesAtalk (AppleTalk phase, spec %4): the same rule again, for
++        // the AppleTalk-only types. `address` is in the set because
++        // string(addr) is a runtime call on its own, with no listener,
++        // browser, or service anywhere in the program.
++        if symbols[symIdx].typeIdx == listenerT or symbols[symIdx].typeIdx == serviceBrowserT or symbols[symIdx].typeIdx == serviceT or symbols[symIdx].typeIdx == AddressT {
++            usesAtalk = true
++        }
+         return symbols[symIdx].typeIdx
+     }
+     case TxWord {
+         // Task 4 (native-5e, Ch13): the checked type system treats `word`
+         // exactly as `int` -- callers pass ordinary int exprs, a word
+         // return reads as int, and checkExternFunc's int/ptr/bool/char
+         // param and return-type checks pass unchanged. The distinct
+         // 16-bit-at-the-trap-boundary marshaling lives entirely in
+         // lowResolveType (lower.cla) -- which reads this same TxWord
+         // TypeExpr node straight off the AST, independent of this checked
+@@ -4334,20 +4453,22 @@ func checkTopHandlerDecl(d: int) {
+             emitDiag(declLine(d), declCol(d), "undefined: " + root)
+             return
+         }
+         k = typeKind(symbols[symIdx].typeIdx)
+         if k == TyConnection {
+             ctx = "connection"
+         } else if k == TyListener {
+             ctx = "listener"
+         } else if k == TyServiceBrowser {
+             ctx = "serviceBrowser"
++        } else if k == TyService {
++            ctx = "service"
+         } else {
+             emitDiag(declLine(d), declCol(d), "undefined: " + root)
+             return
+         }
+     }
+ 
+     if not eventTable.has(ctx + "." + event) {
+         emitDiag(declLine(d), declCol(d), "unknown event")
+         return
+     }
+@@ -5859,22 +5980,24 @@ func checkConversion(e: int, target: int, name: string): int {
+         return InvalidT
+     }
+     ok = false
+     accepted = ""
+     if name == "string" {
+         // string(n) (Task 3): strT(255)'s own index is non-singleton (one
+         // per distinct string length), unlike IntT/FixedT/CharT/PtrT
+         // below, so this arm keys on the conversion NAME rather than
+         // `target == ...`. TyChar joins TyInt in the compiler-cleanup
+         // phase: string(c) is the one-character string.
+-        accepted = "an int or char"
+-        ok = typeKind(at) == TyInt or typeKind(at) == TyChar
++        // TyAddress joins them in the AppleTalk phase (spec %4.3):
++        // string(addr) renders a network address as "net.node.socket".
++        accepted = "an int, char, or address"
++        ok = typeKind(at) == TyInt or typeKind(at) == TyChar or typeKind(at) == TyAddress
+     } else if target == IntT {
+         accepted = "a fixed, char, enum, or ptr"
+         ok = typeKind(at) == TyFixed or typeKind(at) == TyChar or typeKind(at) == TyEnum or typeKind(at) == TyPtr
+     } else if target == FixedT {
+         accepted = "an int"
+         ok = typeKind(at) == TyInt
+     } else if target == CharT {
+         accepted = "an int"
+         ok = typeKind(at) == TyInt
+     } else if target == PtrT {
+@@ -6086,20 +6209,26 @@ func callIsSingleArgOpen(fn: int, argsHead: int): bool {
+ 
+ func checkCall(e: int, expected: int): int {
+     var fn: int
+     var argsHead: int
+     var transport: int
+     var t: int
+ 
+     fn = callFn(e)
+     argsHead = callArgsHead(e)
+     transport = callTransport(e)
++    if transport == 1 {
++        // `appletalk` on connection.open pulls the AppleTalk runtime in
++        // even when no listener/browser/service/address type is named
++        // anywhere (spec %4.1).
++        usesAtalk = true
++    }
+     if transport != 0 and not callIsSingleArgOpen(fn, argsHead) {
+         emitDiag(callTransportLine(e), callTransportCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
+         return InvalidT
+     }
+     if exprKind(fn) == ExIdent {
+         t = checkIdentCall(e, fn)
+     } else if exprKind(fn) == ExSelect {
+         t = checkMethodCall(fn, argsHead)
+     } else {
+         emitDiag(exprLine(e), exprCol(e), "cannot call this expression")
+@@ -6337,35 +6466,37 @@ func checkReset() {
+     menuItems = freshMenuItems
+     externFirstDeclByName = freshExternFirstDeclByName
+     // constFirstDeclByName (binary-files phase Task 2 dedup): same
+     // bounded-memory fold, plain-key style (no former progGen namespace
+     // to drop -- this map is new, born already in its final shape).
+     constFirstDeclByName = freshConstFirstDeclByName
+ 
+     connectionT = pushSimple(TyConnection)
+     listenerT = pushSimple(TyListener)
+     serviceBrowserT = pushSimple(TyServiceBrowser)
++    serviceT = pushSimple(TyService)
+     fileHandleT = pushSimple(TyFileHandle)
+ 
+     universeScope = scopeNew(-1)
+     topScope = scopeNew(universeScope)
+     curScope = topScope
+     curFuncRet = -1
+     curWindow = -1
+ 
+     loopDepth = 0
+     inCloseRequest = false
+     appDeclSeen = false
+     usesFileSaveLoad = false
+     usesSortedMap = false
+     usesDateTime = false
+     usesConn = false
++    usesAtalk = false
+     usesFileh = false
+     lowUsesAbort = false
+     progGen = progGen + 1
+ 
+     paramSpecs.clear()
+     methodSigs.clear()
+     fieldInfos.clear()
+     widgetInfos.clear()
+     eventParams.clear()
+     eventSpecs.clear()
+diff --git a/clarusc/lower.cla b/clarusc/lower.cla
+index 658471b..492972f 100644
+--- a/clarusc/lower.cla
++++ b/clarusc/lower.cla
+@@ -383,20 +383,40 @@ func lowTypeAt(t: int, line: int, col: int): int {
+     case TyConnection {
+         // Task 4 (binary-files phase): a `connection` value is an ordinary
+         // int now -- slot+1 (see lowGlobalVarDecl/lowConnMethod), so nil
+         // (0, ExNilLit) stays distinguishable from slot 0. This is the ONE
+         // line that turns every connection-typed param/local/field/array-
+         // element storage slot from "no case, falls to irVoidT" into real
+         // int storage everywhere lowType/lowResolveType/lowMustType route
+         // through lowTypeAt (they all do).
+         return irIntT
+     }
++    case TyAddress {
++        // AppleTalk phase (spec %4.3): an `address` is an inline 4-byte
++        // AddrBlock (net 2, node 1, socket 1) that travels as a plain
++        // int -- no retain/release, so records, arrays, and params all
++        // get real int storage, same one-line reasoning as TyConnection
++        // just above.
++        return irIntT
++    }
++    case TyListener {
++        // Listener/browser/service values are 1-based runtime handle ints
++        // with 0 = nil, exactly TyConnection's convention (spec %4.5's
++        // per-program caps are on those handle tables).
++        return irIntT
++    }
++    case TyServiceBrowser {
++        return irIntT
++    }
++    case TyService {
++        return irIntT
++    }
+     case TyFileHandle {
+         // 2026-08-22 binary-files spec, Task 5: a `filehandle` value is
+         // likewise an ordinary int -- the 1-based device handle (0 = nil),
+         // same "every storage slot becomes real int storage" reasoning as
+         // TyConnection just above.
+         return irIntT
+     }
+     case TyStr { return irStrType(typeN(t)) }
+     case TyEnum { return irEnumType(typeNameIdx(t)) }
+     case TyRec { return irRecType(typeNameIdx(t)) }
+diff --git a/clarusc/types.cla b/clarusc/types.cla
+index b9574aa..57e4c50 100644
+--- a/clarusc/types.cla
++++ b/clarusc/types.cla
+@@ -41,20 +41,21 @@ enum TypeKind {
+     TyText
+     TyEnum
+     TyRec
+     TyArr
+     TyList
+     TyMap
+     TyWindowRef
+     TyConnection
+     TyListener
+     TyServiceBrowser
++    TyService
+     TyAddress
+     TyErrorType
+     TyVoid
+ 
+     // TyWidget/TyMenuItem are checker-only pseudo-types (Task 9): never a
+     // variable's declared type, only the transient result of a Select
+     // expression (Widget.property, MenuName.ItemName) on the way to a
+     // concrete type. Carried here only for parity with types.go's Kind;
+     // Task 8 seeds and tests neither.
+     TyWidget
+diff --git a/docs/clarus-language-reference.md b/docs/clarus-language-reference.md
+index 90cccc8..0026667 100644
+--- a/docs/clarus-language-reference.md
++++ b/docs/clarus-language-reference.md
+@@ -129,21 +129,21 @@ This list is representative, not exhaustive: later chapters introduce further co
+ 
+ ### Literals
+ 
+ | Kind | Forms | Notes |
+ |---|---|---|
+ | Integer | `42`, `-7`, `0x1F` | 32-bit signed; hex with `0x` |
+ | Fixed | `1.5`, `0.25` | 16.16 fixed-point (no float type) |
+ | Character | `'A'`, `'\n'`, `'\xC9'` | single Mac Roman character; same escapes as strings |
+ | String | `"hello"` | escapes: `\"` `\\` `\n` `\t` `\xHH`; `\n` emits CR (13), the Mac newline; `\xHH` (exactly two hex digits, case-insensitive) emits byte HH — the way to put MacRoman bytes (e.g. `\xC9` for `…`) in a literal while keeping source files pure ASCII. A string literal may be at most 255 bytes. |
+ | Boolean | `true`, `false` | |
+-| Nil | `nil` | window/resource references only (`connection`, `listener`, `serviceBrowser`, `filehandle`) |
++| Nil | `nil` | window/resource references only (`connection`, `listener`, `serviceBrowser`, `service`, `filehandle`) |
+ | Enum member | bare identifier | resolved against the expected enum type |
+ 
+ ### Statement Termination
+ 
+ A newline ends a statement (Go-style). A line ending in an operator, comma, or opening bracket continues to the next line. No semicolons are required; `;` may separate multiple property declarations on one line inside declaration blocks only (as shown in design examples).
+ 
+ ## Chapter 3: Types
+ 
+ Clarus is statically typed. All types are known at compile time; values are either stored inline or as opaque heap-allocated handles. The following table is the canonical inventory of types:
+ 
+@@ -156,29 +156,31 @@ Clarus is statically typed. All types are known at compile time; values are eith
+ | `string(n)` | n+1 bytes | inline | length-prefixed Pascal string, n ≤ 255; `string` alone = `string(255)`; inside an aggregate it occupies n+1 rounded up to even bytes (Ch13 packing rule) |
+ | enum | 2 bytes | inline | named type declared with `enum Name { … }` (see Enums below) |
+ | `record` | sum of fields | inline | plain data aggregate; no methods |
+ | `T[n]` | n × size(T) | inline* | fixed array, 0-indexed; literal initializer `[…]` for `const`/`var` declarations (Constants) |
+ | `text` | 4-byte handle | heap | unbounded text buffer |
+ | `list of T` | 4-byte handle | heap | growable sequence of fixed-size T |
+ | `map of T` | 4-byte handle | heap | hashtable, string keys ≤ 255 bytes, values fixed-size |
+ | `sortedmap of T` | 4-byte handle | heap | string-keyed container, values fixed-size; iterates in ascending key order |
+ | `intmap of T` | 4-byte handle | heap | hashtable, int keys, values fixed-size |
+ | window ref (e.g. `Doc`) | 4 bytes | inline | reference to a window instance; `nil` until assigned |
+-| `connection`, `listener`, `serviceBrowser`, `filehandle` | opaque | resource | networking and file resources (Chapter 12) |
++| `connection`, `listener`, `serviceBrowser`, `service`, `filehandle` | opaque | resource | networking and file resources (Chapter 12) |
+ | `error` | record | inline | `{ code: int, message: string }` |
+ | `FileInfo` | record | inline | `{ size: int, rsrcSize: int, type: string, creator: string, created: int, modified: int, isDir: bool }` (Chapter 12) |
+-| `address` | opaque | inline | network address from a `serviceBrowser` |
++| `address` | opaque | inline | network address from a `serviceBrowser`; 4 bytes laid out as the Toolbox `AddrBlock` (`net` 2 bytes, `node` 1, `socket` 1) |
+ | `saveChoice` | enum | inline | built-in: `Save`, `Discard`, `Cancel` |
+ 
+ \* "inline" values past a size threshold are transparently promoted to handle-backed storage by the compiler (spec §6); semantics are identical.
+ 
+-Resource variables (`connection`, `listener`, `serviceBrowser`, `filehandle`) are fixed-size 4-byte references, like window references: assignable, storable in records and arrays (`connection[8]` is 8 references, 32 bytes), and `nil` until bound.
++Resource variables (`connection`, `listener`, `serviceBrowser`, `service`, `filehandle`) are fixed-size 4-byte references, like window references: assignable, storable in records and arrays (`connection[8]` is 8 references, 32 bytes), and `nil` until bound. A program may declare at most 8 global `connection` variables, 2 `listener`, 2 `serviceBrowser`, and 2 `service`; exceeding a cap is a build error naming it. Only globals count — locals, parameters, fields, and array elements are copies of a global's reference.
++
++An `address` is not a resource: it is a plain inline value, copied like an `int`, with no handle behind it. It comes from `serviceBrowser.found` (Chapter 12) or a `service.request` handler, passes through records, arrays, and parameters unchanged, and renders for display with `string(addr)`.
+ 
+ `FileInfo` is a predeclared record (Chapter 12: Files) returned by `file.info` — an ordinary value, like any user record: assignable, copyable, a legal field, array, or `list of`/`map of` element type. A program may not declare its own `FileInfo` (the ordinary duplicate-declaration error). Its seven fields, in declaration order: `size: int` (data fork length in bytes; 0 for a folder), `rsrcSize: int` (resource fork length in bytes; 0 for a folder or on a host), `type: string` (Finder type, `""` on a host or for a folder), `creator: string` (Finder creator, `""` on a host or for a folder), `created: int` and `modified: int` (Macintosh-epoch seconds, the same clock as `now()`), and `isDir: bool`. A file with no Finder type set reads back `type == ""`, the same as a folder; `isDir` is the reliable discriminator.
+ 
+ **Storage:** `bool` and `char` occupy exactly 1 byte inside every ordinary aggregate — records and arrays — on every target; `bool` occupies 1 byte inside an `extern record` too, but `char` is not a legal `extern record` field type at all (an extern record's 1-byte numeric field type is `byte` — see the Chapter 13 field palette). As a standalone local, parameter, or global, `bool`/`char` occupy a 2-byte slot (68000 even-address alignment). At `external func`/`trap` boundaries the Chapter 13 marshaling rules apply (a bool/char parameter or result travels in a 16-bit stack word).
+ 
+ ### Records and Defaults
+ 
+ A record declares a set of named fields, each with a type. Fields may have default values:
+ 
+ ```rust
+@@ -205,21 +207,21 @@ Clarus performs no implicit conversions between numeric types. Conversions must
+ ```rust
+ var i: int = 42
+ var f: fixed = fixed(i)      // int to fixed
+ var j: int = int(f)          // fixed to int (truncates toward zero)
+ var c: char = char(i)        // int to char (takes low byte, 0–255)
+ var k: int = int(c)          // char to int
+ var s: string = string(i)    // int to string, decimal, "42"
+ var s2: string = string(c)   // char to string, "*"
+ ```
+ 
+-Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric truncation: it keeps only the low byte of `i` — `char(-1)` yields 255. `string()` takes an `int` (rendered in decimal, negative values included, e.g. `string(-7)` is `"-7"`) or a `char` (the one-character string); it is unrelated to the type-position use of `string(n)` as a capacity declaration (e.g. `var s: string(20)`) — the two are told apart positionally (a call expression vs. a type), never ambiguously.
++Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric truncation: it keeps only the low byte of `i` — `char(-1)` yields 255. `string()` takes an `int` (rendered in decimal, negative values included, e.g. `string(-7)` is `"-7"`), a `char` (the one-character string), or an `address` (Chapter 12, rendered as `net.node.socket`); it is unrelated to the type-position use of `string(n)` as a capacity declaration (e.g. `var s: string(20)`) — the two are told apart positionally (a call expression vs. a type), never ambiguously.
+ 
+ ### Strings
+ 
+ Strings are length-prefixed "Pascal" strings, stored with a leading byte indicating length (0–255). The length prefix is transparent to user code. Strings are defined with a maximum capacity which defaults to 255 if not provided.
+ 
+ **Indexing:** A string index yields a single `char`, 0-based as with arrays:
+ 
+ ```rust
+ var s: string = "hello"      // same as string(255)
+ var ch: char = s[1]          // 'e' (index 1)
+@@ -1344,21 +1346,21 @@ every 1 ticks {
+ 
+ A `connection` (Chapter 3) is a single reliable byte-stream abstraction over both AppleTalk (ADSP) and TCP (MacTCP); the transport is chosen at `open` and invisible afterward. 
+ 
+ | Member | Form |
+ |---|---|
+ | `open` | `c.open("host:port")` — MacTCP, DNS inside; `c.open(appletalk "Name:Type")` — ADSP, NBP inside; `c.open(serial "modem:9600")` — a Mac serial port, `"modem"` or `"printer"`, baud after the colon; `c.open(addr)` — from a browser `address` |
+ | `send` | `c.send(t: text)` (also accepts string) |
+ | `close` | `c.close()` |
+ | events | `opened`, `received(data: text)`, `closed`, `failed(err: error)` |
+ 
+-A `connection` value can be copied like any other value: passed as a function parameter, stored in a record field, held in an array element, or assigned to a local variable, and `open`/`send`/`close` work the same way through any of those (spec §3.2). `on <var>.<event>` handlers are the one exception — they still name a top-level global directly, never an expression, since a handler is bound at compile time. A `connection` that has never been assigned (a fresh local, an unset record field or array element) is `nil`; calling `open`, `send`, or `close` on a nil connection is a runtime error (`use of nil connection`) — a different message than, but the same category of contract violation as, `send`/`close` on a connection that was never opened (`connection not open`). The 4-connection-variable-per-program cap (only global `connection` variables count toward it) still applies.
++A `connection` value can be copied like any other value: passed as a function parameter, stored in a record field, held in an array element, or assigned to a local variable, and `open`/`send`/`close` work the same way through any of those (spec §3.2). `on <var>.<event>` handlers are the one exception — they still name a top-level global directly, never an expression, since a handler is bound at compile time. A `connection` that has never been assigned (a fresh local, an unset record field or array element) is `nil`; calling `open`, `send`, or `close` on a nil connection is a runtime error (`use of nil connection`) — a different message than, but the same category of contract violation as, `send`/`close` on a connection that was never opened (`connection not open`). The 8-connection-variable-per-program cap (only global `connection` variables count toward it) still applies.
+ 
+ Like other resources, a `connection`'s events are caught by top-level handlers, not callbacks:
+ 
+ ```rust
+ var conn: connection
+ 
+ on App.launch {
+     conn.open("mac.example.com:70")
+ }
+ 
+@@ -1370,20 +1372,30 @@ on conn.received(data: text) {
+     // process data
+ }
+ 
+ on conn.closed { }
+ 
+ on conn.failed(err: error) {
+     alert(err.message)
+ }
+ ```
+ 
++**AppleTalk (ADSP).** `c.open(appletalk "Name:Type")` looks the name up with NBP as `Name:Type@*` and opens an ADSP stream to the first match. `c.open(addr)` opens one straight to an `address` — from `serviceBrowser.found` (below) or a `service.request` handler — with no lookup at all. Both are asynchronous like every other `open`: `opened` fires on a later pass of the event loop, or `failed(err: error)` does — no such name, the ADSP driver absent, the open timed out, or every connection slot already in use.
++
++An AppleTalk connection's events follow `connection`'s ordinary shape, with these transport-specific rules:
++
++- `closed` fires when the peer closes the stream, or when the connection tears down. Unlike a serial line, ADSP has a closure concept, so this is a real event on this transport; a local `c.close()` still never fires it.
++- `send` writes to the ADSP send queue; `received(data: text)` delivers whatever the stream reports pending, once per event-loop pass, binary-safe — every byte value 0-255 passes through unchanged.
++- `send` or `close` on a connection that was never opened is a runtime error, the same contract violation it is on every other transport.
++
++ADSP is part of System 7; on System 6 it comes from AppleTalk 57 or later, as the `.DSP` driver inside the `AppleTalk` system file. There is no feature query for it — a system without it makes `open(appletalk ...)`, `open(addr)`, and `listener.register` fail with `failed(err: error)`, the ordinary environmental-failure path.
++
+ ### Serial
+ 
+ `c.open(serial "modem:9600")` opens a Macintosh serial port directly, with no AppleTalk or TCP involved: `"modem"` is the modem port (SCC channel A), `"printer"` is the printer port (channel B), and the baud rate follows the colon. The rate must be one of the Serial Driver's standard values — 300, 600, 1200, 1800, 2400, 3600, 4800, 7200, 9600, 19200, or 57600. Framing is fixed at 8 data bits, no parity, one stop bit, no handshake; any other configuration is out of scope for `connection` and goes through the `toolbox/` catalog instead, the same escape hatch every other 80/20 abstraction in this reference falls back to.
+ 
+ A serial connection's events follow `connection`'s ordinary shape, with these transport-specific rules:
+ 
+ - `opened` fires on the event loop's next pass after a successful open, never synchronously inside `open` itself.
+ - `received(data: text)` fires once per pass when bytes are waiting; `data` is freshly allocated and binary-safe — no CR/LF translation, every byte value 0-255 passes through unchanged.
+ - `closed` fires only when the underlying channel itself goes away. A raw Mac serial line has no carrier-detect signal in this release, so `closed` never fires for a serial connection — a transport property, not a missing feature. A local `c.close()` never fires `closed`, on any transport.
+ - `send` on a connection that was never opened, or has since closed, is a runtime error — a program bug, not an environmental failure. Environmental failures (a bad port spec, a driver I/O error) arrive as `failed(err: error)` instead.
+@@ -1402,21 +1414,28 @@ on App.startCLI(args: list of string) {
+ on conn.received(data: text) {
+     if data.length > 0 and data[0] == 'Q' {
+         quit
+     }
+     conn.send(data)
+ }
+ ```
+ 
+ ### Listeners
+ 
+-A `listener` accepts incoming connections from clients. `l.listen(port: int)` opens a TCP listening socket; `l.register(name: string, type: string)` registers an ADSP server under an NBP name for clients to find. Its events are `accepted(c: connection)` and `failed(err: error)`.
++A `listener` accepts incoming connections from clients.
++
++| Member | Form |
++|---|---|
++| `listen` | `l.listen(port: int)` — a TCP listening socket (MacTCP), for clients that dial a fixed port |
++| `register` | `l.register(name: string, type: string)` — an ADSP connection listener, advertised to the zone under the NBP name `name:type` |
++| `stop` | `l.stop()` — remove the name and the listener; idempotent |
++| events | `accepted(c: connection)`, `failed(err: error)` |
+ 
+ The `connection` delivered by `accepted` is bound to the parameter named in the handler — `c` below — a fresh reference the program must store somewhere to keep talking to that client. The usual pattern for a multi-client server is a fixed array of connections with a parallel `bool` array tracking which slots are in use:
+ 
+ ```rust
+ var server: listener
+ var clients: connection[8]
+ var busy: bool[8]
+ 
+ on App.launch {
+     server.listen(6502)
+@@ -1425,41 +1444,122 @@ on App.launch {
+ on server.accepted(c: connection) {
+     var i: int = 0
+     while i < 8 and busy[i] { i = i + 1 }
+     if i < 8 {
+         clients[i] = c
+         busy[i] = true
+     }
+ }
+ ```
+ 
+-`l.register(name, type)` is used the same way, in place of `l.listen(port)`, to run an ADSP server that's discoverable by name instead of a fixed TCP port.
++`l.register(name, type)` is used the same way, in place of `l.listen(port)`, to run an ADSP server that's discoverable by name instead of a fixed TCP port. Two things differ from the TCP form. The `connection` it hands to `accepted` is already open — no `opened` fires for it, because there was never an `open` to complete. And the registered name is visible to every `serviceBrowser.find(type)` in the zone (below) from `register` until `stop`, which is how clients find the server in the first place.
++
++When every connection slot is already in use the runtime denies the incoming request outright: the client's own `open` fails with `failed`, and the server sees nothing — no `accepted`, no `failed`. Refusing a client the program has no room for is not a server-side failure.
++
++`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, or the listener failing to start. `l.stop()` is safe on a listener that was never started, and safe to call twice.
+ 
+ ### Service Discovery
+ 
+-A `serviceBrowser` finds other instances of a named service in the current AppleTalk zone. `b.find(type: string)` starts the search; its events are `found(name: string, addr: address)` and `failed(err: error)`. The `address` delivered by `found` can be passed straight to `connection.open`:
++A `serviceBrowser` finds registered AppleTalk entities — other programs' services, and machines — in a zone.
++
++| Member | Form |
++|---|---|
++| `find` | `b.find(type: string)` — search the current zone; `b.find(type: string, zone: string)` — search a named zone |
++| `zones` | `b.zones(out: list of string)` — synchronous; empties `out` and fills it with the zone names |
++| events | `found(name: string, addr: address)`, `done`, `failed(err: error)` |
++
++`find` is an NBP lookup of `=:type@zone`, with `*` — the current zone — when no zone is given. It fires `found` once per match and then `done`. `done` always arrives, even when nothing matched, so a program knows when the list it is building from `found` is complete; a search that matches nothing is `done` with no `found`, not a failure. `find("=")` matches every registered entity in the zone, of every type: AppleTalk has no node-enumeration protocol of its own, and this lookup is what "list the machines" means on it.
++
++`failed(err: error)` means the lookup could not be issued at all — AppleTalk unavailable, or a zone name the router rejected.
++
++`zones(out)` is synchronous, not an event: it returns with `out` holding the router's zone list, having emptied whatever was in it first. A network with no router has no zone list to fetch, and `out` comes back holding the single name `"*"` — the current, only, zone — so a program never has to special-case the routerless case.
++
++The `address` delivered by `found` is an inline value (Chapter 3), not a resource: store it, copy it, compare it, pass it to `connection.open` or `service.call`. `string(addr)` renders it as `net.node.socket` for display; there is no way back from that text to an `address`.
+ 
+ ```rust
+ var browser: serviceBrowser
+ var conn: connection
++var zoneNames: list of string
++var seen: list of string
+ 
+ on App.launch {
++    browser.zones(zoneNames)
+     browser.find("ChatServer")
+ }
+ 
+ on browser.found(name: string, addr: address) {
++    seen.add(name + " at " + string(addr))
+     conn.open(addr)
+ }
+ 
++on browser.done { }
++
+ on browser.failed(err: error) { }
+ ```
+ 
++### Services
++
++A `service` is a request/response endpoint: a server advertises a name and answers integer-coded operations, and a client calls one and waits for the answer. It is the counterpart to `connection`'s byte stream — a whole request in, a whole reply out, with no framing to invent.
++
++| Member | Form |
++|---|---|
++| `serve` | `svc.serve(name: string, type: string)` — start answering requests, advertised to the zone under the NBP name `name:type` |
++| `reply` | `svc.reply(code: int, data: text)` (also accepts string) — answer the request being handled |
++| `stop` | `svc.stop()` — remove the name and stop answering; idempotent |
++| `call` | `svc.call(target, op: int, req: text, reply: text): bool` — send one request and wait for the answer; `target` is an `address` or a `"Name:Type"` string |
++| events | `request(op: int, req: text, from: address)`, `failed(err: error)` |
++
++`op` and `code` are 32-bit signed integers carried alongside the payload. They are the program's own operation and status namespaces; the language assigns no meaning to any value but `code` `0`, which means success.
++
++**Serving.** Every request arrives as one call of the `request` handler, carrying the operation number, the whole request payload, and the requester's `address`. The handler answers with `reply`. A handler that returns without calling `reply` gets an automatic empty reply with code `-1`, so a requester never waits out its timeout on a request the server forgot to answer. Calling `reply` twice in one handler, or outside a handler, is a runtime error — a program bug, not an environmental failure.
++
++**Calling.** `call` is synchronous: it blocks until the answer arrives or the request times out. It returns `true` only when a response arrived **and** its code was `0`, with `reply` holding the response payload. It returns `false` and sets `lastError` (below) when no response arrived, when the string form's name lookup matched nothing, when the request is over the size limit, or when AppleTalk is unavailable — and also when the server answered with a nonzero `code`, in which case `lastError` is `{ code, "service" }` and `reply` still holds whatever payload the server sent. So `code` is the server's application-level status, and `lastError` keeps its ordinary meaning: the detail behind the most recent soft failure. A server that wants to return a status *with* a successful reply puts that status in the payload.
++
++**Limits.** A request is at most 578 bytes and a reply at most 4624 bytes. Both are enforced, never truncated: a `reply` over the limit is a `failed` event on the server and an automatic `-1` reply to the requester. Timing is fixed in this release: a request times out after 2 seconds and is retried 3 times, and a name lookup tries 3 times at 1-second intervals.
++
++`call` on a variable that is also serving is allowed — the requester uses its own socket — and a client-only program never calls `serve` at all.
++
++The idiom for typed operations is the checked enum conversion (Chapter 3), guarded so an operation number off the wire cannot raise a runtime error:
++
++```rust
++enum ClockOp { Time 1 "Time", Echo 2 "Echo" }
++
++var clock: service
++var lastCaller: string
++
++on App.launch {
++    clock.serve("Clock", "ClockSrv")
++}
++
++on clock.request(op: int, req: text, from: address) {
++    lastCaller = string(from)
++    if op < 1 or op > 2 {
++        clock.reply(-1, "")
++        return
++    }
++    switch ClockOp(op) {
++    case Time {
++        clock.reply(0, "12:00:00")
++    }
++    case Echo {
++        clock.reply(0, req)
++    }
++    }
++}
++
++on clock.failed(err: error) {
++    alert(err.message)
++}
++```
++
++A client holding an `address` from a browser calls that server with `clock.call(addr, 1, "", answer)`, where `answer` is a `text` the reply lands in; the `"Name:Type"` form, `clock.call("Clock:ClockSrv", 1, "", answer)`, looks the name up first and costs one extra round trip.
++
+ ### Files
+ 
+ The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, `file.openRF`, `file.create`, and `file.info` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong — except `file.exists`, whose `false` just means the path doesn't exist, never a failure. `open`/`openRF`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O; `info` returns a `FileInfo` record (Chapter 3), zeroed with `lastError` set on failure.
+ 
+ | Function | Signature | Notes |
+ |---|---|---|
+ | `readText` | `file.readText(path: string, t: text): bool` | fills `t` in place |
+ | `writeText` | `file.writeText(path: string, t: text, type: string, creator: string): bool` | writes `t`'s contents to `path`, stamped with `type`/`creator` |
+ | `save` | `file.save(path: string, data, type: string, creator: string): bool` | `data`: any `record`, `list of` record, or `map of` record; stamped with `type`/`creator` |
+ | `load` | `file.load(path: string, data): bool` | fills `data` in place |
+@@ -2055,21 +2155,24 @@ The following table is the complete per-resource inventory of every event handle
+ | canvas | click | `on Name.click(x: int, y: int) { }` |
+ | canvas | drag | `on Name.drag(x: int, y: int) { }` |
+ | menu item | select | `on Item.select { }` (in `extend Menu`) |
+ | connection | opened | `on c.opened { }` |
+ | connection | received | `on c.received(data: text) { }` |
+ | connection | closed | `on c.closed { }` |
+ | connection | failed | `on c.failed(err: error) { }` |
+ | listener | accepted | `on l.accepted(c: connection) { }` |
+ | listener | failed | `on l.failed(err: error) { }` |
+ | serviceBrowser | found | `on b.found(name: string, addr: address) { }` |
++| serviceBrowser | done | `on b.done { }` |
+ | serviceBrowser | failed | `on b.failed(err: error) { }` |
++| service | request | `on svc.request(op: int, req: text, from: address) { }` |
++| service | failed | `on svc.failed(err: error) { }` |
+ | (timer) | — | `every N ticks { }` |
+ 
+ For `field`/`textview`/`check`/`popup`, `change` fires for a user edit — typing, cut, paste, or clear — and never for a program's own assignment to the widget's property (e.g. `Body.text = t`, or a `textview`'s `scrollToEnd()`), the same "programmatic writes are silent" rule every other runtime property already follows.
+ 
+ ## Appendix C: Worked Examples
+ 
+ ### Bookmark Manager
+ 
+ A complete bookmark manager — data, live table, bound edit form:
+ 
+diff --git a/testdata/errors/addr_string.cla b/testdata/errors/addr_string.cla
+new file mode 100644
+index 0000000..9bb6945
+--- /dev/null
++++ b/testdata/errors/addr_string.cla
+@@ -0,0 +1,14 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// AppleTalk phase, Task 3: string() renders an address (the line below
++// that checks clean), but no other resource -- a listener is an error
++// naming what the conversion does accept.
++var browser: serviceBrowser
++var server: listener
++var shown: string
++
++on browser.found(name: string, addr: address) {
++    shown = string(addr)
++    shown = string(server)
++}
+diff --git a/testdata/errors/addr_string.expect b/testdata/errors/addr_string.expect
+new file mode 100644
+index 0000000..33bb561
+--- /dev/null
++++ b/testdata/errors/addr_string.expect
+@@ -0,0 +1 @@
++../../testdata/errors/addr_string.cla:13:19: string() expects an int, char, or address, got listener
+diff --git a/testdata/errors/brs_find3.cla b/testdata/errors/brs_find3.cla
+new file mode 100644
+index 0000000..13e4654
+--- /dev/null
++++ b/testdata/errors/brs_find3.cla
+@@ -0,0 +1,10 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// AppleTalk phase, Task 3: serviceBrowser.find takes a type, or a type
++// and a zone -- one or two arguments, never three.
++var browser: serviceBrowser
++
++on App.launch {
++    browser.find("a", "b", "c")
++}
+diff --git a/testdata/errors/brs_find3.expect b/testdata/errors/brs_find3.expect
+new file mode 100644
+index 0000000..c2a0831
+--- /dev/null
++++ b/testdata/errors/brs_find3.expect
+@@ -0,0 +1 @@
++../../testdata/errors/brs_find3.cla:9:12: wrong number of arguments to find
+diff --git a/testdata/errors/string_conv_arg.expect b/testdata/errors/string_conv_arg.expect
+index 52df969..a68a715 100644
+--- a/testdata/errors/string_conv_arg.expect
++++ b/testdata/errors/string_conv_arg.expect
+@@ -1 +1 @@
+-../../testdata/errors/string_conv_arg.cla:8:11: string() expects an int or char, got string
++../../testdata/errors/string_conv_arg.cla:8:11: string() expects an int, char, or address, got string
+diff --git a/testdata/errors/svc_reply_type.cla b/testdata/errors/svc_reply_type.cla
+new file mode 100644
+index 0000000..2d32b6d
+--- /dev/null
++++ b/testdata/errors/svc_reply_type.cla
+@@ -0,0 +1,11 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// AppleTalk phase, Task 3: service.reply(code: int, data: text) -- the
++// code comes first and the payload second, so the swapped call below is
++// two argument-type errors, one per parameter.
++var svc: service
++
++on svc.request(op: int, req: text, from: address) {
++    svc.reply("x", 1)
++}
+diff --git a/testdata/errors/svc_reply_type.expect b/testdata/errors/svc_reply_type.expect
+new file mode 100644
+index 0000000..533b92c
+--- /dev/null
++++ b/testdata/errors/svc_reply_type.expect
+@@ -0,0 +1,2 @@
++../../testdata/errors/svc_reply_type.cla:10:15: cannot use string where int is expected
++../../testdata/errors/svc_reply_type.cla:10:20: cannot use int here (expected text or string)
+diff --git a/testdata/valid/atalk_ok.cla b/testdata/valid/atalk_ok.cla
+new file mode 100644
+index 0000000..a0fdeb8
+--- /dev/null
++++ b/testdata/valid/atalk_ok.cla
+@@ -0,0 +1,101 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// AppleTalk phase, Task 3: a check-clean program that names every new
++// front-end shape at least once -- the `service` resource type and its
++// serve/reply/stop/call methods and request/failed events, the
++// serviceBrowser find(type)/find(type, zone)/zones additions and its new
++// `done` event, listener.stop, connection.open(appletalk ...)/open(addr),
++// and the string(addr) conversion. Checked (not lowered) by
++// tests/conntest/atalk_check.sh: lowering every one of these shapes is
++// still fenced this task.
++
++enum ClockOp { Time 1 "Time", Echo 2 "Echo" }
++
++var clock: service
++var caller: service
++var browser: serviceBrowser
++var server: listener
++var conn: connection
++var zoneNames: list of string
++var lastSeen: string
++var clients: connection[8]
++
++func shutdown() {
++    clock.stop()
++    caller.stop()
++    server.stop()
++}
++
++on App.launch {
++    clock.serve("Clock", "ClockSrv")
++    server.register("Chat", "ChatSrv")
++    browser.zones(zoneNames)
++    browser.find("ClockSrv")
++    browser.find("ClockSrv", "Engineering")
++}
++
++on clock.request(op: int, req: text, from: address) {
++    var body: text
++    if op < 1 or op > 2 {
++        clock.reply(-1, "")
++        return
++    }
++    switch ClockOp(op) {
++    case Time {
++        clock.reply(0, "12:00")
++    }
++    case Echo {
++        body = req
++        clock.reply(0, body)
++    }
++    }
++    log(string(from))
++}
++
++on clock.failed(err: error) {
++    alert(err.message)
++}
++
++on browser.found(name: string, addr: address) {
++    var reply: text
++    var op: ClockOp = Time
++    lastSeen = string(addr)
++    if caller.call(addr, int(op), "", reply) {
++        conn.open(addr)
++    }
++    if caller.call("Clock:ClockSrv", 2, "ping", reply) {
++        conn.open(appletalk "Clock:ClockSrv")
++    }
++}
++
++on browser.done {
++    shutdown()
++}
++
++on browser.failed(err: error) {
++    alert(err.message)
++}
++
++on server.accepted(c: connection) {
++    clients[0] = c
++    c.send("hello\n")
++}
++
++on server.failed(err: error) {
++    alert(err.message)
++}
++
++on conn.opened {
++    conn.send("HELLO\n")
++}
++
++on conn.received(data: text) {
++    conn.close()
++}
++
++on conn.closed { }
++
++on conn.failed(err: error) {
++    alert(err.message)
++}
+diff --git a/tests/conntest/atalk_check.sh b/tests/conntest/atalk_check.sh
+new file mode 100755
+index 0000000..36eb0ff
+--- /dev/null
++++ b/tests/conntest/atalk_check.sh
+@@ -0,0 +1,18 @@
++#!/bin/sh
++# tests/conntest/atalk_check.sh (AppleTalk phase, Task 3): the front-end
++# surface -- `service` and its methods/events, serviceBrowser.zones/done/
++# find(type, zone), listener.stop, connection.open(appletalk ...)/open(addr),
++# string(addr) -- must CHECK clean. Check-only on purpose: lowering every
++# one of those shapes is still fenced this task (lowUnsupported), so
++# `clarusc emit` on this fixture is expected to fail and the errors group's
++# own scripts cover the diagnostics.
++. "$(dirname "$0")/../lib.sh" || exit 2
++
++out=$("$CLARUSC" "$ROOT/testdata/valid/atalk_ok.cla" 2>&1)
++rc=$?
++if [ $rc -ne 0 ] || [ -n "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then
++    t_fail check "clarusc check not clean (exit $rc): $out"
++else
++    t_pass check
++fi
++t_done
+diff --git a/tests/reftest/manifest.txt b/tests/reftest/manifest.txt
+index 5638b8a..46b3b2d 100644
+--- a/tests/reftest/manifest.txt
++++ b/tests/reftest/manifest.txt
+@@ -1,110 +1,111 @@
+ # tests/reftest/manifest.txt -- indices (0-based, document order) of the
+ # ```rust fences in docs/clarus-language-reference.md that check clean
+ # standalone under clarusc. Transcribed from internal/reftest/manifest.go's
+ # CheckClean; read it with `grep -v '^#'`. Each EXCLUDED index appears as a
+ # "#" line at its own numeric position, carrying manifest.go's verbatim
+ # reason.
+ 0
+ # 1  (line 81): include "geometry.cla" — no such file
+ 2
+ 3
+-# 4  (line 219): bare statements — indexing/in-place-assignment fragment
+-# 5  (line 230): bare statement — string concat fragment
++# 4  (line 225): bare statements — indexing/in-place-assignment fragment
++# 5  (line 236): bare statement — string concat fragment
+ 6
+ 7
+-# 8  (line 259): bare statements — string(n) fromBytes/toBytes byte-copy fragment
++# 8  (line 265): bare statements — string(n) fromBytes/toBytes byte-copy fragment
+ 9
+ 10
+ 11
+-# 12 (line 312): undefined: EventKind, Drag (enum shown elsewhere in the chapter)
+-# 13 (line 425): undefined: EventKind (const example; enum declared
++# 12 (line 318): undefined: EventKind, Drag (enum shown elsewhere in the chapter)
++# 13 (line 435): undefined: EventKind (const example; enum declared
+ #     elsewhere) — the unresolved type also trips the const-type-must-be-
+ #     int/fixed/char/bool/enum/string/fixed-array fallback error
+ 14
+-# 15 (line 472): undefined: Person
+-# 16 (line 481): undefined: Person
+-# 17 (line 492): bare statement — assignment fragment
++# 15 (line 491): undefined: Person
++# 16 (line 500): undefined: Person
++# 17 (line 511): bare statement — assignment fragment
+ 18
+ 19
+-# 20 (line 524): bare statement — string(n) truncating-assignment fragment
+-# 21 (line 539): undefined: Person (func param type)
+-# 22 (line 551): bare statement — assignment fragment
+-# 23 (line 560): bare fragment — top-level var decls + conn.open/names.add
++# 20 (line 543): bare statement — string(n) truncating-assignment fragment
++# 21 (line 558): undefined: Person (func param type)
++# 22 (line 570): bare statement — assignment fragment
++# 23 (line 579): bare fragment — top-level var decls + conn.open/names.add
+ #     call statements — also references undeclared Person (list of Person /
+ #     new Person)
+-# 24 (line 573): bare if/else-if/else fragment — also references undeclared Person
+-# 25 (line 588): bare while fragment — also references undeclared Person
+-# 26 (line 601): bare for-in fragment (list form) — also references undeclared Person
+-# 27 (line 610): bare for-in fragment (map form)
+-# 28 (line 618): bare for-in fragment (range form)
+-# 29 (line 631): undefined: Person (func param type)
+-# 30 (line 638): undefined: Person (func param type)
+-# 31 (line 651): bare open-statement fragment — also references undeclared Doc
+-# 32 (line 663): bare close-statement fragment — also references undeclared Doc
+-# 33 (line 673): bare edit-statement fragment — also references undeclared EditPerson, Person
++# 24 (line 592): bare if/else-if/else fragment — also references undeclared Person
++# 25 (line 607): bare while fragment — also references undeclared Person
++# 26 (line 620): bare for-in fragment (list form) — also references undeclared Person
++# 27 (line 629): bare for-in fragment (map form)
++# 28 (line 637): bare for-in fragment (range form)
++# 29 (line 650): undefined: Person (func param type)
++# 30 (line 657): undefined: Person (func param type)
++# 31 (line 670): bare open-statement fragment — also references undeclared Doc
++# 32 (line 682): bare close-statement fragment — also references undeclared Doc
++# 33 (line 692): bare edit-statement fragment — also references undeclared EditPerson, Person
+ 34
+ 35
+-# 36 (line 705): bare closeRequest-handler fragment — unknown event outside a window extend block
+-# 37 (line 717): bare while fragment — break-inside-loop example — also references undeclared Person
+-# 38 (line 732): bare switch-statement fragment — references undeclared var tok
++# 36 (line 724): bare closeRequest-handler fragment — unknown event outside a window extend block
++# 37 (line 736): bare while fragment — break-inside-loop example — also references undeclared Person
++# 38 (line 751): bare switch-statement fragment — references undeclared var tok
+ 39
+ 40
+-# 41 (line 820): undefined: Type — func skeleton uses placeholder type names
+-# 42 (line 828): undefined: Person (func param type)
++# 41 (line 839): undefined: Type — func skeleton uses placeholder type names
++# 42 (line 847): undefined: Person (func param type)
+ 43
+-# 44 (line 923): undefined: compile — startCLI example calls a function shown nowhere
++# 44 (line 942): undefined: compile — startCLI example calls a function shown nowhere
+ 45
+ 46
+ 47
+ 48
+ 49
+ 50
+-# 51 (line 1127): undefined: File (menu extend block, menu declared elsewhere)
+-# 52 (line 1137): undefined: Doc (window extend block, window declared elsewhere)
+-# 53 (line 1151): bare property-assignment fragment (File.Save.enabled = false)
+-# 54 (line 1167): form for names an undefined record: Bookmark
+-# 55 (line 1205): bare edit-statement fragment (table/form binds example)
+-# 56 (line 1223): undefined: EditForm (window extend block)
+-# 57 (line 1237): bare table-widget-declaration fragment (table outside a window)
+-# 58 (line 1256): undefined: Main (window extend block)
++# 51 (line 1149): undefined: File (menu extend block, menu declared elsewhere)
++# 52 (line 1159): undefined: Doc (window extend block, window declared elsewhere)
++# 53 (line 1175): bare property-assignment fragment (File.Save.enabled = false)
++# 54 (line 1191): form for names an undefined record: Bookmark
++# 55 (line 1229): bare edit-statement fragment (table/form binds example)
++# 56 (line 1247): undefined: EditForm (window extend block)
++# 57 (line 1261): bare table-widget-declaration fragment (table outside a window)
++# 58 (line 1280): undefined: Main (window extend block)
+ 59
+ 60
+ 61
+ 62
+ 63
+-# 64 (line 1464): bare fragment — filehandle open/create/nil-check idiom
++64
++# 65 (line 1599): bare fragment — filehandle open/create/nil-check idiom
+ #     (binary-files phase) — also references undeclared var path
+-65
+ 66
+-# 67 (line 1568): bare statement — ptr peek/poke call fragment
+-68
+-# 69 (line 1601): overlay records — func f's body interleaves var decls
++67
++# 68 (line 1704): bare statement — ptr peek/poke call fragment
++69
++# 70 (line 1737): overlay records — func f's body interleaves var decls
+ # with statements (var n; h.rc = 5; h.data = p; var back; var same) for
+ # expository clarity, genuinely violating "local variables ... are
+ # declared at the top of the body before any statement" (see the
+ # reference's variable-scoping prose) — a real check-time error, not a
+ # missing-context fragment. Reordering the example to check clean is a
+ # content change out of scope here.
+-70
+ 71
+-# 72 (line 1687): extern record — waitClick usage example calls
++72
++# 73 (line 1823): extern record — waitClick usage example calls
+ # UiWaitNextEvent/nilPtr/handleAt, none declared in the fence itself
+ # (same "references a name declared only in surrounding prose" class as
+ # 12-15, 20, 28, 29, 40, 41, 43, 50, 51, 53, 55 above).
+-73
+ 74
+ 75
+ 76
+ 77
+ 78
+ 79
+ 80
+ 81
+ 82
+ 83
+ 84
+ 85
+ 86
+ 87
+ 88
+ 89
++90

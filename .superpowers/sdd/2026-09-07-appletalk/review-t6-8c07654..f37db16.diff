@@ -1,0 +1,1250 @@
+# Review package: 8c07654..HEAD
+
+## Commits
+f37db16 feat(toolbox): AppleTalk catalog (.MPP/.ATP/.XPP/.DSP), hardware-proved by AtalkSelf
+
+## Files changed
+ CLAUDE.md                         |  12 +-
+ tests/mactest/toolbox_68k.sh      |  13 +-
+ tests/mactest/toolbox_files.txt   |   2 +
+ tests/mactest/toolbox_jiggle.sh   |   2 +-
+ tests/mactest/toolbox_mac.sh      |   6 +-
+ tests/testsuite/catalog.sh        |   1 +
+ testsuite/toolbox/cases_atalk.cla | 212 ++++++++++++++
+ testsuite/toolbox/runner.cla      |  20 +-
+ toolbox/appletalk.cla             | 583 ++++++++++++++++++++++++++++++++++++++
+ toolbox/memory.cla                |  12 +
+ 10 files changed, 852 insertions(+), 11 deletions(-)
+
+## Diff
+diff --git a/CLAUDE.md b/CLAUDE.md
+index f25b765..dad30c2 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -200,21 +200,21 @@ enum + runner, not one boot per case.
+   pointer, including a bool-returning round trip) on both lanes — then
+   to 80 real by the string-perf phase's `StrPerf` case, which pins the
+   length-byte-only string-local init, the inline `s[i]`/`s.length`
+   codegen, and `text.clear()`/`reserve(n)` semantics -- then to 81 real
+   by the language-runtime-cleanup phase's `OpenRF` case, which
+   hardware-proves `file.openRF` (a resource fork opened as an ordinary
+   `filehandle`) on both lanes -- then to 82 real by the
+   native-array-return-and-fileh-guards phase's `ArrReturn` case, which
+   hardware-proves scalar-element fixed-array RETURNS (hidden-result-pointer
+   block copy) on both lanes) runs on
+-  host and natively; `testsuite/toolbox/` (38 `ToolboxTest` cases: 37 real +
++  host and natively; `testsuite/toolbox/` (39 `ToolboxTest` cases: 38 real +
+   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
+   legacy `testdata/ui` scenarios migrated in as cases, plus two new
+   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
+   by the test-consolidation phase, which migrated `formedit`/
+   `texteditor_bigfile` in as `FormEdit`/`BigText` — then to 23 real by the
+   toolbox-cookbook phase's `Catalog` case, which hardware-proves the
+   `toolbox/` catalog below — then to 24 real by the native-gaps-cleanup
+   phase's `FInfoStamp` case, which hardware-proves the doctype/creator
+   file-stamp rule on both lanes — then to 27 real by the mac-resident-
+   clarusc phase's `ResourceBake`/`WriteResStamp`/`FieldCap` cases — then
+@@ -237,21 +237,27 @@ enum + runner, not one boot per case.
+   `text.clear()`+warm reuse keeps FreeMem EXACTLY flat (zero Memory
+   Manager traffic) across 200 clear+refill cycles — then to 35 real by
+   the compiler-cleanup phase's `CasesTable` case, which checksums the
+   suite GUI's OWN case table (the one stale-master-pointer instance
+   nothing in the suite asserted on: a band over one row of `gui.cla`'s
+   `Cases` table, non-blank while a row is present and stable across two
+   paints) -- then to 37 real by the language-runtime-cleanup phase's
+   `CanvasIdle` and `WindowMenus` cases, which hardware-prove the buffered
+   canvas dirty gate (200 idle ticks cost no blit and no FreeMem churn)
+   and the `menus:` window-owned menu set (menu-bar band checksums across
+-  an activation))
++  an activation) -- then to 38 real by the AppleTalk phase's `AtalkSelf`
++  case, which hardware-proves the `toolbox/appletalk.cla` catalog against
++  the ROM `.MPP`/`.ATP` drivers: open both, NBP register with
++  verification, read the node's own net/node back out of the Names Table
++  Entry, look up a type nothing registered (err 0, 0 gotten -- the ROM
++  answers no self-lookup and has no `setSelfSend`), remove the name, then
++  open and close a dynamic ATP socket)
+   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
+   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
+   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
+   (`cli_mac.cla` — `cli.cla` can't boot natively, see its own doc comment:
+   cg68k's non-UI startup stub fires `App.startCLI` with a never-marshaled
+   `args` list). Both suites also have a scriptable GUI front end
+   (`gui.cla`, driven by `--events` the same way the legacy UI goldens are).
+   **Both case counts are hand-maintained in FIVE places each**: core =
+   the runner's `nCoreCases`, `tests/mactest/coresuite_68k.sh`'s and
+   `coresuite_mac.sh`'s `suite_report_check` literals,
+@@ -283,21 +289,21 @@ enum + runner, not one boot per case.
+   `tests/mactest/toolbox_68k.sh`/`tests/mactest/toolbox_mac.sh` (same,
+   `toolbox/gui.cla` + `tests/mactest/toolbox_files.txt`). Each parses the
+   captured `tkReport` log and asserts every case's own PASS line plus the
+   `TOTAL n PASS n FAIL 0` tally, reporting one `PASS <case>`/`FAIL <case>`
+   result line per case. The `_68k` halves run under T2's
+   `CLARUS_MAC_TESTS=1 make -j1 test T=mactest/` (`scripts/test-merge.sh`);
+   not part of T1. The `_mac` twins are the Retro68/cprint lane, demoted
+   (pack3-standardfile phase, 2026-08-07) to an opt-in diagnostic behind
+   `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under bare `CLARUS_MAC_TESTS=1`, so
+   they no longer run as part of T2 by default.
+-- `toolbox/{memory,events,osutils,scrap,standardfile,files}.cla`
++- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk}.cla`
+   (toolbox-cookbook phase; the last two added by pack3-standardfile) is a
+   curated extern catalog of real Inside Macintosh trap declarations,
+   ready to compose into a build (positionally or via `include`) for new
+   UI code instead of hand-declaring traps; `tests/testsuite/catalog.sh`
+   (plus `tests/testsuite/catalog_ui.sh`) is its T1 check. `files.cla` itself grew from
+   pack3-standardfile's deliberately-thin SetVol-only scope to a full HFS
+   catalog/directory family (`_HFSDispatch`'s `GetCatInfo`/`SetCatInfo`/
+   `DirCreate`/`CatMove`, plus `PBH{Delete,Rename,Get/SetFInfo,OpenRF}Sync`)
+   in the filesystem-api phase, 2026-08-26 — no longer just a Standard
+   File helper. See `docs/clarus-toolbox-cookbook.md` for worked
+diff --git a/tests/mactest/toolbox_68k.sh b/tests/mactest/toolbox_68k.sh
+index bebef7f..13837cc 100755
+--- a/tests/mactest/toolbox_68k.sh
++++ b/tests/mactest/toolbox_68k.sh
+@@ -1,20 +1,27 @@
+ #!/bin/sh
+ # timeout: 20m
+ # mactest/toolbox_68k -- port of internal/mactest/coresuite_test.go's
+ # TestToolboxSuiteOn68k: ONE native 68k boot of the toolbox suite's GUI
+ # (toolbox_files.txt, `--testapi` + `--bake`), driven by
+ # testdata/ui/toolboxsuite.events (one click on Run All, then quit). Every
+ # case here calls a REAL Toolbox trap or reads the REAL screen framebuffer
+-# in-process. Content-based gate, no trace/snap goldens; each of the 38
++# in-process. Content-based gate, no trace/snap goldens; each of the 39
+ # result lines is re-emitted so the runner reports per case.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
+ require_env CLARUS_MAC_TESTS
+ 
+ toolbox_emit68k "$WORK/toolboxsuite_gui.bin" testdata/ui/toolboxsuite.events
+-run_mac "$WORK/toolboxsuite_gui.bin" 300
++# 420, not 300: the suite's own wall clock on a Mac Plus was already
++# 287 s of that 300 s budget before the AppleTalk phase, and AtalkSelf
++# adds ~6.5 s of REAL AppleTalk time that cannot be shortened -- NBP
++# runs its full retry budget on both registerName (verifyFlag on) and
++# lookupName, ~3.2 s each at interval 8 / count 3 (task-1-report.md P2).
++# The 13 s of headroom that left was going to bite the next case added
++# here whatever it was. Still well inside the script's own 20m deadline.
++run_mac "$WORK/toolboxsuite_gui.bin" 420
+ [ "$MAC_EXIT" = 0 ] || die "toolbox suite exit code $MAC_EXIT, want 0
+ capture:
+ $(cat "$WORK/cap.out")"
+-suite_report_check "$WORK/cap.out" 38
++suite_report_check "$WORK/cap.out" 39
+ t_done
+diff --git a/tests/mactest/toolbox_files.txt b/tests/mactest/toolbox_files.txt
+index 2ee2cf4..c12d11a 100644
+--- a/tests/mactest/toolbox_files.txt
++++ b/tests/mactest/toolbox_files.txt
+@@ -1,19 +1,20 @@
+ testsuite/kit.cla
+ toolbox/memory.cla
+ toolbox/events.cla
+ toolbox/osutils.cla
+ toolbox/scrap.cla
+ toolbox/files.cla
+ toolbox/resources.cla
+ toolbox/devices.cla
+ toolbox/serial.cla
++toolbox/appletalk.cla
+ testsuite/toolbox/runner.cla
+ testsuite/toolbox/cases_events.cla
+ testsuite/toolbox/cases_draw.cla
+ testsuite/toolbox/cases_a5.cla
+ testsuite/toolbox/cases_gestalt.cla
+ testsuite/toolbox/cases_event.cla
+ testsuite/toolbox/harness.cla
+ testsuite/toolbox/cases_uitest.cla
+ testsuite/toolbox/cases_pattern.cla
+ testsuite/toolbox/cases_buttons.cla
+@@ -28,17 +29,18 @@ testsuite/toolbox/cases_hscroll.cla
+ testsuite/toolbox/cases_popuptable.cla
+ testsuite/toolbox/cases_dialogs.cla
+ testsuite/toolbox/cases_hdim.cla
+ testsuite/toolbox/cases_formedit.cla
+ testsuite/toolbox/cases_bigtext.cla
+ testsuite/toolbox/cases_catalog.cla
+ testsuite/toolbox/cases_finfo.cla
+ testsuite/toolbox/cases_resources.cla
+ testsuite/toolbox/cases_datetime.cla
+ testsuite/toolbox/cases_serial.cla
++testsuite/toolbox/cases_atalk.cla
+ testsuite/toolbox/cases_narrowpopup.cla
+ testsuite/toolbox/cases_leak.cla
+ testsuite/toolbox/cases_scrollend.cla
+ testsuite/toolbox/cases_clearwarm.cla
+ testsuite/toolbox/cases_casestable.cla
+ testsuite/toolbox/cases_winmenus.cla
+ testsuite/toolbox/gui.cla
+diff --git a/tests/mactest/toolbox_jiggle.sh b/tests/mactest/toolbox_jiggle.sh
+index 0add5ce..12a1167 100755
+--- a/tests/mactest/toolbox_jiggle.sh
++++ b/tests/mactest/toolbox_jiggle.sh
+@@ -18,12 +18,12 @@
+ # dispatch and every UiNewPtr call is a lot more heap walking.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
+ require_env CLARUS_MAC_TESTS
+ 
+ toolbox_emit68k "$WORK/toolboxsuite_jiggle_gui.bin" testdata/ui/toolboxsuite_jiggle.events
+ run_mac "$WORK/toolboxsuite_jiggle_gui.bin" 900
+ [ "$MAC_EXIT" = 0 ] || die "toolbox suite (jiggle) exit code $MAC_EXIT, want 0
+ capture:
+ $(cat "$WORK/cap.out")"
+-suite_report_check "$WORK/cap.out" 38
++suite_report_check "$WORK/cap.out" 39
+ t_done
+diff --git a/tests/mactest/toolbox_mac.sh b/tests/mactest/toolbox_mac.sh
+index 8802311..c3f5d1b 100755
+--- a/tests/mactest/toolbox_mac.sh
++++ b/tests/mactest/toolbox_mac.sh
+@@ -12,16 +12,18 @@
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
+ require_env CLARUS_CPRINT_MAC_TESTS
+ 
+ # Word splitting is the point: the list has no spaces in it.
+ # shellcheck disable=SC2046
+ bin=$(build_mac toolboxsuite_gui_mac \
+     $(cat "$ROOT/tests/mactest/toolbox_files.txt") \
+     --test --events testdata/ui/toolboxsuite.events --testapi) || exit 1
+ 
+-run_mac "$bin" 300
++# 420 for the same reason toolbox_68k.sh's own settle was raised: the
++# suite's AtalkSelf case spends ~6.5 s in real NBP retries.
++run_mac "$bin" 420
+ [ "$MAC_EXIT" = 0 ] || die "toolbox suite (Retro68) exit code $MAC_EXIT, want 0
+ capture:
+ $(cat "$WORK/cap.out")"
+-suite_report_check "$WORK/cap.out" 38
++suite_report_check "$WORK/cap.out" 39
+ t_done
+diff --git a/tests/testsuite/catalog.sh b/tests/testsuite/catalog.sh
+index 9db0845..7b2c71b 100755
+--- a/tests/testsuite/catalog.sh
++++ b/tests/testsuite/catalog.sh
+@@ -136,16 +136,17 @@ if "$CLARUSC" "$WORK/driver.cla" \
+         "$ROOT/toolbox/memory.cla" \
+         "$ROOT/toolbox/events.cla" \
+         "$ROOT/toolbox/osutils.cla" \
+         "$ROOT/toolbox/scrap.cla" \
+         "$ROOT/toolbox/standardfile.cla" \
+         "$ROOT/toolbox/files.cla" \
+         "$ROOT/toolbox/resources.cla" \
+         "$ROOT/toolbox/appleevents.cla" \
+         "$ROOT/toolbox/devices.cla" \
+         "$ROOT/toolbox/serial.cla" \
++        "$ROOT/toolbox/appletalk.cla" \
+         > "$WORK/catalog.log" 2>&1; then
+     t_pass "$n"
+ else
+     t_fail "$n" "clarusc check failed: $(head -5 "$WORK/catalog.log" | tr '\n' ' ')"
+ fi
+ t_done
+diff --git a/testsuite/toolbox/cases_atalk.cla b/testsuite/toolbox/cases_atalk.cla
+new file mode 100644
+index 0000000..308000f
+--- /dev/null
++++ b/testsuite/toolbox/cases_atalk.cla
+@@ -0,0 +1,212 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// cases_atalk.cla: AtalkSelf (AppleTalk phase Task 6) -- hardware-proves
++// the shipped toolbox/appletalk.cla catalog against real ROM AppleTalk,
++// in-process, the same "the catalog files supply the externs, this case
++// only calls them" discipline cases_catalog.cla and cases_serial.cla
++// already establish. It opens the real .MPP and .ATP drivers, registers
++// an NBP name with verification on, reads its own net/node back out of
++// the Names Table Entry, looks up a type nothing has registered, removes
++// the name, then opens and closes a dynamic ATP socket.
++//
++// WHAT THIS CASE DELIBERATELY DOES NOT DO, and why. The design spec's
++// original sketch was a self-lookup (find our own registered name) and
++// an ATP self-transaction (async getRequest + sync sendRequest to our
++// own address). Task 1's probe wave (task-1-report.md P3, Amendment 3)
++// proved all three legs of that unavailable on the Mac Plus ROM .MPP,
++// which is what this suite boots:
++//   - `setSelfSend` (csCode 256) returns -17 (controlErr): the ROM .MPP
++//     does not implement it, and the AppleTalk 58 System file whose
++//     .MPP would is not on LaunchAPPL's stripped boot disk (P1).
++//   - a self-lookup therefore returns err 0 with numGotten 0, before and
++//     after that call.
++//   - a self-directed ATP sendRequest fails -1096 (reqFailed) after its
++//     full retry budget, and the paired async getRequest never
++//     completes.
++// So the assertions below are exactly Amendment 3's table -- every row
++// of it, and nothing that was not observed on real hardware. Note in
++// particular that the node number is NOT asserted against a fixed value:
++// it is acquired by LLAP at boot and differs run to run (106 and 18 were
++// both seen). .XPP and .DSP are not opened at all: both are -43 (fnfErr)
++// on this boot disk, and a harness fix for that is scheduled separately.
++//
++// Runtime cost: about 6.5 seconds. `registerName` with verifyFlag on
++// broadcasts `count` lookups at `interval` before returning, and
++// `lookupName` runs its full retry budget even when an answer arrives
++// early (task-1-report.md P2) -- ~3.2 s each at interval 8 / count 3.
++//
++// Every parameter block below is a FRESH extern-record local, one per
++// call, never reused: toolbox/appletalk.cla's Rule 2, which cost Task 1
++// three hard hangs of the emulated Mac before it was understood. An
++// extern record local is zero-initialized on declaration (language
++// reference, "extern record"), so this shape satisfies the rule by
++// construction.
++
++// atPStr writes `s` as a Pascal string at `p` and returns the address
++// one byte past its end -- so three back-to-back calls build the PACKED
++// object/type/zone entity NBP actually wants (toolbox/appletalk.cla's
++// own NTE note: `struct EntityName`'s three Str32Field slots are a
++// Pascal/C interface fiction, per AppleTalk.h's own comment). Same
++// NewPtr+pokeb technique toolbox/devices.cla documents for ioNamePtr and
++// cases_serial.cla's `serPName` demonstrates; kept local to this file
++// rather than shared, so each case file stands on its own.
++func atPStr(p: ptr, s: string): ptr {
++    var i: int
++    pokeb(p, s.length)
++    i = 0
++    while i < s.length {
++        pokeb(p + 1 + i, int(s[i]))
++        i = i + 1
++    }
++    return p + 1 + s.length
++}
++
++func caseAtalkSelf(): TestResult {
++    var mppPb: IOParam
++    var atpPb: IOParam
++    var regPb: NBPRegParam
++    var lkPb: NBPLookupParam
++    var rmPb: NBPParam
++    var skOpenPb: ATPParam
++    var skClosePb: ATPParam
++    var nm: ptr
++    var end: ptr
++    var nte: ptr
++    var lkEntity: ptr
++    var lkBuf: ptr
++    var err: int
++    var mppRef: int
++    var atpRef: int
++    var net: int
++    var node: int
++    var sock: int
++    var detail: string
++
++    // -- 1. Open .MPP. It lives in the Mac Plus ROM, so this works with
++    // no AppleTalk System file present, and the OS hands back the
++    // documented static refNum.
++    nm = NewPtrClear(8)
++    end = atPStr(nm, ".MPP")
++    mppPb.ioNamePtr = nm
++    err = PBOpenSync(mppPb)
++    mppRef = mppPb.ioRefNum
++    if err != 0 or mppRef != mppRefNum {
++        detail = "open .MPP err " + tkIntToStr(err)
++        detail = detail + " refNum " + tkIntToStr(mppRef)
++        return tkFail("AtalkSelf", detail)
++    }
++
++    // -- 2. Register "AtalkSelf:ClarusSuite@*" with verification on.
++    // The NTE is 108 bytes: qNext(4) nteAddress(4) filler(1) then the
++    // packed entity at +9. Rule 3 of toolbox/appletalk.cla says a real
++    // service must poke its own listening socket into NTE+7
++    // (nteAddress + 3) BEFORE this call, because NBP copies that byte
++    // through verbatim. This case leaves it 0 on purpose: the name
++    // exists only long enough to prove register/lookup/remove, and
++    // nothing ever connects to it.
++    nte = NewPtrClear(nteSize)
++    end = atPStr(nte + nteEntity, "AtalkSelf")
++    end = atPStr(end, "ClarusSuite")
++    end = atPStr(end, "*")
++    regPb.ioRefNum = mppRef
++    regPb.csCode = registerName
++    regPb.interval = 8
++    regPb.count = 3
++    regPb.ntQElPtr = nte
++    regPb.verifyFlag = 1
++    err = PBControlSync(regPb)
++    if err != 0 {
++        detail = "registerName err " + tkIntToStr(err)
++        return tkFail("AtalkSelf", detail)
++    }
++
++    // -- 3. registerName filled our own address into the NTE
++    // (task-1-report.md Amendment 4 -- the cheapest way to learn it, no
++    // GetNodeAddress glue and no low-memory poking). Net is 0 on a
++    // routerless LocalTalk net, which is what the emulator lane is; the
++    // node is acquired per boot, so only its legal range is asserted.
++    net = peekw(nte + nteAddress)
++    node = peekb(nte + nteAddress + 2)
++    if net != 0 or node < 1 or node > 254 {
++        detail = "nteAddress net " + tkIntToStr(net)
++        detail = detail + " node " + tkIntToStr(node)
++        return tkFail("AtalkSelf", detail)
++    }
++
++    // -- 4. Look up a type nothing has registered. This is the honest
++    // no-peer NBP proof available on this ROM: the CALL succeeds (err 0)
++    // and finds nothing (numGotten 0). A lookup of our OWN type would
++    // also return 0 gotten here -- the ROM never answers its own
++    // lookups -- so it would prove nothing this does not.
++    lkEntity = NewPtrClear(64)
++    end = atPStr(lkEntity, "=")
++    end = atPStr(end, "ClarusNoSuch")
++    end = atPStr(end, "*")
++    lkBuf = NewPtrClear(1024)
++    lkPb.ioRefNum = mppRef
++    lkPb.csCode = lookupName
++    lkPb.interval = 8
++    lkPb.count = 3
++    lkPb.entityPtr = lkEntity
++    lkPb.retBuffPtr = lkBuf
++    lkPb.retBuffSize = 1024
++    lkPb.maxToGet = 16
++    err = PBControlSync(lkPb)
++    if err != 0 or lkPb.numGotten != 0 {
++        detail = "lookupName err " + tkIntToStr(err)
++        detail = detail + " numGotten " + tkIntToStr(lkPb.numGotten)
++        return tkFail("AtalkSelf", detail)
++    }
++
++    // -- 5. Remove the name. RemoveName takes the ENTITY (the packed
++    // object/type/zone at NTE+9), not the NTE itself -- the other arm of
++    // AppleTalk.h's `union NBPPtrs` at the same offset 30.
++    rmPb.ioRefNum = mppRef
++    rmPb.csCode = removeName
++    rmPb.entityPtr = nte + nteEntity
++    err = PBControlSync(rmPb)
++    if err != 0 {
++        detail = "removeName err " + tkIntToStr(err)
++        return tkFail("AtalkSelf", detail)
++    }
++
++    // -- 6. Open .ATP -- also ROM-resident, also a static refNum.
++    nm = NewPtrClear(8)
++    end = atPStr(nm, ".ATP")
++    atpPb.ioNamePtr = nm
++    err = PBOpenSync(atpPb)
++    atpRef = atpPb.ioRefNum
++    if err != 0 or atpRef != atpRefNum {
++        detail = "open .ATP err " + tkIntToStr(err)
++        detail = detail + " refNum " + tkIntToStr(atpRef)
++        return tkFail("AtalkSelf", detail)
++    }
++
++    // -- 7. openATPSkt with atpSocket 0 asks for any free dynamic
++    // socket; DDP's dynamic range is 128..254 (Inside Macintosh II
++    // ch. 10). Task 1 saw 202.
++    skOpenPb.ioRefNum = atpRef
++    skOpenPb.csCode = openATPSkt
++    skOpenPb.atpSocket = 0
++    err = PBControlSync(skOpenPb)
++    sock = skOpenPb.atpSocket
++    if err != 0 or sock < 128 or sock > 254 {
++        detail = "openATPSkt err " + tkIntToStr(err)
++        detail = detail + " socket " + tkIntToStr(sock)
++        return tkFail("AtalkSelf", detail)
++    }
++
++    // -- 8. Close it again, from a FRESH block (Rule 2). The suite boot
++    // must leave no ATP socket behind for later cases.
++    skClosePb.ioRefNum = atpRef
++    skClosePb.csCode = closeATPSkt
++    skClosePb.atpSocket = sock
++    err = PBControlSync(skClosePb)
++    if err != 0 {
++        detail = "closeATPSkt err " + tkIntToStr(err)
++        return tkFail("AtalkSelf", detail)
++    }
++
++    return tkPass("AtalkSelf")
++}
+diff --git a/testsuite/toolbox/runner.cla b/testsuite/toolbox/runner.cla
+index e771e72..7b32f62 100644
+--- a/testsuite/toolbox/runner.cla
++++ b/testsuite/toolbox/runner.cla
+@@ -106,20 +106,27 @@
+ // is the live-log phase's own Task 1 addition: hardware-proves that
+ // programmatic textview/label sets (rtUiWidgetSetText / rtUiWidgetSetStr's
+ // label branch, uiwidgets.cla) paint SYNCHRONOUSLY, before any update
+ // event can run -- see that case's own header comment for the full
+ // checksum-region derivation. SerialOpenWrite (cases_serial.cla) is
+ // serial-connection phase Task 2's own addition: hardware-proves the
+ // toolbox/devices.cla + toolbox/serial.cla Device Manager/Serial Driver
+ // catalog by opening the real .AOut/.AIn drivers, configuring 9600-8N1,
+ // exercising the load-bearing SerSetBuf call, writing 5 bytes, and
+ // reading a real SerGetBuf count -- see that case's own header comment.
++// AtalkSelf (cases_atalk.cla) is the AppleTalk phase's Task 6 addition:
++// hardware-proves the toolbox/appletalk.cla AppleTalk catalog against
++// real ROM .MPP/.ATP -- open both drivers, register an NBP name with
++// verification, read our own net/node back out of the Names Table
++// Entry, look up a type nothing registered, remove the name, then open
++// and close a dynamic ATP socket -- see that case's own header comment
++// for why a self-lookup and an ATP self-transaction are NOT asserted.
+ // NarrowPopup (cases_narrowpopup.cla) is correctness-cleanup Task 2's own
+ // addition: hardware-proves the labeled-popup layout fix
+ // (uiwidgets.cla's new rtUiKindPopup-with-label arm +
+ // rtUiPopupBoxInto's defensive floor, uitable.cla) against a real
+ // `width: 60` labeled popup (harness.cla's NarrowPopupWin) -- see that
+ // case's own header comment. LeakCheck (cases_leak.cla) is
+ // 68k-call-result-release Task 4's own addition: hardware-proves that a
+ // user function's text result consumed directly (argument / operand /
+ // receiver / builtin-method-argument) is released by the emit68k
+ // call-result-release fix -- a real FreeMem-flat proof across thousands
+@@ -171,36 +178,37 @@ enum ToolboxTest {
+     FormEdit
+     FieldCap
+     BigText
+     Catalog
+     FInfoStamp
+     ResourceBake
+     WriteResStamp
+     DateTimeRoundTrip
+     LivePaint
+     SerialOpenWrite
++    AtalkSelf
+     NarrowPopup
+     LeakCheck
+     ScrollToEnd
+     ClearWarm
+     CasesTable
+     CanvasIdle
+     WindowMenus
+     SelfCheck
+ }
+ 
+-// nTbCases is ToolboxTest's member count minus All: the 37 real cases
++// nTbCases is ToolboxTest's member count minus All: the 38 real cases
+ // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
+ // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
+ // a forgotten branch leaves casesRun short and SelfCheck fails instead of
+ // the suite silently shrinking.
+-const nTbCases: int = 38
++const nTbCases: int = 39
+ 
+ // tbCaseName maps a ToolboxTest member to its programmatic name, used as
+ // both the GUI's table row label and a TestResult's name.
+ func tbCaseName(t: ToolboxTest): string {
+     switch t {
+     case All {
+         return "All"
+     }
+     case TickCountAdvances {
+         return "TickCountAdvances"
+@@ -285,20 +293,23 @@ func tbCaseName(t: ToolboxTest): string {
+     }
+     case DateTimeRoundTrip {
+         return "DateTimeRoundTrip"
+     }
+     case LivePaint {
+         return "LivePaint"
+     }
+     case SerialOpenWrite {
+         return "SerialOpenWrite"
+     }
++    case AtalkSelf {
++        return "AtalkSelf"
++    }
+     case NarrowPopup {
+         return "NarrowPopup"
+     }
+     case LeakCheck {
+         return "LeakCheck"
+     }
+     case ScrollToEnd {
+         return "ScrollToEnd"
+     }
+     case ClearWarm {
+@@ -347,20 +358,21 @@ func tbAllCases(): list of ToolboxTest {
+     l.add(FormEdit)
+     l.add(FieldCap)
+     l.add(BigText)
+     l.add(Catalog)
+     l.add(FInfoStamp)
+     l.add(ResourceBake)
+     l.add(WriteResStamp)
+     l.add(DateTimeRoundTrip)
+     l.add(LivePaint)
+     l.add(SerialOpenWrite)
++    l.add(AtalkSelf)
+     l.add(NarrowPopup)
+     l.add(LeakCheck)
+     l.add(ScrollToEnd)
+     l.add(ClearWarm)
+     l.add(CasesTable)
+     l.add(CanvasIdle)
+     l.add(WindowMenus)
+     l.add(SelfCheck)
+     return l
+ }
+@@ -512,20 +524,24 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
+         casesRun = casesRun + 1
+     }
+     if wantAll or tbHas(deduped, LivePaint) {
+         results.add(caseLivePaint())
+         casesRun = casesRun + 1
+     }
+     if wantAll or tbHas(deduped, SerialOpenWrite) {
+         results.add(caseSerialOpenWrite())
+         casesRun = casesRun + 1
+     }
++    if wantAll or tbHas(deduped, AtalkSelf) {
++        results.add(caseAtalkSelf())
++        casesRun = casesRun + 1
++    }
+     if wantAll or tbHas(deduped, NarrowPopup) {
+         results.add(caseNarrowPopup())
+         casesRun = casesRun + 1
+     }
+     if wantAll or tbHas(deduped, LeakCheck) {
+         results.add(caseLeakCheck())
+         casesRun = casesRun + 1
+     }
+     if wantAll or tbHas(deduped, ScrollToEnd) {
+         results.add(caseScrollToEnd())
+diff --git a/toolbox/appletalk.cla b/toolbox/appletalk.cla
+new file mode 100644
+index 0000000..db127b4
+--- /dev/null
++++ b/toolbox/appletalk.cla
+@@ -0,0 +1,583 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// toolbox/appletalk.cla: curated AppleTalk driver declarations -- the
++// .MPP (LAP/DDP/NBP), .ATP, .XPP (ZIP) and .DSP (ADSP) drivers -- for
++// the AppleTalk phase, Task 6. Every AppleTalk call is an ordinary
++// Device Manager Control/Status call against one of those four named
++// drivers, dispatched on the parameter block's own `csCode` field, NOT a
++// trap of its own: the routines that issue them are PBOpenSync /
++// PBControlSync / PBStatusSync / PBKillIOSync from toolbox/devices.cla
++// (compose both files), plus the ONE new form this file adds,
++// PBControlAsync. Inside Macintosh II ch. 10 ("The AppleTalk Manager"),
++// Inside Macintosh V ch. 28, Inside Macintosh VI ch. 32 (ADSP + ZIP) and
++// Inside Macintosh: Networking (1994) are the prose sources; the numbers
++// come from the headers cited per declaration.
++//
++// Every constant and struct layout below is confirmed directly against
++// Apple's own Universal Interfaces 3.4 (Retro68/InterfacesAndLibraries/
++// Interfaces/CIncludes/{AppleTalk,ADSP,MacErrors,Devices}.h), read via
++// `LC_ALL=C tr '\r' '\n' < AppleTalk.h` -- those headers have CR-only
++// line endings and MacRoman bytes, so a plain `grep -n` silently reports
++// nothing against them (toolbox/devices.cla's header comment records the
++// same trap). Line numbers below are from that reflow, matching the
++// headers' own native numbering 1:1. Read on 2026-09-07.
++//
++// ---- THREE RULES a caller must follow (all three cost real boots) ----
++//
++// 1. **Every AppleTalk parameter block is at least 52 bytes.** The
++//    Device Manager's ParamBlockRec union is larger than the fields any
++//    one AppleTalk call names, and the driver writes into fields the
++//    caller never set (ATP's SendReqparms alone is 52 bytes,
++//    AppleTalk.h:816-841). Every `extern record` below is therefore
++//    padded to at least 52 bytes even where the named fields stop far
++//    short -- the same discipline toolbox/devices.cla's header comment
++//    states for CntrlParam's 50, raised to 52 for this family. A short
++//    record is a stack overrun waiting to stomp its neighbours.
++//    (BDSElement is the one exception below and is not a parameter
++//    block -- see its own comment.)
++//
++// 2. **NEVER reuse a parameter block for a second call without
++//    re-zeroing the WHOLE block.** Task 1's probe wave
++//    (task-1-report.md Amendment 2) hung the emulated Mac hard, three
++//    boots in a row with no bomb and no error, by issuing a second
++//    `lookupName` on the same block a first `lookupName` had just
++//    completed on, rewriting only the call fields. The stale queue
++//    fields (qLink@0 / qType@4, which the driver owns) are the likely
++//    culprit. A fresh zero-initialized `extern record` local per call is
++//    the cheapest correct answer for sync code (an extern record local
++//    is zero-initialized on declaration -- language reference, "extern
++//    record"); a long-lived block allocated with NewPtrClear must be
++//    cleared IN FULL between calls, not just in the fields being set.
++//
++// 3. **NBP registers the socket you give it, verbatim.** `registerName`
++//    fills in the NTE's `nteAddress` net and node itself, but copies
++//    `aSocket` (NTE+7, i.e. nteAddress+3) straight through. A real
++//    service must write its own listening socket -- the ATP socket
++//    `openATPSkt` handed back, or the ADSP socket -- into NTE+7 BEFORE
++//    calling `registerName`, or every client that looks the name up gets
++//    an address with socket 0 and cannot connect (task-1-report.md
++//    Amendment 1, observed on the wire).
++//
++// Two further facts recorded by the same probe wave, load-bearing for
++// anything built on this catalog:
++//   - `registerName` is also the cheapest way for a program to learn its
++//     OWN address: afterwards NTE+4..7 holds net(2) node(1) socket(1).
++//     No GetNodeAddress glue and no low-memory poking is needed
++//     (Amendment 4).
++//   - The Mac Plus ROM .MPP does NOT implement `setSelfSend` (csCode
++//     256 returns -17, controlErr) and never answers its own NBP
++//     lookups. The constant is declared below for completeness; do not
++//     build on it without a Gestalt-style runtime check.
++//   - `lookupName` runs ALL its retries even after an answer arrives:
++//     a lookup costs about `count x interval x 8` ticks regardless.
++//     At the classic interval 8 / count 3 that is ~3.2 seconds.
++
++// ---- The one new trap: the ASYNC Control call ----
++//
++//   PBControlAsync Devices.h:1307-1310 (pragma 1307, trap 1310):
++//                  `#pragma parameter __D0 PBControlAsync(__A0)` ...
++//                  `EXTERN_API( OSErr ) PBControlAsync(ParmBlkPtr
++//                  paramBlock) ONEWORDINLINE(0xA404);` -- pb in A0,
++//                  OSErr in D0, bit 11 clear (0xA404 & 0x0800 == 0) -->
++//                  OS/register convention, bare `reg`, the same shape as
++//                  toolbox/devices.cla's own PBxxxSync declarations. The
++//                  0x0400 bit versus PBControlSync's 0xA004 is the
++//                  Device Manager's async bit (bit 10). The call returns
++//                  immediately with 0 = "queued"; the real result lands
++//                  in the block's own ioResult@16 (pbIoResult below),
++//                  which stays 1 (ioInProgress) until the driver
++//                  completes the request. Rule 2 above applies with
++//                  full force: an async block is owned by the driver
++//                  until ioResult stops being 1.
++//
++// PBOpenSync / PBControlSync / PBStatusSync / PBKillIOSync are NOT
++// redeclared here -- they come from toolbox/devices.cla, which every
++// AppleTalk build must compose alongside this file (two declarations of
++// the same extern name in one build is a real hazard, not a cosmetic
++// one; see that file's own header comment).
++external func PBControlAsync(paramBlock: ptr): int = trap 0xA404 reg
++
++// ---- The four drivers, and their refNums (AppleTalk.h:58-63) ----
++//
++// A caller opens each BY NAME through PBOpenSync (toolbox/devices.cla
++// documents the NewPtr+pokeb Pascal-string pattern `ioNamePtr` needs,
++// and testsuite/toolbox/cases_serial.cla's `serPName` is the worked
++// example) and then reads the OS-assigned refNum back out of the
++// paramBlock. The names themselves -- ".MPP", ".ATP", ".XPP", ".DSP" --
++// are Inside Macintosh prose convention, not header symbols, so no
++// `const string` is declared for them (same discipline as
++// toolbox/serial.cla's four serial driver names). The refNum constants
++// ARE header symbols and are declared, so a caller can assert the
++// driver it got is the driver it asked for.
++//
++// ADSP's refNum is dynamic -- the header's own comment says so -- so
++// there is no `dspRefNum`; ".DSP" hands back whatever the Device
++// Manager assigned it.
++//
++// Availability, measured (task-1-report.md P1): .MPP (-10) and .ATP
++// (-11) live in the Mac Plus ROM and open on any AppleTalk-capable
++// machine. .XPP and .DSP live in the `AppleTalk` System file and return
++// -43 (fnfErr) if that file is not in the resource chain -- which it is
++// NOT on LaunchAPPL's stripped boot disk.
++const mppRefNum: int = -10   // AppleTalk.h:60 -- .MPP (LAP/DDP/NBP)
++const atpRefNum: int = -11   // AppleTalk.h:61 -- .ATP
++const xppRefNum: int = -41   // AppleTalk.h:62 -- .XPP (ASP/AFP/ZIP)
++
++// ---- .MPP csCodes (AppleTalk.h:65-86) ----
++//
++// Only the DDP and NBP codes a Clarus program plausibly issues are
++// declared; the resident LAP codes (lookupReply 242, writeLAP 243,
++// detachPH 244, attachPH 245, loadNBP/lastResident 249, unloadNBP 255)
++// and the System 7 additions (SetMyZone 257, GetATalkInfo 258,
++// ATalkClosePrep 259) are recorded here in prose rather than redeclared,
++// on the "declare what the phase's abstractions actually reach" rule.
++const writeDDP: int = 246      // AppleTalk.h:71 -- Control: write out a DDP datagram
++const closeSkt: int = 247      // AppleTalk.h:72 -- Control: close a DDP socket
++const openSkt: int = 248       // AppleTalk.h:73 -- Control: open a DDP socket
++const confirmName: int = 250   // AppleTalk.h:76 -- Control: NBP ConfirmName
++const lookupName: int = 251    // AppleTalk.h:77 -- Control: NBP LookupName
++const removeName: int = 252    // AppleTalk.h:78 -- Control: NBP RemoveName
++const registerName: int = 253  // AppleTalk.h:79 -- Control: NBP RegisterName
++const killNBP: int = 254       // AppleTalk.h:80 -- Control: cancel an outstanding NBP request
++const setSelfSend: int = 256   // AppleTalk.h:82 -- Control: allow sends to self; -17 on the Mac Plus ROM (see header)
++
++// ---- .ATP csCodes (AppleTalk.h:88-102) ----
++const nSendRequest: int = 248   // AppleTalk.h:90 -- NSendRequest (extended send request)
++const relRspCB: int = 249       // AppleTalk.h:91 -- release a response control block
++const closeATPSkt: int = 250    // AppleTalk.h:92 -- close an ATP socket
++const addResponse: int = 251    // AppleTalk.h:93 -- add a response to an open transaction
++const sendResponse: int = 252   // AppleTalk.h:94 -- send the response to a request
++const getRequest: int = 253     // AppleTalk.h:95 -- receive a request (issue ASYNC; see PBControlAsync)
++const openATPSkt: int = 254     // AppleTalk.h:96 -- open an ATP socket (atpSocket 0 = "any dynamic")
++const sendRequest: int = 255    // AppleTalk.h:97 -- send a request, block for the response
++const relTCB: int = 256         // AppleTalk.h:98 -- release a transaction control block
++const killGetReq: int = 257     // AppleTalk.h:99 -- cancel one GetRequest
++const killSendReq: int = 258    // AppleTalk.h:100 -- cancel one SendRequest
++const killAllGetReq: int = 259  // AppleTalk.h:101 -- cancel every GetRequest on a socket; -17 on the Mac Plus ROM (task-1-report.md P3b) -- use PBKillIOSync instead
++
++// ---- .XPP csCode + the ZIP sub-codes (AppleTalk.h:104-115, 200-204) ----
++//
++// The zone calls are `xCall` (csCode 246) with the real selector in the
++// block's own `xppSubCode`@28 -- XCallParam below. The other .XPP
++// csCodes (openSess 255 ... closeAll 247) are ASP/AFP session calls this
++// phase does not reach and are not redeclared.
++const xCall: int = 246              // AppleTalk.h:115 -- .XPP extended calls (ZIP lives here)
++const zipGetLocalZones: int = 5     // AppleTalk.h:201 -- xppSubCode: zones on the local net
++const zipGetZoneList: int = 6       // AppleTalk.h:202 -- xppSubCode: every zone on the internet
++const zipGetMyZone: int = 7         // AppleTalk.h:203 -- xppSubCode: this node's own zone
++
++// ---- .DSP (ADSP) csCodes (ADSP.h:52-67) ----
++const dspInit: int = 255       // ADSP.h:53 -- create a connection end
++const dspRemove: int = 254     // ADSP.h:54 -- remove a connection end
++const dspOpen: int = 253       // ADSP.h:55 -- open a connection
++const dspClose: int = 252      // ADSP.h:56 -- close a connection
++const dspCLInit: int = 251     // ADSP.h:57 -- create a connection listener
++const dspCLRemove: int = 250   // ADSP.h:58 -- remove a connection listener
++const dspCLListen: int = 249   // ADSP.h:59 -- post a listener request
++const dspCLDeny: int = 248     // ADSP.h:60 -- deny an open-connection request
++const dspStatus: int = 247     // ADSP.h:61 -- status of a connection end
++const dspRead: int = 246       // ADSP.h:62 -- read data from the connection
++const dspWrite: int = 245      // ADSP.h:63 -- write data on the connection
++const dspAttention: int = 244  // ADSP.h:64 -- send an attention message
++const dspOptions: int = 243    // ADSP.h:65 -- set connection-end options
++const dspReset: int = 242      // ADSP.h:66 -- forward-reset the connection
++const dspNewCID: int = 241     // ADSP.h:67 -- generate a connection id
++
++// ---- ATP flags and sizes ----
++//
++// atpMaxData/atpMaxNum/bdsEntrySz are the three sizes an ATP caller
++// needs that AppleTalk.h does NOT name as enum constants; each is
++// derived from the header and cross-checked against Inside Macintosh:
++//   atpMaxData 578 -- the maximum ATP response-data size. IM II ch. 10's
++//     ATP section ("Each response ... up to 578 bytes"); corroborated
++//     inside AppleTalk.h itself at line 780, XCallParam's own zipBuffPtr
++//     comment: "pointer to buffer (must be 578 bytes)".
++//   atpMaxNum 8 -- responses per transaction, i.e. the BDS array's
++//     length: AppleTalk.h:337 `typedef BDSElement BDSType[8]`.
++//   bdsEntrySz 12 -- one BDSElement, AppleTalk.h:330-335 (short + Ptr +
++//     short + long, 68k-packed) -- see the BDSElement record below.
++const atpXOvalue: int = 32         // AppleTalk.h:193 -- atpFlags: exactly-once transaction
++const atpEOMvalue: int = 16        // AppleTalk.h:194 -- atpFlags: end-of-message
++const atpSTSvalue: int = 8         // AppleTalk.h:195 -- atpFlags: send transmission status
++const atpTIDValidvalue: int = 2    // AppleTalk.h:196 -- atpFlags: transaction ID valid
++const atpSendChkvalue: int = 1     // AppleTalk.h:197 -- atpFlags: send checksum
++const atpMaxData: int = 578        // IM II ch.10; AppleTalk.h:780 -- max bytes per ATP response
++const atpMaxNum: int = 8           // AppleTalk.h:337 (BDSType[8]) -- max responses per transaction
++const bdsEntrySz: int = 12         // AppleTalk.h:330-335 -- one BDSElement, 68k-packed
++
++// ---- ADSP open modes, states, event flags and sizes ----
++//
++// ccbSize 242 is likewise not a header enum: it is sizeof(TRCCB),
++// ADSP.h:104-116 -- ccbLink(4) refNum(2) state(2) userFlags(1)
++// localSocket(1) remoteAddress(4) attnCode(2) attnSize(2) attnPtr(4)
++// reserved[220] = 242. A client allocates the CCB (NewPtrClear) and
++// hands ADSP the pointer in dspInitCcbPtr; ADSP owns it thereafter.
++const ocRequest: int = 1       // ADSP.h:72 -- ocMode: request a connection with the remote end
++const ocPassive: int = 2       // ADSP.h:73 -- ocMode: wait for a connection request
++const ocAccept: int = 3        // ADSP.h:74 -- ocMode: accept a request a listener delivered
++const ocEstablish: int = 4     // ADSP.h:75 -- ocMode: consider the connection already open
++const sListening: int = 1      // ADSP.h:80 -- ccbState: connection listener
++const sPassive: int = 2        // ADSP.h:81 -- ccbState: waiting for a connection request
++const sOpening: int = 3        // ADSP.h:82 -- ccbState: requesting a connection
++const sOpen: int = 4           // ADSP.h:83 -- ccbState: connection is open
++const sClosing: int = 5        // ADSP.h:84 -- ccbState: connection is being torn down
++const sClosed: int = 6         // ADSP.h:85 -- ccbState: closed
++const eClosed: int = 128       // ADSP.h:90 -- ccbUserFlags 0x80: connection-closed advice received
++const eTearDown: int = 64      // ADSP.h:91 -- ccbUserFlags 0x40: connection broken
++const eAttention: int = 32     // ADSP.h:92 -- ccbUserFlags 0x20: attention message received
++const eFwdReset: int = 16      // ADSP.h:93 -- ccbUserFlags 0x10: forward-reset advice received
++const attnBufSize: int = 570   // ADSP.h:98 -- required size of the client attention buffer
++const minDSPQueueSize: int = 100  // ADSP.h:99 -- minimum send/receive queue size
++const ccbSize: int = 242       // ADSP.h:104-116 (sizeof TRCCB) -- allocate with NewPtrClear
++
++// ---- Error codes (MacErrors.h) ----
++const ddpSktErr: int = -91         // MacErrors.h:204 -- bad socket number
++const noBridgeErr: int = -93       // MacErrors.h:206 -- no router for a non-local send
++const portInUse: int = -97         // MacErrors.h:210 -- driver open: port already in use
++const portNotCf: int = -98         // MacErrors.h:211 -- driver open: PRAM not configured for this port
++const nbpBuffOvr: int = -1024      // MacErrors.h:622 -- LookupName reply buffer overflowed
++const nbpNoConfirm: int = -1025    // MacErrors.h:623 -- ConfirmName found nothing
++const nbpConfDiff: int = -1026     // MacErrors.h:624 -- name confirmed at a different socket
++const nbpDuplicate: int = -1027    // MacErrors.h:625 -- RegisterName: name already in use
++const nbpNotFound: int = -1028     // MacErrors.h:626 -- RemoveName: name not in the table
++const nbpNISErr: int = -1029       // MacErrors.h:627 -- could not open the Names Information Socket
++const reqFailed: int = -1096       // MacErrors.h:644 -- ATP SendRequest: retry count exhausted
++const tooManyReqs: int = -1097     // MacErrors.h:645 -- too many concurrent ATP requests
++const badATPSkt: int = -1099       // MacErrors.h:647 -- bad ATP socket
++const badBuffNum: int = -1100      // MacErrors.h:648 -- bad BDS buffer number
++const cbNotFound: int = -1102      // MacErrors.h:650 -- control block not found
++const noDataArea: int = -1104      // MacErrors.h:652 -- no data area available
++const reqAborted: int = -1105      // MacErrors.h:653 -- request aborted
++const errRefNum: int = -1280       // MacErrors.h:659 -- ADSP: bad connection refNum
++const errAborted: int = -1279      // MacErrors.h:660 -- ADSP: control call aborted
++const errState: int = -1278        // MacErrors.h:661 -- ADSP: wrong connection state for this call
++const errOpening: int = -1277      // MacErrors.h:662 -- ADSP: open-connection request failed
++const errAttention: int = -1276    // MacErrors.h:663 -- ADSP: attention message too long
++const errFwdReset: int = -1275     // MacErrors.h:664 -- ADSP: read terminated by a forward reset
++const errDSPQueueSize: int = -1274 // MacErrors.h:665 -- ADSP: send/receive queue too small
++const errOpenDenied: int = -1273   // MacErrors.h:666 -- ADSP: open request denied by the remote end
++const atpLenErr: int = -3106       // MacErrors.h:1222 -- ATP: bad length
++const atpBadRsp: int = -3107       // MacErrors.h:1223 -- ATP: bad response
++const sktClosedErr: int = -3109    // MacErrors.h:1225 -- ATP: socket closed
++
++// ---- Parameter blocks ----
++//
++// Same house style toolbox/devices.cla established for CntrlParam and
++// toolbox/files.cla for FileParam/VolumeParam/IOParam: `extern record`
++// has no array field type and no union, so a single record cannot name
++// every csCode's payload at its own offset. One record per PAYLOAD
++// SHAPE, each padded out to at least the 52-byte floor Rule 1 above
++// states, each carrying the identical Device Manager prefix
++// (AppleTalk.h:565-580 for the NBP family):
++//   qLink@0(4) qType@4(2) ioTrap@6(2) ioCmdAddr@8(4) ioCompletion@12(4)
++//   ioResult@16(2) userData@18(4) reqTID@22(2) ioRefNum@24(2)
++//   csCode@26(2)
++// -- field names transcribed verbatim from the header. Note the
++// AppleTalk family's prefix differs from IOParam's/CntrlParam's after
++// ioResult: where those carry ioNamePtr@18 + ioVRefNum@22, the MPP/ATP
++// blocks carry `userData`@18 (the ATP user bytes) and `reqTID`@22.
++// The one exception is DSPParam, which uses the ordinary
++// ioNamePtr/ioVRefNum/ioCRefNum prefix (ADSP.h:194-217).
++//
++// A caller declares one of these as a LOCAL per call (zero-initialized
++// on declaration, so Rule 2 is satisfied by construction). Code that
++// must keep a block alive across an async call allocates it with
++// NewPtrClear instead and reaches its fields through the offset
++// constants at the bottom of this file.
++
++// NBPParam -- the plain NBP shape: RegisterName's own union arm is
++// `ntQElPtr` and RemoveName/LookupName/ConfirmName's is `entityPtr`
++// (AppleTalk.h:545-549, `union NBPPtrs`), both at offset 30, so this
++// record names it `entityPtr` and NBPRegParam below names the same
++// 4 bytes `ntQElPtr`. Use this one for RemoveName and KillNBP, which
++// need nothing past offset 30. Real NBPparms is 44 bytes
++// (AppleTalk.h:565-580); padded to 52 per Rule 1.
++extern record NBPParam {
++    qLink: ptr
++    qType: word
++    ioTrap: word
++    ioCmdAddr: ptr
++    ioCompletion: ptr
++    ioResult: word
++    userData: int
++    reqTID: word
++    ioRefNum: word
++    csCode: word
++    interval: byte
++    count: byte
++    entityPtr: ptr
++    pad[18]
++}
++
++// NBPRegParam -- RegisterName (csCode 253) and ConfirmName (250).
++// `verifyFlag`@34 is `LookupConfirmParams.verifyFlag`
++// (AppleTalk.h:550-551): non-zero asks NBP to broadcast `count` lookups
++// at `interval` first and fail with nbpDuplicate if anyone answers.
++// That verification costs the full retry budget -- about 3.2 s at
++// interval 8 / count 3, measured (task-1-report.md P2).
++extern record NBPRegParam {
++    qLink: ptr
++    qType: word
++    ioTrap: word
++    ioCmdAddr: ptr
++    ioCompletion: ptr
++    ioResult: word
++    userData: int
++    reqTID: word
++    ioRefNum: word
++    csCode: word
++    interval: byte
++    count: byte
++    ntQElPtr: ptr
++    verifyFlag: byte
++    pad[17]
++}
++
++// NBPLookupParam -- LookupName (csCode 251), the Lookup arm of
++// LookupConfirmParams (AppleTalk.h:552-557): retBuffPtr@34,
++// retBuffSize@38, maxToGet@40, numGotten@42. `entityPtr`@30 points at a
++// PACKED three-Pascal-string entity (see the NTE note below);
++// `retBuffPtr` receives `numGotten` tuples, each `AddrBlock`(4) +
++// enumerator(1) + a packed entity (tupleAddr/tupleEnum/tupleEntity
++// below). Real NBPparms is 44 bytes; padded to 52 per Rule 1.
++extern record NBPLookupParam {
++    qLink: ptr
++    qType: word
++    ioTrap: word
++    ioCmdAddr: ptr
++    ioCompletion: ptr
++    ioResult: word
++    userData: int
++    reqTID: word
++    ioRefNum: word
++    csCode: word
++    interval: byte
++    count: byte
++    entityPtr: ptr
++    retBuffPtr: ptr
++    retBuffSize: word
++    maxToGet: word
++    numGotten: word
++    pad[8]
++}
++
++// ATPParam -- AppleTalk.h:816-841 (`SendReqparms`, the widest ATP arm at
++// 52 bytes), which is a strict superset of ATPparms (797-814). One
++// record covers every ATP csCode this catalog names; the three narrow
++// variant arms (ATPmisc1's bitMap/numOfBuffs/rspNum union at 44,
++// ATPmisc2's bdsSize@45 + transID@46, Killparms' aKillQEl@44) land
++// inside the same bytes and are reached by the atpBitMap / atpRspNum /
++// atpBdsSize / atpTransID offset constants below. AddrBlock@30
++// (AppleTalk.h:318-323) is aNet(2) aNode(1) aSocket(1), split here into
++// three named fields because `extern record` reads a nested record's
++// fields but a caller wants them individually. Padded to 56, the
++// header's own `atpSize` (AppleTalk.h:188), comfortably over the
++// 52-byte floor.
++extern record ATPParam {
++    qLink: ptr
++    qType: word
++    ioTrap: word
++    ioCmdAddr: ptr
++    ioCompletion: ptr
++    ioResult: word
++    userData: int
++    reqTID: word
++    ioRefNum: word
++    csCode: word
++    atpSocket: byte
++    atpFlags: byte
++    addrNet: word
++    addrNode: byte
++    addrSocket: byte
++    reqLength: word
++    reqPointer: ptr
++    bdsPointer: ptr
++    numOfBuffs: byte
++    timeOutVal: byte
++    numOfResps: byte
++    retryCount: byte
++    intBuff: word
++    TRelTime: byte
++    pad[5]
++}
++
++// XCallParam -- AppleTalk.h:765-786, the .XPP `xCall` block. The ZIP
++// zone calls (zipGetMyZone / zipGetLocalZones / zipGetZoneList) put
++// their selector in xppSubCode@28 and their reply in a caller-supplied
++// 578-byte buffer at zipBuffPtr@34. zipInfoField (70 bytes @42) is
++// ZIP's own continuation state: the caller zeroes its first word before
++// the first call of a sequence and then leaves it alone. Real size 112.
++extern record XCallParam {
++    qLink: ptr
++    qType: word
++    ioTrap: word
++    ioCmdAddr: ptr
++    ioCompletion: ptr
++    ioResult: word
++    cmdResult: int
++    ioVRefNum: word
++    ioRefNum: word
++    csCode: word
++    xppSubCode: word
++    xppTimeout: byte
++    xppRetry: byte
++    filler1: word
++    zipBuffPtr: ptr
++    zipNumZones: word
++    zipLastFlag: byte
++    filler2: byte
++    pad[70]
++}
++
++// DSPParam -- ADSP.h:194-217. Unlike the MPP/ATP blocks this one uses
++// the ordinary Device Manager prefix (ioNamePtr@18, ioVRefNum@22,
++// ioCRefNum@24) and adds qStatus@28 (ADSP internal) + ccbRefNum@32.
++// Everything past 34 is a union of eight variant arms (TRinitParams,
++// TRopenParams, TRcloseParams, TRioParams, TRattnParams,
++// TRstatusParams, TRoptionParams, TRnewcidParams, ADSP.h:124-192) whose
++// widest member ends at 68; it is captured here as one 34-byte pad and
++// reached through the dspXxx offset constants below. Real size 68.
++extern record DSPParam {
++    qLink: ptr
++    qType: word
++    ioTrap: word
++    ioCmdAddr: ptr
++    ioCompletion: ptr
++    ioResult: word
++    ioNamePtr: ptr
++    ioVRefNum: word
++    ioCRefNum: word
++    csCode: word
++    qStatus: int
++    ccbRefNum: word
++    pad[34]
++}
++
++// BDSElement -- AppleTalk.h:330-335. NOT a parameter block: it is one
++// element of the response-buffer descriptor ARRAY an ATP caller points
++// `bdsPointer`@40 at (BDSType is exactly 8 of these, AppleTalk.h:337),
++// so Rule 1's 52-byte floor does not apply -- its size is fixed at 12
++// by the wire contract. `extern record` cannot be an array element
++// (language reference, "extern record"), so a multi-entry BDS is built
++// with NewPtrClear + bdsEntrySz arithmetic and poked by offset; this
++// record is the one-entry case and the offset documentation for both.
++extern record BDSElement {
++    buffSize: word
++    buffPtr: ptr
++    dataSize: word
++    userBytes: int
++}
++
++// ---- Field offsets, for blocks allocated with NewPtrClear ----
++//
++// Async code (PBControlAsync above) and per-slot runtime state cannot
++// use the `extern record` locals above -- an extern record is never a
++// container element and has no address-of operator outside an
++// `external func` call site -- so it allocates its blocks with
++// NewPtrClear and reaches fields by offset with peekb/peekw/peekl and
++// pokeb/pokew/pokel. Every offset below is the same byte offset the
++// corresponding record field above occupies; they are stated separately
++// so that neither form is derived from the other by hand.
++
++// Device Manager prefix fields common to every block above.
++const pbIoResult: int = 16    // ioResult -- 1 (ioInProgress) until an async call completes
++const pbIoRefNum: int = 24    // ioRefNum / ioCRefNum
++const pbCsCode: int = 26      // csCode -- the call selector
++
++// NBP (AppleTalk.h:545-580).
++const nbpNtQElPtr: int = 30          // union NBPPtrs: ntQElPtr (register) / entityPtr (lookup, remove, confirm)
++const nbpVerifyFlag: int = 34        // LookupConfirmParams.verifyFlag
++const nbpLookupRetBuffPtr: int = 34  // LookupConfirmParams.Lookup.retBuffPtr
++const nbpLookupRetBuffSize: int = 38 // LookupConfirmParams.Lookup.retBuffSize
++const nbpLookupMaxToGet: int = 40    // LookupConfirmParams.Lookup.maxToGet
++const nbpLookupNumGotten: int = 42   // LookupConfirmParams.Lookup.numGotten
++const nbpConfirmAddr: int = 34       // LookupConfirmParams.Confirm.confirmAddr (AddrBlock)
++const nbpConfirmNewSocket: int = 38  // LookupConfirmParams.Confirm.newSocket
++const nbpSetSelfNewFlag: int = 28    // SetSelfparms.newSelfFlag (AppleTalk.h:582-595); oldSelfFlag is at 29
++
++// ATP (AppleTalk.h:797-908). atpBitMap/atpRspNum are the same union
++// byte under ATPmisc1's two names; atpBdsSize/atpTransID are ATPmisc2's.
++const atpUserData: int = 18   // userData -- the 4 ATP user bytes
++const atpReqTID: int = 22     // reqTID -- request transaction ID
++const atpBitMap: int = 44     // ATPmisc1.u.bitMap (GetRequest)
++const atpRspNum: int = 44     // ATPmisc1.u.rspNum (AddResponse) -- same byte
++const atpBdsSize: int = 45    // ATPmisc2.bdsSize
++const atpTransID: int = 46    // ATPmisc2.transID
++
++// ADSP DSPParamBlock variant arms (ADSP.h:124-217).
++const dspIoCRefNum: int = 24          // ioCRefNum (the .DSP driver refNum)
++const dspCcbRefNum: int = 32          // ccbRefNum
++const dspInitCcbPtr: int = 34         // TRinitParams.ccbPtr
++const dspInitUserRoutine: int = 38    // TRinitParams.userRoutine
++const dspInitSendQSize: int = 42      // TRinitParams.sendQSize
++const dspInitSendQueue: int = 44      // TRinitParams.sendQueue
++const dspInitRecvQSize: int = 48      // TRinitParams.recvQSize
++const dspInitRecvQueue: int = 50      // TRinitParams.recvQueue
++const dspInitAttnPtr: int = 54        // TRinitParams.attnPtr (attnBufSize bytes)
++const dspInitLocalSocket: int = 58    // TRinitParams.localSocket
++const dspOpenLocalCID: int = 34       // TRopenParams.localCID
++const dspOpenRemoteCID: int = 36      // TRopenParams.remoteCID
++const dspOpenRemoteAddress: int = 38  // TRopenParams.remoteAddress (AddrBlock)
++const dspOpenFilterAddress: int = 42  // TRopenParams.filterAddress (AddrBlock)
++const dspOpenSendSeq: int = 46        // TRopenParams.sendSeq
++const dspOpenSendWindow: int = 50     // TRopenParams.sendWindow
++const dspOpenRecvSeq: int = 52        // TRopenParams.recvSeq
++const dspOpenAttnSendSeq: int = 56    // TRopenParams.attnSendSeq
++const dspOpenAttnRecvSeq: int = 60    // TRopenParams.attnRecvSeq
++const dspOpenOcMode: int = 64         // TRopenParams.ocMode (ocRequest/ocPassive/ocAccept/ocEstablish)
++const dspOpenOcInterval: int = 65     // TRopenParams.ocInterval
++const dspOpenOcMaximum: int = 66      // TRopenParams.ocMaximum
++const dspCloseAbort: int = 34         // TRcloseParams.abort
++const dspIoReqCount: int = 34         // TRioParams.reqCount
++const dspIoActCount: int = 36         // TRioParams.actCount
++const dspIoDataPtr: int = 38          // TRioParams.dataPtr
++const dspIoEom: int = 42              // TRioParams.eom
++const dspIoFlush: int = 43            // TRioParams.flush
++const dspStatusCcb: int = 34          // TRstatusParams.statusCCB
++const dspStatusSendQPending: int = 38 // TRstatusParams.sendQPending
++const dspStatusSendQFree: int = 40    // TRstatusParams.sendQFree
++const dspStatusRecvQPending: int = 42 // TRstatusParams.recvQPending
++const dspStatusRecvQFree: int = 44    // TRstatusParams.recvQFree
++
++// ADSP connection control block, TRCCB (ADSP.h:104-116). ccbSize bytes,
++// allocated by the client with NewPtrClear and owned by ADSP after
++// dspInit. ccbLink@0 and refNum@4 are ADSP's; the rest is readable
++// state.
++const ccbState: int = 6           // TRCCB.state (sListening .. sClosed)
++const ccbUserFlags: int = 8       // TRCCB.userFlags (eClosed/eTearDown/eAttention/eFwdReset)
++const ccbLocalSocket: int = 9     // TRCCB.localSocket
++const ccbRemoteAddress: int = 10  // TRCCB.remoteAddress (AddrBlock)
++const ccbAttnCode: int = 14       // TRCCB.attnCode
++const ccbAttnSize: int = 16       // TRCCB.attnSize
++const ccbAttnPtr: int = 18        // TRCCB.attnPtr
++
++// ---- Names Table Entry and lookup tuples: PACKED, not Str32Field ----
++//
++// AppleTalk.h:305-310 says so in the header's own words: "Real
++// definition of EntityName is 3 PACKED strings of any length (32 is just
++// an example) ... So this will generate correct looking interfaces for
++// Pascal and C, but they will not be the same, which is OK since they
++// are not used." So `struct EntityName` (AppleTalk.h:311-315, three
++// Str32Field slots) must NOT be transcribed as an extern record -- the
++// wire and the driver both want object, type and zone as three Pascal
++// strings back to back, each exactly (length byte + length) long.
++//
++// A NamesTableEntry (AppleTalk.h:450-453 over NTElement, 444-448) is
++// therefore built with NewPtrClear(nteSize) + pokeb:
++//   qNext@0 (4, driver-owned)  nteAddress@4 (AddrBlock: net(2) node(1)
++//   socket(1))  filler@8 (1)  entityData@9 (99 bytes: the packed
++//   object/type/zone). 4+4+1+99 = 108 = nteSize.
++// Write the service's own socket to nteAddress+3 (= NTE+7) before
++// RegisterName -- Rule 3 above -- and read the node's own address back
++// out of nteAddress+0..3 afterwards.
++//
++// A LookupName reply tuple in retBuffPtr's buffer is the same idea
++// without the queue link: AddrBlock@0, enumerator@4, packed entity@5.
++const nteQNext: int = 0     // NamesTableEntry.qNext
++const nteAddress: int = 4   // NTElement.nteAddress -- net(2) node(1) socket(1)
++const nteEntity: int = 9    // NTElement.entityData -- packed object/type/zone
++const nteSize: int = 108    // sizeof(NamesTableEntry)
++const tupleAddr: int = 0    // LookupName reply tuple: AddrBlock
++const tupleEnum: int = 4    // LookupName reply tuple: enumerator byte
++const tupleEntity: int = 5  // LookupName reply tuple: packed object/type/zone
+diff --git a/toolbox/memory.cla b/toolbox/memory.cla
+index 92d651e..877053d 100644
+--- a/toolbox/memory.cla
++++ b/toolbox/memory.cla
+@@ -32,20 +32,31 @@
+ // response register in the wrong place -- was itself wrong, and
+ // pack3-standardfile Task 5a retired it: multiversal's `Out<A0>` was
+ // RIGHT, and our A1 reading came from taking `Gestalt.h`'s `#pragma
+ // parameter` line as the trap's contract when it describes the INLINE
+ // GLUE. The sharper rule that survives: decode the inline words -- a
+ // `TWOWORDINLINE` routine's second word is glue you must reproduce or
+ // route around. See toolbox/osutils.cla.) Any multiversal citation above
+ // should be read as secondary corroboration only, superseded by the
+ // citations below.
+ //
++//   NewPtrClear   CIncludes/MacMemory.h:580-583 `#pragma parameter
++//                 __A0 NewPtrClear(__D0)` ... `NewPtrClear(Size
++//                 byteCount) ONEWORDINLINE(0xA31E);`;
++//                 AIncludes/MacMemory.a:561 `_NewPtrClear: OPWORD
++//                 $A31E`. Same D0-in/A0-out shape as NewPtr, with
++//                 the Memory Manager's clear bit set -- the block
++//                 comes back zeroed. Added by the AppleTalk phase
++//                 (Task 6): every AppleTalk parameter block, Names
++//                 Table Entry and ADSP control block must be fully
++//                 zeroed before use (toolbox/appletalk.cla's Rule 2),
++//                 and a NewPtr+manual-clear loop is strictly worse.
+ //   NewPtr        CIncludes/MacMemory.h:547 `#pragma parameter __A0
+ //                 NewPtr(__D0)`; AIncludes/MacMemory.a:515 `_NewPtr:
+ //                 OPWORD $A11E`. byteCount in D0, ptr result in A0 --
+ //                 matches `reg` (no explicit ret: default result
+ //                 register for a ptr return is A0).
+ //   DisposePtr    CIncludes/MacMemory.h:1066 `#pragma parameter
+ //                 DisposePtr(__A0)`; AIncludes/MacMemory.a:1209 OPWORD
+ //                 $A01F. p in A0, void result.
+ //   NewHandle     CIncludes/MacMemory.h:433 `#pragma parameter __A0
+ //                 NewHandle(__D0)`; AIncludes/MacMemory.a:355 OPWORD
+@@ -152,20 +163,21 @@
+ //               output register, and the runtime only ever needs the D0
+ //               result (the largest contiguous free block size after
+ //               growing the heap zone to its limit -- the common way
+ //               MaxMem is called in practice), so it's declared narrowly
+ //               below: D0 result only, A0 left unbound/unread. Do not
+ //               rely on A0 after calling this declaration.
+ //
+ // All five new trap words are also bit-11-clear.
+ 
+ external func NewPtr(byteCount: int): ptr = trap 0xA11E reg
++external func NewPtrClear(byteCount: int): ptr = trap 0xA31E reg
+ external func DisposePtr(p: ptr) = trap 0xA01F reg
+ external func NewHandle(byteCount: int): ptr = trap 0xA122 reg
+ external func DisposeHandle(h: ptr) = trap 0xA023 reg
+ external func GetHandleSize(h: ptr): int = trap 0xA025 reg
+ external func SetHandleSize(h: ptr, newSize: int): int = trap 0xA024 reg memerr
+ external func HLock(h: ptr) = trap 0xA029 reg
+ external func HUnlock(h: ptr) = trap 0xA02A reg
+ external func BlockMoveData(srcPtr: ptr, destPtr: ptr, byteCount: int) = trap 0xA22E reg
+ external func MoreMasters() = trap 0xA036 reg
+ external func CompactMem(cbNeeded: int): int = trap 0xA04C reg

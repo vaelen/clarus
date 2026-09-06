@@ -1,0 +1,31 @@
+### Task 8: Lowering for all four kinds + host end-to-end
+
+Spec §7 (lowering), §8.1 end-to-end. Dispatchers are synthesized under `usesAtalk` only (Task 9 adds `or want68k` with the rebless).
+
+**Files:**
+- Modify: `clarusc/lower.cla` (`lowConnMethod` arms for `open` transport 1 / `open(addr)`; new `lowListenerMethod`, `lowBrowserMethod`, `lowServiceMethod` dispatched where `lowConnMethod` is chosen by receiver kind; `lowTopHandler` ladder for `listenerT`/`serviceBrowserT`/`serviceT`; slot pre-passes `lowLsnSlotOf`/`lowBrsSlotOf`/`lowSvcSlotOf` with caps 2 and diagnostics `too many listener variables (max 2)` etc.; `lowSynthAtalkDispatchers()` producing the seven `clar_*_fire_*` functions in the `lowSynthConnFireSimple`/`Received`/`Failed` shapes; `lowSynthConnPump` body gains `rtAtalkPump()` when `usesAtalk`; `string(addr)` → `rtAtalkAddrStr`), `clarusc/ir.cla` (`irUsesAtalk` beside `irUsesConn`), `clarusc/cprint.cla` (`cpEmitMain`: `irUsesAtalk` joins the loop gate; condition adds `clar_fn_rtAtalkAlive()`; body adds `clar_fn_rtAtalkPump()`).
+- Create: `tests/lib_atalk.sh`, `tests/atalk/{serve,call,find,zones,runerr}.sh`, `tests/atalk/testdata/{clock,caller,finder,reply_twice,reply_outside,send_unopened_adsp,too_many_svc}.cla`, `testdata/emitui/atalk_{server,client,browser,listener}.{cla,c.golden}`, `examples/atalkfind.cla`.
+- Read first: `clarusc/lower.cla:121-156, 1444-1575, 5210-5281, 7529-7727, 7893-7970`, `clarusc/cprint.cla:7678-7734`, Task 7's API block, `tests/conntest/connect.sh`, `tests/lib_conntest.sh`.
+
+**Interfaces:**
+- Consumes: Task 7's `rt*` names exactly; Task 2's `atalkdrive`.
+- Produces (lowering): `c.open(appletalk s)` → `rtConnOpen(recv, 1, s)`; `c.open(addr)` (arg kind `TyAddress`) → `rtConnOpenAddr(recv, addr)` (in `atalk.cla` since Task 7, so it lowers and links on the host now; on the host it stages `failed` with `rtAtErrNoHost`); `l.register(n, t)` → `rtLsnRegister`; `l.stop()` → `rtLsnStop`; `b.find(t)` → `rtBrsFind(recv, t, "*")`; `b.find(t, z)` → `rtBrsFind(recv, t, z)`; `b.zones(out)` → `rtBrsZones`; `s.serve` → `rtSvcServe`; `s.reply(code, text)` → `rtSvcReply`, string arg → `rtSvcReplyStr`; `s.stop()` → `rtSvcStop`; `s.call(addr|str, op, req, reply)` → `rtSvcCallAddr`/`rtSvcCallName` by the first arg's kind; `string(addr)` → `rtAtalkAddrStr`. Handlers: `handler_<var>_<event>` functions recorded in `lowLsnHandlerFn`/`lowBrsHandlerFn`/`lowSvcHandlerFn` keyed `"<slot>|<event>"`. Dispatchers: `clar_lsn_fire_accepted(slot: int, c: int)` (the handler's `c` param receives the int), `clar_lsn_fire_failed(slot, code, msg)` (assembles an `error` record like `lowSynthConnFireFailed`), `clar_brs_fire_found(slot, name: string, addr: int)`, `clar_brs_fire_done(slot)`, `clar_brs_fire_failed`, `clar_svc_fire_request(slot, op: int, req: text, from: int)`, `clar_svc_fire_failed`.
+
+- [ ] **Step 1: Emitui fixtures first** — write the four `.cla` fixtures (server: `service` with `serve`/`request`/`reply`/`failed`; client: `call` with both target kinds + `string(addr)`; browser: `find` both arities, `found`/`done`/`failed`, `zones`; listener: `register`/`stop`/`accepted`/`failed` + `open(appletalk …)` + `open(addr)`). Run `make test T=emitui/`: expected FAIL with the `unsupported construct` abort for each.
+- [ ] **Step 2: Implement lowering** per Interfaces, mirroring the excerpted shapes; `lowSynthAtalkDispatchers()` is called right after `lowSynthConnDispatchers()` under `if usesAtalk` (NOT `or want68k` — that is Task 9).
+- [ ] **Step 3: Bless the four emitui goldens** (review the emitted C: each `clar_*_fire_*` is an if-chain over 2 slots; `cpEmitMain`'s loop shows both pumps).
+- [ ] **Step 4: Host end-to-end** — `tests/lib_atalk.sh`: `atalk_build NAME` (host_build from `tests/atalk/testdata`), `atalk_skip_unless_multicast` (runs `$TOOLS/atalkdrive lookup ProbeNone 2>/dev/null; [ $? = 77 ] && skip ...`), `atalk_name` (`"T$$"` suffix). Scripts:
+  - `serve.sh`: `clock.cla` serves `("Clock-$SFX", "ClarusClock")` (name from `args[0]`), op 1 → `reply(0, "12:00")`, op 2 → `reply(0, req)` (echo), op 3 → returns without replying, op 4 → `reply(7, "")`; `atalkdrive call` each: op 1 → `12:00`; op 2 with a 578-byte sweep → byte-exact; op 3 → exit 3 `code -1`; op 4 → exit 3 `code 7`; then `call ... 9` (unknown op → the program's `default` arm replies −1). Program quits on op 5; assert self-exit.
+  - `call.sh`: `atalkdrive serve ("Echo-$SFX","ClarusEcho") 20 script` (op 1 → code 0 4000-byte file; op 2 → code 5 empty); `caller.cla` does `call("Echo-$SFX:ClarusEcho", 1, "hi", reply)` → logs `ok 4000`; op 2 → logs `err 5 service`; a call to `"Nobody-$SFX:ClarusEcho"` → logs `err -1025`; a call with a 579-byte request → logs `err -3106` (rejected before any packet leaves); exits 0. Assert the three log lines and total runtime under 15 s.
+  - `find.sh`: `atalkdrive register ("Svc-$SFX","ClarusFind") 15` in the background; `finder.cla` `find("ClarusFind")` and logs `found <name> <string(addr)>` per hit then `done`; assert one `found Svc-$SFX:ClarusFind 0.N.S` line (N = the node the tool printed) and `done` last; then `find("ClarusFind", "*")` again → same; then `find("NoSuchType")` → only `done`.
+  - `zones.sh`: `zones(out)` logs `zones 1 *`.
+  - `runerr.sh`: `reply_twice.cla`, `reply_outside.cla` (calls `reply` from `App.startCLI`), `send_unopened_adsp.cla` (`c.open(appletalk "X:Y")` then immediate `c.send` — a panic `connection not open` since open is async), each run with `$TOOLS/timeout 10` and asserted to exit nonzero with the panic text on stderr; `too_many_svc.cla` (three `service` globals) asserted to fail at `clarusc emit` with `too many service variables (max 2)`.
+  - `examples/atalkfind.cla`: host CLI browser: `zones` then `find(args[0] or "=")`, printing each entity; documented in the file header as the host acceptance program.
+- [ ] **Step 5: Gate + commit** — `make test T=atalk/ T=emitui/ T=conntest/`, then `scripts/test-task.sh --smoke`. Expected: zero cg68k churn (dispatchers not synthesized under `want68k` yet).
+```bash
+git add clarusc/lower.cla clarusc/ir.cla clarusc/cprint.cla tests/lib_atalk.sh tests/atalk/ testdata/emitui/ examples/atalkfind.cla runtime/clarus/atalk.cla
+git commit -m "feat(lower): listener/serviceBrowser/service/appletalk lowering and dispatchers; host end-to-end against atalkdrive"
+```
+
+---
+

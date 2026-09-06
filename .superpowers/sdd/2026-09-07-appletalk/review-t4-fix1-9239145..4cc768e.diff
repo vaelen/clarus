@@ -1,0 +1,155 @@
+# Review package: 9239145..HEAD
+
+## Commits
+4cc768e fix(host): don't latch pty EOF while no slave has attached
+
+## Files changed
+ runtime/host/rt_serial.inc | 33 +++++++++++++++++++++++----------
+ tests/conntest/stdio.sh    |  6 +++---
+ 2 files changed, 26 insertions(+), 13 deletions(-)
+
+## Diff
+diff --git a/runtime/host/rt_serial.inc b/runtime/host/rt_serial.inc
+index 61f343e..b357f07 100644
+--- a/runtime/host/rt_serial.inc
++++ b/runtime/host/rt_serial.inc
+@@ -230,49 +230,57 @@ static int rt_conn_open_pty(void) {
+ }
+ 
+ /* rt_conn_fd_avail: the non-socket kinds' ConnHAvail step, and the only
+  * place their fd is ever read or their EOF ever detected. Compacts what
+  * the caller has already popped, tops the buffer up from the fd, and
+  * reports the depth.
+  *
+  * poll() with a zero timeout keeps this off the pump's critical path, and
+  * makes the following read() safe on a plain blocking fd: poll said
+  * readable, so read() either hands over bytes or reports EOF, and cannot
+- * park. A pty master with NO slave attached yet polls as nothing at all
+- * (verified on macOS: no POLLIN, no POLLHUP), which is exactly what keeps
+- * the unattached state (s->listening, spec 4.7's "like listening") from
+- * being mistaken for a hangup. Once a slave closes again, the master
+- * polls readable and read() returns 0 (macOS) -- and any hard read error
+- * is treated as EOF too rather than left to spin, since there is no
+- * recovery path for a serial line whose fd has broken. */
++ * park. Once a slave closes again, the master polls readable and read()
++ * returns 0 (macOS) -- and any hard read error is treated as EOF too
++ * rather than left to spin, since there is no recovery path for a serial
++ * line whose fd has broken.
++ *
++ * That EOF latch is deliberately gated on !s->listening, and the gate is
++ * NOT redundant: a pty master with no slave attached yet polls as nothing
++ * at all on macOS (verified), but on Linux it reports POLLHUP, whose
++ * read() then fails EIO -- which without the gate would latch `gone`
++ * during the unattached window, so the first byte a client finally sent
++ * would flip `listening` off with the connection already condemned and
++ * the pump would tear it down after one drain. `listening` IS the "not
++ * there yet" state (spec 4.7's "like listening"); nothing about it can
++ * mean hung up. Linux is untested here -- this repo's gate is macOS
++ * only -- so the gate is written to be correct on both by construction
++ * rather than by observation. */
+ static int32_t rt_conn_fd_avail(rt_conn_slot_t *s) {
+     struct pollfd p;
+     ssize_t k;
+ 
+     if (s->bufPos > 0) {
+         if (s->bufPos < s->bufLen)
+             memmove(s->buf, s->buf + s->bufPos, (size_t)(s->bufLen - s->bufPos));
+         s->bufLen -= s->bufPos;
+         s->bufPos = 0;
+     }
+     if (s->bufLen < RT_CONN_BUFSZ) {
+         p.fd = s->fd;
+         p.events = POLLIN;
+         p.revents = 0;
+         if (poll(&p, 1, 0) > 0) {
+             k = read(s->fd, s->buf + s->bufLen, (size_t)(RT_CONN_BUFSZ - s->bufLen));
+             if (k > 0) {
+                 s->bufLen += (int)k;
+                 s->listening = 0;   /* a pty slave is unmistakably attached */
+-            } else if (k == 0) {
+-                s->gone = 1;
+-            } else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
++            } else if (!s->listening &&
++                       (k == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR))) {
+                 s->gone = 1;
+             }
+         }
+     }
+     return (int32_t)(s->bufLen - s->bufPos);
+ }
+ 
+ /* rt_conn_ignore_sigpipe: one-time process-wide SIGPIPE suppression
+  * (review fix, Task 4 follow-up). Without this, ConnHWrite's send() to a
+  * peer that already closed its end raises SIGPIPE, which terminates the
+@@ -449,20 +457,25 @@ int32_t rt_ext_ConnHWrite(int32_t slot, void *p, int32_t n) {
+     buf = (const unsigned char *)p;
+     sent = 0;
+     /* stdio reads fd 0 but writes fd 1; every other kind writes its own
+      * fd. write() rather than send() for both non-socket kinds -- send()
+      * is a socket call and fails with ENOTSOCK on a pipe or pty. */
+     wfd = (s->kind == RT_CONN_STDIO) ? 1 : s->fd;
+     while (sent < n) {
+         k = (s->kind == RT_CONN_SOCKET)
+             ? send(s->fd, buf + sent, (size_t)(n - sent), 0)
+             : write(wfd, buf + sent, (size_t)(n - sent));
++        /* A signal landing mid-write is not a failed write: retry rather
++         * than report an error and silently drop the tail of a message
++         * whose prefix already went out. write() to a pty master is a
++         * good deal more interruptible than a loopback send(). */
++        if (k < 0 && errno == EINTR) continue;
+         if (k <= 0) return 1;
+         sent += (int32_t)k;
+     }
+     return 0;
+ }
+ 
+ /* rt_ext_ConnHClose: idempotent -- closes the fd (if any) and resets the
+  * slot. Callable on an already-closed slot (conn.cla's own rtConnClose is
+  * idempotent; this is its device-level half).
+  *
+diff --git a/tests/conntest/stdio.sh b/tests/conntest/stdio.sh
+index b80c027..67638b0 100755
+--- a/tests/conntest/stdio.sh
++++ b/tests/conntest/stdio.sh
+@@ -28,38 +28,38 @@ mkfifo "$WORK/in" || die "mkfifo failed"
+ CLARUS_SERIAL_MODEM=stdio "$WORK/echo" < "$WORK/in" > "$WORK/out" 2> "$WORK/prog.err" &
+ prog=$!
+ # Read-write open: never blocks waiting for a reader, and our own read end
+ # keeps the FIFO from signalling EOF if a `cat` below finishes early.
+ exec 3<> "$WORK/in"
+ 
+ # The greeting is written with a bare write(1, ...), so it lands in the
+ # output file as soon as the pump's first pass fires `opened` -- polling
+ # the file's size is a real synchronisation point, not a sleep.
+ i=0
+-while [ $i -lt 10 ] && [ "$(wc -c < "$WORK/out")" -lt 6 ]; do
++while [ $i -lt 10 ] && { [ ! -f "$WORK/out" ] || [ "$(wc -c < "$WORK/out")" -lt 6 ]; }; do
+     sleep 1
+     i=$((i + 1))
+ done
+-if [ "$(wc -c < "$WORK/out")" -lt 6 ]; then
++if [ ! -f "$WORK/out" ] || [ "$(wc -c < "$WORK/out")" -lt 6 ]; then
+     exec 3>&-
+     kill "$prog" 2>/dev/null
+     wait "$prog" 2>/dev/null
+     t_fail greeting "no READY on stdout within 10s: $(cat "$WORK/prog.err")"
+     t_done
+ fi
+ t_pass greeting
+ 
+ cat "$WORK/sweep" >&3
+ cat "$WORK/qqq" >&3
+ 
+ i=0
+-while [ $i -lt 10 ] && [ "$(wc -c < "$WORK/out")" -lt "$want" ]; do
++while [ $i -lt 10 ] && { [ ! -f "$WORK/out" ] || [ "$(wc -c < "$WORK/out")" -lt "$want" ]; }; do
+     sleep 1
+     i=$((i + 1))
+ done
+ head -c "$want" "$WORK/out" > "$WORK/got"
+ if cmp -s "$WORK/expect" "$WORK/got"; then
+     t_pass exchange
+ else
+     t_fail exchange "stdout differs: $(cmp "$WORK/expect" "$WORK/got" 2>&1 | head -1)"
+ fi
+ 

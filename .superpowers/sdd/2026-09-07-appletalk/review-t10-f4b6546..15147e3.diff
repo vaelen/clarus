@@ -1,0 +1,424 @@
+# Review package: f4b6546..HEAD
+
+## Commits
+15147e3 test(mactest): NBP+ATP both ways between a Mini vMac boot and atalkdrive; atalkclock example
+
+## Files changed
+ examples/atalkclock.cla       | 162 ++++++++++++++++++++++++++++++++++++
+ testdata/atalk/clockdrive.cla |  46 +++++++++++
+ tests/mactest/atalk_68k.sh    | 186 ++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 394 insertions(+)
+
+## Diff
+diff --git a/examples/atalkclock.cla b/examples/atalkclock.cla
+new file mode 100644
+index 0000000..33625ef
+--- /dev/null
++++ b/examples/atalkclock.cla
+@@ -0,0 +1,162 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// atalkclock.cla: the AppleTalk phase's NATIVE acceptance app (spec
++// %8.5) -- one small Macintosh program that is BOTH ends of a service.
++// It advertises a clock of its own under an NBP name, answers two
++// operations on it, browses the zone for every other clock, and asks
++// each of them for the time.
++//
++//     scripts/build-68k.sh examples/atalkclock.cla    # a real .bin
++//
++// Nothing in here is Toolbox knowledge: `service`, `serviceBrowser` and
++// `address` are the whole surface (docs/clarus-language-reference.md,
++// Chapter 12's "Service Discovery" and "Services" sections), and the
++// program never polls -- `found`/`done` arrive from the event loop, and
++// `request` fires once per incoming call.
++//
++// The served name carries a per-launch suffix. NBP names are global to
++// the zone and registration VERIFIES uniqueness, so two Macs (or two
++// launches after a crash left a stale name) must not both ask for
++// "Clock". `now()` is the Mac clock in seconds, so the low 12 bits of it
++// change every launch that is at least a second apart -- the same reason
++// the test scripts give their own names a per-run suffix (spec %8.4).
++//
++// tests/mactest/atalk_68k.sh boots this against `atalkdrive` on the
++// host, driving it from testdata/atalk/clockdrive.cla rather than a
++// scripted-event file: scripted mode advances a VIRTUAL tick counter and
++// never waits, and every assertion here needs real seconds to pass while
++// NBP and ATP round-trip against a real peer.
++
++app AtalkClock {
++    name: "AtalkClock"
++    version: "1.0"
++    author: "Andrew C. Young <andrew@vaelen.org>"
++    about: "Serves the time over AppleTalk, and asks its neighbours for theirs."
++    id: "ACLK"
++}
++
++// The operations this service answers. The checked conversion below is
++// guarded, so an operation number off the wire can never raise a runtime
++// error -- Chapter 12's own idiom for a `request` handler.
++enum ClockOp { Time 1 "Time", Echo 2 "Echo" }
++
++var clock: service
++var browser: serviceBrowser
++var myName: string             // "Clock-1234", once serving
++var myEntity: string           // "Clock-1234:ClarusClock", once serving
++var peers: list of string      // every "Name:Type" the last find turned up
++var zoneNames: list of string
++var reply: text
++var shown: text
++
++window Clock {
++    title: "Clock"
++    size: 320, 200
++
++    label Zones { at: 10, 10; width: 296; text: "Zones:" }
++    textview Peers { fill: both; scrollbar: vertical }
++    button Find { at: 10, bottom;   caption: "Find" }
++    button Call { at: next, bottom; caption: "Call" }
++    button Quit { at: next, bottom; caption: "Quit" }
++}
++
++// atClockRepaint: the window is optional -- every entry point below
++// works whether or not it is open, so a `nil` front window is not an
++// error here.
++func atClockRepaint() {
++    var w: Clock = Clock.front
++    var i: int = 0
++    var line: string = "Zones:"
++
++    shown.clear()
++    while i < peers.count {
++        shown.append(peers[i])
++        shown.append("\n")
++        i = i + 1
++    }
++    if w != nil {
++        w.Peers.text = shown
++        i = 0
++        while i < zoneNames.count {
++            line = line + " " + zoneNames[i]
++            i = i + 1
++        }
++        w.Zones.text = line
++    }
++}
++
++// atClockFind: start a fresh browse of the zone. `find` returns at once;
++// `found` then fires once per match and `done` always follows.
++func atClockFind() {
++    peers.clear()
++    atClockRepaint()
++    browser.find("ClarusClock")
++}
++
++// atClockCall: ask every OTHER clock for its time. `call` is synchronous
++// (it blocks for up to a couple of seconds per peer), which is why it is
++// a button and not something the browse does on its own.
++func atClockCall() {
++    var i: int = 0
++
++    while i < peers.count {
++        if peers[i] != myEntity {
++            if clock.call(peers[i], 1, "", reply) {
++                log("remote " + peers[i] + " " + reply[0, reply.length])
++            } else {
++                log("remote " + peers[i] + " failed " + string(lastError.code) + " " + lastError.message)
++            }
++        }
++        i = i + 1
++    }
++}
++
++on App.launch {
++    open Clock
++    myName = "Clock-" + string(now() & 0xFFF)
++    myEntity = myName + ":ClarusClock"
++    clock.serve(myName, "ClarusClock")
++    log("serving " + myEntity)
++    browser.zones(zoneNames)
++    atClockFind()
++}
++
++on clock.request(op: int, req: text, from: address) {
++    if op < 1 or op > 2 {
++        clock.reply(-1, "")
++        return
++    }
++    switch ClockOp(op) {
++    case Time {
++        clock.reply(0, dateTimeStr(now()))
++    }
++    case Echo {
++        clock.reply(0, req)
++    }
++    }
++}
++
++on clock.failed(err: error) {
++    log("clock failed " + string(err.code) + " " + err.message)
++}
++
++on browser.found(name: string, addr: address) {
++    peers.add(name)
++    log("found " + name + " " + string(addr))
++}
++
++on browser.done {
++    atClockRepaint()
++    log("browse done " + string(peers.count))
++}
++
++on browser.failed(err: error) {
++    log("browse failed " + string(err.code) + " " + err.message)
++}
++
++extend Clock {
++    on Find.click { atClockFind() }
++    on Call.click { atClockCall() }
++    on Quit.click { quit }
++}
+diff --git a/testdata/atalk/clockdrive.cla b/testdata/atalk/clockdrive.cla
+new file mode 100644
+index 0000000..f35b447
+--- /dev/null
++++ b/testdata/atalk/clockdrive.cla
+@@ -0,0 +1,46 @@
++// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
++// SPDX-License-Identifier: MIT
++
++// clockdrive.cla (2026-09-06 appletalk spec %8.2, Task 10): the driver
++// half of tests/mactest/atalk_68k.sh's single Mini vMac boot. It is
++// composed onto examples/atalkclock.cla -- `clarusc emit68k
++// examples/atalkclock.cla testdata/atalk/clockdrive.cla` -- and does
++// exactly what a person clicking that app's Find/Call/Quit buttons would
++// do, on a timer, so the boot needs no human and ends on its own.
++//
++// Why not a `--events` script, which is how every other UI boot in
++// tests/mactest is driven: scripted mode replaces the real event loop
++// with the script interpreter and a VIRTUAL tick counter
++// (runtime/clarus/uiscript.cla's rtUiScriptTick -- "real TickCount is
++// never consulted in scripted mode"), so a script races through its
++// lines in no real time at all. Every assertion this boot makes needs
++// real seconds to elapse: the app's own NBP registration to be visible
++// to the host, an NBP lookup to complete against a live peer, and an ATP
++// transaction each way. `every 60 ticks` in the REAL event loop is the
++// only driver on this lane that actually waits.
++//
++// The beat numbers are seconds after launch, with generous slack on a
++// lane where an NBP lookup costs ~3 s and one `call` up to ~6 s:
++//
++//    5   Find   -- the host's `atalkdrive serve` peer is already up (the
++//                 script starts it before the emit + boot), so one
++//                 browse is enough to see it
++//   25   Call   -- ATP to every peer the browse turned up; the `remote
++//                 ...` line the script asserts on comes from here
++//  150   Quit   -- the boot's own end. The host side polls for the app's
++//                 name and calls it while all this is going on, so the
++//                 app has to stay up well past its own work.
++var cdBeats: int = 0
++
++every 60 ticks {
++    cdBeats = cdBeats + 1
++    if cdBeats == 5 {
++        atClockFind()
++    } else if cdBeats == 25 {
++        atClockCall()
++        log("called")
++    } else if cdBeats >= 150 {
++        log("done")
++        quit
++    }
++}
+diff --git a/tests/mactest/atalk_68k.sh b/tests/mactest/atalk_68k.sh
+new file mode 100755
+index 0000000..52be290
+--- /dev/null
++++ b/tests/mactest/atalk_68k.sh
+@@ -0,0 +1,186 @@
++#!/bin/sh
++# timeout: 20m
++# mactest/atalk_68k (2026-09-06 appletalk spec %8.2, Task 10): ONE native
++# Mini vMac boot of examples/atalkclock.cla with `atalkdrive` on the host
++# as the peer -- NBP and ATP both ways between a real ROM AppleTalk stack
++# and runtime/host's LocalTalk-over-UDP one.
++#
++#   host -> Mac : the tool looks the app's own NBP name up, then calls it
++#                 twice -- op 2 echoes a 578-byte sweep back byte-exact
++#                 (ATP's own request ceiling), op 1 answers with the Mac's
++#                 clock.
++#   Mac -> host : the app browses for ClarusClock, finds the tool's
++#                 "Host-...:ClarusClock" name and calls IT, logging the
++#                 reply -- the reply path (PSendResponse on the tool side,
++#                 the ROM's ATP request side on the Mac's) that
++#                 atalk_selfserve.sh, having no peer, could not reach.
++#
++# run_mac BLOCKS until the app quits and only hands back the capture
++# afterwards, so the host half runs in a background subshell started
++# BEFORE the boot; it polls `atalkdrive lookup` for the app's name and
++# writes its own verdicts to $WORK/host.out, which this script asserts on
++# once run_mac returns.
++#
++# The app is driven by testdata/atalk/clockdrive.cla (an `every 60 ticks`
++# state machine composed onto the example), not by a --events script: see
++# that fixture's header -- scripted mode never waits in real time, and
++# every round trip here needs real seconds.
++#
++# .XPP/.DSP are absent from LaunchAPPL's stripped boot disk, so this uses
++# NBP + ATP only -- no zones() assertion, no listener, no ADSP.
++. "$(dirname "$0")/../lib.sh" || exit 2
++. "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
++. "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
++require_env CLARUS_MAC_TESTS
++
++DRIVE=$TOOLS/atalkdrive
++require_tool "$DRIVE"
++atalk_skip_unless_multicast
++
++TYPE=ClarusClock
++HOSTOBJ=$(atalk_name Host)
++
++srvpid=
++hostpid=
++# Only OUR OWN two host processes are ever killed here: a blanket
++# `pkill -f minivmac` would take down a concurrent two-boot test's
++# emulators as well.
++cleanup() {
++    [ -n "$hostpid" ] && kill "$hostpid" 2>/dev/null
++    [ -n "$srvpid" ] && kill "$srvpid" 2>/dev/null
++    return 0
++}
++trap cleanup EXIT INT TERM
++
++# ---- the host peer the Mac calls back ----
++printf 'HOSTTIME' > "$WORK/hosttime"
++printf '1 0 %s\n' "$WORK/hosttime" > "$WORK/script"
++"$DRIVE" serve "$HOSTOBJ" "$TYPE" 300 "$WORK/script" > "$WORK/srv.out" 2> "$WORK/srv.err" &
++srvpid=$!
++if atalk_wait_line "$WORK/srv.out" '^serving node=' $srvpid; then
++    t_pass peer_serving
++else
++    t_fail peer_serving "atalkdrive serve never announced itself: $(cat "$WORK/srv.err")"
++    t_done
++fi
++HOSTNODE=$(sed -n 's/^serving node=\([0-9]*\).*/\1/p' "$WORK/srv.out")
++
++emit68k -o "$WORK/atalkclock.bin" examples/atalkclock.cla testdata/atalk/clockdrive.cla \
++    > "$WORK/emit.log" 2>&1 \
++    || die "clarusc emit68k atalkclock: $(tail -10 "$WORK/emit.log")"
++
++# ---- the host half, running while the boot blocks ----
++#
++# The app's own name is "Clock-<digits>" (examples/atalkclock.cla derives
++# the suffix from now()); tests/atalk/serve.sh's host-side fixture
++# registers "Clock-T<pid>" under the SAME type on the same multicast
++# group, so the match is anchored on the all-digits suffix AND on a node
++# that is not this script's own peer. Foreign entities are otherwise
++# tolerated (spec %8.4).
++atalk_host_half() {
++    _end=$(( $(date +%s) + 120 ))
++    _ent=
++    _node=
++    while [ "$(date +%s)" -lt "$_end" ]; do
++        "$DRIVE" lookup "$TYPE" > "$WORK/lk.out" 2> "$WORK/lk.err"
++        _hit=$(awk -v hn="$HOSTNODE" '
++            { split($1, a, "."); e = $2; sub(/@.*/, "", e)
++              if (a[2] != hn && e ~ /^Clock-[0-9]+:ClarusClock$/) { print a[2], e; exit } }
++            ' "$WORK/lk.out")
++        if [ -n "$_hit" ]; then
++            _node=${_hit%% *}
++            _ent=${_hit#* }
++            break
++        fi
++        sleep 2
++    done
++    if [ -z "$_ent" ]; then
++        echo "discover FAIL no Clock-<digits>:$TYPE at a foreign node in 120s; last lookup: $(tr '\n' '|' < "$WORK/lk.out")"
++        return 0
++    fi
++    if [ "$_node" = 0 ]; then
++        echo "discover FAIL $_ent answered at node 0"
++        return 0
++    fi
++    echo "discover OK $_ent node=$_node"
++    _obj=${_ent%%:*}
++
++    # op 2 -- byte-exact echo of a 578-byte request (ATP's own ceiling),
++    # answered by the ROM's ATP responder through the runtime's waist.
++    "$DRIVE" call "$_obj" "$TYPE" 2 < "$WORK/req578" > "$WORK/echo.out" 2> "$WORK/echo.err"
++    _rc=$?
++    if [ $_rc != 0 ]; then
++        echo "echo578 FAIL exit $_rc ($(tr '\n' '|' < "$WORK/echo.err"))"
++    elif cmp -s "$WORK/req578" "$WORK/echo.out"; then
++        echo "echo578 OK"
++    else
++        echo "echo578 FAIL $(cmp "$WORK/req578" "$WORK/echo.out" 2>&1 | head -1)"
++    fi
++
++    # op 1 -- the Mac's own clock, as dateTimeStr formats it.
++    "$DRIVE" call "$_obj" "$TYPE" 1 < /dev/null > "$WORK/time.out" 2> "$WORK/time.err"
++    _rc=$?
++    _n=$(wc -c < "$WORK/time.out" | tr -d ' ')
++    if [ $_rc = 0 ] && [ "$_n" -gt 0 ]; then
++        echo "time OK $_n [$(cat "$WORK/time.out")]"
++    else
++        echo "time FAIL exit $_rc, $_n bytes ($(tr '\n' '|' < "$WORK/time.err"))"
++    fi
++}
++
++atalk_sweep "$WORK/req578" 578
++atalk_host_half > "$WORK/host.out" 2>&1 &
++hostpid=$!
++
++# The app quits itself ~150 s in (clockdrive.cla); the budget is deliberately
++# far past that, because run_mac's OWN expiry path pkills every minivmac on
++# the machine -- which would take a concurrent two-boot test down with it.
++run_mac "$WORK/atalkclock.bin" 420
++
++wait $hostpid 2>/dev/null
++hostpid=
++kill $srvpid 2>/dev/null
++wait $srvpid 2>/dev/null
++srvpid=
++
++LOG=$WORK/cap.log
++
++[ "$MAC_EXIT" = 0 ] && t_pass exit || t_fail exit "exit $MAC_EXIT, want 0"
++
++# ---- host -> Mac ----
++check_host() {   # check_host NAME PREFIX
++    if grep -q "^$2 OK" "$WORK/host.out"; then
++        t_pass "$1"
++    else
++        t_fail "$1" "$(grep "^$2 " "$WORK/host.out" || echo "no $2 line: $(tr '\n' '|' < "$WORK/host.out")")"
++    fi
++}
++check_host discover discover
++check_host echo_578 echo578
++check_host reply_time time
++
++# ---- the app's own log ----
++want_line() {   # want_line NAME TEXT
++    if grep -qF "$2" "$LOG"; then
++        t_pass "$1"
++    else
++        t_fail "$1" "log has no \"$2\": $(tr '\n' '|' < "$LOG")"
++    fi
++}
++
++# serve() completed: the name the host just looked up is the app's own.
++want_line serving "serving Clock-"
++# Mac -> host: the browse saw the tool's name and the sync call got its
++# reply back through the ROM's ATP requester.
++want_line remote_call "remote $HOSTOBJ:$TYPE HOSTTIME"
++# clockdrive.cla's own last line -- the app ended on its own, not on a
++# watchdog or an alert.
++want_line done_line "done"
++
++if grep -q '^clock failed \|^browse failed ' "$LOG"; then
++    t_fail no_failures "$(grep '^clock failed \|^browse failed ' "$LOG")"
++else
++    t_pass no_failures
++fi
++
++t_done
