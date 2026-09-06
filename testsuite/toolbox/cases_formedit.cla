@@ -32,8 +32,8 @@
 // overflow/re-fix dance (an out-of-int32-range value fails OK validation,
 // beeps, refocuses with the whole field selected, then a corrected retype
 // accepts -- see caseFormEdit's own inline comment) and the prefilled-
-// non-default-int re-render `UiNumToString` exercise docs/ROADMAP.md:1194
-// documents (see caseFormEdit's own cancel-path comment). Neither was
+// non-default-int re-render exercise docs/ROADMAP.md:1194 documents (see
+// caseFormEdit's own cancel-path comment). Neither was
 // separately called out in this file's own original header -- both are
 // exercised by caseFormEdit below, not split into sibling cases, since
 // they're all part of the same `edit`/`accepted`/`cancelled` round trip
@@ -146,12 +146,17 @@ func caseFormEdit(): TestResult {
     // rather than a table row (this case owns no table -- see harness.cla's
     // own FormEditWin comment). `orig.port = 1234` is deliberately a
     // non-default value: opening this form pre-fills Port's own displayed
-    // text from it via `UiNumToString` (runtime/clarus/uitable.cla) --
+    // text from it via `rtUiIntToPStr` (runtime/clarus/uitable.cla) --
     // docs/ROADMAP.md:1194 documents formedit.events' own second `edit`
-    // session (a prefilled, non-default int field, `kind=2`) as
-    // `UiNumToString`'s first real exercise of the fixed register-
-    // marshaling shape; this `edit FormEditWin, orig` call is that same
-    // shape's permanent home now that the scripted golden is retired. (No
+    // session (a prefilled, non-default int field, `kind=2`) as the first
+    // real exercise of that int-to-Str255 path; this `edit FormEditWin,
+    // orig` call is that path's permanent home now that the scripted
+    // golden is retired. (The path used to be the Package-7 `NumToString`
+    // trap, and this comment used to credit a "fixed register-convention"
+    // story for it; the language-runtime-cleanup phase, 2026-09-06,
+    // established that story was wrong -- `_Pack7` needs a selector word
+    // the extern grammar cannot spell -- and replaced the extern with
+    // plain-Clarus `rtUiIntToPStr`. The exercise is the same.) (No
     // `UiTest*` wrapper reads a live widget's displayed text back out of
     // an open modal -- see runtime/clarus/uitest.cla's own function list
     // -- so this is a re-render exercise, not a re-assert-the-text one;

@@ -1568,6 +1568,11 @@ func rtUiGrayPatsGet(): ptr {
     return p
 }
 
+// rtUiCanvasPattern marks the canvas dirty even though setting the fill
+// level changes no pixels by itself: the dirty flag is a "may differ from
+// what is on screen" flag, and over-blitting is the safe direction (a
+// missed blit shows stale pixels; a spare one costs one CopyBits). One
+// extra blit per pattern() call, deliberately.
 func rtUiCanvasPattern(instV: ptr, wIdx: int, level: int) {
     var w: RtUiWinst
     var buf: RtUiCanvasBuf

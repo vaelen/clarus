@@ -55,6 +55,15 @@ func tlkMakeRec(): TlkRec {
     return r
 }
 
+// tlkLenRec consumes a handle-bearing record BY VALUE -- the argument
+// position of the pop/shift shape. cgPushArgs used to schedule its own
+// release for that arg because the materialized copy was untracked; the
+// copy is tracked now and that scheduling is gone, so a regression here is
+// a DOUBLE release (a FreeMem gain / heap corruption), not a leak.
+func tlkLenRec(r: TlkRec): int {
+    return r.body.length
+}
+
 // caseLeakCheck: 1500 iterations of every direct-consumption shape plus
 // 300 of the textview-getter shape, FreeMem sampled before and after. `n`
 // is checked nonzero (kept observably live) so nothing above can be
@@ -65,15 +74,6 @@ func tlkMakeRec(): TlkRec {
 // used as a receiver and as an operand -- each of which leaked one text
 // block per iteration before that phase (~3 x 1500 blocks, far outside the
 // 8KB slack below).
-// tlkLenRec consumes a handle-bearing record BY VALUE -- the argument
-// position of the pop/shift shape. cgPushArgs used to schedule its own
-// release for that arg because the materialized copy was untracked; the
-// copy is tracked now and that scheduling is gone, so a regression here is
-// a DOUBLE release (a FreeMem gain / heap corruption), not a leak.
-func tlkLenRec(r: TlkRec): int {
-    return r.body.length
-}
-
 func caseLeakCheck(): TestResult {
     var before: int
     var after: int

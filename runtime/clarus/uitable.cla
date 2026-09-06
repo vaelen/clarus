@@ -98,22 +98,9 @@ external func UiPopUpMenuSelect(theMenu: ptr, top: word, left: word, popUpItem: 
 // (QuickdrawText.h, ONEWORDINLINE). LocalToGlobal 0xA870 (QuickDraw.h:3941;
 // Multiverse.h:2527-2528 agrees) -- takes `Point *pt` (an IN-OUT pointer,
 // unlike PopUpMenuSelect's own separate top/left shorts), needed for the
-// popup anchor point (rt_ui.c:3400-3403). NumToString: Retro68's modern
-// NumberFormatting.h declares it with NO inline trap clause at all (a real
-// InterfaceLib call on that header's own terms), but Multiverse.h --
-// already this codebase's cross-check reference for every other trap word
-// -- gives it M68K_INLINE(0x3F3C, 0x0000, 0xA9EE) (:12342-12344), a
-// selector-prefixed Package Manager trap exactly like the List Manager
-// family above; ITS OWN `#pragma parameter NumToString(__D0, __A0)` line
-// just above that (:12342) documents REGISTER convention on 68k, not the
-// plain pascal-stack convention this bare `trap` clause declares -- same
-// unresolved-for-native gap ui.cla's own Gestalt externs used to flag and
-// defer to Task 12 (cg68k has no `reg` clause shape for "one ptr in
-// A0, nothing in D-regs but the trap's own D0 selector" -- and note that
-// `reg`'s named form has since landed, so this one is now expressible;
-// it is simply still unexercised on the native lane); the cprint lane
-// (this task's only exercised path) is unaffected, since cprint calls the
-// real C `NumToString` name directly regardless of this clause. ----
+// popup anchor point (rt_ui.c:3400-3403). (NumToString used to be
+// verified here too; it is gone -- see the block below UiLocalToGlobal
+// for the whole account, which is the only telling of it.) ----
 external func UiInvertRect(r: ptr) = trap 0xA8A4
 external func UiDrawText(textBuf: ptr, firstByte: word, byteCount: word) = trap 0xA885
 external func UiGetFontInfo(info: ptr) = trap 0xA88B
@@ -141,9 +128,15 @@ external func UiLocalToGlobal(pt: ptr) = trap 0xA870
 
 // rtUiIntToPStr: signed decimal into a Pascal string at out255 -- the
 // pure-Clarus replacement for the Package 7 NumToString call above.
-// ponytail: `0 - n` on the most-negative int32 overflows; unguarded, for
-// the same reason rtUiFixedToStr's own `0 - v` is (display helper, not a
-// trust boundary) and matching what NumToString itself did here before.
+// ponytail: `0 - n` on the most-negative int32 overflows, so int.min
+// renders as a bare "-"; unguarded, for the same reason rtUiFixedToStr's
+// own `0 - v` is (display helper, not a trust boundary). NOTE: this is a
+// real difference from str.cla's `strFromInt` (:228-245), which takes the
+// safe `d = cur mod 10; if d < 0 { d = 0 - d }` route and gets int.min
+// right -- an earlier version of this comment claimed the retired
+// NumToString path had the same overflow, which was never checked and is
+// not what str.cla does. Upgrade path if a table cell ever needs int.min:
+// copy strFromInt's shape.
 func rtUiIntToPStr(n: int, out255: ptr) {
     var u: int
     var neg: bool

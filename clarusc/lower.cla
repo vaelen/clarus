@@ -1120,10 +1120,13 @@ func lowIntrIsNonOwningContainerRead(nm: int): bool {
 // predicate (cprint.cla's fpIntrCall4, cg68k.cla's cgIntr), not their own
 // re-spelled `nm == IListPop() or nm == IListShift()` chain -- a third
 // transfer intrinsic is added here and nowhere else, and the ownership
-// arms follow by construction. cg68k.cla's cgPushArgs still consults it
-// separately for the handle-bearing RECORD argument shape, whose scratch
+// arms follow by construction. cg68k.cla's cgMaterializeToTemp also
+// consults it, for the handle-bearing RECORD argument shape whose scratch
 // is block-copied out and so is deliberately not tracked by the dispatch
-// arm itself (see cgIntrListPopLike's own doc comment).
+// arm itself (see cgIntrListPopLike's own doc comment). cgPushArgs used
+// to consult it separately as well; that arm was deleted in the
+// language-runtime-cleanup phase (spec %3.1) once cgMaterializeToTemp
+// started tracking the temp -- keeping both released the record twice.
 func lowIntrIsOwningContainerRead(nm: int): bool {
     return nm == IListPop() or nm == IListShift()
 }

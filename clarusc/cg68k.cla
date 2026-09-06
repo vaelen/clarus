@@ -1416,11 +1416,14 @@ var cgSerdescLabels: list of int
 // FIXED POOL of anonymous A6-relative frame slots per function (below the
 // function's own named locals, cgEmitFunc), addressed the SAME way a named
 // local is (reg=6, off) -- cgNewTrackedTmp/cgAllocTmpOff hand out the next
-// free slot, cgStmt resets the pool's high-water mark to 0 at the START of
-// every statement (mirroring fpStmt's own fresh-list swap: a slot only
-// needs to stay live for ONE statement, same as a C temp's declared-once-
-// per-statement lifetime), so the pool only ever has to hold the single
-// widest statement in the function's body.
+// free slot, and cgStmt SAVES AND RESTORES the pool's bump allocator
+// around every statement (language-runtime-cleanup Task 12b; it used to
+// RESET it to 0, which aliased a compound statement's own live temp with
+// its body's first temp -- see cgStmt's own note). Release scope is still
+// one statement: a nested statement allocates above its enclosing
+// statement's live slots and hands them back when it ends, so the pool
+// holds the deepest nesting chain rather than the single widest
+// statement.
 // A6-relative (not A7-relative/stack-scratch) specifically because it stays
 // valid across every nested call's own argument push/cleanup sequence
 // (cgForRangeStmt's `to`-on-the-stack precedent works ONLY because nothing
@@ -3698,13 +3701,14 @@ func cgArrDefaultAt(reg: int, off: int, t: int) {
     // are not free) and for reg == 5, whose only caller,
     // cgEmitInitGlobalsStub, now skips an all-zero default entirely.
     // `off mod 2 == 0` is the 68000 address-bus precondition for the
-    // word/long writes -- always true for a >32-byte array here
-    // (cgAlignOf is 2 for anything 2+ bytes wide, and every local slot
-    // base is a sum of even cgSlotSizeOf contributions), checked rather
-    // than assumed because an odd-based long write is a real address
-    // error on hardware and merely silent on the host lane. The upper
-    // bound keeps `words - 1` inside DBRA's 16-bit counter; a frame that
-    // large cannot exist anyway.
+    // word/long writes. It is believed always true here (cgAlignOf is 2
+    // for anything 2+ bytes wide, and every local slot base is a sum of
+    // even cgSlotSizeOf contributions), so this buys nothing today -- it
+    // is a cheap belt on an invariant whose violation would be an
+    // address error on hardware and silent on the host lane, and it
+    // falls back to the correct unrolled path rather than aborting. The
+    // upper bound keeps `words - 1` inside DBRA's 16-bit counter; a
+    // frame that large cannot exist anyway.
     if reg == 6 and off mod 2 == 0 and total > 32 and total <= 262144 and cgDefaultIsAllZero(et, 0, -1) {
         a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
         words = total / 4
@@ -4448,9 +4452,9 @@ func cgHandoff(off: int) {
 
 // cgFreeStmtTmps mirrors fpFreeStmtTmps: releases every still-tracked slot
 // (cgReleaseAt on its own (A6, off) home) and empties the tracking lists.
-// Does NOT reset cgStmtTmpNext (the pool's own bump allocator) -- that only
-// resets at the NEXT statement's start (cgStmt), matching fpStmtTmps' own
-// per-statement (not per-flush) lifetime.
+// Does NOT touch cgStmtTmpNext (the pool's own bump allocator) -- cgStmt
+// saves and restores that around each statement (Task 12b), so a flush in
+// the middle of one statement does not hand its slots to a sibling.
 func cgFreeStmtTmps() {
     var i: int
 
@@ -10337,11 +10341,16 @@ func cgFlushArgReleases(saved: list of int) {
 //     aliasing case -- its materialized temp shallow-copied a handle field
 //     that still aliases the container's own storage. An OWNING read
 //     (list_pop/list_shift -- lowIntrIsOwningContainerRead, stays borrow,
-//     never irArgNeedsCopy) gets release-only scheduling like ECallFn/
-//     ENewRec -- already a freshly-owned +1 with no other owner, no retain
-//     needed. Before this fix wave, a bare EIntr source got NEITHER
-//     (mirroring cprint's own then-identical gap) -- see this phase's
-//     final-review report for the map_get repro this closes.
+//     never irArgNeedsCopy) is NOT scheduled here at all any more: since
+//     the language-runtime-cleanup phase (spec %3.1) cgMaterializeToTemp
+//     TRACKS a handle-bearing pop/shift result, so cgFreeStmtTmps releases
+//     it at end of statement -- scheduling it here too walked the record
+//     twice. See the arm's own note further down this function. (The
+//     compiler-cleanup phase's original wording, "release-only scheduling
+//     like ECallFn/ENewRec", described the deleted arm.) Before that fix
+//     wave, a bare EIntr source got NEITHER (mirroring cprint's own
+//     then-identical gap) -- see that phase's final-review report for the
+//     map_get repro it closed.
 //
 // A bool/char scalar pushes its cgSlotSizeOf-padded 2-byte slot via
 // MOVE.B, NOT MOVE.W (Task 12 fix, unchanged by this task -- see git
@@ -12811,8 +12820,10 @@ func cgStmt(s: int) {
     // then ran rtListRelease on whatever integer the body last stored
     // there. Hardware-reproduced on the toolbox suite: the value happened
     // to be the last enum ordinal added, benign at 37 and a hang at 38.
-    // Same hazard for SIf/SWhile/SForMap/SAttempt, whose condition/subject
-    // temps are likewise live across their bodies.
+    // Same hazard for SIf/SForMap/SAttempt, whose condition/subject temps
+    // are likewise live across their bodies. NOT SWhile: cgWhileStmt
+    // flushes its condition's tracked temps (around D0) before it emits
+    // the body at all, so nothing of its own is live across it.
     // The tracked-temp LISTS above stay fresh per statement -- release
     // scope is still per statement, only the offset allocator nests.
     // cgLastTrackedOff resets fresh per statement -- see its own doc

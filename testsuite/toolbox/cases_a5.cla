@@ -10,7 +10,9 @@
 // runtime's own UiCurrentA5 (uiscript.cla) is declared but genuinely
 // unreferenced from any Clarus call site (Task 13's `external func`
 // sweep found it, alongside UiNewMenuStr, as the only two zero-call-site
-// externs in runtime/clarus) -- this suite declares its OWN local extern
+// externs in runtime/clarus; UiNewMenuStr has since been deleted -- the
+// language-runtime-cleanup phase, 2026-09-06 -- so UiCurrentA5 is now the
+// only one left) -- this suite declares its OWN local extern
 // against the same clause instead of wiring a real call site into
 // uiscript.cla (out of this audit task's scope), same "user-code externs
 // are the proven pattern" precedent cases_events.cla's own header comment

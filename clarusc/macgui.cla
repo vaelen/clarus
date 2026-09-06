@@ -52,8 +52,11 @@ include "bake.cla"
 
 // gcGet1NamedResource: a SECOND declaration of the same trap Get1NamedResource
 // (toolbox/resources.cla) already catalogs, with a `string` `name` param
-// instead of `ptr` -- same precedent as runtime/clarus/ui.cla's own
-// UiNewMenu (`ptr`) / UiNewMenuStr (`string`) pair, both trap 0xA931. A
+// instead of `ptr`. Declaring one trap twice under two parameter spellings
+// is legal and is the established way to get both marshalings; the
+// `ptr`/`string` pair this used to cite (ui.cla's UiNewMenu/UiNewMenuStr,
+// both trap 0xA931) is gone -- UiNewMenuStr was deleted in the
+// language-runtime-cleanup phase as a zero-call-site extern. A
 // `str`-typed extern param auto-marshals the address of the caller's
 // Str255 (docs/clarus-language-reference.md's own extern-marshaling
 // rule), so this needs no separate "turn a string into a ptr" helper

@@ -408,10 +408,6 @@ int32_t rt_ext_UiTrackGoAway(void *window, int32_t thePt) { return (int32_t)Trac
 short rt_ext_UiFindWindow(int32_t pt, void *wpOut) { return (short)FindWindow(rt_ext_ui_pt(pt), (WindowRef *)wpOut); }
 
 void *rt_ext_UiNewMenuRaw(short menuId, void *menuTitle) { return (void *)NewMenu(menuId, (ConstStr255Param)menuTitle); }
-/* rt_ext_UiNewMenuStr: same NewMenu trap behind ui.cla's string-param
- * variant (str marshals as the Str255's address -- const uint8_t *, per
- * cpEmitExternProtos). Added while the lane was dark; see UiValidRect. */
-void *rt_ext_UiNewMenuStr(short menuId, const uint8_t *menuTitle) { return (void *)NewMenu(menuId, (ConstStr255Param)menuTitle); }
 void rt_ext_UiDisposeMenu(void *theMenu) { DisposeMenu((MenuRef)theMenu); }
 void rt_ext_UiAppendMenu(void *theMenu, void *data) { AppendMenu((MenuRef)theMenu, (ConstStr255Param)data); }
 /* rt_ext_UiAppendMenuStr: UiAppendMenu's `string`-param sibling (Task 7) --
@@ -598,7 +594,6 @@ void rt_ext_UiInvertRect(void *r) { InvertRect((const Rect *)r); }
 void rt_ext_UiDrawText(void *textBuf, short firstByte, short byteCount) { DrawText(textBuf, firstByte, byteCount); }
 void rt_ext_UiGetFontInfo(void *info) { GetFontInfo((FontInfo *)info); }
 void rt_ext_UiLocalToGlobal(void *pt) { LocalToGlobal((Point *)pt); }
-void rt_ext_UiNumToString(int32_t theNum, void *theString) { NumToString((long)theNum, (unsigned char *)theString); }
 
 /* rt_ext_UiCbAddr (Task 9, toolbox-integration Feature C: `callback func`
  * migration): the trivial identity extern uitable.cla's own UiCbAddr
@@ -844,7 +839,9 @@ int32_t rt_ext_PBGetFInfoSync(void *pb) { return (int32_t)PBGetFInfoSync((ParmBl
  * (CLARUS_CPRINT_MAC_TESTS=1) was dark behind the ConnH* / PB* early-
  * comment-close bug (2026-08-22..28, fixed in the cprint-Mac-lane-
  * un-darked commit just before this one) -- same story as this file's
- * FhH* stub block and UiValidRect/UiNewMenuStr above, but these five
+ * FhH* stub block and UiValidRect above (UiNewMenuStr was the third,
+ * deleted with its extern in the language-runtime-cleanup phase), but
+ * these five
  * catalogs needed real Toolbox bodies (the native-68k lane already
  * covers the same ground via cg68k's direct trap emission; this is
  * purely the cprint/Retro68 diagnostic twin catching up). Every
