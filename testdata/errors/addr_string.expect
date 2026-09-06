@@ -1,0 +1,1 @@
+../../testdata/errors/addr_string.cla:13:19: string() expects an int, char, or address, got listener

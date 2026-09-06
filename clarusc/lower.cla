@@ -390,6 +390,26 @@ func lowTypeAt(t: int, line: int, col: int): int {
         // through lowTypeAt (they all do).
         return irIntT
     }
+    case TyAddress {
+        // AppleTalk phase (spec %4.3): an `address` is an inline 4-byte
+        // AddrBlock (net 2, node 1, socket 1) that travels as a plain
+        // int -- no retain/release, so records, arrays, and params all
+        // get real int storage, same one-line reasoning as TyConnection
+        // just above.
+        return irIntT
+    }
+    case TyListener {
+        // Listener/browser/service values are 1-based runtime handle ints
+        // with 0 = nil, exactly TyConnection's convention (spec %4.5's
+        // per-program caps are on those handle tables).
+        return irIntT
+    }
+    case TyServiceBrowser {
+        return irIntT
+    }
+    case TyService {
+        return irIntT
+    }
     case TyFileHandle {
         // 2026-08-22 binary-files spec, Task 5: a `filehandle` value is
         // likewise an ordinary int -- the 1-based device handle (0 = nil),

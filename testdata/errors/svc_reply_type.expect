@@ -1,0 +1,2 @@
+../../testdata/errors/svc_reply_type.cla:10:15: cannot use string where int is expected
+../../testdata/errors/svc_reply_type.cla:10:20: cannot use int here (expected text or string)

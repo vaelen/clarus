@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 3: service.reply(code: int, data: text) -- the
+// code comes first and the payload second, so the swapped call below is
+// two argument-type errors, one per parameter.
+var svc: service
+
+on svc.request(op: int, req: text, from: address) {
+    svc.reply("x", 1)
+}

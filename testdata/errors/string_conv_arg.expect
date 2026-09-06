@@ -1,1 +1,1 @@
-../../testdata/errors/string_conv_arg.cla:8:11: string() expects an int or char, got string
+../../testdata/errors/string_conv_arg.cla:8:11: string() expects an int, char, or address, got string

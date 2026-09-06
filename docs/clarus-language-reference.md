@@ -136,7 +136,7 @@ This list is representative, not exhaustive: later chapters introduce further co
 | Character | `'A'`, `'\n'`, `'\xC9'` | single Mac Roman character; same escapes as strings |
 | String | `"hello"` | escapes: `\"` `\\` `\n` `\t` `\xHH`; `\n` emits CR (13), the Mac newline; `\xHH` (exactly two hex digits, case-insensitive) emits byte HH — the way to put MacRoman bytes (e.g. `\xC9` for `…`) in a literal while keeping source files pure ASCII. A string literal may be at most 255 bytes. |
 | Boolean | `true`, `false` | |
-| Nil | `nil` | window/resource references only (`connection`, `listener`, `serviceBrowser`, `filehandle`) |
+| Nil | `nil` | window/resource references only (`connection`, `listener`, `serviceBrowser`, `service`, `filehandle`) |
 | Enum member | bare identifier | resolved against the expected enum type |
 
 ### Statement Termination
@@ -163,15 +163,17 @@ Clarus is statically typed. All types are known at compile time; values are eith
 | `sortedmap of T` | 4-byte handle | heap | string-keyed container, values fixed-size; iterates in ascending key order |
 | `intmap of T` | 4-byte handle | heap | hashtable, int keys, values fixed-size |
 | window ref (e.g. `Doc`) | 4 bytes | inline | reference to a window instance; `nil` until assigned |
-| `connection`, `listener`, `serviceBrowser`, `filehandle` | opaque | resource | networking and file resources (Chapter 12) |
+| `connection`, `listener`, `serviceBrowser`, `service`, `filehandle` | opaque | resource | networking and file resources (Chapter 12) |
 | `error` | record | inline | `{ code: int, message: string }` |
 | `FileInfo` | record | inline | `{ size: int, rsrcSize: int, type: string, creator: string, created: int, modified: int, isDir: bool }` (Chapter 12) |
-| `address` | opaque | inline | network address from a `serviceBrowser` |
+| `address` | opaque | inline | network address from a `serviceBrowser`; 4 bytes laid out as the Toolbox `AddrBlock` (`net` 2 bytes, `node` 1, `socket` 1) |
 | `saveChoice` | enum | inline | built-in: `Save`, `Discard`, `Cancel` |
 
 \* "inline" values past a size threshold are transparently promoted to handle-backed storage by the compiler (spec §6); semantics are identical.
 
-Resource variables (`connection`, `listener`, `serviceBrowser`, `filehandle`) are fixed-size 4-byte references, like window references: assignable, storable in records and arrays (`connection[8]` is 8 references, 32 bytes), and `nil` until bound.
+Resource variables (`connection`, `listener`, `serviceBrowser`, `service`, `filehandle`) are fixed-size 4-byte references, like window references: assignable, storable in records and arrays (`connection[8]` is 8 references, 32 bytes), and `nil` until bound. A program may declare at most 8 global `connection` variables, 2 `listener`, 2 `serviceBrowser`, and 2 `service`; exceeding a cap is a build error naming it. Only globals count — locals, parameters, fields, and array elements are copies of a global's reference.
+
+An `address` is not a resource: it is a plain inline value, copied like an `int`, with no handle behind it. It comes from `serviceBrowser.found` (Chapter 12) or a `service.request` handler, passes through records, arrays, and parameters unchanged, and renders for display with `string(addr)`.
 
 `FileInfo` is a predeclared record (Chapter 12: Files) returned by `file.info` — an ordinary value, like any user record: assignable, copyable, a legal field, array, or `list of`/`map of` element type. A program may not declare its own `FileInfo` (the ordinary duplicate-declaration error). Its seven fields, in declaration order: `size: int` (data fork length in bytes; 0 for a folder), `rsrcSize: int` (resource fork length in bytes; 0 for a folder or on a host), `type: string` (Finder type, `""` on a host or for a folder), `creator: string` (Finder creator, `""` on a host or for a folder), `created: int` and `modified: int` (Macintosh-epoch seconds, the same clock as `now()`), and `isDir: bool`. A file with no Finder type set reads back `type == ""`, the same as a folder; `isDir` is the reliable discriminator.
 
@@ -212,7 +214,7 @@ var s: string = string(i)    // int to string, decimal, "42"
 var s2: string = string(c)   // char to string, "*"
 ```
 
-Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric truncation: it keeps only the low byte of `i` — `char(-1)` yields 255. `string()` takes an `int` (rendered in decimal, negative values included, e.g. `string(-7)` is `"-7"`) or a `char` (the one-character string); it is unrelated to the type-position use of `string(n)` as a capacity declaration (e.g. `var s: string(20)`) — the two are told apart positionally (a call expression vs. a type), never ambiguously.
+Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric truncation: it keeps only the low byte of `i` — `char(-1)` yields 255. `string()` takes an `int` (rendered in decimal, negative values included, e.g. `string(-7)` is `"-7"`), a `char` (the one-character string), or an `address` (Chapter 12, rendered as `net.node.socket`); it is unrelated to the type-position use of `string(n)` as a capacity declaration (e.g. `var s: string(20)`) — the two are told apart positionally (a call expression vs. a type), never ambiguously.
 
 ### Strings
 
@@ -1351,7 +1353,7 @@ A `connection` (Chapter 3) is a single reliable byte-stream abstraction over bot
 | `close` | `c.close()` |
 | events | `opened`, `received(data: text)`, `closed`, `failed(err: error)` |
 
-A `connection` value can be copied like any other value: passed as a function parameter, stored in a record field, held in an array element, or assigned to a local variable, and `open`/`send`/`close` work the same way through any of those (spec §3.2). `on <var>.<event>` handlers are the one exception — they still name a top-level global directly, never an expression, since a handler is bound at compile time. A `connection` that has never been assigned (a fresh local, an unset record field or array element) is `nil`; calling `open`, `send`, or `close` on a nil connection is a runtime error (`use of nil connection`) — a different message than, but the same category of contract violation as, `send`/`close` on a connection that was never opened (`connection not open`). The 4-connection-variable-per-program cap (only global `connection` variables count toward it) still applies.
+A `connection` value can be copied like any other value: passed as a function parameter, stored in a record field, held in an array element, or assigned to a local variable, and `open`/`send`/`close` work the same way through any of those (spec §3.2). `on <var>.<event>` handlers are the one exception — they still name a top-level global directly, never an expression, since a handler is bound at compile time. A `connection` that has never been assigned (a fresh local, an unset record field or array element) is `nil`; calling `open`, `send`, or `close` on a nil connection is a runtime error (`use of nil connection`) — a different message than, but the same category of contract violation as, `send`/`close` on a connection that was never opened (`connection not open`). The 8-connection-variable-per-program cap (only global `connection` variables count toward it) still applies.
 
 Like other resources, a `connection`'s events are caught by top-level handlers, not callbacks:
 
@@ -1376,6 +1378,16 @@ on conn.failed(err: error) {
     alert(err.message)
 }
 ```
+
+**AppleTalk (ADSP).** `c.open(appletalk "Name:Type")` looks the name up with NBP as `Name:Type@*` and opens an ADSP stream to the first match. `c.open(addr)` opens one straight to an `address` — from `serviceBrowser.found` (below) or a `service.request` handler — with no lookup at all. Both are asynchronous like every other `open`: `opened` fires on a later pass of the event loop, or `failed(err: error)` does — no such name, the ADSP driver absent, the open timed out, or every connection slot already in use.
+
+An AppleTalk connection's events follow `connection`'s ordinary shape, with these transport-specific rules:
+
+- `closed` fires when the peer closes the stream, or when the connection tears down. Unlike a serial line, ADSP has a closure concept, so this is a real event on this transport; a local `c.close()` still never fires it.
+- `send` writes to the ADSP send queue; `received(data: text)` delivers whatever the stream reports pending, once per event-loop pass, binary-safe — every byte value 0-255 passes through unchanged.
+- `send` or `close` on a connection that was never opened is a runtime error, the same contract violation it is on every other transport.
+
+ADSP is part of System 7; on System 6 it comes from AppleTalk 57 or later, as the `.DSP` driver inside the `AppleTalk` system file. There is no feature query for it — a system without it makes `open(appletalk ...)`, `open(addr)`, and `listener.register` fail with `failed(err: error)`, the ordinary environmental-failure path.
 
 ### Serial
 
@@ -1409,7 +1421,14 @@ on conn.received(data: text) {
 
 ### Listeners
 
-A `listener` accepts incoming connections from clients. `l.listen(port: int)` opens a TCP listening socket; `l.register(name: string, type: string)` registers an ADSP server under an NBP name for clients to find. Its events are `accepted(c: connection)` and `failed(err: error)`.
+A `listener` accepts incoming connections from clients.
+
+| Member | Form |
+|---|---|
+| `listen` | `l.listen(port: int)` — a TCP listening socket (MacTCP), for clients that dial a fixed port |
+| `register` | `l.register(name: string, type: string)` — an ADSP connection listener, advertised to the zone under the NBP name `name:type` |
+| `stop` | `l.stop()` — remove the name and the listener; idempotent |
+| events | `accepted(c: connection)`, `failed(err: error)` |
 
 The `connection` delivered by `accepted` is bound to the parameter named in the handler — `c` below — a fresh reference the program must store somewhere to keep talking to that client. The usual pattern for a multi-client server is a fixed array of connections with a parallel `bool` array tracking which slots are in use:
 
@@ -1432,26 +1451,107 @@ on server.accepted(c: connection) {
 }
 ```
 
-`l.register(name, type)` is used the same way, in place of `l.listen(port)`, to run an ADSP server that's discoverable by name instead of a fixed TCP port.
+`l.register(name, type)` is used the same way, in place of `l.listen(port)`, to run an ADSP server that's discoverable by name instead of a fixed TCP port. Two things differ from the TCP form. The `connection` it hands to `accepted` is already open — no `opened` fires for it, because there was never an `open` to complete. And the registered name is visible to every `serviceBrowser.find(type)` in the zone (below) from `register` until `stop`, which is how clients find the server in the first place.
+
+When every connection slot is already in use the runtime denies the incoming request outright: the client's own `open` fails with `failed`, and the server sees nothing — no `accepted`, no `failed`. Refusing a client the program has no room for is not a server-side failure.
+
+`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, or the listener failing to start. `l.stop()` is safe on a listener that was never started, and safe to call twice.
 
 ### Service Discovery
 
-A `serviceBrowser` finds other instances of a named service in the current AppleTalk zone. `b.find(type: string)` starts the search; its events are `found(name: string, addr: address)` and `failed(err: error)`. The `address` delivered by `found` can be passed straight to `connection.open`:
+A `serviceBrowser` finds registered AppleTalk entities — other programs' services, and machines — in a zone.
+
+| Member | Form |
+|---|---|
+| `find` | `b.find(type: string)` — search the current zone; `b.find(type: string, zone: string)` — search a named zone |
+| `zones` | `b.zones(out: list of string)` — synchronous; empties `out` and fills it with the zone names |
+| events | `found(name: string, addr: address)`, `done`, `failed(err: error)` |
+
+`find` is an NBP lookup of `=:type@zone`, with `*` — the current zone — when no zone is given. It fires `found` once per match and then `done`. `done` always arrives, even when nothing matched, so a program knows when the list it is building from `found` is complete; a search that matches nothing is `done` with no `found`, not a failure. `find("=")` matches every registered entity in the zone, of every type: AppleTalk has no node-enumeration protocol of its own, and this lookup is what "list the machines" means on it.
+
+`failed(err: error)` means the lookup could not be issued at all — AppleTalk unavailable, or a zone name the router rejected.
+
+`zones(out)` is synchronous, not an event: it returns with `out` holding the router's zone list, having emptied whatever was in it first. A network with no router has no zone list to fetch, and `out` comes back holding the single name `"*"` — the current, only, zone — so a program never has to special-case the routerless case.
+
+The `address` delivered by `found` is an inline value (Chapter 3), not a resource: store it, copy it, compare it, pass it to `connection.open` or `service.call`. `string(addr)` renders it as `net.node.socket` for display; there is no way back from that text to an `address`.
 
 ```rust
 var browser: serviceBrowser
 var conn: connection
+var zoneNames: list of string
+var seen: list of string
 
 on App.launch {
+    browser.zones(zoneNames)
     browser.find("ChatServer")
 }
 
 on browser.found(name: string, addr: address) {
+    seen.add(name + " at " + string(addr))
     conn.open(addr)
 }
 
+on browser.done { }
+
 on browser.failed(err: error) { }
 ```
+
+### Services
+
+A `service` is a request/response endpoint: a server advertises a name and answers integer-coded operations, and a client calls one and waits for the answer. It is the counterpart to `connection`'s byte stream — a whole request in, a whole reply out, with no framing to invent.
+
+| Member | Form |
+|---|---|
+| `serve` | `svc.serve(name: string, type: string)` — start answering requests, advertised to the zone under the NBP name `name:type` |
+| `reply` | `svc.reply(code: int, data: text)` (also accepts string) — answer the request being handled |
+| `stop` | `svc.stop()` — remove the name and stop answering; idempotent |
+| `call` | `svc.call(target, op: int, req: text, reply: text): bool` — send one request and wait for the answer; `target` is an `address` or a `"Name:Type"` string |
+| events | `request(op: int, req: text, from: address)`, `failed(err: error)` |
+
+`op` and `code` are 32-bit signed integers carried alongside the payload. They are the program's own operation and status namespaces; the language assigns no meaning to any value but `code` `0`, which means success.
+
+**Serving.** Every request arrives as one call of the `request` handler, carrying the operation number, the whole request payload, and the requester's `address`. The handler answers with `reply`. A handler that returns without calling `reply` gets an automatic empty reply with code `-1`, so a requester never waits out its timeout on a request the server forgot to answer. Calling `reply` twice in one handler, or outside a handler, is a runtime error — a program bug, not an environmental failure.
+
+**Calling.** `call` is synchronous: it blocks until the answer arrives or the request times out. It returns `true` only when a response arrived **and** its code was `0`, with `reply` holding the response payload. It returns `false` and sets `lastError` (below) when no response arrived, when the string form's name lookup matched nothing, when the request is over the size limit, or when AppleTalk is unavailable — and also when the server answered with a nonzero `code`, in which case `lastError` is `{ code, "service" }` and `reply` still holds whatever payload the server sent. So `code` is the server's application-level status, and `lastError` keeps its ordinary meaning: the detail behind the most recent soft failure. A server that wants to return a status *with* a successful reply puts that status in the payload.
+
+**Limits.** A request is at most 578 bytes and a reply at most 4624 bytes. Both are enforced, never truncated: a `reply` over the limit is a `failed` event on the server and an automatic `-1` reply to the requester. Timing is fixed in this release: a request times out after 2 seconds and is retried 3 times, and a name lookup tries 3 times at 1-second intervals.
+
+`call` on a variable that is also serving is allowed — the requester uses its own socket — and a client-only program never calls `serve` at all.
+
+The idiom for typed operations is the checked enum conversion (Chapter 3), guarded so an operation number off the wire cannot raise a runtime error:
+
+```rust
+enum ClockOp { Time 1 "Time", Echo 2 "Echo" }
+
+var clock: service
+var lastCaller: string
+
+on App.launch {
+    clock.serve("Clock", "ClockSrv")
+}
+
+on clock.request(op: int, req: text, from: address) {
+    lastCaller = string(from)
+    if op < 1 or op > 2 {
+        clock.reply(-1, "")
+        return
+    }
+    switch ClockOp(op) {
+    case Time {
+        clock.reply(0, "12:00:00")
+    }
+    case Echo {
+        clock.reply(0, req)
+    }
+    }
+}
+
+on clock.failed(err: error) {
+    alert(err.message)
+}
+```
+
+A client holding an `address` from a browser calls that server with `clock.call(addr, 1, "", answer)`, where `answer` is a `text` the reply lands in; the `"Name:Type"` form, `clock.call("Clock:ClockSrv", 1, "", answer)`, looks the name up first and costs one extra round trip.
 
 ### Files
 
@@ -2062,7 +2162,10 @@ The following table is the complete per-resource inventory of every event handle
 | listener | accepted | `on l.accepted(c: connection) { }` |
 | listener | failed | `on l.failed(err: error) { }` |
 | serviceBrowser | found | `on b.found(name: string, addr: address) { }` |
+| serviceBrowser | done | `on b.done { }` |
 | serviceBrowser | failed | `on b.failed(err: error) { }` |
+| service | request | `on svc.request(op: int, req: text, from: address) { }` |
+| service | failed | `on svc.failed(err: error) { }` |
 | (timer) | — | `every N ticks { }` |
 
 For `field`/`textview`/`check`/`popup`, `change` fires for a user edit — typing, cut, paste, or clear — and never for a program's own assignment to the widget's property (e.g. `Body.text = t`, or a `textview`'s `scrollToEnd()`), the same "programmatic writes are silent" rule every other runtime property already follows.

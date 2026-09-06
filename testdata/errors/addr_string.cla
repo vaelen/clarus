@@ -1,0 +1,14 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 3: string() renders an address (the line below
+// that checks clean), but no other resource -- a listener is an error
+// naming what the conversion does accept.
+var browser: serviceBrowser
+var server: listener
+var shown: string
+
+on browser.found(name: string, addr: address) {
+    shown = string(addr)
+    shown = string(server)
+}

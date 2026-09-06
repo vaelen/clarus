@@ -1,0 +1,101 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 3: a check-clean program that names every new
+// front-end shape at least once -- the `service` resource type and its
+// serve/reply/stop/call methods and request/failed events, the
+// serviceBrowser find(type)/find(type, zone)/zones additions and its new
+// `done` event, listener.stop, connection.open(appletalk ...)/open(addr),
+// and the string(addr) conversion. Checked (not lowered) by
+// tests/conntest/atalk_check.sh: lowering every one of these shapes is
+// still fenced this task.
+
+enum ClockOp { Time 1 "Time", Echo 2 "Echo" }
+
+var clock: service
+var caller: service
+var browser: serviceBrowser
+var server: listener
+var conn: connection
+var zoneNames: list of string
+var lastSeen: string
+var clients: connection[8]
+
+func shutdown() {
+    clock.stop()
+    caller.stop()
+    server.stop()
+}
+
+on App.launch {
+    clock.serve("Clock", "ClockSrv")
+    server.register("Chat", "ChatSrv")
+    browser.zones(zoneNames)
+    browser.find("ClockSrv")
+    browser.find("ClockSrv", "Engineering")
+}
+
+on clock.request(op: int, req: text, from: address) {
+    var body: text
+    if op < 1 or op > 2 {
+        clock.reply(-1, "")
+        return
+    }
+    switch ClockOp(op) {
+    case Time {
+        clock.reply(0, "12:00")
+    }
+    case Echo {
+        body = req
+        clock.reply(0, body)
+    }
+    }
+    log(string(from))
+}
+
+on clock.failed(err: error) {
+    alert(err.message)
+}
+
+on browser.found(name: string, addr: address) {
+    var reply: text
+    var op: ClockOp = Time
+    lastSeen = string(addr)
+    if caller.call(addr, int(op), "", reply) {
+        conn.open(addr)
+    }
+    if caller.call("Clock:ClockSrv", 2, "ping", reply) {
+        conn.open(appletalk "Clock:ClockSrv")
+    }
+}
+
+on browser.done {
+    shutdown()
+}
+
+on browser.failed(err: error) {
+    alert(err.message)
+}
+
+on server.accepted(c: connection) {
+    clients[0] = c
+    c.send("hello\n")
+}
+
+on server.failed(err: error) {
+    alert(err.message)
+}
+
+on conn.opened {
+    conn.send("HELLO\n")
+}
+
+on conn.received(data: text) {
+    conn.close()
+}
+
+on conn.closed { }
+
+on conn.failed(err: error) {
+    alert(err.message)
+}

@@ -47,6 +47,11 @@ var connectionT: int
 var listenerT: int
 var serviceBrowserT: int
 
+// serviceT (AppleTalk phase, spec %4.4) is the singleton `service` type --
+// the request/response resource. Same shape, and the same stale-index
+// hazard, as connectionT above: reallocated by checkReset every program.
+var serviceT: int
+
 // fileHandleT (2026-08-22 binary-files spec, Task 5) is the singleton
 // `filehandle` type -- same TyFileHandle-resource-kind shape connectionT
 // above already established. Reallocated in checkReset (typesReset empties
@@ -566,6 +571,7 @@ var textOnlyMethods: map of int
 var connectionMethods: map of int
 var listenerMethods: map of int
 var serviceBrowserMethods: map of int
+var serviceMethods: map of int
 var fileFuncs: map of int
 var filehandleMethods: map of int
 var canvasMethods: map of int
@@ -797,6 +803,16 @@ var usesDateTime: bool
 // (non-conn) program's manifest, and thus its IR indices and goldens,
 // stays byte-identical. Reset alongside its siblings in checkReset().
 var usesConn: bool
+
+// usesAtalk (AppleTalk phase, spec %4) is true once the program under
+// check has named an AppleTalk-only type ANYWHERE a type may appear --
+// `listener`, `serviceBrowser`, `service`, or `address` (resolveType's
+// TxNamed arm, exactly like usesConn/usesFileh beside it) -- or has used
+// the `appletalk` transport prefix on connection.open (checkCall). The
+// `address` name counts because string(addr) alone needs the runtime.
+// Set-but-unread until the runtime modules land; drive.cla's manifest
+// splice is what will read it, the same way usesConn gates conn.cla.
+var usesAtalk: bool
 
 // usesFileh (2026-08-22 binary-files spec, Task 5) is true once the
 // program under check either names the `filehandle` type ANYWHERE a type
@@ -1055,6 +1071,7 @@ func makeSpec1(nameIdx: int, typeIdx: int): int {
 func buildEventsTable() {
     var p1: int
     var p2: int
+    var p3: int
 
     addEvent("app.launch", -1, 0)
     addEvent("app.startEmpty", -1, 0)
@@ -1109,7 +1126,17 @@ func buildEventsTable() {
     p2 = newEventParam(intern("addr"), AddressT, -1)
     p1 = newEventParam(intern("name"), strT(255), p2)
     addEvent("serviceBrowser.found", p1, 2)
+    addEvent("serviceBrowser.done", -1, 0)
     addEvent("serviceBrowser.failed", newEventParam(intern("err"), ErrTIndex, -1), 1)
+
+    // service.request(op, req, from) (AppleTalk phase, spec %4.4): the
+    // params chain is built last-to-first, same as serviceBrowser.found
+    // right above.
+    p3 = newEventParam(intern("from"), AddressT, -1)
+    p2 = newEventParam(intern("req"), TextT, p3)
+    p1 = newEventParam(intern("op"), IntT, p2)
+    addEvent("service.request", p1, 3)
+    addEvent("service.failed", newEventParam(intern("err"), ErrTIndex, -1), 1)
 }
 
 // formatEventParams renders an event spec's params for a "takes (...)"
@@ -1208,6 +1235,9 @@ func typeName(t: int): string {
     case TyServiceBrowser {
         return "serviceBrowser"
     }
+    case TyService {
+        return "service"
+    }
     case TyFileHandle {
         return "filehandle"
     }
@@ -1287,6 +1317,9 @@ func kindName(k: TypeKind): string {
     case TyServiceBrowser {
         return "serviceBrowser"
     }
+    case TyService {
+        return "service"
+    }
     case TyFileHandle {
         return "filehandle"
     }
@@ -1335,7 +1368,7 @@ func kindsList(k1: TypeKind, k2: TypeKind, k3: TypeKind, count: int): string {
 // isResourceKind reports whether k is a window ref or one of the network
 // resource kinds -- the only kinds `nil` is valid for.
 func isResourceKind(k: TypeKind): bool {
-    return k == TyWindowRef or k == TyConnection or k == TyListener or k == TyServiceBrowser or k == TyFileHandle
+    return k == TyWindowRef or k == TyConnection or k == TyListener or k == TyServiceBrowser or k == TyService or k == TyFileHandle
 }
 
 func isTextish(t: int): bool {
@@ -1487,6 +1520,7 @@ func registerUniverse(scope: int) {
     declBuiltinType(scope, "connection", connectionT)
     declBuiltinType(scope, "listener", listenerT)
     declBuiltinType(scope, "serviceBrowser", serviceBrowserT)
+    declBuiltinType(scope, "service", serviceT)
     declBuiltinType(scope, "filehandle", fileHandleT)
     declBuiltinType(scope, "address", AddressT)
     declBuiltinType(scope, "error", ErrTIndex)
@@ -1673,8 +1707,53 @@ func buildMethodTables() {
     listenerMethods["register"] = sigEnd(-1)
 
     sigStart()
+    listenerMethods["stop"] = sigEnd(-1)
+
+    sigStart()
     sigAdd(psPlain(strT(255)))
     serviceBrowserMethods["find"] = sigEnd(-1)
+
+    // find(type, zone) (AppleTalk phase, spec %4.3): the two-argument
+    // overload. checkTableMethod has no notion of overloading, so the
+    // wider arity is registered under the "<name>/<argc>" key it tries
+    // FIRST -- see its own comment. Registering it as an ordinary "find"
+    // would silently replace the one-argument form.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    serviceBrowserMethods["find/2"] = sigEnd(-1)
+
+    // zones(out) fills `out` in place (spec %4.3): it empties the list and
+    // appends the router's zone names, or the single element "*" on a
+    // routerless network, so a program never special-cases having no
+    // router.
+    sigStart()
+    sigAdd(psPlain(listT(strT(255))))
+    serviceBrowserMethods["zones"] = sigEnd(-1)
+
+    // service (AppleTalk phase, spec %4.4): serve/reply/stop/call. reply's
+    // payload takes text or string, exactly like connection.send above;
+    // call's target takes a "Name:Type" string or an `address` from a
+    // browser, exactly like connection.open.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    serviceMethods["serve"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psOneOf2(TyText, TyStr))
+    serviceMethods["reply"] = sigEnd(-1)
+
+    sigStart()
+    serviceMethods["stop"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psOneOf2(TyStr, TyAddress))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(TextT))
+    sigAdd(psPlain(TextT))
+    serviceMethods["call"] = sigEnd(BoolT)
 
     sigStart()
     sigAdd(psPlain(strT(255)))
@@ -1965,15 +2044,24 @@ func checkTableMethod(table: map of int, sel: int, argsHead: int): int {
     var symIdx: int
 
     name = poolGet(selectName(sel))
+    haveCount = exprListCount(argsHead)
+    // Overloading (AppleTalk phase, spec %4.3: serviceBrowser.find takes a
+    // type, or a type and a zone). A table entry keyed "<name>/<argc>" is
+    // an arity-specific overload and wins for exactly that argument count;
+    // the bare "<name>" entry stays the one that reports arity errors, so
+    // a wrong count still says "wrong number of arguments to find" rather
+    // than "undefined: find/7".
+    if table.has(name + "/" + numToStr(haveCount)) {
+        name = name + "/" + numToStr(haveCount)
+    }
     if not table.has(name) {
-        emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
+        emitDiag(exprLine(sel), exprCol(sel), "undefined: " + poolGet(selectName(sel)))
         return InvalidT
     }
     sigIdx = table.get(name, -1)
     wantCount = methodSigs[sigIdx].paramCount
-    haveCount = exprListCount(argsHead)
     if haveCount != wantCount {
-        emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
+        emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + poolGet(selectName(sel)))
     } else {
         a = argsHead
         p = methodSigs[sigIdx].paramsHead
@@ -2264,7 +2352,31 @@ func checkMethodCall(sel: int, argsHead: int): int {
         return checkTableMethod(listenerMethods, sel, argsHead)
     }
     case TyServiceBrowser {
-        return checkTableMethod(serviceBrowserMethods, sel, argsHead)
+        // b.zones(out) fills `out` in place -- same fill-argument guard
+        // every other out-param call gets (file.readText's `out` above),
+        // and like file.list's own it is a no-op in practice (a list is a
+        // reference type, so the value-kind gate always passes it), kept
+        // for consistency. Runs AFTER dispatch for the same reason
+        // readText's does: the widget-property half needs the argument's
+        // own type memo warm, which only checkTableMethod's checkParamArg
+        // walk guarantees.
+        result = checkTableMethod(serviceBrowserMethods, sel, argsHead)
+        if name == "zones" and argsHead != -1 {
+            checkRejectParamFill(argsHead)
+        }
+        return result
+    }
+    case TyService {
+        // svc.call(target, op, req, reply) fills `reply` -- the fourth
+        // argument -- in place (spec %4.4), so it gets the same guard.
+        // Here the widget-property half is NOT redundant: `reply` is a
+        // text, and `d.Body.text` would otherwise compile clean and throw
+        // the server's answer away.
+        result = checkTableMethod(serviceMethods, sel, argsHead)
+        if name == "call" and argsHead != -1 and exprNext(argsHead) != -1 and exprNext(exprNext(argsHead)) != -1 and exprNext(exprNext(exprNext(argsHead))) != -1 {
+            checkRejectParamFill(exprNext(exprNext(exprNext(argsHead))))
+        }
+        return result
     }
     case TyWidget {
         // canvas (Ch11: Drawing) and textview (Ch8: scrollToEnd) are the
@@ -2348,6 +2460,13 @@ func resolveType(te: int): int {
         // usesFileh hook right above was added to avoid.
         if symbols[symIdx].typeIdx == connectionT {
             usesConn = true
+        }
+        // usesAtalk (AppleTalk phase, spec %4): the same rule again, for
+        // the AppleTalk-only types. `address` is in the set because
+        // string(addr) is a runtime call on its own, with no listener,
+        // browser, or service anywhere in the program.
+        if symbols[symIdx].typeIdx == listenerT or symbols[symIdx].typeIdx == serviceBrowserT or symbols[symIdx].typeIdx == serviceT or symbols[symIdx].typeIdx == AddressT {
+            usesAtalk = true
         }
         return symbols[symIdx].typeIdx
     }
@@ -4341,6 +4460,8 @@ func checkTopHandlerDecl(d: int) {
             ctx = "listener"
         } else if k == TyServiceBrowser {
             ctx = "serviceBrowser"
+        } else if k == TyService {
+            ctx = "service"
         } else {
             emitDiag(declLine(d), declCol(d), "undefined: " + root)
             return
@@ -5866,8 +5987,10 @@ func checkConversion(e: int, target: int, name: string): int {
         // below, so this arm keys on the conversion NAME rather than
         // `target == ...`. TyChar joins TyInt in the compiler-cleanup
         // phase: string(c) is the one-character string.
-        accepted = "an int or char"
-        ok = typeKind(at) == TyInt or typeKind(at) == TyChar
+        // TyAddress joins them in the AppleTalk phase (spec %4.3):
+        // string(addr) renders a network address as "net.node.socket".
+        accepted = "an int, char, or address"
+        ok = typeKind(at) == TyInt or typeKind(at) == TyChar or typeKind(at) == TyAddress
     } else if target == IntT {
         accepted = "a fixed, char, enum, or ptr"
         ok = typeKind(at) == TyFixed or typeKind(at) == TyChar or typeKind(at) == TyEnum or typeKind(at) == TyPtr
@@ -6093,6 +6216,12 @@ func checkCall(e: int, expected: int): int {
     fn = callFn(e)
     argsHead = callArgsHead(e)
     transport = callTransport(e)
+    if transport == 1 {
+        // `appletalk` on connection.open pulls the AppleTalk runtime in
+        // even when no listener/browser/service/address type is named
+        // anywhere (spec %4.1).
+        usesAtalk = true
+    }
     if transport != 0 and not callIsSingleArgOpen(fn, argsHead) {
         emitDiag(callTransportLine(e), callTransportCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
         return InvalidT
@@ -6344,6 +6473,7 @@ func checkReset() {
     connectionT = pushSimple(TyConnection)
     listenerT = pushSimple(TyListener)
     serviceBrowserT = pushSimple(TyServiceBrowser)
+    serviceT = pushSimple(TyService)
     fileHandleT = pushSimple(TyFileHandle)
 
     universeScope = scopeNew(-1)
@@ -6359,6 +6489,7 @@ func checkReset() {
     usesSortedMap = false
     usesDateTime = false
     usesConn = false
+    usesAtalk = false
     usesFileh = false
     lowUsesAbort = false
     progGen = progGen + 1
