@@ -53,42 +53,8 @@ for entry in "$ROOT"/testdata/emitui/*.cla; do
 
     if cmp -s "$srcout" "$bakeout"; then
         t_pass "$base"
-        continue
+    else
+        t_fail "$base" "--rtbake fork ($(wc -c < "$bakeout" | tr -d ' ') bytes) != from-source fork ($(wc -c < "$srcout" | tr -d ' ') bytes): $(cmp "$srcout" "$bakeout" 2>&1 | head -1)"
     fi
-
-    # Known, PRE-EXISTING C-lane limitation (docs/TODO.md, "Bake / CLIR
-    # artifact machinery": `--rtbake --lane c` drops the conn/filehandle
-    # runtime). bake.cla's bakeModuleList leaves conn.cla/conn_c.cla and
-    # fileh.cla/fileh_c.cla out of the C-lane baked chain on purpose --
-    # driveManifestSplice gates that pair on usesConn/usesFileh for the
-    # host lane -- but the --rtbake path bypasses driveManifestSplice
-    # entirely, so nothing ever splices them and the emitted C CALLS
-    # rtConnOpen/rtFhOpen without defining them. Detected, not
-    # allowlisted by name: the from-source fork declares the entry point,
-    # the bake fork does not, AND the bake fork still CALLS it -- the
-    # third clause (Task 11, final-review item 18) is what pins this to
-    # the actual undefined-symbol gap. Without it a fixture whose bake
-    # fork merely dropped an unused declaration would take the SKIP too,
-    # so a real regression could hide behind this message. Reproduces on
-    # `main` with tests/conntest/testdata/echo.cla, which predates this
-    # corpus entry; this check retires itself the moment the gap is
-    # closed, because the forks then match and never reach here.
-    gap=
-    for sym in clar_fn_rtConnOpen clar_fn_rtFhOpen; do
-        if grep -q "^static[^;]*$sym" "$srcout" &&
-                ! grep -q "^static[^;]*$sym" "$bakeout" &&
-                grep -qF "$sym(" "$bakeout"; then
-            gap=$sym
-            break
-        fi
-    done
-    if [ -n "$gap" ]; then
-        echo "SKIP $base: known pre-existing gap -- --rtbake --lane c omits the" \
-             "conn/filehandle runtime ($gap declared from source, absent from the" \
-             "bake); see docs/TODO.md, Bake / CLIR artifact machinery"
-        continue
-    fi
-
-    t_fail "$base" "--rtbake fork ($(wc -c < "$bakeout" | tr -d ' ') bytes) != from-source fork ($(wc -c < "$srcout" | tr -d ' ') bytes): $(cmp "$srcout" "$bakeout" 2>&1 | head -1)"
 done
 t_done
