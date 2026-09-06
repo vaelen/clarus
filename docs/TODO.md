@@ -205,6 +205,21 @@ sub-heading.
   wrapped a 190-character comment for the same reason. Cosmetic; split
   the concatenation across two lines.
 
+## Language: feature-support queries (after the AppleTalk release)
+
+- **A `system.has*()` family for optional platform features** (Andrew,
+  2026-09-07, during the AppleTalk brainstorm). A program running on
+  System 6 without the `.DSP` driver should be able to learn that and
+  disable its ADSP features itself, rather than discovering it through
+  a `failed` event. Shape: `system.hasADSP(): bool` first, then
+  whatever other optional things need a check later (`.XPP`/zone
+  calls, MacTCP, Gestalt-gated System 7 features). Mostly syntactic
+  sugar over the corresponding Toolbox calls (`OpenDriver` probes,
+  Gestalt selectors), but abstracting them lets the host lane answer
+  the same questions (`hasADSP()` is `false` on the host until host
+  ADSP lands, see `docs/FUTURE.md`). Scheduled AFTER the initial
+  AppleTalk implementation ships, not inside it.
+
 ## Runtime / Toolbox robustness
 
 ### native-array-return-and-fileh-guards phase (2026-09-06)
