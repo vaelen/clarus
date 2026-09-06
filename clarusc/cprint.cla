@@ -7636,6 +7636,14 @@ func cpEmitAbortDefaultCheck(ui: bool) {
 // handler, if any, is simply never called here -- dead per the reference,
 // not a lowering gap).
 func cpEmitUiMain() {
+    // Both `main` shapes below call clar_init_globals() and run straight
+    // on, with no abort check after it (2026-09-06, documented rather
+    // than changed): an `abort()` reached from inside a global
+    // initializer sets clar_aborting and every remaining initializer
+    // still runs; the first checked call site the program reaches
+    // afterwards (App.launch's own default check, or any checked call in
+    // a handler) is where it is observed. cg68k's cgEmitInitGlobalsStub
+    // behaves identically (no bail chain, no check), so the lanes agree.
     cpRestBuf.add(toText("int main(int argc, char **argv) {"))
     cpRestBuf.add(toText("    clar_init_globals();"))
     cpRestBuf.add(toText("    rt_register_cleanup(cl_free_globals);"))

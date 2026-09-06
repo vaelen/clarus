@@ -5315,6 +5315,18 @@ func cgEmitInitGlobalsStub(lbl: int) {
     // into the cg_init_globals of a program that has no UI runtime --
     // "runtime function rtUiAlertMsg not found/reachable", found by
     // tests/cg68k/segments.sh on the core suite's non-UI CLI composition.
+    //
+    // Consequence, documented rather than changed (2026-09-06): an
+    // `abort()` reached from INSIDE a global initializer (`var g: text =
+    // mk()` where mk aborts) does NOT stop initialization. With no bail
+    // chain here, no call site in this routine emits a check, so the
+    // aborting flag is set and every remaining initializer still runs to
+    // completion; the first CHECKED call site the program reaches
+    // afterwards (inside App.launch or a handler) is where the abort is
+    // observed. The C lane behaves identically -- clar_init_globals()
+    // returns normally and main() runs on (cprint.cla's cpEmitUiMain,
+    // both `main` shapes) -- so the two lanes agree and nothing routes
+    // a bail out of global initialization on either.
     cgCurFuncHasBail = false
     cgCurFuncIsUiDispatcher = false
     runningNeg = cgReserveDeepScratch(runningNeg)
@@ -5323,6 +5335,18 @@ func cgEmitInitGlobalsStub(lbl: int) {
     // Same 16-bit d16(A6)/LINK ceiling cgEmitFunc guards, for the same
     // reason: the pools above grow without bound, so a wrapped frame is
     // reachable from ordinary initializer shape and must fail loudly.
+    //
+    // Two known imprecisions, documented rather than fixed (2026-09-06)
+    // because neither is reachable: (1) on the measure pass (cgRecMode ==
+    // 2) frameSize includes the cgBigTmpFloor-inflated big-temp pool, so
+    // this guard is evaluated against a LARGER frame than the real pass
+    // lays out -- it can only fail early, never late, and the real pass
+    // re-runs it on the exact frame; (2) this routine's frame is invisible
+    // to cgStackHeuristic, which sizes the stack from the per-function
+    // need tables alone -- the stub runs once at startup, before any
+    // function frame exists, on a frame that is tiny for every program
+    // seen (deep-release scratch plus a few temps). Either becomes real
+    // only if global initializers grow into arbitrary computation.
     if frameSize > 32767 {
         abort("cg68k: cg_init_globals needs a " + numToStr(frameSize) + "-byte frame; the 68000 d16(A6) frame addressing this backend uses caps frames at 32767 bytes -- move the work out of the global initializers")
     }
@@ -6136,6 +6160,15 @@ func cgRetNeedsHidden(retTy: int): bool {
 // ref bit) consult for "this parameter kind passes by address". KArr joins
 // KStr/KRec/KErr when its element carries no handle -- a handle-bearing
 // array would need a retain walk on the copy path and stays by value.
+//
+// KErr is a KNOWN, DELIBERATE asymmetry with the C lane: cprint.cla's
+// cpParamByRef passes `error` BY VALUE (it always has -- cpFuncProto's
+// own by-value arm) while this lane passes it by address. Each lane is
+// self-consistent (caller, callee prototype/frame and deref set all read
+// the one predicate on their own lane), nothing observable depends on the
+// two agreeing, and widening the C lane would be an ABI change with no
+// fixture behind it. Recorded here so the next reader comparing the two
+// predicates doesn't take the difference for a drift bug (2026-09-06).
 func cgParamByRef(t: int): bool {
     var k: IRKind
 

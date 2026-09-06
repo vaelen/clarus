@@ -88,30 +88,6 @@ sub-heading.
   not the generic value-context message) would be the code-side
   improvement.
 
-- **`cpParamByRef` omits `KErr` where `cgParamByRef` has it** (Task 9) —
-  a pre-existing host/native asymmetry in the `error` argument ABI, now
-  documented in `cpParamByRef`'s own doc comment but not unified. Close
-  it when something depends on the two lanes agreeing here.
-
-- **clarusc's native self-compile sits near the 32 KB per-function
-  ceiling** (Task 7) — `cg_free_globals` scales with `irGlobals.count`,
-  so ANY new compiler global grows every segment, and adding the
-  array-literal pool machinery pushed `fpIntrCall3` over. Task 7 split it
-  into `fpIntrCall3`/`fpIntrCall3b` to recover ~10 KB. The next compiler
-  feature will hit the same wall; the lever is another split, or making
-  `cg_free_globals` iterate a table instead of unrolling.
-
-- **`abort()` inside a global initializer does not propagate** (Task 8
-  review) — newly reachable now that a global initializer may call a
-  function, on BOTH lanes, and neither documented nor tested. The stub
-  resets `cgCurFuncHasBail`, so the abort check is emitted; where the
-  bail goes from `cg_init_globals` is the open question.
-
-- **`cg_init_globals`' frame is invisible to `cgStackHeuristic`** (Task 8
-  minor) and its `frameSize > 32767` guard runs on the floor-inflated
-  measure frame rather than the real one. Neither is reachable today (the
-  stub's frame is tiny); both are wrong in principle.
-
 - **`cg_init_globals` still emits explicit stores for zero-valued
   constant initializers** (final review) — `var x: int = 0`, `= ptr(0)`,
   `= false` each cost a `MOVE.L #0,D0` / `MOVE.L D0,-N(A5)` pair (~30 of
@@ -270,6 +246,24 @@ machinery that exists to make that fast, and the Snow boots that prove
 it. Recorded so the work is not lost, not scheduled.
 
 ### ABI / performance
+
+- **`cg_free_globals` is ~11 KB of glue duplicated into EVERY segment
+  of ClarusC.APPL** (language-runtime-cleanup Task 7 found the symptom;
+  measured 2026-09-06 on a `--listing` self-emit of `clarusc/macgui.cla`:
+  46 segments, 3667 instructions / 369 release `JSR`s / ~11 KB per
+  segment, ~500 KB of the 1.5 MB binary). The routine is backend-
+  synthesized (not an `irFunc`), so it has no jump-table entry and is
+  re-emitted per segment; it unrolls one `MOVE.L off(A5),D0; ...; JSR`
+  group per handle-typed global, so ANY new compiler global shrinks every
+  segment's 32 KB budget at once. That is what pushed `fpIntrCall3` over
+  the ceiling (Task 7 split it into `fpIntrCall3`/`fpIntrCall3b` to
+  recover ~10 KB) and the next compiler feature will hit the same wall.
+  Two levers, either of which recovers a third of every segment: (a) a
+  table-driven loop -- a constant-pool table of (A5 offset, kind) pairs
+  and one release loop, ~200 bytes per segment instead of ~11 KB; (b) a
+  jump-table slot so the routine lives in segment 1 only. Only
+  ClarusC.APPL is anywhere near the ceiling (a user program has a
+  handful of globals), which is why this sits in the on-hold section.
 
 - **param-abi RSS increase (+4-9%) unexplained** — profile before
   further Layer-2/3 memory work; suspects are the call-site copy temps
