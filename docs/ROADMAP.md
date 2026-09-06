@@ -94,8 +94,9 @@ pushed (`c5d447b`). In brief:
   are not being advanced; that debt sits in `docs/TODO.md`'s own
   "Compiler-on-Mac" section until the target resumes.
 
-**`language-runtime-cleanup` is COMPLETE and NOT YET MERGED** (branch
-`language-runtime-cleanup`; merging to `main` is Andrew's call). It
+**`language-runtime-cleanup` is COMPLETE and MERGED to `main`**
+(fast-forward, 2026-09-06 morning, merge tip `d36e728`; the status line
+here had lagged the merge until the evening close-out). It
 cleared 24 `docs/TODO.md` entries in two waves across 16 tasks, blessed
 the goldens exactly twice, regenerated the bootstrap snapshot once, and
 landed three user-visible features (array literals, `menus:`,
