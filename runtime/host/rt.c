@@ -252,3 +252,13 @@ static int rt_file_write_data(const uint8_t *path, const rt_text *t, const uint8
  * rt_ext_FhH* symbol only gets referenced (and thus only gets linked) when
  * the Clarus side actually calls it. */
 #include "rt_fileh.inc"
+
+/* AppleTalk glue (2026-09-06 appletalk spec %6.1, Task 2): the host's own
+ * LocalTalk-over-UDP stack -- LLAP/DDP/NBP/ATP over multicast
+ * 239.192.76.84:1954, the same wire the Mini vMac and Snow emulators are
+ * on. Included after rt_serial.inc (whose CLARUS_ATALK_IFACE-less serial
+ * slots it shares nothing with) and unconditionally, same as every .inc
+ * above: cheap dead weight in a build that never calls it, since each
+ * rt_ext_AtalkH* symbol is only referenced -- and so only linked -- when
+ * the Clarus side actually calls it. */
+#include "rt_atalk.inc"

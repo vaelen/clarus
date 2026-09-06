@@ -19,6 +19,13 @@ RES = $(patsubst tests/%.sh,$(BR)/tests/%.result,$(1))
 tools: $(TOOLS)
 bootstrap: $(BR)/clarusc-current
 
+# atalkdrive is the one tool that links the host runtime: it drives
+# rt_atalk.inc's LToUDP stack (Task 2), which lives inside rt.c. Explicit
+# rule, above the generic one, so `make -j tools` still builds every tool.
+$(BR)/tools/atalkdrive: tests/tools/atalkdrive.c runtime/host/rt.c $(RT_HOST)
+	@mkdir -p $(BR)/tools
+	$(CC) -std=c99 -Wall -Werror -I runtime/host -o $@ $< runtime/host/rt.c
+
 $(BR)/tools/%: tests/tools/%.c
 	@mkdir -p $(BR)/tools
 	$(CC) -std=c99 -Wall -Werror -o $@ $<
