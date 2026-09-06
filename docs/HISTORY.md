@@ -5830,7 +5830,20 @@ close-path errno record: an AppleDouble fork whose sidecar directory is
 made `0555` between open and close must leave `EACCES` in `rt_fh_errno`
 (verified RED by dropping the record in `FhHClose`, GREEN with it; skipped
 when running as root). `cg68k/`, `hostrt/` and `testsuite/` all green
-(30 passed / 0 skipped / 0 failed), core CLI 83/83.
+(30 passed / 0 skipped / 0 failed), core CLI 83/83. Its review surfaced
+one more pre-existing swallowed failure, fixed as a follow-up (Andrew,
+19:32): `rt_fh_sidecar_store`'s copy loop treated a `pread` ERROR as
+end-of-file (`got <= 0` → break), so a read error mid-copy wrote a
+truncated sidecar — header length from `st.st_size`, less data — and
+returned success. A `pread` error is now a failure with `errno`
+preserved across the `fclose`; `got == 0` remains the EOF break. No
+new test: the function is `static` inside the `.inc` and a `pread`
+failure on a live fd has no clean portable recipe. Still open, recorded
+here only: a fork that SHRINKS between the `fstat` and the copy exits
+through the `got == 0` break with the same header-exceeds-data shape;
+the 167-character `ArrReturn` failure-message line; the unchecked
+`mkdir` in the read-only-directory test, which is also a silent no-op
+under root.
 
 **Gates.** T1 (`scripts/test-task.sh --smoke`) on the integrated tip of
 waves A+B (`22be35e`): PASS in 31s — t1 88 passed / 30 skipped / 0
