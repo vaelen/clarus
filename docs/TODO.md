@@ -62,56 +62,6 @@ sub-heading.
   comment, fixed this task to state the real constraint instead of
   claiming host-lane runnability it never had.
 
-## Compiler correctness / cleanup
-
-### language-runtime-cleanup phase (2026-09-06)
-
-- **Array RETURNS still abort on `emit68k`** (Task 9) — `func mk():
-  int[4]` checks clean and runs on the host lane, but the native lane
-  aborts: `cgRetNeedsHidden` (`clarusc/cg68k.cla`) knows `KStr`/`KRec`/
-  `KErr` and not `KArr`, so an array result never gets a hidden-return
-  slot. Pre-existing; §3.4 fixed the *parameter* ABI only. Task 9's
-  `cgEmitStoreArr` guard now turns the reachable half of this into a
-  diagnostic instead of a SIGSEGV, so the remaining gap is the missing
-  feature, not a crash.
-
-- **Handle-bearing fixed-array PARAMETERS abort on `emit68k`** (final
-  review) — an array whose element carries a `text`/`list`/`map` (e.g.
-  `func f(a: Named[2])` where `Named` has a `text` field) checks clean
-  and runs on the host lane (by-value struct), but `emit68k` aborts with
-  the generic `cgExpr: EVarRef non-scalar (str/rec/arr) reached in value
-  context` message — the same one an array RETURN gets. Pre-existing (at
-  7c9d5f8 every fixed-array argument aborted natively); this phase turned
-  the scalar-element case into the working `KArr` borrow ABI and left
-  handle-bearing ones exactly where they were. A clear diagnostic in
-  `cgPushArgs`' by-value `KArr` arm (naming the handle-bearing element,
-  not the generic value-context message) would be the code-side
-  improvement.
-
-- **`cg_init_globals` still emits explicit stores for zero-valued
-  constant initializers** (final review) — `var x: int = 0`, `= ptr(0)`,
-  `= false` each cost a `MOVE.L #0,D0` / `MOVE.L D0,-N(A5)` pair (~30 of
-  them in a UI program's stub) even though the startup sweep already
-  zeroed that memory. §3.5's skip only covers DEFAULT-init (no `=` at
-  all); a zero-valued EXPLICIT initializer of an all-zero type is the
-  same case and isn't caught. A one-predicate extension to that skip
-  would remove them.
-
-## Runtime / Toolbox robustness
-
-### language-runtime-cleanup phase (2026-09-06)
-
-- **`file.rename("", x)` reaches `PBHRenameSync` with an empty name**
-  (Task 4) — after the stat reuse, `rtFhDevStat`'s `""` branch returns
-  true, so the empty-name case is no longer rejected before the trap.
-  One-line guard candidate.
-
-- **Sidecar `filehandle` minors** (Task 11) — `flush` fsyncs the unlinked
-  temp rather than the `._` sidecar; `close` cannot report a failed
-  write-back; the temp path is hardcoded `/tmp` and ignores `TMPDIR`.
-  All three only bind on the AppleDouble path (non-Apple host, or
-  `CLARUS_FORCE_APPLEDOUBLE=1`).
-
 ## Test coverage gaps (recorded by audits, mostly need real input/hardware)
 
 - **cprint-lane `UiLaunchReal`** (real AppleEvent glue in

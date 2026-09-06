@@ -5539,6 +5539,233 @@ Spec: `docs/superpowers/specs/2026-09-06-language-runtime-cleanup-design.md`
 briefs, reports, reviews and the `progress.md` ledger in
 `.superpowers/sdd/2026-09-06-language-runtime-cleanup/`.
 
+## native-array-return-and-fileh-guards phase (2026-09-06, branch `native-array-return-and-fileh-guards`)
+
+Recorded on the same terms as the entries above: merging to `main` is
+Andrew's call and had not happened when this was written.
+
+**What it did.** The `language-runtime-cleanup` phase emptied four
+`docs/TODO.md` sections and immediately refilled two of them with its own
+deferred debt. A triage the same day (2026-09-06) closed three of those
+entries as code comments and moved one to the on-hold Compiler-on-Mac
+section, leaving **five**: array RETURNS aborting on `emit68k`;
+handle-bearing fixed-array PARAMETERS aborting with the generic message;
+`cg_init_globals` still storing zeros for zero-valued explicit
+initializers; `file.rename("", x)` reaching `PBHRenameSync` with an empty
+name; and the AppleDouble sidecar `filehandle` minors. This phase fixed
+all five, so `## Compiler correctness / cleanup` and `## Runtime /
+Toolbox robustness` are deleted from `docs/TODO.md` outright rather than
+reused. Six implementation tasks in three waves (A: 1, 4, 5, 6 in
+parallel worktrees; B: 2, 3 after Task 1 landed; C: this close-out), each
+reviewed; one fix round, on Task 1.
+
+**Task 1 — native array returns, scalar elements only** (`clarusc/
+cg68k.cla`, commits `ec41620` + `9a97808`). `cgRetNeedsHidden` gained
+`irtKind(retTy) == KArr and not cgNeedsRelease(retTy)`, which is exactly
+`cgParamByRef`'s body — so the return ABI and the parameter ABI share one
+boundary and every downstream caller (callee frame layout in
+`cgEmitFunc`, `cgCallFnScalar`'s discard gate, `cgCallFnInto`'s callers)
+picked the new kind up from that single predicate. `cgEmitStoreArr` gained
+the `ECallFn -> cgCallFnInto` fast path `cgEmitStoreRec` already had,
+which is what makes all four consumer shapes work, because all four funnel
+through that one helper: `b = mk()` (SAssign), `sum4(mk())` (`cgPushArgs`
+-> `cgMaterializeToTemp`), `return mk()` (`cgExprAddr`'s materialize
+fallback) and a bare discarded `mk()` (a new `KArr` arm in
+`cgCallFnScalar`). The plan mandated a `cgEmitReturnArr` helper as a
+verbatim copy of `cgEmitReturnErr`'s five-statement body, and the
+pre-flight scan accepted that duplication; the reviewer objected that two
+unparameterized copies of an ABI-critical stash-across-the-8(A6)-read
+block copy is the one-sided-edit trap this file documents by name, the
+ruling REVERSED the pre-flight one, and the fix round deleted
+`cgEmitReturnArr`: `cgReturnStmt` now dispatches `KErr or KArr` to
+`cgEmitReturnErr`, whose doc comment carries the deleted function's
+content (a `KErr`-only change there must now check the `KArr` caller, and
+the comment says so). Pinned by the new `testdata/cg68k/karr_return.s`
+golden, encoder-checked by `tests/cg68k/vasm.sh`'s round-trip, and
+executed by Task 3's suite case.
+
+**Task 2 — named diagnostics for handle-bearing fixed arrays**
+(`clarusc/cg68k.cla`, `tests/cg68k/array_assign.sh`, commit `ecc5d25`).
+Two guards, each replacing a path that used to reach `cgExpr`'s generic
+`EVarRef non-scalar (str/rec/arr) reached in value context` abort, plus a
+new `cgArrElemDesc` that spells a fixed array's element type (`record
+<Name>`, `text`/`list`/`map`, `array of ...` recursively). The parameter
+guard sits at the top of `cgPushArgs`' by-value arm, reached only after
+`cgParamByRef` returned false — which for a `KArr` means handle-bearing
+by construction. The return guard sits in `cgEmitFunc` right after
+`needsHidden` is computed, so it fires at frame layout, before any body
+statement is emitted, and names the function. The two fixed substrings the
+tests grep for are **`cannot be passed by value natively`** and **`cannot
+be returned natively`**; the emitted messages are
+
+```
+cg68k: a fixed array whose elements carry a text/list/map (record Named) cannot be passed by value natively -- pass a `list`, or put the array in a record and pass the record
+cg68k: function g returns a fixed array whose elements carry a text/list/map (text) -- cannot be returned natively; return a `list` instead
+```
+
+Both guards are pure aborts on paths that already aborted, so no
+emitted byte moved — `cg68k/goldens`, `image`, `determinism` and
+`selfemit` all passed untouched. One thing the plan did not predict: the
+RETURN fixture used to abort in the `SAssign` whole-array handle-bearing
+guard, not the value-context one (`return t` lowers through a store); the
+new `cgEmitFunc` guard preempts both.
+
+**Task 3 — the `ArrReturn` core case** (`testsuite/core/cases_arr.cla`,
+`runner.cla`, commit `22be35e`). `caseArrReturn` exercises all four
+consumer shapes against `caseArrMk4(): int[4]` and `caseArrFwd4()` (a
+return forwarded through a second call), then asserts the assigned copy
+stayed independent after `b[0] = 100`. The core suite goes **82 -> 83
+cases** (82 real + `SelfCheck`), so all five hand-maintained count sites
+moved: the runner's `nCoreCases`, `tests/mactest/coresuite_68k.sh` and
+`coresuite_mac.sh`'s `suite_report_check` literals,
+`tests/testsuite/core_cases.txt`, and `CLAUDE.md` — plus the sixth,
+non-suite site, `docs/TODO.md`'s own "Suite bookkeeping minors" entry,
+which quotes the literal. The case is the execution proof of Task 1's
+hidden-result-pointer block copy on BOTH lanes; the golden only pins its
+shape. `docs/clarus-language-reference.md`'s Chapter 6 parameter
+paragraph now states that a fixed array is a legal return type copied to
+the caller by value on both lanes, and that both the pass-by-value and
+the return rule stop at handle-bearing element types.
+
+**Task 4 — skip zero-valued explicit global initializers** (`clarusc/
+cg68k.cla`, commit `5b5e641`). One new predicate, `cgInitIsZeroConst(e)`
+(an `EIntConst` of 0, or a `CvIntToPtr` `EConv` wrapping one), and one
+more clause on `cgEmitInitGlobalsStub`'s per-global guard: skip
+`cgEmitGlobalInitExpr` when the initializer is a zero constant AND
+`cgDefaultIsAllZero(gt, 0, -1)`. Correct because `cgEmitStartup`'s
+below-A5 sweep has already zeroed every global before `cg_init_globals`
+runs. Lowering turns `false`, `nil`, `'\0'`, `0.0` and a zero-valued enum
+member into `EIntConst 0` and `ptr(0)` into `CvIntToPtr(EIntConst 0)`, so
+one predicate covers every spelling the reference admits; it is
+conservative in the safe direction (`char(0)` lowers to `CvIntToChar` and
+keeps its redundant store — a missed optimization, never a miscompile).
+The new `testdata/cg68k/globals_zero_init.cla` fixture went from **6
+stores to 1** (the `= 1` control), stub 123 lines -> 17. **A correction to
+the spec**: §4 claimed `cgDefaultIsAllZero` is false for a `KStr` with
+`= ""`. It is not — that function's `strDefaultIdx == -1` arm returns
+true. The real reason a string initializer is never skipped is
+`cgInitIsZeroConst`: `= ""` lowers to an `EStrConst`, never an
+`EIntConst`. The code comment states the real reason.
+
+**Task 5 — `file.rename("", x)` refuses before the trap** (`runtime/
+clarus/fileh.cla`, commit `e3a1663`). `rtFhRename`'s existing
+`if newName == ""` check became `if path == "" or newName == ""`, same
+`rtSetLastErr(-37, "rename failed")`. `rtFhRename` is the only choke point
+(`clarusc/lower.cla` lowers `file.rename` to it; both device backends sit
+under it), so one guard covers both lanes. Without it the native lane
+reused `rtFhDevStat("")`, whose empty-path branch is the "program's own
+folder" convention `exists("")`/`info("")` rely on, and issued
+`PBHRenameSync` with an empty leaf name and `ioDirID = 0` — Inside
+Macintosh rename semantics for that shape are a VOLUME rename. That
+convention is untouched; only `rename` refuses it. Pinned by two
+assertions inside the existing `DirOps` core case, so it is hardware-
+proved on both lanes with no new case; the RED run returned code `2`
+(host `ENOENT`), proving nothing was already returning `-37` by accident.
+The reference's `rename` row now says an empty `path` fails.
+
+**Task 6 — AppleDouble sidecar minors** (`runtime/host/rt_fileh.inc`,
+`rt_fileh_test.c`, commit `e5c8836`). Three fixes, all binding only on the
+AppleDouble path (non-Apple host, or `CLARUS_FORCE_APPLEDOUBLE=1`):
+`rt_ext_FhHOpenRF`'s `mkstemp` template honours `$TMPDIR` when set and
+non-empty (else `/tmp`), with an `ENAMETOOLONG` return instead of the old
+64-byte buffer smash; `rt_fh_sidecar_store` now `fflush`+`fsync`es the
+sidecar before `fclose` and reports failure, so `flush()` is a real
+durability barrier on the `._` file and not just on the unlinked temp; and
+`rt_ext_FhHClose` records a failed write-back in `rt_fh_errno` instead of
+dropping the store's return. `close()` stays void by contract on every
+lane — the native lane drops `PBCloseSync` failures the same way — and
+the reference's `close` row now says the AppleDouble write-back is
+best-effort at close and `flush()` is the call that reports failure.
+`tests/hostrt/fileh.sh` gained seven CHECKs: `TMPDIR` honoured (a missing
+directory ⇒ handle 0 + `ENOENT`; the scratch dir ⇒ works — the temp is
+unlinked at creation, so its location is observable only through that
+failure), and the flush barrier (the `._` sidecar read straight off disk
+BEFORE `close` already holds the bytes, at size 86 = an 82-byte header
+plus 4 fork bytes, with the right AppleDouble magic).
+
+**Goldens.** The bless touched **49 `testdata/cg68k/*.s` files**: the two
+NEW ones (`karr_return.s` from Task 1, `globals_zero_init.s` from Task 4)
+plus **47 existing**. Twenty-seven of the 47 are single-segment fixtures
+whose diff is a pure `-96 / +0` deletion — 48 `MOVE.L #0,D0` /
+`MOVE.[LB] D0,-N(A5)` pairs, the runtime modules' own zero-initialized
+globals, identical in every fixture. The other 20 belong to seven
+multi-segment UI programs (`arc`, `bounce`, `clear_deep`,
+`connfailprobe`, `smoke`, `strcontainers`, `tickprobe`) and show
+insertions and changes OUTSIDE `cg_init_globals`: removing ~480 bytes from
+segment 1 let one more function fit under the 32 KB budget, and the repack
+cascades through jump-table slot numbers, `JSR n(A5)` -> `BSR.W LBL_n`
+flips, `LBL_n` renumbering and string-pool items crossing a segment
+boundary. The implementer flagged that as a stop-and-report; the ruling
+was that repack-induced golden movement is the ordinary consequence of a
+native code-size change (`language-runtime-cleanup` blessed 56 goldens
+the same way) and that the REVIEW must verify the equivalence. It did, and
+found the implementer's own normalization insufficient (it erased callees
+and label numbers): the reviewer re-verified with per-segment label
+namespacing, JT-offset-to-callee-name resolution cross-validated by the
+`JSR`/`BSR` flips, `LEA` -> `DC.B` literal rewrite, and
+structure-preserving label renumbering — **2206 units across the seven
+fixtures, 0 functions added, removed or altered**; only the 149-line
+`MULU` helper block and duplicate string-pool `DC.B` entries changed
+segment. Because the tasks blessed in separate worktrees, `karr_return.s`
+was re-blessed once on the INTEGRATED tree (`aa6475d`, `-96 / +0`, the
+same 48 zero-store pairs) rather than text-merged.
+
+**Out of scope, by the spec's §7.**
+
+- Handle-bearing array returns and by-value copies (the retain walk).
+  Task 2's two diagnostics name them; nothing compiles them.
+- The C-lane `KErr` by-value asymmetry — documented and deliberate
+  (`cgParamByRef`'s doc).
+- Making `close()` return a status on either lane.
+- Everything in `docs/TODO.md`'s on-hold Compiler-on-Mac section,
+  including the `cg_free_globals` glue duplication measured during the
+  2026-09-06 triage.
+
+**Deferred / recorded** (review minors, none blocking; the ledger in
+`.superpowers/sdd/2026-09-06-native-array-return-and-fileh-guards/
+progress.md` carries them verbatim):
+
+- `return mk()` double-copies through a materialize temp — consistent
+  with `cgEmitReturnErr`'s own behaviour for `KErr`, noted not fixed.
+- `cgArrElemDesc`'s trailing `return "element"` is unreachable (both call
+  sites gate on `irtKind(...) == KArr`).
+- `tests/cg68k/array_assign.sh`'s new subcases lack the sibling no-`.bin`
+  assertion the existing `handle_elem_no_bin` case makes, and their
+  comment claims definition order is load-bearing for the return subcase
+  — it is not (`cgEmitFunc`'s guard fires whenever `g` is emitted).
+- `globals_zero_init.cla`'s comment says "exactly ONE `MOVE.L #1,D0`"
+  where two runtime globals also store 1; it should say one FIXTURE
+  global. `cgDefaultIsAllZero` is now evaluated twice per global
+  (brief-mandated, negligible — a pure compile-time predicate).
+- `ArrReturn`'s independence check omits `b[2]`, and its failure message
+  prints no values.
+- `rtFhMove` has no empty-path guard. Weaker hazard than `rename`:
+  `rtFhDevMove` never consults `rtFhDevStat`, it hands the raw path to
+  `PBCatMoveSync`, and `CatMove` has no volume-level semantics to fall
+  into.
+- `rt_ext_FhHClose` reads `errno` AFTER `rt_fh_sidecar_store`'s own
+  `fclose` has run, so the recorded value can be `fclose`'s, or 0 —
+  clearing a prior `rt_fh_errno`. Same as the pre-existing `FhHFlush`
+  behaviour; saving `errno` inside the store fixes both sites. The
+  close-path errno record has no test, and the sidecar `fsync` itself is
+  unobservable from userspace, so that step is unpinned. `tmpl[1100]` is
+  arbitrary-but-safe.
+
+**Gates.** T1 (`scripts/test-task.sh --smoke`) over the integrated waves
+and the full T2 (`scripts/test-merge.sh`) run at close-out on the
+integrated branch — `mactest/coresuite_68k` is where `ArrReturn` and the
+`rename` guard are proved on hardware, and `mactest/smoke_bounce` /
+`mactest/tick` are the load-bearing check on the 20 repacked goldens. No
+runtime module was added, so no `tests/bake/` twin and no Snow
+`clarusc_bake` run is owed (`clarusc/bake.cla` and `macgui.cla` were not
+edited); the bootstrap snapshot did not need regenerating. Per-stage
+result lines are in the phase ledger.
+
+Spec: `docs/superpowers/specs/2026-09-06-native-array-return-and-fileh-guards-design.md`;
+plan `docs/superpowers/plans/2026-09-06-native-array-return-and-fileh-guards.md`;
+per-task briefs, reports, reviews and the `progress.md` ledger in
+`.superpowers/sdd/2026-09-06-native-array-return-and-fileh-guards/`.
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of

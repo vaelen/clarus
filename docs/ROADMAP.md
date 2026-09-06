@@ -107,6 +107,28 @@ tree, every stage) and **Snow bake gate PASS in 1656s** (27.6 min, all
 six subcases) via the new exit-trailer probe that replaced the gate's
 fixed 55-minute settle timer. Details: `docs/HISTORY.md`'s own entry.
 
+**`native-array-return-and-fileh-guards` is COMPLETE and NOT YET MERGED**
+(branch `native-array-return-and-fileh-guards`; merging to `main` is
+Andrew's call). It cleared the five entries `language-runtime-cleanup`
+had left behind, in six tasks across three waves: fixed arrays of scalar
+elements are now a legal native return type (one predicate,
+`cgRetNeedsHidden`, sharing `cgParamByRef`'s boundary, so the return ABI
+and the parameter ABI have the same edge); handle-bearing fixed arrays
+get named diagnostics instead of the generic value-context abort on both
+the parameter and the return path; `cg_init_globals` no longer stores
+zeros the startup sweep already wrote; `file.rename("", x)` is refused
+before the trap on both lanes instead of reaching `PBHRenameSync` as a
+volume rename; and the host AppleDouble sidecar honours `$TMPDIR`, is
+fsynced by `flush()`, and records a failed write-back at `close`. The
+core suite is 83 cases (the new `ArrReturn`), and 49 `testdata/cg68k/*.s`
+goldens were blessed — two new, 27 pure `cg_init_globals` deletions, 20
+repacked by the 32 KB segment packer with equivalence verified unit by
+unit in review. That emptied `docs/TODO.md`'s "Compiler correctness /
+cleanup" and "Runtime / Toolbox robustness" sections, which are now
+DELETED rather than reused: what remains in that file is the Serial /
+connection group, the test-coverage gaps, and the on-hold Compiler-on-Mac
+section. Details: `docs/HISTORY.md`'s own entry.
+
 Owed, not yet done (details in `docs/TODO.md`): a live run of the Snow
 `macresident` scripts; a System 7 spot check of the filesystem-api
 phase; the 68kbbs re-pin.
