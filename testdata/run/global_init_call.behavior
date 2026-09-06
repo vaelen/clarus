@@ -1,0 +1,6 @@
+exit=0
+--- stdout ---
+g = made
+h = abc
+early = 1
+--- stderr ---

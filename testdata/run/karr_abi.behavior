@@ -1,0 +1,7 @@
+exit=0
+--- stdout ---
+sum = 10
+fwd = 10
+bump = 7
+g0 = 100
+--- stderr ---

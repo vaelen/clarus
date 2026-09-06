@@ -15,7 +15,7 @@ check_test.cla:13:11: enums are not ordered
 === duplicate-enum-value ===
 check_test.cla:3:5: duplicate enum value 0
 === const-type-must-be ===
-check_test.cla:1:1: const type must be int, fixed, char, bool, enum, or string
+check_test.cla:1:1: const type must be int, fixed, char, bool, enum, string, or a fixed array
 === forward-type-in-signature-still-errors ===
 check_test.cla:1:14: undefined: Widget
 === mutual-recursion-clean ===
