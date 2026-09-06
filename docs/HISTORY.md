@@ -5848,7 +5848,12 @@ PASS in 21s`, `perfgate/ PASS in 0s`, `selfhost/ PASS in 178s`,
 `mactest/ PASS in 664s` (18 passed / 13 skipped, `coresuite_68k` 83/83
 with the new `move("")` assertion, `smoke_bounce` / `tick` as the
 load-bearing check on the 20 repacked goldens), `bake/ full corpus PASS
-in 2s`. No runtime module was added, so no `tests/bake/` twin and no Snow
+in 2s`. After the deferred-minors wave the snapshot was regenerated a
+third time (`d4cd7c1`) and T2 on `d4cd7c1` PASS in 859s (`t1 body 18s`,
+`selfhost/ 179s`, `mactest/ 648s` with `coresuite_68k` `ArrReturn` and
+`toolbox_68k` `LeakCheck` green — the native proof that the
+return-forwarding fast path neither miscomputes nor leaks, `bake/ 2s`).
+No runtime module was added, so no `tests/bake/` twin and no Snow
 `clarusc_bake` run is owed (`clarusc/bake.cla` and `macgui.cla` were not
 edited).
 
