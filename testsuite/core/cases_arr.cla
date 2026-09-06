@@ -12,6 +12,7 @@
 //                             local `var` array block-copied from it, both
 //                             hardware-proved on the native lane by
 //                             tests/mactest/coresuite_68k.sh.
+//   ArrReturn <- native-array-return-and-fileh-guards, spec %2: a scalar-element fixed array returned by value, consumed assigned / as an argument / forwarded / discarded; the returned copy is independent.
 
 // coreArrLitTab is a `const` array: no storage, no startup cost -- reads
 // index the constant pool directly (PC-relative on 68k, a `static const`
@@ -79,4 +80,56 @@ func caseArrHolderElementStore(): TestResult {
         return tkFail("ArrHolderElementStore", "const array clobbered by var copy")
     }
     return tkPass("ArrHolderElementStore")
+}
+
+// caseArrMk4/caseArrSum4/caseArrFwd4 are ArrReturn's fixtures: an array
+// RETURN (hidden result pointer on the native lane, cgRetNeedsHidden), a
+// borrowed array PARAMETER (cgParamByRef), and a return forwarded through
+// a second call.
+func caseArrMk4(): int[4] {
+    var a: int[4]
+
+    a[0] = 1
+    a[1] = 2
+    a[2] = 3
+    a[3] = 4
+    return a
+}
+
+func caseArrSum4(a: int[4]): int {
+    return a[0] + a[1] + a[2] + a[3]
+}
+
+func caseArrFwd4(): int[4] {
+    return caseArrMk4()
+}
+
+func caseArrReturn(): TestResult {
+    var b: int[4]
+    var s: int
+
+    // A bare, discarded call must compile and run (cgCallFnScalar's
+    // discard arm parks the result in a tracked temp).
+    caseArrMk4()
+
+    b = caseArrMk4()
+    s = caseArrSum4(b)
+    if s != 10 {
+        return tkFail("ArrReturn", "assigned return sum " + string(s) + " want 10")
+    }
+    // Mutating the copy must not reach the callee's local or any later
+    // return: the next two calls must still sum to 10.
+    b[0] = 100
+    s = caseArrSum4(caseArrMk4())
+    if s != 10 {
+        return tkFail("ArrReturn", "direct-argument return sum " + string(s) + " want 10")
+    }
+    s = caseArrSum4(caseArrFwd4())
+    if s != 10 {
+        return tkFail("ArrReturn", "forwarded return sum " + string(s) + " want 10")
+    }
+    if b[0] != 100 or b[1] != 2 or b[3] != 4 {
+        return tkFail("ArrReturn", "assigned copy not independent")
+    }
+    return tkPass("ArrReturn")
 }

@@ -158,6 +158,7 @@ enum CoreTest {
     RecCopyIndependence
     RecFieldGlobalAlias
     ArrHolderElementStore
+    ArrReturn
     EnumIntRoundTrip
     EnumSaveChoiceValue
     FixedMathOps
@@ -222,13 +223,13 @@ enum CoreTest {
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 81 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 82 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 82
+const nCoreCases: int = 83
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -296,6 +297,9 @@ func coreCaseName(t: CoreTest): string {
     }
     case ArrHolderElementStore {
         return "ArrHolderElementStore"
+    }
+    case ArrReturn {
+        return "ArrReturn"
     }
     case EnumIntRoundTrip {
         return "EnumIntRoundTrip"
@@ -520,6 +524,7 @@ func coreAllCases(): list of CoreTest {
     l.add(RecCopyIndependence)
     l.add(RecFieldGlobalAlias)
     l.add(ArrHolderElementStore)
+    l.add(ArrReturn)
     l.add(EnumIntRoundTrip)
     l.add(EnumSaveChoiceValue)
     l.add(FixedMathOps)
@@ -697,6 +702,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, ArrHolderElementStore) {
         results.add(caseArrHolderElementStore())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, ArrReturn) {
+        results.add(caseArrReturn())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, EnumIntRoundTrip) {

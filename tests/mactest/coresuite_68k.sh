@@ -26,5 +26,5 @@ run_mac "$WORK/coresuite_gui.bin" 300
 [ "$MAC_EXIT" = 0 ] || die "coresuite GUI exit code $MAC_EXIT, want 0
 capture:
 $(cat "$WORK/cap.out")"
-suite_report_check "$WORK/cap.out" 82
+suite_report_check "$WORK/cap.out" 83
 t_done

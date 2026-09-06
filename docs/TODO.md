@@ -140,7 +140,7 @@ sub-heading.
 
 - **Suite bookkeeping minors**: the expected case counts are hand-written
   literals in the ported scripts too (`suite_report_check "$WORK/cap.out"
-  82` in `tests/mactest/coresuite_68k.sh`, `38` in `toolbox_68k.sh`, each
+  83` in `tests/mactest/coresuite_68k.sh`, `38` in `toolbox_68k.sh`, each
   duplicated in that script's own doc comment), so adding a suite case
   still means editing two places per lane — the original
   `internal/mactest/coresuite_test.go` complaint, carried over by the

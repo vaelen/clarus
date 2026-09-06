@@ -18,6 +18,7 @@ MapOfListUpsert
 RecCopyIndependence
 RecFieldGlobalAlias
 ArrHolderElementStore
+ArrReturn
 EnumIntRoundTrip
 EnumSaveChoiceValue
 FixedMathOps
