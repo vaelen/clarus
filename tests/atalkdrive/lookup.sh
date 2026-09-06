@@ -9,6 +9,8 @@
 # emulator sessions, an EtherTalk bridge), so the name carries this
 # script's pid and nothing asserts an entity count.
 . "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
+atalk_lock   # one LToUDP script on the group at a time
 
 DRIVE=$TOOLS/atalkdrive
 require_tool "$DRIVE"

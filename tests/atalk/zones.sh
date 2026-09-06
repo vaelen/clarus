@@ -7,6 +7,7 @@
 # lane run is routerless, so "zones 1 *" is the whole contract here.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
+atalk_lock   # one LToUDP script on the group at a time
 
 require_tool "$TOOLS/atalkdrive"
 atalk_skip_unless_multicast

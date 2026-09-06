@@ -271,7 +271,18 @@ static void rt_at_tick(rt_atalk *a, int ms) {
 }
 
 /* rt_at_acquire: claim a node id, starting from `first` (1..127) or a
- * random one when first <= 0. Returns 0, or -1 with errno EADDRINUSE. */
+ * random one when first <= 0. Returns 0, or -1 with errno EADDRINUSE.
+ * Eight lapENQ probes, not three: Inside AppleTalk sends up to 20, and a
+ * peer only answers ENQ while something is polling it, so a lone ACK
+ * inside a 60 ms window is easy to miss when the group is busy.
+ *
+ * Each probe waits on a CLOCK, not on one rt_at_tick: tick's select
+ * returns the instant ANY datagram lands, so on a busy group the whole
+ * probe loop used to finish in about a millisecond -- far quicker than
+ * the ACK round trip -- and the id was claimed while its real owner was
+ * still answering. That is the T1 interference bug (2026-09-07): the
+ * duplicate node ids it minted are what let one process's NBP replies be
+ * delivered to another's lookups. */
 static int rt_at_acquire(rt_atalk *a, int first) {
     int try_;
 
@@ -282,9 +293,10 @@ static int rt_at_acquire(rt_atalk *a, int first) {
         a->node = (uint8_t)cand;
         a->acquiring = 1;
         a->collided = 0;
-        for (probe = 0; probe < 3 && !a->collided; probe++) {
+        for (probe = 0; probe < 8 && !a->collided; probe++) {
+            double until = rt_at_now() + 0.025;
             rt_at_tx(a, (uint8_t)cand, RT_AT_LLAP_ENQ, NULL, 0);
-            rt_at_tick(a, 20);
+            while (rt_at_now() < until && !a->collided) rt_at_tick(a, 5);
         }
         a->acquiring = 0;
         if (!a->collided) return 0;
@@ -475,10 +487,17 @@ const rt_at_tuple *rt_at_nbp_lookup_get(rt_atalk *a, int lk, int i) {
 /* rt_at_lookup_add: de-duplicated by (address, obj, type) -- the same
  * entity answers all three broadcasts. (The plan said (address,
  * enumerator); the name is the finer key, and it survives a peer that
- * re-registers with a fresh enumerator mid-window.) */
+ * re-registers with a fresh enumerator mid-window.)
+ *
+ * The pattern re-check is not belt-and-braces: an NBP id is 8 bits and a
+ * LkUp-Reply is unicast to the requester's NODE, so on a busy group a
+ * reply meant for somebody else's lookup can land here (two hosts holding
+ * the same node id, ids colliding). A lookup must only ever report
+ * entities matching what IT asked for. */
 static void rt_at_lookup_add(rt_at_lookup *L, rt_at_addr addr,
                              const char *obj, const char *type, const char *zone) {
     int i;
+    if (!rt_at_name_match(L->obj, obj) || !rt_at_name_match(L->type, type)) return;
     for (i = 0; i < L->count; i++) {
         rt_at_tuple *t = &L->tuples[i];
         if (t->addr.net == addr.net && t->addr.node == addr.node &&
@@ -1053,6 +1072,12 @@ rt_atalk *rt_at_open(const char *iface_ip) {
      * a Mini vMac on the same machine). */
     setsockopt(a->fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
 #endif
+    {   /* Best-effort: an instance is drained once per pump pass, and the
+         * default receive buffer overflows on a group with a dozen live
+         * peers -- a dropped lapACK there costs a duplicate node id. */
+        int rcvbuf = 256 * 1024;
+        setsockopt(a->fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+    }
     memset(&bindaddr, 0, sizeof(bindaddr));
     bindaddr.sin_family = AF_INET;
     bindaddr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -1081,6 +1106,7 @@ rt_atalk *rt_at_open(const char *iface_ip) {
     a->sender[2] = (uint8_t)(rand() & 0xFF);
     a->sender[3] = (uint8_t)((rand() & 0xFE) | 1);   /* never all-zero */
     a->sock_next = (uint8_t)(rand() % 127);
+    a->nbp_id = (uint8_t)(rand() & 0xFF);   /* not 1 in every fresh instance */
     a->tid_next = (uint16_t)(rand() & 0xFFFF);
     a->rq.eom_seq = -1;
 

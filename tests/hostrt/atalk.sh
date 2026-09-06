@@ -10,6 +10,8 @@
 # environmental skip into a FAIL. The compile line below is run_c_test's,
 # verbatim.
 . "$(dirname "$0")/../lib.sh" || exit 2
+. "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
+atalk_lock   # one LToUDP script on the group at a time
 
 exe=$WORK/rt_atalk_test
 $CC -std=c99 -Wall -Werror -I "$HOSTRT" runtime/host/rt_atalk_test.c \

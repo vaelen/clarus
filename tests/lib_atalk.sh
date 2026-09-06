@@ -82,3 +82,44 @@ atalk_sweep() {
     done > "$1"
     [ "$(wc -c < "$1" | tr -d ' ')" = "$2" ] || die "atalk_sweep: $1 is not $2 bytes"
 }
+
+# atalk_lock / atalk_unlock : serialize every script that puts an LToUDP
+# stack on the loopback multicast group -- tests/hostrt/atalk.sh,
+# tests/atalkdrive/*.sh and the network half of tests/atalk/*.sh. Under
+# `make -j` those otherwise start within the same seconds, and a dozen
+# stacks racing for 127 node ids is a source of flakiness that no amount
+# of protocol hardening removes (a peer can only defend its node id while
+# something is polling it, which a test process between operations is not).
+#
+# mkdir is the lock: it is the one atomic create POSIX sh has (macOS has no
+# flock). The holder's pid goes inside, so a killed holder's lock is stolen
+# rather than blocking every later run until the wait bound expires.
+#
+# The EXIT trap re-does lib.sh's own `rm -rf "$WORK"`: lib.sh is frozen, so
+# there is no way to CHAIN a handler onto it, and replacing it without the
+# rm would leak the work directory.
+atalk_lock() {
+    _lk=$BR/atalk.lock
+    _i=0
+    mkdir -p "$BR"
+    while ! mkdir "$_lk" 2>/dev/null; do
+        _owner=$(cat "$_lk/pid" 2>/dev/null)
+        if [ -n "$_owner" ] && ! kill -0 "$_owner" 2>/dev/null; then
+            rm -rf "$_lk"          # holder died without releasing; steal it
+            continue
+        fi
+        [ "$_i" -ge 300 ] && die "atalk_lock: $_lk still held after 300s"
+        sleep 1
+        _i=$((_i + 1))
+    done
+    echo $$ > "$_lk/pid"
+    ATALK_LOCK=$_lk
+    trap 'atalk_unlock; rm -rf "$WORK"' EXIT
+    trap 'atalk_unlock; rm -rf "$WORK"; exit 2' INT TERM
+}
+
+atalk_unlock() {
+    [ -n "${ATALK_LOCK:-}" ] || return 0
+    rm -rf "$ATALK_LOCK"
+    ATALK_LOCK=
+}

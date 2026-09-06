@@ -8,6 +8,7 @@
 # scripts in this group cover.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
+atalk_lock   # one LToUDP script on the group at a time
 
 DRIVE=$TOOLS/atalkdrive
 require_tool "$DRIVE"
