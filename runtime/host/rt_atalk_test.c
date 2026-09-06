@@ -265,6 +265,10 @@ extern int32_t rt_ext_AtalkHLookupDone(int32_t lk);
 extern int32_t rt_ext_AtalkHLookupCount(int32_t lk);
 extern int32_t rt_ext_AtalkHLookupAddr(int32_t lk, int32_t i);
 extern void    rt_ext_AtalkHLookupName(int32_t lk, int32_t i, void *out);
+extern int32_t rt_ext_AtalkHAtpOpen(void);
+extern void    rt_ext_AtalkHAtpClose(int32_t sock);
+extern int32_t rt_ext_AtalkHAtpGetRequest(int32_t sock, void *buf, int32_t cap);
+extern int32_t rt_ext_AtalkHAtpSendResponse(int32_t sock, int32_t code, void *buf, int32_t n);
 
 /* pstr: a C string as the Pascal string a Clarus `string` argument is. */
 static void pstr(uint8_t *p, const char *s) {
@@ -319,12 +323,28 @@ static void test_ext(void) {
     }
     CHECK(seen, "AtalkHLookupName never produced \"obj:ClarusTest\"");
     rt_at_nbp_remove(A, nbp_obj, "ClarusTest");
+
+    /* A SendResponse with no live request must be refused: without the
+     * guard it would answer the PREVIOUS transaction a second time and
+     * re-arm a fresh 30 s XO entry under that old TID. */
+    {
+        int32_t sk = rt_ext_AtalkHAtpOpen();
+        uint8_t body[8];
+        CHECK(sk >= 128 && sk <= 254, "AtalkHAtpOpen did not return a dynamic socket");
+        if (sk >= 0) {
+            CHECK(rt_ext_AtalkHAtpGetRequest(sk, body, (int32_t)sizeof(body)) == -1,
+                  "AtalkHAtpGetRequest invented a request");
+            CHECK(rt_ext_AtalkHAtpSendResponse(sk, 0, body, 0) == -1096,
+                  "AtalkHAtpSendResponse answered a stale request");
+            rt_ext_AtalkHAtpClose(sk);
+        }
+    }
 }
 
 int main(void) {
-    /* Watchdog: three NBP lookups at 3 s each, three registers at 0.75 s,
-     * a handful of ATP calls with a 1 s retransmit timer, plus the opens.
-     * A clean run is ~14 s. */
+    /* Watchdog: three NBP lookups at 3 s each, three registers whose own
+     * verify-lookup is another 3 s each, a handful of ATP calls with a 1 s
+     * retransmit timer, plus the opens. A clean run is ~24 s. */
     alarm(120);
 
     A = rt_at_open(NULL);
