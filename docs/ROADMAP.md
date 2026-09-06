@@ -127,7 +127,11 @@ unit in review. That emptied `docs/TODO.md`'s "Compiler correctness /
 cleanup" and "Runtime / Toolbox robustness" sections, which are now
 DELETED rather than reused: what remains in that file is the Serial /
 connection group, the test-coverage gaps, and the on-hold Compiler-on-Mac
-section. Details: `docs/HISTORY.md`'s own entry.
+section. Full T2 green at the tip (`scripts/test-merge.sh` PASS in 876s
+on `6f5fdcb`: selfhost 178s, mactest 664s with `coresuite_68k` 83/83 on
+hardware, bake full corpus 2s); the bootstrap snapshot was regenerated
+twice on the branch and reproduces itself. Details: `docs/HISTORY.md`'s
+own entry.
 
 Owed, not yet done (details in `docs/TODO.md`): a live run of the Snow
 `macresident` scripts; a System 7 spot check of the filesystem-api
