@@ -72097,6 +72097,8 @@ static void clar_fn_cgEmitInitGlobalsStub(int32_t cv_lbl) {
     cv_initE = 0;
     int32_t cv_fullReplace;
     cv_fullReplace = 0;
+    int32_t cv_allZero;
+    cv_allZero = 0;
     int32_t cv_frameSize;
     cv_frameSize = 0;
     int32_t cv_runningNeg;
@@ -72222,11 +72224,12 @@ static void clar_fn_cgEmitInitGlobalsStub(int32_t cv_lbl) {
         cv_cgStmtBigTmpNext = 0;
         cv_cgLastTrackedOff = CLAR_NEG32(1);
         cv_fullReplace = (((cv_initE != CLAR_NEG32(1)) && clar_fn_irtNeedsCtor(cv_gt)) && (!(((clar_fn_irtKind(cv_gt) == 6) && (clar_fn_irtKind(clar_fn_irExprType(cv_initE)) == 5)))));
-        if ((!(cv_fullReplace)) && (!(clar_fn_cgDefaultIsAllZero(cv_gt, 0, CLAR_NEG32(1))))) {
+        cv_allZero = clar_fn_cgDefaultIsAllZero(cv_gt, 0, CLAR_NEG32(1));
+        if ((!(cv_fullReplace)) && (!(cv_allZero))) {
             clar_fn_cgDefaultInitAt(5, (*(int32_t*)rt_list_at(cv_cgGlobalOffsets, (int32_t)(cv_i))), cv_gt, 0, CLAR_NEG32(1));
             if (clar_aborting) goto bail;
         }
-        if ((cv_initE != CLAR_NEG32(1)) && (!((clar_fn_cgInitIsZeroConst(cv_initE) && clar_fn_cgDefaultIsAllZero(cv_gt, 0, CLAR_NEG32(1)))))) {
+        if ((cv_initE != CLAR_NEG32(1)) && (!((clar_fn_cgInitIsZeroConst(cv_initE) && cv_allZero)))) {
             clar_fn_cgEmitGlobalInitExpr(cv_i, cv_gt, cv_initE);
             if (clar_aborting) goto bail;
         }
@@ -74051,6 +74054,11 @@ static void clar_fn_cgEmitReturnRec(int32_t cv_src) {
 static void clar_fn_cgEmitReturnErr(int32_t cv_src) {
     int32_t cv_sz;
     cv_sz = 0;
+    if (clar_fn_irExprKind(cv_src) == 8) {
+        clar_fn_cgCallFnInto(cv_src, CLAR_NEG32(1));
+        if (clar_aborting) goto bail;
+        return;
+    }
     cv_sz = clar_fn_cgSizeOf(cv_cgCurRetType);
     clar_fn_cgExprAddr(cv_src);
     if (clar_aborting) goto bail;
@@ -78569,9 +78577,13 @@ static void clar_fn_cgCallFnInto(int32_t cv_e, int32_t cv_dst) {
     t4 = clar_fn_cgPushArgs(clar_fn_irCallFnArgsHead(cv_e));
     if (clar_aborting) goto bail;
     cv_total = t4;
-    clar_fn_cgExprAddr(cv_dst);
-    if (clar_aborting) goto bail;
-    clar_fn_a68Emit(0, 4, 2, 0, 0, 5, 7, 0);
+    if (cv_dst == CLAR_NEG32(1)) {
+        clar_fn_a68Emit(0, 4, 6, 6, 8, 5, 7, 0);
+    } else {
+        clar_fn_cgExprAddr(cv_dst);
+        if (clar_aborting) goto bail;
+        clar_fn_a68Emit(0, 4, 2, 0, 0, 5, 7, 0);
+    }
     cv_total = CLAR_ADD32(cv_total, 4);
     clar_fn_cgCallFunc(cv_fi);
     clar_fn_cgCleanupStack(cv_total);
