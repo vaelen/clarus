@@ -129,7 +129,7 @@ external func UiLocalToGlobal(pt: ptr) = trap 0xA870
 // rtUiIntToPStr: signed decimal into a Pascal string at out255 -- the
 // pure-Clarus replacement for the Package 7 NumToString call above.
 // Digits come off the SIGNED value (`d = u mod 10; if d < 0 { d = 0 - d }`),
-// the same shape str.cla's `strFromInt` uses, so int.min converts like any
+// the same shape str.cla's `rtIntToStr` uses, so int.min converts like any
 // other value. Negating up front (`u = 0 - n`) would overflow on int.min
 // and render it as a bare "-"; this function did exactly that until the
 // language-runtime-cleanup phase's close-out.

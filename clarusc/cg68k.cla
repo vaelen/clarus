@@ -3679,7 +3679,12 @@ func cgDefaultIsAllZero(t: int, scalarDefault: int, strDefaultIdx: int): bool {
 // matters for extern-record storage: an EXRecAddr field read/write
 // addresses this SAME region via literal, unpadded byte offsets
 // (irXRecFieldOffset), so every byte in that contiguous range must actually
-// be zeroed, not just every other one.
+// be zeroed, not just every other one. The CLR.L loop below (final review)
+// clobbers D0 (the DBRA counter), unlike the unrolled path above it, which
+// only ever touches A0 -- fine today because its only reg == 6 callers,
+// the two mid-expression cgRecordCtorAt(6, ...) sites in the form `edit`
+// arms, have D0 dead at that point, but a future reg == 6 caller with a
+// live D0 would need to save/restore it.
 func cgArrDefaultAt(reg: int, off: int, t: int) {
     var et: int
     var n: int
