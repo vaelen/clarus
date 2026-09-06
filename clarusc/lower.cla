@@ -163,6 +163,31 @@ var lowConnSlotOf: map of int
 // ("a slot with no handler for an event is a no-op").
 var lowConnHandlerFn: map of int
 
+// ---- AppleTalk resource lowering state (2026-09-06 appletalk spec %7,
+// Task 8) ----
+//
+// The three maps below are lowConnSlotOf's exact counterparts for the
+// three AppleTalk resource kinds -- a GLOBAL `listener`/`serviceBrowser`/
+// `service` var's own name to its slot index, assigned by lowerProgram's
+// own pre-pass in declaration order, with spec %4.5's cap of 2 apiece
+// (matching atalk.cla's own `const rtLsnMax/rtBrsMax/rtSvcMax: int = 2`
+// -- the same by-hand sync lowConnSlotOf's own "4 (not a named const)"
+// note above describes, for the same reason: clarusc's source and a user
+// program's runtime modules are separate compilation units).
+var lowLsnSlotOf: map of int
+var lowBrsSlotOf: map of int
+var lowSvcSlotOf: map of int
+
+// lowLsnHandlerFn/lowBrsHandlerFn/lowSvcHandlerFn map "<slot>|<event>"
+// to the interned C name of that slot's minted handler IRFunc, exactly
+// as lowConnHandlerFn does for connections -- absent means "no-op arm"
+// in the corresponding clar_lsn_/clar_brs_/clar_svc_fire_* dispatcher.
+// Events: accepted/failed (listener), found/done/failed (browser),
+// request/failed (service).
+var lowLsnHandlerFn: map of int
+var lowBrsHandlerFn: map of int
+var lowSvcHandlerFn: map of int
+
 // lowCurFuncRet is the enclosing function's declared return IR type index,
 // for the Return-statement coercion Task 4 adds (lower.go's curFuncRet).
 var lowCurFuncRet: int
@@ -1373,6 +1398,17 @@ func lowCall(e: int): int {
                 // chainer (already-lowered IR head + one raw AST arg).
                 return newIRIntr(IStrConcatChar(), lowMethodArgs2(newIRStrConst(lowInternStr(""), irStrType(255)), callArgsHead(e)), ty)
             }
+            if typeKind(exprTypeGet(callArgsHead(e))) == TyAddress {
+                // string(addr) (2026-09-06 appletalk spec %4.3, Task 8):
+                // "net.node.socket", NOT a decimal number. An `address`
+                // is int-shaped (lowTypeAt's TyAddress case), so without
+                // this arm it would fall into IIntToStr below and print
+                // the packed net<<16|node<<8|socket integer -- checked
+                // clean, silently wrong. atalk.cla's rtAtalkAddrStr is
+                // an ordinary spliced runtime function, so this is a
+                // plain call, not an intrinsic.
+                return newIRCallFn(intern("rtAtalkAddrStr"), lowArgs(callArgsHead(e)), ty)
+            }
             return newIRIntr(IIntToStr(), lowArgs(callArgsHead(e)), ty)
         } else if name == "askOpen" {
             // askOpen(path, types) -- native-gaps-cleanup Task 2: types is
@@ -1484,6 +1520,20 @@ func lowMethodCall(e: int, fn: int): int {
         // line below runs.
         return lowFileHandleMethod(e, fn, ty, xk)
     }
+    if xk == TyListener {
+        // AppleTalk resource methods (2026-09-06 appletalk spec, Task 8):
+        // same shape/reasoning as the TyConnection branch above -- each
+        // lowers its own receiver (a 1-based int handle, lowTypeAt), so
+        // all three must return BEFORE the generic `recv = lowExpr(...)`
+        // line below.
+        return lowListenerMethod(e, fn, ty, xk)
+    }
+    if xk == TyServiceBrowser {
+        return lowBrowserMethod(e, fn, ty, xk)
+    }
+    if xk == TyService {
+        return lowServiceMethod(e, fn, ty, xk)
+    }
     recv = lowExpr(selectX(fn))
     if xk == TyStr or xk == TyText {
         return lowStringTextMethod(recv, xk == TyText, fn, callArgsHead(e), ty)
@@ -1575,6 +1625,30 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
         irExprListAppend(tail, lowCoerceTo(irStrType(255), argsHead))
         return newIRCallFn(intern("rtConnOpen"), args, irVoidT)
     }
+    if name == "open" and callTransport(e) == 1 {
+        // `c.open(appletalk "Name:Type")` (2026-09-06 appletalk spec
+        // %4.1, Task 8): the SAME rtConnOpen entry point the serial arm
+        // above uses, with conn.cla's transport tag 1 -- conn.cla's own
+        // transport switch (Task 9) is what routes it to atalk.cla's
+        // rtAdspOpenName. On the host lane that path stages `failed`
+        // with rtAtErrNoHost (spec %4.6).
+        args = recv
+        tail = irExprListAppend(args, newIRIntConst(1, irIntT))
+        irExprListAppend(tail, lowCoerceTo(irStrType(255), argsHead))
+        return newIRCallFn(intern("rtConnOpen"), args, irVoidT)
+    }
+    if name == "open" and typeKind(exprTypeGet(argsHead)) == TyAddress {
+        // `c.open(addr)` (spec %4.1): no transport prefix and no name
+        // lookup -- an ADSP open straight to a browser/request address,
+        // its own runtime entry point (atalk.cla's rtConnOpenAddr, which
+        // records the transport in conn.cla's slot table itself).
+        // rtConnOpenAddr(h: int, addr: int) -- an `address` is an
+        // int-shaped inline value (lowTypeAt's TyAddress case), so the
+        // argument needs no coercion at all.
+        args = recv
+        irExprListAppend(args, lowExpr(argsHead))
+        return newIRCallFn(intern("rtConnOpenAddr"), args, irVoidT)
+    }
     if name == "send" {
         args = recv
         if typeKind(exprTypeGet(argsHead)) == TyText {
@@ -1593,6 +1667,156 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
     // receiver kind) is what lowMethodCall's own fallback reports for
     // every OTHER unhandled receiver kind -- ty is the CALL's result
     // type, not the receiver's, and must not be substituted here.
+    lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
+    return -1
+}
+
+// lowListenerMethod dispatches `lsnExpr.register/stop(...)` to the
+// matching rtLsn* runtime call (2026-09-06 appletalk spec %4.2, Task 8).
+// Same shape as lowConnMethod above: a `listener` is an ordinary int
+// value (lowTypeAt's TyListener case), so the receiver lowers via plain
+// lowExpr and its 1-based handle (0 = nil) goes straight through --
+// atalk.cla's own rtLsn* entry points do the `h == 0` nil check.
+// `l.listen(port)` stays a MacTCP fence: it falls to the shared
+// not-yet-implemented diagnostic below, exactly as it did before this
+// task.
+func lowListenerMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
+    var recv: int
+    var name: string
+    var argsHead: int
+    var args: int
+    var tail: int
+
+    recv = lowExpr(selectX(fn))
+    name = poolGet(selectName(fn))
+    argsHead = callArgsHead(e)
+
+    if name == "register" {
+        // rtLsnRegister(h: int, name: string, typ: string) -- params 2/3.
+        args = recv
+        tail = irExprListAppend(args, lowCoerceTo(irStrType(255), argsHead))
+        irExprListAppend(tail, lowCoerceTo(irStrType(255), exprNext(argsHead)))
+        return newIRCallFn(intern("rtLsnRegister"), args, irVoidT)
+    }
+    if name == "stop" {
+        return newIRCallFn(intern("rtLsnStop"), recv, irVoidT)
+    }
+    lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
+    return -1
+}
+
+// lowBrowserMethod dispatches `brsExpr.find/zones(...)` to the matching
+// rtBrs* runtime call (spec %4.3, Task 8).
+//
+// `find` has two arities and ONE runtime entry point: rtBrsFind(h, typ,
+// zone). The one-argument form supplies the "*" (current zone) literal
+// here at the lowering seam rather than in the runtime, so atalk.cla
+// needs no overload and no sentinel. The arities are told apart by the
+// argument COUNT, never by name -- check.cla registers the wider one
+// under the key "find/2" (checkTableMethod tries "<sel>/<argc>" first),
+// so both reach this arm spelled "find".
+func lowBrowserMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
+    var recv: int
+    var name: string
+    var argsHead: int
+    var args: int
+    var tail: int
+
+    recv = lowExpr(selectX(fn))
+    name = poolGet(selectName(fn))
+    argsHead = callArgsHead(e)
+
+    if name == "find" {
+        // rtBrsFind(h: int, typ: string, zone: string) -- params 2/3.
+        args = recv
+        tail = irExprListAppend(args, lowCoerceTo(irStrType(255), argsHead))
+        if exprNext(argsHead) != -1 {
+            irExprListAppend(tail, lowCoerceTo(irStrType(255), exprNext(argsHead)))
+        } else {
+            irExprListAppend(tail, newIRStrConst(lowInternStr("*"), irStrType(255)))
+        }
+        return newIRCallFn(intern("rtBrsFind"), args, irVoidT)
+    }
+    if name == "zones" {
+        // rtBrsZones(h: int, out: list of string) -- `out` is filled in
+        // place, so it is passed straight through with no coercion (a
+        // list is a reference value; lowCoerceStr would be a no-op
+        // against it anyway), exactly like rtFhReadAt's own `out`.
+        args = recv
+        irExprListAppend(args, lowExpr(argsHead))
+        return newIRCallFn(intern("rtBrsZones"), args, irVoidT)
+    }
+    lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
+    return -1
+}
+
+// lowServiceMethod dispatches `svcExpr.serve/reply/stop/call(...)` to the
+// matching rtSvc* runtime call (spec %4.4, Task 8). Two arms pick their
+// entry point by an ARGUMENT's own checked type, the way lowConnMethod's
+// "send" already does: `reply` by its payload (text -> rtSvcReply,
+// string -> rtSvcReplyStr) and `call` by its target (an `address` ->
+// rtSvcCallAddr, a "Name:Type" string -> rtSvcCallName).
+func lowServiceMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
+    var recv: int
+    var name: string
+    var argsHead: int
+    var args: int
+    var tail: int
+    var opArg: int
+    var reqArg: int
+    var replyArg: int
+    var byAddr: bool
+
+    recv = lowExpr(selectX(fn))
+    name = poolGet(selectName(fn))
+    argsHead = callArgsHead(e)
+
+    if name == "serve" {
+        // rtSvcServe(h: int, name: string, typ: string) -- params 2/3.
+        args = recv
+        tail = irExprListAppend(args, lowCoerceTo(irStrType(255), argsHead))
+        irExprListAppend(tail, lowCoerceTo(irStrType(255), exprNext(argsHead)))
+        return newIRCallFn(intern("rtSvcServe"), args, irVoidT)
+    }
+    if name == "reply" {
+        args = recv
+        tail = irExprListAppend(args, lowExpr(argsHead))
+        if typeKind(exprTypeGet(exprNext(argsHead))) == TyText {
+            // rtSvcReply(h: int, code: int, data: text) -- 3rd param.
+            irExprListAppend(tail, lowCoerceTo(irTextT, exprNext(argsHead)))
+            return newIRCallFn(intern("rtSvcReply"), args, irVoidT)
+        }
+        // rtSvcReplyStr(h: int, code: int, s: string) -- 3rd param.
+        irExprListAppend(tail, lowCoerceTo(irStrType(255), exprNext(argsHead)))
+        return newIRCallFn(intern("rtSvcReplyStr"), args, irVoidT)
+    }
+    if name == "stop" {
+        return newIRCallFn(intern("rtSvcStop"), recv, irVoidT)
+    }
+    if name == "call" {
+        opArg = exprNext(argsHead)
+        reqArg = exprNext(opArg)
+        replyArg = exprNext(reqArg)
+        byAddr = typeKind(exprTypeGet(argsHead)) == TyAddress
+        args = recv
+        if byAddr {
+            // rtSvcCallAddr(h, addr: int, op: int, req: text, reply: text)
+            // -- an `address` is int-shaped, so no coercion.
+            tail = irExprListAppend(args, lowExpr(argsHead))
+        } else {
+            // rtSvcCallName(h, name: string, op: int, req: text, reply: text).
+            tail = irExprListAppend(args, lowCoerceTo(irStrType(255), argsHead))
+        }
+        tail = irExprListAppend(tail, lowExpr(opArg))
+        tail = irExprListAppend(tail, lowCoerceTo(irTextT, reqArg))
+        // `reply` is filled in place -- passed through uncoerced, same
+        // out-param rule as rtBrsZones' own `out` above.
+        irExprListAppend(tail, lowExpr(replyArg))
+        if byAddr {
+            return newIRCallFn(intern("rtSvcCallAddr"), args, irBoolT)
+        }
+        return newIRCallFn(intern("rtSvcCallName"), args, irBoolT)
+    }
     lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
     return -1
 }
@@ -5295,9 +5519,31 @@ func lowTopHandler(d: int) {
             fnNameIdx = intern("handler_" + root + "_" + event)
             lowFuncBody(fnNameIdx, handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
             lowConnHandlerFn[numToStr(slot) + "|" + event] = fnNameIdx
+        } else if symIdx != -1 and symbols[symIdx].typeIdx == listenerT {
+            // AppleTalk resource handlers (2026-09-06 appletalk spec %7,
+            // Task 8): `on <lsn|brs|svc>.<event>` for a GLOBAL listener/
+            // serviceBrowser/service var. Identical machinery to the
+            // connection arm just above -- checkTopHandlerDecl has
+            // already proved the root's type and the event name, and
+            // lowerProgram's own per-kind slot pre-pass has already
+            // slotted every global of that kind, so the slot lookup here
+            // cannot miss and needs no lowIsLocal guard (a handler
+            // target is spec-mandated to be a global).
+            slot = lowLsnSlotOf.get(root, -1)
+            fnNameIdx = intern("handler_" + root + "_" + event)
+            lowFuncBody(fnNameIdx, handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
+            lowLsnHandlerFn[numToStr(slot) + "|" + event] = fnNameIdx
+        } else if symIdx != -1 and symbols[symIdx].typeIdx == serviceBrowserT {
+            slot = lowBrsSlotOf.get(root, -1)
+            fnNameIdx = intern("handler_" + root + "_" + event)
+            lowFuncBody(fnNameIdx, handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
+            lowBrsHandlerFn[numToStr(slot) + "|" + event] = fnNameIdx
+        } else if symIdx != -1 and symbols[symIdx].typeIdx == serviceT {
+            slot = lowSvcSlotOf.get(root, -1)
+            fnNameIdx = intern("handler_" + root + "_" + event)
+            lowFuncBody(fnNameIdx, handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d), false)
+            lowSvcHandlerFn[numToStr(slot) + "|" + event] = fnNameIdx
         } else {
-            // Task 4+: resource handlers (listener/serviceBrowser) are
-            // unsupported.
             lowUnsupported("handler " + path)
         }
     }
@@ -5522,6 +5768,18 @@ func lowGlobalVarDecl(d: int) {
         // irIntT) but matching the ordinary-int-with-initializer case's
         // own default.
         init = newIRIntConst(lowConnSlotOf.get(poolGet(varDeclName(d)), -1) + 1, irIntT)
+    } else if lowLsnSlotOf.has(poolGet(varDeclName(d))) {
+        // AppleTalk resource globals (2026-09-06 appletalk spec %7, Task
+        // 8): the same slot+1 handle the connection arm above installs,
+        // for the same reasons -- a `listener`/`serviceBrowser`/`service`
+        // is an ordinary int value (lowTypeAt), 0 is nil, and a written
+        // `nil` initializer must not zero out a slot the var's own
+        // handlers and cap still bind to.
+        init = newIRIntConst(lowLsnSlotOf.get(poolGet(varDeclName(d)), -1) + 1, irIntT)
+    } else if lowBrsSlotOf.has(poolGet(varDeclName(d))) {
+        init = newIRIntConst(lowBrsSlotOf.get(poolGet(varDeclName(d)), -1) + 1, irIntT)
+    } else if lowSvcSlotOf.has(poolGet(varDeclName(d))) {
+        init = newIRIntConst(lowSvcSlotOf.get(poolGet(varDeclName(d)), -1) + 1, irIntT)
     } else if initAst != -1 {
         init = lowExpr(initAst)
         // ARC Task 6 fix (reviewer Critical, reproduced double-free): a
@@ -7730,6 +7988,33 @@ func lowSynthConnPump() {
         // usesConn, and shake resolves the edge by name.
         body = newIRExprStmt(newIRCallFn(intern("rtConnPump"), -1, irVoidT))
     }
+    if usesAtalk and not want68k {
+        // AppleTalk phase Task 8: the UI event loop's pump hook drives
+        // BOTH runtime pumps -- atalk.cla's rtAtalkPump is what turns
+        // device state into the clar_*_fire_* events, exactly as
+        // rtConnPump does for connections. Appended (not replacing), so
+        // a program that uses both gets both, in that order. Gated on
+        // usesAtalk for the same reason rtConnPump is gated on usesConn:
+        // nothing else cuts a program that never touches AppleTalk off
+        // from the AppleTalk runtime's reachability.
+        //
+        // `not want68k` is TASK 8 ONLY, and Task 9 deletes it: drive.cla
+        // does not splice atalk.cla into the native superset yet, so
+        // naming rtAtalkPump from a native build's own always-rooted
+        // clar_conn_pump would abort cg68k with "call to unknown/
+        // unreachable function rtAtalkPump" -- a build REGRESSION for a
+        // program that today merely declares a `service` and targets
+        // 68k (tests/atalk/testdata/splice.cla emit68k's clean, and must
+        // keep doing so). Task 9 adds the native splice and the real
+        // atalk_68k.cla bodies in the same wave; the guard goes with it.
+        // Nothing is lost on the host meanwhile: cpEmitMain drives
+        // rtAtalkPump from its own loop text, never through this hook.
+        if body != -1 {
+            irStmtListAppend(body, newIRExprStmt(newIRCallFn(intern("rtAtalkPump"), -1, irVoidT)))
+        } else {
+            body = newIRExprStmt(newIRCallFn(intern("rtAtalkPump"), -1, irVoidT))
+        }
+    }
     fnameIdx = intern("clar_conn_pump")
     newIRFunc(fnameIdx, -1, irVoidT, -1, body)
     shakeAddRoot(fnameIdx)
@@ -7812,6 +8097,269 @@ func lowSynthEveryPump() {
     shakeAddRoot(fnameIdx)
 }
 
+// ================================================================
+// AppleTalk dispatcher synthesis (2026-09-06 appletalk spec %7, Task 8)
+// ================================================================
+//
+// The seven clar_lsn_/clar_brs_/clar_svc_fire_* builders below are the
+// exact counterparts of the four clar_conn_fire_* ones just above, and
+// answer the seven bare externs runtime/clarus/atalk.cla declares (Task
+// 7) and rtAtalkPump calls by those literal names. Everything the
+// connection family's own section header says applies unchanged: one arm
+// per SLOT (0..1 here, matching atalk.cla's rtLsnMax/rtBrsMax/rtSvcMax
+// of 2), an empty arm for a slot with no handler, a shakeAddRoot on each
+// (rtAtalkPump reaches them only as ECallExt, which shakeWalkExpr never
+// follows to a synthesized target), and a lowUiSynthExternName identity
+// entry each so cprint routes the call to clar_fn_NAME.
+//
+// Synthesized under `usesAtalk` ONLY -- deliberately NOT `or want68k`
+// like the connection family: drive.cla does not splice atalk.cla into
+// the native superset yet (Task 9 does, in the golden-rebless wave that
+// change earns), so nothing on that lane can call these, and
+// synthesizing them there would move every native program's numbering
+// for no reason.
+
+// lowAtalkHandlerFn reads the per-kind handler map ("lsn"/"brs"/"svc")
+// -- a plain three-way dispatch rather than passing the map itself, so
+// the five builders below stay parameterized by a kind string.
+func lowAtalkHandlerFn(kind: string, slot: int, event: string): int {
+    if kind == "lsn" {
+        return lowLsnHandlerFn.get(numToStr(slot) + "|" + event, -1)
+    }
+    if kind == "brs" {
+        return lowBrsHandlerFn.get(numToStr(slot) + "|" + event, -1)
+    }
+    return lowSvcHandlerFn.get(numToStr(slot) + "|" + event, -1)
+}
+
+// lowSynthAtalkFireSimple builds clar_brs_fire_done(slot: int) -- the one
+// argument-less AppleTalk event, lowSynthConnFireSimple's own shape.
+func lowSynthAtalkFireSimple(kind: string, eventKey: string, cName: string) {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var fnName: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("slot"), irIntT)
+
+    i = 0
+    while i < 2 {
+        fnName = lowAtalkHandlerFn(kind, i, eventKey)
+        conds.add(lowSynthEqInt("slot", i))
+        if fnName != -1 {
+            bodies.add(newIRExprStmt(newIRCallFn(fnName, -1, irVoidT)))
+        } else {
+            bodies.add(-1)
+        }
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, -1)
+    fnameIdx = intern(cName)
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthAtalkFireFailed builds the three `failed` dispatchers
+// (clar_lsn_/clar_brs_/clar_svc_fire_failed) -- byte-for-byte
+// lowSynthConnFireFailed's shape over 2 slots: `msg`'s param type is
+// `ptr` (fpCallExt passes a Str argument's address), IUiValueAtPtr
+// materializes it into the handler's `err: error` record, and the `err`
+// local is only declared when some slot actually has a handler.
+func lowSynthAtalkFireFailed(kind: string, cName: string) {
+    var paramsHead: int
+    var paramsTail: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var fnName: int
+    var chain: int
+    var fnameIdx: int
+    var setCode: int
+    var setMsg: int
+    var callStmt: int
+    var body: int
+    var anyFailed: bool
+
+    paramsHead = newIRLocal(intern("slot"), irIntT)
+    paramsTail = irLocalListAppend(paramsHead, newIRLocal(intern("code"), irIntT))
+    irLocalListAppend(paramsTail, newIRLocal(intern("msg"), irPtrT))
+
+    anyFailed = false
+    i = 0
+    while i < 2 {
+        if lowAtalkHandlerFn(kind, i, "failed") != -1 {
+            anyFailed = true
+        }
+        i = i + 1
+    }
+
+    lowLocalsHead = -1
+    lowLocalsTail = -1
+    if anyFailed {
+        lowAddLocal(intern("err"), irErrT)
+    }
+
+    i = 0
+    while i < 2 {
+        body = -1
+        fnName = lowAtalkHandlerFn(kind, i, "failed")
+        if fnName != -1 {
+            setCode = lowStoreStmt(newIRFieldRef(newIRVarRef(intern("err"), false, irErrT), intern("code"), irIntT), lowSynthIntRef("code"), irIntT)
+            setMsg = lowStoreStmt(newIRFieldRef(newIRVarRef(intern("err"), false, irErrT), intern("message"), irStrType(255)), newIRIntr(IUiValueAtPtr(), lowSynthPtrRef("msg"), irStrType(255)), irStrType(255))
+            irStmtListAppend(setCode, setMsg)
+            callStmt = newIRExprStmt(newIRCallFn(fnName, newIRVarRef(intern("err"), false, irErrT), irVoidT))
+            irStmtListAppend(setMsg, callStmt)
+            body = setCode
+        }
+        conds.add(lowSynthEqInt("slot", i))
+        bodies.add(body)
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, -1)
+    fnameIdx = intern(cName)
+    newIRFunc(fnameIdx, paramsHead, irVoidT, lowLocalsHead, chain)
+    shakeAddRoot(fnameIdx)
+    lowLocalsHead = -1
+    lowLocalsTail = -1
+}
+
+// lowSynthLsnFireAccepted builds clar_lsn_fire_accepted(slot: int, c:
+// int) -- the handler's own `c: connection` param is an ordinary int
+// (lowTypeAt's TyConnection case), an already-open connection handle
+// atalk.cla took from conn.cla's slot table, so it passes straight
+// through with no marshaling at all.
+func lowSynthLsnFireAccepted() {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var fnName: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("slot"), irIntT)
+    irLocalListAppend(paramsHead, newIRLocal(intern("c"), irIntT))
+
+    i = 0
+    while i < 2 {
+        fnName = lowAtalkHandlerFn("lsn", i, "accepted")
+        conds.add(lowSynthEqInt("slot", i))
+        if fnName != -1 {
+            bodies.add(newIRExprStmt(newIRCallFn(fnName, lowSynthIntRef("c"), irVoidT)))
+        } else {
+            bodies.add(-1)
+        }
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, -1)
+    fnameIdx = intern("clar_lsn_fire_accepted")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthBrsFireFound builds clar_brs_fire_found(slot: int, name: ptr,
+// addr: int) -- `name` takes the same `ptr` + IUiValueAtPtr treatment
+// lowSynthConnFireFailed's `msg` does (and clar_ui_fire_launchdoc's
+// `path` before it), passed inline as the handler's first argument
+// rather than through a scratch local; `addr` is an int-shaped inline
+// `address` and goes through untouched.
+func lowSynthBrsFireFound() {
+    var paramsHead: int
+    var paramsTail: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var fnName: int
+    var chain: int
+    var fnameIdx: int
+    var argsHead: int
+
+    paramsHead = newIRLocal(intern("slot"), irIntT)
+    paramsTail = irLocalListAppend(paramsHead, newIRLocal(intern("name"), irPtrT))
+    irLocalListAppend(paramsTail, newIRLocal(intern("addr"), irIntT))
+
+    i = 0
+    while i < 2 {
+        fnName = lowAtalkHandlerFn("brs", i, "found")
+        conds.add(lowSynthEqInt("slot", i))
+        if fnName != -1 {
+            argsHead = newIRIntr(IUiValueAtPtr(), lowSynthPtrRef("name"), irStrType(255))
+            irExprListAppend(argsHead, lowSynthIntRef("addr"))
+            bodies.add(newIRExprStmt(newIRCallFn(fnName, argsHead, irVoidT)))
+        } else {
+            bodies.add(-1)
+        }
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, -1)
+    fnameIdx = intern("clar_brs_fire_found")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthSvcFireRequest builds clar_svc_fire_request(slot: int, op: int,
+// req: text, from: int) -- `req` is a `text` param, the same shape
+// clar_conn_fire_received's own `data` already uses; `op` and `from`
+// (an inline `address`) are plain ints.
+func lowSynthSvcFireRequest() {
+    var paramsHead: int
+    var paramsTail: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var fnName: int
+    var chain: int
+    var fnameIdx: int
+    var argsHead: int
+    var argsTail: int
+
+    paramsHead = newIRLocal(intern("slot"), irIntT)
+    paramsTail = irLocalListAppend(paramsHead, newIRLocal(intern("op"), irIntT))
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("req"), irTextT))
+    irLocalListAppend(paramsTail, newIRLocal(intern("from"), irIntT))
+
+    i = 0
+    while i < 2 {
+        fnName = lowAtalkHandlerFn("svc", i, "request")
+        conds.add(lowSynthEqInt("slot", i))
+        if fnName != -1 {
+            argsHead = lowSynthIntRef("op")
+            argsTail = irExprListAppend(argsHead, newIRVarRef(intern("req"), false, irTextT))
+            irExprListAppend(argsTail, lowSynthIntRef("from"))
+            bodies.add(newIRExprStmt(newIRCallFn(fnName, argsHead, irVoidT)))
+        } else {
+            bodies.add(-1)
+        }
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, -1)
+    fnameIdx = intern("clar_svc_fire_request")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthAtalkDispatchers is the AppleTalk section's one entry point
+// (lowerProgram's tail, under `usesAtalk`, right after
+// lowSynthConnDispatchers). Emission order follows atalk.cla's own
+// extern block.
+func lowSynthAtalkDispatchers() {
+    lowSynthLsnFireAccepted()
+    lowSynthAtalkFireFailed("lsn", "clar_lsn_fire_failed")
+    lowSynthBrsFireFound()
+    lowSynthAtalkFireSimple("brs", "done", "clar_brs_fire_done")
+    lowSynthAtalkFireFailed("brs", "clar_brs_fire_failed")
+    lowSynthSvcFireRequest()
+    lowSynthAtalkFireFailed("svc", "clar_svc_fire_failed")
+}
+
 // lowSynthConnDispatchers is this section's one entry point (called from
 // lowerProgram's tail, when usesConn or want68k).
 func lowSynthConnDispatchers() {
@@ -7861,6 +8409,31 @@ func lowUiSynthExternName(externNameIdx: int): int {
     if nm == "clar_conn_fire_closed" { return intern("clar_conn_fire_closed") }
     if nm == "clar_conn_fire_failed" { return intern("clar_conn_fire_failed") }
     if nm == "clar_conn_pump" { return intern("clar_conn_pump") }
+    // AppleTalk dispatchers (2026-09-06 appletalk spec %7, Task 8):
+    // atalk.cla declares these seven as `external func clar_*_fire_*`
+    // and rtAtalkPump calls them by those literal names -- identity
+    // mappings for exactly the reason the five connection entries just
+    // above are.
+    //
+    // Gated on usesAtalk, unlike the connection family: this map answers
+    // "is this extern name answered by a synthesized IRFunc in THIS
+    // program?", and lowSynthAtalkDispatchers only builds the seven when
+    // usesAtalk. The distinction is observable because the host lane
+    // splices atalk.cla for `usesConn or usesAtalk` (drive.cla, Task 7),
+    // so a SERIAL-only program carries these seven extern declarations
+    // with no dispatcher behind them; answering true there would drop
+    // their prototypes from a program that never synthesizes them (and
+    // churn every existing connection golden for no gain).
+    if not usesAtalk {
+        return -1
+    }
+    if nm == "clar_lsn_fire_accepted" { return intern("clar_lsn_fire_accepted") }
+    if nm == "clar_lsn_fire_failed" { return intern("clar_lsn_fire_failed") }
+    if nm == "clar_brs_fire_found" { return intern("clar_brs_fire_found") }
+    if nm == "clar_brs_fire_done" { return intern("clar_brs_fire_done") }
+    if nm == "clar_brs_fire_failed" { return intern("clar_brs_fire_failed") }
+    if nm == "clar_svc_fire_request" { return intern("clar_svc_fire_request") }
+    if nm == "clar_svc_fire_failed" { return intern("clar_svc_fire_failed") }
     return -1
 }
 
@@ -7906,6 +8479,17 @@ func lowerProgram(declHead: int): int {
     var freshConnHandlerFn: map of int
     var connCount: int
     var connSymIdx: int
+    var freshLsnSlot: map of int
+    var freshBrsSlot: map of int
+    var freshSvcSlot: map of int
+    var freshLsnHandlerFn: map of int
+    var freshBrsHandlerFn: map of int
+    var freshSvcHandlerFn: map of int
+    var lsnCount: int
+    var brsCount: int
+    var svcCount: int
+    var atSymIdx: int
+    var atTypeIdx: int
 
     // runtime-ir-bake Task 4: lowResumeFromBake skips exactly the two
     // pieces of reset that would clobber/duplicate an already-installed
@@ -8015,6 +8599,58 @@ func lowerProgram(declHead: int): int {
             d = declNext(d)
         }
     }
+    // AppleTalk resource slot pre-pass (2026-09-06 appletalk spec %4.5,
+    // Task 8): the connection pre-pass just above, once per resource
+    // kind, in ONE walk of the decl chain -- same reason it exists (a
+    // method call or `on <var>.<event>` handler reached before the var's
+    // own decl still needs its slot), same never-resumed-from-a-bake
+    // property (no runtime module declares one of these globals).
+    // The caps are spec %4.5's: 2 listeners, 2 browsers, 2 services,
+    // matching atalk.cla's own rtLsnMax/rtBrsMax/rtSvcMax. The
+    // connection cap stays 4 here -- Task 9 raises it to 8 with the
+    // slot-table growth that earns it.
+    lowLsnSlotOf = freshLsnSlot
+    lowBrsSlotOf = freshBrsSlot
+    lowSvcSlotOf = freshSvcSlot
+    lowLsnHandlerFn = freshLsnHandlerFn
+    lowBrsHandlerFn = freshBrsHandlerFn
+    lowSvcHandlerFn = freshSvcHandlerFn
+    irUsesAtalk = usesAtalk
+    lsnCount = 0
+    brsCount = 0
+    svcCount = 0
+    if usesAtalk {
+        d = declHead
+        while d != -1 {
+            if declKind(d) == DkVar {
+                atSymIdx = scopeLookup(curScope, varDeclName(d))
+                atTypeIdx = -1
+                if atSymIdx != -1 {
+                    atTypeIdx = symbols[atSymIdx].typeIdx
+                }
+                if atTypeIdx == listenerT {
+                    if lsnCount >= 2 {
+                        abort("clarusc emit: too many listener variables (max 2)")
+                    }
+                    lowLsnSlotOf[poolGet(varDeclName(d))] = lsnCount
+                    lsnCount = lsnCount + 1
+                } else if atTypeIdx == serviceBrowserT {
+                    if brsCount >= 2 {
+                        abort("clarusc emit: too many serviceBrowser variables (max 2)")
+                    }
+                    lowBrsSlotOf[poolGet(varDeclName(d))] = brsCount
+                    brsCount = brsCount + 1
+                } else if atTypeIdx == serviceT {
+                    if svcCount >= 2 {
+                        abort("clarusc emit: too many service variables (max 2)")
+                    }
+                    lowSvcSlotOf[poolGet(varDeclName(d))] = svcCount
+                    svcCount = svcCount + 1
+                }
+            }
+            d = declNext(d)
+        }
+    }
     d = declHead
     while d != -1 {
         lowDecl(d)
@@ -8064,6 +8700,14 @@ func lowerProgram(declHead: int): int {
     if not lowSkipUiDispatchers {
         if usesConn or want68k {
             lowSynthConnDispatchers()
+        }
+        // AppleTalk dispatcher synthesis (2026-09-06 appletalk spec %7,
+        // Task 8): `usesAtalk` ONLY -- see lowSynthAtalkDispatchers' own
+        // section header for why the `or want68k` disjunct the
+        // connection family carries is deliberately absent here (Task 9
+        // adds it with the native splice and the golden rebless).
+        if usesAtalk {
+            lowSynthAtalkDispatchers()
         }
         // Host-lane `every` driver (AppleTalk phase Task 5) -- see
         // lowSynthEveryPump's own doc comment for why it is host-only

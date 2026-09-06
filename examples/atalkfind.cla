@@ -1,0 +1,55 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalkfind.cla: the AppleTalk phase's HOST acceptance program (Task 8) --
+// the AppleTalk counterpart of `atlookup`/`nbplkup`, in 30 lines of
+// Clarus with no Toolbox knowledge anywhere in it.
+//
+//     scripts/clarus-run.sh examples/atalkfind.cla            # every entity
+//     scripts/clarus-run.sh examples/atalkfind.cla -- ClockSrv # one type
+//
+// It prints the router's zone list (the single zone "*" on a routerless
+// network -- which is every LocalTalk network without a bridge, and every
+// host-lane run), then does one NBP lookup of `=:type@*`, printing every
+// match as `name  net.node.socket`. The default type is "=", which
+// matches every registered entity of every type: AppleTalk has no
+// node-enumeration protocol of its own, and this lookup is what "list the
+// machines" means on it.
+//
+// The whole program is event-driven and never polls: `find` returns
+// immediately, `found` fires once per match from the pump loop, and
+// `done` always arrives -- even with no matches at all -- which is what
+// ends the program, since the host CLI stays alive exactly as long as a
+// search is in flight (Chapter 12's lifetime rule).
+var browser: serviceBrowser
+var zoneNames: list of string
+var hits: int
+
+on App.startCLI(args: list of string) {
+    var i: int = 0
+
+    browser.zones(zoneNames)
+    while i < zoneNames.count {
+        log("zone " + zoneNames[i])
+        i = i + 1
+    }
+    if args.count > 0 {
+        browser.find(args[0])
+    } else {
+        browser.find("=")
+    }
+}
+
+on browser.found(name: string, addr: address) {
+    hits = hits + 1
+    log(name + "  " + string(addr))
+}
+
+on browser.done {
+    log("done, " + string(hits) + " found")
+}
+
+on browser.failed(err: error) {
+    log("lookup failed: " + err.message + " (" + string(err.code) + ")")
+    quit 1
+}

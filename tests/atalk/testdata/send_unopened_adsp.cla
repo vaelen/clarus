@@ -1,0 +1,14 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 8, runerr fixture: every `open` is asynchronous,
+// the AppleTalk forms included -- `opened` fires on a later pump pass
+// (spec %4.1). So a `send` on the very next line is a send on a
+// connection that is not open yet, which is a contract violation and a
+// runtime error (spec %4.5), exactly as it is for the serial transport.
+var link: connection
+
+on App.startCLI(args: list of string) {
+    link.open(appletalk "Nobody:ClarusNone")
+    link.send("hello")
+}

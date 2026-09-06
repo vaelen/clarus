@@ -1,0 +1,25 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 8: `serviceBrowser.zones(out)` is synchronous --
+// it returns with `out` already filled, no event and no pump pass. On a
+// routerless network (every host lane run, and every LocalTalk one) the
+// answer is the single zone "*", so a program never special-cases having
+// no router (spec %4.3). tests/atalk/zones.sh asserts exactly "zones 1 *".
+var brs: serviceBrowser
+var names: list of string
+
+on App.startCLI(args: list of string) {
+    var line: string = ""
+    var i: int = 0
+
+    brs.zones(names)
+    while i < names.count {
+        if i > 0 {
+            line = line + ","
+        }
+        line = line + names[i]
+        i = i + 1
+    }
+    log("zones " + string(names.count) + " " + line)
+}

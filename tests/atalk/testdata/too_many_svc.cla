@@ -1,0 +1,12 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 8: three `service` globals -- one past spec
+// %4.5's cap of 2, a BUILD error naming the cap, not a runtime failure.
+var a: service
+var b: service
+var c: service
+
+on App.startCLI(args: list of string) {
+    a.stop()
+}

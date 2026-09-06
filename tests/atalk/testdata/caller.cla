@@ -1,0 +1,40 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 8: the CLIENT end-to-end fixture, the mirror of
+// clock.cla. args[0] is a live "Name:Type" served by `atalkdrive serve`,
+// args[1] a "Name:Type" nobody registered. Every call logs one line:
+//
+//   ok <bytes>            -- true, with the reply's own length
+//   err <code> <message>  -- false, with lastError
+//
+// tests/atalk/call.sh pins all four: a 4000-byte multi-packet reply, a
+// nonzero server code (-> lastError { 5, "service" }), a name that
+// resolves to nothing (nbpNoConfirm, -1025), and a request over ATP's
+// 578-byte ceiling (atpLenErr, -3106, rejected before a packet leaves).
+var svc: service
+var req: text
+var reply: text
+var big: text
+
+func report(ok: bool) {
+    if ok {
+        log("ok " + string(reply.length))
+    } else {
+        log("err " + string(lastError.code) + " " + lastError.message)
+    }
+}
+
+on App.startCLI(args: list of string) {
+    var i: int = 0
+
+    req = "hi"
+    report(svc.call(args[0], 1, req, reply))
+    report(svc.call(args[0], 2, req, reply))
+    report(svc.call(args[1], 1, req, reply))
+    while i < 579 {
+        big = big + "x"
+        i = i + 1
+    }
+    report(svc.call(args[0], 1, big, reply))
+}

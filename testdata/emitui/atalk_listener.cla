@@ -1,0 +1,26 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalk_listener.cla (AppleTalk phase, Task 8): pins `listener`
+// lowering -- register/stop and the accepted/failed events -- together
+// with connection.open's two AppleTalk forms: the `appletalk` transport
+// tag (rtConnOpen with transport 1) and a bare `address` argument
+// (rtConnOpenAddr).
+var lsn: listener
+var link: connection
+var peer: address
+
+on App.startCLI(args: list of string) {
+    lsn.register("Chat", "ClarusChat")
+    link.open(appletalk "Chat:ClarusChat")
+    link.open(peer)
+    lsn.stop()
+}
+
+on lsn.accepted(c: connection) {
+    c.send("hi\n")
+}
+
+on lsn.failed(err: error) {
+    log("failed " + err.message)
+}

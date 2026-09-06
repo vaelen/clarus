@@ -1,0 +1,30 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 8: the BROWSER end-to-end fixture. args[0] is the
+// NBP type to look up; an optional args[1] selects the two-argument
+// find(type, zone) overload instead of the one-argument form (which
+// supplies "*" at the lowering seam). One `found` line per match, then
+// `done` -- which always arrives, even with no matches (spec %4.3), and
+// is what makes the program exit on its own.
+var brs: serviceBrowser
+
+on App.startCLI(args: list of string) {
+    if args.count > 1 {
+        brs.find(args[0], args[1])
+    } else {
+        brs.find(args[0])
+    }
+}
+
+on brs.found(name: string, addr: address) {
+    log("found " + name + " " + string(addr))
+}
+
+on brs.done {
+    log("done")
+}
+
+on brs.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+}

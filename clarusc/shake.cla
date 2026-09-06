@@ -243,6 +243,18 @@ func shakeProgram() {
         shakeMarkAndEnqueue(intern("rtConnAlive"))
     }
 
+    // ---- AppleTalk pump loop (2026-09-06 appletalk spec %7, Task 8) ----
+    // Exactly the pair just above, for atalk.cla: cpEmitMain calls
+    // clar_fn_rtAtalkPump/rtAtalkAlive as raw text, so neither is
+    // reachable through any node the walk below would find. The seven
+    // clar_lsn_/clar_brs_/clar_svc_fire_* dispatchers rtAtalkPump calls
+    // self-root via lowSynthAtalkDispatchers' own shakeAddRoot calls,
+    // the same way the connection family's four do.
+    if irUsesAtalk {
+        shakeMarkAndEnqueue(intern("rtAtalkPump"))
+        shakeMarkAndEnqueue(intern("rtAtalkAlive"))
+    }
+
     // ---- window + widget handlers ----
     i = 0
     while i < irWinHandlers.count {

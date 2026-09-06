@@ -7690,6 +7690,7 @@ func cpEmitUiMain() {
 // main() is untouched.
 func cpEmitMain() {
     var pumpCond: string
+    var pumpTerms: int
 
     if irIsUiProgram() {
         cpEmitUiMain()
@@ -7748,26 +7749,43 @@ func cpEmitMain() {
     // rt_ext_ConnHIdle, which usleep()s when no connection slot is open
     // (its own doc comment, runtime/host/rt_serial.inc) -- so it is the
     // timer-only program's tick delay too, no second sleep needed.
-    if irUsesConn or irEveryCount > 0 {
+    //
+    // AppleTalk phase Task 8: an AppleTalk program is a third liveness
+    // source -- rtAtalkAlive() is true while a service is serving, a
+    // browser search is in flight, or an event is staged (atalk.cla), so
+    // a program whose whole job runs off `on svc.request` stays alive
+    // after startCLI returns exactly as a connection program does. Its
+    // pump joins the body beside rtConnPump.
+    if irUsesConn or irUsesAtalk or irEveryCount > 0 {
         pumpCond = ""
+        pumpTerms = 0
         if irUsesConn {
             pumpCond = "clar_fn_rtConnAlive()"
+            pumpTerms = pumpTerms + 1
+        }
+        if irUsesAtalk {
+            if pumpCond != "" {
+                pumpCond = pumpCond + " || "
+            }
+            pumpCond = pumpCond + "clar_fn_rtAtalkAlive()"
+            pumpTerms = pumpTerms + 1
         }
         if irEveryCount > 0 {
             if pumpCond != "" {
                 pumpCond = pumpCond + " || "
             }
             pumpCond = pumpCond + "1"
+            pumpTerms = pumpTerms + 1
         }
         if lowUsesAbort {
-            // Parenthesized ONLY when the OR actually has two terms: C's
-            // && binds tighter than ||, so `!clar_aborting && alive() ||
-            // 1` would be `(!clar_aborting && alive()) || 1` -- always
-            // true, an abort that could never stop the loop. A one-term
-            // condition keeps its existing unparenthesized shape, so the
-            // conn-only goldens (connpump_abort.c.golden) stay
-            // byte-identical.
-            if irUsesConn and irEveryCount > 0 {
+            // Parenthesized ONLY when the OR actually has two or more
+            // terms: C's && binds tighter than ||, so `!clar_aborting &&
+            // alive() || 1` would be `(!clar_aborting && alive()) || 1`
+            // -- always true, an abort that could never stop the loop. A
+            // one-term condition keeps its existing unparenthesized
+            // shape, so the conn-only goldens (connpump_abort.c.golden)
+            // stay byte-identical.
+            if pumpTerms > 1 {
                 pumpCond = "(" + pumpCond + ")"
             }
             pumpCond = "!clar_aborting && " + pumpCond
@@ -7775,6 +7793,9 @@ func cpEmitMain() {
         cpRestBuf.add(toText("    while (" + pumpCond + ") {"))
         if irUsesConn {
             cpRestBuf.add(toText("        clar_fn_rtConnPump();"))
+        }
+        if irUsesAtalk {
+            cpRestBuf.add(toText("        clar_fn_rtAtalkPump();"))
         }
         if irEveryCount > 0 {
             cpRestBuf.add(toText("        clar_fn_clar_every_pump();"))

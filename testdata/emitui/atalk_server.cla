@@ -1,0 +1,30 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalk_server.cla (AppleTalk phase, Task 8): pins the `service` lowering
+// -- serve/reply(text)/reply(string)/stop, plus the two service events
+// (request, failed) and the clar_svc_fire_request/clar_svc_fire_failed
+// dispatchers synthesized for them. Slot 0 is handled, slot 1 is the
+// empty arm every dispatcher's if-chain carries.
+var clock: service
+
+on App.startCLI(args: list of string) {
+    clock.serve("Clock", "ClarusClock")
+}
+
+on clock.request(op: int, req: text, from: address) {
+    if op == 1 {
+        // string payload -> rtSvcReplyStr
+        clock.reply(0, "12:00")
+    } else if op == 2 {
+        // text payload -> rtSvcReply
+        clock.reply(0, req)
+    } else {
+        clock.reply(-1, "")
+    }
+}
+
+on clock.failed(err: error) {
+    log("failed " + err.message)
+    clock.stop()
+}

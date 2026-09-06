@@ -1,0 +1,22 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalk_client.cla (AppleTalk phase, Task 8): pins `service.call`'s two
+// target forms -- rtSvcCallName for a "Name:Type" string, rtSvcCallAddr
+// for an `address` -- and the `string(addr)` conversion, which lowers to
+// clar_fn_rtAtalkAddrStr (NOT rtIntToStr: an `address` is an int-shaped
+// value, so the wrong arm would silently print a decimal number).
+var svc: service
+var peer: address
+var req: text
+var reply: text
+
+on App.startCLI(args: list of string) {
+    if svc.call("Clock:ClarusClock", 1, req, reply) {
+        log("named ok")
+    }
+    if svc.call(peer, 2, req, reply) {
+        log("addr ok")
+    }
+    log("peer is " + string(peer))
+}

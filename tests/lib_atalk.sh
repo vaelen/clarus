@@ -1,0 +1,84 @@
+# tests/lib_atalk.sh -- helpers shared by tests/atalk/*.sh (sourced right
+# after lib.sh). The AppleTalk end-to-end scripts all have the same three
+# needs: build a fixture, refuse to run without multicast, and register
+# names that cannot collide with another run (or with Andrew's live
+# emulator sessions, which share the loopback group -- spec %8.4).
+
+# atalk_build NAME : host-build tests/atalk/testdata/NAME.cla into
+# $WORK/NAME with the CURRENT-source clarusc (the committed snapshot
+# cannot lower AppleTalk); build output lands in $WORK/NAME.build.
+atalk_build() {
+    host_build "$WORK/$1" "$ROOT/tests/atalk/testdata/$1.cla" > "$WORK/$1.build" 2>&1
+}
+
+# atalk_skip_unless_multicast : SKIP the whole script when the LToUDP
+# stack cannot join the loopback multicast group. atalkdrive exits 77 for
+# exactly that case (and only that case), so its own verdict is the probe
+# -- no second copy of the "is multicast up" rule anywhere.
+atalk_skip_unless_multicast() {
+    "$TOOLS/atalkdrive" lookup ProbeNone > /dev/null 2>&1
+    [ $? = 77 ] && skip "multicast unavailable"
+    return 0
+}
+
+# atalk_name PREFIX : PREFIX with this run's own suffix appended. NBP
+# names are global to the group, so every registered name a test uses
+# must be unique per run (spec %8.4).
+atalk_name() { echo "$1-T$$"; }
+
+# atalk_wait_line FILE PATTERN PID : wait up to 20 s for PATTERN to show
+# up in FILE, giving up early if PID died. Returns 0 when it appeared.
+# (The atalkdrive peers announce themselves on stdout once their own NBP
+# registration is confirmed -- ~3 s -- so every script waits for the line
+# rather than sleeping a guessed interval.)
+atalk_wait_line() {
+    _i=0
+    while [ $_i -lt 20 ]; do
+        grep -q "$2" "$1" 2>/dev/null && return 0
+        kill -0 "$3" 2>/dev/null || return 1
+        sleep 1
+        _i=$((_i + 1))
+    done
+    return 1
+}
+
+# atalk_wait_exit PID NAME : the program must exit ON ITS OWN, status 0,
+# within 15 s -- the host CLI lifetime rule (spec %4.7: alive while a
+# service is serving, a search is in flight, or an event is pending).
+# Ported from tests/lib_conntest.sh's conn_wait_self_exit, with the longer
+# window an NBP name removal needs.
+atalk_wait_exit() {
+    _pid=$1
+    _name=$2
+    _i=0
+    while [ $_i -lt 15 ] && kill -0 "$_pid" 2>/dev/null; do
+        sleep 1
+        _i=$((_i + 1))
+    done
+    if kill -0 "$_pid" 2>/dev/null; then
+        kill "$_pid" 2>/dev/null
+        wait "$_pid" 2>/dev/null
+        t_fail "$_name" "did not exit on its own within 15s (lifetime rule violated)"
+        return 1
+    fi
+    wait "$_pid"
+    _rc=$?
+    if [ $_rc -eq 0 ]; then
+        t_pass "$_name"
+        return 0
+    fi
+    t_fail "$_name" "exit $_rc, want 0"
+    return 1
+}
+
+# atalk_sweep FILE N : the first N bytes of the repeating 0..255 byte
+# sweep. printf's octal escapes, not awk's "%c" -- awk goes through the
+# locale's character set and mangles NUL and everything above 127.
+atalk_sweep() {
+    _i=0
+    while [ $_i -lt "$2" ]; do
+        printf "\\$(printf '%03o' $((_i % 256)))"
+        _i=$((_i + 1))
+    done > "$1"
+    [ "$(wc -c < "$1" | tr -d ' ')" = "$2" ] || die "atalk_sweep: $1 is not $2 bytes"
+}

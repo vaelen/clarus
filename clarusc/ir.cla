@@ -831,6 +831,18 @@ var irHasOpenDocument: bool
 // bkPutBool/bkLdIr* code needed, so no CLIR format-version bump either.
 var irUsesConn: bool
 
+// irUsesAtalk (2026-09-06 appletalk spec %7, Task 8) is irUsesConn's
+// counterpart for check.cla's usesAtalk, set from the same place in
+// lowerProgram and read by exactly the same two consumers for the same
+// reasons: cprint.cla's cpEmitMain (the host pump loop's gate,
+// condition and body -- rtAtalkAlive/rtAtalkPump are called from raw C
+// text no reachability walk can see) and shake.cla (which roots that
+// pair). Never threaded through bake.cla, for the identical reason
+// irUsesConn isn't: a runtime module never declares an AppleTalk
+// resource global, so a baked chain's own lowering computes it false
+// regardless.
+var irUsesAtalk: bool
+
 // The (at most one) `app` section's string properties, as string-pool
 // indices (-1 = property absent) -- icon stays build-time-only (check.cla's
 // checkAppDecl already validated it) and never reaches IR. id reached IR as
@@ -1181,6 +1193,7 @@ func irReset() {
     irHasStartCLI = false
     irHasOpenDocument = false
     irUsesConn = false
+    irUsesAtalk = false
     irAppName = -1
     irAppVersion = -1
     irAppAuthor = -1

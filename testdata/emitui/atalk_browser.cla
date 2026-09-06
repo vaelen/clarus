@@ -1,0 +1,35 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalk_browser.cla (AppleTalk phase, Task 8): pins `serviceBrowser`
+// lowering -- find's one- and two-argument arities (the 1-arg form
+// supplies the "*" zone at the lowering seam, so both reach the same
+// rtBrsFind) and the synchronous zones(out) fill -- plus all three
+// browser events across BOTH slots, so the found/done/failed
+// dispatchers' if-chains each carry two real arms.
+var brs: serviceBrowser
+var brs2: serviceBrowser
+var zoneNames: list of string
+var seen: list of string
+
+on App.startCLI(args: list of string) {
+    brs.zones(zoneNames)
+    brs.find("ClarusChat")
+    brs2.find("ClarusChat", "Engineering")
+}
+
+on brs.found(name: string, addr: address) {
+    seen.add(name + " " + string(addr))
+}
+
+on brs.done {
+    log("done")
+}
+
+on brs.failed(err: error) {
+    log("failed " + err.message)
+}
+
+on brs2.done {
+    log("done 2")
+}

@@ -1,0 +1,41 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 8: the SERVER end-to-end fixture. Serves an ATP
+// name (taken from args[0] so the script can make it unique per run) and
+// answers the five ops tests/atalk/serve.sh drives it through with
+// `atalkdrive call`:
+//
+//   1  reply(0, "12:00")     -- a fixed string payload
+//   2  reply(0, req)         -- byte-exact echo of the request text
+//   3  return without reply  -- the runtime's automatic -1 empty reply
+//   4  reply(7, "")          -- a nonzero application code
+//   5  reply(0, "bye"), stop -- and the program then exits ON ITS OWN,
+//                               the host CLI lifetime rule
+//   *  reply(-1, "")         -- the unknown-op arm
+var clock: service
+
+on App.startCLI(args: list of string) {
+    clock.serve(args[0], "ClarusClock")
+}
+
+on clock.request(op: int, req: text, from: address) {
+    if op == 1 {
+        clock.reply(0, "12:00")
+    } else if op == 2 {
+        clock.reply(0, req)
+    } else if op == 3 {
+        return
+    } else if op == 4 {
+        clock.reply(7, "")
+    } else if op == 5 {
+        clock.reply(0, "bye")
+        clock.stop()
+    } else {
+        clock.reply(-1, "")
+    }
+}
+
+on clock.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+}

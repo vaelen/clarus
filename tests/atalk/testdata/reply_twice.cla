@@ -1,0 +1,18 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 8, runerr fixture: two `reply` calls in one
+// request handler is the other half of spec %4.5's contract rule. Needs a
+// real request to reach the handler at all, so tests/atalk/runerr.sh
+// drives it with one `atalkdrive call` (a program can never call its own
+// registered name -- the stack drops its own datagrams).
+var svc: service
+
+on App.startCLI(args: list of string) {
+    svc.serve(args[0], "ClarusTwice")
+}
+
+on svc.request(op: int, req: text, from: address) {
+    svc.reply(0, "first")
+    svc.reply(0, "second")
+}

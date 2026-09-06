@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, Task 8: the listener half of spec %4.5's caps.
+var a: listener
+var b: listener
+var c: listener
+
+on App.startCLI(args: list of string) {
+    a.stop()
+}
