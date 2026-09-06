@@ -214,12 +214,6 @@ sub-heading.
   (Task 5) — those shapes still reject the same way pre-phase; nothing
   regresses that specifically today.
 
-- **`tests/conntest/envunset.sh` rebuilds `echo.cla` instead of reusing
-  `tests/conntest/connect.sh`'s binary** (Task 5) — T1
-  hot-path cost, harmless but avoidable. (Each script has its own `$WORK`,
-  so sharing now needs a cached build under `build-run/`, not just a
-  reordering.)
-
 - **No coverage for the >4-connections build error** (Task 5) — the
   cap exists and is enforced, just untested.
 
