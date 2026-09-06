@@ -35,11 +35,11 @@ exec 3<> "$WORK/in"
 # output file as soon as the pump's first pass fires `opened` -- polling
 # the file's size is a real synchronisation point, not a sleep.
 i=0
-while [ $i -lt 10 ] && [ "$(wc -c < "$WORK/out")" -lt 6 ]; do
+while [ $i -lt 10 ] && { [ ! -f "$WORK/out" ] || [ "$(wc -c < "$WORK/out")" -lt 6 ]; }; do
     sleep 1
     i=$((i + 1))
 done
-if [ "$(wc -c < "$WORK/out")" -lt 6 ]; then
+if [ ! -f "$WORK/out" ] || [ "$(wc -c < "$WORK/out")" -lt 6 ]; then
     exec 3>&-
     kill "$prog" 2>/dev/null
     wait "$prog" 2>/dev/null
@@ -52,7 +52,7 @@ cat "$WORK/sweep" >&3
 cat "$WORK/qqq" >&3
 
 i=0
-while [ $i -lt 10 ] && [ "$(wc -c < "$WORK/out")" -lt "$want" ]; do
+while [ $i -lt 10 ] && { [ ! -f "$WORK/out" ] || [ "$(wc -c < "$WORK/out")" -lt "$want" ]; }; do
     sleep 1
     i=$((i + 1))
 done

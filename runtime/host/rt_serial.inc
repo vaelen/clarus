@@ -237,13 +237,22 @@ static int rt_conn_open_pty(void) {
  * poll() with a zero timeout keeps this off the pump's critical path, and
  * makes the following read() safe on a plain blocking fd: poll said
  * readable, so read() either hands over bytes or reports EOF, and cannot
- * park. A pty master with NO slave attached yet polls as nothing at all
- * (verified on macOS: no POLLIN, no POLLHUP), which is exactly what keeps
- * the unattached state (s->listening, spec 4.7's "like listening") from
- * being mistaken for a hangup. Once a slave closes again, the master
- * polls readable and read() returns 0 (macOS) -- and any hard read error
- * is treated as EOF too rather than left to spin, since there is no
- * recovery path for a serial line whose fd has broken. */
+ * park. Once a slave closes again, the master polls readable and read()
+ * returns 0 (macOS) -- and any hard read error is treated as EOF too
+ * rather than left to spin, since there is no recovery path for a serial
+ * line whose fd has broken.
+ *
+ * That EOF latch is deliberately gated on !s->listening, and the gate is
+ * NOT redundant: a pty master with no slave attached yet polls as nothing
+ * at all on macOS (verified), but on Linux it reports POLLHUP, whose
+ * read() then fails EIO -- which without the gate would latch `gone`
+ * during the unattached window, so the first byte a client finally sent
+ * would flip `listening` off with the connection already condemned and
+ * the pump would tear it down after one drain. `listening` IS the "not
+ * there yet" state (spec 4.7's "like listening"); nothing about it can
+ * mean hung up. Linux is untested here -- this repo's gate is macOS
+ * only -- so the gate is written to be correct on both by construction
+ * rather than by observation. */
 static int32_t rt_conn_fd_avail(rt_conn_slot_t *s) {
     struct pollfd p;
     ssize_t k;
@@ -263,9 +272,8 @@ static int32_t rt_conn_fd_avail(rt_conn_slot_t *s) {
             if (k > 0) {
                 s->bufLen += (int)k;
                 s->listening = 0;   /* a pty slave is unmistakably attached */
-            } else if (k == 0) {
-                s->gone = 1;
-            } else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+            } else if (!s->listening &&
+                       (k == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR))) {
                 s->gone = 1;
             }
         }
@@ -456,6 +464,11 @@ int32_t rt_ext_ConnHWrite(int32_t slot, void *p, int32_t n) {
         k = (s->kind == RT_CONN_SOCKET)
             ? send(s->fd, buf + sent, (size_t)(n - sent), 0)
             : write(wfd, buf + sent, (size_t)(n - sent));
+        /* A signal landing mid-write is not a failed write: retry rather
+         * than report an error and silently drop the tail of a message
+         * whose prefix already went out. write() to a pty master is a
+         * good deal more interruptible than a loopback send(). */
+        if (k < 0 && errno == EINTR) continue;
         if (k <= 0) return 1;
         sent += (int32_t)k;
     }
