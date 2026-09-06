@@ -1,0 +1,17 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// AppleTalk phase, final fix wave: svc.call's fourth argument is an
+// OUT-parameter the runtime fills in place, so it must be a `text`. The
+// signature accepts a string by the ordinary call-argument coercion, but
+// lowering passes an out-parameter through uncoerced -- so without this
+// diagnostic the emitted C hands a clar_str_255 * to an rt_text * and
+// only cc's warning stands between the user and a heap write.
+var caller: service
+var answer: string
+
+on App.startCLI(args: list of string) {
+    if caller.call("Clock:ClockSrv", 1, "", answer) {
+        log(answer)
+    }
+}

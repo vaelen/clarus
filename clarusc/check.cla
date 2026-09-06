@@ -2227,6 +2227,8 @@ func checkMethodCall(sel: int, argsHead: int): int {
     var xt: int
     var name: string
     var result: int
+    var arg4: int
+    var t4: int
 
     x = selectX(sel)
     if exprKind(x) == ExIdent and identName(x) == cnFile {
@@ -2374,7 +2376,24 @@ func checkMethodCall(sel: int, argsHead: int): int {
         // the server's answer away.
         result = checkTableMethod(serviceMethods, sel, argsHead)
         if name == "call" and argsHead != -1 and exprNext(argsHead) != -1 and exprNext(exprNext(argsHead)) != -1 and exprNext(exprNext(exprNext(argsHead))) != -1 {
-            checkRejectParamFill(exprNext(exprNext(exprNext(argsHead))))
+            arg4 = exprNext(exprNext(exprNext(argsHead)))
+            checkRejectParamFill(arg4)
+            // ...and `reply` must be a text, not a string. The signature
+            // above is psPlain(TextT), which ACCEPTS a string by the
+            // ordinary string->text call-argument coercion -- fine for an
+            // in-parameter, wrong here: lowServiceMethod passes an
+            // out-parameter through uncoerced, so a `string` argument
+            // reaches clar_fn_rtSvcCallName's `rt_text *` as a
+            // clar_str_255 *, which cc only WARNS about, and the runtime
+            // then writes the reply through it. (The same hole exists at
+            // every text out-parameter -- file.readText, filehandle.readAt
+            // -- but there the callee is an intrinsic taking rt_text by
+            // value, so cc errors and the user is stopped; see
+            // docs/TODO.md's "text out-parameters accept a string".)
+            t4 = exprTypeGet(arg4)
+            if t4 != InvalidT and typeKind(t4) != TyText {
+                emitDiag(exprLine(arg4), exprCol(arg4), "call: reply must be a text variable")
+            }
         }
         return result
     }

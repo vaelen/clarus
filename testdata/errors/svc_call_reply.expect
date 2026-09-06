@@ -1,0 +1,1 @@
+../../testdata/errors/svc_call_reply.cla:14:45: call: reply must be a text variable

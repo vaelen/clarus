@@ -153,6 +153,31 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   wrapped a 190-character comment for the same reason. Cosmetic; split
   the concatenation across two lines.
 
+## Compiler: type checking
+
+### AppleTalk phase (2026-09-07)
+
+- **Text out-parameters accept a `string`, and nothing but `cc` catches
+  it.** Every `text` out-parameter in the language -- `file.readText(path,
+  t)`, `fh.readAt(pos, n, t)`, `svc.call(target, op, req, reply)` -- is
+  registered in `clarusc/check.cla` as an ordinary `psPlain(TextT)`
+  parameter, and a `string` argument is admitted there by the ordinary
+  string->text call-argument coercion. Lowering then passes an
+  out-parameter through UNCOERCED (deliberately -- the callee must write
+  into the caller's own storage), so a `string` argument arrives at a
+  `rt_text *` parameter as a `clar_str_255 *`. For `readText`/`readAt`
+  the callee is an intrinsic whose prototype takes `rt_text` by value, so
+  `cc` errors and the user is stopped; for `svc.call` the callee is a
+  lowered Clarus function, so `cc` only WARNS and the program ships with
+  a wild write into the string's storage. The AppleTalk phase's fix wave
+  put a one-off `typeKind(...) != TyText` guard on `svc.call`'s fourth
+  argument (`testdata/errors/svc_call_reply.{cla,expect}`) because that
+  was the site with the silent failure mode; the general fix is real
+  out-parameter typing in the checker -- a parameter-shape flag that
+  suppresses the coercion and rejects any argument whose kind is not the
+  declared one -- applied to the whole family at once, so the next
+  `text` out-parameter added does not have to remember the guard.
+
 ## Language: feature-support queries (after the AppleTalk release)
 
 - **A `system.has*()` family for optional platform features** (Andrew,
