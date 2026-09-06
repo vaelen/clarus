@@ -1,0 +1,162 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalkclock.cla: the AppleTalk phase's NATIVE acceptance app (spec
+// %8.5) -- one small Macintosh program that is BOTH ends of a service.
+// It advertises a clock of its own under an NBP name, answers two
+// operations on it, browses the zone for every other clock, and asks
+// each of them for the time.
+//
+//     scripts/build-68k.sh examples/atalkclock.cla    # a real .bin
+//
+// Nothing in here is Toolbox knowledge: `service`, `serviceBrowser` and
+// `address` are the whole surface (docs/clarus-language-reference.md,
+// Chapter 12's "Service Discovery" and "Services" sections), and the
+// program never polls -- `found`/`done` arrive from the event loop, and
+// `request` fires once per incoming call.
+//
+// The served name carries a per-launch suffix. NBP names are global to
+// the zone and registration VERIFIES uniqueness, so two Macs (or two
+// launches after a crash left a stale name) must not both ask for
+// "Clock". `now()` is the Mac clock in seconds, so the low 12 bits of it
+// change every launch that is at least a second apart -- the same reason
+// the test scripts give their own names a per-run suffix (spec %8.4).
+//
+// tests/mactest/atalk_68k.sh boots this against `atalkdrive` on the
+// host, driving it from testdata/atalk/clockdrive.cla rather than a
+// scripted-event file: scripted mode advances a VIRTUAL tick counter and
+// never waits, and every assertion here needs real seconds to pass while
+// NBP and ATP round-trip against a real peer.
+
+app AtalkClock {
+    name: "AtalkClock"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "Serves the time over AppleTalk, and asks its neighbours for theirs."
+    id: "ACLK"
+}
+
+// The operations this service answers. The checked conversion below is
+// guarded, so an operation number off the wire can never raise a runtime
+// error -- Chapter 12's own idiom for a `request` handler.
+enum ClockOp { Time 1 "Time", Echo 2 "Echo" }
+
+var clock: service
+var browser: serviceBrowser
+var myName: string             // "Clock-1234", once serving
+var myEntity: string           // "Clock-1234:ClarusClock", once serving
+var peers: list of string      // every "Name:Type" the last find turned up
+var zoneNames: list of string
+var reply: text
+var shown: text
+
+window Clock {
+    title: "Clock"
+    size: 320, 200
+
+    label Zones { at: 10, 10; width: 296; text: "Zones:" }
+    textview Peers { fill: both; scrollbar: vertical }
+    button Find { at: 10, bottom;   caption: "Find" }
+    button Call { at: next, bottom; caption: "Call" }
+    button Quit { at: next, bottom; caption: "Quit" }
+}
+
+// atClockRepaint: the window is optional -- every entry point below
+// works whether or not it is open, so a `nil` front window is not an
+// error here.
+func atClockRepaint() {
+    var w: Clock = Clock.front
+    var i: int = 0
+    var line: string = "Zones:"
+
+    shown.clear()
+    while i < peers.count {
+        shown.append(peers[i])
+        shown.append("\n")
+        i = i + 1
+    }
+    if w != nil {
+        w.Peers.text = shown
+        i = 0
+        while i < zoneNames.count {
+            line = line + " " + zoneNames[i]
+            i = i + 1
+        }
+        w.Zones.text = line
+    }
+}
+
+// atClockFind: start a fresh browse of the zone. `find` returns at once;
+// `found` then fires once per match and `done` always follows.
+func atClockFind() {
+    peers.clear()
+    atClockRepaint()
+    browser.find("ClarusClock")
+}
+
+// atClockCall: ask every OTHER clock for its time. `call` is synchronous
+// (it blocks for up to a couple of seconds per peer), which is why it is
+// a button and not something the browse does on its own.
+func atClockCall() {
+    var i: int = 0
+
+    while i < peers.count {
+        if peers[i] != myEntity {
+            if clock.call(peers[i], 1, "", reply) {
+                log("remote " + peers[i] + " " + reply[0, reply.length])
+            } else {
+                log("remote " + peers[i] + " failed " + string(lastError.code) + " " + lastError.message)
+            }
+        }
+        i = i + 1
+    }
+}
+
+on App.launch {
+    open Clock
+    myName = "Clock-" + string(now() & 0xFFF)
+    myEntity = myName + ":ClarusClock"
+    clock.serve(myName, "ClarusClock")
+    log("serving " + myEntity)
+    browser.zones(zoneNames)
+    atClockFind()
+}
+
+on clock.request(op: int, req: text, from: address) {
+    if op < 1 or op > 2 {
+        clock.reply(-1, "")
+        return
+    }
+    switch ClockOp(op) {
+    case Time {
+        clock.reply(0, dateTimeStr(now()))
+    }
+    case Echo {
+        clock.reply(0, req)
+    }
+    }
+}
+
+on clock.failed(err: error) {
+    log("clock failed " + string(err.code) + " " + err.message)
+}
+
+on browser.found(name: string, addr: address) {
+    peers.add(name)
+    log("found " + name + " " + string(addr))
+}
+
+on browser.done {
+    atClockRepaint()
+    log("browse done " + string(peers.count))
+}
+
+on browser.failed(err: error) {
+    log("browse failed " + string(err.code) + " " + err.message)
+}
+
+extend Clock {
+    on Find.click { atClockFind() }
+    on Call.click { atClockCall() }
+    on Quit.click { quit }
+}

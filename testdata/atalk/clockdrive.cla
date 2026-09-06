@@ -1,0 +1,46 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// clockdrive.cla (2026-09-06 appletalk spec %8.2, Task 10): the driver
+// half of tests/mactest/atalk_68k.sh's single Mini vMac boot. It is
+// composed onto examples/atalkclock.cla -- `clarusc emit68k
+// examples/atalkclock.cla testdata/atalk/clockdrive.cla` -- and does
+// exactly what a person clicking that app's Find/Call/Quit buttons would
+// do, on a timer, so the boot needs no human and ends on its own.
+//
+// Why not a `--events` script, which is how every other UI boot in
+// tests/mactest is driven: scripted mode replaces the real event loop
+// with the script interpreter and a VIRTUAL tick counter
+// (runtime/clarus/uiscript.cla's rtUiScriptTick -- "real TickCount is
+// never consulted in scripted mode"), so a script races through its
+// lines in no real time at all. Every assertion this boot makes needs
+// real seconds to elapse: the app's own NBP registration to be visible
+// to the host, an NBP lookup to complete against a live peer, and an ATP
+// transaction each way. `every 60 ticks` in the REAL event loop is the
+// only driver on this lane that actually waits.
+//
+// The beat numbers are seconds after launch, with generous slack on a
+// lane where an NBP lookup costs ~3 s and one `call` up to ~6 s:
+//
+//    5   Find   -- the host's `atalkdrive serve` peer is already up (the
+//                 script starts it before the emit + boot), so one
+//                 browse is enough to see it
+//   25   Call   -- ATP to every peer the browse turned up; the `remote
+//                 ...` line the script asserts on comes from here
+//  150   Quit   -- the boot's own end. The host side polls for the app's
+//                 name and calls it while all this is going on, so the
+//                 app has to stay up well past its own work.
+var cdBeats: int = 0
+
+every 60 ticks {
+    cdBeats = cdBeats + 1
+    if cdBeats == 5 {
+        atClockFind()
+    } else if cdBeats == 25 {
+        atClockCall()
+        log("called")
+    } else if cdBeats >= 150 {
+        log("done")
+        quit
+    }
+}
