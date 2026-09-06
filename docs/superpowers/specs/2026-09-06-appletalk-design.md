@@ -321,9 +321,16 @@ interval 8 (1 s), count 3. The pump fires `found` per extracted tuple
 
 ### 5.7 Pump
 
-`rtConnPump` gains a call into `rtAtalkPump`, so neither the UI event
-loop nor the host CLI loop needs a new hook. `rtConnAlive` gains
-"service open or browser searching".
+The compiler-synthesized `clar_conn_pump()` (what the native UI loop's
+`UiConnPump` hook and the host CLI loop both reach) gains a call to
+`rtAtalkPump()` whenever the program uses AppleTalk, beside its
+existing `rtConnPump()` call, so neither loop needs a new hook and
+`conn.cla` never names an `atalk.cla` function it might not have been
+spliced with. The host CLI loop's alive condition ORs in
+`rtAtalkAlive()` ("service open, listener registered, browser
+searching, or an event pending"). (Plan amendment, 2026-09-07: the
+brainstorm's "`rtConnPump` calls `rtAtalkPump`" wording is superseded
+by this.)
 
 ## 6. Host lane
 
@@ -378,9 +385,18 @@ pty cases in `rt_serial_test.c`. Then a deliberate re-pin in 68kbbs
 ### 6.4 `every` on the host CLI pump
 
 The post-`startCLI` loop becomes: pump connections, pump AppleTalk,
-fire due `every` timers, idle until the nearest deadline. The timer
-bookkeeping moves out of the UI runtime into a small lane-neutral
-module both loops share; the Mac UI loop's behavior is unchanged.
+fire due `every` timers, idle 20 ms. Implementation (plan amendment,
+2026-09-07, after reading the seams): today any `every` declaration
+classifies a program as a UI program on the host lane, so a CLI
+program with a timer cannot compile there at all. The fix is in the
+compiler, not the runtime: `every` alone no longer makes a program UI
+on the host; for a non-UI host program lowering synthesizes a
+`clar_every_pump()` that asks a C helper (`rt_ext_EveryDue(idx,
+ticks)`, a static due-tick table over the host `TickCount`) whether
+each timer is due and calls its handler. `ui.cla`'s own `every` code
+and the Mac lanes are untouched, so this costs no golden rebless. A
+program with an `every` timer stays alive until `quit` (a timer never
+disarms).
 
 ## 7. Compiler and bake
 
@@ -400,8 +416,14 @@ module both loops share; the Mac UI loop's behavior is unchanged.
   string and a 4-byte address, `request` an int, a text, and an
   address. `reply`'s "inside a handler" contract is a runtime flag.
 - **Splice/bake.** `atalk.cla` (+ `_68k`) joins the unconditional 68k
-  superset beside `conn.cla`; the host lane splices `atalk.cla` +
-  `atalk_c.cla` under a new `usesAtalk` gate. Planned consequences:
+  superset beside `conn.cla`; the host lane splices `conn.cla` +
+  `conn_c.cla` + `atalk.cla` + `atalk_c.cla` together whenever
+  `usesConn or usesAtalk` (plan amendment, 2026-09-07: `atalk.cla`
+  owns the ADSP transport `conn.cla` dispatches to and reads
+  `conn.cla`'s slot table for listener accepts, so the two modules
+  always travel together; a serial-only host program carries the
+  `atalk_c.cla` wrappers as dead weight, the same "cheap dead weight"
+  argument `rt.c` already makes for its unconditional `.inc` includes). Planned consequences:
   one golden rebless wave (global renumbering, and the 4 → 8 slot
   growth in the same wave); the standing `CLARUS_SNOW_TESTS=1 make test
   T=mactest/snow/clarusc_bake` run because `bake.cla`'s module list
@@ -452,8 +474,9 @@ module both loops share; the Mac UI loop's behavior is unchanged.
   possibly via `SetSelfSend`) an ATP self-transaction. Hardware-proves
   the catalog with no peer, the `SerialOpenWrite` pattern. Toolbox
   count 38 → 39 in all five places.
-- One FreeMem check across an ADSP open/close cycle in the suite (the
-  ~3 KB per-slot allocation must come back).
+- Toolbox suite case `AdspLeak`: FreeMem stays exactly flat across 20
+  ADSP connection-end init/remove cycles through the runtime's own
+  waist (the ~3 KB per-slot allocation must come back). 39 → 40.
 
 ### 8.3 Opt-in Snow, `CLARUS_SNOW_TESTS=1`
 
