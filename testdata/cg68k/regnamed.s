@@ -99,101 +99,11 @@ LBL_227:
 LBL_226:
         ; cg_init_globals
         LINK A6,#-48
-        MOVE.L #0,D0
-        MOVE.L D0,-4(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-8(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-12(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-16(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-20(A5)
         MOVE.L #1,D0
         NEG.L D0
         MOVE.L D0,-24(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-26(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-30(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-34(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-38(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-42(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-46(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-48(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-50(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-52(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-54(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-58(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-62(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-66(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-70(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-74(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-76(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-80(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-84(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-88(A5)
         MOVE.L #1,D0
         MOVE.B D0,-90(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-92(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-96(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-98(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-102(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-106(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-110(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-114(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-118(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-122(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-124(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-128(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-132(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-136(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-138(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-142(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-146(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-150(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-154(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-158(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-162(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-1272(A5)
         LEA -1304(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L #256,-(A7)
@@ -201,12 +111,6 @@ LBL_226:
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L #0,D0
-        MOVE.L D0,-1582(A5)
-        MOVE.L #0,D0
-        MOVE.B D0,-1584(A5)
-        MOVE.L #0,D0
-        MOVE.L D0,-1588(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)

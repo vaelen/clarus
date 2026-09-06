@@ -1,0 +1,28 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// globals_zero_init.cla (native-array-return-and-fileh-guards, spec %4):
+// a zero-valued EXPLICIT global initializer of an all-zero type must
+// cost nothing in cg_init_globals -- the startup sweep already zeroed
+// the slot. Five zero spellings (lowering folds every one to
+// EIntConst 0, or CvIntToPtr of one for ptr(0)) and one non-zero
+// control that must keep its store. The listing's cg_init_globals
+// block therefore holds exactly ONE `MOVE.L #1,D0` store pair.
+
+enum Mode {
+    Off
+    On
+}
+
+var gi: int = 0
+var gb: bool = false
+var gp: ptr = ptr(0)
+var gf: fixed = 0.0
+var gm: Mode = Off
+var gk: int = 1
+
+on App.launch {
+    if gi != 0 or gb or gp != ptr(0) or gf != 0.0 or gm != Off or gk != 1 {
+        return
+    }
+}

@@ -5228,6 +5228,31 @@ func cgEmitGlobalInitExpr(i: int, gt: int, initE: int) {
     }
 }
 
+// cgInitIsZeroConst (native-array-return-and-fileh-guards, spec %4): true
+// when a global's EXPLICIT initializer is a constant zero -- an EIntConst
+// of 0 (`= 0`, `= false`, `= 0.0`, a zero-valued enum member; lowering
+// folds every one of those to EIntConst 0) or a CvIntToPtr conversion of
+// one (`= ptr(0)`). cgEmitInitGlobalsStub skips the store for such an
+// initializer when the global's type is all-zero by default
+// (cgDefaultIsAllZero): the startup sweep already zeroed the slot, so
+// the store was a `MOVE.L #0,D0` / `MOVE.L D0,-N(A5)` pair buying
+// nothing. A `KStr` `= ""` never reaches this (its initializer lowers to
+// a string constant, not an EIntConst, so this predicate is false for it)
+// and keeps its cgEmitStoreStr path -- likewise a KRec/KArr initializer,
+// which is never an EIntConst either.
+func cgInitIsZeroConst(e: int): bool {
+    var k: IRExprKind
+
+    k = irExprKind(e)
+    if k == EIntConst {
+        return irIntConstV(e) == 0
+    }
+    if k == EConv and irConvOp(e) == CvIntToPtr {
+        return cgInitIsZeroConst(irConvX(e))
+    }
+    return false
+}
+
 // cg_init_globals/cg_free_globals now LINK a small frame (Task 13
 // upgrade, same reason and same shape as cgEmitOneRcWalk's own upgrade,
 // above): a KList/KMap global's default-birth (cgDefaultInitAt) or release
@@ -5362,6 +5387,9 @@ func cgEmitInitGlobalsStub(lbl: int) {
         // cgLastTrackedOff cleared so cgEmitGlobalInitExpr's handoff reads
         // only THIS initializer's verdict, and cgFreeStmtTmps at the tail
         // to release whatever intermediate the expression still owns.
+        // A zero-valued constant initializer of an all-zero type is
+        // skipped outright (cgInitIsZeroConst) -- the sweep already
+        // produced that value.
         cgStmtTmpOffs = cgFreshIntList()
         cgStmtTmpType = cgFreshIntList()
         cgStmtTmpNext = 0
@@ -5371,7 +5399,7 @@ func cgEmitInitGlobalsStub(lbl: int) {
         if not fullReplace and not cgDefaultIsAllZero(gt, 0, -1) {
             cgDefaultInitAt(5, cgGlobalOffsets[i], gt, 0, -1)
         }
-        if initE != -1 {
+        if initE != -1 and not (cgInitIsZeroConst(initE) and cgDefaultIsAllZero(gt, 0, -1)) {
             cgEmitGlobalInitExpr(i, gt, initE)
         }
         cgFreeStmtTmps()
