@@ -307,9 +307,42 @@ snow_run() {
 }
 
 # snow_settle_done SECS : print a DONE_CMD for snow_run that becomes true
-# SECS from now -- the elapsed-time proxy every Go `done` that has no
-# real completion signal uses (writes aren't flushed to the host-visible
-# image until Snow's process exits, so there is nothing else to poll).
+# SECS from now -- the elapsed-time proxy for a guest with no completion
+# signal at all (one that never quits, e.g. a real-tick event loop).
+# A guest that ENDS its trace with the ##CLARUS-EXIT## trailer should use
+# snow_done_when_trailer instead: that is a real signal, and Snow does
+# write guest sectors through to $SNOW_IMG mid-boot (measured -- see that
+# helper), so it can be polled.
 snow_settle_done() {
     echo "test \"\$(date +%s)\" -ge $(( $(date +%s) + $1 ))"
+}
+
+# snow_done_when_trailer HOLD_SECS : print a DONE_CMD for snow_run that is
+# true once the guest has written a NEW '##CLARUS-EXIT##' -- the trace
+# trailer natQuit writes as the very last thing before ExitToShell -- into
+# the live disk image, and it has stayed there for HOLD_SECS.
+#
+# Measured (clarusc_boot boot, 2026-09-06): Snow writes guest sectors
+# through to $SNOW_IMG as the guest flushes them, so the trailer really does
+# appear in the host file mid-boot -- 29s into a boot whose settle ran to
+# 45s. The file's MTIME never moves (Snow keeps the image mapped), so only
+# the CONTENT is a usable signal. Must be called after snow_disk +
+# snow_put_bin: the count is taken relative to a baseline of the staged
+# volume, because ClarusC.APPL's baked runtime SOURCE names the trailer in
+# native.cla's comments (4 matches on a staged ClarusC volume) -- while a
+# produced app never does, natQuit pokes those 16 bytes one at a time and
+# no binary carries the literal.
+#
+# HOLD_SECS gives the app's own EARLIER writes (the compiled .APPL's forks)
+# and the guest's catalog flush time to reach the image -- Snow's graceful
+# quit cannot flush the GUEST's own cache. The first-seen epoch lives in a
+# marker file under $WORK, dropped again if the match count ever falls back.
+# Callers keep a generous snow_run SECS as the CEILING: a guest that never
+# writes a trailer still times out there, and the caller's own clean_exit
+# check then fails exactly as it always did.
+snow_done_when_trailer() {
+    _mark=$WORK/trailer-seen
+    rm -f "$_mark"
+    _base=$(grep -a -o '##CLARUS-EXIT##' "$SNOW_IMG" | wc -l | tr -d ' ')
+    printf '%s\n' "{ test \$(grep -a -o '##CLARUS-EXIT##' \"$SNOW_IMG\" | wc -l) -gt $_base || { rm -f \"$_mark\"; false; }; } && { [ -f \"$_mark\" ] || date +%s > \"$_mark\"; } && test \$(date +%s) -ge \$(( \$(cat \"$_mark\") + $1 )) && echo \"snow: exit trailer (over baseline $_base) first seen at epoch \$(cat \"$_mark\"), held ${1}s, quitting at epoch \$(date +%s)\""
 }

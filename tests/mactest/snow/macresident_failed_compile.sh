@@ -9,10 +9,12 @@
 # tickprobe.cla compiles successfully in the SAME session and its produced
 # app is byte-compared against the host oracle.
 #
-# Same wall-clock caveat as macresident.sh: the 110-minute default settle
-# is not enough to finish both compiles on emulated hardware; set
-# CLARUS_MACRESIDENT_SETTLE (and CLARUS_MACRESIDENT_DONE) for a run meant
-# to reach the byte-compare.
+# Same wall-clock shape as macresident.sh: the boot ends on the
+# ##CLARUS-EXIT## completion probe (snow_done_when_trailer), and
+# CLARUS_MACRESIDENT_SETTLE's 110-minute default is only the base of the
+# settle+20m ceiling -- not enough for both compiles on emulated hardware,
+# so raise it (and CLARUS_MACRESIDENT_DONE still works as a manual
+# override) for a run meant to reach the byte-compare.
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
@@ -40,7 +42,7 @@ snow_put "$BAD" badabort.cla
 snow_put "$TICK" tickprobe.cla
 
 SETTLE=$(settle_seconds "${CLARUS_MACRESIDENT_SETTLE:-110m}")
-DONE=$(snow_settle_done "$SETTLE")
+DONE=$(snow_done_when_trailer 30)
 if [ -n "${CLARUS_MACRESIDENT_DONE:-}" ]; then
     DONE="$DONE || test -e \"$CLARUS_MACRESIDENT_DONE\""
 fi

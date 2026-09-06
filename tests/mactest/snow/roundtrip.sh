@@ -21,7 +21,9 @@ snow_put "$WORK/Marker.txt" Marker.txt
 snow_put_bin "$BIN" SnowRoundTrip
 
 # snowRoundTripSettle: 30s, a generous multiple of the fixture's own work
-# (open a window, two file ops, quit), not a measured minimum.
+# (open a window, two file ops, quit), not a measured minimum. A timer,
+# not snow_done_when_trailer: the whole settle is already as short as that
+# probe's own 30s flush hold, so the probe could only make this slower.
 snow_run 180 "$(snow_settle_done 30)"
 
 snow_get Copy.txt "$WORK/Copy.txt"

@@ -10,14 +10,18 @@
 # resource fallback: toolbox/osutils.cla is deliberately NEVER staged on
 # the volume.
 #
-# Wall clock: the default settle is 110 minutes, and the Go test's own doc
-# comment records that this is NOT enough to finish both compiles on real
-# (emulated) hardware -- "on the order of TEN HOURS ... at ~7x
-# fast-forward". Set CLARUS_MACRESIDENT_SETTLE=12h (and expect this
-# script's own `# timeout:` header to need raising to match) for a run
-# actually meant to reach the byte-compare; CLARUS_MACRESIDENT_DONE names
-# a marker file an operator watching the emulator can create to end the
-# settle the moment the scripted `quit` visibly lands.
+# Wall clock: the boot ends on a real completion probe -- snow_run quits
+# Snow once the ##CLARUS-EXIT## trailer has been visible in the live disk
+# image for 30s (snow_done_when_trailer) -- so the run is as long as both
+# compiles actually take. CLARUS_MACRESIDENT_SETTLE (110m by default) is
+# only the base of the CEILING, settle+20m, at which a guest that never
+# writes a trailer is given up on, and the Go test's own doc comment
+# records that both compiles take far longer than that on real (emulated)
+# hardware -- "on the order of TEN HOURS ... at ~7x fast-forward". Set
+# CLARUS_MACRESIDENT_SETTLE=12h (and expect this script's own `# timeout:`
+# header to need raising to match) for a run actually meant to reach the
+# byte-compare. CLARUS_MACRESIDENT_DONE still names a marker file an
+# operator watching the emulator can create to end the wait by hand.
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
@@ -41,13 +45,13 @@ snow_put "$TICK" tickprobe.cla
 snow_put "$CATP" catprobe.cla
 
 SETTLE=$(settle_seconds "${CLARUS_MACRESIDENT_SETTLE:-110m}")
-DONE=$(snow_settle_done "$SETTLE")
+DONE=$(snow_done_when_trailer 30)
 if [ -n "${CLARUS_MACRESIDENT_DONE:-}" ]; then
     DONE="$DONE || test -e \"$CLARUS_MACRESIDENT_DONE\""
 fi
-# 20-minute headroom above the settle: runSnow's timeout is a hard kill,
-# the settle is when the poll loop decides to quit Snow, so the two must
-# never be equal.
+# settle+20m is the hard ceiling: runSnow's timeout is a hard kill, the
+# probe above is what normally decides to quit Snow, so the ceiling must
+# sit above any wait the probe could plausibly need.
 snow_run $(( SETTLE + 1200 )) "$DONE"
 
 snow_get ":System Folder:Startup Items:out" "$WORK/out"
@@ -92,7 +96,10 @@ fi
 # Launchable-app proof: TickProbe, the on-Mac-produced app, booted
 # standalone on a FRESH disk with no --events (the real, non-scripted
 # rtUiRun/UiTickCount event loop) -- proof the byte-identity check isn't
-# comparing two equally broken outputs. macResidentLaunchSettle: 30s.
+# comparing two equally broken outputs. macResidentLaunchSettle: 30s, and
+# a timer is the only option here: TickProbe never quits (that IS the
+# test -- it must still be ticking when the settle ends), so it writes no
+# ##CLARUS-EXIT## trailer for snow_done_when_trailer to see.
 snow_disk
 snow_put_bin "$WORK/TickProbe.bin" TickProbe
 snow_run 180 "$(snow_settle_done 30)"

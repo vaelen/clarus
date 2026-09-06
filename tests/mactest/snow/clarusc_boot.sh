@@ -20,8 +20,10 @@ snow_disk
 snow_put_bin "$BIN" ClarusC
 
 # clarusCBootSettle: 45s (raised from 20s -- a 48MB SIZE(-1) partition
-# takes the Process Manager measurably longer to zone/launch, and `done`
-# is a pure elapsed-time heuristic with no real completion signal).
+# takes the Process Manager measurably longer to zone/launch). A timer,
+# not snow_done_when_trailer: this guest does quit, but the whole settle
+# is shorter than that probe's own 30s flush hold, so the probe could only
+# make this boot slower.
 snow_run 180 "$(snow_settle_done 45)"
 
 snow_get ":System Folder:Startup Items:out" "$WORK/out"

@@ -7,10 +7,13 @@
 # BAKE path specifically (never the CLFS-source fallback) and the produced
 # app to be byte-identical to the host compiler's own output.
 #
-# clarusCBakeSettle: 55 minutes -- a real controller run completed (clean
-# exit, byte-identical fork) in 3302s (~55.0m), landing almost exactly on
-# this default. Overridable via CLARUS_MACRESIDENT_SETTLE, the same env var
-# macresident.sh reads (both tune the same kind of wait).
+# The boot ends on a real completion probe, not a timer: snow_run quits
+# Snow once the ##CLARUS-EXIT## trailer has been visible in the live disk
+# image for 30s (snow_done_when_trailer). CLARUS_MACRESIDENT_SETTLE (55m
+# by default, the same env var macresident.sh reads) is now only the base
+# of the CEILING -- settle+20m -- at which a guest that never writes a
+# trailer is given up on; raise it if the emulated compile itself needs
+# longer than that.
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
@@ -30,7 +33,7 @@ snow_put_bin "$BIN" ClarusC
 snow_put "$TICK" tickprobe.cla
 
 SETTLE=$(settle_seconds "${CLARUS_MACRESIDENT_SETTLE:-55m}")
-snow_run $(( SETTLE + 1200 )) "$(snow_settle_done "$SETTLE")"
+snow_run $(( SETTLE + 1200 )) "$(snow_done_when_trailer 30)"
 
 snow_get ":System Folder:Startup Items:out" "$WORK/out"
 echo "--- app out ($(wc -c < "$WORK/out" | tr -d ' ') bytes)"
