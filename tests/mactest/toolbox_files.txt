@@ -7,6 +7,7 @@ toolbox/files.cla
 toolbox/resources.cla
 toolbox/devices.cla
 toolbox/serial.cla
+toolbox/appletalk.cla
 testsuite/toolbox/runner.cla
 testsuite/toolbox/cases_events.cla
 testsuite/toolbox/cases_draw.cla
@@ -35,6 +36,7 @@ testsuite/toolbox/cases_finfo.cla
 testsuite/toolbox/cases_resources.cla
 testsuite/toolbox/cases_datetime.cla
 testsuite/toolbox/cases_serial.cla
+testsuite/toolbox/cases_atalk.cla
 testsuite/toolbox/cases_narrowpopup.cla
 testsuite/toolbox/cases_leak.cla
 testsuite/toolbox/cases_scrollend.cla

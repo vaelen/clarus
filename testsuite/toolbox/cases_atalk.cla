@@ -1,0 +1,212 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_atalk.cla: AtalkSelf (AppleTalk phase Task 6) -- hardware-proves
+// the shipped toolbox/appletalk.cla catalog against real ROM AppleTalk,
+// in-process, the same "the catalog files supply the externs, this case
+// only calls them" discipline cases_catalog.cla and cases_serial.cla
+// already establish. It opens the real .MPP and .ATP drivers, registers
+// an NBP name with verification on, reads its own net/node back out of
+// the Names Table Entry, looks up a type nothing has registered, removes
+// the name, then opens and closes a dynamic ATP socket.
+//
+// WHAT THIS CASE DELIBERATELY DOES NOT DO, and why. The design spec's
+// original sketch was a self-lookup (find our own registered name) and
+// an ATP self-transaction (async getRequest + sync sendRequest to our
+// own address). Task 1's probe wave (task-1-report.md P3, Amendment 3)
+// proved all three legs of that unavailable on the Mac Plus ROM .MPP,
+// which is what this suite boots:
+//   - `setSelfSend` (csCode 256) returns -17 (controlErr): the ROM .MPP
+//     does not implement it, and the AppleTalk 58 System file whose
+//     .MPP would is not on LaunchAPPL's stripped boot disk (P1).
+//   - a self-lookup therefore returns err 0 with numGotten 0, before and
+//     after that call.
+//   - a self-directed ATP sendRequest fails -1096 (reqFailed) after its
+//     full retry budget, and the paired async getRequest never
+//     completes.
+// So the assertions below are exactly Amendment 3's table -- every row
+// of it, and nothing that was not observed on real hardware. Note in
+// particular that the node number is NOT asserted against a fixed value:
+// it is acquired by LLAP at boot and differs run to run (106 and 18 were
+// both seen). .XPP and .DSP are not opened at all: both are -43 (fnfErr)
+// on this boot disk, and a harness fix for that is scheduled separately.
+//
+// Runtime cost: about 6.5 seconds. `registerName` with verifyFlag on
+// broadcasts `count` lookups at `interval` before returning, and
+// `lookupName` runs its full retry budget even when an answer arrives
+// early (task-1-report.md P2) -- ~3.2 s each at interval 8 / count 3.
+//
+// Every parameter block below is a FRESH extern-record local, one per
+// call, never reused: toolbox/appletalk.cla's Rule 2, which cost Task 1
+// three hard hangs of the emulated Mac before it was understood. An
+// extern record local is zero-initialized on declaration (language
+// reference, "extern record"), so this shape satisfies the rule by
+// construction.
+
+// atPStr writes `s` as a Pascal string at `p` and returns the address
+// one byte past its end -- so three back-to-back calls build the PACKED
+// object/type/zone entity NBP actually wants (toolbox/appletalk.cla's
+// own NTE note: `struct EntityName`'s three Str32Field slots are a
+// Pascal/C interface fiction, per AppleTalk.h's own comment). Same
+// NewPtr+pokeb technique toolbox/devices.cla documents for ioNamePtr and
+// cases_serial.cla's `serPName` demonstrates; kept local to this file
+// rather than shared, so each case file stands on its own.
+func atPStr(p: ptr, s: string): ptr {
+    var i: int
+    pokeb(p, s.length)
+    i = 0
+    while i < s.length {
+        pokeb(p + 1 + i, int(s[i]))
+        i = i + 1
+    }
+    return p + 1 + s.length
+}
+
+func caseAtalkSelf(): TestResult {
+    var mppPb: IOParam
+    var atpPb: IOParam
+    var regPb: NBPRegParam
+    var lkPb: NBPLookupParam
+    var rmPb: NBPParam
+    var skOpenPb: ATPParam
+    var skClosePb: ATPParam
+    var nm: ptr
+    var end: ptr
+    var nte: ptr
+    var lkEntity: ptr
+    var lkBuf: ptr
+    var err: int
+    var mppRef: int
+    var atpRef: int
+    var net: int
+    var node: int
+    var sock: int
+    var detail: string
+
+    // -- 1. Open .MPP. It lives in the Mac Plus ROM, so this works with
+    // no AppleTalk System file present, and the OS hands back the
+    // documented static refNum.
+    nm = NewPtrClear(8)
+    end = atPStr(nm, ".MPP")
+    mppPb.ioNamePtr = nm
+    err = PBOpenSync(mppPb)
+    mppRef = mppPb.ioRefNum
+    if err != 0 or mppRef != mppRefNum {
+        detail = "open .MPP err " + tkIntToStr(err)
+        detail = detail + " refNum " + tkIntToStr(mppRef)
+        return tkFail("AtalkSelf", detail)
+    }
+
+    // -- 2. Register "AtalkSelf:ClarusSuite@*" with verification on.
+    // The NTE is 108 bytes: qNext(4) nteAddress(4) filler(1) then the
+    // packed entity at +9. Rule 3 of toolbox/appletalk.cla says a real
+    // service must poke its own listening socket into NTE+7
+    // (nteAddress + 3) BEFORE this call, because NBP copies that byte
+    // through verbatim. This case leaves it 0 on purpose: the name
+    // exists only long enough to prove register/lookup/remove, and
+    // nothing ever connects to it.
+    nte = NewPtrClear(nteSize)
+    end = atPStr(nte + nteEntity, "AtalkSelf")
+    end = atPStr(end, "ClarusSuite")
+    end = atPStr(end, "*")
+    regPb.ioRefNum = mppRef
+    regPb.csCode = registerName
+    regPb.interval = 8
+    regPb.count = 3
+    regPb.ntQElPtr = nte
+    regPb.verifyFlag = 1
+    err = PBControlSync(regPb)
+    if err != 0 {
+        detail = "registerName err " + tkIntToStr(err)
+        return tkFail("AtalkSelf", detail)
+    }
+
+    // -- 3. registerName filled our own address into the NTE
+    // (task-1-report.md Amendment 4 -- the cheapest way to learn it, no
+    // GetNodeAddress glue and no low-memory poking). Net is 0 on a
+    // routerless LocalTalk net, which is what the emulator lane is; the
+    // node is acquired per boot, so only its legal range is asserted.
+    net = peekw(nte + nteAddress)
+    node = peekb(nte + nteAddress + 2)
+    if net != 0 or node < 1 or node > 254 {
+        detail = "nteAddress net " + tkIntToStr(net)
+        detail = detail + " node " + tkIntToStr(node)
+        return tkFail("AtalkSelf", detail)
+    }
+
+    // -- 4. Look up a type nothing has registered. This is the honest
+    // no-peer NBP proof available on this ROM: the CALL succeeds (err 0)
+    // and finds nothing (numGotten 0). A lookup of our OWN type would
+    // also return 0 gotten here -- the ROM never answers its own
+    // lookups -- so it would prove nothing this does not.
+    lkEntity = NewPtrClear(64)
+    end = atPStr(lkEntity, "=")
+    end = atPStr(end, "ClarusNoSuch")
+    end = atPStr(end, "*")
+    lkBuf = NewPtrClear(1024)
+    lkPb.ioRefNum = mppRef
+    lkPb.csCode = lookupName
+    lkPb.interval = 8
+    lkPb.count = 3
+    lkPb.entityPtr = lkEntity
+    lkPb.retBuffPtr = lkBuf
+    lkPb.retBuffSize = 1024
+    lkPb.maxToGet = 16
+    err = PBControlSync(lkPb)
+    if err != 0 or lkPb.numGotten != 0 {
+        detail = "lookupName err " + tkIntToStr(err)
+        detail = detail + " numGotten " + tkIntToStr(lkPb.numGotten)
+        return tkFail("AtalkSelf", detail)
+    }
+
+    // -- 5. Remove the name. RemoveName takes the ENTITY (the packed
+    // object/type/zone at NTE+9), not the NTE itself -- the other arm of
+    // AppleTalk.h's `union NBPPtrs` at the same offset 30.
+    rmPb.ioRefNum = mppRef
+    rmPb.csCode = removeName
+    rmPb.entityPtr = nte + nteEntity
+    err = PBControlSync(rmPb)
+    if err != 0 {
+        detail = "removeName err " + tkIntToStr(err)
+        return tkFail("AtalkSelf", detail)
+    }
+
+    // -- 6. Open .ATP -- also ROM-resident, also a static refNum.
+    nm = NewPtrClear(8)
+    end = atPStr(nm, ".ATP")
+    atpPb.ioNamePtr = nm
+    err = PBOpenSync(atpPb)
+    atpRef = atpPb.ioRefNum
+    if err != 0 or atpRef != atpRefNum {
+        detail = "open .ATP err " + tkIntToStr(err)
+        detail = detail + " refNum " + tkIntToStr(atpRef)
+        return tkFail("AtalkSelf", detail)
+    }
+
+    // -- 7. openATPSkt with atpSocket 0 asks for any free dynamic
+    // socket; DDP's dynamic range is 128..254 (Inside Macintosh II
+    // ch. 10). Task 1 saw 202.
+    skOpenPb.ioRefNum = atpRef
+    skOpenPb.csCode = openATPSkt
+    skOpenPb.atpSocket = 0
+    err = PBControlSync(skOpenPb)
+    sock = skOpenPb.atpSocket
+    if err != 0 or sock < 128 or sock > 254 {
+        detail = "openATPSkt err " + tkIntToStr(err)
+        detail = detail + " socket " + tkIntToStr(sock)
+        return tkFail("AtalkSelf", detail)
+    }
+
+    // -- 8. Close it again, from a FRESH block (Rule 2). The suite boot
+    // must leave no ATP socket behind for later cases.
+    skClosePb.ioRefNum = atpRef
+    skClosePb.csCode = closeATPSkt
+    skClosePb.atpSocket = sock
+    err = PBControlSync(skClosePb)
+    if err != 0 {
+        detail = "closeATPSkt err " + tkIntToStr(err)
+        return tkFail("AtalkSelf", detail)
+    }
+
+    return tkPass("AtalkSelf")
+}

@@ -143,6 +143,7 @@ if "$CLARUSC" "$WORK/driver.cla" \
         "$ROOT/toolbox/appleevents.cla" \
         "$ROOT/toolbox/devices.cla" \
         "$ROOT/toolbox/serial.cla" \
+        "$ROOT/toolbox/appletalk.cla" \
         > "$WORK/catalog.log" 2>&1; then
     t_pass "$n"
 else

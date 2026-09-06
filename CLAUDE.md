@@ -207,7 +207,7 @@ enum + runner, not one boot per case.
   native-array-return-and-fileh-guards phase's `ArrReturn` case, which
   hardware-proves scalar-element fixed-array RETURNS (hidden-result-pointer
   block copy) on both lanes) runs on
-  host and natively; `testsuite/toolbox/` (38 `ToolboxTest` cases: 37 real +
+  host and natively; `testsuite/toolbox/` (39 `ToolboxTest` cases: 38 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -244,7 +244,13 @@ enum + runner, not one boot per case.
   `CanvasIdle` and `WindowMenus` cases, which hardware-prove the buffered
   canvas dirty gate (200 idle ticks cost no blit and no FreeMem churn)
   and the `menus:` window-owned menu set (menu-bar band checksums across
-  an activation))
+  an activation) -- then to 38 real by the AppleTalk phase's `AtalkSelf`
+  case, which hardware-proves the `toolbox/appletalk.cla` catalog against
+  the ROM `.MPP`/`.ATP` drivers: open both, NBP register with
+  verification, read the node's own net/node back out of the Names Table
+  Entry, look up a type nothing registered (err 0, 0 gotten -- the ROM
+  answers no self-lookup and has no `setSelfSend`), remove the name, then
+  open and close a dynamic ATP socket)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -290,7 +296,7 @@ enum + runner, not one boot per case.
   (pack3-standardfile phase, 2026-08-07) to an opt-in diagnostic behind
   `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under bare `CLARUS_MAC_TESTS=1`, so
   they no longer run as part of T2 by default.
-- `toolbox/{memory,events,osutils,scrap,standardfile,files}.cla`
+- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk}.cla`
   (toolbox-cookbook phase; the last two added by pack3-standardfile) is a
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new

@@ -113,6 +113,13 @@
 // catalog by opening the real .AOut/.AIn drivers, configuring 9600-8N1,
 // exercising the load-bearing SerSetBuf call, writing 5 bytes, and
 // reading a real SerGetBuf count -- see that case's own header comment.
+// AtalkSelf (cases_atalk.cla) is the AppleTalk phase's Task 6 addition:
+// hardware-proves the toolbox/appletalk.cla AppleTalk catalog against
+// real ROM .MPP/.ATP -- open both drivers, register an NBP name with
+// verification, read our own net/node back out of the Names Table
+// Entry, look up a type nothing registered, remove the name, then open
+// and close a dynamic ATP socket -- see that case's own header comment
+// for why a self-lookup and an ATP self-transaction are NOT asserted.
 // NarrowPopup (cases_narrowpopup.cla) is correctness-cleanup Task 2's own
 // addition: hardware-proves the labeled-popup layout fix
 // (uiwidgets.cla's new rtUiKindPopup-with-label arm +
@@ -178,6 +185,7 @@ enum ToolboxTest {
     DateTimeRoundTrip
     LivePaint
     SerialOpenWrite
+    AtalkSelf
     NarrowPopup
     LeakCheck
     ScrollToEnd
@@ -188,12 +196,12 @@ enum ToolboxTest {
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 37 real cases
+// nTbCases is ToolboxTest's member count minus All: the 38 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 38
+const nTbCases: int = 39
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -292,6 +300,9 @@ func tbCaseName(t: ToolboxTest): string {
     case SerialOpenWrite {
         return "SerialOpenWrite"
     }
+    case AtalkSelf {
+        return "AtalkSelf"
+    }
     case NarrowPopup {
         return "NarrowPopup"
     }
@@ -354,6 +365,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(DateTimeRoundTrip)
     l.add(LivePaint)
     l.add(SerialOpenWrite)
+    l.add(AtalkSelf)
     l.add(NarrowPopup)
     l.add(LeakCheck)
     l.add(ScrollToEnd)
@@ -517,6 +529,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, SerialOpenWrite) {
         results.add(caseSerialOpenWrite())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, AtalkSelf) {
+        results.add(caseAtalkSelf())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, NarrowPopup) {

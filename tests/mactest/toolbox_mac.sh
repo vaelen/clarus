@@ -19,9 +19,11 @@ bin=$(build_mac toolboxsuite_gui_mac \
     $(cat "$ROOT/tests/mactest/toolbox_files.txt") \
     --test --events testdata/ui/toolboxsuite.events --testapi) || exit 1
 
-run_mac "$bin" 300
+# 420 for the same reason toolbox_68k.sh's own settle was raised: the
+# suite's AtalkSelf case spends ~6.5 s in real NBP retries.
+run_mac "$bin" 420
 [ "$MAC_EXIT" = 0 ] || die "toolbox suite (Retro68) exit code $MAC_EXIT, want 0
 capture:
 $(cat "$WORK/cap.out")"
-suite_report_check "$WORK/cap.out" 38
+suite_report_check "$WORK/cap.out" 39
 t_done

@@ -25,5 +25,5 @@ run_mac "$WORK/toolboxsuite_jiggle_gui.bin" 900
 [ "$MAC_EXIT" = 0 ] || die "toolbox suite (jiggle) exit code $MAC_EXIT, want 0
 capture:
 $(cat "$WORK/cap.out")"
-suite_report_check "$WORK/cap.out" 38
+suite_report_check "$WORK/cap.out" 39
 t_done

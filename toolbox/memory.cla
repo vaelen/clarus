@@ -39,6 +39,17 @@
 // should be read as secondary corroboration only, superseded by the
 // citations below.
 //
+//   NewPtrClear   CIncludes/MacMemory.h:580-583 `#pragma parameter
+//                 __A0 NewPtrClear(__D0)` ... `NewPtrClear(Size
+//                 byteCount) ONEWORDINLINE(0xA31E);`;
+//                 AIncludes/MacMemory.a:561 `_NewPtrClear: OPWORD
+//                 $A31E`. Same D0-in/A0-out shape as NewPtr, with
+//                 the Memory Manager's clear bit set -- the block
+//                 comes back zeroed. Added by the AppleTalk phase
+//                 (Task 6): every AppleTalk parameter block, Names
+//                 Table Entry and ADSP control block must be fully
+//                 zeroed before use (toolbox/appletalk.cla's Rule 2),
+//                 and a NewPtr+manual-clear loop is strictly worse.
 //   NewPtr        CIncludes/MacMemory.h:547 `#pragma parameter __A0
 //                 NewPtr(__D0)`; AIncludes/MacMemory.a:515 `_NewPtr:
 //                 OPWORD $A11E`. byteCount in D0, ptr result in A0 --
@@ -159,6 +170,7 @@
 // All five new trap words are also bit-11-clear.
 
 external func NewPtr(byteCount: int): ptr = trap 0xA11E reg
+external func NewPtrClear(byteCount: int): ptr = trap 0xA31E reg
 external func DisposePtr(p: ptr) = trap 0xA01F reg
 external func NewHandle(byteCount: int): ptr = trap 0xA122 reg
 external func DisposeHandle(h: ptr) = trap 0xA023 reg
