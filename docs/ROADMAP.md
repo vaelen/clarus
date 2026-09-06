@@ -47,8 +47,14 @@ check (Gestalt) with a graceful fallback when the feature is absent.
   `rtUiLdefDraw` find — that one on a binary whose only difference
   was an ADDED suite case, not even a rebuild of the buggy function
   itself). Re-derive master pointers after any allocating call.
+- **`rtUiTableClick` scripted row math has no upper clamp** against the
+  live row count — deliberate tripwire (runtime-ir-bake T2 blocker): a
+  clamp would mask the next stale-master-pointer bug. Do not "fix"
+  casually. (Moved here verbatim from `docs/TODO.md` at the close of the
+  `language-runtime-cleanup` phase, 2026-09-06: it is a do-not-fix note,
+  not work, and it was the only survivor of that section.)
 
-## Where we are (2026-09-05)
+## Where we are (2026-09-06)
 
 Everything through the `compiler-cleanup` phase is merged to `main` and
 pushed (`c5d447b`). In brief:
@@ -69,16 +75,36 @@ pushed (`c5d447b`). In brief:
 - **68kBBS's language asks are closed**: the `connection` type (serial
   transport, both lanes), `filehandle` + binary `text` accessors +
   CRC-16/16x/32, the `file.*` directory/catalog family, `= ptr` externs,
-  `textview.scrollToEnd()`, and the string-perf work (length-byte-only
+  `textview.scrollToEnd()`, the string-perf work (length-byte-only
   string-local init, inline `s[i]`/`s.length`, `text.clear()`/
-  `reserve(n)`).
+  `reserve(n)`), and — from `language-runtime-cleanup` —
+  **array-literal initializers** (`const t: int[256] = [...]`, a
+  zero-cost constant-pool table), **window-owned menu sets** (the
+  `menus:` window property, bar synced on front change), and
+  **`file.openRF`** (a resource fork as an ordinary `filehandle`).
 - `docs/TODO.md`'s "Compiler correctness / diagnostics" section was
-  emptied by `compiler-cleanup`; what remains there is recorded debt.
+  emptied by `compiler-cleanup`; the "Language features (needed)",
+  "Compiler correctness / cleanup", "ABI / performance" and "Runtime /
+  Toolbox robustness" sections were emptied by `language-runtime-cleanup`
+  (24 entries, all disposed of; the one do-not-fix note moved into
+  Standing rules above). What remains there is recorded debt.
 - **The Mac-resident compiler (`ClarusC.APPL`) is on hold** (Andrew,
   2026-09-05). It works and stays tested, but its compile-time
   performance, the bake/CLIR machinery behind it, and its Snow boots
   are not being advanced; that debt sits in `docs/TODO.md`'s own
   "Compiler-on-Mac" section until the target resumes.
+
+**`language-runtime-cleanup` is COMPLETE and NOT YET MERGED** (branch
+`language-runtime-cleanup`; merging to `main` is Andrew's call). It
+cleared 24 `docs/TODO.md` entries in two waves across 16 tasks, blessed
+the goldens exactly twice, regenerated the bootstrap snapshot once, and
+landed three user-visible features (array literals, `menus:`,
+`file.openRF`) plus two compiler-correctness fixes nobody had asked for
+(a native statement-temp aliasing bug that was releasing wrong pointers
+in any program with `for x in f()`, and the `lst.pop().field` native
+leak). Full T2 green apart from one 2-byte `CanvasIdle` FreeMem sample
+under review at close-out; the Snow `clarusc_bake` gate PASSed. Details:
+`docs/HISTORY.md`'s own entry.
 
 Owed, not yet done (details in `docs/TODO.md`): a live run of the Snow
 `macresident` scripts; a System 7 spot check of the filesystem-api

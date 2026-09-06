@@ -123,7 +123,7 @@ Tiered test gates:
     case they check. Two known failures, unchanged from the retired Go
     lane: `FileHandleRW: create failed` and `DirOps: exists("") false` in
     the cprint CORE-suite boot (cprint-lane runtime gaps). The cprint
-    TOOLBOX twin is green — 36/36 since the compiler-cleanup phase
+    TOOLBOX twin is green — 38/38 since the compiler-cleanup phase
     (2026-09-05) added the `rt_ext_TbFreeMem`/`rt_ext_TbClearWarmFreeMem`
     shims whose absence used to make it fail to link. Lane deletion is
     deferred to the 5f Retro68-retirement phase; the C printer's remaining
@@ -181,7 +181,7 @@ Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
 Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
-- `testsuite/core/` (81 `CoreTest` cases: 80 real + `SelfCheck`, grown
+- `testsuite/core/` (82 `CoreTest` cases: 81 real + `SelfCheck`, grown
   from 74 real (correctness-cleanup phase tip) by the binary-files
   phase's `TextBinary`/`Crc16`/`IntToStr`/`FileHandleRW` cases — the
   first three hardware-prove `text`'s new LE/word/setter binary
@@ -197,8 +197,11 @@ enum + runner, not one boot per case.
   pointer, including a bool-returning round trip) on both lanes — then
   to 80 real by the string-perf phase's `StrPerf` case, which pins the
   length-byte-only string-local init, the inline `s[i]`/`s.length`
-  codegen, and `text.clear()`/`reserve(n)` semantics) runs on
-  host and natively; `testsuite/toolbox/` (36 `ToolboxTest` cases: 35 real +
+  codegen, and `text.clear()`/`reserve(n)` semantics -- then to 81 real
+  by the language-runtime-cleanup phase's `OpenRF` case, which
+  hardware-proves `file.openRF` (a resource fork opened as an ordinary
+  `filehandle`) on both lanes) runs on
+  host and natively; `testsuite/toolbox/` (38 `ToolboxTest` cases: 37 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -221,7 +224,7 @@ enum + runner, not one boot per case.
   the emulated Mac Plus — then to 33 real by the textview-scroll-to-end
   phase's `ScrollToEnd` case, which hardware-proves the new
   `textview.scrollToEnd()` widget method on the native lane (the cprint
-  twin passes too, 36/36, since the compiler-cleanup phase added the
+  twin passes too, 38/38, since the compiler-cleanup phase added the
   `rt_ext_TbFreeMem`/`rt_ext_TbClearWarmFreeMem` shims that used to block
   it) — then to 34 real by the
   string-perf phase's `ClearWarm` case, which hardware-proves
@@ -231,7 +234,11 @@ enum + runner, not one boot per case.
   suite GUI's OWN case table (the one stale-master-pointer instance
   nothing in the suite asserted on: a band over one row of `gui.cla`'s
   `Cases` table, non-blank while a row is present and stable across two
-  paints))
+  paints) -- then to 37 real by the language-runtime-cleanup phase's
+  `CanvasIdle` and `WindowMenus` cases, which hardware-prove the buffered
+  canvas dirty gate (200 idle ticks cost no blit and no FreeMem churn)
+  and the `menus:` window-owned menu set (menu-bar band checksums across
+  an activation))
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -239,6 +246,14 @@ enum + runner, not one boot per case.
   cg68k's non-UI startup stub fires `App.startCLI` with a never-marshaled
   `args` list). Both suites also have a scriptable GUI front end
   (`gui.cla`, driven by `--events` the same way the legacy UI goldens are).
+  **Both case counts are hand-maintained in FIVE places each**: core =
+  the runner's `nCoreCases`, `tests/mactest/coresuite_68k.sh`'s and
+  `coresuite_mac.sh`'s `suite_report_check` literals,
+  `tests/testsuite/core_cases.txt` (the host CLI's own list --
+  `testsuite/core_cli` fails without it), and this file; toolbox = the
+  runner's `nTbCases`, `tests/mactest/toolbox_68k.sh`,
+  `toolbox_jiggle.sh`, `toolbox_mac.sh`, and this file. A task adding a
+  case bumps all five.
 - **Run `core` on host** (compose recipe — no single-file entry point,
   `clarusc emit`/`emit68k` both take multiple `.cla` files positionally):
   ```sh
@@ -249,7 +264,7 @@ enum + runner, not one boot per case.
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
   `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract
-  design: it asserts all 80 other cases ran in the same invocation
+  design: it asserts all 81 other cases ran in the same invocation
   (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
   `all`), never alone.
   (Exact file list: `tests/testsuite/core_cli.sh`.) `toolbox` has no host
@@ -353,7 +368,10 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   binary-files phase (2026-08-22) rounded out the binary-data surface:
   `filehandle` (positioned file I/O — `file.open`/`file.create`/
   `readAt`/`writeAt`/`size`/`setSize`/`flush`/`close`, both lanes,
-  hardware-proved on System 6 and System 7), `string(n)` (the
+  hardware-proved on System 6 and System 7; the language-runtime-cleanup
+  phase, 2026-09-06, added `file.openRF`, which opens a file's RESOURCE
+  fork as an ordinary `filehandle` — native `PBOpenRFSync`, host xattr
+  with an AppleDouble `._` sidecar fallback), `string(n)` (the
   int-to-decimal-string conversion, `string(i)`, joining `int()`/
   `fixed()`/`char()`/`ptr()` -- not the pre-existing bounded-capacity
   TYPE syntax of the same name; the compiler-cleanup phase, 2026-09-05,

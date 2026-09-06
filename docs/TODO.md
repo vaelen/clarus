@@ -10,54 +10,6 @@ a to-do list, not a history: a fixed item is deleted, not struck through.
 Ideas, "if it ever bites" levers, and other maybe-someday items live in
 `docs/FUTURE.md` instead (split 2026-09-05).
 
-## Language features (needed)
-
-- **Array-literal initializers** (transfer-crcs phase, Andrew
-  2026-08-25): `var t: int[256] = {…}` / `const` arrays do not exist —
-  fixed arrays are always zero-filled and `const` initializers are single
-  literals — so lookup tables (the `crc32` table, sine tables, MacRoman
-  translation tables, keycode maps) must be built at run time. `crc32`'s
-  table is built lazily at first call as a stopgap (a 4-byte table pointer in every
-  program's data segment, since shake prunes unreachable functions but
-  never globals — a second, smaller follow-up in its own right; the 1 KB
-  block itself is heap-allocated only by programs that call `crc32`). Needs
-  parser + checker + IR + both backends (cg68k constant pool; cprint
-  static initializer). Spec: `docs/superpowers/specs/2026-08-25-transfer-crcs-design.md` §2.3.
-  The `crc32` table ended up as a heap block rather than a global array
-  for the `cg_init_globals` reason recorded under ABI / performance —
-  an array literal would also need a zero-cost (constant-pool)
-  representation to be the right home for it.
-
-- **Per-window menu bars / menu teardown** (Andrew 2026-08-05): suite
-  cases install menus they never tear down; a multi-window app may want
-  its own menu set swapped on activate. Needs a design.
-
-### filesystem-api phase (2026-08-26)
-
-- **Resource-fork-as-bytes / `file.openRF`** (Andrew 2026-09-05, moved
-  here from 68kbbs's since-retired `docs/language-gaps.md`, item 4 — the
-  last unshipped ask on that list) — this phase's `file.*` family covers the data fork
-  only; `readResource`/`writeRes` (binary-files phase) remain the only
-  resource-fork surface, and both are narrower than what 68kbbs needs:
-  `writeRes` writes a fork but leaves the data fork EMPTY (whole-file),
-  and `readResource` reads a *named resource from the current resource
-  chain*, not an arbitrary file's fork as a blob. Ask: read a named
-  file's entire resource fork into a `text`, and write a `text` as a
-  file's resource fork alongside an existing data fork. Unlocks
-  MacBinary encode on download / decode on upload — transferring real
-  Mac files (applications, documents with icons/preferences) faithfully;
-  without it BBS file areas can only carry flat data-fork content, which
-  rules out most period Mac software. Shape, either: the fork-level
-  counterparts to `readText`/`writeText` — `file.readResFork(path, out):
-  bool` / `file.writeResFork(path, fork): bool` (data fork preserved) —
-  or `file.openRF(path): filehandle` giving positioned I/O against the
-  resource fork (mirroring `file.open`'s data-fork `filehandle`), with
-  the blob forms built on top. Toolbox: `PBHOpenRF` (already declared in
-  `toolbox/files.cla`) + the existing positioned read/write path;
-  `file.setInfo` already covers restamping type/creator/dates after a
-  decode. Named out of scope by the filesystem-api spec (§7),
-  unscheduled.
-
 ## Serial / connection
 
 Grouped (Andrew, 2026-09-05) so they can be addressed together in one
@@ -122,221 +74,67 @@ sub-heading.
 
 ## Compiler correctness / cleanup
 
-### extern-ptr-call phase (2026-08-27)
+### language-runtime-cleanup phase (2026-09-06)
 
-- **Converge the three byte-identical extern-index scans** —
-  `irExternLookup` (ir.cla:1036), `cgExternIdxByName` (cg68k.cla), and
-  `fpExternIdxByName` (cprint.cla) each do the same linear scan over the
-  extern registry by name; collapse the latter two onto `irExternLookup`.
-  Pure deletion, no behavior change; deferred because it forces a
-  snapshot regen + full T2 for zero user-visible effect.
+- **Array RETURNS still abort on `emit68k`** (Task 9) — `func mk():
+  int[4]` checks clean and runs on the host lane, but the native lane
+  aborts: `cgRetNeedsHidden` (`clarusc/cg68k.cla`) knows `KStr`/`KRec`/
+  `KErr` and not `KArr`, so an array result never gets a hidden-return
+  slot. Pre-existing; §3.4 fixed the *parameter* ABI only. Task 9's
+  `cgEmitStoreArr` guard now turns the reachable half of this into a
+  diagnostic instead of a SIGSEGV, so the remaining gap is the missing
+  feature, not a crash.
 
-### compiler-cleanup phase (2026-09-05)
+- **`cpParamByRef` omits `KErr` where `cgParamByRef` has it** (Task 9) —
+  a pre-existing host/native asymmetry in the `error` argument ABI, now
+  documented in `cpParamByRef`'s own doc comment but not unified. Close
+  it when something depends on the two lanes agreeing here.
 
-- **Native and host now differ on `pop`/`shift` tracking for a
-  handle-bearing RECORD element** (Task 6 review, Minor 3) — the shape is
-  `lst.pop().field` / `lst.pop() + x` where `lst` is a `list of R` and
-  `R` is a record with at least one handle field (`text`/`list`/`map`),
-  popped and consumed in a receiver or operand position rather than
-  assigned, returned, or passed as an argument. **Lane: native
-  (`emit68k`) only** — the host lane (`cprint`) releases it correctly, so
-  this is a lane asymmetry, not a symmetric leak. **Why:** this phase's
-  §4.1b fix made `cgIntrListPopLike` (`clarusc/cg68k.cla`) track its
-  result in every position, but gated on `cgIsHandleKind(irtKind(elemT))`
-  rather than the spec's literal `cgNeedsRelease` — deliberately, because
-  `cgNeedsRelease` is additionally true for a handle-bearing `KRec`, and
-  a `KRec` element is >4 bytes, so the pop writes into a big-pool scratch
-  whose OFFSET is handed back to `cgEmitStoreRec` / `cgEmitReturnRec` /
-  `cgMaterializeToTemp`; those `cgCopyScratchToDst` the bytes (a raw
-  block copy, no retain) into a destination that then owns them, and none
-  can untrack the scratch because `cgLastTrackedOff` is only ever
-  consulted for a handle kind. Tracking a `KRec` scratch would
-  double-release fields the destination is still using. In a
-  receiver/operand position nothing takes ownership, so the record's
-  handle fields leak — one block per evaluation. The bare-discard arm
-  stays as the one `KRec` position that IS tracked.
-  **Fix when scheduled:** extend §4.1a's `cgMaterializeToTemp` gate to
-  `irExprKind(e) == EIntr and lowIntrIsOwningContainerRead(irIntrName(e))`
-  **for `KRec` only** — extending it to handle kinds would double-track
-  against §4.1b, which already tracks those at the producer. Plus a
-  `LeakCheck` shape, since no fixture in the tree pops a handle-bearing
-  record today. Full analysis:
-  `.superpowers/sdd/2026-09-05-compiler-cleanup/task-6-report.md`'s
-  "Concern 2, restated precisely".
+- **clarusc's native self-compile sits near the 32 KB per-function
+  ceiling** (Task 7) — `cg_free_globals` scales with `irGlobals.count`,
+  so ANY new compiler global grows every segment, and adding the
+  array-literal pool machinery pushed `fpIntrCall3` over. Task 7 split it
+  into `fpIntrCall3`/`fpIntrCall3b` to recover ~10 KB. The next compiler
+  feature will hit the same wall; the lever is another split, or making
+  `cg_free_globals` iterate a table instead of unrolling.
 
-- **Pre-existing, not introduced by this phase: a global `text`
-  initializer with a non-literal expression is unsupported on BOTH
-  lanes** (final-review wave, Minor 11) — `var g: text = mk()` aborts
-  natively with the new named message (`clarusc/cg68k.cla`'s
-  `cgAllocTmpOff` abort, ~line 4193; the big-pool sibling `big-temp need
-  mismatch` fires the same way for `var h: text = "ab" + "c"`, identical
-  on the pre-phase 311af68 compiler), and the host lane (`cprint`) emits
-  the initializer call before the function's own prototype, so `cc`
-  fails with `clar_fn_mk` undeclared. Found by the final whole-branch
-  review's live probe, not by any task; no fixture pins it. Follow-up:
-  support global-initializer temps (native) and hoist prototypes ahead
-  of global initializers (host), or diagnose it cleanly at check time
-  until then.
+- **`abort()` inside a global initializer does not propagate** (Task 8
+  review) — newly reachable now that a global initializer may call a
+  function, on BOTH lanes, and neither documented nor tested. The stub
+  resets `cgCurFuncHasBail`, so the abort check is emitted; where the
+  bail goes from `cg_init_globals` is the open question.
 
-## ABI / performance
-
-- **`KArr` param ABI** still copies arrays by value at call sites
-  (param-abi covered `KStr`/`KRec` only).
-
-- **`ser.cla` still reads per-byte** (`file.save`/`file.load`) —
-  deliberate clir-load-perf non-goal, not yet adopted onto bulk reads.
-
-### Correctness-cleanup phase (2026-08-17)
-
-- **`scripts/size-68k.sh` suite composition is stale/broken** — missing
-  `cases_param`/`abort`/`textrange`/`errret`/`evalorder`; repair before
-  the next size-sensitive phase. This phase's own code-size growth
-  (jiggle machinery in the always-spliced `uiscript.cla`, plus the
-  div/mod guard added to every glue site; 7 fixtures newly crossed into
-  seg2) went unmeasured as a result — record that gap alongside the fix.
-
-### transfer-crcs phase (2026-08-25)
-
-- **`cg_init_globals` re-zeroes what the startup zero-loop already
-  zeroed, and unrolls arrays element by element** (transfer-crcs Task 1
-  finding): `cgEmitInitGlobalsStub` default-inits EVERY global via
-  `cgDefaultInitAt` even when the type's default is all-zero and the
-  below-A5 sweep has already zeroed it, and `cgArrDefaultAt` unrolls
-  `T[N]` into N stores — a 256-int global costs ~1.5 KB of startup code
-  in every native program. Skipping all-zero-default globals (or
-  looping large scalar arrays) would shrink every native program's
-  startup code; it is a planned rebless wave of its own (every cg68k
-  golden's `cg_init_globals` changes). The `crc32` table went to the
-  heap to sidestep this.
-
-- **Migrate `crc16` and `crc16x` to table-driven loops** (Andrew
-  2026-08-26): both are still per-bit loops (`rtTextCrc16`,
-  `rtTextCrc16X` in `runtime/clarus/text.cla`, 8 iterations per byte);
-  the Snow probe measured 277 / 287 ticks per 64 KB against `crc32`'s
-  120 with its table, so a 512-byte table each (256 × 16-bit entries:
-  reflected `0x8408` for KERMIT, forward `0x1021` for XMODEM — the
-  standard byte-indexed formulations, `crc = tab[(crc ^ b) & 0xFF] ^
-  (crc >> 8)` reflected, `crc = tab[((crc >> 8) ^ b) & 0xFF] ^ ((crc
-  << 8) & 0xFFFF)` forward) should bring each down to roughly `crc32`'s
-  per-byte cost. Follow the `crc32` pattern exactly: a lazily
-  `TextNewPtr`-allocated heap block behind one `ptr` global each, NOT
-  an `int[256]` global (the `cg_init_globals` unrolled-init cost just
-  above). Each new `ptr` global shifts every later global's A5 offset
-  — a full cg68k/emitui golden rebless per global — so land both
-  together, ideally in the same wave as the `cg_init_globals` fix or
-  the array-literal-initializer phase (which would make all three
-  tables constant-pool data and retire the heap blocks). Test vectors
-  already pinned: `"123456789"` → `0x2189` (KERMIT), `0x31C3` (XMODEM),
-  plus the chunked/n==0 cases in `testdata/run/crc16.cla` and the core
-  suite's `Crc16` case; the KERMIT one is also `examples/pagefile.cla`'s
-  journal checksum, so the migration must stay bit-exact.
+- **`cg_init_globals`' frame is invisible to `cgStackHeuristic`** (Task 8
+  minor) and its `frameSize > 32767` guard runs on the floor-inflated
+  measure frame rather than the real one. Neither is reachable today (the
+  stub's frame is tiny); both are wrong in principle.
 
 ## Runtime / Toolbox robustness
 
-- **Buffered canvases blit every event-loop pass, flickering the mouse
-  pointer** (68kbbs canvas log window, Andrew 2026-09-02):
-  `rtUiFlushBufferedCanvases` (uiwidgets.cla:1329 / rt_ui.c:2172) does
-  a full CopyBits of EVERY buffered canvas with an offscreen
-  (`buf.port != 0`) on every rtUiRun iteration, drew or not. A program
-  with an `every 2 ticks` block therefore blits a static canvas ~30x/s;
-  each blit makes QuickDraw shield the cursor, so the pointer visibly
-  flickers over/near the window, and ~17 KB/blit of needless CopyBits
-  traffic burns real 68k CPU. Fix: a per-canvas dirty flag in
-  RtUiCanvasBuf -- set by every canvas drawing op (clear/line/rect/
-  fillRect/circle/fillCircle/drawText), tested by the flush (skip
-  clean canvases), cleared after the blit; the updateEvt path must
-  force-blit regardless of the flag so window exposure still repaints.
-  Both lanes (rt_ui.c mirrors the .cla module). ~10 lines. A static
-  canvas then costs zero per pass and the flicker disappears;
-  animation loops (the Bounce example) are unaffected since they draw
-  every frame anyway.
+### language-runtime-cleanup phase (2026-09-06)
 
 - **`rtUiTableClick` scripted row math has no upper clamp** against the
   live row count — deliberate tripwire (runtime-ir-bake T2 blocker): a
   clamp would mask the next stale-master-pointer bug. Do not "fix"
-  casually.
+  casually. (Also recorded as a standing rule in `docs/ROADMAP.md`; kept
+  here because this is where someone auditing the runtime will look.)
 
-- **Map runtime minors** (map-hashtable Task 5 review): unbounded index
-  probe loops have no corruption guard; `rt_map_layout_check` is
-  `sizeof`-only; dead `MAP_KEYBLOCK` constant; three near-identical
-  growers; keypool is append-only until release/clear (fine for compiler
-  workloads, a real ceiling otherwise).
+- **The two `snprintf` guards in `rt_fileh.inc`'s `FhHRename`/`FhHMove`
+  are unreachable** (Task 4) — both halves are Str255-bounded, so the
+  512-byte `target` buffer cannot overflow. Kept by ruling as defensive;
+  a future trim could take them (the `ListNext` guard is the one that
+  does real work and must stay).
 
-### Correctness-cleanup phase (2026-08-17)
+- **`file.rename("", x)` reaches `PBHRenameSync` with an empty name**
+  (Task 4) — after the stat reuse, `rtFhDevStat`'s `""` branch returns
+  true, so the empty-name case is no longer rejected before the trap.
+  One-line guard candidate.
 
-- **Heap-jiggle stress mode only hooks the `UiNewPtr` waist** (Task 3):
-  `rtUiJiggleTick()` forces a full-heap `CompactMem` at each scripted
-  dispatch and each `UiNewPtr` call, but core text/list allocations
-  (`TENew`, List Manager row storage) and Toolbox-internal moves that
-  don't route through `UiNewPtr` are not jiggled — a stale-master-pointer
-  bug reachable only through one of those paths would not be caught by
-  the harness as it stands today. The stride lever named in the brief
-  (tick every Nth call, for when per-call `CompactMem` overhead becomes
-  unacceptable) is unused — Task 3's one measured script ran well under
-  budget (44.75s vs. a 15m allowance), so no stride was needed.
-
-- **`rtUiLayout`'s dead `ctrlMp` assignment** (`runtime/clarus/
-  uiwidgets.cla`, Task 4 audit): `ctrlMp = UiHandleDeref(ctrl)` is
-  computed and never read. Harmless (not a staleness hazard — nothing
-  consumes the stale value), left in place per the audit's "don't churn
-  safe code" rule; worth deleting in a future cleanup pass through that
-  function.
-
-- **`(new)` doc-comment tag is a one-off convention** (`runtime/clarus/
-  ui.cla:1192,1203`, Task 1): marks the two About-box helpers as new
-  relative to the file's inherited `rt_ui.c`-heritage citation style;
-  cosmetic, not reused anywhere else in the runtime.
-
-### binary-files phase (2026-08-22)
-
-- **`testsuite/toolbox/cases_catalog.cla` discards `PBCreateSync`'s own
-  error** (Task 2 minor; final-review wave M5; ~line 219,
-  `PBCreateSync(fpb) // dupFNErr on a rerun is fine; PBOpenSync below is
-  the real gate`) — test-side only, `PBOpenSync` right after is the real
-  pass/fail gate for this case. NOT made moot by the final-review wave's
-  M2 fix (the `wbuf` `NewPtr(64)` leak a few lines below, in the same
-  function) — M2 only disposes the write buffer; it does not touch this
-  discarded return value. The *runtime* sibling of this same class of
-  gap (`rtFhDevCreate` reporting the OPEN error over a real non-dupFNErr
-  CREATE error) is the final-review wave's M4, fixed for real.
-
-### filesystem-api phase (2026-08-26)
-
-- **`rt_fh_mac_time` duplicates `rt_dt_now_mac`'s 3-line Unix-to-Mac-
-  epoch-local conversion** (Task 3 minor, deferred; `runtime/host/
-  rt_fileh.inc:210-214`, `rt_ext_host.inc`'s `rt_dt_now_mac`) — share
-  one helper instead of two independently-maintained copies.
-
-- **`rtFhDevRename` (native lane) re-implements the by-name
-  `PBGetCatInfoSync` block instead of reusing a state-block slot**
-  (Task 5 minor, deferred; `runtime/clarus/fileh_68k.cla:731`) —
-  `rtFhDevStat` already stashes a directory hit's own DirID at
-  `rtFh68kState+28`; `rtFhDevRename` could stash the SAME lookup's
-  parent DirID at a new `+44` slot and reuse it instead of issuing its
-  own separate `PBGetCatInfoSync` call. Correctness is unaffected (both
-  calls read the identical field), purely a duplicate-call cost.
-
-- **`rtFh68kEnsureState` does not check `SerNewPtr`'s result** (Task 5
-  minor, deferred; `runtime/clarus/fileh_68k.cla:395`) — pre-existing
-  idiom for this file's global-lifetime allocation block; an
-  out-of-memory native Mac would crash on the next `peekl`/`pokel`
-  rather than fail cleanly.
-
-- **`rtFh68kFourCCToStr` maps a zero `fdType` to `""`, conflating an
-  untyped file with a folder** (Task 5 minor, deferred; `runtime/
-  clarus/fileh_68k.cla:409`) — both a folder and a file with no
-  Finder type set read back `type == ""` from `file.info`; `isDir` is
-  the only reliable discriminator today. Comment-only fix recorded,
-  unimplemented.
-
-- **Host `readdir` names over 255 bytes are silently clamped, and
-  `FhHRename`/`FhHMove`'s `snprintf` into a 512-byte `target` buffer
-  silently truncates a 255+255-byte path/newName combination**
-  (final-review wave, Minor 7, deferred; `runtime/host/rt_fileh.inc`'s
-  `rt_ext_FhHListNext:321`/`rt_ext_FhHRename:367`/`rt_ext_FhHMove:377`)
-  — neither ceiling sets `lastError`, both just quietly clip. An
-  HFS-authored path never reaches either limit (31-byte name cap), but
-  a host filesystem entry created by another program could.
+- **Sidecar `filehandle` minors** (Task 11) — `flush` fsyncs the unlinked
+  temp rather than the `._` sidecar; `close` cannot report a failed
+  write-back; the temp path is hardcoded `/tmp` and ignores `TMPDIR`.
+  All three only bind on the AppleDouble path (non-Apple host, or
+  `CLARUS_FORCE_APPLEDOUBLE=1`).
 
 ## Test coverage gaps (recorded by audits, mostly need real input/hardware)
 

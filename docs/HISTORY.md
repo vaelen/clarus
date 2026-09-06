@@ -5284,6 +5284,210 @@ pointing at where the raw native `TOTAL` lines are pasted. The snapshot
 was regenerated and the `cg68k`/`emitui` goldens reblessed for the
 runtime change, and full T2 re-run.
 
+## language-runtime-cleanup phase (2026-09-06, branch `language-runtime-cleanup`)
+
+Recorded here on the same terms as the two entries above: merging to
+`main` is Andrew's call and had not happened when this was written.
+
+**What it did.** `docs/TODO.md` had four sections — "Language features
+(needed)", "Compiler correctness / cleanup", "ABI / performance",
+"Runtime / Toolbox robustness" — holding **24 entries** accumulated
+across nine phases (2026-08-05 to 2026-09-02). Several forced the same
+expensive regeneration (every `testdata/cg68k/*.s` golden, the
+`clarusc/clarusc.c` snapshot, the ~55-minute Snow bake gate), so fixing
+them a phase at a time meant paying those costs repeatedly. Same shape as
+the `compiler-cleanup` phase one week earlier, same direction from
+Andrew: clear all four sections in ONE phase, structured so the goldens
+bless at most twice, the snapshot regenerates once, and the Snow gate
+fires once. All 24 are disposed of; all four sections are now gone.
+
+**The 24 dispositions.**
+
+- **23 fixed.** Array-literal initializers (`const t: int[256] = [...]`
+  in a dedicated constant-pool class, `var` arrays block-copied from it —
+  parser, checker, IR, lowering, both backends, the bake/CLIR format at
+  v8); window-owned menu sets (the `menus:` window property, a 32-bit
+  `menuMask` in the window descriptor, the bar re-synced on front change,
+  a 31-menu ceiling with its own diagnostic); `file.openRF` (a resource
+  fork opened as an ordinary `filehandle` — native `PBOpenRFSync`, host
+  xattr with an AppleDouble `._` sidecar fallback); the three
+  byte-identical extern-index scans converged onto `irExternLookup`; the
+  native-only `lst.pop().field` leak on a handle-bearing record;
+  function-calling global initializers on both lanes; the `KArr`
+  parameter ABI (fixed arrays of scalars pass by address, borrow-or-copy,
+  one shared predicate per lane); `ser.cla`'s per-byte reads;
+  `scripts/size-68k.sh`'s stale suite composition (it now reads the same
+  file lists the boot scripts do); `cg_init_globals` re-zeroing and
+  unrolling what the startup loop already covers; `crc16`/`crc16x`/
+  `crc32` migrated to `const` table-driven loops; buffered canvases
+  blitting every event-loop pass (a per-canvas dirty flag); the map
+  runtime minors (bounded probes, one grower, a field-order layout check,
+  `MAP_KEYBLOCK` deleted); the heap-jiggle waist widened from `UiNewPtr`
+  alone to every allocating Toolbox wrapper; `rtUiLayout`'s dead `ctrlMp`
+  assignment; the `(new)` doc-comment tags; `cases_catalog.cla`
+  discarding `PBCreateSync`'s error; `rt_fh_mac_time` duplicating
+  `rt_dt_now_mac`; `rtFhDevRename` re-issuing the catalog lookup;
+  `rtFh68kEnsureState`'s unchecked `SerNewPtr`; a zero `fdType` reading
+  back as `""`; the host `readdir`/rename/move buffers clipping silently;
+  and the `crc32` table pointer global in every program (deleted outright
+  with the lazy heap block behind it).
+- **1 excluded by design.** `rtUiTableClick` has no upper row clamp — a
+  deliberate tripwire (the runtime-ir-bake T2 blocker): a clamp would
+  mask the next stale-master-pointer bug. Its note moved verbatim into
+  `docs/ROADMAP.md`'s Standing rules so the section could be deleted, and
+  a copy stays in TODO.md's Runtime section where a runtime audit will
+  look.
+
+**Structure: two waves, two blesses, one snapshot.** Wave 1 (five
+parallel tasks — runtime and harness, no `clarusc/` change) ended with
+**bless #1** at `a5b3f8b`, plus a differential oracle proving every hunk
+came from the wave-1 runtime edits alone. Wave 2 (eight tasks: the
+compiler, the three features, plus two unplanned fix tasks, 7b and 12b)
+ended with **bless #2**: **44 existing `testdata/cg68k/*.s` listings
+rewritten, 3 new (`arrlit.s`, `karr_param.s`, `pop_rec.s`), 2 stale
+`*.seg2.s` DELETED** (`arr_whole_assign` and `recs` pack into one segment
+again after the init-stub shrink), **all 20 `testdata/emitui/*.c.golden`**,
+and — the one the plan did not predict — the FROZEN
+`testdata/emitui/uiblob_probe.{blob,dump}.golden`, which moved by exactly
+one byte (`table 0 6 rowsIdx` 49 → 48, because deleting `rtCrc32Tab`
+shifts every later `irGlobals` index down by one) and was hand-regenerated
+the way that script's own header sanctions.
+
+**The snapshot story is "once, but not where the plan put it."** A
+runtime module that USES a new language feature cannot be compiled by the
+frozen snapshot, so `text.cla`'s `const` CRC tables forced the
+regeneration early: Task 14 regenerated `clarusc/clarusc.c` at `9fa5134`
+(commit `2738898`), before its own change landed. Close-out was therefore
+a fixed-point VERIFY — `snapshot_fresh` was red for the tables
+themselves, one pass of the documented recipe fixed it, and the very next
+run reported `PASS snapshot_fresh` / `PASS fixed_point`. No second pass.
+
+**The `.s` line delta.** Across the whole `testdata/cg68k` corpus:
+**480,204 lines pre-phase (`7c9d5f8`) → 481,001 after bless #1
+(`a5b3f8b`) → 500,523 after bless #2.** The +19,522 headline is entirely
+the three NEW fixtures (+35,998) net of the two deleted stale segments
+(−2,113): **the 44 pre-existing goldens SHRANK by 14,363 lines**, which
+is `cg_init_globals` no longer emitting a `MOVE.L #0,D0 / MOVE.L
+D0,-N(A5)` pair per zero-default global and a `LEA/CLR.W (A0)+/DBRA` loop
+per zero-default array, net of the new `; constant pool: array literals`
+section that `text.cla`'s three 256-entry tables now put into every
+program that pulls a CRC in.
+
+**Size numbers** (`scripts/size-68k.sh`, pre-wave-2 baseline from Task 5
+on the left):
+
+```
+                      baseline (Task 5)              close-out
+SIZE coregui     bytes=282180 seg=9  bin=288896  ->  bytes=279584 seg=9  bin=286336
+SIZE toolboxgui  bytes=208464 seg=7  bin=213888  ->  bytes=209982 seg=7  bin=215552
+SIZE clarusc     bytes=1910688 seg=59 bin=1929600 -> bytes=2006308 seg=62 bin=2025472
+```
+
+`coregui` shrank (−2,596 bytes) on the init-stub work alone. `toolboxgui`
+grew slightly (+1,518) — two new suite cases and the menu-mask runtime.
+`clarusc` grew 5% (+95,620 bytes, 59 → 62 segments): the array-literal
+machinery, the menu-mask plumbing, `openRF`, and `text.cla`'s 3 KB of
+constant tables, which every program including the compiler now carries.
+
+**Two compiler-correctness bugs nobody had asked for.**
+
+1. **The statement-temp aliasing bug (Task 12b).** `cgStmt` reset the
+   statement-temp pool's bump allocators at the start of EVERY statement,
+   nested body statements included, while tracked temps are released at
+   the end of the statement that OWNS them. A compound statement's own
+   tracked temp — `for x in mk()`'s parked list handle, an `if` over a
+   handle-returning call — was therefore aliased by the first temp its
+   body allocated, and the end-of-statement release then ran
+   `rtListRelease` on whatever integer the body had last stored there.
+   **Any native program with `for x in f() { … }`, where `f` returns a
+   text/list/map, was releasing a wrong pointer before this fix.** It
+   surfaced as Task 12's blocker: adding ANY 39th `ToolboxTest` enum
+   member hung the toolbox suite's native boot before its first window
+   opened, because the member moved `SelfCheck`'s ordinal from 37 to 38
+   and `rtListRelease(ptr(37))` happened to be survivable where
+   `ptr(38)` was not. Six emulator boots of binary bisection found it.
+   The allocators are now saved and restored, not reset; frames grow with
+   nesting depth instead (the suite's worst function moved 4 bytes).
+   Pinned by `tests/cg68k/nested_tmp_alias.sh`.
+2. **The `EArrLit` seam (Task 7b).** The array-literal and `KArr`-ABI
+   tasks met at `cgIsAddressableArgShape`, and the fix's blast radius was
+   much wider than the seam: accepting `EArrLit` there is required for
+   EVERY native `var x: T[n] = [...]` initializer, which the base commit
+   aborted outright. `cgEmitStoreArr` also gained a guard turning a
+   non-addressable array source into a diagnostic instead of a SIGSEGV.
+
+**The Pack-7 find (Task 2), and a correction to the record.** Widening
+the jiggle waist went red, as the spec said it might — but not on a stale
+master pointer. `UiNumToString` was declared `= trap 0xA9EE reg`, and
+`$A9EE` is `_Pack7`, the Binary/Decimal Conversion Package's SHARED
+dispatch trap: its glue pushes a selector word (`MOVE.W #0,-(SP)`) BEFORE
+the trap, and `reg` pushes nothing, so the package read whatever 16-bit
+word happened to sit at `0(SP)` and dispatched wherever that pointed —
+sometimes NumToString, sometimes another Pack7 entry that left the
+destination string untouched or zero-lengthed. Latent and
+heap-layout-dependent for as long as it existed; the widened waist made
+it deterministic. The extern grammar has no "selector word AND register
+args" clause shape, so rather than grow one, the four call sites moved to
+a plain-Clarus `rtUiIntToPStr`. The stale prose this refuted — in
+`macgui.cla`, `cases_a5.cla`, `cases_formedit.cla` (which asserted the
+refuted "fixed register-convention" story outright) and `uitable.cla` —
+was corrected at close-out, and the dead C glue deleted.
+
+**The 32 KB self-compile cliff, named.** `cg_free_globals` scales with
+`irGlobals.count`, so ANY new compiler global grows EVERY segment of
+clarusc's own native build. Adding the array-literal pool machinery
+pushed `fpIntrCall3` over the 32 KB per-function ceiling; Task 7 split it
+into `fpIntrCall3`/`fpIntrCall3b` to recover ~10 KB. This phase spent the
+slack it found. The next compiler feature will hit the same wall, and the
+levers are another split or a table-driven `cg_free_globals` — recorded
+in `docs/TODO.md`.
+
+**Honest limits of the evidence.**
+
+- **Tasks 4 and 5 have no `cg68k` golden coverage at all** — no fixture
+  in the corpus reaches their code paths. Their hardware proof rests
+  entirely on the `core`/`toolbox` suite boots, which did pass.
+- **`cg68k` goldens are extremely coarse** (Task 6): 84,000 lines of diff
+  for a semantic change touching ~20 runtime functions, because one new
+  runtime function renumbers every label, JT slot and constant-pool
+  offset in every fixture. Every runtime task pays that review cost. A
+  label-normalizing comparison mode is a `docs/FUTURE.md` candidate.
+- **Suite case counts are hand-maintained in FIVE places each**, not the
+  two or three the plan named: core = the runner's `nCoreCases`,
+  `coresuite_68k.sh`, `coresuite_mac.sh`, `tests/testsuite/core_cases.txt`
+  and `CLAUDE.md`; toolbox = `nTbCases`, `toolbox_68k.sh`,
+  `toolbox_jiggle.sh`, `toolbox_mac.sh` and `CLAUDE.md`. Task 1 and
+  Task 11 each shipped one site short and were caught in review. Now
+  recorded in `CLAUDE.md`.
+- **The handle-bearing-array exception.** The `KArr` borrow ABI applies
+  only to arrays whose element carries no handle (`not
+  cgNeedsRelease(t)`) — one shared predicate on both sides of the call.
+  An array argument that needs a copy and exceeds the 512-byte big-temp
+  slot aborts the compile with a message naming the ceiling.
+- **The 31-menu cap** is a checker diagnostic, not a runtime limit: bit
+  31 of `menuMask` is the sign bit, so the 32nd menu declaration reports
+  `at most 31 menus per program`.
+- **`testdata/run/crc16.leaks` was deleted, not blessed** — it recorded
+  one live block, `rtCrc32Tab`'s lazily allocated table, which Task 14
+  retired. `selfhost/behavior` is T2-only, so Task 14 could not see it
+  move. Same coverage-gap class as `compiler-cleanup`'s `--rtbake`
+  lesson, one lane over.
+
+**Gates at close-out.** Full T2 (`scripts/test-merge.sh`) and the Snow
+`clarusc_bake` gate (`CLARUS_SNOW_TESTS=1 make test
+T=mactest/snow/clarusc_bake`, the one run covering both `bake.cla` edits)
+— see the Task 15 report in
+`.superpowers/sdd/2026-09-06-language-runtime-cleanup/` for the verbatim
+stage lines, the golden attributions, and the one open item close-out's
+T2 surfaced (a 2-byte `CanvasIdle` `FreeMem` sample, bisected to a
+one-time settle transient rather than a per-pass leak).
+
+Spec: `docs/superpowers/specs/2026-09-06-language-runtime-cleanup-design.md`
+(its §10 carries the as-built corrections); plan
+`docs/superpowers/plans/2026-09-06-language-runtime-cleanup.md`; per-task
+briefs, reports, reviews and the `progress.md` ledger in
+`.superpowers/sdd/2026-09-06-language-runtime-cleanup/`.
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of

@@ -1,44 +1,89 @@
-# Session status — 2026-09-05 (compiler-cleanup: COMPLETE on branch, full T2 green, NOT merged)
+# Session status — 2026-09-06 (language-runtime-cleanup: COMPLETE on branch, NOT merged)
 
-See §0 below for the current phase. The `string-perf` summary that
-follows is kept as the prior phase's handoff; `go-retirement` (also
-COMPLETE, not merged) is recorded in `docs/HISTORY.md` and
-`docs/ROADMAP.md` rather than here.
-
-Handoff summary. **The `string-perf` phase (branch `string-perf`, based
-on `main` at `54292df` = `061dbd5` + this phase's spec/plan docs;
-`textview-scroll-to-end` and everything before it are already merged to
-local `main`, NOT pushed) removes the two dominant measured string
-costs on the native 68k lane and adds `text.clear()`/`text.reserve(n)`.**
-Origin: 68kbbs's Snow bench doc (temporary, their repo) blamed ~200
-ms/row table draws on string ops with a guessed mechanism; three code
-traces + a new calibration bench (`testdata/bench/strbench.cla`,
-`TestStrBench68k`, gated `CLARUS_BENCH68K=1`) replaced the model: the
-real costs were the full-capacity zero loop per string local per call
-(~0.48 ms/local, `cgEmitFunc`) and out-of-line `rtStrIndex`/`rtStrLen`
-calls per `s[i]`/`s.length` (~30 instructions each). `string` returns
-were already one BlockMove — the doc's per-char-return model was wrong.
-
-Landed (5 commits over `54292df`): length-byte-only string-local init
-(`cgDefaultInitStrLenOnlyAt`, gated on the ledger's zeroed-tail probe —
-all consumers length-bounded on both lanes); inline `IStrLen`/
-`IStrIndex` (cold path delegates to `rtStrIndex` to avoid a second
-`cgRelClsPanicMsg` identity in the object/bake format); `clear()`/
-`reserve(n)` end to end (check/ir/lower/cg68k/cprint/shake/text.cla +
-reference; cprint arms in `fpIntrCall13` — `fpIntrCall3` trips the 32KB
-segment limit); suite pins `StrPerf` (core, now 81) and `ClearWarm`
-(toolbox, now 35 — FreeMem EXACTLY flat across 200 clear+refill
-cycles, hardware); snapshot regenerated to fixed point in one pass.
-After-bench: `mklocal4` 10549→1268 ticks (8.3x), `strindex` ~71→~24
-us/index; `echo*` unchanged (proven instruction-identical; Mini vMac
-bench rows are bimodal across runs — see ledger Task 7 and TODO.md).
-
-Deviations/discoveries are in the ledger
-(`.superpowers/sdd/2026-09-02-string-perf/progress.md`). Next after
-merge: 68kbbs re-pins its toolchain and re-measures on Snow; then
-AppleTalk -> MacTCP per `docs/ROADMAP.md`.
+See §0 below for the current phase. The `compiler-cleanup` summary that
+follows §0 is kept as the prior phase's handoff; `go-retirement` and
+`string-perf` (also COMPLETE, not merged) are recorded in
+`docs/HISTORY.md` and `docs/ROADMAP.md` rather than here.
 
 ## 0. START HERE next session
+
+**Current branch: `language-runtime-cleanup` (2026-09-06, based on
+`main` at `7c9d5f8` = `compiler-cleanup`'s tip + this phase's own
+spec/plan docs). COMPLETE — NOT merged (merge only on Andrew's
+request).** It cleared FOUR whole `docs/TODO.md` sections — "Language
+features (needed)", "Compiler correctness / cleanup", "ABI /
+performance", "Runtime / Toolbox robustness" — **24 entries** accumulated
+across nine phases, disposed of as **23 fixed / 1 excluded by design**
+(the `rtUiTableClick` tripwire, whose note moved verbatim into
+`docs/ROADMAP.md`'s Standing rules). Two waves, sixteen tasks, two golden
+blesses, one snapshot regeneration, one Snow gate.
+
+**Three user-visible features landed**: array-literal initializers
+(`const t: int[256] = [...]` in a dedicated constant-pool class),
+window-owned menu sets (the `menus:` window property), and `file.openRF`
+(a resource fork as an ordinary `filehandle`). Suites: core 82 (new
+`OpenRF`), toolbox 38 (new `CanvasIdle`, `WindowMenus`).
+
+**Two compiler-correctness bugs were found that nobody had asked for**,
+both native-lane:
+
+1. **The statement-temp aliasing bug (Task 12b)** — `cgStmt` reset the
+   statement-temp bump allocators per statement, so a compound
+   statement's own tracked temp aliased its body's first temp and the
+   end-of-statement release freed a wrong pointer. **Any native program
+   with `for x in f() { … }` (or `if f() { … }`) where `f` returns a
+   text/list/map was affected.** Pinned by
+   `tests/cg68k/nested_tmp_alias.sh`.
+2. **The `EArrLit` addressable-argument seam (Task 7b)** — accepting
+   `EArrLit` in `cgIsAddressableArgShape` is required for EVERY native
+   `var x: T[n] = [...]` initializer, which the base commit aborted.
+
+Full detail: `docs/HISTORY.md`'s "language-runtime-cleanup phase
+(2026-09-06)" entry, the spec's §10 (as-built notes),
+`docs/ROADMAP.md`'s "Where we are", and
+`.superpowers/sdd/2026-09-06-language-runtime-cleanup/` (per-task briefs,
+reports, reviews, and `progress.md`'s `Ruling:` lines).
+
+**Obligations this phase leaves.**
+
+- **One open item from close-out's own T2.** `mactest/toolbox_68k`'s
+  `CanvasIdle` case reports `FreeMem moved: 3557464 -> 3557462` — 2
+  bytes, deterministic, and bisected at close-out to commit `9fa5134`
+  (Task 12's menu-bar re-place fix). It is **NOT a per-pass leak**: an
+  instrumented boot shows FreeMem exactly flat across three further
+  200-tick batches, and the transient is a 2-byte oscillation across the
+  window's activation settle (`open` → `+2` after the first tick verb →
+  back to baseline after the second), which the case's `m0` sample
+  happens to land inside. `toolbox_jiggle` — the same 38 cases under
+  heap jiggle — is 38/38 green. Recommended fix is one extra settle tick
+  before `m0` in `testsuite/toolbox/cases_canvasidle.cla`; NOT applied,
+  because a runtime/fixture change at close-out is the controller's
+  ruling to make. Everything else in T2 passed.
+- **The Snow `clarusc_bake` gate was run** (the one run covering both
+  `bake.cla` edits, `bkFormatVersion` 7 → 8) — see the Task 15 report for
+  its result line and duration.
+- **New debt filed** in `docs/TODO.md` under this phase's own
+  sub-headings: array RETURNS still abort on `emit68k`
+  (`cgRetNeedsHidden` lacks `KArr`); `cpParamByRef` omits `KErr` where
+  `cgParamByRef` has it; **clarusc's native self-compile sits near the
+  32 KB per-function ceiling** (`cg_free_globals` scales with
+  `irGlobals.count`, so any new compiler global shrinks every segment —
+  Task 7 had to split `fpIntrCall3` to recover ~10 KB); `abort()` inside
+  a global initializer does not propagate on either lane;
+  `cg_init_globals`' frame is invisible to `cgStackHeuristic`; three
+  `rt_fileh.inc` minors; the AppleDouble sidecar minors.
+- **Suite case counts are hand-maintained in FIVE places each** — now
+  written into `CLAUDE.md`. Two tasks shipped one site short and were
+  caught only in review.
+- **Carried over, unchanged, from earlier phases** (nothing here is
+  discharged by this phase): the `macresident` /
+  `macresident_failed_compile` Snow scripts are ported but not
+  live-validated; the System 7 spot check filesystem-api owed; 68kbbs
+  needs to re-pin its toolchain and re-measure on Snow after
+  `string-perf`.
+- **Next on the roadmap after merge:** AppleTalk → MacTCP.
+
+## 0b. Prior phase — compiler-cleanup (2026-09-05, COMPLETE, NOT merged)
 
 **Current branch: `compiler-cleanup` (2026-09-05, based on `main` at
 `311af68` = `a1f9899` + this phase's own spec/plan/TODO docs).

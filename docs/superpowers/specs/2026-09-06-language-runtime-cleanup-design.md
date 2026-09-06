@@ -506,3 +506,135 @@ function and the host storage rule.
   compiler's own embedded runtime, so the snapshot regen at wave 2's end
   covers both waves; the wave-1 differential oracle is what proves
   nothing else moved.
+
+## 10. As-built notes
+
+Recorded at close-out (Task 15, 2026-09-06), the shape the
+compiler-cleanup spec's §8 set. Everything below is a deviation from, or
+a correction to, the sections above; the sections themselves are left as
+written so the design and what shipped can be compared.
+
+### Wave 1
+
+- **§2.2 — the jiggle red was not a stale master pointer.** Widening the
+  heap-jiggle waist to every allocating Toolbox wrapper did go red, as
+  the spec predicted it might, but the bug it exposed was a different
+  class entirely: `UiNumToString` was declared `= trap 0xA9EE reg`, and
+  `$A9EE` is `_Pack7`, the Binary/Decimal Conversion Package's SHARED
+  dispatch trap. Its glue is `MOVE.W #0,-(SP)` (the selector) before the
+  trap; `reg` pushes nothing, so the package read whatever 16-bit word sat
+  at `0(SP)` and dispatched wherever that pointed. The extern grammar has
+  no "selector word AND register args" clause shape, so rather than grow
+  one the four call sites moved to a plain-Clarus `rtUiIntToPStr`
+  (`uitable.cla`). `runtime/mac/rt_ext_mac.inc`'s glue was renamed to
+  match, so the cprint twins still link.
+- **§2.3 — `rt_map_layout_check` is a field-ORDER check, not an
+  absolute-offset one.** The spec asked for offsets; absolute 68k offsets
+  cannot hold on the 64-bit host where the check actually runs. It ships
+  as an `offsetof` chain plus a `sizeof`, which is what that lane can
+  assert.
+- **§2.7 — the host clamps report the raw `ENAMETOOLONG` errno**, not
+  `bdNamErr`. The brief said errno and the brief won; a Mac error code
+  from a host `readdir` would have been a fiction.
+- **§2.1 — `rtUiCanvasPattern` marks the canvas dirty although setting
+  the fill level changes no pixels.** Deliberate: over-blitting is the
+  safe direction. One comment in the function now says so.
+- **Tasks 4 and 5 have no `cg68k` golden coverage at all** — no fixture
+  reaches their code paths. Their hardware proof rests entirely on the
+  `core`/`toolbox` suite boots.
+
+### Wave 2
+
+- **§3.1 — the fix also deleted `cgPushArgs`' owning-read release
+  scheduling.** Tracking a handle-bearing `KRec` pop/shift result in
+  `cgMaterializeToTemp` means `cgFreeStmtTmps` already releases that slot
+  at end of statement; keeping the `cgPushArgs` arm walked the record
+  twice (an rc underflow on `take(lst.pop())`). The listing fixture
+  asserts three releases, not the brief's two.
+- **§3.1 (unplanned) — Task 12b, a compiler-correctness fix nobody
+  planned.** `cgStmt` reset the statement-temp bump allocators at the
+  start of EVERY statement, nested bodies included, while tracked temps
+  are released at the end of the statement that owns them. A compound
+  statement's own tracked temp — `for x in mk()`'s parked list handle, an
+  `if` over a handle-returning call — was therefore aliased by the first
+  temp its body allocated, and the end-of-statement release then ran on
+  whatever the body had left there. Silent wrong-pointer release in ANY
+  native program with that shape. Found by bisecting the toolbox suite's
+  native boot down to five bytes (adding a 39th `ToolboxTest` enum member
+  moved `SelfCheck`'s ordinal 37 → 38; `rtListRelease(ptr(37))` was
+  survivable, `ptr(38)` hung the app before its first window). The
+  allocators are now saved and restored rather than reset. Pinned by
+  `tests/cg68k/nested_tmp_alias.sh`.
+- **§3.2 — the recording mode is `cgRecMode == 2`, not `== 1`.** Mode 1
+  is a function's own measure stream; the `cg_init_globals` stub's
+  measure pass runs under mode 2 (the seg1-only startup bucket), so
+  recording on 1 would never have fired, and both allocators' growth
+  gates had to widen to `!= 1 and != 2`. `cgBigTmpFloor` applies on the
+  measure pass ONLY — applied unconditionally it added 4 × 512 bytes to
+  every program's `cg_init_globals` frame and moved every `cg68k` golden
+  by one `LINK` line. The stub also resets `cgCurFuncHasBail` and
+  `cgCurFuncIsUiDispatcher`, which it never had to before a global
+  initializer could call anything.
+- **§3.4 — the `KArr` borrow ABI needed a seam fix (Task 7b) with a much
+  wider blast radius than the seam.** `EArrLit` had to be accepted by
+  `cgIsAddressableArgShape`, and `cgEmitStoreArr` needed a guard turning
+  a non-addressable array source into a diagnostic instead of a SIGSEGV.
+  That arm was NOT merely a nicety for `sumOf(squares)`: it is required
+  for every native `var x: T[n] = [...]` initializer, which BASE aborted
+  outright. It is a correctness fix, not a codegen preference.
+- **§3.5 — the "non-zero-default scalar array" premise is wrong.**
+  `string(n)[N]` defaults are whole-slot zero like everything else, so
+  the CLR loop covers them; no special case was needed.
+- **§4 — array literals, as built.** The checker field is `arrLitLen`
+  (not `arrLitCount`); the element IR type comes from `irtElem`; the pool
+  SECTION HEADER is gated on the pool being non-empty (which is why
+  Task 7 moved zero golden bytes and Task 14 moved them all); there is a
+  `cgEmitGlobalInitExpr` `KArr` arm; `fpIntrCall3` had to be split into
+  `fpIntrCall3`/`fpIntrCall3b` to stay under the 32 KB per-function
+  ceiling; `lowArrLitIrIdx` is cleared in `bkInstallArenas` (a stale memo
+  across two compiles in one process); and `parseArrLit` accepts a
+  trailing comma. The grammar does NOT accept a newline before the
+  closing `]` — now stated in the reference.
+- **§4 — the 32 KB self-compile cliff is real and close.**
+  `cg_free_globals` scales with `irGlobals.count`, so any new compiler
+  global grows every segment. This phase spent its slack; the next
+  compiler feature will need another split or a table-driven
+  `cg_free_globals`.
+- **§5 — window-owned menu sets, as built.** No `lowMenuDeclIndex` was
+  added: the existing `uiMenuIdx` (single source-ordered dispatch,
+  `lower.cla:6482`) IS the index. The brief's `UiTestMenu(5, 1)`
+  assertion was wrong — the verb's first argument is a MenuID (base 2),
+  so `WmAlpha` is 4. `testdata/emitui/uiblob_probe.{blob,dump}.golden`
+  were hand-regenerated (sanctioned by `tests/emitui/uiblob.sh:17-24`)
+  and `tests/tools/uiblob.c`'s stride went to 52. Review round 1 fixed a
+  real ordering bug: a menu claimed by BOTH the outgoing and incoming
+  front window kept its old bar slot, so the sync now deletes every
+  CLAIMED menu and re-inserts the target set in declaration order.
+- **§6 — `file.openRF`, as built.** `PBOpenRFSync` was already declared
+  (`toolbox/files.cla:202`), so no new trap. `usesFileh` is generic and
+  needed no `openRF` arm. The host AppleDouble sidecar rewrite keeps only
+  entries 2 and 9 (a documented, deliberate loss). `EFTYPE` is
+  BSD/macOS-only and falls back to `EINVAL` elsewhere.
+- **`cgRetNeedsHidden` still lacks `KArr`**, so array RETURNS remain
+  unsupported on `emit68k` — §3.4 was the parameter ABI only. Recorded in
+  `docs/TODO.md`.
+
+### Close-out
+
+- **The snapshot was regenerated ONCE in Task 14, not once at wave 2's
+  end** (§7's "one snapshot"). A runtime module that uses a new language
+  feature cannot be compiled by the frozen snapshot, so `text.cla`'s
+  `const` CRC tables forced the regen early (commit `2738898`, taken at
+  `9fa5134`, before the tables landed). Task 15's Step 2 was therefore a
+  fixed-point VERIFY plus one more regen for the tables themselves —
+  `PASS snapshot_fresh` / `PASS fixed_point` on the next run, no second
+  pass.
+- **Three golden groups moved at bless #2, not two.** `emitui/uiblob` is
+  FROZEN (no bless variable) and moved by exactly one byte —
+  `table 0 6 rowsIdx` 49 → 48, because deleting the `rtCrc32Tab` global
+  shifted every later `irGlobals` index down by one.
+- **`testdata/run/crc16.leaks` was deleted, not blessed.** It recorded
+  one live block: `rtCrc32Tab`'s lazily allocated table, which Task 14
+  retired. `selfhost/behavior` is T2-only, so Task 14 could not see it.
+- **Suite case counts are hand-maintained in FIVE places each**, not the
+  two or three the plan named. Recorded in `CLAUDE.md`.
