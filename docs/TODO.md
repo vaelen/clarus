@@ -49,9 +49,7 @@ sub-heading.
   `done()` blocks ~34s inside `runSnow`'s poll loop, suspending
   died-mid-run detection for that window (now
   `tests/lib_snow.sh`'s `snow_run`); `tests/conntest/listen.sh`
-  has a stolen-port edge case; `examples/serialecho.cla`'s
-  quit-in-loop keeps scanning the rest of a chunk after the 3rd `Q`
-  instead of returning immediately.
+  has a stolen-port edge case.
 
 ### binary-files phase (2026-08-22)
 
