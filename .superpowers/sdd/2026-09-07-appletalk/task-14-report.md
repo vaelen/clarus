@@ -216,7 +216,9 @@ Nothing was deleted from the main repo's workspace.
 
 ## Step 5 — final `make -j t1`
 
-Run after the doc commits. Result: FINAL_T1_PLACEHOLDER
+Run after the doc commits. Result: PASS -- `make -j t1` on the close-out tip `0d3e317`: **104 passed,
+33 skipped, 0 failed**, exit 0. (Docs cannot break it; the snapshot
+commit could, which is why step 1 preceded the gate.)
 
 ## Concerns
 
