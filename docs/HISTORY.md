@@ -5607,8 +5607,11 @@ Both guards are pure aborts on paths that already aborted, so no
 emitted byte moved — `cg68k/goldens`, `image`, `determinism` and
 `selfemit` all passed untouched. One thing the plan did not predict: the
 RETURN fixture used to abort in the `SAssign` whole-array handle-bearing
-guard, not the value-context one (`return t` lowers through a store); the
-new `cgEmitFunc` guard preempts both.
+guard, not the value-context one (`return t` lowers through a store).
+Task 2 put the return guard in `cgEmitFunc`, which only preempts those
+when the offending callee is emitted before its caller; the final-review
+fix wave below moved it to a pre-pass over reachable functions, so it now
+wins regardless of definition order.
 
 **Task 3 — the `ArrReturn` core case** (`testsuite/core/cases_arr.cla`,
 `runner.cla`, commit `22be35e`). `caseArrReturn` exercises all four
@@ -5634,9 +5637,11 @@ more clause on `cgEmitInitGlobalsStub`'s per-global guard: skip
 `cgEmitGlobalInitExpr` when the initializer is a zero constant AND
 `cgDefaultIsAllZero(gt, 0, -1)`. Correct because `cgEmitStartup`'s
 below-A5 sweep has already zeroed every global before `cg_init_globals`
-runs. Lowering turns `false`, `nil`, `'\0'`, `0.0` and a zero-valued enum
-member into `EIntConst 0` and `ptr(0)` into `CvIntToPtr(EIntConst 0)`, so
-one predicate covers every spelling the reference admits; it is
+runs. Lowering turns `false`, `nil`, `0.0` and a zero-valued enum member into
+`EIntConst 0` and `ptr(0)` into `CvIntToPtr(EIntConst 0)`, so one
+predicate covers every spelling the reference admits (`'\0'` is NOT among
+them -- it is not a legal char literal in Clarus at all; the lexer reports
+`invalid escape sequence`); it is
 conservative in the safe direction (`char(0)` lowers to `CvIntToChar` and
 keeps its redundant store — a missed optimization, never a miscompile).
 The new `testdata/cg68k/globals_zero_init.cla` fixture went from **6
@@ -5667,8 +5672,12 @@ The reference's `rename` row now says an empty `path` fails.
 `rt_fileh_test.c`, commit `e5c8836`). Three fixes, all binding only on the
 AppleDouble path (non-Apple host, or `CLARUS_FORCE_APPLEDOUBLE=1`):
 `rt_ext_FhHOpenRF`'s `mkstemp` template honours `$TMPDIR` when set and
-non-empty (else `/tmp`), with an `ENAMETOOLONG` return instead of the old
-64-byte buffer smash; `rt_fh_sidecar_store` now `fflush`+`fsync`es the
+non-empty (else `/tmp`), and an over-long result now fails with
+`ENAMETOOLONG` rather than being truncated. The old code was never a
+buffer smash, as an earlier draft of this entry claimed: it `strcpy`'d a
+22-byte constant into `tmpl[64]`, which always fit. What changed is that
+`TMPDIR` is honoured at all, and that the now-variable-length result is
+bounds-checked; `rt_fh_sidecar_store` now `fflush`+`fsync`es the
 sidecar before `fclose` and reports failure, so `flush()` is a real
 durability barrier on the `._` file and not just on the unlinked temp; and
 `rt_ext_FhHClose` records a failed write-back in `rt_fh_errno` instead of
@@ -5676,16 +5685,20 @@ dropping the store's return. `close()` stays void by contract on every
 lane — the native lane drops `PBCloseSync` failures the same way — and
 the reference's `close` row now says the AppleDouble write-back is
 best-effort at close and `flush()` is the call that reports failure.
-`tests/hostrt/fileh.sh` gained seven CHECKs: `TMPDIR` honoured (a missing
+`runtime/host/rt_fileh_test.c` -- the C program `tests/hostrt/fileh.sh`
+builds and runs -- gained seven CHECKs: `TMPDIR` honoured (a missing
 directory ⇒ handle 0 + `ENOENT`; the scratch dir ⇒ works — the temp is
 unlinked at creation, so its location is observable only through that
 failure), and the flush barrier (the `._` sidecar read straight off disk
 BEFORE `close` already holds the bytes, at size 86 = an 82-byte header
 plus 4 fork bytes, with the right AppleDouble magic).
 
-**Goldens.** The bless touched **49 `testdata/cg68k/*.s` files**: the two
-NEW ones (`karr_return.s` from Task 1, `globals_zero_init.s` from Task 4)
-plus **47 existing**. Twenty-seven of the 47 are single-segment fixtures
+**Goldens.** Across THREE separate bless events -- Task 1's new
+`karr_return.s`, Task 4's 47 existing files plus its own new
+`globals_zero_init.s`, and the integrated re-bless of `karr_return.s`
+(`aa6475d`, see below) -- **49 distinct `testdata/cg68k/*.s` files**
+moved: the two NEW ones (`karr_return.s`, `globals_zero_init.s`) plus
+**47 existing**. Twenty-seven of the 47 are single-segment fixtures
 whose diff is a pure `-96 / +0` deletion — 48 `MOVE.L #0,D0` /
 `MOVE.[LB] D0,-N(A5)` pairs, the runtime modules' own zero-initialized
 globals, identical in every fixture. The other 20 belong to seven
@@ -5731,18 +5744,23 @@ progress.md` carries them verbatim):
   sites gate on `irtKind(...) == KArr`).
 - `tests/cg68k/array_assign.sh`'s new subcases lack the sibling no-`.bin`
   assertion the existing `handle_elem_no_bin` case makes, and their
-  comment claims definition order is load-bearing for the return subcase
-  — it is not (`cgEmitFunc`'s guard fires whenever `g` is emitted).
+  comment claims definition order is load-bearing for the return subcase.
+  (Both fixed in the fix wave below — and the order claim turned out to
+  be half true: order did not matter for WHERE the guard fired, but it
+  did decide WHICH abort the user saw.)
 - `globals_zero_init.cla`'s comment says "exactly ONE `MOVE.L #1,D0`"
   where two runtime globals also store 1; it should say one FIXTURE
-  global. `cgDefaultIsAllZero` is now evaluated twice per global
+  global. (Fixed in the fix wave below.) `cgDefaultIsAllZero` is now evaluated twice per global
   (brief-mandated, negligible — a pure compile-time predicate).
 - `ArrReturn`'s independence check omits `b[2]`, and its failure message
-  prints no values.
+  prints no values. `testsuite/core/cases_arr.cla:15` is a ~190-character
+  comment line, well past the file's usual wrap.
 - `rtFhMove` has no empty-path guard. Weaker hazard than `rename`:
   `rtFhDevMove` never consults `rtFhDevStat`, it hands the raw path to
   `PBCatMoveSync`, and `CatMove` has no volume-level semantics to fall
-  into.
+  into. (Promoted and fixed in the fix wave below — `ioDirID 0` + an
+  empty name still resolves to the program's own folder, so the move
+  would have relocated THAT.)
 - `rt_ext_FhHClose` reads `errno` AFTER `rt_fh_sidecar_store`'s own
   `fclose` has run, so the recorded value can be `fclose`'s, or 0 —
   clearing a prior `rt_fh_errno`. Same as the pre-existing `FhHFlush`
@@ -5750,6 +5768,33 @@ progress.md` carries them verbatim):
   close-path errno record has no test, and the sidecar `fsync` itself is
   unobservable from userspace, so that step is unpinned. `tmpl[1100]` is
   arbitrary-but-safe.
+
+**Final-review fix wave** (branch `sdd/nar-fixwave`). The whole-branch
+review returned one Important finding and several minors, fixed in one
+pass. The Important one: Task 2's return diagnostic lived in
+`cgEmitFunc`, and functions are emitted in `irFuncs` index order, so a
+caller defined BEFORE the handle-bearing callee hit the older generic
+`SAssign: whole-array assignment of handle-bearing elements unsupported
+natively` abort first -- no function name, no element type, and advice
+("assign element-wise") that cannot be followed for a call result. It is
+now `cgCheckArrayReturns`, a pre-pass over every `shakeReachable`
+function called once at the top of `cg68ProgramFork`, before
+`cg68Measure` -- the single point both entries into the measure/emit
+loops (`drive.cla`'s `emit68k` and `cg68k.cla`'s own bake object capture)
+pass through, and after `shakeProgram` on both. The `cgEmitFunc` copy is
+deleted; the message text is byte-identical. `tests/cg68k/array_assign.sh`
+gained the `handle_return_caller_first` subcase that pins exactly the
+caller-first order (asserting the generic abort does NOT win), plus the
+missing no-`.bin` assertions on all three handle-return/param subcases.
+The wave also: gave `rtFhMove` the empty-`path` guard `rtFhRename` got in
+Task 5 (an empty `path` would reach `PBCatMoveSync` as the program's own
+folder, `ioDirID 0` + empty name, and move THAT into `dirPath`; an empty
+`dirPath` stays legal as a destination) with two more `DirOps`
+assertions and the reference's `move` row updated; corrected
+`karr_return.cla`'s comment, which still named the deleted
+`cgEmitReturnArr`; and corrected `globals_zero_init.cla`'s "exactly ONE
+store pair" claim to name the FIXTURE global. No emitted byte moved: the
+whole `cg68k/` group passed unblessed.
 
 **Gates.** T1 (`scripts/test-task.sh --smoke`) over the integrated waves
 and the full T2 (`scripts/test-merge.sh`) run at close-out on the
