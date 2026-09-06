@@ -1,0 +1,924 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalk.cla: the shared AppleTalk runtime (2026-09-06 appletalk spec,
+// %5.2-%5.7 -- docs/superpowers/specs/2026-09-06-appletalk-design.md).
+// Fixed slot tables for the three resource kinds the spec caps (2
+// listeners, 2 browsers, 2 services), a pump that turns device state into
+// the reverse-waist `clar_*_fire_*` events, and the ADSP waist conn.cla
+// dispatches to for transport 1. Lane-neutral: every device-facing
+// operation goes through the rtAtDev*/rtAdspDev*/rtLsnDev* functions
+// below, which atalk_c.cla (host, real, over runtime/host/rt_atalk.inc's
+// LToUDP stack) and atalk_68k.cla (native; stubs until Task 9) answer --
+// the conn.cla/conn_c.cla/conn_68k.cla precedent exactly.
+//
+// DORMANT this task: lowering (Task 8) is what routes `svc.serve`,
+// `b.find`, `l.register`, `c.open(appletalk ...)` and the event dispatch
+// here, and what roots rtAtalkPump/rtAtalkAlive in shake.cla the way
+// irUsesConn already roots rtConnPump/rtConnAlive. Nothing in the tree
+// calls any function below yet.
+//
+// Spliced (drive.cla) on the HOST lane whenever `usesConn or usesAtalk`,
+// after conn.cla (this file reads conn.cla's own rtConnState slot table
+// for listener accepts, and calls rtConnSetFailed), after ser.cla (reuses
+// its already-declared SerNewPtr/SerDisposePtr scratch externs rather
+// than redeclaring a duplicate pair) and after text.cla/core.cla
+// (text values, rtPanic/rtSetLastErr). NOT on the 68k lane this task --
+// Task 9 adds it there with the real atalk_68k.cla bodies.
+//
+// Error principle (spec %4.5, inherited from conn.cla): contract
+// violations are runtime errors -- use of a nil resource, `reply` outside
+// a handler, `reply` twice. Everything environmental (AppleTalk down, a
+// name already in use, no response, slot table full, ADSP absent) is a
+// `failed` event or `false` + `lastError`, never a panic. Events NEVER
+// fire from the call that caused them: failures are staged per slot and
+// drained by the next rtAtalkPump pass, exactly as conn.cla does it.
+//
+// Native contract (Task 1 probe findings, binding on atalk_68k.cla, which
+// records them in full): every per-slot parameter block is fully re-zeroed
+// before each reuse (a reused NBP parameter block hung the Mac), and NBP
+// registers the socket number verbatim -- which is why rtAtDevRegister
+// takes `sock` and rtLsnDevSocket exists at all.
+
+const rtLsnMax: int = 2
+const rtBrsMax: int = 2
+const rtSvcMax: int = 2
+
+// Lookup slots (rt_atalk.inc's RT_AT_NLK / the native lookup PB table):
+// 0-1 belong to the two browsers (lk == browser slot), 2-9 to the eight
+// connection slots' name-form ADSP opens (lk == conn slot + 2), and 9 is
+// ALSO the sync slot rtSvcCallName borrows -- a `call("Name:Type", ...)`
+// is synchronous, so it cannot overlap with conn slot 7's own async open
+// within one program pass.
+const rtAtLookupMax: int = 10
+const rtAtNameCallLk: int = 9
+
+// errOpenDenied, reused as "this lane has no streams" -- the host twin's
+// whole rtAdspDev*/rtLsnDev* family returns it (spec %4.6: AppleTalk
+// stream open, register and therefore accepted fail with an event on the
+// host this phase).
+const rtAtErrNoHost: int = -1273
+
+// ATP's own hard limits (Inside AppleTalk 2nd ed.; RT_AT_MAXREQ /
+// RT_AT_MAXRESP). Enforced, never truncated (spec %4.4).
+const rtAtMaxReq: int = 578
+const rtAtMaxResp: int = 4624
+
+// The OSErrs the spec names by number.
+const rtAtErrNoConfirm: int = -1025    // nbpNoConfirm: no such name
+const rtAtErrDuplicate: int = -1027    // nbpDuplicate: name already in use
+const rtAtErrLenErr: int = -3106       // atpLenErr: request/reply over the limit
+const rtAtErrNoBridge: int = -93       // noBridgeErr: routerless net, zone is "*"
+const rtAtErrMemFull: int = -108       // memFullErr: scratch allocation failed
+
+// Slot states. Deliberately not conn.cla's stClosed/stOpen: those name a
+// device channel, these name "this resource variable is doing something"
+// (registered / searching / serving).
+const rtAtIdle: int = 0
+const rtAtActive: int = 1
+
+// ADSP per-slot open phases (rtAdspPhase below).
+const rtAdspNone: int = 0
+const rtAdspLookup: int = 1
+const rtAdspOpening: int = 2
+const rtAdspOpen: int = 3
+
+// ---- Reverse-waist synthesized dispatchers (Task 8 synthesizes their
+// bodies, self-rooted, exactly like conn.cla's own clar_conn_fire_*
+// family -- see that module's comment for the pattern). Bare externs with
+// literal names: these are the fixed cross-task interface. ----
+external func clar_lsn_fire_accepted(slot: int, c: int)
+external func clar_lsn_fire_failed(slot: int, code: int, msg: string)
+external func clar_brs_fire_found(slot: int, name: string, addr: int)
+external func clar_brs_fire_done(slot: int)
+external func clar_brs_fire_failed(slot: int, code: int, msg: string)
+external func clar_svc_fire_request(slot: int, op: int, req: text, from: int)
+external func clar_svc_fire_failed(slot: int, code: int, msg: string)
+
+// ---- State. Parallel fixed arrays (literal sizes -- parseType's array
+// grammar needs an int LITERAL, not a named const), conn.cla's own
+// convention. Every default (0/false/"") is already the correct rest
+// state. ----
+
+// rtAtUp: the stack has been brought up at least once. rtAtalkPump does
+// nothing at all until it is true, so a program that merely DECLARES a
+// service never opens a socket (and never calls into a null host stack).
+var rtAtUp: bool
+
+var rtLsnState: int[2]
+var rtLsnPendFailedCode: int[2]
+var rtLsnPendFailedMsg: string[2]
+
+var rtBrsState: int[2]
+var rtBrsPendFailedCode: int[2]
+var rtBrsPendFailedMsg: string[2]
+// rtBrsPendDone: the lookup window closed and every `found` has fired;
+// `done` itself fires from the NEXT pump pass. Keeping it staged (rather
+// than firing inline after the founds) is what makes rtAtalkAlive() hold
+// the host CLI loop open across the gap.
+var rtBrsPendDone: bool[2]
+
+var rtSvcState: int[2]
+var rtSvcSock: int[2]
+var rtSvcInHandler: bool[2]
+var rtSvcReplied: bool[2]
+var rtSvcPendFailedCode: int[2]
+var rtSvcPendFailedMsg: string[2]
+
+// rtSvcName/rtSvcType/rtLsnName/rtLsnType: the registered NBP entity, kept
+// so stop() can call rtAtDevRemove(obj, typ) -- that waist signature takes
+// the name from its caller (the native PRemoveName needs a fresh NTE), so
+// the name has to live somewhere, and nothing else on either lane
+// remembers it. (Deviation from the task brief's global table, which
+// listed no name storage: without these, `stop` could close the socket but
+// never remove the name, and spec %4.4/%5.4 both say stop removes it --
+// a restarted server would then fail with nbpDuplicate.)
+var rtSvcName: string[2]
+var rtSvcType: string[2]
+var rtLsnName: string[2]
+var rtLsnType: string[2]
+
+// rtAdspPhase: per CONNECTION slot (8, spec %4.1's grown slot table), not
+// per listener/browser/service. 0 none, 1 lookup pending, 2 open pending,
+// 3 open.
+var rtAdspPhase: int[8]
+// rtConnSlotTransport: 0 serial (or unused), 1 ADSP. Declared HERE rather
+// than in conn.cla so conn.cla gains no global of its own for a transport
+// it cannot reach without this module; conn.cla reads it from Task 9 on
+// (this module is always spliced alongside conn.cla, both lanes).
+var rtConnSlotTransport: int[8]
+
+// rtAtLastErr: the last device-layer error this module saw, kept for
+// diagnosis on both lanes (the native twin's own PB ioResult goes here
+// too). Never part of a public contract -- every user-visible failure
+// travels as a `failed` event or lastError.
+var rtAtLastErr: int
+
+// ---- Helpers ----
+
+// rtAtEnsureUp: lazily bring the stack up (host: open the LToUDP socket
+// and acquire a node; native: OpenDriver(".MPP"), never closed). 0 on
+// success. Cheap to call repeatedly -- both lanes short-circuit once up.
+func rtAtEnsureUp(): int {
+    var e: int
+
+    e = rtAtDevUp()
+    if e != 0 {
+        rtAtLastErr = e
+        return e
+    }
+    rtAtUp = true
+    return 0
+}
+
+// rtAtRegMsg: the message for a failed NBP registration. nbpDuplicate is
+// the one the spec names ("name in use"); anything else is generic.
+func rtAtRegMsg(code: int): string {
+    if code == rtAtErrDuplicate {
+        return "name in use"
+    }
+    return "could not register name"
+}
+
+func rtSvcSetFailed(slot: int, code: int, msg: string) {
+    // Keep-first, conn.cla's own rule: the EARLIEST undrained failure is
+    // the useful one. A 0 code is never a real failure on either lane, so
+    // the code field doubles as its own "nothing pending" flag.
+    if rtSvcPendFailedCode[slot] == 0 {
+        rtSvcPendFailedCode[slot] = code
+        rtSvcPendFailedMsg[slot] = msg
+    }
+    rtAtLastErr = code
+}
+
+func rtBrsSetFailed(slot: int, code: int, msg: string) {
+    if rtBrsPendFailedCode[slot] == 0 {
+        rtBrsPendFailedCode[slot] = code
+        rtBrsPendFailedMsg[slot] = msg
+    }
+    rtAtLastErr = code
+}
+
+func rtLsnSetFailed(slot: int, code: int, msg: string) {
+    if rtLsnPendFailedCode[slot] == 0 {
+        rtLsnPendFailedCode[slot] = code
+        rtLsnPendFailedMsg[slot] = msg
+    }
+    rtAtLastErr = code
+}
+
+// rtAtTextToPtr: copy a text's bytes into a fresh scratch block, the
+// pokeb marshal rtConnSendText uses (the caller disposes). ptr(0) on a
+// zero-length text OR on an allocation failure -- callers that must tell
+// the two apart check the length themselves first.
+func rtAtTextToPtr(t: text): ptr {
+    var p: ptr
+    var i: int
+    var n: int
+
+    n = t.length
+    if n == 0 {
+        return ptr(0)
+    }
+    p = SerNewPtr(n)
+    if p == ptr(0) {
+        return ptr(0)
+    }
+    i = 0
+    while i < n {
+        pokeb(p + i, int(t[i]))
+        i = i + 1
+    }
+    return p
+}
+
+// rtAtAppendBytes: append n bytes from p to t, one Toolbox-free byte at a
+// time. ponytail: per-byte append -- the batched alternative
+// (rtTextFromBytes) takes a raw text POINTER and is not reachable from a
+// `text` value, so this loop is the whole vocabulary available here. At
+// ATP sizes (<= 4624) it is bounded and cheap.
+func rtAtAppendBytes(t: text, p: ptr, n: int) {
+    var i: int
+
+    if p == ptr(0) {
+        return
+    }
+    i = 0
+    while i < n {
+        t.append(char(peekb(p + i)))
+        i = i + 1
+    }
+}
+
+// ---- Services (spec %4.4, %5.5) ----
+
+// rtSvcServe: open an ATP socket, register the NBP name pointing AT that
+// socket (the Task 1 probe finding: NBP registers the socket verbatim),
+// then arm the first get-request. Every failure is a staged `failed`
+// event -- serving is environmental from end to end.
+func rtSvcServe(h: int, name: string, typ: string) {
+    var slot: int
+    var e: int
+    var sock: int
+
+    if h == 0 {
+        rtPanic("use of nil service")
+    }
+    slot = h - 1
+    if rtSvcState[slot] == rtAtActive {
+        // Re-serving a serving variable would leak the old socket and the
+        // old name. Weather, not a bug (conn.cla treats a reopen the same
+        // way), so it stages a `failed` instead of panicking.
+        rtSvcSetFailed(slot, rtConnErrAlreadyOpen, "service already serving")
+        return
+    }
+    e = rtAtEnsureUp()
+    if e != 0 {
+        rtSvcSetFailed(slot, e, "AppleTalk unavailable")
+        return
+    }
+    sock = rtAtDevAtpOpen()
+    if sock <= 0 {
+        rtSvcSetFailed(slot, rtAtDevLastErr(), "could not open socket")
+        return
+    }
+    e = rtAtDevRegister(name, typ, sock)
+    if e != 0 {
+        rtAtDevAtpClose(sock)
+        rtSvcSetFailed(slot, e, rtAtRegMsg(e))
+        return
+    }
+    rtSvcSock[slot] = sock
+    rtSvcName[slot] = name
+    rtSvcType[slot] = typ
+    rtSvcState[slot] = rtAtActive
+    e = rtAtDevAtpArm(slot, sock)
+    if e != 0 {
+        // The socket and the name are live; only the receive arm failed.
+        // Stay serving and let the pump retry the arm each pass.
+        rtSvcSetFailed(slot, e, "could not receive requests")
+    }
+}
+
+// rtSvcReply: the ONE contract-checked entry point in this file besides
+// the nil checks -- calling it outside a request handler, or twice inside
+// one, is a program bug (spec %4.4), so both panic. A reply over ATP's
+// 4624-byte ceiling is not a bug though: it is weather (a `failed` event)
+// PLUS the automatic -1 reply, so the requester never waits out its
+// timeout (spec %4.4's own wording).
+func rtSvcReply(h: int, code: int, data: text) {
+    var slot: int
+    var n: int
+    var e: int
+    var scratch: ptr
+
+    if h == 0 {
+        rtPanic("use of nil service")
+    }
+    slot = h - 1
+    if not rtSvcInHandler[slot] {
+        rtPanic("reply outside a request handler")
+    }
+    if rtSvcReplied[slot] {
+        rtPanic("reply already sent")
+    }
+    // Set BEFORE any early return below: every path from here answers the
+    // request exactly once, and the pump's own auto-reply must not add a
+    // second response on top of the -1 the over-length path sends.
+    rtSvcReplied[slot] = true
+    n = data.length
+    if n > rtAtMaxResp {
+        rtSvcSetFailed(slot, rtAtErrLenErr, "reply too long")
+        rtAtDevAtpRespond(slot, -1, ptr(0), 0)
+        return
+    }
+    if n == 0 {
+        e = rtAtDevAtpRespond(slot, code, ptr(0), 0)
+        if e != 0 {
+            rtSvcSetFailed(slot, e, "reply failed")
+        }
+        return
+    }
+    scratch = rtAtTextToPtr(data)
+    if scratch == ptr(0) {
+        rtSvcSetFailed(slot, rtAtErrMemFull, "reply failed")
+        rtAtDevAtpRespond(slot, -1, ptr(0), 0)
+        return
+    }
+    // rtAtDevAtpRespond copies into the slot's own reply buffer (native:
+    // the async PSendResponse reads from THAT buffer, not from here), so
+    // the scratch goes back immediately.
+    e = rtAtDevAtpRespond(slot, code, scratch, n)
+    SerDisposePtr(scratch)
+    if e != 0 {
+        rtSvcSetFailed(slot, e, "reply failed")
+    }
+}
+
+// rtSvcReplyStr: `string` converts to `text` at a call argument (Ch3), so
+// the string form is the text form with no second marshal path.
+func rtSvcReplyStr(h: int, code: int, s: string) {
+    rtSvcReply(h, code, s)
+}
+
+// rtSvcStop: remove the name, close the socket. Idempotent (spec %4.4).
+func rtSvcStop(h: int) {
+    var slot: int
+
+    if h == 0 {
+        rtPanic("use of nil service")
+    }
+    slot = h - 1
+    if rtSvcState[slot] != rtAtActive {
+        return
+    }
+    rtAtDevRemove(rtSvcName[slot], rtSvcType[slot])
+    rtAtDevAtpClose(rtSvcSock[slot])
+    rtSvcState[slot] = rtAtIdle
+    rtSvcSock[slot] = 0
+    rtSvcName[slot] = ""
+    rtSvcType[slot] = ""
+}
+
+// rtSvcCallAddr: the synchronous requester (spec %4.4, Q3). true only when
+// a response arrived AND its code is 0; `reply` holds the payload either
+// way. Uses the requester's own socket, so a serving variable may call.
+func rtSvcCallAddr(h: int, addr: int, op: int, req: text, reply: text): bool {
+    var e: int
+    var n: int
+    var code: int
+    var p: ptr
+
+    if h == 0 {
+        rtPanic("use of nil service")
+    }
+    if req.length > rtAtMaxReq {
+        rtSetLastErr(rtAtErrLenErr, "request too long")
+        return false
+    }
+    e = rtAtEnsureUp()
+    if e != 0 {
+        rtSetLastErr(e, "AppleTalk unavailable")
+        return false
+    }
+    p = rtAtTextToPtr(req)
+    if p == ptr(0) and req.length > 0 {
+        rtSetLastErr(rtAtErrMemFull, "request too long")
+        return false
+    }
+    // Blocks up to timeout x retries (2 s x 3, fixed this phase). Incoming
+    // requests queue while it blocks; they are answered from the pump.
+    n = rtAtDevAtpCall(addr, op, p, req.length)
+    if p != ptr(0) {
+        SerDisposePtr(p)
+    }
+    if n < 0 {
+        rtAtLastErr = n
+        rtSetLastErr(n, "no response")
+        return false
+    }
+    code = rtAtDevAtpCallCode()
+    reply.clear()
+    rtAtAppendBytes(reply, rtAtDevAtpCallPtr(), n)
+    if code != 0 {
+        rtSetLastErr(code, "service")
+        return false
+    }
+    return true
+}
+
+// rtSvcCallName: the "Name:Type" target form -- a SYNCHRONOUS NBP lookup
+// (lookup slot 9, borrowed for exactly the duration of this call) and then
+// the address form. The spin is what makes it synchronous: the host's
+// lookup window is 3 x 1 s of real time driven by rtAtDevPoll; the native
+// twin's PLookupName is issued sync and comes back done on the first
+// LookupDone call, so the loop body never runs there.
+//
+// A program can never call its OWN registered name on the host lane: the
+// LToUDP stack drops its own datagrams (rt_atalk.inc's sender id), so the
+// lookup finds nothing and this returns false with nbpNoConfirm. Call by
+// address, or from a second process, to reach a local service on the host.
+func rtSvcCallName(h: int, name: string, op: int, req: text, reply: text): bool {
+    var e: int
+    var addr: int
+    var idx: int
+
+    if h == 0 {
+        rtPanic("use of nil service")
+    }
+    // "Name:Type" -- split at the first colon (Clarus has no by-reference
+    // string out-params, and two locals beat a pair of scratch globals).
+    idx = name.indexOf(':')
+    if idx < 0 {
+        rtSetLastErr(rtAtErrNoConfirm, "name not found")
+        return false
+    }
+    e = rtAtEnsureUp()
+    if e != 0 {
+        rtSetLastErr(e, "AppleTalk unavailable")
+        return false
+    }
+    e = rtAtDevLookupStart(rtAtNameCallLk, name[0, idx], name[idx + 1, name.length - idx - 1], "*")
+    if e != 0 {
+        rtAtLastErr = e
+        rtSetLastErr(e, "name not found")
+        return false
+    }
+    while not rtAtDevLookupDone(rtAtNameCallLk) {
+        rtAtDevPoll()
+    }
+    if rtAtDevLookupCount(rtAtNameCallLk) == 0 {
+        rtSetLastErr(rtAtErrNoConfirm, "name not found")
+        return false
+    }
+    addr = rtAtDevLookupAddr(rtAtNameCallLk, 0)
+    return rtSvcCallAddr(h, addr, op, req, reply)
+}
+
+// ---- Service browsers (spec %4.3, %5.6) ----
+
+// rtBrsFind: an NBP lookup of "=:typ@zone" on the browser's own lookup
+// slot. `zone` is "*" from the one-argument form (lowering passes it);
+// an empty string is treated the same way rather than reaching the wire.
+func rtBrsFind(h: int, typ: string, zone: string) {
+    var slot: int
+    var e: int
+    var z: string
+
+    if h == 0 {
+        rtPanic("use of nil serviceBrowser")
+    }
+    slot = h - 1
+    z = zone
+    if z == "" {
+        z = "*"
+    }
+    e = rtAtEnsureUp()
+    if e != 0 {
+        rtBrsSetFailed(slot, e, "AppleTalk unavailable")
+        return
+    }
+    e = rtAtDevLookupStart(slot, "=", typ, z)
+    if e != 0 {
+        rtBrsSetFailed(slot, e, "lookup failed")
+        return
+    }
+    rtBrsState[slot] = rtAtActive
+    rtBrsPendDone[slot] = false
+}
+
+// rtBrsZones: synchronous, and never fails from the caller's point of
+// view -- a routerless LocalTalk net (noBridgeErr), a missing .XPP, or any
+// other error all yield the one-element list ["*"], so programs never
+// special-case the routerless case (spec %4.3). The host lane always takes
+// that path: its stack has no ZIP at all.
+func rtBrsZones(h: int, out: list of string) {
+    if h == 0 {
+        rtPanic("use of nil serviceBrowser")
+    }
+    out.clear()
+    if rtAtEnsureUp() != 0 or rtAtDevZones(out) != 0 or out.count == 0 {
+        out.clear()
+        out.add("*")
+    }
+}
+
+// ---- Listeners (spec %4.2, %5.4) ----
+
+// rtLsnRegister: an ADSP connection listener plus the NBP registration of
+// its own DDP socket. On the host lane rtLsnDevInit returns rtAtErrNoHost
+// and this stages the spec's own "streams not available on this lane"
+// failure before any name is registered.
+func rtLsnRegister(h: int, name: string, typ: string) {
+    var slot: int
+    var e: int
+
+    if h == 0 {
+        rtPanic("use of nil listener")
+    }
+    slot = h - 1
+    if rtLsnState[slot] == rtAtActive {
+        rtLsnSetFailed(slot, rtConnErrAlreadyOpen, "listener already registered")
+        return
+    }
+    e = rtAtEnsureUp()
+    if e != 0 {
+        rtLsnSetFailed(slot, e, "AppleTalk unavailable")
+        return
+    }
+    e = rtLsnDevInit(slot)
+    if e != 0 {
+        if e == rtAtErrNoHost {
+            rtLsnSetFailed(slot, e, "streams not available on this lane")
+        } else {
+            rtLsnSetFailed(slot, e, "could not start listener")
+        }
+        return
+    }
+    e = rtAtDevRegister(name, typ, rtLsnDevSocket(slot))
+    if e != 0 {
+        rtLsnDevRemove(slot)
+        rtLsnSetFailed(slot, e, rtAtRegMsg(e))
+        return
+    }
+    e = rtLsnDevListen(slot)
+    if e != 0 {
+        rtAtDevRemove(name, typ)
+        rtLsnDevRemove(slot)
+        rtLsnSetFailed(slot, e, "could not start listener")
+        return
+    }
+    rtLsnName[slot] = name
+    rtLsnType[slot] = typ
+    rtLsnState[slot] = rtAtActive
+}
+
+// rtLsnStop: remove the name and the listener. Idempotent (spec %4.2).
+func rtLsnStop(h: int) {
+    var slot: int
+
+    if h == 0 {
+        rtPanic("use of nil listener")
+    }
+    slot = h - 1
+    if rtLsnState[slot] != rtAtActive {
+        return
+    }
+    rtAtDevRemove(rtLsnName[slot], rtLsnType[slot])
+    rtLsnDevRemove(slot)
+    rtLsnState[slot] = rtAtIdle
+    rtLsnName[slot] = ""
+    rtLsnType[slot] = ""
+}
+
+// ---- ADSP: connection transport 1 (spec %4.1, %5.3) ----
+
+// rtAdspOpenName: `c.open(appletalk "Name:Type")`. Starts the NBP lookup
+// on the connection slot's own lookup slot (slot + 2); rtAdspPoll drives
+// the rest. 0 means "started", not "open".
+func rtAdspOpenName(slot: int, spec: string): int {
+    var e: int
+    var idx: int
+
+    idx = spec.indexOf(':')
+    if idx < 0 {
+        return rtAtErrNoConfirm
+    }
+    e = rtAtEnsureUp()
+    if e != 0 {
+        return e
+    }
+    e = rtAtDevLookupStart(slot + 2, spec[0, idx], spec[idx + 1, spec.length - idx - 1], "*")
+    if e != 0 {
+        rtAtLastErr = e
+        return e
+    }
+    rtAdspPhase[slot] = rtAdspLookup
+    return 0
+}
+
+// rtAdspOpenAddr: `c.open(addr)` -- no lookup step, straight to the ADSP
+// open (spec %5.3).
+func rtAdspOpenAddr(slot: int, addr: int): int {
+    var e: int
+
+    e = rtAtEnsureUp()
+    if e != 0 {
+        return e
+    }
+    e = rtAdspDevOpen(slot, addr)
+    if e != 0 {
+        rtAtLastErr = e
+        rtAdspPhase[slot] = rtAdspNone
+        return e
+    }
+    rtAdspPhase[slot] = rtAdspOpening
+    return 0
+}
+
+// rtAdspPoll: one step of the per-slot open state machine, called from
+// conn.cla's pump (Task 9) for every slot whose transport is 1. 1 once the
+// connection BECAME open (reported exactly once -- an already-open slot
+// answers 0, so the pump cannot fire `opened` twice), 0 while pending,
+// the device error code (< 0) on failure.
+func rtAdspPoll(slot: int): int {
+    var e: int
+    var addr: int
+
+    if rtAdspPhase[slot] == rtAdspLookup {
+        if not rtAtDevLookupDone(slot + 2) {
+            return 0
+        }
+        if rtAtDevLookupCount(slot + 2) == 0 {
+            rtAdspPhase[slot] = rtAdspNone
+            return rtAtErrNoConfirm
+        }
+        addr = rtAtDevLookupAddr(slot + 2, 0)
+        e = rtAdspDevOpen(slot, addr)
+        if e != 0 {
+            rtAtLastErr = e
+            rtAdspPhase[slot] = rtAdspNone
+            return e
+        }
+        rtAdspPhase[slot] = rtAdspOpening
+        return 0
+    }
+    if rtAdspPhase[slot] == rtAdspOpening {
+        e = rtAdspDevOpenPoll(slot)
+        if e == 1 {
+            rtAdspPhase[slot] = rtAdspOpen
+            return 1
+        }
+        if e < 0 {
+            rtAtLastErr = e
+            rtAdspPhase[slot] = rtAdspNone
+            return e
+        }
+        return 0
+    }
+    return 0
+}
+
+func rtAdspAvail(slot: int): int {
+    return rtAdspDevAvail(slot)
+}
+
+// rtAdspReadInto: drain up to 1024 currently-available bytes into t with
+// ONE device read (spec %5.3's batched-read upgrade to conn.cla's
+// byte-at-a-time ponytail note). Returns the number of bytes appended.
+// The 1024 ceiling matches the per-slot ADSP receive queue.
+func rtAdspReadInto(slot: int, t: text): int {
+    var n: int
+    var got: int
+    var scratch: ptr
+
+    n = rtAdspDevAvail(slot)
+    if n <= 0 {
+        return 0
+    }
+    if n > 1024 {
+        n = 1024
+    }
+    scratch = SerNewPtr(n)
+    if scratch == ptr(0) {
+        rtAtLastErr = rtAtErrMemFull
+        return 0
+    }
+    got = rtAdspDevRead(slot, scratch, n)
+    if got < 0 {
+        rtAtLastErr = got
+        got = 0
+    }
+    rtAtAppendBytes(t, scratch, got)
+    SerDisposePtr(scratch)
+    return got
+}
+
+func rtAdspWrite(slot: int, p: ptr, n: int): int {
+    return rtAdspDevWrite(slot, p, n)
+}
+
+func rtAdspClose(slot: int) {
+    rtAdspDevClose(slot)
+    rtAdspPhase[slot] = rtAdspNone
+}
+
+func rtAdspGone(slot: int): bool {
+    return rtAdspDevGone(slot)
+}
+
+// rtConnOpenAddr: `connection.open(addr)` -- the address form of an
+// AppleTalk open, tagged transport 1 so conn.cla's pump (Task 9) polls
+// rtAdspPoll for this slot. An immediate failure stages conn.cla's own
+// pending `failed`; success is reported by that pump, never from here
+// (conn.cla's "not inside open itself" rule).
+func rtConnOpenAddr(h: int, addr: int) {
+    var slot: int
+    var e: int
+
+    if h == 0 {
+        rtPanic("use of nil connection")
+    }
+    slot = h - 1
+    rtConnSlotTransport[slot] = 1
+    e = rtAdspOpenAddr(slot, addr)
+    if e != 0 {
+        rtConnSetFailed(slot, e, "could not open connection")
+    }
+}
+
+// ---- The pump ----
+
+// rtAtalkPump: one event-loop pass. Called from the compiler-synthesized
+// clar_conn_pump() beside rtConnPump (spec %5.7), so neither the native UI
+// loop nor the host CLI loop needs a new hook.
+//
+// Per slot, in this order: drain a staged `failed` first (so a failure
+// always precedes whatever the device does next), then service the slot.
+// Services answer at most ONE request per pass and always answer it before
+// the next slot is polled -- the device layer answers "the last dequeued
+// request", so dequeuing a second one before replying would strand the
+// first (reqFailed, -1096).
+func rtAtalkPump() {
+    var i: int
+    var code: int
+    var pr: int
+    var n: int
+    var req: text
+    var free: int
+    var j: int
+    var e: int
+
+    if not rtAtUp {
+        return
+    }
+    rtAtDevPoll()
+
+    // ---- services ----
+    i = 0
+    while i < rtSvcMax {
+        if rtSvcPendFailedCode[i] != 0 {
+            code = rtSvcPendFailedCode[i]
+            rtSvcPendFailedCode[i] = 0
+            clar_svc_fire_failed(i, code, rtSvcPendFailedMsg[i])
+            rtSvcPendFailedMsg[i] = ""
+        }
+        if rtSvcState[i] == rtAtActive and not rtAtDevAtpRespBusy(i) {
+            pr = rtAtDevAtpPoll(i)
+            if pr < 0 {
+                rtSvcSetFailed(i, pr, "request failed")
+            } else if pr == 1 {
+                n = rtAtDevAtpReqLen(i)
+                if n > rtAtMaxReq {
+                    n = rtAtMaxReq
+                }
+                req = ""
+                rtAtAppendBytes(req, rtAtDevAtpReqPtr(i), n)
+                rtSvcInHandler[i] = true
+                rtSvcReplied[i] = false
+                clar_svc_fire_request(i, rtAtDevAtpReqOp(i), req, rtAtDevAtpReqFrom(i))
+                rtSvcInHandler[i] = false
+                if not rtSvcReplied[i] {
+                    // Spec %4.4: a handler that returns without replying
+                    // gets an automatic empty reply with code -1, so the
+                    // requester never waits out its timeout.
+                    rtSvcReplied[i] = true
+                    rtAtDevAtpRespond(i, -1, ptr(0), 0)
+                }
+            }
+            // Re-arm only once the reply is off the wire; the native lane
+            // sends responses asynchronously, so this is checked fresh.
+            if not rtAtDevAtpRespBusy(i) {
+                rtAtDevAtpArm(i, rtSvcSock[i])
+            }
+        }
+        i = i + 1
+    }
+
+    // ---- browsers ----
+    i = 0
+    while i < rtBrsMax {
+        if rtBrsPendFailedCode[i] != 0 {
+            code = rtBrsPendFailedCode[i]
+            rtBrsPendFailedCode[i] = 0
+            clar_brs_fire_failed(i, code, rtBrsPendFailedMsg[i])
+            rtBrsPendFailedMsg[i] = ""
+        } else if rtBrsPendDone[i] {
+            rtBrsPendDone[i] = false
+            clar_brs_fire_done(i)
+        } else if rtBrsState[i] == rtAtActive and rtAtDevLookupDone(i) {
+            rtBrsState[i] = rtAtIdle
+            n = rtAtDevLookupCount(i)
+            j = 0
+            while j < n {
+                clar_brs_fire_found(i, rtAtDevLookupName(i, j), rtAtDevLookupAddr(i, j))
+                j = j + 1
+            }
+            // `done` fires from the NEXT pass (spec %4.3's "then done"),
+            // which also keeps rtAtalkAlive() true across the gap.
+            rtBrsPendDone[i] = true
+        }
+        i = i + 1
+    }
+
+    // ---- listeners ----
+    i = 0
+    while i < rtLsnMax {
+        if rtLsnPendFailedCode[i] != 0 {
+            code = rtLsnPendFailedCode[i]
+            rtLsnPendFailedCode[i] = 0
+            clar_lsn_fire_failed(i, code, rtLsnPendFailedMsg[i])
+            rtLsnPendFailedMsg[i] = ""
+        }
+        if rtLsnState[i] == rtAtActive {
+            pr = rtLsnDevPoll(i)
+            if pr < 0 {
+                rtLsnSetFailed(i, pr, "listener failed")
+            } else if pr == 1 {
+                free = -1
+                j = 0
+                while j < rtConnMax {
+                    if free < 0 and rtConnState[j] == stClosed and rtAdspPhase[j] == rtAdspNone {
+                        free = j
+                    }
+                    j = j + 1
+                }
+                if free < 0 {
+                    // Spec %4.2: all slots taken -> deny, and the client's
+                    // own open fails. Not a failure of THIS program.
+                    rtLsnDevDeny(i)
+                } else {
+                    e = rtLsnDevAccept(i, free)
+                    if e != 0 {
+                        rtLsnSetFailed(i, e, "could not accept connection")
+                    } else {
+                        rtConnState[free] = stOpen
+                        rtConnSlotTransport[free] = 1
+                        rtAdspPhase[free] = rtAdspOpen
+                        // spec %4.2: no `opened` fires for an accepted
+                        // connection -- `accepted` IS the event.
+                        clar_lsn_fire_accepted(i, free + 1)
+                    }
+                }
+                rtLsnDevListen(i)
+            }
+        }
+        i = i + 1
+    }
+}
+
+// rtAtalkAlive: the host CLI pump loop's own lifetime condition (spec
+// %5.7) -- any service serving, any listener registered, any browser
+// searching, or any event still waiting to be drained.
+func rtAtalkAlive(): bool {
+    var i: int
+
+    i = 0
+    while i < rtSvcMax {
+        if rtSvcState[i] == rtAtActive or rtSvcPendFailedCode[i] != 0 {
+            return true
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < rtBrsMax {
+        if rtBrsState[i] == rtAtActive or rtBrsPendFailedCode[i] != 0 or rtBrsPendDone[i] {
+            return true
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < rtLsnMax {
+        if rtLsnState[i] == rtAtActive or rtLsnPendFailedCode[i] != 0 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// rtAtalkAddrStr: `string(addr)` (spec %4.3) -- "net.node.socket" from the
+// packed net<<16 | node<<8 | socket the whole waist passes addresses as.
+func rtAtalkAddrStr(addr: int): string {
+    return string((addr >> 16) & 0xFFFF) + "." + string((addr >> 8) & 0xFF) + "." + string(addr & 0xFF)
+}

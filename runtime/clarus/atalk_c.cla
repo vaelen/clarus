@@ -1,0 +1,313 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalk_c.cla: the C-lane AppleTalk waist (2026-09-06 appletalk spec %6),
+// eighteen `AtalkH`-prefixed externs (the family-prefix convention
+// conn_c.cla/ser.cla explain: a bare short name could collide with a user
+// program's own `external func` once everything is one translation unit)
+// rendering as rt_ext_AtalkH* in runtime/host/rt_atalk.inc -- a real
+// LocalTalk-over-UDP peer, so a host program is a genuine peer of the
+// emulators. atalk_68k.cla is this file's native twin: same rtAtDev*/
+// rtAdspDev*/rtLsnDev* names, real Toolbox _Control calls.
+//
+// What this lane does NOT have (spec %4.6, %6.1): ADSP and therefore
+// streams. Every rtAdspDev*/rtLsnDev* function below returns
+// rtAtErrNoHost, so `connection.open(appletalk ...)`, `listener.register`
+// and `accepted` fail with an event on the host, exactly as specified.
+// Zones are the same story: no ZIP, no router, so rtAtDevZones always
+// reports noBridgeErr and atalk.cla substitutes ["*"].
+//
+// Never spliced onto the native lane (drive.cla adds this module only for
+// non-68k builds), so it can freely assume the host stack.
+
+external func AtalkHUp(): int
+external func AtalkHNode(): int
+external func AtalkHRegister(obj: string, typ: string, sock: int): int
+external func AtalkHRemove(obj: string, typ: string): int
+external func AtalkHLookupStart(lk: int, obj: string, typ: string, zone: string): int
+external func AtalkHLookupDone(lk: int): int
+external func AtalkHLookupCount(lk: int): int
+external func AtalkHLookupAddr(lk: int, i: int): int
+external func AtalkHLookupName(lk: int, i: int, out: ptr)
+external func AtalkHAtpOpen(): int
+external func AtalkHAtpClose(sock: int)
+external func AtalkHAtpGetRequest(sock: int, buf: ptr, cap: int): int
+external func AtalkHAtpReqOp(): int
+external func AtalkHAtpReqFrom(): int
+external func AtalkHAtpSendResponse(sock: int, code: int, buf: ptr, n: int): int
+external func AtalkHAtpCall(addr: int, op: int, req: ptr, reqLen: int, resp: ptr, respCap: int): int
+external func AtalkHAtpCallCode(): int
+external func AtalkHPoll()
+
+// Scratch buffers, allocated once on the first successful Up (SerNewPtr /
+// SerDisposePtr are ser.cla's already-spliced NewPtr/DisposePtr externs --
+// conn.cla's own precedent for reusing them rather than redeclaring a
+// duplicate pair). One 578-byte request buffer per service slot, one
+// shared 4624-byte response buffer for the requester (rtSvcCallAddr is
+// synchronous, so one is enough), and a 68-byte Pascal-string buffer for
+// lookup names. `ptr` cannot be a container element, so the two request
+// buffers are two scalars behind rtAtCReqBuf() rather than an array.
+var rtAtCReqBuf0: ptr
+var rtAtCReqBuf1: ptr
+var rtAtCRespBuf: ptr
+var rtAtCNameBuf: ptr
+var rtAtCBufsOk: bool
+
+// Per-service-slot device state. The host stack's own request state is
+// process-global ("the LAST request AtalkHAtpGetRequest dequeued"), so
+// each slot snapshots op/from/len at poll time and atalk.cla's pump
+// answers one request before polling the next slot.
+var rtAtCSock: int[2]
+var rtAtCReqLen: int[2]
+var rtAtCReqOp: int[2]
+var rtAtCReqFrom: int[2]
+
+// rtAtCLastErr: the AtpOpen failure code, since that waist entry reports
+// "0 plus rtAtDevLastErr()" rather than returning the OSErr itself.
+var rtAtCLastErr: int
+
+func rtAtCReqBuf(slot: int): ptr {
+    if slot == 0 {
+        return rtAtCReqBuf0
+    }
+    return rtAtCReqBuf1
+}
+
+func rtAtDevUp(): int {
+    var e: int
+
+    e = AtalkHUp()
+    if e != 0 {
+        rtAtCLastErr = e
+        return e
+    }
+    if not rtAtCBufsOk {
+        if rtAtCReqBuf0 == ptr(0) {
+            rtAtCReqBuf0 = SerNewPtr(578)
+        }
+        if rtAtCReqBuf1 == ptr(0) {
+            rtAtCReqBuf1 = SerNewPtr(578)
+        }
+        if rtAtCRespBuf == ptr(0) {
+            rtAtCRespBuf = SerNewPtr(4624)
+        }
+        if rtAtCNameBuf == ptr(0) {
+            rtAtCNameBuf = SerNewPtr(68)
+        }
+        if rtAtCReqBuf0 == ptr(0) or rtAtCReqBuf1 == ptr(0) or rtAtCRespBuf == ptr(0) or rtAtCNameBuf == ptr(0) {
+            // memFullErr. Whatever DID allocate is kept, so a retry only
+            // asks for the blocks still missing.
+            rtAtCLastErr = -108
+            return -108
+        }
+        rtAtCBufsOk = true
+    }
+    return 0
+}
+
+func rtAtDevRegister(obj: string, typ: string, sock: int): int {
+    // Blocks ~3 s: the stack runs a verify lookup before claiming the
+    // name, exactly as the Mac's PRegisterName with verify does.
+    return AtalkHRegister(obj, typ, sock)
+}
+
+func rtAtDevRemove(obj: string, typ: string): int {
+    return AtalkHRemove(obj, typ)
+}
+
+func rtAtDevLookupStart(lk: int, obj: string, typ: string, zone: string): int {
+    return AtalkHLookupStart(lk, obj, typ, zone)
+}
+
+func rtAtDevLookupDone(lk: int): bool {
+    return AtalkHLookupDone(lk) != 0
+}
+
+func rtAtDevLookupCount(lk: int): int {
+    return AtalkHLookupCount(lk)
+}
+
+func rtAtDevLookupAddr(lk: int, i: int): int {
+    return AtalkHLookupAddr(lk, i)
+}
+
+// rtAtDevLookupName: "obj:type" as a Pascal string in the 68-byte scratch
+// buffer, read back byte by byte -- fileh_c.cla's rtFhDevListNext idiom.
+func rtAtDevLookupName(lk: int, i: int): string {
+    var s: string
+    var n: int
+    var j: int
+
+    if rtAtCNameBuf == ptr(0) {
+        return ""
+    }
+    AtalkHLookupName(lk, i, rtAtCNameBuf)
+    n = peekb(rtAtCNameBuf)
+    j = 0
+    while j < n {
+        s = s + char(peekb(rtAtCNameBuf + 1 + j))
+        j = j + 1
+    }
+    return s
+}
+
+// rtAtDevZones: this lane has no ZIP and no router, so the answer is
+// always noBridgeErr and atalk.cla substitutes ["*"] (spec %4.6). `out` is
+// deliberately untouched.
+func rtAtDevZones(out: list of string): int {
+    return rtAtErrNoBridge
+}
+
+func rtAtDevAtpOpen(): int {
+    var sock: int
+
+    sock = AtalkHAtpOpen()
+    if sock <= 0 {
+        rtAtCLastErr = sock
+        return 0
+    }
+    return sock
+}
+
+func rtAtDevAtpClose(sock: int) {
+    AtalkHAtpClose(sock)
+}
+
+// rtAtDevAtpArm: nothing to arm on this lane -- the host get-request is a
+// non-blocking poll, not an async parameter block -- so this only records
+// which socket rtAtDevAtpPoll should drain for the slot.
+func rtAtDevAtpArm(slot: int, sock: int): int {
+    rtAtCSock[slot] = sock
+    return 0
+}
+
+// rtAtDevAtpPoll: -1 from the glue means "nothing queued". A 0 is a
+// genuine ZERO-LENGTH request and must be dispatched like any other, so
+// the test is `< 0`, never `<= 0`.
+func rtAtDevAtpPoll(slot: int): int {
+    var n: int
+
+    if rtAtCSock[slot] == 0 {
+        return 0
+    }
+    n = AtalkHAtpGetRequest(rtAtCSock[slot], rtAtCReqBuf(slot), 578)
+    if n < 0 {
+        return 0
+    }
+    rtAtCReqLen[slot] = n
+    rtAtCReqOp[slot] = AtalkHAtpReqOp()
+    rtAtCReqFrom[slot] = AtalkHAtpReqFrom()
+    return 1
+}
+
+func rtAtDevAtpReqOp(slot: int): int {
+    return rtAtCReqOp[slot]
+}
+
+func rtAtDevAtpReqFrom(slot: int): int {
+    return rtAtCReqFrom[slot]
+}
+
+func rtAtDevAtpReqLen(slot: int): int {
+    return rtAtCReqLen[slot]
+}
+
+func rtAtDevAtpReqPtr(slot: int): ptr {
+    return rtAtCReqBuf(slot)
+}
+
+// rtAtDevAtpRespond: answers the request the last successful poll
+// dequeued (the glue's own contract), synchronously -- so a response is
+// never outstanding once this returns and rtAtDevAtpRespBusy is always
+// false on this lane.
+func rtAtDevAtpRespond(slot: int, code: int, p: ptr, n: int): int {
+    return AtalkHAtpSendResponse(rtAtCSock[slot], code, p, n)
+}
+
+func rtAtDevAtpRespBusy(slot: int): bool {
+    return false
+}
+
+// rtAtDevAtpCall: blocks up to 2 s x 3 retries inside the glue; incoming
+// requests queue meanwhile but are not answered until the next pump pass.
+func rtAtDevAtpCall(addr: int, op: int, req: ptr, reqLen: int): int {
+    return AtalkHAtpCall(addr, op, req, reqLen, rtAtCRespBuf, 4624)
+}
+
+func rtAtDevAtpCallCode(): int {
+    return AtalkHAtpCallCode()
+}
+
+func rtAtDevAtpCallPtr(): ptr {
+    return rtAtCRespBuf
+}
+
+func rtAtDevLastErr(): int {
+    return rtAtCLastErr
+}
+
+// rtAtDevPoll: drain the UDP socket and run the stack's timers. Guarded on
+// rtAtCBufsOk so it can never reach a stack that was never opened.
+func rtAtDevPoll() {
+    if rtAtCBufsOk {
+        AtalkHPoll()
+    }
+}
+
+// ---- ADSP + listener: absent on this lane (spec %4.6). Every entry
+// reports rtAtErrNoHost / 0 / false, which atalk.cla turns into the
+// "streams not available on this lane" failed event. ----
+
+func rtAdspDevOpen(slot: int, addr: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAdspDevOpenPoll(slot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAdspDevAvail(slot: int): int {
+    return 0
+}
+
+func rtAdspDevRead(slot: int, p: ptr, n: int): int {
+    return 0
+}
+
+func rtAdspDevWrite(slot: int, p: ptr, n: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAdspDevClose(slot: int) {
+}
+
+func rtAdspDevGone(slot: int): bool {
+    return true
+}
+
+func rtLsnDevInit(slot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtLsnDevListen(slot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtLsnDevPoll(slot: int): int {
+    return 0
+}
+
+func rtLsnDevAccept(slot: int, connSlot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtLsnDevDeny(slot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtLsnDevRemove(slot: int) {
+}
+
+func rtLsnDevSocket(slot: int): int {
+    return 0
+}

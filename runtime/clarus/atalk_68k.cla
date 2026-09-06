@@ -1,0 +1,195 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalk_68k.cla: the native (68k) AppleTalk waist -- atalk_c.cla's twin,
+// same rtAtDev*/rtAdspDev*/rtLsnDev* names, one file spliced per lane
+// (the conn_68k.cla/conn_c.cla precedent).
+//
+// STUBS this task (2026-09-06 appletalk spec, Task 7). Every function
+// below reports "unavailable" (rtAtErrNoHost / 0 / false / ""), and this
+// module is spliced NOWHERE yet: drive.cla adds atalk.cla + atalk_c.cla to
+// the host lane only, and the 68k lane stays untouched (zero cg68k golden
+// churn). Task 9 replaces the BODIES -- no signature here moves.
+//
+// What Task 9 puts in these bodies (spec %5.2-%5.6, and the Task 1 probe
+// findings, which are binding):
+//   - .MPP/.ATP/.XPP/.DSP opened lazily with OpenDriver and never closed
+//     (Apple's warning: other processes may be using them); every call is
+//     a _Control with a csCode through toolbox/devices.cla.
+//   - EVERY per-slot parameter block must be fully re-zeroed before each
+//     reuse. A reused NBP parameter block hung the Mac in the probe --
+//     this is not a tidiness rule.
+//   - NBP registers the socket number VERBATIM, so a service writes its
+//     own ATP socket into the NTE before PRegisterName (which is why
+//     rtAtDevRegister takes `sock`), and a listener registers its own DDP
+//     socket (rtLsnDevSocket). A program's own address is read back out of
+//     the NTE after registerName.
+//   - Services: POpenATPSkt, PRegisterName (verify on), async PGetRequest
+//     into the slot's 578-byte buffer; PSendResponse async with the XO
+//     flag (a sync XO PSendResponse only completes on the requester's TRel
+//     or the 30 s release timer), which is what rtAtDevAtpRespBusy is for
+//     -- the pump does not re-arm PGetRequest while a response is still
+//     outstanding.
+//   - Browsers: async PLookupName, maxToGet 32, interval 8 (1 s), count 3;
+//     rtAtDevLookupName/-Addr parse the return buffer's tuples (the
+//     runtime does its own NBPExtract). Zones: sync GetZoneList over .XPP
+//     until zipLastFlag, ["*"] on noBridgeErr/reqFailed/no .XPP.
+//   - ADSP: per slot a 242-byte CCB, 1 KB send and receive queues and a
+//     570-byte attention buffer; avail = dspStatus.recvQPending, read =
+//     sync dspRead into the caller's scratch, gone = CCB state >=
+//     sClosing, write = sync dspWrite with flush.
+//   - Listener: dspCLInit + PRegisterName + async dspCLListen; on
+//     completion dspInit + dspOpen(ocAccept) into the free connection
+//     slot, then re-arm; dspCLDeny when no slot is free.
+
+func rtAtDevUp(): int {
+    return rtAtErrNoHost
+}
+
+func rtAtDevRegister(obj: string, typ: string, sock: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAtDevRemove(obj: string, typ: string): int {
+    return rtAtErrNoHost
+}
+
+func rtAtDevLookupStart(lk: int, obj: string, typ: string, zone: string): int {
+    return rtAtErrNoHost
+}
+
+func rtAtDevLookupDone(lk: int): bool {
+    return true
+}
+
+func rtAtDevLookupCount(lk: int): int {
+    return 0
+}
+
+func rtAtDevLookupAddr(lk: int, i: int): int {
+    return 0
+}
+
+func rtAtDevLookupName(lk: int, i: int): string {
+    return ""
+}
+
+func rtAtDevZones(out: list of string): int {
+    return rtAtErrNoBridge
+}
+
+func rtAtDevAtpOpen(): int {
+    return 0
+}
+
+func rtAtDevAtpClose(sock: int) {
+}
+
+func rtAtDevAtpArm(slot: int, sock: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAtDevAtpPoll(slot: int): int {
+    return 0
+}
+
+func rtAtDevAtpReqOp(slot: int): int {
+    return 0
+}
+
+func rtAtDevAtpReqFrom(slot: int): int {
+    return 0
+}
+
+func rtAtDevAtpReqLen(slot: int): int {
+    return 0
+}
+
+func rtAtDevAtpReqPtr(slot: int): ptr {
+    return ptr(0)
+}
+
+func rtAtDevAtpRespond(slot: int, code: int, p: ptr, n: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAtDevAtpRespBusy(slot: int): bool {
+    return false
+}
+
+func rtAtDevAtpCall(addr: int, op: int, req: ptr, reqLen: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAtDevAtpCallCode(): int {
+    return 0
+}
+
+func rtAtDevAtpCallPtr(): ptr {
+    return ptr(0)
+}
+
+// rtAtDevLastErr: the stub's own "why AtpOpen returned 0" answer.
+func rtAtDevLastErr(): int {
+    return rtAtErrNoHost
+}
+
+// rtAtDevPoll: a no-op natively even once Task 9 lands -- the Toolbox
+// drivers run their own async parameter blocks, so there is nothing to
+// drain here; the pump polls ioResult per slot instead.
+func rtAtDevPoll() {
+}
+
+func rtAdspDevOpen(slot: int, addr: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAdspDevOpenPoll(slot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAdspDevAvail(slot: int): int {
+    return 0
+}
+
+func rtAdspDevRead(slot: int, p: ptr, n: int): int {
+    return 0
+}
+
+func rtAdspDevWrite(slot: int, p: ptr, n: int): int {
+    return rtAtErrNoHost
+}
+
+func rtAdspDevClose(slot: int) {
+}
+
+func rtAdspDevGone(slot: int): bool {
+    return true
+}
+
+func rtLsnDevInit(slot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtLsnDevListen(slot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtLsnDevPoll(slot: int): int {
+    return 0
+}
+
+func rtLsnDevAccept(slot: int, connSlot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtLsnDevDeny(slot: int): int {
+    return rtAtErrNoHost
+}
+
+func rtLsnDevRemove(slot: int) {
+}
+
+func rtLsnDevSocket(slot: int): int {
+    return 0
+}

@@ -275,6 +275,31 @@ extern int32_t rt_ext_ConnHWrite(int32_t, void *, int32_t);
 extern void rt_ext_ConnHClose(int32_t);
 extern int32_t rt_ext_ConnHGone(int32_t);
 extern void rt_ext_ConnHIdle(int32_t);
+extern void rt_ext_clar_lsn_fire_accepted(int32_t, int32_t);
+extern void rt_ext_clar_lsn_fire_failed(int32_t, int32_t, const uint8_t *);
+extern void rt_ext_clar_brs_fire_found(int32_t, const uint8_t *, int32_t);
+extern void rt_ext_clar_brs_fire_done(int32_t);
+extern void rt_ext_clar_brs_fire_failed(int32_t, int32_t, const uint8_t *);
+extern void rt_ext_clar_svc_fire_request(int32_t, int32_t, rt_text *, int32_t);
+extern void rt_ext_clar_svc_fire_failed(int32_t, int32_t, const uint8_t *);
+extern int32_t rt_ext_AtalkHUp(void);
+extern int32_t rt_ext_AtalkHNode(void);
+extern int32_t rt_ext_AtalkHRegister(const uint8_t *, const uint8_t *, int32_t);
+extern int32_t rt_ext_AtalkHRemove(const uint8_t *, const uint8_t *);
+extern int32_t rt_ext_AtalkHLookupStart(int32_t, const uint8_t *, const uint8_t *, const uint8_t *);
+extern int32_t rt_ext_AtalkHLookupDone(int32_t);
+extern int32_t rt_ext_AtalkHLookupCount(int32_t);
+extern int32_t rt_ext_AtalkHLookupAddr(int32_t, int32_t);
+extern void rt_ext_AtalkHLookupName(int32_t, int32_t, void *);
+extern int32_t rt_ext_AtalkHAtpOpen(void);
+extern void rt_ext_AtalkHAtpClose(int32_t);
+extern int32_t rt_ext_AtalkHAtpGetRequest(int32_t, void *, int32_t);
+extern int32_t rt_ext_AtalkHAtpReqOp(void);
+extern int32_t rt_ext_AtalkHAtpReqFrom(void);
+extern int32_t rt_ext_AtalkHAtpSendResponse(int32_t, int32_t, void *, int32_t);
+extern int32_t rt_ext_AtalkHAtpCall(int32_t, int32_t, void *, int32_t, void *, int32_t);
+extern int32_t rt_ext_AtalkHAtpCallCode(void);
+extern void rt_ext_AtalkHPoll(void);
 
 static const clar_str_255 clar_lit_0 = {24, {97, 114, 114, 97, 121, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 static const clar_str_255 clar_lit_1 = {25, {110, 111, 32, 101, 110, 117, 109, 32, 109, 101, 109, 98, 101, 114, 32, 119, 105, 116, 104, 32, 118, 97, 108, 117, 101}};
@@ -403,15 +428,41 @@ static const clar_str_255 clar_lit_123 = {23, {105, 110, 118, 97, 108, 105, 100,
 static const clar_str_255 clar_lit_124 = {25, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 111, 112, 101, 110, 32, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110}};
 static const clar_str_255 clar_lit_125 = {19, {99, 111, 110, 110, 101, 99, 116, 105, 111, 110, 32, 110, 111, 116, 32, 111, 112, 101, 110}};
 static const clar_str_255 clar_lit_126 = {12, {119, 114, 105, 116, 101, 32, 102, 97, 105, 108, 101, 100}};
-static const clar_str_255 clar_lit_127 = {10, {109, 111, 100, 101, 109, 58, 57, 54, 48, 48}};
-static const clar_str_255 clar_lit_128 = {5, {104, 101, 108, 108, 111}};
-static const clar_str_255 clar_lit_129 = {4, {115, 116, 111, 112}};
-static const clar_str_255 clar_lit_130 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_131 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_132 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_133 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_134 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_135 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_127 = {11, {110, 97, 109, 101, 32, 105, 110, 32, 117, 115, 101}};
+static const clar_str_255 clar_lit_128 = {23, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 103, 105, 115, 116, 101, 114, 32, 110, 97, 109, 101}};
+static const clar_str_255 clar_lit_129 = {18, {117, 115, 101, 32, 111, 102, 32, 110, 105, 108, 32, 115, 101, 114, 118, 105, 99, 101}};
+static const clar_str_255 clar_lit_130 = {23, {115, 101, 114, 118, 105, 99, 101, 32, 97, 108, 114, 101, 97, 100, 121, 32, 115, 101, 114, 118, 105, 110, 103}};
+static const clar_str_255 clar_lit_131 = {21, {65, 112, 112, 108, 101, 84, 97, 108, 107, 32, 117, 110, 97, 118, 97, 105, 108, 97, 98, 108, 101}};
+static const clar_str_255 clar_lit_132 = {21, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 111, 112, 101, 110, 32, 115, 111, 99, 107, 101, 116}};
+static const clar_str_255 clar_lit_133 = {26, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 99, 101, 105, 118, 101, 32, 114, 101, 113, 117, 101, 115, 116, 115}};
+static const clar_str_255 clar_lit_134 = {31, {114, 101, 112, 108, 121, 32, 111, 117, 116, 115, 105, 100, 101, 32, 97, 32, 114, 101, 113, 117, 101, 115, 116, 32, 104, 97, 110, 100, 108, 101, 114}};
+static const clar_str_255 clar_lit_135 = {18, {114, 101, 112, 108, 121, 32, 97, 108, 114, 101, 97, 100, 121, 32, 115, 101, 110, 116}};
+static const clar_str_255 clar_lit_136 = {14, {114, 101, 112, 108, 121, 32, 116, 111, 111, 32, 108, 111, 110, 103}};
+static const clar_str_255 clar_lit_137 = {12, {114, 101, 112, 108, 121, 32, 102, 97, 105, 108, 101, 100}};
+static const clar_str_255 clar_lit_138 = {16, {114, 101, 113, 117, 101, 115, 116, 32, 116, 111, 111, 32, 108, 111, 110, 103}};
+static const clar_str_255 clar_lit_139 = {11, {110, 111, 32, 114, 101, 115, 112, 111, 110, 115, 101}};
+static const clar_str_255 clar_lit_140 = {7, {115, 101, 114, 118, 105, 99, 101}};
+static const clar_str_255 clar_lit_141 = {14, {110, 97, 109, 101, 32, 110, 111, 116, 32, 102, 111, 117, 110, 100}};
+static const clar_str_255 clar_lit_142 = {1, {42}};
+static const clar_str_255 clar_lit_143 = {25, {117, 115, 101, 32, 111, 102, 32, 110, 105, 108, 32, 115, 101, 114, 118, 105, 99, 101, 66, 114, 111, 119, 115, 101, 114}};
+static const clar_str_255 clar_lit_144 = {1, {61}};
+static const clar_str_255 clar_lit_145 = {13, {108, 111, 111, 107, 117, 112, 32, 102, 97, 105, 108, 101, 100}};
+static const clar_str_255 clar_lit_146 = {19, {117, 115, 101, 32, 111, 102, 32, 110, 105, 108, 32, 108, 105, 115, 116, 101, 110, 101, 114}};
+static const clar_str_255 clar_lit_147 = {27, {108, 105, 115, 116, 101, 110, 101, 114, 32, 97, 108, 114, 101, 97, 100, 121, 32, 114, 101, 103, 105, 115, 116, 101, 114, 101, 100}};
+static const clar_str_255 clar_lit_148 = {34, {115, 116, 114, 101, 97, 109, 115, 32, 110, 111, 116, 32, 97, 118, 97, 105, 108, 97, 98, 108, 101, 32, 111, 110, 32, 116, 104, 105, 115, 32, 108, 97, 110, 101}};
+static const clar_str_255 clar_lit_149 = {24, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 115, 116, 97, 114, 116, 32, 108, 105, 115, 116, 101, 110, 101, 114}};
+static const clar_str_255 clar_lit_150 = {14, {114, 101, 113, 117, 101, 115, 116, 32, 102, 97, 105, 108, 101, 100}};
+static const clar_str_255 clar_lit_151 = {15, {108, 105, 115, 116, 101, 110, 101, 114, 32, 102, 97, 105, 108, 101, 100}};
+static const clar_str_255 clar_lit_152 = {27, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 97, 99, 99, 101, 112, 116, 32, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110}};
+static const clar_str_255 clar_lit_153 = {10, {109, 111, 100, 101, 109, 58, 57, 54, 48, 48}};
+static const clar_str_255 clar_lit_154 = {5, {104, 101, 108, 108, 111}};
+static const clar_str_255 clar_lit_155 = {4, {115, 116, 111, 112}};
+static const clar_str_255 clar_lit_156 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_157 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_158 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_159 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_160 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_161 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -538,6 +589,10 @@ typedef struct {
 typedef struct { int32_t e[4]; } clar_arr_int_4;
 typedef struct { uint8_t e[4]; } clar_arr_bool_4;
 typedef struct { clar_str_255 e[4]; } clar_arr_str255_4;
+typedef struct { int32_t e[2]; } clar_arr_int_2;
+typedef struct { clar_str_255 e[2]; } clar_arr_str255_2;
+typedef struct { uint8_t e[2]; } clar_arr_bool_2;
+typedef struct { int32_t e[8]; } clar_arr_int_8;
 
 static const int32_t clar_enum_saveChoice[] __attribute__((unused)) = {0, 1, 2};
 static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
@@ -672,6 +727,37 @@ static clar_arr_int_4 cv_rtConnPendFailedCode;
 static clar_arr_str255_4 cv_rtConnPendFailedMsg;
 static int32_t cv_rtConnParsePortIdx;
 static int32_t cv_rtConnParseBaud;
+static int32_t cv_rtAtUp;
+static clar_arr_int_2 cv_rtLsnState;
+static clar_arr_int_2 cv_rtLsnPendFailedCode;
+static clar_arr_str255_2 cv_rtLsnPendFailedMsg;
+static clar_arr_int_2 cv_rtBrsState;
+static clar_arr_int_2 cv_rtBrsPendFailedCode;
+static clar_arr_str255_2 cv_rtBrsPendFailedMsg;
+static clar_arr_bool_2 cv_rtBrsPendDone;
+static clar_arr_int_2 cv_rtSvcState;
+static clar_arr_int_2 cv_rtSvcSock;
+static clar_arr_bool_2 cv_rtSvcInHandler;
+static clar_arr_bool_2 cv_rtSvcReplied;
+static clar_arr_int_2 cv_rtSvcPendFailedCode;
+static clar_arr_str255_2 cv_rtSvcPendFailedMsg;
+static clar_arr_str255_2 cv_rtSvcName;
+static clar_arr_str255_2 cv_rtSvcType;
+static clar_arr_str255_2 cv_rtLsnName;
+static clar_arr_str255_2 cv_rtLsnType;
+static clar_arr_int_8 cv_rtAdspPhase;
+static clar_arr_int_8 cv_rtConnSlotTransport;
+static int32_t cv_rtAtLastErr;
+static void * cv_rtAtCReqBuf0;
+static void * cv_rtAtCReqBuf1;
+static void * cv_rtAtCRespBuf;
+static void * cv_rtAtCNameBuf;
+static int32_t cv_rtAtCBufsOk;
+static clar_arr_int_2 cv_rtAtCSock;
+static clar_arr_int_2 cv_rtAtCReqLen;
+static clar_arr_int_2 cv_rtAtCReqOp;
+static clar_arr_int_2 cv_rtAtCReqFrom;
+static int32_t cv_rtAtCLastErr;
 static int32_t cv_conn;
 static void clar_init_globals(void) {
     cv_rtUiMenuHandlesArr = 0;
@@ -782,6 +868,83 @@ static void clar_init_globals(void) {
     }
     cv_rtConnParsePortIdx = 0;
     cv_rtConnParseBaud = 0;
+    cv_rtAtUp = 0;
+    for (int32_t ix5 = 0; ix5 < 2; ix5++) {
+        cv_rtLsnState.e[ix5] = 0;
+    }
+    for (int32_t ix6 = 0; ix6 < 2; ix6++) {
+        cv_rtLsnPendFailedCode.e[ix6] = 0;
+    }
+    for (int32_t ix7 = 0; ix7 < 2; ix7++) {
+        cv_rtLsnPendFailedMsg.e[ix7] = (clar_str_255){0};
+    }
+    for (int32_t ix8 = 0; ix8 < 2; ix8++) {
+        cv_rtBrsState.e[ix8] = 0;
+    }
+    for (int32_t ix9 = 0; ix9 < 2; ix9++) {
+        cv_rtBrsPendFailedCode.e[ix9] = 0;
+    }
+    for (int32_t ix10 = 0; ix10 < 2; ix10++) {
+        cv_rtBrsPendFailedMsg.e[ix10] = (clar_str_255){0};
+    }
+    for (int32_t ix11 = 0; ix11 < 2; ix11++) {
+        cv_rtBrsPendDone.e[ix11] = 0;
+    }
+    for (int32_t ix12 = 0; ix12 < 2; ix12++) {
+        cv_rtSvcState.e[ix12] = 0;
+    }
+    for (int32_t ix13 = 0; ix13 < 2; ix13++) {
+        cv_rtSvcSock.e[ix13] = 0;
+    }
+    for (int32_t ix14 = 0; ix14 < 2; ix14++) {
+        cv_rtSvcInHandler.e[ix14] = 0;
+    }
+    for (int32_t ix15 = 0; ix15 < 2; ix15++) {
+        cv_rtSvcReplied.e[ix15] = 0;
+    }
+    for (int32_t ix16 = 0; ix16 < 2; ix16++) {
+        cv_rtSvcPendFailedCode.e[ix16] = 0;
+    }
+    for (int32_t ix17 = 0; ix17 < 2; ix17++) {
+        cv_rtSvcPendFailedMsg.e[ix17] = (clar_str_255){0};
+    }
+    for (int32_t ix18 = 0; ix18 < 2; ix18++) {
+        cv_rtSvcName.e[ix18] = (clar_str_255){0};
+    }
+    for (int32_t ix19 = 0; ix19 < 2; ix19++) {
+        cv_rtSvcType.e[ix19] = (clar_str_255){0};
+    }
+    for (int32_t ix20 = 0; ix20 < 2; ix20++) {
+        cv_rtLsnName.e[ix20] = (clar_str_255){0};
+    }
+    for (int32_t ix21 = 0; ix21 < 2; ix21++) {
+        cv_rtLsnType.e[ix21] = (clar_str_255){0};
+    }
+    for (int32_t ix22 = 0; ix22 < 8; ix22++) {
+        cv_rtAdspPhase.e[ix22] = 0;
+    }
+    for (int32_t ix23 = 0; ix23 < 8; ix23++) {
+        cv_rtConnSlotTransport.e[ix23] = 0;
+    }
+    cv_rtAtLastErr = 0;
+    cv_rtAtCReqBuf0 = 0;
+    cv_rtAtCReqBuf1 = 0;
+    cv_rtAtCRespBuf = 0;
+    cv_rtAtCNameBuf = 0;
+    cv_rtAtCBufsOk = 0;
+    for (int32_t ix24 = 0; ix24 < 2; ix24++) {
+        cv_rtAtCSock.e[ix24] = 0;
+    }
+    for (int32_t ix25 = 0; ix25 < 2; ix25++) {
+        cv_rtAtCReqLen.e[ix25] = 0;
+    }
+    for (int32_t ix26 = 0; ix26 < 2; ix26++) {
+        cv_rtAtCReqOp.e[ix26] = 0;
+    }
+    for (int32_t ix27 = 0; ix27 < 2; ix27++) {
+        cv_rtAtCReqFrom.e[ix27] = 0;
+    }
+    cv_rtAtCLastErr = 0;
     cv_conn = 0;
     cv_conn = 1;
 }
@@ -1589,9 +1752,9 @@ static int32_t clar_fn_rtConnDevGone(int32_t cv_slot) {
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     clar_str_255 cv_msg;
     cv_msg = (clar_str_255){0};
-    clar_fn_rtConnOpen(cv_conn, 2, &(clar_lit_127));
-    clar_fn_rtConnSendStr(cv_conn, &(clar_lit_128));
-    clar_fn_rtStrStore((void*)&(clar_abort_msg), 255, (void*)(const uint8_t*)&(clar_lit_129));
+    clar_fn_rtConnOpen(cv_conn, 2, &(clar_lit_153));
+    clar_fn_rtConnSendStr(cv_conn, &(clar_lit_154));
+    clar_fn_rtStrStore((void*)&(clar_abort_msg), 255, (void*)(const uint8_t*)&(clar_lit_155));
     clar_aborting = 1;
     goto att0_h;
     goto att0_a;
@@ -1664,32 +1827,32 @@ static void clar_fn_clar_conn_pump(void) {
 }
 
 static void clar_fn_clar_ui_fire_winevent(int32_t cv_winIdx, void * cv_inst, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
-    rt_log((const uint8_t*)&(clar_lit_130));
+    rt_log((const uint8_t*)&(clar_lit_156));
     rt_quit((int32_t)(1));
 }
 
 static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
-    rt_log((const uint8_t*)&(clar_lit_131));
+    rt_log((const uint8_t*)&(clar_lit_157));
     rt_quit((int32_t)(1));
 }
 
 static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil) {
-    rt_log((const uint8_t*)&(clar_lit_132));
+    rt_log((const uint8_t*)&(clar_lit_158));
     rt_quit((int32_t)(1));
 }
 
 static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
-    rt_log((const uint8_t*)&(clar_lit_133));
+    rt_log((const uint8_t*)&(clar_lit_159));
     rt_quit((int32_t)(1));
 }
 
 static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) {
-    rt_log((const uint8_t*)&(clar_lit_134));
+    rt_log((const uint8_t*)&(clar_lit_160));
     rt_quit((int32_t)(1));
 }
 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
-    rt_log((const uint8_t*)&(clar_lit_135));
+    rt_log((const uint8_t*)&(clar_lit_161));
     rt_quit((int32_t)(1));
     return 0;
     return 0;

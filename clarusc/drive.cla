@@ -1646,12 +1646,30 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     // already spliced above unconditionally on every lane, so simply
     // appending here satisfies both regardless of which branch below is
     // taken.
+    //
+    // AppleTalk (2026-09-06 appletalk spec %7, Task 7): on the HOST lane
+    // atalk.cla + atalk_c.cla travel WITH conn.cla, spliced together
+    // whenever `usesConn or usesAtalk`. The two modules are one unit:
+    // atalk.cla owns the ADSP transport conn.cla dispatches to and reads
+    // conn.cla's own rtConnState slot table for listener accepts, so
+    // neither is useful alone. A serial-only host program therefore
+    // carries the atalk_c.cla wrappers as dead weight -- the same "cheap
+    // dead weight" argument rt.c already makes for its unconditional
+    // .inc includes, and it keeps every AppleTalk program's manifest
+    // identical to every connection program's.
+    // The 68k lane is deliberately UNTOUCHED here: Task 9 adds
+    // atalk.cla/atalk_68k.cla to the unconditional native superset once
+    // the native twin has real bodies, in the golden-rebless wave that
+    // change earns. Splicing them today would move every native
+    // program's global numbering for a module nothing calls yet.
     if want68k {
         neededMods.add("conn.cla")
         neededMods.add("conn_68k.cla")
-    } else if usesConn {
+    } else if usesConn or usesAtalk {
         neededMods.add("conn.cla")
         neededMods.add("conn_c.cla")
+        neededMods.add("atalk.cla")
+        neededMods.add("atalk_c.cla")
     }
     if want68k {
         neededMods.add("native.cla")
@@ -1937,13 +1955,45 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
 // Diagnostics stay in the existing `diags`/`diagPaths` stores exactly as
 // before this task; driveCompile itself never prints or quits -- every
 // front end renders them and decides its own exit code.
+// driveRtbakeFallback: abandon the --rtbake path for THIS compile and
+// re-run driveCompile from source. Two callers, both in driveCompile
+// below: a provable manifest drift (Phase A), and a host program that
+// uses one of the usage-gated runtime pairs the C-lane bake omits (after
+// the check pass, which is what sets usesConn/usesFileh/usesAtalk).
+// The caller logs its own reason first -- this is just the machinery.
+func driveRtbakeFallback(entries: list of string, testapi: bool): bool {
+    var ok: bool
+
+    haveRtbake = false
+    // clir-load-perf Task 7 (design B): a fallen-back session must
+    // RE-PARSE if the bake becomes usable again -- the pending state
+    // describes a runtime whose sources have since changed on disk, so
+    // nothing may be installed from it again without a fresh parse (and
+    // rtbakeBytes is deliberately still held: macgui only frees the
+    // buffer while bkParsedValid holds, so the next compile's
+    // gcResolveBakePath re-reads the resource and this one's own re-parse
+    // has bytes to work from).
+    bkParsedValid = false
+    bkManifestDriftPath = ""
+    driveReset()
+    resetDiags()
+    astReset()
+    ok = driveCompile(entries, testapi)
+    // Restored (not left false) so a LATER, unrelated compile in the same
+    // long-running process (macgui.cla's Mac-resident compiler, the one
+    // front end that calls driveCompile more than once) still tries the
+    // bake path fresh -- this fallback is scoped to "for that compile"
+    // only, per the design spec's own wording.
+    haveRtbake = true
+    return ok
+}
+
 func driveCompile(entries: list of string, testapi: bool): bool {
     var i: int
     var h: int
     var tail: int
     var earlySpliceDone: bool
     var wantLane: int
-    var fallbackOk: bool
     var isUiProg: bool
     var earlySkip: list of int
 
@@ -2137,28 +2187,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     // actionable instead of generic.
     if haveRtbake and bkManifestDriftPath != "" {
         log("clarusc --rtbake: " + bkManifestDriftPath + " differs from the baked copy; falling back to a from-source compile")
-        haveRtbake = false
-        // clir-load-perf Task 7 (design B): a drifted session must
-        // RE-PARSE if the bake becomes usable again -- the pending state
-        // describes a runtime whose sources have since changed on disk,
-        // so nothing may be installed from it again without a fresh
-        // parse (and rtbakeBytes is deliberately still held: macgui only
-        // frees the buffer while bkParsedValid holds, so the next
-        // compile's gcResolveBakePath re-reads the resource and this
-        // one's own re-parse has bytes to work from).
-        bkParsedValid = false
-        bkManifestDriftPath = ""
-        driveReset()
-        resetDiags()
-        astReset()
-        fallbackOk = driveCompile(entries, testapi)
-        // Restored (not left false) so a LATER, unrelated compile in the
-        // same long-running process (macgui.cla's Mac-resident compiler,
-        // the one front end that calls driveCompile more than once) still
-        // tries the bake path fresh -- this fallback is scoped to "for
-        // that compile" only, per the design spec's own wording.
-        haveRtbake = true
-        return fallbackOk
+        return driveRtbakeFallback(entries, testapi)
     }
     driveProgressPhase("Parsed user program")
     // Everything expanded so far is the user program's own; everything a
@@ -2315,6 +2344,30 @@ func driveCompile(entries: list of string, testapi: bool): bool {
 
     if not wantEmit {
         return true
+    }
+
+    // C-lane --rtbake gap, closed (appletalk spec %7, docs/TODO.md's own
+    // fix (b)): bakeModuleList deliberately leaves the usage-gated HOST
+    // pairs (conn.cla/conn_c.cla, fileh.cla/fileh_c.cla and now
+    // atalk.cla/atalk_c.cla) out of the C-lane baked chain, and the
+    // haveRtbake branch below bypasses driveManifestSplice entirely -- so
+    // a host program using any of the three compiled to C that CALLED
+    // clar_fn_rtConnOpen/rtFhOpen/rtSvcServe without ever defining them,
+    // and the emitted C did not compile. Reusing the same from-source
+    // fallback the drift check uses costs those programs a full recompile
+    // and moves no golden (fix (a), adding the pairs to the C-lane
+    // bakeModuleList, would move every host program's baked manifest and
+    // IR indices).
+    //
+    // HERE, not beside the drift check up in Phase A (where docs/TODO.md's
+    // own write-up of fix (b) assumed usesConn/usesFileh were "already
+    // set"): they are not. checkReset() clears all three and the user
+    // program's own check pass is what sets them, which is the `Checked
+    // user program` phase just above. Placed after the wantEmit gate too,
+    // since a check-only run splices no runtime and has no gap to close.
+    if haveRtbake and not want68k and (usesConn or usesFileh or usesAtalk) {
+        log("clarusc --rtbake: host program uses connection/filehandle/AppleTalk; falling back to a from-source compile")
+        return driveRtbakeFallback(entries, testapi)
     }
 
     // runtime-ir-bake Task 4: the bake path branches here -- combined2/
