@@ -91,9 +91,11 @@ subsection under *Test coverage gaps* with two entries:
   longer sees the name).
 - **`atalk_lock`'s stale-holder STEAL path is still racy between two
   waiters.** The fix wave closed the UNLOCK half (the `pid` ownership
-  check). Two waiters that both observe the same dead holder's pid can
-  both `rm -rf` and both `mkdir`, and the second succeeds because the
-  first `rm -rf` removed the directory it had just created. Pre-existing
+  check). Two waiters can both pass the same dead holder's `kill -0`
+  check: waiter A `rm -rf`s the dead directory and `mkdir`s its own (A
+  now holds the lock), then waiter B -- already past its check --
+  `rm -rf`s A's FRESH directory and `mkdir`s its own. Both believe they
+  hold the lock. Pre-existing
   shape, never observed, costs determinism on a test group only. Real
   fix recorded: an atomic `mv`-into-place, or `flock` on a lock file.
 
@@ -243,3 +245,48 @@ commit could, which is why step 1 preceded the gate.)
    cost to unrelated programs and it will compound when MacTCP lands.
    If it is ever worth fixing, the lever is making the 68k splice
    `usesAtalk`-gated the way the host one already is.
+
+
+---
+
+## Fix round 1/5 (review: Needs fixes, docs only)
+
+Four findings, all documentation, all verified against the tree before
+editing; every edit byte-safe (Python UTF-8 replace, not the Edit tool).
+
+1. **Important -- `docs/HISTORY.md`: the `docs/TODO.md` line figure was
+   wrong.** It said "shrank by 158 lines net"; 158 is `--stat`'s total
+   CHANGED-line count. `git diff --numstat dbacb90..40ce5ef --
+   docs/TODO.md` = `40 118`, i.e. **-78 net**. Now reads "shrank by 78
+   lines net (40 added, 118 removed)".
+
+2. **`adsp_68k.sh` has TWELVE subcases, not ten.** Ten fail without
+   `.DSP`; `server_registered` and `client_echo_bytes` pass either way
+   (verified: the twelve are `server_{registered,accepted,sweep,hello,
+   closed,exit}` and `client_{opened,sweep_echo,hello_echo,echo_exact,
+   echo_bytes,exit}`). Both "all ten assertions run" sentences --
+   `docs/HISTORY.md` and `CLAUDE.md`'s gated-lane bullet -- now say
+   twelve. The separate "would have failed T2 on ten assertions"
+   sentence is left alone: that one counts the assertions that were
+   actually red, and ten is correct there.
+
+3. **`docs/TODO.md`'s `atalk_lock` steal-race description was
+   backwards.** The real interleaving is not "the second `mkdir`
+   succeeds because the first `rm -rf` removed its own directory": both
+   waiters pass the same dead holder's `kill -0`, then A `rm -rf`s the
+   DEAD directory and `mkdir`s its own (A holds), and B -- already past
+   its check -- `rm -rf`s **A's fresh** directory and `mkdir`s its own.
+   Both then believe they hold the lock, which is the actual hazard.
+   Rewritten in `docs/TODO.md` and in the Step 2 summary above.
+
+4. **A third binding Task 1 amendment was missing from HISTORY.**
+   `registerName` copies the NTE's `aSocket` VERBATIM -- it does not
+   allocate one -- so a service must write its ATP/ADSP socket into
+   NTE+7 BEFORE registering. The runtime's register path is built around
+   that; the entry named only the PB re-zeroing and `nteAddress`
+   amendments. Added as the middle of three.
+
+**Verification:** `make test T='runner/ reftest/'` -- 6 passed, 0
+skipped, 0 failed (`reftest/{checkclean,extract,required}`,
+`runner/{selfcheck,syntax,timeout}`). No code changed, so no other gate
+is implicated.

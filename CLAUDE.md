@@ -176,7 +176,7 @@ Tiered test gates:
   BEFORE its first assertion (a `FAIL ` line would beat exit 77), so it
   is a clean SKIP rather than a red result. It retires itself: once
   LaunchAPPL copies `AppleTalk` onto the boot disk the grep misses and
-  all ten ADSP assertions run. `tests/mactest/atalk_68k.sh` (NBP/ATP over
+  all twelve ADSP assertions run. `tests/mactest/atalk_68k.sh` (NBP/ATP over
   the ROM's own `.MPP`/`.ATP`) needs no such file and PASSes today.
 - Golden blessing — five variables, and each must be set to exactly `1`
   (`lib.sh`'s `env_set`; any other value, `0` included, is NOT a bless):

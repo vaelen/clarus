@@ -5924,11 +5924,14 @@ reshaped three later tasks:
   instances are `<tmp>/minivmac.app/...`, so the obvious `pkill -f
   minivmac.app` kills BOTH. `run_mac_pair` kills by per-instance cwd.
 
-Two more findings fell out of P3 and became rules for every later task:
-**an AppleTalk parameter block reused without being re-zeroed hangs the
-Mac** (reproduced three times; a fresh block fixes it — so the native
-runtime zeroes the whole block before every reuse and every AppleTalk
-`extern record` pads to >= 52 bytes), and **`registerName` fills the
+Three more findings fell out of P3 and became rules for every later
+task: **an AppleTalk parameter block reused without being re-zeroed
+hangs the Mac** (reproduced three times; a fresh block fixes it — so the
+native runtime zeroes the whole block before every reuse and every
+AppleTalk `extern record` pads to >= 52 bytes); **`registerName` copies
+the NTE's `aSocket` VERBATIM** — it does not allocate one — so a service
+must write its ATP or ADSP socket into NTE+7 BEFORE registering, which
+is what the runtime's register path does; and **`registerName` fills the
 caller's `nteAddress` with the node's own net/node**, which is the
 cheapest way for a program to learn its own address.
 
@@ -6005,7 +6008,8 @@ work for real; `connection.open(appletalk ...)`, `open(addr)` and
 `listener.register` fail with a `failed` event because streams are
 Macintosh-only this release; `zones` is always `["*"]`;
 `CLARUS_ATALK_IFACE`); the cookbook gained 255 lines of worked AppleTalk
-transcription; `docs/TODO.md` shrank by 158 lines net as the phase
+transcription; `docs/TODO.md` shrank by 78 lines net (40 added, 118
+removed) as the phase
 closed several entries.
 
 **Two real bugs, one of them pre-existing.**
@@ -6043,7 +6047,7 @@ Important, and a page of minors. All were fixed in ONE wave
   (the listener's own report that `.DSP` is absent) and calls `skip`
   BEFORE its first assertion, because in this harness a `FAIL ` line
   beats exit 77. When LaunchAPPL carries the `AppleTalk` file the grep
-  misses and all ten assertions run, with no test edit.
+  misses and all twelve assertions run, with no test edit.
 - **C2 — `svc.call`'s `reply` out-parameter accepted a `string` and
   emitted type-confused C.** The underlying checker hole is
   **pre-existing and class-wide** (`file.readText(path, s)` and

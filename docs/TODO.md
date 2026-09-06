@@ -173,9 +173,11 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   -- `atalk_unlock` now refuses to `rm -rf` a lock directory whose
   `pid` file is not `$$`, so a waiter that stole a dead holder's lock and
   then exited can no longer delete a second waiter's live lock. The STEAL
-  half is unguarded: two waiters that both observe the same dead holder's
-  pid can both `rm -rf` and both `mkdir`, and the second `mkdir` succeeds
-  because the first `rm -rf` removed the directory it had just created.
+  half is unguarded: two waiters can both pass the same dead holder's
+  `kill -0` check, and then waiter A `rm -rf`s the dead directory and
+  `mkdir`s its own (A now holds the lock) -- while waiter B, already past
+  its check, `rm -rf`s A's FRESH directory and `mkdir`s its own. Both
+  believe they hold the lock.
   Pre-existing shape, never observed, and it only costs determinism on a
   test group (two LToUDP stacks racing for node ids, which is exactly what
   the lock exists to prevent). Real fix: make the steal an atomic
