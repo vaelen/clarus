@@ -10795,22 +10795,9 @@ LBL_742:
         ;   hidden result ptr : 8(A6)  size 4
 LBL_164:
         LINK A6,#-2100
-        LEA -516(A6),A0
-        MOVE.L A0,-(A7)
+        MOVE.L 8(A6),-(A7)
         BSR.W LBL_162
         ADDQ.L #4,A7
-        LEA -516(A6),A0
-        MOVE.L A0,-(A7)
-        MOVEA.L 8(A6),A1
-        MOVEA.L (A7)+,A0
-        MOVE.W (A0)+,(A1)+
-        MOVE.W (A0)+,(A1)+
-        MOVE.W (A0)+,(A1)+
-        MOVE.W (A0)+,(A1)+
-        MOVE.W (A0)+,(A1)+
-        MOVE.W (A0)+,(A1)+
-        MOVE.W (A0)+,(A1)+
-        MOVE.W (A0)+,(A1)+
         BRA.W LBL_743
 LBL_743:
         UNLK A6
