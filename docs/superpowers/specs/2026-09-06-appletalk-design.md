@@ -40,11 +40,16 @@ both LocalTalk-over-UDP) and on the host:
   packet of up to 578 bytes, a response of up to 8 × 578 = 4624 bytes,
   a 32-bit user-bytes field in each direction, exactly-once (XO) mode
   built in. ASP's session/tickle/attention layers are not needed.
-- **ADSP is System 7.** On System 6 it is Apple's separate `ADSP` INIT
-  (type `INIT`, from the Network Software Installer); detection is
-  `OpenDriver(".DSP")` failing — there is no Gestalt selector for it.
-  NBP and ATP are in the Mac Plus ROM. `.XPP` is in the System file on
-  a Plus, in ROM on SE/II.
+- **ADSP is System 7, or an add-on on System 6.** Inside Macintosh VI
+  introduces it with System 7; on System 6 it came from Apple's
+  Network Software Installer — early releases as a separate `ADSP`
+  INIT, later ones (AppleTalk 57/58) as a `.DSP` `DRVR` inside the
+  `AppleTalk` system file. Detection is `OpenDriver(".DSP")` failing —
+  there is no Gestalt selector for it. NBP and ATP are in the Mac Plus
+  ROM. **Both Mini vMac images now carry AppleTalk 58.1.4** (verified
+  2026-09-07: the `AppleTalk` file's `DRVR` resources are `.MPP` 9,
+  `.ATP` 10, `.XPP` 40, `.DSP` 126), so `.DSP` and `.XPP` are present
+  on System 6 with no separate INIT.
 - **Polling works without completion routines.** `PGetRequest` and
   `dspRead` block until satisfied, so the event-loop shape is issue
   async, poll `ioResult` each pump pass. `dspStatus.recvQPending` is
@@ -72,7 +77,7 @@ both LocalTalk-over-UDP) and on the host:
 | # | Question | Decision |
 |---|---|---|
 | Q1 | Host lane | **Real LToUDP peer in C**: DDP + NBP + ATP for real; a host program is a genuine peer of the emulators and the harness gets a driver tool. |
-| Q2 | ADSP scope | **ADSP on the Macs only** this phase (System 6 via the `ADSP` INIT on the test disk, System 7 built in). Host ADSP → `docs/FUTURE.md`. |
+| Q2 | ADSP scope | **ADSP on the Macs only** this phase (System 6 via AppleTalk 58.1.4's `.DSP` on the test disks, System 7 built in). Host ADSP → `docs/FUTURE.md`. |
 | Q3 | RPC client | **Synchronous `call`**, `bool` + `lastError`, the `file.*` convention. Fixed 2 s × 3 retries. |
 | Q4 | Endpoints | **One service = one NBP name + one ATP socket; integer `op` in the ATP user bytes**, one `request` handler, `switch` over a program enum. No new declaration form. |
 | Q5 | Discovery | `find(type[, zone])` → `found` per entity then `done`; `zones()` sync, `["*"]` with no router; nodes = `find("=")`. No echo probe. |
@@ -458,15 +463,19 @@ client — the System 7 proof of `.DSP` built in. Plus the standing
 
 ### 8.4 Environment rules
 
-- The `ADSP` INIT goes into the System 6 image that `~/.LaunchAPPL.cfg`
-  boots, and the config points at `disk1.dsk`; `macplus/` and
-  `macplus2/` disks stay identical copies.
+- Both System 6 images (`macplus/disk1.dsk`, `macplus2/disk1.dsk`)
+  carry AppleTalk 58.1.4 (the `AppleTalk` file with `.DSP`/`.XPP`),
+  and `~/.LaunchAPPL.cfg` boots `disk1.dsk`. The two-boot helper
+  launches the second instance with LaunchAPPL's per-invocation
+  overrides (`--minivmac-dir $ROOT/macplus2 --minivmac-path
+  ./MacPlus2.app --system-image ./disk1.dsk`), no second config file;
+  the disks stay identical copies.
 - Every test registers names with a per-run suffix and tolerates
   unrelated entities in lookup results: multicast sees Andrew's live
   sessions and, when up, the bridge.
 - Test timeouts assume no router: a zone call fails fast with
   `noBridgeErr` rather than waiting.
-- `.gitignore` gains `/macplus2`.
+- `/macplus2` is already in `.gitignore` (Andrew, 2026-09-07).
 
 ### 8.5 Acceptance apps
 
@@ -478,11 +487,11 @@ client — the System 7 proof of `.DSP` built in. Plus the standing
 
 ## 9. Task 1 probe wave (before any build-out)
 
-1. **ADSP INIT.** Locate Apple's `ADSP` INIT, install it on the System
-   6 image, confirm `OpenDriver(".DSP")` succeeds on a boot and fails
-   without it. If it cannot be found, streams become Snow-only this
-   phase (Q2's (ii) degrades to (iii)) — Andrew's decision, not the
-   plan's.
+1. **`.DSP` on the boot disk.** A trap-level program confirms
+   `OpenDriver(".DSP")` and `OpenDriver(".XPP")` succeed on the
+   LaunchAPPL boot of `disk1.dsk` (the harness builds a stripped boot
+   disk from the system image, so the check is that the `AppleTalk`
+   file survives that step, not that the image has it).
 2. **LToUDP reach.** A hand-rolled trap-level Clarus program registers
    an NBP name on one Mini vMac; the other looks it up; a throwaway
    host C sniffer joined to the group sees the lookup. Confirms
