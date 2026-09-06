@@ -323,15 +323,6 @@ static void test_ext(void) {
     }
     CHECK(seen, "AtalkHLookupName never produced \"obj:ClarusTest\"");
 
-    /* Slot 10 is public (the Clarus runtime's synchronous name-call slot,
-     * fix round 1: it used to collide with conn slot 7's ADSP name-open on
-     * slot 9), and RT_AT_NLK itself is not -- it is register's own private
-     * verify slot. No wait: that a lookup STARTS on 10 is the whole claim. */
-    CHECK(rt_ext_AtalkHLookupStart(10, po, pt, pz) == 0,
-          "lookup slot 10 is not usable");
-    CHECK(rt_ext_AtalkHLookupStart(RT_AT_NLK, po, pt, pz) != 0,
-          "lookup slot RT_AT_NLK (register's private verify slot) is public");
-
     rt_at_nbp_remove(A, nbp_obj, "ClarusTest");
 
     /* A SendResponse with no live request must be refused: without the
@@ -349,6 +340,19 @@ static void test_ext(void) {
             rt_ext_AtalkHAtpClose(sk);
         }
     }
+
+    /* Slot 10 is public (the Clarus runtime's synchronous name-call slot,
+     * fix round 1: it used to collide with conn slot 7's ADSP name-open on
+     * slot 9), and RT_AT_NLK itself is not -- it is register's own private
+     * verify slot. That a lookup STARTS on 10 is the whole claim, so there
+     * is no wait -- which is why this sits LAST: the started lookup stays
+     * active, retransmitting its LkUp for the rest of its 3 s window, and
+     * `rt_at_g` is a static inside rt.c that this translation unit cannot
+     * reach to clear. Nothing follows it to perturb. */
+    CHECK(rt_ext_AtalkHLookupStart(10, po, pt, pz) == 0,
+          "lookup slot 10 is not usable");
+    CHECK(rt_ext_AtalkHLookupStart(RT_AT_NLK, po, pt, pz) != 0,
+          "lookup slot RT_AT_NLK (register's private verify slot) is public");
 }
 
 int main(void) {

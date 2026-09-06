@@ -818,6 +818,12 @@ func rtAtalkPump() {
         if rtSvcState[i] == rtAtActive and not rtAtDevAtpRespBusy(i) {
             pr = rtAtDevAtpPoll(i)
             if pr < 0 {
+                // The get-request completed WITH an error, so the slot's
+                // parameter block is free again -- clearing armed is what
+                // lets the arm below re-issue it. Without this the slot
+                // silently stops serving after one native PGetRequest
+                // error (the host lane never returns < 0 here).
+                rtSvcArmed[i] = false
                 rtSvcSetFailed(i, pr, "request failed")
             } else if pr == 1 {
                 rtSvcArmed[i] = false
@@ -865,7 +871,13 @@ func rtAtalkPump() {
             rtBrsState[i] = rtAtIdle
             n = rtAtDevLookupCount(i)
             j = 0
-            while j < n {
+            // The state test is the loop's real bound: a `found` handler may
+            // call find() again on this browser, which restarts THIS lookup
+            // slot (the device layer zeroes it), so every remaining tuple of
+            // the old search is already gone -- firing them would deliver
+            // empty names and address 0. They are dropped instead, and the
+            // new search owns the slot from here.
+            while j < n and rtBrsState[i] == rtAtIdle {
                 clar_brs_fire_found(i, rtAtDevLookupName(i, j), rtAtDevLookupAddr(i, j))
                 j = j + 1
             }
