@@ -43,9 +43,10 @@
 // `scripts/clarus-run.sh`'s `-I runtime/host` include path. This is a
 // real, pre-existing runtime gap (confirmed here to affect
 // examples/serialecho.cla's own host-lane doc-comment claim too, not
-// just this program) -- see docs/TODO.md for the follow-up entry. It is
-// not fixed here; this task's brief is scoped to this app + its Snow
-// test, not compiler/runtime changes.
+// just this program) -- see docs/FUTURE.md for the entry (moved there
+// from docs/TODO.md 2026-09-07). It is not fixed here; this task's
+// brief is scoped to this app + its Snow test, not compiler/runtime
+// changes.
 //
 // To exercise `runPageFile`'s file work (create/write/flush/commit/
 // verify -- everything this task actually adds) on the plain host `cc`

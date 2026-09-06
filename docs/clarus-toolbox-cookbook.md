@@ -983,9 +983,12 @@ not a trap.
 Universal Interfaces spells the NBP blocks as one `NBPparms` struct with a
 `union NBPPtrs` at offset 30 and a `union LookupConfirmParams` at 34
 (`AppleTalk.h:545-580`). `extern record` has neither unions nor array field
-types, so §11's "one record per payload shape" rule applies again —
-`NBPLookupParam` is the LookupName arm, spelled out field by field with the
-union arms it actually uses:
+types, so a single record cannot name every arm at its own offset. The
+catalog answers that the way `toolbox/files.cla` answers it for
+`IOParam`/`FileParam`/`VolumeParam` (§11): one record per payload shape,
+each carrying the identical Device Manager prefix (`toolbox/appletalk.cla`
+says so in its own "Parameter blocks" note). `NBPLookupParam` is the
+LookupName arm, spelled out field by field with the union arms it uses:
 
 ```rust
 extern record NBPLookupParam {
@@ -1057,13 +1060,16 @@ Open `.MPP` by name, fill a fresh block, `PBControlSync`. The whole call is
 in the block; the trap only carries its address:
 
 ```rust
-func lookupType(typ: string): int {
+// `buf` is the caller's: at least 1024 bytes, and it must outlive this
+// call, since the reply tuples land in it. Everything this function
+// allocates, it disposes before returning — both blocks are copied or
+// consumed by the synchronous call they are handed to.
+func lookupType(typ: string, buf: ptr): int {
     var mppPb: IOParam
     var pb: NBPLookupParam
     var nm: ptr
     var end: ptr
     var entity: ptr
-    var buf: ptr
     var err: int
 
     // .MPP is ROM-resident on any AppleTalk-capable Mac, so this succeeds
@@ -1073,6 +1079,7 @@ func lookupType(typ: string): int {
     end = atPStr(nm, ".MPP")
     mppPb.ioNamePtr = nm
     err = PBOpenSync(mppPb)
+    DisposePtr(nm)              // PBOpenSync is done with the name
     if err != 0 or mppPb.ioRefNum != mppRefNum {
         return err
     }
@@ -1086,20 +1093,20 @@ func lookupType(typ: string): int {
     // strings — at most 104 bytes — so maxToGet and retBuffSize must agree:
     // 8 × 104 = 832 fits in 1024; 16 would not (1664), and NBP would answer
     // nbpBuffOvr instead of filling the buffer.
-    buf = NewPtrClear(1024)
     pb.ioRefNum = mppPb.ioRefNum
     pb.csCode = lookupName
-    pb.interval = 8             // 8 ticks between retries
+    pb.interval = 8             // retry interval in 8-TICK units: 8 ≈ 1 s
     pb.count = 3                // 3 retries
     pb.entityPtr = entity
     pb.retBuffPtr = buf
     pb.retBuffSize = 1024
     pb.maxToGet = 8
     err = PBControlSync(pb)
+    DisposePtr(entity)          // the sync call is over; NBP kept no ref
     if err != 0 {
         return err
     }
-    return pb.numGotten         // tuples now sitting in `buf`
+    return pb.numGotten         // tuples now sitting in the caller's buf
 }
 ```
 
@@ -1136,7 +1143,7 @@ func lookupBegin(mppRef: int, entity: ptr, buf: ptr): ptr {
     pb = NewPtrClear(nbpPbSize)
     pokew(pb + pbIoRefNum, mppRef)
     pokew(pb + pbCsCode, lookupName)
-    pokeb(pb + nbpInterval, 8)
+    pokeb(pb + nbpInterval, 8)   // 8-tick units: 8 ≈ 1 s
     pokeb(pb + nbpCount, 3)
     pokel(pb + nbpNtQElPtr, int(entity))       // union NBPPtrs, Lookup arm
     pokel(pb + nbpLookupRetBuffPtr, int(buf))
@@ -1151,7 +1158,7 @@ func lookupBegin(mppRef: int, entity: ptr, buf: ptr): ptr {
 
 // atOSErr: peekw ZERO-extends (Ch13, peek/poke), so a negative OSErr read
 // out of a word field comes back as 65497, not -39. Every OSErr read this
-// way needs the same correction 's own
+// way needs the same correction `runtime/clarus/native.cla`'s own
 // nat_UiScreenBits applies to QuickDraw's rowBytes.
 func atOSErr(v: int): int {
     if v >= 32768 {

@@ -363,10 +363,10 @@ stack) so a unit test can run two peers in one process.
   on completion. Responder: XO transactions list with duplicate
   replay, 30 s release timer; `STS` unused. Same 578/4624 limits.
 - **No ADSP.** DDP type 7 dropped; the `rtAdsp*` waist fails at open.
-- Non-blocking throughout except `call` and `zones`, which loop on
-  `select` under their own deadline. `rt_ext_ConnHIdle` adds the UDP
-  socket to its `select` set so a host server sleeps until traffic or
-  the next timer.
+- Non-blocking throughout except `register`, `call` and `zones`, which
+  loop on `select` under their own deadline (`register` for the verify
+  lookup above). `rt_ext_ConnHIdle` adds the UDP socket to its `select`
+  set so a host server sleeps until traffic or the next timer.
 
 ### 6.2 Driver tool
 

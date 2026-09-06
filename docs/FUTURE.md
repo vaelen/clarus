@@ -228,10 +228,11 @@ Real debt and needed improvements stay in `docs/TODO.md`.
 ### AppleTalk phase (2026-09-07)
 
 - **Host-lane ADSP** (spec §11, out of scope this phase) — the host
-  stack drops DDP type 7 on the floor, and the whole `rtAdspDev*`/
-  `rtLsnDev*` waist in `runtime/clarus/atalk_c.cla` returns
-  `rtAtErrNoHost`, so `connection.open(appletalk ...)` and
-  `listener.register` are native-only. Implementing it is roughly
+  stack drops DDP type 7 on the floor, and every `rtAdspDev*`/`rtLsnDev*`
+  entry point in `runtime/clarus/atalk_c.cla` is a stub reporting
+  "unavailable" — `rtAtErrNoHost` / 0 / false, per its own header note —
+  so `connection.open(appletalk ...)` and `listener.register` are
+  native-only. Implementing it is roughly
   800-1500 lines of C in `runtime/host/rt_atalk.inc` (which is 1252
   lines today) mirroring the ATP layer already there: connection state
   machine, sequenced send/receive queues, open/close handshake,
@@ -306,11 +307,12 @@ Real debt and needed improvements stay in `docs/TODO.md`.
 
 ### AppleTalk phase (2026-09-07)
 
-- **`hostrt/atalk` costs ~23 s of T1** (Task 2's report) — three NBP
-  registers, each paying a 3 × 1 s verify lookup, plus the lookups the
-  test itself makes. It is the slowest host test. A ~3 s trim exists if
-  T1 wall time ever matters: `rt_atalk_test.c`'s third register (in
-  `test_ext`, which only exists to give the `rt_ext` lookup something to
-  find) could reuse a name an earlier subtest already registered instead
-  of registering its own. Not taken — the verify window is the ruled
-  behavior, and one register per subtest keeps the subtests independent.
+- **`hostrt/atalk` costs ~24 s of T1** (Task 2's report; `rt_atalk_test.c`
+  `main`'s own watchdog comment says the same) — three NBP registers,
+  each paying a 3 × 1 s verify lookup, plus the lookups the test itself
+  makes. It is the slowest host test. The only ~3 s lever is to drop one
+  of the three registers (there is no cheaper register: re-registering a
+  name that is still live answers `nbpDuplicate`, and `test_ext` already
+  re-registers the one `test_nbp` removed). Not taken — the verify
+  window is the ruled behavior, and one register per subtest keeps the
+  subtests independent.
