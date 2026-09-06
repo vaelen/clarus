@@ -560,13 +560,24 @@ int32_t rt_ext_ConnHGone(int32_t slot) {
 /* rt_ext_ConnHIdle: select()-with-timeout across every open slot's fd, so
  * Task 5's host pump loop blocks efficiently instead of spinning. Plain
  * usleep when no slot is open at all (select() with an empty fd_set and a
- * timeout is portable but this reads more plainly). */
+ * timeout is portable but this reads more plainly).
+ *
+ * The AppleTalk stack's UDP socket joins the set too (appletalk spec
+ * %6.1): without it an AppleTalk-only host server -- a `service` with no
+ * connection open anywhere -- would take the usleep arm and wake 50
+ * times a second to poll a socket that select could have waited on.
+ * Forward-declared rather than included, because rt.c includes this file
+ * BEFORE rt_atalk.inc; a host build with no AppleTalk in it never calls
+ * ConnHIdle either, so the reference costs nothing there. */
+int32_t rt_ext_AtalkHFd(void);
+
 void rt_ext_ConnHIdle(int32_t ms) {
     fd_set rfds;
     struct timeval tv;
     int maxfd;
     int i;
     int any;
+    int32_t afd;
 
     FD_ZERO(&rfds);
     maxfd = -1;
@@ -578,6 +589,12 @@ void rt_ext_ConnHIdle(int32_t ms) {
             if (fd > maxfd) maxfd = fd;
             any = 1;
         }
+    }
+    afd = rt_ext_AtalkHFd();
+    if (afd >= 0) {
+        FD_SET((int)afd, &rfds);
+        if ((int)afd > maxfd) maxfd = (int)afd;
+        any = 1;
     }
     if (ms < 0) ms = 0;
     if (!any) {

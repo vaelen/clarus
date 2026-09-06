@@ -387,8 +387,10 @@ int32_t rt_ext_TickCount(void) {
  * The deadline compare is the Toolbox's own signed-difference idiom, done
  * through uint32_t exactly the way rt_ext_TickCount above builds its
  * result: unsigned subtraction wraps by definition, so the comparison
- * stays correct across the 2^32-tick (~2.3 year) wrap with no signed
- * overflow anywhere.
+ * stays correct across the 2^32-tick (~2.3 year) wrap. The two ARMINGS
+ * go through uint32_t for the same reason -- `now + periodTicks` as
+ * signed int32_t is undefined behaviour within periodTicks ticks of the
+ * wrap, and the wrapped value is exactly what the compare below wants.
  * A missed period is dropped, not caught up: the next deadline is measured
  * from now, so a slow handler cannot build a backlog of instant refires.
  *
@@ -413,11 +415,11 @@ int32_t rt_ext_EveryDue(int32_t idx, int32_t periodTicks) {
     now = rt_ext_TickCount();
     if (!armed[idx]) {
         armed[idx] = 1;
-        due[idx] = now + periodTicks;
+        due[idx] = (int32_t)((uint32_t)now + (uint32_t)periodTicks);
         return 0;
     }
     if ((int32_t)((uint32_t)now - (uint32_t)due[idx]) >= 0) {
-        due[idx] = now + periodTicks;
+        due[idx] = (int32_t)((uint32_t)now + (uint32_t)periodTicks);
         return 1;
     }
     return 0;
