@@ -51,7 +51,12 @@ uint8_t   rt_at_node(const rt_atalk *a);
 void      rt_at_poll(rt_atalk *a);          /* drain UDP, run timers; never blocks */
 
 /* --- NBP ----------------------------------------------------------- */
-#define RT_AT_NLK 10                        /* lookup slots, 0..9 */
+/* Public lookup slots 0..RT_AT_NLK-1 (RT_AT_NLK itself is register's own
+ * private verify slot). The Clarus runtime's map: 0-1 browsers, 2-9 the
+ * eight connection slots' ADSP name-opens, 10 synchronous name-calls --
+ * which is why this is 11 and not 10 (a name-call during a live ADSP
+ * name-open on conn slot 7 used to collide on slot 9). */
+#define RT_AT_NLK 11
 int  rt_at_nbp_register(rt_atalk *a, const char *obj, const char *type, uint8_t socket); /* 0, or -1027 */
 int  rt_at_nbp_remove(rt_atalk *a, const char *obj, const char *type);                   /* 0, or -1028 */
 int  rt_at_nbp_lookup_start(rt_atalk *a, int lk, const char *obj, const char *type, const char *zone);

@@ -44,14 +44,15 @@ const rtLsnMax: int = 2
 const rtBrsMax: int = 2
 const rtSvcMax: int = 2
 
-// Lookup slots (rt_atalk.inc's RT_AT_NLK / the native lookup PB table):
-// 0-1 belong to the two browsers (lk == browser slot), 2-9 to the eight
-// connection slots' name-form ADSP opens (lk == conn slot + 2), and 9 is
-// ALSO the sync slot rtSvcCallName borrows -- a `call("Name:Type", ...)`
-// is synchronous, so it cannot overlap with conn slot 7's own async open
-// within one program pass.
-const rtAtLookupMax: int = 10
-const rtAtNameCallLk: int = 9
+// Lookup slots (rt_atalk.inc's RT_AT_NLK / the native lookup PB table),
+// eleven of them: 0-1 the two browsers (lk == browser slot), 2-9 the eight
+// connection slots' name-form ADSP opens (lk == conn slot + 2), and 10
+// rtSvcCallName's own synchronous slot. 10 and not 9 (fix round 1): an
+// ADSP name-open sits in rtAdspLookup ACROSS pump passes, so a
+// `call("Name:Type", ...)` made during that window would have restarted
+// conn slot 7's live lookup on top of it.
+const rtAtLookupMax: int = 11
+const rtAtNameCallLk: int = 10
 
 // errOpenDenied, reused as "this lane has no streams" -- the host twin's
 // whole rtAdspDev*/rtLsnDev* family returns it (spec %4.6: AppleTalk
@@ -112,14 +113,17 @@ var rtLsnPendFailedMsg: string[2]
 var rtBrsState: int[2]
 var rtBrsPendFailedCode: int[2]
 var rtBrsPendFailedMsg: string[2]
-// rtBrsPendDone: the lookup window closed and every `found` has fired;
-// `done` itself fires from the NEXT pump pass. Keeping it staged (rather
-// than firing inline after the founds) is what makes rtAtalkAlive() hold
-// the host CLI loop open across the gap.
-var rtBrsPendDone: bool[2]
 
 var rtSvcState: int[2]
 var rtSvcSock: int[2]
+// rtSvcArmed: a get-request is outstanding on this slot. The pump arms
+// only when it is false and clears it the moment a request is dequeued, so
+// rtAtDevAtpArm is called EXACTLY ONCE per outstanding get-request -- a
+// re-issue into a parameter block with a live async call is the reused-PB
+// hang the Task 1 probe recorded. (Added in fix round 1; still the initial
+// declaration of this table, since atalk.cla is not on the 68k lane yet
+// and no golden pins its globals.)
+var rtSvcArmed: bool[2]
 var rtSvcInHandler: bool[2]
 var rtSvcReplied: bool[2]
 var rtSvcPendFailedCode: int[2]
@@ -197,6 +201,15 @@ func rtBrsSetFailed(slot: int, code: int, msg: string) {
         rtBrsPendFailedMsg[slot] = msg
     }
     rtAtLastErr = code
+}
+
+// rtAdspFailed: put a connection slot back to "no AppleTalk here" -- no
+// pending phase and no transport tag. Every rtAdsp* failure path and
+// rtAdspClose route through it (fix round 1): a leftover tag would send a
+// later SERIAL open on the same variable down the ADSP waist.
+func rtAdspFailed(slot: int) {
+    rtAdspPhase[slot] = rtAdspNone
+    rtConnSlotTransport[slot] = 0
 }
 
 func rtLsnSetFailed(slot: int, code: int, msg: string) {
@@ -292,11 +305,14 @@ func rtSvcServe(h: int, name: string, typ: string) {
     rtSvcName[slot] = name
     rtSvcType[slot] = typ
     rtSvcState[slot] = rtAtActive
+    rtSvcArmed[slot] = false
     e = rtAtDevAtpArm(slot, sock)
     if e != 0 {
         // The socket and the name are live; only the receive arm failed.
         // Stay serving and let the pump retry the arm each pass.
         rtSvcSetFailed(slot, e, "could not receive requests")
+    } else {
+        rtSvcArmed[slot] = true
     }
 }
 
@@ -375,6 +391,7 @@ func rtSvcStop(h: int) {
     rtAtDevRemove(rtSvcName[slot], rtSvcType[slot])
     rtAtDevAtpClose(rtSvcSock[slot])
     rtSvcState[slot] = rtAtIdle
+    rtSvcArmed[slot] = false
     rtSvcSock[slot] = 0
     rtSvcName[slot] = ""
     rtSvcType[slot] = ""
@@ -403,7 +420,7 @@ func rtSvcCallAddr(h: int, addr: int, op: int, req: text, reply: text): bool {
     }
     p = rtAtTextToPtr(req)
     if p == ptr(0) and req.length > 0 {
-        rtSetLastErr(rtAtErrMemFull, "request too long")
+        rtSetLastErr(rtAtErrMemFull, "out of memory")
         return false
     }
     // Blocks up to timeout x retries (2 s x 3, fixed this phase). Incoming
@@ -504,7 +521,6 @@ func rtBrsFind(h: int, typ: string, zone: string) {
         return
     }
     rtBrsState[slot] = rtAtActive
-    rtBrsPendDone[slot] = false
 }
 
 // rtBrsZones: synchronous, and never fails from the caller's point of
@@ -596,6 +612,12 @@ func rtLsnStop(h: int) {
 // rtAdspOpenName: `c.open(appletalk "Name:Type")`. Starts the NBP lookup
 // on the connection slot's own lookup slot (slot + 2); rtAdspPoll drives
 // the rest. 0 means "started", not "open".
+//
+// Both rtAdspOpen* own the slot's transport tag: they set it to 1 only
+// once the attempt is actually under way, and every failure path here and
+// in rtAdspPoll puts it (and the phase) back to 0/none, so a caller that
+// stages a `failed` and later reopens the same variable over SERIAL is
+// never dispatched to ADSP by a leftover tag.
 func rtAdspOpenName(slot: int, spec: string): int {
     var e: int
     var idx: int
@@ -611,9 +633,11 @@ func rtAdspOpenName(slot: int, spec: string): int {
     e = rtAtDevLookupStart(slot + 2, spec[0, idx], spec[idx + 1, spec.length - idx - 1], "*")
     if e != 0 {
         rtAtLastErr = e
+        rtAdspFailed(slot)
         return e
     }
     rtAdspPhase[slot] = rtAdspLookup
+    rtConnSlotTransport[slot] = 1
     return 0
 }
 
@@ -629,10 +653,11 @@ func rtAdspOpenAddr(slot: int, addr: int): int {
     e = rtAdspDevOpen(slot, addr)
     if e != 0 {
         rtAtLastErr = e
-        rtAdspPhase[slot] = rtAdspNone
+        rtAdspFailed(slot)
         return e
     }
     rtAdspPhase[slot] = rtAdspOpening
+    rtConnSlotTransport[slot] = 1
     return 0
 }
 
@@ -650,14 +675,14 @@ func rtAdspPoll(slot: int): int {
             return 0
         }
         if rtAtDevLookupCount(slot + 2) == 0 {
-            rtAdspPhase[slot] = rtAdspNone
+            rtAdspFailed(slot)
             return rtAtErrNoConfirm
         }
         addr = rtAtDevLookupAddr(slot + 2, 0)
         e = rtAdspDevOpen(slot, addr)
         if e != 0 {
             rtAtLastErr = e
-            rtAdspPhase[slot] = rtAdspNone
+            rtAdspFailed(slot)
             return e
         }
         rtAdspPhase[slot] = rtAdspOpening
@@ -671,7 +696,7 @@ func rtAdspPoll(slot: int): int {
         }
         if e < 0 {
             rtAtLastErr = e
-            rtAdspPhase[slot] = rtAdspNone
+            rtAdspFailed(slot)
             return e
         }
         return 0
@@ -720,7 +745,7 @@ func rtAdspWrite(slot: int, p: ptr, n: int): int {
 
 func rtAdspClose(slot: int) {
     rtAdspDevClose(slot)
-    rtAdspPhase[slot] = rtAdspNone
+    rtAdspFailed(slot)
 }
 
 func rtAdspGone(slot: int): bool {
@@ -740,7 +765,14 @@ func rtConnOpenAddr(h: int, addr: int) {
         rtPanic("use of nil connection")
     }
     slot = h - 1
-    rtConnSlotTransport[slot] = 1
+    // Same contract as rtConnOpen (conn.cla): reopening an already-open
+    // slot is weather, not a bug.
+    if rtConnState[slot] == stOpen {
+        rtConnSetFailed(slot, rtConnErrAlreadyOpen, "connection already open")
+        return
+    }
+    // rtAdspOpenAddr owns the slot's transport tag and phase, including
+    // putting both back on failure -- see its own comment.
     e = rtAdspOpenAddr(slot, addr)
     if e != 0 {
         rtConnSetFailed(slot, e, "could not open connection")
@@ -788,6 +820,7 @@ func rtAtalkPump() {
             if pr < 0 {
                 rtSvcSetFailed(i, pr, "request failed")
             } else if pr == 1 {
+                rtSvcArmed[i] = false
                 n = rtAtDevAtpReqLen(i)
                 if n > rtAtMaxReq {
                     n = rtAtMaxReq
@@ -806,10 +839,15 @@ func rtAtalkPump() {
                     rtAtDevAtpRespond(i, -1, ptr(0), 0)
                 }
             }
-            // Re-arm only once the reply is off the wire; the native lane
-            // sends responses asynchronously, so this is checked fresh.
-            if not rtAtDevAtpRespBusy(i) {
-                rtAtDevAtpArm(i, rtSvcSock[i])
+            // Re-arm only once the reply is off the wire (the native lane
+            // sends responses asynchronously, so this is checked fresh) AND
+            // only when nothing is armed already: rtAtDevAtpArm re-issues
+            // into the slot's own parameter block, and doing that while an
+            // async PGetRequest is live is the reused-PB hang.
+            if not rtSvcArmed[i] and not rtAtDevAtpRespBusy(i) {
+                if rtAtDevAtpArm(i, rtSvcSock[i]) == 0 {
+                    rtSvcArmed[i] = true
+                }
             }
         }
         i = i + 1
@@ -823,9 +861,6 @@ func rtAtalkPump() {
             rtBrsPendFailedCode[i] = 0
             clar_brs_fire_failed(i, code, rtBrsPendFailedMsg[i])
             rtBrsPendFailedMsg[i] = ""
-        } else if rtBrsPendDone[i] {
-            rtBrsPendDone[i] = false
-            clar_brs_fire_done(i)
         } else if rtBrsState[i] == rtAtActive and rtAtDevLookupDone(i) {
             rtBrsState[i] = rtAtIdle
             n = rtAtDevLookupCount(i)
@@ -834,9 +869,14 @@ func rtAtalkPump() {
                 clar_brs_fire_found(i, rtAtDevLookupName(i, j), rtAtDevLookupAddr(i, j))
                 j = j + 1
             }
-            // `done` fires from the NEXT pass (spec %4.3's "then done"),
-            // which also keeps rtAtalkAlive() true across the gap.
-            rtBrsPendDone[i] = true
+            // `done` in the SAME pass, right after the founds (spec %4.3's
+            // "then done") -- unless a `found` handler started a NEW search
+            // on this browser, which owns the slot from here and gets its
+            // own `done` when ITS window closes. Firing this one anyway
+            // would be a spurious early `done` for that search.
+            if rtBrsState[i] == rtAtIdle {
+                clar_brs_fire_done(i)
+            }
         }
         i = i + 1
     }
@@ -902,7 +942,17 @@ func rtAtalkAlive(): bool {
     }
     i = 0
     while i < rtBrsMax {
-        if rtBrsState[i] == rtAtActive or rtBrsPendFailedCode[i] != 0 or rtBrsPendDone[i] {
+        if rtBrsState[i] == rtAtActive or rtBrsPendFailedCode[i] != 0 {
+            return true
+        }
+        i = i + 1
+    }
+    // A connection slot mid-ADSP-open still owes an `opened` or a `failed`,
+    // and neither rtConnAlive (the slot is not stOpen yet, and conn.cla has
+    // nothing staged) nor anything above would hold the loop open for it.
+    i = 0
+    while i < rtConnMax {
+        if rtAdspPhase[i] != rtAdspNone and rtAdspPhase[i] != rtAdspOpen {
             return true
         }
         i = i + 1

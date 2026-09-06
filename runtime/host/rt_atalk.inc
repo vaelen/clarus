@@ -164,8 +164,8 @@ struct rt_atalk {
     rt_at_name         names[RT_AT_NNAMES];
     uint8_t            enum_next;
     uint8_t            nbp_id;
-    /* Slot RT_AT_NLK is register's private verify-lookup; 0..9 are the
-     * caller's. */
+    /* Slot RT_AT_NLK is register's private verify-lookup; 0..RT_AT_NLK-1
+     * are the caller's. */
     rt_at_lookup       lk[RT_AT_NLK + 1];
 
     rt_at_sockslot     socks[RT_AT_NSOCK];

@@ -10,10 +10,10 @@
 # asserted here is that all four modules check, lower, emit compilable C
 # and link, and that the runtime globals actually reached the output.
 #
-# Function-level coverage of atalk.cla's own bodies arrives with Task 8:
-# shake.cla drops every runtime function nothing roots, and rtAtalkPump is
-# rooted (beside rtConnPump/rtConnAlive) only once lowering wires the pump.
-# The globals below are the available splice witness until then.
+# What this does NOT prove: atalk.cla's function BODIES. shake.cla drops
+# every runtime function nothing roots, and rtAtalkPump is rooted (beside
+# rtConnPump/rtConnAlive) only once Task 8's lowering wires the pump -- so
+# until then the checked-and-spliced globals below are the whole witness.
 . "$(dirname "$0")/../lib.sh" || exit 2
 
 FIX=$ROOT/tests/atalk/testdata/splice.cla

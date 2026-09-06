@@ -29,7 +29,10 @@
 //     flag (a sync XO PSendResponse only completes on the requester's TRel
 //     or the 30 s release timer), which is what rtAtDevAtpRespBusy is for
 //     -- the pump does not re-arm PGetRequest while a response is still
-//     outstanding.
+//     outstanding. rtAtDevAtpArm is called EXACTLY ONCE per outstanding
+//     get-request (atalk.cla's rtSvcArmed guards it), so this body may
+//     assume the slot's PGetRequest parameter block is free -- but it
+//     still re-zeroes the whole block before every reuse, per the probe.
 //   - Browsers: async PLookupName, maxToGet 32, interval 8 (1 s), count 3;
 //     rtAtDevLookupName/-Addr parse the return buffer's tuples (the
 //     runtime does its own NBPExtract). Zones: sync GetZoneList over .XPP

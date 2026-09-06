@@ -734,9 +734,9 @@ static clar_arr_str255_2 cv_rtLsnPendFailedMsg;
 static clar_arr_int_2 cv_rtBrsState;
 static clar_arr_int_2 cv_rtBrsPendFailedCode;
 static clar_arr_str255_2 cv_rtBrsPendFailedMsg;
-static clar_arr_bool_2 cv_rtBrsPendDone;
 static clar_arr_int_2 cv_rtSvcState;
 static clar_arr_int_2 cv_rtSvcSock;
+static clar_arr_bool_2 cv_rtSvcArmed;
 static clar_arr_bool_2 cv_rtSvcInHandler;
 static clar_arr_bool_2 cv_rtSvcReplied;
 static clar_arr_int_2 cv_rtSvcPendFailedCode;
@@ -888,13 +888,13 @@ static void clar_init_globals(void) {
         cv_rtBrsPendFailedMsg.e[ix10] = (clar_str_255){0};
     }
     for (int32_t ix11 = 0; ix11 < 2; ix11++) {
-        cv_rtBrsPendDone.e[ix11] = 0;
+        cv_rtSvcState.e[ix11] = 0;
     }
     for (int32_t ix12 = 0; ix12 < 2; ix12++) {
-        cv_rtSvcState.e[ix12] = 0;
+        cv_rtSvcSock.e[ix12] = 0;
     }
     for (int32_t ix13 = 0; ix13 < 2; ix13++) {
-        cv_rtSvcSock.e[ix13] = 0;
+        cv_rtSvcArmed.e[ix13] = 0;
     }
     for (int32_t ix14 = 0; ix14 < 2; ix14++) {
         cv_rtSvcInHandler.e[ix14] = 0;
