@@ -3,196 +3,1448 @@
 
 // atalk_68k.cla: the native (68k) AppleTalk waist -- atalk_c.cla's twin,
 // same rtAtDev*/rtAdspDev*/rtLsnDev* names, one file spliced per lane
-// (the conn_68k.cla/conn_c.cla precedent).
+// (the conn_68k.cla/conn_c.cla precedent). Real Device Manager Control /
+// Status calls against the four AppleTalk drivers, every csCode and
+// offset taken from toolbox/appletalk.cla (Task 6's catalog), which is
+// itself transcribed from Apple's Universal Interfaces.
 //
-// STUBS this task (2026-09-06 appletalk spec, Task 7). Every function
-// below reports "unavailable" (rtAtErrNoHost / 0 / false / ""), and this
-// module is spliced NOWHERE yet: drive.cla adds atalk.cla + atalk_c.cla to
-// the host lane only, and the 68k lane stays untouched (zero cg68k golden
-// churn). Task 9 replaces the BODIES -- no signature here moves.
+// FIVE RULES this file obeys, all of them paid for on hardware:
 //
-// What Task 9 puts in these bodies (spec %5.2-%5.6, and the Task 1 probe
-// findings, which are binding):
-//   - .MPP/.ATP/.XPP/.DSP opened lazily with OpenDriver and never closed
-//     (Apple's warning: other processes may be using them); every call is
-//     a _Control with a csCode through toolbox/devices.cla.
-//   - EVERY per-slot parameter block must be fully re-zeroed before each
-//     reuse. A reused NBP parameter block hung the Mac in the probe --
-//     this is not a tidiness rule.
-//   - NBP registers the socket number VERBATIM, so a service writes its
-//     own ATP socket into the NTE before PRegisterName (which is why
-//     rtAtDevRegister takes `sock`), and a listener registers its own DDP
-//     socket (rtLsnDevSocket). A program's own address is read back out of
-//     the NTE after registerName.
-//   - Services: POpenATPSkt, PRegisterName (verify on), async PGetRequest
-//     into the slot's 578-byte buffer; PSendResponse async with the XO
-//     flag (a sync XO PSendResponse only completes on the requester's TRel
-//     or the 30 s release timer), which is what rtAtDevAtpRespBusy is for
-//     -- the pump does not re-arm PGetRequest while a response is still
-//     outstanding. rtAtDevAtpArm is called EXACTLY ONCE per outstanding
-//     get-request (atalk.cla's rtSvcArmed guards it), so this body may
-//     assume the slot's PGetRequest parameter block is free -- but it
-//     still re-zeroes the whole block before every reuse, per the probe.
-//   - Browsers: async PLookupName, maxToGet 32, interval 8 (1 s), count 3;
-//     rtAtDevLookupName/-Addr parse the return buffer's tuples (the
-//     runtime does its own NBPExtract). Zones: sync GetZoneList over .XPP
-//     until zipLastFlag, ["*"] on noBridgeErr/reqFailed/no .XPP.
-//   - ADSP: per slot a 242-byte CCB, 1 KB send and receive queues and a
-//     570-byte attention buffer; avail = dspStatus.recvQPending, read =
-//     sync dspRead into the caller's scratch, gone = CCB state >=
-//     sClosing, write = sync dspWrite with flush.
-//   - Listener: dspCLInit + PRegisterName + async dspCLListen; on
-//     completion dspInit + dspOpen(ocAccept) into the free connection
-//     slot, then re-arm; dspCLDeny when no slot is free.
+// 1. EVERY parameter block is fully re-zeroed before EVERY reuse. A
+//    reused NBP block hung the emulated Mac three times in the Task 1
+//    probe wave. rtAt68Zero is the whole discipline; a block that is
+//    still async-live is never re-zeroed (see rule 2).
+// 2. An async parameter block belongs to the driver until its ioResult
+//    stops being 1. Nothing reissues into a live block: lookups spin the
+//    old one out first, PGetRequest is armed exactly once per
+//    outstanding request (atalk.cla's rtSvcArmed), and the calls that
+//    must run WHILE a block is live (dspCLDeny, dspCLRemove, dspClose,
+//    dspRemove) use the separate rtAt68DspAux block instead.
+// 3. `peekw` ZERO-extends, but ioResult and every other `word` that can
+//    be negative is signed: rtAt68SignW does the correction, and the
+//    "still pending" test is `== 1` (ioInProgress) rather than a sign-
+//    dependent comparison. `-39` read raw is 65497, which no `<= 0`
+//    completion poll would ever see.
+// 4. NBP registers the socket VERBATIM: a service writes its own ATP
+//    socket into the NTE's address+3 byte before registerName, and a
+//    listener writes its own DDP socket there. A program's own address
+//    is read back out of the same four bytes afterwards.
+// 5. `ptr` is not a legal container element (language reference,
+//    Ch13), so every per-slot block address lives in an `int[]` and
+//    round-trips through int()/ptr(). That is exact on this lane: a
+//    68k `int` is 32 bits and so is a 68k address. (The task brief's
+//    global table wrote these as `ptr[n]`; the language does not allow
+//    it, and atalk_c.cla's own header records the same constraint.)
+//
+// The .XPP and .DSP drivers ship in the AppleTalk System file, not in
+// ROM, so both may be ABSENT (-43) -- notably on LaunchAPPL's stripped
+// boot disk. rtAtDevUp tolerates that: rtAt68XppRef 0 makes rtAtDevZones
+// answer noBridgeErr (atalk.cla then substitutes ["*"]), and
+// rtAt68DspRef 0 makes every rtAdspDev*/rtLsnDev* entry answer
+// rtAtErrNoHost -- the spec's own ".DSP missing" path, identical to what
+// the host lane reports.
+
+include "../../toolbox/appletalk.cla"
+include "../../toolbox/devices.cla"
+include "../../toolbox/files.cla"
+include "../../toolbox/memory.cla"
+
+// ---- Block sizes ----
+//
+// rtAt68LkBufSz is 4096, not the plan's 2048: a LookupName reply tuple is
+// AddrBlock(4) + enumerator(1) + three packed Pascal strings of up to 32
+// bytes each, so 32 tuples (the plan's own maxToGet) is at most 32 x 104
+// = 3328 bytes. At 2048 a full zone would answer nbpBuffOvr instead of
+// the tuples -- the sizing trap cases_atalk.cla's own lookup comment
+// records. The buffer is allocated LAZILY per lookup slot, so a program
+// with one browser pays 4 KB, not 44.
+const rtAt68LkBufSz: int = 4096
+const rtAt68EntSz: int = 104      // three packed Pascal strings, 32 max each
+const rtAt68PbSz: int = 56        // atpSize -- the widest MPP/ATP block
+const rtAt68DspPbSz: int = 68     // sizeof(DSPParamBlock)
+const rtAt68ReqBufSz: int = 600   // >= atpMaxData (578)
+const rtAt68BdsSz: int = 96       // 8 x bdsEntrySz
+const rtAt68QSz: int = 1024       // ADSP send/receive queue
+
+// NBP parameter-block field offsets the catalog names only as record
+// FIELDS (interval/count sit inside the union-free prefix at 28/29). Kept
+// local rather than added to toolbox/appletalk.cla: the catalog's own
+// offset block is the "blocks allocated with NewPtrClear" surface Task 6
+// froze, and these two are only needed here.
+const rtAt68NbpInterval: int = 28
+const rtAt68NbpCount: int = 29
+
+// ATPParam offsets, for the two ATP blocks that must survive an async
+// call (PGetRequest, PSendResponse). Same bytes as the record fields of
+// the same names in toolbox/appletalk.cla; ATPmisc1/ATPmisc2's union arms
+// are already named there (atpBitMap/atpBdsSize/atpTransID).
+const rtAt68AtpSocket: int = 28
+const rtAt68AtpFlags: int = 29
+const rtAt68AtpAddrNet: int = 30
+const rtAt68AtpAddrNode: int = 32
+const rtAt68AtpAddrSkt: int = 33
+const rtAt68AtpReqLength: int = 34
+const rtAt68AtpReqPointer: int = 36
+const rtAt68AtpBdsPointer: int = 40
+const rtAt68AtpNumOfBuffs: int = 44
+
+// BDSElement offsets (AppleTalk.h:330-335), for the arrays built by hand.
+const rtAt68BdsBuffSize: int = 0
+const rtAt68BdsBuffPtr: int = 2
+const rtAt68BdsDataSize: int = 6
+const rtAt68BdsUserBytes: int = 8
+
+// ---- Driver refNums + liveness ----
+var rtAt68MppRef: int
+var rtAt68AtpRef: int
+var rtAt68XppRef: int
+var rtAt68DspRef: int
+var rtAt68Up: bool
+var rtAt68LastErr: int
+
+// ---- Lookup slots (atalk.cla's rtAtLookupMax = 11: 2 browsers, 8
+// connection slots at slot+2, and slot 10 for a synchronous name-call).
+// All three blocks per slot are allocated on first use and never freed --
+// a lookup slot is reused for the life of the program. ----
+var rtAt68LkPb: int[11]
+var rtAt68LkEntity: int[11]
+var rtAt68LkBuf: int[11]
+
+// ---- NBP registrations. A NamesTableEntry is linked into the driver's
+// own names table and must stay put until RemoveName, so it cannot be a
+// per-call local. rtAtDevRegister/-Remove take no slot index (the waist
+// signature is the host lane's), so this is a small pool: at most 2
+// services + 2 listeners can be registered at once (spec %4.5's caps).
+// Remove finds its entry by comparing the caller's object/type against
+// the PACKED ENTITY already sitting in the NTE, rather than keeping a
+// parallel string[4] pair -- two of those would be 2 KB of A5 globals in
+// every native program, spliced or not, for four names. ----
+var rtAt68Nte: int[4]
+var rtAt68NteUsed: bool[4]
+
+// ---- Service slots (2). getPb carries the async PGetRequest, respPb the
+// async PSendResponse; the request snapshot is taken at completion
+// because the block is re-armed underneath it. ----
+var rtAt68SvcGetPb: int[2]
+var rtAt68SvcReqBuf: int[2]
+var rtAt68SvcRespPb: int[2]
+var rtAt68SvcRespBuf: int[2]
+var rtAt68SvcBds: int[2]
+var rtAt68SvcSock: int[2]
+var rtAt68SvcGetLive: bool[2]
+var rtAt68SvcReqOp: int[2]
+var rtAt68SvcReqFrom: int[2]
+var rtAt68SvcReqLen: int[2]
+var rtAt68SvcTransID: int[2]
+var rtAt68SvcXO: int[2]
+
+// ---- Requester (rtSvcCallAddr is synchronous, so one set is enough). ----
+var rtAt68CallBuf: ptr
+var rtAt68CallBds: ptr
+var rtAt68CallCode: int
+
+// ---- Listener slots (2). ----
+var rtAt68LsnCcb: int[2]
+var rtAt68LsnPb: int[2]
+var rtAt68LsnRef: int[2]
+var rtAt68LsnLive: bool[2]
+
+// ---- Connection slots (8, spec %4.1's grown table). The CCB, the two
+// queues and the attention buffer are ADSP's for the life of the
+// connection end and come back on close (so Task 11's AdspLeak can prove
+// FreeMem flat); the parameter block is reused, re-zeroed, for open /
+// read / write / status. ----
+var rtAt68Ccb: int[8]
+var rtAt68Pb: int[8]
+var rtAt68SendQ: int[8]
+var rtAt68RecvQ: int[8]
+var rtAt68Attn: int[8]
+var rtAt68CcbRef: int[8]
+var rtAt68OpenLive: bool[8]
+
+// rtAt68DspAux: the one DSP block used by calls that must run while some
+// OTHER block on the same connection end is still async-live -- dspClose,
+// dspRemove, dspCLDeny, dspCLRemove (rule 2). Re-zeroed per use.
+var rtAt68DspAux: ptr
+
+// ---- Primitives ----
+
+// rtAt68SignW: peekw and a `word` field disagree -- peekw zero-extends,
+// so every 16-bit value that can be negative (ioResult, a driver refNum,
+// an OSErr) comes back through here.
+func rtAt68SignW(v: int): int {
+    if v >= 32768 {
+        return v - 65536
+    }
+    return v
+}
+
+// rtAt68Zero: rule 1. Longword-at-a-time with a byte tail.
+func rtAt68Zero(p: ptr, n: int) {
+    var i: int
+
+    if p == ptr(0) {
+        return
+    }
+    i = 0
+    while i + 4 <= n {
+        pokel(p + i, 0)
+        i = i + 4
+    }
+    while i < n {
+        pokeb(p + i, 0)
+        i = i + 1
+    }
+}
+
+// rtAt68Pending: true while the driver still owns this async block.
+// ioResult is exactly 1 (ioInProgress) until the call completes.
+func rtAt68Pending(pb: ptr): bool {
+    if pb == ptr(0) {
+        return false
+    }
+    return peekw(pb + pbIoResult) == 1
+}
+
+// rtAt68Result: the completed block's OSErr, sign-corrected.
+func rtAt68Result(pb: ptr): int {
+    return rtAt68SignW(peekw(pb + pbIoResult))
+}
+
+// rtAt68PStr writes s as a Pascal string at p (clamped to NBP's own
+// 32-byte name limit) and returns the address one byte past its end, so
+// three calls in a row build the PACKED object/type/zone entity NBP wants
+// -- cases_atalk.cla's `atPStr`, the hardware-proved original.
+func rtAt68PStr(p: ptr, s: string): ptr {
+    var i: int
+    var n: int
+
+    n = s.length
+    if n > 32 {
+        n = 32
+    }
+    pokeb(p, n)
+    i = 0
+    while i < n {
+        pokeb(p + 1 + i, int(s[i]))
+        i = i + 1
+    }
+    return p + 1 + n
+}
+
+// rtAt68GetPStr reads the Pascal string at p back out as a string.
+func rtAt68GetPStr(p: ptr): string {
+    var s: string
+    var i: int
+    var n: int
+
+    n = peekb(p)
+    i = 0
+    while i < n {
+        s = s + char(peekb(p + 1 + i))
+        i = i + 1
+    }
+    return s
+}
+
+// rtAt68SkipPStr: the address one byte past the Pascal string at p.
+func rtAt68SkipPStr(p: ptr): ptr {
+    return p + 1 + peekb(p)
+}
+
+// rtAt68PackAddr / the three unpackers: the whole waist passes an
+// AppleTalk address as net << 16 | node << 8 | socket (atalk.cla's
+// rtAtalkAddrStr prints exactly that), while the wire form is an
+// AddrBlock: net(2) node(1) socket(1).
+func rtAt68PackAddr(p: ptr): int {
+    return (peekw(p) << 16) + (peekb(p + 2) << 8) + peekb(p + 3)
+}
+
+func rtAt68PokeAddr(p: ptr, addr: int) {
+    pokew(p, (addr >> 16) & 0xFFFF)
+    pokeb(p + 2, (addr >> 8) & 0xFF)
+    pokeb(p + 3, addr & 0xFF)
+}
+
+// rtAt68OpenDrv: PBOpenSync a named driver. 0 (never a legal refNum) on
+// any failure, with the OSErr left in rtAt68LastErr -- .XPP and .DSP are
+// allowed to fail, so the caller decides what a 0 means.
+func rtAt68OpenDrv(name: string): int {
+    var pb: IOParam
+    var nm: ptr
+    var e: int
+
+    nm = NewPtrClear(40)
+    if nm == ptr(0) {
+        rtAt68LastErr = rtAtErrMemFull
+        return 0
+    }
+    rtAt68PStr(nm, name)
+    pb.ioNamePtr = nm
+    e = PBOpenSync(pb)
+    // The Device Manager copies nothing out of ioNamePtr past the open.
+    DisposePtr(nm)
+    if e != 0 {
+        rtAt68LastErr = e
+        return 0
+    }
+    return pb.ioRefNum
+}
+
+// ---- Bring-up ----
 
 func rtAtDevUp(): int {
-    return rtAtErrNoHost
+    if rtAt68Up {
+        return 0
+    }
+    // .MPP and .ATP are ROM-resident on every machine this targets, so a
+    // failure here really is "no AppleTalk".
+    rtAt68MppRef = rtAt68OpenDrv(".MPP")
+    if rtAt68MppRef == 0 {
+        if rtAt68LastErr == 0 {
+            rtAt68LastErr = rtAtErrNoHost
+        }
+        return rtAt68LastErr
+    }
+    rtAt68AtpRef = rtAt68OpenDrv(".ATP")
+    if rtAt68AtpRef == 0 {
+        if rtAt68LastErr == 0 {
+            rtAt68LastErr = rtAtErrNoHost
+        }
+        return rtAt68LastErr
+    }
+    // Both of these live in the AppleTalk System file. Absent is normal
+    // (see this file's header) and must not fail bring-up.
+    rtAt68XppRef = rtAt68OpenDrv(".XPP")
+    rtAt68DspRef = rtAt68OpenDrv(".DSP")
+    rtAt68LastErr = 0
+    rtAt68Up = true
+    return 0
+}
+
+// ---- NBP registration ----
+
+// rtAt68PStrEq: does the Pascal string at p equal s (clamped the same
+// way rtAt68PStr clamps when it writes one)?
+func rtAt68PStrEq(p: ptr, s: string): bool {
+    var i: int
+    var n: int
+
+    n = s.length
+    if n > 32 {
+        n = 32
+    }
+    if peekb(p) != n {
+        return false
+    }
+    i = 0
+    while i < n {
+        if peekb(p + 1 + i) != int(s[i]) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// rtAt68NteFind: the pool index registered under obj/typ, or -1 -- matched
+// against the packed entity in each live NTE (object then type; the zone
+// is always "*").
+func rtAt68NteFind(obj: string, typ: string): int {
+    var i: int
+    var ent: ptr
+
+    i = 0
+    while i < 4 {
+        if rtAt68NteUsed[i] and rtAt68Nte[i] != 0 {
+            ent = ptr(rtAt68Nte[i]) + nteEntity
+            if rtAt68PStrEq(ent, obj) and rtAt68PStrEq(rtAt68SkipPStr(ent), typ) {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return -1
 }
 
 func rtAtDevRegister(obj: string, typ: string, sock: int): int {
-    return rtAtErrNoHost
+    var pb: NBPRegParam
+    var nte: ptr
+    var end: ptr
+    var k: int
+    var e: int
+
+    if rtAt68MppRef == 0 {
+        return rtAtErrNoHost
+    }
+    k = 0
+    while k < 4 and rtAt68NteUsed[k] {
+        k = k + 1
+    }
+    if k >= 4 {
+        // Four names is two services plus two listeners -- the spec's own
+        // caps. Nothing can ask for a fifth.
+        return rtAtErrMemFull
+    }
+    if rtAt68Nte[k] == 0 {
+        rtAt68Nte[k] = int(NewPtrClear(nteSize))
+        if rtAt68Nte[k] == 0 {
+            return rtAtErrMemFull
+        }
+    }
+    nte = ptr(rtAt68Nte[k])
+    rtAt68Zero(nte, nteSize)
+    // Rule 4: the socket goes in VERBATIM, at nteAddress + 3.
+    pokeb(nte + nteAddress + 3, sock)
+    end = rtAt68PStr(nte + nteEntity, obj)
+    end = rtAt68PStr(end, typ)
+    end = rtAt68PStr(end, "*")
+    pb.ioRefNum = rtAt68MppRef
+    pb.csCode = registerName
+    pb.interval = 8
+    pb.count = 3
+    pb.ntQElPtr = nte
+    pb.verifyFlag = 1
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return e
+    }
+    rtAt68NteUsed[k] = true
+    return 0
 }
 
 func rtAtDevRemove(obj: string, typ: string): int {
-    return rtAtErrNoHost
+    var pb: NBPParam
+    var k: int
+    var e: int
+
+    if rtAt68MppRef == 0 {
+        return rtAtErrNoHost
+    }
+    k = rtAt68NteFind(obj, typ)
+    if k < 0 {
+        return nbpNotFound
+    }
+    // RemoveName takes the ENTITY (the packed strings at NTE+9), the
+    // other arm of AppleTalk.h's `union NBPPtrs` at offset 30.
+    pb.ioRefNum = rtAt68MppRef
+    pb.csCode = removeName
+    pb.entityPtr = ptr(rtAt68Nte[k]) + nteEntity
+    e = PBControlSync(pb)
+    // The pool entry goes back either way: a name the driver no longer
+    // has must not pin a slot forever. The NTE block itself is kept for
+    // the next registration.
+    rtAt68NteUsed[k] = false
+    if e != 0 {
+        rtAt68LastErr = e
+    }
+    return e
 }
 
+// ---- NBP lookup ----
+
+func rtAt68LkEnsure(lk: int): bool {
+    if rtAt68LkPb[lk] == 0 {
+        rtAt68LkPb[lk] = int(NewPtrClear(rtAt68PbSz))
+    }
+    if rtAt68LkEntity[lk] == 0 {
+        rtAt68LkEntity[lk] = int(NewPtrClear(rtAt68EntSz))
+    }
+    if rtAt68LkBuf[lk] == 0 {
+        rtAt68LkBuf[lk] = int(NewPtrClear(rtAt68LkBufSz))
+    }
+    return rtAt68LkPb[lk] != 0 and rtAt68LkEntity[lk] != 0 and rtAt68LkBuf[lk] != 0
+}
+
+// rtAtDevLookupStart: every failure path returns BEFORE the slot's buffer
+// or entity is touched (atalk.cla's browser pump leans on that: a `found`
+// handler may call find() again, and a rejected restart must leave the
+// old results intact).
+//
+// ponytail: a restart while the slot's own lookup is still in flight
+// SPINS the old one out rather than cancelling it -- reissuing into a
+// live block is the probe's hang, and killNBP (csCode 254) is exactly the
+// shape of ROM call the probe found unimplemented on the Mac Plus
+// (killAllGetReq answered -17). NBP's own retry budget bounds the spin at
+// interval x count = 8 x 3 ticks, about 3 s worst case, and only a
+// re-entrant find can reach it. If that stall ever matters, the upgrade
+// is killNBP behind a hardware check that it works.
 func rtAtDevLookupStart(lk: int, obj: string, typ: string, zone: string): int {
-    return rtAtErrNoHost
+    var pb: ptr
+    var ent: ptr
+    var end: ptr
+    var z: string
+    var e: int
+
+    if rtAt68MppRef == 0 {
+        return rtAtErrNoHost
+    }
+    if not rtAt68LkEnsure(lk) {
+        return rtAtErrMemFull
+    }
+    pb = ptr(rtAt68LkPb[lk])
+    ent = ptr(rtAt68LkEntity[lk])
+    while rtAt68Pending(pb) {
+    }
+    rtAt68Zero(pb, rtAt68PbSz)
+    rtAt68Zero(ent, rtAt68EntSz)
+    z = zone
+    if z == "" {
+        z = "*"
+    }
+    end = rtAt68PStr(ent, obj)
+    end = rtAt68PStr(end, typ)
+    end = rtAt68PStr(end, z)
+    pokew(pb + pbIoRefNum, rtAt68MppRef)
+    pokew(pb + pbCsCode, lookupName)
+    pokeb(pb + rtAt68NbpInterval, 8)
+    pokeb(pb + rtAt68NbpCount, 3)
+    pokel(pb + nbpNtQElPtr, int(ent))
+    pokel(pb + nbpLookupRetBuffPtr, rtAt68LkBuf[lk])
+    pokew(pb + nbpLookupRetBuffSize, rtAt68LkBufSz)
+    pokew(pb + nbpLookupMaxToGet, 32)
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return e
+    }
+    return 0
 }
 
 func rtAtDevLookupDone(lk: int): bool {
-    return true
+    if rtAt68LkPb[lk] == 0 {
+        return true
+    }
+    return not rtAt68Pending(ptr(rtAt68LkPb[lk]))
 }
 
 func rtAtDevLookupCount(lk: int): int {
-    return 0
+    var pb: ptr
+
+    if rtAt68LkPb[lk] == 0 {
+        return 0
+    }
+    pb = ptr(rtAt68LkPb[lk])
+    if rtAt68Pending(pb) {
+        return 0
+    }
+    if rtAt68Result(pb) < 0 {
+        // nbpBuffOvr and friends: report nothing rather than parsing a
+        // buffer the driver may have filled only partly.
+        rtAt68LastErr = rtAt68Result(pb)
+        return 0
+    }
+    return peekw(pb + nbpLookupNumGotten)
+}
+
+// rtAt68LkTuple: the address of reply tuple i, walking the packed
+// entities (a tuple is AddrBlock(4) + enumerator(1) + three Pascal
+// strings, so its length is data-dependent). ptr(0) when i is out of
+// range.
+func rtAt68LkTuple(lk: int, i: int): ptr {
+    var p: ptr
+    var j: int
+
+    if i < 0 or i >= rtAtDevLookupCount(lk) {
+        return ptr(0)
+    }
+    p = ptr(rtAt68LkBuf[lk])
+    j = 0
+    while j < i {
+        p = p + tupleEntity
+        p = rtAt68SkipPStr(p)
+        p = rtAt68SkipPStr(p)
+        p = rtAt68SkipPStr(p)
+        j = j + 1
+    }
+    return p
 }
 
 func rtAtDevLookupAddr(lk: int, i: int): int {
+    var t: ptr
+
+    t = rtAt68LkTuple(lk, i)
+    if t == ptr(0) {
+        return 0
+    }
+    return rtAt68PackAddr(t + tupleAddr)
+}
+
+// rtAtDevLookupName: "Object:Type", the same spelling the host lane's
+// AtalkHLookupName produces (tests grep for it).
+func rtAtDevLookupName(lk: int, i: int): string {
+    var t: ptr
+    var obj: string
+    var typ: string
+
+    t = rtAt68LkTuple(lk, i)
+    if t == ptr(0) {
+        return ""
+    }
+    obj = rtAt68GetPStr(t + tupleEntity)
+    typ = rtAt68GetPStr(rtAt68SkipPStr(t + tupleEntity))
+    return obj + ":" + typ
+}
+
+// ---- ZIP zones ----
+
+// rtAtDevZones: sync GetZoneList over .XPP, appending each returned
+// Pascal string, until zipLastFlag. A routerless net answers noBridgeErr
+// and atalk.cla substitutes ["*"]. The XCallParam local is REUSED across
+// the loop on purpose (rule 1's one exception, and not a violation of it:
+// the call is synchronous, so the block is never driver-owned between
+// iterations, and zipInfoField is ZIP's own continuation state, which the
+// caller must NOT clear between calls of one sequence).
+func rtAtDevZones(out: list of string): int {
+    var pb: XCallParam
+    var buf: ptr
+    var e: int
+    var n: int
+    var i: int
+    var p: ptr
+    var last: int
+    var guard: int
+
+    if rtAt68XppRef == 0 {
+        return rtAtErrNoBridge
+    }
+    buf = NewPtrClear(578)
+    if buf == ptr(0) {
+        return rtAtErrMemFull
+    }
+    last = 0
+    guard = 0
+    e = 0
+    while last == 0 and guard < 64 {
+        pb.ioRefNum = rtAt68XppRef
+        pb.csCode = xCall
+        pb.xppSubCode = zipGetZoneList
+        pb.xppTimeout = 3
+        pb.xppRetry = 4
+        pb.zipBuffPtr = buf
+        e = PBControlSync(pb)
+        if e != 0 {
+            rtAt68LastErr = e
+            DisposePtr(buf)
+            return e
+        }
+        n = pb.zipNumZones
+        p = buf
+        i = 0
+        while i < n {
+            out.add(rtAt68GetPStr(p))
+            p = rtAt68SkipPStr(p)
+            i = i + 1
+        }
+        last = pb.zipLastFlag
+        guard = guard + 1
+    }
+    DisposePtr(buf)
     return 0
 }
 
-func rtAtDevLookupName(lk: int, i: int): string {
-    return ""
-}
-
-func rtAtDevZones(out: list of string): int {
-    return rtAtErrNoBridge
-}
+// ---- ATP: sockets ----
 
 func rtAtDevAtpOpen(): int {
-    return 0
+    var pb: ATPParam
+    var e: int
+
+    if rtAt68AtpRef == 0 {
+        rtAt68LastErr = rtAtErrNoHost
+        return 0
+    }
+    pb.ioRefNum = rtAt68AtpRef
+    pb.csCode = openATPSkt
+    // atpSocket 0 asks for any free dynamic socket (DDP's 128..254).
+    pb.atpSocket = 0
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return 0
+    }
+    return pb.atpSocket
 }
 
 func rtAtDevAtpClose(sock: int) {
+    var pb: ATPParam
+
+    if rtAt68AtpRef == 0 or sock == 0 {
+        return
+    }
+    pb.ioRefNum = rtAt68AtpRef
+    pb.csCode = closeATPSkt
+    pb.atpSocket = sock
+    PBControlSync(pb)
 }
 
+// ---- ATP: the service (request) side ----
+
+func rtAt68SvcEnsure(slot: int): bool {
+    if rtAt68SvcGetPb[slot] == 0 {
+        rtAt68SvcGetPb[slot] = int(NewPtrClear(rtAt68PbSz))
+    }
+    if rtAt68SvcReqBuf[slot] == 0 {
+        rtAt68SvcReqBuf[slot] = int(NewPtrClear(rtAt68ReqBufSz))
+    }
+    if rtAt68SvcRespPb[slot] == 0 {
+        rtAt68SvcRespPb[slot] = int(NewPtrClear(rtAt68PbSz))
+    }
+    if rtAt68SvcRespBuf[slot] == 0 {
+        rtAt68SvcRespBuf[slot] = int(NewPtrClear(rtAtMaxResp))
+    }
+    if rtAt68SvcBds[slot] == 0 {
+        rtAt68SvcBds[slot] = int(NewPtrClear(rtAt68BdsSz))
+    }
+    return rtAt68SvcGetPb[slot] != 0 and rtAt68SvcReqBuf[slot] != 0 and rtAt68SvcRespPb[slot] != 0 and rtAt68SvcRespBuf[slot] != 0 and rtAt68SvcBds[slot] != 0
+}
+
+// rtAtDevAtpArm: async PGetRequest into the slot's own request buffer.
+// atalk.cla's rtSvcArmed guarantees exactly one outstanding get-request
+// per slot, so the block is free here -- and it is re-zeroed anyway
+// (rule 1).
 func rtAtDevAtpArm(slot: int, sock: int): int {
-    return rtAtErrNoHost
+    var pb: ptr
+    var e: int
+
+    if rtAt68AtpRef == 0 {
+        return rtAtErrNoHost
+    }
+    if not rtAt68SvcEnsure(slot) {
+        return rtAtErrMemFull
+    }
+    pb = ptr(rtAt68SvcGetPb[slot])
+    if rtAt68Pending(pb) {
+        // Defensive: never reissue into a live block (rule 2). The pump
+        // treats a nonzero return as "arm failed, retry next pass".
+        return rtAtErrNoHost
+    }
+    rtAt68Zero(pb, rtAt68PbSz)
+    rtAt68SvcSock[slot] = sock
+    pokew(pb + pbIoRefNum, rtAt68AtpRef)
+    pokew(pb + pbCsCode, getRequest)
+    pokeb(pb + rtAt68AtpSocket, sock)
+    pokew(pb + rtAt68AtpReqLength, rtAtMaxReq)
+    pokel(pb + rtAt68AtpReqPointer, rtAt68SvcReqBuf[slot])
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return e
+    }
+    rtAt68SvcGetLive[slot] = true
+    return 0
 }
 
+// rtAtDevAtpPoll: 1 when a request was dequeued (reported exactly once
+// per arm -- rtAt68SvcGetLive is what stops a completed-but-not-yet-
+// re-armed block from being read twice), 0 while pending or idle, the
+// OSErr (< 0) when the get-request itself failed.
 func rtAtDevAtpPoll(slot: int): int {
-    return 0
+    var pb: ptr
+    var res: int
+
+    if not rtAt68SvcGetLive[slot] {
+        return 0
+    }
+    pb = ptr(rtAt68SvcGetPb[slot])
+    if rtAt68Pending(pb) {
+        return 0
+    }
+    rtAt68SvcGetLive[slot] = false
+    res = rtAt68Result(pb)
+    if res < 0 {
+        rtAt68LastErr = res
+        return res
+    }
+    rtAt68SvcReqOp[slot] = peekl(pb + atpUserData)
+    rtAt68SvcReqFrom[slot] = rtAt68PackAddr(pb + rtAt68AtpAddrNet)
+    rtAt68SvcReqLen[slot] = peekw(pb + rtAt68AtpReqLength)
+    rtAt68SvcTransID[slot] = peekw(pb + atpTransID)
+    rtAt68SvcXO[slot] = peekb(pb + rtAt68AtpFlags) & atpXOvalue
+    return 1
 }
 
 func rtAtDevAtpReqOp(slot: int): int {
-    return 0
+    return rtAt68SvcReqOp[slot]
 }
 
 func rtAtDevAtpReqFrom(slot: int): int {
-    return 0
+    return rtAt68SvcReqFrom[slot]
 }
 
 func rtAtDevAtpReqLen(slot: int): int {
-    return 0
+    return rtAt68SvcReqLen[slot]
 }
 
 func rtAtDevAtpReqPtr(slot: int): ptr {
-    return ptr(0)
+    return ptr(rtAt68SvcReqBuf[slot])
 }
 
+// rtAtDevAtpRespond: copy the payload into the slot's own reply buffer,
+// build the BDS over it, and send ASYNC. Async is load-bearing for an
+// exactly-once transaction: a SYNC PSendResponse in XO mode only
+// completes when the requester's TRel arrives or the 30 s release timer
+// fires, which would stall the whole event loop (spec %5.5).
 func rtAtDevAtpRespond(slot: int, code: int, p: ptr, n: int): int {
-    return rtAtErrNoHost
+    var pb: ptr
+    var bds: ptr
+    var buf: ptr
+    var nb: int
+    var i: int
+    var off: int
+    var ds: int
+    var cnt: int
+    var e: int
+
+    if rtAt68AtpRef == 0 {
+        return rtAtErrNoHost
+    }
+    if not rtAt68SvcEnsure(slot) {
+        return rtAtErrMemFull
+    }
+    pb = ptr(rtAt68SvcRespPb[slot])
+    if rtAt68Pending(pb) {
+        // atalk.cla's pump never dispatches a request while the previous
+        // response is outstanding, so this is unreachable in practice --
+        // and reissuing anyway would be the probe's hang.
+        return rtAtErrNoHost
+    }
+    bds = ptr(rtAt68SvcBds[slot])
+    buf = ptr(rtAt68SvcRespBuf[slot])
+    cnt = n
+    if cnt < 0 {
+        cnt = 0
+    }
+    if cnt > rtAtMaxResp {
+        cnt = rtAtMaxResp
+    }
+    if cnt > 0 and p != ptr(0) {
+        BlockMoveData(p, buf, cnt)
+    }
+    rtAt68Zero(pb, rtAt68PbSz)
+    rtAt68Zero(bds, rtAt68BdsSz)
+    // At least one BDS entry always: a zero-length reply still carries
+    // the application code in its user bytes.
+    nb = (cnt + atpMaxData - 1) / atpMaxData
+    if nb < 1 {
+        nb = 1
+    }
+    if nb > atpMaxNum {
+        nb = atpMaxNum
+    }
+    i = 0
+    while i < nb {
+        off = i * atpMaxData
+        ds = cnt - off
+        if ds > atpMaxData {
+            ds = atpMaxData
+        }
+        if ds < 0 {
+            ds = 0
+        }
+        pokew(bds + i * bdsEntrySz + rtAt68BdsBuffSize, atpMaxData)
+        pokel(bds + i * bdsEntrySz + rtAt68BdsBuffPtr, int(buf) + off)
+        pokew(bds + i * bdsEntrySz + rtAt68BdsDataSize, ds)
+        if i == 0 {
+            pokel(bds + i * bdsEntrySz + rtAt68BdsUserBytes, code)
+        }
+        i = i + 1
+    }
+    pokew(pb + pbIoRefNum, rtAt68AtpRef)
+    pokew(pb + pbCsCode, sendResponse)
+    pokeb(pb + rtAt68AtpSocket, rtAt68SvcSock[slot])
+    // XO (only when the request itself was exactly-once) PLUS EOM. The
+    // task brief listed XO alone; Inside Macintosh's PSendResponse takes
+    // atpEOMvalue too, and it is load-bearing rather than decorative:
+    // ATP's requester completes on "every bitmap packet received AND an
+    // end-of-message packet seen", so a response with no EOM anywhere
+    // leaves the requester spinning out its full retry budget. The host
+    // lane's own stack states that rule in code
+    // (runtime/host/rt_atalk.inc, rt_at_rq_done: `eom_seq >= 0 &&
+    // bitmap == 0`), which is the peer Task 10 drives this against. The
+    // driver puts the flag on the LAST packet of the response.
+    pokeb(pb + rtAt68AtpFlags, rtAt68SvcXO[slot] + atpEOMvalue)
+    rtAt68PokeAddr(pb + rtAt68AtpAddrNet, rtAt68SvcReqFrom[slot])
+    pokel(pb + rtAt68AtpBdsPointer, int(bds))
+    pokeb(pb + rtAt68AtpNumOfBuffs, nb)
+    pokeb(pb + atpBdsSize, nb)
+    pokew(pb + atpTransID, rtAt68SvcTransID[slot])
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return e
+    }
+    return 0
 }
 
 func rtAtDevAtpRespBusy(slot: int): bool {
-    return false
+    if rtAt68SvcRespPb[slot] == 0 {
+        return false
+    }
+    return rtAt68Pending(ptr(rtAt68SvcRespPb[slot]))
 }
 
+// ---- ATP: the requester side ----
+
+func rtAt68CallEnsure(): bool {
+    if rtAt68CallBuf == ptr(0) {
+        rtAt68CallBuf = NewPtrClear(rtAtMaxResp)
+    }
+    if rtAt68CallBds == ptr(0) {
+        rtAt68CallBds = NewPtrClear(rtAt68BdsSz)
+    }
+    return rtAt68CallBuf != ptr(0) and rtAt68CallBds != ptr(0)
+}
+
+// rtAtDevAtpCall: sync PSendRequest, exactly-once, 2 s x 3 retries. On
+// success the numOfResps responses are COMPACTED into the front of the
+// response buffer (each lands at its own 578-byte slot, so a short
+// response leaves a gap the caller must not see) and the byte count is
+// returned; the application code is the first response's user bytes.
 func rtAtDevAtpCall(addr: int, op: int, req: ptr, reqLen: int): int {
-    return rtAtErrNoHost
+    var pb: ATPParam
+    var i: int
+    var nresp: int
+    var total: int
+    var ds: int
+    var e: int
+
+    if rtAt68AtpRef == 0 {
+        return rtAtErrNoHost
+    }
+    if not rtAt68CallEnsure() {
+        return rtAtErrMemFull
+    }
+    rtAt68Zero(rtAt68CallBds, rtAt68BdsSz)
+    i = 0
+    while i < atpMaxNum {
+        pokew(rtAt68CallBds + i * bdsEntrySz + rtAt68BdsBuffSize, atpMaxData)
+        pokel(rtAt68CallBds + i * bdsEntrySz + rtAt68BdsBuffPtr, int(rtAt68CallBuf) + i * atpMaxData)
+        i = i + 1
+    }
+    rtAt68CallCode = 0
+    pb.ioRefNum = rtAt68AtpRef
+    pb.csCode = sendRequest
+    pb.userData = op
+    pb.atpFlags = atpXOvalue
+    pb.addrNet = (addr >> 16) & 0xFFFF
+    pb.addrNode = (addr >> 8) & 0xFF
+    pb.addrSocket = addr & 0xFF
+    pb.reqLength = reqLen
+    pb.reqPointer = req
+    pb.bdsPointer = rtAt68CallBds
+    pb.numOfBuffs = atpMaxNum
+    pb.timeOutVal = 2
+    pb.retryCount = 3
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return e
+    }
+    nresp = pb.numOfResps
+    if nresp > atpMaxNum {
+        nresp = atpMaxNum
+    }
+    total = 0
+    i = 0
+    while i < nresp {
+        ds = peekw(rtAt68CallBds + i * bdsEntrySz + rtAt68BdsDataSize)
+        if total != i * atpMaxData and ds > 0 {
+            BlockMoveData(rtAt68CallBuf + i * atpMaxData, rtAt68CallBuf + total, ds)
+        }
+        total = total + ds
+        i = i + 1
+    }
+    rtAt68CallCode = peekl(rtAt68CallBds + rtAt68BdsUserBytes)
+    return total
 }
 
 func rtAtDevAtpCallCode(): int {
-    return 0
+    return rtAt68CallCode
 }
 
 func rtAtDevAtpCallPtr(): ptr {
-    return ptr(0)
+    return rtAt68CallBuf
 }
 
-// rtAtDevLastErr: the stub's own "why AtpOpen returned 0" answer.
 func rtAtDevLastErr(): int {
-    return rtAtErrNoHost
+    return rtAt68LastErr
 }
 
-// rtAtDevPoll: a no-op natively even once Task 9 lands -- the Toolbox
-// drivers run their own async parameter blocks, so there is nothing to
-// drain here; the pump polls ioResult per slot instead.
+// rtAtDevPoll: a no-op natively -- the Toolbox drivers run their own
+// async parameter blocks, so there is nothing to drain here; the pump
+// polls ioResult per slot instead.
 func rtAtDevPoll() {
 }
 
-func rtAdspDevOpen(slot: int, addr: int): int {
-    return rtAtErrNoHost
+// ---- ADSP ----
+
+func rtAt68DspAuxPb(): ptr {
+    if rtAt68DspAux == ptr(0) {
+        rtAt68DspAux = NewPtrClear(rtAt68DspPbSz)
+    }
+    if rtAt68DspAux != ptr(0) {
+        rtAt68Zero(rtAt68DspAux, rtAt68DspPbSz)
+    }
+    return rtAt68DspAux
 }
 
+func rtAt68CcbEnsure(slot: int): bool {
+    if rtAt68Ccb[slot] == 0 {
+        rtAt68Ccb[slot] = int(NewPtrClear(ccbSize))
+    }
+    if rtAt68Pb[slot] == 0 {
+        rtAt68Pb[slot] = int(NewPtrClear(rtAt68DspPbSz))
+    }
+    if rtAt68SendQ[slot] == 0 {
+        rtAt68SendQ[slot] = int(NewPtrClear(rtAt68QSz))
+    }
+    if rtAt68RecvQ[slot] == 0 {
+        rtAt68RecvQ[slot] = int(NewPtrClear(rtAt68QSz))
+    }
+    if rtAt68Attn[slot] == 0 {
+        rtAt68Attn[slot] = int(NewPtrClear(attnBufSize))
+    }
+    return rtAt68Ccb[slot] != 0 and rtAt68Pb[slot] != 0 and rtAt68SendQ[slot] != 0 and rtAt68RecvQ[slot] != 0 and rtAt68Attn[slot] != 0
+}
+
+// rtAt68DspFree: give a connection slot's four ADSP blocks back (the
+// parameter block is kept -- it is small and the slot may be reopened).
+func rtAt68DspFree(slot: int) {
+    if rtAt68Ccb[slot] != 0 {
+        DisposePtr(ptr(rtAt68Ccb[slot]))
+        rtAt68Ccb[slot] = 0
+    }
+    if rtAt68SendQ[slot] != 0 {
+        DisposePtr(ptr(rtAt68SendQ[slot]))
+        rtAt68SendQ[slot] = 0
+    }
+    if rtAt68RecvQ[slot] != 0 {
+        DisposePtr(ptr(rtAt68RecvQ[slot]))
+        rtAt68RecvQ[slot] = 0
+    }
+    if rtAt68Attn[slot] != 0 {
+        DisposePtr(ptr(rtAt68Attn[slot]))
+        rtAt68Attn[slot] = 0
+    }
+    rtAt68CcbRef[slot] = 0
+}
+
+// rtAt68DspInitEnd: dspInit a connection end on `slot`. Sync; on success
+// the slot's ccbRefNum is stored. Returns the OSErr.
+func rtAt68DspInitEnd(slot: int): int {
+    var pb: ptr
+    var e: int
+
+    if not rtAt68CcbEnsure(slot) {
+        return rtAtErrMemFull
+    }
+    pb = ptr(rtAt68Pb[slot])
+    if rtAt68Pending(pb) {
+        // Rule 2. The only way to get here is a reopen while a previous
+        // dspOpen on this slot is somehow still queued (dspRemove with
+        // abort should have completed it), and re-zeroing it under the
+        // driver is the probe's hang -- fail the open instead.
+        return rtAtErrNoHost
+    }
+    rtAt68Zero(pb, rtAt68DspPbSz)
+    rtAt68Zero(ptr(rtAt68Ccb[slot]), ccbSize)
+    pokew(pb + dspIoCRefNum, rtAt68DspRef)
+    pokew(pb + pbCsCode, dspInit)
+    pokel(pb + dspInitCcbPtr, rtAt68Ccb[slot])
+    pokel(pb + dspInitUserRoutine, 0)
+    pokew(pb + dspInitSendQSize, rtAt68QSz)
+    pokel(pb + dspInitSendQueue, rtAt68SendQ[slot])
+    pokew(pb + dspInitRecvQSize, rtAt68QSz)
+    pokel(pb + dspInitRecvQueue, rtAt68RecvQ[slot])
+    pokel(pb + dspInitAttnPtr, rtAt68Attn[slot])
+    pokeb(pb + dspInitLocalSocket, 0)
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return e
+    }
+    rtAt68CcbRef[slot] = peekw(pb + dspCcbRefNum)
+    return 0
+}
+
+// rtAt68DspRemoveEnd: dspRemove through the AUX block (rule 2 -- the
+// slot's own block may still hold a pending dspOpen).
+func rtAt68DspRemoveEnd(slot: int) {
+    var aux: ptr
+
+    if rtAt68CcbRef[slot] == 0 {
+        return
+    }
+    aux = rtAt68DspAuxPb()
+    if aux != ptr(0) {
+        pokew(aux + dspIoCRefNum, rtAt68DspRef)
+        pokew(aux + pbCsCode, dspRemove)
+        pokew(aux + dspCcbRefNum, rtAt68CcbRef[slot])
+        pokeb(aux + dspCloseAbort, 1)
+        PBControlSync(aux)
+    }
+    rtAt68CcbRef[slot] = 0
+}
+
+// rtAdspDevOpen: dspInit then an ASYNC dspOpen(ocRequest). 0 means
+// "started"; rtAdspDevOpenPoll reports the outcome.
+func rtAdspDevOpen(slot: int, addr: int): int {
+    var pb: ptr
+    var e: int
+
+    if rtAt68DspRef == 0 {
+        return rtAtErrNoHost
+    }
+    e = rtAt68DspInitEnd(slot)
+    if e != 0 {
+        return e
+    }
+    pb = ptr(rtAt68Pb[slot])
+    rtAt68Zero(pb, rtAt68DspPbSz)
+    pokew(pb + dspIoCRefNum, rtAt68DspRef)
+    pokew(pb + pbCsCode, dspOpen)
+    pokew(pb + dspCcbRefNum, rtAt68CcbRef[slot])
+    rtAt68PokeAddr(pb + dspOpenRemoteAddress, addr)
+    pokel(pb + dspOpenFilterAddress, 0)
+    pokeb(pb + dspOpenOcMode, ocRequest)
+    pokeb(pb + dspOpenOcInterval, 6)
+    pokeb(pb + dspOpenOcMaximum, 3)
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        rtAt68DspRemoveEnd(slot)
+        rtAt68DspFree(slot)
+        return e
+    }
+    rtAt68OpenLive[slot] = true
+    return 0
+}
+
+// rtAdspDevOpenPoll: 1 once open, 0 while pending, the OSErr (< 0) on
+// failure -- and a failure tears the half-built connection end down, so
+// the slot can be reopened.
 func rtAdspDevOpenPoll(slot: int): int {
-    return rtAtErrNoHost
+    var pb: ptr
+    var res: int
+
+    if rtAt68DspRef == 0 {
+        return rtAtErrNoHost
+    }
+    if not rtAt68OpenLive[slot] {
+        return rtAtErrNoHost
+    }
+    pb = ptr(rtAt68Pb[slot])
+    if rtAt68Pending(pb) {
+        return 0
+    }
+    rtAt68OpenLive[slot] = false
+    res = rtAt68Result(pb)
+    if res < 0 {
+        rtAt68LastErr = res
+        rtAt68DspRemoveEnd(slot)
+        rtAt68DspFree(slot)
+        return res
+    }
+    return 1
 }
 
 func rtAdspDevAvail(slot: int): int {
-    return 0
+    var pb: ptr
+
+    if rtAt68DspRef == 0 or rtAt68CcbRef[slot] == 0 {
+        return 0
+    }
+    pb = ptr(rtAt68Pb[slot])
+    if rtAt68Pending(pb) {
+        return 0
+    }
+    rtAt68Zero(pb, rtAt68DspPbSz)
+    pokew(pb + dspIoCRefNum, rtAt68DspRef)
+    pokew(pb + pbCsCode, dspStatus)
+    pokew(pb + dspCcbRefNum, rtAt68CcbRef[slot])
+    pokel(pb + dspStatusCcb, rtAt68Ccb[slot])
+    if PBControlSync(pb) != 0 {
+        return 0
+    }
+    return peekw(pb + dspStatusRecvQPending)
 }
 
 func rtAdspDevRead(slot: int, p: ptr, n: int): int {
-    return 0
+    var pb: ptr
+    var e: int
+
+    if rtAt68DspRef == 0 or rtAt68CcbRef[slot] == 0 {
+        return 0
+    }
+    if n <= 0 {
+        return 0
+    }
+    pb = ptr(rtAt68Pb[slot])
+    if rtAt68Pending(pb) {
+        return 0
+    }
+    rtAt68Zero(pb, rtAt68DspPbSz)
+    pokew(pb + dspIoCRefNum, rtAt68DspRef)
+    pokew(pb + pbCsCode, dspRead)
+    pokew(pb + dspCcbRefNum, rtAt68CcbRef[slot])
+    pokew(pb + dspIoReqCount, n)
+    pokel(pb + dspIoDataPtr, int(p))
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return 0
+    }
+    return peekw(pb + dspIoActCount)
 }
 
 func rtAdspDevWrite(slot: int, p: ptr, n: int): int {
-    return rtAtErrNoHost
+    var pb: ptr
+    var e: int
+
+    if rtAt68DspRef == 0 or rtAt68CcbRef[slot] == 0 {
+        return rtAtErrNoHost
+    }
+    if n <= 0 {
+        return 0
+    }
+    pb = ptr(rtAt68Pb[slot])
+    if rtAt68Pending(pb) {
+        return rtAtErrNoHost
+    }
+    rtAt68Zero(pb, rtAt68DspPbSz)
+    pokew(pb + dspIoCRefNum, rtAt68DspRef)
+    pokew(pb + pbCsCode, dspWrite)
+    pokew(pb + dspCcbRefNum, rtAt68CcbRef[slot])
+    pokew(pb + dspIoReqCount, n)
+    pokel(pb + dspIoDataPtr, int(p))
+    pokeb(pb + dspIoEom, 0)
+    pokeb(pb + dspIoFlush, 1)
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+    }
+    return e
 }
 
-func rtAdspDevClose(slot: int) {
-}
-
+// rtAdspDevGone: the CCB's own state word. sClosing (5) and sClosed (6)
+// both mean the peer is gone; TRCCB.state is a UInt16, so peekw is right.
 func rtAdspDevGone(slot: int): bool {
-    return true
+    if rtAt68CcbRef[slot] == 0 or rtAt68Ccb[slot] == 0 {
+        return true
+    }
+    return peekw(ptr(rtAt68Ccb[slot]) + ccbState) >= sClosing
+}
+
+// rtAdspDevClose: an orderly dspClose, then dspRemove, then the memory
+// back. Both control calls go through the AUX block: the slot's own may
+// still hold a pending dspOpen if the program closed mid-open.
+func rtAdspDevClose(slot: int) {
+    var aux: ptr
+
+    if rtAt68CcbRef[slot] == 0 {
+        rtAt68DspFree(slot)
+        rtAt68OpenLive[slot] = false
+        return
+    }
+    aux = rtAt68DspAuxPb()
+    if aux != ptr(0) {
+        pokew(aux + dspIoCRefNum, rtAt68DspRef)
+        pokew(aux + pbCsCode, dspClose)
+        pokew(aux + dspCcbRefNum, rtAt68CcbRef[slot])
+        pokeb(aux + dspCloseAbort, 0)
+        PBControlSync(aux)
+    }
+    rtAt68DspRemoveEnd(slot)
+    rtAt68DspFree(slot)
+    rtAt68OpenLive[slot] = false
+}
+
+// ---- ADSP connection listener ----
+
+func rtAt68LsnEnsure(slot: int): bool {
+    if rtAt68LsnCcb[slot] == 0 {
+        rtAt68LsnCcb[slot] = int(NewPtrClear(ccbSize))
+    }
+    if rtAt68LsnPb[slot] == 0 {
+        rtAt68LsnPb[slot] = int(NewPtrClear(rtAt68DspPbSz))
+    }
+    return rtAt68LsnCcb[slot] != 0 and rtAt68LsnPb[slot] != 0
 }
 
 func rtLsnDevInit(slot: int): int {
-    return rtAtErrNoHost
+    var pb: ptr
+    var e: int
+
+    if rtAt68DspRef == 0 {
+        return rtAtErrNoHost
+    }
+    if not rtAt68LsnEnsure(slot) {
+        return rtAtErrMemFull
+    }
+    pb = ptr(rtAt68LsnPb[slot])
+    if rtAt68Pending(pb) {
+        return rtAtErrNoHost
+    }
+    rtAt68Zero(pb, rtAt68DspPbSz)
+    rtAt68Zero(ptr(rtAt68LsnCcb[slot]), ccbSize)
+    pokew(pb + dspIoCRefNum, rtAt68DspRef)
+    pokew(pb + pbCsCode, dspCLInit)
+    pokel(pb + dspInitCcbPtr, rtAt68LsnCcb[slot])
+    pokeb(pb + dspInitLocalSocket, 0)
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return e
+    }
+    rtAt68LsnRef[slot] = peekw(pb + dspCcbRefNum)
+    return 0
 }
 
 func rtLsnDevListen(slot: int): int {
-    return rtAtErrNoHost
-}
+    var pb: ptr
+    var e: int
 
-func rtLsnDevPoll(slot: int): int {
+    if rtAt68DspRef == 0 or rtAt68LsnRef[slot] == 0 {
+        return rtAtErrNoHost
+    }
+    pb = ptr(rtAt68LsnPb[slot])
+    if rtAt68Pending(pb) {
+        return 0
+    }
+    rtAt68Zero(pb, rtAt68DspPbSz)
+    pokew(pb + dspIoCRefNum, rtAt68DspRef)
+    pokew(pb + pbCsCode, dspCLListen)
+    pokew(pb + dspCcbRefNum, rtAt68LsnRef[slot])
+    pokel(pb + dspOpenFilterAddress, 0)
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        return e
+    }
+    rtAt68LsnLive[slot] = true
     return 0
 }
 
-func rtLsnDevAccept(slot: int, connSlot: int): int {
-    return rtAtErrNoHost
+// rtLsnDevPoll: 1 when a connection request is waiting (accept or deny
+// it, then re-listen), 0 while pending, the OSErr (< 0) on failure.
+func rtLsnDevPoll(slot: int): int {
+    var pb: ptr
+    var res: int
+
+    if not rtAt68LsnLive[slot] {
+        return 0
+    }
+    pb = ptr(rtAt68LsnPb[slot])
+    if rtAt68Pending(pb) {
+        return 0
+    }
+    rtAt68LsnLive[slot] = false
+    res = rtAt68Result(pb)
+    if res < 0 {
+        rtAt68LastErr = res
+        return res
+    }
+    return 1
 }
 
+// rtLsnDevAccept: build a connection end on `connSlot` and dspOpen it in
+// ocAccept mode, carrying the remote CID, address and sequence numbers
+// the completed dspCLListen left in the listener's block. Synchronous:
+// the handshake is already half done, and ocInterval 6 / ocMaximum 3
+// bound it at about 3 s.
+func rtLsnDevAccept(slot: int, connSlot: int): int {
+    var lpb: ptr
+    var pb: ptr
+    var e: int
+
+    if rtAt68DspRef == 0 or rtAt68LsnRef[slot] == 0 {
+        return rtAtErrNoHost
+    }
+    lpb = ptr(rtAt68LsnPb[slot])
+    e = rtAt68DspInitEnd(connSlot)
+    if e != 0 {
+        return e
+    }
+    pb = ptr(rtAt68Pb[connSlot])
+    rtAt68Zero(pb, rtAt68DspPbSz)
+    pokew(pb + dspIoCRefNum, rtAt68DspRef)
+    pokew(pb + pbCsCode, dspOpen)
+    pokew(pb + dspCcbRefNum, rtAt68CcbRef[connSlot])
+    pokew(pb + dspOpenRemoteCID, peekw(lpb + dspOpenRemoteCID))
+    pokel(pb + dspOpenRemoteAddress, peekl(lpb + dspOpenRemoteAddress))
+    pokel(pb + dspOpenFilterAddress, 0)
+    pokel(pb + dspOpenSendSeq, peekl(lpb + dspOpenSendSeq))
+    pokew(pb + dspOpenSendWindow, peekw(lpb + dspOpenSendWindow))
+    pokel(pb + dspOpenAttnSendSeq, peekl(lpb + dspOpenAttnSendSeq))
+    pokeb(pb + dspOpenOcMode, ocAccept)
+    pokeb(pb + dspOpenOcInterval, 6)
+    pokeb(pb + dspOpenOcMaximum, 3)
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtAt68LastErr = e
+        rtAt68DspRemoveEnd(connSlot)
+        rtAt68DspFree(connSlot)
+        return e
+    }
+    return 0
+}
+
+// rtLsnDevDeny: refuse the request the completed listen delivered (no
+// free connection slot). Through the AUX block, so the listener's own is
+// free to be re-armed straight afterwards.
 func rtLsnDevDeny(slot: int): int {
-    return rtAtErrNoHost
+    var lpb: ptr
+    var aux: ptr
+    var e: int
+
+    if rtAt68DspRef == 0 or rtAt68LsnRef[slot] == 0 {
+        return rtAtErrNoHost
+    }
+    lpb = ptr(rtAt68LsnPb[slot])
+    aux = rtAt68DspAuxPb()
+    if aux == ptr(0) {
+        return rtAtErrMemFull
+    }
+    pokew(aux + dspIoCRefNum, rtAt68DspRef)
+    pokew(aux + pbCsCode, dspCLDeny)
+    pokew(aux + dspCcbRefNum, rtAt68LsnRef[slot])
+    pokew(aux + dspOpenRemoteCID, peekw(lpb + dspOpenRemoteCID))
+    pokel(aux + dspOpenRemoteAddress, peekl(lpb + dspOpenRemoteAddress))
+    e = PBControlSync(aux)
+    if e != 0 {
+        rtAt68LastErr = e
+    }
+    return e
 }
 
 func rtLsnDevRemove(slot: int) {
+    var aux: ptr
+
+    if rtAt68LsnRef[slot] == 0 {
+        return
+    }
+    aux = rtAt68DspAuxPb()
+    if aux != ptr(0) {
+        pokew(aux + dspIoCRefNum, rtAt68DspRef)
+        pokew(aux + pbCsCode, dspCLRemove)
+        pokew(aux + dspCcbRefNum, rtAt68LsnRef[slot])
+        pokeb(aux + dspCloseAbort, 1)
+        PBControlSync(aux)
+    }
+    rtAt68LsnRef[slot] = 0
+    rtAt68LsnLive[slot] = false
+    if rtAt68LsnCcb[slot] != 0 {
+        DisposePtr(ptr(rtAt68LsnCcb[slot]))
+        rtAt68LsnCcb[slot] = 0
+    }
 }
 
+// rtLsnDevSocket: the DDP socket dspCLInit assigned -- what the listener
+// registers with NBP (rule 4).
 func rtLsnDevSocket(slot: int): int {
-    return 0
+    if rtAt68LsnCcb[slot] == 0 {
+        return 0
+    }
+    return peekb(ptr(rtAt68LsnCcb[slot]) + ccbLocalSocket)
 }

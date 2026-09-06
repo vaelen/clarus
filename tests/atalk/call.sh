@@ -63,12 +63,15 @@ check_line call_no_name   'err -1025 name not found'
 check_line call_too_long  'err -3106 request too long'
 
 # Every call has to come back from its own answer or its own lookup
-# window, never from a 2 s x 3 request timeout. Four name-form calls cost
-# a fixed ~3 s NBP lookup each on the host lane (~12 s observed); a single
-# timed-out transaction would put this well past the bound.
-if [ "$elapsed" -lt 20 ]; then
+# window, never from a 2 s x 3 request timeout. THREE of the four
+# name-form calls cost a fixed ~3 s NBP lookup on the host lane (~9 s
+# observed); the over-length one costs nothing at all since Task 9 hoisted
+# rtSvcCallName's own length check above the lookup (spec %4.4: rejected
+# "before any packet leaves"). A single timed-out transaction would put
+# this well past the bound.
+if [ "$elapsed" -lt 15 ]; then
     t_pass no_timeouts
 else
-    t_fail no_timeouts "the four calls took ${elapsed}s (want < 20s)"
+    t_fail no_timeouts "the four calls took ${elapsed}s (want < 15s)"
 fi
 t_done

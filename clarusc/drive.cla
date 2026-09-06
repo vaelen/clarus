@@ -1657,14 +1657,19 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     // dead weight" argument rt.c already makes for its unconditional
     // .inc includes, and it keeps every AppleTalk program's manifest
     // identical to every connection program's.
-    // The 68k lane is deliberately UNTOUCHED here: Task 9 adds
-    // atalk.cla/atalk_68k.cla to the unconditional native superset once
-    // the native twin has real bodies, in the golden-rebless wave that
-    // change earns. Splicing them today would move every native
-    // program's global numbering for a module nothing calls yet.
+    // The 68k lane (Task 9) joins the same unconditional superset splice
+    // conn.cla/conn_68k.cla already have, and for the identical reason:
+    // lower.cla's lowSynthAtalkDispatchers runs under `usesAtalk or
+    // want68k` now, so atalk.cla's seven `clar_*_fire_*` externs must
+    // resolve in every native build, and atalk_68k.cla is what answers
+    // its rtAtDev*/rtAdspDev*/rtLsnDev* calls. Ordering: after conn.cla
+    // (atalk.cla reads rtConnState/rtConnMax and calls rtConnSetFailed)
+    // and after conn_68k.cla, mirroring the host branch below.
     if want68k {
         neededMods.add("conn.cla")
         neededMods.add("conn_68k.cla")
+        neededMods.add("atalk.cla")
+        neededMods.add("atalk_68k.cla")
     } else if usesConn or usesAtalk {
         neededMods.add("conn.cla")
         neededMods.add("conn_c.cla")

@@ -119,7 +119,7 @@ var lowCurFnRuntimeOrigin: bool
 // ---- connection lowering state (serial-connection phase, Task 5) ----
 //
 // lowConnSlotOf maps a global `connection` var's own name to its slot
-// index (0..3), assigned by lowerProgram's own pre-pass in declaration
+// index (0..7), assigned by lowerProgram's own pre-pass in declaration
 // order (spec %3.3: "global connection vars only" -- the same GLOBAL-only
 // scope check.cla's usesConn already enforces). Built ONLY when usesConn
 // (check.cla), before the main decl walk, so lowTopHandler/lowConnMethod
@@ -148,11 +148,13 @@ var lowCurFnRuntimeOrigin: bool
 // not-yet-implemented rejection like any other unsupported receiver
 // shape.
 //
-// 4 (not a named const): matches conn.cla's own `const rtConnMax: int =
-// 4` -- clarusc's own source (this file) and a user program's runtime
+// 8 (not a named const): matches conn.cla's own `const rtConnMax: int =
+// 8` -- clarusc's own source (this file) and a user program's runtime
 // modules (conn.cla) are different compilation units with no shared
 // namespace, so there is no single symbol both sides could reference;
-// keep the two literal 4s in sync by hand if that ever changes.
+// keep the two literal 8s in sync by hand if that ever changes. (4 -> 8
+// in the AppleTalk phase's Task 9, with conn.cla's own slot table: an
+// ADSP listener hands out accepted connections from it.)
 var lowConnSlotOf: map of int
 
 // lowConnHandlerFn maps "<slot>|<event>" (event one of opened/received/
@@ -171,7 +173,7 @@ var lowConnHandlerFn: map of int
 // `service` var's own name to its slot index, assigned by lowerProgram's
 // own pre-pass in declaration order, with spec %4.5's cap of 2 apiece
 // (matching atalk.cla's own `const rtLsnMax/rtBrsMax/rtSvcMax: int = 2`
-// -- the same by-hand sync lowConnSlotOf's own "4 (not a named const)"
+// -- the same by-hand sync lowConnSlotOf's own "8 (not a named const)"
 // note above describes, for the same reason: clarusc's source and a user
 // program's runtime modules are separate compilation units).
 var lowLsnSlotOf: map of int
@@ -7820,7 +7822,7 @@ func lowSynthConnFireSimple(eventKey: string, cName: string) {
     paramsHead = newIRLocal(intern("slot"), irIntT)
 
     i = 0
-    while i < 4 {
+    while i < 8 {
         fnName = lowConnHandlerFn.get(numToStr(i) + "|" + eventKey, -1)
         conds.add(lowSynthEqInt("slot", i))
         if fnName != -1 {
@@ -7854,7 +7856,7 @@ func lowSynthConnFireReceived() {
     irLocalListAppend(paramsHead, newIRLocal(intern("data"), irTextT))
 
     i = 0
-    while i < 4 {
+    while i < 8 {
         fnName = lowConnHandlerFn.get(numToStr(i) + "|received", -1)
         conds.add(lowSynthEqInt("slot", i))
         if fnName != -1 {
@@ -7926,7 +7928,7 @@ func lowSynthConnFireFailed() {
     // nothing). Declare it only when some slot actually has a handler.
     anyFailed = false
     i = 0
-    while i < 4 {
+    while i < 8 {
         if lowConnHandlerFn.has(numToStr(i) + "|failed") {
             anyFailed = true
         }
@@ -7940,7 +7942,7 @@ func lowSynthConnFireFailed() {
     }
 
     i = 0
-    while i < 4 {
+    while i < 8 {
         body = -1
         fnName = lowConnHandlerFn.get(numToStr(i) + "|failed", -1)
         if fnName != -1 {
@@ -7988,7 +7990,7 @@ func lowSynthConnPump() {
         // usesConn, and shake resolves the edge by name.
         body = newIRExprStmt(newIRCallFn(intern("rtConnPump"), -1, irVoidT))
     }
-    if usesAtalk and not want68k {
+    if usesAtalk {
         // AppleTalk phase Task 8: the UI event loop's pump hook drives
         // BOTH runtime pumps -- atalk.cla's rtAtalkPump is what turns
         // device state into the clar_*_fire_* events, exactly as
@@ -7998,17 +8000,14 @@ func lowSynthConnPump() {
         // nothing else cuts a program that never touches AppleTalk off
         // from the AppleTalk runtime's reachability.
         //
-        // `not want68k` is TASK 8 ONLY, and Task 9 deletes it: drive.cla
-        // does not splice atalk.cla into the native superset yet, so
-        // naming rtAtalkPump from a native build's own always-rooted
-        // clar_conn_pump would abort cg68k with "call to unknown/
-        // unreachable function rtAtalkPump" -- a build REGRESSION for a
-        // program that today merely declares a `service` and targets
-        // 68k (tests/atalk/testdata/splice.cla emit68k's clean, and must
-        // keep doing so). Task 9 adds the native splice and the real
-        // atalk_68k.cla bodies in the same wave; the guard goes with it.
-        // Nothing is lost on the host meanwhile: cpEmitMain drives
-        // rtAtalkPump from its own loop text, never through this hook.
+        // Task 8 carried a `not want68k` conjunct here, because the 68k
+        // lane had no atalk.cla spliced and naming rtAtalkPump from a
+        // native build's always-rooted clar_conn_pump would have aborted
+        // cg68k with "call to unknown/unreachable function". Task 9
+        // deleted it with the native splice (drive.cla) and the real
+        // atalk_68k.cla bodies. Nothing changes on the host: cpEmitMain
+        // drives rtAtalkPump from its own CLI loop text too, never only
+        // through this hook.
         if body != -1 {
             irStmtListAppend(body, newIRExprStmt(newIRCallFn(intern("rtAtalkPump"), -1, irVoidT)))
         } else {
@@ -8112,12 +8111,11 @@ func lowSynthEveryPump() {
 // follows to a synthesized target), and a lowUiSynthExternName identity
 // entry each so cprint routes the call to clar_fn_NAME.
 //
-// Synthesized under `usesAtalk` ONLY -- deliberately NOT `or want68k`
-// like the connection family: drive.cla does not splice atalk.cla into
-// the native superset yet (Task 9 does, in the golden-rebless wave that
-// change earns), so nothing on that lane can call these, and
-// synthesizing them there would move every native program's numbering
-// for no reason.
+// Synthesized under `usesAtalk or want68k`, exactly like the connection
+// family: Task 9 splices atalk.cla + atalk_68k.cla into the native
+// superset unconditionally (drive.cla), so atalk.cla's seven externs
+// must resolve in every 68k build, dormant program or not. (Task 8 had
+// `usesAtalk` alone, because the 68k lane carried no atalk.cla at all.)
 
 // lowAtalkHandlerFn reads the per-kind handler map ("lsn"/"brs"/"svc")
 // -- a plain three-way dispatch rather than passing the map itself, so
@@ -8415,18 +8413,18 @@ func lowUiSynthExternName(externNameIdx: int): int {
     // mappings for exactly the reason the five connection entries just
     // above are.
     //
-    // Gated on usesAtalk, unlike the connection family: this map answers
-    // "is this extern name answered by a synthesized IRFunc in THIS
-    // program?", and lowSynthAtalkDispatchers only builds the seven when
-    // usesAtalk. The distinction is observable because the host lane
-    // splices atalk.cla for `usesConn or usesAtalk` (drive.cla, Task 7),
-    // so a SERIAL-only program carries these seven extern declarations
-    // with no dispatcher behind them; answering true there would drop
-    // their prototypes from a program that never synthesizes them (and
-    // churn every existing connection golden for no gain).
-    if not usesAtalk {
-        return -1
-    }
+    // UNCONDITIONAL, exactly like the connection five above (Task 9; Task
+    // 8 gated these on `usesAtalk`). The gate had to go when the 68k lane
+    // joined the splice: `clarusc --bake-ir --lane 68k` lowers the whole
+    // runtime chain with want68k FALSE and usesAtalk FALSE (main.cla
+    // quits before either is set), so a gated answer of -1 sent
+    // rtAtalkPump's own ECallExt down cg68k's ordinary extern dispatch
+    // and aborted the bake with "extern clar_svc_fire_failed has no trap
+    // clause and no nat_ fallback". Answering unconditionally routes it
+    // to cgCallExtUiSynth instead, which TAINTS the capture under
+    // cgBakeCapture rather than crashing -- the identical treatment the
+    // connection five have always had, and the reason they never hit
+    // this.
     if nm == "clar_lsn_fire_accepted" { return intern("clar_lsn_fire_accepted") }
     if nm == "clar_lsn_fire_failed" { return intern("clar_lsn_fire_failed") }
     if nm == "clar_brs_fire_found" { return intern("clar_brs_fire_found") }
@@ -8589,8 +8587,8 @@ func lowerProgram(declHead: int): int {
             if declKind(d) == DkVar {
                 connSymIdx = scopeLookup(curScope, varDeclName(d))
                 if connSymIdx != -1 and symbols[connSymIdx].typeIdx == connectionT {
-                    if connCount >= 4 {
-                        abort("clarusc emit: too many connection variables (max 4)")
+                    if connCount >= 8 {
+                        abort("clarusc emit: too many connection variables (max 8)")
                     }
                     lowConnSlotOf[poolGet(varDeclName(d))] = connCount
                     connCount = connCount + 1
@@ -8607,8 +8605,8 @@ func lowerProgram(declHead: int): int {
     // property (no runtime module declares one of these globals).
     // The caps are spec %4.5's: 2 listeners, 2 browsers, 2 services,
     // matching atalk.cla's own rtLsnMax/rtBrsMax/rtSvcMax. The
-    // connection cap stays 4 here -- Task 9 raises it to 8 with the
-    // slot-table growth that earns it.
+    // connection cap just above is 8 (Task 9 raised it with conn.cla's
+    // own slot-table growth).
     lowLsnSlotOf = freshLsnSlot
     lowBrsSlotOf = freshBrsSlot
     lowSvcSlotOf = freshSvcSlot
@@ -8701,12 +8699,13 @@ func lowerProgram(declHead: int): int {
         if usesConn or want68k {
             lowSynthConnDispatchers()
         }
-        // AppleTalk dispatcher synthesis (2026-09-06 appletalk spec %7,
-        // Task 8): `usesAtalk` ONLY -- see lowSynthAtalkDispatchers' own
-        // section header for why the `or want68k` disjunct the
-        // connection family carries is deliberately absent here (Task 9
-        // adds it with the native splice and the golden rebless).
-        if usesAtalk {
+        // AppleTalk dispatcher synthesis (2026-09-06 appletalk spec %7).
+        // `usesAtalk or want68k`, matching the connection family exactly:
+        // Task 9 splices atalk.cla + atalk_68k.cla into EVERY native
+        // build (drive.cla), so atalk.cla's own `clar_lsn_/brs_/svc_
+        // fire_*` externs must resolve on that lane whether the program
+        // touches AppleTalk or not.
+        if usesAtalk or want68k {
             lowSynthAtalkDispatchers()
         }
         // Host-lane `every` driver (AppleTalk phase Task 5) -- see

@@ -1,0 +1,79 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalk_client.cla: the native codegen golden for the CLIENT half of the
+// AppleTalk surface (2026-09-06 appletalk spec %4.1/%4.3/%4.4, Task 9) --
+// a service browser (both `find` arities plus `zones`), a synchronous
+// `call` in both target forms, `string(addr)`, and a connection opened
+// over ADSP by name AND by address. atalk_server.cla is the other half.
+
+window Main {
+    title: "AtalkClient"
+    size: 240, 120
+}
+
+var brs: serviceBrowser
+var svc: service
+var link: connection
+var direct: connection
+var found: address
+var zones: list of string
+var reply: text
+var req: text
+
+on App.launch {
+    open Main
+    brs.zones(zones)
+    if zones.count > 0 {
+        brs.find("ClarusTest", zones[0])
+    } else {
+        brs.find("ClarusTest")
+    }
+}
+
+on brs.found(name: string, addr: address) {
+    found = addr
+    log("found " + name + " " + string(addr))
+}
+
+on brs.done {
+    req = "hi"
+    if svc.call(found, 1, req, reply) {
+        log("addr ok " + string(reply.length))
+    } else {
+        log("addr err " + string(lastError.code) + " " + lastError.message)
+    }
+    if svc.call("ClarusServer:ClarusTest", 2, req, reply) {
+        log("name ok " + string(reply.length))
+    } else {
+        log("name err " + string(lastError.code) + " " + lastError.message)
+    }
+    link.open(appletalk "ClarusStream:ClarusTest")
+    direct.open(found)
+}
+
+on brs.failed(err: error) {
+    log("brs failed " + string(err.code) + " " + err.message)
+}
+
+on link.opened {
+    link.send(req)
+}
+
+on link.received(data: text) {
+    log("rx " + string(data.length))
+    link.close()
+}
+
+on link.closed {
+    quit
+}
+
+on link.failed(err: error) {
+    log("link failed " + string(err.code) + " " + err.message)
+    quit
+}
+
+on direct.failed(err: error) {
+    log("direct failed " + string(err.code) + " " + err.message)
+}

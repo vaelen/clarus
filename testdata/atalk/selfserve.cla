@@ -1,0 +1,104 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// selfserve.cla (2026-09-06 appletalk spec %8.2, Task 9): the no-peer
+// native AppleTalk boot. tests/mactest/atalk_selfserve.sh compiles this
+// with `clarusc emit68k` and runs it under Mini vMac, which emulates a
+// Mac Plus with NO network hardware at all -- LLAP acquires a node on a
+// dead wire, and nothing ever answers a lookup. That makes the run fully
+// deterministic, and it exercises every native waist body that does not
+// need a second machine:
+//
+//   serve()     POpenATPSkt + PRegisterName (verify on) + async
+//               PGetRequest  -- proved by the ABSENCE of an svc.failed
+//   zones()     .XPP absent (or no router) -> noBridgeErr -> ["*"]
+//   find()      async PLookupName, then LookupDone/LookupCount/the tuple
+//               walk -- proved by `done 0`
+//   call()      the synchronous name form: lookup slot 10, spun to
+//               completion, no match -> nbpNoConfirm (-1025)
+//   register()  the .DSP-absent path: rtLsnDevInit answers
+//               rtAtErrNoHost and the runtime stages "streams not
+//               available on this lane" WITHOUT registering a name
+//   stop()      PRemoveName + PCloseATPSkt
+//
+// Two things this deliberately does NOT do. It never asserts a peer
+// reply -- that needs the two-machine harness Task 10 builds. And it does
+// not log the node's own address: no waist entry exposes it (the language
+// surface has no such API, spec %4), and the ROM .MPP answers none of its
+// own lookups (task-1-report.md P3), so a self-lookup would print
+// nothing. The register/lookup/arm proof above is what stands in for it.
+
+app AtalkSelfServe {
+    name: "AtalkSelfServe"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "No-peer AppleTalk waist probe."
+    id: "ASSV"
+}
+
+window Main {
+    title: "AtalkSelfServe"
+    size: 260, 120
+}
+
+var svc: service
+var lsn: listener
+var brs: serviceBrowser
+var zones: list of string
+var reply: text
+var req: text
+var nfound: int = 0
+var beats: int = 0
+
+on App.launch {
+    open Main
+    svc.serve("ClarusSelf", "ClarusSelfTest")
+    log("served")
+    lsn.register("ClarusSelfStream", "ClarusSelfTest")
+    brs.zones(zones)
+    log("zones " + string(zones.count) + " " + zones[0])
+    brs.find("ClarusSelfTest")
+}
+
+on svc.failed(err: error) {
+    log("svcfail " + string(err.code) + " " + err.message)
+}
+
+on lsn.failed(err: error) {
+    log("lsnfail " + string(err.code) + " " + err.message)
+}
+
+on brs.failed(err: error) {
+    log("brsfail " + string(err.code) + " " + err.message)
+}
+
+on brs.found(name: string, addr: address) {
+    nfound = nfound + 1
+    log("found " + name + " " + string(addr))
+}
+
+on brs.done {
+    log("done " + string(nfound))
+    req = "x"
+    if svc.call("Nobody:ClarusSelfTest", 1, req, reply) {
+        log("call ok " + string(reply.length))
+    } else {
+        log("call err " + string(lastError.code) + " " + lastError.message)
+    }
+    svc.stop()
+    log("stopped")
+    quit
+}
+
+// Watchdog: `done` is what ends this program, so a waist body that never
+// completes its lookup would otherwise sit in rtUiRun until the boot
+// deadline -- a timeout instead of a readable failure. 40 beats of 60
+// ticks is ~40 s, comfortably past the ~10 s of NBP retry budget the
+// three calls above spend between them.
+every 60 ticks {
+    beats = beats + 1
+    if beats >= 40 {
+        log("watchdog")
+        quit
+    }
+}

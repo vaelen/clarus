@@ -2962,6 +2962,22 @@ func cgSeveredFamily(nm: string): int {
     if cgNameHasPrefix(nm, "clar_conn_fire_") {
         return 1
     }
+    // AppleTalk phase Task 9: the seven clar_lsn_/clar_brs_/clar_svc_
+    // fire_* dispatchers (lower.cla's lowSynthAtalkDispatchers) are the
+    // same shape as the connection four -- newIRFunc directly, never
+    // lowFuncBody, so never a bail chain of their own -- and reach a
+    // user `on <var>.<event>` handler the same way, so they need the same
+    // family-1 treatment (the %3.5 in-place abort default and the
+    // severed-family stack term).
+    if cgNameHasPrefix(nm, "clar_lsn_fire_") {
+        return 1
+    }
+    if cgNameHasPrefix(nm, "clar_brs_fire_") {
+        return 1
+    }
+    if cgNameHasPrefix(nm, "clar_svc_fire_") {
+        return 1
+    }
     if cgNameHasPrefix(nm, "nat") {
         return 2
     }

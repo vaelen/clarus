@@ -31,7 +31,7 @@ include "../../toolbox/serial.cla"
 include "../../toolbox/files.cla"
 
 // Per-slot refNums, parallel to conn.cla's own rtConnState/rtConnPend*
-// arrays -- literal 4, matching rtConnMax (parseType's array-size grammar
+// arrays -- literal 8, matching rtConnMax (parseType's array-size grammar
 // needs a literal, not the named const; see conn.cla's own header
 // comment for the same constraint). `IOParam`/`CntrlReset`/`CntrlSetBuf`
 // are `extern record`s and so can never be array elements or globals
@@ -40,8 +40,8 @@ include "../../toolbox/files.cla"
 // reads back out of one survives past that call, exactly the shape
 // testsuite/toolbox/cases_serial.cla's own local `outPb`/`inPb` already
 // prove works.
-var rtConnOutRef: int[4]
-var rtConnInRef: int[4]
+var rtConnOutRef: int[8]
+var rtConnInRef: int[8]
 
 // rtConnReadBuf: the one persistent 1-byte scratch PBReadSync targets --
 // lazily NewPtr'd on first use, reused by every rtConnDevReadByte call on

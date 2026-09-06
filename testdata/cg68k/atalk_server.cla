@@ -1,0 +1,58 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalk_server.cla: the native codegen golden for the SERVER half of the
+// AppleTalk surface (2026-09-06 appletalk spec %4.2/%4.4, Task 9) -- an
+// ATP service with a request/reply handler, and an ADSP listener whose
+// accepted connections arrive as `accepted(c)`. Between this fixture and
+// atalk_client.cla every lowering site the phase added is pinned in a
+// committed 68k listing: the seven synthesized clar_lsn_/clar_brs_/
+// clar_svc_fire_* dispatchers, the reply text-and-string coercions, and
+// the always-spliced atalk.cla/atalk_68k.cla globals.
+//
+// Not booted anywhere (no peer, and the .DSP driver is absent from the
+// harness's stripped boot disk) -- tests/mactest/atalk_selfserve.sh is
+// the fixture that actually runs on hardware.
+
+window Main {
+    title: "AtalkServer"
+    size: 240, 120
+}
+
+var svc: service
+var lsn: listener
+
+on App.launch {
+    open Main
+    svc.serve("ClarusServer", "ClarusTest")
+    lsn.register("ClarusStream", "ClarusTest")
+}
+
+on svc.request(op: int, req: text, from: address) {
+    if op == 1 {
+        svc.reply(0, "pong")
+    } else if op == 2 {
+        svc.reply(0, req)
+    } else {
+        svc.reply(-1, "")
+        log("unknown op from " + string(from))
+    }
+}
+
+on svc.failed(err: error) {
+    log("svc failed " + string(err.code) + " " + err.message)
+    svc.stop()
+}
+
+on lsn.accepted(c: connection) {
+    // The accepted connection arrives as an already-open `connection`
+    // VALUE (spec %4.2: no `opened` fires for it), so send/close reach it
+    // through the ordinary handle-taking runtime entry points.
+    c.send("hello\n")
+    c.close()
+}
+
+on lsn.failed(err: error) {
+    log("lsn failed " + string(err.code) + " " + err.message)
+    lsn.stop()
+}

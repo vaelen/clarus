@@ -36,17 +36,15 @@
 // the next rtConnPump pass, never synchronously from send itself, per
 // this whole file's deferred-event design (see rtConnSendText).
 
-const rtConnMax: int = 4
+const rtConnMax: int = 8
 
-// rtConnTransportSerial is the only transport tag rtConnOpen ever
-// actually sees this phase: parse.cla's callTransport tags a
-// `serial "..."` prefix 2, `appletalk "..."` 1, and no prefix 0 -- but
-// appletalk stays a lowering-time not-yet-implemented diagnostic (spec
-// %3.3) and no-prefix `open(...)` isn't a transport-open at all, so tags
-// 0/1 are structurally unreachable at THIS call site, this phase. Kept as
-// a real parameter (not asserted against) purely for interface stability
-// ahead of the MacTCP phase, which will give rtConnOpen a second live tag
-// to switch on.
+// The transport tags parse.cla's callTransport assigns: a
+// `serial "..."` prefix is 2, `appletalk "..."` 1, no prefix 0 (which is
+// not a transport-open at all and never reaches this file). rtConnOpen
+// finally switches on them -- tag 1 went live in the AppleTalk phase's
+// Task 9, when atalk.cla's ADSP waist got real native bodies. MacTCP
+// will add the third.
+const rtConnTransportAtalk: int = 1
 const rtConnTransportSerial: int = 2
 
 const stClosed: int = 0
@@ -74,15 +72,23 @@ external func clar_conn_fire_received(slot: int, data: text)
 external func clar_conn_fire_closed(slot: int)
 external func clar_conn_fire_failed(slot: int, code: int, msg: string)
 
-// Per-slot state. Parallel fixed arrays (literal 4, matching rtConnMax --
+// Per-slot state. Parallel fixed arrays (literal 8, matching rtConnMax --
 // parseType's array-size grammar requires an int LITERAL, not a named
 // const) rather than an array of records: no array-of-record global
 // exists anywhere else in the runtime to follow as precedent, and four
 // short parallel arrays read exactly as plainly. All zero/false/""
 // initialized (every global's default), which is already the correct
 // rest state -- closed, nothing pending.
-var rtConnState: int[4]
-var rtConnPendOpened: bool[4]
+//
+// 4 -> 8 (AppleTalk phase Task 9, spec %4.1): an ADSP listener hands out
+// ACCEPTED connections from this same table, so a listening program
+// needs more slots than the four a serial-only program ever used. The
+// per-slot transport tag (rtConnSlotTransport) and the ADSP open-phase
+// table live in atalk.cla, which is always spliced alongside this module
+// on both lanes -- see that file's own declaration comment for why they
+// are declared there rather than here.
+var rtConnState: int[8]
+var rtConnPendOpened: bool[8]
 // rtConnPendFailedCode doubles as its own presence flag: 0 means "no
 // failed event pending" (a real OSErr/errno is always positive, and
 // rtConnErrAlreadyOpen/InvalidSpec above are both negative -- 0 is never
@@ -100,8 +106,8 @@ var rtConnPendOpened: bool[4]
 // immediately, before any pump pass) -- rtConnPump's own ordering
 // handles that correctly without special-casing it here (see its doc
 // comment).
-var rtConnPendFailedCode: int[4]
-var rtConnPendFailedMsg: string[4]
+var rtConnPendFailedCode: int[8]
+var rtConnPendFailedMsg: string[8]
 
 // rtConnParsePortIdx/rtConnParseBaud are rtConnParseSpec's own out-param
 // pair -- Clarus has no int-by-reference parameters (Ch6), same module-
@@ -214,6 +220,22 @@ func rtConnOpen(h: int, transport: int, spec: string) {
         rtConnSetFailed(slot, rtConnErrAlreadyOpen, "connection already open")
         return
     }
+    if transport == rtConnTransportAtalk {
+        // `open(appletalk "Name:Type")` (AppleTalk phase Task 9, spec
+        // %5.3). rtAdspOpenName owns the slot's transport tag and open
+        // phase -- including putting both back on failure -- and only
+        // ever STARTS the attempt: the NBP lookup and the ADSP open both
+        // complete asynchronously, so there is no rtConnPendOpened here
+        // and the slot stays stClosed. rtConnPump's own ADSP arm is what
+        // flips it open and fires `opened`.
+        devErr = rtAdspOpenName(slot, spec)
+        if devErr != 0 {
+            rtConnSetFailed(slot, devErr, "could not open connection")
+            return
+        }
+        rtConnPendFailedCode[slot] = 0
+        return
+    }
     if not rtConnParseSpec(spec) {
         rtConnSetFailed(slot, rtConnErrInvalidSpec, "invalid connection spec")
         return
@@ -223,6 +245,7 @@ func rtConnOpen(h: int, transport: int, spec: string) {
         rtConnSetFailed(slot, devErr, "could not open connection")
         return
     }
+    rtConnSlotTransport[slot] = 0
     rtConnState[slot] = stOpen
     rtConnPendOpened[slot] = true
     // Clears any STALE pending failure left over from an earlier open()
@@ -296,7 +319,11 @@ func rtConnSendText(h: int, t: text) {
         pokeb(scratch + i, int(t[i]))
         i = i + 1
     }
-    wErr = rtConnDevWrite(slot, scratch, n)
+    if rtConnSlotTransport[slot] == rtConnTransportAtalk {
+        wErr = rtAdspWrite(slot, scratch, n)
+    } else {
+        wErr = rtConnDevWrite(slot, scratch, n)
+    }
     if wErr != 0 and rtConnPendFailedCode[slot] == 0 {
         rtConnPendFailedCode[slot] = wErr
         rtConnPendFailedMsg[slot] = "write failed"
@@ -327,7 +354,16 @@ func rtConnClose(h: int) {
         rtPanic("use of nil connection")
     }
     slot = h - 1
-    rtConnDevClose(slot)
+    if rtConnSlotTransport[slot] == rtConnTransportAtalk {
+        // rtAdspClose tears the ADSP connection end down AND resets the
+        // slot's transport tag and open phase (atalk.cla's rtAdspFailed),
+        // so a later SERIAL open on the same variable is never dispatched
+        // down the ADSP waist by a leftover tag.
+        rtAdspClose(slot)
+    } else {
+        rtConnDevClose(slot)
+    }
+    rtConnSlotTransport[slot] = 0
     rtConnState[slot] = stClosed
 }
 
@@ -354,6 +390,8 @@ func rtConnPump() {
     var code: int
     var n: int
     var j: int
+    var e: int
+    var gone: bool
 
     i = 0
     while i < rtConnMax {
@@ -367,11 +405,46 @@ func rtConnPump() {
             rtConnPendFailedMsg[i] = ""
         }
 
+        // AppleTalk phase Task 9: a slot opening over ADSP is not open
+        // yet, so the servicing block below skips it -- this arm drives
+        // its lookup/open state machine instead, and is what fires
+        // `opened` for transport 1 (rtAdspPoll answers 1 exactly once,
+        // so `opened` can never fire twice).
+        if rtConnSlotTransport[i] == rtConnTransportAtalk and rtConnState[i] != stOpen {
+            e = rtAdspPoll(i)
+            if e == 1 {
+                rtConnState[i] = stOpen
+                clar_conn_fire_opened(i)
+            } else if e < 0 {
+                rtConnSetFailed(i, e, "could not open connection")
+            }
+        }
+
         if rtConnState[i] == stOpen {
-            if rtConnDevGone(i) {
-                rtConnDevClose(i)
+            if rtConnSlotTransport[i] == rtConnTransportAtalk {
+                gone = rtAdspGone(i)
+            } else {
+                gone = rtConnDevGone(i)
+            }
+            if gone {
+                if rtConnSlotTransport[i] == rtConnTransportAtalk {
+                    rtAdspClose(i)
+                    rtConnSlotTransport[i] = 0
+                } else {
+                    rtConnDevClose(i)
+                }
                 rtConnState[i] = stClosed
                 clar_conn_fire_closed(i)
+            } else if rtConnSlotTransport[i] == rtConnTransportAtalk {
+                // The batched read spec %5.3 asks for: ONE dspRead of
+                // everything currently queued, appended in one step,
+                // instead of the byte-at-a-time serial loop below.
+                if rtAdspAvail(i) > 0 {
+                    t = ""
+                    if rtAdspReadInto(i, t) > 0 {
+                        clar_conn_fire_received(i, t)
+                    }
+                }
             } else if rtConnDevAvail(i) > 0 {
                 t = ""
                 // ponytail: per-byte append -- plain and correct at

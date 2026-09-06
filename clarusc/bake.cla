@@ -459,6 +459,16 @@ func bakeModuleList(lane: int): list of string {
         // as it always has been.
         mods.add("conn.cla")
         mods.add("conn_68k.cla")
+        // AppleTalk (2026-09-06 appletalk spec %7, Task 9): atalk.cla +
+        // atalk_68k.cla join the 68k lane's full superset with
+        // conn.cla/conn_68k.cla, mirroring driveManifestSplice's own
+        // `if want68k` splice (drive.cla) -- ordering included, right
+        // after the connection pair. The host lane's atalk.cla +
+        // atalk_c.cla pair rides conn.cla's own `usesConn or usesAtalk`
+        // gate there and so is deliberately absent from bkLaneC's list
+        // here, exactly as conn.cla/conn_c.cla always has been.
+        mods.add("atalk.cla")
+        mods.add("atalk_68k.cla")
         // native.cla is native-only (Toolbox-trap glue, no C runtime
         // under it at all -- see its own doc comment); driveManifestSplice
         // only ever splices it under want68k, and the bake generator

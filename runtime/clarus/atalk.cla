@@ -463,6 +463,14 @@ func rtSvcCallName(h: int, name: string, op: int, req: text, reply: text): bool 
     if h == 0 {
         rtPanic("use of nil service")
     }
+    // Hoisted above the lookup (Task 8 review, spec %4.4: an over-length
+    // request is rejected "before any packet leaves"). rtSvcCallAddr
+    // checks it too, but only after this function has already spent an
+    // NBP lookup on the wire finding a service it will refuse to call.
+    if req.length > rtAtMaxReq {
+        rtSetLastErr(rtAtErrLenErr, "request too long")
+        return false
+    }
     // "Name:Type" -- split at the first colon (Clarus has no by-reference
     // string out-params, and two locals beat a pair of scratch globals).
     idx = name.indexOf(':')

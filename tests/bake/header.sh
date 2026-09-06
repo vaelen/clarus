@@ -4,11 +4,13 @@
 # every-byte-accounted-for section framing are clirhdr's own exit status)
 # plus the per-lane module manifest.
 #
-# modules 23 (68k) / 18 (c) mirrors clarusc/bake.cla's bakeModuleList and
+# modules 25 (68k) / 18 (c) mirrors clarusc/bake.cla's bakeModuleList and
 # the Go test's wantModuleCounts: 18 shared modules on both lanes, plus
-# conn.cla + conn_68k.cla + fileh.cla + fileh_68k.cla + native.cla on the
-# 68k lane's unconditional full-superset splice (the c lane keeps
-# conn/fileh usage-gated, so neither pair is ever in its bake list).
+# conn.cla + conn_68k.cla + atalk.cla + atalk_68k.cla + fileh.cla +
+# fileh_68k.cla + native.cla on the 68k lane's unconditional full-superset
+# splice (the c lane keeps conn/atalk/fileh usage-gated, so none of those
+# pairs is ever in its bake list). 23 -> 25 in the AppleTalk phase's
+# Task 9, when the atalk pair joined that splice.
 # sections 46 is bkSectionCount. version 8 is language-runtime-cleanup's
 # format (IRWindowDesc gained menuMask; v7 was clir-load-perf Task 4's
 # hash swap, FNV-mul -> shift-add).
@@ -17,7 +19,7 @@
 
 for lane in 68k c; do
     case $lane in
-        68k) modules=23 ;;
+        68k) modules=25 ;;
         c)   modules=18 ;;
     esac
 

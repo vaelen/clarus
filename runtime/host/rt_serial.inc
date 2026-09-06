@@ -72,7 +72,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define RT_CONN_MAX 4
+/* 4 -> 8: AppleTalk phase Task 9 grew conn.cla's own slot table to 8
+ * (spec 4.1 -- an ADSP listener hands out accepted connections from it).
+ * The two must agree: conn.cla indexes this array by slot. */
+#define RT_CONN_MAX 8
 
 /* Read buffer for the non-socket kinds (see the header comment: FIONREAD
  * is useless on a pty master). One pump pass hands the program at most
@@ -105,6 +108,7 @@ typedef struct {
 } rt_conn_slot_t;
 
 static rt_conn_slot_t rt_conn_slots[RT_CONN_MAX] = {
+    { -1, 0, 0, 0 }, { -1, 0, 0, 0 }, { -1, 0, 0, 0 }, { -1, 0, 0, 0 },
     { -1, 0, 0, 0 }, { -1, 0, 0, 0 }, { -1, 0, 0, 0 }, { -1, 0, 0, 0 }
 };
 
