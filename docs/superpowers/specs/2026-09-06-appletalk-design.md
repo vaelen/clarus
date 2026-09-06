@@ -313,7 +313,8 @@ slot → `dspCLDeny`, re-arm. `stop`: `PRemoveName`, `dspCLRemove`.
 
 ### 5.6 Browser
 
-`find`: async `PLookupName` with a 2 KB return buffer, `maxToGet` 32,
+`find`: async `PLookupName` with a 4 KB return buffer (`rtAt68LkBufSz`
+= 4096 -- 32 tuples at up to 104 bytes each), `maxToGet` 32,
 interval 8 (1 s), count 3. The pump fires `found` per extracted tuple
 (runtime `NBPExtract` equivalent) then `done`. `zones`: sync
 `GetZoneList` loop over `.XPP` until `zipLastFlag`; `["*"]` on

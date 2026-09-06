@@ -114,6 +114,31 @@ Tiered test gates:
   in T1, not only in the opt-in full-corpus sweep. The binary-files
   phase shipped eight tasks `--rtbake`-broken because nothing but the
   T2-only sweep exercised that path.
+- **AppleTalk test groups (AppleTalk phase, 2026-09-07).** Three T1
+  groups put a real LocalTalk-over-UDP (LToUDP) stack on the loopback
+  multicast group `239.192.76.84:1954`: `tests/atalk/` (end-to-end
+  Clarus programs against the `atalkdrive` peer tool — `call`, `find`,
+  `serve`, `zones`, `runerr`, plus `splice`/`examples`, which need no
+  network), `tests/atalkdrive/` (the tool talking to itself) and
+  `tests/hostrt/atalk.sh` (the C unit test over `rt_atalk.inc`). That
+  group is shared with any Mini vMac/Snow session running on the same
+  machine, so every script that puts a stack on it takes
+  `tests/lib_atalk.sh`'s `atalk_lock` first — a `mkdir` mutex under
+  `build-run/`, holder pid inside, stolen if the holder died. A dozen
+  stacks racing for 127 node ids under `make -j` is flaky in a way no
+  protocol hardening fixes. The lock is taken as late as possible:
+  fixture COMPILES run outside it (they need no group), and
+  `tests/atalk/runerr.sh`'s panic and build-error sections run before it
+  and without the multicast gate at all. A machine with no multicast
+  makes the network scripts SKIP (`atalk_skip_unless_multicast`, whose
+  probe is `atalkdrive`'s own exit 77). `CLARUS_ATALK_IFACE=<ipv4>`
+  picks the interface to join the group on when the host is multi-homed;
+  unset, the system chooses. `runtime/clarus/atalk.cla` +
+  `atalk_68k.cla` are in the 68k superset — spliced into EVERY native
+  build, not usage-gated like the host `atalk.cla`/`atalk_c.cla` pair —
+  so they are in `bake.cla`'s 68k module list and any edit to
+  `atalk.cla` moves `testdata/cg68k/atalk_{server,client}.s` and
+  `testdata/emitui/atalk_listener.c.golden`.
 - Opt-in lanes, SKIPped by both gates:
   - `CLARUS_CPRINT_MAC_TESTS=1` (alongside `CLARUS_MAC_TESTS=1`) enables
     the Retro68/cprint-gcc twins — `tests/mactest/{coresuite_mac,
@@ -319,8 +344,10 @@ enum + runner, not one boot per case.
 
 ## Retro68 / Mac toolchain (symlinks, not in git)
 
-- `Retro68/` → Retro68 source; Universal Interfaces in
-  `Retro68/InterfacesAndLibraries`.
+- `Retro68/` → Retro68 source. The Universal Interfaces headers the
+  `toolbox/` catalog is transcribed from are `toolchain/universal/CIncludes`
+  (CR-only line endings and MacRoman bytes — read them through
+  `LC_ALL=C tr '\r' '\n'`, a plain `grep -n` reports nothing).
 - `toolchain/` → built cross-toolchain (`toolchain/bin`: gcc, Rez, LaunchAPPL,
   hfsutils h* tools). Prebuilt samples: `../Retro68-build/build-target/Samples/`.
 - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.

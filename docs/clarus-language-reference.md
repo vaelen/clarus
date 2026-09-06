@@ -1551,7 +1551,9 @@ on clock.failed(err: error) {
 }
 ```
 
-A client holding an `address` from a browser calls that server with `clock.call(addr, 1, "", answer)`, where `answer` is a `text` the reply lands in; the `"Name:Type"` form, `clock.call("Clock:ClockSrv", 1, "", answer)`, looks the name up first and costs one extra round trip.
+A client holding an `address` from a browser calls that server with `clock.call(addr, 1, "", answer)`, where `answer` is a `text` the reply lands in; the `"Name:Type"` form, `clock.call("Clock:ClockSrv", 1, "", answer)`, looks the name up first and costs one extra round trip. `answer` must be a `text` variable, not a `string`: `call` fills it in place, so it is an out-parameter and the compiler rejects anything else.
+
+**AppleTalk on a command-line host.** A host build is a real LocalTalk peer, not a stub: the runtime carries its own LocalTalk-over-UDP stack on the multicast group `239.192.76.84:1954`, which is the same wire a Mini vMac or Snow emulator on the machine is on — so a host program and a Macintosh program can discover and call each other. Everything in *Service Discovery* and *Services* above works for real there: `find`, `zones`, `serve`, `reply`, and `call`, with the same events, the same limits, and the same `lastError`. The ADSP stream half does not: `connection.open(appletalk "Name:Type")`, `connection.open(addr)`, and `listener.register` all fail with `failed(err: error)` on a host in this release — streams are Macintosh-only, the same environmental-failure path a System 6 machine without the `.DSP` driver takes. `zones(out)` on a host always comes back holding the single name `"*"`, since there is no router to ask. On a machine with more than one network interface, `CLARUS_ATALK_IFACE` names the IPv4 address of the one to join the group on (`CLARUS_ATALK_IFACE=192.168.1.20`); unset, the system picks.
 
 ### Files
 

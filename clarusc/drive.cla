@@ -2351,8 +2351,11 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         return true
     }
 
-    // C-lane --rtbake gap, closed (appletalk spec %7, docs/TODO.md's own
-    // fix (b)): bakeModuleList deliberately leaves the usage-gated HOST
+    // C-lane --rtbake gap, closed (appletalk spec %7; the gap itself was
+    // recorded by the compiler-cleanup phase -- docs/HISTORY.md's entry
+    // for it -- with two candidate fixes, (a) and (b), and the TODO line
+    // naming them was deleted when this closed it):
+    // bakeModuleList deliberately leaves the usage-gated HOST
     // pairs (conn.cla/conn_c.cla, fileh.cla/fileh_c.cla and now
     // atalk.cla/atalk_c.cla) out of the C-lane baked chain, and the
     // haveRtbake branch below bypasses driveManifestSplice entirely -- so
@@ -2364,8 +2367,8 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     // bakeModuleList, would move every host program's baked manifest and
     // IR indices).
     //
-    // HERE, not beside the drift check up in Phase A (where docs/TODO.md's
-    // own write-up of fix (b) assumed usesConn/usesFileh were "already
+    // HERE, not beside the drift check up in Phase A (where that
+    // write-up of fix (b) assumed usesConn/usesFileh were "already
     // set"): they are not. checkReset() clears all three and the user
     // program's own check pass is what sets them, which is the `Checked
     // user program` phase just above. Placed after the wantEmit gate too,

@@ -15,9 +15,9 @@
 // come from the headers cited per declaration.
 //
 // Every constant and struct layout below is confirmed directly against
-// Apple's own Universal Interfaces 3.4 (Retro68/InterfacesAndLibraries/
-// Interfaces/CIncludes/{AppleTalk,ADSP,MacErrors,Devices}.h), read via
-// `LC_ALL=C tr '\r' '\n' < AppleTalk.h` -- those headers have CR-only
+// Apple's own Universal Interfaces 3.4
+// (toolchain/universal/CIncludes/{AppleTalk,ADSP,MacErrors,Devices}.h),
+// read via `LC_ALL=C tr '\r' '\n' < AppleTalk.h` -- those headers have CR-only
 // line endings and MacRoman bytes, so a plain `grep -n` silently reports
 // nothing against them (toolbox/devices.cla's header comment records the
 // same trap). Line numbers below are from that reflow, matching the
