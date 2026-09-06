@@ -125,10 +125,13 @@ core suite is 83 cases (the new `ArrReturn`), and 49 `testdata/cg68k/*.s`
 goldens were blessed — two new, 27 pure `cg_init_globals` deletions, 20
 repacked by the 32 KB segment packer with equivalence verified unit by
 unit in review. That emptied `docs/TODO.md`'s "Compiler correctness /
-cleanup" and "Runtime / Toolbox robustness" sections, which are now
-DELETED rather than reused: what remains in that file is the Serial /
-connection group, the test-coverage gaps, and the on-hold Compiler-on-Mac
-section. Full T2 green at the tip (`scripts/test-merge.sh` PASS in 859s
+cleanup" and "Runtime / Toolbox robustness" sections; the Compiler
+section is DELETED, and the Runtime section was re-created at close-out
+for one new entry (the sidecar shrink-between-`fstat`-and-copy path the
+final review surfaced), alongside two test nits under the test-coverage
+gaps. What remains in that file is the Serial / connection group, the
+test-coverage gaps, that one Runtime entry, and the on-hold
+Compiler-on-Mac section. Full T2 green at the tip (`scripts/test-merge.sh` PASS in 859s
 on `d4cd7c1`, after the deferred-minors wave: selfhost 179s, mactest
 648s with `coresuite_68k` 83/83 and `toolbox_68k` `LeakCheck` on
 hardware, bake full corpus 2s); the bootstrap snapshot was regenerated

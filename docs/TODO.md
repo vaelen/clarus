@@ -187,6 +187,42 @@ sub-heading.
   toolbox suite's jiggle boot exercises, so the gap is real, not
   hypothetical.
 
+### native-array-return-and-fileh-guards phase (2026-09-06)
+
+- **The read-only-directory close-errno check is a silent no-op under
+  root and does not check `mkdir`** (`runtime/host/rt_fileh_test.c`,
+  `test_openrf`'s forced-AppleDouble block, added by the phase's
+  deferred-minors wave): the `EACCES` assertion is skipped when
+  `geteuid() == 0` (root bypasses directory modes) without printing a
+  SKIP, and `mkdir("rf_ro_dir", 0755)`'s return is unchecked, so a stale
+  0555 `rf_ro_dir` left by a killed run surfaces as a confusing
+  `close errno: openRF` failure rather than naming the directory. Two
+  lines each.
+
+- **`ArrReturn`'s independence-failure message is a 167-character source
+  line** (`testsuite/core/cases_arr.cla`, the `assigned copy not
+  independent` `tkFail`) in a file wrapped at ~72 columns — the same wave
+  wrapped a 190-character comment for the same reason. Cosmetic; split
+  the concatenation across two lines.
+
+## Runtime / Toolbox robustness
+
+### native-array-return-and-fileh-guards phase (2026-09-06)
+
+- **A resource fork that SHRINKS between `fstat` and the copy still
+  yields a truncated AppleDouble sidecar reported as success**
+  (`runtime/host/rt_fileh.inc`, `rt_fh_sidecar_store`): the resource-fork
+  entry length is written into the header from `st.st_size` BEFORE the
+  copy loop, and the loop's `got == 0` break (end of file) exits early if
+  the fork got shorter in between, so the header's length exceeds the
+  data that follows it. The phase's `pread` follow-up made a read ERROR
+  fail (errno preserved); this is the remaining short-copy path. Only
+  reachable if another writer truncates the same open fork mid-store —
+  host lane, AppleDouble path only (non-Apple host or
+  `CLARUS_FORCE_APPLEDOUBLE=1`). Fix candidates: re-`fstat` after the
+  loop and fail on a mismatch, or copy first and write the header last
+  with the byte count actually copied.
+
 ## Compiler-on-Mac (`ClarusC.APPL`) — on hold
 
 The Mac-resident compiler target is on hold (Andrew, 2026-09-05). Nothing

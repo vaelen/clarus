@@ -5839,7 +5839,7 @@ returned success. A `pread` error is now a failure with `errno`
 preserved across the `fclose`; `got == 0` remains the EOF break. No
 new test: the function is `static` inside the `.inc` and a `pread`
 failure on a live fd has no clean portable recipe. Still open, recorded
-here only: a fork that SHRINKS between the `fstat` and the copy exits
+in `docs/TODO.md` (Andrew, 20:58): a fork that SHRINKS between the `fstat` and the copy exits
 through the `got == 0` break with the same header-exceeds-data shape;
 the 167-character `ArrReturn` failure-message line; the unchecked
 `mkdir` in the read-only-directory test, which is also a silent no-op
