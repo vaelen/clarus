@@ -1,0 +1,298 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// atalkchat.cla (2026-09-06 appletalk spec 8.5, Task 11): the AppleTalk
+// phase's STREAM acceptance app -- one program that is either end of an
+// ADSP conversation, and the subject of tests/mactest/adsp_68k.sh's two
+// Mini vMac boots.
+//
+// Which end it is, is chosen at runtime by the button clicked:
+//
+//   Serve    lsn.register("Chat-<n>", "ClarusChat"), then echo every
+//            chunk that arrives back to the client with a '>' prepended,
+//            and quit when the client closes the stream.
+//   Connect  brs.find("ClarusChat"), then open(appletalk "Name:Type") to
+//            the first match, send a 0..255 byte sweep, check the echo
+//            byte for byte, send "hello", check that echo too, close.
+//
+// The registered name carries a per-run suffix (spec 8.4: multicast
+// LocalTalk sees every other session on the machine, so a fixed name
+// would collide with Andrew's own running copies), and the client takes
+// the FIRST "ClarusChat" entity NBP hands it -- it cannot know the
+// server's suffix, so it logs the name it picked and the test reads that
+// back.
+//
+// Both ends write the same shaped log, which is what adsp_68k.sh parses
+// out of the boot capture:
+//
+//   server   serving <name> / accepted / received 256 / received 5 /
+//            closed
+//   client   connecting / found <name> <net.node.socket> / opened /
+//            received 257 / echo ok / received 6 / echo ok / closing
+//
+// The exchange is deliberately LOCK-STEP -- the client sends "hello"
+// only after the sweep's echo has come back -- so each `received` length
+// is deterministic. Sending both up front would let ADSP coalesce them
+// into one 261-byte delivery on a slow pass, which is a legal stream
+// behavior but makes the per-chunk lengths unassertable.
+//
+// Not runnable on the host `cc` lane: this is a UI program, and the host
+// C lane only compiles non-UI programs (see examples/serialecho.cla's
+// own header for that gap). Build it with scripts/build-68k.sh, or with
+// `--events` for the scripted two-boot test.
+include "toolbox/osutils.cla"
+
+app AtalkChat {
+    name: "AtalkChat"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "Two-Mac AppleTalk chat over ADSP."
+    id: "ACHT"
+}
+
+// Content top-left = ((512 - width) / 2, 44) for a window that fits on
+// screen unclamped (ui.cla's rtUiOpen), so (106, 44) here; a button's
+// default size is 80x20 (testsuite/toolbox/gui.cla's own derivation).
+// -> Serve   (116,54)-(196,74), center (156,64)
+//    Connect (206,54)-(286,74), center (246,64)
+// which is exactly what testdata/ui/atalkchat_{server,client}.events
+// click.
+window Chat {
+    title: "AppleTalk Chat"
+    size: 300, 160
+
+    button Serve   { at: 10, 10;  caption: "Serve" }
+    button Connect { at: 100, 10; caption: "Connect" }
+    label Status   { at: 10, 45; width: 280; text: "idle" }
+    label Peer     { at: 10, 70; width: 280; text: "" }
+}
+
+menu File {
+    item Quit "Quit" key "Q"
+}
+
+var chatType: string = "ClarusChat"
+
+var roleIdle: int = 0
+var roleServer: int = 1
+var roleClient: int = 2
+
+var lsn: listener
+var brs: serviceBrowser
+var chat: connection
+
+var role: int = 0
+var dialed: bool = false
+var tries: int = 0
+var sent: text
+var out: text
+var beats: int = 0
+var quitAt: int = 0
+
+// The watchdog exists for the same reason selfserve.cla's does: every
+// end state here is reached by a network event, so a waist body that
+// never completes would otherwise sit in the event loop until the boot
+// deadline -- a timeout instead of a readable log line.
+var maxBeats: int = 380
+
+func setStatus(s: string) {
+    var w: Chat = Chat.front
+
+    if w != nil {
+        w.Status.text = s
+    }
+}
+
+func setPeer(s: string) {
+    var w: Chat = Chat.front
+
+    if w != nil {
+        w.Peer.text = s
+    }
+}
+
+on App.launch {
+    open Chat
+}
+
+extend Chat {
+    on Serve.click {
+        var name: string
+
+        if role == roleIdle {
+            role = roleServer
+            // `mod` is a remainder, and a Mac whose clock was never
+            // set reads back a NEGATIVE `now()` (the stripped LaunchAPPL
+            // boot disk does exactly that -- the first real run of this
+            // registered "Chat--8422"), so fold it back into 0..9999.
+            name = "Chat-" + string(((now() mod 10000) + 10000) mod 10000)
+            lsn.register(name, chatType)
+            log("serving " + name)
+            Status.text = "serving " + name
+        }
+    }
+    on Connect.click {
+        if role == roleIdle {
+            role = roleClient
+            log("connecting")
+            Status.text = "looking for a chat server"
+            brs.find(chatType)
+        }
+    }
+}
+
+extend File {
+    on Quit.select { quit }
+}
+
+// ---- server side ----
+
+on lsn.accepted(c: connection) {
+    // spec 4.2: the connection arrives already open, so no `opened`
+    // fires for it. It lands in the program's one connection slot --
+    // `chat` is the only `connection` global, so slot 0 is both what the
+    // pre-pass gave `chat` and the free slot the accept picks, which is
+    // what makes the `on chat.received` handler below fire for it.
+    chat = c
+    log("accepted")
+    setStatus("client connected")
+}
+
+on lsn.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+    setStatus("listener failed: " + err.message)
+    quit
+}
+
+// ---- client side ----
+
+on brs.found(name: string, addr: address) {
+    if not dialed {
+        dialed = true
+        log("found " + name + " " + string(addr))
+        setPeer(name + " " + string(addr))
+        chat.open(appletalk name + ":" + chatType)
+    }
+}
+
+on brs.done {
+    if not dialed {
+        // The server may not have finished registering its name yet --
+        // it boots first, but NBP registration is itself a couple of
+        // seconds of network traffic. Each retry is a full lookup, so
+        // this is self-paced, not a spin.
+        tries = tries + 1
+        if tries >= 8 {
+            log("no server found")
+            quit
+        }
+        brs.find(chatType)
+    }
+}
+
+on brs.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+    quit
+}
+
+on chat.opened {
+    var i: int = 0
+
+    log("opened")
+    setStatus("connected")
+    sent.clear()
+    sent.reserve(256)
+    while i < 256 {
+        sent.append(char(i))
+        i = i + 1
+    }
+    chat.send(sent)
+}
+
+// ---- shared ----
+
+// echoOk: the server's echo of `sent` is those same bytes with a '>'
+// prepended. This is the byte-exactness half of spec 8.2's "byte-exact
+// echo both ways" -- a length check alone would pass on a stream that
+// dropped or reordered bytes.
+func echoOk(data: text): bool {
+    var i: int = 0
+
+    if data.length != sent.length + 1 {
+        return false
+    }
+    if data[0] != '>' {
+        return false
+    }
+    while i < sent.length {
+        if data[i + 1] != sent[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+on chat.received(data: text) {
+    log("received " + string(data.length))
+    if role == roleServer {
+        out.clear()
+        out.append('>')
+        out.append(data)
+        chat.send(out)
+    } else {
+        if echoOk(data) {
+            log("echo ok")
+        } else {
+            log("echo bad")
+        }
+        if sent.length == 256 {
+            sent.clear()
+            sent.append("hello")
+            chat.send(sent)
+        } else {
+            chat.close()
+            log("closing")
+            setStatus("done")
+            // Not `quit` outright: the close has to reach the server for
+            // its own `closed` to fire, and quitting inside this handler
+            // would tear the slot down first.
+            quitAt = beats + 6
+        }
+    }
+}
+
+on chat.closed {
+    log("closed")
+    setStatus("peer closed")
+    quit
+}
+
+on chat.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+    setStatus("failed: " + err.message)
+    quit
+}
+
+// The Delay is what makes a `--events` build take real time. A scripted
+// boot's ticks are VIRTUAL (uiscript.cla's rtUiVirtualTicks: the real
+// clock is never consulted), so without it the whole event script would
+// run out in well under a second -- before the peer has even finished
+// booting -- and the program would quit with nothing to show. A sixth
+// of a second per beat turns a 400-line script into ~66 s of real
+// overlap between the two boots. In a real interactive build it costs
+// only that much latency on a beat the app spends waiting for the
+// network anyway.
+every 4 ticks {
+    var slept: int
+
+    slept = Delay(10)
+    beats = beats + 1
+    if quitAt != 0 and beats >= quitAt {
+        quit
+    }
+    if beats >= maxBeats {
+        log("watchdog role " + string(role))
+        quit
+    }
+}

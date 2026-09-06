@@ -31,6 +31,65 @@ run_mac() {
     capture_split "$WORK/cap.raw"
 }
 
+MAC_EXIT1=
+MAC_EXIT2=
+
+# run_mac_pair BIN1 BIN2 SECS (2026-09-06 appletalk spec 8.2, Task 11):
+# TWO Mini vMac boots at once -- BIN1 on macplus/ (the ~/.LaunchAPPL.cfg
+# default) and, 5 s later, BIN2 on macplus2/ via LaunchAPPL's own
+# per-invocation overrides, no second config file (spec 8.4). Each boot
+# gets its OWN cwd under $WORK, because LaunchAPPL makes its temp dir --
+# and the copy of the emulator app it actually runs -- in cwd; that cwd
+# string is also the only safe kill key. run_mac's own blanket
+# `pkill -f minivmac.app` must NOT be reused here: it would take out the
+# other half of this pair and any UNRELATED session's emulator too (Task
+# 1 P4; Andrew runs boots of his own alongside the gate), and it does not
+# even match the second instance, whose app copy is named MacPlus2.app.
+#
+# Both boots run under the same SECS deadline, so the second can outlive
+# the first by at most the 5 s stagger. Either one failing (a timeout, or
+# LaunchAPPL itself erroring) sweeps up BOTH cwds and dies -- a surviving
+# detached emulator owns the machine's screen and would poison every
+# later boot in the group.
+#
+# The captures land in $WORK/cap{1,2}.raw and are split by capture_split
+# into $WORK/cap1.{out,log} / $WORK/cap2.{out,log} with MAC_EXIT1 /
+# MAC_EXIT2 -- capture_split itself writes the un-numbered cap.* names,
+# so each split is renamed before the next one overwrites it.
+run_mac_pair() {
+    mkdir -p "$WORK/launchA" "$WORK/launchB"
+    ( cd "$WORK/launchA" && "$TOOLS/timeout" "$3" \
+        "$ROOT/toolchain/bin/LaunchAPPL" -e minivmac "$1" \
+        > "$WORK/cap1.raw" 2> "$WORK/cap1.err" ) &
+    _pidA=$!
+    # The stagger is what makes the pair a server/client pair: BIN1 is
+    # listening (or at least booting) before BIN2 starts looking for it.
+    sleep 5
+    ( cd "$WORK/launchB" && "$TOOLS/timeout" "$3" \
+        "$ROOT/toolchain/bin/LaunchAPPL" -e minivmac \
+        --minivmac-dir "$ROOT/macplus2" --minivmac-path ./MacPlus2.app \
+        --system-image ./disk1.dsk --autoquit-image ./autoquit-1.1.1.dsk \
+        "$2" > "$WORK/cap2.raw" 2> "$WORK/cap2.err" ) &
+    _pidB=$!
+    wait "$_pidA"; _rcA=$?
+    wait "$_pidB"; _rcB=$?
+    if [ $_rcA -ne 0 ] || [ $_rcB -ne 0 ]; then
+        pkill -f "$WORK/launchA"
+        pkill -f "$WORK/launchB"
+        die "LaunchAPPL pair failed (rc $_rcA/$_rcB, 124 = timed out after $3s):
+  $1: $(head -5 "$WORK/cap1.err")
+  $2: $(head -5 "$WORK/cap2.err")"
+    fi
+    capture_split "$WORK/cap1.raw"
+    MAC_EXIT1=$MAC_EXIT
+    mv "$WORK/cap.out" "$WORK/cap1.out"
+    mv "$WORK/cap.log" "$WORK/cap1.log"
+    capture_split "$WORK/cap2.raw"
+    MAC_EXIT2=$MAC_EXIT
+    mv "$WORK/cap.out" "$WORK/cap2.out"
+    mv "$WORK/cap.log" "$WORK/cap2.log"
+}
+
 # capture_split RAW : split the capture at the LAST "##CLARUS-EXIT## "
 # line (the record may legitimately start at byte 0 for an alert-free
 # program) into $WORK/cap.out (everything before it, byte-exact), the
