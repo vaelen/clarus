@@ -5473,14 +5473,33 @@ in `docs/TODO.md`.
   move. Same coverage-gap class as `compiler-cleanup`'s `--rtbake`
   lesson, one lane over.
 
-**Gates at close-out.** Full T2 (`scripts/test-merge.sh`) and the Snow
-`clarusc_bake` gate (`CLARUS_SNOW_TESTS=1 make test
-T=mactest/snow/clarusc_bake`, the one run covering both `bake.cla` edits)
-— see the Task 15 report in
-`.superpowers/sdd/2026-09-06-language-runtime-cleanup/` for the verbatim
-stage lines, the golden attributions, and the one open item close-out's
-T2 surfaced (a 2-byte `CanvasIdle` `FreeMem` sample, bisected to a
-one-time settle transient rather than a per-pass leak).
+**Gates at close-out.** Full T2 (`scripts/test-merge.sh`) is green on
+every stage. The Snow `clarusc_bake` gate (`CLARUS_SNOW_TESTS=1 make
+test T=mactest/snow/clarusc_bake`, the one run covering both `bake.cla`
+edits) is still OWED — no run has completed, and nothing here should be
+read as claiming it passed. The Task 15 report in
+`.superpowers/sdd/2026-09-06-language-runtime-cleanup/` carries the
+verbatim stage lines, the golden attributions, and the close-out fix
+round.
+
+**What close-out's own T2 caught.** `CanvasIdle` went red by 2 bytes
+(`FreeMem moved: 3557464 -> 3557462`). Per-pass instrumentation on the
+emulated Mac Plus showed the case had been sampling `FreeMem` INSIDE a
+window's first-open Toolbox allocation transient the whole time: at
+`63e2429` the transient settled on pass 1 and both of the case's samples
+landed on the settled value, so it passed; the phase's own code-size
+ripple moved the settle to pass 4 and the first sample began landing
+inside it. Reverting the SEMANTIC half of the commit the bisect named
+(`9fa5134`'s two `rtUiSyncMenuBar` loop conditions, same line count)
+reproduces the failure byte-identically — and `rtUiSyncMenuBar` never
+reaches a Toolbox call during that case anyway, since `IdleCanvasWin`
+declares no `menus:` and the mask compare early-returns. So the trigger
+was heap layout, and the case was green on layout luck: exactly the
+class `docs/ROADMAP.md`'s own standing rule warns about. Fixed by
+warming up 12 event-loop passes before sampling, with the per-pass
+measurements written into the case. The steady-state contract it exists
+to prove — a clean buffered canvas costs no blit and no Memory Manager
+traffic per pass — is unchanged and now actually what is asserted.
 
 Spec: `docs/superpowers/specs/2026-09-06-language-runtime-cleanup-design.md`
 (its §10 carries the as-built corrections); plan

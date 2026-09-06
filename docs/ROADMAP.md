@@ -102,8 +102,11 @@ landed three user-visible features (array literals, `menus:`,
 `file.openRF`) plus two compiler-correctness fixes nobody had asked for
 (a native statement-temp aliasing bug that was releasing wrong pointers
 in any program with `for x in f()`, and the `lst.pop().field` native
-leak). Full T2 green apart from one 2-byte `CanvasIdle` FreeMem sample
-under review at close-out; the Snow `clarusc_bake` gate PASSed. Details:
+leak). Full T2 is green — every stage, including the `mactest/` suite
+boots after close-out's own `CanvasIdle` fix (a first-open FreeMem
+settle the case was sampling inside). The Snow `clarusc_bake` gate is
+the one thing still OWED: `clarusc/bake.cla` changed this phase
+(`bkFormatVersion` 7 → 8), and no run has completed. Details:
 `docs/HISTORY.md`'s own entry.
 
 Owed, not yet done (details in `docs/TODO.md`): a live run of the Snow

@@ -16,7 +16,7 @@ performance", "Runtime / Toolbox robustness" — **24 entries** accumulated
 across nine phases, disposed of as **23 fixed / 1 excluded by design**
 (the `rtUiTableClick` tripwire, whose note moved verbatim into
 `docs/ROADMAP.md`'s Standing rules). Two waves, sixteen tasks, two golden
-blesses, one snapshot regeneration, one Snow gate.
+blesses, one snapshot regeneration, and one Snow gate still owed.
 
 **Three user-visible features landed**: array-literal initializers
 (`const t: int[256] = [...]` in a dedicated constant-pool class),
@@ -46,22 +46,24 @@ reports, reviews, and `progress.md`'s `Ruling:` lines).
 
 **Obligations this phase leaves.**
 
-- **One open item from close-out's own T2.** `mactest/toolbox_68k`'s
-  `CanvasIdle` case reports `FreeMem moved: 3557464 -> 3557462` — 2
-  bytes, deterministic, and bisected at close-out to commit `9fa5134`
-  (Task 12's menu-bar re-place fix). It is **NOT a per-pass leak**: an
-  instrumented boot shows FreeMem exactly flat across three further
-  200-tick batches, and the transient is a 2-byte oscillation across the
-  window's activation settle (`open` → `+2` after the first tick verb →
-  back to baseline after the second), which the case's `m0` sample
-  happens to land inside. `toolbox_jiggle` — the same 38 cases under
-  heap jiggle — is 38/38 green. Recommended fix is one extra settle tick
-  before `m0` in `testsuite/toolbox/cases_canvasidle.cla`; NOT applied,
-  because a runtime/fixture change at close-out is the controller's
-  ruling to make. Everything else in T2 passed.
-- **The Snow `clarusc_bake` gate was run** (the one run covering both
-  `bake.cla` edits, `bkFormatVersion` 7 → 8) — see the Task 15 report for
-  its result line and duration.
+- **`CanvasIdle` was red at close-out and is FIXED** (`ecbef8a`). The
+  case sampled `FreeMem` before a window's first-open Toolbox allocation
+  transient had settled; per-pass instrumentation showed the same
+  transient at `63e2429`, where it happened to settle one pass earlier
+  and both samples landed on the settled value — so the case had been
+  green on heap-layout luck. Reverting the semantic half of the commit
+  the bisect named (`9fa5134`) leaves the failure byte-identical, so the
+  trigger was that commit's code-size ripple, not its menu logic. The
+  case now warms up 12 event-loop passes before sampling, with the
+  measurements in its comment; `toolbox_68k` and `toolbox_jiggle` are
+  38/38 with `PASS CanvasIdle` on both lanes. It is the only
+  exact-FreeMem case in the suite that brackets a window open.
+- **The Snow `clarusc_bake` gate is OWED and has not passed.**
+  `clarusc/bake.cla` changed this phase (`bkFormatVersion` 7 → 8, two
+  additive sections), so the ~55-minute standing rule fires. No run has
+  completed: see the Task 15 report for the two attempts and their
+  disposition. Do not treat this phase as gate-complete until that
+  result line exists.
 - **New debt filed** in `docs/TODO.md` under this phase's own
   sub-headings: array RETURNS still abort on `emit68k`
   (`cgRetNeedsHidden` lacks `KArr`); `cpParamByRef` omits `KErr` where
