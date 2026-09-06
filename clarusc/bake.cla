@@ -4002,17 +4002,6 @@ func bkCopyIntmapInt(src: intmap of int): intmap of int {
     return dst
 }
 
-func bkCopyMapInt(src: map of int): map of int {
-    var dst: map of int
-    var k: string
-    var v: int
-
-    for k, v in src {
-        dst[k] = v
-    }
-    return dst
-}
-
 // bkCopyListScope is the one deep copy: Scope.names is an `intmap of
 // int`, i.e. a REFERENCE field that a plain `.add` would share with the
 // pending parse -- and types.cla's scopeDeclare writes
@@ -4290,6 +4279,9 @@ func bkInstallArenas(testapi: bool) {
     var arrN: list of int
     var arrVals: list of int
     var freshArrLitMemo: intmap of int
+    var freshStrIdx: map of int
+    var strKey: string
+    var strVal: int
 
     // Every assignment in this function COPIES its pending container
     // (clir-load-perf Task 7, design B -- see bkParsedValid's own doc
@@ -4474,7 +4466,27 @@ func bkInstallArenas(testapi: bool) {
     uiMenuCount = bkLdUiMenuCount
     lowStoreTempN = bkLdLowStoreTempN
     lowRetTempN = bkLdLowRetTempN
-    lowStrIdx = bkCopyMapInt(bkLdLowStrIdx)
+    // NOT a straight copy: a non-testapi install TRUNCATED irStrLits back
+    // to the base boundary above, but bkLdLowStrIdx is the GENERATOR's
+    // WHOLE by-value dedup map -- so every entry it carries for a
+    // uitest.cla literal now points PAST the installed pool. A user
+    // program whose source happens to contain that same string then dedups
+    // to a dead index and the emitted C references a clar_lit_K nothing
+    // defines. (Found by the AppleTalk phase's Task 5:
+    // testdata/emitui/every_cli.cla logs "tick ", which uitest.cla also
+    // uses, and its --rtbake fork emitted `clar_lit_129` into a pool of
+    // 126 -- a full corpus of fixtures had simply never collided before.)
+    // Filtered here for exactly the reason irFuncIdxByName is REBUILT
+    // rather than copied a few lines above: same truncation, same stale-
+    // index hazard, and the two maps are the only by-name/by-value
+    // indexes into a truncatable arena. Cheap: one pass over a map with a
+    // few hundred entries, once per compile.
+    for strKey, strVal in bkLdLowStrIdx {
+        if strVal < irStrLits.count {
+            freshStrIdx[strKey] = strVal
+        }
+    }
+    lowStrIdx = freshStrIdx
 }
 
 // bkInstallObjCode is GONE (clir-load-perf Task 7, design B). It used to
