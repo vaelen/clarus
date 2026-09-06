@@ -23,9 +23,10 @@
 # check of both echoes -- the length lines alone would pass on a stream
 # that dropped or reordered bytes.
 #
-# There is no multicast/no-peer skip: both peers here are emulators this
+# There is no multicast/no-peer skip -- both peers here are emulators this
 # script boots itself, so either the pair runs or the environment gate
-# (CLARUS_MAC_TESTS) already declined.
+# (CLARUS_MAC_TESTS) already declined -- but there IS a boot-disk skip:
+# see the -1273 check after run_mac_pair below.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
@@ -60,6 +61,20 @@ CLI=$WORK/cap2.log
 # output can ever look like a result line to the runner.
 sed 's/^/  server: /' "$SRV"
 sed 's/^/  client: /' "$CLI"
+
+# The boot disk LaunchAPPL builds is System + AutoQuit + the app and
+# nothing else -- in particular no `AppleTalk` system file, so the .DSP
+# driver is absent and `lsn.register` fails with -1273 (the example logs
+# it as "failed -1273 ..."). Without ADSP there is no stream stack to
+# test, so the run is a SKIP, not a failure. This check runs BEFORE the
+# first t_fail/want_line on purpose: a FAIL line in the log beats exit 77
+# in this harness, so a single assertion ahead of it would turn the skip
+# into a red result. Task 13's out-of-repo LaunchAPPL patch (carry the
+# AppleTalk file onto the disk) is what makes this script run for real;
+# every assertion below is kept intact for that lane.
+if grep -q '^failed -1273 ' "$SRV"; then
+    skip "boot disk lacks .DSP (AppleTalk system file not carried by LaunchAPPL)"
+fi
 
 # want_line NAME FILE TEXT : FILE must contain TEXT as a WHOLE line. The
 # log lines asserted here are all complete lines the example emits, and
