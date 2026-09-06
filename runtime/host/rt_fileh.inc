@@ -123,7 +123,11 @@ static int rt_fh_sidecar_load(int slot, int fd) {
  * two entries survive a rewrite; see this block's own header comment.
  * deferred-minors wave: every failure path preserves the ORIGINAL errno
  * across its fclose(), so the two callers (FhHFlush/FhHClose) record the
- * real cause rather than whatever fclose() left behind. */
+ * real cause rather than whatever fclose() left behind.
+ * A `pread` error is a failure (errno preserved), not an early EOF --
+ * otherwise a truncated sidecar would be written and reported as success.
+ * The header's fork-length field was already written from st.st_size, so a
+ * short copy would leave a sidecar whose header length exceeds its data. */
 static int rt_fh_sidecar_store(int slot, int fd) {
     unsigned char hdr[82], buf[4096]; struct stat st; FILE *f; off_t pos; ssize_t got;
     if (fstat(fd, &st) != 0) return -1;
@@ -138,7 +142,8 @@ static int rt_fh_sidecar_store(int slot, int fd) {
     if (fwrite(hdr, 1, 82, f) != 82) { int e = errno; fclose(f); errno = e; return -1; }
     for (pos = 0; pos < st.st_size; pos += got) {
         got = pread(fd, buf, sizeof buf, pos);
-        if (got <= 0) break;
+        if (got < 0) { int e = errno; fclose(f); errno = e; return -1; }
+        if (got == 0) break;
         if (fwrite(buf, 1, (size_t)got, f) != (size_t)got) { int e = errno; fclose(f); errno = e; return -1; }
     }
     /* spec %6: flush's durability barrier covers the SIDECAR, not just the
