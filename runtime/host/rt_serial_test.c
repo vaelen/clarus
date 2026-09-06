@@ -42,7 +42,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
+#include <termios.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -481,6 +484,171 @@ static void test_open_failure(void) {
     CHECK(rt_ext_ConnHOpen(2, 0) != 0, "ConnHOpen with a zero port should fail");
 }
 
+/* ---------------------------------------------------------------------
+ * stdio / pty transports (appletalk phase, Task 4; spec 4.7 + 6.3).
+ * Both are non-socket fds, so these scenarios drive the glue against
+ * ordinary pipes / a real pty pair rather than the loopback sockets
+ * above: read()/write() instead of recv()/send(), and EOF (read returning
+ * 0) instead of a MSG_PEEK of 0 as the "channel went away" signal.
+ * ------------------------------------------------------------------- */
+
+/* fd_read_all: plain_recv_all's read() twin -- recv() only works on
+ * sockets, and neither a pipe nor a pty master is one. Bounded by poll()
+ * so a missing byte fails this test fast instead of parking in read()
+ * until main()'s own watchdog fires. */
+static int fd_read_all(int fd, unsigned char *buf, int n, int seconds) {
+    int got = 0;
+    while (got < n) {
+        struct pollfd p;
+        ssize_t k;
+        p.fd = fd;
+        p.events = POLLIN;
+        p.revents = 0;
+        if (poll(&p, 1, seconds * 1000) <= 0) return 0;
+        k = read(fd, buf + got, (size_t)(n - got));
+        if (k <= 0) return 0;
+        got += (int)k;
+    }
+    return 1;
+}
+
+/* test_stdio: CLARUS_SERIAL_MODEM=stdio, slot 0 (closed again by
+ * test_listen_mode above). A pipe pair stands in for the terminal: the
+ * read end is dup2'd onto fd 0 (what the glue reads) and a second pipe's
+ * write end onto fd 1 (what the glue writes), with the real fd 0/1 saved
+ * and restored around the whole scenario -- printf("OK") in main() only
+ * reaches the harness at all if that restore works, and if
+ * rt_ext_ConnHClose left fd 1 alone rather than closing the process's own
+ * stdout. fd 0 is a pipe here, never a tty, so the isatty()-gated raw
+ * mode is deliberately NOT exercised (that path needs a real terminal;
+ * the atexit restore is the reason it is safe to skip). */
+static void test_stdio(void) {
+    int inPipe[2], outPipe[2];
+    int save0, save1;
+    unsigned char out[300], got[300], sweep[256], back[256];
+    int rc;
+
+    CHECK(pipe(inPipe) == 0, "stdio: input pipe() should succeed");
+    CHECK(pipe(outPipe) == 0, "stdio: output pipe() should succeed");
+    save0 = dup(0);
+    save1 = dup(1);
+    CHECK(save0 >= 0 && save1 >= 0, "stdio: saving fd 0/1 should succeed");
+    CHECK(dup2(inPipe[0], 0) == 0, "stdio: dup2 onto fd 0 should succeed");
+    CHECK(dup2(outPipe[1], 1) == 1, "stdio: dup2 onto fd 1 should succeed");
+
+    setenv("CLARUS_SERIAL_MODEM", "stdio", 1);
+    unsetenv("CLARUS_SERIAL_PRINTER");
+    rc = rt_ext_ConnHOpen(0, 0);
+    CHECK(rc == 0, "stdio: ConnHOpen should succeed");
+
+    /* terminal -> program: 300 bytes (more than one 256-byte pattern, so
+       the count itself is not a coincidence of the pattern length). */
+    fill_pattern(out, (int)sizeof(out), 0);
+    CHECK(write(inPipe[1], out, sizeof(out)) == (ssize_t)sizeof(out), "stdio: feeding the input pipe should succeed");
+    CHECK(wait_avail(0, (int)sizeof(out)), "stdio: ConnHAvail should report the 300 fed bytes");
+    glue_read_all(0, got, (int)sizeof(got));
+    CHECK(memcmp(out, got, sizeof(out)) == 0, "stdio: terminal->program bytes match, in order");
+    CHECK(!rt_ext_ConnHGone(0), "stdio: not gone while the input pipe's writer is still open");
+
+    /* program -> terminal: the full 0-255 sweep, byte-exact on fd 1. */
+    fill_pattern(sweep, (int)sizeof(sweep), 0);
+    CHECK(rt_ext_ConnHWrite(0, sweep, (int32_t)sizeof(sweep)) == 0, "stdio: ConnHWrite should succeed");
+    CHECK(fd_read_all(outPipe[0], back, (int)sizeof(back), 5), "stdio: the sweep should reach the output pipe");
+    CHECK(memcmp(sweep, back, sizeof(sweep)) == 0, "stdio: program->terminal bytes match");
+
+    /* EOF on fd 0 is the terminal going away. */
+    close(inPipe[1]);
+    CHECK(wait_gone(0), "stdio: ConnHGone should fire once the input pipe's writer closes");
+
+    rt_ext_ConnHClose(0);
+    CHECK(dup2(save0, 0) == 0, "stdio: restoring fd 0 should succeed");
+    CHECK(dup2(save1, 1) == 1, "stdio: restoring fd 1 should succeed");
+    close(save0);
+    close(save1);
+    close(inPipe[0]);
+    close(outPipe[0]);
+    close(outPipe[1]);
+}
+
+/* test_pty: CLARUS_SERIAL_MODEM=pty, slot 1 (closed again by
+ * test_connect_mode above). stderr is captured over a pipe just for the
+ * ConnHOpen call so the announced slave path can be parsed back out (and
+ * so it never pollutes run_c_test's own "expect exactly OK" capture),
+ * then this test plays the CONSUMER: opens /dev/ttysNNN itself, puts the
+ * line discipline in raw mode (a real client's job -- see
+ * rt_serial.inc's own pty comment), and round-trips bytes each way.
+ * Also pins the "no slave attached yet" state (Avail 0, Write discarded
+ * with success, Gone 0) before opening the slave, and Gone once the slave
+ * closes again. */
+static void test_pty(void) {
+    int errPipe[2];
+    int save2;
+    char line[160];
+    char path[128];
+    ssize_t n;
+    int slave;
+    struct termios tio;
+    unsigned char out[256], got[256], back[256];
+    int rc;
+
+    CHECK(pipe(errPipe) == 0, "pty: stderr pipe() should succeed");
+    save2 = dup(2);
+    CHECK(save2 >= 0, "pty: saving fd 2 should succeed");
+    fflush(stderr);
+    CHECK(dup2(errPipe[1], 2) == 2, "pty: dup2 onto fd 2 should succeed");
+
+    setenv("CLARUS_SERIAL_MODEM", "pty", 1);
+    rc = rt_ext_ConnHOpen(1, 0);
+    fflush(stderr);
+    CHECK(dup2(save2, 2) == 2, "pty: restoring fd 2 should succeed");
+    close(save2);
+    close(errPipe[1]);
+    CHECK(rc == 0, "pty: ConnHOpen should succeed");
+
+    memset(line, 0, sizeof(line));
+    n = read(errPipe[0], line, sizeof(line) - 1);
+    close(errPipe[0]);
+    path[0] = '\0';
+    CHECK(n > 0 && sscanf(line, "pty %127s", path) == 1 && strncmp(path, "/dev/", 5) == 0,
+        "pty: open should announce `pty /dev/...` on stderr");
+    if (path[0] == '\0') { rt_ext_ConnHClose(1); return; }
+
+    /* No slave attached yet: the `listening` state, per spec 4.7. */
+    fill_pattern(out, (int)sizeof(out), 0);
+    CHECK(rt_ext_ConnHAvail(1) == 0, "pty: nothing available before a slave attaches");
+    CHECK(rt_ext_ConnHWrite(1, out, 8) == 0, "pty: a write with no slave attached discards and reports success");
+    CHECK(!rt_ext_ConnHGone(1), "pty: not gone before a slave has ever attached");
+
+    slave = open(path, O_RDWR | O_NOCTTY);
+    CHECK(slave >= 0, "pty: opening the announced slave should succeed");
+    if (slave < 0) { rt_ext_ConnHClose(1); return; }
+    /* Raw the slave BEFORE anything is written through it: a cooked pty
+       echoes what the master writes straight back at the master and
+       translates CR/LF, which would corrupt both byte sweeps below. */
+    CHECK(tcgetattr(slave, &tio) == 0, "pty: tcgetattr on the slave should succeed");
+    cfmakeraw(&tio);
+    CHECK(tcsetattr(slave, TCSANOW, &tio) == 0, "pty: tcsetattr(raw) on the slave should succeed");
+
+    /* consumer -> program: the full 0-255 sweep. */
+    CHECK(write(slave, out, sizeof(out)) == (ssize_t)sizeof(out), "pty: writing the sweep into the slave should succeed");
+    CHECK(wait_avail(1, (int)sizeof(out)), "pty: ConnHAvail should see the slave's bytes");
+    glue_read_all(1, got, (int)sizeof(got));
+    CHECK(memcmp(out, got, sizeof(out)) == 0, "pty: consumer->program bytes match");
+
+    /* program -> consumer: a DIFFERENT pattern, so an echoed copy of the
+       sweep above could never pass for it. */
+    fill_pattern(out, (int)sizeof(out), 128);
+    CHECK(rt_ext_ConnHWrite(1, out, (int32_t)sizeof(out)) == 0, "pty: ConnHWrite with a slave attached should succeed");
+    CHECK(fd_read_all(slave, back, (int)sizeof(back), 5), "pty: the written bytes should reach the slave");
+    CHECK(memcmp(out, back, sizeof(out)) == 0, "pty: program->consumer bytes match");
+
+    CHECK(!rt_ext_ConnHGone(1), "pty: not gone while the slave is still open");
+    close(slave);
+    CHECK(wait_gone(1), "pty: ConnHGone should fire once the slave closes");
+
+    rt_ext_ConnHClose(1);
+}
+
 /* on_alarm: process-wide watchdog (see wait_accept_and_write's own
  * comment for the specific race this whole file used to be vulnerable
  * to) -- if ANY blocking call anywhere in this file ever hangs for a
@@ -489,7 +657,7 @@ static void test_open_failure(void) {
  * the whole `go test -timeout 30m` gate for half an hour. */
 static void on_alarm(int sig) {
     (void)sig;
-    fprintf(stderr, "FAIL: watchdog fired -- a call hung past the 240s bound\n");
+    fprintf(stderr, "FAIL: watchdog fired -- a call hung past the 270s bound\n");
     fprintf(stderr, "FAILED\n");
     _exit(1);
 }
@@ -510,19 +678,27 @@ int main(void) {
      *   test_write_before_accept: wait_accept_and_write 30s +
      *                              plain_recv_all 30s          = 60s
      *   test_open_failure:                                     = 0s
+     *   test_stdio:               wait_avail 2s + fd_read_all 5s +
+     *                              wait_gone 2s                = 9s
+     *   test_pty:                 wait_avail 2s + fd_read_all 5s +
+     *                              wait_gone 2s                = 9s
      *   ------------------------------------------------------------
-     *   sum                                                    = 196s
-     * 240s leaves ~44s of headroom above that honest sum. Still loud and
+     *   sum                                                    = 214s
+     * 270s (up from 240s, appletalk Task 4, which added the two
+     * non-socket scenarios above) leaves ~56s of headroom above that
+     * honest sum. Still loud and
      * fast in the overwhelmingly common case (a clean run finishes in well
      * under a second); this only matters on the rare, deeply pathological
      * run where every single one of these hit its own worst case at once. */
-    alarm(240);
+    alarm(270);
 
     test_listen_mode();
     test_connect_mode();
     test_sigpipe();
     test_write_before_accept();
     test_open_failure();
+    test_stdio();
+    test_pty();
     /* ConnHIdle: just prove it returns promptly with nothing open (all
        slots were closed by their own tests above) rather than hanging --
        the select()-vs-usleep branch's cheap half. */
