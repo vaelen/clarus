@@ -650,6 +650,11 @@ written so the design and what shipped can be compared.
   it. Reverting the suspected commit's semantic half reproduces the
   failure byte-identically. Fixed in the case (12 warm-up passes) with
   the per-pass measurements recorded there.
+- **The final whole-branch review found two factual errors in
+  HISTORY.md's TODO-emptying account and one undocumented pre-existing
+  native gap** (handle-bearing fixed-array parameters abort on
+  `emit68k`) — all doc-only, fixed in a follow-up commit; see
+  `docs/TODO.md` and `docs/HISTORY.md`.
 - **The Snow gate's 55-minute settle timer is gone.** Close-out's Snow
   attempts made the cost obvious: a fixed timer is a floor on every run,
   pass or fail. A follow-up task replaced `snow_settle_done` with a probe

@@ -89,6 +89,17 @@ Real debt and needed improvements stay in `docs/TODO.md`.
 
 ## Performance levers (measure first)
 
+### language-runtime-cleanup phase (2026-09-06)
+
+- **CRC hot loops pay a bounds-check + multiply per byte** (final
+  review) — `cgArrElemAddr` emits an `rtArrCheck` JSR and a `BSR mul32`
+  for every array index, even at a constant stride, so `crc16`/`crc16x`/
+  `crc32`'s per-byte table loop pays that cost where `crc32` used to be
+  a raw `peekl`. `perfgate/` is green and `crc16`/`crc16x` (were 8-step
+  bit loops) probably still net faster; worth one Mac Plus measurement
+  before 68kbbs leans on `crc16` for transfers. Lever: a constant-stride
+  shift peephole in `cgArrElemAddr`.
+
 - **Bulk `text` methods' loop-body residual** (clir-load-perf): ~10x a
   `move.b`-class floor on 68k; lever if it matters again is
   hand-emitted asm helpers (à la `cg_mul32`) or tighter loop codegen.

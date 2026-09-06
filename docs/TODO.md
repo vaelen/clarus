@@ -85,6 +85,19 @@ sub-heading.
   diagnostic instead of a SIGSEGV, so the remaining gap is the missing
   feature, not a crash.
 
+- **Handle-bearing fixed-array PARAMETERS abort on `emit68k`** (final
+  review) — an array whose element carries a `text`/`list`/`map` (e.g.
+  `func f(a: Named[2])` where `Named` has a `text` field) checks clean
+  and runs on the host lane (by-value struct), but `emit68k` aborts with
+  the generic `cgExpr: EVarRef non-scalar (str/rec/arr) reached in value
+  context` message — the same one an array RETURN gets. Pre-existing (at
+  7c9d5f8 every fixed-array argument aborted natively); this phase turned
+  the scalar-element case into the working `KArr` borrow ABI and left
+  handle-bearing ones exactly where they were. A clear diagnostic in
+  `cgPushArgs`' by-value `KArr` arm (naming the handle-bearing element,
+  not the generic value-context message) would be the code-side
+  improvement.
+
 - **`cpParamByRef` omits `KErr` where `cgParamByRef` has it** (Task 9) —
   a pre-existing host/native asymmetry in the `error` argument ABI, now
   documented in `cpParamByRef`'s own doc comment but not unified. Close
@@ -108,6 +121,15 @@ sub-heading.
   minor) and its `frameSize > 32767` guard runs on the floor-inflated
   measure frame rather than the real one. Neither is reachable today (the
   stub's frame is tiny); both are wrong in principle.
+
+- **`cg_init_globals` still emits explicit stores for zero-valued
+  constant initializers** (final review) — `var x: int = 0`, `= ptr(0)`,
+  `= false` each cost a `MOVE.L #0,D0` / `MOVE.L D0,-N(A5)` pair (~30 of
+  them in a UI program's stub) even though the startup sweep already
+  zeroed that memory. §3.5's skip only covers DEFAULT-init (no `=` at
+  all); a zero-valued EXPLICIT initializer of an all-zero type is the
+  same case and isn't caught. A one-predicate extension to that skip
+  would remove them.
 
 ## Runtime / Toolbox robustness
 

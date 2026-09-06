@@ -5299,7 +5299,10 @@ them a phase at a time meant paying those costs repeatedly. Same shape as
 the `compiler-cleanup` phase one week earlier, same direction from
 Andrew: clear all four sections in ONE phase, structured so the goldens
 bless at most twice, the snapshot regenerates once, and the Snow gate
-fires once. All 24 are disposed of; all four sections are now gone.
+fires once. All 24 are disposed of; two of the four sections (`##
+Compiler correctness / cleanup`, `## Runtime / Toolbox robustness`) are
+emptied of their 24 entries and reused for this phase's own new debt;
+the other two are gone outright.
 
 **The 24 dispositions.**
 
@@ -5334,9 +5337,8 @@ fires once. All 24 are disposed of; all four sections are now gone.
 - **1 excluded by design.** `rtUiTableClick` has no upper row clamp — a
   deliberate tripwire (the runtime-ir-bake T2 blocker): a clamp would
   mask the next stale-master-pointer bug. Its note moved verbatim into
-  `docs/ROADMAP.md`'s Standing rules so the section could be deleted, and
-  a copy stays in TODO.md's Runtime section where a runtime audit will
-  look.
+  `docs/ROADMAP.md`'s Standing rules so the section could be deleted; it
+  does not also live in TODO.md.
 
 **Structure: two waves, two blesses, one snapshot.** Wave 1 (five
 parallel tasks — runtime and harness, no `clarusc/` change) ended with
@@ -5349,9 +5351,10 @@ rewritten, 3 new (`arrlit.s`, `karr_param.s`, `pop_rec.s`), 2 stale
 again after the init-stub shrink), **all 20 `testdata/emitui/*.c.golden`**,
 and — the one the plan did not predict — the FROZEN
 `testdata/emitui/uiblob_probe.{blob,dump}.golden`, which moved by exactly
-one byte (`table 0 6 rowsIdx` 49 → 48, because deleting `rtCrc32Tab`
-shifts every later `irGlobals` index down by one) and was hand-regenerated
-the way that script's own header sanctions.
+one byte across the whole branch (`table 0 6 rowsIdx` 47 → 48: Task 12's
+two new UI globals shifted it to 49, then Task 14's deleted `rtCrc32Tab`
+global shifted every later `irGlobals` index back down by one, to 48) and
+was hand-regenerated the way that script's own header sanctions.
 
 **The snapshot story is "once, but not where the plan put it."** A
 runtime module that USES a new language feature cannot be compiled by the
