@@ -6866,20 +6866,25 @@ func cgEmitStoreErr(dst: int, src: int) {
 // below (native-array-return-and-fileh-guards, spec %2), the same fast
 // path cgEmitStoreRec has.
 //
-// language-runtime-cleanup Task 9, fix round 1: src must therefore ALREADY
-// be addressable, and this function asserts it. The doc comment used to
+// language-runtime-cleanup Task 9, fix round 1: EVERY OTHER src must
+// therefore ALREADY be addressable, and this function asserts it. The doc
+// comment used to
 // claim "cgExprAddr's own materialize fallback covers any non-addressable
 // src generically" -- true for KStr/KRec, FALSE for KArr and the exact
 // "infinite re-materialization" bug class cgEmitStoreRec's own doc comment
-// names: cgExprAddr(value-producing src) falls to cgMaterializeToTemp,
-// whose KArr arm (Task 9) calls back into THIS function with the SAME src,
-// forever -- a SIGSEGV (exit 139, no diagnostic) where the pre-task
-// compiler printed a build error. Both call sites can reach it, and which
-// one fires depends on DEFINITION ORDER (with the array-returning callee
-// defined first, its own `return a` aborts before the caller is emitted;
-// with the caller first, the recursion wins):
+// names: cgExprAddr(value-producing src) fell to cgMaterializeToTemp,
+// whose KArr arm (Task 9) called back into THIS function with the SAME
+// src, forever -- a SIGSEGV (exit 139, no diagnostic) where the pre-task
+// compiler printed a build error. Both call sites could reach it, and
+// which one fired depended on DEFINITION ORDER (with the array-returning
+// callee defined first, its own `return a` aborted before the caller was
+// emitted; with the caller first, the recursion won):
 //   - cgPushArgs -> cgMaterializeToTemp: `sum4(mk())`
 //   - cgStmt's SAssign arm:              `b = mk()`
+// The ECallFn arm above is what terminates that loop today: the one
+// value-producing src shape cgMaterializeToTemp could hand back now
+// short-circuits into cgCallFnInto instead of recursing, so the guard
+// below only ever sees a genuinely non-addressable NON-call expression.
 // One guard here, at the single function both route through, rather than
 // one at each call site. cgIsAddressableArgShape is reused deliberately:
 // when Task 7 lands EArrLit (a pool-backed array literal, a real address),
@@ -6900,7 +6905,8 @@ func cgEmitStoreArr(dst: int, src: int) {
         // spec %2: build the returned array straight into dst through the
         // hidden result pointer -- cgEmitStoreRec's own ECallFn arm. This
         // single arm serves `b = mk()` (SAssign), `sum4(mk())` (cgPushArgs
-        // -> cgMaterializeToTemp) and `return mk()` (cgEmitReturnArr ->
+        // -> cgMaterializeToTemp) and `return mk()` (cgEmitReturnErr, the
+        // KArr return path too ->
         // cgExprAddr), all of which route here.
         cgCallFnInto(src, dst)
         return
@@ -6960,26 +6966,18 @@ func cgEmitReturnRec(src: int) {
 // cgMaterializeToTemp, now KErr-aware) is stashed on the stack across the
 // 8(A6) hidden-pointer read exactly like cgEmitReturnRec's own generic
 // arm, then block-copied.
+//
+// native-array-return-and-fileh-guards (spec %2): this is ALSO the KArr
+// return path (cgReturnStmt routes KErr and a handle-free KArr to the
+// same arm). A fixed array has no constructor expression either, so
+// `return <array expr>` is the same generic stash-across-the-8(A6)-read
+// block copy, sized from cgCurRetType -- nothing distinguished a
+// KArr-specific copy of this body, so there isn't one. src's address
+// resolves directly for a local/global/field/element; an ECallFn falls to
+// cgExprAddr's materialize fallback, whose KArr arm is cgEmitStoreArr,
+// itself ECallFn-aware (it builds the result straight into the temp
+// through cgCallFnInto).
 func cgEmitReturnErr(src: int) {
-    var sz: int
-
-    sz = cgSizeOf(cgCurRetType)
-    cgExprAddr(src)
-    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 1, 0)
-    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
-    cgBlockCopy(sz)
-}
-
-// cgEmitReturnArr (native-array-return-and-fileh-guards, spec %2) is
-// cgEmitReturnErr's body for a `return <array expr>` inside a function
-// whose return needs a hidden pointer (a handle-free KArr -- see
-// cgRetNeedsHidden). No constructor arm: the IR has no array constructor
-// expression. src's address (a local/global/field/element resolves
-// directly; an ECallFn falls to cgExprAddr's materialize fallback, whose
-// KArr arm is cgEmitStoreArr, ECallFn-aware) is stashed on the stack
-// across the 8(A6) hidden-pointer read, then block-copied.
-func cgEmitReturnArr(src: int) {
     var sz: int
 
     sz = cgSizeOf(cgCurRetType)
@@ -12807,10 +12805,8 @@ func cgReturnStmt(s: int) {
     if cgCurHiddenOffset != -1 {
         if irtKind(cgCurRetType) == KRec {
             cgEmitReturnRec(x)
-        } else if irtKind(cgCurRetType) == KErr {
+        } else if irtKind(cgCurRetType) == KErr or irtKind(cgCurRetType) == KArr {
             cgEmitReturnErr(x)
-        } else if irtKind(cgCurRetType) == KArr {
-            cgEmitReturnArr(x)
         } else {
             cgEmitReturnStr(x)
         }
