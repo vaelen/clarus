@@ -469,6 +469,24 @@ static void test_openrf(void) {
                CHECK(fread(m, 1, 4, f) == 4 && m[0] == 0 && m[1] == 5 && m[2] == 0x16 && m[3] == 7, "flush barrier: AppleDouble magic before close");
                fclose(f); }
       rt_ext_FhHClose(h);
+      /* A failed write-back at close is recorded in rt_fh_errno: make the
+       * sidecar's directory unwritable between open and close (runs as an
+       * ordinary user, so fopen("wb") fails with EACCES). */
+      { uint8_t sub[256]; int32_t h2;
+        mkdir("rf_ro_dir", 0755);
+        mkpath(sub, "rf_ro_dir/f.dat"); h2 = rt_ext_FhHCreate(sub); rt_ext_FhHClose(h2);
+        h2 = rt_ext_FhHOpenRF(sub);
+        CHECK(h2 != 0, "close errno: openRF");
+        CHECK(rt_ext_FhHWriteAt(h2, 0, (void *)"Z", 1) == 0, "close errno: write");
+        if (geteuid() != 0) {
+          CHECK(chmod("rf_ro_dir", 0555) == 0, "close errno: chmod ro");
+          rt_ext_FhHClose(h2);
+          CHECK(rt_ext_FhHErrno() == EACCES, "close errno: EACCES recorded after a failed write-back");
+          chmod("rf_ro_dir", 0755);
+        } else {
+          rt_ext_FhHClose(h2);
+        }
+        unlink("rf_ro_dir/f.dat"); unlink("rf_ro_dir/._f.dat"); rmdir("rf_ro_dir"); }
       if (hadOld) setenv("TMPDIR", saved, 1); else unsetenv("TMPDIR");
       unlink("fileh_test_rf.dat"); unlink("._fileh_test_rf.dat"); }
     unsetenv("CLARUS_FORCE_APPLEDOUBLE");

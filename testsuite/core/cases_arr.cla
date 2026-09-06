@@ -12,7 +12,11 @@
 //                             local `var` array block-copied from it, both
 //                             hardware-proved on the native lane by
 //                             tests/mactest/coresuite_68k.sh.
-//   ArrReturn <- native-array-return-and-fileh-guards, spec %2: a scalar-element fixed array returned by value, consumed assigned / as an argument / forwarded / discarded; the returned copy is independent.
+//   ArrReturn <- native-array-return-and-fileh-guards, spec %2: a
+//                             scalar-element fixed array returned by
+//                             value, consumed assigned / as an argument /
+//                             forwarded / discarded; the returned copy is
+//                             independent.
 
 // coreArrLitTab is a `const` array: no storage, no startup cost -- reads
 // index the constant pool directly (PC-relative on 68k, a `static const`
@@ -128,8 +132,8 @@ func caseArrReturn(): TestResult {
     if s != 10 {
         return tkFail("ArrReturn", "forwarded return sum " + string(s) + " want 10")
     }
-    if b[0] != 100 or b[1] != 2 or b[3] != 4 {
-        return tkFail("ArrReturn", "assigned copy not independent")
+    if b[0] != 100 or b[1] != 2 or b[2] != 3 or b[3] != 4 {
+        return tkFail("ArrReturn", "assigned copy not independent: " + string(b[0]) + "," + string(b[1]) + "," + string(b[2]) + "," + string(b[3]) + " want 100,2,3,4")
     }
     return tkPass("ArrReturn")
 }

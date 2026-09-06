@@ -5266,6 +5266,7 @@ func cgEmitInitGlobalsStub(lbl: int) {
     var gt: int
     var initE: int
     var fullReplace: bool
+    var allZero: bool
     var frameSize: int
     var runningNeg: int
     var tmpOffs: list of int
@@ -5396,10 +5397,13 @@ func cgEmitInitGlobalsStub(lbl: int) {
         cgStmtBigTmpNext = 0
         cgLastTrackedOff = -1
         fullReplace = initE != -1 and irtNeedsCtor(gt) and not (irtKind(gt) == KText and irtKind(irExprType(initE)) == KStr)
-        if not fullReplace and not cgDefaultIsAllZero(gt, 0, -1) {
+        // deferred-minors wave: one cgDefaultIsAllZero(gt) per global, not
+        // two -- it walks gt's whole field/element tree on every call.
+        allZero = cgDefaultIsAllZero(gt, 0, -1)
+        if not fullReplace and not allZero {
             cgDefaultInitAt(5, cgGlobalOffsets[i], gt, 0, -1)
         }
-        if initE != -1 and not (cgInitIsZeroConst(initE) and cgDefaultIsAllZero(gt, 0, -1)) {
+        if initE != -1 and not (cgInitIsZeroConst(initE) and allZero) {
             cgEmitGlobalInitExpr(i, gt, initE)
         }
         cgFreeStmtTmps()
@@ -7057,9 +7061,18 @@ func cgEmitReturnRec(src: int) {
 // cgExprAddr's materialize fallback, whose KArr arm is cgEmitStoreArr,
 // itself ECallFn-aware (it builds the result straight into the temp
 // through cgCallFnInto).
+//
+// deferred-minors wave: an ECallFn source no longer takes that route at
+// all -- it forwards OUR hidden pointer as the callee's (cgCallFnInto's
+// dst == -1 sentinel), so the callee builds its result straight into the
+// final buffer; the block copy below is for addressable sources only.
 func cgEmitReturnErr(src: int) {
     var sz: int
 
+    if irExprKind(src) == ECallFn {
+        cgCallFnInto(src, -1)
+        return
+    }
     sz = cgSizeOf(cgCurRetType)
     cgExprAddr(src)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
@@ -10784,6 +10797,10 @@ func cgCallFnScalar(e: int) {
 // result pointer (str/record, cgSizeOf > 4), writing the result directly
 // into dst (an addressable IRExpr -- cgExprAddr resolves it). Args push
 // first, then dst's own address pushes LAST, per the calling convention.
+// The sentinel dst == -1 (deferred-minors wave) means "the CURRENT
+// function's own hidden result pointer": the pointer VALUE at 8(A6) is
+// pushed straight through, so a `return f()` builds f's result in the
+// caller's caller's buffer with no intermediate copy.
 func cgCallFnInto(e: int, dst: int) {
     var fi: int
     var total: int
@@ -10799,8 +10816,16 @@ func cgCallFnInto(e: int, dst: int) {
     // -> cgCallFnInto), so the guard matters here just as much.
     savedReleases = cgSaveArgReleases()
     total = cgPushArgs(irCallFnArgsHead(e))
-    cgExprAddr(dst)
-    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    if dst == -1 {
+        // deferred-minors wave: `return f()` inside a function whose own
+        // return needs a hidden pointer -- forward OUR caller's pointer
+        // (the VALUE at 8(A6)) as f's hidden result pointer, so f builds
+        // its result in place and cgEmitReturnErr's block copy is skipped.
+        a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
+    } else {
+        cgExprAddr(dst)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    }
     total = total + 4
     cgCallFunc(fi)
     cgCleanupStack(total)
