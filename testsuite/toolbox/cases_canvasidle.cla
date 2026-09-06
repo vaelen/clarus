@@ -17,9 +17,38 @@ func caseCanvasIdle(): TestResult {
     var b1: int
     var m0: int
     var m1: int
+    var i: int
 
     w = open IdleCanvasWin
-    UiTestTick(2)
+    // Warm-up before ANY sample: opening a window for the first time in a
+    // run leaves a small Toolbox allocation transient that takes a few
+    // event-loop passes to settle, and this case is the only exact-FreeMem
+    // case in the suite that brackets a window open (LeakCheck carries 8 KB
+    // of slack; ClearWarm opens no window). Measured per pass with
+    // TbFreeMem, first open vs second, language-runtime-cleanup Task 15:
+    //
+    //   first open   0 +2 +2 +2  0  0 ...   settles on pass 4
+    //   second open  0 +34 -4  0  0  0 ...  settles on pass 2
+    //
+    // The settle POINT moves with heap layout, so any code-size change
+    // anywhere relocates it -- which is exactly how this case went red
+    // during that phase (`9fa5134`, a menu-bar fix whose SEMANTIC half,
+    // reverted on its own, left the failure byte-identical). Sampling
+    // inside the settle made the case a heap-layout tripwire rather than
+    // the steady-state assertion it is meant to be: once settled, FreeMem
+    // is EXACTLY flat across the 200 idle ticks below, which is the
+    // contract -- a clean buffered canvas costs no blit and no Memory
+    // Manager traffic per event-loop pass.
+    //
+    // ponytail: 12 passes is ~3x the largest settle measured. If this ever
+    // goes red again by a handful of bytes, re-measure per pass before
+    // touching the number -- a real regression moves it every pass, not
+    // once.
+    i = 0
+    while i < 12 {
+        UiTestTick(1)
+        i = i + 1
+    }
     b0 = UiTestCanvasBlits(0)
     if b0 < 1 {
         close w
