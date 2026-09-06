@@ -364,7 +364,13 @@ func rtFhSetInfo(path: string, ftype: string, fcreator: string, created: int, mo
 func rtFhRename(path: string, newName: string): bool {
     var i: int
 
-    if newName == "" {
+    // native-array-return-and-fileh-guards, spec %5: an empty path is
+    // refused here, on both lanes, before the device layer. rtFhDevStat's
+    // empty-path convention ("the program's own folder", which exists/
+    // info/list rely on) would otherwise hand rtFhDevRename a parent
+    // DirID of 0 and an empty leaf name -- the shape PBHRenameSync reads
+    // as "rename the volume".
+    if path == "" or newName == "" {
         rtSetLastErr(-37, "rename failed")
         return false
     }

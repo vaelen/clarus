@@ -115,6 +115,17 @@ func caseDirOps(): TestResult {
     if file.rename(":DirOpsT:c.dat", "sub:d.dat") {
         return tkFail("DirOps", "rename with path succeeded")
     }
+    // native-array-return-and-fileh-guards, spec %5: an EMPTY path must be
+    // refused before any trap. On the native lane rtFhDevStat("") is the
+    // "program's own folder" convention and reports parent DirID 0, so
+    // without the guard PBHRenameSync would be issued with an empty leaf
+    // name and ioDirID 0 -- a VOLUME rename in Inside Macintosh's terms.
+    if file.rename("", "x") {
+        return tkFail("DirOps", "rename of empty path succeeded")
+    }
+    if lastError.code != -37 {
+        return tkFail("DirOps", "rename of empty path code " + tkIntToStr(lastError.code) + " want -37")
+    }
 
     if file.delete(":DirOpsT:Sub") {
         return tkFail("DirOps", "delete non-empty folder succeeded")
