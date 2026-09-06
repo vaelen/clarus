@@ -12,11 +12,9 @@
 # host CLI lifetime rule ending the process on its own.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
-atalk_lock   # one LToUDP script on the group at a time
 
 DRIVE=$TOOLS/atalkdrive
 require_tool "$DRIVE"
-atalk_skip_unless_multicast
 
 if atalk_build clock; then
     t_pass build
@@ -24,6 +22,11 @@ else
     t_fail build "$(tail -20 "$WORK/clock.build")"
     t_done
 fi
+
+atalk_lock   # one LToUDP script on the group at a time -- taken HERE,
+             # after the build above: `clarusc emit` + `cc` need no group
+             # and serializing them was most of this group's T1 cost.
+atalk_skip_unless_multicast
 
 NAME=$(atalk_name Clock)
 TYPE=ClarusClock

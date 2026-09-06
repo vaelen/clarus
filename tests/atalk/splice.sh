@@ -46,7 +46,7 @@ else
     t_fail run "no binary to run"
 fi
 
-# --- 2. the C-lane --rtbake gap (docs/TODO.md's fix (b)) --------------
+# --- 2. the C-lane --rtbake gap (appletalk spec %7's fix (b)) --------
 # bakeModuleList leaves the usage-gated host pairs out of the C-lane baked
 # chain, and the bake path bypasses driveManifestSplice, so a host program
 # using connection/filehandle/AppleTalk used to emit C that CALLED
@@ -85,9 +85,9 @@ else
     t_fail bake_compiles "no output"
 fi
 
-# The same gap for a plain SERIAL connection program -- the shape
-# docs/TODO.md's repro used, and the reason conn programs now carry
-# atalk.cla too.
+# The same gap for a plain SERIAL connection program -- the shape the
+# compiler-cleanup phase's own repro used (docs/HISTORY.md), and the
+# reason conn programs now carry atalk.cla too.
 if rtbake_fork echo "$ROOT/tests/conntest/testdata/echo.cla"; then
     if grep -q 'falling back to a from-source compile' "$WORK/echo.log" \
         && grep -q 'clar_fn_rtConnOpen(int32_t' "$WORK/echo.c"; then

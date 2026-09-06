@@ -6,13 +6,22 @@
 # a resource-variable count past its cap is a BUILD error naming the cap.
 # Everything environmental stays a `failed` event, which the other four
 # scripts in this group cover.
+#
+# Section order is gate order, not narrative order: the two network-free
+# sections run first and unconditionally, the peer-needing one last.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
-atalk_lock   # one LToUDP script on the group at a time
 
 DRIVE=$TOOLS/atalkdrive
 require_tool "$DRIVE"
-atalk_skip_unless_multicast
+
+# Sections 1 and 2 below need neither the multicast group nor the lock:
+# section 1 runs two programs that panic essentially at once (one before
+# any device call at all), and section 2 only runs `clarusc emit`. Only
+# section 3 needs a peer, so the probe and the lock sit immediately above
+# it -- on a machine without multicast the error-principle fences still
+# run, which was the whole point of writing them down. (Before this the
+# gate was at the top and a no-multicast host silently lost all five.)
 
 # --- 1. runtime errors that need no peer -----------------------------
 check_panic() {   # check_panic NAME TEXT
@@ -36,7 +45,27 @@ check_panic reply_outside 'reply outside a request handler'
 # host lane this phase, never will be -- spec %4.6).
 check_panic send_unopened_adsp 'connection not open'
 
-# --- 2. reply twice: needs a real request to reach the handler --------
+# --- 2. the three caps, at BUILD time --------------------------------
+check_cap() {   # check_cap NAME DIAGNOSTIC
+    if "$CLARUSC" emit --rtdir "$RTDIR" -o "$WORK/$1.c" \
+            "$ROOT/tests/atalk/testdata/$1.cla" > "$WORK/$1.emit" 2>&1; then
+        t_fail "$1" "clarusc emit succeeded; expected [$2]"
+    elif grep -q "$2" "$WORK/$1.emit"; then
+        t_pass "$1"
+    else
+        t_fail "$1" "emit failed without [$2]: $(tr '\n' '|' < "$WORK/$1.emit")"
+    fi
+}
+check_cap too_many_lsn 'too many listener variables (max 2)'
+check_cap too_many_brs 'too many serviceBrowser variables (max 2)'
+check_cap too_many_svc 'too many service variables (max 2)'
+
+# --- 3. reply twice: needs a real request to reach the handler --------
+# The only section with a peer, so the group gate and the LToUDP lock are
+# taken here rather than at the top of the script.
+atalk_lock   # one LToUDP script on the group at a time
+atalk_skip_unless_multicast
+
 if atalk_build reply_twice; then
     t_pass reply_twice_build
 else
@@ -86,18 +115,4 @@ else
     fi
 fi
 
-# --- 3. the three caps, at BUILD time --------------------------------
-check_cap() {   # check_cap NAME DIAGNOSTIC
-    if "$CLARUSC" emit --rtdir "$RTDIR" -o "$WORK/$1.c" \
-            "$ROOT/tests/atalk/testdata/$1.cla" > "$WORK/$1.emit" 2>&1; then
-        t_fail "$1" "clarusc emit succeeded; expected [$2]"
-    elif grep -q "$2" "$WORK/$1.emit"; then
-        t_pass "$1"
-    else
-        t_fail "$1" "emit failed without [$2]: $(tr '\n' '|' < "$WORK/$1.emit")"
-    fi
-}
-check_cap too_many_lsn 'too many listener variables (max 2)'
-check_cap too_many_brs 'too many serviceBrowser variables (max 2)'
-check_cap too_many_svc 'too many service variables (max 2)'
 t_done

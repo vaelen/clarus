@@ -1,5 +1,7 @@
-# tests/lib_atalk.sh -- helpers shared by tests/atalk/*.sh (sourced right
-# after lib.sh). The AppleTalk end-to-end scripts all have the same three
+# tests/lib_atalk.sh -- helpers shared by the three groups that put an
+# LToUDP stack on the loopback multicast group: tests/atalk/*.sh,
+# tests/atalkdrive/*.sh and tests/hostrt/atalk.sh (sourced right after
+# lib.sh). The AppleTalk end-to-end scripts all have the same three
 # needs: build a fixture, refuse to run without multicast, and register
 # names that cannot collide with another run (or with Andrew's live
 # emulator sessions, which share the loopback group -- spec %8.4).
@@ -108,7 +110,7 @@ atalk_lock() {
             rm -rf "$_lk"          # holder died without releasing; steal it
             continue
         fi
-        [ "$_i" -ge 300 ] && die "atalk_lock: $_lk still held after 300s"
+        [ "$_i" -ge 600 ] && die "atalk_lock: $_lk still held after 600s"
         sleep 1
         _i=$((_i + 1))
     done
@@ -120,6 +122,12 @@ atalk_lock() {
 
 atalk_unlock() {
     [ -n "${ATALK_LOCK:-}" ] || return 0
+    # Only the holder may remove it. Without this check, a waiter that
+    # stole a dead holder's lock and then exited could delete the
+    # directory a SECOND waiter had since legitimately created -- two
+    # scripts on the group at once, which is the one thing the lock
+    # exists to prevent.
+    [ "$(cat "$ATALK_LOCK/pid" 2>/dev/null)" = "$$" ] || return 0
     rm -rf "$ATALK_LOCK"
     ATALK_LOCK=
 }

@@ -7,10 +7,8 @@
 # lane run is routerless, so "zones 1 *" is the whole contract here.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_atalk.sh" || die "helper lib failed to load"
-atalk_lock   # one LToUDP script on the group at a time
 
 require_tool "$TOOLS/atalkdrive"
-atalk_skip_unless_multicast
 
 if atalk_build zones; then
     t_pass build
@@ -18,6 +16,11 @@ else
     t_fail build "$(tail -20 "$WORK/zones.build")"
     t_done
 fi
+
+atalk_lock   # one LToUDP script on the group at a time -- taken HERE,
+             # after the build above: `clarusc emit` + `cc` need no group
+             # and serializing them was most of this group's T1 cost.
+atalk_skip_unless_multicast
 
 "$TOOLS/timeout" 30 "$WORK/zones" > "$WORK/out" 2> "$WORK/log"
 rc=$?
