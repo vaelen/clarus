@@ -580,37 +580,47 @@ static void test_stdio(void) {
  * Also pins the "no slave attached yet" state (Avail 0, Write discarded
  * with success, Gone 0) before opening the slave, and Gone once the slave
  * closes again. */
-static void test_pty(void) {
+/* pty_open: rt_ext_ConnHOpen with CLARUS_SERIAL_MODEM=pty on `slot`, with
+ * stderr captured over a pipe for the duration of that ONE call so the
+ * announced slave path can be parsed back out -- and so it never pollutes
+ * run_c_test's own "the program prints exactly OK" capture. Returns 1 and
+ * fills pathOut (which must hold at least 128 bytes) on success. */
+static int pty_open(int slot, char *pathOut) {
     int errPipe[2];
     int save2;
     char line[160];
-    char path[128];
     ssize_t n;
-    int slave;
-    struct termios tio;
-    unsigned char out[256], got[256], back[256];
     int rc;
 
-    CHECK(pipe(errPipe) == 0, "pty: stderr pipe() should succeed");
+    pathOut[0] = '\0';
+    if (pipe(errPipe) != 0) return 0;
     save2 = dup(2);
-    CHECK(save2 >= 0, "pty: saving fd 2 should succeed");
+    if (save2 < 0) { close(errPipe[0]); close(errPipe[1]); return 0; }
     fflush(stderr);
-    CHECK(dup2(errPipe[1], 2) == 2, "pty: dup2 onto fd 2 should succeed");
+    if (dup2(errPipe[1], 2) != 2) { close(save2); close(errPipe[0]); close(errPipe[1]); return 0; }
 
     setenv("CLARUS_SERIAL_MODEM", "pty", 1);
-    rc = rt_ext_ConnHOpen(1, 0);
+    rc = rt_ext_ConnHOpen((int32_t)slot, 0);
     fflush(stderr);
-    CHECK(dup2(save2, 2) == 2, "pty: restoring fd 2 should succeed");
+    dup2(save2, 2);
     close(save2);
     close(errPipe[1]);
-    CHECK(rc == 0, "pty: ConnHOpen should succeed");
 
     memset(line, 0, sizeof(line));
     n = read(errPipe[0], line, sizeof(line) - 1);
     close(errPipe[0]);
-    path[0] = '\0';
-    CHECK(n > 0 && sscanf(line, "pty %127s", path) == 1 && strncmp(path, "/dev/", 5) == 0,
-        "pty: open should announce `pty /dev/...` on stderr");
+    if (rc != 0 || n <= 0) return 0;
+    if (sscanf(line, "pty %127s", pathOut) != 1) { pathOut[0] = '\0'; return 0; }
+    return strncmp(pathOut, "/dev/", 5) == 0;
+}
+
+static void test_pty(void) {
+    char path[128];
+    int slave;
+    struct termios tio;
+    unsigned char out[256], got[256], back[256];
+
+    CHECK(pty_open(1, path), "pty: ConnHOpen should succeed and announce `pty /dev/...` on stderr");
     if (path[0] == '\0') { rt_ext_ConnHClose(1); return; }
 
     /* No slave attached yet: the `listening` state, per spec 4.7. */
@@ -649,6 +659,38 @@ static void test_pty(void) {
     rt_ext_ConnHClose(1);
 }
 
+/* test_pty_attach_close: a client that attaches and detaches WITHOUT ever
+ * sending a byte -- a `screen` attach with no keystrokes, or a driver that
+ * dies before writing (review fix round 2). test_pty above cannot catch
+ * this: its slave writes before it closes, so `listening` is long gone by
+ * then. Here the slot is still `listening` when the hangup arrives, and
+ * rt_serial.inc's EOF gate has to let that hangup through anyway (macOS
+ * leaves the master polling POLLIN|POLLHUP with read() == 0, persistently)
+ * -- otherwise the slot wedges in `listening` for good: never gone, never
+ * closed by the pump, and permanently readable, which spins ConnHIdle's
+ * select() hot on every pass. Slot 2 (test_open_failure's own opens all
+ * fail, so it leaves that slot closed). */
+static void test_pty_attach_close(void) {
+    char path[128];
+    int slave;
+
+    CHECK(pty_open(2, path), "pty attach/close: ConnHOpen should succeed and announce its slave");
+    if (path[0] == '\0') { rt_ext_ConnHClose(2); return; }
+
+    CHECK(!rt_ext_ConnHGone(2), "pty attach/close: not gone before a client has ever attached");
+
+    slave = open(path, O_RDWR | O_NOCTTY);
+    CHECK(slave >= 0, "pty attach/close: opening the announced slave should succeed");
+    if (slave < 0) { rt_ext_ConnHClose(2); return; }
+    close(slave);   /* not one byte written, either way */
+
+    CHECK(wait_gone(2), "pty attach/close: ConnHGone should fire for a client that never sent a byte");
+    CHECK(rt_ext_ConnHAvail(2) == 0, "pty attach/close: no phantom bytes after the hangup");
+    CHECK(rt_ext_ConnHGone(2), "pty attach/close: gone stays latched");
+
+    rt_ext_ConnHClose(2);
+}
+
 /* on_alarm: process-wide watchdog (see wait_accept_and_write's own
  * comment for the specific race this whole file used to be vulnerable
  * to) -- if ANY blocking call anywhere in this file ever hangs for a
@@ -682,10 +724,11 @@ int main(void) {
      *                              wait_gone 2s                = 9s
      *   test_pty:                 wait_avail 2s + fd_read_all 5s +
      *                              wait_gone 2s                = 9s
+     *   test_pty_attach_close:    wait_gone 2s                 = 2s
      *   ------------------------------------------------------------
-     *   sum                                                    = 214s
-     * 270s (up from 240s, appletalk Task 4, which added the two
-     * non-socket scenarios above) leaves ~56s of headroom above that
+     *   sum                                                    = 216s
+     * 270s (up from 240s, appletalk Task 4, which added the three
+     * non-socket scenarios above) leaves ~54s of headroom above that
      * honest sum. Still loud and
      * fast in the overwhelmingly common case (a clean run finishes in well
      * under a second); this only matters on the rare, deeply pathological
@@ -699,6 +742,7 @@ int main(void) {
     test_open_failure();
     test_stdio();
     test_pty();
+    test_pty_attach_close();
     /* ConnHIdle: just prove it returns promptly with nothing open (all
        slots were closed by their own tests above) rather than hanging --
        the select()-vs-usleep branch's cheap half. */

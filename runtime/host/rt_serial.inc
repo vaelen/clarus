@@ -242,17 +242,42 @@ static int rt_conn_open_pty(void) {
  * rather than left to spin, since there is no recovery path for a serial
  * line whose fd has broken.
  *
- * That EOF latch is deliberately gated on !s->listening, and the gate is
- * NOT redundant: a pty master with no slave attached yet polls as nothing
- * at all on macOS (verified), but on Linux it reports POLLHUP, whose
- * read() then fails EIO -- which without the gate would latch `gone`
- * during the unattached window, so the first byte a client finally sent
- * would flip `listening` off with the connection already condemned and
- * the pump would tear it down after one drain. `listening` IS the "not
- * there yet" state (spec 4.7's "like listening"); nothing about it can
- * mean hung up. Linux is untested here -- this repo's gate is macOS
- * only -- so the gate is written to be correct on both by construction
- * rather than by observation. */
+ * The EOF latch's own gate, `!s->listening || (p.revents & POLLIN)`, is
+ * where the two platforms have to be reconciled, so it is worth spelling
+ * out what each half is for.
+ *
+ * `!s->listening` suppresses the latch during the unattached window. On
+ * macOS an unattached master polls as nothing at all (verified), so the
+ * read() is never even reached; on Linux it reports a BARE POLLHUP, whose
+ * read() fails EIO -- and latching that would condemn the connection
+ * before the client ever arrived, so the first byte finally sent would
+ * clear `listening` on an already-dead slot and the pump would tear it
+ * down after one drain.
+ *
+ * `p.revents & POLLIN` is what lets a REAL hangup through while still
+ * listening -- a client that attaches and detaches without ever sending a
+ * byte (a `screen` attach with no keystrokes; a driver that dies before
+ * writing). Verified on macOS: that leaves the master polling 0x11
+ * (POLLIN|POLLHUP) with read() == 0, persistently, and Linux's unattached
+ * window is a bare POLLHUP with no POLLIN, so the two states stay
+ * distinguishable on both. Without this half the slot would wedge in
+ * `listening` forever -- `gone` never latched, ConnHGone stuck on its own
+ * `listening` early-return -- with ConnHIdle's select() finding the fd
+ * permanently readable and spinning the pump hot. `listening` is cleared
+ * along with the latch for that same reason: a hangup proves a client WAS
+ * there, so the slot is no longer "not there yet", and ConnHGone's early
+ * return must let the verdict through.
+ *
+ * Linux is untested here -- this repo's gate is macOS only -- so the gate
+ * is written to be correct on both by construction rather than by
+ * observation. One known Linux-only wart is left standing, out of scope
+ * for this task: because an unattached master polls readable there
+ * (POLLHUP), ConnHIdle's select() returns immediately every pass until a
+ * client attaches, so a program waiting on an empty pty busy-spins. That
+ * is inherent in keeping the slot alive-but-unattached rather than a
+ * defect of this gate; the fix, if it ever matters, is for ConnHIdle to
+ * leave a still-listening pty master out of its fd_set and fall back to
+ * its usleep. */
 static int32_t rt_conn_fd_avail(rt_conn_slot_t *s) {
     struct pollfd p;
     ssize_t k;
@@ -272,9 +297,10 @@ static int32_t rt_conn_fd_avail(rt_conn_slot_t *s) {
             if (k > 0) {
                 s->bufLen += (int)k;
                 s->listening = 0;   /* a pty slave is unmistakably attached */
-            } else if (!s->listening &&
+            } else if ((!s->listening || (p.revents & POLLIN)) &&
                        (k == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR))) {
                 s->gone = 1;
+                s->listening = 0;   /* a hangup proves a client was here */
             }
         }
     }
@@ -503,12 +529,16 @@ int32_t rt_ext_ConnHGone(int32_t slot) {
     ssize_t n;
 
     if (!rt_conn_slot_ok(slot)) return 0;
-    if (rt_conn_slots[slot].fd < 0 || rt_conn_slots[slot].listening) return 0;
+    if (rt_conn_slots[slot].fd < 0) return 0;
     if (rt_conn_slots[slot].kind != RT_CONN_SOCKET) {
         /* Non-socket kinds: the latched EOF flag. Polled here as well as
          * from ConnHAvail so a caller that only ever asks "gone?" (the
          * pump's own order is Avail first, but nothing requires that)
-         * still sees the hangup. */
+         * still sees the hangup. Note this runs even while `listening`,
+         * unlike the socket branch below: an unattached pty that IS being
+         * hung up on (a client that attached and left without sending a
+         * byte) has no other way to be noticed, and rt_conn_fd_avail's own
+         * gate is what keeps a merely-unattached one quiet. */
         rt_conn_slot_t *s = &rt_conn_slots[slot];
         if (!s->gone) rt_conn_fd_avail(s);
         /* Buffered bytes outrank the hangup: the socket path's MSG_PEEK
@@ -516,6 +546,7 @@ int32_t rt_ext_ConnHGone(int32_t slot) {
          * waits for the last byte here as well. */
         return (s->gone && s->bufPos >= s->bufLen) ? 1 : 0;
     }
+    if (rt_conn_slots[slot].listening) return 0;
     n = recv(rt_conn_slots[slot].fd, &b, 1, MSG_PEEK | MSG_DONTWAIT);
     if (n == 0) return 1;
     if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) return 1;
