@@ -189,10 +189,13 @@ const dspNewCID: int = 241     // ADSP.h:67 -- generate a connection id
 // atpMaxData/atpMaxNum/bdsEntrySz are the three sizes an ATP caller
 // needs that AppleTalk.h does NOT name as enum constants; each is
 // derived from the header and cross-checked against Inside Macintosh:
-//   atpMaxData 578 -- the maximum ATP response-data size. IM II ch. 10's
-//     ATP section ("Each response ... up to 578 bytes"); corroborated
-//     inside AppleTalk.h itself at line 780, XCallParam's own zipBuffPtr
-//     comment: "pointer to buffer (must be 578 bytes)".
+//   atpMaxData 578 -- the maximum ATP response-data size. NOT a header
+//     symbol under any name: the source is Inside Macintosh II ch. 10's
+//     own ATP section (each response carries up to 578 bytes of data).
+//     AppleTalk.h:780 is only INDIRECT corroboration -- it is
+//     XCallParam's zipBuffPtr comment, "pointer to buffer (must be 578
+//     bytes)", which reads 578 precisely because a ZIP reply is itself
+//     one ATP response.
 //   atpMaxNum 8 -- responses per transaction, i.e. the BDS array's
 //     length: AppleTalk.h:337 `typedef BDSElement BDSType[8]`.
 //   bdsEntrySz 12 -- one BDSElement, AppleTalk.h:330-335 (short + Ptr +
@@ -202,14 +205,14 @@ const atpEOMvalue: int = 16        // AppleTalk.h:194 -- atpFlags: end-of-messag
 const atpSTSvalue: int = 8         // AppleTalk.h:195 -- atpFlags: send transmission status
 const atpTIDValidvalue: int = 2    // AppleTalk.h:196 -- atpFlags: transaction ID valid
 const atpSendChkvalue: int = 1     // AppleTalk.h:197 -- atpFlags: send checksum
-const atpMaxData: int = 578        // IM II ch.10; AppleTalk.h:780 -- max bytes per ATP response
+const atpMaxData: int = 578        // IM II ch.10 (see above) -- max bytes per ATP response
 const atpMaxNum: int = 8           // AppleTalk.h:337 (BDSType[8]) -- max responses per transaction
 const bdsEntrySz: int = 12         // AppleTalk.h:330-335 -- one BDSElement, 68k-packed
 
 // ---- ADSP open modes, states, event flags and sizes ----
 //
 // ccbSize 242 is likewise not a header enum: it is sizeof(TRCCB),
-// ADSP.h:104-116 -- ccbLink(4) refNum(2) state(2) userFlags(1)
+// ADSP.h:105-116 -- ccbLink(4) refNum(2) state(2) userFlags(1)
 // localSocket(1) remoteAddress(4) attnCode(2) attnSize(2) attnPtr(4)
 // reserved[220] = 242. A client allocates the CCB (NewPtrClear) and
 // hands ADSP the pointer in dspInitCcbPtr; ADSP owns it thereafter.
@@ -229,7 +232,7 @@ const eAttention: int = 32     // ADSP.h:92 -- ccbUserFlags 0x20: attention mess
 const eFwdReset: int = 16      // ADSP.h:93 -- ccbUserFlags 0x10: forward-reset advice received
 const attnBufSize: int = 570   // ADSP.h:98 -- required size of the client attention buffer
 const minDSPQueueSize: int = 100  // ADSP.h:99 -- minimum send/receive queue size
-const ccbSize: int = 242       // ADSP.h:104-116 (sizeof TRCCB) -- allocate with NewPtrClear
+const ccbSize: int = 242       // ADSP.h:105-116 (sizeof TRCCB) -- allocate with NewPtrClear
 
 // ---- Error codes (MacErrors.h) ----
 const ddpSktErr: int = -91         // MacErrors.h:204 -- bad socket number
@@ -278,7 +281,7 @@ const sktClosedErr: int = -3109    // MacErrors.h:1225 -- ATP: socket closed
 // ioResult: where those carry ioNamePtr@18 + ioVRefNum@22, the MPP/ATP
 // blocks carry `userData`@18 (the ATP user bytes) and `reqTID`@22.
 // The one exception is DSPParam, which uses the ordinary
-// ioNamePtr/ioVRefNum/ioCRefNum prefix (ADSP.h:194-217).
+// ioNamePtr/ioVRefNum/ioCRefNum prefix (ADSP.h:193-216).
 //
 // A caller declares one of these as a LOCAL per call (zero-initialized
 // on declaration, so Rule 2 is satisfied by construction). Code that
@@ -369,10 +372,10 @@ extern record NBPLookupParam {
 // ATPmisc2's bdsSize@45 + transID@46, Killparms' aKillQEl@44) land
 // inside the same bytes and are reached by the atpBitMap / atpRspNum /
 // atpBdsSize / atpTransID offset constants below. AddrBlock@30
-// (AppleTalk.h:318-323) is aNet(2) aNode(1) aSocket(1), split here into
+// (AppleTalk.h:319-323) is aNet(2) aNode(1) aSocket(1), split here into
 // three named fields because `extern record` reads a nested record's
 // fields but a caller wants them individually. Padded to 56, the
-// header's own `atpSize` (AppleTalk.h:188), comfortably over the
+// header's own `atpSize` (AppleTalk.h:189), comfortably over the
 // 52-byte floor.
 extern record ATPParam {
     qLink: ptr
@@ -430,7 +433,7 @@ extern record XCallParam {
     pad[70]
 }
 
-// DSPParam -- ADSP.h:194-217. Unlike the MPP/ATP blocks this one uses
+// DSPParam -- ADSP.h:193-216. Unlike the MPP/ATP blocks this one uses
 // the ordinary Device Manager prefix (ioNamePtr@18, ioVRefNum@22,
 // ioCRefNum@24) and adds qStatus@28 (ADSP internal) + ccbRefNum@32.
 // Everything past 34 is a union of eight variant arms (TRinitParams,
@@ -505,7 +508,7 @@ const atpRspNum: int = 44     // ATPmisc1.u.rspNum (AddResponse) -- same byte
 const atpBdsSize: int = 45    // ATPmisc2.bdsSize
 const atpTransID: int = 46    // ATPmisc2.transID
 
-// ADSP DSPParamBlock variant arms (ADSP.h:124-217).
+// ADSP DSPParamBlock variant arms (ADSP.h:124-216).
 const dspIoCRefNum: int = 24          // ioCRefNum (the .DSP driver refNum)
 const dspCcbRefNum: int = 32          // ccbRefNum
 const dspInitCcbPtr: int = 34         // TRinitParams.ccbPtr
@@ -540,7 +543,7 @@ const dspStatusSendQFree: int = 40    // TRstatusParams.sendQFree
 const dspStatusRecvQPending: int = 42 // TRstatusParams.recvQPending
 const dspStatusRecvQFree: int = 44    // TRstatusParams.recvQFree
 
-// ADSP connection control block, TRCCB (ADSP.h:104-116). ccbSize bytes,
+// ADSP connection control block, TRCCB (ADSP.h:105-116). ccbSize bytes,
 // allocated by the client with NewPtrClear and owned by ADSP after
 // dspInit. ccbLink@0 and refNum@4 are ADSP's; the rest is readable
 // state.
@@ -558,7 +561,7 @@ const ccbAttnPtr: int = 18        // TRCCB.attnPtr
 // definition of EntityName is 3 PACKED strings of any length (32 is just
 // an example) ... So this will generate correct looking interfaces for
 // Pascal and C, but they will not be the same, which is OK since they
-// are not used." So `struct EntityName` (AppleTalk.h:311-315, three
+// are not used." So `struct EntityName` (AppleTalk.h:312-316, three
 // Str32Field slots) must NOT be transcribed as an extern record -- the
 // wire and the driver both want object, type and zone as three Pascal
 // strings back to back, each exactly (length byte + length) long.

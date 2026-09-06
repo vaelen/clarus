@@ -105,8 +105,14 @@ func caseAtalkSelf(): TestResult {
     // through verbatim. This case leaves it 0 on purpose: the name
     // exists only long enough to prove register/lookup/remove, and
     // nothing ever connects to it.
+    // The object name carries a TickCount suffix (toolbox/events.cla's
+    // TickCount, the same trap cases_catalog.cla uses). A fixed name
+    // only collides if two suite boots share one LocalTalk net at the
+    // same moment -- which Task 11's two-emulator harness is about to
+    // make possible -- and a collision would fail registerName with
+    // nbpDuplicate, since verifyFlag is on.
     nte = NewPtrClear(nteSize)
-    end = atPStr(nte + nteEntity, "AtalkSelf")
+    end = atPStr(nte + nteEntity, "AtalkSelf-" + string(TickCount() mod 10000))
     end = atPStr(end, "ClarusSuite")
     end = atPStr(end, "*")
     regPb.ioRefNum = mppRef
@@ -143,6 +149,10 @@ func caseAtalkSelf(): TestResult {
     end = atPStr(lkEntity, "=")
     end = atPStr(end, "ClarusNoSuch")
     end = atPStr(end, "*")
+    // 8, not 16: a reply tuple is AddrBlock(4) + enumerator(1) + three
+    // packed Pascal strings, at most 104 bytes, so maxToGet and
+    // retBuffSize have to agree -- 8 x 104 = 832 fits in 1024, 16 would
+    // not (1664) and NBP would answer nbpBuffOvr instead of 0 gotten.
     lkBuf = NewPtrClear(1024)
     lkPb.ioRefNum = mppRef
     lkPb.csCode = lookupName
@@ -151,7 +161,7 @@ func caseAtalkSelf(): TestResult {
     lkPb.entityPtr = lkEntity
     lkPb.retBuffPtr = lkBuf
     lkPb.retBuffSize = 1024
-    lkPb.maxToGet = 16
+    lkPb.maxToGet = 8
     err = PBControlSync(lkPb)
     if err != 0 or lkPb.numGotten != 0 {
         detail = "lookupName err " + tkIntToStr(err)

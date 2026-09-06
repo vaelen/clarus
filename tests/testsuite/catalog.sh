@@ -28,6 +28,10 @@ on App.startCLI(args: list of string) {
     var ci: CInfoPBRec
     var hp: HFileParam
     var cm: CMovePBRec
+    var np: NBPLookupParam
+    var xp: XCallParam
+    var dp: DSPParam
+    var bd: BDSElement
     var hr: HIOParamRename
 
     t0 = TickCount()
@@ -128,6 +132,14 @@ on App.startCLI(args: list of string) {
         t0 = t0 + 1
     }
     t0 = t0 + fnfErr + fBsyErr + dupFNErr + dirNFErr + fsRtDirID
+    np.csCode = lookupName
+    np.maxToGet = 1
+    xp.csCode = xCall
+    xp.xppSubCode = zipGetMyZone
+    dp.csCode = dspInit
+    bd.buffSize = 0
+    err = PBControlAsync(np)
+    t0 = t0 + registerName + nteSize + ccbSize + atpMaxData + nbpDuplicate
 }
 CLA_EOF
 

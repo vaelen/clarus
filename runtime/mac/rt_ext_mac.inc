@@ -48,6 +48,12 @@ int32_t rt_ext_TbClearWarmFreeMem(void) { return (int32_t)FreeMem(); }
 int32_t rt_ext_SetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_BlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
 void *rt_ext_NewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
+/* appletalk: toolbox/memory.cla declares NewPtrClear (0xA31E) and
+   testsuite/toolbox's AtalkSelf case calls it; cprint emits one
+   rt_ext_<Name> call per extern, so it needs its own shim here or the
+   toolbox_mac.sh lane fails to link (same failure mode as
+   rt_ext_TbFreeMem above). */
+void *rt_ext_NewPtrClear(int32_t size) { return (void *)NewPtrClear((Size)size); }
 void rt_ext_DisposePtr(void *p) { DisposePtr((Ptr)p); }
 
 /* ---- Plan 5b Task 3: str/text params + file/container/lasterr ---- */

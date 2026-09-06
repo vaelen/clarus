@@ -297,7 +297,8 @@ enum + runner, not one boot per case.
   `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under bare `CLARUS_MAC_TESTS=1`, so
   they no longer run as part of T2 by default.
 - `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk}.cla`
-  (toolbox-cookbook phase; the last two added by pack3-standardfile) is a
+  (toolbox-cookbook phase; `standardfile`/`files` added by
+  pack3-standardfile, `appletalk` by the AppleTalk phase) is a
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new
   UI code instead of hand-declaring traps; `tests/testsuite/catalog.sh`

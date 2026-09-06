@@ -14,7 +14,7 @@
 # a real stale-master-pointer bug. A FAIL in the exit code or capture
 # format itself means something more basic broke.
 #
-# 15m boot budget (vs the plain suite's 5m): CompactMem before every
+# 15m boot budget (vs the plain suite's 7m): CompactMem before every
 # dispatch and every UiNewPtr call is a lot more heap walking.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
