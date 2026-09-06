@@ -102,12 +102,10 @@ landed three user-visible features (array literals, `menus:`,
 `file.openRF`) plus two compiler-correctness fixes nobody had asked for
 (a native statement-temp aliasing bug that was releasing wrong pointers
 in any program with `for x in f()`, and the `lst.pop().field` native
-leak). Full T2 is green — every stage, including the `mactest/` suite
-boots after close-out's own `CanvasIdle` fix (a first-open FreeMem
-settle the case was sampling inside). The Snow `clarusc_bake` gate is
-the one thing still OWED: `clarusc/bake.cla` changed this phase
-(`bkFormatVersion` 7 → 8), and no run has completed. Details:
-`docs/HISTORY.md`'s own entry.
+leak). **Full T2 green** (one clean `scripts/test-merge.sh` on the final
+tree, every stage) and **Snow bake gate PASS in 1656s** (27.6 min, all
+six subcases) via the new exit-trailer probe that replaced the gate's
+fixed 55-minute settle timer. Details: `docs/HISTORY.md`'s own entry.
 
 Owed, not yet done (details in `docs/TODO.md`): a live run of the Snow
 `macresident` scripts; a System 7 spot check of the filesystem-api

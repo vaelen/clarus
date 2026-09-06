@@ -5473,14 +5473,32 @@ in `docs/TODO.md`.
   move. Same coverage-gap class as `compiler-cleanup`'s `--rtbake`
   lesson, one lane over.
 
-**Gates at close-out.** Full T2 (`scripts/test-merge.sh`) is green on
-every stage. The Snow `clarusc_bake` gate (`CLARUS_SNOW_TESTS=1 make
-test T=mactest/snow/clarusc_bake`, the one run covering both `bake.cla`
-edits) is still OWED — no run has completed, and nothing here should be
-read as claiming it passed. The Task 15 report in
+**Gates at close-out.** One clean `scripts/test-merge.sh` on the final
+tree, every stage green:
+
+```
+  test-merge.sh: t1 body PASS in 21s
+  test-merge.sh: perfgate/ PASS in 0s
+  test-merge.sh: selfhost/ PASS in 162s
+  test-merge.sh: mactest/ PASS in 655s
+  test-merge.sh: bake/ full corpus PASS in 2s
+  test-merge.sh: PASS in 840s
+```
+
+The Snow `clarusc_bake` gate — the one run covering both `bake.cla`
+edits — **PASSED in 1656 s (27.6 min)**, all six subcases, on tip
+`e2a9df2`. It ran under a reworked harness: `snow_settle_done`'s fixed
+55-minute timer was replaced by a probe of the live disk image for the
+guest's own `##CLARUS-EXIT##` trailer, so a boot now ends when the guest
+is done instead of paying a 55-minute floor on every run, pass or fail
+(`tests/lib_snow.sh` plus the five `tests/mactest/snow/*.sh` scripts;
+`CLAUDE.md`'s standing-rule note is updated to ~30 min). That rework was
+prompted by this phase's own close-out, where two Snow attempts were
+interrupted by hand and the timer meant each one cost 37 and 8 minutes
+before anyone could see a result. The Task 15 report in
 `.superpowers/sdd/2026-09-06-language-runtime-cleanup/` carries the
 verbatim stage lines, the golden attributions, and the close-out fix
-round.
+rounds.
 
 **What close-out's own T2 caught.** `CanvasIdle` went red by 2 bytes
 (`FreeMem moved: 3557464 -> 3557462`). Per-pass instrumentation on the
@@ -5500,6 +5518,17 @@ warming up 12 event-loop passes before sampling, with the per-pass
 measurements written into the case. The steady-state contract it exists
 to prove — a clean buffered canvas costs no blit and no Memory Manager
 traffic per pass — is unchanged and now actually what is asserted.
+
+**One more fix the review pulled in.** `rtUiIntToPStr` — the plain-Clarus
+decimal conversion that replaced the Pack-7 `NumToString` extern above —
+negated up front (`u = 0 - n`) and so rendered int.min as a bare `-`.
+Close-out had recorded that as a comment correction; the ruling was to
+actually fix it, reusing `str.cla`'s own signed-digit shape
+(`d = u mod 10; if d < 0 { d = 0 - d }`), which `core`'s `IntToStr` case
+already pins on both lanes. That is the phase's THIRD golden bless, and
+the only one caused by a deliberate runtime edit rather than a ripple:
+34 `cg68k` listings and the 14 UI `emitui` fixtures, every hunk that
+function body plus renumbering.
 
 Spec: `docs/superpowers/specs/2026-09-06-language-runtime-cleanup-design.md`
 (its §10 carries the as-built corrections); plan

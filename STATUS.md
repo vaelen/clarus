@@ -16,7 +16,8 @@ performance", "Runtime / Toolbox robustness" — **24 entries** accumulated
 across nine phases, disposed of as **23 fixed / 1 excluded by design**
 (the `rtUiTableClick` tripwire, whose note moved verbatim into
 `docs/ROADMAP.md`'s Standing rules). Two waves, sixteen tasks, two golden
-blesses, one snapshot regeneration, and one Snow gate still owed.
+blesses (three, after the review pulled in the `rtUiIntToPStr` int.min
+fix), one snapshot regeneration, one Snow gate.
 
 **Three user-visible features landed**: array-literal initializers
 (`const t: int[256] = [...]` in a dedicated constant-pool class),
@@ -58,12 +59,15 @@ reports, reviews, and `progress.md`'s `Ruling:` lines).
   measurements in its comment; `toolbox_68k` and `toolbox_jiggle` are
   38/38 with `PASS CanvasIdle` on both lanes. It is the only
   exact-FreeMem case in the suite that brackets a window open.
-- **The Snow `clarusc_bake` gate is OWED and has not passed.**
-  `clarusc/bake.cla` changed this phase (`bkFormatVersion` 7 → 8, two
-  additive sections), so the ~55-minute standing rule fires. No run has
-  completed: see the Task 15 report for the two attempts and their
-  disposition. Do not treat this phase as gate-complete until that
-  result line exists.
+- **Both gates are green.** One clean `scripts/test-merge.sh` on the
+  final tree, every stage PASS; and `PASS mactest/snow/clarusc_bake
+  1656s` (27.6 min, all six subcases) — the one run covering both
+  `bake.cla` edits (`bkFormatVersion` 7 → 8). That run also validated a
+  reworked Snow harness: a boot now ends on the guest's own
+  `##CLARUS-EXIT##` trailer, probed from the live disk image, instead of
+  a fixed 55-minute settle timer that every run paid whether it passed
+  or failed (`tests/lib_snow.sh` + the five `tests/mactest/snow/*.sh`
+  scripts; `CLAUDE.md`'s standing-rule note now says ~30 min).
 - **New debt filed** in `docs/TODO.md` under this phase's own
   sub-headings: array RETURNS still abort on `emit68k`
   (`cgRetNeedsHidden` lacks `KArr`); `cpParamByRef` omits `KErr` where

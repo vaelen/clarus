@@ -638,3 +638,22 @@ written so the design and what shipped can be compared.
   retired. `selfhost/behavior` is T2-only, so Task 14 could not see it.
 - **Suite case counts are hand-maintained in FIVE places each**, not the
   two or three the plan named. Recorded in `CLAUDE.md`.
+- **Three blesses, not two.** The review ruled that `rtUiIntToPStr`'s
+  int.min overflow (§2.2's replacement for the Pack-7 extern) should be
+  fixed rather than only documented; it is spliced into every UI program,
+  so it moved 34 `cg68k` listings and the 14 UI `emitui` goldens on its
+  own. Deliberate runtime edit, not a ripple.
+- **`CanvasIdle` was measuring inside a settle.** Close-out's T2 found
+  the case sampling `FreeMem` before a window's first-open Toolbox
+  allocation transient had resolved; it had been green on heap-layout
+  luck since before this phase, and the phase's code-size ripple tipped
+  it. Reverting the suspected commit's semantic half reproduces the
+  failure byte-identically. Fixed in the case (12 warm-up passes) with
+  the per-pass measurements recorded there.
+- **The Snow gate's 55-minute settle timer is gone.** Close-out's Snow
+  attempts made the cost obvious: a fixed timer is a floor on every run,
+  pass or fail. A follow-up task replaced `snow_settle_done` with a probe
+  of the live disk image for the guest's own `##CLARUS-EXIT##` trailer
+  (`tests/lib_snow.sh` + the five `tests/mactest/snow/*.sh` scripts). The
+  phase's own gate run passed under it in 1656 s (27.6 min) against
+  ~55 min minimum before.
