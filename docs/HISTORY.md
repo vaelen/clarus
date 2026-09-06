@@ -5740,8 +5740,10 @@ progress.md` carries them verbatim):
 
 - `return mk()` double-copies through a materialize temp — consistent
   with `cgEmitReturnErr`'s own behaviour for `KErr`, noted not fixed.
+  (Fixed in the deferred-minors wave below.)
 - `cgArrElemDesc`'s trailing `return "element"` is unreachable (both call
-  sites gate on `irtKind(...) == KArr`).
+  sites gate on `irtKind(...) == KArr`). **Dropped as not actionable**:
+  Clarus has no unreachable-return construct, so the arm has to stay.
 - `tests/cg68k/array_assign.sh`'s new subcases lack the sibling no-`.bin`
   assertion the existing `handle_elem_no_bin` case makes, and their
   comment claims definition order is load-bearing for the return subcase.
@@ -5751,10 +5753,12 @@ progress.md` carries them verbatim):
 - `globals_zero_init.cla`'s comment says "exactly ONE `MOVE.L #1,D0`"
   where two runtime globals also store 1; it should say one FIXTURE
   global. (Fixed in the fix wave below.) `cgDefaultIsAllZero` is now evaluated twice per global
-  (brief-mandated, negligible — a pure compile-time predicate).
+  (brief-mandated, negligible — a pure compile-time predicate). (Fixed in
+  the deferred-minors wave below.)
 - `ArrReturn`'s independence check omits `b[2]`, and its failure message
   prints no values. `testsuite/core/cases_arr.cla:15` is a ~190-character
-  comment line, well past the file's usual wrap.
+  comment line, well past the file's usual wrap. (Both fixed in the
+  deferred-minors wave below.)
 - `rtFhMove` has no empty-path guard. Weaker hazard than `rename`:
   `rtFhDevMove` never consults `rtFhDevStat`, it hands the raw path to
   `PBCatMoveSync`, and `CatMove` has no volume-level semantics to fall
@@ -5767,7 +5771,16 @@ progress.md` carries them verbatim):
   behaviour; saving `errno` inside the store fixes both sites. The
   close-path errno record has no test, and the sidecar `fsync` itself is
   unobservable from userspace, so that step is unpinned. `tmpl[1100]` is
-  arbitrary-but-safe.
+  arbitrary-but-safe. (The errno precision and the missing close-path test
+  are both fixed in the deferred-minors wave below; the `fsync` step stays
+  unpinned, and `tmpl[1100]`/`saved[1024]` were **dropped as not
+  actionable** — `tmpl` is filled by an `snprintf` whose overflow arm
+  returns `ENAMETOOLONG`, and `saved` is the test harness's own
+  `strncpy`-bounded `TMPDIR` copy; neither can overrun.)
+- Task 4's zero-const skip is unpinned for the `= nil` spelling. It stays
+  unpinned **by design**: pinning it needs a window-typed global, i.e. a
+  UI fixture, for a spelling the same `EIntConst 0` predicate already
+  covers.
 
 **Final-review fix wave** (branch `sdd/nar-fixwave`). The whole-branch
 review returned one Important finding and several minors, fixed in one
@@ -5795,6 +5808,29 @@ assertions and the reference's `move` row updated; corrected
 `cgEmitReturnArr`; and corrected `globals_zero_init.cla`'s "exactly ONE
 store pair" claim to name the FIXTURE global. No emitted byte moved: the
 whole `cg68k/` group passed unblessed.
+
+**Deferred-minors wave** (Andrew, 2026-09-06 19:05). Six of the deferred
+minors above, fixed in one pass on the branch tip. **M1** — `cgCallFnInto`
+gained a `dst == -1` sentinel meaning "the CURRENT function's own hidden
+result pointer", pushed as the VALUE at `8(A6)`, and `cgEmitReturnErr`
+routes an `ECallFn` source through it, so `return f()` builds `f`'s result
+straight into the caller's buffer instead of staging through a materialize
+temp and block-copying (one golden moved, `karr_return.s`: `fwd`'s
+`LEA -516(A6),A0` / `MOVE.L A0,-(A7)` and its eight-`MOVE.W` block copy
+replaced by a single `MOVE.L 8(A6),-(A7)`; no frame-size or segment
+change). **M2** — `cgEmitInitGlobalsStub` hoists `cgDefaultIsAllZero(gt)`
+into one `allZero` local per global (verified to move no golden by running
+it before M1's bless). **M3** — `ArrReturn`'s independence check covers
+all four elements and prints them on failure. **M4** — the 190-character
+`cases_arr.cla` header-comment entry is wrapped to the file's usual width.
+**M5** — every failure path in `rt_fh_sidecar_store` preserves the
+ORIGINAL `errno` across its `fclose`, so `FhHFlush`/`FhHClose` record the
+real cause and can never record 0. **M6** — `rt_fileh_test.c` pins the
+close-path errno record: an AppleDouble fork whose sidecar directory is
+made `0555` between open and close must leave `EACCES` in `rt_fh_errno`
+(verified RED by dropping the record in `FhHClose`, GREEN with it; skipped
+when running as root). `cg68k/`, `hostrt/` and `testsuite/` all green
+(30 passed / 0 skipped / 0 failed), core CLI 83/83.
 
 **Gates.** T1 (`scripts/test-task.sh --smoke`) on the integrated tip of
 waves A+B (`22be35e`): PASS in 31s — t1 88 passed / 30 skipped / 0
