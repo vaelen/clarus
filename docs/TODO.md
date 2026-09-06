@@ -45,11 +45,6 @@ sub-heading.
   services open connections only, not `every` timers. Deliberately not
   promised this phase.
 
-- **Task 7 leftover minor, deferred**: `tests/conntest/listen.sh` has a
-  stolen-port edge case (pick-port's probe-close-then-bind gap; the
-  script retries the whole pick + spawn + dial sequence up to 5 times,
-  a mitigation rather than a fix).
-
 ### binary-files phase (2026-08-22)
 
 - **UI/non-UI connection-pump lane gap** (Task 9's report) — the native
