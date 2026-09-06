@@ -2312,6 +2312,7 @@ static void clar_fn_rtAtalkPump(void) {
             cv_pr = clar_fn_rtLsnDevPoll(cv_i);
             if (cv_pr < 0) {
                 clar_fn_rtLsnSetFailed(cv_i, cv_pr, &(clar_lit_151));
+                clar_fn_rtLsnStop(CLAR_ADD32(cv_i, 1));
             } else {
                 if (cv_pr == 1) {
                     cv_free = CLAR_NEG32(1);

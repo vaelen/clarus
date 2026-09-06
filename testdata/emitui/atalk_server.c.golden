@@ -640,6 +640,7 @@ static void clar_fn_rtSvcServe(int32_t cv_h, const clar_str_255 *cv_name, const 
 static void clar_fn_rtSvcReply(int32_t cv_h, int32_t cv_code, rt_text * cv_data);
 static void clar_fn_rtSvcReplyStr(int32_t cv_h, int32_t cv_code, const clar_str_255 *cv_s);
 static void clar_fn_rtSvcStop(int32_t cv_h);
+static void clar_fn_rtLsnStop(int32_t cv_h);
 static void clar_fn_rtAtalkPump(void);
 static int32_t clar_fn_rtAtalkAlive(void);
 static void * clar_fn_rtAtCReqBuf(int32_t cv_slot);
@@ -666,6 +667,7 @@ static int32_t clar_fn_rtLsnDevListen(int32_t cv_slot);
 static int32_t clar_fn_rtLsnDevPoll(int32_t cv_slot);
 static int32_t clar_fn_rtLsnDevAccept(int32_t cv_slot, int32_t cv_connSlot);
 static int32_t clar_fn_rtLsnDevDeny(int32_t cv_slot);
+static void clar_fn_rtLsnDevRemove(int32_t cv_slot);
 static void clar_fn_handler_App_startCLI(rt_list * cv_args);
 static void clar_fn_handler_clock_request(int32_t cv_op, rt_text * cv_req, int32_t cv_from);
 static void clar_fn_handler_clock_failed(clar_rec_Err cv_err);
@@ -1673,6 +1675,27 @@ static void clar_fn_rtSvcStop(int32_t cv_h) {
     clar_fn_rtStrStore((void*)&((cv_rtSvcType).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
 }
 
+static void clar_fn_rtLsnStop(int32_t cv_h) {
+    int32_t cv_slot;
+    cv_slot = 0;
+    if (cv_h == 0) {
+        clar_fn_rtPanic(&(clar_lit_146));
+    }
+    cv_slot = CLAR_SUB32(cv_h, 1);
+    if ((cv_rtLsnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] != 1) {
+        return;
+    }
+    clar_str_255 t1;
+    t1 = (cv_rtLsnName).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)];
+    clar_str_255 t2;
+    t2 = (cv_rtLsnType).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)];
+    clar_fn_rtAtDevRemove(&(t1), &(t2));
+    clar_fn_rtLsnDevRemove(cv_slot);
+    (cv_rtLsnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 0;
+    clar_fn_rtStrStore((void*)&((cv_rtLsnName).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
+    clar_fn_rtStrStore((void*)&((cv_rtLsnType).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
+}
+
 static void clar_fn_rtAtalkPump(void) {
     int32_t cv_i;
     cv_i = 0;
@@ -1785,6 +1808,7 @@ static void clar_fn_rtAtalkPump(void) {
             cv_pr = clar_fn_rtLsnDevPoll(cv_i);
             if (cv_pr < 0) {
                 clar_fn_rtLsnSetFailed(cv_i, cv_pr, &(clar_lit_151));
+                clar_fn_rtLsnStop(CLAR_ADD32(cv_i, 1));
             } else {
                 if (cv_pr == 1) {
                     cv_free = CLAR_NEG32(1);
@@ -2043,6 +2067,9 @@ static int32_t clar_fn_rtLsnDevAccept(int32_t cv_slot, int32_t cv_connSlot) {
 static int32_t clar_fn_rtLsnDevDeny(int32_t cv_slot) {
     return -1273;
     return 0;
+}
+
+static void clar_fn_rtLsnDevRemove(int32_t cv_slot) {
 }
 
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {

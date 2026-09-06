@@ -913,7 +913,23 @@ func rtAtalkPump() {
         if rtLsnState[i] == rtAtActive {
             pr = rtLsnDevPoll(i)
             if pr < 0 {
+                // The listen request itself failed. The re-arm below
+                // lives only in the pr == 1 arm, and natively the poll
+                // has already cleared rtAt68LsnLive[i] -- so without
+                // this the slot would stay rtAtActive with nothing
+                // armed: deaf forever, NBP name still advertised, and
+                // rtAtalkAlive still holding a CLI program open. Tearing
+                // the listener down is the smaller of the two correct
+                // fixes and the honest one: the program has just been
+                // told the listener failed, so the state must match, and
+                // re-arming instead would refire `failed` on every pump
+                // pass for as long as the cause persisted. rtLsnStop
+                // does the whole teardown (NBP name, device slot, state)
+                // and is idempotent; the staged failed event still
+                // reaches the program, because rtAtalkAlive counts
+                // rtLsnPendFailedCode too.
                 rtLsnSetFailed(i, pr, "listener failed")
+                rtLsnStop(i + 1)
             } else if pr == 1 {
                 free = -1
                 j = 0

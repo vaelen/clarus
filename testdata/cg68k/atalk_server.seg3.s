@@ -182,7 +182,7 @@ LBL_1:
         DC.W $A8A3  ; UiEraseRect
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4346(A5)
+        JSR 4338(A5)
         ADDQ.L #4,A7
         MOVE.L D0,-28(A6)
         MOVE.L -28(A6),D0
@@ -1050,7 +1050,7 @@ LBL_6:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4314(A5)
+        JSR 4306(A5)
         ADDA.W #24,A7
 LBL_249:
         UNLK A6
@@ -1103,7 +1103,7 @@ LBL_7:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4314(A5)
+        JSR 4306(A5)
         ADDA.W #24,A7
 LBL_250:
         UNLK A6
@@ -1337,7 +1337,7 @@ LBL_257:
         MOVE.L D0,-20(A6)
         MOVE.L -20(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4346(A5)
+        JSR 4338(A5)
         ADDQ.L #4,A7
         MOVE.L D0,-24(A6)
         MOVE.L -24(A6),D0
@@ -1870,7 +1870,7 @@ LBL_283:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4314(A5)
+        JSR 4306(A5)
         ADDA.W #24,A7
 LBL_282:
         UNLK A6
@@ -5514,7 +5514,7 @@ LBL_460:
         ADDQ.L #4,A7
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4330(A5)
+        JSR 4322(A5)
         ADDQ.L #4,A7
 LBL_462:
         MOVE.L -4(A6),D1
@@ -8898,7 +8898,7 @@ LBL_677:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4306(A5)
+        JSR 4298(A5)
         ADDA.W #20,A7
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
@@ -8965,7 +8965,7 @@ LBL_81:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4306(A5)
+        JSR 4298(A5)
         ADDA.W #20,A7
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
@@ -10636,7 +10636,7 @@ LBL_763:
         ADDA.L D0,A1
         MOVEA.L A1,A0
         MOVE.L A0,-(A7)
-        JSR 4250(A5)
+        JSR 4242(A5)
         ADDA.W #12,A7
         LEA -2288(A5),A0
         MOVE.L A0,-(A7)
@@ -10895,7 +10895,7 @@ LBL_778:
         MOVE.L D0,(A0)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4242(A5)
+        JSR 4234(A5)
         ADDQ.L #4,A7
         BRA.W LBL_776
 LBL_775:

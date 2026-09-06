@@ -642,11 +642,13 @@ static void clar_fn_rtLsnSetFailed(int32_t cv_slot, int32_t cv_code, const clar_
 static void clar_fn_rtAtAppendBytes(rt_text * cv_t, void * cv_p, int32_t cv_n);
 static void clar_fn_rtBrsFind(int32_t cv_h, const clar_str_255 *cv_typ, const clar_str_255 *cv_zone);
 static void clar_fn_rtBrsZones(int32_t cv_h, rt_list * cv_out);
+static void clar_fn_rtLsnStop(int32_t cv_h);
 static void clar_fn_rtAtalkPump(void);
 static int32_t clar_fn_rtAtalkAlive(void);
 static clar_str_255 clar_fn_rtAtalkAddrStr(int32_t cv_addr);
 static void * clar_fn_rtAtCReqBuf(int32_t cv_slot);
 static int32_t clar_fn_rtAtDevUp(void);
+static int32_t clar_fn_rtAtDevRemove(const clar_str_255 *cv_obj, const clar_str_255 *cv_typ);
 static int32_t clar_fn_rtAtDevLookupStart(int32_t cv_lk, const clar_str_255 *cv_obj, const clar_str_255 *cv_typ, const clar_str_255 *cv_zone);
 static int32_t clar_fn_rtAtDevLookupDone(int32_t cv_lk);
 static int32_t clar_fn_rtAtDevLookupCount(int32_t cv_lk);
@@ -666,6 +668,7 @@ static int32_t clar_fn_rtLsnDevListen(int32_t cv_slot);
 static int32_t clar_fn_rtLsnDevPoll(int32_t cv_slot);
 static int32_t clar_fn_rtLsnDevAccept(int32_t cv_slot, int32_t cv_connSlot);
 static int32_t clar_fn_rtLsnDevDeny(int32_t cv_slot);
+static void clar_fn_rtLsnDevRemove(int32_t cv_slot);
 static void clar_fn_handler_App_startCLI(rt_list * cv_args);
 static void clar_fn_handler_brs_found(const clar_str_255 *cv_name, int32_t cv_addr);
 static void clar_fn_handler_brs_done(void);
@@ -1714,6 +1717,27 @@ static void clar_fn_rtBrsZones(int32_t cv_h, rt_list * cv_out) {
     }
 }
 
+static void clar_fn_rtLsnStop(int32_t cv_h) {
+    int32_t cv_slot;
+    cv_slot = 0;
+    if (cv_h == 0) {
+        clar_fn_rtPanic(&(clar_lit_146));
+    }
+    cv_slot = CLAR_SUB32(cv_h, 1);
+    if ((cv_rtLsnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] != 1) {
+        return;
+    }
+    clar_str_255 t1;
+    t1 = (cv_rtLsnName).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)];
+    clar_str_255 t2;
+    t2 = (cv_rtLsnType).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)];
+    clar_fn_rtAtDevRemove(&(t1), &(t2));
+    clar_fn_rtLsnDevRemove(cv_slot);
+    (cv_rtLsnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 0;
+    clar_fn_rtStrStore((void*)&((cv_rtLsnName).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
+    clar_fn_rtStrStore((void*)&((cv_rtLsnType).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
+}
+
 static void clar_fn_rtAtalkPump(void) {
     int32_t cv_i;
     cv_i = 0;
@@ -1826,6 +1850,7 @@ static void clar_fn_rtAtalkPump(void) {
             cv_pr = clar_fn_rtLsnDevPoll(cv_i);
             if (cv_pr < 0) {
                 clar_fn_rtLsnSetFailed(cv_i, cv_pr, &(clar_lit_151));
+                clar_fn_rtLsnStop(CLAR_ADD32(cv_i, 1));
             } else {
                 if (cv_pr == 1) {
                     cv_free = CLAR_NEG32(1);
@@ -1956,6 +1981,11 @@ static int32_t clar_fn_rtAtDevUp(void) {
     return 0;
 }
 
+static int32_t clar_fn_rtAtDevRemove(const clar_str_255 *cv_obj, const clar_str_255 *cv_typ) {
+    return rt_ext_AtalkHRemove((const uint8_t*)&((*cv_obj)), (const uint8_t*)&((*cv_typ)));
+    return 0;
+}
+
 static int32_t clar_fn_rtAtDevLookupStart(int32_t cv_lk, const clar_str_255 *cv_obj, const clar_str_255 *cv_typ, const clar_str_255 *cv_zone) {
     return rt_ext_AtalkHLookupStart(cv_lk, (const uint8_t*)&((*cv_obj)), (const uint8_t*)&((*cv_typ)), (const uint8_t*)&((*cv_zone)));
     return 0;
@@ -2082,6 +2112,9 @@ static int32_t clar_fn_rtLsnDevAccept(int32_t cv_slot, int32_t cv_connSlot) {
 static int32_t clar_fn_rtLsnDevDeny(int32_t cv_slot) {
     return -1273;
     return 0;
+}
+
+static void clar_fn_rtLsnDevRemove(int32_t cv_slot) {
 }
 
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
