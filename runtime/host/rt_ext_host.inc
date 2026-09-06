@@ -374,6 +374,53 @@ int32_t rt_ext_TickCount(void) {
     return (int32_t)(uint32_t)((uint32_t)ts.tv_sec * 60u + (uint32_t)(ts.tv_nsec / 16666667L));
 }
 
+/* rt_ext_EveryDue: the host lane's `every N ticks` arming clock (AppleTalk
+ * phase Task 5), called once per idx per pass of cpEmitMain's pump loop by
+ * lowering's synthesized clar_every_pump(). Returns 1 exactly on the
+ * passes where timer idx has come due, re-arming it for the next period.
+ *
+ * The first call for an idx only ARMS it (returns 0), so a timer's first
+ * fire is one full period after the program reaches the pump loop -- the
+ * Mac lane's own behavior (rt_ui_every_desc[]'s deadline is likewise set
+ * at startup, not fired at it).
+ *
+ * Deadlines are compared as `now - due >= 0` on int32_t, so the arithmetic
+ * stays correct across rt_ext_TickCount's own 2^32-tick wrap (~2.3 years),
+ * the same signed-difference idiom the Toolbox's own TickCount users use.
+ * A missed period is dropped, not caught up: the next deadline is measured
+ * from now, so a slow handler cannot build a backlog of instant refires.
+ *
+ * 16 slots, a deliberate ceiling: `every` blocks are top-level
+ * declarations and no plausible program writes more than a handful, so a
+ * fixed array beats any allocation here. A program past the ceiling gets
+ * no timer for the extra slots (the range guard returns 0) rather than
+ * corrupting memory -- raise RT_EVERY_MAX if one ever needs 17. */
+#define RT_EVERY_MAX 16
+
+int32_t rt_ext_EveryDue(int32_t idx, int32_t periodTicks) {
+    static int32_t due[RT_EVERY_MAX];
+    static unsigned char armed[RT_EVERY_MAX];
+    int32_t now;
+
+    if (idx < 0 || idx >= RT_EVERY_MAX) {
+        return 0;
+    }
+    if (periodTicks < 1) {
+        periodTicks = 1;
+    }
+    now = rt_ext_TickCount();
+    if (!armed[idx]) {
+        armed[idx] = 1;
+        due[idx] = now + periodTicks;
+        return 0;
+    }
+    if (now - due[idx] >= 0) {
+        due[idx] = now + periodTicks;
+        return 1;
+    }
+    return 0;
+}
+
 /* Mac epoch (1904-01-01 00:00:00 LOCAL) vs Unix epoch (1970-01-01 UTC):
  * 24,107 days. The Mac clock stores local-time seconds, so the host's
  * current UTC offset (tm_gmtoff) is applied. */

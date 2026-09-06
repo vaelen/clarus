@@ -7735,6 +7735,83 @@ func lowSynthConnPump() {
     shakeAddRoot(fnameIdx)
 }
 
+// lowSynthEveryPump builds clar_every_pump() -- the HOST lane's own
+// `every` driver (AppleTalk phase Task 5), one due-check per irEveryHead
+// entry in declaration order:
+//
+//     if EveryDue(0, 6) { ui_every_0() }
+//     if EveryDue(1, 60) { ui_every_1() }
+//
+// A flat SEQUENCE of ifs, not lowSynthFoldIfChain's if/else chain: two
+// timers can come due on the same pass and both must fire.
+//
+// EveryDue is registered here as an ordinary clause-less extern (conv 0,
+// no trap), NOT one of lowUiSynthExternName's synthesized names, so
+// cprint renders it as a plain `rt_ext_EveryDue` call against the host
+// runtime's own arming helper (runtime/host/rt_ext_host.inc). Registered
+// inside this function rather than beside the other externs so a program
+// with no `every` block never grows a prototype for it -- the zero-churn
+// constraint every existing emitui golden holds this task to.
+//
+// Called ONLY when `not want68k and irEveryCount > 0 and not
+// irIsUiProgram()` (see the call site for the third conjunct): natively
+// an every-only program is still a UI program (irIsUiProgram(),
+// cprint.cla) whose timers rtUiRun already fires from the real event
+// loop, and this task leaves that lane byte-for-byte alone -- as it
+// leaves a HOST UI program, whose cpEmitUiMain event loop fires its own
+// timers just the same. Self-roots via shakeAddRoot
+// for the same reason the conn dispatchers do -- cpEmitMain calls it from
+// hand-written C text, an edge shake cannot see.
+func lowSynthEveryPump() {
+    var paramTys: list of int
+    var paramRegs: list of int
+    var idleTys: list of int
+    var idleRegs: list of int
+    var head: int
+    var tail: int
+    var e: int
+    var idx: int
+    var argsHead: int
+    var st: int
+    var fnameIdx: int
+
+    paramTys.add(irIntT)
+    paramTys.add(irIntT)
+    paramRegs.add(-1)
+    paramRegs.add(-1)
+    irRegisterExtern(intern("EveryDue"), irBoolT, paramTys, -1, 0, -1, paramRegs, -1)
+    // ConnHIdle is cpEmitMain's own idle call, written as literal C text
+    // there and so invisible to the extern registry -- registered here (a
+    // no-op by irRegisterExtern's own lookup-before-append when the
+    // program ALSO opens connections and conn_c.cla already declared it)
+    // purely so cpEmitExternProtos emits its prototype for a
+    // timer-only program too. Same signature conn_c.cla declares:
+    // `external func ConnHIdle(ms: int)`.
+    idleTys.add(irIntT)
+    idleRegs.add(-1)
+    irRegisterExtern(intern("ConnHIdle"), irVoidT, idleTys, -1, 0, -1, idleRegs, -1)
+
+    head = -1
+    tail = -1
+    idx = 0
+    e = irEveryHead
+    while e != -1 {
+        argsHead = newIRIntConst(idx, irIntT)
+        irExprListAppend(argsHead, newIRIntConst(irEveryEntryTicks(e), irIntT))
+        st = newIRIf(newIRCallExt(intern("EveryDue"), argsHead, irBoolT), newIRExprStmt(newIRCallFn(irEveryEntryFuncName(e), -1, irVoidT)), -1)
+        if head == -1 {
+            head = st
+        }
+        tail = irStmtListAppend(tail, st)
+        e = irEveryEntryNext(e)
+        idx = idx + 1
+    }
+
+    fnameIdx = intern("clar_every_pump")
+    newIRFunc(fnameIdx, -1, irVoidT, -1, head)
+    shakeAddRoot(fnameIdx)
+}
+
 // lowSynthConnDispatchers is this section's one entry point (called from
 // lowerProgram's tail, when usesConn or want68k).
 func lowSynthConnDispatchers() {
@@ -7988,6 +8065,19 @@ func lowerProgram(declHead: int): int {
         if usesConn or want68k {
             lowSynthConnDispatchers()
         }
+        // Host-lane `every` driver (AppleTalk phase Task 5) -- see
+        // lowSynthEveryPump's own doc comment for why it is host-only
+        // (`not want68k`) and why it is usage-gated (irEveryCount > 0).
+        // `not irIsUiProgram()` is the third conjunct because a HOST UI
+        // program (window/menu AND an `every` block, e.g.
+        // testdata/emitui/every.cla) still takes cpEmitUiMain, whose
+        // event loop fires its own timers -- synthesizing the pump there
+        // too would root a function nothing calls and churn that
+        // program's committed golden. With want68k false, irIsUiProgram()
+        // is exactly "declares a window or a menu".
+        if not want68k and irEveryCount > 0 and not irIsUiProgram() {
+            lowSynthEveryPump()
+        }
     }
     // Reverse-waist dispatcher synthesis (runtime-ir-bake Task 2: made
     // UNCONDITIONAL -- was gated on irIsUiProgram()'s own condition,
@@ -8017,7 +8107,15 @@ func lowerProgram(declHead: int): int {
     // REAL program's own state.
     if not lowSkipUiDispatchers {
         lowSynthUiDispatchers()
-        if irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0 {
+        // AppleTalk phase Task 5: the `every` disjunct is 68k-only here,
+        // mirroring irIsUiProgram()'s own (cprint.cla) exactly -- this
+        // condition is that predicate, duplicated rather than called
+        // across the layering boundary. Without the want68k conjunct a
+        // NON-UI host program with an `every` block would root
+        // rtUiStartup/rtUiRun, keeping the whole UI runtime reachable and
+        // its rt_ui.h-only symbols in the emitted C, which is exactly
+        // what that task removes.
+        if irWindowDescs.count > 0 or irMenuDescs.count > 0 or (irEveryCount > 0 and want68k) {
             lowUiPortAddRoots()
         }
     }

@@ -7338,8 +7338,21 @@ func cpEmitUiDescs() {
 // line, cpUiBuf's own blank-line separator, and Task 5's main()/dispatcher
 // wiring below), so a UI-free program's output stays byte-for-byte
 // unchanged (the differential suite enforces this).
+//
+// AppleTalk phase Task 5: the `every` half is now 68k-only. A NON-UI host
+// program (no window, no menu) that declares an `every` block used to
+// land here as a UI program, taking cpEmitUiMain and emitting #include
+// "rt_ui.h" -- a Mac-only header, so such a program could not even
+// COMPILE against runtime/host. Its timers now run from cpEmitMain's own
+// pump loop instead (lower.cla's synthesized clar_every_pump +
+// rt_ext_EveryDue). Gated on want68k (drive.cla) rather than dropping the
+// clause outright because this predicate is ALSO the native lane's own
+// (cg68k.cla reads it in a dozen places -- the UI startup path, the
+// SIZE(-1) flag word, the UI blob/events segments): natively an
+// every-only program is still a real UI program with a real event loop,
+// and must stay byte-for-byte what it was.
 func irIsUiProgram(): bool {
-    return irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0
+    return irWindowDescs.count > 0 or irMenuDescs.count > 0 or (irEveryCount > 0 and want68k)
 }
 
 // irAnyCloseRequestHandler reports whether ANY window type registered a
@@ -7724,13 +7737,48 @@ func cpEmitMain() {
     // exactly like cpEmitAbortDefaultCheck's own calls just above/below --
     // referencing it unconditionally would be an undeclared-identifier
     // compile error for a no-abort program.
-    if irUsesConn {
-        pumpCond = "clar_fn_rtConnAlive()"
+    //
+    // AppleTalk phase Task 5: `every` timers share this same loop. The
+    // condition is the OR of every liveness source the program actually
+    // has -- rtConnAlive() when it opens connections, a literal 1 when it
+    // declares an `every` block (a timer never disarms, so such a program
+    // runs until `quit`, per the reference's own lifetime sentence) --
+    // still ANDed with !clar_aborting when lowUsesAbort, exactly as
+    // above. The body drives whichever pumps exist, then idles 20ms on
+    // rt_ext_ConnHIdle, which usleep()s when no connection slot is open
+    // (its own doc comment, runtime/host/rt_serial.inc) -- so it is the
+    // timer-only program's tick delay too, no second sleep needed.
+    if irUsesConn or irEveryCount > 0 {
+        pumpCond = ""
+        if irUsesConn {
+            pumpCond = "clar_fn_rtConnAlive()"
+        }
+        if irEveryCount > 0 {
+            if pumpCond != "" {
+                pumpCond = pumpCond + " || "
+            }
+            pumpCond = pumpCond + "1"
+        }
         if lowUsesAbort {
+            // Parenthesized ONLY when the OR actually has two terms: C's
+            // && binds tighter than ||, so `!clar_aborting && alive() ||
+            // 1` would be `(!clar_aborting && alive()) || 1` -- always
+            // true, an abort that could never stop the loop. A one-term
+            // condition keeps its existing unparenthesized shape, so the
+            // conn-only goldens (connpump_abort.c.golden) stay
+            // byte-identical.
+            if irUsesConn and irEveryCount > 0 {
+                pumpCond = "(" + pumpCond + ")"
+            }
             pumpCond = "!clar_aborting && " + pumpCond
         }
         cpRestBuf.add(toText("    while (" + pumpCond + ") {"))
-        cpRestBuf.add(toText("        clar_fn_rtConnPump();"))
+        if irUsesConn {
+            cpRestBuf.add(toText("        clar_fn_rtConnPump();"))
+        }
+        if irEveryCount > 0 {
+            cpRestBuf.add(toText("        clar_fn_clar_every_pump();"))
+        }
         cpRestBuf.add(toText("        rt_ext_ConnHIdle(20);"))
         cpRestBuf.add(toText("    }"))
     }

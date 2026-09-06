@@ -1,0 +1,24 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// every_cli.cla: emitui golden fixture -- a NON-UI program (no window, no
+// menu) that declares an `every N ticks { }` block, the AppleTalk phase's
+// Task 5 shape. Proves the host lane's main() grows a pump loop driving
+// the timer (rt_ext_EveryDue + clar_fn_clar_every_pump) instead of taking
+// the UI main path, which needs rt_ui.h (Mac-only) and cannot link
+// against runtime/host at all. every.cla (which HAS a window) is the
+// unchanged-golden control for the UI path.
+
+var n: int = 0
+
+on App.startCLI(args: list of string) {
+    log("start")
+}
+
+every 6 ticks {
+    n = n + 1
+    log("tick " + string(n))
+    if n == 3 {
+        quit 0
+    }
+}
