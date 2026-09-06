@@ -405,6 +405,10 @@ static const clar_str_255 clar_lit_130 = {44, {99, 108, 97, 114, 95, 117, 105, 9
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
+typedef struct { int32_t e[256]; } clar_arr_int_256;
+static const clar_arr_int_256 clar_arrlit_0 = {{0, 4489, 8978, 12955, 17956, 22445, 25910, 29887, 35912, 40385, 44890, 48851, 51820, 56293, 59774, 63735, 4225, 264, 13203, 8730, 22181, 18220, 30135, 25662, 40137, 36160, 49115, 44626, 56045, 52068, 63999, 59510, 8450, 12427, 528, 5017, 26406, 30383, 17460, 21949, 44362, 48323, 36440, 40913, 60270, 64231, 51324, 55797, 12675, 8202, 4753, 792, 30631, 26158, 21685, 17724, 48587, 44098, 40665, 36688, 64495, 60006, 55549, 51572, 16900, 21389, 24854, 28831, 1056, 5545, 10034, 14011, 52812, 57285, 60766, 64727, 34920, 39393, 43898, 47859, 21125, 17164, 29079, 24606, 5281, 1320, 14259, 9786, 57037, 53060, 64991, 60502, 39145, 35168, 48123, 43634, 25350, 29327, 16404, 20893, 9506, 13483, 1584, 6073, 61262, 65223, 52316, 56789, 43370, 47331, 35448, 39921, 29575, 25102, 20629, 16668, 13731, 9258, 5809, 1848, 65487, 60998, 56541, 52564, 47595, 43106, 39673, 35696, 33800, 38273, 42778, 46739, 49708, 54181, 57662, 61623, 2112, 6601, 11090, 15067, 20068, 24557, 28022, 31999, 38025, 34048, 47003, 42514, 53933, 49956, 61887, 57398, 6337, 2376, 15315, 10842, 24293, 20332, 32247, 27774, 42250, 46211, 34328, 38801, 58158, 62119, 49212, 53685, 10562, 14539, 2640, 7129, 28518, 32495, 19572, 24061, 46475, 41986, 38553, 34576, 62383, 57894, 53437, 49460, 14787, 10314, 6865, 2904, 32743, 28270, 23797, 19836, 50700, 55173, 58654, 62615, 32808, 37281, 41786, 45747, 19012, 23501, 26966, 30943, 3168, 7657, 12146, 16123, 54925, 50948, 62879, 58390, 37033, 33056, 46011, 41522, 23237, 19276, 31191, 26718, 7393, 3432, 16371, 11898, 59150, 63111, 50204, 54677, 41258, 45219, 33336, 37809, 27462, 31439, 18516, 23005, 11618, 15595, 3696, 8185, 63375, 58886, 54429, 50452, 45483, 40994, 37561, 33584, 31687, 27214, 22741, 18780, 15843, 11370, 7921, 3960}};
+static const clar_arr_int_256 clar_arrlit_1 = {{0, 4129, 8258, 12387, 16516, 20645, 24774, 28903, 33032, 37161, 41290, 45419, 49548, 53677, 57806, 61935, 4657, 528, 12915, 8786, 21173, 17044, 29431, 25302, 37689, 33560, 45947, 41818, 54205, 50076, 62463, 58334, 9314, 13379, 1056, 5121, 25830, 29895, 17572, 21637, 42346, 46411, 34088, 38153, 58862, 62927, 50604, 54669, 13907, 9842, 5649, 1584, 30423, 26358, 22165, 18100, 46939, 42874, 38681, 34616, 63455, 59390, 55197, 51132, 18628, 22757, 26758, 30887, 2112, 6241, 10242, 14371, 51660, 55789, 59790, 63919, 35144, 39273, 43274, 47403, 23285, 19156, 31415, 27286, 6769, 2640, 14899, 10770, 56317, 52188, 64447, 60318, 39801, 35672, 47931, 43802, 27814, 31879, 19684, 23749, 11298, 15363, 3168, 7233, 60846, 64911, 52716, 56781, 44330, 48395, 36200, 40265, 32407, 28342, 24277, 20212, 15891, 11826, 7761, 3696, 65439, 61374, 57309, 53244, 48923, 44858, 40793, 36728, 37256, 33193, 45514, 41451, 53516, 49453, 61774, 57711, 4224, 161, 12482, 8419, 20484, 16421, 28742, 24679, 33721, 37784, 41979, 46042, 49981, 54044, 58239, 62302, 689, 4752, 8947, 13010, 16949, 21012, 25207, 29270, 46570, 42443, 38312, 34185, 62830, 58703, 54572, 50445, 13538, 9411, 5280, 1153, 29798, 25671, 21540, 17413, 42971, 47098, 34713, 38840, 59231, 63358, 50973, 55100, 9939, 14066, 1681, 5808, 26199, 30326, 17941, 22068, 55628, 51565, 63758, 59695, 39368, 35305, 47498, 43435, 22596, 18533, 30726, 26663, 6336, 2273, 14466, 10403, 52093, 56156, 60223, 64286, 35833, 39896, 43963, 48026, 19061, 23124, 27191, 31254, 2801, 6864, 10931, 14994, 64814, 60687, 56684, 52557, 48554, 44427, 40424, 36297, 31782, 27655, 23652, 19525, 15522, 11395, 7392, 3265, 61215, 65342, 53085, 57212, 44955, 49082, 36825, 40952, 28183, 32310, 20053, 24180, 11923, 16050, 3793, 7920}};
+static const clar_arr_int_256 clar_arrlit_2 = {{0, 1996959894, -301047508, -1727442502, 124634137, 1886057615, -379345611, -1637575261, 249268274, 2044508324, -522852066, -1747789432, 162941995, 2125561021, -407360249, -1866523247, 498536548, 1789927666, -205950648, -2067906082, 450548861, 1843258603, -187386543, -2083289657, 325883990, 1684777152, -43845254, -1973040660, 335633487, 1661365465, -99664541, -1928851979, 997073096, 1281953886, -715111964, -1570279054, 1006888145, 1258607687, -770865667, -1526024853, 901097722, 1119000684, -608450090, -1396901568, 853044451, 1172266101, -589951537, -1412350631, 651767980, 1373503546, -925412992, -1076862698, 565507253, 1454621731, -809855591, -1195530993, 671266974, 1594198024, -972236366, -1324619484, 795835527, 1483230225, -1050600021, -1234817731, 1994146192, 31158534, -1731059524, -271249366, 1907459465, 112637215, -1614814043, -390540237, 2013776290, 251722036, -1777751922, -519137256, 2137656763, 141376813, -1855689577, -429695999, 1802195444, 476864866, -2056965928, -228458418, 1812370925, 453092731, -2113342271, -183516073, 1706088902, 314042704, -1950435094, -54949764, 1658658271, 366619977, -1932296973, -69972891, 1303535960, 984961486, -1547960204, -725929758, 1256170817, 1037604311, -1529756563, -740887301, 1131014506, 879679996, -1385723834, -631195440, 1141124467, 855842277, -1442165665, -586318647, 1342533948, 654459306, -1106571248, -921952122, 1466479909, 544179635, -1184443383, -832445281, 1591671054, 702138776, -1328506846, -942167884, 1504918807, 783551873, -1212326853, -1061524307, -306674912, -1698712650, 62317068, 1957810842, -355121351, -1647151185, 81470997, 1943803523, -480048366, -1805370492, 225274430, 2053790376, -468791541, -1828061283, 167816743, 2097651377, -267414716, -2029476910, 503444072, 1762050814, -144550051, -2140837941, 426522225, 1852507879, -19653770, -1982649376, 282753626, 1742555852, -105259153, -1900089351, 397917763, 1622183637, -690576408, -1580100738, 953729732, 1340076626, -776247311, -1497606297, 1068828381, 1219638859, -670225446, -1358292148, 906185462, 1090812512, -547295293, -1469587627, 829329135, 1181335161, -882789492, -1134132454, 628085408, 1382605366, -871598187, -1156888829, 570562233, 1426400815, -977650754, -1296233688, 733239954, 1555261956, -1026031705, -1244606671, 752459403, 1541320221, -1687895376, -328994266, 1969922972, 40735498, -1677130071, -351390145, 1913087877, 83908371, -1782625662, -491226604, 2075208622, 213261112, -1831694693, -438977011, 2094854071, 198958881, -2032938284, -237706686, 1759359992, 534414190, -2118248755, -155638181, 1873836001, 414664567, -2012718362, -15766928, 1711684554, 285281116, -1889165569, -127750551, 1634467795, 376229701, -1609899400, -686959890, 1308918612, 956543938, -1486412191, -799009033, 1231636301, 1047427035, -1362007478, -640263460, 1088359270, 936918000, -1447252397, -558129467, 1202900863, 817233897, -1111625188, -893730166, 1404277552, 615818150, -1160759803, -841546093, 1423857449, 601450431, -1285129682, -1000256840, 1567103746, 711928724, -1274298825, -1022587231, 1510334235, 755167117}};
 typedef struct {
     int32_t cv_size;
     int32_t cv_rsrcSize;
@@ -542,179 +546,25 @@ typedef char clar_ui_szassert_NoteWin[(sizeof(clar_uistate_NoteWin) == 16) ? 1 :
 
 static const unsigned char clar_ui_blob[] = {
     67, 76, 85, 73, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 44, 0, 0, 0, 0,
-    0, 0, 0, 244, 0, 0, 0, 0, 0, 0, 0, 244, 0, 0, 0, 0, 0, 0, 0, 244,
-    255, 255, 255, 255, 0, 0, 1, 4, 0, 0, 1, 12, 0, 0, 1, 64, 0, 0, 1, 4,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 140,
-    0, 0, 1, 12, 0, 0, 1, 1, 255, 255, 255, 255, 0, 0, 1, 17, 0, 0, 1, 25,
-    0, 0, 0, 200, 0, 0, 0, 160, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 16, 0, 0, 1, 1, 255, 255, 255, 255,
-    0, 0, 0, 4, 0, 0, 0, 244, 0, 0, 0, 249, 0, 0, 0, 0, 0, 0, 0, 20,
-    0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 10, 255, 255, 255, 255, 0, 0, 0, 5, 0, 0, 0, 255,
-    255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 50,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2,
-    255, 255, 255, 255, 4, 78, 97, 109, 101, 5, 78, 97, 109, 101, 58, 4, 66, 111, 100, 121,
-    7, 84, 101, 120, 116, 87, 105, 110, 4, 84, 101, 120, 116, 7, 78, 111, 116, 101, 87, 105,
-    110, 5, 78, 111, 116, 101, 115, 0,
+    0, 0, 0, 252, 0, 0, 0, 0, 0, 0, 0, 252, 0, 0, 0, 0, 0, 0, 0, 252,
+    255, 255, 255, 255, 0, 0, 1, 12, 0, 0, 1, 20, 0, 0, 1, 64, 0, 0, 1, 4,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 148,
+    0, 0, 1, 12, 0, 0, 1, 1, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 1, 25,
+    0, 0, 1, 33, 0, 0, 0, 200, 0, 0, 0, 160, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 16, 0, 0, 1, 1,
+    255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 252, 0, 0, 1, 1,
+    0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0,
+    0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 255, 255, 255, 255,
+    0, 0, 0, 5, 0, 0, 1, 7, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 20,
+    0, 0, 0, 0, 0, 0, 0, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    0, 0, 0, 8, 0, 0, 0, 2, 255, 255, 255, 255, 4, 78, 97, 109, 101, 5, 78, 97,
+    109, 101, 58, 4, 66, 111, 100, 121, 7, 84, 101, 120, 116, 87, 105, 110, 4, 84, 101, 120,
+    116, 7, 78, 111, 116, 101, 87, 105, 110, 5, 78, 111, 116, 101, 115, 0,
 };
 
 
 static const int32_t clar_enum_saveChoice[] __attribute__((unused)) = {0, 1, 2};
 static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
-
-static void * cv_rtCrc32Tab;
-static void * cv_rtUiMenuHandlesArr;
-static int32_t cv_rtUiNMenusVal;
-static void * cv_rtUiAppleMenuHandle;
-static int32_t cv_rtUiStdEditMenuIdx;
-static int32_t cv_rtUiSys7;
-static void * cv_rtUiEveryDueArr;
-static int32_t cv_rtUiNEveryVal;
-static void * cv_rtUiEmptyPStrCache;
-static void * cv_rtUiScratchBitMap;
-static void * cv_rtUiGrayPats;
-static int32_t cv_rtUiScripted;
-static int32_t cv_rtUiScriptDbl;
-static int32_t cv_rtUiJiggle;
-static int32_t cv_rtUiJiggleBusy;
-static void * cv_rtUiAnswerKinds;
-static void * cv_rtUiAnswerVals;
-static void * cv_rtUiAnswerStrs;
-static int32_t cv_rtUiAnswerHead;
-static int32_t cv_rtUiAnswerTail;
-static int32_t cv_rtUiTraceSuppressed;
-static void * cv_rtUiTraceWinCounts;
-static void * cv_rtUiTraceLastFront;
-static void * cv_rtUiDimPrevArr;
-static int32_t cv_rtUiDimFirst;
-static int32_t cv_rtUiStdEditDimPrev;
-static void * cv_rtUiScriptCursor;
-static int32_t cv_rtUiScriptCursorInit;
-static void * cv_rtUiScriptLineBuf;
-static int32_t cv_rtUiScriptLineLen;
-static void * cv_rtUiVerbBuf;
-static void * cv_rtUiArg1Buf;
-static void * cv_rtUiArg2Buf;
-static int32_t cv_rtUiVirtualTicks;
-static int32_t cv_rtUiModalActive;
-static void * cv_rtUiModalInst;
-static void * cv_rtUiModalBufH;
-static void * cv_rtUiModalBuf;
-static int32_t cv_rtUiModalIsNew;
-static int32_t cv_rtUiModalWbKind;
-static void * cv_rtUiModalAddr;
-static void * cv_rtUiModalLst;
-static int32_t cv_rtUiModalIdx;
-static void * cv_rtUiModalMp;
-static void * cv_rtUiModalKey255;
-static int32_t cv_rtSerPos;
-static int32_t cv_rtSerBad;
-static void clar_init_globals(void) {
-    cv_rtCrc32Tab = 0;
-    cv_rtUiMenuHandlesArr = 0;
-    cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
-    cv_rtUiNMenusVal = 0;
-    cv_rtUiNMenusVal = 0;
-    cv_rtUiAppleMenuHandle = 0;
-    cv_rtUiAppleMenuHandle = (void *)(intptr_t)(0);
-    cv_rtUiStdEditMenuIdx = 0;
-    cv_rtUiStdEditMenuIdx = CLAR_NEG32(1);
-    cv_rtUiSys7 = 0;
-    cv_rtUiSys7 = 0;
-    cv_rtUiEveryDueArr = 0;
-    cv_rtUiEveryDueArr = (void *)(intptr_t)(0);
-    cv_rtUiNEveryVal = 0;
-    cv_rtUiNEveryVal = 0;
-    cv_rtUiEmptyPStrCache = 0;
-    cv_rtUiEmptyPStrCache = (void *)(intptr_t)(0);
-    cv_rtUiScratchBitMap = 0;
-    cv_rtUiScratchBitMap = (void *)(intptr_t)(0);
-    cv_rtUiGrayPats = 0;
-    cv_rtUiGrayPats = (void *)(intptr_t)(0);
-    cv_rtUiScripted = 0;
-    cv_rtUiScripted = 0;
-    cv_rtUiScriptDbl = 0;
-    cv_rtUiScriptDbl = 0;
-    cv_rtUiJiggle = 0;
-    cv_rtUiJiggle = 0;
-    cv_rtUiJiggleBusy = 0;
-    cv_rtUiJiggleBusy = 0;
-    cv_rtUiAnswerKinds = 0;
-    cv_rtUiAnswerKinds = (void *)(intptr_t)(0);
-    cv_rtUiAnswerVals = 0;
-    cv_rtUiAnswerVals = (void *)(intptr_t)(0);
-    cv_rtUiAnswerStrs = 0;
-    cv_rtUiAnswerStrs = (void *)(intptr_t)(0);
-    cv_rtUiAnswerHead = 0;
-    cv_rtUiAnswerHead = 0;
-    cv_rtUiAnswerTail = 0;
-    cv_rtUiAnswerTail = 0;
-    cv_rtUiTraceSuppressed = 0;
-    cv_rtUiTraceSuppressed = 0;
-    cv_rtUiTraceWinCounts = 0;
-    cv_rtUiTraceWinCounts = (void *)(intptr_t)(0);
-    cv_rtUiTraceLastFront = 0;
-    cv_rtUiTraceLastFront = (void *)(intptr_t)(0);
-    cv_rtUiDimPrevArr = 0;
-    cv_rtUiDimPrevArr = (void *)(intptr_t)(0);
-    cv_rtUiDimFirst = 0;
-    cv_rtUiDimFirst = 1;
-    cv_rtUiStdEditDimPrev = 0;
-    cv_rtUiStdEditDimPrev = 0;
-    cv_rtUiScriptCursor = 0;
-    cv_rtUiScriptCursor = (void *)(intptr_t)(0);
-    cv_rtUiScriptCursorInit = 0;
-    cv_rtUiScriptCursorInit = 0;
-    cv_rtUiScriptLineBuf = 0;
-    cv_rtUiScriptLineBuf = (void *)(intptr_t)(0);
-    cv_rtUiScriptLineLen = 0;
-    cv_rtUiScriptLineLen = 0;
-    cv_rtUiVerbBuf = 0;
-    cv_rtUiVerbBuf = (void *)(intptr_t)(0);
-    cv_rtUiArg1Buf = 0;
-    cv_rtUiArg1Buf = (void *)(intptr_t)(0);
-    cv_rtUiArg2Buf = 0;
-    cv_rtUiArg2Buf = (void *)(intptr_t)(0);
-    cv_rtUiVirtualTicks = 0;
-    cv_rtUiVirtualTicks = 0;
-    cv_rtUiModalActive = 0;
-    cv_rtUiModalActive = 0;
-    cv_rtUiModalInst = 0;
-    cv_rtUiModalInst = (void *)(intptr_t)(0);
-    cv_rtUiModalBufH = 0;
-    cv_rtUiModalBufH = (void *)(intptr_t)(0);
-    cv_rtUiModalBuf = 0;
-    cv_rtUiModalBuf = (void *)(intptr_t)(0);
-    cv_rtUiModalIsNew = 0;
-    cv_rtUiModalIsNew = 0;
-    cv_rtUiModalWbKind = 0;
-    cv_rtUiModalWbKind = 0;
-    cv_rtUiModalAddr = 0;
-    cv_rtUiModalAddr = (void *)(intptr_t)(0);
-    cv_rtUiModalLst = 0;
-    cv_rtUiModalLst = (void *)(intptr_t)(0);
-    cv_rtUiModalIdx = 0;
-    cv_rtUiModalIdx = 0;
-    cv_rtUiModalMp = 0;
-    cv_rtUiModalMp = (void *)(intptr_t)(0);
-    cv_rtUiModalKey255 = 0;
-    cv_rtUiModalKey255 = (void *)(intptr_t)(0);
-    cv_rtSerPos = 0;
-    cv_rtSerBad = 0;
-}
-
-static void cl_free_globals(void) {
-
-}
-
-
-#if defined(__m68k__) || defined(macintosh)
-#define CLAR_PASCAL pascal
-#else
-#define CLAR_PASCAL
-#endif
-static CLAR_PASCAL void clar_cb_rtUiScrollbarAction(void * cv_ctrl, short cv_part);
-static CLAR_PASCAL void clar_cb_rtUiLdefDraw(short cv_msg, uint8_t cv_select, void * cv_rectPtr, int32_t cv_cellPacked, short cv_dataOffset, short cv_dataLen, void * cv_lh);
 
 static void clar_fn_rtSetLastErr(int32_t cv_code, const clar_str_255 *cv_msg);
 static void clar_fn_rtPanic(const clar_str_255 *cv_msg);
@@ -794,6 +644,7 @@ static int32_t clar_fn_uidWinNWidgets(int32_t cv_winIdx);
 static int32_t clar_fn_uidWinWidgetsOff(int32_t cv_winIdx);
 static int32_t clar_fn_uidWinStateSize(int32_t cv_winIdx);
 static int32_t clar_fn_uidWinFormOff(int32_t cv_winIdx);
+static int32_t clar_fn_uidWinMenuMask(int32_t cv_winIdx);
 static void * clar_fn_uidWidgetBase(int32_t cv_winIdx, int32_t cv_widgetIdx);
 static int32_t clar_fn_uidWidgetKind(int32_t cv_winIdx, int32_t cv_widgetIdx);
 static int32_t clar_fn_uidWidgetNameOff(int32_t cv_winIdx, int32_t cv_widgetIdx);
@@ -895,6 +746,7 @@ static void * clar_fn_rtUiAboutParam(void * cv_p);
 static void clar_fn_rtUiAboutAlert(void);
 static void clar_fn_rtUiAppleSelect(int32_t cv_itemNum);
 static void clar_fn_rtUiBuildMenus(void);
+static void clar_fn_rtUiSyncMenuBar(void);
 static void clar_fn_rtUiMenuEnable(int32_t cv_menuIdx, int32_t cv_itemIdx, int32_t cv_enable);
 static void clar_fn_rtUiMenuRecomputeDim(void);
 static void clar_fn_rtUiAfterFrontChange(void);
@@ -1103,6 +955,164 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst);
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx);
 void clar_fn_clar_ui_fire_launchdoc(void * cv_path);
 void clar_fn_clar_ui_fire_startempty(void);
+
+static void * cv_rtUiMenuHandlesArr;
+static int32_t cv_rtUiNMenusVal;
+static int32_t cv_rtUiClaimedMask;
+static int32_t cv_rtUiBarMask;
+static void * cv_rtUiAppleMenuHandle;
+static int32_t cv_rtUiStdEditMenuIdx;
+static int32_t cv_rtUiSys7;
+static void * cv_rtUiEveryDueArr;
+static int32_t cv_rtUiNEveryVal;
+static void * cv_rtUiEmptyPStrCache;
+static void * cv_rtUiScratchBitMap;
+static void * cv_rtUiGrayPats;
+static int32_t cv_rtUiScripted;
+static int32_t cv_rtUiScriptDbl;
+static int32_t cv_rtUiJiggle;
+static int32_t cv_rtUiJiggleBusy;
+static void * cv_rtUiAnswerKinds;
+static void * cv_rtUiAnswerVals;
+static void * cv_rtUiAnswerStrs;
+static int32_t cv_rtUiAnswerHead;
+static int32_t cv_rtUiAnswerTail;
+static int32_t cv_rtUiTraceSuppressed;
+static void * cv_rtUiTraceWinCounts;
+static void * cv_rtUiTraceLastFront;
+static void * cv_rtUiDimPrevArr;
+static int32_t cv_rtUiDimFirst;
+static int32_t cv_rtUiStdEditDimPrev;
+static void * cv_rtUiScriptCursor;
+static int32_t cv_rtUiScriptCursorInit;
+static void * cv_rtUiScriptLineBuf;
+static int32_t cv_rtUiScriptLineLen;
+static void * cv_rtUiVerbBuf;
+static void * cv_rtUiArg1Buf;
+static void * cv_rtUiArg2Buf;
+static int32_t cv_rtUiVirtualTicks;
+static int32_t cv_rtUiModalActive;
+static void * cv_rtUiModalInst;
+static void * cv_rtUiModalBufH;
+static void * cv_rtUiModalBuf;
+static int32_t cv_rtUiModalIsNew;
+static int32_t cv_rtUiModalWbKind;
+static void * cv_rtUiModalAddr;
+static void * cv_rtUiModalLst;
+static int32_t cv_rtUiModalIdx;
+static void * cv_rtUiModalMp;
+static void * cv_rtUiModalKey255;
+static int32_t cv_rtSerPos;
+static int32_t cv_rtSerBad;
+static void clar_init_globals(void) {
+    cv_rtUiMenuHandlesArr = 0;
+    cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
+    cv_rtUiNMenusVal = 0;
+    cv_rtUiNMenusVal = 0;
+    cv_rtUiClaimedMask = 0;
+    cv_rtUiClaimedMask = 0;
+    cv_rtUiBarMask = 0;
+    cv_rtUiBarMask = 0;
+    cv_rtUiAppleMenuHandle = 0;
+    cv_rtUiAppleMenuHandle = (void *)(intptr_t)(0);
+    cv_rtUiStdEditMenuIdx = 0;
+    cv_rtUiStdEditMenuIdx = CLAR_NEG32(1);
+    cv_rtUiSys7 = 0;
+    cv_rtUiSys7 = 0;
+    cv_rtUiEveryDueArr = 0;
+    cv_rtUiEveryDueArr = (void *)(intptr_t)(0);
+    cv_rtUiNEveryVal = 0;
+    cv_rtUiNEveryVal = 0;
+    cv_rtUiEmptyPStrCache = 0;
+    cv_rtUiEmptyPStrCache = (void *)(intptr_t)(0);
+    cv_rtUiScratchBitMap = 0;
+    cv_rtUiScratchBitMap = (void *)(intptr_t)(0);
+    cv_rtUiGrayPats = 0;
+    cv_rtUiGrayPats = (void *)(intptr_t)(0);
+    cv_rtUiScripted = 0;
+    cv_rtUiScripted = 0;
+    cv_rtUiScriptDbl = 0;
+    cv_rtUiScriptDbl = 0;
+    cv_rtUiJiggle = 0;
+    cv_rtUiJiggle = 0;
+    cv_rtUiJiggleBusy = 0;
+    cv_rtUiJiggleBusy = 0;
+    cv_rtUiAnswerKinds = 0;
+    cv_rtUiAnswerKinds = (void *)(intptr_t)(0);
+    cv_rtUiAnswerVals = 0;
+    cv_rtUiAnswerVals = (void *)(intptr_t)(0);
+    cv_rtUiAnswerStrs = 0;
+    cv_rtUiAnswerStrs = (void *)(intptr_t)(0);
+    cv_rtUiAnswerHead = 0;
+    cv_rtUiAnswerHead = 0;
+    cv_rtUiAnswerTail = 0;
+    cv_rtUiAnswerTail = 0;
+    cv_rtUiTraceSuppressed = 0;
+    cv_rtUiTraceSuppressed = 0;
+    cv_rtUiTraceWinCounts = 0;
+    cv_rtUiTraceWinCounts = (void *)(intptr_t)(0);
+    cv_rtUiTraceLastFront = 0;
+    cv_rtUiTraceLastFront = (void *)(intptr_t)(0);
+    cv_rtUiDimPrevArr = 0;
+    cv_rtUiDimPrevArr = (void *)(intptr_t)(0);
+    cv_rtUiDimFirst = 0;
+    cv_rtUiDimFirst = 1;
+    cv_rtUiStdEditDimPrev = 0;
+    cv_rtUiStdEditDimPrev = 0;
+    cv_rtUiScriptCursor = 0;
+    cv_rtUiScriptCursor = (void *)(intptr_t)(0);
+    cv_rtUiScriptCursorInit = 0;
+    cv_rtUiScriptCursorInit = 0;
+    cv_rtUiScriptLineBuf = 0;
+    cv_rtUiScriptLineBuf = (void *)(intptr_t)(0);
+    cv_rtUiScriptLineLen = 0;
+    cv_rtUiScriptLineLen = 0;
+    cv_rtUiVerbBuf = 0;
+    cv_rtUiVerbBuf = (void *)(intptr_t)(0);
+    cv_rtUiArg1Buf = 0;
+    cv_rtUiArg1Buf = (void *)(intptr_t)(0);
+    cv_rtUiArg2Buf = 0;
+    cv_rtUiArg2Buf = (void *)(intptr_t)(0);
+    cv_rtUiVirtualTicks = 0;
+    cv_rtUiVirtualTicks = 0;
+    cv_rtUiModalActive = 0;
+    cv_rtUiModalActive = 0;
+    cv_rtUiModalInst = 0;
+    cv_rtUiModalInst = (void *)(intptr_t)(0);
+    cv_rtUiModalBufH = 0;
+    cv_rtUiModalBufH = (void *)(intptr_t)(0);
+    cv_rtUiModalBuf = 0;
+    cv_rtUiModalBuf = (void *)(intptr_t)(0);
+    cv_rtUiModalIsNew = 0;
+    cv_rtUiModalIsNew = 0;
+    cv_rtUiModalWbKind = 0;
+    cv_rtUiModalWbKind = 0;
+    cv_rtUiModalAddr = 0;
+    cv_rtUiModalAddr = (void *)(intptr_t)(0);
+    cv_rtUiModalLst = 0;
+    cv_rtUiModalLst = (void *)(intptr_t)(0);
+    cv_rtUiModalIdx = 0;
+    cv_rtUiModalIdx = 0;
+    cv_rtUiModalMp = 0;
+    cv_rtUiModalMp = (void *)(intptr_t)(0);
+    cv_rtUiModalKey255 = 0;
+    cv_rtUiModalKey255 = (void *)(intptr_t)(0);
+    cv_rtSerPos = 0;
+    cv_rtSerBad = 0;
+}
+
+static void cl_free_globals(void) {
+
+}
+
+
+#if defined(__m68k__) || defined(macintosh)
+#define CLAR_PASCAL pascal
+#else
+#define CLAR_PASCAL
+#endif
+static CLAR_PASCAL void clar_cb_rtUiScrollbarAction(void * cv_ctrl, short cv_part);
+static CLAR_PASCAL void clar_cb_rtUiLdefDraw(short cv_msg, uint8_t cv_select, void * cv_rectPtr, int32_t cv_cellPacked, short cv_dataOffset, short cv_dataLen, void * cv_lh);
 
 static void clar_fn_rtSetLastErr(int32_t cv_code, const clar_str_255 *cv_msg) {
     rt_ext_CoreSetLastErr(cv_code, (const uint8_t*)&((*cv_msg)));
@@ -1942,7 +1952,7 @@ static int32_t clar_fn_uidAppOff(void) {
 }
 
 static void * clar_fn_uidWinBase(int32_t cv_winIdx) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidWinsOff()))) + (CLAR_MUL32(cv_winIdx, 48)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidWinsOff()))) + (CLAR_MUL32(cv_winIdx, 52)));
     return 0;
 }
 
@@ -2008,6 +2018,11 @@ static int32_t clar_fn_uidWinStateSize(int32_t cv_winIdx) {
 
 static int32_t clar_fn_uidWinFormOff(int32_t cv_winIdx) {
     return clar_fn_uidI32((void *)((char *)(clar_fn_uidWinBase(cv_winIdx)) + (44)));
+    return 0;
+}
+
+static int32_t clar_fn_uidWinMenuMask(int32_t cv_winIdx) {
+    return clar_fn_uidI32((void *)((char *)(clar_fn_uidWinBase(cv_winIdx)) + (48)));
     return 0;
 }
 
@@ -3038,6 +3053,8 @@ static void clar_fn_rtUiAppleSelect(int32_t cv_itemNum) {
 static void clar_fn_rtUiBuildMenus(void) {
     int32_t cv_nMenus;
     cv_nMenus = 0;
+    int32_t cv_nWins;
+    cv_nWins = 0;
     int32_t cv_i;
     cv_i = 0;
     int32_t cv_j;
@@ -3058,6 +3075,15 @@ static void clar_fn_rtUiBuildMenus(void) {
         cv_rtUiMenuHandlesArr = clar_fn_UiNewPtrClear(CLAR_MUL32(cv_nMenus, 4));
     } else {
         cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
+    }
+    cv_rtUiClaimedMask = 0;
+    cv_rtUiBarMask = 0;
+    cv_nWins = clar_fn_uidNWins();
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < cv_nWins))) break;
+        cv_rtUiClaimedMask = (cv_rtUiClaimedMask | clar_fn_uidWinMenuMask(cv_i));
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
     cv_i = 0;
     while (1) {
@@ -3097,10 +3123,58 @@ static void clar_fn_rtUiBuildMenus(void) {
                 cv_j = CLAR_ADD32(cv_j, 1);
             }
         }
-        rt_ext_UiInsertMenu(cv_mh, 0);
+        if ((cv_rtUiClaimedMask & CLAR_SHL32(1, cv_i)) == 0) {
+            rt_ext_UiInsertMenu(cv_mh, 0);
+            cv_rtUiBarMask = (cv_rtUiBarMask | CLAR_SHL32(1, cv_i));
+        }
         rt_pokel((void *)((char *)(cv_rtUiMenuHandlesArr) + (CLAR_MUL32(cv_i, 4))), ((int32_t)(intptr_t)(cv_mh)));
         cv_i = CLAR_ADD32(cv_i, 1);
     }
+    rt_ext_UiDrawMenuBar();
+}
+
+static void clar_fn_rtUiSyncMenuBar(void) {
+    void * cv_inst;
+    cv_inst = 0;
+    int32_t cv_target;
+    cv_target = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    int32_t cv_bit;
+    cv_bit = 0;
+    void * cv_mh;
+    cv_mh = 0;
+    if ((cv_rtUiMenuHandlesArr == (void *)(intptr_t)(0)) || (cv_rtUiClaimedMask == 0)) {
+        return;
+    }
+    cv_target = (CLAR_SUB32(CLAR_SHL32(1, cv_rtUiNMenusVal), 1) & (2147483647 ^ cv_rtUiClaimedMask));
+    cv_inst = clar_fn_rtUiWinstOf(rt_ext_UiFrontWindow());
+    if (cv_inst != (void *)(intptr_t)(0)) {
+        cv_target = (cv_target | clar_fn_uidWinMenuMask((((clar_rec_RtUiWinst *)(cv_inst)))->cv_winIdx));
+    }
+    if (cv_target == cv_rtUiBarMask) {
+        return;
+    }
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < cv_rtUiNMenusVal))) break;
+        cv_bit = CLAR_SHL32(1, cv_i);
+        if (((cv_rtUiBarMask & cv_bit) != 0) && ((cv_rtUiClaimedMask & cv_bit) != 0)) {
+            rt_ext_UiDeleteMenu(CLAR_ADD32(2, cv_i));
+        }
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < cv_rtUiNMenusVal))) break;
+        cv_bit = CLAR_SHL32(1, cv_i);
+        if (((cv_target & cv_bit) != 0) && ((cv_rtUiClaimedMask & cv_bit) != 0)) {
+            cv_mh = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_rtUiMenuHandlesArr) + (CLAR_MUL32(cv_i, 4)))));
+            rt_ext_UiInsertMenu(cv_mh, 0);
+        }
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+    cv_rtUiBarMask = cv_target;
     rt_ext_UiDrawMenuBar();
 }
 
@@ -3161,6 +3235,7 @@ static void clar_fn_rtUiMenuRecomputeDim(void) {
 }
 
 static void clar_fn_rtUiAfterFrontChange(void) {
+    clar_fn_rtUiSyncMenuBar();
     clar_fn_rtUiMenuRecomputeDim();
     clar_fn_rtUiTraceFrontCheck();
 }
