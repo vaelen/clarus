@@ -5875,6 +5875,352 @@ plan `docs/superpowers/plans/2026-09-06-native-array-return-and-fileh-guards.md`
 per-task briefs, reports, reviews and the `progress.md` ledger in
 `.superpowers/sdd/2026-09-06-native-array-return-and-fileh-guards/`.
 
+## AppleTalk phase (2026-09-07, branch `appletalk`)
+
+Recorded on the same terms as the entries above: merging to `main` is
+Andrew's call and had not happened when this was written. **This entry
+covers Tasks 1-12 plus the final fix wave, all merged into `appletalk`.
+Task 13 (the Snow proofs and the first green two-Mac ADSP run) is
+BLOCKED on a toolchain patch outside this repo and lands after this
+entry** — see "Task 13, still owed" below.
+
+**What it did.** Made AppleTalk real in Clarus: NBP discovery
+(`serviceBrowser`), ATP request/response services (a new `service`
+resource with `serve`/`reply`/`call`), and ADSP streams as
+`connection`'s second transport with `listener` accepting them — on real
+LocalTalk under Mini vMac, and, for discovery and RPC, **on the host as
+a genuine LocalTalk-over-UDP peer on the same wire an emulator is on**.
+It also cleared the two items the `serial-connection` phase left
+recorded: host `stdio` and `pty` transports for `connection`, and
+`every` timers in the host CLI pump. Fourteen tasks in five waves, each
+in its own worktree on `appletalk-tN` and each reviewed; the controller
+merged every task into `appletalk` and re-gated the merged tree. 83
+files, +12,483/-348 outside `testdata/`.
+
+**The probe wave came first, and it paid.** Task 1 booted four throwaway
+Clarus programs on the emulated Mac Plus and returned verdicts that
+reshaped three later tasks:
+
+- **P1 — `.XPP` and `.DSP` are `-43` on a LaunchAPPL boot disk.**
+  `.MPP` and `.ATP` open clean (they are in the Mac Plus ROM); the two
+  drivers that live in the `AppleTalk` **system file** do not, because
+  LaunchAPPL builds its boot disk with System + AutoQuit + the app and
+  nothing else. This is the whole reason Task 13 is blocked: every ADSP
+  assertion in the harness needs a boot disk that carries that file.
+- **P2 — LToUDP works, first try.** NBP `registerName` on one emulated
+  Mac, `lookupName` from a second, with a host sniffer capturing both
+  the LkUp and the LkUp-Reply on the multicast group. That result is
+  what made a host stack worth building at all.
+- **P3 — there is no self-send on the Mac Plus ROM.** `setSelfSend` is
+  `-17` (controlErr), a self-lookup returns `gotten = 0` before and
+  after, and an ATP self-transaction times out at `-1096` with the async
+  `getRequest` never completing. The planned `AtalkSelf` suite case was
+  reshaped on the spot (open / register / lookup-miss / remove /
+  openATPSkt / closeATPSkt, no self-send, no self-transaction, no fixed
+  node number).
+- **P4 — two emulators boot simultaneously**, with independent captures
+  — but the planned `pkill -f MacPlus2.app` recipe is WRONG: that string
+  matches LaunchAPPL's own argv and never the emulator, while both
+  instances are `<tmp>/minivmac.app/...`, so the obvious `pkill -f
+  minivmac.app` kills BOTH. `run_mac_pair` kills by per-instance cwd.
+
+Two more findings fell out of P3 and became rules for every later task:
+**an AppleTalk parameter block reused without being re-zeroed hangs the
+Mac** (reproduced three times; a fresh block fixes it — so the native
+runtime zeroes the whole block before every reuse and every AppleTalk
+`extern record` pads to >= 52 bytes), and **`registerName` fills the
+caller's `nteAddress` with the node's own net/node**, which is the
+cheapest way for a program to learn its own address.
+
+**The host stack** (`runtime/host/rt_atalk.{h,inc}`, `rt_atalk_test.c`,
+`tests/tools/atalkdrive.c`, Task 2). A real, instance-able
+LToUDP + LLAP + DDP + NBP + ATP implementation on the multicast group
+`239.192.76.84:1954` — the same wire a local Mini vMac or Snow LToUDP
+build is on, so a host program and an emulated Mac genuinely see each
+other. `CLARUS_ATALK_IFACE=<ipv4>` picks the interface on a multi-homed
+host. Every wire decoder bounds-checks before it reads. `atalkdrive` is
+the standalone C driver the harness uses as the far end. NBP register
+does the spec's 3 x 1 s verify window BLOCKING (duplicate detection must
+not be hurried — the Mac's own `registerName` blocks ~3.2 s at
+interval 8 / count 3), which is why `service.serve()` stalls ~3 s on the
+host; spec §6.1 was amended to say so.
+
+**The front end and lowering** (Tasks 3, 8). A new `service` type
+alongside `listener`, `serviceBrowser` and `address`; `string(addr)`
+lowering to `rtAtalkAddrStr`; the four resource caps enforced in
+lowering with exact diagnostics (**8 connections, 2 listeners,
+2 serviceBrowsers, 2 services**); the four handler families
+(`found`/`done`, `request`, `accepted`, `opened`/`closed`/`failed`)
+synthesized the way the connection dispatchers already were.
+
+**The runtime** (Tasks 7, 9). `runtime/clarus/atalk.cla` is the
+lane-neutral module — it names nothing but `rtAtDev*`/`rtAdspDev*`/
+`rtLsnDev*` — with `atalk_c.cla` (host) and `atalk_68k.cla` (native
+`.MPP`/`.ATP`/`.XPP`/`.DSP`) as its twins, exactly the shape
+`conn.cla`/`conn_c.cla`/`conn_68k.cla` established. The return
+conventions line up at the seam: the host's `-1 = none` from
+`AtalkHAtpGetRequest` is normalized to 0 in `atalk_c.cla` (`n < 0`,
+never `n <= 0`, so a zero-length request still dispatches), and the
+native poll returns a sign-corrected `ioResult` the pump reads as `< 0`.
+Native memory/PB discipline is five stated rules, each visible in the
+code: zero before every reuse; a separate auxiliary block for the four
+calls that must run while another block is live (`dspClose`,
+`dspRemove`, `dspCLDeny`, `dspCLRemove`); an explicit sign-extension
+helper for every negative `word`; `int[]`-held block addresses because
+`ptr` is not a legal element type; and CCB + both queues + attention
+buffer returned on every close and every FAILED open.
+
+**The catalog** (Task 6). `toolbox/appletalk.cla` — 586 lines of real
+Inside Macintosh trap declarations for `.MPP`/`.ATP`/`.XPP`/`.DSP`,
+cited per declaration against `toolchain/universal/CIncludes` and IM,
+plus `NewPtrClear` added to `toolbox/memory.cla`. Hardware-proved by the
+new `AtalkSelf` toolbox suite case (toolbox suite **38 -> 39**: 38 real
++ `SelfCheck`); `tests/testsuite/catalog.sh` bind-checks it.
+
+**The two serial carry-ins** (Tasks 4, 5). Host `connection` gained
+`stdio` and `pty` transports (`runtime/host/rt_serial.inc`), and the
+host CLI pump gained real `every` timers — which required
+`irIsUiProgram` to stop being the gate on synthesizing a pump, so a
+non-UI `every` program now works on the host. Both are covered by new
+`tests/conntest/` scripts.
+
+**Tests and examples.** Three new groups — `tests/atalk/` (7 scripts),
+`tests/atalkdrive/` (2), `tests/hostrt/atalk.sh` — plus
+`tests/bake/atalk.sh` (the `emit68k_pair` twin landed in the same task
+as the module, per the standing rule), `tests/bake/every_cli.sh`,
+`tests/conntest/{every,pty,stdio,atalk_check}.sh`, and three gated
+emulator boots: `mactest/atalk_68k.sh` (one boot + `atalkdrive` —
+native `PSendResponse`/`PSendRequest` hardware-proved BOTH ways against
+the host stack, 10/10 in 216 s), `mactest/atalk_selfserve.sh` (serve +
+browse with no peer, written to pass on both boot disks), and
+`mactest/adsp_68k.sh` (two boots, ADSP — SKIPs today, see below).
+`tests/lib_atalk.sh` and `tests/lib_mac.sh`'s `run_mac_pair` are the new
+helpers. Examples: `atalkclock.cla`, `atalkchat.cla`, `atalkfind.cla`,
+all three kept compiling by `tests/atalk/examples.sh`.
+
+**Documentation.** The reference gained the Service Discovery / Services
+material in Chapter 12 including a host-lane paragraph (a host build is
+a real LocalTalk peer; discovery, `zones`, `serve`, `reply` and `call`
+work for real; `connection.open(appletalk ...)`, `open(addr)` and
+`listener.register` fail with a `failed` event because streams are
+Macintosh-only this release; `zones` is always `["*"]`;
+`CLARUS_ATALK_IFACE`); the cookbook gained 255 lines of worked AppleTalk
+transcription; `docs/TODO.md` shrank by 158 lines net as the phase
+closed several entries.
+
+**Two real bugs, one of them pre-existing.**
+
+- **Pre-existing, in `clarusc/bake.cla`** (found by Task 8's
+  `CLARUS_BAKE_FULL=1` run, root-caused and fixed by Task 5's second fix
+  round, `747c4bd`): `bkInstallArenas` restored `lowStrIdx` **unfiltered
+  after a truncating install of `irStrLits`**, so any program sharing a
+  string literal with one of `uitest.cla`'s dropped literals miscompiled
+  under `--rtbake` on the C lane (`every_cli.cla`: 62,716 B fork vs
+  62,787 B from source, first diff at line 394). One-line filter, plus
+  `tests/bake/every_cli.sh` as the T1-level regression so the T2-only
+  full-corpus sweep is never again the first thing to see it. **This is
+  why Task 13 owes the Snow `clarusc_bake` rerun**: `bake.cla` changed.
+- **This phase's own, in the host stack** (Task 2's second fix round,
+  `bd534e6`): `rt_at_acquire`'s lapACK wait returned on ANY datagram, so
+  under load two host stacks could take the same node id and pollute each
+  other's LkUp-Replies. It surfaced as a wave-3 T1 failure that passed
+  when run alone. Fixed with a real lapACK wait plus a lookup-pattern
+  filter, a random `nbp_id`, a larger `SO_RCVBUF` and 8 probes — and,
+  because the multicast group is also shared with Andrew's live emulator
+  sessions and his EtherTalk bridge, an `atalk_lock` mkdir mutex that
+  serializes the network scripts. That lock is where most of T1's new
+  wall clock comes from; see the accepted costs.
+
+**Final whole-branch review and the one fix wave.** The review (opus,
+`dbacb90..a43b522`, six passes over runtime / host C / compiler /
+catalog / tests / docs) returned "With fixes": two Critical, four
+Important, and a page of minors. All were fixed in ONE wave
+(`a43b522..40ce5ef`, 7 commits):
+
+- **C1 — `mactest/adsp_68k.sh` was committed red** and would have failed
+  T2 on ten assertions. Ruling: not an env gate, a **self-retiring
+  skip** — the script greps the SERVER capture for `^failed -1273 `
+  (the listener's own report that `.DSP` is absent) and calls `skip`
+  BEFORE its first assertion, because in this harness a `FAIL ` line
+  beats exit 77. When LaunchAPPL carries the `AppleTalk` file the grep
+  misses and all ten assertions run, with no test edit.
+- **C2 — `svc.call`'s `reply` out-parameter accepted a `string` and
+  emitted type-confused C.** The underlying checker hole is
+  **pre-existing and class-wide** (`file.readText(path, s)` and
+  `fh.readAt(0, 4, s)` check clean too), but those bottom out in an
+  intrinsic taking `rt_text` by value so `cc` ERRORS and the user is
+  stopped; `svc.call` bottoms out in a lowered Clarus function so `cc`
+  only WARNS and the user ships a binary that writes through a
+  `clar_str_255 *` as if it were an `rt_text *`. This phase added the
+  first site of the class with a silent failure mode, so it got a
+  one-off `typeKind(...) != TyText` guard plus
+  `testdata/errors/svc_call_reply.{cla,expect}`, and the class-wide hole
+  is recorded in `docs/TODO.md`'s new `## Compiler: type checking`
+  section with the general fix (real out-parameter typing).
+- **I1 — the LToUDP test lock was taken too early**, around every
+  script's own `clarusc emit` + `cc`. Narrowed to sit immediately above
+  the multicast probe, with an ownership check in `atalk_unlock` (a
+  waiter that stole a dead holder's lock could delete a live one's) and
+  the wait bound raised 300 -> 600 s. **The honest measurement: it
+  bought ~2.5 s.** The compiles were never the cost.
+- **I2 — `tests/atalk/runerr.sh` hid three network-free assertions
+  behind the multicast gate**, so on any host without multicast the
+  phase's own cap diagnostics silently vanished. Section order is now
+  gate order: the two panic cases and the three build-error cap cases run
+  unconditionally and unlocked; only `reply_twice` needs a peer.
+- **I3 — a listener that failed a `dspCLListen` went permanently deaf.**
+  The re-arm lived only in the success branch, and natively
+  `rtLsnDevPoll` has already cleared the live flag by the time it returns
+  negative — so the slot stayed `rtAtActive` with nothing armed, the NBP
+  name stayed advertised, `rtAtalkAlive` kept the program running, and no
+  client would ever be accepted again, after exactly one `failed` event.
+  Fixed as **teardown, not re-arm**: `rtLsnStop(i + 1)` after
+  `rtLsnSetFailed`, because the state must match what the program was
+  told, because re-arming a persistent failure would refire `failed` on
+  every pump pass forever, and because `rtLsnStop` already IS the
+  documented-idempotent teardown.
+- **I4 — the reference documented no host-lane AppleTalk behavior** at
+  all, even though the host lane is a real peer. One paragraph, modelled
+  on the Serial section's `CLARUS_SERIAL_*` precedent.
+- Minors: the `every` arming's signed-overflow window
+  (`(int32_t)((uint32_t)now + (uint32_t)periodTicks)`); spec §5.6's
+  "2 KB" lookup buffer corrected to 4 KB; stale "docs/TODO.md's fix (b)"
+  citations repointed; `toolbox/appletalk.cla`'s header path corrected to
+  `toolchain/universal/CIncludes`; **`rt_ext_ConnHIdle` now `FD_SET`s
+  the AppleTalk UDP fd**, closing spec §6.1's stated integration (an
+  AppleTalk-only host server used to wake 50x/s on the `usleep` arm);
+  `tests/atalk/examples.sh`; CLAUDE.md's test-section updates.
+
+The fix-wave re-review confirmed every finding addressed, confirmed the
+golden movement was exactly the AppleTalk set, and **refuted one claim
+the fix-wave report itself made**: the five retained functions are NOT
+carried by every native binary. See the costs below.
+
+**Rebless proof.** Task 9 was the phase's one planned rebless wave and
+the fix wave's I3 forced a second, targeted one. The whole-branch review
+re-ran the normalization independently on `testdata/cg68k/arith.s`: after
+`s/-?N(A5)/OFF(A5)/` and label normalization the **only** residue is the
+globals-size immediate and the appended `clar_*_fire_*` roots — i.e.
+renumbering plus addition, no altered code. I3's own rebless moved
+exactly ten `testdata/cg68k/atalk_{server,client}*.s` files and nothing
+else; four of the ten normalize to **zero** residue (pure jump-table
+renumbering, `JSR 4306(A5)` -> `JSR 4298(A5)`), and the server's entire
+normalized residue is the six added instructions of the `rtLsnStop`
+call plus one function (`clar_ui_fire_startempty`) pushed across a
+segment boundary — the sorted `; func` name set across all five segments
+is byte-identically the same before and after. Four
+`testdata/emitui/atalk_*.c.golden` moved for the same reason:
+`atalk_listener` gains exactly one line (it already called `lsn.stop()`),
+the other three gain that line plus the pulled-in `rtLsnStop` body and
+its forward declarations.
+
+**Accepted costs, stated precisely.**
+
+- **Every native program's A5 globals grew 1,596 -> 6,910 bytes**
+  (globals-size immediate `#797` -> `#3454`), because
+  `runtime/clarus/atalk.cla` + `atalk_68k.cla` are in the **68k
+  superset** — spliced into every native build, not usage-gated the way
+  the host `atalk.cla`/`atalk_c.cla` pair is. That is the single largest
+  standing cost of the phase and it is paid by a program that never
+  mentions AppleTalk.
+- **Host `connection` programs carry the `atalk_c.cla` wrappers**,
+  because the host splice is joint (one synthesized `clar_conn_pump`
+  calls `rtAtalkPump`).
+- **An AppleTalk native program WITHOUT a listener keeps `rtLsnStop` and
+  four callees** (`rtAtDevRemove`, `rtLsnDevRemove`, `rtAt68NteFind`,
+  `rtAt68PStrEq`), because I3's pump references the teardown
+  unconditionally. This is NOT every native binary — the fix wave's
+  report said so and the re-review refuted it: retention is
+  `usesAtalk`-gated, so a program that never touches AppleTalk keeps
+  none of the five.
+- **T1's wall clock went 34 s -> ~2:14.** The cost is the network
+  scripts' WAIT budgets (`atalk_wait_line`'s up-to-20 s NBP-registration
+  confirmations, `atalk_wait_exit`'s up-to-15 s lifetime checks) times
+  five scripts, serialized on `atalk_lock` — measured at ~130 s of the
+  ~134 s, with `atalk/examples` at 0 s and `atalk/splice` at 1 s. Keeping
+  the lock was ruled correct (determinism on a group shared with live
+  emulator sessions beats the seconds); the lever, recorded in
+  `docs/FUTURE.md`, is the wait budgets.
+- **`svc.call`'s type guard is a one-off.** Until real out-parameter
+  typing lands, the next `text` out-parameter added to the language has
+  to remember it (`docs/TODO.md`).
+
+**Task 13, still owed.** Blocked on a one-line change to Andrew's
+Retro68 checkout that this session was not permitted to make:
+`CopySystemFile("AppleTalk", false)` in
+`LaunchAPPL/Client/MiniVMac.cc`, plus a LaunchAPPL rebuild, so the
+harness's stripped boot disk installs all four AppleTalk 58.1.4 drivers
+instead of just what the ROM provides. With that in place, Task 13 adds:
+
+1. the **`AdspLeak` toolbox suite case** (toolbox count **39 -> 40**;
+   the five hand-maintained sites move as usual);
+2. the **first green `mactest/adsp_68k` run** — its self-retiring skip
+   stops firing on its own, no test edit;
+3. **`tests/mactest/snow/adsp_listener.sh`** — Snow (System 7, `.DSP`
+   built in) as server against `macplus/` as client;
+4. the **Snow interop probe** (P5: register on Snow / look up on the
+   Plus, and the reverse), recorded as an appendix to Task 1's report;
+5. the standing **`CLARUS_SNOW_TESTS=1 make test
+   T=mactest/snow/clarusc_bake`** rerun (~30 min), owed because
+   `clarusc/bake.cla` changed twice this phase — its 68k module list
+   grew by `atalk.cla` + `atalk_68k.cla` AND its `lowStrIdx` install was
+   fixed.
+
+**Gates.** T1 was run on every task's own worktree and again on
+every merged tree; the wave-4 merged-tree gate
+(`scripts/test-task.sh --smoke`, `a43b522`) was PASS in 146 s, and the
+fix wave's own was PASS in 141 s. The full merge gate
+(`CLARUS_MAC_TESTS=1 scripts/test-merge.sh`) was run at close-out on
+`20d6fbf` -- the phase tip plus the regenerated bootstrap snapshot plus
+the residual-nit commit -- and was **PASS in 1318 s**, every stage
+green:
+
+```
+test-merge.sh: t1 body PASS in 130s        (104 passed, 33 skipped, 0 failed)
+test-merge.sh: perfgate/ PASS in 0s        (1 passed)
+test-merge.sh: selfhost/ PASS in 204s      (6 passed)
+test-merge.sh: mactest/ PASS in 981s       (20 passed, 14 skipped, 0 failed)
+test-merge.sh: bake/ full corpus PASS in 3s (7 passed)
+test-merge.sh: PASS in 1318s
+```
+
+The load-bearing `mactest/` results: **`atalk_68k` PASS in 216 s**
+(native NBP/ATP against the host stack, both directions),
+**`atalk_selfserve` PASS in 14 s**, `toolbox_68k` PASS in 303 s at
+**39/39** with `AtalkSelf` green, `coresuite_68k` PASS at 83/83,
+`smoke_bounce` and `tick` PASS (the load-bearing check on the reblessed
+`cg68k` goldens), and **`adsp_68k` SKIP in 40 s with zero `FAIL` lines
+in its log** -- the self-retiring `.DSP`-absent skip, exactly as
+designed. The other 13 `mactest/` skips are the opt-in cprint lane
+(`CLARUS_CPRINT_MAC_TESTS`) and the Snow lane (`CLARUS_SNOW_TESTS`).
+The bootstrap snapshot was regenerated at close-out (`3fd0767`) with
+`tests/selfhost/fixedpoint.sh`'s own Go-free recipe -- clarusc changed
+substantially this phase, so `snapshot_fresh` was red until then.
+
+**Deferred / recorded.** The `progress.md` ledger in
+`.superpowers/sdd/2026-09-07-appletalk/` carries every deferred minor
+verbatim, one line per task, alongside every ruling and its stated cost
+if wrong. The items that outlive the phase are in `docs/TODO.md` (the
+class-wide `text` out-parameter hole; the listener teardown path has no
+runtime test, only goldens; `atalk_lock`'s stale-holder STEAL path is
+still racy between two waiters, the unlock half being guarded by a pid
+check) and `docs/FUTURE.md` (T1's wait budgets). Explicitly NOT done and
+recorded as such: the ~70 duplicated lines between
+`lowSynthAtalkFire{Simple,Failed}` and the connection builders — the
+fold has to edit code every `emitui` and `cg68k` golden pins, for zero
+behavior change, at the end of a phase that already reblessed the
+corpus; the review's own recommendation is to fold it in the MacTCP
+phase when a third copy makes the case unarguable.
+
+Spec: `docs/superpowers/specs/2026-09-06-appletalk-design.md`; plan
+`docs/superpowers/plans/2026-09-07-appletalk.md`; per-task briefs,
+reports, review packages and the `progress.md` ledger in
+`.superpowers/sdd/2026-09-07-appletalk/` (the one omission is
+`review-t9-8ef9fe6..6646efb.diff`, 12.8 MB of golden churn, regenerable
+as `git diff 8ef9fe6..6646efb`; the code-only package the reviewer
+actually read IS committed).
+
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of

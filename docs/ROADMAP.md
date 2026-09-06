@@ -157,7 +157,14 @@ list are DONE — `binary-files`, `transfer-crcs`, `filesystem-api`, and
 
 1. **AppleTalk.** In progress on branch `appletalk` (spec
    `docs/superpowers/specs/2026-09-06-appletalk-design.md`, plan
-   `docs/superpowers/plans/2026-09-07-appletalk.md`). Not merged.
+   `docs/superpowers/plans/2026-09-07-appletalk.md`). **Not merged.**
+   Tasks 1-12 and the final fix wave are complete, reviewed and merged
+   into `appletalk`, and the phase record is in `docs/HISTORY.md`. What
+   remains is Task 13 — the Snow proofs, the `AdspLeak` suite case, the
+   first green `mactest/adsp_68k` run and the standing Snow
+   `clarusc_bake` rerun — which is blocked on a one-line LaunchAPPL
+   patch outside this repo (`CopySystemFile("AppleTalk", false)`), and
+   Andrew's merge request.
 2. **MacTCP.**
 
 Environment note: `snow/MacII.snoww` + its hdd image are already
