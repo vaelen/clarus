@@ -6150,9 +6150,19 @@ func cgIsScalarKind(k: IRKind): bool {
 // function was the one holdout still treating a `func f(): error` return
 // as scalar, failing check-time as "EVarRef non-scalar" at the `return e`
 // statement -- the param side of KErr was already fixed, this closes the
-// return side).
+// return side). native-array-return-and-fileh-guards (spec %2): KArr
+// joins the set when its element carries no handle -- the same boundary
+// cgParamByRef draws for the parameter ABI, so an array that can be
+// passed by address can also be returned through the hidden pointer,
+// and a handle-bearing one can do neither (cgEmitFunc names it).
 func cgRetNeedsHidden(retTy: int): bool {
-    return irtKind(retTy) == KStr or irtKind(retTy) == KRec or irtKind(retTy) == KErr
+    var k: IRKind
+
+    k = irtKind(retTy)
+    if k == KStr or k == KRec or k == KErr {
+        return true
+    }
+    return k == KArr and not cgNeedsRelease(retTy)
 }
 
 // cgParamByRef (language-runtime-cleanup, spec %3.4): the ONE predicate both
@@ -6850,12 +6860,11 @@ func cgEmitStoreErr(dst: int, src: int) {
 // cgEmitStoreRec/cgEmitStoreErr's own default arm (same A0/A1-across-call
 // clobber discipline -- src's address is computed and pushed BEFORE dst's
 // address computation touches A0/D-scratch, so no intervening JSR can
-// clobber either address once both are live in A0/A1). No ENewRec/ECallFn
+// clobber either address once both are live in A0/A1). No ENewRec
 // fast-path exists here (unlike cgEmitStoreRec): there is no array
-// constructor expr in the IR, and -- unlike KStr/KRec -- there is no
-// "build the value straight into this destination" primitive for a KArr
-// either, because a function CANNOT return an array through the hidden
-// result pointer on this backend (cgRetNeedsHidden is KStr/KRec/KErr).
+// constructor expr in the IR; an ECallFn source routes to cgCallFnInto
+// below (native-array-return-and-fileh-guards, spec %2), the same fast
+// path cgEmitStoreRec has.
 //
 // language-runtime-cleanup Task 9, fix round 1: src must therefore ALREADY
 // be addressable, and this function asserts it. The doc comment used to
@@ -6887,8 +6896,17 @@ func cgEmitStoreErr(dst: int, src: int) {
 func cgEmitStoreArr(dst: int, src: int) {
     var sz: int
 
+    if irExprKind(src) == ECallFn {
+        // spec %2: build the returned array straight into dst through the
+        // hidden result pointer -- cgEmitStoreRec's own ECallFn arm. This
+        // single arm serves `b = mk()` (SAssign), `sum4(mk())` (cgPushArgs
+        // -> cgMaterializeToTemp) and `return mk()` (cgEmitReturnArr ->
+        // cgExprAddr), all of which route here.
+        cgCallFnInto(src, dst)
+        return
+    }
     if not cgIsAddressableArgShape(src, KArr) {
-        abort("cg68k: an array-valued call/expression result has no address on this backend -- a fixed array can only be assigned or passed from a variable, field or element, never straight from a call; return a `list` instead of an array")
+        abort("cg68k: an array-valued expression result has no address on this backend -- a fixed array can only be assigned or passed from a variable, field, element, or a function call")
     }
     sz = cgSizeOf(irExprType(dst))
     cgExprAddr(src)
@@ -6943,6 +6961,25 @@ func cgEmitReturnRec(src: int) {
 // 8(A6) hidden-pointer read exactly like cgEmitReturnRec's own generic
 // arm, then block-copied.
 func cgEmitReturnErr(src: int) {
+    var sz: int
+
+    sz = cgSizeOf(cgCurRetType)
+    cgExprAddr(src)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 1, 0)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgBlockCopy(sz)
+}
+
+// cgEmitReturnArr (native-array-return-and-fileh-guards, spec %2) is
+// cgEmitReturnErr's body for a `return <array expr>` inside a function
+// whose return needs a hidden pointer (a handle-free KArr -- see
+// cgRetNeedsHidden). No constructor arm: the IR has no array constructor
+// expression. src's address (a local/global/field/element resolves
+// directly; an ECallFn falls to cgExprAddr's materialize fallback, whose
+// KArr arm is cgEmitStoreArr, ECallFn-aware) is stashed on the stack
+// across the 8(A6) hidden-pointer read, then block-copied.
+func cgEmitReturnArr(src: int) {
     var sz: int
 
     sz = cgSizeOf(cgCurRetType)
@@ -10626,12 +10663,19 @@ func cgCallFnScalar(e: int) {
                 // cgCallFnInto, writing the (unused) result into the fresh
                 // tracked temp cgFreeStmtTmps releases at statement end.
                 cgEmitStoreErr(dst, e)
+            } else if irtKind(retType) == KArr {
+                // spec %2: a bare, discarded call to an array-returning
+                // function. cgNewTrackedTmp above already sized the slot
+                // from retType (cgAllocTmpOff picks the big pool for any
+                // type wider than 4 bytes), and a scalar array owes no
+                // release, so the end-of-statement flush is a no-op on it.
+                cgEmitStoreArr(dst, e)
             } else {
                 cgEmitStoreStr(dst, e)
             }
             return
         }
-        abort("cg68k: cgCallFnScalar used for str/rec/err-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
+        abort("cg68k: cgCallFnScalar used for str/rec/err/arr-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
     }
     // param-abi phase, Task 6: cgSaveArgReleases/cgFlushArgReleases bracket
     // the push+call+cleanup span -- see cgPendingArgReleases' own doc
@@ -12765,6 +12809,8 @@ func cgReturnStmt(s: int) {
             cgEmitReturnRec(x)
         } else if irtKind(cgCurRetType) == KErr {
             cgEmitReturnErr(x)
+        } else if irtKind(cgCurRetType) == KArr {
+            cgEmitReturnArr(x)
         } else {
             cgEmitReturnStr(x)
         }

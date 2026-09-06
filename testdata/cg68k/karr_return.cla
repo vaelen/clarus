@@ -1,0 +1,47 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// karr_return.cla (native-array-return-and-fileh-guards, spec %2): the
+// KArr RETURN ABI's own `.s` golden, karr_param.cla's sibling. A
+// scalar-element fixed array returns through the same hidden result
+// pointer a record does (cgRetNeedsHidden), block-copied by
+// cgEmitReturnArr; every consumer shape funnels into cgEmitStoreArr's
+// ECallFn arm and from there into cgCallFnInto:
+//   - `mk()` bare        : a discarded call -- cgCallFnScalar's discard
+//                          arm parks the result in a tracked big-pool temp.
+//   - `b = mk()`         : SAssign's KArr arm.
+//   - `sum4(mk())`       : cgPushArgs -> cgMaterializeToTemp.
+//   - `return mk()`      : cgEmitReturnArr -> cgExprAddr's materialize
+//                          fallback (fwd below).
+
+func mk(): int[4] {
+    var a: int[4]
+
+    a[0] = 1
+    a[1] = 2
+    a[2] = 3
+    a[3] = 4
+    return a
+}
+
+func sum4(a: int[4]): int {
+    return a[0] + a[1] + a[2] + a[3]
+}
+
+func fwd(): int[4] {
+    return mk()
+}
+
+func runKarrReturn(): int {
+    var b: int[4]
+
+    mk()
+    b = mk()
+    return sum4(b) + sum4(mk()) + sum4(fwd())
+}
+
+on App.launch {
+    if runKarrReturn() == 0 {
+        return
+    }
+}
