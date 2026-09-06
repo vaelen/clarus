@@ -10,58 +10,6 @@ a to-do list, not a history: a fixed item is deleted, not struck through.
 Ideas, "if it ever bites" levers, and other maybe-someday items live in
 `docs/FUTURE.md` instead (split 2026-09-05).
 
-## Serial / connection
-
-Grouped (Andrew, 2026-09-05) so they can be addressed together in one
-serial/connection follow-up phase. The originating phase is the
-sub-heading.
-
-### Serial/connection phase (2026-08-16)
-
-- **Host-lane `stdio` and `pty` transports for the serial ports**
-  (Andrew 2026-08-30, from 68kbbs's standalone BASIC interpreter):
-  `CLARUS_SERIAL_MODEM`/`CLARUS_SERIAL_PRINTER` accept only
-  `listen:PORT` and `connect:HOST:PORT` today (`runtime/host/
-  rt_serial.inc`'s `rt_ext_ConnHOpen`), so a host CLI program's only
-  terminal is a TCP peer — 68kbbs's `scripts/basic.sh` has to start the
-  binary listening and attach `nc` to it. Add two more spec values in
-  the same parser: `stdio` (read fd 0, write fd 1; optionally raw-mode
-  `tcsetattr` on open, restored at exit, for per-keystroke input) and
-  `pty` (`posix_openpt`/`grantpt`/`unlockpt`, print the slave path;
-  a master with no slave attached behaves like the `listening` state).
-  Same env-var-at-open mechanism, no build flag — one binary serves
-  any transport by how it is launched. The four functions that assume
-  a socket must branch for non-socket fds: `ReadByte`/`Write`
-  (`recv`/`send` → `read`/`write`, `ENOTSOCK` on a tty), and `Gone`,
-  whose `MSG_PEEK` trick has no tty/pipe equivalent — keep a per-slot
-  `gone` flag set when `read` returns 0. `FIONREAD` (`Avail`) and
-  `select` (`Idle`) already work on ttys and pipes. Roughly 100 lines of
-  C plus a `pipe()`-pair case in `rt_serial_test.c` and a spec
-  paragraph; then a deliberate re-pin in 68kbbs.
-
-- **Host `every`-timer gap in the CLI pump** (design doc
-  `docs/superpowers/specs/2026-08-15-serial-connection-design.md` §6/§7)
-  — `every` machinery is UI-runtime-entangled today; the host CLI pump
-  services open connections only, not `every` timers. Deliberately not
-  promised this phase.
-
-### binary-files phase (2026-08-22)
-
-- **UI/non-UI connection-pump lane gap** (Task 9's report) — the native
-  lane only pumps `connection` traffic (`nat_UiConnPump`) for
-  UI-classified programs (window/menu/`every` present); the host C lane
-  only ever compiles NON-UI programs (`cprint` emits `#include
-  "rt_ui.h"`, which lives only under `runtime/mac/`, so `cc` against
-  `runtime/host` fails outright for any program with a `window`/`menu`).
-  There is no single program shape that both boots on the host dev lane
-  AND pumps connections on native — a serial/BBS-style program has to
-  carry at least one throwaway status window purely to get native
-  pumping (`examples/pagefile.cla`'s workaround). Serial-connection
-  phase's own spec §3/§7 promised one program shape on both lanes; it
-  doesn't hold today. Also affects `examples/serialecho.cla`'s doc
-  comment, fixed this task to state the real constraint instead of
-  claiming host-lane runnability it never had.
-
 ## Test coverage gaps (recorded by audits, mostly need real input/hardware)
 
 - **cprint-lane `UiLaunchReal`** (real AppleEvent glue in
@@ -302,63 +250,6 @@ it. Recorded so the work is not lost, not scheduled.
 
 #### compiler-cleanup phase (2026-09-05)
 
-- **`--rtbake --lane c` silently drops the `connection`/`filehandle`
-  runtime** — a HOST program that uses either type compiles under
-  `--rtbake` to C that CALLS `clar_fn_rtConnOpen`/`clar_fn_rtFhOpen`
-  (etc.) without ever declaring or defining them, so the emitted C does
-  not compile. **Pre-existing, not introduced by this phase**, and
-  reproducible on `main`: `tests/conntest/testdata/echo.cla` (unchanged
-  since go-retirement) forks 74,570 bytes from source vs 57,795 from the
-  bake, the difference being the entire `rtConn*` family; a minimal
-  `file.create`/`append`/`close` program forks 59,282 vs 52,371 the same
-  way. **Why:** `bake.cla`'s `bakeModuleList` deliberately leaves
-  `conn.cla`/`conn_c.cla` and `fileh.cla`/`fileh_c.cla` out of the
-  **C-lane** baked chain (its own comment says so) because
-  `driveManifestSplice` gates that pair on `usesConn`/`usesFileh` for the
-  host lane, keeping every non-conn host program's manifest and IR
-  indices byte-identical. But `driveCompile`'s `haveRtbake` branch
-  **bypasses `driveManifestSplice` entirely**, so on the bake path
-  nothing ever consults `usesConn`/`usesFileh` and nothing ever splices
-  the pair. The 68k lane is unaffected — it splices conn/fileh
-  unconditionally on both sides, which is why `tests/bake/connfileh.sh`
-  (an `emit68k_pair`) has always passed.
-  **Found by** the compiler-cleanup phase's close-out T2: spec §3.5's new
-  `testdata/emitui/connpump_abort.cla` is the first fixture in the C-lane
-  `bake/full_corpus_emitui` sweep to declare a `connection`. That sweep
-  now SKIPs the shape with an explicit reason naming this entry, and the
-  skip retires itself when the gap closes (it only fires when the
-  from-source fork declares the entry point, the bake fork does not, AND
-  the bake fork still CALLS it -- that third clause added by Task 11,
-  2026-09-05, so a fixture that merely dropped an unused declaration
-  cannot take the SKIP).
-  **Two candidate fixes**, neither taken here (this phase's spec forbids
-  touching `clarusc/bake.cla`, which would fire the 55-minute Snow
-  `clarusc_bake` gate):
-  (a) add `conn.cla`/`conn_c.cla` and `fileh.cla`/`fileh_c.cla` to the
-  C-lane `bakeModuleList` unconditionally, mirroring the 68k lane —
-  correct and simple, but it moves every existing host program's baked
-  manifest and IR indices, so it needs its own bless;
-  (b) extend the existing from-source fallback in `drive.cla` (the
-  `bkManifestDriftPath` site that logs "falling back to a from-source
-  compile" and re-enters `driveCompile` with `haveRtbake = false`) with
-  `haveRtbake and not want68k and (usesConn or usesFileh)` — no
-  `bake.cla` edit, no golden movement, reuses machinery that already
-  exists, at the cost of a full recompile for those programs. `usesConn`/
-  `usesFileh` are already set at that point (the user program is checked
-  before the `haveRtbake` branch).
-  **Repro** (runnable from this entry alone, from the repo root, using
-  the snapshot-bootstrapped `build-run/clarusc-current`):
-  ```
-  $ build-run/clarusc-current --bake-ir --lane c -o RTC.clir
-  $ build-run/clarusc-current emit --rtdir runtime/clarus/ -o SRC tests/conntest/testdata/echo.cla
-  $ build-run/clarusc-current emit --rtdir runtime/clarus/ --rtbake RTC.clir -o BAKE tests/conntest/testdata/echo.cla
-  $ wc -c SRC BAKE
-     74570 SRC
-     57795 BAKE
-  $ grep -c 'clar_fn_rtConnOpen' BAKE
-  1                       # one CALL, zero definitions -- BAKE does not compile
-  ```
-
 - **Stamp-proxy gap** (runtime-ir-bake, still open): the CLIR stamp
   hashes the committed `clarusc/clarusc.c` snapshot, not the live
   runtime source set; the per-module drift hashes close only the
@@ -416,15 +307,6 @@ it. Recorded so the work is not lost, not scheduled.
   idiom; `bkCheckRtbakeHeader`'s header doc still names
   `bkHashTextFrom`; `drive.cla`'s "rtbakeBytes still held"
   parenthetical is wrong for the memoized drift-interleaving case.
-
-#### filesystem-api phase (2026-08-26)
-
-- **Pre-existing: the C (host) lane's `--rtbake` cannot compile any
-  `filehandle` program** — `fileh*.cla` is not in `clarusc/bake.cla`'s
-  `bakeModuleList` on that lane (found by Task 3's reviewer while
-  checking the `prelude.cla` bake path; not introduced by this phase,
-  not fixed by it either — the native/`emit68k` `--rtbake` lane is
-  unaffected).
 
 ### Test coverage
 

@@ -199,6 +199,57 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   only, no functional gap; revisit if a future phase needs the shared
   body for another reason anyway.
 
+- **UI/non-UI connection-pump lane gap** (Task 9's report) — the native
+  lane only pumps `connection` traffic (`nat_UiConnPump`) for
+  UI-classified programs (window/menu/`every` present); the host C lane
+  only ever compiles NON-UI programs (`cprint` emits `#include
+  "rt_ui.h"`, which lives only under `runtime/mac/`, so `cc` against
+  `runtime/host` fails outright for any program with a `window`/`menu`).
+  There is no single program shape that both boots on the host dev lane
+  AND pumps connections on native — a serial/BBS-style program has to
+  carry at least one throwaway status window purely to get native
+  pumping (`examples/pagefile.cla`'s workaround). Serial-connection
+  phase's own spec §3/§7 promised one program shape on both lanes; it
+  doesn't hold today. Also affects `examples/serialecho.cla`'s doc
+  comment, fixed this task to state the real constraint instead of
+  claiming host-lane runnability it never had.
+
+  Moved here verbatim from `docs/TODO.md` on 2026-09-07 (Andrew's ruling
+  during the AppleTalk phase): the gap is a lane-shape consequence of how
+  the two backends classify programs, not debt anyone owes. That phase
+  also narrowed it — `every` alone no longer classifies a HOST
+  program as a UI program (`irIsUiProgram`'s `irEveryCount > 0 and
+  want68k`, `clarusc/cprint.cla`; spec §6.4), while the native lane
+  still treats an every-only program as a real UI program, so the shape
+  that both compiles on the host AND pumps natively is now "carry one
+  `every` timer" rather than "carry a throwaway window". A single shape
+  that needs neither still does not exist.
+
+### AppleTalk phase (2026-09-07)
+
+- **Host-lane ADSP** (spec §11, out of scope this phase) — the host
+  stack drops DDP type 7 on the floor, and the whole `rtAdspDev*`/
+  `rtLsnDev*` waist in `runtime/clarus/atalk_c.cla` returns
+  `rtAtErrNoHost`, so `connection.open(appletalk ...)` and
+  `listener.register` are native-only. Implementing it is roughly
+  800-1500 lines of C in `runtime/host/rt_atalk.inc` (which is 1252
+  lines today) mirroring the ATP layer already there: connection state
+  machine, sequenced send/receive queues, open/close handshake,
+  retransmit and forward reset. The payoff is a host lane that can serve
+  and dial ADSP — and `system.hasADSP()` (recorded in `docs/TODO.md`)
+  could then answer true on the host instead of always false. Pull it
+  only if host-side ADSP development (or a host end of a two-peer test)
+  is actually wanted; the emulator lane covers ADSP today.
+
+- **A `service.call` retry knob** (spec §4.4, out of scope this phase)
+  — request timeout and retry count are fixed at 2 s × 3, and the NBP
+  lookup at 1 s × 3, with no way for a program to widen them for a slow
+  or busy peer or tighten them for a snappy UI. Shape if it ever bites:
+  optional named arguments on `serve`/`call`, or a `svc.timeout(ms,
+  retries)` setter — both are pure plumbing down to the `timeOutVal`@45
+  / `retryCount`@47 ATP fields (`toolbox/appletalk.cla`) the native lane
+  already writes.
+
 ## Hardening candidates
 
 ### binary-files phase (2026-08-22)
@@ -252,3 +303,14 @@ Real debt and needed improvements stay in `docs/TODO.md`.
 
 - **Host CLI progress bar** (clarusc-live-log follow-up): reuse the
   `feProgressStep`/`feProgressTick` seams for a stderr bar/spinner.
+
+### AppleTalk phase (2026-09-07)
+
+- **`hostrt/atalk` costs ~23 s of T1** (Task 2's report) — three NBP
+  registers, each paying a 3 × 1 s verify lookup, plus the lookups the
+  test itself makes. It is the slowest host test. A ~3 s trim exists if
+  T1 wall time ever matters: `rt_atalk_test.c`'s third register (in
+  `test_ext`, which only exists to give the `rt_ext` lookup something to
+  find) could reuse a name an earlier subtest already registered instead
+  of registering its own. Not taken — the verify window is the ruled
+  behavior, and one register per subtest keeps the subtests independent.

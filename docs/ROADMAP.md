@@ -155,7 +155,9 @@ Items 1 (binary streams and files) and 2 (serial ports) of the original
 list are DONE — `binary-files`, `transfer-crcs`, `filesystem-api`, and
 `serial-connection` in `docs/HISTORY.md`. Remaining, in order:
 
-1. **AppleTalk.**
+1. **AppleTalk.** In progress on branch `appletalk` (spec
+   `docs/superpowers/specs/2026-09-06-appletalk-design.md`, plan
+   `docs/superpowers/plans/2026-09-07-appletalk.md`). Not merged.
 2. **MacTCP.**
 
 Environment note: `snow/MacII.snoww` + its hdd image are already

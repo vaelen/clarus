@@ -356,6 +356,9 @@ stack) so a unit test can run two peers in one process.
 - **NBP.** Local names table answering `LkUp` for our names; `LkUp`
   broadcast (node 255, socket 2) with reply collection for lookups;
   verify-lookup before register. Retry 3 × 1 s. Zone always `*`.
+  `register` blocks for its 3 × 1 s verify lookup (controller ruling
+  2026-09-07: parity with the Mac's own `registerName` verify at
+  interval 8 / count 3).
 - **ATP.** Requester: XO, TID, bitmap, retransmit on timeout, `TRel`
   on completion. Responder: XO transactions list with duplicate
   replay, 30 s release timer; `STS` unused. Same 578/4624 limits.

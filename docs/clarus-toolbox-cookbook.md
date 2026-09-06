@@ -964,6 +964,254 @@ Two footguns:
   pushes the wrong arguments — the mismatch is entirely the caller's to
   avoid, same as any other `= ptr` contract.
 
+## 14. Walkthrough: a driver Control call — NBP `lookupName`
+
+`toolbox/appletalk.cla` transcribes a family with no traps of its own.
+Every AppleTalk routine — LAP, DDP, NBP, ATP, ZIP, ADSP — is an ordinary
+Device Manager `Control` or `Status` call against one of four named
+drivers (`.MPP`, `.ATP`, `.XPP`, `.DSP`), dispatched on a `csCode` field
+inside the parameter block. There is nothing to apply §1's bit-11 test to
+per routine: the only traps in play are `PBOpenSync`/`PBControlSync`/
+`PBStatusSync`/`PBKillIOSync` from `toolbox/devices.cla`, plus the one new
+trap this catalog adds, `PBControlAsync` (`0xA404 reg` — `PBControlSync`'s
+`0xA004` with the Device Manager's async bit 10 set). So transcribing an
+AppleTalk call means transcribing a **record layout** and a **constant**,
+not a trap.
+
+### The extern record
+
+Universal Interfaces spells the NBP blocks as one `NBPparms` struct with a
+`union NBPPtrs` at offset 30 and a `union LookupConfirmParams` at 34
+(`AppleTalk.h:545-580`). `extern record` has neither unions nor array field
+types, so §11's "one record per payload shape" rule applies again —
+`NBPLookupParam` is the LookupName arm, spelled out field by field with the
+union arms it actually uses:
+
+```rust
+extern record NBPLookupParam {
+    qLink: ptr          //  0  driver-owned queue link
+    qType: word         //  4
+    ioTrap: word        //  6
+    ioCmdAddr: ptr      //  8
+    ioCompletion: ptr   // 12
+    ioResult: word      // 16  1 (ioInProgress) until an async call finishes
+    userData: int       // 18  NOT ioNamePtr — see below
+    reqTID: word        // 22
+    ioRefNum: word      // 24  the .MPP refNum PBOpenSync handed back
+    csCode: word        // 26  the call selector: lookupName = 251
+    interval: byte      // 28
+    count: byte         // 29
+    entityPtr: ptr      // 30  union NBPPtrs, Lookup arm
+    retBuffPtr: ptr     // 34  union LookupConfirmParams, Lookup arm
+    retBuffSize: word   // 38
+    maxToGet: word      // 40
+    numGotten: word     // 42
+    pad[8]              //     44 → 52, per Rule 1 below
+}
+```
+
+Two things there are not obvious from the header:
+
+- **The Device Manager prefix is not `IOParam`'s.** Where `toolbox/
+  files.cla`'s `IOParam` and `toolbox/devices.cla`'s `CntrlParam` carry
+  `ioNamePtr`@18 + `ioVRefNum`@22, the MPP/ATP blocks carry `userData`@18
+  (the ATP user bytes) and `reqTID`@22. Copying the File Manager prefix
+  wholesale would put every field from offset 18 onward in the wrong place
+  — silently, because the widths happen to match.
+- **`pad[8]` is load-bearing.** Real `NBPparms` is 44 bytes; the record is
+  padded to 52. See Rule 1.
+
+### The entity is packed, not a struct
+
+`AppleTalk.h:305-310` says so in the header's own words: `struct
+EntityName`'s three `Str32Field` slots are "correct looking interfaces for
+Pascal and C, but they will not be the same, which is OK since they are not
+used." The driver wants object, type and zone as three Pascal strings back
+to back, each exactly `1 + length` bytes long — so the entity is built with
+`NewPtrClear` + `pokeb`, the same technique `toolbox/devices.cla` documents
+for `ioNamePtr`:
+
+```rust
+include "toolbox/memory.cla"     // NewPtrClear, DisposePtr
+include "toolbox/files.cla"      // IOParam
+include "toolbox/devices.cla"    // PBOpenSync, PBControlSync
+include "toolbox/appletalk.cla"  // NBPLookupParam, lookupName, mppRefNum, ...
+
+// atPStr writes `s` as a Pascal string at `p` and returns the address one
+// byte past its end, so three back-to-back calls build the packed entity.
+func atPStr(p: ptr, s: string): ptr {
+    var i: int
+    pokeb(p, s.length)
+    i = 0
+    while i < s.length {
+        pokeb(p + 1 + i, int(s[i]))
+        i = i + 1
+    }
+    return p + 1 + s.length
+}
+```
+
+### The synchronous call
+
+Open `.MPP` by name, fill a fresh block, `PBControlSync`. The whole call is
+in the block; the trap only carries its address:
+
+```rust
+func lookupType(typ: string): int {
+    var mppPb: IOParam
+    var pb: NBPLookupParam
+    var nm: ptr
+    var end: ptr
+    var entity: ptr
+    var buf: ptr
+    var err: int
+
+    // .MPP is ROM-resident on any AppleTalk-capable Mac, so this succeeds
+    // with no AppleTalk System file present and hands back the documented
+    // static refNum.
+    nm = NewPtrClear(8)
+    end = atPStr(nm, ".MPP")
+    mppPb.ioNamePtr = nm
+    err = PBOpenSync(mppPb)
+    if err != 0 or mppPb.ioRefNum != mppRefNum {
+        return err
+    }
+
+    entity = NewPtrClear(64)
+    end = atPStr(entity, "=")   // any object name
+    end = atPStr(end, typ)      // this type
+    end = atPStr(end, "*")      // this zone
+
+    // A reply tuple is AddrBlock(4) + enumerator(1) + three packed Pascal
+    // strings — at most 104 bytes — so maxToGet and retBuffSize must agree:
+    // 8 × 104 = 832 fits in 1024; 16 would not (1664), and NBP would answer
+    // nbpBuffOvr instead of filling the buffer.
+    buf = NewPtrClear(1024)
+    pb.ioRefNum = mppPb.ioRefNum
+    pb.csCode = lookupName
+    pb.interval = 8             // 8 ticks between retries
+    pb.count = 3                // 3 retries
+    pb.entityPtr = entity
+    pb.retBuffPtr = buf
+    pb.retBuffSize = 1024
+    pb.maxToGet = 8
+    err = PBControlSync(pb)
+    if err != 0 {
+        return err
+    }
+    return pb.numGotten         // tuples now sitting in `buf`
+}
+```
+
+`pb` is an ordinary `extern record` LOCAL: zero-initialized on declaration
+(the reference's "extern record" entry), and passed to `PBControlSync`'s
+`ptr` parameter by the implicit address-of every `external func` call site
+gives an extern record. `testsuite/toolbox/cases_atalk.cla`'s `AtalkSelf`
+case is this same sequence, hardware-proved against real ROM AppleTalk.
+
+### The asynchronous variant
+
+`lookupName` costs about `count × interval × 8` ticks — roughly 3.2 s at
+interval 8 / count 3 — **whether or not** an answer arrives early, so a UI
+program cannot afford the sync form. The async form is the same block with
+`PBControlAsync` instead, which returns immediately (0 = "queued") and
+leaves the real result in the block's own `ioResult`@16.
+
+That changes how the block is allocated. An `extern record` is a local with
+no address-of operator outside a call site, so it cannot outlive the
+function that declared it — and the driver owns an async block until it
+completes. Async code therefore allocates with `NewPtrClear` and reaches
+fields through the offset constants at the bottom of `toolbox/appletalk.cla`
+(`pbIoResult`, `pbCsCode`, `nbpNtQElPtr`, `nbpLookupRetBuffPtr`, …), which
+name the same byte offsets the record fields occupy:
+
+```rust
+const nbpPbSize: int = 52       // Rule 1's floor; the block IS the call
+const nbpInterval: int = 28     // interval / count sit right after csCode@26
+const nbpCount: int = 29
+
+func lookupBegin(mppRef: int, entity: ptr, buf: ptr): ptr {
+    var pb: ptr
+
+    pb = NewPtrClear(nbpPbSize)
+    pokew(pb + pbIoRefNum, mppRef)
+    pokew(pb + pbCsCode, lookupName)
+    pokeb(pb + nbpInterval, 8)
+    pokeb(pb + nbpCount, 3)
+    pokel(pb + nbpNtQElPtr, int(entity))       // union NBPPtrs, Lookup arm
+    pokel(pb + nbpLookupRetBuffPtr, int(buf))
+    pokew(pb + nbpLookupRetBuffSize, 1024)
+    pokew(pb + nbpLookupMaxToGet, 8)
+    if PBControlAsync(pb) != 0 {
+        DisposePtr(pb)
+        return ptr(0)
+    }
+    return pb                                  // the driver owns it now
+}
+
+// atOSErr: peekw ZERO-extends (Ch13, peek/poke), so a negative OSErr read
+// out of a word field comes back as 65497, not -39. Every OSErr read this
+// way needs the same correction 's own
+// nat_UiScreenBits applies to QuickDraw's rowBytes.
+func atOSErr(v: int): int {
+    if v >= 32768 {
+        return v - 65536
+    }
+    return v
+}
+
+// Poll from an `every` block or between other work — never busy-wait; the
+// driver completes the request on its own interrupt-time schedule.
+func lookupDone(pb: ptr): bool {
+    return peekw(pb + pbIoResult) != 1          // 1 = ioInProgress
+}
+
+// 0 or more = the tuple count; negative = the OSErr the driver reported.
+func lookupResult(pb: ptr): int {
+    var err: int
+
+    err = atOSErr(peekw(pb + pbIoResult))
+    if err != 0 {
+        return err
+    }
+    return peekw(pb + nbpLookupNumGotten)
+}
+```
+
+### The three rules the catalog header states
+
+`toolbox/appletalk.cla`'s own header opens with three rules, each of which
+cost real emulator boots to learn. They are not style preferences:
+
+1. **Every AppleTalk parameter block is at least 52 bytes.** The Device
+   Manager's `ParamBlockRec` union is wider than the fields any one
+   AppleTalk call names, and the driver writes into fields the caller never
+   set (ATP's `SendReqparms` alone is 52 bytes, `AppleTalk.h:816-841`).
+   Every `extern record` in the catalog is padded to 52 even where its named
+   fields stop far short — same discipline `toolbox/devices.cla` states for
+   `CntrlParam`'s 50, raised to 52 for this family. A short record is a
+   stack overrun waiting to stomp its neighbours.
+2. **Never reuse a parameter block without re-zeroing the WHOLE block.**
+   The phase's probe wave hung the emulated Mac hard — three boots in a row,
+   no bomb, no error — by issuing a second `lookupName` on the block a first
+   `lookupName` had just completed on, rewriting only the call fields. The
+   stale queue fields (`qLink`@0 / `qType`@4, which the driver owns) are the
+   likely culprit. A fresh `extern record` local per call satisfies this by
+   construction; a long-lived `NewPtrClear` block must be cleared in full
+   between calls, not just in the fields being set.
+3. **NBP registers the socket you give it, verbatim.** `registerName` fills
+   in the NTE's `nteAddress` net and node itself but copies the socket byte
+   at NTE+7 (`nteAddress + 3`) straight through. A real service must write
+   its own listening socket — the one `openATPSkt` handed back, or its ADSP
+   socket — into NTE+7 *before* calling `registerName`, or every client that
+   looks the name up gets an address with socket 0 and cannot connect
+   (observed on the wire, not deduced).
+
+The same probe recorded a fourth fact worth keeping: after `registerName`,
+NTE+4..7 holds the node's own net(2), node(1) and socket(1). That is the
+cheapest way for a program to learn its own AppleTalk address — no
+`GetNodeAddress` glue, no low-memory poking.
+
 ---
 
 *Everything in this document is a citation, not an assertion — see the
