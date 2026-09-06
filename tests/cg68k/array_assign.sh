@@ -41,6 +41,66 @@ else
     t_pass handle_elem_no_bin
 fi
 
+# --- handle-bearing array PARAMETER by value: named diagnostic ---------
+# (native-array-return-and-fileh-guards, spec %3). cgParamByRef routes
+# every handle-free array by address, so a KArr reaching cgPushArgs' by-
+# value arm is handle-bearing by construction and must fail closed with
+# a message that names the element, not the generic value-context abort.
+dir=$WORK/hparam
+mkdir -p "$dir" || die "mkdir $dir"
+cat > "$dir/hparam.cla" <<'EOF'
+record Named {
+    label: text
+}
+
+func f(a: Named[2]): int {
+    return 1
+}
+
+on App.launch {
+    var n: Named[2]
+    if f(n) == 0 {
+        return
+    }
+}
+EOF
+if out=$("$CLARUSC" emit68k -o "$dir/out.bin" "$dir/hparam.cla" 2>&1); then
+    t_fail handle_param_named_error "emit68k unexpectedly succeeded on a handle-bearing array parameter"
+    echo "$out"
+elif ! printf '%s\n' "$out" | grep -q 'cannot be passed by value natively'; then
+    t_fail handle_param_named_error "expected the named handle-bearing-parameter error, got: $out"
+elif ! printf '%s\n' "$out" | grep -q 'record Named'; then
+    t_fail handle_param_named_error "diagnostic does not name the element record: $out"
+else
+    t_pass handle_param_named_error
+fi
+
+# --- handle-bearing array RETURN: named diagnostic ---------------------
+# g is defined FIRST so cgEmitFunc(g) runs before the handler that calls
+# it -- the diagnostic fires at g's own frame layout, before any caller.
+dir=$WORK/hret
+mkdir -p "$dir" || die "mkdir $dir"
+cat > "$dir/hret.cla" <<'EOF'
+func g(): text[2] {
+    var t: text[2]
+    return t
+}
+
+on App.launch {
+    g()
+}
+EOF
+if out=$("$CLARUSC" emit68k -o "$dir/out.bin" "$dir/hret.cla" 2>&1); then
+    t_fail handle_return_named_error "emit68k unexpectedly succeeded on a handle-bearing array return"
+    echo "$out"
+elif ! printf '%s\n' "$out" | grep -q 'cannot be returned natively'; then
+    t_fail handle_return_named_error "expected the named handle-bearing-return error, got: $out"
+elif ! printf '%s\n' "$out" | grep -q 'function g '; then
+    t_fail handle_return_named_error "diagnostic does not name the function: $out"
+else
+    t_pass handle_return_named_error
+fi
+
 # Never let the SKIP below swallow a fail-closed regression.
 [ "$STATUS" -eq 0 ] || t_done
 

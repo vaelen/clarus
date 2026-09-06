@@ -5530,6 +5530,12 @@ func cgEmitFunc(f: int) {
     // cgRetNeedsHidden's own doc comment for the ABI-mismatch bug this
     // guards against).
     needsHidden = cgRetNeedsHidden(irFuncRet(f))
+    if irtKind(irFuncRet(f)) == KArr and not needsHidden {
+        // spec %3: a handle-bearing array return has no hidden slot
+        // (cgRetNeedsHidden) and no retain walk; fail at the callee's own
+        // frame layout, once, naming the function.
+        abort("cg68k: function " + poolGet(irFuncName(f)) + " returns a fixed array whose elements carry a text/list/map (" + cgArrElemDesc(irFuncRet(f)) + ") -- cannot be returned natively; return a `list` instead")
+    }
     if needsHidden {
         offset = 12
     } else {
@@ -6191,6 +6197,34 @@ func cgRetNeedsHidden(retTy: int): bool {
         return true
     }
     return k == KArr and not cgNeedsRelease(retTy)
+}
+
+// cgArrElemDesc (native-array-return-and-fileh-guards, spec %3) spells a
+// fixed array's element type for the two handle-bearing-array
+// diagnostics: the record's own name for a KRec element (the common
+// case -- a record with a text field), the kind's name otherwise.
+func cgArrElemDesc(t: int): string {
+    var et: int
+    var k: IRKind
+
+    et = irtElem(t)
+    k = irtKind(et)
+    if k == KRec {
+        return "record " + poolGet(irtName(et))
+    }
+    if k == KText {
+        return "text"
+    }
+    if k == KList {
+        return "list"
+    }
+    if k == KMap or k == KSortedMap or k == KIntMap {
+        return "map"
+    }
+    if k == KArr {
+        return "array of " + cgArrElemDesc(et)
+    }
+    return "element"
 }
 
 // cgParamByRef (language-runtime-cleanup, spec %3.4): the ONE predicate both
@@ -10550,6 +10584,14 @@ func cgPushArgs(argsHead: int): int {
                 a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
             }
         } else {
+            if irtKind(t) == KArr {
+                // spec %3: cgParamByRef passes every handle-free array by
+                // address, so a KArr here is handle-bearing by
+                // construction -- and its copy path would owe a retain
+                // walk this backend does not have. Name it, instead of
+                // falling into cgExpr's generic value-context abort.
+                abort("cg68k: a fixed array whose elements carry a text/list/map (" + cgArrElemDesc(t) + ") cannot be passed by value natively -- pass a `list`, or put the array in a record and pass the record")
+            }
             sz = cgSlotSizeOf(t)
             ak = irExprKind(a)
             // compiler-cleanup: a bare pop/shift of a non-KRec handle kind
