@@ -6391,6 +6391,8 @@ static void * clar_fn_UiLNew(void * cv_rView, void * cv_dataBounds, int32_t cv_c
 static void clar_fn_rtUiIntToPStr(int32_t cv_n, void * cv_out255) {
     int32_t cv_u;
     cv_u = 0;
+    int32_t cv_d;
+    cv_d = 0;
     int32_t cv_neg;
     cv_neg = 0;
     int32_t cv_len;
@@ -6402,19 +6404,19 @@ static void clar_fn_rtUiIntToPStr(int32_t cv_n, void * cv_out255) {
     int32_t cv_t;
     cv_t = 0;
     cv_neg = (cv_n < 0);
-    if (cv_neg) {
-        cv_u = CLAR_SUB32(0, cv_n);
-    } else {
-        cv_u = cv_n;
-    }
+    cv_u = cv_n;
     cv_len = 0;
     if (cv_u == 0) {
         rt_pokeb((void *)((char *)(cv_out255) + (1)), ((int32_t)(48)));
         cv_len = 1;
     }
     while (1) {
-        if (!((cv_u > 0))) break;
-        rt_pokeb((void *)((char *)((void *)((char *)(cv_out255) + (1))) + (cv_len)), CLAR_ADD32(((int32_t)(48)), CLAR_MOD32(cv_u, 10)));
+        if (!((cv_u != 0))) break;
+        cv_d = CLAR_MOD32(cv_u, 10);
+        if (cv_d < 0) {
+            cv_d = CLAR_SUB32(0, cv_d);
+        }
+        rt_pokeb((void *)((char *)((void *)((char *)(cv_out255) + (1))) + (cv_len)), CLAR_ADD32(((int32_t)(48)), cv_d));
         cv_len = CLAR_ADD32(cv_len, 1);
         cv_u = CLAR_DIV32(cv_u, 10);
     }

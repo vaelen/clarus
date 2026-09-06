@@ -113,12 +113,6 @@ sub-heading.
 
 ### language-runtime-cleanup phase (2026-09-06)
 
-- **`rtUiTableClick` scripted row math has no upper clamp** against the
-  live row count — deliberate tripwire (runtime-ir-bake T2 blocker): a
-  clamp would mask the next stale-master-pointer bug. Do not "fix"
-  casually. (Also recorded as a standing rule in `docs/ROADMAP.md`; kept
-  here because this is where someone auditing the runtime will look.)
-
 - **The two `snprintf` guards in `rt_fileh.inc`'s `FhHRename`/`FhHMove`
   are unreachable** (Task 4) — both halves are Str255-bounded, so the
   512-byte `target` buffer cannot overflow. Kept by ruling as defensive;

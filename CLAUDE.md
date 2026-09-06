@@ -130,10 +130,13 @@ Tiered test gates:
     first-class role is host builds (`clarusc emit` + `cc`).
   - `CLARUS_SNOW_TESTS=1` enables the Snow (System 7 / Mac II) scripts
     under `tests/mactest/snow/`. `CLARUS_SNOW_TESTS=1 make test
-    T=mactest/snow/clarusc_bake` (~55 min) is the standing rule after any
+    T=mactest/snow/clarusc_bake` (~30 min) is the standing rule after any
     change to `clarusc/bake.cla` or `clarusc/macgui.cla` — it is the only
     proof `ClarusC.APPL`'s default bake path works on real hardware, and
-    neither T1 nor T2 boots it.
+    neither T1 nor T2 boots it. It ends on the guest's own
+    `##CLARUS-EXIT##` trailer (a probe of the live disk image) rather than
+    a fixed settle timer — the language-runtime-cleanup phase, 2026-09-06;
+    the old 55-minute timer was a floor on every run, pass or fail.
   - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
     calibration bench, `tests/mactest/bench.sh`.
 - Golden blessing — five variables, and each must be set to exactly `1`

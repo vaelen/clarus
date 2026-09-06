@@ -128,17 +128,14 @@ external func UiLocalToGlobal(pt: ptr) = trap 0xA870
 
 // rtUiIntToPStr: signed decimal into a Pascal string at out255 -- the
 // pure-Clarus replacement for the Package 7 NumToString call above.
-// ponytail: `0 - n` on the most-negative int32 overflows, so int.min
-// renders as a bare "-"; unguarded, for the same reason rtUiFixedToStr's
-// own `0 - v` is (display helper, not a trust boundary). NOTE: this is a
-// real difference from str.cla's `strFromInt` (:228-245), which takes the
-// safe `d = cur mod 10; if d < 0 { d = 0 - d }` route and gets int.min
-// right -- an earlier version of this comment claimed the retired
-// NumToString path had the same overflow, which was never checked and is
-// not what str.cla does. Upgrade path if a table cell ever needs int.min:
-// copy strFromInt's shape.
+// Digits come off the SIGNED value (`d = u mod 10; if d < 0 { d = 0 - d }`),
+// the same shape str.cla's `strFromInt` uses, so int.min converts like any
+// other value. Negating up front (`u = 0 - n`) would overflow on int.min
+// and render it as a bare "-"; this function did exactly that until the
+// language-runtime-cleanup phase's close-out.
 func rtUiIntToPStr(n: int, out255: ptr) {
     var u: int
+    var d: int
     var neg: bool
     var len: int
     var i: int
@@ -146,18 +143,18 @@ func rtUiIntToPStr(n: int, out255: ptr) {
     var t: int
 
     neg = n < 0
-    if neg {
-        u = 0 - n
-    } else {
-        u = n
-    }
+    u = n
     len = 0
     if u == 0 {
         pokeb(out255 + 1, int('0'))
         len = 1
     }
-    while u > 0 {
-        pokeb(out255 + 1 + len, int('0') + (u mod 10))
+    while u != 0 {
+        d = u mod 10
+        if d < 0 {
+            d = 0 - d
+        }
+        pokeb(out255 + 1 + len, int('0') + d)
         len = len + 1
         u = u / 10
     }
