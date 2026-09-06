@@ -1273,6 +1273,7 @@ int32_t rt_ext_AtalkHAtpCallCode(void) { return rt_at_g_code; }
 void rt_ext_AtalkHPoll(void) { rt_at_poll(rt_at_g); }
 
 /* rt_ext_AtalkHFd: the stack's UDP fd for a host pump's select set, or -1
- * while the stack is down. (Wiring it into rt_ext_ConnHIdle's set is a
- * later task's job -- that pump's 20 ms idle already bounds latency.) */
+ * while the stack is down. rt_ext_ConnHIdle (rt_serial.inc) FD_SETs it
+ * when it is >= 0, so an AppleTalk-only host server sleeps on traffic
+ * instead of taking that pump's 20 ms usleep arm. */
 int32_t rt_ext_AtalkHFd(void) { return (int32_t)rt_at_fd(rt_at_g); }

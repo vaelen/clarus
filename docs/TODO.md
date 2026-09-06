@@ -153,6 +153,35 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   wrapped a 190-character comment for the same reason. Cosmetic; split
   the concatenation across two lines.
 
+### AppleTalk phase (2026-09-07)
+
+- **The listener teardown path has no runtime test.** The final fix
+  wave's I3 made `rtAtalkPump`'s listener arm call `rtLsnStop(i + 1)`
+  after `rtLsnSetFailed` when `rtLsnDevPoll` returns negative, so a
+  listener that loses its `dspCLListen` is torn down (NBP name removed,
+  device slot released, state back to `rtAtIdle`) instead of staying
+  `rtAtActive` and permanently deaf. Nothing exercises it: the failure
+  needs a real `.DSP` that then fails, and `mactest/adsp_68k.sh` SKIPs on
+  every current boot disk. The change is pinned only by goldens (four
+  `testdata/emitui/atalk_*.c.golden`, ten `testdata/cg68k/atalk_*.s`) --
+  shape, not behaviour. Once the LaunchAPPL `AppleTalk`-file patch lands
+  (Task 13), the cheap check is a subcase that kills the server mid-run
+  and asserts the client's next `find` no longer sees the name.
+
+- **`atalk_lock`'s stale-holder steal path is still racy between two
+  waiters** (`tests/lib_atalk.sh`). The fix wave closed the UNLOCK half
+  -- `atalk_unlock` now refuses to `rm -rf` a lock directory whose
+  `pid` file is not `$$`, so a waiter that stole a dead holder's lock and
+  then exited can no longer delete a second waiter's live lock. The STEAL
+  half is unguarded: two waiters that both observe the same dead holder's
+  pid can both `rm -rf` and both `mkdir`, and the second `mkdir` succeeds
+  because the first `rm -rf` removed the directory it had just created.
+  Pre-existing shape, never observed, and it only costs determinism on a
+  test group (two LToUDP stacks racing for node ids, which is exactly what
+  the lock exists to prevent). Real fix: make the steal an atomic
+  `mv`-into-place of a uniquely named directory, or drop the mkdir mutex
+  for `flock` on a lock FILE where the platform has it.
+
 ## Compiler: type checking
 
 ### AppleTalk phase (2026-09-07)

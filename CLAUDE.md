@@ -137,8 +137,11 @@ Tiered test gates:
   `atalk_68k.cla` are in the 68k superset — spliced into EVERY native
   build, not usage-gated like the host `atalk.cla`/`atalk_c.cla` pair —
   so they are in `bake.cla`'s 68k module list and any edit to
-  `atalk.cla` moves `testdata/cg68k/atalk_{server,client}.s` and
-  `testdata/emitui/atalk_listener.c.golden`.
+  `atalk.cla` moves `testdata/cg68k/atalk_{server,client}.s` and all
+  FOUR `testdata/emitui/atalk_*.c.golden` files
+  (`atalk_{browser,client,listener,server}`) -- `shake` pulls whatever
+  the pump references into every program that uses AppleTalk, so a
+  one-line pump edit is not confined to the listener golden.
 - Opt-in lanes, SKIPped by both gates:
   - `CLARUS_CPRINT_MAC_TESTS=1` (alongside `CLARUS_MAC_TESTS=1`) enables
     the Retro68/cprint-gcc twins — `tests/mactest/{coresuite_mac,
@@ -164,6 +167,17 @@ Tiered test gates:
     the old 55-minute timer was a floor on every run, pass or fail.
   - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
     calibration bench, `tests/mactest/bench.sh`.
+- `tests/mactest/adsp_68k.sh` (the two-Mac ADSP stream boot, appletalk
+  phase 2026-09-07) runs under plain `CLARUS_MAC_TESTS=1` but SKIPs
+  itself on today's toolchain: LaunchAPPL's stripped boot disk carries
+  System + AutoQuit + the app and NOT the `AppleTalk` system file, so
+  `.DSP`/`.XPP` open `-43` and the listener reports `failed -1273`. The
+  script greps the SERVER capture for `^failed -1273 ` and calls `skip`
+  BEFORE its first assertion (a `FAIL ` line would beat exit 77), so it
+  is a clean SKIP rather than a red result. It retires itself: once
+  LaunchAPPL copies `AppleTalk` onto the boot disk the grep misses and
+  all ten ADSP assertions run. `tests/mactest/atalk_68k.sh` (NBP/ATP over
+  the ROM's own `.MPP`/`.ATP`) needs no such file and PASSes today.
 - Golden blessing — five variables, and each must be set to exactly `1`
   (`lib.sh`'s `env_set`; any other value, `0` included, is NOT a bless):
   `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap goldens,

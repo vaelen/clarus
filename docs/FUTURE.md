@@ -89,6 +89,27 @@ Real debt and needed improvements stay in `docs/TODO.md`.
 
 ## Performance levers (measure first)
 
+### AppleTalk phase (2026-09-07)
+
+- **T1's wall clock went 34 s -> ~2:14, and the cost is the network
+  scripts' WAIT budgets, not compiles and not the lock.** The five
+  building `tests/atalk/*.sh` scripts plus `tests/atalkdrive/` and
+  `tests/hostrt/atalk.sh` serialize on `atalk_lock` (a shared loopback
+  multicast group -- a dozen LToUDP stacks racing for 127 node ids under
+  `make -j` is not deterministic, and the group is shared with Andrew's
+  live emulator sessions), and while serialized they spend their time in
+  `atalk_wait_line`'s up-to-20 s NBP-registration confirmations and
+  `atalk_wait_exit`'s up-to-15 s lifetime checks. Measured: the whole
+  network chain is ~130 s of the ~134 s; `atalk/examples` is 0 s and
+  `atalk/splice` 1 s. The fix wave already moved every compile OUT of the
+  lock -- that bought ~2.5 s, which is the honest size of the compile
+  share. Levers, in order of payoff: shrink the `atalk_wait_*` budgets to
+  what the observed registrations actually need (they were sized for the
+  Mac's ~3.2 s verify, not the host's); or overlap the atalkdrive-free
+  halves, since only the sections that put a stack on the group need the
+  mutex at all. Do neither without a before/after `make -j t1` timing --
+  a budget cut that makes the group flaky costs far more than 100 s.
+
 ### language-runtime-cleanup phase (2026-09-06)
 
 - **CRC hot loops pay a bounds-check + multiply per byte** (final
