@@ -1510,7 +1510,7 @@ if f == nil { alert(lastError.message) }
 | `size` | `f.size(): int` | the logical end of file, in bytes |
 | `setSize` | `f.setSize(n: int): bool` | grows (new bytes zero) or truncates |
 | `flush` | `f.flush(): bool` | a durability barrier |
-| `close` | `f.close()` | idempotent |
+| `close` | `f.close()` | idempotent; on a host build's AppleDouble sidecar path (a non-Apple host, or `CLARUS_FORCE_APPLEDOUBLE=1`) the resource-fork write-back at close is best-effort -- call `flush()` first when a failure must be observed |
 
 - `readAt(pos, count, out)` reads up to `count` bytes starting at byte offset `pos` into `out`, replacing whatever `out` held. A read that crosses the end of file succeeds with a shorter `out`; a read starting at or past the end of file succeeds with an empty `out` — neither is an error. `readAt` returns `false` + `lastError` only on an actual I/O error. `pos < 0` or `count < 0` is a runtime error.
 - `writeAt(pos, data)` writes all of `data` (`text` or `string` — the same either-form `connection.send` accepts) at `pos`. A write that starts past the current end of file extends it (the Mac File Manager's own behavior on write); the gap between the old end of file and `pos`, if any, has unspecified contents on the Macintosh and reads as zero bytes on a host build — a program that cares about the gap's contents should `setSize` first to pin them down. `pos < 0` is a runtime error.

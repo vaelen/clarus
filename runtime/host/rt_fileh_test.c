@@ -443,6 +443,34 @@ static void test_openrf(void) {
       f = fopen("._fileh_test_rf.dat", "rb"); CHECK(f != NULL, "sidecar written");
       if (f) { CHECK(fread(m, 1, 4, f) == 4 && m[0] == 0 && m[1] == 5 && m[2] == 0x16 && m[3] == 7, "AppleDouble magic"); fclose(f); }
       unlink("fileh_test_rf.dat"); unlink("._fileh_test_rf.dat"); }
+    /* spec %6 (native-array-return-and-fileh-guards): TMPDIR is honoured
+     * for the unlinked temp that backs a sidecar fork. The temp is
+     * unlinked the moment it is created, so its location is observable
+     * only through the failure a missing directory causes. */
+    { const char *old = getenv("TMPDIR"); char saved[1024]; int hadOld = old != NULL;
+      uint8_t path[256]; int32_t h; FILE *f; unsigned char m[4]; long sz;
+      if (hadOld) { strncpy(saved, old, sizeof saved - 1); saved[sizeof saved - 1] = 0; }
+      mkpath(path, "fileh_test_rf.dat"); h = rt_ext_FhHCreate(path); rt_ext_FhHClose(h);
+      setenv("TMPDIR", "./no-such-tmpdir-for-clarus", 1);
+      h = rt_ext_FhHOpenRF(path);
+      CHECK(h == 0 && rt_ext_FhHErrno() == ENOENT, "TMPDIR honoured: missing dir fails with ENOENT");
+      if (h) rt_ext_FhHClose(h);
+      setenv("TMPDIR", ".", 1);
+      h = rt_ext_FhHOpenRF(path);
+      CHECK(h != 0, "TMPDIR honoured: cwd works");
+      /* flush is the durability barrier: the sidecar is complete on disk
+       * BEFORE close, and its size is header (82) + fork (4). */
+      CHECK(rt_ext_FhHWriteAt(h, 0, (void *)"FLSH", 4) == 0, "flush barrier: write");
+      CHECK(rt_ext_FhHFlush(h) == 0, "flush barrier: flush");
+      f = fopen("._fileh_test_rf.dat", "rb");
+      CHECK(f != NULL, "flush barrier: sidecar exists before close");
+      if (f) { fseek(f, 0, SEEK_END); sz = ftell(f); fseek(f, 0, SEEK_SET);
+               CHECK(sz == 86, "flush barrier: sidecar size 82+4 before close");
+               CHECK(fread(m, 1, 4, f) == 4 && m[0] == 0 && m[1] == 5 && m[2] == 0x16 && m[3] == 7, "flush barrier: AppleDouble magic before close");
+               fclose(f); }
+      rt_ext_FhHClose(h);
+      if (hadOld) setenv("TMPDIR", saved, 1); else unsetenv("TMPDIR");
+      unlink("fileh_test_rf.dat"); unlink("._fileh_test_rf.dat"); }
     unsetenv("CLARUS_FORCE_APPLEDOUBLE");
 }
 

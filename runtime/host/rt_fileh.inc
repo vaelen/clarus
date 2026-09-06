@@ -138,11 +138,15 @@ static int rt_fh_sidecar_store(int slot, int fd) {
         if (got <= 0) break;
         if (fwrite(buf, 1, (size_t)got, f) != (size_t)got) { fclose(f); return -1; }
     }
+    /* spec %6: flush's durability barrier covers the SIDECAR, not just the
+     * unlinked temp -- push the stdio buffer and fsync before closing. */
+    if (fflush(f) != 0 || fsync(fileno(f)) != 0) { fclose(f); return -1; }
     return fclose(f) == 0 ? 0 : -1;
 }
 
 int32_t rt_ext_FhHOpenRF(const uint8_t *path) {
-    char cpath[256], tmpl[64], dirbuf[256], basebuf[256];
+    char cpath[256], tmpl[1100], dirbuf[256], basebuf[256];
+    const char *tdir;
     struct stat st; int fd, slot, i;
     path_to_cstr(cpath, path);
     if (stat(cpath, &st) != 0) { rt_fh_errno = errno; return 0; }
@@ -158,7 +162,11 @@ int32_t rt_ext_FhHOpenRF(const uint8_t *path) {
     slot = -1;
     for (i = 0; i < RT_FH_RF_MAX; i++) if (rt_fh_rf[i].fd == 0) { slot = i; break; }
     if (slot < 0) { rt_fh_errno = EMFILE; return 0; }
-    strcpy(tmpl, "/tmp/clarus-rf-XXXXXX");
+    /* spec %6: the unlinked temp that backs the fork lives under $TMPDIR
+     * when set and non-empty, else /tmp -- the ordinary POSIX rule. */
+    tdir = getenv("TMPDIR");
+    if (!tdir || !*tdir) tdir = "/tmp";
+    if (snprintf(tmpl, sizeof tmpl, "%s/clarus-rf-XXXXXX", tdir) >= (int)sizeof tmpl) { rt_fh_errno = ENAMETOOLONG; return 0; }
     fd = mkstemp(tmpl);
     if (fd < 0) { rt_fh_errno = errno; return 0; }
     unlink(tmpl);
@@ -322,7 +330,11 @@ void rt_ext_FhHClose(int32_t h) {
      * slot is the whole of what close has to release). */
     slot = rt_fh_rf_slot(fd);
     if (slot >= 0) {
-        rt_fh_sidecar_store(slot, fd);
+        /* close() is void on every lane (reference: "idempotent"), so a
+         * failed write-back cannot be returned; it is recorded in
+         * rt_fh_errno for FhHErrno, and the reference tells programs that
+         * flush() is the call that reports it (spec %6). */
+        if (rt_fh_sidecar_store(slot, fd) != 0) rt_fh_errno = errno;
         rt_fh_rf[slot].fd = 0;
     }
     close(fd);
