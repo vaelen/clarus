@@ -107,9 +107,9 @@ tree, every stage) and **Snow bake gate PASS in 1656s** (27.6 min, all
 six subcases) via the new exit-trailer probe that replaced the gate's
 fixed 55-minute settle timer. Details: `docs/HISTORY.md`'s own entry.
 
-**`native-array-return-and-fileh-guards` is COMPLETE and NOT YET MERGED**
-(branch `native-array-return-and-fileh-guards`; merging to `main` is
-Andrew's call). It cleared the five entries `language-runtime-cleanup`
+**`native-array-return-and-fileh-guards` is COMPLETE and MERGED to
+`main`** (fast-forward, 2026-09-06 19:49, `main` = `d947f9a`; NOT yet
+pushed to origin). It cleared the five entries `language-runtime-cleanup`
 had left behind, in six tasks across three waves: fixed arrays of scalar
 elements are now a legal native return type (one predicate,
 `cgRetNeedsHidden`, sharing `cgParamByRef`'s boundary, so the return ABI
