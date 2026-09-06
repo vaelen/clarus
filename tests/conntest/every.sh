@@ -10,23 +10,23 @@
 # file): it logs "start" from App.startCLI, then `every 6 ticks` counts to 3
 # and quits 0.
 #
-# Timing is an assertion here, as a CEILING. 6 ticks is 100 ms, so three
-# fires is ~0.35 s of real waiting unloaded (measured); the budget catches a
-# timer that arms but never comes due, or one whose deadline arithmetic runs
-# away, without waiting out the outer $TOOLS/timeout 10 net (expiry there is
-# exit 124, distinguishable from any real exit code the program can produce).
+# Timing is asserted from BOTH sides, and the FLOOR is the load-bearing one.
+# The transcript alone proves nothing about periodicity: an rt_ext_EveryDue
+# stubbed to return 1 unconditionally -- period ignored, arming ignored --
+# prints exactly the same "start/tick 1/tick 2/tick 3" and exits 0. Only
+# elapsed wall clock separates the two. The fixture's period is therefore 60
+# ticks (one second), so three fires cannot physically happen in under ~3 s,
+# and a floor of 2 s (allowing for `date +%s`'s whole-second truncation)
+# fails instantly against a free-running timer while contention can only
+# ever push real elapsed time UP, never below the floor.
 #
-# 8 s, not the 2 s this task was drafted with, for exactly the reason
-# abort.sh's own header records: wall clock under `make -j t1` is not the
-# same budget as wall clock alone. This loop idles in 20 ms usleep()s, whose
-# real duration stretches with CPU contention -- the drafted 2 s measured 4 s
-# under a full parallel t1 on an otherwise idle machine. 8 s is still ~20x
-# the unloaded run and ~20x short of a hang.
-#
-# The proof that the timer is PERIODIC rather than free-running is the
-# fixture's own shape, not the clock: `every 6 ticks` counts n to 3 and
-# quits, so the exact "tick 1/tick 2/tick 3" transcript below can only come
-# from three separate due passes.
+# The ceiling is the other half: it catches a timer that arms but never
+# comes due, or one whose deadline arithmetic runs away. 10 s against a ~3 s
+# nominal run, because wall clock under `make -j t1` is not the same budget
+# as wall clock alone -- exactly the reason abort.sh's own header records
+# for its own 2 s -> 10 s raise. $TOOLS/timeout 20 is the outer net, kept
+# clear of the ceiling so a real overrun is reported as a timing FAIL with
+# its measured seconds rather than as an opaque exit 124.
 . "$(dirname "$0")/../lib.sh" || exit 2
 
 host_build "$WORK/every_cli" testdata/emitui/every_cli.cla > "$WORK/build.log" 2>&1 \
@@ -34,13 +34,13 @@ host_build "$WORK/every_cli" testdata/emitui/every_cli.cla > "$WORK/build.log" 2
 t_pass build
 
 t0=$(date +%s)
-"$TOOLS/timeout" 10 "$WORK/every_cli" > "$WORK/out" 2>&1
+"$TOOLS/timeout" 20 "$WORK/every_cli" > "$WORK/out" 2>&1
 rc=$?
 t1=$(date +%s)
 elapsed=$((t1 - t0))
 
 [ $rc -eq 0 ] && t_pass exit0 \
-    || t_fail exit0 "exit $rc, want 0 (124 = never quit within 10s): $(cat "$WORK/out")"
+    || t_fail exit0 "exit $rc, want 0 (124 = never quit within 20s): $(cat "$WORK/out")"
 
 printf 'start\ntick 1\ntick 2\ntick 3\n' > "$WORK/want"
 if cmp -s "$WORK/out" "$WORK/want"; then
@@ -49,8 +49,14 @@ else
     t_fail output "stdout mismatch: $(first_diff "$WORK/want" "$WORK/out" | tr '\n' ' ')"
 fi
 
-[ "$elapsed" -le 8 ] && t_pass timing \
-    || t_fail timing "took ${elapsed}s, want <= 8s for 3 fires of a 6-tick (100ms) timer"
+if [ "$elapsed" -lt 2 ]; then
+    t_fail timing_floor "finished in ${elapsed}s; 3 fires of a 60-tick (1s) timer cannot take under ~3s -- the timer is not arming, it is firing on every pass"
+else
+    t_pass timing_floor
+fi
+
+[ "$elapsed" -le 10 ] && t_pass timing_ceiling \
+    || t_fail timing_ceiling "took ${elapsed}s, want <= 10s for 3 fires of a 60-tick (1s) timer"
 
 # The UI path is unchanged: every.cla declares the SAME `every` construct but
 # HAS a window, so it must still emit byte-for-byte its committed golden.

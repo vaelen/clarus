@@ -8,6 +8,12 @@
 // the UI main path, which needs rt_ui.h (Mac-only) and cannot link
 // against runtime/host at all. every.cla (which HAS a window) is the
 // unchanged-golden control for the UI path.
+//
+// 60 ticks (one second), not a shorter period: tests/conntest/every.sh
+// runs THIS fixture end to end and asserts a wall-clock FLOOR on it (three
+// fires cannot happen in under ~3 s), which is the only assertion that can
+// tell a real arming clock from an rt_ext_EveryDue stub that returns 1 on
+// every call -- both produce the identical tick transcript.
 
 var n: int = 0
 
@@ -15,7 +21,7 @@ on App.startCLI(args: list of string) {
     log("start")
 }
 
-every 6 ticks {
+every 60 ticks {
     n = n + 1
     log("tick " + string(n))
     if n == 3 {

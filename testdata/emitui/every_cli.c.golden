@@ -1235,7 +1235,7 @@ static void clar_fn_ui_every_0(void) {
 }
 
 static void clar_fn_clar_every_pump(void) {
-    if (rt_ext_EveryDue(0, 6)) {
+    if (rt_ext_EveryDue(0, 60)) {
         clar_fn_ui_every_0();
     }
 }

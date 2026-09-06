@@ -384,9 +384,11 @@ int32_t rt_ext_TickCount(void) {
  * Mac lane's own behavior (rt_ui_every_desc[]'s deadline is likewise set
  * at startup, not fired at it).
  *
- * Deadlines are compared as `now - due >= 0` on int32_t, so the arithmetic
- * stays correct across rt_ext_TickCount's own 2^32-tick wrap (~2.3 years),
- * the same signed-difference idiom the Toolbox's own TickCount users use.
+ * The deadline compare is the Toolbox's own signed-difference idiom, done
+ * through uint32_t exactly the way rt_ext_TickCount above builds its
+ * result: unsigned subtraction wraps by definition, so the comparison
+ * stays correct across the 2^32-tick (~2.3 year) wrap with no signed
+ * overflow anywhere.
  * A missed period is dropped, not caught up: the next deadline is measured
  * from now, so a slow handler cannot build a backlog of instant refires.
  *
@@ -414,7 +416,7 @@ int32_t rt_ext_EveryDue(int32_t idx, int32_t periodTicks) {
         due[idx] = now + periodTicks;
         return 0;
     }
-    if (now - due[idx] >= 0) {
+    if ((int32_t)((uint32_t)now - (uint32_t)due[idx]) >= 0) {
         due[idx] = now + periodTicks;
         return 1;
     }
