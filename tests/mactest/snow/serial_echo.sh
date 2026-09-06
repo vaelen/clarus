@@ -54,19 +54,28 @@ expect $WORK/qqq
 sleep 5000
 EOF
 
-# The done command: run the whole exchange once, record its exit status,
-# and always succeed, so snow_run stops polling and quits Snow gracefully
-# whether the exchange passed or diverged (a divergence is reported below
-# from the recorded status, not by burning the outer bound).
+# The exchange runs in the BACKGROUND, started before Snow: it records its
+# exit status in drive.rc and the done command is just a probe for that
+# file. Running the exchange AS the done command (the Go original's
+# shape) blocked snow_run's poll loop for the whole dial + echo budget,
+# so a Snow death mid-exchange surfaced one tcpdrive deadline late and
+# as a tcpdrive divergence, not as "Snow exited early". Starting before
+# Snow is fine: tcpdrive re-dials every 250 ms for the --retry window, so
+# a refused connection before the bridge exists is the same as one during
+# guest boot. A divergence is still reported below from the recorded
+# status, never by burning the outer bound.
+# ponytail: if snow_run dies early the orphaned tcpdrive runs on until its
+# own deadline (<=120s) -- snow_run owns the EXIT trap, so no second one.
 cat > "$WORK/drive.sh" <<EOF
 "$DRIVE" connect 127.0.0.1:$PORT --retry 120 "$WORK/drive.txt" > "$WORK/drive.log" 2>&1
 echo \$? > "$WORK/drive.rc"
 EOF
+sh "$WORK/drive.sh" &
 
 # serialEchoSnowTimeout: 6 min, the outer bound above the exchange's own
 # internal budgets (dial 120s + greeting + two echo passes + QQQ + a 5s
 # quit settle).
-snow_run 360 "sh $WORK/drive.sh" --serial-bridge-a "tcp:$PORT"
+snow_run 360 "test -f $WORK/drive.rc" --serial-bridge-a "tcp:$PORT"
 
 if [ "$(cat "$WORK/drive.rc" 2>/dev/null)" = 0 ]; then
     t_pass serial_exchange
