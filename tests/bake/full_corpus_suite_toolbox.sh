@@ -19,8 +19,9 @@
 # fallback-class shape" line describes the PRE-Task-2 test and is stale
 # (flagged in task-9-report.md).
 #
-# The file list is bakeidentity_test.go's own toolboxSuiteGUIFiles,
-# verbatim and in order.
+# The file list is tests/mactest/toolbox_files.txt, the same one the
+# toolbox_68k boot composes (one path per line, no comments -- so the
+# unquoted $(cat) word-split below is exactly right).
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 require_env CLARUS_BAKE_FULL
@@ -29,51 +30,7 @@ BAKE=$WORK/rt68k.clir
 bake_ir 68k "$BAKE"
 
 PAIRFLAGS=--testapi
-if detail=$(emit68k_pair toolbox \
-        testsuite/kit.cla \
-        toolbox/memory.cla \
-        toolbox/events.cla \
-        toolbox/osutils.cla \
-        toolbox/scrap.cla \
-        toolbox/files.cla \
-        toolbox/resources.cla \
-        toolbox/devices.cla \
-        toolbox/serial.cla \
-        testsuite/toolbox/runner.cla \
-        testsuite/toolbox/cases_events.cla \
-        testsuite/toolbox/cases_draw.cla \
-        testsuite/toolbox/cases_a5.cla \
-        testsuite/toolbox/cases_gestalt.cla \
-        testsuite/toolbox/cases_event.cla \
-        testsuite/toolbox/harness.cla \
-        testsuite/toolbox/cases_uitest.cla \
-        testsuite/toolbox/cases_pattern.cla \
-        testsuite/toolbox/cases_buttons.cla \
-        testsuite/toolbox/cases_winvar.cla \
-        testsuite/toolbox/cases_textwidgets.cla \
-        testsuite/toolbox/cases_menus.cla \
-        testsuite/toolbox/cases_editmenu.cla \
-        testsuite/toolbox/cases_canvas.cla \
-        testsuite/toolbox/cases_canvasidle.cla \
-        testsuite/toolbox/cases_zoomwin.cla \
-        testsuite/toolbox/cases_hscroll.cla \
-        testsuite/toolbox/cases_popuptable.cla \
-        testsuite/toolbox/cases_dialogs.cla \
-        testsuite/toolbox/cases_hdim.cla \
-        testsuite/toolbox/cases_formedit.cla \
-        testsuite/toolbox/cases_bigtext.cla \
-        testsuite/toolbox/cases_catalog.cla \
-        testsuite/toolbox/cases_finfo.cla \
-        testsuite/toolbox/cases_resources.cla \
-        testsuite/toolbox/cases_datetime.cla \
-        testsuite/toolbox/cases_serial.cla \
-        testsuite/toolbox/cases_narrowpopup.cla \
-        testsuite/toolbox/cases_leak.cla \
-        testsuite/toolbox/cases_scrollend.cla \
-        testsuite/toolbox/cases_clearwarm.cla \
-        testsuite/toolbox/cases_casestable.cla \
-        testsuite/toolbox/cases_winmenus.cla \
-        testsuite/toolbox/gui.cla); then
+if detail=$(emit68k_pair toolbox $(cat "$ROOT/tests/mactest/toolbox_files.txt")); then
     t_pass toolbox_suite
 else
     t_fail toolbox_suite "$detail"

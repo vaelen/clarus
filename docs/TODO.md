@@ -51,9 +51,7 @@ sub-heading.
   `tests/lib_snow.sh`'s `snow_run`); `tests/conntest/listen.sh`
   has a stolen-port edge case; `examples/serialecho.cla`'s
   quit-in-loop keeps scanning the rest of a chunk after the 3rd `Q`
-  instead of returning immediately; `runtime/host/rt_serial_test.c` has
-  three stale/contradictory comments (alarm numbers, a retry-loop
-  reference, and `set_recv_timeout`'s stated rationale).
+  instead of returning immediately.
 
 ### binary-files phase (2026-08-22)
 
@@ -135,12 +133,6 @@ sub-heading.
 
 ### language-runtime-cleanup phase (2026-09-06)
 
-- **The two `snprintf` guards in `rt_fileh.inc`'s `FhHRename`/`FhHMove`
-  are unreachable** (Task 4) — both halves are Str255-bounded, so the
-  512-byte `target` buffer cannot overflow. Kept by ruling as defensive;
-  a future trim could take them (the `ListNext` guard is the one that
-  does real work and must stay).
-
 - **`file.rename("", x)` reaches `PBHRenameSync` with an empty name**
   (Task 4) — after the stat reuse, `rtFhDevStat`'s `""` branch returns
   true, so the empty-name case is no longer rejected before the trap.
@@ -172,20 +164,15 @@ sub-heading.
   read-verified, not hardware-exercised — add one assertion if touched
   again; the `textAt` core case never pins its freshness contract.
 
-- **Dead runtime declarations**: `UiNewMenuStr` (unused `string`-typed
-  NewMenu overload) and the runtime's own `UiCurrentA5` (the `A5Live`
-  suite case covers the codegen via its own local extern) — delete or
-  wire up in a cleanup pass.
-
-- **Datetime glue loose ends**: host `rt_ext` glue for the catalog's
-  `ReadDateTime`/`SecondsToDate`/`DateToSeconds` never added (nothing
-  host-side calls them); `rt_ext_mac.inc`'s Date-Time glue is
-  header-verified but first really compiled whenever the opt-in cprint
-  lane next runs.
+- **Dead runtime declaration**: the runtime's own `UiCurrentA5`
+  (`runtime/clarus/uiscript.cla`) has no Clarus call site -- the `A5Live`
+  suite case covers the codegen via its own local extern. Delete or wire
+  up in a cleanup pass. (`UiNewMenuStr`, its former twin, was deleted by
+  the language-runtime-cleanup phase, 2026-09-06.)
 
 - **Suite bookkeeping minors**: the expected case counts are hand-written
   literals in the ported scripts too (`suite_report_check "$WORK/cap.out"
-  81` in `tests/mactest/coresuite_68k.sh`, `35` in `toolbox_68k.sh`, each
+  82` in `tests/mactest/coresuite_68k.sh`, `38` in `toolbox_68k.sh`, each
   duplicated in that script's own doc comment), so adding a suite case
   still means editing two places per lane — the original
   `internal/mactest/coresuite_test.go` complaint, carried over by the
@@ -210,31 +197,17 @@ sub-heading.
   that need real file I/O, so the twin can only go green via real
   C-side HFS FhH implementations for this lane, lane-aware case skips,
   or accepting a documented 78/80. (The toolbox twin itself runs green,
-  36/36 as of 2026-09-05.)
+  38/38 as of 2026-09-06.)
 
 ### Correctness-cleanup phase (2026-08-17)
 
 - **`rt_ext_UiCompactMem` (Task 3's cprint-lane no-op stub for
   `CompactMem`) is unexercised** — no jiggle test targets the Retro68/
-  cprint Mac lane (`TestToolboxSuiteJiggleOn68k` is native-68k-only), so
-  the stub is only really compiled whenever the opt-in cprint lane next
-  runs (`CLARUS_CPRINT_MAC_TESTS=1`), same class of gap as the existing
-  Datetime glue entry above.
+  cprint Mac lane (`TestToolboxSuiteJiggleOn68k` is native-68k-only); the
+  stub compiles and links (the cprint toolbox twin runs 38/38) but no
+  test ever drives it.
 
 ### Serial/connection phase (2026-08-16)
-
-- **Toolbox-suite compose file list duplicated across the `bake` and
-  `mactest` groups** — `tests/bake/full_corpus_suite_toolbox.sh`'s inline
-  list (still labelled `toolboxSuiteGUIFiles` after its Go origin) and
-  `tests/mactest/toolbox_files.txt` are hand-maintained twins with a
-  "keep in sync" comment as the only enforcement; Task 2 updated one and
-  missed the other, undetected until this task's T2 run (see `STATUS.md`
-  §3, fix commit `0907364`). A shared source (one list, imported by both) or a
-  T1-level consistency check would prevent the next miss.
-  Recurred 2026-09-05 (compiler-cleanup Task 10: `cases_casestable.cla`
-  was added to `toolbox_files.txt` but not
-  `full_corpus_suite_toolbox.sh`; only T2's full sweep caught it) — have
-  the bake script read `tests/mactest/toolbox_files.txt` directly.
 
 - **No committed emit-time fixture pinning the unchanged
   `lowUnsupported` rejection for `appletalk`/local-receiver shapes**
