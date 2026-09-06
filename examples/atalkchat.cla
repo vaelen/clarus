@@ -73,9 +73,9 @@ menu File {
 
 var chatType: string = "ClarusChat"
 
-var roleIdle: int = 0
-var roleServer: int = 1
-var roleClient: int = 2
+const roleIdle: int = 0
+const roleServer: int = 1
+const roleClient: int = 2
 
 var lsn: listener
 var brs: serviceBrowser
@@ -89,10 +89,10 @@ var out: text
 var beats: int = 0
 var quitAt: int = 0
 
-// The watchdog exists for the same reason selfserve.cla's does: every
-// end state here is reached by a network event, so a waist body that
-// never completes would otherwise sit in the event loop until the boot
-// deadline -- a timeout instead of a readable log line.
+// The watchdog exists for the same reason testdata/atalk/selfserve.cla's
+// does: every end state here is reached by a network event, so a waist
+// body that never completes would otherwise sit in the event loop until
+// the boot deadline -- a timeout instead of a readable log line.
 var maxBeats: int = 380
 
 func setStatus(s: string) {
@@ -274,17 +274,24 @@ on chat.failed(err: error) {
     quit
 }
 
-// The Delay is what makes a `--events` build take real time. A scripted
-// boot's ticks are VIRTUAL (uiscript.cla's rtUiVirtualTicks: the real
-// clock is never consulted), so without it the whole event script would
-// run out in well under a second -- before the peer has even finished
-// booting -- and the program would quit with nothing to show. A sixth
-// of a second per beat turns a 400-line script into ~66 s of real
-// overlap between the two boots. In a real interactive build it costs
-// only that much latency on a beat the app spends waiting for the
-// network anyway.
-every 4 ticks {
-    var slept: int
+// A REAL app would not have this Delay. It exists only because a
+// `--events` build's ticks are VIRTUAL (uiscript.cla's rtUiVirtualTicks:
+// the real clock is never consulted in scripted mode, and each script
+// line does exactly one pump pass), so without it the whole event script
+// would run out in well under a second -- before the peer has even
+// finished booting -- and the program would quit with nothing to show.
+// Delay(10) is a sixth of a second, so a 400-line `tick 12` script is
+// ~66 s of real overlap between the two boots.
+//
+// The 12-tick period is deliberately LONGER than the 10-tick Delay:
+// blocking for longer than the beat's own period would peg the duty
+// cycle at 100% and starve WaitNextEvent outright. As written the beat
+// blocks 10 ticks out of every 12 -- ~83% -- which in a real
+// interactive build means the event loop sees ~5 free ticks a second
+// and a click can wait up to ~167 ms. That is the honest cost, and it
+// is paid on a beat the app spends waiting for the network anyway.
+every 12 ticks {
+    var slept: int // result ignored; Delay is called for its blocking
 
     slept = Delay(10)
     beats = beats + 1

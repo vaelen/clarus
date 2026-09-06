@@ -29,12 +29,24 @@
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
+[ -d "$ROOT/macplus2" ] || skip "macplus2 not present"
+
+# The NBP TYPE is made per-run here rather than in the committed example
+# (spec 8.4's "register names with a per-run suffix"): the example's own
+# per-run suffix is on the NAME, but the client can only search by type,
+# so a concurrent ClarusChat on the group -- Andrew's own session, or a
+# second gate run -- would otherwise be a live false-failure vector. The
+# client connects to the first match, and with a PID-stamped type the
+# only match is this run's own server. The committed example keeps the
+# plain "ClarusChat" so it stays a readable demo.
+sed "s/ClarusChat/ClarusChat$$/g" examples/atalkchat.cla > "$WORK/atalkchat.cla" \
+    || die "could not stamp a per-run NBP type into the example"
 
 emit68k -o "$WORK/chatsrv.bin" --events testdata/ui/atalkchat_server.events \
-    examples/atalkchat.cla > "$WORK/emit_srv.log" 2>&1 \
+    "$WORK/atalkchat.cla" > "$WORK/emit_srv.log" 2>&1 \
     || die "clarusc emit68k atalkchat (server): $(tail -10 "$WORK/emit_srv.log")"
 emit68k -o "$WORK/chatcli.bin" --events testdata/ui/atalkchat_client.events \
-    examples/atalkchat.cla > "$WORK/emit_cli.log" 2>&1 \
+    "$WORK/atalkchat.cla" > "$WORK/emit_cli.log" 2>&1 \
     || die "clarusc emit68k atalkchat (client): $(tail -10 "$WORK/emit_cli.log")"
 
 run_mac_pair "$WORK/chatsrv.bin" "$WORK/chatcli.bin" 420
@@ -64,8 +76,17 @@ want_line() {
 [ "$MAC_EXIT1" = 0 ] && t_pass server_exit || t_fail server_exit "exit $MAC_EXIT1, want 0"
 [ "$MAC_EXIT2" = 0 ] && t_pass client_exit || t_fail client_exit "exit $MAC_EXIT2, want 0"
 
-# Server: the listener registered, NBP advertised it, and the incoming
-# ADSP request was accepted as an already-open connection (spec 4.2).
+# Server: the Serve click landed and `lsn.register` was reached -- the
+# half that still works on a boot disk with no AppleTalk file, and the
+# only proof the scripted click hit the right widget. The name carries
+# the example's own per-run suffix, so only the prefix is fixed.
+if grep -q '^serving Chat-' "$SRV"; then
+    t_pass server_registered
+else
+    t_fail server_registered "server log has no \"serving Chat-...\" line: $(tr '\n' '|' < "$SRV")"
+fi
+# NBP advertised it, and the incoming ADSP request was accepted as an
+# already-open connection (spec 4.2).
 want_line server_accepted "$SRV" "accepted"
 # The 256-byte sweep, delivered in one piece.
 want_line server_sweep "$SRV" "received 256"

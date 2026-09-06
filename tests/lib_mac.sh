@@ -41,10 +41,11 @@ MAC_EXIT2=
 # gets its OWN cwd under $WORK, because LaunchAPPL makes its temp dir --
 # and the copy of the emulator app it actually runs -- in cwd; that cwd
 # string is also the only safe kill key. run_mac's own blanket
-# `pkill -f minivmac.app` must NOT be reused here: it would take out the
-# other half of this pair and any UNRELATED session's emulator too (Task
-# 1 P4; Andrew runs boots of his own alongside the gate), and it does not
-# even match the second instance, whose app copy is named MacPlus2.app.
+# `pkill -f minivmac.app` must NOT be reused here: MiniVMac.cc copies
+# whatever bundle it is handed to a fixed `minivmac.app` name (Task 1 P4
+# (c)), so that one pattern matches BOTH halves of this pair and any
+# UNRELATED session's emulator as well -- and Andrew runs boots of his
+# own alongside the gate.
 #
 # Both boots run under the same SECS deadline, so the second can outlive
 # the first by at most the 5 s stagger. Either one failing (a timeout, or
@@ -76,9 +77,14 @@ run_mac_pair() {
     if [ $_rcA -ne 0 ] || [ $_rcB -ne 0 ]; then
         pkill -f "$WORK/launchA"
         pkill -f "$WORK/launchB"
+        # The guest's own partial stdout (cap*.raw) is the only evidence
+        # of how far a timed-out boot actually got -- LaunchAPPL's stderr
+        # says nothing about it.
         die "LaunchAPPL pair failed (rc $_rcA/$_rcB, 124 = timed out after $3s):
   $1: $(head -5 "$WORK/cap1.err")
-  $2: $(head -5 "$WORK/cap2.err")"
+  $1 capture tail: $(tail -5 "$WORK/cap1.raw" | tr '\n' '|')
+  $2: $(head -5 "$WORK/cap2.err")
+  $2 capture tail: $(tail -5 "$WORK/cap2.raw" | tr '\n' '|')"
     fi
     capture_split "$WORK/cap1.raw"
     MAC_EXIT1=$MAC_EXIT
