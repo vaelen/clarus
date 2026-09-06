@@ -6,8 +6,10 @@
 // cost nothing in cg_init_globals -- the startup sweep already zeroed
 // the slot. Five zero spellings (lowering folds every one to
 // EIntConst 0, or CvIntToPtr of one for ptr(0)) and one non-zero
-// control that must keep its store. The listing's cg_init_globals
-// block therefore holds exactly ONE `MOVE.L #1,D0` store pair.
+// control that must keep its store. The listing's cg_init_globals block
+// therefore holds exactly ONE `MOVE.L #1,D0` store pair for a FIXTURE
+// global (`gk`) -- the runtime's own globals keep theirs, so the block
+// as a whole holds more than one.
 
 enum Mode {
     Off

@@ -390,6 +390,15 @@ func rtFhRename(path: string, newName: string): bool {
 }
 
 func rtFhMove(path: string, dirPath: string): bool {
+    // native-array-return-and-fileh-guards (final review): an empty path
+    // would reach PBCatMoveSync as the program's own folder (ioDirID 0 +
+    // empty name) and move THAT into dirPath -- refuse it here, both lanes,
+    // like rtFhRename. An empty dirPath stays legal: it names the own folder
+    // as a destination, which is exactly what it means everywhere else.
+    if path == "" {
+        rtSetLastErr(-37, "move failed")
+        return false
+    }
     if rtFhDevMove(path, dirPath) != 0 {
         rtSetLastErr(rtFhDevLastOSErr(), "move failed")
         return false

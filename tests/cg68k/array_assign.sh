@@ -74,10 +74,17 @@ elif ! printf '%s\n' "$out" | grep -q 'record Named'; then
 else
     t_pass handle_param_named_error
 fi
+if [ -f "$dir/out.bin" ]; then
+    t_fail handle_param_no_bin "emit68k left a .bin behind despite the array-parameter error"
+else
+    t_pass handle_param_no_bin
+fi
 
 # --- handle-bearing array RETURN: named diagnostic ---------------------
-# g is defined FIRST so cgEmitFunc(g) runs before the handler that calls
-# it -- the diagnostic fires at g's own frame layout, before any caller.
+# Definition order no longer matters: cgCheckArrayReturns is a pre-pass
+# over every reachable function, run once before the measure pass, so the
+# named diagnostic wins whichever function the emitter would have reached
+# first. The caller_first subcase below pins exactly that.
 dir=$WORK/hret
 mkdir -p "$dir" || die "mkdir $dir"
 cat > "$dir/hret.cla" <<'EOF'
@@ -99,6 +106,55 @@ elif ! printf '%s\n' "$out" | grep -q 'function g '; then
     t_fail handle_return_named_error "diagnostic does not name the function: $out"
 else
     t_pass handle_return_named_error
+fi
+if [ -f "$dir/out.bin" ]; then
+    t_fail handle_return_no_bin "emit68k left a .bin behind despite the array-return error"
+else
+    t_pass handle_return_no_bin
+fi
+
+# --- handle-bearing array RETURN, CALLER DEFINED FIRST -----------------
+# (final review F1) The pre-pass exists for this shape: emission runs in
+# irFuncs index order, so before it, caller's own `u = g()` hit the older
+# generic whole-array-assign abort -- no function name, no element type,
+# and advice ("assign element-wise") impossible to follow for a call
+# result. The named return diagnostic must win here too.
+dir=$WORK/hretcaller
+mkdir -p "$dir" || die "mkdir $dir"
+cat > "$dir/hretcaller.cla" <<'EOF'
+func caller(): int {
+    var u: text[2]
+    u = g()
+    return 1
+}
+
+func g(): text[2] {
+    var t: text[2]
+    return t
+}
+
+on App.launch {
+    if caller() == 0 {
+        return
+    }
+}
+EOF
+if out=$("$CLARUSC" emit68k -o "$dir/out.bin" "$dir/hretcaller.cla" 2>&1); then
+    t_fail handle_return_caller_first "emit68k unexpectedly succeeded on a handle-bearing array return"
+    echo "$out"
+elif ! printf '%s\n' "$out" | grep -q 'cannot be returned natively'; then
+    t_fail handle_return_caller_first "expected the named handle-bearing-return error, got: $out"
+elif ! printf '%s\n' "$out" | grep -q 'function g '; then
+    t_fail handle_return_caller_first "diagnostic does not name the function: $out"
+elif printf '%s\n' "$out" | grep -q 'whole-array assignment of handle-bearing elements'; then
+    t_fail handle_return_caller_first "the generic whole-array-assign abort won over the named return diagnostic: $out"
+else
+    t_pass handle_return_caller_first
+fi
+if [ -f "$dir/out.bin" ]; then
+    t_fail handle_return_caller_first_no_bin "emit68k left a .bin behind despite the array-return error"
+else
+    t_pass handle_return_caller_first_no_bin
 fi
 
 # Never let the SKIP below swallow a fail-closed regression.

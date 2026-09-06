@@ -5530,12 +5530,6 @@ func cgEmitFunc(f: int) {
     // cgRetNeedsHidden's own doc comment for the ABI-mismatch bug this
     // guards against).
     needsHidden = cgRetNeedsHidden(irFuncRet(f))
-    if irtKind(irFuncRet(f)) == KArr and not needsHidden {
-        // spec %3: a handle-bearing array return has no hidden slot
-        // (cgRetNeedsHidden) and no retain walk; fail at the callee's own
-        // frame layout, once, naming the function.
-        abort("cg68k: function " + poolGet(irFuncName(f)) + " returns a fixed array whose elements carry a text/list/map (" + cgArrElemDesc(irFuncRet(f)) + ") -- cannot be returned natively; return a `list` instead")
-    }
     if needsHidden {
         offset = 12
     } else {
@@ -6225,6 +6219,30 @@ func cgArrElemDesc(t: int): string {
         return "array of " + cgArrElemDesc(et)
     }
     return "element"
+}
+
+// cgCheckArrayReturns (final review F1) is the SINGLE authority for the
+// handle-bearing array RETURN diagnostic, and it is a PRE-PASS -- run
+// once over every reachable function before the measure pass, never from
+// inside cgEmitFunc. Emission runs in irFuncs index order, so a check
+// living in cgEmitFunc only wins when the offending callee happens to be
+// emitted before its caller: define the caller first and its own
+// `b = g()` hits the older generic whole-array-assign abort instead,
+// which names neither the function nor the element type and whose advice
+// ("assign element-wise") cannot be followed for a call result. Checking
+// up front means every consumer shape -- assign, argument, discard,
+// forward -- sees the named message. tests/cg68k/array_assign.sh's
+// handle_return_caller_first subcase pins it.
+func cgCheckArrayReturns() {
+    var i: int
+
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) and irtKind(irFuncRet(i)) == KArr and not cgRetNeedsHidden(irFuncRet(i)) {
+            abort("cg68k: function " + poolGet(irFuncName(i)) + " returns a fixed array whose elements carry a text/list/map (" + cgArrElemDesc(irFuncRet(i)) + ") -- cannot be returned natively; return a `list` instead")
+        }
+        i = i + 1
+    }
 }
 
 // cgParamByRef (language-runtime-cleanup, spec %3.4): the ONE predicate both
@@ -15653,6 +15671,12 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     } else {
         cgSegLimit = 32760
     }
+
+    // Before any emission: the handle-bearing array-return diagnostic is
+    // order-independent only as a pre-pass (cgCheckArrayReturns' own doc
+    // comment). Both entries into the measure/emit loops -- drive.cla's
+    // emit68k and cg68k's own bake object capture -- come through here.
+    cgCheckArrayReturns()
 
     driveProgressStage("Measuring")
     if not cg68Measure() {

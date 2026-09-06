@@ -5,13 +5,14 @@
 // KArr RETURN ABI's own `.s` golden, karr_param.cla's sibling. A
 // scalar-element fixed array returns through the same hidden result
 // pointer a record does (cgRetNeedsHidden), block-copied by
-// cgEmitReturnArr; every consumer shape funnels into cgEmitStoreArr's
+// cgEmitReturnErr's shared hidden-result path; every consumer shape
+// funnels into cgEmitStoreArr's
 // ECallFn arm and from there into cgCallFnInto:
 //   - `mk()` bare        : a discarded call -- cgCallFnScalar's discard
 //                          arm parks the result in a tracked big-pool temp.
 //   - `b = mk()`         : SAssign's KArr arm.
 //   - `sum4(mk())`       : cgPushArgs -> cgMaterializeToTemp.
-//   - `return mk()`      : cgEmitReturnArr -> cgExprAddr's materialize
+//   - `return mk()`      : cgEmitReturnErr -> cgExprAddr's materialize
 //                          fallback (fwd below).
 
 func mk(): int[4] {

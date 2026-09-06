@@ -1476,7 +1476,7 @@ The `file` namespace covers documents and preferences. Every function but `file.
 | `list` | `file.list(path: string, names: list of string): bool` | empties `names`, then appends the leaf name of every file **and** folder directly inside `path`, in catalog order; `""` names the program's own folder; a `path` that is not a folder is a failure; on failure `names` is empty |
 | `setInfo` | `file.setInfo(path: string, type: string, creator: string, created: int, modified: int): bool` | restamps an existing file's Finder type/creator and dates; a `0` date means "leave unchanged"; `type`/`creator` follow `writeText`'s four-character rule |
 | `rename` | `file.rename(path: string, newName: string): bool` | renames in place; `newName` is a leaf name, not a path -- a `newName` containing `:` fails, and so does an empty `path` or an empty `newName` (both `-37`) |
-| `move` | `file.move(path: string, dirPath: string): bool` | moves a file or folder into the folder `dirPath`, keeping its name; same volume only (`badMovErr` otherwise) |
+| `move` | `file.move(path: string, dirPath: string): bool` | moves a file or folder into the folder `dirPath`, keeping its name; same volume only (`badMovErr` otherwise); an empty `path` fails (`-37`) |
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
 

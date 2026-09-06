@@ -127,6 +127,16 @@ func caseDirOps(): TestResult {
         return tkFail("DirOps", "rename of empty path code " + tkIntToStr(lastError.code) + " want -37")
     }
 
+    // (final review) the rtFhMove twin: an empty path would reach
+    // PBCatMoveSync as the program's OWN folder (ioDirID 0 + empty name)
+    // and move that into dirPath. An empty dirPath stays legal.
+    if file.move("", ":DirOpsT:Sub") {
+        return tkFail("DirOps", "move of empty path succeeded")
+    }
+    if lastError.code != -37 {
+        return tkFail("DirOps", "move of empty path code " + tkIntToStr(lastError.code) + " want -37")
+    }
+
     if file.delete(":DirOpsT:Sub") {
         return tkFail("DirOps", "delete non-empty folder succeeded")
     }
