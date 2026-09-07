@@ -1,0 +1,120 @@
+d8c759b docs: audit fix round 1 -- listener teardown clause, three nits
+ CLAUDE.md                         | 10 +++++-----
+ docs/HISTORY.md                   | 11 ++++++-----
+ docs/clarus-language-reference.md |  2 +-
+ docs/clarus-toolbox-cookbook.md   |  9 +++++----
+ 4 files changed, 17 insertions(+), 15 deletions(-)
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 921cf6d..d92db0c 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -48,15 +48,15 @@ The test harness is Make + POSIX shell + a handful of small C tools —
+ no Go anywhere (the Go harness was deleted in the go-retirement phase,
+ 2026-09-05; `tests/` replaces the old `internal/*_test.go` packages one
+ script per Go test).
+ 
+ - `make -j tools bootstrap` builds `build-run/tools/*` (the C helpers:
+   `timeout`, `uiblob`, `resfork`, `clirhdr`, `tcpdrive`, `atalkdrive`) and
+-  the two-stage
+-  `build-run/clarusc-{snapshot,current}` compilers. Every test depends on
+-  both targets, so make's own scheduling serializes the bootstrap.
++  the two-stage `build-run/clarusc-{snapshot,current}` compilers. Every
++  test depends on both targets, so make's own scheduling serializes the
++  bootstrap.
+ - `make test T='<group>/<name> <group>/'` runs selected scripts. Each `T=`
+   word is a prefix matched against `tests/<prefix>`, so `T=bake/` is a
+   whole group and `T=cg68k/goldens` one script.
+ - `make -j t1` runs every group except `selfhost/` and `perfgate/`.
+   `make t2` is the whole merge gate (t1, then perfgate alone, `selfhost/`,
+   the gated `mactest/` group at `-j1`, and the `bake/` full-corpus sweep).
+@@ -395,14 +395,14 @@ enum + runner, not one boot per case.
+   RED on `AdspLeak` (`open .DSP err -43`). Re-apply the three lines and
+   rebuild.
+ - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
+ - `macplus2/` → a second Mini vMac (`MacPlus2.app` + `vMac.ROM` + its
+   own `disk1.dsk`, an identical copy of `macplus/`'s) —
+   `tests/lib_mac.sh`'s `run_mac_pair` boots it as the second machine
+-  for `tests/mactest/adsp_68k.sh`. Gitignored like `macplus/`; missing
+-  ⇒ that script cannot run.
++  for `tests/mactest/adsp_68k.sh`. Gitignored like `macplus/`. Missing ⇒
++  that script SKIPs (`macplus2 not present`).
+ - `vasm/` → locally built `vasmm68k_mot` (the third-party 68000 assembler
+   used as an encoder oracle; rebuild recipe in
+   `tests/asm68k/roundtrip.sh`'s header). Missing or built without the bin
+   output module ⇒ `tests/asm68k/roundtrip.sh`, `tests/cg68k/vasm.sh` and
+   the round-trip halves of `tests/cg68k/array_assign.sh` and
+   `tests/cg68k/segments.sh` SKIP.
+diff --git a/docs/HISTORY.md b/docs/HISTORY.md
+index 9cc9bdc..e90deb8 100644
+--- a/docs/HISTORY.md
++++ b/docs/HISTORY.md
+@@ -213,18 +213,19 @@ the condensed open follow-ups extracted from these entries.
+     `reply`/`call`), and ADSP streams as `connection`'s second transport
+     with `listener` accepting them — natively on real LocalTalk under
+     Mini vMac, and, for discovery and RPC, on a command-line host as a
+     genuine LocalTalk-over-UDP peer on the same wire an emulator is on.
+     Merged to `main` 2026-09-07 (fast-forward, then pushed). Full entry:
+     "AppleTalk phase (2026-09-07, branch `appletalk`)" below.
+-    (Items 1-11 above are the pre-2026-08 milestones. Every phase since
+-    — `go-retirement`, `compiler-cleanup`, `language-runtime-cleanup`,
++    (Items 1-11 above are the pre-2026-08 milestones. The phases with
++    their own top-level `## … phase` section further down are
++    `go-retirement`, `compiler-cleanup`, `language-runtime-cleanup`,
+     `native-array-return-and-fileh-guards` and `appletalk`, all merged to
+-    `main` — is recorded as its own `## … phase` section further down;
+-    this entry is here because `appletalk` closes the networking
+-    milestone the list itself was tracking.)
++    `main`; the rest are bullets under the sections above. This entry is
++    here because `appletalk` closes the networking milestone the list
++    itself was tracking.)
+ 
+ ## clarusc / self-hosting strategy (agreed in discussion, 2026-07-22)
+ 
+ **Superseded 2026-08-05 — the Go compiler is deleted (tag
+ `go-compiler-final`); see the Go-compiler-deletion Done entry below.**
+ 
+diff --git a/docs/clarus-language-reference.md b/docs/clarus-language-reference.md
+index 38a9f9f..4d3dd2e 100644
+--- a/docs/clarus-language-reference.md
++++ b/docs/clarus-language-reference.md
+@@ -1452,13 +1452,13 @@ on server.accepted(c: connection) {
+ ```
+ 
+ `l.register(name, type)` is used the same way, in place of `l.listen(port)`, to run an ADSP server that's discoverable by name instead of a fixed TCP port. Two things differ from the TCP form. The `connection` it hands to `accepted` is already open — no `opened` fires for it, because there was never an `open` to complete. And the registered name is visible to every `serviceBrowser.find(type)` in the zone (below) from `register` until `stop`, which is how clients find the server in the first place.
+ 
+ When every connection slot is already in use the runtime denies the incoming request outright: the client's own `open` fails with `failed`, and the server sees nothing — no `accepted`, no `failed`. Refusing a client the program has no room for is not a server-side failure.
+ 
+-`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, or the listener failing to start. A `failed` that arrives after a successful `register` also stops the listener — the name is removed and the listener released, exactly as if `stop()` had been called — so a program that wants to keep serving must `register` again. `l.stop()` is safe on a listener that was never started, and safe to call twice.
++`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, or the listener failing to start. After a successful `register`, what a `failed` costs depends on which failure it reports. A lost listen request — the listener's own machinery failing — tears the listener down: the name is removed and the listener released, exactly as if `stop()` had been called, so a program that wants to keep serving must `register` again. A single connection that could not be accepted does not: the listener stays registered and listening, the next client can still connect, and `register` on it fails with *listener already registered*. `l.stop()` is safe on a listener that was never started, and safe to call twice.
+ 
+ ### Service Discovery
+ 
+ A `serviceBrowser` finds registered AppleTalk entities — other programs' services, and machines — in a zone.
+ 
+ | Member | Form |
+diff --git a/docs/clarus-toolbox-cookbook.md b/docs/clarus-toolbox-cookbook.md
+index e14227e..c4583d2 100644
+--- a/docs/clarus-toolbox-cookbook.md
++++ b/docs/clarus-toolbox-cookbook.md
+@@ -11,16 +11,17 @@ end to end, including the mistakes a first attempt tends to make. Wherever
+ this document and the reference seem to disagree, the reference wins — that
+ would be a bug in this document, not a second opinion.
+ 
+ Every declaration shown below either already ships in the repository — the
+ curated catalog under `toolbox/` (`memory.cla`, `events.cla`, `osutils.cla`,
+ `scrap.cla`, `devices.cla`, `files.cla`, `standardfile.cla`, `serial.cla`,
+-`resources.cla`, `appleevents.cla`, `appletalk.cla`), the runtime (`runtime/clarus/ui.cla`, `runtime/clarus/
+-uitext.cla`), or a test suite case (`testsuite/toolbox/`) — or is the
+-reference's own worked example. None of it is invented for this document;
+-each walkthrough below cites its source.
++`resources.cla`, `appleevents.cla`, `appletalk.cla`), the runtime
++(`runtime/clarus/ui.cla`, `runtime/clarus/uitext.cla`), or a test suite
++case (`testsuite/toolbox/`) — or is the reference's own worked example.
++None of it is invented for this document; each walkthrough below cites its
++source.
+ 
+ **Who this is for.** Most Clarus programs should never need anything in this
+ document: the language's own windows, widgets, menus, forms, and files hide
+ the Toolbox behind friendlier abstractions (cut/copy/paste, for example, is
+ a capability of text controls, not something an application implements), and
+ a "standard" application is written entirely through the lens of the Clarus

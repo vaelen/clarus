@@ -1,0 +1,496 @@
+6e53e47 docs: reflect the AppleTalk phase -- README refresh, reference/cookbook/TODO/ROADMAP corrections (23 audit findings)
+ CLAUDE.md                         | 11 ++++++--
+ README.md                         | 54 +++++++++++++++++++++++++++------------
+ docs/HISTORY.md                   | 18 ++++++++++++-
+ docs/ROADMAP.md                   | 31 +++++++++++++++++-----
+ docs/TODO.md                      | 30 +++++++++++++++++-----
+ docs/clarus-language-reference.md |  4 +--
+ docs/clarus-toolbox-cookbook.md   |  5 ++--
+ docs/snow-floppy-howto.md         |  7 +++++
+ examples/atalkchat.cla            |  7 ++---
+ 9 files changed, 127 insertions(+), 40 deletions(-)
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 9eff907..921cf6d 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -47,13 +47,14 @@ scripts/test-merge.sh             # T2: per-merge gate (~15m + selfhost, needs t
+ The test harness is Make + POSIX shell + a handful of small C tools —
+ no Go anywhere (the Go harness was deleted in the go-retirement phase,
+ 2026-09-05; `tests/` replaces the old `internal/*_test.go` packages one
+ script per Go test).
+ 
+ - `make -j tools bootstrap` builds `build-run/tools/*` (the C helpers:
+-  `timeout`, `uiblob`, `resfork`, `clirhdr`, `tcpdrive`) and the two-stage
++  `timeout`, `uiblob`, `resfork`, `clirhdr`, `tcpdrive`, `atalkdrive`) and
++  the two-stage
+   `build-run/clarusc-{snapshot,current}` compilers. Every test depends on
+   both targets, so make's own scheduling serializes the bootstrap.
+ - `make test T='<group>/<name> <group>/'` runs selected scripts. Each `T=`
+   word is a prefix matched against `tests/<prefix>`, so `T=bake/` is a
+   whole group and `T=cg68k/goldens` one script.
+ - `make -j t1` runs every group except `selfhost/` and `perfgate/`.
+@@ -183,13 +184,14 @@ Tiered test gates:
+   the script calls `skip` on that line BEFORE its first assertion,
+   because a `FAIL ` line would beat exit 77. See the LaunchAPPL
+   prerequisite under "Retro68 / Mac toolchain" below — without that
+   patch this script SKIPs and `mactest/toolbox_68k` goes RED (the
+   `AdspLeak` suite case has no skip verdict and FAILs with
+   `open .DSP err -43`). `tests/mactest/atalk_68k.sh` (NBP/ATP over the
+-  ROM's own `.MPP`/`.ATP`) needs no such file.
++  ROM's own `.MPP`/`.ATP`) and `tests/mactest/atalk_selfserve.sh` (serve
++  + browse with no peer at all) need no such file.
+ - Golden blessing — five variables, and each must be set to exactly `1`
+   (`lib.sh`'s `env_set`; any other value, `0` included, is NOT a bless):
+   `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap goldens,
+   `CLARUS_CG68K_BLESS=1` the `testdata/cg68k` `.s` goldens,
+   `CLARUS_BLESS_BEHAVIOR=1` the `selfhost` `.behavior` blobs,
+   `CLARUS_MODULES_BLESS=1` the `clarusc/test/*.out` module-driver stdout
+@@ -390,12 +392,17 @@ enum + runner, not one boot per case.
+   beside it as `LaunchAPPL.orig`. **The patch is UNCOMMITTED in the
+   Retro68 checkout, so a fresh Retro68 build silently loses it** — after
+   which `mactest/adsp_68k` SKIPs itself and `mactest/toolbox_68k` goes
+   RED on `AdspLeak` (`open .DSP err -43`). Re-apply the three lines and
+   rebuild.
+ - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
++- `macplus2/` → a second Mini vMac (`MacPlus2.app` + `vMac.ROM` + its
++  own `disk1.dsk`, an identical copy of `macplus/`'s) —
++  `tests/lib_mac.sh`'s `run_mac_pair` boots it as the second machine
++  for `tests/mactest/adsp_68k.sh`. Gitignored like `macplus/`; missing
++  ⇒ that script cannot run.
+ - `vasm/` → locally built `vasmm68k_mot` (the third-party 68000 assembler
+   used as an encoder oracle; rebuild recipe in
+   `tests/asm68k/roundtrip.sh`'s header). Missing or built without the bin
+   output module ⇒ `tests/asm68k/roundtrip.sh`, `tests/cg68k/vasm.sh` and
+   the round-trip halves of `tests/cg68k/array_assign.sh` and
+   `tests/cg68k/segments.sh` SKIP.
+diff --git a/README.md b/README.md
+index 3f6a00f..a32e283 100644
+--- a/README.md
++++ b/README.md
+@@ -1,12 +1,13 @@
+ # Clarus
+ 
+ Clarus is a small, compiled, event-driven language for building native
+ System 6/7 applications on 68k Macintosh computers. Programs are written as
+ typed declarations — windows, menus, records — plus event handlers; there is
+-no `main`. The compiler emits C.
++no `main`. The compiler emits C for host builds and native 68k code directly
++for the Macintosh, and it also runs *on* the Mac, as `ClarusC.APPL`.
+ 
+ ```rust
+ window Game {
+     title: "Bounce"
+     size: 200, 200
+     canvas Board { at: 0, 0; fill: both; buffered }
+@@ -29,48 +30,69 @@ every 1 ticks {
+ The language is specified in [docs/clarus-language-reference.md](docs/clarus-language-reference.md).
+ Project status and sequencing live in [docs/ROADMAP.md](docs/ROADMAP.md).
+ 
+ ## Status
+ 
+ - **Language reference** — complete v1 draft (the normative spec).
+-- **Host toolchain** — `clarus check` / `build` / `run` work on the host via
+-  a portable C runtime.
++- **Host toolchain** — `scripts/clarus-run.sh` compiles and runs a program
++  on the development machine, against a portable C runtime.
+ - **Self-hosting** — done. `clarusc`, the compiler written in Clarus
+   (`clarusc/*.cla`), compiles itself: the three-stage bootstrap reaches a
+   byte-identical fixed point, and the generated C snapshot is committed at
+   `clarusc/clarusc.c` so the compiler can be rebuilt from any C compiler
+-  with no prior Clarus or Go toolchain.
+-- **Next** — the actual Macintosh target (Toolbox backend), then memory +
+-  forms runtime, networking, and finally building Clarus programs *on* a Mac.
++  with no prior Clarus toolchain.
++- **Macintosh target** — native 68k `.APPL` binaries (`clarusc emit68k`, no
++  C and no cross-compiler in the path), the full UI runtime — windows,
++  menus, forms, tables, text editing, files — and `ClarusC.APPL`, which
++  compiles Clarus programs on the Mac itself.
++- **Networking** — `connection` over a serial port or AppleTalk (ADSP),
++  `serviceBrowser` name discovery, and ATP request/response `service`s. A
++  command-line host build is a real LocalTalk-over-UDP peer on the same
++  wire as an emulated Mac, so the two ends can find and call each other.
++- **Toolbox catalog** — `toolbox/*.cla` holds curated Inside Macintosh trap
++  declarations for programs that need to reach past the language's own
++  abstractions; see [docs/clarus-toolbox-cookbook.md](docs/clarus-toolbox-cookbook.md).
++- **Next** — MacTCP.
+ 
+ ## Building
+ 
+-The host toolchain requires Go and a C compiler:
++A C compiler is the only prerequisite. Bootstrap `clarusc` from the
++committed snapshot:
+ 
+ ```sh
+-go build -o clarus ./cmd/clarus
++cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c
+ 
+-./clarus check FILE...          # type-check only
+-./clarus build [-o OUT] FILE... # compile to a host binary
+-./clarus run FILE...            # compile and run
++./clarusc FILE...               # type-check only
++./clarusc emit -o OUT.c FILE... # emit C for a host build
+ ```
+ 
+-To bootstrap `clarusc` from the committed snapshot with no Go at all:
++Day to day, one script does the bootstrap, the emission, the C compile and
++the run:
+ 
+ ```sh
+-cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c
+-./clarusc [emit -o OUT.c] FILE...
++scripts/clarus-run.sh FILE.cla [-- args...]
++```
++
++The test gates are two more scripts — the first after every change, the
++second before merging:
++
++```sh
++scripts/test-task.sh    # ~1-2 minutes
++scripts/test-merge.sh   # ~15 minutes; needs the emulator
+ ```
+ 
+ ## Repository layout
+ 
+ | Path | Contents |
+ |---|---|
+-| `docs/` | Language reference and roadmap |
+-| `tests/` | The test harness: a Make + POSIX-shell runner plus its C tools |
++| `docs/` | Language reference, cookbook, roadmap, and history |
+ | `clarusc/` | The self-hosted compiler, written in Clarus, plus its committed C snapshot |
++| `runtime/` | The Clarus and C runtime modules spliced into every build |
++| `toolbox/` | Curated Inside Macintosh trap declarations, per manager |
++| `examples/` | Complete sample programs (`atalkclock`, `texteditor`, `bookmarks`, …) |
++| `tests/` | The test harness: a Make + POSIX-shell runner plus its C tools |
+ | `testdata/` | Golden tests: valid programs, diagnostics, runtime behavior |
+ 
+ ## License
+ 
+ MIT — see [LICENSE](LICENSE).
+ 
+diff --git a/docs/HISTORY.md b/docs/HISTORY.md
+index baf3b39..9cc9bdc 100644
+--- a/docs/HISTORY.md
++++ b/docs/HISTORY.md
+@@ -205,12 +205,26 @@ the condensed open follow-ups extracted from these entries.
+     post-ARC (+0.12s, ~1.3%). Text Editor: 3.98s pre-ARC → 3.97s
+     post-ARC (no measurable change). Both deltas are within run-to-run
+     noise (observed spread ~0.05-0.2s per binary) and neither is
+     subjectively perceptible on the emulator — **elision is NOT
+     triggered by this measurement.** Full design + counting-rules table:
+     `docs/superpowers/specs/2026-07-29-arc-design.md`.
++12. **AppleTalk: DONE.** NBP service discovery (`serviceBrowser`), ATP
++    request/response services (the `service` resource, with `serve`/
++    `reply`/`call`), and ADSP streams as `connection`'s second transport
++    with `listener` accepting them — natively on real LocalTalk under
++    Mini vMac, and, for discovery and RPC, on a command-line host as a
++    genuine LocalTalk-over-UDP peer on the same wire an emulator is on.
++    Merged to `main` 2026-09-07 (fast-forward, then pushed). Full entry:
++    "AppleTalk phase (2026-09-07, branch `appletalk`)" below.
++    (Items 1-11 above are the pre-2026-08 milestones. Every phase since
++    — `go-retirement`, `compiler-cleanup`, `language-runtime-cleanup`,
++    `native-array-return-and-fileh-guards` and `appletalk`, all merged to
++    `main` — is recorded as its own `## … phase` section further down;
++    this entry is here because `appletalk` closes the networking
++    milestone the list itself was tracking.)
+ 
+ ## clarusc / self-hosting strategy (agreed in discussion, 2026-07-22)
+ 
+ **Superseded 2026-08-05 — the Go compiler is deleted (tag
+ `go-compiler-final`); see the Go-compiler-deletion Done entry below.**
+ 
+@@ -5875,13 +5889,15 @@ plan `docs/superpowers/plans/2026-09-06-native-array-return-and-fileh-guards.md`
+ per-task briefs, reports, reviews and the `progress.md` ledger in
+ `.superpowers/sdd/2026-09-06-native-array-return-and-fileh-guards/`.
+ 
+ ## AppleTalk phase (2026-09-07, branch `appletalk`)
+ 
+ Recorded on the same terms as the entries above: merging to `main` is
+-Andrew's call and had not happened when this was written. **This entry
++Andrew's call and had not happened when this was written. **Merged to
++`main` 2026-09-07 — fast-forward, then pushed (`main` = `6e6e3d4`).**
++**This entry
+ covers all fourteen tasks plus the final fix wave, all merged into
+ `appletalk`. Task 13 (the Snow proofs and the first green two-Mac ADSP
+ run) was blocked on a toolchain patch outside this repo until
+ 2026-09-07, and was amended into this entry once it landed** — see
+ "Task 13, done 2026-09-07" below.
+ 
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index 3e9adb3..b308f01 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -1,10 +1,10 @@
+ # Clarus Roadmap
+ 
+ Living document — the authoritative record of sequencing and strategy
+-going forward. Updated 2026-09-05. Lists only unfinished work.
++going forward. Updated 2026-09-07. Lists only unfinished work.
+ 
+ - Completed phases are archived verbatim in `docs/HISTORY.md`.
+ - Recorded-but-unscheduled debt and needed improvements: `docs/TODO.md`.
+ - Ideas and if-it-ever-bites levers, not debt: `docs/FUTURE.md`.
+ - `docs/clarus-language-reference.md` is the normative spec; where any
+   other doc disagrees, the reference wins.
+@@ -51,21 +51,21 @@ check (Gestalt) with a graceful fallback when the feature is absent.
+   live row count — deliberate tripwire (runtime-ir-bake T2 blocker): a
+   clamp would mask the next stale-master-pointer bug. Do not "fix"
+   casually. (Moved here verbatim from `docs/TODO.md` at the close of the
+   `language-runtime-cleanup` phase, 2026-09-06: it is a do-not-fix note,
+   not work, and it was the only survivor of that section.)
+ 
+-## Where we are (2026-09-06)
++## Where we are (2026-09-07)
+ 
+-Everything through the `compiler-cleanup` phase is merged to `main` and
+-pushed (`c5d447b`). In brief:
++Everything through the `appletalk` phase is merged to `main` and pushed
++(`6e6e3d4`). In brief:
+ 
+ - **clarusc is the only compiler** — self-hosted (the Go compiler is
+   deleted, tag `go-compiler-final`), bootstrapped from the committed C
+   snapshot `clarusc/clarusc.c` with `cc` alone. The test harness is Make
+-  + POSIX shell + five small C tools; no Go anywhere (`go-retirement`).
++  + POSIX shell + six small C tools; no Go anywhere (`go-retirement`).
+ - **Both targets work**: host builds via C emission (`clarusc emit` +
+   cc against `runtime/host`), native 68k `.APPL` binaries via direct
+   emission (`emit68k`, no C, no Retro68).
+ - **`ClarusC.APPL`** compiles Clarus programs ON a Mac: baked runtime
+   source catalog (`'CLFS'`) + baked runtime IR/object code (`'CLIR'`),
+   live progress UI, recoverable errors (`attempt`/`abort`).
+@@ -106,14 +106,14 @@ in any program with `for x in f()`, and the `lst.pop().field` native
+ leak). **Full T2 green** (one clean `scripts/test-merge.sh` on the final
+ tree, every stage) and **Snow bake gate PASS in 1656s** (27.6 min, all
+ six subcases) via the new exit-trailer probe that replaced the gate's
+ fixed 55-minute settle timer. Details: `docs/HISTORY.md`'s own entry.
+ 
+ **`native-array-return-and-fileh-guards` is COMPLETE and MERGED to
+-`main`** (fast-forward, 2026-09-06 19:49, `main` = `d947f9a`; NOT yet
+-pushed to origin). It cleared the five entries `language-runtime-cleanup`
++`main`** (fast-forward, 2026-09-06 19:49, `main` = `d947f9a`; pushed
++since, with the `appletalk` merge). It cleared the five entries `language-runtime-cleanup`
+ had left behind, in six tasks across three waves: fixed arrays of scalar
+ elements are now a legal native return type (one predicate,
+ `cgRetNeedsHidden`, sharing `cgParamByRef`'s boundary, so the return ABI
+ and the parameter ABI have the same edge); handle-bearing fixed arrays
+ get named diagnostics instead of the generic value-context abort on both
+ the parameter and the return path; `cg_init_globals` no longer stores
+@@ -135,12 +135,23 @@ Compiler-on-Mac section. Full T2 green at the tip (`scripts/test-merge.sh` PASS
+ on `d4cd7c1`, after the deferred-minors wave: selfhost 179s, mactest
+ 648s with `coresuite_68k` 83/83 and `toolbox_68k` `LeakCheck` on
+ hardware, bake full corpus 2s); the bootstrap snapshot was regenerated
+ three times on the branch and reproduces itself. Details: `docs/HISTORY.md`'s
+ own entry.
+ 
++**`appletalk` is COMPLETE and MERGED to `main`** (fast-forward,
++2026-09-07, `main` = `6e6e3d4`, pushed). Clarus programs now discover
++services with `serviceBrowser`, answer and make ATP requests with the new
++`service` resource, and open ADSP streams as `connection`s with
++`listener` accepting them — natively on real LocalTalk, and, for
++discovery and RPC, on the host as a genuine LocalTalk-over-UDP peer on
++the same wire an emulator is on. It also cleared the `serial-connection`
++phase's two carry-ins (host `stdio`/`pty` transports, `every` timers in
++the host CLI pump). Full T2 green (1350 s), with `adsp_68k` 12/12 and
++`toolbox_68k` 40/40 on hardware. Details: `docs/HISTORY.md`'s own entry.
++
+ Owed, not yet done (details in `docs/TODO.md`): a live run of the Snow
+ `macresident` scripts; a System 7 spot check of the filesystem-api
+ phase; the 68kbbs re-pin.
+ 
+ ## Roadmap
+ 
+@@ -167,12 +178,18 @@ configured (2026-08-15): AppleTalk on the Printer port, a TCP listener
+ (port 1984) bridging the Modem port, and a DaynaPORT SCSI Ethernet
+ adapter running a NATted MacTCP instance (the emulated Mac is 10.0.0.2,
+ gateway 10.0.0.1). Caveat: on a modern Mac the emulator cannot attach to
+ a tap device, so it can't reach the real Ethernet — AppleTalk runs over
+ UDP instead, which means two Snow instances running simultaneously can
+ see each other over AppleTalk (the way to test AppleTalk peer-to-peer).
++Snow's LocalTalk-over-UDP bridge is off by default and has no launch flag
++or workspace field — it is turned on per run from Snow's own in-window
++**Ports > Channel B (printer) > Enable LocalTalk (UDP)** menu, which is
++what `tests/lib_snow.sh`'s `snow_localtalk_b` clicks; once on, the guest
++joins the same `239.192.76.84:1954` group Mini vMac and the host
++`atalkdrive` tool are already on.
+ 
+ **Driving application: a BBS server** — first over the serial port,
+ later over MacTCP networking.
+ 
+ ### Then
+ 
+diff --git a/docs/TODO.md b/docs/TODO.md
+index b6a7e96..34be738 100644
+--- a/docs/TODO.md
++++ b/docs/TODO.md
+@@ -72,19 +72,24 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
+   cprint Mac lane (`TestToolboxSuiteJiggleOn68k` is native-68k-only); the
+   stub compiles and links (the cprint toolbox twin runs 38/38) but no
+   test ever drives it.
+ 
+ ### Serial/connection phase (2026-08-16)
+ 
+-- **No committed emit-time fixture pinning the unchanged
+-  `lowUnsupported` rejection for `appletalk`/local-receiver shapes**
+-  (Task 5) — those shapes still reject the same way pre-phase; nothing
+-  regresses that specifically today.
+-
+-- **No coverage for the >4-connections build error** (Task 5) — the
+-  cap exists and is enforced, just untested.
++- **No committed emit-time fixture pinning the `lowUnsupported`
++  rejection for local-receiver connection shapes** (Task 5) — the
++  `appletalk` half of this entry was closed by the AppleTalk phase
++  (2026-09-07), which lowers those shapes; the local-receiver shapes
++  still reject the same way pre-phase, and nothing regresses that
++  specifically today.
++
++- **No coverage for the >8-connections build error** (Task 5; the cap
++  was raised 4 → 8 by the AppleTalk phase) — the listener,
++  serviceBrowser and service caps got fixtures in
++  `tests/atalk/runerr.sh` (`too_many_lsn`/`too_many_brs`/
++  `too_many_svc`); the connection cap did not.
+ 
+ ### binary-files phase (2026-08-22)
+ 
+ - **No fixture asserts `readAt`/`writeAt` with `count == 0`** (Task 5
+   minor; final-review wave M5) — the `pos == EOF` case IS covered
+   (`readAt(600,10)` past EOF, `readAt(512,100)` crossing EOF); only a
+@@ -224,12 +229,23 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
+   was the site with the silent failure mode; the general fix is real
+   out-parameter typing in the checker -- a parameter-shape flag that
+   suppresses the coercion and rejects any argument whose kind is not the
+   declared one -- applied to the whole family at once, so the next
+   `text` out-parameter added does not have to remember the guard.
+ 
++## Compiler: cleanup
++
++### AppleTalk phase (2026-09-07)
++
++- **`lowSynthAtalkFire{Simple,Failed}` duplicate ~70 lines of the
++  connection dispatcher builders** (`clarusc/lower.cla`). The final
++  review recommended folding them; the fold edits code every `emitui`
++  and `cg68k` golden pins, for zero behaviour change, so it was deferred
++  to the MacTCP phase, where a third copy makes the case and the corpus
++  is reblessed anyway.
++
+ ## Language: feature-support queries (after the AppleTalk release)
+ 
+ - **A `system.has*()` family for optional platform features** (Andrew,
+   2026-09-07, during the AppleTalk brainstorm). A program running on
+   System 6 without the `.DSP` driver should be able to learn that and
+   disable its ADSP features itself, rather than discovering it through
+diff --git a/docs/clarus-language-reference.md b/docs/clarus-language-reference.md
+index e780a59..38a9f9f 100644
+--- a/docs/clarus-language-reference.md
++++ b/docs/clarus-language-reference.md
+@@ -1452,13 +1452,13 @@ on server.accepted(c: connection) {
+ ```
+ 
+ `l.register(name, type)` is used the same way, in place of `l.listen(port)`, to run an ADSP server that's discoverable by name instead of a fixed TCP port. Two things differ from the TCP form. The `connection` it hands to `accepted` is already open — no `opened` fires for it, because there was never an `open` to complete. And the registered name is visible to every `serviceBrowser.find(type)` in the zone (below) from `register` until `stop`, which is how clients find the server in the first place.
+ 
+ When every connection slot is already in use the runtime denies the incoming request outright: the client's own `open` fails with `failed`, and the server sees nothing — no `accepted`, no `failed`. Refusing a client the program has no room for is not a server-side failure.
+ 
+-`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, or the listener failing to start. `l.stop()` is safe on a listener that was never started, and safe to call twice.
++`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, or the listener failing to start. A `failed` that arrives after a successful `register` also stops the listener — the name is removed and the listener released, exactly as if `stop()` had been called — so a program that wants to keep serving must `register` again. `l.stop()` is safe on a listener that was never started, and safe to call twice.
+ 
+ ### Service Discovery
+ 
+ A `serviceBrowser` finds registered AppleTalk entities — other programs' services, and machines — in a zone.
+ 
+ | Member | Form |
+@@ -1552,13 +1552,13 @@ on clock.failed(err: error) {
+     alert(err.message)
+ }
+ ```
+ 
+ A client holding an `address` from a browser calls that server with `clock.call(addr, 1, "", answer)`, where `answer` is a `text` the reply lands in; the `"Name:Type"` form, `clock.call("Clock:ClockSrv", 1, "", answer)`, looks the name up first and costs one extra round trip. `answer` must be a `text` variable, not a `string`: `call` fills it in place, so it is an out-parameter and the compiler rejects anything else.
+ 
+-**AppleTalk on a command-line host.** A host build is a real LocalTalk peer, not a stub: the runtime carries its own LocalTalk-over-UDP stack on the multicast group `239.192.76.84:1954`, which is the same wire a Mini vMac or Snow emulator on the machine is on — so a host program and a Macintosh program can discover and call each other. Everything in *Service Discovery* and *Services* above works for real there: `find`, `zones`, `serve`, `reply`, and `call`, with the same events, the same limits, and the same `lastError`. The ADSP stream half does not: `connection.open(appletalk "Name:Type")`, `connection.open(addr)`, and `listener.register` all fail with `failed(err: error)` on a host in this release — streams are Macintosh-only, the same environmental-failure path a System 6 machine without the `.DSP` driver takes. `zones(out)` on a host always comes back holding the single name `"*"`, since there is no router to ask. On a machine with more than one network interface, `CLARUS_ATALK_IFACE` names the IPv4 address of the one to join the group on (`CLARUS_ATALK_IFACE=192.168.1.20`); unset, the system picks.
++**AppleTalk on a command-line host.** A host build is a real LocalTalk peer, not a stub: the runtime carries its own LocalTalk-over-UDP stack on the multicast group `239.192.76.84:1954`, which is the same wire a Mini vMac or Snow emulator on the machine is on — so a host program and a Macintosh program can discover and call each other. Everything in *Service Discovery* and *Services* above works for real there: `find`, `zones`, `serve`, `reply`, and `call`, with the same events, the same limits, and the same `lastError`. One timing difference: on the host, `serve` blocks for about three seconds while NBP verifies the name is not already taken — the same verification the Macintosh does inside `registerName`. The ADSP stream half does not: `connection.open(appletalk "Name:Type")`, `connection.open(addr)`, and `listener.register` all fail with `failed(err: error)` on a host in this release — streams are Macintosh-only, the same environmental-failure path a System 6 machine without the `.DSP` driver takes. `zones(out)` on a host always comes back holding the single name `"*"`, since there is no router to ask. On a machine with more than one network interface, `CLARUS_ATALK_IFACE` names the IPv4 address of the one to join the group on (`CLARUS_ATALK_IFACE=192.168.1.20`); unset, the system picks.
+ 
+ ### Files
+ 
+ The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, `file.openRF`, `file.create`, and `file.info` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong — except `file.exists`, whose `false` just means the path doesn't exist, never a failure. `open`/`openRF`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O; `info` returns a `FileInfo` record (Chapter 3), zeroed with `lastError` set on failure.
+ 
+ | Function | Signature | Notes |
+diff --git a/docs/clarus-toolbox-cookbook.md b/docs/clarus-toolbox-cookbook.md
+index ced13e9..e14227e 100644
+--- a/docs/clarus-toolbox-cookbook.md
++++ b/docs/clarus-toolbox-cookbook.md
+@@ -10,13 +10,14 @@ table's rules; it walks through applying them to real Inside Macintosh pages,
+ end to end, including the mistakes a first attempt tends to make. Wherever
+ this document and the reference seem to disagree, the reference wins — that
+ would be a bug in this document, not a second opinion.
+ 
+ Every declaration shown below either already ships in the repository — the
+ curated catalog under `toolbox/` (`memory.cla`, `events.cla`, `osutils.cla`,
+-`scrap.cla`), the runtime (`runtime/clarus/ui.cla`, `runtime/clarus/
++`scrap.cla`, `devices.cla`, `files.cla`, `standardfile.cla`, `serial.cla`,
++`resources.cla`, `appleevents.cla`, `appletalk.cla`), the runtime (`runtime/clarus/ui.cla`, `runtime/clarus/
+ uitext.cla`), or a test suite case (`testsuite/toolbox/`) — or is the
+ reference's own worked example. None of it is invented for this document;
+ each walkthrough below cites its source.
+ 
+ **Who this is for.** Most Clarus programs should never need anything in this
+ document: the language's own windows, widgets, menus, forms, and files hide
+@@ -696,13 +697,13 @@ this repository's own emulator, and still be wrong on real hardware. When
+ transcribing an `extern record` or reasoning about a struct's layout, trust
+ the Field Palette's alignment rules (Ch13) over "the test suite is green" —
+ the emulator cannot catch what it doesn't model.
+ 
+ ### (b) Using the catalog
+ 
+-The four `toolbox/*.cla` files are ordinary user-side declaration files, not
++The `toolbox/*.cla` files are ordinary user-side declaration files, not
+ runtime modules — they join a build the same way any other `.cla` file does,
+ two ways:
+ 
+ - **Positionally**, as one more file handed to `clarusc emit`/`emit68k`/
+   `check`, the same compose-recipe pattern `testsuite/core`'s own CLI build
+   uses (CLAUDE.md's own "Run `core` on host" recipe):
+diff --git a/docs/snow-floppy-howto.md b/docs/snow-floppy-howto.md
+index 768049d..1a6405c 100644
+--- a/docs/snow-floppy-howto.md
++++ b/docs/snow-floppy-howto.md
+@@ -99,12 +99,19 @@ SNOW=/Applications/Snow.app/Contents/MacOS/Snow
+   (macOS); `kill` works too, but discards unsaved floppy/PRAM state.
+ 
+ Other useful flags: `--serial-bridge-a tcp:PORT` / `--serial-bridge-b …`
+ (SCC serial to TCP or PTY), `-f`/`--zen` (fullscreen/zen; need a
+ workspace/ROM argument). `Snow --help` lists them.
+ 
++Note that `--serial-bridge-*` takes only `pty` and `tcp:PORT` — anything
++else is a WARN ("Invalid serial bridge mode") and is ignored. Snow's
++LocalTalk-over-UDP bridge is *not* a bridge mode and has no flag: it is
++enabled per run from **Ports > Channel B (printer) > Enable LocalTalk
++(UDP)** in Snow's own in-window menu bar, which is what
++`tests/lib_snow.sh`'s `snow_localtalk_b` clicks by screen position.
++
+ ### Minimal workspace JSON
+ 
+ If you don't have a `.snoww` yet, this is the shape Snow writes. Paths are
+ relative to the workspace file (absolute paths also work):
+ 
+ ```json
+diff --git a/examples/atalkchat.cla b/examples/atalkchat.cla
+index 90235d4..ae527a4 100644
+--- a/examples/atalkchat.cla
++++ b/examples/atalkchat.cla
+@@ -8,15 +8,16 @@
+ //
+ // Which end it is, is chosen at runtime by the button clicked:
+ //
+ //   Serve    lsn.register("Chat-<n>", "ClarusChat"), then echo every
+ //            chunk that arrives back to the client with a '>' prepended,
+ //            and quit when the client closes the stream.
+-//   Connect  brs.find("ClarusChat"), then open(appletalk "Name:Type") to
+-//            the first match, send a 0..255 byte sweep, check the echo
+-//            byte for byte, send "hello", check that echo too, close.
++//   Connect  brs.find("ClarusChat"), then open(appletalk name) -- found's
++//            name is already NBP's "Object:Type" spelling -- to the first
++//            match, send a 0..255 byte sweep, check the echo byte for
++//            byte, send "hello", check that echo too, close.
+ //
+ // The registered name carries a per-run suffix (spec 8.4: multicast
+ // LocalTalk sees every other session on the machine, so a fixed name
+ // would collide with Andrew's own running copies), and the client takes
+ // the FIRST "ClarusChat" entity NBP hands it -- it cannot know the
+ // server's suffix, so it logs the name it picked and the test reads that
