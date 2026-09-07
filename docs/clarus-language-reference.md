@@ -581,7 +581,7 @@ A function call, method-style call, or list/map operation may appear on its own 
 var p: Person = new Person
 var names: list of Person
 
-conn.open("mac.example.com:70")
+conn.open(tcp "10.0.0.5:70")
 names.add(p)
 ```
 
@@ -1348,7 +1348,7 @@ A `connection` (Chapter 3) is a single reliable byte-stream abstraction over bot
 
 | Member | Form |
 |---|---|
-| `open` | `c.open("host:port")` — MacTCP, DNS inside; `c.open(appletalk "Name:Type")` — ADSP, NBP inside; `c.open(serial "modem:9600")` — a Mac serial port, `"modem"` or `"printer"`, baud after the colon; `c.open(addr)` — from a browser `address` |
+| `open` | `c.open(tcp "a.b.c.d:port")` — MacTCP, dotted quad only this release; `c.open(appletalk "Name:Type")` — ADSP, NBP inside; `c.open(serial "modem:9600")` — a Mac serial port, `"modem"` or `"printer"`, baud after the colon; `c.open(addr)` — from a browser `address` |
 | `send` | `c.send(t: text)` (also accepts string) |
 | `close` | `c.close()` |
 | events | `opened`, `received(data: text)`, `closed`, `failed(err: error)` |
@@ -1361,7 +1361,7 @@ Like other resources, a `connection`'s events are caught by top-level handlers, 
 var conn: connection
 
 on App.launch {
-    conn.open("mac.example.com:70")
+    conn.open(tcp "10.0.0.5:70")
 }
 
 on conn.opened {
@@ -1387,6 +1387,15 @@ An AppleTalk connection's events follow `connection`'s ordinary shape, with thes
 - `send` writes to the ADSP send queue; `received(data: text)` delivers whatever the stream reports pending, once per event-loop pass, binary-safe — every byte value 0-255 passes through unchanged.
 - `send` or `close` on a connection that was never opened is a runtime error, the same contract violation it is on every other transport.
 
+**TCP (MacTCP).** `c.open(tcp "a.b.c.d:port")` opens a TCP stream to a dotted-quad address — each octet 0–255, the port 1–65535. A host *name* is not accepted in this release, on either lane: resolving one needs MacTCP's Domain Name Resolver, which is a later phase, so a name arrives as `failed(err: error)` with *invalid connection spec*. The bare-string form `c.open("host:port")` is a compile error — *open needs a transport: tcp, appletalk, or serial*.
+
+A TCP connection's events follow `connection`'s ordinary shape, with these transport-specific rules:
+
+- The open is asynchronous like every other one: `opened` fires on a later pass of the event loop, when the active open completes. `failed(err: error)` reports a malformed spec, a host name, MacTCP absent, no free stream, a refused or unreachable peer, or a 30-second open timeout.
+- `send` appends to the connection's send queue, and the runtime pushes every chunk, so a line-oriented peer sees it at once. `received(data: text)` delivers whatever one completed receive carried, at most once per pass, binary-safe.
+- `closed` fires when the peer closes or the connection is reset. The slot is released, so a later `send` is the ordinary `connection not open` runtime error. A local `c.close()` never fires it.
+- `close()` drains the pending sends first, then closes gracefully with a 10-second cap, so a peer that never closes cannot pin the slot; bytes the peer sends after a local close are discarded. Re-opening the same variable afterwards is fine.
+
 ADSP is part of System 7; on System 6 it comes from AppleTalk 57 or later, as the `.DSP` driver inside the `AppleTalk` system file. There is no feature query for it — a system without it makes `open(appletalk ...)`, `open(addr)`, and `listener.register` fail with `failed(err: error)`, the ordinary environmental-failure path.
 
 ### Serial
@@ -1400,7 +1409,7 @@ A serial connection's events follow `connection`'s ordinary shape, with these tr
 - `closed` fires only when the underlying channel itself goes away. A raw Mac serial line has no carrier-detect signal in this release, so `closed` never fires for a serial connection — a transport property, not a missing feature. A local `c.close()` never fires `closed`, on any transport.
 - `send` on a connection that was never opened, or has since closed, is a runtime error — a program bug, not an environmental failure. Environmental failures (a bad port spec, a driver I/O error) arrive as `failed(err: error)` instead.
 
-On a command-line host, two environment variables map the ports to TCP for development instead of real hardware: `CLARUS_SERIAL_MODEM` and `CLARUS_SERIAL_PRINTER`, each one of `listen:PORT` (open becomes a listening accept), `connect:HOST:PORT` (open dials out), `stdio`, or `pty`; the baud rate is accepted but ignored. `stdio` makes the program itself the terminal program — it reads fd 0 and writes fd 1, with no socket involved; when fd 0 is a tty the terminal is put in raw mode at open and the saved settings are restored at exit, and under a pipe there is nothing to set and that step is skipped. `pty` allocates a pseudo-terminal and announces its slave path on stderr as `pty /dev/ttys003`, for a client such as `screen` to attach to; until a client sends its first byte the connection behaves like a bound-but-unconnected `listen:PORT` — writes are discarded, not failed — and the client owns the slave's line discipline, so a client that wants the byte transparency above sets raw mode on the slave itself, and closing the connection discards anything the client has not yet read. An unset variable makes `open` fail with `failed`, not a crash. This host lane is also where the command-line lifetime rule matters: after `App.startCLI` returns, the program stays alive while any connection remains open, an event is pending, or an `every` timer is declared (a timer never disarms, so such a program runs until `quit`), pumping them, and only exits once none of those holds — `quit` still works at any point regardless.
+On a command-line host, two environment variables map the ports to TCP for development instead of real hardware: `CLARUS_SERIAL_MODEM` and `CLARUS_SERIAL_PRINTER`, each one of `listen:PORT` (open becomes a listening accept), `connect:HOST:PORT` (open dials out), `stdio`, or `pty`; the baud rate is accepted but ignored. `stdio` makes the program itself the terminal program — it reads fd 0 and writes fd 1, with no socket involved; when fd 0 is a tty the terminal is put in raw mode at open and the saved settings are restored at exit, and under a pipe there is nothing to set and that step is skipped. `pty` allocates a pseudo-terminal and announces its slave path on stderr as `pty /dev/ttys003`, for a client such as `screen` to attach to; until a client sends its first byte the connection behaves like a bound-but-unconnected `listen:PORT` — writes are discarded, not failed — and the client owns the slave's line discipline, so a client that wants the byte transparency above sets raw mode on the slave itself, and closing the connection discards anything the client has not yet read. An unset variable makes `open` fail with `failed`, not a crash. This host lane is also where the command-line lifetime rule matters: after `App.startCLI` returns, the program stays alive while any connection remains open, any listener is listening, an event is pending, or an `every` timer is declared (a timer never disarms, so such a program runs until `quit`), pumping them, and only exits once none of those holds — `quit` still works at any point regardless.
 
 Servicing a connection is cooperative: the runtime only drains waiting bytes between event-loop passes, so a handler that runs long starves every open connection's pump, not just its own. The driver's receive buffer is grown to 8KB at open to absorb a burst while a handler runs, but that is headroom, not immunity — a handler blocked for long enough can still overrun it and lose data.
 
@@ -1425,7 +1434,7 @@ A `listener` accepts incoming connections from clients.
 
 | Member | Form |
 |---|---|
-| `listen` | `l.listen(port: int)` — a TCP listening socket (MacTCP), for clients that dial a fixed port |
+| `listen` | `l.listen(tcp port: int)` — a TCP listening socket (MacTCP), for clients that dial a fixed port |
 | `register` | `l.register(name: string, type: string)` — an ADSP connection listener, advertised to the zone under the NBP name `name:type` |
 | `stop` | `l.stop()` — remove the name and the listener; idempotent |
 | events | `accepted(c: connection)`, `failed(err: error)` |
@@ -1438,7 +1447,7 @@ var clients: connection[8]
 var busy: bool[8]
 
 on App.launch {
-    server.listen(6502)
+    server.listen(tcp 6502)
 }
 
 on server.accepted(c: connection) {
@@ -1451,11 +1460,13 @@ on server.accepted(c: connection) {
 }
 ```
 
-`l.register(name, type)` is used the same way, in place of `l.listen(port)`, to run an ADSP server that's discoverable by name instead of a fixed TCP port. Two things differ from the TCP form. The `connection` it hands to `accepted` is already open — no `opened` fires for it, because there was never an `open` to complete. And the registered name is visible to every `serviceBrowser.find(type)` in the zone (below) from `register` until `stop`, which is how clients find the server in the first place.
+`l.listen(tcp port)` is the TCP form: the port is 1–65535, and the `tcp` keyword is required — `l.listen(port)` without it is a compile error, *listen needs the tcp keyword: l.listen(tcp port)*. The `connection` it hands to `accepted` is already open, so no `opened` fires for it, exactly as with `register`. One listener variable serves either form at a time: the other form on a started listener fails with *listener already registered*. On a command-line host this works for real, over BSD sockets.
+
+`l.register(name, type)` is used the same way, in place of `l.listen(tcp port)`, to run an ADSP server that's discoverable by name instead of a fixed TCP port. One thing differs from the TCP form: the registered name is visible to every `serviceBrowser.find(type)` in the zone (below) from `register` until `stop`, which is how clients find the server in the first place. Both forms hand `accepted` an already-open `connection`, so no `opened` ever fires for one.
 
 When every connection slot is already in use the runtime denies the incoming request outright: the client's own `open` fails with `failed`, and the server sees nothing — no `accepted`, no `failed`. Refusing a client the program has no room for is not a server-side failure.
 
-`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, or the listener failing to start. After a successful `register`, what a `failed` costs depends on which failure it reports. A lost listen request — the listener's own machinery failing — tears the listener down: the name is removed and the listener released, exactly as if `stop()` had been called, so a program that wants to keep serving must `register` again. A single connection that could not be accepted does not: the listener stays registered and listening, the next client can still connect, and `register` on it fails with *listener already registered*. `l.stop()` is safe on a listener that was never started, and safe to call twice.
+`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, MacTCP absent, the port already in use, or the listener failing to start. After a successful `register`, what a `failed` costs depends on which failure it reports. A lost listen request — the listener's own machinery failing — tears the listener down: the name is removed and the listener released, exactly as if `stop()` had been called, so a program that wants to keep serving must `register` again. A single connection that could not be accepted does not: the listener stays registered and listening, the next client can still connect, and `register` on it fails with *listener already registered*. `l.stop()` is safe on a listener that was never started, and safe to call twice.
 
 ### Service Discovery
 
@@ -1555,7 +1566,7 @@ on clock.failed(err: error) {
 
 A client holding an `address` from a browser calls that server with `clock.call(addr, 1, "", answer)`, where `answer` is a `text` the reply lands in; the `"Name:Type"` form, `clock.call("Clock:ClockSrv", 1, "", answer)`, looks the name up first and costs one extra round trip. `answer` must be a `text` variable, not a `string`: `call` fills it in place, so it is an out-parameter and the compiler rejects anything else.
 
-**AppleTalk on a command-line host.** A host build is a real LocalTalk peer, not a stub: the runtime carries its own LocalTalk-over-UDP stack on the multicast group `239.192.76.84:1954`, which is the same wire a Mini vMac or Snow emulator on the machine is on — so a host program and a Macintosh program can discover and call each other. Everything in *Service Discovery* and *Services* above works for real there: `find`, `zones`, `serve`, `reply`, and `call`, with the same events, the same limits, and the same `lastError`. One timing difference: on the host, `serve` blocks for about three seconds while NBP verifies the name is not already taken — the same verification the Macintosh does inside `registerName`. The ADSP stream half does not: `connection.open(appletalk "Name:Type")`, `connection.open(addr)`, and `listener.register` all fail with `failed(err: error)` on a host in this release — streams are Macintosh-only, the same environmental-failure path a System 6 machine without the `.DSP` driver takes. `zones(out)` on a host always comes back holding the single name `"*"`, since there is no router to ask. On a machine with more than one network interface, `CLARUS_ATALK_IFACE` names the IPv4 address of the one to join the group on (`CLARUS_ATALK_IFACE=192.168.1.20`); unset, the system picks.
+**AppleTalk on a command-line host.** A host build is a real LocalTalk peer, not a stub: the runtime carries its own LocalTalk-over-UDP stack on the multicast group `239.192.76.84:1954`, which is the same wire a Mini vMac or Snow emulator on the machine is on — so a host program and a Macintosh program can discover and call each other. Everything in *Service Discovery* and *Services* above works for real there: `find`, `zones`, `serve`, `reply`, and `call`, with the same events, the same limits, and the same `lastError`. One timing difference: on the host, `serve` blocks for about three seconds while NBP verifies the name is not already taken — the same verification the Macintosh does inside `registerName`. The ADSP stream half does not: `connection.open(appletalk "Name:Type")`, `connection.open(addr)`, and `listener.register` all fail with `failed(err: error)` on a host in this release — ADSP streams are Macintosh-only, the same environmental-failure path a System 6 machine without the `.DSP` driver takes. TCP streams (`open(tcp …)`, `listen(tcp …)`) do work on the host, for real, over BSD sockets — so a host build is a working TCP client and a working TCP server. `zones(out)` on a host always comes back holding the single name `"*"`, since there is no router to ask. On a machine with more than one network interface, `CLARUS_ATALK_IFACE` names the IPv4 address of the one to join the group on (`CLARUS_ATALK_IFACE=192.168.1.20`); unset, the system picks.
 
 ### Files
 

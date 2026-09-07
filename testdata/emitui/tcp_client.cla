@@ -1,0 +1,30 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// tcp_client.cla (MacTCP phase, Task 6): pins `c.open(tcp "a.b.c.d:port")`
+// -- lowering's transport-3 arm into rtConnOpen(h, 3, spec), and the whole
+// tcp.cla/tcp_c.cla splice riding conn.cla + atalk.cla behind it.
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    conn.open(tcp "10.0.0.5:70")
+}
+
+on conn.opened {
+    conn.send("READY\n")
+}
+
+on conn.received(data: text) {
+    conn.send(data)
+    if data.indexOf("QQQ") >= 0 {
+        conn.close()
+    }
+}
+
+on conn.closed {
+    log("closed")
+}
+
+on conn.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+}

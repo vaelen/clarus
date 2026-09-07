@@ -467,16 +467,15 @@ static const clar_str_255 clar_lit_153 = {27, {99, 111, 117, 108, 100, 32, 110, 
 static const clar_str_255 clar_lit_154 = {12, {105, 110, 118, 97, 108, 105, 100, 32, 112, 111, 114, 116}};
 static const clar_str_255 clar_lit_155 = {15, {84, 67, 80, 32, 117, 110, 97, 118, 97, 105, 108, 97, 98, 108, 101}};
 static const clar_str_255 clar_lit_156 = {11, {112, 111, 114, 116, 32, 105, 110, 32, 117, 115, 101}};
-static const clar_str_255 clar_lit_157 = {5, {67, 108, 111, 99, 107}};
-static const clar_str_255 clar_lit_158 = {11, {67, 108, 97, 114, 117, 115, 67, 108, 111, 99, 107}};
-static const clar_str_255 clar_lit_159 = {5, {49, 50, 58, 48, 48}};
-static const clar_str_255 clar_lit_160 = {7, {102, 97, 105, 108, 101, 100, 32}};
-static const clar_str_255 clar_lit_161 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_162 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_163 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_164 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_165 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_166 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_157 = {9, {108, 105, 115, 116, 101, 110, 105, 110, 103}};
+static const clar_str_255 clar_lit_158 = {6, {82, 69, 65, 68, 89, 13}};
+static const clar_str_255 clar_lit_159 = {8, {108, 102, 97, 105, 108, 101, 100, 32}};
+static const clar_str_255 clar_lit_160 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_161 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_162 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_163 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_164 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_165 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -617,6 +616,8 @@ static int32_t clar_fn_rtArrCheck(int32_t cv_i, int32_t cv_n);
 static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
 static void clar_fn_rtStrConcat(void * cv_out, void * cv_a, void * cv_b);
 static void clar_fn_rtStrConcatChar(void * cv_out, void * cv_a, int32_t cv_c);
+static void clar_fn_rtStrPrependChar(void * cv_out, int32_t cv_c, void * cv_a);
+static clar_str_255 clar_fn_rtIntToStr(int32_t cv_n);
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need);
 static void * clar_fn_rtTextNew(void);
 static void clar_fn_rtTextRetain(void * cv_t);
@@ -625,6 +626,8 @@ static void clar_fn_rtTextStore(void * cv_t, void * cv_s);
 static int32_t clar_fn_rtTextLen(void * cv_t);
 static int32_t clar_fn_rtTextIndex(void * cv_t, int32_t cv_i);
 static void clar_fn_rtTextAppendChar(void * cv_t, int32_t cv_c);
+static void clar_fn_rtTextClear(void * cv_t);
+static void clar_fn_rtTextAppendText(void * cv_t, void * cv_src);
 static void * clar_fn_rtListNew(int32_t cv_elemsize);
 static void clar_fn_rtListRetain(void * cv_l);
 static void clar_fn_rtListRelease(void * cv_l);
@@ -651,29 +654,36 @@ static void clar_fn_rtSortedMapRelease(void * cv_m);
 static int32_t clar_fn_rtSortedMapLastref(void * cv_m);
 static int32_t clar_fn_rtSortedMapCount(void * cv_m);
 static void clar_fn_rtSortedMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
-static int32_t clar_fn_rtAtEnsureUp(void);
-static clar_str_255 clar_fn_rtAtRegMsg(int32_t cv_code);
+static void clar_fn_rtConnSetFailed(int32_t cv_slot, int32_t cv_code, const clar_str_255 *cv_msg);
+static void clar_fn_rtConnSendText(int32_t cv_h, rt_text * cv_t);
+static void clar_fn_rtConnSendStr(int32_t cv_h, const clar_str_255 *cv_s);
+static void clar_fn_rtConnPump(void);
+static int32_t clar_fn_rtConnAlive(void);
+static int32_t clar_fn_rtConnDevAvail(int32_t cv_slot);
+static int32_t clar_fn_rtConnDevReadByte(int32_t cv_slot);
+static int32_t clar_fn_rtConnDevWrite(int32_t cv_slot, void * cv_p, int32_t cv_n);
+static void clar_fn_rtConnDevClose(int32_t cv_slot);
+static int32_t clar_fn_rtConnDevGone(int32_t cv_slot);
 static void clar_fn_rtSvcSetFailed(int32_t cv_slot, int32_t cv_code, const clar_str_255 *cv_msg);
+static void clar_fn_rtAdspFailed(int32_t cv_slot);
 static void clar_fn_rtLsnSetFailed(int32_t cv_slot, int32_t cv_code, const clar_str_255 *cv_msg);
 static void * clar_fn_rtAtTextToPtr(rt_text * cv_t);
 static void clar_fn_rtAtAppendBytes(rt_text * cv_t, void * cv_p, int32_t cv_n);
-static void clar_fn_rtSvcServe(int32_t cv_h, const clar_str_255 *cv_name, const clar_str_255 *cv_typ);
-static void clar_fn_rtSvcReply(int32_t cv_h, int32_t cv_code, rt_text * cv_data);
-static void clar_fn_rtSvcReplyStr(int32_t cv_h, int32_t cv_code, const clar_str_255 *cv_s);
-static void clar_fn_rtSvcStop(int32_t cv_h);
 static void clar_fn_rtLsnStop(int32_t cv_h);
+static int32_t clar_fn_rtAdspPoll(int32_t cv_slot);
+static int32_t clar_fn_rtAdspAvail(int32_t cv_slot);
+static int32_t clar_fn_rtAdspReadInto(int32_t cv_slot, rt_text * cv_t);
+static int32_t clar_fn_rtAdspWrite(int32_t cv_slot, void * cv_p, int32_t cv_n);
+static void clar_fn_rtAdspClose(int32_t cv_slot);
+static int32_t clar_fn_rtAdspGone(int32_t cv_slot);
 static void clar_fn_rtAtalkPump(void);
 static int32_t clar_fn_rtAtalkAlive(void);
 static void * clar_fn_rtAtCReqBuf(int32_t cv_slot);
-static int32_t clar_fn_rtAtDevUp(void);
-static int32_t clar_fn_rtAtDevRegister(const clar_str_255 *cv_obj, const clar_str_255 *cv_typ, int32_t cv_sock);
 static int32_t clar_fn_rtAtDevRemove(const clar_str_255 *cv_obj, const clar_str_255 *cv_typ);
 static int32_t clar_fn_rtAtDevLookupDone(int32_t cv_lk);
 static int32_t clar_fn_rtAtDevLookupCount(int32_t cv_lk);
 static int32_t clar_fn_rtAtDevLookupAddr(int32_t cv_lk, int32_t cv_i);
 static clar_str_255 clar_fn_rtAtDevLookupName(int32_t cv_lk, int32_t cv_i);
-static int32_t clar_fn_rtAtDevAtpOpen(void);
-static void clar_fn_rtAtDevAtpClose(int32_t cv_sock);
 static int32_t clar_fn_rtAtDevAtpArm(int32_t cv_slot, int32_t cv_sock);
 static int32_t clar_fn_rtAtDevAtpPoll(int32_t cv_slot);
 static int32_t clar_fn_rtAtDevAtpReqOp(int32_t cv_slot);
@@ -682,24 +692,56 @@ static int32_t clar_fn_rtAtDevAtpReqLen(int32_t cv_slot);
 static void * clar_fn_rtAtDevAtpReqPtr(int32_t cv_slot);
 static int32_t clar_fn_rtAtDevAtpRespond(int32_t cv_slot, int32_t cv_code, void * cv_p, int32_t cv_n);
 static int32_t clar_fn_rtAtDevAtpRespBusy(int32_t cv_slot);
-static int32_t clar_fn_rtAtDevLastErr(void);
 static void clar_fn_rtAtDevPoll(void);
+static int32_t clar_fn_rtAdspDevOpen(int32_t cv_slot, int32_t cv_addr);
+static int32_t clar_fn_rtAdspDevOpenPoll(int32_t cv_slot);
+static int32_t clar_fn_rtAdspDevAvail(int32_t cv_slot);
+static int32_t clar_fn_rtAdspDevRead(int32_t cv_slot, void * cv_p, int32_t cv_n);
+static int32_t clar_fn_rtAdspDevWrite(int32_t cv_slot, void * cv_p, int32_t cv_n);
+static void clar_fn_rtAdspDevClose(int32_t cv_slot);
+static int32_t clar_fn_rtAdspDevGone(int32_t cv_slot);
 static int32_t clar_fn_rtLsnDevListen(int32_t cv_slot);
 static int32_t clar_fn_rtLsnDevPoll(int32_t cv_slot);
 static int32_t clar_fn_rtLsnDevAccept(int32_t cv_slot, int32_t cv_connSlot);
 static int32_t clar_fn_rtLsnDevDeny(int32_t cv_slot);
 static void clar_fn_rtLsnDevRemove(int32_t cv_slot);
+static int32_t clar_fn_rtTcpEnsureUp(void);
 static int32_t clar_fn_rtTcpFree(int32_t cv_slot);
+static void clar_fn_rtTcpRelease(int32_t cv_slot);
+static void clar_fn_rtTcpDropFront(int32_t cv_slot, int32_t cv_n);
+static int32_t clar_fn_rtTcpKick(int32_t cv_slot);
+static int32_t clar_fn_rtTcpWrite(int32_t cv_slot, void * cv_p, int32_t cv_n);
+static void clar_fn_rtTcpStep(int32_t cv_slot);
+static void clar_fn_rtTcpPollConn(int32_t cv_slot);
+static void clar_fn_rtLsnListen(int32_t cv_h, int32_t cv_port);
+static clar_str_255 clar_fn_rtTcpListenMsg(int32_t cv_code);
 static void clar_fn_rtTcpLsnStop(int32_t cv_slot);
 static void clar_fn_rtTcpPump(void);
+static int32_t clar_fn_rtTcpAlive(void);
+static int32_t clar_fn_rtTcpDevInit(void);
+static int32_t clar_fn_rtTcpDevPoll(int32_t cv_slot);
+static int32_t clar_fn_rtTcpDevRecvLen(int32_t cv_slot);
+static void * clar_fn_rtTcpDevRecvPtr(int32_t cv_slot);
+static int32_t clar_fn_rtTcpDevRecvArm(int32_t cv_slot);
+static int32_t clar_fn_rtTcpDevSendBusy(int32_t cv_slot);
+static int32_t clar_fn_rtTcpDevSend(int32_t cv_slot, void * cv_p, int32_t cv_n);
+static int32_t clar_fn_rtTcpDevClose(int32_t cv_slot);
+static void clar_fn_rtTcpDevRelease(int32_t cv_slot);
 static int32_t clar_fn_rtTcpDevLsnOpen(int32_t cv_lsn, int32_t cv_port);
 static int32_t clar_fn_rtTcpDevLsnPoll(int32_t cv_lsn);
 static int32_t clar_fn_rtTcpDevLsnAccept(int32_t cv_lsn, int32_t cv_slot);
 static void clar_fn_rtTcpDevLsnDeny(int32_t cv_lsn);
 static void clar_fn_rtTcpDevLsnClose(int32_t cv_lsn);
 static void clar_fn_handler_App_startCLI(rt_list * cv_args);
-static void clar_fn_handler_clock_request(int32_t cv_op, rt_text * cv_req, int32_t cv_from);
-static void clar_fn_handler_clock_failed(clar_rec_Err cv_err);
+static void clar_fn_handler_lsn_accepted(int32_t cv_c);
+static void clar_fn_handler_lsn_failed(clar_rec_Err cv_err);
+static void clar_fn_handler_client_received(rt_text * cv_data);
+static void clar_fn_handler_client_closed(void);
+static void clar_fn_clar_conn_fire_opened(int32_t cv_slot);
+static void clar_fn_clar_conn_fire_received(int32_t cv_slot, rt_text * cv_data);
+static void clar_fn_clar_conn_fire_closed(int32_t cv_slot);
+static void clar_fn_clar_conn_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg);
+static void clar_fn_clar_conn_pump(void);
 static void clar_fn_clar_lsn_fire_accepted(int32_t cv_slot, int32_t cv_c);
 static void clar_fn_clar_lsn_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg);
 static void clar_fn_clar_brs_fire_found(int32_t cv_slot, void * cv_name, int32_t cv_addr);
@@ -809,7 +851,8 @@ static clar_arr_int_2 cv_rtLsnPort;
 static int32_t cv_rtTcpLastErr;
 static int32_t cv_rtTcpParseIp;
 static int32_t cv_rtTcpParsePort;
-static int32_t cv_clock;
+static int32_t cv_lsn;
+static int32_t cv_client;
 static void clar_init_globals(void) {
     cv_rtUiMenuHandlesArr = 0;
     cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
@@ -1012,8 +1055,10 @@ static void clar_init_globals(void) {
     cv_rtTcpLastErr = 0;
     cv_rtTcpParseIp = 0;
     cv_rtTcpParsePort = 0;
-    cv_clock = 0;
-    cv_clock = 1;
+    cv_lsn = 0;
+    cv_lsn = 1;
+    cv_client = 0;
+    cv_client = 1;
 }
 
 static void cl_free_globals(void) {
@@ -1128,6 +1173,63 @@ static void clar_fn_rtStrConcatChar(void * cv_out, void * cv_a, int32_t cv_c) {
     if (cv_n < cv_total) {
         clar_fn_rtSetLastErr(1, &(clar_lit_3));
     }
+}
+
+static void clar_fn_rtStrPrependChar(void * cv_out, int32_t cv_c, void * cv_a) {
+    int32_t cv_la;
+    cv_la = 0;
+    int32_t cv_total;
+    cv_total = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    cv_la = rt_peekb(cv_a);
+    cv_total = CLAR_ADD32(cv_la, 1);
+    if (cv_total > 255) {
+        cv_n = 255;
+    } else {
+        cv_n = cv_total;
+    }
+    rt_pokeb((void *)((char *)(cv_out) + (1)), cv_c);
+    rt_ext_StrBlockMoveData((void *)((char *)(cv_a) + (1)), (void *)((char *)(cv_out) + (2)), CLAR_SUB32(cv_n, 1));
+    rt_pokeb(cv_out, cv_n);
+    if (cv_n < cv_total) {
+        clar_fn_rtSetLastErr(1, &(clar_lit_3));
+    }
+}
+
+static clar_str_255 clar_fn_rtIntToStr(int32_t cv_n) {
+    clar_str_255 cv_s;
+    cv_s = (clar_str_255){0};
+    int32_t cv_d;
+    cv_d = 0;
+    int32_t cv_neg;
+    cv_neg = 0;
+    int32_t cv_cur;
+    cv_cur = 0;
+    cv_cur = cv_n;
+    if (cv_cur == 0) {
+        return clar_lit_5;
+    }
+    cv_neg = (cv_cur < 0);
+    clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(clar_lit_6));
+    while (1) {
+        if (!((cv_cur != 0))) break;
+        cv_d = CLAR_MOD32(cv_cur, 10);
+        if (cv_d < 0) {
+            cv_d = CLAR_SUB32(0, cv_d);
+        }
+        clar_str_255 t1;
+        clar_fn_rtStrPrependChar((void*)&t1, (int32_t)(((uint8_t)(CLAR_ADD32(48, cv_d)))), (void*)(const uint8_t*)&(cv_s));
+        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t1));
+        cv_cur = CLAR_DIV32(cv_cur, 10);
+    }
+    if (cv_neg) {
+        clar_str_255 t2;
+        clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(clar_lit_7), (void*)(const uint8_t*)&(cv_s));
+        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t2));
+    }
+    return cv_s;
+    return (clar_str_255){0};
 }
 
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need) {
@@ -1256,6 +1358,39 @@ static void clar_fn_rtTextAppendChar(void * cv_t, int32_t cv_c) {
     cv_mp = rt_ext_TextHandleDeref((cv_rt)->cv_h);
     rt_pokeb((void *)((char *)(cv_mp) + (cv_len0)), cv_c);
     (cv_rt)->cv_len = CLAR_ADD32(cv_len0, 1);
+}
+
+static void clar_fn_rtTextClear(void * cv_t) {
+    clar_rec_RtText * cv_rt;
+    cv_rt = 0;
+    cv_rt = ((clar_rec_RtText *)(cv_t));
+    (cv_rt)->cv_len = 0;
+}
+
+static void clar_fn_rtTextAppendText(void * cv_t, void * cv_src) {
+    clar_rec_RtText * cv_rs;
+    cv_rs = 0;
+    clar_rec_RtText * cv_rt;
+    cv_rt = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_len0;
+    cv_len0 = 0;
+    void * cv_srcmp;
+    cv_srcmp = 0;
+    void * cv_dstmp;
+    cv_dstmp = 0;
+    cv_rs = ((clar_rec_RtText *)(cv_src));
+    cv_n = (cv_rs)->cv_len;
+    cv_rt = ((clar_rec_RtText *)(cv_t));
+    cv_len0 = (cv_rt)->cv_len;
+    clar_fn_rtTextGrow(cv_t, CLAR_ADD32(cv_len0, cv_n));
+    cv_rs = ((clar_rec_RtText *)(cv_src));
+    cv_rt = ((clar_rec_RtText *)(cv_t));
+    cv_srcmp = rt_ext_TextHandleDeref((cv_rs)->cv_h);
+    cv_dstmp = rt_ext_TextHandleDeref((cv_rt)->cv_h);
+    rt_ext_TextBlockMoveData(cv_srcmp, (void *)((char *)(cv_dstmp) + (cv_len0)), cv_n);
+    (cv_rt)->cv_len = CLAR_ADD32(cv_len0, cv_n);
 }
 
 static void * clar_fn_rtListNew(int32_t cv_elemsize) {
@@ -1532,25 +1667,214 @@ static void clar_fn_rtSortedMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
     rt_ext_SortedMapBlockMoveData(clar_fn_sortedmapValSlot(cv_m, cv_i), cv_out, (((clar_rec_RtSortedMap *)(cv_m)))->cv_valsize);
 }
 
-static int32_t clar_fn_rtAtEnsureUp(void) {
+static void clar_fn_rtConnSetFailed(int32_t cv_slot, int32_t cv_code, const clar_str_255 *cv_msg) {
+    (cv_rtConnPendOpened).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
+    (cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = cv_code;
+    clar_fn_rtStrStore((void*)&((cv_rtConnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]), 255, (void*)(const uint8_t*)&((*cv_msg)));
+}
+
+static void clar_fn_rtConnSendText(int32_t cv_h, rt_text * cv_t) {
+    void * cv_scratch;
+    cv_scratch = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    int32_t cv_wErr;
+    cv_wErr = 0;
+    int32_t cv_slot;
+    cv_slot = 0;
+    if (cv_h == 0) {
+        clar_fn_rtPanic(&(clar_lit_122));
+    }
+    cv_slot = CLAR_SUB32(cv_h, 1);
+    if ((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] != 1) {
+        clar_fn_rtPanic(&(clar_lit_126));
+    }
+    cv_n = clar_fn_rtTextLen((void*)cv_t);
+    if (cv_n == 0) {
+        return;
+    }
+    cv_scratch = rt_ext_SerNewPtr(cv_n);
+    if (cv_scratch == (void *)(intptr_t)(0)) {
+        if ((cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 0) {
+            (cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = CLAR_NEG32(108);
+            clar_fn_rtStrStore((void*)&((cv_rtConnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]), 255, (void*)(const uint8_t*)&(clar_lit_127));
+        }
+        return;
+    }
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < cv_n))) break;
+        rt_pokeb((void *)((char *)(cv_scratch) + (cv_i)), ((int32_t)(clar_fn_rtTextIndex((void*)cv_t, (int32_t)(cv_i)))));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+    if ((cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 1) {
+        cv_wErr = clar_fn_rtAdspWrite(cv_slot, cv_scratch, cv_n);
+    } else {
+        if ((cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 3) {
+            cv_wErr = clar_fn_rtTcpWrite(cv_slot, cv_scratch, cv_n);
+        } else {
+            cv_wErr = clar_fn_rtConnDevWrite(cv_slot, cv_scratch, cv_n);
+        }
+    }
+    if ((cv_wErr != 0) && ((cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 0)) {
+        (cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = cv_wErr;
+        clar_fn_rtStrStore((void*)&((cv_rtConnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]), 255, (void*)(const uint8_t*)&(clar_lit_127));
+    }
+    rt_ext_SerDisposePtr(cv_scratch);
+}
+
+static void clar_fn_rtConnSendStr(int32_t cv_h, const clar_str_255 *cv_s) {
+    rt_text * t1 = NULL;
+    t1 = (rt_text *)clar_fn_rtTextNew();
+    clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&((*cv_s)));
+    clar_fn_rtConnSendText(cv_h, t1);
+    clar_fn_rtTextRelease(t1);
+}
+
+static void clar_fn_rtConnPump(void) {
+    int32_t cv_i;
+    cv_i = 0;
+    rt_text * cv_t;
+    cv_t = (rt_text *)clar_fn_rtTextNew();
+    int32_t cv_code;
+    cv_code = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_j;
+    cv_j = 0;
     int32_t cv_e;
     cv_e = 0;
-    cv_e = clar_fn_rtAtDevUp();
-    if (cv_e != 0) {
-        cv_rtAtLastErr = cv_e;
-        return cv_e;
+    int32_t cv_gone;
+    cv_gone = 0;
+    rt_text * cv___store1;
+    cv___store1 = NULL;
+    rt_text * cv___store2;
+    cv___store2 = NULL;
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < 8))) break;
+        if ((cv_rtConnPendOpened).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)]) {
+            (cv_rtConnPendOpened).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] = 0;
+            clar_fn_clar_conn_fire_opened(cv_i);
+        } else {
+            if ((cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] != 0) {
+                cv_code = (cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)];
+                (cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] = 0;
+                clar_fn_clar_conn_fire_failed(cv_i, cv_code, (void*)(const uint8_t*)&((cv_rtConnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)]));
+                clar_fn_rtStrStore((void*)&((cv_rtConnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
+            }
+        }
+        if (((cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] == 1) && ((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] != 1)) {
+            cv_e = clar_fn_rtAdspPoll(cv_i);
+            if (cv_e == 1) {
+                (cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] = 1;
+                clar_fn_clar_conn_fire_opened(cv_i);
+            } else {
+                if (cv_e < 0) {
+                    clar_fn_rtConnSetFailed(cv_i, cv_e, &(clar_lit_124));
+                }
+            }
+        }
+        if ((cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] == 3) {
+            clar_fn_rtTcpPollConn(cv_i);
+        } else {
+            if ((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] == 1) {
+                if ((cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] == 1) {
+                    cv_gone = clar_fn_rtAdspGone(cv_i);
+                } else {
+                    cv_gone = clar_fn_rtConnDevGone(cv_i);
+                }
+                if (cv_gone) {
+                    if ((cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] == 1) {
+                        clar_fn_rtAdspClose(cv_i);
+                        (cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] = 0;
+                    } else {
+                        clar_fn_rtConnDevClose(cv_i);
+                    }
+                    (cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] = 0;
+                    clar_fn_clar_conn_fire_closed(cv_i);
+                } else {
+                    if ((cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] == 1) {
+                        if (clar_fn_rtAdspAvail(cv_i) > 0) {
+                            clar_fn_rtTextRelease((void*)cv___store1);
+                            rt_text * t1 = NULL;
+                            t1 = (rt_text *)clar_fn_rtTextNew();
+                            clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
+                            cv___store1 = t1;
+                            clar_fn_rtTextRelease((void*)cv_t);
+                            cv_t = cv___store1;
+                            cv___store1 = 0;
+                            if (clar_fn_rtAdspReadInto(cv_i, cv_t) > 0) {
+                                clar_fn_clar_conn_fire_received(cv_i, cv_t);
+                            }
+                        }
+                    } else {
+                        if (clar_fn_rtConnDevAvail(cv_i) > 0) {
+                            clar_fn_rtTextRelease((void*)cv___store2);
+                            rt_text * t2 = NULL;
+                            t2 = (rt_text *)clar_fn_rtTextNew();
+                            clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_6));
+                            cv___store2 = t2;
+                            clar_fn_rtTextRelease((void*)cv_t);
+                            cv_t = cv___store2;
+                            cv___store2 = 0;
+                            cv_n = clar_fn_rtConnDevAvail(cv_i);
+                            cv_j = 0;
+                            while (1) {
+                                if (!((cv_j < cv_n))) break;
+                                clar_fn_rtTextAppendChar((void*)cv_t, (int32_t)(((uint8_t)(clar_fn_rtConnDevReadByte(cv_i)))));
+                                cv_j = CLAR_ADD32(cv_j, 1);
+                            }
+                            clar_fn_clar_conn_fire_received(cv_i, cv_t);
+                        }
+                    }
+                }
+            }
+        }
+        cv_i = CLAR_ADD32(cv_i, 1);
     }
-    cv_rtAtUp = 1;
-    return 0;
+    clar_fn_rtTextRelease((void*)cv_t);
+}
+
+static int32_t clar_fn_rtConnAlive(void) {
+    int32_t cv_i;
+    cv_i = 0;
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < 8))) break;
+        if ((((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] == 1) || (cv_rtConnPendOpened).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)]) || ((cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] != 0)) {
+            return 1;
+        }
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+    return clar_fn_rtTcpAlive();
     return 0;
 }
 
-static clar_str_255 clar_fn_rtAtRegMsg(int32_t cv_code) {
-    if (cv_code == -1027) {
-        return clar_lit_128;
-    }
-    return clar_lit_129;
-    return (clar_str_255){0};
+static int32_t clar_fn_rtConnDevAvail(int32_t cv_slot) {
+    return rt_ext_ConnHAvail(cv_slot);
+    return 0;
+}
+
+static int32_t clar_fn_rtConnDevReadByte(int32_t cv_slot) {
+    return rt_ext_ConnHReadByte(cv_slot);
+    return 0;
+}
+
+static int32_t clar_fn_rtConnDevWrite(int32_t cv_slot, void * cv_p, int32_t cv_n) {
+    return rt_ext_ConnHWrite(cv_slot, cv_p, cv_n);
+    return 0;
+}
+
+static void clar_fn_rtConnDevClose(int32_t cv_slot) {
+    rt_ext_ConnHClose(cv_slot);
+}
+
+static int32_t clar_fn_rtConnDevGone(int32_t cv_slot) {
+    return rt_ext_ConnHGone(cv_slot);
+    return 0;
 }
 
 static void clar_fn_rtSvcSetFailed(int32_t cv_slot, int32_t cv_code, const clar_str_255 *cv_msg) {
@@ -1559,6 +1883,11 @@ static void clar_fn_rtSvcSetFailed(int32_t cv_slot, int32_t cv_code, const clar_
         clar_fn_rtStrStore((void*)&((cv_rtSvcPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&((*cv_msg)));
     }
     cv_rtAtLastErr = cv_code;
+}
+
+static void clar_fn_rtAdspFailed(int32_t cv_slot) {
+    (cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
+    (cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
 }
 
 static void clar_fn_rtLsnSetFailed(int32_t cv_slot, int32_t cv_code, const clar_str_255 *cv_msg) {
@@ -1608,129 +1937,6 @@ static void clar_fn_rtAtAppendBytes(rt_text * cv_t, void * cv_p, int32_t cv_n) {
     }
 }
 
-static void clar_fn_rtSvcServe(int32_t cv_h, const clar_str_255 *cv_name, const clar_str_255 *cv_typ) {
-    int32_t cv_slot;
-    cv_slot = 0;
-    int32_t cv_e;
-    cv_e = 0;
-    int32_t cv_sock;
-    cv_sock = 0;
-    if (cv_h == 0) {
-        clar_fn_rtPanic(&(clar_lit_130));
-    }
-    cv_slot = CLAR_SUB32(cv_h, 1);
-    if ((cv_rtSvcState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] == 1) {
-        clar_fn_rtSvcSetFailed(cv_slot, -1, &(clar_lit_131));
-        return;
-    }
-    cv_e = clar_fn_rtAtEnsureUp();
-    if (cv_e != 0) {
-        clar_fn_rtSvcSetFailed(cv_slot, cv_e, &(clar_lit_132));
-        return;
-    }
-    cv_sock = clar_fn_rtAtDevAtpOpen();
-    if (cv_sock <= 0) {
-        clar_fn_rtSvcSetFailed(cv_slot, clar_fn_rtAtDevLastErr(), &(clar_lit_133));
-        return;
-    }
-    cv_e = clar_fn_rtAtDevRegister(&((*cv_name)), &((*cv_typ)), cv_sock);
-    if (cv_e != 0) {
-        clar_fn_rtAtDevAtpClose(cv_sock);
-        clar_str_255 t1;
-        t1 = clar_fn_rtAtRegMsg(cv_e);
-        clar_fn_rtSvcSetFailed(cv_slot, cv_e, &(t1));
-        return;
-    }
-    (cv_rtSvcSock).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = cv_sock;
-    clar_fn_rtStrStore((void*)&((cv_rtSvcName).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&((*cv_name)));
-    clar_fn_rtStrStore((void*)&((cv_rtSvcType).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&((*cv_typ)));
-    (cv_rtSvcState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 1;
-    (cv_rtSvcArmed).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 0;
-    cv_e = clar_fn_rtAtDevAtpArm(cv_slot, cv_sock);
-    if (cv_e != 0) {
-        clar_fn_rtSvcSetFailed(cv_slot, cv_e, &(clar_lit_134));
-    } else {
-        (cv_rtSvcArmed).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 1;
-    }
-}
-
-static void clar_fn_rtSvcReply(int32_t cv_h, int32_t cv_code, rt_text * cv_data) {
-    int32_t cv_slot;
-    cv_slot = 0;
-    int32_t cv_n;
-    cv_n = 0;
-    int32_t cv_e;
-    cv_e = 0;
-    void * cv_scratch;
-    cv_scratch = 0;
-    if (cv_h == 0) {
-        clar_fn_rtPanic(&(clar_lit_130));
-    }
-    cv_slot = CLAR_SUB32(cv_h, 1);
-    if (!((cv_rtSvcInHandler).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)])) {
-        clar_fn_rtPanic(&(clar_lit_135));
-    }
-    if ((cv_rtSvcReplied).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]) {
-        clar_fn_rtPanic(&(clar_lit_136));
-    }
-    (cv_rtSvcReplied).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 1;
-    cv_n = clar_fn_rtTextLen((void*)cv_data);
-    if (cv_n > 4624) {
-        clar_fn_rtSvcSetFailed(cv_slot, -3106, &(clar_lit_137));
-        clar_fn_rtAtDevAtpRespond(cv_slot, CLAR_NEG32(1), (void *)(intptr_t)(0), 0);
-        return;
-    }
-    if (cv_n == 0) {
-        cv_e = clar_fn_rtAtDevAtpRespond(cv_slot, cv_code, (void *)(intptr_t)(0), 0);
-        if (cv_e != 0) {
-            clar_fn_rtSvcSetFailed(cv_slot, cv_e, &(clar_lit_138));
-        }
-        return;
-    }
-    cv_scratch = clar_fn_rtAtTextToPtr(cv_data);
-    if (cv_scratch == (void *)(intptr_t)(0)) {
-        clar_fn_rtSvcSetFailed(cv_slot, -108, &(clar_lit_138));
-        clar_fn_rtAtDevAtpRespond(cv_slot, CLAR_NEG32(1), (void *)(intptr_t)(0), 0);
-        return;
-    }
-    cv_e = clar_fn_rtAtDevAtpRespond(cv_slot, cv_code, cv_scratch, cv_n);
-    rt_ext_SerDisposePtr(cv_scratch);
-    if (cv_e != 0) {
-        clar_fn_rtSvcSetFailed(cv_slot, cv_e, &(clar_lit_138));
-    }
-}
-
-static void clar_fn_rtSvcReplyStr(int32_t cv_h, int32_t cv_code, const clar_str_255 *cv_s) {
-    rt_text * t1 = NULL;
-    t1 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&((*cv_s)));
-    clar_fn_rtSvcReply(cv_h, cv_code, t1);
-    clar_fn_rtTextRelease(t1);
-}
-
-static void clar_fn_rtSvcStop(int32_t cv_h) {
-    int32_t cv_slot;
-    cv_slot = 0;
-    if (cv_h == 0) {
-        clar_fn_rtPanic(&(clar_lit_130));
-    }
-    cv_slot = CLAR_SUB32(cv_h, 1);
-    if ((cv_rtSvcState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] != 1) {
-        return;
-    }
-    clar_str_255 t1;
-    t1 = (cv_rtSvcName).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)];
-    clar_str_255 t2;
-    t2 = (cv_rtSvcType).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)];
-    clar_fn_rtAtDevRemove(&(t1), &(t2));
-    clar_fn_rtAtDevAtpClose((cv_rtSvcSock).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]);
-    (cv_rtSvcState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 0;
-    (cv_rtSvcArmed).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 0;
-    (cv_rtSvcSock).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 0;
-    clar_fn_rtStrStore((void*)&((cv_rtSvcName).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
-    clar_fn_rtStrStore((void*)&((cv_rtSvcType).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
-}
-
 static void clar_fn_rtLsnStop(int32_t cv_h) {
     int32_t cv_slot;
     cv_slot = 0;
@@ -1754,6 +1960,96 @@ static void clar_fn_rtLsnStop(int32_t cv_h) {
     (cv_rtLsnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 0;
     clar_fn_rtStrStore((void*)&((cv_rtLsnName).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
     clar_fn_rtStrStore((void*)&((cv_rtLsnType).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
+}
+
+static int32_t clar_fn_rtAdspPoll(int32_t cv_slot) {
+    int32_t cv_e;
+    cv_e = 0;
+    int32_t cv_addr;
+    cv_addr = 0;
+    if ((cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 1) {
+        if (!(clar_fn_rtAtDevLookupDone(CLAR_ADD32(cv_slot, 2)))) {
+            return 0;
+        }
+        if (clar_fn_rtAtDevLookupCount(CLAR_ADD32(cv_slot, 2)) == 0) {
+            clar_fn_rtAdspFailed(cv_slot);
+            return -1025;
+        }
+        cv_addr = clar_fn_rtAtDevLookupAddr(CLAR_ADD32(cv_slot, 2), 0);
+        cv_e = clar_fn_rtAdspDevOpen(cv_slot, cv_addr);
+        if (cv_e != 0) {
+            cv_rtAtLastErr = cv_e;
+            clar_fn_rtAdspFailed(cv_slot);
+            return cv_e;
+        }
+        (cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 2;
+        return 0;
+    }
+    if ((cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 2) {
+        cv_e = clar_fn_rtAdspDevOpenPoll(cv_slot);
+        if (cv_e == 1) {
+            (cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 3;
+            return 1;
+        }
+        if (cv_e < 0) {
+            cv_rtAtLastErr = cv_e;
+            clar_fn_rtAdspFailed(cv_slot);
+            return cv_e;
+        }
+        return 0;
+    }
+    return 0;
+    return 0;
+}
+
+static int32_t clar_fn_rtAdspAvail(int32_t cv_slot) {
+    return clar_fn_rtAdspDevAvail(cv_slot);
+    return 0;
+}
+
+static int32_t clar_fn_rtAdspReadInto(int32_t cv_slot, rt_text * cv_t) {
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_got;
+    cv_got = 0;
+    void * cv_scratch;
+    cv_scratch = 0;
+    cv_n = clar_fn_rtAdspDevAvail(cv_slot);
+    if (cv_n <= 0) {
+        return 0;
+    }
+    if (cv_n > 1024) {
+        cv_n = 1024;
+    }
+    cv_scratch = rt_ext_SerNewPtr(cv_n);
+    if (cv_scratch == (void *)(intptr_t)(0)) {
+        cv_rtAtLastErr = -108;
+        return 0;
+    }
+    cv_got = clar_fn_rtAdspDevRead(cv_slot, cv_scratch, cv_n);
+    if (cv_got < 0) {
+        cv_rtAtLastErr = cv_got;
+        cv_got = 0;
+    }
+    clar_fn_rtAtAppendBytes(cv_t, cv_scratch, cv_got);
+    rt_ext_SerDisposePtr(cv_scratch);
+    return cv_got;
+    return 0;
+}
+
+static int32_t clar_fn_rtAdspWrite(int32_t cv_slot, void * cv_p, int32_t cv_n) {
+    return clar_fn_rtAdspDevWrite(cv_slot, cv_p, cv_n);
+    return 0;
+}
+
+static void clar_fn_rtAdspClose(int32_t cv_slot) {
+    clar_fn_rtAdspDevClose(cv_slot);
+    clar_fn_rtAdspFailed(cv_slot);
+}
+
+static int32_t clar_fn_rtAdspGone(int32_t cv_slot) {
+    return clar_fn_rtAdspDevGone(cv_slot);
+    return 0;
 }
 
 static void clar_fn_rtAtalkPump(void) {
@@ -1950,42 +2246,6 @@ static void * clar_fn_rtAtCReqBuf(int32_t cv_slot) {
     return 0;
 }
 
-static int32_t clar_fn_rtAtDevUp(void) {
-    int32_t cv_e;
-    cv_e = 0;
-    cv_e = rt_ext_AtalkHUp();
-    if (cv_e != 0) {
-        cv_rtAtCLastErr = cv_e;
-        return cv_e;
-    }
-    if (!(cv_rtAtCBufsOk)) {
-        if (cv_rtAtCReqBuf0 == (void *)(intptr_t)(0)) {
-            cv_rtAtCReqBuf0 = rt_ext_SerNewPtr(578);
-        }
-        if (cv_rtAtCReqBuf1 == (void *)(intptr_t)(0)) {
-            cv_rtAtCReqBuf1 = rt_ext_SerNewPtr(578);
-        }
-        if (cv_rtAtCRespBuf == (void *)(intptr_t)(0)) {
-            cv_rtAtCRespBuf = rt_ext_SerNewPtr(4624);
-        }
-        if (cv_rtAtCNameBuf == (void *)(intptr_t)(0)) {
-            cv_rtAtCNameBuf = rt_ext_SerNewPtr(68);
-        }
-        if ((((cv_rtAtCReqBuf0 == (void *)(intptr_t)(0)) || (cv_rtAtCReqBuf1 == (void *)(intptr_t)(0))) || (cv_rtAtCRespBuf == (void *)(intptr_t)(0))) || (cv_rtAtCNameBuf == (void *)(intptr_t)(0))) {
-            cv_rtAtCLastErr = CLAR_NEG32(108);
-            return CLAR_NEG32(108);
-        }
-        cv_rtAtCBufsOk = 1;
-    }
-    return 0;
-    return 0;
-}
-
-static int32_t clar_fn_rtAtDevRegister(const clar_str_255 *cv_obj, const clar_str_255 *cv_typ, int32_t cv_sock) {
-    return rt_ext_AtalkHRegister((const uint8_t*)&((*cv_obj)), (const uint8_t*)&((*cv_typ)), cv_sock);
-    return 0;
-}
-
 static int32_t clar_fn_rtAtDevRemove(const clar_str_255 *cv_obj, const clar_str_255 *cv_typ) {
     return rt_ext_AtalkHRemove((const uint8_t*)&((*cv_obj)), (const uint8_t*)&((*cv_typ)));
     return 0;
@@ -2028,22 +2288,6 @@ static clar_str_255 clar_fn_rtAtDevLookupName(int32_t cv_lk, int32_t cv_i) {
     }
     return cv_s;
     return (clar_str_255){0};
-}
-
-static int32_t clar_fn_rtAtDevAtpOpen(void) {
-    int32_t cv_sock;
-    cv_sock = 0;
-    cv_sock = rt_ext_AtalkHAtpOpen();
-    if (cv_sock <= 0) {
-        cv_rtAtCLastErr = cv_sock;
-        return 0;
-    }
-    return cv_sock;
-    return 0;
-}
-
-static void clar_fn_rtAtDevAtpClose(int32_t cv_sock) {
-    rt_ext_AtalkHAtpClose(cv_sock);
 }
 
 static int32_t clar_fn_rtAtDevAtpArm(int32_t cv_slot, int32_t cv_sock) {
@@ -2099,15 +2343,43 @@ static int32_t clar_fn_rtAtDevAtpRespBusy(int32_t cv_slot) {
     return 0;
 }
 
-static int32_t clar_fn_rtAtDevLastErr(void) {
-    return cv_rtAtCLastErr;
-    return 0;
-}
-
 static void clar_fn_rtAtDevPoll(void) {
     if (cv_rtAtCBufsOk) {
         rt_ext_AtalkHPoll();
     }
+}
+
+static int32_t clar_fn_rtAdspDevOpen(int32_t cv_slot, int32_t cv_addr) {
+    return -1273;
+    return 0;
+}
+
+static int32_t clar_fn_rtAdspDevOpenPoll(int32_t cv_slot) {
+    return -1273;
+    return 0;
+}
+
+static int32_t clar_fn_rtAdspDevAvail(int32_t cv_slot) {
+    return 0;
+    return 0;
+}
+
+static int32_t clar_fn_rtAdspDevRead(int32_t cv_slot, void * cv_p, int32_t cv_n) {
+    return 0;
+    return 0;
+}
+
+static int32_t clar_fn_rtAdspDevWrite(int32_t cv_slot, void * cv_p, int32_t cv_n) {
+    return -1273;
+    return 0;
+}
+
+static void clar_fn_rtAdspDevClose(int32_t cv_slot) {
+}
+
+static int32_t clar_fn_rtAdspDevGone(int32_t cv_slot) {
+    return 1;
+    return 0;
 }
 
 static int32_t clar_fn_rtLsnDevListen(int32_t cv_slot) {
@@ -2133,9 +2405,203 @@ static int32_t clar_fn_rtLsnDevDeny(int32_t cv_slot) {
 static void clar_fn_rtLsnDevRemove(int32_t cv_slot) {
 }
 
+static int32_t clar_fn_rtTcpEnsureUp(void) {
+    int32_t cv_e;
+    cv_e = 0;
+    if (cv_rtTcpUp) {
+        return 0;
+    }
+    cv_e = clar_fn_rtTcpDevInit();
+    if (cv_e != 0) {
+        cv_rtTcpLastErr = cv_e;
+        return cv_e;
+    }
+    cv_rtTcpUp = 1;
+    return 0;
+    return 0;
+}
+
 static int32_t clar_fn_rtTcpFree(int32_t cv_slot) {
     return ((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 0);
     return 0;
+}
+
+static void clar_fn_rtTcpRelease(int32_t cv_slot) {
+    clar_fn_rtTcpDevRelease(cv_slot);
+    (cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
+    clar_fn_rtTextClear((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]);
+    if ((cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 3) {
+        (cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
+    }
+}
+
+static void clar_fn_rtTcpDropFront(int32_t cv_slot, int32_t cv_n) {
+    rt_text * cv_rest;
+    cv_rest = (rt_text *)clar_fn_rtTextNew();
+    int32_t cv_i;
+    cv_i = 0;
+    cv_i = cv_n;
+    while (1) {
+        if (!((cv_i < clar_fn_rtTextLen((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)])))) break;
+        clar_fn_rtTextAppendChar((void*)cv_rest, (int32_t)(clar_fn_rtTextIndex((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)], (int32_t)(cv_i))));
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+    clar_fn_rtTextClear((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]);
+    clar_fn_rtTextAppendText((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)], (void*)cv_rest);
+    clar_fn_rtTextRelease((void*)cv_rest);
+}
+
+static int32_t clar_fn_rtTcpKick(int32_t cv_slot) {
+    int32_t cv_n;
+    cv_n = 0;
+    void * cv_scratch;
+    cv_scratch = 0;
+    int32_t cv_e;
+    cv_e = 0;
+    if (clar_fn_rtTcpDevSendBusy(cv_slot) || (clar_fn_rtTextLen((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]) == 0)) {
+        return 0;
+    }
+    cv_n = clar_fn_rtTextLen((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]);
+    if (cv_n > 4096) {
+        cv_n = 4096;
+    }
+    cv_scratch = clar_fn_rtAtTextToPtr((cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]);
+    if (cv_scratch == (void *)(intptr_t)(0)) {
+        return -108;
+    }
+    cv_e = clar_fn_rtTcpDevSend(cv_slot, cv_scratch, cv_n);
+    rt_ext_SerDisposePtr(cv_scratch);
+    if (cv_e != 0) {
+        return cv_e;
+    }
+    clar_fn_rtTcpDropFront(cv_slot, cv_n);
+    return 0;
+    return 0;
+}
+
+static int32_t clar_fn_rtTcpWrite(int32_t cv_slot, void * cv_p, int32_t cv_n) {
+    clar_fn_rtAtAppendBytes((cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)], cv_p, cv_n);
+    return clar_fn_rtTcpKick(cv_slot);
+    return 0;
+}
+
+static void clar_fn_rtTcpStep(int32_t cv_slot) {
+    if ((((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 3) && (clar_fn_rtTextLen((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]) == 0)) && (!(clar_fn_rtTcpDevSendBusy(cv_slot)))) {
+        clar_fn_rtTcpDevClose(cv_slot);
+    }
+}
+
+static void clar_fn_rtTcpPollConn(int32_t cv_slot) {
+    int32_t cv_ev;
+    cv_ev = 0;
+    rt_text * cv_t;
+    cv_t = (rt_text *)clar_fn_rtTextNew();
+    int32_t cv_e;
+    cv_e = 0;
+    rt_text * cv___store4;
+    cv___store4 = NULL;
+    if ((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 0) {
+        clar_fn_rtTextRelease((void*)cv_t);
+        return;
+    }
+    cv_ev = clar_fn_rtTcpDevPoll(cv_slot);
+    if (cv_ev == 0) {
+        clar_fn_rtTcpStep(cv_slot);
+        clar_fn_rtTextRelease((void*)cv_t);
+        return;
+    }
+    if ((((cv_ev != 1) && (cv_ev != 2)) && (cv_ev != 3)) && (cv_ev != 4)) {
+        clar_fn_rtTcpRelease(cv_slot);
+        clar_fn_rtConnSetFailed(cv_slot, cv_ev, &(clar_lit_124));
+        clar_fn_rtTextRelease((void*)cv_t);
+        return;
+    }
+    if (cv_ev == 1) {
+        (cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 2;
+        (cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 1;
+        clar_fn_clar_conn_fire_opened(cv_slot);
+        clar_fn_rtTextRelease((void*)cv_t);
+        return;
+    }
+    if (cv_ev == 4) {
+        cv_e = clar_fn_rtTcpKick(cv_slot);
+        if ((cv_e != 0) && ((cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 0)) {
+            (cv_rtConnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = cv_e;
+            clar_fn_rtStrStore((void*)&((cv_rtConnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]), 255, (void*)(const uint8_t*)&(clar_lit_127));
+        }
+        clar_fn_rtTcpStep(cv_slot);
+        clar_fn_rtTextRelease((void*)cv_t);
+        return;
+    }
+    if (cv_ev == 2) {
+        if ((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 2) {
+            clar_fn_rtTextRelease((void*)cv___store4);
+            rt_text * t1 = NULL;
+            t1 = (rt_text *)clar_fn_rtTextNew();
+            clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
+            cv___store4 = t1;
+            clar_fn_rtTextRelease((void*)cv_t);
+            cv_t = cv___store4;
+            cv___store4 = 0;
+            clar_fn_rtAtAppendBytes(cv_t, clar_fn_rtTcpDevRecvPtr(cv_slot), clar_fn_rtTcpDevRecvLen(cv_slot));
+            clar_fn_rtTcpDevRecvArm(cv_slot);
+            clar_fn_clar_conn_fire_received(cv_slot, cv_t);
+        } else {
+            clar_fn_rtTcpDevRecvArm(cv_slot);
+        }
+        clar_fn_rtTextRelease((void*)cv_t);
+        return;
+    }
+    if ((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 2) {
+        clar_fn_rtTcpRelease(cv_slot);
+        (cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
+        clar_fn_clar_conn_fire_closed(cv_slot);
+    } else {
+        clar_fn_rtTcpRelease(cv_slot);
+    }
+    clar_fn_rtTextRelease((void*)cv_t);
+}
+
+static void clar_fn_rtLsnListen(int32_t cv_h, int32_t cv_port) {
+    int32_t cv_slot;
+    cv_slot = 0;
+    int32_t cv_e;
+    cv_e = 0;
+    if (cv_h == 0) {
+        clar_fn_rtPanic(&(clar_lit_147));
+    }
+    cv_slot = CLAR_SUB32(cv_h, 1);
+    if ((cv_rtLsnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] == 1) {
+        clar_fn_rtLsnSetFailed(cv_slot, -1, &(clar_lit_148));
+        return;
+    }
+    if ((cv_port < 1) || (cv_port > 65535)) {
+        clar_fn_rtLsnSetFailed(cv_slot, -2, &(clar_lit_154));
+        return;
+    }
+    cv_e = clar_fn_rtTcpEnsureUp();
+    if (cv_e != 0) {
+        clar_fn_rtLsnSetFailed(cv_slot, cv_e, &(clar_lit_155));
+        return;
+    }
+    cv_e = clar_fn_rtTcpDevLsnOpen(cv_slot, cv_port);
+    if (cv_e != 0) {
+        clar_str_255 t1;
+        t1 = clar_fn_rtTcpListenMsg(cv_e);
+        clar_fn_rtLsnSetFailed(cv_slot, cv_e, &(t1));
+        return;
+    }
+    (cv_rtLsnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 3;
+    (cv_rtLsnPort).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = cv_port;
+    (cv_rtLsnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 2)] = 1;
+}
+
+static clar_str_255 clar_fn_rtTcpListenMsg(int32_t cv_code) {
+    if ((cv_code == CLAR_NEG32(23017)) || (cv_code == 48)) {
+        return clar_lit_156;
+    }
+    return clar_lit_150;
+    return (clar_str_255){0};
 }
 
 static void clar_fn_rtTcpLsnStop(int32_t cv_slot) {
@@ -2199,6 +2665,65 @@ static void clar_fn_rtTcpPump(void) {
     }
 }
 
+static int32_t clar_fn_rtTcpAlive(void) {
+    int32_t cv_i;
+    cv_i = 0;
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < 8))) break;
+        if ((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_i), 8)] != 0) {
+            return 1;
+        }
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
+    return 0;
+    return 0;
+}
+
+static int32_t clar_fn_rtTcpDevInit(void) {
+    return rt_ext_TcpHInit();
+    return 0;
+}
+
+static int32_t clar_fn_rtTcpDevPoll(int32_t cv_slot) {
+    return rt_ext_TcpHPoll(cv_slot);
+    return 0;
+}
+
+static int32_t clar_fn_rtTcpDevRecvLen(int32_t cv_slot) {
+    return rt_ext_TcpHRecvLen(cv_slot);
+    return 0;
+}
+
+static void * clar_fn_rtTcpDevRecvPtr(int32_t cv_slot) {
+    return rt_ext_TcpHRecvPtr(cv_slot);
+    return 0;
+}
+
+static int32_t clar_fn_rtTcpDevRecvArm(int32_t cv_slot) {
+    return rt_ext_TcpHRecvArm(cv_slot);
+    return 0;
+}
+
+static int32_t clar_fn_rtTcpDevSendBusy(int32_t cv_slot) {
+    return (rt_ext_TcpHSendBusy(cv_slot) != 0);
+    return 0;
+}
+
+static int32_t clar_fn_rtTcpDevSend(int32_t cv_slot, void * cv_p, int32_t cv_n) {
+    return rt_ext_TcpHSend(cv_slot, cv_p, cv_n);
+    return 0;
+}
+
+static int32_t clar_fn_rtTcpDevClose(int32_t cv_slot) {
+    return rt_ext_TcpHClose(cv_slot);
+    return 0;
+}
+
+static void clar_fn_rtTcpDevRelease(int32_t cv_slot) {
+    rt_ext_TcpHRelease(cv_slot);
+}
+
 static int32_t clar_fn_rtTcpDevLsnOpen(int32_t cv_lsn, int32_t cv_port) {
     return rt_ext_TcpHLsnOpen(cv_lsn, cv_port);
     return 0;
@@ -2223,30 +2748,149 @@ static void clar_fn_rtTcpDevLsnClose(int32_t cv_lsn) {
 }
 
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
-    clar_fn_rtSvcServe(cv_clock, &(clar_lit_157), &(clar_lit_158));
+    clar_fn_rtLsnListen(cv_lsn, 6502);
+    rt_log((const uint8_t*)&(clar_lit_157));
 }
 
-static void clar_fn_handler_clock_request(int32_t cv_op, rt_text * cv_req, int32_t cv_from) {
-    if (cv_op == 1) {
-        clar_fn_rtSvcReplyStr(cv_clock, 0, &(clar_lit_159));
+static void clar_fn_handler_lsn_accepted(int32_t cv_c) {
+    cv_client = cv_c;
+    clar_fn_rtConnSendStr(cv_client, &(clar_lit_158));
+}
+
+static void clar_fn_handler_lsn_failed(clar_rec_Err cv_err) {
+    clar_str_255 t1;
+    t1 = clar_fn_rtIntToStr((int32_t)((cv_err).code));
+    clar_str_255 t2;
+    clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(clar_lit_159), (void*)(const uint8_t*)&(t1));
+    clar_str_255 t3;
+    clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(t2), (void*)(const uint8_t*)&(clar_lit_47));
+    clar_str_255 t4;
+    clar_fn_rtStrConcat((void*)&t4, (void*)(const uint8_t*)&(t3), (void*)(const uint8_t*)&((cv_err).message));
+    rt_log((const uint8_t*)&(t4));
+}
+
+static void clar_fn_handler_client_received(rt_text * cv_data) {
+    clar_fn_rtConnSendText(cv_client, cv_data);
+}
+
+static void clar_fn_handler_client_closed(void) {
+    clar_fn_rtLsnStop(cv_lsn);
+}
+
+static void clar_fn_clar_conn_fire_opened(int32_t cv_slot) {
+    if (cv_slot == 0) {
     } else {
-        if (cv_op == 2) {
-            clar_fn_rtSvcReply(cv_clock, 0, cv_req);
+        if (cv_slot == 1) {
         } else {
-            clar_fn_rtSvcReplyStr(cv_clock, CLAR_NEG32(1), &(clar_lit_6));
+            if (cv_slot == 2) {
+            } else {
+                if (cv_slot == 3) {
+                } else {
+                    if (cv_slot == 4) {
+                    } else {
+                        if (cv_slot == 5) {
+                        } else {
+                            if (cv_slot == 6) {
+                            } else {
+                                if (cv_slot == 7) {
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-static void clar_fn_handler_clock_failed(clar_rec_Err cv_err) {
-    clar_str_255 t1;
-    clar_fn_rtStrConcat((void*)&t1, (void*)(const uint8_t*)&(clar_lit_160), (void*)(const uint8_t*)&((cv_err).message));
-    rt_log((const uint8_t*)&(t1));
-    clar_fn_rtSvcStop(cv_clock);
+static void clar_fn_clar_conn_fire_received(int32_t cv_slot, rt_text * cv_data) {
+    if (cv_slot == 0) {
+        clar_fn_handler_client_received(cv_data);
+    } else {
+        if (cv_slot == 1) {
+        } else {
+            if (cv_slot == 2) {
+            } else {
+                if (cv_slot == 3) {
+                } else {
+                    if (cv_slot == 4) {
+                    } else {
+                        if (cv_slot == 5) {
+                        } else {
+                            if (cv_slot == 6) {
+                            } else {
+                                if (cv_slot == 7) {
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void clar_fn_clar_conn_fire_closed(int32_t cv_slot) {
+    if (cv_slot == 0) {
+        clar_fn_handler_client_closed();
+    } else {
+        if (cv_slot == 1) {
+        } else {
+            if (cv_slot == 2) {
+            } else {
+                if (cv_slot == 3) {
+                } else {
+                    if (cv_slot == 4) {
+                    } else {
+                        if (cv_slot == 5) {
+                        } else {
+                            if (cv_slot == 6) {
+                            } else {
+                                if (cv_slot == 7) {
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void clar_fn_clar_conn_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg) {
+    if (cv_slot == 0) {
+    } else {
+        if (cv_slot == 1) {
+        } else {
+            if (cv_slot == 2) {
+            } else {
+                if (cv_slot == 3) {
+                } else {
+                    if (cv_slot == 4) {
+                    } else {
+                        if (cv_slot == 5) {
+                        } else {
+                            if (cv_slot == 6) {
+                            } else {
+                                if (cv_slot == 7) {
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void clar_fn_clar_conn_pump(void) {
+    clar_fn_rtConnPump();
+    clar_fn_rtAtalkPump();
 }
 
 static void clar_fn_clar_lsn_fire_accepted(int32_t cv_slot, int32_t cv_c) {
     if (cv_slot == 0) {
+        clar_fn_handler_lsn_accepted(cv_c);
     } else {
         if (cv_slot == 1) {
         }
@@ -2254,7 +2898,13 @@ static void clar_fn_clar_lsn_fire_accepted(int32_t cv_slot, int32_t cv_c) {
 }
 
 static void clar_fn_clar_lsn_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg) {
+    clar_rec_Err cv_err;
+    cv_err.code = 0;
+    cv_err.message = (clar_str_255){0};
     if (cv_slot == 0) {
+        (cv_err).code = cv_code;
+        clar_fn_rtStrStore((void*)&((cv_err).message), 255, (void*)(const uint8_t*)&((*(const clar_str_255 *)(cv_msg))));
+        clar_fn_handler_lsn_failed(cv_err);
     } else {
         if (cv_slot == 1) {
         }
@@ -2287,7 +2937,6 @@ static void clar_fn_clar_brs_fire_failed(int32_t cv_slot, int32_t cv_code, void 
 
 static void clar_fn_clar_svc_fire_request(int32_t cv_slot, int32_t cv_op, rt_text * cv_req, int32_t cv_from) {
     if (cv_slot == 0) {
-        clar_fn_handler_clock_request(cv_op, cv_req, cv_from);
     } else {
         if (cv_slot == 1) {
         }
@@ -2295,13 +2944,7 @@ static void clar_fn_clar_svc_fire_request(int32_t cv_slot, int32_t cv_op, rt_tex
 }
 
 static void clar_fn_clar_svc_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg) {
-    clar_rec_Err cv_err;
-    cv_err.code = 0;
-    cv_err.message = (clar_str_255){0};
     if (cv_slot == 0) {
-        (cv_err).code = cv_code;
-        clar_fn_rtStrStore((void*)&((cv_err).message), 255, (void*)(const uint8_t*)&((*(const clar_str_255 *)(cv_msg))));
-        clar_fn_handler_clock_failed(cv_err);
     } else {
         if (cv_slot == 1) {
         }
@@ -2309,32 +2952,32 @@ static void clar_fn_clar_svc_fire_failed(int32_t cv_slot, int32_t cv_code, void 
 }
 
 static void clar_fn_clar_ui_fire_winevent(int32_t cv_winIdx, void * cv_inst, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
-    rt_log((const uint8_t*)&(clar_lit_161));
+    rt_log((const uint8_t*)&(clar_lit_160));
     rt_quit((int32_t)(1));
 }
 
 static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
-    rt_log((const uint8_t*)&(clar_lit_162));
+    rt_log((const uint8_t*)&(clar_lit_161));
     rt_quit((int32_t)(1));
 }
 
 static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil) {
-    rt_log((const uint8_t*)&(clar_lit_163));
+    rt_log((const uint8_t*)&(clar_lit_162));
     rt_quit((int32_t)(1));
 }
 
 static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
-    rt_log((const uint8_t*)&(clar_lit_164));
+    rt_log((const uint8_t*)&(clar_lit_163));
     rt_quit((int32_t)(1));
 }
 
 static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) {
-    rt_log((const uint8_t*)&(clar_lit_165));
+    rt_log((const uint8_t*)&(clar_lit_164));
     rt_quit((int32_t)(1));
 }
 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
-    rt_log((const uint8_t*)&(clar_lit_166));
+    rt_log((const uint8_t*)&(clar_lit_165));
     rt_quit((int32_t)(1));
     return 0;
     return 0;
@@ -2351,7 +2994,8 @@ int main(int argc, char **argv) {
     rt_register_cleanup(cl_free_globals);
     rt_args_init(argc, argv);
     clar_fn_handler_App_startCLI(rt_args_list());
-    while (clar_fn_rtAtalkAlive()) {
+    while (clar_fn_rtConnAlive() || clar_fn_rtAtalkAlive()) {
+        clar_fn_rtConnPump();
         clar_fn_rtAtalkPump();
         rt_ext_ConnHIdle(20);
     }
