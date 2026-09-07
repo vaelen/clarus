@@ -160,7 +160,7 @@ var lowConnSlotOf: map of int
 // lowConnHandlerFn maps "<slot>|<event>" (event one of opened/received/
 // closed/failed) to the interned C name of that slot's minted handler
 // IRFunc -- absent (map default -1) when no `on <var>.<event>` handler
-// was declared for that slot, which lowSynthConnFireSimple/Received/
+// was declared for that slot, which lowSynthFireSimple/ConnFireReceived/
 // Failed (below) read as "no-op arm", per the brief's own rule
 // ("a slot with no handler for an event is a no-op").
 var lowConnHandlerFn: map of int
@@ -7771,7 +7771,7 @@ func lowSynthAppLog() {
 //
 // The three lowSynthConnFireXxx builders below build clar_conn_fire_
 // opened/received/closed/failed (opened and closed share one --
-// lowSynthConnFireSimple, parameterized by event key and C name) -- the exact extern names conn.cla
+// lowSynthFireSimple, parameterized by event key and C name) -- the exact extern names conn.cla
 // already declares (Task 4) and rtConnPump calls -- as ordinary IRFuncs,
 // following lowSynthFireWinEvent's own if-chain-over-index shape
 // (lower.cla, above): one arm per SLOT (0..3, matching conn.cla's own
@@ -7806,11 +7806,29 @@ func lowSynthAppLog() {
 // extern-prototype pass route the call to `clar_fn_NAME` instead of a
 // nonexistent `rt_ext_NAME` shim.
 
-// lowSynthConnFireSimple builds clar_conn_fire_<eventKey>(slot: int) for
-// the two argument-less events (opened/closed) -- compiler-cleanup folded
-// the two former copies, which differed only in the event-key and C-name
-// strings. Received/Failed carry extra params and stay separate.
-func lowSynthConnFireSimple(eventKey: string, cName: string) {
+// lowHandlerFnFor reads the per-kind handler map: "conn" is
+// lowConnHandlerFn (8 slots), "lsn"/"brs"/"svc" the three AppleTalk maps
+// (2 slots each). MacTCP phase Task 1: the four former builders
+// (lowSynthConnFire{Simple,Failed}, lowSynthAtalkFire{Simple,Failed})
+// differed only in this lookup and the slot count.
+func lowHandlerFnFor(kind: string, slot: int, event: string): int {
+    if kind == "conn" {
+        return lowConnHandlerFn.get(numToStr(slot) + "|" + event, -1)
+    }
+    if kind == "lsn" {
+        return lowLsnHandlerFn.get(numToStr(slot) + "|" + event, -1)
+    }
+    if kind == "brs" {
+        return lowBrsHandlerFn.get(numToStr(slot) + "|" + event, -1)
+    }
+    return lowSvcHandlerFn.get(numToStr(slot) + "|" + event, -1)
+}
+
+// lowSynthFireSimple builds clar_<kind>_fire_<eventKey>(slot: int) for
+// the argument-less events -- conn's opened/closed over 8 slots and the
+// AppleTalk browser's done over 2. Received/Failed carry extra params
+// and stay separate.
+func lowSynthFireSimple(kind: string, slots: int, eventKey: string, cName: string) {
     var paramsHead: int
     var conds: list of int
     var bodies: list of int
@@ -7822,8 +7840,8 @@ func lowSynthConnFireSimple(eventKey: string, cName: string) {
     paramsHead = newIRLocal(intern("slot"), irIntT)
 
     i = 0
-    while i < 8 {
-        fnName = lowConnHandlerFn.get(numToStr(i) + "|" + eventKey, -1)
+    while i < slots {
+        fnName = lowHandlerFnFor(kind, i, eventKey)
         conds.add(lowSynthEqInt("slot", i))
         if fnName != -1 {
             bodies.add(newIRExprStmt(newIRCallFn(fnName, -1, irVoidT)))
@@ -7873,7 +7891,7 @@ func lowSynthConnFireReceived() {
     shakeAddRoot(fnameIdx)
 }
 
-// lowSynthConnFireFailed builds clar_conn_fire_failed(slot: int, code:
+// lowSynthFireFailed builds clar_<kind>_fire_failed(slot: int, code:
 // int, msg: string) -- the one dispatcher that needs a scratch local: the
 // handler's own `err: error` param (Ch3's `{code, message}` record,
 // ErrTIndex/irErrT) has to be ASSEMBLED from the two scalar params, since
@@ -7903,7 +7921,7 @@ func lowSynthConnFireReceived() {
 // copy it out" -- exactly clar_ui_fire_launchdoc's own `path: ptr` ->
 // `string` marshaling one section up (lowSynthLaunchDoc), the identical
 // shape reused here for `msg`.
-func lowSynthConnFireFailed() {
+func lowSynthFireFailed(kind: string, slots: int, cName: string) {
     var paramsHead: int
     var paramsTail: int
     var conds: list of int
@@ -7928,8 +7946,8 @@ func lowSynthConnFireFailed() {
     // nothing). Declare it only when some slot actually has a handler.
     anyFailed = false
     i = 0
-    while i < 8 {
-        if lowConnHandlerFn.has(numToStr(i) + "|failed") {
+    while i < slots {
+        if lowHandlerFnFor(kind, i, "failed") != -1 {
             anyFailed = true
         }
         i = i + 1
@@ -7942,9 +7960,9 @@ func lowSynthConnFireFailed() {
     }
 
     i = 0
-    while i < 8 {
+    while i < slots {
         body = -1
-        fnName = lowConnHandlerFn.get(numToStr(i) + "|failed", -1)
+        fnName = lowHandlerFnFor(kind, i, "failed")
         if fnName != -1 {
             setCode = lowStoreStmt(newIRFieldRef(newIRVarRef(intern("err"), false, irErrT), intern("code"), irIntT), lowSynthIntRef("code"), irIntT)
             setMsg = lowStoreStmt(newIRFieldRef(newIRVarRef(intern("err"), false, irErrT), intern("message"), irStrType(255)), newIRIntr(IUiValueAtPtr(), lowSynthPtrRef("msg"), irStrType(255)), irStrType(255))
@@ -7959,7 +7977,7 @@ func lowSynthConnFireFailed() {
     }
 
     chain = lowSynthFoldIfChain(conds, bodies, -1)
-    fnameIdx = intern("clar_conn_fire_failed")
+    fnameIdx = intern(cName)
     newIRFunc(fnameIdx, paramsHead, irVoidT, lowLocalsHead, chain)
     shakeAddRoot(fnameIdx)
     lowLocalsHead = -1
@@ -8117,115 +8135,6 @@ func lowSynthEveryPump() {
 // must resolve in every 68k build, dormant program or not. (Task 8 had
 // `usesAtalk` alone, because the 68k lane carried no atalk.cla at all.)
 
-// lowAtalkHandlerFn reads the per-kind handler map ("lsn"/"brs"/"svc")
-// -- a plain three-way dispatch rather than passing the map itself, so
-// the five builders below stay parameterized by a kind string.
-func lowAtalkHandlerFn(kind: string, slot: int, event: string): int {
-    if kind == "lsn" {
-        return lowLsnHandlerFn.get(numToStr(slot) + "|" + event, -1)
-    }
-    if kind == "brs" {
-        return lowBrsHandlerFn.get(numToStr(slot) + "|" + event, -1)
-    }
-    return lowSvcHandlerFn.get(numToStr(slot) + "|" + event, -1)
-}
-
-// lowSynthAtalkFireSimple builds clar_brs_fire_done(slot: int) -- the one
-// argument-less AppleTalk event, lowSynthConnFireSimple's own shape.
-func lowSynthAtalkFireSimple(kind: string, eventKey: string, cName: string) {
-    var paramsHead: int
-    var conds: list of int
-    var bodies: list of int
-    var i: int
-    var fnName: int
-    var chain: int
-    var fnameIdx: int
-
-    paramsHead = newIRLocal(intern("slot"), irIntT)
-
-    i = 0
-    while i < 2 {
-        fnName = lowAtalkHandlerFn(kind, i, eventKey)
-        conds.add(lowSynthEqInt("slot", i))
-        if fnName != -1 {
-            bodies.add(newIRExprStmt(newIRCallFn(fnName, -1, irVoidT)))
-        } else {
-            bodies.add(-1)
-        }
-        i = i + 1
-    }
-
-    chain = lowSynthFoldIfChain(conds, bodies, -1)
-    fnameIdx = intern(cName)
-    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
-    shakeAddRoot(fnameIdx)
-}
-
-// lowSynthAtalkFireFailed builds the three `failed` dispatchers
-// (clar_lsn_/clar_brs_/clar_svc_fire_failed) -- byte-for-byte
-// lowSynthConnFireFailed's shape over 2 slots: `msg`'s param type is
-// `ptr` (fpCallExt passes a Str argument's address), IUiValueAtPtr
-// materializes it into the handler's `err: error` record, and the `err`
-// local is only declared when some slot actually has a handler.
-func lowSynthAtalkFireFailed(kind: string, cName: string) {
-    var paramsHead: int
-    var paramsTail: int
-    var conds: list of int
-    var bodies: list of int
-    var i: int
-    var fnName: int
-    var chain: int
-    var fnameIdx: int
-    var setCode: int
-    var setMsg: int
-    var callStmt: int
-    var body: int
-    var anyFailed: bool
-
-    paramsHead = newIRLocal(intern("slot"), irIntT)
-    paramsTail = irLocalListAppend(paramsHead, newIRLocal(intern("code"), irIntT))
-    irLocalListAppend(paramsTail, newIRLocal(intern("msg"), irPtrT))
-
-    anyFailed = false
-    i = 0
-    while i < 2 {
-        if lowAtalkHandlerFn(kind, i, "failed") != -1 {
-            anyFailed = true
-        }
-        i = i + 1
-    }
-
-    lowLocalsHead = -1
-    lowLocalsTail = -1
-    if anyFailed {
-        lowAddLocal(intern("err"), irErrT)
-    }
-
-    i = 0
-    while i < 2 {
-        body = -1
-        fnName = lowAtalkHandlerFn(kind, i, "failed")
-        if fnName != -1 {
-            setCode = lowStoreStmt(newIRFieldRef(newIRVarRef(intern("err"), false, irErrT), intern("code"), irIntT), lowSynthIntRef("code"), irIntT)
-            setMsg = lowStoreStmt(newIRFieldRef(newIRVarRef(intern("err"), false, irErrT), intern("message"), irStrType(255)), newIRIntr(IUiValueAtPtr(), lowSynthPtrRef("msg"), irStrType(255)), irStrType(255))
-            irStmtListAppend(setCode, setMsg)
-            callStmt = newIRExprStmt(newIRCallFn(fnName, newIRVarRef(intern("err"), false, irErrT), irVoidT))
-            irStmtListAppend(setMsg, callStmt)
-            body = setCode
-        }
-        conds.add(lowSynthEqInt("slot", i))
-        bodies.add(body)
-        i = i + 1
-    }
-
-    chain = lowSynthFoldIfChain(conds, bodies, -1)
-    fnameIdx = intern(cName)
-    newIRFunc(fnameIdx, paramsHead, irVoidT, lowLocalsHead, chain)
-    shakeAddRoot(fnameIdx)
-    lowLocalsHead = -1
-    lowLocalsTail = -1
-}
-
 // lowSynthLsnFireAccepted builds clar_lsn_fire_accepted(slot: int, c:
 // int) -- the handler's own `c: connection` param is an ordinary int
 // (lowTypeAt's TyConnection case), an already-open connection handle
@@ -8245,7 +8154,7 @@ func lowSynthLsnFireAccepted() {
 
     i = 0
     while i < 2 {
-        fnName = lowAtalkHandlerFn("lsn", i, "accepted")
+        fnName = lowHandlerFnFor("lsn", i, "accepted")
         conds.add(lowSynthEqInt("slot", i))
         if fnName != -1 {
             bodies.add(newIRExprStmt(newIRCallFn(fnName, lowSynthIntRef("c"), irVoidT)))
@@ -8263,7 +8172,7 @@ func lowSynthLsnFireAccepted() {
 
 // lowSynthBrsFireFound builds clar_brs_fire_found(slot: int, name: ptr,
 // addr: int) -- `name` takes the same `ptr` + IUiValueAtPtr treatment
-// lowSynthConnFireFailed's `msg` does (and clar_ui_fire_launchdoc's
+// lowSynthFireFailed's `msg` does (and clar_ui_fire_launchdoc's
 // `path` before it), passed inline as the handler's first argument
 // rather than through a scratch local; `addr` is an int-shaped inline
 // `address` and goes through untouched.
@@ -8284,7 +8193,7 @@ func lowSynthBrsFireFound() {
 
     i = 0
     while i < 2 {
-        fnName = lowAtalkHandlerFn("brs", i, "found")
+        fnName = lowHandlerFnFor("brs", i, "found")
         conds.add(lowSynthEqInt("slot", i))
         if fnName != -1 {
             argsHead = newIRIntr(IUiValueAtPtr(), lowSynthPtrRef("name"), irStrType(255))
@@ -8325,7 +8234,7 @@ func lowSynthSvcFireRequest() {
 
     i = 0
     while i < 2 {
-        fnName = lowAtalkHandlerFn("svc", i, "request")
+        fnName = lowHandlerFnFor("svc", i, "request")
         conds.add(lowSynthEqInt("slot", i))
         if fnName != -1 {
             argsHead = lowSynthIntRef("op")
@@ -8350,12 +8259,12 @@ func lowSynthSvcFireRequest() {
 // extern block.
 func lowSynthAtalkDispatchers() {
     lowSynthLsnFireAccepted()
-    lowSynthAtalkFireFailed("lsn", "clar_lsn_fire_failed")
+    lowSynthFireFailed("lsn", 2, "clar_lsn_fire_failed")
     lowSynthBrsFireFound()
-    lowSynthAtalkFireSimple("brs", "done", "clar_brs_fire_done")
-    lowSynthAtalkFireFailed("brs", "clar_brs_fire_failed")
+    lowSynthFireSimple("brs", 2, "done", "clar_brs_fire_done")
+    lowSynthFireFailed("brs", 2, "clar_brs_fire_failed")
     lowSynthSvcFireRequest()
-    lowSynthAtalkFireFailed("svc", "clar_svc_fire_failed")
+    lowSynthFireFailed("svc", 2, "clar_svc_fire_failed")
 }
 
 // lowSynthConnDispatchers is this section's one entry point (called from
@@ -8363,10 +8272,10 @@ func lowSynthAtalkDispatchers() {
 func lowSynthConnDispatchers() {
     // ORDER MATTERS: IR function order drives emission order, so keeping
     // opened/received/closed/failed pins every existing golden.
-    lowSynthConnFireSimple("opened", "clar_conn_fire_opened")
+    lowSynthFireSimple("conn", 8, "opened", "clar_conn_fire_opened")
     lowSynthConnFireReceived()
-    lowSynthConnFireSimple("closed", "clar_conn_fire_closed")
-    lowSynthConnFireFailed()
+    lowSynthFireSimple("conn", 8, "closed", "clar_conn_fire_closed")
+    lowSynthFireFailed("conn", 8, "clar_conn_fire_failed")
     lowSynthConnPump()
 }
 
