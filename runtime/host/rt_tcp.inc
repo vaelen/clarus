@@ -46,7 +46,10 @@
  * TcpTickCount extern (_TickCount, 0xA975). Private name because a
  * plain `TickCount` collides with toolbox/events.cla's identical
  * clause under `--rtbake --testapi`; the tick source is the same one
- * rt_ext_TickCount (rt_ext_host.inc, included by rt.c first) uses. */
+ * rt_ext_TickCount (rt_ext_host.inc, included by rt.c first) uses. The
+ * C-printer lane (runtime/mac/rt_ext_mac.inc) has no twin, which costs
+ * nothing: that lane cannot link tcp_c.cla's sixteen rt_ext_TcpH*
+ * entries either, so a cprint TCP build was never possible. */
 int32_t rt_ext_TcpTickCount(void) { return rt_ext_TickCount(); }
 
 #define RT_TCP_SLOTS 8

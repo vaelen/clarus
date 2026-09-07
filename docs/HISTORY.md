@@ -6689,10 +6689,11 @@ a deliberate decision, not an omission: the host lane could have
 resolved names for free, but a program must not pass on the host and
 fail on the Mac.
 
-**Tests.** One new group `tests/tcp/` (9 scripts: `connect`, `deny`,
-`every`, `examples`, `failed`, `lfailed`, `listen`, `runerr`,
-`waist68k` -- end-to-end Clarus programs against the `tcpdrive` peer
-tool, binding loopback ports only, so unlike `tests/atalk/` they need no
+**Tests.** One new group `tests/tcp/` (10 scripts: `bigsend`,
+`connect`, `deny`, `every`, `examples`, `failed`, `lfailed`, `listen`,
+`runerr`, `waist68k` -- end-to-end Clarus programs against the
+`tcpdrive` peer tool, binding loopback ports only, so unlike
+`tests/atalk/` they need no
 shared-medium lock and are safe under `make -j`),
 `tests/hostrt/tcp.sh` (the six-scenario C unit test over
 `rt_tcp.inc`, grown to eight by Ruling 7's fixes), `tests/bake/tcp.sh`
@@ -6801,7 +6802,12 @@ gen2); the fix wave's comment-only `clarusc/` edits did not move the
 generated C, so no second regeneration was needed.
 
 The merge gate (`scripts/test-merge.sh`) was run on the finished tree,
-after the fix wave:
+after the fix wave. Fix round 1 -- the `TcpTickCount` rename, `3492c49`,
+which fixes the `bake/` red below -- came AFTER this run, and re-ran T1
+`--smoke`, the full `CLARUS_BAKE_FULL=1 bake/` sweep, `selfhost/` and
+the Snow `tcp_selfconnect` boot (all green, `selfhost/fixedpoint`
+included -- `tcp.cla` is runtime, not compiler, so the snapshot stayed
+fresh), but deliberately not the `mactest/` group (Ruling 23):
 
 ```
 test-merge.sh: t1 body PASS in 130s     (116 passed, 35 skipped, 0 failed)
@@ -6915,9 +6921,11 @@ and `pgrep -x ClarusSnow` empty before each:
   catalogs into early visibility; it was worked around once inside the
   phase (`testsuite/core/cases_ptrcall.cla` now `include`s
   `toolbox/memory.cla` instead of carrying private copies), and at
-  close-out it took down a gate: `bake/full_corpus_suite_toolbox` is RED
+  close-out it took down a gate: `bake/full_corpus_suite_toolbox` failed
   on `toolbox/events.cla:132:1: redeclaration of TickCount`, against
-  `tcp.cla`'s own identical declaration. See the gates section.
+  `tcp.cla`'s own identical declaration -- fixed by fix round 1 (see the
+  gates section), which renamed the runtime's extern rather than closing
+  the gap itself.
 - **`rtTcpListenMsg` hardcodes errno 48** as "port in use". 48 is
   `EADDRINUSE` on BSD/macOS and 98 on Linux, so a Linux host reports the
   generic message and `tests/tcp/lfailed.sh` would fail there
