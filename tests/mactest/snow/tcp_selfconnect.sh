@@ -55,6 +55,15 @@ want_line sweep_echo "received 257"
 want_line hello_in "received 5"
 want_line hello_echo "received 6"
 want_line echo_exact "echo ok"
+# Both exchanges, individually: presence alone would let a byte-wrong
+# 256-byte sweep echo pass on the trivial "hello" echo's own `echo ok`.
+# The example turns a mismatch into a `failed -1 echo mismatch` line too,
+# which no_failed below catches -- this is the second, independent gate.
+if [ "$(grep -cxF 'echo ok' "$WORK/out")" = 2 ]; then
+    t_pass sweep_and_hello_ok
+else
+    t_fail sweep_and_hello_ok "want 2 \"echo ok\" lines, got $(grep -cxF 'echo ok' "$WORK/out")"
+fi
 want_line client_closing "closing"
 want_line server_closed "closed"
 if grep -qF 'failed ' "$WORK/out"; then t_fail no_failed "$(grep 'failed ' "$WORK/out" | head -1)"; else t_pass no_failed; fi

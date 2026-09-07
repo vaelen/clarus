@@ -45,6 +45,15 @@
 //
 // `accepted` and `opened` may arrive in either order -- they are the two
 // ends of the same handshake -- so the test asserts presence, not order.
+// Both `echo ok` lines are counted, though: a byte-wrong sweep echo
+// followed by a good "hello" echo would otherwise leave the token
+// present and the run green.
+//
+// Every failure -- an environmental one from a `failed` handler, or a
+// byte mismatch in the echo -- writes the SAME `failed <code> <message>`
+// line and quits, so the test needs one `no_failed` assertion rather
+// than a growing list of bad-news tokens. The echo mismatch is code -1
+// (not an OSErr; nothing in the Toolbox produced it).
 //
 // The exchange is deliberately LOCK-STEP -- the client sends "hello"
 // only after the sweep's echo has come back -- so each `received` length
@@ -143,9 +152,13 @@ func startDialing(addr: string) {
     client.open(tcp addr)
 }
 
-func fail(what: string, err: error) {
-    log("failed " + string(err.code) + " " + err.message)
-    setStatus(what + " failed: " + err.message)
+// fail: the one failure exit. Takes a code and a message rather than an
+// `error` so the echo-mismatch path -- which has no Toolbox error to
+// carry -- reports through exactly the same line the `failed` handlers
+// do, and so trips the test's `no_failed` assertion.
+func fail(what: string, code: int, msg: string) {
+    log("failed " + string(code) + " " + msg)
+    setStatus(what + " failed: " + msg)
     quit
 }
 
@@ -192,7 +205,7 @@ on lsn.accepted(c: connection) {
 }
 
 on lsn.failed(err: error) {
-    fail("listener", err)
+    fail("listener", err.code, err.message)
 }
 
 on server.received(data: text) {
@@ -213,7 +226,7 @@ on server.closed {
 }
 
 on server.failed(err: error) {
-    fail("server", err)
+    fail("server", err.code, err.message)
 }
 
 // ---- client side ----
@@ -256,11 +269,11 @@ func echoOk(data: text): bool {
 
 on client.received(data: text) {
     log("received " + string(data.length))
-    if echoOk(data) {
-        log("echo ok")
-    } else {
-        log("echo bad")
+    if not echoOk(data) {
+        fail("echo", -1, "echo mismatch")
+        return
     }
+    log("echo ok")
     if sent.length == 256 {
         sent.clear()
         sent.append("hello")
@@ -277,7 +290,7 @@ on client.received(data: text) {
 }
 
 on client.failed(err: error) {
-    fail("client", err)
+    fail("client", err.code, err.message)
 }
 
 // The beat counts script lines: the --events script is 200 lines of
