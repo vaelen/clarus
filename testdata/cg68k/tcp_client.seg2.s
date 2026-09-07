@@ -3911,7 +3911,7 @@ LBL_290:
         MOVE.L (A7)+,D0
         MOVE.B D0,(A0)
         CLR.L -(A7)
-        DC.W $A975  ; TickCount
+        DC.W $A975  ; TcpTickCount
         MOVE.L (A7)+,D0
         MOVE.L D0,-(A7)
         LEA -6690(A5),A0
@@ -3962,7 +3962,7 @@ LBL_29:
         BRA.W LBL_293
 LBL_294:
         CLR.L -(A7)
-        DC.W $A975  ; TickCount
+        DC.W $A975  ; TcpTickCount
         MOVE.L (A7)+,D0
         MOVE.L D0,-(A7)
         LEA -6690(A5),A0

@@ -293,7 +293,7 @@ extern int32_t rt_ext_AtalkHAtpSendResponse(int32_t, int32_t, void *, int32_t);
 extern int32_t rt_ext_AtalkHAtpCall(int32_t, int32_t, void *, int32_t, void *, int32_t);
 extern int32_t rt_ext_AtalkHAtpCallCode(void);
 extern void rt_ext_AtalkHPoll(void);
-extern int32_t rt_ext_TickCount(void);
+extern int32_t rt_ext_TcpTickCount(void);
 extern int32_t rt_ext_TcpHInit(void);
 extern int32_t rt_ext_TcpHCreate(int32_t);
 extern int32_t rt_ext_TcpHActiveOpen(int32_t, int32_t, int32_t);
@@ -2509,7 +2509,7 @@ static void clar_fn_rtTcpStep(int32_t cv_slot) {
     if ((clar_fn_rtTextLen((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]) == 0) && (!(clar_fn_rtTcpDevSendBusy(cv_slot)))) {
         if (clar_fn_rtTcpDevClose(cv_slot) == 0) {
             (cv_rtTcpCloseSent).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 1;
-            (cv_rtTcpCloseTick).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = rt_ext_TickCount();
+            (cv_rtTcpCloseTick).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = rt_ext_TcpTickCount();
         }
     }
 }
@@ -2518,7 +2518,7 @@ static int32_t clar_fn_rtTcpCloseExpired(int32_t cv_slot) {
     if (!((cv_rtTcpCloseSent).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)])) {
         return 0;
     }
-    return (CLAR_SUB32(rt_ext_TickCount(), (cv_rtTcpCloseTick).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]) >= 600);
+    return (CLAR_SUB32(rt_ext_TcpTickCount(), (cv_rtTcpCloseTick).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]) >= 600);
     return 0;
 }
 

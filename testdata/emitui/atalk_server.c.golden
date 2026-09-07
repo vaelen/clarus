@@ -293,7 +293,7 @@ extern int32_t rt_ext_AtalkHAtpSendResponse(int32_t, int32_t, void *, int32_t);
 extern int32_t rt_ext_AtalkHAtpCall(int32_t, int32_t, void *, int32_t, void *, int32_t);
 extern int32_t rt_ext_AtalkHAtpCallCode(void);
 extern void rt_ext_AtalkHPoll(void);
-extern int32_t rt_ext_TickCount(void);
+extern int32_t rt_ext_TcpTickCount(void);
 extern int32_t rt_ext_TcpHInit(void);
 extern int32_t rt_ext_TcpHCreate(int32_t);
 extern int32_t rt_ext_TcpHActiveOpen(int32_t, int32_t, int32_t);

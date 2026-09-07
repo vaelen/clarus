@@ -13,7 +13,7 @@
  *
  * Everything runs on 127.0.0.1 against OS-chosen ephemeral ports, so no
  * fixed port number appears anywhere and this never collides with another
- * test (or another worktree) running at the same time. Six scenarios:
+ * test (or another worktree) running at the same time. Eight scenarios:
  *
  *   1 connect      -- LsnOpen rejects port 0, then a real listener + a real
  *                     ActiveOpen meet: LsnPoll 1 / Poll 1 / LsnAccept.
@@ -37,6 +37,14 @@
  *                     This scenario alone is why the whole test takes
  *                     ~10 s; there is no way to observe a 10 s timer in
  *                     less than 10 s.
+ *   7 close drains -- a Close with a Send remainder still queued defers
+ *                     the shutdown(SHUT_WR): every byte handed to Send
+ *                     arrives, in order, and EOF comes after them.
+ *   8 close connecting -- a Close on a still-CONNECTING slot resets it
+ *                     rather than leaving the connect in flight.
+ *
+ * main() runs 7 and 8 before 6, so a failure there is not stuck behind
+ * scenario 6's 10 s deadline.
  */
 #include "rt.h"
 #include <stdio.h>

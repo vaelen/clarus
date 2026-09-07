@@ -42,6 +42,13 @@
 #include <time.h>
 #include <sys/time.h>
 
+/* rt_ext_TcpTickCount: host twin of tcp.cla's runtime-private
+ * TcpTickCount extern (_TickCount, 0xA975). Private name because a
+ * plain `TickCount` collides with toolbox/events.cla's identical
+ * clause under `--rtbake --testapi`; the tick source is the same one
+ * rt_ext_TickCount (rt_ext_host.inc, included by rt.c first) uses. */
+int32_t rt_ext_TcpTickCount(void) { return rt_ext_TickCount(); }
+
 #define RT_TCP_SLOTS 8
 #define RT_TCP_LSNS  2
 #define RT_TCP_CHUNK 4096

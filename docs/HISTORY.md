@@ -6855,7 +6855,14 @@ did not pass, none of them TCP:
   narrow: from-source builds dedup the two externs, and `--rtbake`
   without `--testapi` preloads no early symbols, so `full_corpus_cg68k`,
   `full_corpus_emitui`, `full_corpus_selfcompile`, `tests/bake/tcp.sh`
-  and the Snow `clarusc_bake` boot are all green.
+  and the Snow `clarusc_bake` boot are all green. **Fixed at close-out
+  (fix round 1):** the runtime's extern is now `TcpTickCount`, with an
+  `rt_ext_TcpTickCount` host twin in `runtime/host/rt_tcp.inc` -- a
+  runtime-private trap extern must not share a name with a `toolbox/`
+  catalog clause, since the `--rtbake --testapi` preload has no
+  identical-repeat accommodation (that accommodation stays `docs/TODO.md`
+  debt 3's own, larger fix); the sweep is green and the rename moved 12
+  goldens by 25 comment/declaration lines.
 
 An earlier T2 attempt, before the fix wave, got its first three stages
 green and then lost all thirteen `mactest/` boots to

@@ -46,12 +46,14 @@ const rtTcpChunk: int = 4096
 // there this is a backstop that changes nothing.
 const rtTcpCloseTicks: int = 600
 
-// _TickCount (0xA975): stack-result Pascal trap, NO `reg` (the reg form
-// is the 2026-08-03 stale-D0 bug, testdata/cg68k/tickprobe.cla). The
-// clause is byte-identical to toolbox/events.cla's, so a program that
-// composes that catalog dedups rather than conflicting; host builds link
-// rt_ext_TickCount (runtime/host/rt_ext_host.inc).
-external func TickCount(): int = trap 0xA975
+// TcpTickCount: _TickCount (0xA975), stack-result Pascal trap, NO `reg`
+// (the reg form is the 2026-08-03 stale-D0 bug,
+// testdata/cg68k/tickprobe.cla). Runtime-private name, ui.cla:361's
+// UiTickCount convention: plain `TickCount` collides with the identical
+// clause in toolbox/events.cla under `--rtbake --testapi`, whose baked
+// symbol preload has no identical-repeat dedup (docs/TODO.md). Host
+// builds link rt_ext_TcpTickCount (runtime/host/rt_tcp.inc).
+external func TcpTickCount(): int = trap 0xA975
 
 // Phases, per connection slot.
 const rtTcpIdle: int = 0
@@ -62,7 +64,7 @@ const rtTcpClosing: int = 3
 var rtTcpPhase: int[8]
 var rtTcpPending: text[8]        // bytes queued behind the in-flight send
 var rtTcpCloseSent: bool[8]      // the graceful close has been issued
-var rtTcpCloseTick: int[8]       // TickCount() when it was, for rtTcpCloseTicks
+var rtTcpCloseTick: int[8]       // TcpTickCount() when it was, for rtTcpCloseTicks
 var rtTcpUp: bool                // rtTcpDevInit succeeded once
 var rtLsnSlotTransport: int[2]   // 0 ADSP/unused, 3 TCP
 var rtLsnPort: int[2]
@@ -243,19 +245,19 @@ func rtTcpStep(slot: int) {
     if rtTcpPending[slot].length == 0 and not rtTcpDevSendBusy(slot) {
         if rtTcpDevClose(slot) == 0 {
             rtTcpCloseSent[slot] = true
-            rtTcpCloseTick[slot] = TickCount()
+            rtTcpCloseTick[slot] = TcpTickCount()
         }
     }
 }
 
 // rtTcpCloseExpired: rtTcpCloseTicks elapsed since the close went out.
-// Difference-compare, not `>=` on the sum: TickCount is a free-running
+// Difference-compare, not `>=` on the sum: _TickCount is a free-running
 // unsigned 32-bit counter that wraps (uiscript.cla's own idiom).
 func rtTcpCloseExpired(slot: int): bool {
     if not rtTcpCloseSent[slot] {
         return false
     }
-    return TickCount() - rtTcpCloseTick[slot] >= rtTcpCloseTicks
+    return TcpTickCount() - rtTcpCloseTick[slot] >= rtTcpCloseTicks
 }
 
 // rtTcpClose: conn.cla's transport-3 close arm. Never fires `closed`.
