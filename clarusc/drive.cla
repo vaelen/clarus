@@ -1318,6 +1318,46 @@ func driveEarlySplice(testapi: bool): bool {
     earlyMods.add("uitable.cla")
     earlyMods.add("uiscript.cla")
     earlyMods.add("uidialogs.cla")
+    // MacTCP phase, debt 3 (docs/TODO.md's AdspLeak item): on the 68k
+    // lane the connection and AppleTalk families are early-visible under
+    // --testapi too, so a suite case can drive the runtime's own waist
+    // (rtAt68DspInitEnd + rtAdspDevClose) and not only the ROM.
+    //
+    // They go HERE, ahead of uitest.cla and in the manifest's own order
+    // (sortedmap/datetime first; ser.cla before conn.cla, which reuses
+    // its SerNewPtr/SerDisposePtr), NOT appended after uitest.cla: this
+    // list's own heads become driveManifestSplice's earlyRuntimeChain
+    // verbatim, and that chain is followed there by the neededMods
+    // REMAINDER -- so the early list has to stay a strict PREFIX of the
+    // manifest order, or the lowered chain stops matching the bake's
+    // fixed module order and --rtbake byte identity breaks.
+    // sortedmap/datetime are dragged in for exactly that contiguity
+    // reason (nothing needs to NAME them); the widening is harmless --
+    // --testapi is a test-only flag.
+    // driveManifestSplice drops these same names from neededMods when it
+    // ran, rather than re-expanding them: a second expand() of an
+    // already-expanded runtime module dedups to an asmHeads index
+    // hoistDedups ignores (it only hoists USER heads, hit <
+    // userHeadCount), so the module would push no head at all and simply
+    // vanish from the chain. bake.cla's bakeModuleList moves uitest.cla
+    // to the matching spot on this lane, so both paths agree on where
+    // "early-visible" ends.
+    //
+    // Host lane deliberately unchanged: bakeModuleList's bkLaneC list
+    // carries no conn/atalk at all (they stay usesConn-gated there), so
+    // early-splicing them here would make the two paths disagree about
+    // the host early-visible set for no gain -- the toolbox suite this
+    // exists for is native-only.
+    if want68k {
+        earlyMods.add("sortedmap.cla")
+        earlyMods.add("datetime.cla")
+        earlyMods.add("datetime_68k.cla")
+        earlyMods.add("ser.cla")
+        earlyMods.add("conn.cla")
+        earlyMods.add("conn_68k.cla")
+        earlyMods.add("atalk.cla")
+        earlyMods.add("atalk_68k.cla")
+    }
     // runtime-ir-bake Task 5, fix round 2: uitest.cla STAYS in this
     // early-spliced list -- check#1 (driveCompile's own first
     // checkProgram call, over `combined`, BEFORE driveManifestSplice/
@@ -1546,6 +1586,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     var userChainRebuilt: int
     var userChainRebuiltTail: int
     var entriesOnlyHead: int
+    var early68k: bool
 
     if want68k {
         driveResolveAppName(entries)
@@ -1613,20 +1654,32 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     // by the checker (no other consumer besides this now-retired splice
     // gate; harmless to leave set-but-unread) but no longer gate anything
     // here.
+    // MacTCP phase, debt 3: under --testapi on the 68k lane,
+    // driveEarlySplice already spliced sortedmap/datetime(+lane)/ser and
+    // the conn/atalk pairs (see its own list comment) -- re-adding them
+    // here would expand() them a SECOND time, which dedups to an
+    // asmHeads index hoistDedups drops on the floor, so the module would
+    // fall out of the chain entirely. early68k is that "already done"
+    // gate. The cp*Ported flags below stay unconditional either way:
+    // they are cprint's own "this family is spliced from source" flags,
+    // and it is spliced either way.
+    early68k = want68k and earlySpliceDone
     cpSortedMapPorted = true
-    neededMods.add("sortedmap.cla")
-    // datetime (2026-08-10 spec): datetime.cla + exactly one per-lane
-    // rtNow variant. No cprint ported-flag exists for this family -- the
-    // builtins lower to ordinary named calls (lowCall), so the C lane
-    // compiles the spliced .cla source directly.
-    neededMods.add("datetime.cla")
-    if want68k {
-        neededMods.add("datetime_68k.cla")
-    } else {
-        neededMods.add("datetime_c.cla")
-    }
     cpSerPorted = true
-    neededMods.add("ser.cla")
+    if not early68k {
+        neededMods.add("sortedmap.cla")
+        // datetime (2026-08-10 spec): datetime.cla + exactly one per-lane
+        // rtNow variant. No cprint ported-flag exists for this family -- the
+        // builtins lower to ordinary named calls (lowCall), so the C lane
+        // compiles the spliced .cla source directly.
+        neededMods.add("datetime.cla")
+        if want68k {
+            neededMods.add("datetime_68k.cla")
+        } else {
+            neededMods.add("datetime_c.cla")
+        }
+        neededMods.add("ser.cla")
+    }
     // connection (2026-08-15 serial-connection spec, Task 4/6): shared
     // conn.cla + exactly one per-lane rtConnDev* waist, same lane-split
     // shape as datetime above. Host lane STAYS usage-gated (usesConn),
@@ -1666,10 +1719,14 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     // (atalk.cla reads rtConnState/rtConnMax and calls rtConnSetFailed)
     // and after conn_68k.cla, mirroring the host branch below.
     if want68k {
-        neededMods.add("conn.cla")
-        neededMods.add("conn_68k.cla")
-        neededMods.add("atalk.cla")
-        neededMods.add("atalk_68k.cla")
+        // MacTCP phase, debt 3: skipped when driveEarlySplice already
+        // spliced this pair of pairs -- see early68k above.
+        if not early68k {
+            neededMods.add("conn.cla")
+            neededMods.add("conn_68k.cla")
+            neededMods.add("atalk.cla")
+            neededMods.add("atalk_68k.cla")
+        }
     } else if usesConn or usesAtalk {
         neededMods.add("conn.cla")
         neededMods.add("conn_c.cla")

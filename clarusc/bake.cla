@@ -440,7 +440,20 @@ func bakeModuleList(lane: int): list of string {
     mods.add("uitable.cla")
     mods.add("uiscript.cla")
     mods.add("uidialogs.cla")
-    mods.add("uitest.cla")
+    // MacTCP phase, debt 3: uitest.cla is the early-visible BOUNDARY
+    // marker (bakeGenerateChain records earlyVisibleAsmHeadsBoundary at
+    // it), so it sits at the end of whatever driveEarlySplice's own
+    // early list is for this lane -- which is these twelve on the host
+    // lane, but twelve + sortedmap/datetime(+lane)/ser + the conn/atalk
+    // pairs on 68k (drive.cla's own list comment says why). Moving it
+    // does NOT move any BASE module: bakeGenerateChain lowers base
+    // (everything but uitest.cla) and uitest.cla in two separate passes,
+    // in base's own bakeModuleList order, so the baked IR arenas are
+    // byte-identical either way -- only the checker-symbol boundary
+    // (bkGenEarlySymbolsCount) and the manifest early-visible flags move.
+    if lane != bkLane68k {
+        mods.add("uitest.cla")
+    }
     mods.add("sortedmap.cla")
     mods.add("datetime.cla")
     if lane == bkLane68k {
@@ -469,6 +482,10 @@ func bakeModuleList(lane: int): list of string {
         // here, exactly as conn.cla/conn_c.cla always has been.
         mods.add("atalk.cla")
         mods.add("atalk_68k.cla")
+        // MacTCP phase, debt 3: the 68k lane's early-visible boundary --
+        // driveEarlySplice's own early list ends here on this lane. See
+        // the host-lane uitest.cla add above.
+        mods.add("uitest.cla")
         // native.cla is native-only (Toolbox-trap glue, no C runtime
         // under it at all -- see its own doc comment); driveManifestSplice
         // only ever splices it under want68k, and the bake generator

@@ -14,14 +14,23 @@
 // historic hardware-bug site) is otherwise unexercised by
 // PtrCallRound's word-returning call alone.
 //
-// NewPtr/DisposePtr here are the SAME trap declarations
-// toolbox/memory.cla carries (0xA11E/0xA01F, `reg` positional) -- the
-// core suite doesn't compose that file, so this case declares its own
-// copy under the identical name/signature/clause rather than a `Pc`-
-// prefixed duplicate, matching the reference's "identical repeat" extern
-// accommodation and picking up the host lane's existing
-// rt_ext_NewPtr/rt_ext_DisposePtr glue (runtime/host/rt_ext_host.inc)
-// for free.
+// NewPtr/DisposePtr come from toolbox/memory.cla, included below --
+// the core suite composes no toolbox catalog file, so this case pulls
+// the one it needs. It used to declare its own copy under the identical
+// name/signature/clause instead, relying on the reference's "identical
+// repeat" extern accommodation; MacTCP phase debt 3 retired that shape.
+// Once clarusc/drive.cla's driveEarlySplice made the AppleTalk family
+// early-visible under --testapi, toolbox/memory.cla came with it
+// (runtime/clarus/atalk_68k.cla includes it), and the identical-repeat
+// accommodation is a CHECKER-CALL-LOCAL table (check.cla's
+// externFirstDeclByName) that the --rtbake testapi symbol preload does
+// not carry -- so the duplicate declaration checked clean from source
+// and failed "redeclaration of NewPtr" under --rtbake. `include` is the
+// mechanism that IS parity-tested for reaching an early-visible
+// manifest module's externs (tests/bake/testapi_include_parity.sh: the
+// path dedups fully on both paths). The host lane still picks up
+// rt_ext_NewPtr/rt_ext_DisposePtr (runtime/host/rt_ext_host.inc) the
+// same way. The preload gap itself is recorded in docs/TODO.md.
 // PtrCallVoid/pcStamp (final-review fix wave) add a THIRD `= ptr` extern
 // whose RESULT is void, not word/bool -- checkExternFunc's zero-return
 // arm (cgCallExtPtr's own `irtKind(retTy) != KVoid` guards, both the
@@ -30,8 +39,8 @@
 // common case (an ordinary Toolbox action/filter procedure never hands
 // anything back) -- see the reference's own `myAction` example under
 // `callback func`.
-external func NewPtr(size: int): ptr = trap 0xA11E reg
-external func DisposePtr(p: ptr) = trap 0xA01F reg
+include "../../toolbox/memory.cla"
+
 external func PtrCallRound(entry: ptr, w: word, flag: bool, out: ptr, n: int): word = ptr
 external func PtrCallFlag(entry: ptr, x: int): bool = ptr
 external func PtrCallVoid(entry: ptr, out: ptr) = ptr

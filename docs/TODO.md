@@ -191,23 +191,38 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   `mv`-into-place of a uniquely named directory, or drop the mkdir mutex
   for `flock` on a lock FILE where the platform has it.
 
-- **`AdspLeak` proves the ROM's half of the ADSP lifecycle, not the
-  runtime's.** Task 13b's `testsuite/toolbox` case (`cases_atalk.cla`)
-  allocates the connection-end and listener blocks itself and pairs
-  `dspInit`/`dspRemove` and `dspCLInit`/`dspCLRemove` at the runtime's own
-  sizes, so it catches a driver that retains memory -- but not a
-  `rtAt68DspFree` that forgets a `DisposePtr`. The waist version
-  (`rtAt68DspInitEnd` + `rtAdspDevClose` called from the case) does not
-  compile: `--testapi` early-splices a fixed thirteen-module list
-  (`clarusc/drive.cla`'s `driveEarlySplice`, `clarusc/bake.cla`'s
-  `bakeModuleList`) and the AppleTalk modules are manifest-spliced after
-  the checker's first pass, so their names are invisible to user code.
-  Real fix: add the AppleTalk family to that early-visible set in BOTH
-  places -- a compiler change that shifts the testapi visibility boundary,
-  the bake manifest classification and the golden corpus, so schedule it
-  with the next phase that reblesses the corpus (MacTCP).
-
 ## Compiler: type checking
+
+### MacTCP phase (2026-09-08)
+
+- **The `--rtbake --testapi` symbol preload does not carry the
+  identical-repeat extern accommodation.** From source, a second
+  `external func` sharing a name with one an earlier decl in the SAME
+  `checkProgram` call already registered is legal iff its clause is
+  identical (`check.cla`'s `externFirstDeclByName`/`externMergeCandidate`,
+  `checkFuncSig`'s `DkExternFunc` arm). `bkInstallCheckerSymbolsForTestapi`
+  installs baked `funcSigs`/`symbols`/`scopes` but not that table -- it is
+  keyed by DECL INDEX, and the bake carries no decl arena -- so a user
+  file redeclaring an early-visible baked extern gets a plain
+  "redeclaration of X" under `--rtbake` while checking clean from source.
+  Found by this phase's debt-3 widening: `toolbox/memory.cla` rode into
+  the early-visible set with `atalk_68k.cla`, and
+  `testsuite/core/cases_ptrcall.cla`'s own `NewPtr`/`DisposePtr` copies
+  then failed `bake/full_corpus_suite_core`. Worked around there by
+  `include`ing `toolbox/memory.cla` instead (the mechanism
+  `tests/bake/testapi_include_parity.sh` already proves has full
+  path-dedup parity), which is the right shape for a suite case anyway --
+  but the underlying parity gap is still there for the next user file
+  that repeats a baked extern.
+  Real fix needs a decl-free merge key: bake the early-visible extern
+  NAMES (a `bkSec*` section, `bkSecFieldInfo`'s own precedent) and seed
+  `externFirstDeclByName` with a sentinel meaning "declared by the bake",
+  guarding `checkExternFunc`'s clause comparison for it. Note the
+  tradeoff that needs deciding first: with no baked decl there is nothing
+  to compare the trap word/conv against, so a sentinel merge would accept
+  a user extern that reuses a baked name with a DIFFERENT trap. Either
+  bake enough of the clause to compare, or accept the loosening
+  deliberately.
 
 ### AppleTalk phase (2026-09-07)
 

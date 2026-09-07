@@ -239,19 +239,21 @@ func caseAtalkSelf(): TestResult {
 // source: whether the driver keeps a per-connection-end allocation of its
 // own that dspRemove does not give back.
 //
-// WHAT IT DELIBERATELY DOES NOT PROVE: rtAt68DspFree's own bookkeeping.
-// The blocks below are allocated and disposed by THIS case, not by
-// rtAt68CcbEnsure/rtAt68DspFree, so a future runtime edit that dropped
-// one of those DisposePtr calls would not be caught here. That is not a
-// design preference: a suite case CANNOT name rtAt68DspInitEnd /
-// rtAdspDevClose / rtAtEnsureUp at all, because `--testapi` early-splices
-// a FIXED thirteen-module list (core/str/text/list/map + the ui* family +
-// uitest.cla -- clarusc/drive.cla's driveEarlySplice, clarusc/bake.cla's
-// bakeModuleList) and the AppleTalk modules are not in it; they are
-// manifest-spliced AFTER the checker's first pass, so their names are
-// invisible to user code. Widening that set is a compiler change that
-// moves the bake manifest and the golden corpus -- recorded in
-// docs/TODO.md, scheduled with the next phase that reblesses goldens.
+// AND the runtime's own half, section 4 (MacTCP phase, debt 3): the same
+// bracket around rtAt68DspInitEnd + rtAdspDevClose, so rtAt68CcbEnsure's
+// five NewPtrClears and rtAt68DspFree's four DisposePtrs are proved to
+// balance too -- a dropped DisposePtr in the runtime waist now fails
+// here, which the ROM-level sections above cannot see (they allocate and
+// dispose every block themselves).
+//
+// That section only became writable in this phase: `--testapi` used to
+// early-splice a FIXED thirteen-module list (core/str/text/list/map + the
+// ui* family + uitest.cla) with the AppleTalk modules manifest-spliced
+// AFTER the checker's first pass, so no suite case could name a runtime
+// function at all. clarusc/drive.cla's driveEarlySplice now adds
+// sortedmap/datetime/ser + the conn/atalk pairs to that set on the 68k
+// lane (see its own list comment for why the early list has to stay a
+// PREFIX of the manifest order).
 //
 // The sizes below MIRROR the runtime's (rtAt68DspPbSz 68 = sizeof
 // DSPParamBlock, ADSP.h:193-216; rtAt68QSz 1024; ccbSize 242 and
@@ -270,6 +272,9 @@ func caseAtalkSelf(): TestResult {
 const tbAdspPbSz: int = 68     // sizeof(DSPParamBlock) -- runtime rtAt68DspPbSz
 const tbAdspQSz: int = 1024    // ADSP send/receive queue -- runtime rtAt68QSz
 const tbAdspCycles: int = 20
+// tbAdspWaistSlot: rtConnMax - 1 (conn.cla). Section 4's slot -- see its
+// own comment in caseAdspLeak.
+const tbAdspWaistSlot: int = 7
 
 // tbAdspMemFullErr: memFullErr. Named locally rather than reusing the
 // runtime's rtAtErrMemFull for the same reason every extern in this file
@@ -483,6 +488,61 @@ func caseAdspLeak(): TestResult {
     after = FreeMem()
     if after != before or ran != tbAdspCycles {
         detail = "listener before " + tkIntToStr(before) + " after " + tkIntToStr(after)
+        detail = detail + " cycles " + tkIntToStr(ran)
+        return tkFail("AdspLeak", detail)
+    }
+
+    // -- 4. The RUNTIME waist (MacTCP phase, debt 3). Sections 2 and 3
+    // pair the driver's calls with this case's own NewPtrClear/DisposePtr,
+    // so they prove the DRIVER retains nothing. This section runs the same
+    // lifecycle through runtime/clarus/atalk_68k.cla itself --
+    // rtAt68DspInitEnd (rtAt68CcbEnsure's five allocations + dspInit) and
+    // rtAdspDevClose (dspClose + dspRemove + rtAt68DspFree's four
+    // DisposePtrs) -- so a runtime edit that forgets one of those
+    // DisposePtrs fails here.
+    //
+    // rtAtEnsureUp first: rtAt68DspInitEnd pokes rtAt68DspRef into every
+    // parameter block, and that global is only set by the bring-up path
+    // (.MPP/.ATP/.XPP/.DSP). Section 1 already proved .DSP openable, so a
+    // failure here is a runtime-bring-up failure, not an environment gate.
+    //
+    // Slot 7 is rtConnMax - 1 (conn.cla), the last slot -- connection and
+    // listener globals are assigned from 0 up, so this is the one least
+    // likely to be a live slot in a program that also uses `connection`.
+    //
+    // Warm-up outside the bracket for the same reason as sections 2 and 3,
+    // plus one of the runtime's own: rtAt68DspFree deliberately KEEPS the
+    // slot's parameter block (it is small and the slot may be reopened)
+    // and rtAt68DspAuxPb allocates the shared aux block once, so the first
+    // cycle is a permanent, one-time cost. Every cycle after it must be
+    // free.
+    err = rtAtEnsureUp()
+    if err != 0 {
+        detail = "rtAtEnsureUp err " + tkIntToStr(err)
+        return tkFail("AdspLeak", detail)
+    }
+    err = rtAt68DspInitEnd(tbAdspWaistSlot)
+    if err != 0 {
+        detail = "waist warmup err " + tkIntToStr(err)
+        return tkFail("AdspLeak", detail)
+    }
+    rtAdspDevClose(tbAdspWaistSlot)
+    before = FreeMem()
+    ran = 0
+    i = 0
+    while i < tbAdspCycles {
+        err = rtAt68DspInitEnd(tbAdspWaistSlot)
+        if err != 0 {
+            detail = "waist cycle " + tkIntToStr(i) + " err " + tkIntToStr(err)
+            return tkFail("AdspLeak", detail)
+        }
+        rtAdspDevClose(tbAdspWaistSlot)
+        ran = ran + 1
+        i = i + 1
+    }
+    after = FreeMem()
+    if after != before or ran != tbAdspCycles {
+        detail = "waist before " + tkIntToStr(before) + " after " + tkIntToStr(after)
         detail = detail + " cycles " + tkIntToStr(ran)
         return tkFail("AdspLeak", detail)
     }
