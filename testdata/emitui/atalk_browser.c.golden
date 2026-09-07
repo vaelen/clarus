@@ -1818,6 +1818,17 @@ static void clar_fn_rtAtalkPump(void) {
     rt_text * cv___store3;
     cv___store3 = NULL;
     clar_fn_rtTcpPump();
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < 2))) break;
+        if ((cv_rtLsnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] != 0) {
+            cv_code = (cv_rtLsnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)];
+            (cv_rtLsnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
+            clar_fn_clar_lsn_fire_failed(cv_i, cv_code, (void*)(const uint8_t*)&((cv_rtLsnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)]));
+            clar_fn_rtStrStore((void*)&((cv_rtLsnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
+        }
+        cv_i = CLAR_ADD32(cv_i, 1);
+    }
     if (!(cv_rtAtUp)) {
         clar_fn_rtTextRelease((void*)cv_req);
         return;
@@ -1901,12 +1912,6 @@ static void clar_fn_rtAtalkPump(void) {
     cv_i = 0;
     while (1) {
         if (!((cv_i < 2))) break;
-        if ((cv_rtLsnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] != 0) {
-            cv_code = (cv_rtLsnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)];
-            (cv_rtLsnPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
-            clar_fn_clar_lsn_fire_failed(cv_i, cv_code, (void*)(const uint8_t*)&((cv_rtLsnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)]));
-            clar_fn_rtStrStore((void*)&((cv_rtLsnPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
-        }
         if (((cv_rtLsnState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] == 1) && ((cv_rtLsnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] != 3)) {
             cv_pr = clar_fn_rtLsnDevPoll(cv_i);
             if (cv_pr < 0) {
@@ -1918,7 +1923,7 @@ static void clar_fn_rtAtalkPump(void) {
                     cv_j = 0;
                     while (1) {
                         if (!((cv_j < 8))) break;
-                        if (((cv_free < 0) && ((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && ((cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) {
+                        if ((((cv_free < 0) && ((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && ((cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && clar_fn_rtTcpFree(cv_j)) {
                             cv_free = cv_j;
                         }
                         cv_j = CLAR_ADD32(cv_j, 1);
