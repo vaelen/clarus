@@ -151,22 +151,16 @@ compilation cache is deliberately de-prioritized (see "Later").
 
 ### Next: language usability
 
-Items 1 (binary streams and files) and 2 (serial ports) of the original
-list are DONE — `binary-files`, `transfer-crcs`, `filesystem-api`, and
-`serial-connection` in `docs/HISTORY.md`. Remaining, in order:
+Items 1 (binary streams and files), 2 (serial ports) and 3 (AppleTalk)
+of the original list are DONE — `binary-files`, `transfer-crcs`,
+`filesystem-api`, `serial-connection` and `appletalk` in
+`docs/HISTORY.md` (the AppleTalk phase merged to `main` 2026-09-07; its
+environment prerequisite, the one-line `CopySystemFile("AppleTalk",
+false)` LaunchAPPL patch that the `mactest/adsp_68k` and `toolbox_68k`
+boots need, is carried in `CLAUDE.md`'s toolchain section and is lost by
+a fresh Retro68 build). Remaining, in order:
 
-1. **AppleTalk.** Complete on branch `appletalk` (spec
-   `docs/superpowers/specs/2026-09-06-appletalk-design.md`, plan
-   `docs/superpowers/plans/2026-09-07-appletalk.md`). **Not merged.**
-   All fourteen tasks and the final fix wave are complete, reviewed and
-   merged into `appletalk`; the phase record is in `docs/HISTORY.md` and
-   the full merge gate is green. All that remains is Andrew's merge
-   request. Environment prerequisite, carried in `CLAUDE.md`: the
-   `mactest/adsp_68k` and `toolbox_68k` boots need the one-line
-   `CopySystemFile("AppleTalk", false)` LaunchAPPL patch, which is
-   uncommitted in Andrew's Retro68 checkout and is lost by a fresh
-   Retro68 build.
-2. **MacTCP.**
+1. **MacTCP.**
 
 Environment note: `snow/MacII.snoww` + its hdd image are already
 configured (2026-08-15): AppleTalk on the Printer port, a TCP listener
