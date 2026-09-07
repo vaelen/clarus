@@ -1221,6 +1221,50 @@ NTE+4..7 holds the node's own net(2), node(1) and socket(1). That is the
 cheapest way for a program to learn its own AppleTalk address — no
 `GetNodeAddress` glue, no low-memory poking.
 
+## 15. Walkthrough: a second csCode-dispatched driver -- MacTCP
+
+`toolbox/mactcp.cla` is §14's shape a second time. MacTCP has no traps of
+its own either: every IP, TCP and UDP routine is a Device Manager
+`Control` call against ONE named driver, `.IPP`, dispatched on the
+parameter block's `csCode`@26. So the transcription work is again
+constants and layouts, not traps -- the only trap the catalog carries is
+`PBControlAsync`, redeclared byte-identically to `toolbox/appletalk.cla`'s
+so a build may compose either catalog, both, or neither (the language
+reference's same-name rule merges two identical `external func`
+declarations; do not tidy the spelling on one side alone).
+
+Two things differ from the AppleTalk catalog. First, `mactcp.cla` declares
+**no `extern record` at all**. A `TCPiopb` is 102 bytes whose payload from
+offset 32 on is a union of eight arms, which `extern record` cannot spell;
+the runtime allocates one `NewPtrClear(tcpPbSize)` block and pokes the
+catalogued ABSOLUTE offsets into it. Every `tcp*` offset constant is
+therefore measured from the start of the block, not from `tcpCsParam`.
+Second, the source header is not under `toolchain/universal` -- it is
+`Retro68/InterfacesAndLibraries/Interfaces/CIncludes/MacTCP.h`, and it has
+the same CR-only line endings, so read it the same way:
+
+```sh
+LC_ALL=C tr '\r' '\n' < Retro68/InterfacesAndLibraries/Interfaces/CIncludes/MacTCP.h > /tmp/MacTCP.h
+```
+
+A plain `grep -n` against the original reports nothing at all.
+
+The offsets are worth recomputing rather than copying, because the printed
+*MacTCP Programmer's Guide* and the header disagree -- and the header says
+so itself, at `MacTCP.h:434-435`: "Note: the filler in the following
+structure is in a different location than that specified in the
+Programmer's Guide." In `TCPReceivePB` the guide's tables (pp. 47, 50) put
+the pad byte right after the command timeout and read the mark flag at 34
+and the urgent flag at 35; the header puts `markFlag` at 33, `urgentFlag`
+at 34 and the pad at 35. `TCPClosePB` has the same shift: the guide reads
+the user data pointer at 35, the header at 36. **The header wins** -- it is
+what the shipped driver was compiled against, and the catalog cites the
+header line for each. Where the header names nothing, the guide is the
+only source and the catalog says so at the declaration: the driver name
+`.IPP` (p. 5), the connection-state values at
+`tcpStatusConnectionState` (p. 54), and the ULP timeout action byte, which
+five separate guide tables give as "0 = report, nonzero = abort".
+
 ---
 
 *Everything in this document is a citation, not an assertion — see the

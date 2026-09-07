@@ -44,6 +44,7 @@ on App.startCLI(args: list of string) {
     }
     DisposePtr(p)
     SysBeep(1)
+    t0 = t0 + tcpCreate + ipctlGetAddr
     if t0 < 0 {
         t0 = 0
     }
@@ -156,6 +157,7 @@ if "$CLARUSC" "$WORK/driver.cla" \
         "$ROOT/toolbox/devices.cla" \
         "$ROOT/toolbox/serial.cla" \
         "$ROOT/toolbox/appletalk.cla" \
+        "$ROOT/toolbox/mactcp.cla" \
         > "$WORK/catalog.log" 2>&1; then
     t_pass "$n"
 else

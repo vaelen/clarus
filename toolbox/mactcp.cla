@@ -1,0 +1,435 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/mactcp.cla: curated MacTCP driver declarations -- the `.IPP`
+// driver's IP, TCP and UDP control interface -- for the MacTCP phase,
+// Task 4. MacTCP has no traps of its own: like AppleTalk, every routine
+// is an ordinary Device Manager Control call against ONE named driver,
+// dispatched on the parameter block's own `csCode` field. The routines
+// that issue them are PBOpenSync / PBControlSync / PBKillIOSync from
+// toolbox/devices.cla and PBControlAsync from toolbox/appletalk.cla
+// (compose those files; PBControlAsync is redeclared identically at the
+// bottom of this file so a build composing mactcp.cla WITHOUT
+// appletalk.cla still checks -- the language reference's same-name rule
+// merges two byte-identical extern declarations).
+//
+// This file is CONSTANTS ONLY. There are no `extern record`s: a TCPiopb
+// is 102 bytes with a union at offset 32 that `extern record` cannot
+// spell, so the runtime allocates one NewPtrClear block and pokes the
+// byte offsets below into it. That is why every field appears here as an
+// ABSOLUTE offset from the start of the parameter block, not as an
+// offset within its csParam arm.
+//
+// Every csCode, offset, flag and error code below is confirmed directly
+// against Apple's own Universal Interfaces 3.4
+// (Retro68/InterfacesAndLibraries/Interfaces/CIncludes/MacTCP.h), read
+// via `LC_ALL=C tr '\r' '\n' < MacTCP.h` -- that header has CR-only line
+// endings, so a plain `grep -n` silently reports nothing against it
+// (toolbox/appletalk.cla and toolbox/devices.cla record the same trap).
+// Line numbers below are from that reflow, matching the header's own
+// native numbering 1:1. Read on 2026-09-08. Offsets are RECOMPUTED from
+// the struct declarations under the header's own `#pragma options
+// align=mac68k` (2-byte alignment, no tail padding), not copied from the
+// printed guide -- see the TCPReceivePB note under "receive" below for
+// why that distinction is load-bearing.
+//
+// The prose source is Apple's *MacTCP Programmer's Guide*
+// (inside-macintosh-v2/MacTCP Programmers Guide.pdf; page numbers below
+// are the PRINTED page numbers, which are PDF page - 7). It is the only
+// source for three things the header does not name at all: the driver's
+// name, the connection-state values, and the meaning of the ULP timeout
+// action byte. Each is cited at its declaration.
+//
+// ---- THREE RULES a caller must follow ----
+//
+// 1. **`.IPP` is opened ONCE with PBOpenSync and never PBClose'd.** The
+//    MacTCP driver installs itself at startup via INIT-31 and registers
+//    with the Device Manager as `.IPP` (guide p. 5). The name is prose
+//    convention, not a header symbol, so no `const string` is declared
+//    for it -- the same discipline toolbox/appletalk.cla uses for
+//    ".MPP"/".ATP" and toolbox/serial.cla for the four serial drivers.
+//    The guide is explicit about the close (p. 8): "The application
+//    should not issue a PBClose call to the MacTCP driver. Because the
+//    driver can be shared by a variety of applications, once
+//    initialized, it never stops operation until the machine is
+//    restarted. PBClose returns a closeErr error code." Open it once,
+//    keep the refNum, and put that refNum in every block's
+//    ioCRefNum@24 (tcpIoCRefNum).
+//
+// 2. **A block MacTCP owns is untouchable until its ioResult leaves 1.**
+//    Every MacTCP routine supports both sync and async modes (guide
+//    p. 7); an async call returns immediately and the real result lands
+//    in ioResult@16 (tcpIoResult), which stays 1 (`inProgress`,
+//    MacTCP.h:93) until the driver completes the request. Neither the
+//    parameter block nor any buffer it points at may be read, written,
+//    moved or freed while that is true. This is toolbox/appletalk.cla's
+//    rule 2 restated for a second driver, and it cost that phase three
+//    hung boots to learn.
+//
+// 3. **The receive buffer given to TCPCreate belongs to MacTCP until
+//    TCPRelease.** The guide (p. 36) says so directly: "Ownership of
+//    this block of memory passes to TCP. The memory -- a minimum of 4096
+//    bytes -- cannot be modified or relocated until TCPRelease is
+//    called." It must be a locked, non-relocatable block (NewPtr, not a
+//    handle), it sizes the advertised receive window, and TCPRelease
+//    (p. 56) hands it back at tcpCsParam/tcpCsParam+4 -- only then may
+//    the caller free it. 4096 is the floor; the guide recommends 8192
+//    for character-oriented and 16 KB for block-oriented applications.
+
+// ---- The driver's own IP control calls (MacTCP.h:196-221) ----
+//
+// These three csCodes go in a GetAddrParamBlock / ICMPParamBlock /
+// IPParamBlock rather than a TCPiopb. Only ipctlGetAddr is reached by
+// this phase's abstractions -- it is how a program learns its own IP
+// address and net mask -- but all three are catalogued because they are
+// the whole of the `.IPP` driver's non-TCP, non-UDP control interface.
+const ipctlGetAddr: int = 15    // MacTCP.h:197 -- Control: get our IP address and net mask
+const ipctlEchoICMP: int = 17   // MacTCP.h:220 -- Control: send an ICMP echo (ping)
+const ipctlLAPStats: int = 19   // MacTCP.h:221 -- Control: get link-access-protocol statistics
+
+// GetAddrParamBlock offsets (MacTCP.h:203-216), recomputed under mac68k
+// packing: qLink@0(4) qType@4(2) ioTrap@6(2) ioCmdAddr@8(4)
+// ioCompletion@12(4) ioResult@16(2) ioNamePtr@18(4) ioVRefNum@22(2)
+// ioCRefNum@24(2) csCode@26(2) ourAddress@28(4) ourNetMask@32(4) = 36.
+// The Device Manager prefix is identical to a TCPiopb's, so
+// tcpIoResult/tcpIoCRefNum/tcpCsCode below apply to this block too.
+const getAddrPbSize: int = 36        // MacTCP.h:203-216 -- sizeof(GetAddrParamBlock)
+const getAddrOurAddress: int = 28    // MacTCP.h:214 -- long: our IP address
+const getAddrOurNetMask: int = 32    // MacTCP.h:215 -- long: our IP net mask
+
+// ---- TCP csCodes (MacTCP.h:333-347) ----
+//
+// 33 is absent from the header's own enum (it was TCPWaitForOpen in an
+// earlier MacTCP) and 44-49 are reserved up to TCPCtlMax = 49.
+const tcpCreate: int = 30         // MacTCP.h:334 -- open a TCP stream (hands over the receive buffer)
+const tcpPassiveOpen: int = 31    // MacTCP.h:335 -- listen for an incoming connection
+const tcpActiveOpen: int = 32     // MacTCP.h:336 -- initiate an outgoing connection
+const tcpSend: int = 34           // MacTCP.h:337 -- send data described by a WDS
+const tcpNoCopyRcv: int = 35      // MacTCP.h:338 -- receive in place; TCP fills an RDS
+const tcpRcvBfrReturn: int = 36   // MacTCP.h:339 -- give the tcpNoCopyRcv buffers back to TCP
+const tcpRcv: int = 37            // MacTCP.h:340 -- receive by copy into the caller's buffer
+const tcpClose: int = 38          // MacTCP.h:341 -- graceful close: "no more data to send"
+const tcpAbort: int = 39          // MacTCP.h:342 -- break the connection, discard everything
+const tcpStatus: int = 40         // MacTCP.h:343 -- read connection state and counters
+const tcpExtendedStat: int = 41   // MacTCP.h:344 -- extended status (absent from the guide's Appendix)
+const tcpRelease: int = 42        // MacTCP.h:345 -- close the stream, hand the receive buffer back
+const tcpGlobalInfo: int = 43     // MacTCP.h:346 -- driver-wide parameters and statistics
+
+// ---- UDP csCodes (MacTCP.h:577-589) ----
+//
+// Catalogued for completeness -- this phase's abstractions reach none of
+// them. A UDP call uses a UDPiopb (MacTCP.h:646-659), whose Device
+// Manager prefix and stream pointer sit at the same offsets as a
+// TCPiopb's but whose csParam arms are laid out differently; do not
+// reuse the tcp* offsets below for UDP without transcribing those
+// structs first.
+const udpCreate: int = 20        // MacTCP.h:578 -- open a UDP stream
+const udpRead: int = 21          // MacTCP.h:579 -- read a datagram
+const udpBfrReturn: int = 22     // MacTCP.h:580 -- return a read buffer to the driver
+const udpWrite: int = 23         // MacTCP.h:581 -- write a datagram
+const udpRelease: int = 24       // MacTCP.h:582 -- close a UDP stream
+const udpMaxMTUSize: int = 25    // MacTCP.h:583 -- largest datagram to a given host
+const udpStatus: int = 26        // MacTCP.h:584 -- stream status
+const udpMultiCreate: int = 27   // MacTCP.h:585 -- open a multi-port stream
+const udpMultiSend: int = 28     // MacTCP.h:586 -- send on a multi-port stream
+const udpMultiRead: int = 29     // MacTCP.h:587 -- read on a multi-port stream
+
+// ---- TCPiopb: the common header (MacTCP.h:556-575) ----
+//
+// struct TCPiopb { SInt8 fill12[12]; TCPIOCompletionUPP ioCompletion;
+// short ioResult; Ptr ioNamePtr; short ioVRefNum; short ioCRefNum;
+// short csCode; StreamPtr tcpStream; union {...} csParam; }
+//
+// fill12@0(12) ioCompletion@12(4) ioResult@16(2) ioNamePtr@18(4)
+// ioVRefNum@22(2) ioCRefNum@24(2) csCode@26(2) tcpStream@28(4)
+// csParam@32. The first 12 bytes are the Device Manager's own
+// qLink/qType/ioTrap/ioCmdAddr, which the driver owns -- never write
+// them; that is why the header spells them as opaque filler.
+//
+// tcpPbSize is sizeof(TCPiopb) = 32 + the LARGEST csParam arm. That arm
+// is TCPStatusPB at 70 bytes (MacTCP.h:486-512), not TCPOpenPB, which is
+// only 66 despite its 40-byte options array: 32 + 70 = 102. The guide
+// corroborates it independently -- TCPStatus's last field is a long at
+// offset 98 (p. 54), so the block cannot be shorter than 102.
+const tcpPbSize: int = 102        // MacTCP.h:556-575 -- sizeof(TCPiopb); allocate with NewPtrClear
+const tcpIoCompletion: int = 12   // MacTCP.h:558 -- long: completion routine, 0 for none
+const tcpIoResult: int = 16       // MacTCP.h:559 -- word: OSErr; stays 1 (inProgress) while the driver owns the block
+const tcpIoCRefNum: int = 24      // MacTCP.h:562 -- word: the `.IPP` refNum PBOpenSync handed back
+const tcpCsCode: int = 26         // MacTCP.h:563 -- word: which TCP routine (the tcp* csCodes above)
+const tcpStream: int = 28         // MacTCP.h:564 -- long: stream pointer; OUT of tcpCreate, IN to everything else
+const tcpCsParam: int = 32        // MacTCP.h:565 -- where the per-call union begins
+
+// ---- TCPCreate csParam (MacTCP.h:392-397; guide p. 36) ----
+//
+// TCPCreatePB { Ptr rcvBuff; unsigned long rcvBuffLen; TCPNotifyUPP
+// notifyProc; Ptr userDataPtr; } -- +0/+4/+8/+12 on tcpCsParam.
+// notifyProc is the ASR; 0 means "do not notify me" (guide p. 36), which
+// is what this phase's runtime passes. See rule 3 above for what happens
+// to rcvBuff.
+const tcpCreateRcvBuff: int = 32       // MacTCP.h:393 -- long: locked receive buffer, >= 4096 bytes
+const tcpCreateRcvBuffLen: int = 36    // MacTCP.h:394 -- long: its length; it sizes the receive window
+const tcpCreateNotifyProc: int = 40    // MacTCP.h:395 -- long: ASR, or 0 for no asynchronous notification
+const tcpCreateUserDataPtr: int = 44   // MacTCP.h:396 -- long: passed back to the ASR untouched
+
+// ---- TCPPassiveOpen / TCPActiveOpen csParam (MacTCP.h:399-416) ----
+//
+// One struct serves both csCodes (guide pp. 41, 44), so these offsets
+// are shared. TCPOpenPB { SInt8 ulpTimeoutValue, ulpTimeoutAction,
+// validityFlags, commandTimeoutValue; ip_addr remoteHost; tcp_port
+// remotePort; ip_addr localHost; tcp_port localPort; SInt8 tosFlags,
+// precedence; Boolean dontFrag; SInt8 timeToLive, security, optionCnt,
+// options[40]; Ptr userDataPtr; } = 66 bytes.
+//
+// Note remoteHost@36 and localHost@42 are 4-byte quantities on 2-byte
+// boundaries -- correct under mac68k packing, and confirmed by the
+// guide's own tables (pp. 41, 44), which list exactly these offsets.
+// TCPActiveOpen ignores commandTimeoutValue; TCPPassiveOpen accepts a
+// remoteHost/remotePort of 0 meaning "any peer".
+const tcpOpenUlpTimeoutValue: int = 32      // MacTCP.h:400 -- byte: ULP timeout in seconds; 0 = TCP's default (2 minutes)
+const tcpOpenUlpTimeoutAction: int = 33     // MacTCP.h:401 -- byte: tcpUlpReport / tcpUlpAbort (see below)
+const tcpOpenValidityFlags: int = 34        // MacTCP.h:402 -- byte: which optional parameters are set (tcpValid* below)
+const tcpOpenCommandTimeoutValue: int = 35  // MacTCP.h:403 -- byte: passive-open timeout in seconds; 0 = infinite
+const tcpOpenRemoteHost: int = 36           // MacTCP.h:404 -- long: remote IP address (0 = any, passive open only)
+const tcpOpenRemotePort: int = 40           // MacTCP.h:405 -- word: remote TCP port (0 = any, passive open only)
+const tcpOpenLocalHost: int = 42            // MacTCP.h:406 -- long: local IP address (returned)
+const tcpOpenLocalPort: int = 46            // MacTCP.h:407 -- word: local TCP port; 0 = let TCP assign one
+const tcpOpenTosFlags: int = 48             // MacTCP.h:408 -- byte: type of service (bit 0 low delay, 1 throughput, 2 reliability)
+const tcpOpenPrecedence: int = 49           // MacTCP.h:409 -- byte: IP precedence 0..7; 0 = routine
+const tcpOpenDontFrag: int = 50             // MacTCP.h:410 -- byte: nonzero forbids fragmentation
+const tcpOpenTimeToLive: int = 51           // MacTCP.h:411 -- byte: IP TTL; 0 = TCP's default of 60
+const tcpOpenSecurity: int = 52             // MacTCP.h:412 -- byte: nonzero inserts the configured IP security option
+const tcpOpenOptionCnt: int = 53            // MacTCP.h:413 -- byte: long words of IP options that follow
+const tcpOpenOptions: int = 54              // MacTCP.h:414 -- byte[40]: raw IP options
+const tcpOpenUserDataPtr: int = 94          // MacTCP.h:415 -- long: caller's own cookie
+
+// ---- TCPSend csParam (MacTCP.h:419-430; guide p. 45) ----
+//
+// TCPSendPB { SInt8 ulpTimeoutValue, ulpTimeoutAction, validityFlags;
+// Boolean pushFlag, urgentFlag; SInt8 filler; Ptr wdsPtr; unsigned long
+// sendFree; unsigned short sendLength; Ptr userDataPtr; } -- the filler
+// at +5 is what puts wdsPtr on +6 (38) rather than +5.
+//
+// The guide (p. 45) calls sendFree and sendLength "reserved"; the header
+// names them. Both are driver-internal on a plain TCPSend -- the data is
+// described entirely by the WDS.
+const tcpSendUlpTimeoutValue: int = 32    // MacTCP.h:420 -- byte: ULP timeout in seconds
+const tcpSendUlpTimeoutAction: int = 33   // MacTCP.h:421 -- byte: tcpUlpReport / tcpUlpAbort
+const tcpSendValidityFlags: int = 34      // MacTCP.h:422 -- byte: which optional parameters are set
+const tcpSendPushFlag: int = 35           // MacTCP.h:423 -- byte: nonzero sends immediately (PSH)
+const tcpSendUrgentFlag: int = 36         // MacTCP.h:424 -- byte: nonzero marks the data urgent (URG)
+const tcpSendWdsPtr: int = 38             // MacTCP.h:426 -- long: the write data structure (see WDS below)
+const tcpSendSendFree: int = 42           // MacTCP.h:427 -- long: driver-internal ("reserved", guide p. 45)
+const tcpSendSendLength: int = 46         // MacTCP.h:428 -- word: driver-internal ("reserved", guide p. 45)
+const tcpSendUserDataPtr: int = 48        // MacTCP.h:429 -- long: caller's own cookie
+
+// ---- TCPRcv / TCPNoCopyRcv / TCPRcvBfrReturn csParam
+//      (MacTCP.h:436-447; guide pp. 47, 50) ----
+//
+// One struct serves all three csCodes. TCPReceivePB { SInt8
+// commandTimeoutValue; Boolean markFlag, urgentFlag; SInt8 filler; Ptr
+// rcvBuff; unsigned short rcvBuffLen; Ptr rdsPtr; unsigned short
+// rdsLength, secondTimeStamp; Ptr userDataPtr; }
+//
+// **The header and the printed guide disagree here, and the header
+// wins.** MacTCP.h:434-435 says so itself: "Note: the filler in the
+// following structure is in a different location than that specified in
+// the Programmer's Guide." The guide's tables (pp. 47, 50) put the
+// filler at +1 and read mark@34 / urgent@35; the header puts mark@33,
+// urgent@34 and the filler at +3. Everything from rcvBuff@36 onward
+// agrees. Transcribing the guide's two byte offsets instead of the
+// header's would read the wrong bytes for both flags.
+const tcpRcvCommandTimeoutValue: int = 32  // MacTCP.h:437 -- byte: seconds to wait for data; 0 = infinite
+const tcpRcvMarkFlag: int = 33             // MacTCP.h:438 -- byte: returned; nonzero = this data ends the urgent data
+const tcpRcvUrgentFlag: int = 34           // MacTCP.h:439 -- byte: returned; nonzero = this data begins urgent data
+const tcpRcvRcvBuff: int = 36              // MacTCP.h:441 -- long: caller's buffer (tcpRcv only)
+const tcpRcvRcvBuffLen: int = 40           // MacTCP.h:442 -- word: in, its size; out, bytes actually received
+const tcpRcvRdsPtr: int = 42               // MacTCP.h:443 -- long: read data structure (tcpNoCopyRcv / tcpRcvBfrReturn)
+const tcpRcvRdsLength: int = 46            // MacTCP.h:444 -- word: RDS entries excluding the terminating zero
+const tcpRcvSecondTimeStamp: int = 48      // MacTCP.h:445 -- word: driver-internal ("reserved", guide p. 50)
+const tcpRcvUserDataPtr: int = 50          // MacTCP.h:446 -- long: caller's own cookie
+
+// ---- TCPClose csParam (MacTCP.h:450-456; guide p. 52) ----
+//
+// TCPClosePB { SInt8 ulpTimeoutValue, ulpTimeoutAction, validityFlags,
+// filler; Ptr userDataPtr; } -- the same filler family as TCPReceivePB.
+// The guide's table (p. 52) puts the user data pointer at 35; the header
+// puts the filler there and userDataPtr at 36. The header wins, for the
+// reason MacTCP.h:434-435 states.
+//
+// TCPClose is a HALF close: it means "I have no more data to send", not
+// "shut the connection down" (guide p. 52). The connection can stay open
+// indefinitely while the peer keeps sending; only when the peer closes
+// too does it end. Use tcpAbort to break one unconditionally.
+const tcpCloseUlpTimeoutValue: int = 32    // MacTCP.h:451 -- byte: ULP timeout in seconds
+const tcpCloseUlpTimeoutAction: int = 33   // MacTCP.h:452 -- byte: tcpUlpReport / tcpUlpAbort
+const tcpCloseValidityFlags: int = 34      // MacTCP.h:453 -- byte: which optional parameters are set
+const tcpCloseUserDataPtr: int = 36        // MacTCP.h:455 -- long: caller's own cookie (guide p. 52 says 35; header wins)
+
+// ---- TCPAbort csParam (MacTCP.h:514-516; guide p. 53) ----
+const tcpAbortUserDataPtr: int = 32   // MacTCP.h:515 -- long: caller's own cookie; the only field TCPAbort takes
+
+// ---- TCPStatus csParam (MacTCP.h:486-512; guide p. 54) ----
+//
+// TCPStatusPB is the widest arm of the union and therefore what fixes
+// tcpPbSize at 102. Only the fields this phase reads are declared; the
+// rest (securityLevelPtr@62, sendUnacked@66, sendNext@70,
+// congestionWindow@74, rcvNext@78, srtt@82, lastRTT@86,
+// sendMaxSegSize@90, connStatPtr@94) are recorded here in prose on the
+// "declare what the phase's abstractions actually reach" rule that
+// toolbox/appletalk.cla states. ulpTimeoutValue@32 and
+// ulpTimeoutAction@33 are returned in the same two bytes the open calls
+// set, so the tcpOpen* names cover them.
+const tcpStatusRemoteHost: int = 38        // MacTCP.h:490 -- long: remote IP address
+const tcpStatusRemotePort: int = 42        // MacTCP.h:491 -- word: remote TCP port
+const tcpStatusLocalHost: int = 44         // MacTCP.h:492 -- long: local IP address
+const tcpStatusLocalPort: int = 48         // MacTCP.h:493 -- word: local TCP port
+const tcpStatusConnectionState: int = 52   // MacTCP.h:496 -- byte: one of the tcpState* values below
+const tcpStatusSendWindow: int = 54        // MacTCP.h:498 -- word: bytes the remote TCP will accept
+const tcpStatusRcvWindow: int = 56         // MacTCP.h:499 -- word: bytes the local TCP will accept
+const tcpStatusAmtUnackedData: int = 58    // MacTCP.h:500 -- word: sent but not yet acknowledged
+const tcpStatusAmtUnreadData: int = 60     // MacTCP.h:501 -- word: received but not yet read -- the "is there data?" poll
+const tcpStatusUserDataPtr: int = 98       // MacTCP.h:511 -- long: caller's own cookie
+
+// ---- Validity flags (MacTCP.h:378-383) ----
+//
+// The open/send/close calls' validityFlags byte says which optional
+// parameters the caller actually filled in; a clear bit means "use
+// TCP's default" (guide p. 41). The header names these `timeoutValue`,
+// `timeoutAction`, `typeOfService` and `precedence` -- far too generic
+// to put in a shared namespace, so they carry a tcpValid prefix here.
+// The guide states them as bit numbers (bit 7 value, 6 action, 5 TOS,
+// 4 precedence), which is the same thing.
+const tcpValidTimeoutValue: int = 0x80    // MacTCP.h:379 -- bit 7: ULP timeout VALUE is supplied
+const tcpValidTimeoutAction: int = 0x40   // MacTCP.h:380 -- bit 6: ULP timeout ACTION is supplied
+const tcpValidTypeOfService: int = 0x20   // MacTCP.h:381 -- bit 5: type-of-service byte is supplied
+const tcpValidPrecedence: int = 0x10      // MacTCP.h:382 -- bit 4: precedence byte is supplied
+
+// ---- ULP timeout action (guide pp. 41, 44, 45, 52, 54) ----
+//
+// **These values come from the guide alone -- MacTCP.h declares the byte
+// (`SInt8 ulpTimeoutAction`) and says nothing about its values.** All
+// five of the guide's parameter-block tables that list the field say the
+// same thing, verbatim: "ULP timeout action; 0 = report, nonzero =
+// abort". The prose agrees: TCPSend p. 45, "If the ULP action is abort,
+// the connection is broken ... If the ULP action is report, a ULP
+// timeout notification is given", i.e. an ASR event (tcpULPTimeout) and
+// the connection survives.
+//
+// The task brief for this file had these two values the other way round
+// (tcpUlpAbort = 0, tcpUlpReport = 1). The names are kept as the brief
+// specified; the VALUES follow the guide, which is the only source that
+// has any. A caller wanting the connection torn down when the ULP timer
+// expires writes tcpUlpAbort, and must also set tcpValidTimeoutAction in
+// validityFlags -- a cleared block means action 0, which is REPORT.
+const tcpUlpReport: int = 0   // guide pp. 41/44/45/52/54 -- 0: notify via the ASR, keep the connection
+const tcpUlpAbort: int = 1    // guide pp. 41/44/45/52/54 -- nonzero: break the connection
+
+// ---- WDS and RDS entries (MacTCP.h:156-165) ----
+//
+// struct wdsEntry { unsigned short length; Ptr ptr; } -- 2 + 4 = 6 bytes
+// under mac68k packing, NOT 8; rdsEntry is declared identically
+// (MacTCP.h:161-164), so one set of names serves both. A WDS is an array
+// of these terminated by an entry whose length field is 0 (guide p. 47
+// spells the RDS case out: "the simplest possible RDS has one element
+// and is 8 bytes in length: a word length field, a long pointer field,
+// and a terminating word length field of 0" -- 6 + 2).
+const wdsEntrySize: int = 6   // MacTCP.h:156-159 -- sizeof(wdsEntry) == sizeof(rdsEntry)
+const wdsLength: int = 0      // MacTCP.h:157 -- word: bytes in this buffer; 0 terminates the array
+const wdsPtr: int = 2         // MacTCP.h:158 -- long: the buffer itself
+
+// ---- ASR event codes (MacTCP.h:350-357; guide p. 37, Appendix p. 86) ----
+//
+// Catalogued for completeness. This phase's runtime registers no ASR
+// (tcpCreateNotifyProc is 0), so nothing here is reached today; an ASR
+// runs at interrupt time and may not allocate or release memory.
+const tcpClosing: int = 1         // MacTCP.h:351 -- the peer sent everything it intends to send
+const tcpULPTimeout: int = 2      // MacTCP.h:352 -- ULP timer expired and the action is report
+const tcpTerminate: int = 3       // MacTCP.h:353 -- the connection no longer exists (reason in D1, below)
+const tcpDataArrival: int = 4     // MacTCP.h:354 -- data arrived with no receive command outstanding
+const tcpUrgent: int = 5          // MacTCP.h:355 -- urgent data outstanding
+const tcpICMPReceived: int = 6    // MacTCP.h:356 -- an ICMP report arrived on this stream
+
+// ---- Termination reasons (MacTCP.h:362-370; guide p. 38, Appendix p. 86) ----
+//
+// The word passed in D1 with a tcpTerminate event. There is no reason 1.
+const tcpRemoteAbort: int = 2             // MacTCP.h:363 -- the remote TCP aborted the connection
+const tcpNetworkFailure: int = 3          // MacTCP.h:364 -- "currently not in use" (guide p. 37)
+const tcpSecPrecMismatch: int = 4         // MacTCP.h:365 -- invalid security option or precedence level
+const tcpULPTimeoutTerminate: int = 5     // MacTCP.h:366 -- ULP timer expired and the action is abort
+const tcpULPAbort: int = 6                // MacTCP.h:367 -- the user issued TCPAbort
+const tcpULPClose: int = 7                // MacTCP.h:368 -- the connection closed gracefully
+const tcpServiceError: int = 8            // MacTCP.h:369 -- unexpected connection-initiation segment read
+
+// ---- Connection states (guide p. 54; NOT in MacTCP.h) ----
+//
+// The byte at tcpStatusConnectionState. MacTCP.h declares the field and
+// no values at all, so these come from the guide's own table on p. 54
+// ("The TCP connection state has the following values"), reproduced here
+// with its wording. They are the RFC 793 state machine at doubled
+// numbering -- the odd values are unused.
+const tcpStateClosed: int = 0         // guide p. 54 -- no connection exists on this stream
+const tcpStateListen: int = 2         // guide p. 54 -- listening for an incoming connection
+const tcpStateSynReceived: int = 4    // guide p. 54 -- incoming connection is being established
+const tcpStateSynSent: int = 6        // guide p. 54 -- outgoing connection is being established
+const tcpStateEstablished: int = 8    // guide p. 54 -- connection is up
+const tcpStateFinWait1: int = 10      // guide p. 54 -- connection is up; close has been issued
+const tcpStateFinWait2: int = 12      // guide p. 54 -- connection is up; close has been completed
+const tcpStateCloseWait: int = 14     // guide p. 54 -- connection is up; close has been received
+const tcpStateClosing: int = 16       // guide p. 54 -- close has been issued and received
+const tcpStateLastAck: int = 18       // guide p. 54 -- close has been issued and received
+const tcpStateTimeWait: int = 20      // guide p. 54 -- connection is being broken
+
+// ---- Result codes (MacTCP.h:92-132) ----
+//
+// MacTCP's own range is -23000..-23049. ioResult also carries the
+// Device Manager's ordinary OSErrs (openErr, closeErr, controlErr) and,
+// while a call is outstanding, 1 -- the header's `inProgress`
+// (MacTCP.h:93), which is the Device Manager's ioInProgress and is
+// therefore NOT redeclared here.
+const ipBadLapErr: int = -23000            // MacTCP.h:96 -- bad network configuration
+const ipBadCnfgErr: int = -23001           // MacTCP.h:97 -- bad IP configuration
+const ipNoCnfgErr: int = -23002            // MacTCP.h:98 -- missing IP or LAP configuration
+const ipLoadErr: int = -23003              // MacTCP.h:99 -- error in MacTCP load
+const ipBadAddr: int = -23004              // MacTCP.h:100 -- error in getting address
+const connectionClosing: int = -23005      // MacTCP.h:101 -- connection is closing
+const invalidLength: int = -23006          // MacTCP.h:102 -- WDS total was 0 or > 65535, or the receive buffer is too small
+const connectionExists: int = -23007       // MacTCP.h:103 -- this stream already has an open connection
+const connectionDoesntExist: int = -23008  // MacTCP.h:104 -- this stream has no open connection
+const insufficientResources: int = -23009  // MacTCP.h:105 -- 64 TCP streams are already open
+const invalidStreamPtr: int = -23010       // MacTCP.h:106 -- the specified stream is not open
+const streamAlreadyOpen: int = -23011      // MacTCP.h:107 -- a stream is already using this receive buffer
+const connectionTerminated: int = -23012   // MacTCP.h:108 -- the connection was broken; reason in a terminate ASR
+const invalidBufPtr: int = -23013          // MacTCP.h:109 -- buffer pointer was 0
+const invalidRDS: int = -23014             // MacTCP.h:110 -- the RDS pointer was 0
+const invalidWDS: int = -23014             // MacTCP.h:111 -- the WDS pointer was 0 (the header really shares -23014 with invalidRDS)
+const openFailed: int = -23015             // MacTCP.h:112 -- the connection came halfway up and then failed
+const commandTimeout: int = -23016         // MacTCP.h:113 -- nothing arrived within the command timeout
+const duplicateSocket: int = -23017        // MacTCP.h:114 -- that local/remote address pair is already connected
+const ipDontFragErr: int = -23032          // MacTCP.h:119 -- packet too large to send without fragmenting
+const ipDestDeadErr: int = -23033          // MacTCP.h:120 -- destination not responding
+const icmpEchoTimeoutErr: int = -23035     // MacTCP.h:121 -- ICMP echo timed out
+const ipNoFragMemErr: int = -23036         // MacTCP.h:122 -- no memory to send a fragmented packet
+const ipRouteErr: int = -23037             // MacTCP.h:123 -- cannot route the packet off-net
+const nameSyntaxErr: int = -23041          // MacTCP.h:124 -- DNR: malformed domain name
+const cacheFault: int = -23042             // MacTCP.h:125 -- DNR: cache miss
+const noResultProc: int = -23043           // MacTCP.h:126 -- DNR: no result procedure supplied
+const noNameServer: int = -23044           // MacTCP.h:127 -- DNR: no name server configured
+const authNameErr: int = -23045            // MacTCP.h:128 -- DNR: name does not exist
+const noAnsErr: int = -23046               // MacTCP.h:129 -- DNR: no name server answered
+const dnrErr: int = -23047                 // MacTCP.h:130 -- DNR: generic failure
+const outOfMemory: int = -23048            // MacTCP.h:131 -- DNR: out of memory
+
+// ---- The one trap: the ASYNC Control call ----
+//
+// Byte-identical to toolbox/appletalk.cla's declaration, deliberately:
+// the language reference's same-name rule merges two identical extern
+// declarations, so a build may compose both catalogs, either one alone,
+// or neither. Do not "clean up" the spelling on one side only.
+//
+//   PBControlAsync Devices.h:1307-1310 -- pb in A0, OSErr in D0, bit 11
+//   of 0xA404 clear --> the OS/register convention, bare `reg`. The
+//   0x0400 bit versus PBControlSync's 0xA004 is the Device Manager's
+//   async bit (bit 10). The call returns 0 = "queued"; the real result
+//   lands in the block's own ioResult@16 (tcpIoResult), which stays 1
+//   until the driver completes the request -- rule 2 above.
+external func PBControlAsync(paramBlock: ptr): int = trap 0xA404 reg
