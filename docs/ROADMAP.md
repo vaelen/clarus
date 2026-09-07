@@ -1,7 +1,7 @@
 # Clarus Roadmap
 
 Living document — the authoritative record of sequencing and strategy
-going forward. Updated 2026-09-05. Lists only unfinished work.
+going forward. Updated 2026-09-07. Lists only unfinished work.
 
 - Completed phases are archived verbatim in `docs/HISTORY.md`.
 - Recorded-but-unscheduled debt and needed improvements: `docs/TODO.md`.
@@ -54,15 +54,15 @@ check (Gestalt) with a graceful fallback when the feature is absent.
   `language-runtime-cleanup` phase, 2026-09-06: it is a do-not-fix note,
   not work, and it was the only survivor of that section.)
 
-## Where we are (2026-09-06)
+## Where we are (2026-09-07)
 
-Everything through the `compiler-cleanup` phase is merged to `main` and
-pushed (`c5d447b`). In brief:
+Everything through the `appletalk` phase is merged to `main` and pushed
+(`6e6e3d4`). In brief:
 
 - **clarusc is the only compiler** — self-hosted (the Go compiler is
   deleted, tag `go-compiler-final`), bootstrapped from the committed C
   snapshot `clarusc/clarusc.c` with `cc` alone. The test harness is Make
-  + POSIX shell + five small C tools; no Go anywhere (`go-retirement`).
+  + POSIX shell + six small C tools; no Go anywhere (`go-retirement`).
 - **Both targets work**: host builds via C emission (`clarusc emit` +
   cc against `runtime/host`), native 68k `.APPL` binaries via direct
   emission (`emit68k`, no C, no Retro68).
@@ -109,8 +109,8 @@ six subcases) via the new exit-trailer probe that replaced the gate's
 fixed 55-minute settle timer. Details: `docs/HISTORY.md`'s own entry.
 
 **`native-array-return-and-fileh-guards` is COMPLETE and MERGED to
-`main`** (fast-forward, 2026-09-06 19:49, `main` = `d947f9a`; NOT yet
-pushed to origin). It cleared the five entries `language-runtime-cleanup`
+`main`** (fast-forward, 2026-09-06 19:49, `main` = `d947f9a`; pushed
+since, with the `appletalk` merge). It cleared the five entries `language-runtime-cleanup`
 had left behind, in six tasks across three waves: fixed arrays of scalar
 elements are now a legal native return type (one predicate,
 `cgRetNeedsHidden`, sharing `cgParamByRef`'s boundary, so the return ABI
@@ -137,6 +137,17 @@ on `d4cd7c1`, after the deferred-minors wave: selfhost 179s, mactest
 hardware, bake full corpus 2s); the bootstrap snapshot was regenerated
 three times on the branch and reproduces itself. Details: `docs/HISTORY.md`'s
 own entry.
+
+**`appletalk` is COMPLETE and MERGED to `main`** (fast-forward,
+2026-09-07, `main` = `6e6e3d4`, pushed). Clarus programs now discover
+services with `serviceBrowser`, answer and make ATP requests with the new
+`service` resource, and open ADSP streams as `connection`s with
+`listener` accepting them — natively on real LocalTalk, and, for
+discovery and RPC, on the host as a genuine LocalTalk-over-UDP peer on
+the same wire an emulator is on. It also cleared the `serial-connection`
+phase's two carry-ins (host `stdio`/`pty` transports, `every` timers in
+the host CLI pump). Full T2 green (1350 s), with `adsp_68k` 12/12 and
+`toolbox_68k` 40/40 on hardware. Details: `docs/HISTORY.md`'s own entry.
 
 Owed, not yet done (details in `docs/TODO.md`): a live run of the Snow
 `macresident` scripts; a System 7 spot check of the filesystem-api
@@ -170,6 +181,12 @@ gateway 10.0.0.1). Caveat: on a modern Mac the emulator cannot attach to
 a tap device, so it can't reach the real Ethernet — AppleTalk runs over
 UDP instead, which means two Snow instances running simultaneously can
 see each other over AppleTalk (the way to test AppleTalk peer-to-peer).
+Snow's LocalTalk-over-UDP bridge is off by default and has no launch flag
+or workspace field — it is turned on per run from Snow's own in-window
+**Ports > Channel B (printer) > Enable LocalTalk (UDP)** menu, which is
+what `tests/lib_snow.sh`'s `snow_localtalk_b` clicks; once on, the guest
+joins the same `239.192.76.84:1954` group Mini vMac and the host
+`atalkdrive` tool are already on.
 
 **Driving application: a BBS server** — first over the serial port,
 later over MacTCP networking.

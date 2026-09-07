@@ -75,13 +75,18 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ### Serial/connection phase (2026-08-16)
 
-- **No committed emit-time fixture pinning the unchanged
-  `lowUnsupported` rejection for `appletalk`/local-receiver shapes**
-  (Task 5) — those shapes still reject the same way pre-phase; nothing
-  regresses that specifically today.
+- **No committed emit-time fixture pinning the `lowUnsupported`
+  rejection for local-receiver connection shapes** (Task 5) — the
+  `appletalk` half of this entry was closed by the AppleTalk phase
+  (2026-09-07), which lowers those shapes; the local-receiver shapes
+  still reject the same way pre-phase, and nothing regresses that
+  specifically today.
 
-- **No coverage for the >4-connections build error** (Task 5) — the
-  cap exists and is enforced, just untested.
+- **No coverage for the >8-connections build error** (Task 5; the cap
+  was raised 4 → 8 by the AppleTalk phase) — the listener,
+  serviceBrowser and service caps got fixtures in
+  `tests/atalk/runerr.sh` (`too_many_lsn`/`too_many_brs`/
+  `too_many_svc`); the connection cap did not.
 
 ### binary-files phase (2026-08-22)
 
@@ -226,6 +231,17 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   suppresses the coercion and rejects any argument whose kind is not the
   declared one -- applied to the whole family at once, so the next
   `text` out-parameter added does not have to remember the guard.
+
+## Compiler: cleanup
+
+### AppleTalk phase (2026-09-07)
+
+- **`lowSynthAtalkFire{Simple,Failed}` duplicate ~70 lines of the
+  connection dispatcher builders** (`clarusc/lower.cla`). The final
+  review recommended folding them; the fold edits code every `emitui`
+  and `cg68k` golden pins, for zero behaviour change, so it was deferred
+  to the MacTCP phase, where a third copy makes the case and the corpus
+  is reblessed anyway.
 
 ## Language: feature-support queries (after the AppleTalk release)
 

@@ -11,9 +11,10 @@
 //   Serve    lsn.register("Chat-<n>", "ClarusChat"), then echo every
 //            chunk that arrives back to the client with a '>' prepended,
 //            and quit when the client closes the stream.
-//   Connect  brs.find("ClarusChat"), then open(appletalk "Name:Type") to
-//            the first match, send a 0..255 byte sweep, check the echo
-//            byte for byte, send "hello", check that echo too, close.
+//   Connect  brs.find("ClarusChat"), then open(appletalk name) -- found's
+//            name is already NBP's "Object:Type" spelling -- to the first
+//            match, send a 0..255 byte sweep, check the echo byte for
+//            byte, send "hello", check that echo too, close.
 //
 // The registered name carries a per-run suffix (spec 8.4: multicast
 // LocalTalk sees every other session on the machine, so a fixed name

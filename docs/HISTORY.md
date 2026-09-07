@@ -208,6 +208,20 @@ the condensed open follow-ups extracted from these entries.
     subjectively perceptible on the emulator — **elision is NOT
     triggered by this measurement.** Full design + counting-rules table:
     `docs/superpowers/specs/2026-07-29-arc-design.md`.
+12. **AppleTalk: DONE.** NBP service discovery (`serviceBrowser`), ATP
+    request/response services (the `service` resource, with `serve`/
+    `reply`/`call`), and ADSP streams as `connection`'s second transport
+    with `listener` accepting them — natively on real LocalTalk under
+    Mini vMac, and, for discovery and RPC, on a command-line host as a
+    genuine LocalTalk-over-UDP peer on the same wire an emulator is on.
+    Merged to `main` 2026-09-07 (fast-forward, then pushed). Full entry:
+    "AppleTalk phase (2026-09-07, branch `appletalk`)" below.
+    (Items 1-11 above are the pre-2026-08 milestones. Every phase since
+    — `go-retirement`, `compiler-cleanup`, `language-runtime-cleanup`,
+    `native-array-return-and-fileh-guards` and `appletalk`, all merged to
+    `main` — is recorded as its own `## … phase` section further down;
+    this entry is here because `appletalk` closes the networking
+    milestone the list itself was tracking.)
 
 ## clarusc / self-hosting strategy (agreed in discussion, 2026-07-22)
 
@@ -5878,7 +5892,9 @@ per-task briefs, reports, reviews and the `progress.md` ledger in
 ## AppleTalk phase (2026-09-07, branch `appletalk`)
 
 Recorded on the same terms as the entries above: merging to `main` is
-Andrew's call and had not happened when this was written. **This entry
+Andrew's call and had not happened when this was written. **Merged to
+`main` 2026-09-07 — fast-forward, then pushed (`main` = `6e6e3d4`).**
+**This entry
 covers all fourteen tasks plus the final fix wave, all merged into
 `appletalk`. Task 13 (the Snow proofs and the first green two-Mac ADSP
 run) was blocked on a toolchain patch outside this repo until

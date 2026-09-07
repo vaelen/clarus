@@ -13,7 +13,8 @@ would be a bug in this document, not a second opinion.
 
 Every declaration shown below either already ships in the repository — the
 curated catalog under `toolbox/` (`memory.cla`, `events.cla`, `osutils.cla`,
-`scrap.cla`), the runtime (`runtime/clarus/ui.cla`, `runtime/clarus/
+`scrap.cla`, `devices.cla`, `files.cla`, `standardfile.cla`, `serial.cla`,
+`resources.cla`, `appleevents.cla`, `appletalk.cla`), the runtime (`runtime/clarus/ui.cla`, `runtime/clarus/
 uitext.cla`), or a test suite case (`testsuite/toolbox/`) — or is the
 reference's own worked example. None of it is invented for this document;
 each walkthrough below cites its source.
@@ -699,7 +700,7 @@ the emulator cannot catch what it doesn't model.
 
 ### (b) Using the catalog
 
-The four `toolbox/*.cla` files are ordinary user-side declaration files, not
+The `toolbox/*.cla` files are ordinary user-side declaration files, not
 runtime modules — they join a build the same way any other `.cla` file does,
 two ways:
 

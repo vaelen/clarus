@@ -50,7 +50,8 @@ no Go anywhere (the Go harness was deleted in the go-retirement phase,
 script per Go test).
 
 - `make -j tools bootstrap` builds `build-run/tools/*` (the C helpers:
-  `timeout`, `uiblob`, `resfork`, `clirhdr`, `tcpdrive`) and the two-stage
+  `timeout`, `uiblob`, `resfork`, `clirhdr`, `tcpdrive`, `atalkdrive`) and
+  the two-stage
   `build-run/clarusc-{snapshot,current}` compilers. Every test depends on
   both targets, so make's own scheduling serializes the bootstrap.
 - `make test T='<group>/<name> <group>/'` runs selected scripts. Each `T=`
@@ -186,7 +187,8 @@ Tiered test gates:
   patch this script SKIPs and `mactest/toolbox_68k` goes RED (the
   `AdspLeak` suite case has no skip verdict and FAILs with
   `open .DSP err -43`). `tests/mactest/atalk_68k.sh` (NBP/ATP over the
-  ROM's own `.MPP`/`.ATP`) needs no such file.
+  ROM's own `.MPP`/`.ATP`) and `tests/mactest/atalk_selfserve.sh` (serve
+  + browse with no peer at all) need no such file.
 - Golden blessing — five variables, and each must be set to exactly `1`
   (`lib.sh`'s `env_set`; any other value, `0` included, is NOT a bless):
   `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap goldens,
@@ -393,6 +395,11 @@ enum + runner, not one boot per case.
   RED on `AdspLeak` (`open .DSP err -43`). Re-apply the three lines and
   rebuild.
 - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
+- `macplus2/` → a second Mini vMac (`MacPlus2.app` + `vMac.ROM` + its
+  own `disk1.dsk`, an identical copy of `macplus/`'s) —
+  `tests/lib_mac.sh`'s `run_mac_pair` boots it as the second machine
+  for `tests/mactest/adsp_68k.sh`. Gitignored like `macplus/`; missing
+  ⇒ that script cannot run.
 - `vasm/` → locally built `vasmm68k_mot` (the third-party 68000 assembler
   used as an encoder oracle; rebuild recipe in
   `tests/asm68k/roundtrip.sh`'s header). Missing or built without the bin
