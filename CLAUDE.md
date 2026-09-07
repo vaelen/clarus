@@ -246,7 +246,7 @@ enum + runner, not one boot per case.
   native-array-return-and-fileh-guards phase's `ArrReturn` case, which
   hardware-proves scalar-element fixed-array RETURNS (hidden-result-pointer
   block copy) on both lanes) runs on
-  host and natively; `testsuite/toolbox/` (39 `ToolboxTest` cases: 38 real +
+  host and natively; `testsuite/toolbox/` (40 `ToolboxTest` cases: 39 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -289,7 +289,13 @@ enum + runner, not one boot per case.
   verification, read the node's own net/node back out of the Names Table
   Entry, look up a type nothing registered (err 0, 0 gotten -- the ROM
   answers no self-lookup and has no `setSelfSend`), remove the name, then
-  open and close a dynamic ATP socket)
+  open and close a dynamic ATP socket -- then to 39 real by the AppleTalk
+  phase's Task 13b `AdspLeak` case, which hardware-proves the ROM `.DSP`
+  `dspInit`/`dspRemove` and `dspCLInit`/`dspCLRemove` pairs leak nothing at
+  the runtime's own block sizes: 20 cycles of each, `FreeMem` exactly flat.
+  It does NOT cover `rtAt68DspFree`'s own bookkeeping -- a suite case cannot
+  name the AppleTalk runtime at all, since `--testapi`'s early-visible module
+  set does not include it, see `docs/TODO.md`)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end

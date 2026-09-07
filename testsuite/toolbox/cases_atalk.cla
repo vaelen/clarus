@@ -1,7 +1,10 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// cases_atalk.cla: AtalkSelf (AppleTalk phase Task 6) -- hardware-proves
+// cases_atalk.cla: AtalkSelf (AppleTalk phase Task 6) and AdspLeak
+// (Task 13b, at the foot of this file -- see its own header comment).
+//
+// AtalkSelf hardware-proves
 // the shipped toolbox/appletalk.cla catalog against real ROM AppleTalk,
 // in-process, the same "the catalog files supply the externs, this case
 // only calls them" discipline cases_catalog.cla and cases_serial.cla
@@ -28,8 +31,10 @@
 // of it, and nothing that was not observed on real hardware. Note in
 // particular that the node number is NOT asserted against a fixed value:
 // it is acquired by LLAP at boot and differs run to run (106 and 18 were
-// both seen). .XPP and .DSP are not opened at all: both are -43 (fnfErr)
-// on this boot disk, and a harness fix for that is scheduled separately.
+// both seen). AtalkSelf itself opens neither .XPP nor .DSP -- it needs
+// neither, and when it was written both answered -43 (fnfErr) on
+// LaunchAPPL's stripped boot disk. That harness gap is now fixed (Task
+// 13a), which is what lets AdspLeak below open .DSP for real.
 //
 // Runtime cost: about 6.5 seconds. `registerName` with verifyFlag on
 // broadcasts `count` lookups at `interval` before returning, and
@@ -219,4 +224,238 @@ func caseAtalkSelf(): TestResult {
     }
 
     return tkPass("AtalkSelf")
+}
+
+// ---- AdspLeak (AppleTalk phase Task 13b) ----
+
+// What AdspLeak proves: the ROM's .DSP driver retains NOTHING across an
+// init/remove pair -- for a connection end (dspInit/dspRemove) and for a
+// connection listener (dspCLInit/dspCLRemove) -- at the exact block sizes
+// runtime/clarus/atalk_68k.cla hands it, and that pairing those calls
+// with matching DisposePtrs leaves FreeMem EXACTLY where it started.
+// That is the half of the ADSP lifecycle nobody can settle by reading
+// source: whether the driver keeps a per-connection-end allocation of its
+// own that dspRemove does not give back.
+//
+// WHAT IT DELIBERATELY DOES NOT PROVE: rtAt68DspFree's own bookkeeping.
+// The blocks below are allocated and disposed by THIS case, not by
+// rtAt68CcbEnsure/rtAt68DspFree, so a future runtime edit that dropped
+// one of those DisposePtr calls would not be caught here. That is not a
+// design preference: a suite case CANNOT name rtAt68DspInitEnd /
+// rtAdspDevClose / rtAtEnsureUp at all, because `--testapi` early-splices
+// a FIXED thirteen-module list (core/str/text/list/map + the ui* family +
+// uitest.cla -- clarusc/drive.cla's driveEarlySplice, clarusc/bake.cla's
+// bakeModuleList) and the AppleTalk modules are not in it; they are
+// manifest-spliced AFTER the checker's first pass, so their names are
+// invisible to user code. Widening that set is a compiler change that
+// moves the bake manifest and the golden corpus -- recorded in
+// docs/TODO.md, scheduled with the next phase that reblesses goldens.
+//
+// The sizes below MIRROR the runtime's (rtAt68DspPbSz 68 = sizeof
+// DSPParamBlock, ADSP.h:193-216; rtAt68QSz 1024; ccbSize 242 and
+// attnBufSize 570 come straight from toolbox/appletalk.cla). Mirroring
+// is the point -- a leak the driver only exhibits at some other queue
+// size would not be the one the runtime can hit.
+//
+// Rule 2 (toolbox/appletalk.cla): every call below gets its OWN freshly
+// cleared parameter block -- dspInit and dspRemove never share one, the
+// same separation rtAt68DspAux exists for in the runtime.
+//
+// Exact equality, not slack: unlike cases_leak.cla's LeakCheck (which
+// brackets Memory-Manager-heavy handle traffic and needs jitter
+// headroom), every cycle here is a strict NewPtrClear/DisposePtr pair in
+// the application zone, so a single retained byte is a real finding.
+const tbAdspPbSz: int = 68     // sizeof(DSPParamBlock) -- runtime rtAt68DspPbSz
+const tbAdspQSz: int = 1024    // ADSP send/receive queue -- runtime rtAt68QSz
+const tbAdspCycles: int = 20
+
+// tbAdspFreeIf: DisposePtr unless the allocation failed. A partial
+// allocation still has to give back what it got, or the FreeMem bracket
+// would report the shortfall as a driver leak.
+func tbAdspFreeIf(p: ptr) {
+    if p != ptr(0) {
+        DisposePtr(p)
+    }
+}
+
+// tbAdspEndCycle: one full connection-end lifecycle -- the five blocks
+// rtAt68CcbEnsure allocates (CCB, send queue, receive queue, attention
+// buffer, parameter block) plus the separate remove block, dspInit,
+// dspRemove with the abort flag set, and every block back. Returns the
+// OSErr; 0 on success.
+func tbAdspEndCycle(dspRef: int): int {
+    var ccb: ptr
+    var sendQ: ptr
+    var recvQ: ptr
+    var attn: ptr
+    var pbInit: ptr
+    var pbRem: ptr
+    var e: int
+
+    ccb = NewPtrClear(ccbSize)
+    sendQ = NewPtrClear(tbAdspQSz)
+    recvQ = NewPtrClear(tbAdspQSz)
+    attn = NewPtrClear(attnBufSize)
+    pbInit = NewPtrClear(tbAdspPbSz)
+    pbRem = NewPtrClear(tbAdspPbSz)
+    e = rtAtErrMemFullLocal
+    if ccb != ptr(0) and sendQ != ptr(0) and recvQ != ptr(0) and attn != ptr(0) and pbInit != ptr(0) and pbRem != ptr(0) {
+        pokew(pbInit + dspIoCRefNum, dspRef)
+        pokew(pbInit + pbCsCode, dspInit)
+        pokel(pbInit + dspInitCcbPtr, int(ccb))
+        pokel(pbInit + dspInitUserRoutine, 0)
+        pokew(pbInit + dspInitSendQSize, tbAdspQSz)
+        pokel(pbInit + dspInitSendQueue, int(sendQ))
+        pokew(pbInit + dspInitRecvQSize, tbAdspQSz)
+        pokel(pbInit + dspInitRecvQueue, int(recvQ))
+        pokel(pbInit + dspInitAttnPtr, int(attn))
+        pokeb(pbInit + dspInitLocalSocket, 0)
+        e = PBControlSync(pbInit)
+        if e == 0 {
+            // The CCB is ADSP's until dspRemove returns, so the remove
+            // must succeed before any block below is disposed.
+            pokew(pbRem + dspIoCRefNum, dspRef)
+            pokew(pbRem + pbCsCode, dspRemove)
+            pokew(pbRem + dspCcbRefNum, peekw(pbInit + dspCcbRefNum))
+            pokeb(pbRem + dspCloseAbort, 1)
+            e = PBControlSync(pbRem)
+        }
+    }
+    tbAdspFreeIf(ccb)
+    tbAdspFreeIf(sendQ)
+    tbAdspFreeIf(recvQ)
+    tbAdspFreeIf(attn)
+    tbAdspFreeIf(pbInit)
+    tbAdspFreeIf(pbRem)
+    return e
+}
+
+// tbAdspLsnCycle: the connection-LISTENER twin. dspCLInit takes only a
+// CCB and a local socket -- no queues, no attention buffer (ADSP.h's
+// TRinitParams; rtLsnDevInit sets exactly these two fields too) -- and
+// localSocket 0 asks DDP for a dynamic socket, which dspCLRemove has to
+// give back or twenty cycles would run the node out of them.
+func tbAdspLsnCycle(dspRef: int): int {
+    var ccb: ptr
+    var pbInit: ptr
+    var pbRem: ptr
+    var e: int
+
+    ccb = NewPtrClear(ccbSize)
+    pbInit = NewPtrClear(tbAdspPbSz)
+    pbRem = NewPtrClear(tbAdspPbSz)
+    e = rtAtErrMemFullLocal
+    if ccb != ptr(0) and pbInit != ptr(0) and pbRem != ptr(0) {
+        pokew(pbInit + dspIoCRefNum, dspRef)
+        pokew(pbInit + pbCsCode, dspCLInit)
+        pokel(pbInit + dspInitCcbPtr, int(ccb))
+        pokeb(pbInit + dspInitLocalSocket, 0)
+        e = PBControlSync(pbInit)
+        if e == 0 {
+            pokew(pbRem + dspIoCRefNum, dspRef)
+            pokew(pbRem + pbCsCode, dspCLRemove)
+            pokew(pbRem + dspCcbRefNum, peekw(pbInit + dspCcbRefNum))
+            pokeb(pbRem + dspCloseAbort, 1)
+            e = PBControlSync(pbRem)
+        }
+    }
+    tbAdspFreeIf(ccb)
+    tbAdspFreeIf(pbInit)
+    tbAdspFreeIf(pbRem)
+    return e
+}
+
+// rtAtErrMemFullLocal: memFullErr. Named locally rather than reusing the
+// runtime's rtAtErrMemFull for the same reason every extern in this file
+// is local -- runtime names are not in scope for a suite case (see
+// AdspLeak's header comment).
+const rtAtErrMemFullLocal: int = -108
+
+func caseAdspLeak(): TestResult {
+    var openPb: IOParam
+    var nm: ptr
+    var end: ptr
+    var dspRef: int
+    var err: int
+    var before: int
+    var after: int
+    var i: int
+    var ran: int
+    var detail: string
+
+    // -- 1. Open .DSP. Unlike .MPP/.ATP this one is NOT in the Mac Plus
+    // ROM: it lives in the AppleTalk system file, so this is also the
+    // case's own environment gate. A failure FAILs with the OSErr (-43
+    // when the file is absent) rather than passing vacuously -- there is
+    // no "skip" verdict in this suite, and a silently-skipped leak check
+    // is worse than a red one.
+    nm = NewPtrClear(8)
+    if nm == ptr(0) {
+        return tkFail("AdspLeak", "NewPtrClear failed")
+    }
+    end = atPStr(nm, ".DSP")
+    openPb.ioNamePtr = nm
+    err = PBOpenSync(openPb)
+    dspRef = openPb.ioRefNum
+    DisposePtr(nm)
+    if err != 0 or dspRef == 0 {
+        detail = "open .DSP err " + tkIntToStr(err)
+        detail = detail + " refNum " + tkIntToStr(dspRef)
+        return tkFail("AdspLeak", detail)
+    }
+
+    // -- 2. Connection ends. One warm-up cycle OUTSIDE the bracket: the
+    // first dspInit on a freshly opened .DSP is what makes the driver
+    // build whatever per-driver state it keeps (and the Memory Manager
+    // grow the zone for our own first six blocks), and that one-time cost
+    // is not a leak. Everything after it must be free.
+    err = tbAdspEndCycle(dspRef)
+    if err != 0 {
+        detail = "end warmup err " + tkIntToStr(err)
+        return tkFail("AdspLeak", detail)
+    }
+    before = FreeMem()
+    i = 0
+    while i < tbAdspCycles {
+        err = tbAdspEndCycle(dspRef)
+        if err != 0 {
+            detail = "end cycle " + tkIntToStr(i) + " err " + tkIntToStr(err)
+            return tkFail("AdspLeak", detail)
+        }
+        ran = ran + 1
+        i = i + 1
+    }
+    after = FreeMem()
+    if after != before or ran != tbAdspCycles {
+        detail = "end before " + tkIntToStr(before) + " after " + tkIntToStr(after)
+        detail = detail + " cycles " + tkIntToStr(ran)
+        return tkFail("AdspLeak", detail)
+    }
+
+    // -- 3. Connection listeners, same shape, own warm-up.
+    err = tbAdspLsnCycle(dspRef)
+    if err != 0 {
+        detail = "listener warmup err " + tkIntToStr(err)
+        return tkFail("AdspLeak", detail)
+    }
+    before = FreeMem()
+    ran = 0
+    i = 0
+    while i < tbAdspCycles {
+        err = tbAdspLsnCycle(dspRef)
+        if err != 0 {
+            detail = "listener cycle " + tkIntToStr(i) + " err " + tkIntToStr(err)
+            return tkFail("AdspLeak", detail)
+        }
+        ran = ran + 1
+        i = i + 1
+    }
+    after = FreeMem()
+    if after != before or ran != tbAdspCycles {
+        detail = "listener before " + tkIntToStr(before) + " after " + tkIntToStr(after)
+        detail = detail + " cycles " + tkIntToStr(ran)
+        return tkFail("AdspLeak", detail)
+    }
+
+    return tkPass("AdspLeak")
 }

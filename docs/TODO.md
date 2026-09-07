@@ -184,6 +184,22 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   `mv`-into-place of a uniquely named directory, or drop the mkdir mutex
   for `flock` on a lock FILE where the platform has it.
 
+- **`AdspLeak` proves the ROM's half of the ADSP lifecycle, not the
+  runtime's.** Task 13b's `testsuite/toolbox` case (`cases_atalk.cla`)
+  allocates the connection-end and listener blocks itself and pairs
+  `dspInit`/`dspRemove` and `dspCLInit`/`dspCLRemove` at the runtime's own
+  sizes, so it catches a driver that retains memory -- but not a
+  `rtAt68DspFree` that forgets a `DisposePtr`. The waist version
+  (`rtAt68DspInitEnd` + `rtAdspDevClose` called from the case) does not
+  compile: `--testapi` early-splices a fixed thirteen-module list
+  (`clarusc/drive.cla`'s `driveEarlySplice`, `clarusc/bake.cla`'s
+  `bakeModuleList`) and the AppleTalk modules are manifest-spliced after
+  the checker's first pass, so their names are invisible to user code.
+  Real fix: add the AppleTalk family to that early-visible set in BOTH
+  places -- a compiler change that shifts the testapi visibility boundary,
+  the bake manifest classification and the golden corpus, so schedule it
+  with the next phase that reblesses the corpus (MacTCP).
+
 ## Compiler: type checking
 
 ### AppleTalk phase (2026-09-07)

@@ -152,6 +152,14 @@
 // (spec 5) -- a claimed menu joins the bar only while a claiming window
 // is frontmost, and leaves again when it closes -- see that case's own
 // header comment.
+// AdspLeak (cases_atalk.cla) is the AppleTalk phase Task 13b
+// addition: hardware-proves the ROM .DSP driver retains nothing across
+// an init/remove pair -- dspInit/dspRemove for a connection end and
+// dspCLInit/dspCLRemove for a connection listener, twenty cycles each at
+// the block sizes runtime/clarus/atalk_68k.cla uses, FreeMem exactly
+// flat. It does NOT prove rtAt68DspFree's own bookkeeping: a suite case
+// cannot name the AppleTalk runtime at all -- see that case's own header
+// comment and docs/TODO.md.
 
 enum ToolboxTest {
     All
@@ -193,15 +201,16 @@ enum ToolboxTest {
     CasesTable
     CanvasIdle
     WindowMenus
+    AdspLeak
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 38 real cases
+// nTbCases is ToolboxTest's member count minus All: the 39 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 39
+const nTbCases: int = 40
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -324,6 +333,9 @@ func tbCaseName(t: ToolboxTest): string {
     case WindowMenus {
         return "WindowMenus"
     }
+    case AdspLeak {
+        return "AdspLeak"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -373,6 +385,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(CasesTable)
     l.add(CanvasIdle)
     l.add(WindowMenus)
+    l.add(AdspLeak)
     l.add(SelfCheck)
     return l
 }
@@ -561,6 +574,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, WindowMenus) {
         results.add(caseWindowMenus())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, AdspLeak) {
+        results.add(caseAdspLeak())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
