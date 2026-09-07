@@ -17,6 +17,19 @@
  * peer is waiting, and a NEGATIVE errno for a dead listener (the waist
  * contract, so a caller can tell "no peer yet" from "this listener is
  * finished" without a second call).
+ *
+ * Close's two rules (spec 4.1, "pending sends drain first, then the
+ * graceful close"), both review fixes over the planned design:
+ *   - A Close with an unflushed Send remainder enters CLOSING and starts
+ *     the deadline AT ONCE, but DEFERS the shutdown(SHUT_WR) until Poll's
+ *     flush has emptied the buffer (shutPending). Shutting the write side
+ *     down with bytes still queued makes the next flush fail EPIPE and
+ *     loses them, reporting 3 as though the data had gone out. The sent
+ *     event (4) still fires exactly once, when the remainder drains; if
+ *     the peer never reads, the deadline ends the slot anyway.
+ *   - A Close on a CONNECTING slot RESETS it: there is no write side to
+ *     half-close yet, and leaving the connect in flight would later hand
+ *     the caller event 1 on a connection it had already abandoned.
  */
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -44,6 +57,7 @@ typedef struct {
     uint8_t snd[RT_TCP_CHUNK];
     int32_t sndLen, sndOff;  /* unwritten remainder of the last chunk */
     int sentPending;         /* report event 4 once after the chunk drains */
+    int shutPending;         /* CLOSING: shutdown(SHUT_WR) owed once snd drains */
     time_t closeDeadline;    /* RT_TCP_CLOSING: report 3 at the latest here */
 } rt_tcp_slot;
 
@@ -116,6 +130,9 @@ int32_t rt_ext_TcpHPoll(int32_t slot) {
     }
     /* OPEN or CLOSING: drain sends first, then one receive. */
     if (s->sndLen > 0) { int32_t e = rt_tcp_flush(s); if (e) { rt_tcp_reset(s); return 3; } }
+    /* The remainder is out: only now is it safe to half-close (see the
+     * header's Close rules -- shutting down earlier loses those bytes). */
+    if (s->shutPending && s->sndLen == 0) { s->shutPending = 0; shutdown(s->fd, SHUT_WR); }
     if (s->sentPending) { s->sentPending = 0; return 4; }
     if (s->rcvLen > 0) return 0;   /* the last received event is not consumed yet */
     n = recv(s->fd, s->rcv, sizeof s->rcv, 0);
@@ -141,9 +158,11 @@ int32_t rt_ext_TcpHClose(int32_t slot) {
     rt_tcp_slot *s;
     if (!rt_tcp_slot_ok(slot)) return EINVAL;
     s = &rt_tcp_slots[slot];
+    if (s->state == RT_TCP_CONNECTING) { rt_tcp_reset(s); return 0; }
     if (s->state != RT_TCP_OPEN) return 0;
-    shutdown(s->fd, SHUT_WR);
     s->state = RT_TCP_CLOSING; s->closeDeadline = time(NULL) + RT_TCP_CLOSE_SECS;
+    if (s->sndLen > 0) s->shutPending = 1;   /* deferred: Poll shuts down once it drains */
+    else shutdown(s->fd, SHUT_WR);
     return 0;
 }
 void rt_ext_TcpHRelease(int32_t slot) { if (rt_tcp_slot_ok(slot)) rt_tcp_reset(&rt_tcp_slots[slot]); }

@@ -71,6 +71,9 @@ extern void    rt_ext_TcpHLsnDeny(int32_t lsn);
 extern void    rt_ext_TcpHLsnClose(int32_t lsn);
 
 #define LOOPBACK_IP 0x7f000001
+/* Mirrors rt_tcp.inc's RT_TCP_CHUNK, which lives in that .inc and so is
+ * not visible from this translation unit: the largest single Send. */
+#define SEND_CHUNK 4096
 
 static int failed = 0;
 #define CHECK(cond, msg) \
@@ -281,6 +284,96 @@ static void test_deny(void) {
     CHECK(rt_ext_TcpHLsnPoll(0) < 0, "a closed listener polls dead (negative errno)");
 }
 
+/* ---- Scenario 7 (review fix round 1): Close drains a pending remainder ----
+ * Close must not shutdown(SHUT_WR) while a Send remainder is still queued:
+ * the next flush would fail EPIPE and those bytes would be lost behind a
+ * perfectly innocent-looking event 3. Getting a remainder at all takes a
+ * peer that never reads -- keep Sending 4096-byte chunks until its receive
+ * buffer and our send buffer are both full and SendBusy latches 1. Then
+ * Close, then let the peer read: every byte handed to Send must arrive, in
+ * order, and EOF must come after them rather than instead of them. */
+static void test_close_drains_pending(void) {
+    uint8_t chunk[SEND_CHUNK], rbuf[65536];
+    int srv, peer = -1, port = 0, i;
+    int32_t ev = 0, handed = 0, got = 0;
+    int eof = 0, bad = 0;
+
+    for (i = 0; i < SEND_CHUNK; i++) chunk[i] = (uint8_t)i;
+    srv = bind_ephemeral(&port);
+    CHECK(srv >= 0, "drain peer listener");
+    if (srv < 0) return;
+    fcntl(srv, F_SETFL, fcntl(srv, F_GETFL, 0) | O_NONBLOCK);
+    CHECK(rt_ext_TcpHCreate(5) == 0, "Create slot 5");
+    CHECK(rt_ext_TcpHActiveOpen(5, LOOPBACK_IP, port) == 0, "ActiveOpen slot 5");
+    for (i = 0; i < 200 && (peer < 0 || ev != 1); i++) {
+        if (peer < 0) peer = accept(srv, NULL, NULL);
+        if (ev != 1) ev = rt_ext_TcpHPoll(5);
+        if (peer < 0 || ev != 1) tick(10);
+    }
+    CHECK(peer >= 0 && ev == 1, "slot 5 opened to a peer that will not read");
+    if (peer < 0 || ev != 1) { close(srv); return; }
+    fcntl(peer, F_SETFL, fcntl(peer, F_GETFL, 0) | O_NONBLOCK);
+
+    /* The peer reads nothing in this loop, so it terminates on a full pipe. */
+    for (i = 0; i < 4000 && !rt_ext_TcpHSendBusy(5); i++) {
+        if (rt_ext_TcpHSend(5, chunk, SEND_CHUNK) != 0) break;
+        handed += SEND_CHUNK;
+        rt_ext_TcpHPoll(5);
+    }
+    CHECK(rt_ext_TcpHSendBusy(5) == 1, "a Send remainder is pending");
+    CHECK(handed > 0, "bytes were handed to Send");
+    CHECK(rt_ext_TcpHClose(5) == 0, "Close with a remainder pending");
+
+    /* Now drain from the peer's side. The deferred shutdown only fires
+     * once the remainder is out, so EOF must be the LAST thing seen. */
+    for (i = 0; i < 20000 && !eof; i++) {
+        ssize_t n;
+        rt_ext_TcpHPoll(5);
+        n = recv(peer, rbuf, sizeof rbuf, 0);
+        if (n > 0) {
+            ssize_t k;
+            for (k = 0; k < n; k++) {
+                if (rbuf[k] != (uint8_t)((got + k) % SEND_CHUNK)) bad = 1;
+            }
+            got += (int32_t)n;
+        } else if (n == 0) {
+            eof = 1;
+        } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            break;      /* a reset here is exactly the bug under test */
+        } else {
+            tick(1);
+        }
+    }
+    CHECK(got == handed, "every byte handed to Send arrived after the Close");
+    CHECK(!bad, "the drained bytes are in order and intact");
+    CHECK(eof, "the peer saw EOF, and only after the last byte");
+    rt_ext_TcpHRelease(5);
+    if (peer >= 0) close(peer);
+    close(srv);
+}
+
+/* ---- Scenario 8 (review fix round 1): Close while still CONNECTING ----
+ * There is no write side to half-close yet, so Close resets the slot. The
+ * bug it guards against is the opposite: a silent no-op that leaves the
+ * connect in flight and later reports event 1 (or an errno) on a
+ * connection the caller already walked away from. */
+static void test_close_while_connecting(void) {
+    int dead = free_port(), i;
+
+    CHECK(dead > 0, "picked a dead port");
+    CHECK(rt_ext_TcpHCreate(6) == 0, "Create slot 6");
+    CHECK(rt_ext_TcpHActiveOpen(6, LOOPBACK_IP, dead) == 0, "ActiveOpen slot 6");
+    CHECK(rt_ext_TcpHClose(6) == 0, "Close while still CONNECTING");
+    /* Poll well past the point the refusal would otherwise have landed
+     * (scenario 4 sees ECONNREFUSED within a pass or two): stay silent. */
+    for (i = 0; i < 40; i++) {
+        int32_t ev = rt_ext_TcpHPoll(6);
+        CHECK(ev == 0, "the abandoned slot stays idle -- never event 1, never an errno");
+        if (ev != 0) break;
+        tick(5);
+    }
+}
+
 /* ---- Scenario 6: close deadline ---- */
 static void test_close_deadline(void) {
     int srv, peer = -1, port = 0, i;
@@ -324,9 +417,14 @@ static void test_close_deadline(void) {
 int main(void) {
     /* Every wait above is a bounded poll() loop except scenario 5's one
      * blocking recv() on the denied client; 120 s is far above the honest
-     * worst-case sum (~45 s, of which scenario 6's deadline is 13 s) and
-     * exists only so a pathological hang is a failure, not a wedged test
-     * run. A clean run takes ~10 s, essentially all of it scenario 6. */
+     * worst-case sum (~70 s, of which scenario 6's deadline is 13 s and
+     * scenario 7's drain budget is 20 s) and exists only so a pathological
+     * hang is a failure, not a wedged test run. A clean run takes ~10 s,
+     * essentially all of it scenario 6.
+     *
+     * Scenarios 7 and 8 (the review fix round) run BEFORE 6 so that a
+     * regression in either surfaces in under a second instead of behind
+     * the 10-second deadline wait. */
     alarm(120);
 
     test_connect();
@@ -334,6 +432,8 @@ int main(void) {
     test_close();
     test_refused();
     test_deny();
+    test_close_drains_pending();
+    test_close_while_connecting();
     test_close_deadline();
 
     if (failed) {
