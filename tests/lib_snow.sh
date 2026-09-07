@@ -342,13 +342,25 @@ snow_run() {
 # `--serial-bridge-b localtalk` flag upstream, the same one-line shape as
 # the LaunchAPPL AppleTalk patch.
 #
+# `window 1` is System Events' FRONTMOST window of the Snow process, not
+# necessarily the emulator window -- a modal Snow dialog (writeback ask,
+# a file picker) would be window 1 instead and the clicks would land on
+# it. Our own boots open none, and the log-line check below is what
+# notices if one ever does.
+#
 # snow_run BLOCKS for the whole boot, so this cannot be called after it:
 # it arms a BACKGROUND clicker that waits for Snow's window to appear
-# (up to 60s) and then clicks. Call it immediately BEFORE snow_run and
-# `wait` for $SNOW_LTALK_PID afterwards. Clicking early is also correct
-# on the guest's terms: the bridge only has to exist before the guest
-# opens .MPP and acquires an LLAP node, which is ~35s into the boot
-# (measured -- see adsp_listener.sh's own timing-budget comment).
+# (up to 60s) and then clicks. **It must only be started once snow_run is
+# about to launch**: it waits for $WORK/snow.log, which nothing but our
+# own snow_run creates, so an orphaned clicker (the caller died before
+# snow_run ever ran, e.g. on snow_run's own "another Snow is already
+# running" refusal) can never post clicks into somebody else's Snow
+# window. It also gives up the moment $WORK is gone, which is how both
+# EXIT traps in this file say "the parent is finished". `wait` for
+# $SNOW_LTALK_PID afterwards. Clicking early is also correct on the
+# guest's terms: the bridge only has to exist before the guest opens
+# .MPP and acquires an LLAP node, which is ~35s into the boot (measured
+# -- see adsp_listener.sh's own timing-budget comment).
 snow_localtalk_b() {
     (
         # A backgrounded subshell inherits lib.sh's `rm -rf "$WORK"` EXIT
@@ -358,22 +370,34 @@ snow_localtalk_b() {
         _i=0
         _pos=
         while [ $_i -lt 60 ]; do
-            _pos=$(osascript -e 'tell application "System Events" to tell process "Snow" to get position of window 1' 2>/dev/null)
-            case "$_pos" in *,*) break ;; esac
-            _pos=
+            [ -d "$WORK" ] || exit 1          # parent gone; both EXIT traps rm $WORK
+            # $WORK/snow.log is created by snow_run's own launch
+            # redirection and by nothing else: until it exists, the only
+            # Snow that could be running is somebody else's.
+            if [ -f "$WORK/snow.log" ]; then
+                _pos=$(osascript -e 'tell application "System Events" to tell process "Snow" to get position of window 1' 2>/dev/null)
+                case "$_pos" in *,*) break ;; esac
+                _pos=
+            fi
             sleep 1
             _i=$(( _i + 1 ))
         done
-        [ -n "$_pos" ] || { echo "snow_localtalk_b: no Snow window after ${_i}s"; exit 1; }
+        if [ -z "$_pos" ]; then
+            echo "snow_localtalk_b: no window from our own Snow after ${_i}s (snow.log $([ -f "$WORK/snow.log" ] && echo present || echo absent))"
+            exit 1
+        fi
         _x=${_pos%%,*}
         _y=${_pos##*, }
         echo "snow_localtalk_b: Snow window at $_x,$_y after ${_i}s"
         osascript -e 'tell application "System Events" to set frontmost of process "Snow" to true' \
             > /dev/null 2>&1
-        # Ports -> Channel B (printer) -> Enable LocalTalk (UDP).
+        # Ports -> Channel B (printer) -> Enable LocalTalk (UDP). Neither
+        # stream is discarded: a missing `swift` or a revoked Accessibility
+        # permission has to show up in ltalk.log, not masquerade as
+        # "Snow's menu layout moved".
         for _off in "250 49" "310 95" "498 184"; do
             swift "$ROOT/scripts/click.swift" \
-                $(( _x + ${_off%% *} )) $(( _y + ${_off##* } )) > /dev/null 2>&1
+                $(( _x + ${_off%% *} )) $(( _y + ${_off##* } ))
             sleep 1
         done
         _i=0

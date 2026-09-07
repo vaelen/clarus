@@ -51,6 +51,13 @@
 # below restamps it to 220,64, which is that same Serve button on a
 # 640-wide screen. If it ever misses, `serving Chat-` never appears and
 # server_registered fails loudly.
+#
+# Unlike adsp_68k.sh there is deliberately NO `failed -1273` boot-disk
+# skip here (the same ruling as the toolbox suite's AdspLeak case): a
+# machine that can run the Snow lane at all is by definition one with the
+# LaunchAPPL AppleTalk patch and a System 7 disk that carries .DSP, so
+# twelve loud FAILs are the right answer to a missing driver, not a
+# green-by-skip.
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 . "$(dirname "$0")/../../lib_mac.sh" || die "helper lib failed to load"
@@ -81,9 +88,36 @@ emit68k -o "$WORK/chatcli.bin" --events testdata/ui/atalkchat_client.events \
     "$WORK/atalkchat.cla" > "$WORK/emit_cli.log" 2>&1 \
     || die "clarusc emit68k atalkchat (client): $(tail -10 "$WORK/emit_cli.log")"
 
+# snow_run makes this same refusal, but only AFTER snow_localtalk_b has
+# been armed below -- and an armed clicker whose parent then died on that
+# refusal is a clicker looking for a Snow window that is somebody else's.
+# (snow_localtalk_b's own $WORK/snow.log gate is the belt to this
+# braces; both are cheap.)
+_other=$(pgrep -x Snow | tr '\n' ' ')
+[ -z "$_other" ] || die "another Snow process is already running (pid $_other) -- refusing to boot"
+
 # The fixture COMPILES above need no network; the lock is taken as late
 # as possible (tests/lib_atalk.sh's own rule).
 atalk_lock
+
+# One cleanup for every exit path from here on: kill our two background
+# halves (and, by its own per-run cwd -- never by app name -- any
+# emulator the client half has started), drop the LToUDP lock, remove
+# $WORK. atalk_lock installed a trap without the kills, and snow_run
+# replaces the trap with one of its own, so this is installed here and
+# re-installed after snow_run returns. Both halves ALSO give up on their
+# own when $WORK disappears, which covers the one window neither trap
+# does: a `die` inside snow_run runs snow_run's trap, not this one.
+cleanup() {
+    [ -n "${SNOW_LTALK_PID:-}" ] && kill "$SNOW_LTALK_PID" 2>/dev/null
+    [ -n "${CLIPID:-}" ] && kill "$CLIPID" 2>/dev/null
+    pkill -f "$WORK/launch" 2>/dev/null
+    atalk_unlock
+    rm -rf "$WORK"
+    return 0
+}
+trap cleanup EXIT
+trap 'cleanup; exit 2' INT TERM
 
 snow_disk
 snow_put_bin "$WORK/chatsrv.bin" AtalkChat
@@ -100,6 +134,9 @@ client_half() {
     _end=$(( $(date +%s) + 240 ))
     _t0=$(date +%s)
     while [ "$(date +%s)" -lt "$_end" ]; do
+        # The parent is gone (every EXIT trap here removes $WORK) -- stop
+        # before booting an emulator nobody is left to read.
+        [ -d "$WORK" ] || return 0
         "$DRIVE" lookup "$TYPE" > "$WORK/lk.out" 2>&1
         if grep -q ":$TYPE" "$WORK/lk.out"; then
             echo "listener visible after $(( $(date +%s) - _t0 ))s: $(tr '\n' '|' < "$WORK/lk.out")"
@@ -109,6 +146,7 @@ client_half() {
     done
     grep -q ":$TYPE" "$WORK/lk.out" \
         || echo "listener NEVER visible on the group in $(( $(date +%s) - _t0 ))s -- booting the client anyway"
+    [ -d "$WORK" ] || return 0
     (
         run_mac "$WORK/chatcli.bin" 300
         echo "$MAC_EXIT" > "$WORK/client.exit"
@@ -127,11 +165,13 @@ CLIPID=$!
 snow_localtalk_b
 
 snow_run 600 "$(snow_done_when_trailer 20)"
-# snow_run installed its own EXIT trap and left `rm -rf "$WORK"` behind
-# it, which drops atalk_lock's unlock. Restore it. A lock leaked by a
-# crash in between is self-healing: atalk_lock steals a lock whose
-# recorded holder pid is gone.
-trap 'atalk_unlock; rm -rf "$WORK"' EXIT
+# snow_run installed its own EXIT trap and left `kill -9 <snow>;
+# rm -rf "$WORK"` behind it, which drops both the unlock and the
+# background-half kills. Restore ours. A lock leaked by a crash in
+# between is self-healing: atalk_lock steals a lock whose recorded holder
+# pid is gone.
+trap cleanup EXIT
+trap 'cleanup; exit 2' INT TERM
 wait "$CLIPID" 2>/dev/null
 # A bridge that never came up is a HARNESS fault, not a verdict about
 # ADSP: every assertion below would fail, all twelve for the same reason.
