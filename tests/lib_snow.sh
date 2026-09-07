@@ -98,6 +98,35 @@ snow_disk() {
     done
 }
 
+# snow_ethernet [ID] : attach Snow's DaynaPORT SCSI/Link Ethernet adapter at
+# SCSI ID (default 3 -- the ID snow/MacII.snoww uses and the ID the guest's
+# DaynaPORT driver was installed against) in the SCRATCH workspace, which
+# snow_disk clones from snow/Clarus.snoww (no adapter; "ethernet_link_type":
+# "NAT" is already there). Call it after snow_disk and before snow_run.
+#
+# scsi_targets is one ENTRY per ID: a bare "None"/"Ethernet" string on its
+# own line, or a three-line {"Disk": ...} object -- so entries are counted by
+# the line that STARTS one, never by line number.
+# ponytail: rewrite in place with awk; the file is a few dozen lines of
+# one-key-per-line JSON, which is why the rest of this file sed-edits it too.
+# A real JSON parser only pays off if Snow ever emits nested/compact output.
+snow_ethernet() {
+    _id=${1:-3}
+    awk -v id="$_id" '
+        /"scsi_targets": \[/ { inarr = 1; n = -1; print; next }
+        inarr && /^[ \t]*\]/ { inarr = 0 }
+        inarr && /^[ \t]*("None"|"Ethernet"|\{)/ {
+            n++
+            if (n == id) { sub(/"None"/, "\"Ethernet\"") }
+        }
+        { print }' "$SNOW_WS" > "$SNOW_WS.new" || die "snow_ethernet: rewrite failed"
+    mv "$SNOW_WS.new" "$SNOW_WS"
+    # A silently-missed rewrite would boot a guest with no link at all, and
+    # every MacTCP probe would then fail for the wrong reason.
+    grep -q '"Ethernet"' "$SNOW_WS" \
+        || die "snow_ethernet: no Ethernet entry at SCSI id $_id after rewrite"
+}
+
 # snow_put FILE MACPATH : stage FILE in text mode (hcopy -t) at MACPATH
 # (bare = volume root). putText -- data files NEVER go into Startup
 # Items, where Finder auto-opens every item and a data file throws a
