@@ -60,7 +60,7 @@
 //    Every MacTCP routine supports both sync and async modes (guide
 //    p. 7); an async call returns immediately and the real result lands
 //    in ioResult@16 (tcpIoResult), which stays 1 (`inProgress`,
-//    MacTCP.h:93) until the driver completes the request. Neither the
+//    MacTCP.h:95) until the driver completes the request. Neither the
 //    parameter block nor any buffer it points at may be read, written,
 //    moved or freed while that is true. This is toolbox/appletalk.cla's
 //    rule 2 restated for a second driver, and it cost that phase three
@@ -99,8 +99,8 @@ const getAddrOurNetMask: int = 32    // MacTCP.h:215 -- long: our IP net mask
 
 // ---- TCP csCodes (MacTCP.h:333-347) ----
 //
-// 33 is absent from the header's own enum (it was TCPWaitForOpen in an
-// earlier MacTCP) and 44-49 are reserved up to TCPCtlMax = 49.
+// 33 is absent from the header's own enum, as are 44-49; the enum ends
+// at TCPCtlMax = 49 (MacTCP.h:347).
 const tcpCreate: int = 30         // MacTCP.h:334 -- open a TCP stream (hands over the receive buffer)
 const tcpPassiveOpen: int = 31    // MacTCP.h:335 -- listen for an incoming connection
 const tcpActiveOpen: int = 32     // MacTCP.h:336 -- initiate an outgoing connection
@@ -118,7 +118,7 @@ const tcpGlobalInfo: int = 43     // MacTCP.h:346 -- driver-wide parameters and 
 // ---- UDP csCodes (MacTCP.h:577-589) ----
 //
 // Catalogued for completeness -- this phase's abstractions reach none of
-// them. A UDP call uses a UDPiopb (MacTCP.h:646-659), whose Device
+// them. A UDP call uses a UDPiopb (MacTCP.h:646-661), whose Device
 // Manager prefix and stream pointer sit at the same offsets as a
 // TCPiopb's but whose csParam arms are laid out differently; do not
 // reuse the tcp* offsets below for UDP without transcribing those
@@ -186,7 +186,7 @@ const tcpCreateUserDataPtr: int = 44   // MacTCP.h:396 -- long: passed back to t
 // TCPActiveOpen ignores commandTimeoutValue; TCPPassiveOpen accepts a
 // remoteHost/remotePort of 0 meaning "any peer".
 const tcpOpenUlpTimeoutValue: int = 32      // MacTCP.h:400 -- byte: ULP timeout in seconds; 0 = TCP's default (2 minutes)
-const tcpOpenUlpTimeoutAction: int = 33     // MacTCP.h:401 -- byte: tcpUlpReport / tcpUlpAbort (see below)
+const tcpOpenUlpTimeoutAction: int = 33     // MacTCP.h:401 -- byte: tcpUlpActionReport / tcpUlpActionAbort (see below)
 const tcpOpenValidityFlags: int = 34        // MacTCP.h:402 -- byte: which optional parameters are set (tcpValid* below)
 const tcpOpenCommandTimeoutValue: int = 35  // MacTCP.h:403 -- byte: passive-open timeout in seconds; 0 = infinite
 const tcpOpenRemoteHost: int = 36           // MacTCP.h:404 -- long: remote IP address (0 = any, passive open only)
@@ -213,7 +213,7 @@ const tcpOpenUserDataPtr: int = 94          // MacTCP.h:415 -- long: caller's ow
 // names them. Both are driver-internal on a plain TCPSend -- the data is
 // described entirely by the WDS.
 const tcpSendUlpTimeoutValue: int = 32    // MacTCP.h:420 -- byte: ULP timeout in seconds
-const tcpSendUlpTimeoutAction: int = 33   // MacTCP.h:421 -- byte: tcpUlpReport / tcpUlpAbort
+const tcpSendUlpTimeoutAction: int = 33   // MacTCP.h:421 -- byte: tcpUlpActionReport / tcpUlpActionAbort
 const tcpSendValidityFlags: int = 34      // MacTCP.h:422 -- byte: which optional parameters are set
 const tcpSendPushFlag: int = 35           // MacTCP.h:423 -- byte: nonzero sends immediately (PSH)
 const tcpSendUrgentFlag: int = 36         // MacTCP.h:424 -- byte: nonzero marks the data urgent (URG)
@@ -261,7 +261,7 @@ const tcpRcvUserDataPtr: int = 50          // MacTCP.h:446 -- long: caller's own
 // indefinitely while the peer keeps sending; only when the peer closes
 // too does it end. Use tcpAbort to break one unconditionally.
 const tcpCloseUlpTimeoutValue: int = 32    // MacTCP.h:451 -- byte: ULP timeout in seconds
-const tcpCloseUlpTimeoutAction: int = 33   // MacTCP.h:452 -- byte: tcpUlpReport / tcpUlpAbort
+const tcpCloseUlpTimeoutAction: int = 33   // MacTCP.h:452 -- byte: tcpUlpActionReport / tcpUlpActionAbort
 const tcpCloseValidityFlags: int = 34      // MacTCP.h:453 -- byte: which optional parameters are set
 const tcpCloseUserDataPtr: int = 36        // MacTCP.h:455 -- long: caller's own cookie (guide p. 52 says 35; header wins)
 
@@ -316,13 +316,29 @@ const tcpValidPrecedence: int = 0x10      // MacTCP.h:382 -- bit 4: precedence b
 // the connection survives.
 //
 // The task brief for this file had these two values the other way round
-// (tcpUlpAbort = 0, tcpUlpReport = 1). The names are kept as the brief
-// specified; the VALUES follow the guide, which is the only source that
-// has any. A caller wanting the connection torn down when the ULP timer
-// expires writes tcpUlpAbort, and must also set tcpValidTimeoutAction in
-// validityFlags -- a cleared block means action 0, which is REPORT.
-const tcpUlpReport: int = 0   // guide pp. 41/44/45/52/54 -- 0: notify via the ASR, keep the connection
-const tcpUlpAbort: int = 1    // guide pp. 41/44/45/52/54 -- nonzero: break the connection
+// (abort = 0, report = 1). The VALUES below follow the guide, which is
+// the only source that has any.
+//
+// The guide's TCPPassiveOpen prose (p. 42) adds one thing its tables do
+// not: "If the ULP timeout action is abort (the default value), the
+// connection is broken and the TCPPassiveOpen command is completed in
+// error." That default is the DRIVER's, not this byte's -- it is what
+// TCP applies when tcpValidTimeoutAction is CLEAR in validityFlags, in
+// which case the driver ignores this byte entirely (guide p. 41: "If a
+// validity bit is 0, TCP uses its default value for that parameter").
+// So a caller who wants abort must set BOTH tcpUlpActionAbort here and
+// tcpValidTimeoutAction in validityFlags; a caller who leaves this byte
+// 0 without that validity bit gets the driver's default, abort, not
+// report.
+//
+// **Do not confuse these two with tcpULPTimeoutTerminate = 5 and
+// tcpULPAbort = 6 further down.** Those are TERMINATION REASONS an ASR
+// reports, and they keep MacTCP.h's own capital-ULP spelling; these two
+// are the ACTION byte a caller writes. tcpUlpActionAbort (1) and
+// tcpULPAbort (6) would otherwise differ only in letter case, which the
+// compiler cannot catch -- hence the tcpUlpAction prefix here.
+const tcpUlpActionReport: int = 0   // guide pp. 41/44/45/52/54 -- 0: notify via the ASR, keep the connection
+const tcpUlpActionAbort: int = 1    // guide pp. 41/44/45/52/54 -- nonzero: break the connection
 
 // ---- WDS and RDS entries (MacTCP.h:156-165) ----
 //
@@ -352,6 +368,10 @@ const tcpICMPReceived: int = 6    // MacTCP.h:356 -- an ICMP report arrived on t
 // ---- Termination reasons (MacTCP.h:362-370; guide p. 38, Appendix p. 86) ----
 //
 // The word passed in D1 with a tcpTerminate event. There is no reason 1.
+// These keep MacTCP.h's own capital-ULP spelling. **tcpULPAbort = 6 here
+// is a reason an ASR reports, NOT the tcpUlpActionAbort = 1 a caller
+// writes into the ULP timeout action byte** -- the two differ only in
+// letter case; see the ULP timeout action block above.
 const tcpRemoteAbort: int = 2             // MacTCP.h:363 -- the remote TCP aborted the connection
 const tcpNetworkFailure: int = 3          // MacTCP.h:364 -- "currently not in use" (guide p. 37)
 const tcpSecPrecMismatch: int = 4         // MacTCP.h:365 -- invalid security option or precedence level
@@ -384,7 +404,7 @@ const tcpStateTimeWait: int = 20      // guide p. 54 -- connection is being brok
 // MacTCP's own range is -23000..-23049. ioResult also carries the
 // Device Manager's ordinary OSErrs (openErr, closeErr, controlErr) and,
 // while a call is outstanding, 1 -- the header's `inProgress`
-// (MacTCP.h:93), which is the Device Manager's ioInProgress and is
+// (MacTCP.h:95), which is the Device Manager's ioInProgress and is
 // therefore NOT redeclared here.
 const ipBadLapErr: int = -23000            // MacTCP.h:96 -- bad network configuration
 const ipBadCnfgErr: int = -23001           // MacTCP.h:97 -- bad IP configuration
