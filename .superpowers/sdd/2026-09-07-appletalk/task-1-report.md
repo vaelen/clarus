@@ -564,3 +564,116 @@ answering the RTMP-req broadcasts.
 - Scratch deleted: `$SCRATCH/atprobe/`, and `build-68k/{Drivers,Register,
   Lookup,SelfSend,SelfNbp,SelfNbp3,SelfNbp4,SelfFlag,SelfAtp}`. No stray
   emulator processes were left running (`pgrep -lf minivmac` clean).
+
+---
+
+## P5 (Task 13c, 2026-09-07) — Snow / System 7 interop
+
+Run from `/Users/andrew/repos/clarus-wt/t13` on branch `appletalk-t13`, two
+Snow boots (the first without the LocalTalk bridge, the second with it),
+each paired with one Mini vMac boot on `macplus/`. Probe programs were
+throwaway Clarus, not trap-level: `p5snow.cla` (Snow) and `p5mac.cla`
+(Mini vMac) used the shipped `service`/`listener`/`serviceBrowser` surface
+for register and lookup, plus one `toolbox/appletalk.cla` call —
+`setSelfSend`, csCode 256, on an `NBPParam` whose `interval`@28 /
+`count`@29 are the same bytes as `newSelfFlag` / `oldSelfFlag`. Both
+sources were deleted afterwards; everything they printed is below.
+
+### The wire: Snow needs its LocalTalk bridge turned on by hand
+
+**Snow's emulated LocalTalk is NOT on the LToUDP group by default, and
+nothing outside its GUI can put it there.** First boot: the guest's own
+AppleTalk was completely alive — `.MPP` open, NBP register with
+verification `err 0`, `.DSP` open, node acquired — and *nothing* on the
+host saw it. Nine `atalkdrive lookup` sweeps across the app's 45 s of life
+returned zero tuples, and the Mini vMac peer found nothing either.
+
+Snow v1.5.0-b81dbcc has exactly one way to bridge SCC channel B to
+`239.192.76.84:1954`: **Ports → Channel B (printer) → Enable LocalTalk
+(UDP)**, in the menu bar egui draws *inside* the window. Ruled out, each
+measured:
+
+- `--serial-bridge-b localtalk` / `ltoudp` / `udp` → `WARN snowemu::app
+  Invalid serial bridge mode: '<v>'. Use 'pty' or 'tcp:PORT'`, then
+  ignored.
+- The `Workspace` serde field list in the binary (`…pram_path
+  extension_rom_path disks scsi_targets windows init_args model
+  scaling_algorithm pause_on_state_load shared_dir disassembly_labels
+  floppy_images custom_datetime shader_enabled shader_configs
+  ethernet_link_type`) has no serial-bridge field, so saving a `.snoww`
+  cannot carry it. `Clarus.snoww` and Andrew's networked `MacII.snoww`
+  are identical in this respect.
+- `~/Library/Application Support/snowemu/Snow/settings.json` does not
+  hold it either, so it does not survive a quit.
+- PRAM cannot help: `clarus.pram` and `macii.pram` differ in only two
+  bytes, `0x12` (`SPATalkB`, the AppleTalk node hint: 0x01 vs 0x16) and
+  `0xBB`. `SPConfig`@0x13 is `0x21` in **both** — port B already
+  `useATalk`. The guest side was never the problem.
+
+`tests/lib_snow.sh` gained `snow_localtalk_b` for this: three CGEvent
+clicks at fixed offsets from the Snow window's top-left corner (Ports
++250,+49; Channel B +310,+95; Enable LocalTalk +498,+184), armed in the
+background before `snow_run` and verified against Snow's own
+`LocalTalk bridge enabled` stdout line, dying loudly if it never arrives.
+The real fix is a `--serial-bridge-b localtalk` flag upstream.
+
+With the bridge on, the host saw the guest 35 s after Snow launched.
+
+### Both directions
+
+**Snow (System 7, node 1) → Mini vMac (System 6, node 16)** — the Snow
+guest's own log, verbatim (`out`, after `##CLARUS-LOG##`):
+
+```
+gestalt atlk err 0 val 58
+served SnowP5:ClarusP5S
+registered SnowLsn:ClarusP5L
+zones 1 *
+done p1 0
+selfsend err 0 old 0
+found p2 SnowP5:ClarusP5S 0.1.252
+done p2 1
+done p3 0
+done p3 0
+found p3 MacP5:ClarusP5M 0.16.253
+done p3 1
+stopped
+```
+
+**Mini vMac → Snow** — the LaunchAPPL capture, verbatim:
+
+```
+served MacP5:ClarusP5M
+found SnowP5:ClarusP5S 0.1.252
+done 1
+stopped
+```
+
+**Host (`build-run/tools/atalkdrive`) → Snow**, both of the Snow guest's
+names, verbatim:
+
+```
+0.1.252 SnowP5:ClarusP5S@*
+0.1.251 SnowLsn:ClarusP5L@*
+```
+
+Both boots exited 0. The Snow node was `1` (the `SPATalkB` PRAM hint,
+uncontested); the Mini vMac node was `16`. Net 0 and zone `*` on both, no
+router — same routerless LocalTalk P2 saw.
+
+### What System 7's AppleTalk does differently from the Mac Plus ROM
+
+| | Mac Plus ROM (P1/P3) | System 7 / Snow (P5) |
+|---|---|---|
+| AppleTalk version | ROM `.MPP`, no Gestalt asked | Gestalt `'atlk'` err 0, **58** |
+| `.XPP` / `.DSP` | `-43`, absent from the boot disk | **present** — `lsn.register` opens `.DSP`, gets a dynamic ADSP socket and NBP-advertises it (`SnowLsn:ClarusP5L` at socket **251**) |
+| `setSelfSend` (csCode 256) | **`-17`** (controlErr) — not implemented | **`err 0`**, `oldSelfFlag 0` — implemented, and off by default |
+| self-lookup | `gotten 0` before and after | **`0` before, `1` after** — `found p2 SnowP5:ClarusP5S 0.1.252`. System 7's `.MPP` answers its own NBP lookups once self-send is on |
+| zone list, routerless | `["*"]` | `["*"]` — unchanged |
+| own node number | dynamic, 106 / 18 seen | **1**, taken from the PRAM `SPATalkB` hint and never contested |
+
+Amendment 3's reshaping of `AtalkSelf` therefore stands **for the Mini
+vMac lane only**. On System 7 the original spec sketch (register, then
+find your own name) works exactly as first imagined — provided
+`setSelfSend` is called first. Nothing in this phase depends on that; it
+is recorded for whoever writes a System 7 AppleTalk case later.
