@@ -1475,6 +1475,8 @@ A `serviceBrowser` finds registered AppleTalk entities — other programs' servi
 
 The `address` delivered by `found` is an inline value (Chapter 3), not a resource: store it, copy it, compare it, pass it to `connection.open` or `service.call`. `string(addr)` renders it as `net.node.socket` for display; there is no way back from that text to an `address`.
 
+The `name` delivered by `found` is already the full NBP `"Object:Type"` spelling — the very form `connection.open(appletalk "Name:Type")` and `service.call`'s string target take — so pass it straight through, and never append the type again: `find("ChatServer")` reports a match as `"Chat-7:ChatServer"`, and `c.open(appletalk name + ":ChatServer")` would then look up the type `"ChatServer:ChatServer"`, which nothing has registered.
+
 ```rust
 var browser: serviceBrowser
 var conn: connection

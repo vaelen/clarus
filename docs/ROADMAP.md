@@ -155,16 +155,17 @@ Items 1 (binary streams and files) and 2 (serial ports) of the original
 list are DONE — `binary-files`, `transfer-crcs`, `filesystem-api`, and
 `serial-connection` in `docs/HISTORY.md`. Remaining, in order:
 
-1. **AppleTalk.** In progress on branch `appletalk` (spec
+1. **AppleTalk.** Complete on branch `appletalk` (spec
    `docs/superpowers/specs/2026-09-06-appletalk-design.md`, plan
    `docs/superpowers/plans/2026-09-07-appletalk.md`). **Not merged.**
-   Tasks 1-12 and the final fix wave are complete, reviewed and merged
-   into `appletalk`, and the phase record is in `docs/HISTORY.md`. What
-   remains is Task 13 — the Snow proofs, the `AdspLeak` suite case, the
-   first green `mactest/adsp_68k` run and the standing Snow
-   `clarusc_bake` rerun — which is blocked on a one-line LaunchAPPL
-   patch outside this repo (`CopySystemFile("AppleTalk", false)`), and
-   Andrew's merge request.
+   All fourteen tasks and the final fix wave are complete, reviewed and
+   merged into `appletalk`; the phase record is in `docs/HISTORY.md` and
+   the full merge gate is green. All that remains is Andrew's merge
+   request. Environment prerequisite, carried in `CLAUDE.md`: the
+   `mactest/adsp_68k` and `toolbox_68k` boots need the one-line
+   `CopySystemFile("AppleTalk", false)` LaunchAPPL patch, which is
+   uncommitted in Andrew's Retro68 checkout and is lost by a fresh
+   Retro68 build.
 2. **MacTCP.**
 
 Environment note: `snow/MacII.snoww` + its hdd image are already

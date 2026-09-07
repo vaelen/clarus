@@ -364,3 +364,24 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   re-registers the one `test_nbp` removed). Not taken — the verify
   window is the ruled behavior, and one register per subtest keeps the
   subtests independent.
+
+- **Snow's LocalTalk-over-UDP bridge has no launch flag** (Task 13c).
+  It is off by default and reachable only through the menu bar Snow's
+  egui draws inside its own window: `--serial-bridge-b localtalk` (and
+  `ltoudp`, and `udp`) get
+  `WARN snowemu::app Invalid serial bridge mode ... Use 'pty' or
+  'tcp:PORT'` and are then ignored, the `.snoww` workspace has no
+  serial-bridge field to serialize, PRAM only picks which GUEST port
+  AppleTalk uses, and Snow's own `settings.json` has no such key — each
+  measured, not assumed. So `tests/lib_snow.sh`'s `snow_localtalk_b`
+  clicks **Ports → Channel B (printer) → Enable LocalTalk (UDP)** at
+  fixed offsets from the Snow window's origin ((+250,+49) / (+310,+95) /
+  (+498,+184)) and then waits for Snow's own
+  `LocalTalk bridge enabled` log line, failing with the exact geometry
+  it used if that never arrives. Ratified for the opt-in Snow lane — it
+  fails loudly rather than silently, and the lane already needs a real
+  unlocked display — but it means every future Snow AppleTalk test
+  inherits a pixel click, and a Snow release that moves the Ports menu
+  breaks the lane until the offsets are re-measured. The clean fix is
+  upstream, the same one-line shape as this phase's LaunchAPPL patch: a
+  `--serial-bridge-b localtalk` mode in Snow. Worth asking for.

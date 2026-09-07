@@ -161,12 +161,14 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   listener that loses its `dspCLListen` is torn down (NBP name removed,
   device slot released, state back to `rtAtIdle`) instead of staying
   `rtAtActive` and permanently deaf. Nothing exercises it: the failure
-  needs a real `.DSP` that then fails, and `mactest/adsp_68k.sh` SKIPs on
-  every current boot disk. The change is pinned only by goldens (four
+  needs a real `.DSP` that then fails, and no test drives one into
+  failing. The change is pinned only by goldens (four
   `testdata/emitui/atalk_*.c.golden`, ten `testdata/cg68k/atalk_*.s`) --
-  shape, not behaviour. Once the LaunchAPPL `AppleTalk`-file patch lands
-  (Task 13), the cheap check is a subcase that kills the server mid-run
-  and asserts the client's next `find` no longer sees the name.
+  shape, not behaviour. The cheap check is now buildable -- Task 13a's
+  LaunchAPPL `AppleTalk`-file patch means `mactest/adsp_68k.sh` runs
+  both boots against a real `.DSP` -- and is a subcase that kills the
+  server mid-run and asserts the client's next `find` no longer sees the
+  name.
 
 - **`atalk_lock`'s stale-holder steal path is still racy between two
   waiters** (`tests/lib_atalk.sh`). The fix wave closed the UNLOCK half

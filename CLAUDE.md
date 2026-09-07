@@ -165,19 +165,28 @@ Tiered test gates:
     `##CLARUS-EXIT##` trailer (a probe of the live disk image) rather than
     a fixed settle timer — the language-runtime-cleanup phase, 2026-09-06;
     the old 55-minute timer was a floor on every run, pass or fail.
+    `mactest/snow/adsp_listener` (AppleTalk phase, 2026-09-07 — System 7
+    Snow as the ADSP listener, Mini vMac as the client, over LToUDP) also
+    needs `CLARUS_MAC_TESTS=1` for its client half **and a real, unlocked
+    display**: Snow's LocalTalk-over-UDP bridge has no launch flag, so
+    `tests/lib_snow.sh`'s `snow_localtalk_b` turns it on by posting
+    CGEvent clicks into Snow's own in-window menu bar (see
+    `docs/FUTURE.md`).
   - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
     calibration bench, `tests/mactest/bench.sh`.
 - `tests/mactest/adsp_68k.sh` (the two-Mac ADSP stream boot, appletalk
-  phase 2026-09-07) runs under plain `CLARUS_MAC_TESTS=1` but SKIPs
-  itself on today's toolchain: LaunchAPPL's stripped boot disk carries
-  System + AutoQuit + the app and NOT the `AppleTalk` system file, so
-  `.DSP`/`.XPP` open `-43` and the listener reports `failed -1273`. The
-  script greps the SERVER capture for `^failed -1273 ` and calls `skip`
-  BEFORE its first assertion (a `FAIL ` line would beat exit 77), so it
-  is a clean SKIP rather than a red result. It retires itself: once
-  LaunchAPPL copies `AppleTalk` onto the boot disk the grep misses and
-  all twelve ADSP assertions run. `tests/mactest/atalk_68k.sh` (NBP/ATP over
-  the ROM's own `.MPP`/`.ATP`) needs no such file and PASSes today.
+  phase 2026-09-07) runs both boots under plain `CLARUS_MAC_TESTS=1` and
+  is 12/12 — ~20 s of emulator time once the pair is up, ~7 min for the
+  whole script against its 420 s pair budget. Its `^failed -1273 ` grep
+  over the SERVER capture stays as the guard for a LaunchAPPL that does
+  NOT carry the `AppleTalk` system file (`.DSP`/`.XPP` then open `-43`):
+  the script calls `skip` on that line BEFORE its first assertion,
+  because a `FAIL ` line would beat exit 77. See the LaunchAPPL
+  prerequisite under "Retro68 / Mac toolchain" below — without that
+  patch this script SKIPs and `mactest/toolbox_68k` goes RED (the
+  `AdspLeak` suite case has no skip verdict and FAILs with
+  `open .DSP err -43`). `tests/mactest/atalk_68k.sh` (NBP/ATP over the
+  ROM's own `.MPP`/`.ATP`) needs no such file.
 - Golden blessing — five variables, and each must be set to exactly `1`
   (`lib.sh`'s `env_set`; any other value, `0` included, is NOT a bless):
   `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap goldens,
@@ -370,6 +379,19 @@ enum + runner, not one boot per case.
   `LC_ALL=C tr '\r' '\n'`, a plain `grep -n` reports nothing).
 - `toolchain/` → built cross-toolchain (`toolchain/bin`: gcc, Rez, LaunchAPPL,
   hfsutils h* tools). Prebuilt samples: `../Retro68-build/build-target/Samples/`.
+- **LaunchAPPL carries a local patch (AppleTalk phase, 2026-09-07).**
+  `Retro68/LaunchAPPL/Client/MiniVMac.cc` has
+  `CopySystemFile("AppleTalk", false);` added after its debugger-file
+  copy, so the stripped boot disk LaunchAPPL builds (System + AutoQuit +
+  the app) also installs AppleTalk 58.1.4 and `.XPP`/`.DSP` open instead
+  of answering `-43`. Rebuilt with `make LaunchAPPL` in
+  `Retro68-build/build-host` and installed at
+  `Retro68-build/toolchain/bin/LaunchAPPL`; the pre-patch binary is kept
+  beside it as `LaunchAPPL.orig`. **The patch is UNCOMMITTED in the
+  Retro68 checkout, so a fresh Retro68 build silently loses it** — after
+  which `mactest/adsp_68k` SKIPs itself and `mactest/toolbox_68k` goes
+  RED on `AdspLeak` (`open .DSP err -43`). Re-apply the three lines and
+  rebuild.
 - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
 - `vasm/` → locally built `vasmm68k_mot` (the third-party 68000 assembler
   used as an encoder oracle; rebuild recipe in

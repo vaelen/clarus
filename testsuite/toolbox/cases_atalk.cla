@@ -269,6 +269,12 @@ const tbAdspPbSz: int = 68     // sizeof(DSPParamBlock) -- runtime rtAt68DspPbSz
 const tbAdspQSz: int = 1024    // ADSP send/receive queue -- runtime rtAt68QSz
 const tbAdspCycles: int = 20
 
+// tbAdspMemFullErr: memFullErr. Named locally rather than reusing the
+// runtime's rtAtErrMemFull for the same reason every extern in this file
+// is local -- runtime names are not in scope for a suite case (see
+// AdspLeak's header comment).
+const tbAdspMemFullErr: int = -108
+
 // tbAdspFreeIf: DisposePtr unless the allocation failed. A partial
 // allocation still has to give back what it got, or the FreeMem bracket
 // would report the shortfall as a driver leak.
@@ -281,8 +287,8 @@ func tbAdspFreeIf(p: ptr) {
 // tbAdspEndCycle: one full connection-end lifecycle -- the five blocks
 // rtAt68CcbEnsure allocates (CCB, send queue, receive queue, attention
 // buffer, parameter block) plus the separate remove block, dspInit,
-// dspRemove with the abort flag set, and every block back. Returns the
-// OSErr; 0 on success.
+// dspRemove with the abort flag set, and every block back once the
+// driver has given it up. Returns the OSErr; 0 on success.
 func tbAdspEndCycle(dspRef: int): int {
     var ccb: ptr
     var sendQ: ptr
@@ -291,14 +297,16 @@ func tbAdspEndCycle(dspRef: int): int {
     var pbInit: ptr
     var pbRem: ptr
     var e: int
+    var driverHolds: bool
 
+    driverHolds = false
     ccb = NewPtrClear(ccbSize)
     sendQ = NewPtrClear(tbAdspQSz)
     recvQ = NewPtrClear(tbAdspQSz)
     attn = NewPtrClear(attnBufSize)
     pbInit = NewPtrClear(tbAdspPbSz)
     pbRem = NewPtrClear(tbAdspPbSz)
-    e = rtAtErrMemFullLocal
+    e = tbAdspMemFullErr
     if ccb != ptr(0) and sendQ != ptr(0) and recvQ != ptr(0) and attn != ptr(0) and pbInit != ptr(0) and pbRem != ptr(0) {
         pokew(pbInit + dspIoCRefNum, dspRef)
         pokew(pbInit + pbCsCode, dspInit)
@@ -312,19 +320,34 @@ func tbAdspEndCycle(dspRef: int): int {
         pokeb(pbInit + dspInitLocalSocket, 0)
         e = PBControlSync(pbInit)
         if e == 0 {
-            // The CCB is ADSP's until dspRemove returns, so the remove
-            // must succeed before any block below is disposed.
+            // The CCB, the two queues and the attention buffer are
+            // ADSP's from here until dspRemove returns, so a dspRemove
+            // that FAILS leaves the driver still referencing all four:
+            // they are deliberately not disposed below, because handing
+            // them back to the Memory Manager while the driver may still
+            // write into them is a use-after-free. The FreeMem bracket
+            // then reports the shortfall, but the case has already
+            // FAILed with this OSErr -- tbAdspEndCycle returns it and
+            // caseAdspLeak puts it in the detail with the cycle index.
+            driverHolds = true
             pokew(pbRem + dspIoCRefNum, dspRef)
             pokew(pbRem + pbCsCode, dspRemove)
             pokew(pbRem + dspCcbRefNum, peekw(pbInit + dspCcbRefNum))
             pokeb(pbRem + dspCloseAbort, 1)
             e = PBControlSync(pbRem)
+            if e == 0 {
+                driverHolds = false
+            }
         }
     }
-    tbAdspFreeIf(ccb)
-    tbAdspFreeIf(sendQ)
-    tbAdspFreeIf(recvQ)
-    tbAdspFreeIf(attn)
+    if not driverHolds {
+        tbAdspFreeIf(ccb)
+        tbAdspFreeIf(sendQ)
+        tbAdspFreeIf(recvQ)
+        tbAdspFreeIf(attn)
+    }
+    // The parameter blocks are the caller's throughout: PBControlSync is
+    // synchronous, so neither is queued once it has returned.
     tbAdspFreeIf(pbInit)
     tbAdspFreeIf(pbRem)
     return e
@@ -340,11 +363,13 @@ func tbAdspLsnCycle(dspRef: int): int {
     var pbInit: ptr
     var pbRem: ptr
     var e: int
+    var driverHolds: bool
 
+    driverHolds = false
     ccb = NewPtrClear(ccbSize)
     pbInit = NewPtrClear(tbAdspPbSz)
     pbRem = NewPtrClear(tbAdspPbSz)
-    e = rtAtErrMemFullLocal
+    e = tbAdspMemFullErr
     if ccb != ptr(0) and pbInit != ptr(0) and pbRem != ptr(0) {
         pokew(pbInit + dspIoCRefNum, dspRef)
         pokew(pbInit + pbCsCode, dspCLInit)
@@ -352,24 +377,27 @@ func tbAdspLsnCycle(dspRef: int): int {
         pokeb(pbInit + dspInitLocalSocket, 0)
         e = PBControlSync(pbInit)
         if e == 0 {
+            // Same rule as tbAdspEndCycle: the CCB is ADSP's until
+            // dspCLRemove returns, so a failed remove leaves it with the
+            // driver and it is not disposed.
+            driverHolds = true
             pokew(pbRem + dspIoCRefNum, dspRef)
             pokew(pbRem + pbCsCode, dspCLRemove)
             pokew(pbRem + dspCcbRefNum, peekw(pbInit + dspCcbRefNum))
             pokeb(pbRem + dspCloseAbort, 1)
             e = PBControlSync(pbRem)
+            if e == 0 {
+                driverHolds = false
+            }
         }
     }
-    tbAdspFreeIf(ccb)
+    if not driverHolds {
+        tbAdspFreeIf(ccb)
+    }
     tbAdspFreeIf(pbInit)
     tbAdspFreeIf(pbRem)
     return e
 }
-
-// rtAtErrMemFullLocal: memFullErr. Named locally rather than reusing the
-// runtime's rtAtErrMemFull for the same reason every extern in this file
-// is local -- runtime names are not in scope for a suite case (see
-// AdspLeak's header comment).
-const rtAtErrMemFullLocal: int = -108
 
 func caseAdspLeak(): TestResult {
     var openPb: IOParam
