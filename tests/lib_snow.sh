@@ -5,12 +5,19 @@
 # clarusc_bake_test.go (readForkFromMacBinary, normalizeForkReserved,
 # macResidentExtractApp).
 #
-# Snow (snow/Snow) is a real macOS GUI app with no headless mode: a boot
-# occupies the whole screen for its entire run, which is why every script
-# in this group gates on its own CLARUS_SNOW_TESTS (never CLARUS_MAC_TESTS)
-# and why two boots must never overlap.
+# Snow (snow/ClarusSnow) is a real macOS GUI app with no headless mode: a
+# boot occupies the whole screen for its entire run, which is why every
+# script in this group gates on its own CLARUS_SNOW_TESTS (never
+# CLARUS_MAC_TESTS) and why two boots must never overlap.
+#
+# ClarusSnow, not Snow: snow/ClarusSnow -> snow/Snow.app/Contents/MacOS/Snow
+# is a private COPY of the emulator whose executable has a different
+# name, so a Clarus boot and Andrew's own long-running BBS `Snow` are
+# distinguishable by process name. Everything in this file that looks for
+# "another emulator" therefore matches `ClarusSnow` only -- a BBS Snow
+# must not block a Clarus boot, and nothing here may ever quit one.
 
-SNOW_BIN=$ROOT/snow/Snow
+SNOW_BIN=$ROOT/snow/ClarusSnow
 SNOW_HFS=$ROOT/toolchain/bin
 
 # --- hfsutils --------------------------------------------------------
@@ -300,11 +307,12 @@ snow_run() {
     _done=$2
     shift 2
     [ -x "$SNOW_BIN" ] || die "$SNOW_BIN not found (snow/ symlink missing?)"
-    # Never launch alongside another Snow: two boots fight over the
-    # screen, and the graceful quit below is BY APP NAME, so it would
-    # target the other instance too.
-    _other=$(pgrep -x Snow | tr '\n' ' ')
-    [ -z "$_other" ] || die "another Snow process is already running (pid $_other) -- refusing to boot"
+    # Never launch alongside another ClarusSnow: two boots fight over the
+    # screen. Deliberately NOT `pgrep -x Snow` -- that also matches
+    # Andrew's BBS instance, which shares nothing with a test boot but the
+    # application, and must neither block one nor be touched by one.
+    _other=$(pgrep -x ClarusSnow | tr '\n' ' ')
+    [ -z "$_other" ] || die "another ClarusSnow process is already running (pid $_other) -- refusing to boot"
 
     "$SNOW_BIN" "$SNOW_WS" "$@" > "$WORK/snow.log" 2>&1 &
     SNOW_PID=$!
@@ -319,7 +327,18 @@ snow_run() {
         sleep 2
     done
 
-    osascript -e 'quit app "Snow"'
+    # Quit OUR pid, never the app name: `osascript -e 'quit app "Snow"'`
+    # would also quit a BBS Snow running beside us (same application,
+    # different process). SIGTERM is Snow's clean shutdown -- it runs the
+    # normal exit path and flushes its pending image writes, measured
+    # against the extracted guest `out` below; the 20s wait and the
+    # force-kill failure path underneath are unchanged, so a build of
+    # Snow that ever stopped honouring it fails loudly instead of
+    # silently extracting from a half-written image.
+    # The shell's own "Terminated: 15" job notice for $SNOW_PID lands in
+    # the test log here. It is the expected quit, not a failure -- the
+    # real verdict is the graceful-exit loop below.
+    kill -TERM "$SNOW_PID" 2>/dev/null
     _g=0
     while kill -0 "$SNOW_PID" 2>/dev/null; do
         if [ $_g -ge 20 ]; then
@@ -335,7 +354,14 @@ snow_run() {
     trap 'rm -rf "$WORK"' EXIT
 }
 
-# snow_localtalk_b : turn Snow's LocalTalk-over-UDP bridge on for SCC
+# snow_localtalk_b : NAME-BASED, and so unsafe while a BBS `Snow` is up --
+# its System Events lookups say `process "Snow"`, which would find that
+# instance and post clicks into ITS window. Nothing in the MacTCP lane
+# uses it (no TCP test needs the LocalTalk bridge); a future task that
+# does needs to reach our own process by unix id first, the way snow_run's
+# quit now does.
+#
+# turn Snow's LocalTalk-over-UDP bridge on for SCC
 # channel B (the printer port), which is the port the guest's own PRAM
 # has AppleTalk on. That bridge puts the emulated LocalTalk network on
 # 239.192.76.84:1954 -- the same LToUDP group every Mini vMac boot, the
