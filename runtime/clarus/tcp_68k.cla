@@ -69,6 +69,7 @@ const rtTcp68EvSent: int = 4         // = rtTcpEvSent
 // rtTcpErrNoDriver is the catalog's own ipBadLapErr (-23000), so no
 // stand-in is needed for it -- this file returns ipBadLapErr directly.
 const rtTcp68ErrMemFull: int = -108  // memFullErr, atalk.cla's rtAtErrMemFull value
+const rtTcp68InProgress: int = 1     // MacTCP.h:95 inProgress -- a block the driver still owns
 
 // ---- Local block sizes and offsets ----
 const rtTcp68WdsSize: int = 12       // one wdsEntry (6) + a 2-byte zero terminator, rounded up
@@ -112,7 +113,8 @@ var rtTcp68RcvGot: int[8]     // bytes delivered by the last completed receive
 var rtTcp68LsnStream: int[2]
 var rtTcp68LsnBuf: int[2]
 var rtTcp68LsnPb: int[2]
-var rtTcp68LsnLive: bool[2]
+var rtTcp68LsnLive: bool[2]   // a passive open is outstanding
+var rtTcp68LsnReady: bool[2]  // a CONNECTED stream is held, waiting for Accept or Deny
 
 // ---- Primitives (see the header: local copies of atalk_68k.cla's) ----
 
@@ -157,14 +159,18 @@ func rtTcp68Result(pb: ptr): int {
 }
 
 // rtTcp68Drain: wait for the driver to hand a block back after the abort
-// that precedes every release. Bounded -- see rtTcp68DrainSpin.
-func rtTcp68Drain(pb: ptr) {
+// that precedes every release. Bounded -- see rtTcp68DrainSpin. True
+// means the block is the caller's again; FALSE means the bound ran out
+// with the driver still holding it, so nothing that block points at may
+// be freed.
+func rtTcp68Drain(pb: ptr): bool {
     var i: int
 
     i = 0
     while i < rtTcp68DrainSpin and rtTcp68Pending(pb) {
         i = i + 1
     }
+    return not rtTcp68Pending(pb)
 }
 
 // rtTcp68Alloc / rtTcp68Free: the lazy-allocate and dispose-and-clear
@@ -254,18 +260,44 @@ func rtTcp68AuxCall(cs: int, stream: int): int {
 // leave the driver, then release it. Spec %5.4 and %10: TCPRelease's
 // behaviour with a pending command is unstated, so a release NEVER races
 // a completion -- everything is aborted first. pbA/pbB may be ptr(0).
-// The stream buffer is the caller's again only after this returns
-// (rule 3).
-func rtTcp68Kill(stream: int, pbA: ptr, pbB: ptr) {
+//
+// THE DISPOSAL RULE. 0 means the stream is gone and every block it
+// pointed at -- the stream buffer, both parameter blocks, and the receive
+// and send buffers those blocks address -- is the caller's again: only
+// then may any of them be disposed. NONZERO means MacTCP may still hold
+// those pointers (the release failed, or the abort did not retire a block
+// inside rtTcp68DrainSpin), and the caller must free NOTHING and keep
+// every address in place so a later release can retry. Leaking 16 KB on a
+// failed release is strictly cheaper than a dangling driver pointer: the
+// next packet would otherwise land in freed heap. invalidStreamPtr counts
+// as success -- the stream is already gone. The code is left in
+// rtTcp68LastErr (the runtime cannot log) for Task 11's bring-up.
+func rtTcp68Kill(stream: int, pbA: ptr, pbB: ptr): int {
+    var drained: bool
+    var e: int
+
     if stream == 0 {
-        return
+        return 0
     }
     // TCPAbort (guide p. 53): "all pending commands are returned".
     rtTcp68AuxCall(tcpAbort, stream)
-    rtTcp68Drain(pbA)
-    rtTcp68Drain(pbB)
+    // Both, never short-circuited: each block must be drained.
+    drained = rtTcp68Drain(pbA)
+    if not rtTcp68Drain(pbB) {
+        drained = false
+    }
     // TCPRelease (guide p. 56): hands the stream buffer back.
-    rtTcp68AuxCall(tcpRelease, stream)
+    e = rtTcp68AuxCall(tcpRelease, stream)
+    if e == invalidStreamPtr {
+        e = 0
+    }
+    if e == 0 and not drained {
+        e = rtTcp68InProgress
+    }
+    if e != 0 {
+        rtTcp68LastErr = e
+    }
+    return e
 }
 
 // ---- Bring-up ----
@@ -316,7 +348,13 @@ func rtTcpDevCreate(slot: int): int {
         return ipBadLapErr
     }
     if rtTcp68Stream[slot] != 0 {
-        return 0
+        // A stream on an idle slot means a previous release could not get
+        // it back from MacTCP (rtTcp68Kill's disposal rule). Retry, and
+        // fail rather than hand out a stream the driver still owns.
+        rtTcpDevRelease(slot)
+        if rtTcp68Stream[slot] != 0 {
+            return rtTcp68LastErr
+        }
     }
     rtTcp68Buf[slot] = rtTcp68Alloc(rtTcp68Buf[slot], rtTcp68StreamBuf)
     if rtTcp68Buf[slot] == 0 or not rtTcp68SlotBlocks(slot) {
@@ -459,6 +497,12 @@ func rtTcpDevPoll(slot: int): int {
                 // (guide p. 50). Genuinely unsigned, 0..rtTcp68Chunk, so
                 // it is read RAW -- rule 3's one exception.
                 rtTcp68RcvGot[slot] = peekw(pb + tcpRcvRcvBuffLen)
+                if rtTcp68RcvGot[slot] > rtTcp68Chunk {
+                    // Cannot happen -- the buffer we handed it is that
+                    // size. Clamped anyway: this count is what tcp.cla
+                    // copies out of the buffer.
+                    rtTcp68RcvGot[slot] = rtTcp68Chunk
+                }
                 return rtTcp68EvReceived
             }
             // connectionClosing (peer closed, everything delivered),
@@ -504,6 +548,7 @@ func rtTcpDevSend(slot: int, p: ptr, n: int): int {
     // The WDS: one entry describing the send chunk, then a zero length to
     // terminate the array (guide p. 46).
     wds = ptr(rtTcp68Wds[slot])
+    rtTcp68Zero(wds, rtTcp68WdsSize)
     pokew(wds + wdsLength, n)
     pokel(wds + wdsPtr, rtTcp68Snd[slot])
     pokew(wds + wdsEntrySize, 0)
@@ -564,8 +609,17 @@ func rtTcpDevClose(slot: int): int {
 // first, drain both blocks, release, and only THEN dispose -- MacTCP must
 // never hold a pointer into freed memory (spec %5.4's quit path, the
 // rtAt68DspFree teardown rule).
+//
+// If rtTcp68Kill could not get the stream back, the slot is left EXACTLY
+// as it stands -- stream, blocks and flags -- and nothing is disposed
+// (rtTcp68Kill's disposal rule). ponytail: that slot is then stuck until
+// a later release succeeds; rtTcpDevCreate retries it before handing the
+// slot out again, which is the whole recovery path. The alternative is
+// freeing memory the driver writes into.
 func rtTcpDevRelease(slot: int) {
-    rtTcp68Kill(rtTcp68Stream[slot], ptr(rtTcp68Pb[slot]), ptr(rtTcp68RcvPb[slot]))
+    if rtTcp68Kill(rtTcp68Stream[slot], ptr(rtTcp68Pb[slot]), ptr(rtTcp68RcvPb[slot])) != 0 {
+        return
+    }
     rtTcp68Stream[slot] = 0
     rtTcp68PbLive[slot] = false
     rtTcp68RcvLive[slot] = false
@@ -583,9 +637,21 @@ func rtTcpDevRelease(slot: int) {
 
 // rtTcp68LsnDrop: abort + release whatever the listener holds (a pending
 // passive open included) and give its blocks back. The whole of LsnDeny
-// and LsnClose, and the failure path of LsnPoll and LsnOpen.
+// and LsnClose, and the failure path of LsnPoll and LsnOpen. Same
+// disposal rule as rtTcpDevRelease: a release MacTCP did not honour
+// leaves the slot untouched for a later retry rather than freeing the
+// stream buffer under the driver.
 func rtTcp68LsnDrop(lsn: int) {
-    rtTcp68Kill(rtTcp68LsnStream[lsn], ptr(rtTcp68LsnPb[lsn]), ptr(0))
+    // Cleared first and unconditionally: the abort below is issued either
+    // way, so a held connection is never acceptable after a drop, however
+    // the release goes.
+    rtTcp68LsnReady[lsn] = false
+    if rtTcp68Kill(rtTcp68LsnStream[lsn], ptr(rtTcp68LsnPb[lsn]), ptr(0)) != 0 {
+        // LsnLive is deliberately left alone: if a passive open is still
+        // outstanding, rtTcpDevLsnPoll's own error path is what retries
+        // this drop once the driver finally completes it.
+        return
+    }
     rtTcp68LsnStream[lsn] = 0
     rtTcp68LsnLive[lsn] = false
     rtTcp68LsnBuf[lsn] = rtTcp68Free(rtTcp68LsnBuf[lsn])
@@ -603,8 +669,18 @@ func rtTcpDevLsnOpen(lsn: int, port: int): int {
     // taken yet: nothing to do. One passive open is one connection
     // (guide pp. 31, 43), so the re-arm after an accept lands here with
     // both cleared and creates a NEW stream.
-    if rtTcp68LsnLive[lsn] or rtTcp68LsnStream[lsn] != 0 {
+    if rtTcp68LsnLive[lsn] or rtTcp68LsnReady[lsn] {
         return 0
+    }
+    if rtTcp68LsnStream[lsn] != 0 {
+        // Neither listening nor ready, but a stream is still held: a
+        // previous drop could not get it back from MacTCP
+        // (rtTcp68Kill's disposal rule). Retry; still stuck means still
+        // the driver's, so fail rather than orphan it behind a new one.
+        rtTcp68LsnDrop(lsn)
+        if rtTcp68LsnStream[lsn] != 0 {
+            return rtTcp68LastErr
+        }
     }
     rtTcp68LsnBuf[lsn] = rtTcp68Alloc(rtTcp68LsnBuf[lsn], rtTcp68StreamBuf)
     rtTcp68LsnPb[lsn] = rtTcp68Alloc(rtTcp68LsnPb[lsn], tcpPbSize)
@@ -655,10 +731,19 @@ func rtTcpDevLsnOpen(lsn: int, port: int): int {
 
 // rtTcpDevLsnPoll: 0 nothing, 1 a client is ready (the stream is held
 // until Accept or Deny), the OSErr if the listener itself failed.
+//
+// The "ready" answer LATCHES in rtTcp68LsnReady. The passive open
+// completes exactly once, so without the latch a caller that missed the
+// single poll that reported 1 would see 0 for ever after -- and
+// rtTcpDevLsnOpen would decline to re-arm, because the connected stream
+// is still held. The latch is cleared only by Accept or Deny.
 func rtTcpDevLsnPoll(lsn: int): int {
     var pb: ptr
     var res: int
 
+    if rtTcp68LsnReady[lsn] {
+        return 1
+    }
     if not rtTcp68LsnLive[lsn] {
         return 0
     }
@@ -669,6 +754,7 @@ func rtTcpDevLsnPoll(lsn: int): int {
     rtTcp68LsnLive[lsn] = false
     res = rtTcp68Result(pb)
     if res == 0 {
+        rtTcp68LsnReady[lsn] = true
         return 1
     }
     rtTcp68LastErr = res
@@ -684,7 +770,7 @@ func rtTcpDevLsnPoll(lsn: int): int {
 func rtTcpDevLsnAccept(lsn: int, slot: int): int {
     var e: int
 
-    if rtTcp68LsnStream[lsn] == 0 {
+    if not rtTcp68LsnReady[lsn] or rtTcp68LsnStream[lsn] == 0 {
         return connectionDoesntExist
     }
     if rtTcp68Stream[slot] != 0 {
@@ -700,6 +786,7 @@ func rtTcpDevLsnAccept(lsn: int, slot: int): int {
     rtTcp68LsnStream[lsn] = 0
     rtTcp68LsnBuf[lsn] = 0
     rtTcp68LsnLive[lsn] = false
+    rtTcp68LsnReady[lsn] = false
     e = rtTcpDevRecvArm(slot)
     if e != 0 {
         rtTcpDevRelease(slot)
