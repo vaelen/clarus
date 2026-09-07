@@ -1,0 +1,10 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, Task 6 (spec %4.2): `listen` without the `tcp` keyword is
+// a compile error naming the required form.
+var l: listener
+
+on App.startCLI(args: list of string) {
+    l.listen(2323)
+}

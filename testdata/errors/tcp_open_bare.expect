@@ -1,0 +1,1 @@
+../../testdata/errors/tcp_open_bare.cla:10:11: open needs a transport: tcp, appletalk, or serial

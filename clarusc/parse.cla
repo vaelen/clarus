@@ -53,7 +53,8 @@ var parseSawNonInclude: bool
 // lexOpKind convention): Clarus functions return one value, so the second
 // piece of parseArgs's result -- which contextual transport prefix (if
 // any) was present: 0 none, 1 `appletalk`, 2 `serial` (serial-connection
-// phase, Task 3) -- is stashed here immediately before return, and read by
+// phase, Task 3), 3 `tcp` (MacTCP phase, Task 6) -- is stashed here
+// immediately before return, and read by
 // the caller immediately after -- safe even under recursion (nested
 // calls), since each call overwrites and is read back before any other
 // call runs.
@@ -84,6 +85,7 @@ var cwInited: bool
 var cwMod: int
 var cwAppletalk: int
 var cwSerial: int
+var cwTcp: int
 var cwPad: int
 var cwWord: int
 var cwByte: int
@@ -121,6 +123,7 @@ func cwInit() {
     cwMod = intern("mod")
     cwAppletalk = intern("appletalk")
     cwSerial = intern("serial")
+    cwTcp = intern("tcp")
     cwPad = intern("pad")
     cwWord = intern("word")
     cwByte = intern("byte")
@@ -614,10 +617,10 @@ func isPrimaryStart(k: TokKind): bool {
 
 // parseArgs parses `[args]` up to and including the closing `)` (the `(`
 // already consumed by the caller), recognizing the contextual `appletalk`/
-// `serial` transport prefixes (only when what follows can start a primary
-// expression -- otherwise it's an ordinary identifier, left for
+// `serial`/`tcp` transport prefixes (only when what follows can start a
+// primary expression -- otherwise it's an ordinary identifier, left for
 // parseExpr). Stashes which one (if any) matched in parseArgsTransport
-// (see that var's doc comment): 0 none, 1 appletalk, 2 serial.
+// (see that var's doc comment): 0 none, 1 appletalk, 2 serial, 3 tcp.
 func parseArgs(): int {
     var head: int
     var tail: int
@@ -648,6 +651,11 @@ func parseArgs(): int {
             tCol = curCol()
             advance()
             transport = 2
+        } else if curIsIdentIdx(cwTcp) {
+            tLine = curLine()
+            tCol = curCol()
+            advance()
+            transport = 3
         }
     }
 

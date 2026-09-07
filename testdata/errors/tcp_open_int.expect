@@ -1,0 +1,2 @@
+../../testdata/errors/tcp_open_int.cla:11:16: cannot use int here (expected string or address)
+../../testdata/errors/tcp_open_int.cla:11:12: tcp is only valid on connection.open with a string argument or listener.listen with an int argument

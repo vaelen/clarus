@@ -1596,13 +1596,11 @@ func lowCoerceTo(targetType: int, argAst: int): int {
 // the ordinary lowExpr, and its resulting int value (1-based handle, 0 =
 // nil) is passed straight through to the rtConn* runtime entry point,
 // which now does its own `h == 0` nil check (runtime/clarus/conn.cla).
-// For `open`, only the `serial` transport tag (callTransport(e) == 2)
-// is implemented; `open` with no transport prefix, the `appletalk`
-// prefix, or a resolved `address` argument (all legal per
-// connectionMethods' own signature, just not implemented yet) still fall
-// through to the exact SAME generic not-yet-implemented diagnostic
-// lowMethodCall's own fallback produces for an unhandled receiver kind
-// (brief: "EXACTLY as today"), since xk == TyConnection either way.
+// For `open`, all three transport tags (2 `serial`, 1 `appletalk`, 3
+// `tcp`) and the `address` argument form are implemented; anything else
+// still falls through to the exact SAME generic not-yet-implemented
+// diagnostic lowMethodCall's own fallback produces for an unhandled
+// receiver kind, since xk == TyConnection either way.
 // `on <var>.<event>` handlers (lowTopHandler) and lowerProgram's own
 // connection-slot pre-pass still use lowConnSlotOf/lowIsLocal -- a
 // handler's target is spec-mandated to always be a global (checkTop-
@@ -1624,6 +1622,16 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
         args = recv
         tail = irExprListAppend(args, newIRIntConst(2, irIntT))
         // rtConnOpen(h: int, transport: int, spec: string) -- 3rd param.
+        irExprListAppend(tail, lowCoerceTo(irStrType(255), argsHead))
+        return newIRCallFn(intern("rtConnOpen"), args, irVoidT)
+    }
+    if name == "open" and callTransport(e) == 3 {
+        // `c.open(tcp "a.b.c.d:port")` (MacTCP phase, spec %4.1): the
+        // SAME rtConnOpen entry point the serial/appletalk arms use, with
+        // conn.cla's transport tag 3 -- conn.cla's own transport switch
+        // routes it to tcp.cla's rtTcpOpen, which is real on BOTH lanes.
+        args = recv
+        tail = irExprListAppend(args, newIRIntConst(3, irIntT))
         irExprListAppend(tail, lowCoerceTo(irStrType(255), argsHead))
         return newIRCallFn(intern("rtConnOpen"), args, irVoidT)
     }
@@ -1679,9 +1687,8 @@ func lowConnMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
 // value (lowTypeAt's TyListener case), so the receiver lowers via plain
 // lowExpr and its 1-based handle (0 = nil) goes straight through --
 // atalk.cla's own rtLsn* entry points do the `h == 0` nil check.
-// `l.listen(port)` stays a MacTCP fence: it falls to the shared
-// not-yet-implemented diagnostic below, exactly as it did before this
-// task.
+// `l.listen(tcp port)` (MacTCP phase, spec %4.2) joins them, into
+// tcp.cla's rtLsnListen.
 func lowListenerMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
     var recv: int
     var name: string
@@ -1699,6 +1706,12 @@ func lowListenerMethod(e: int, fn: int, ty: int, xk: TypeKind): int {
         tail = irExprListAppend(args, lowCoerceTo(irStrType(255), argsHead))
         irExprListAppend(tail, lowCoerceTo(irStrType(255), exprNext(argsHead)))
         return newIRCallFn(intern("rtLsnRegister"), args, irVoidT)
+    }
+    if name == "listen" {
+        // `l.listen(tcp port)` (MacTCP phase): rtLsnListen(h: int, port: int).
+        args = recv
+        irExprListAppend(args, lowCoerceTo(irIntT, argsHead))
+        return newIRCallFn(intern("rtLsnListen"), args, irVoidT)
     }
     if name == "stop" {
         return newIRCallFn(intern("rtLsnStop"), recv, irVoidT)

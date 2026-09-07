@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, Task 6 (spec %4.1): the plain-string `open("host:port")`
+// form left the reference when TCP became connection's third transport --
+// a bare string with no transport keyword now names the three keywords.
+var c: connection
+
+on App.startCLI(args: list of string) {
+    c.open("10.0.0.5:2323")
+}

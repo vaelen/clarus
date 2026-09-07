@@ -1732,6 +1732,13 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         neededMods.add("conn_c.cla")
         neededMods.add("atalk.cla")
         neededMods.add("atalk_c.cla")
+        // tcp.cla + tcp_c.cla (MacTCP phase, Task 6): conn.cla's third
+        // transport and atalk.cla's listener second form, so they ride
+        // the same unit -- conn.cla calls rtTcpOpen/rtTcpPump/rtTcpAlive
+        // and atalk.cla dispatches rtLsnStop to rtTcpLsnStop. After
+        // atalk.cla, which declares rtLsnState/rtLsnMax/rtAtAppendBytes.
+        neededMods.add("tcp.cla")
+        neededMods.add("tcp_c.cla")
     }
     if want68k {
         neededMods.add("native.cla")

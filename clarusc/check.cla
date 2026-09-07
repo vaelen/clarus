@@ -6195,8 +6195,8 @@ func checkIdentCall(e: int, fn: int): int {
 
 // transportName renders a call's transport tag (see ast.cla's callTransport)
 // as the contextual keyword that produced it -- used only to build the
-// misuse diagnostic below. Tag 0 (no prefix) never reaches here: every
-// caller pre-filters on `transport != 0`, so anything but 1/2 is a
+// misuse diagnostics below. Tag 0 (no prefix) never reaches here: every
+// caller pre-filters on `transport != 0`, so anything but 1/2/3 is a
 // compiler invariant violation, not a user error (compiler-cleanup: the
 // old fall-through silently rendered ANY unknown tag as "serial").
 func transportName(tag: int): string {
@@ -6206,24 +6206,62 @@ func transportName(tag: int): string {
     if tag == 2 {
         return "serial"
     }
+    if tag == 3 {
+        return "tcp"
+    }
     abort("clarusc: unknown transport tag " + numToStr(tag))
     return ""
 }
 
-// callIsSingleArgOpen reports whether e is `X.open(ARG)` -- exactly one
-// argument to a method named "open" -- the only shape the `appletalk`/
-// `serial` transport prefixes are legal on (serial-connection phase, Task
-// 3). It does not itself confirm X is a connection; checkMethodCall's own
-// table dispatch (only TyConnection registers "open") reports "undefined:
-// open" for any other receiver kind, so this stays syntactic.
-func callIsSingleArgOpen(fn: int, argsHead: int): bool {
+// callTransportShape: the one call shape each transport keyword is legal
+// on. `appletalk`/`serial`: X.open(str). `tcp` (MacTCP phase): X.open(str)
+// OR X.listen(int). Returns "" when the shape is fine, else the diagnostic.
+// It does not itself confirm X is a connection/listener; checkMethodCall's
+// own table dispatch (only TyConnection registers "open", only TyListener
+// "listen") reports "undefined: open" for any other receiver kind, so this
+// stays syntactic. argT is the argument's already-resolved type, or -1
+// when it has not been checked yet (the pre-dispatch call site).
+func callTransportShape(transport: int, fn: int, argsHead: int, argT: int): string {
+    var mname: string
+
+    if exprKind(fn) != ExSelect or exprListCount(argsHead) != 1 {
+        return transportName(transport) + " is only valid on connection.open with a single string argument"
+    }
+    mname = poolGet(selectName(fn))
+    if transport == 3 {
+        if mname == "open" and (argT == -1 or typeKind(argT) == TyStr) { return "" }
+        if mname == "listen" and (argT == -1 or typeKind(argT) == TyInt) { return "" }
+        return "tcp is only valid on connection.open with a string argument or listener.listen with an int argument"
+    }
+    if mname == "open" and (argT == -1 or typeKind(argT) == TyStr) { return "" }
+    return transportName(transport) + " is only valid on connection.open with a single string argument"
+}
+
+// checkBareTransport: the MacTCP phase's own "you forgot the keyword"
+// diagnostics. `c.open("host:port")` (a connection receiver, one string
+// argument, no transport prefix) used to be the serial spec's own legal
+// form; it left the reference when TCP arrived (spec %4.1), so it is now
+// a compile error naming the three keywords. `l.listen(...)` with no
+// prefix is the same rule for listeners (spec %4.2). `c.open(addr)` --
+// argument type TyAddress -- stays legal with no keyword and is not
+// touched here. Runs AFTER dispatch, so both the receiver's and the
+// argument's type memos are warm.
+func checkBareTransport(e: int, fn: int, argsHead: int) {
+    var recvKind: TypeKind
+    var mname: string
+
     if exprKind(fn) != ExSelect {
-        return false
+        return
     }
-    if poolGet(selectName(fn)) != "open" {
-        return false
+    recvKind = typeKind(exprTypeGet(selectX(fn)))
+    mname = poolGet(selectName(fn))
+    if recvKind == TyConnection and mname == "open" and exprListCount(argsHead) == 1 and typeKind(exprTypeGet(argsHead)) == TyStr {
+        emitDiag(exprLine(e), exprCol(e), "open needs a transport: tcp, appletalk, or serial")
+        return
     }
-    return exprListCount(argsHead) == 1
+    if recvKind == TyListener and mname == "listen" {
+        emitDiag(exprLine(e), exprCol(e), "listen needs the tcp keyword: l.listen(tcp port)")
+    }
 }
 
 func checkCall(e: int, expected: int): int {
@@ -6231,6 +6269,7 @@ func checkCall(e: int, expected: int): int {
     var argsHead: int
     var transport: int
     var t: int
+    var shapeErr: string
 
     fn = callFn(e)
     argsHead = callArgsHead(e)
@@ -6241,9 +6280,12 @@ func checkCall(e: int, expected: int): int {
         // anywhere (spec %4.1).
         usesAtalk = true
     }
-    if transport != 0 and not callIsSingleArgOpen(fn, argsHead) {
-        emitDiag(callTransportLine(e), callTransportCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
-        return InvalidT
+    if transport != 0 {
+        shapeErr = callTransportShape(transport, fn, argsHead, -1)
+        if shapeErr != "" {
+            emitDiag(callTransportLine(e), callTransportCol(e), shapeErr)
+            return InvalidT
+        }
     }
     if exprKind(fn) == ExIdent {
         t = checkIdentCall(e, fn)
@@ -6253,9 +6295,15 @@ func checkCall(e: int, expected: int): int {
         emitDiag(exprLine(e), exprCol(e), "cannot call this expression")
         return InvalidT
     }
-    if transport != 0 and t != InvalidT and typeKind(exprTypeGet(argsHead)) != TyStr {
-        emitDiag(callTransportLine(e), callTransportCol(e), transportName(transport) + " is only valid on connection.open with a single string argument")
-        return InvalidT
+    if transport != 0 and t != InvalidT {
+        shapeErr = callTransportShape(transport, fn, argsHead, exprTypeGet(argsHead))
+        if shapeErr != "" {
+            emitDiag(callTransportLine(e), callTransportCol(e), shapeErr)
+            return InvalidT
+        }
+    }
+    if transport == 0 and t != InvalidT {
+        checkBareTransport(e, fn, argsHead)
     }
     return t
 }

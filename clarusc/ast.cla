@@ -704,7 +704,8 @@ func callArgsHead(i: int): int {
 }
 
 // callTransport returns the call's transport tag: 0 (none), 1 (`appletalk`
-// prefix), or 2 (`serial` prefix) -- see parse.cla's parseArgsTransport.
+// prefix), 2 (`serial` prefix), or 3 (`tcp` prefix, MacTCP phase) -- see
+// parse.cla's parseArgsTransport.
 func callTransport(i: int): int {
     return exprs[i].intVal
 }

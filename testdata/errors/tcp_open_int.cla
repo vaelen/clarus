@@ -1,0 +1,12 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, Task 6: `tcp` is legal on connection.open with a string
+// and on listener.listen with an int -- an int on `open` is neither. The
+// argument's own type error (connectionMethods' signature) is reported
+// first, then the keyword-shape rule; both are true and both are kept.
+var c: connection
+
+on App.startCLI(args: list of string) {
+    c.open(tcp 2323)
+}
