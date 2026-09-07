@@ -1,6 +1,6 @@
 LBL_250:
         ; startup (JT slot 0)
-        ; globals (below A5, 7356 bytes total):
+        ; globals (below A5, 7396 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiClaimedMask : -12(A5)  size 4  type int
@@ -119,54 +119,56 @@ LBL_250:
         ;   rtAt68DspAux : -6586(A5)  size 4  type ptr
         ;   rtTcpPhase : -6618(A5)  size 32  type arr
         ;   rtTcpPending : -6650(A5)  size 32  type arr
-        ;   rtTcpUp : -6652(A5)  size 1  type bool
-        ;   rtLsnSlotTransport : -6660(A5)  size 8  type arr
-        ;   rtLsnPort : -6668(A5)  size 8  type arr
-        ;   rtTcpLastErr : -6672(A5)  size 4  type int
-        ;   rtTcpParseIp : -6676(A5)  size 4  type int
-        ;   rtTcpParsePort : -6680(A5)  size 4  type int
-        ;   rtTcp68Ref : -6684(A5)  size 4  type int
-        ;   rtTcp68LastErr : -6688(A5)  size 4  type int
-        ;   rtTcp68Aux : -6692(A5)  size 4  type int
-        ;   rtTcp68Stream : -6724(A5)  size 32  type arr
-        ;   rtTcp68Buf : -6756(A5)  size 32  type arr
-        ;   rtTcp68Rcv : -6788(A5)  size 32  type arr
-        ;   rtTcp68Snd : -6820(A5)  size 32  type arr
-        ;   rtTcp68RcvPb : -6852(A5)  size 32  type arr
-        ;   rtTcp68Pb : -6884(A5)  size 32  type arr
-        ;   rtTcp68Wds : -6916(A5)  size 32  type arr
-        ;   rtTcp68RcvLive : -6924(A5)  size 8  type arr
-        ;   rtTcp68PbLive : -6932(A5)  size 8  type arr
-        ;   rtTcp68PbOp : -6964(A5)  size 32  type arr
-        ;   rtTcp68RcvGot : -6996(A5)  size 32  type arr
-        ;   rtTcp68LsnStream : -7004(A5)  size 8  type arr
-        ;   rtTcp68LsnBuf : -7012(A5)  size 8  type arr
-        ;   rtTcp68LsnPb : -7020(A5)  size 8  type arr
-        ;   rtTcp68LsnLive : -7022(A5)  size 2  type arr
-        ;   rtTcp68LsnReady : -7024(A5)  size 2  type arr
-        ;   natPb : -7028(A5)  size 4  type ptr
-        ;   natBuf : -7032(A5)  size 4  type ptr
-        ;   natDigits : -7036(A5)  size 4  type ptr
-        ;   natLogBuf : -7040(A5)  size 4  type ptr
-        ;   natLogLen : -7044(A5)  size 4  type int
-        ;   natRef : -7048(A5)  size 4  type int
-        ;   natOpened : -7050(A5)  size 1  type bool
-        ;   natDone : -7052(A5)  size 1  type bool
-        ;   natArgs : -7056(A5)  size 4  type list
-        ;   natPanicBuf : -7060(A5)  size 4  type ptr
-        ;   natEmptyStr : -7064(A5)  size 4  type ptr
-        ;   natErrCode : -7068(A5)  size 4  type int
-        ;   natErrMsg : -7324(A5)  size 256  type str
-        ;   natFilePb : -7328(A5)  size 4  type ptr
-        ;   natFileReady : -7330(A5)  size 1  type bool
-        ;   natUiEmitBuf : -7334(A5)  size 4  type ptr
-        ;   natQdInited : -7336(A5)  size 1  type bool
-        ;   natQdGlobals : -7340(A5)  size 4  type ptr
-        ;   rtFh68kLastErr : -7344(A5)  size 4  type int
-        ;   rtFh68kState : -7348(A5)  size 4  type ptr
-        ;   conn : -7352(A5)  size 4  type int
-        LEA -7356(A5),A0
-        MOVE.W #3677,D0
+        ;   rtTcpCloseSent : -6658(A5)  size 8  type arr
+        ;   rtTcpCloseTick : -6690(A5)  size 32  type arr
+        ;   rtTcpUp : -6692(A5)  size 1  type bool
+        ;   rtLsnSlotTransport : -6700(A5)  size 8  type arr
+        ;   rtLsnPort : -6708(A5)  size 8  type arr
+        ;   rtTcpLastErr : -6712(A5)  size 4  type int
+        ;   rtTcpParseIp : -6716(A5)  size 4  type int
+        ;   rtTcpParsePort : -6720(A5)  size 4  type int
+        ;   rtTcp68Ref : -6724(A5)  size 4  type int
+        ;   rtTcp68LastErr : -6728(A5)  size 4  type int
+        ;   rtTcp68Aux : -6732(A5)  size 4  type int
+        ;   rtTcp68Stream : -6764(A5)  size 32  type arr
+        ;   rtTcp68Buf : -6796(A5)  size 32  type arr
+        ;   rtTcp68Rcv : -6828(A5)  size 32  type arr
+        ;   rtTcp68Snd : -6860(A5)  size 32  type arr
+        ;   rtTcp68RcvPb : -6892(A5)  size 32  type arr
+        ;   rtTcp68Pb : -6924(A5)  size 32  type arr
+        ;   rtTcp68Wds : -6956(A5)  size 32  type arr
+        ;   rtTcp68RcvLive : -6964(A5)  size 8  type arr
+        ;   rtTcp68PbLive : -6972(A5)  size 8  type arr
+        ;   rtTcp68PbOp : -7004(A5)  size 32  type arr
+        ;   rtTcp68RcvGot : -7036(A5)  size 32  type arr
+        ;   rtTcp68LsnStream : -7044(A5)  size 8  type arr
+        ;   rtTcp68LsnBuf : -7052(A5)  size 8  type arr
+        ;   rtTcp68LsnPb : -7060(A5)  size 8  type arr
+        ;   rtTcp68LsnLive : -7062(A5)  size 2  type arr
+        ;   rtTcp68LsnReady : -7064(A5)  size 2  type arr
+        ;   natPb : -7068(A5)  size 4  type ptr
+        ;   natBuf : -7072(A5)  size 4  type ptr
+        ;   natDigits : -7076(A5)  size 4  type ptr
+        ;   natLogBuf : -7080(A5)  size 4  type ptr
+        ;   natLogLen : -7084(A5)  size 4  type int
+        ;   natRef : -7088(A5)  size 4  type int
+        ;   natOpened : -7090(A5)  size 1  type bool
+        ;   natDone : -7092(A5)  size 1  type bool
+        ;   natArgs : -7096(A5)  size 4  type list
+        ;   natPanicBuf : -7100(A5)  size 4  type ptr
+        ;   natEmptyStr : -7104(A5)  size 4  type ptr
+        ;   natErrCode : -7108(A5)  size 4  type int
+        ;   natErrMsg : -7364(A5)  size 256  type str
+        ;   natFilePb : -7368(A5)  size 4  type ptr
+        ;   natFileReady : -7370(A5)  size 1  type bool
+        ;   natUiEmitBuf : -7374(A5)  size 4  type ptr
+        ;   natQdInited : -7376(A5)  size 1  type bool
+        ;   natQdGlobals : -7380(A5)  size 4  type ptr
+        ;   rtFh68kLastErr : -7384(A5)  size 4  type int
+        ;   rtFh68kState : -7388(A5)  size 4  type ptr
+        ;   conn : -7392(A5)  size 4  type int
+        LEA -7396(A5),A0
+        MOVE.W #3697,D0
 LBL_252:
         CLR.W (A0)+
         DBRA D0,LBL_252
@@ -176,15 +178,15 @@ LBL_252:
         DC.W $A063  ; _MaxApplZone
         DC.W $A036  ; _MoreMasters
         BSR.W LBL_251
-        JSR 3970(A5)
+        JSR 3938(A5)
         ; UI startup: rtUiStartup / [App.launch] / rtUiLaunch / rtUiRun
         BSR.W LBL_207
-        JSR 4154(A5)
+        JSR 4122(A5)
         JSR 1866(A5)
         JSR 1858(A5)
         BSR.W LBL_249
         CLR.L -(A7)
-        JSR 3994(A5)
+        JSR 3962(A5)
         RTS
 LBL_251:
         ; cg_init_globals
@@ -234,7 +236,7 @@ LBL_251:
         BSR.W LBL_14
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        LEA -7056(A5),A0
+        LEA -7096(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L #256,-(A7)
         BSR.W LBL_27
@@ -242,7 +244,7 @@ LBL_251:
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
         MOVE.L #1,D0
-        MOVE.L D0,-7352(A5)
+        MOVE.L D0,-7392(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -254,7 +256,7 @@ LBL_0:
         MOVE.L D0,-(A7)
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 4010(A5)
+        JSR 3978(A5)
         ADDQ.L #8,A7
 LBL_253:
         UNLK A6
@@ -265,7 +267,7 @@ LBL_1:
         LINK A6,#-2100
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 4002(A5)
+        JSR 3970(A5)
         ADDQ.L #4,A7
 LBL_254:
         UNLK A6
@@ -6399,7 +6401,7 @@ LBL_174:
         MOVE.L D0,-(A7)
         MOVE.L #1903520116,D0
         MOVE.L D0,-(A7)
-        LEA 4322(A5),A0
+        LEA 4290(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -6417,7 +6419,7 @@ LBL_174:
         MOVE.L D0,-(A7)
         MOVE.L #1868656752,D0
         MOVE.L D0,-(A7)
-        LEA 4330(A5),A0
+        LEA 4298(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -6431,7 +6433,7 @@ LBL_174:
         EXT.L D0
         MOVE.L D0,-4(A6)
 LBL_569:
-        JSR 4314(A5)
+        JSR 4282(A5)
 LBL_568:
         UNLK A6
         RTS
@@ -7423,7 +7425,7 @@ LBL_609:
         MOVE.L D0,-24(A6)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4138(A5)
+        JSR 4106(A5)
         ADDQ.L #4,A7
         MOVE.L -24(A6),D1
         MOVEQ #0,D0
@@ -7854,7 +7856,7 @@ LBL_627:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4266(A5)
+        JSR 4234(A5)
         ADDA.W #20,A7
         MOVE.L -8(A6),D0
         BRA.W LBL_604
@@ -7975,7 +7977,7 @@ LBL_634:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4266(A5)
+        JSR 4234(A5)
         ADDA.W #20,A7
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
@@ -7992,7 +7994,7 @@ LBL_634:
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4298(A5)
+        JSR 4266(A5)
         ADDQ.L #8,A7
 LBL_636:
         MOVEQ #0,D0
@@ -8242,7 +8244,7 @@ LBL_645:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4266(A5)
+        JSR 4234(A5)
         ADDA.W #20,A7
         MOVE.L -12(A6),D0
         MOVEA.L D0,A0
@@ -8346,7 +8348,7 @@ LBL_651:
 LBL_650:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4122(A5)
+        JSR 4090(A5)
         ADDQ.L #4,A7
 LBL_648:
         UNLK A6
@@ -10013,7 +10015,7 @@ LBL_753:
         MOVE.L D0,-(A7)
         MOVE.L -28(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4282(A5)
+        JSR 4250(A5)
         ADDQ.L #8,A7
 LBL_755:
 LBL_751:
@@ -10206,7 +10208,7 @@ LBL_766:
         ADDQ.L #4,A7
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4290(A5)
+        JSR 4258(A5)
         ADDQ.L #4,A7
 LBL_768:
         MOVE.L -8(A6),D1
@@ -10227,7 +10229,7 @@ LBL_207:
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
         MOVE.L D0,-8(A6)
-        JSR 4130(A5)
+        JSR 4098(A5)
         MOVE.L #65535,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
@@ -11924,7 +11926,7 @@ LBL_213:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4266(A5)
+        JSR 4234(A5)
         ADDA.W #20,A7
 LBL_832:
         UNLK A6
@@ -12022,7 +12024,7 @@ LBL_834:
         MOVE.L D0,-24(A6)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4138(A5)
+        JSR 4106(A5)
         ADDQ.L #4,A7
         MOVE.L -24(A6),D1
         MOVEQ #6,D0
@@ -12276,7 +12278,7 @@ LBL_215:
         MOVE.L D0,-4(A6)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4138(A5)
+        JSR 4106(A5)
         ADDQ.L #4,A7
         MOVE.L -4(A6),D1
         MOVEQ #6,D0
@@ -12645,7 +12647,7 @@ LBL_856:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4274(A5)
+        JSR 4242(A5)
         ADDA.W #24,A7
         BRA.W LBL_854
 LBL_853:
@@ -12751,7 +12753,7 @@ LBL_864:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4274(A5)
+        JSR 4242(A5)
         ADDA.W #24,A7
 LBL_865:
 LBL_861:
@@ -13122,7 +13124,7 @@ LBL_249:
         BSR.W LBL_16
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-        MOVE.L -7056(A5),D0
+        MOVE.L -7096(A5),D0
         MOVE.L D0,-4(A6)
 LBL_891:
         MOVE.L A1,-(A7)

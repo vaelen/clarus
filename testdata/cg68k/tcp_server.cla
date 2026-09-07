@@ -1,0 +1,38 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// tcp_server.cla: the native codegen golden for the SERVER half of the
+// TCP surface (2026-09-07 mactcp spec %4.2, Task 9) -- `listen(tcp port)`
+// lowered to rtLsnListen, `accepted(c: connection)` handing over an
+// already-open connection value (no `opened` fires for it), the echo, and
+// `stop()` dispatching through atalk.cla's shared rtLsnStop into
+// tcp.cla's rtTcpLsnStop.
+//
+// UI-less and never booted, for the same reasons as tcp_client.cla.
+
+var lsn: listener
+var client: connection
+
+on App.startCLI(args: list of string) {
+    lsn.listen(tcp 2323)
+    log("listening")
+}
+
+on lsn.accepted(c: connection) {
+    client = c
+    client.send("READY\n")
+}
+
+on lsn.failed(err: error) {
+    log("lfailed " + string(err.code) + " " + err.message)
+    quit 1
+}
+
+on client.received(data: text) {
+    client.send(data)
+}
+
+on client.closed {
+    lsn.stop()
+    quit 0
+}

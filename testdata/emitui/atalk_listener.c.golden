@@ -293,6 +293,7 @@ extern int32_t rt_ext_AtalkHAtpSendResponse(int32_t, int32_t, void *, int32_t);
 extern int32_t rt_ext_AtalkHAtpCall(int32_t, int32_t, void *, int32_t, void *, int32_t);
 extern int32_t rt_ext_AtalkHAtpCallCode(void);
 extern void rt_ext_AtalkHPoll(void);
+extern int32_t rt_ext_TickCount(void);
 extern int32_t rt_ext_TcpHInit(void);
 extern int32_t rt_ext_TcpHCreate(int32_t);
 extern int32_t rt_ext_TcpHActiveOpen(int32_t, int32_t, int32_t);
@@ -735,6 +736,7 @@ static void clar_fn_rtTcpDropFront(int32_t cv_slot, int32_t cv_n);
 static int32_t clar_fn_rtTcpKick(int32_t cv_slot);
 static int32_t clar_fn_rtTcpWrite(int32_t cv_slot, void * cv_p, int32_t cv_n);
 static void clar_fn_rtTcpStep(int32_t cv_slot);
+static int32_t clar_fn_rtTcpCloseExpired(int32_t cv_slot);
 static void clar_fn_rtTcpPollConn(int32_t cv_slot);
 static void clar_fn_rtTcpLsnStop(int32_t cv_slot);
 static void clar_fn_rtTcpPump(void);
@@ -866,6 +868,8 @@ static clar_arr_int_2 cv_rtAtCReqFrom;
 static int32_t cv_rtAtCLastErr;
 static clar_arr_int_8 cv_rtTcpPhase;
 static clar_arr_text_8 cv_rtTcpPending;
+static clar_arr_bool_8 cv_rtTcpCloseSent;
+static clar_arr_int_8 cv_rtTcpCloseTick;
 static int32_t cv_rtTcpUp;
 static clar_arr_int_2 cv_rtLsnSlotTransport;
 static clar_arr_int_2 cv_rtLsnPort;
@@ -1067,12 +1071,18 @@ static void clar_init_globals(void) {
     for (int32_t ix29 = 0; ix29 < 8; ix29++) {
         cv_rtTcpPending.e[ix29] = (rt_text *)clar_fn_rtTextNew();
     }
-    cv_rtTcpUp = 0;
-    for (int32_t ix30 = 0; ix30 < 2; ix30++) {
-        cv_rtLsnSlotTransport.e[ix30] = 0;
+    for (int32_t ix30 = 0; ix30 < 8; ix30++) {
+        cv_rtTcpCloseSent.e[ix30] = 0;
     }
-    for (int32_t ix31 = 0; ix31 < 2; ix31++) {
-        cv_rtLsnPort.e[ix31] = 0;
+    for (int32_t ix31 = 0; ix31 < 8; ix31++) {
+        cv_rtTcpCloseTick.e[ix31] = 0;
+    }
+    cv_rtTcpUp = 0;
+    for (int32_t ix32 = 0; ix32 < 2; ix32++) {
+        cv_rtLsnSlotTransport.e[ix32] = 0;
+    }
+    for (int32_t ix33 = 0; ix33 < 2; ix33++) {
+        cv_rtLsnPort.e[ix33] = 0;
     }
     cv_rtTcpLastErr = 0;
     cv_rtTcpParseIp = 0;
@@ -1085,8 +1095,8 @@ static void clar_init_globals(void) {
 }
 
 static void cl_free_globals(void) {
-    for (int32_t ix32 = 0; ix32 < 8; ix32++) {
-    clar_fn_rtTextRelease((void*)cv_rtTcpPending.e[ix32]);
+    for (int32_t ix34 = 0; ix34 < 8; ix34++) {
+    clar_fn_rtTextRelease((void*)cv_rtTcpPending.e[ix34]);
     }
 
 }
@@ -2855,6 +2865,8 @@ static void clar_fn_rtTcpRelease(int32_t cv_slot) {
     clar_fn_rtTcpDevRelease(cv_slot);
     (cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
     clar_fn_rtTextClear((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]);
+    (cv_rtTcpCloseSent).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
+    (cv_rtTcpCloseTick).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
     if ((cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 3) {
         (cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
     }
@@ -2939,9 +2951,23 @@ static int32_t clar_fn_rtTcpWrite(int32_t cv_slot, void * cv_p, int32_t cv_n) {
 }
 
 static void clar_fn_rtTcpStep(int32_t cv_slot) {
-    if ((((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 3) && (clar_fn_rtTextLen((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]) == 0)) && (!(clar_fn_rtTcpDevSendBusy(cv_slot)))) {
-        clar_fn_rtTcpDevClose(cv_slot);
+    if (((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] != 3) || (cv_rtTcpCloseSent).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]) {
+        return;
     }
+    if ((clar_fn_rtTextLen((void*)(cv_rtTcpPending).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]) == 0) && (!(clar_fn_rtTcpDevSendBusy(cv_slot)))) {
+        if (clar_fn_rtTcpDevClose(cv_slot) == 0) {
+            (cv_rtTcpCloseSent).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 1;
+            (cv_rtTcpCloseTick).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = rt_ext_TickCount();
+        }
+    }
+}
+
+static int32_t clar_fn_rtTcpCloseExpired(int32_t cv_slot) {
+    if (!((cv_rtTcpCloseSent).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)])) {
+        return 0;
+    }
+    return (CLAR_SUB32(rt_ext_TickCount(), (cv_rtTcpCloseTick).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)]) >= 600);
+    return 0;
 }
 
 static void clar_fn_rtTcpPollConn(int32_t cv_slot) {
@@ -2954,6 +2980,11 @@ static void clar_fn_rtTcpPollConn(int32_t cv_slot) {
     rt_text * cv___store4;
     cv___store4 = NULL;
     if ((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 0) {
+        clar_fn_rtTextRelease((void*)cv_t);
+        return;
+    }
+    if (clar_fn_rtTcpCloseExpired(cv_slot)) {
+        clar_fn_rtTcpRelease(cv_slot);
         clar_fn_rtTextRelease((void*)cv_t);
         return;
     }

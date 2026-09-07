@@ -1157,11 +1157,13 @@ var cgFuncSegment: list of int
 
 // cgFuncFrameSizes[i] is irFuncs index i's own LINK frame size in bytes
 // (native-gaps-cleanup Task 4) -- cgEmitFunc's own `frameSize` local,
-// index-assigned there (NOT appended: cgEmitFunc runs twice per function,
-// once during cg68Measure's throwaway pass and once for real, always
-// computing the identical value from the same IR, so a plain index write
-// is idempotent). Pre-sized to irFuncs.count zeros by cg68Measure before
-// either pass runs. 0 for an unreachable function, or a callback-glue
+// index-assigned there (NOT appended) on the MEASURE pass ONLY. The two
+// passes do NOT agree: the measure pass lays out an empty small pool and
+// an at-floor big pool, so the real pass's frameSize is larger. See the
+// guarded write in cgEmitFunc for why the measure value is the one both
+// the from-source and the --rtbake paths must record (MacTCP phase, Task
+// 9). Pre-sized to irFuncs.count zeros by cg68Measure before either pass
+// runs. 0 for an unreachable function, or a callback-glue
 // function (cgEmitFunc's cgCbGlueBodyFor early-return skips the frameSize
 // computation entirely -- a callback's own dispatch depth is untraceable
 // from the static call graph anyway, see cgStackHeuristic's own doc
@@ -5759,7 +5761,32 @@ func cgEmitFunc(f: int) {
     if frameSize > 32767 {
         abort("cg68k: function " + poolGet(irFuncName(f)) + " needs a " + numToStr(frameSize) + "-byte frame; the 68000 d16(A6) frame addressing this backend uses caps frames at 32767 bytes -- split the function or the statement")
     }
-    cgFuncFrameSizes[f] = frameSize
+    // MacTCP phase, Task 9: recorded on the MEASURE pass ONLY (cgRecMode
+    // 1). The two passes do NOT compute the same frameSize -- the measure
+    // pass lays the small pool out EMPTY and the big pool at
+    // cgBigTmpFloor (cgFuncSmallTmpNeed[f]/cgFuncBigTmpNeed[f] are still
+    // 0 there, by construction), so the real pass's value is larger by
+    // whatever those two pools ended up needing. cgStackHeuristic is this
+    // list's only reader and it runs from cgEmitStartup, which
+    // cg68ProgramFork emits BEFORE any real-pass cgEmitFunc call -- so
+    // the heuristic has always seen the measure-pass numbers, and an
+    // unguarded real-pass write is dead for it. It was NOT dead for
+    // --rtbake: bkWriteObjMeta captures this list after the capture
+    // fork's real pass, so a baked function carried its FINAL frame into
+    // cg68Measure's paste branch while a from-source compile of the same
+    // program used the measure one -- two different heuristic results,
+    // one differing byte in the startup ADDA, and a --rtbake identity
+    // failure (found by tests/bake/tcp.sh, whose fixture puts
+    // rtConnSendStr on the deepest chain). Guarding the write makes both
+    // paths agree on the measure value.
+    // ponytail: this pins the EXISTING behaviour rather than changing it.
+    // That the heuristic prices frames without their temp pools at all is
+    // a separate, pre-existing under-reserve (it has been so since the
+    // pools became per-function) -- a real bug, but not this task's, and
+    // fixing it moves every native program's stack reserve.
+    if cgRecMode == 1 {
+        cgFuncFrameSizes[f] = frameSize
+    }
     cgStmtTmpOffs = cgFreshIntList()
     cgStmtTmpType = cgFreshIntList()
     cgStmtTmpNext = 0

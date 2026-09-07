@@ -12396,7 +12396,7 @@ LBL_738:
         ; func natLastErrCode  (JT slot 304)
 LBL_82:
         LINK A6,#-2100
-        MOVE.L -7068(A5),D0
+        MOVE.L -7108(A5),D0
         BRA.W LBL_740
 LBL_740:
         UNLK A6
@@ -12604,7 +12604,7 @@ LBL_97:
         JSR 138(A5)
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-        MOVE.L -7056(A5),D0
+        MOVE.L -7096(A5),D0
         MOVE.L D0,-4(A6)
 LBL_753:
         MOVE.L A1,-(A7)

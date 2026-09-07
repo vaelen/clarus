@@ -1,0 +1,43 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// tcp_client.cla: the native codegen golden for the CLIENT half of the
+// TCP surface (2026-09-07 mactcp spec %4.1, Task 9) -- `open(tcp
+// "a.b.c.d:port")` lowered to rtConnOpen(h, 3, spec), a send on `opened`,
+// an echo plus a local `close()` on `received`, and both terminal
+// handlers. tcp_server.cla is the other half; between them every lowering
+// site the phase added is pinned in a committed 68k listing, and the
+// always-spliced tcp.cla/tcp_68k.cla globals ride along.
+//
+// Deliberately UI-LESS (`on App.startCLI`): the transport is the point,
+// and a window would bury the conn/tcp code under the whole UI runtime.
+// Not booted anywhere -- MacTCP is absent from every emulator in this
+// repo (spec %2); Task 11 boots the real thing on Snow.
+
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    conn.open(tcp "127.0.0.1:2323")
+}
+
+on conn.opened {
+    conn.send("READY\n")
+}
+
+on conn.received(data: text) {
+    conn.send(data)
+    if data.indexOf("QQQ") >= 0 {
+        conn.close()
+        quit 0
+    }
+}
+
+on conn.closed {
+    log("closed")
+    quit 0
+}
+
+on conn.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+    quit 1
+}

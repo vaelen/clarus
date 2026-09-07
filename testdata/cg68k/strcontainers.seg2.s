@@ -1032,13 +1032,13 @@ LBL_153:
 LBL_15:
         LINK A6,#-2100
         MOVE.L 8(A6),D1
-        MOVE.L #151,D0
+        MOVE.L #153,D0
         CMP.L D0,D1
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_155
-        LEA -7056(A5),A0
+        LEA -7096(A5),A0
         MOVE.L A0,D0
         BRA.W LBL_154
         BRA.W LBL_156
@@ -1345,7 +1345,7 @@ LBL_54:
         JSR 154(A5)
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-        MOVE.L -7056(A5),D0
+        MOVE.L -7096(A5),D0
         MOVE.L D0,-4(A6)
 LBL_170:
         MOVE.L A1,-(A7)

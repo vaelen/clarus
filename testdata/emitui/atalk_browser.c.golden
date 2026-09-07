@@ -293,6 +293,7 @@ extern int32_t rt_ext_AtalkHAtpSendResponse(int32_t, int32_t, void *, int32_t);
 extern int32_t rt_ext_AtalkHAtpCall(int32_t, int32_t, void *, int32_t, void *, int32_t);
 extern int32_t rt_ext_AtalkHAtpCallCode(void);
 extern void rt_ext_AtalkHPoll(void);
+extern int32_t rt_ext_TickCount(void);
 extern int32_t rt_ext_TcpHInit(void);
 extern int32_t rt_ext_TcpHCreate(int32_t);
 extern int32_t rt_ext_TcpHActiveOpen(int32_t, int32_t, int32_t);
@@ -806,6 +807,8 @@ static clar_arr_int_2 cv_rtAtCReqFrom;
 static int32_t cv_rtAtCLastErr;
 static clar_arr_int_8 cv_rtTcpPhase;
 static clar_arr_text_8 cv_rtTcpPending;
+static clar_arr_bool_8 cv_rtTcpCloseSent;
+static clar_arr_int_8 cv_rtTcpCloseTick;
 static int32_t cv_rtTcpUp;
 static clar_arr_int_2 cv_rtLsnSlotTransport;
 static clar_arr_int_2 cv_rtLsnPort;
@@ -1008,12 +1011,18 @@ static void clar_init_globals(void) {
     for (int32_t ix29 = 0; ix29 < 8; ix29++) {
         cv_rtTcpPending.e[ix29] = (rt_text *)clar_fn_rtTextNew();
     }
-    cv_rtTcpUp = 0;
-    for (int32_t ix30 = 0; ix30 < 2; ix30++) {
-        cv_rtLsnSlotTransport.e[ix30] = 0;
+    for (int32_t ix30 = 0; ix30 < 8; ix30++) {
+        cv_rtTcpCloseSent.e[ix30] = 0;
     }
-    for (int32_t ix31 = 0; ix31 < 2; ix31++) {
-        cv_rtLsnPort.e[ix31] = 0;
+    for (int32_t ix31 = 0; ix31 < 8; ix31++) {
+        cv_rtTcpCloseTick.e[ix31] = 0;
+    }
+    cv_rtTcpUp = 0;
+    for (int32_t ix32 = 0; ix32 < 2; ix32++) {
+        cv_rtLsnSlotTransport.e[ix32] = 0;
+    }
+    for (int32_t ix33 = 0; ix33 < 2; ix33++) {
+        cv_rtLsnPort.e[ix33] = 0;
     }
     cv_rtTcpLastErr = 0;
     cv_rtTcpParseIp = 0;
@@ -1027,8 +1036,8 @@ static void clar_init_globals(void) {
 }
 
 static void cl_free_globals(void) {
-    for (int32_t ix32 = 0; ix32 < 8; ix32++) {
-    clar_fn_rtTextRelease((void*)cv_rtTcpPending.e[ix32]);
+    for (int32_t ix34 = 0; ix34 < 8; ix34++) {
+    clar_fn_rtTextRelease((void*)cv_rtTcpPending.e[ix34]);
     }
     clar_fn_rtListRelease((void*)cv_zoneNames);
     clar_fn_rtListRelease((void*)cv_seen);
@@ -2395,10 +2404,10 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
 }
 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
-    if (cv_rowsIdx == 95) {
+    if (cv_rowsIdx == 97) {
         return ((void*)&(cv_zoneNames));
     } else {
-        if (cv_rowsIdx == 96) {
+        if (cv_rowsIdx == 98) {
             return ((void*)&(cv_seen));
         } else {
             rt_log((const uint8_t*)&(clar_lit_167));

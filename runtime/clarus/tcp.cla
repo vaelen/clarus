@@ -35,6 +35,24 @@ const rtTcpErrBadSpec: int = -2
 const rtTcpStreamBuf: int = 8192
 const rtTcpChunk: int = 4096
 
+// rtTcpCloseTicks: spec %4.1's "a peer that never closes cannot pin the
+// slot" -- 10 s at 60 ticks/s, measured from the moment the graceful
+// close was issued. Enforced HERE, on both lanes, because the Mac lane
+// cannot: Task 8's Snow probe P4 found MacTCP's TCPClose returns in 0
+// ticks leaving the stream in finWait2, and the ULP abort attached to
+// that close never fires while the peer holds its half open. TCPRelease
+// DOES work from finWait2, which is exactly what rtTcpRelease issues.
+// The host waist runs its own identical 10 s deadline internally, so
+// there this is a backstop that changes nothing.
+const rtTcpCloseTicks: int = 600
+
+// _TickCount (0xA975): stack-result Pascal trap, NO `reg` (the reg form
+// is the 2026-08-03 stale-D0 bug, testdata/cg68k/tickprobe.cla). The
+// clause is byte-identical to toolbox/events.cla's, so a program that
+// composes that catalog dedups rather than conflicting; host builds link
+// rt_ext_TickCount (runtime/host/rt_ext_host.inc).
+external func TickCount(): int = trap 0xA975
+
 // Phases, per connection slot.
 const rtTcpIdle: int = 0
 const rtTcpOpening: int = 1
@@ -43,6 +61,8 @@ const rtTcpClosing: int = 3
 
 var rtTcpPhase: int[8]
 var rtTcpPending: text[8]        // bytes queued behind the in-flight send
+var rtTcpCloseSent: bool[8]      // the graceful close has been issued
+var rtTcpCloseTick: int[8]       // TickCount() when it was, for rtTcpCloseTicks
 var rtTcpUp: bool                // rtTcpDevInit succeeded once
 var rtLsnSlotTransport: int[2]   // 0 ADSP/unused, 3 TCP
 var rtLsnPort: int[2]
@@ -125,6 +145,8 @@ func rtTcpRelease(slot: int) {
     rtTcpDevRelease(slot)
     rtTcpPhase[slot] = rtTcpIdle
     rtTcpPending[slot].clear()
+    rtTcpCloseSent[slot] = false
+    rtTcpCloseTick[slot] = 0
     if rtConnSlotTransport[slot] == rtConnTransportTcp {
         rtConnSlotTransport[slot] = 0
     }
@@ -209,11 +231,31 @@ func rtTcpWrite(slot: int, p: ptr, n: int): int {
     return rtTcpKick(slot)
 }
 
-// rtTcpStep: in Closing, issue the graceful close once the queue drained.
+// rtTcpStep: in Closing, issue the graceful close ONCE the queue drained
+// -- and once only. rtTcpCloseSent is both that latch and the arming of
+// the rtTcpCloseTicks deadline: without it every pump pass after the
+// close block completed would issue another TCPClose on a stream already
+// in finWait2, ~60 of them a second for the whole deadline window.
 func rtTcpStep(slot: int) {
-    if rtTcpPhase[slot] == rtTcpClosing and rtTcpPending[slot].length == 0 and not rtTcpDevSendBusy(slot) {
-        rtTcpDevClose(slot)
+    if rtTcpPhase[slot] != rtTcpClosing or rtTcpCloseSent[slot] {
+        return
     }
+    if rtTcpPending[slot].length == 0 and not rtTcpDevSendBusy(slot) {
+        if rtTcpDevClose(slot) == 0 {
+            rtTcpCloseSent[slot] = true
+            rtTcpCloseTick[slot] = TickCount()
+        }
+    }
+}
+
+// rtTcpCloseExpired: rtTcpCloseTicks elapsed since the close went out.
+// Difference-compare, not `>=` on the sum: TickCount is a free-running
+// unsigned 32-bit counter that wraps (uiscript.cla's own idiom).
+func rtTcpCloseExpired(slot: int): bool {
+    if not rtTcpCloseSent[slot] {
+        return false
+    }
+    return TickCount() - rtTcpCloseTick[slot] >= rtTcpCloseTicks
 }
 
 // rtTcpClose: conn.cla's transport-3 close arm. Never fires `closed`.
@@ -234,6 +276,15 @@ func rtTcpPollConn(slot: int) {
     var e: int
 
     if rtTcpPhase[slot] == rtTcpIdle {
+        return
+    }
+    if rtTcpCloseExpired(slot) {
+        // The peer never closed its half within rtTcpCloseTicks. Drop the
+        // slot -- silently: a local close never fires `closed`. Checked
+        // BEFORE the poll, so a peer that keeps SENDING after our close
+        // (whose bytes we discard below) cannot hold the slot open past
+        // the deadline by keeping rtTcpDevPoll productive.
+        rtTcpRelease(slot)
         return
     }
     ev = rtTcpDevPoll(slot)
