@@ -340,9 +340,11 @@ enum + runner, not one boot per case.
   the emulated Mac Plus — then to 33 real by the textview-scroll-to-end
   phase's `ScrollToEnd` case, which hardware-proves the new
   `textview.scrollToEnd()` widget method on the native lane (the cprint
-  twin passes too, 38/38, since the compiler-cleanup phase added the
+  twin passed too, 38/38, once the compiler-cleanup phase added the
   `rt_ext_TbFreeMem`/`rt_ext_TbClearWarmFreeMem` shims that used to block
-  it) — then to 34 real by the
+  it — historical: the MacTCP phase made the toolbox suite
+  68k-source-only and that twin no longer compiles, see the
+  `CLARUS_CPRINT_MAC_TESTS=1` bullet above) — then to 34 real by the
   string-perf phase's `ClearWarm` case, which hardware-proves
   `text.clear()`+warm reuse keeps FreeMem EXACTLY flat (zero Memory
   Manager traffic) across 200 clear+refill cycles — then to 35 real by
@@ -406,7 +408,10 @@ enum + runner, not one boot per case.
   `toolbox/gui.cla` + `tests/mactest/toolbox_files.txt`). Each parses the
   captured `tkReport` log and asserts every case's own PASS line plus the
   `TOTAL n PASS n FAIL 0` tally, reporting one `PASS <case>`/`FAIL <case>`
-  result line per case. The `_68k` halves run under T2's
+  result line per case — except `toolbox_mac.sh`, which since the MacTCP
+  phase dies in `build_mac` before any case runs (the toolbox suite is
+  68k-source-only; see the `CLARUS_CPRINT_MAC_TESTS=1` bullet above).
+  The `_68k` halves run under T2's
   `CLARUS_MAC_TESTS=1 make -j1 test T=mactest/` (`scripts/test-merge.sh`);
   not part of T1. The `_mac` twins are the Retro68/cprint lane, demoted
   (pack3-standardfile phase, 2026-08-07) to an opt-in diagnostic behind
