@@ -166,10 +166,10 @@ Items 1 (binary streams and files), 2 (serial ports) and 3 (AppleTalk)
 of the original list are DONE — `binary-files`, `transfer-crcs`,
 `filesystem-api`, `serial-connection` and `appletalk` in
 `docs/HISTORY.md` (the AppleTalk phase merged to `main` 2026-09-07; its
-environment prerequisite, the one-line `CopySystemFile("AppleTalk",
-false)` LaunchAPPL patch that the `mactest/adsp_68k` and `toolbox_68k`
-boots need, is carried in `CLAUDE.md`'s toolchain section and is lost by
-a fresh Retro68 build). Remaining, in order:
+environment prerequisite — a LaunchAPPL with the `--system-extra-file`
+option, from the `vaelen/Retro68` fork until upstream PR #316 lands, plus
+`system-extra-file = AppleTalk` in `~/.LaunchAPPL.cfg` — is carried in
+`CLAUDE.md`'s toolchain section). Remaining, in order:
 
 1. **MacTCP.**
 

@@ -6182,7 +6182,14 @@ UNCOMMITTED in Andrew's Retro68 checkout and a fresh Retro68 build
 silently loses it** — which is why `CLAUDE.md`'s "Retro68 / Mac
 toolchain" section now records it as an environment prerequisite, and
 why a machine without it gets a red `toolbox_68k` (`AdspLeak` FAILs with
-`open .DSP err -43`) rather than a quiet skip. Task 13 then ran as four
+`open .DSP err -43`) rather than a quiet skip. (Superseded the same
+evening: the hardcoded copy became a proper, repeatable
+`--system-extra-file NAME` LaunchAPPL option on Andrew's fork,
+`vaelen/Retro68` branch `system-extra-file`, upstream PR
+autc04/Retro68#316; the installed binary was rebuilt from it and
+`~/.LaunchAPPL.cfg` gained `system-extra-file = AppleTalk`, so the
+prerequisite is now a config line plus a LaunchAPPL that knows the
+option, and `CLAUDE.md` describes that form.) Task 13 then ran as four
 dispatches.
 
 **13a — the first green `mactest/adsp_68k`.** The first real run of the

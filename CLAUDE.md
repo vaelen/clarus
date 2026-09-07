@@ -381,19 +381,21 @@ enum + runner, not one boot per case.
   `LC_ALL=C tr '\r' '\n'`, a plain `grep -n` reports nothing).
 - `toolchain/` → built cross-toolchain (`toolchain/bin`: gcc, Rez, LaunchAPPL,
   hfsutils h* tools). Prebuilt samples: `../Retro68-build/build-target/Samples/`.
-- **LaunchAPPL carries a local patch (AppleTalk phase, 2026-09-07).**
-  `Retro68/LaunchAPPL/Client/MiniVMac.cc` has
-  `CopySystemFile("AppleTalk", false);` added after its debugger-file
-  copy, so the stripped boot disk LaunchAPPL builds (System + AutoQuit +
-  the app) also installs AppleTalk 58.1.4 and `.XPP`/`.DSP` open instead
-  of answering `-43`. Rebuilt with `make LaunchAPPL` in
-  `Retro68-build/build-host` and installed at
-  `Retro68-build/toolchain/bin/LaunchAPPL`; the pre-patch binary is kept
-  beside it as `LaunchAPPL.orig`. **The patch is UNCOMMITTED in the
-  Retro68 checkout, so a fresh Retro68 build silently loses it** — after
-  which `mactest/adsp_68k` SKIPs itself and `mactest/toolbox_68k` goes
-  RED on `AdspLeak` (`open .DSP err -43`). Re-apply the three lines and
-  rebuild.
+- **LaunchAPPL needs `system-extra-file = AppleTalk` (AppleTalk phase,
+  2026-09-07).** Stock LaunchAPPL builds its Mini vMac boot disk from
+  only the System file, the debugger and a few extensions, so the
+  `AppleTalk` file (the `.XPP`/`.DSP` drivers) is absent and both open
+  `-43`. The installed `toolchain/bin/LaunchAPPL` is built from Andrew's
+  fork (`github.com/vaelen/Retro68`, branch `system-extra-file`, upstream
+  PR autc04/Retro68#316), which adds a repeatable `--system-extra-file
+  NAME` option / config key; `~/.LaunchAPPL.cfg` carries
+  `system-extra-file = AppleTalk`. The pre-option binary is kept beside
+  it as `LaunchAPPL.orig`. A LaunchAPPL rebuilt from upstream without
+  that option (or a config missing the line) makes `mactest/adsp_68k`
+  SKIP itself and `mactest/toolbox_68k` go RED on `AdspLeak`
+  (`open .DSP err -43`); rebuild from the fork branch (or upstream once
+  the PR lands) and keep the config line. The `Retro68` checkout's
+  remotes are `origin` = the fork, `upstream` = autc04.
 - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
 - `macplus2/` → a second Mini vMac (`MacPlus2.app` + `vMac.ROM` + its
   own `disk1.dsk`, an identical copy of `macplus/`'s) —
