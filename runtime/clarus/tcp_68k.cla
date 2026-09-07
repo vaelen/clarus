@@ -1,0 +1,717 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// tcp_68k.cla: the native (68k) MacTCP waist -- tcp_c.cla's twin, same
+// rtTcpDev* names, one file spliced per lane (the conn_68k.cla/conn_c.cla
+// and atalk_68k.cla/atalk_c.cla precedent). Real Device Manager Control
+// calls against the one `.IPP` driver, every csCode, offset, flag and
+// error code taken from toolbox/mactcp.cla (Task 4's catalog), which is
+// itself transcribed from Apple's Universal Interfaces and the MacTCP
+// Programmer's Guide.
+//
+// It obeys atalk_68k.cla's five parameter-block rules verbatim -- they
+// are a property of the Device Manager, not of AppleTalk:
+//
+// 1. EVERY parameter block is fully re-zeroed before EVERY reuse
+//    (rtTcp68Zero).
+// 2. An async block belongs to the driver until its ioResult stops being
+//    1. Nothing reissues into a live block; the calls that must run
+//    WHILE a block is live (tcpAbort, tcpRelease) use the separate
+//    rtTcp68Aux block instead.
+// 3. `peekw` ZERO-extends, but ioResult and a driver refNum are signed
+//    words: rtTcp68SignW corrects them, and the "still pending" test is
+//    `== 1` (inProgress) rather than a sign-dependent comparison. The
+//    one word this file reads RAW is tcpRcvRcvBuffLen, a 0..4096 count
+//    that is genuinely unsigned.
+// 5. `ptr` is not a legal container element (language reference, Ch13),
+//    so every per-slot block address lives in an `int[]` and round-trips
+//    through int()/ptr(). Exact on this lane: a 68k `int` is 32 bits and
+//    so is a 68k address.
+//
+// (Rule 4 was NBP's verbatim-socket rule; MacTCP has no equivalent.)
+//
+// NO ASR. TCPCreate's notifyProc is 0 (guide p. 36): a receive command
+// outstanding on the stream is how this waist learns of data, and TCPRcv
+// completes with connectionClosing / connectionTerminated when the peer
+// closes or resets (guide p. 51). Nothing here runs at interrupt time.
+//
+// PRIMITIVES ARE LOCAL, NOT atalk_68k.cla's. rtTcp68SignW / -Zero /
+// -Pending / -Result / -OpenDrv are byte-for-byte the rtAt68* helpers of
+// the same names. They are duplicated deliberately: tests/tcp/waist68k.sh
+// compile-checks this file by passing it POSITIONALLY as user code, and
+// clarusc checks user code standalone BEFORE any runtime module is
+// consulted -- a call to rtAt68Zero from here is `undefined: rtAt68Zero`,
+// and a local *definition* named rtAt68Zero is `redeclaration` once the
+// superset splices atalk_68k.cla. Five small functions is the price of
+// having a compile-check at all before Task 9 wires the module in.
+// ponytail: once the module is spliced and that test retires, these five
+// can be deleted in favour of the rtAt68* originals.
+
+include "../../toolbox/mactcp.cla"
+include "../../toolbox/devices.cla"
+include "../../toolbox/memory.cla"
+
+// ---- Constants tcp.cla owns after Task 9 ----
+//
+// tcp.cla (Task 6) declares rtTcpStreamBuf/rtTcpChunk and the five
+// rtTcpEv* event codes, but it is not in this build yet and a duplicate
+// global const across two spliced modules is a check error. These are
+// private stand-ins with this file's own prefix; Task 9 deletes the block
+// and renames the uses.
+const rtTcp68StreamBuf: int = 8192   // = rtTcpStreamBuf; guide p. 36's character-application size
+const rtTcp68Chunk: int = 4096       // = rtTcpChunk; receive copy buffer and send chunk
+const rtTcp68EvNone: int = 0         // = rtTcpEvNone
+const rtTcp68EvOpened: int = 1       // = rtTcpEvOpened
+const rtTcp68EvReceived: int = 2     // = rtTcpEvReceived
+const rtTcp68EvClosed: int = 3   // = rtTcpEvClosed
+const rtTcp68EvSent: int = 4         // = rtTcpEvSent
+
+// rtTcpErrNoDriver is the catalog's own ipBadLapErr (-23000), so no
+// stand-in is needed for it -- this file returns ipBadLapErr directly.
+const rtTcp68ErrMemFull: int = -108  // memFullErr, atalk.cla's rtAtErrMemFull value
+
+// ---- Local block sizes and offsets ----
+const rtTcp68WdsSize: int = 12       // one wdsEntry (6) + a 2-byte zero terminator, rounded up
+const rtTcp68OpenPbSize: int = 80    // >= sizeof(ParamBlockRec) (50), for the one PBOpenSync
+const rtTcp68IoNamePtr: int = 18     // ParamBlockRec ioNamePtr@18; the catalog names only the TCPiopb arm
+const rtTcp68UlpOpen: int = 30       // seconds; spec %5.4 -- ULP timeout on the active open
+const rtTcp68UlpSend: int = 30       // seconds; spec %5.4 -- ULP timeout on a send
+const rtTcp68UlpClose: int = 10      // seconds; spec %5.4 -- ULP timeout on the graceful close
+
+// rtTcp68DrainSpin bounds the post-abort handshake in rtTcp68Drain. The
+// abort completes every outstanding command on the stream (guide p. 53),
+// so the loop normally turns a handful of times; the bound only exists so
+// a driver that breaks that promise cannot hang the application.
+// ponytail: a plain counter, not a TickCount deadline -- this runs on the
+// quit path where the event loop is already gone.
+const rtTcp68DrainSpin: int = 100000
+
+// ---- Driver state ----
+var rtTcp68Ref: int        // .IPP refNum; 0 = not open / no MacTCP on this machine
+var rtTcp68LastErr: int    // last OSErr seen, for hardware bring-up (Task 11)
+var rtTcp68Aux: int        // one block for the sync abort/release that run while others are live
+
+// ---- Connection slots (tcp.cla's rtConnMax = 8). Every block is
+// allocated at create and disposed at release: an idle slot holds
+// nothing (spec %5.3). ----
+var rtTcp68Stream: int[8]     // StreamPtr from TCPCreate
+var rtTcp68Buf: int[8]        // 8 KB stream buffer -- MacTCP's until TCPRelease (rule 3, guide p. 36)
+var rtTcp68Rcv: int[8]        // 4 KB receive copy buffer
+var rtTcp68Snd: int[8]        // 4 KB send chunk, described by the WDS
+var rtTcp68RcvPb: int[8]      // the always-outstanding TCPRcv
+var rtTcp68Pb: int[8]         // open / send / close, one at a time
+var rtTcp68Wds: int[8]        // one wdsEntry + terminator
+var rtTcp68RcvLive: bool[8]
+var rtTcp68PbLive: bool[8]
+var rtTcp68PbOp: int[8]       // 1 open, 2 send, 3 close
+var rtTcp68RcvGot: int[8]     // bytes delivered by the last completed receive
+
+// ---- Listener slots (tcp.cla's rtLsnMax = 2). One stream with a passive
+// open outstanding; at accept the stream AND its buffer move into a
+// connection slot (spec %5.5) and the next LsnOpen creates a fresh one. --
+var rtTcp68LsnStream: int[2]
+var rtTcp68LsnBuf: int[2]
+var rtTcp68LsnPb: int[2]
+var rtTcp68LsnLive: bool[2]
+
+// ---- Primitives (see the header: local copies of atalk_68k.cla's) ----
+
+// rtTcp68SignW: rule 3. peekw zero-extends; a `word` that can be negative
+// comes back through here.
+func rtTcp68SignW(v: int): int {
+    if v >= 32768 {
+        return v - 65536
+    }
+    return v
+}
+
+// rtTcp68Zero: rule 1. Longword-at-a-time with a byte tail.
+func rtTcp68Zero(p: ptr, n: int) {
+    var i: int
+
+    if p == ptr(0) {
+        return
+    }
+    i = 0
+    while i + 4 <= n {
+        pokel(p + i, 0)
+        i = i + 4
+    }
+    while i < n {
+        pokeb(p + i, 0)
+        i = i + 1
+    }
+}
+
+// rtTcp68Pending: rule 2. True while the driver still owns this block.
+func rtTcp68Pending(pb: ptr): bool {
+    if pb == ptr(0) {
+        return false
+    }
+    return peekw(pb + tcpIoResult) == 1
+}
+
+// rtTcp68Result: the completed block's OSErr, sign-corrected.
+func rtTcp68Result(pb: ptr): int {
+    return rtTcp68SignW(peekw(pb + tcpIoResult))
+}
+
+// rtTcp68Drain: wait for the driver to hand a block back after the abort
+// that precedes every release. Bounded -- see rtTcp68DrainSpin.
+func rtTcp68Drain(pb: ptr) {
+    var i: int
+
+    i = 0
+    while i < rtTcp68DrainSpin and rtTcp68Pending(pb) {
+        i = i + 1
+    }
+}
+
+// rtTcp68Alloc / rtTcp68Free: the lazy-allocate and dispose-and-clear
+// idioms every slot block uses. Address 0 means "not allocated".
+func rtTcp68Alloc(a: int, n: int): int {
+    if a != 0 {
+        return a
+    }
+    return int(NewPtrClear(n))
+}
+
+func rtTcp68Free(a: int): int {
+    if a != 0 {
+        DisposePtr(ptr(a))
+    }
+    return 0
+}
+
+// rtTcp68OpenDrv: PBOpenSync a named driver, refNum or 0 on any failure
+// (0 is never a legal refNum). A raw block rather than files.cla's
+// IOParam record, so this file needs only the three catalogs its header
+// includes; the Device Manager prefix is the TCPiopb's own, so
+// tcpIoCRefNum names ioRefNum@24 here too (toolbox/mactcp.cla says so for
+// GetAddrParamBlock).
+func rtTcp68OpenDrv(name: string): int {
+    var pb: ptr
+    var nm: ptr
+    var e: int
+    var i: int
+    var n: int
+    var ref: int
+
+    pb = NewPtrClear(rtTcp68OpenPbSize)
+    nm = NewPtrClear(40)
+    if pb == ptr(0) or nm == ptr(0) {
+        rtTcp68LastErr = rtTcp68ErrMemFull
+        if pb != ptr(0) {
+            DisposePtr(pb)
+        }
+        if nm != ptr(0) {
+            DisposePtr(nm)
+        }
+        return 0
+    }
+    n = name.length
+    if n > 31 {
+        n = 31
+    }
+    pokeb(nm, n)
+    i = 0
+    while i < n {
+        pokeb(nm + 1 + i, int(name[i]))
+        i = i + 1
+    }
+    pokel(pb + rtTcp68IoNamePtr, int(nm))
+    e = PBOpenSync(pb)
+    ref = rtTcp68SignW(peekw(pb + tcpIoCRefNum))
+    // The Device Manager copies nothing out of ioNamePtr past the open.
+    DisposePtr(nm)
+    DisposePtr(pb)
+    if e != 0 {
+        rtTcp68LastErr = e
+        return 0
+    }
+    return ref
+}
+
+// rtTcp68AuxCall: a SYNC control call on `stream` through the aux block --
+// rule 2's escape hatch, the only way to abort or release a stream whose
+// own two blocks are still with the driver.
+func rtTcp68AuxCall(cs: int, stream: int): int {
+    var aux: ptr
+
+    rtTcp68Aux = rtTcp68Alloc(rtTcp68Aux, tcpPbSize)
+    if rtTcp68Aux == 0 {
+        return rtTcp68ErrMemFull
+    }
+    aux = ptr(rtTcp68Aux)
+    rtTcp68Zero(aux, tcpPbSize)
+    pokew(aux + tcpIoCRefNum, rtTcp68Ref)
+    pokew(aux + tcpCsCode, cs)
+    pokel(aux + tcpStream, stream)
+    return PBControlSync(aux)
+}
+
+// rtTcp68Kill: abort the stream, wait for both of its async blocks to
+// leave the driver, then release it. Spec %5.4 and %10: TCPRelease's
+// behaviour with a pending command is unstated, so a release NEVER races
+// a completion -- everything is aborted first. pbA/pbB may be ptr(0).
+// The stream buffer is the caller's again only after this returns
+// (rule 3).
+func rtTcp68Kill(stream: int, pbA: ptr, pbB: ptr) {
+    if stream == 0 {
+        return
+    }
+    // TCPAbort (guide p. 53): "all pending commands are returned".
+    rtTcp68AuxCall(tcpAbort, stream)
+    rtTcp68Drain(pbA)
+    rtTcp68Drain(pbB)
+    // TCPRelease (guide p. 56): hands the stream buffer back.
+    rtTcp68AuxCall(tcpRelease, stream)
+}
+
+// ---- Bring-up ----
+
+func rtTcpDevInit(): int {
+    if rtTcp68Ref != 0 {
+        return 0
+    }
+    // `.IPP` is opened once and never PBClose'd (guide p. 8; catalog rule
+    // 1). Absent driver -> no MacTCP on this machine.
+    rtTcp68Ref = rtTcp68OpenDrv(".IPP")
+    if rtTcp68Ref == 0 {
+        return ipBadLapErr
+    }
+    rtTcp68Aux = rtTcp68Alloc(rtTcp68Aux, tcpPbSize)
+    if rtTcp68Aux == 0 {
+        // Retryable: a later Init reopens the driver and tries again.
+        rtTcp68Ref = 0
+        return rtTcp68ErrMemFull
+    }
+    return 0
+}
+
+// ---- Connection slots ----
+
+// rtTcp68Busy: rule 2 for the slot's shared open/send/close block.
+func rtTcp68Busy(slot: int): bool {
+    return rtTcp68PbLive[slot] or rtTcp68Pending(ptr(rtTcp68Pb[slot]))
+}
+
+// rtTcp68SlotBlocks: everything a connection slot needs EXCEPT the stream
+// buffer, which either TCPCreate is given here or the listener hands over
+// with the stream.
+func rtTcp68SlotBlocks(slot: int): bool {
+    rtTcp68Rcv[slot] = rtTcp68Alloc(rtTcp68Rcv[slot], rtTcp68Chunk)
+    rtTcp68Snd[slot] = rtTcp68Alloc(rtTcp68Snd[slot], rtTcp68Chunk)
+    rtTcp68RcvPb[slot] = rtTcp68Alloc(rtTcp68RcvPb[slot], tcpPbSize)
+    rtTcp68Pb[slot] = rtTcp68Alloc(rtTcp68Pb[slot], tcpPbSize)
+    rtTcp68Wds[slot] = rtTcp68Alloc(rtTcp68Wds[slot], rtTcp68WdsSize)
+    return rtTcp68Rcv[slot] != 0 and rtTcp68Snd[slot] != 0 and rtTcp68RcvPb[slot] != 0 and rtTcp68Pb[slot] != 0 and rtTcp68Wds[slot] != 0
+}
+
+func rtTcpDevCreate(slot: int): int {
+    var pb: ptr
+    var e: int
+
+    if rtTcp68Ref == 0 {
+        return ipBadLapErr
+    }
+    if rtTcp68Stream[slot] != 0 {
+        return 0
+    }
+    rtTcp68Buf[slot] = rtTcp68Alloc(rtTcp68Buf[slot], rtTcp68StreamBuf)
+    if rtTcp68Buf[slot] == 0 or not rtTcp68SlotBlocks(slot) {
+        rtTcpDevRelease(slot)
+        return rtTcp68ErrMemFull
+    }
+    // TCPCreate (guide p. 36). Sync: it only hands the stream buffer over
+    // and returns the StreamPtr. notifyProc 0 = no ASR.
+    pb = ptr(rtTcp68Pb[slot])
+    rtTcp68Zero(pb, tcpPbSize)
+    pokew(pb + tcpIoCRefNum, rtTcp68Ref)
+    pokew(pb + tcpCsCode, tcpCreate)
+    pokel(pb + tcpCreateRcvBuff, rtTcp68Buf[slot])
+    pokel(pb + tcpCreateRcvBuffLen, rtTcp68StreamBuf)
+    pokel(pb + tcpCreateNotifyProc, 0)
+    pokel(pb + tcpCreateUserDataPtr, 0)
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtTcp68LastErr = e
+        rtTcpDevRelease(slot)
+        return e
+    }
+    rtTcp68Stream[slot] = peekl(pb + tcpStream)
+    return 0
+}
+
+func rtTcpDevActiveOpen(slot: int, ip: int, port: int): int {
+    var pb: ptr
+    var e: int
+
+    if rtTcp68Stream[slot] == 0 {
+        return invalidStreamPtr
+    }
+    if rtTcp68Busy(slot) {
+        return connectionExists
+    }
+    // TCPActiveOpen (guide p. 44). Async: the connection comes up (or
+    // fails) on a later rtTcpDevPoll. Both validity bits are set, so the
+    // ULP timeout value AND action below are the ones TCP uses.
+    pb = ptr(rtTcp68Pb[slot])
+    rtTcp68Zero(pb, tcpPbSize)
+    pokew(pb + tcpIoCRefNum, rtTcp68Ref)
+    pokew(pb + tcpCsCode, tcpActiveOpen)
+    pokel(pb + tcpStream, rtTcp68Stream[slot])
+    pokeb(pb + tcpOpenUlpTimeoutValue, rtTcp68UlpOpen)
+    pokeb(pb + tcpOpenUlpTimeoutAction, tcpUlpActionAbort)
+    pokeb(pb + tcpOpenValidityFlags, tcpValidTimeoutValue | tcpValidTimeoutAction)
+    pokel(pb + tcpOpenRemoteHost, ip)
+    pokew(pb + tcpOpenRemotePort, port)
+    pokel(pb + tcpOpenLocalHost, 0)
+    pokew(pb + tcpOpenLocalPort, 0)
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtTcp68LastErr = e
+        return e
+    }
+    rtTcp68PbLive[slot] = true
+    rtTcp68PbOp[slot] = 1
+    return 0
+}
+
+func rtTcpDevRecvArm(slot: int): int {
+    var pb: ptr
+    var e: int
+
+    if rtTcp68RcvLive[slot] {
+        return 0
+    }
+    if rtTcp68Stream[slot] == 0 {
+        return invalidStreamPtr
+    }
+    // TCPRcv (guide p. 50), the copying receive -- no RDS, no
+    // TCPRcvBfrReturn pairing. commandTimeoutValue 0 = wait forever, so
+    // this block completes only on data or on the end of the connection.
+    pb = ptr(rtTcp68RcvPb[slot])
+    rtTcp68Zero(pb, tcpPbSize)
+    pokew(pb + tcpIoCRefNum, rtTcp68Ref)
+    pokew(pb + tcpCsCode, tcpRcv)
+    pokel(pb + tcpStream, rtTcp68Stream[slot])
+    pokeb(pb + tcpRcvCommandTimeoutValue, 0)
+    pokel(pb + tcpRcvRcvBuff, rtTcp68Rcv[slot])
+    pokew(pb + tcpRcvRcvBuffLen, rtTcp68Chunk)
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtTcp68LastErr = e
+        return e
+    }
+    rtTcp68RcvLive[slot] = true
+    return 0
+}
+
+// rtTcpDevPoll: at most ONE event per call, in the order below.
+func rtTcpDevPoll(slot: int): int {
+    var pb: ptr
+    var res: int
+    var e: int
+
+    if rtTcp68PbLive[slot] {
+        pb = ptr(rtTcp68Pb[slot])
+        if not rtTcp68Pending(pb) {
+            rtTcp68PbLive[slot] = false
+            res = rtTcp68Result(pb)
+            if rtTcp68PbOp[slot] == 1 {
+                // The active open finished.
+                if res != 0 {
+                    rtTcp68LastErr = res
+                    rtTcpDevRelease(slot)
+                    return res
+                }
+                e = rtTcpDevRecvArm(slot)
+                if e != 0 {
+                    rtTcp68LastErr = e
+                    rtTcpDevRelease(slot)
+                    return e
+                }
+                return rtTcp68EvOpened
+            }
+            if rtTcp68PbOp[slot] == 2 {
+                // ponytail: a send that failed means the connection is
+                // gone (ULP action is abort), so report it as the close
+                // rather than inventing a fifth event code.
+                if res != 0 {
+                    rtTcp68LastErr = res
+                    rtTcpDevRelease(slot)
+                    return rtTcp68EvClosed
+                }
+                return rtTcp68EvSent
+            }
+            // Op 3, the graceful close: nothing to report. Our half is
+            // shut; the receive still running reports the end.
+        }
+    }
+    if rtTcp68RcvLive[slot] {
+        pb = ptr(rtTcp68RcvPb[slot])
+        if not rtTcp68Pending(pb) {
+            rtTcp68RcvLive[slot] = false
+            res = rtTcp68Result(pb)
+            if res == 0 {
+                // MacTCP writes the actual count back into rcvBuffLen
+                // (guide p. 50). Genuinely unsigned, 0..rtTcp68Chunk, so
+                // it is read RAW -- rule 3's one exception.
+                rtTcp68RcvGot[slot] = peekw(pb + tcpRcvRcvBuffLen)
+                return rtTcp68EvReceived
+            }
+            // connectionClosing (peer closed, everything delivered),
+            // connectionTerminated (reset), or anything else: the
+            // connection is over. tcp.cla releases the slot.
+            rtTcp68LastErr = res
+            return rtTcp68EvClosed
+        }
+    }
+    return rtTcp68EvNone
+}
+
+func rtTcpDevRecvLen(slot: int): int {
+    return rtTcp68RcvGot[slot]
+}
+
+func rtTcpDevRecvPtr(slot: int): ptr {
+    return ptr(rtTcp68Rcv[slot])
+}
+
+func rtTcpDevSendBusy(slot: int): bool {
+    return rtTcp68PbLive[slot] and rtTcp68PbOp[slot] == 2
+}
+
+func rtTcpDevSend(slot: int, p: ptr, n: int): int {
+    var pb: ptr
+    var wds: ptr
+    var e: int
+
+    if rtTcp68Stream[slot] == 0 {
+        return invalidStreamPtr
+    }
+    if n < 1 or n > rtTcp68Chunk {
+        return invalidLength
+    }
+    if rtTcp68Busy(slot) {
+        // Rule 2: never reissue into a live block. tcp.cla checks
+        // rtTcpDevSendBusy first; this is the backstop, and
+        // connectionExists is the closest OSErr to "already in use".
+        return connectionExists
+    }
+    BlockMoveData(p, ptr(rtTcp68Snd[slot]), n)
+    // The WDS: one entry describing the send chunk, then a zero length to
+    // terminate the array (guide p. 46).
+    wds = ptr(rtTcp68Wds[slot])
+    pokew(wds + wdsLength, n)
+    pokel(wds + wdsPtr, rtTcp68Snd[slot])
+    pokew(wds + wdsEntrySize, 0)
+    // TCPSend (guide p. 45). Async, pushFlag set so the bytes go out now.
+    pb = ptr(rtTcp68Pb[slot])
+    rtTcp68Zero(pb, tcpPbSize)
+    pokew(pb + tcpIoCRefNum, rtTcp68Ref)
+    pokew(pb + tcpCsCode, tcpSend)
+    pokel(pb + tcpStream, rtTcp68Stream[slot])
+    pokeb(pb + tcpSendUlpTimeoutValue, rtTcp68UlpSend)
+    pokeb(pb + tcpSendUlpTimeoutAction, tcpUlpActionAbort)
+    pokeb(pb + tcpSendValidityFlags, tcpValidTimeoutValue | tcpValidTimeoutAction)
+    pokeb(pb + tcpSendPushFlag, 1)
+    pokel(pb + tcpSendWdsPtr, rtTcp68Wds[slot])
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtTcp68LastErr = e
+        return e
+    }
+    rtTcp68PbLive[slot] = true
+    rtTcp68PbOp[slot] = 2
+    return 0
+}
+
+func rtTcpDevClose(slot: int): int {
+    var pb: ptr
+    var e: int
+
+    if rtTcp68Stream[slot] == 0 {
+        return invalidStreamPtr
+    }
+    if rtTcp68Busy(slot) {
+        // Rule 2 again: tcp.cla only closes once the send has drained.
+        return connectionExists
+    }
+    // TCPClose (guide p. 52): a HALF close -- "no more data to send". The
+    // peer may keep sending and the receive stays armed; the ULP timeout
+    // bounds a peer that never closes back.
+    pb = ptr(rtTcp68Pb[slot])
+    rtTcp68Zero(pb, tcpPbSize)
+    pokew(pb + tcpIoCRefNum, rtTcp68Ref)
+    pokew(pb + tcpCsCode, tcpClose)
+    pokel(pb + tcpStream, rtTcp68Stream[slot])
+    pokeb(pb + tcpCloseUlpTimeoutValue, rtTcp68UlpClose)
+    pokeb(pb + tcpCloseUlpTimeoutAction, tcpUlpActionAbort)
+    pokeb(pb + tcpCloseValidityFlags, tcpValidTimeoutValue | tcpValidTimeoutAction)
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtTcp68LastErr = e
+        return e
+    }
+    rtTcp68PbLive[slot] = true
+    rtTcp68PbOp[slot] = 3
+    return 0
+}
+
+// rtTcpDevRelease: safe on any slot in any state, and safe twice. Abort
+// first, drain both blocks, release, and only THEN dispose -- MacTCP must
+// never hold a pointer into freed memory (spec %5.4's quit path, the
+// rtAt68DspFree teardown rule).
+func rtTcpDevRelease(slot: int) {
+    rtTcp68Kill(rtTcp68Stream[slot], ptr(rtTcp68Pb[slot]), ptr(rtTcp68RcvPb[slot]))
+    rtTcp68Stream[slot] = 0
+    rtTcp68PbLive[slot] = false
+    rtTcp68RcvLive[slot] = false
+    rtTcp68PbOp[slot] = 0
+    rtTcp68RcvGot[slot] = 0
+    rtTcp68Buf[slot] = rtTcp68Free(rtTcp68Buf[slot])
+    rtTcp68Rcv[slot] = rtTcp68Free(rtTcp68Rcv[slot])
+    rtTcp68Snd[slot] = rtTcp68Free(rtTcp68Snd[slot])
+    rtTcp68RcvPb[slot] = rtTcp68Free(rtTcp68RcvPb[slot])
+    rtTcp68Pb[slot] = rtTcp68Free(rtTcp68Pb[slot])
+    rtTcp68Wds[slot] = rtTcp68Free(rtTcp68Wds[slot])
+}
+
+// ---- Listener slots ----
+
+// rtTcp68LsnDrop: abort + release whatever the listener holds (a pending
+// passive open included) and give its blocks back. The whole of LsnDeny
+// and LsnClose, and the failure path of LsnPoll and LsnOpen.
+func rtTcp68LsnDrop(lsn: int) {
+    rtTcp68Kill(rtTcp68LsnStream[lsn], ptr(rtTcp68LsnPb[lsn]), ptr(0))
+    rtTcp68LsnStream[lsn] = 0
+    rtTcp68LsnLive[lsn] = false
+    rtTcp68LsnBuf[lsn] = rtTcp68Free(rtTcp68LsnBuf[lsn])
+    rtTcp68LsnPb[lsn] = rtTcp68Free(rtTcp68LsnPb[lsn])
+}
+
+func rtTcpDevLsnOpen(lsn: int, port: int): int {
+    var pb: ptr
+    var e: int
+
+    if rtTcp68Ref == 0 {
+        return ipBadLapErr
+    }
+    // Already listening, or holding a client rtTcpDevLsnAccept has not
+    // taken yet: nothing to do. One passive open is one connection
+    // (guide pp. 31, 43), so the re-arm after an accept lands here with
+    // both cleared and creates a NEW stream.
+    if rtTcp68LsnLive[lsn] or rtTcp68LsnStream[lsn] != 0 {
+        return 0
+    }
+    rtTcp68LsnBuf[lsn] = rtTcp68Alloc(rtTcp68LsnBuf[lsn], rtTcp68StreamBuf)
+    rtTcp68LsnPb[lsn] = rtTcp68Alloc(rtTcp68LsnPb[lsn], tcpPbSize)
+    if rtTcp68LsnBuf[lsn] == 0 or rtTcp68LsnPb[lsn] == 0 {
+        rtTcp68LsnDrop(lsn)
+        return rtTcp68ErrMemFull
+    }
+    // TCPCreate (guide p. 36), sync.
+    pb = ptr(rtTcp68LsnPb[lsn])
+    rtTcp68Zero(pb, tcpPbSize)
+    pokew(pb + tcpIoCRefNum, rtTcp68Ref)
+    pokew(pb + tcpCsCode, tcpCreate)
+    pokel(pb + tcpCreateRcvBuff, rtTcp68LsnBuf[lsn])
+    pokel(pb + tcpCreateRcvBuffLen, rtTcp68StreamBuf)
+    pokel(pb + tcpCreateNotifyProc, 0)
+    pokel(pb + tcpCreateUserDataPtr, 0)
+    e = PBControlSync(pb)
+    if e != 0 {
+        rtTcp68LastErr = e
+        rtTcp68LsnDrop(lsn)
+        return e
+    }
+    rtTcp68LsnStream[lsn] = peekl(pb + tcpStream)
+    // TCPPassiveOpen (guide p. 42), async. Wildcard remote host/port,
+    // commandTimeoutValue 0 = wait forever, validityFlags 0 so TCP uses
+    // its own ULP defaults.
+    rtTcp68Zero(pb, tcpPbSize)
+    pokew(pb + tcpIoCRefNum, rtTcp68Ref)
+    pokew(pb + tcpCsCode, tcpPassiveOpen)
+    pokel(pb + tcpStream, rtTcp68LsnStream[lsn])
+    pokeb(pb + tcpOpenUlpTimeoutValue, 0)
+    pokeb(pb + tcpOpenUlpTimeoutAction, 0)
+    pokeb(pb + tcpOpenValidityFlags, 0)
+    pokeb(pb + tcpOpenCommandTimeoutValue, 0)
+    pokel(pb + tcpOpenRemoteHost, 0)
+    pokew(pb + tcpOpenRemotePort, 0)
+    pokel(pb + tcpOpenLocalHost, 0)
+    pokew(pb + tcpOpenLocalPort, port)
+    e = PBControlAsync(pb)
+    if e != 0 {
+        rtTcp68LastErr = e
+        rtTcp68LsnDrop(lsn)
+        return e
+    }
+    rtTcp68LsnLive[lsn] = true
+    return 0
+}
+
+// rtTcpDevLsnPoll: 0 nothing, 1 a client is ready (the stream is held
+// until Accept or Deny), the OSErr if the listener itself failed.
+func rtTcpDevLsnPoll(lsn: int): int {
+    var pb: ptr
+    var res: int
+
+    if not rtTcp68LsnLive[lsn] {
+        return 0
+    }
+    pb = ptr(rtTcp68LsnPb[lsn])
+    if rtTcp68Pending(pb) {
+        return 0
+    }
+    rtTcp68LsnLive[lsn] = false
+    res = rtTcp68Result(pb)
+    if res == 0 {
+        return 1
+    }
+    rtTcp68LastErr = res
+    rtTcp68LsnDrop(lsn)
+    return res
+}
+
+// rtTcpDevLsnAccept: the connection is already up on the listening
+// stream, so the stream AND the stream buffer MacTCP owns move together
+// into the connection slot (rule 3 -- that buffer cannot be swapped
+// before TCPRelease). tcp.cla calls rtTcpDevLsnOpen afterwards to create
+// the next listening stream.
+func rtTcpDevLsnAccept(lsn: int, slot: int): int {
+    var e: int
+
+    if rtTcp68LsnStream[lsn] == 0 {
+        return connectionDoesntExist
+    }
+    if rtTcp68Stream[slot] != 0 {
+        return connectionExists
+    }
+    if not rtTcp68SlotBlocks(slot) {
+        rtTcp68LsnDrop(lsn)
+        rtTcpDevRelease(slot)
+        return rtTcp68ErrMemFull
+    }
+    rtTcp68Stream[slot] = rtTcp68LsnStream[lsn]
+    rtTcp68Buf[slot] = rtTcp68LsnBuf[lsn]
+    rtTcp68LsnStream[lsn] = 0
+    rtTcp68LsnBuf[lsn] = 0
+    rtTcp68LsnLive[lsn] = false
+    e = rtTcpDevRecvArm(slot)
+    if e != 0 {
+        rtTcpDevRelease(slot)
+        return e
+    }
+    return 0
+}
+
+func rtTcpDevLsnDeny(lsn: int) {
+    rtTcp68LsnDrop(lsn)
+}
+
+func rtTcpDevLsnClose(lsn: int) {
+    rtTcp68LsnDrop(lsn)
+}
