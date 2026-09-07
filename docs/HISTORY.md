@@ -6169,8 +6169,9 @@ why a machine without it gets a red `toolbox_68k` (`AdspLeak` FAILs with
 dispatches.
 
 **13a — the first green `mactest/adsp_68k`.** The first real run of the
-pair, on the unmodified phase tip, was **3 PASS / 8 FAIL**: the server
-registered its name (so `.DSP` really did open), the client's browse
+pair, on the unmodified phase tip, was **4 PASS (one of them vacuous on
+an empty client log) / 8 FAIL**: the server registered its name (so
+`.DSP` really did open), the client's browse
 found `Chat-5627:ClarusChat2025 0.91.253`, and then `open` failed
 **-1025**. -1025 is `nbpNoConfirm` — an NBP error, not an ADSP one — so
 the failure was in the open-by-name path's own name resolve, before any
@@ -6237,9 +6238,13 @@ works — 1 tuple, against 0 before and after on the ROM. Task 1's
 Amendment 3, the reason `AtalkSelf` is not a self-lookup case, is
 therefore a Mac Plus ROM verdict, not an AppleTalk one**;
 `testsuite/toolbox/cases_atalk.cla`'s header already scopes its claim to
-"the Mac Plus ROM .MPP, which is what this suite boots", so it stands as
-written. Nothing about System 7's `.DSP` behaved differently from 13a's
-ROM measurements — same `dspCLInit` / `dspCLListen` /
+"the Mac Plus ROM .MPP, which is what this suite boots", and one clause
+of it was amended here: it used to explain the `-17` partly by the
+AppleTalk 58 file's ABSENCE from the boot disk, which Task 13a made
+false, and `AtalkSelf` is still green with that file present -- so the
+`-17` is the ROM `.MPP`'s own verdict and the header now says so.
+Nothing about System 7's `.DSP` behaved differently from 13a's ROM
+measurements — same `dspCLInit` / `dspCLListen` /
 `dspOpen(ocAccept)` / `dspClose` shape, same socket handling, no runtime
 change. Two lane facts fell out. Snow's guest screen is 640x480, so
 `--events` click coordinates from the 512-wide Mini vMac lane do not
@@ -6328,8 +6333,9 @@ and `AdspLeak` green, `toolbox_jiggle` PASS in 331 s at 40/40,
 `atalk_68k` PASS in 216 s, `atalk_selfserve` PASS in 18 s,
 `coresuite_68k` PASS at 83/83, and `smoke_bounce` + `tick` PASS. One
 more script runs than at the first gate (21 passed against 20:
-`adsp_68k` no longer skips) and one more skips (14 against 13: the new
-`mactest/snow/adsp_listener`, which needs `CLARUS_SNOW_TESTS`). The
+`adsp_68k` no longer skips), and the skip total is unchanged at 14 --
+`adsp_68k` stopped skipping and the new `mactest/snow/adsp_listener`,
+which needs `CLARUS_SNOW_TESTS`, started. The
 remaining skips are the opt-in cprint lane
 (`CLARUS_CPRINT_MAC_TESTS`) and the Snow lane (`CLARUS_SNOW_TESTS`).
 

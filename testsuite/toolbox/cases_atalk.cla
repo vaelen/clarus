@@ -20,8 +20,10 @@
 // proved all three legs of that unavailable on the Mac Plus ROM .MPP,
 // which is what this suite boots:
 //   - `setSelfSend` (csCode 256) returns -17 (controlErr): the ROM .MPP
-//     does not implement it, and the AppleTalk 58 System file whose
-//     .MPP would is not on LaunchAPPL's stripped boot disk (P1).
+//     does not implement it, and the AppleTalk 58 file the boot disk now
+//     carries (Task 13a) does not displace the ROM's .MPP on a Mac Plus,
+//     so this stays -17 with the file present. System 7's AppleTalk 58
+//     answers err 0 and self-lookup then works -- Task 13c.
 //   - a self-lookup therefore returns err 0 with numGotten 0, before and
 //     after that call.
 //   - a self-directed ATP sendRequest fails -1096 (reqFailed) after its

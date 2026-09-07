@@ -176,10 +176,10 @@ Tiered test gates:
     calibration bench, `tests/mactest/bench.sh`.
 - `tests/mactest/adsp_68k.sh` (the two-Mac ADSP stream boot, appletalk
   phase 2026-09-07) runs both boots under plain `CLARUS_MAC_TESTS=1` and
-  is 12/12 — ~20 s of emulator time once the pair is up, ~7 min for the
-  whole script against its 420 s pair budget. Its `^failed -1273 ` grep
-  over the SERVER capture stays as the guard for a LaunchAPPL that does
-  NOT carry the `AppleTalk` system file (`.DSP`/`.XPP` then open `-43`):
+  is 12/12 in ~20 s; `run_mac_pair`'s 420 s is the per-boot timeout
+  ceiling, not the expected duration (both apps quit on their own). Its
+  `^failed -1273 ` grep over the SERVER capture stays as the guard for a
+  LaunchAPPL that does NOT carry the `AppleTalk` system file (`.DSP`/`.XPP` then open `-43`):
   the script calls `skip` on that line BEFORE its first assertion,
   because a `FAIL ` line would beat exit 77. See the LaunchAPPL
   prerequisite under "Retro68 / Mac toolchain" below — without that
