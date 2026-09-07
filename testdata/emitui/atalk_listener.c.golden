@@ -3028,10 +3028,21 @@ static void clar_fn_rtTcpPollConn(int32_t cv_slot) {
             cv_t = cv___store4;
             cv___store4 = 0;
             clar_fn_rtAtAppendBytes(cv_t, clar_fn_rtTcpDevRecvPtr(cv_slot), clar_fn_rtTcpDevRecvLen(cv_slot));
-            clar_fn_rtTcpDevRecvArm(cv_slot);
+            cv_e = clar_fn_rtTcpDevRecvArm(cv_slot);
             clar_fn_clar_conn_fire_received(cv_slot, cv_t);
         } else {
-            clar_fn_rtTcpDevRecvArm(cv_slot);
+            cv_e = clar_fn_rtTcpDevRecvArm(cv_slot);
+        }
+        if (cv_e != 0) {
+            if ((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 2) {
+                clar_fn_rtTcpRelease(cv_slot);
+                (cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] = 0;
+                clar_fn_clar_conn_fire_closed(cv_slot);
+            } else {
+                if ((cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_slot), 8)] == 3) {
+                    clar_fn_rtTcpRelease(cv_slot);
+                }
+            }
         }
         clar_fn_rtTextRelease((void*)cv_t);
         return;

@@ -1,0 +1,64 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, final-review fix wave: ONE conn.send() larger than
+// rtTcpChunk, through the language. args[0] is "ip:port" (a tcpdrive
+// listen peer that echoes the blob back). 5000 bytes is two chunks --
+// 4096 sent by rtTcpKick from conn.send() itself, the 904-byte tail sent
+// by the rtTcpEvSent -> rtTcpKick re-kick -- so this is the only coverage
+// of rtTcpDropFront's requeue on either lane.
+//
+// The pattern is deliberately NOT periodic at 4096: byte i is
+// (i*7 + i/4096) mod 256, so the tail's bytes differ from the ones a
+// duplicate-or-drop off the chunk boundary would put there, and the
+// first divergent index is reported.
+const bigLen: int = 5000
+
+var conn: connection
+var big: text
+var got: text
+
+on App.startCLI(args: list of string) {
+    var i: int
+
+    i = 0
+    while i < bigLen {
+        big.append(char(i * 7 + i / 4096))
+        i = i + 1
+    }
+    conn.open(tcp args[0])
+}
+
+on conn.opened {
+    conn.send(big)
+}
+
+on conn.received(data: text) {
+    var i: int
+
+    got.append(data)
+    if got.length < bigLen {
+        return
+    }
+    if got.length > bigLen {
+        log("big bad " + string(got.length))
+        conn.close()
+        return
+    }
+    i = 0
+    while i < bigLen {
+        if got[i] != big[i] {
+            log("big bad " + string(i))
+            conn.close()
+            return
+        }
+        i = i + 1
+    }
+    log("big ok")
+    conn.close()
+}
+
+on conn.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+    quit 1
+}

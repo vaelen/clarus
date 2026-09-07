@@ -113,7 +113,7 @@ static int32_t rt_tcp_flush(rt_tcp_slot *s) {
 }
 
 int32_t rt_ext_TcpHPoll(int32_t slot) {
-    rt_tcp_slot *s; struct pollfd p; int so_err; socklen_t sl = sizeof so_err; ssize_t n;
+    rt_tcp_slot *s; struct pollfd p; int so_err = 0; socklen_t sl = sizeof so_err; ssize_t n;
     if (!rt_tcp_slot_ok(slot)) return EINVAL;
     s = &rt_tcp_slots[slot];
     if (s->state == RT_TCP_IDLE) return 0;

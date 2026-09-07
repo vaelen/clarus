@@ -181,7 +181,7 @@ LBL_218:
         BSR.W LBL_217
         JSR 2034(A5)
         ; entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)
-        JSR 2234(A5)
+        JSR 2218(A5)
         BSR.W LBL_215
         CLR.L -(A7)
         JSR 2058(A5)
@@ -4295,7 +4295,7 @@ LBL_421:
 LBL_420:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 2170(A5)
+        JSR 2178(A5)
         ADDQ.L #4,A7
 LBL_418:
         UNLK A6
@@ -6963,7 +6963,7 @@ LBL_122:
         BEQ.W LBL_574
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2194(A5)
+        JSR 2170(A5)
         ADDQ.L #4,A7
 LBL_574:
         MOVE.L 8(A6),D0

@@ -317,10 +317,31 @@ func rtTcpPollConn(slot: int) {
         if rtTcpPhase[slot] == rtTcpEstablished {
             t = ""
             rtAtAppendBytes(t, rtTcpDevRecvPtr(slot), rtTcpDevRecvLen(slot))
-            rtTcpDevRecvArm(slot)
+            e = rtTcpDevRecvArm(slot)
             clar_conn_fire_received(slot, t)
         } else {
-            rtTcpDevRecvArm(slot)   // Closing: bytes after a local close are dropped
+            e = rtTcpDevRecvArm(slot)   // Closing: bytes after a local close are dropped
+        }
+        if e != 0 {
+            // A failed re-arm (PBControlAsync error, invalidStreamPtr) leaves
+            // NEITHER PB live on the Mac lane, so rtTcpDevPoll would return
+            // rtTcpEvNone for ever: no `received`, no `closed`, rtTcpAlive()
+            // true -- a pinned slot the rtTcpCloseTicks deadline cannot reach
+            // (that arms only on rtTcpCloseSent). So a failed re-arm IS the
+            // close. The phase is re-read here, not reused from above: a
+            // `received` handler is user code and may have closed the slot
+            // itself, and a local close never fires `closed`.
+            // Host: TcpHRecvArm always returns 0, so this arm is Mac-only.
+            // Only these two phases: a handler that closed AND REOPENED
+            // the slot leaves it Opening over a NEW stream (rtTcpOpen
+            // released the old one itself), and Idle is already released.
+            if rtTcpPhase[slot] == rtTcpEstablished {
+                rtTcpRelease(slot)
+                rtConnState[slot] = stClosed
+                clar_conn_fire_closed(slot)
+            } else if rtTcpPhase[slot] == rtTcpClosing {
+                rtTcpRelease(slot)
+            }
         }
         return
     }
