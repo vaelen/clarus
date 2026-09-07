@@ -1,0 +1,300 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// tcpchat.cla (2026-09-07 mactcp spec 8.3, Task 10): the MacTCP phase's
+// STREAM acceptance app -- examples/atalkchat.cla's twin over TCP, and
+// the subject of tests/mactest/snow/tcp_selfconnect.sh's Snow boot.
+//
+// Which end it is, is chosen at runtime by the button clicked:
+//
+//   Serve    lsn.listen(tcp 2323) and echo every chunk that arrives back
+//            to the client with a '>' prepended, quitting when the
+//            client closes the stream.
+//   Connect  client.open(tcp "10.0.0.1:2323") -- dial a server elsewhere,
+//            send a 0..255 byte sweep, check the echo byte for byte,
+//            send "hello", check that echo too, close. The address is a
+//            FIXTURE, not a constant: 10.0.0.1 is the host-side gateway
+//            of Snow's DaynaPORT NAT, i.e. where a host-side listener
+//            (`tcpdrive listen 2323`) sits for manual testing. Edit it
+//            for any other pairing.
+//   Self     both, in ONE program: listen on 2323 and dial the guest's
+//            OWN address, which is what the scripted Snow boot clicks.
+//            The address is 10.0.0.2, the Snow workspace's DaynaPORT
+//            address -- another fixture property, edit it if the
+//            workspace's MacTCP configuration changes.
+//
+// Why the own address and not 127.0.0.1: the phase's Snow probe wave
+// (task-8-report.md, P2) measured it. A `tcp 127.0.0.1` active open
+// RETURNS 0 -- it looks like success at the caller -- but the listener's
+// passive open never completes: MacTCP 2.x does not loop 127/8 back to
+// its own streams. Against 10.0.0.2 the passive open completes in 0
+// ticks, before the active open even returns.
+//
+// Unlike atalkchat there is no `role` dispatch inside the shared
+// handlers: `server` and `client` are two separate connection globals
+// with their own handlers, which is what lets Self drive both ends at
+// once. `server` is declared FIRST so it takes slot 0 -- the free slot
+// the listener's accept picks (spec 4.2 and conn.cla's slot table), so
+// `on server.received` is the handler an accepted stream fires.
+//
+// The log this writes is what tests/mactest/snow/tcp_selfconnect.sh
+// parses out of the boot capture:
+//
+//   listening 2323 / accepted / opened / received 256 / received 257 /
+//   echo ok / received 5 / received 6 / echo ok / closing / closed
+//
+// `accepted` and `opened` may arrive in either order -- they are the two
+// ends of the same handshake -- so the test asserts presence, not order.
+//
+// The exchange is deliberately LOCK-STEP -- the client sends "hello"
+// only after the sweep's echo has come back -- so each `received` length
+// is deterministic. Sending both up front would let TCP coalesce them
+// into one 261-byte delivery, which is a legal stream behavior but makes
+// the per-chunk lengths unassertable.
+//
+// Not runnable on the host `cc` lane: this is a UI program, and the host
+// C lane only compiles non-UI programs (see examples/serialecho.cla's
+// own header for that gap). Build it with scripts/build-68k.sh, or with
+// `--events` for the scripted Snow boot.
+
+app TcpChat {
+    name: "TcpChat"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "TCP chat over MacTCP."
+    id: "TCHT"
+}
+
+// Content top-left = ((screenWidth - width) / 2, 44) for a window that
+// fits on screen unclamped (ui.cla's rtUiOpen), and a button's default
+// size is 80x20 (testsuite/toolbox/gui.cla's own derivation), so a
+// button at (bx,by) has its center at (left + bx + 40, 44 + by + 10).
+// On Snow's 640x480 Mac II, left = (640 - 300) / 2 = 170:
+//   -> Serve   center (220,64)
+//      Connect center (310,64)
+//      Self    center (400,64)   <- testdata/ui/tcpchat_self.events
+// On a 512x342 Mac Plus, left = 106 and those become 156/246/336; this
+// example's only scripted boot is Snow's, so the events file carries the
+// 640-wide numbers.
+window Chat {
+    title: "TCP Chat"
+    size: 300, 160
+
+    button Serve   { at: 10, 10;  caption: "Serve" }
+    button Connect { at: 100, 10; caption: "Connect" }
+    button Self    { at: 190, 10; caption: "Self" }
+    label Status   { at: 10, 45; width: 280; text: "idle" }
+    label Peer     { at: 10, 70; width: 280; text: "" }
+}
+
+menu File {
+    item Quit "Quit" key "Q"
+}
+
+const chatPort: int = 2323
+const peerAddr: string = "10.0.0.1:2323"   // fixture: Snow's NAT gateway
+const selfAddr: string = "10.0.0.2:2323"   // fixture: Snow's own DaynaPORT address
+
+const roleIdle: int = 0
+const roleServer: int = 1
+const roleClient: int = 2
+const roleSelf: int = 3
+
+var lsn: listener
+var server: connection      // slot 0 -- the accept target
+var client: connection      // slot 1 -- the dialer
+
+var role: int = 0
+var sent: text
+var out: text
+var beats: int = 0
+var quitAt: int = 0
+
+// The watchdog exists for the same reason atalkchat's does: every end
+// state here is reached by a network event, so a run that never
+// completes would otherwise sit in the event loop until the boot
+// deadline -- a timeout instead of a readable log line.
+var maxBeats: int = 380
+
+func setStatus(s: string) {
+    var w: Chat = Chat.front
+
+    if w != nil {
+        w.Status.text = s
+    }
+}
+
+func setPeer(s: string) {
+    var w: Chat = Chat.front
+
+    if w != nil {
+        w.Peer.text = s
+    }
+}
+
+func startServing() {
+    lsn.listen(tcp chatPort)
+    log("listening " + string(chatPort))
+    setStatus("listening on " + string(chatPort))
+}
+
+func startDialing(addr: string) {
+    setPeer(addr)
+    client.open(tcp addr)
+}
+
+func fail(what: string, err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+    setStatus(what + " failed: " + err.message)
+    quit
+}
+
+on App.launch {
+    open Chat
+}
+
+extend Chat {
+    on Serve.click {
+        if role == roleIdle {
+            role = roleServer
+            startServing()
+        }
+    }
+    on Connect.click {
+        if role == roleIdle {
+            role = roleClient
+            startDialing(peerAddr)
+        }
+    }
+    on Self.click {
+        if role == roleIdle {
+            role = roleSelf
+            startServing()
+            startDialing(selfAddr)
+        }
+    }
+}
+
+extend File {
+    on Quit.select { quit }
+}
+
+// ---- server side ----
+
+on lsn.accepted(c: connection) {
+    // spec 4.2: the connection arrives already open, so no `opened`
+    // fires for it. It lands in the lowest free connection slot, which
+    // is slot 0 = `server` (`client` is already busy dialing by then in
+    // the Self case, and unused in the Serve case).
+    server = c
+    log("accepted")
+    setStatus("client connected")
+}
+
+on lsn.failed(err: error) {
+    fail("listener", err)
+}
+
+on server.received(data: text) {
+    log("received " + string(data.length))
+    out.clear()
+    out.append('>')
+    out.append(data)
+    server.send(out)
+}
+
+on server.closed {
+    log("closed")
+    setStatus("peer closed")
+    lsn.stop()
+    // Not `quit` outright: in the Self case the client half is still
+    // finishing its own teardown in the same program.
+    quitAt = beats + 6
+}
+
+on server.failed(err: error) {
+    fail("server", err)
+}
+
+// ---- client side ----
+
+on client.opened {
+    var i: int = 0
+
+    log("opened")
+    setStatus("connected")
+    sent.clear()
+    sent.reserve(256)
+    while i < 256 {
+        sent.append(char(i))
+        i = i + 1
+    }
+    client.send(sent)
+}
+
+// echoOk: the server's echo of `sent` is those same bytes with a '>'
+// prepended. This is the byte-exactness half of spec 8.3's "byte-exact
+// echo both ways" -- a length check alone would pass on a stream that
+// dropped or reordered bytes.
+func echoOk(data: text): bool {
+    var i: int = 0
+
+    if data.length != sent.length + 1 {
+        return false
+    }
+    if data[0] != '>' {
+        return false
+    }
+    while i < sent.length {
+        if data[i + 1] != sent[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+on client.received(data: text) {
+    log("received " + string(data.length))
+    if echoOk(data) {
+        log("echo ok")
+    } else {
+        log("echo bad")
+    }
+    if sent.length == 256 {
+        sent.clear()
+        sent.append("hello")
+        client.send(sent)
+    } else {
+        client.close()
+        log("closing")
+        setStatus("done")
+        // Not `quit` outright: the close has to reach the server for its
+        // own `closed` to fire, and quitting inside this handler would
+        // tear the slot down first.
+        quitAt = beats + 6
+    }
+}
+
+on client.failed(err: error) {
+    fail("client", err)
+}
+
+// The beat counts script lines: the --events script is 200 lines of
+// `delay 12`, each a real 12/60 s wait that also advances the virtual
+// clock by 12, so `beats` is both the watchdog and the quit timer.
+// Under that 40 s script the script's own trailing `quit` arrives first
+// (200 < maxBeats), which is deliberate -- a run that hangs still ends
+// with the trailer and a log the test can read. maxBeats is the net for
+// an UNSCRIPTED build (scripts/build-68k.sh with no --events), where
+// nothing else ever ends the event loop.
+every 12 ticks {
+    beats = beats + 1
+    if quitAt != 0 and beats >= quitAt {
+        quit
+    }
+    if beats >= maxBeats {
+        log("watchdog role " + string(role))
+        quit
+    }
+}
