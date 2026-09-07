@@ -41,7 +41,6 @@
 // C lane only compiles non-UI programs (see examples/serialecho.cla's
 // own header for that gap). Build it with scripts/build-68k.sh, or with
 // `--events` for the scripted two-boot test.
-include "toolbox/osutils.cla"
 
 app AtalkChat {
     name: "AtalkChat"
@@ -280,26 +279,10 @@ on chat.failed(err: error) {
     quit
 }
 
-// A REAL app would not have this Delay. It exists only because a
-// `--events` build's ticks are VIRTUAL (uiscript.cla's rtUiVirtualTicks:
-// the real clock is never consulted in scripted mode, and each script
-// line does exactly one pump pass), so without it the whole event script
-// would run out in well under a second -- before the peer has even
-// finished booting -- and the program would quit with nothing to show.
-// Delay(10) is a sixth of a second, so a 400-line `tick 12` script is
-// ~66 s of real overlap between the two boots.
-//
-// The 12-tick period is deliberately LONGER than the 10-tick Delay:
-// blocking for longer than the beat's own period would peg the duty
-// cycle at 100% and starve WaitNextEvent outright. As written the beat
-// blocks 10 ticks out of every 12 -- ~83% -- which in a real
-// interactive build means the event loop sees ~5 free ticks a second
-// and a click can wait up to ~167 ms. That is the honest cost, and it
-// is paid on a beat the app spends waiting for the network anyway.
+// The beat counts script lines: the two --events scripts are 400 lines
+// of `delay 12`, each a real 12/60 s wait that also advances the virtual
+// clock by 12, so `beats` is both the watchdog and the quit timer.
 every 12 ticks {
-    var slept: int // result ignored; Delay is called for its blocking
-
-    slept = Delay(10)
     beats = beats + 1
     if quitAt != 0 and beats >= quitAt {
         quit

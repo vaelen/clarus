@@ -39,33 +39,6 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   handle-backed map values, printing, color QuickDraw, labeled break,
   const arithmetic, `switch` on text, substring/indexOf as library code.
 
-### AppleTalk phase (2026-09-07)
-
-- **A `delay N` verb for the scripted-event lane** (Andrew, 2026-09-07;
-  **do this when the MacTCP phase lands**, which reblesses the golden
-  corpus anyway). In scripted mode (`--events`) the UI runtime never
-  consults the real `TickCount`: `runtime/clarus/uiscript.cla`'s
-  `tick N` verb advances a virtual counter and fires `every` blocks, so
-  a 400-line script runs in near-zero wall-clock time and cannot wait
-  out a real NBP lookup (~3 s) or an ADSP open handshake. Today two
-  tests work around it: `tests/mactest/adsp_68k.sh` paces
-  `examples/atalkchat.cla` with a Toolbox `Delay(10)` inside its
-  `every 12 ticks` beat (the example carries `toolbox/osutils.cla` and
-  an ~83% duty-cycle stall a real app would never want; both
-  `testdata/ui/atalkchat_server.events` and `atalkchat_client.events`
-  are 400 `tick 12` lines), and `tests/mactest/atalk_68k.sh` drives
-  `examples/atalkclock.cla` with a real `every 60 ticks` block composed
-  from `testdata/atalk/clockdrive.cla` instead of an events file at
-  all. The verb: `delay N` sleeps N real ticks (`Delay`/`TickCount`)
-  in `rtUiRunScripted`'s dispatch, pumping `UiConnPump` while it waits,
-  so a script line can genuinely wait for the network. Then delete the
-  `Delay(10)` beat from `atalkchat.cla`, rewrite the two events files
-  as `delay`/`click` lines, and consider giving `atalkclock` an events
-  file too. Not done in the AppleTalk phase because `uiscript.cla` is
-  in every native UI program's golden and the change would have forced
-  a second corpus rebless for a test convenience (ruling recorded in
-  `.superpowers/sdd/2026-09-07-appletalk/progress.md`).
-
 ### Serial/connection phase (2026-08-16)
 
 - **No carrier detect** — `rtConnDevGone` (`runtime/clarus/conn_68k.cla:253`)

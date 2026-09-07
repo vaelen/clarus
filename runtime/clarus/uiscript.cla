@@ -1227,6 +1227,24 @@ func rtUiScriptTick(n: int) {
     rtUiFlushAllBuffered()
 }
 
+// rtUiScriptDelay: `delay N` (MacTCP phase, debt 2 -- docs/FUTURE.md's
+// AppleTalk-phase entry). Waits N REAL ticks, pumping connections and
+// the passive UI pump each spin so a network handshake can complete
+// while the script waits, then advances the virtual clock by N exactly
+// as `tick N` would -- a `delay 12` line is a `tick 12` line that also
+// takes 12/60 s of wall clock. The spin is the same UiConnPump()/
+// rtUiPumpPassive() pair rtUiRunScripted runs between lines.
+func rtUiScriptDelay(n: int) {
+    var until: int
+
+    until = UiTickCount() + n
+    while UiTickCount() - until < 0 {
+        rtUiPumpPassive()
+        UiConnPump()
+    }
+    rtUiScriptTick(n)
+}
+
 // rtUiScriptMenu (rt_ui.c:4346-4365): bar position M / 1-based item I ->
 // native (menuID, itemNum) is the IDENTITY mapping (see the C reference's
 // own extensive comment on why) -- `menu 2 1` is the first declared
@@ -1404,6 +1422,8 @@ func rtUiScriptDispatchLine(): bool {
         rtUiScriptResize(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
     } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("zoom")) {
         rtUiScriptZoom()
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("delay")) {
+        rtUiScriptDelay(rtUiAtoi(rtUiArg1Buf))
     } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("tick")) {
         rtUiScriptTick(rtUiAtoi(rtUiArg1Buf))
     } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("snap")) {

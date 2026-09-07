@@ -11,7 +11,9 @@
 #
 # The two boots are the SAME binary source with two different --events
 # scripts; the only difference is which button the script clicks (spec
-# 8.5). run_mac_pair (tests/lib_mac.sh) staggers them by 5 s, kills both
+# 8.5). Both are paced by `delay 12` script lines (real ticks), so the
+# two boots overlap ~80 s.
+# run_mac_pair (tests/lib_mac.sh) staggers them by 5 s, kills both
 # by cwd on any failure -- never by app name, which would take out an
 # unrelated session's emulator -- and splits each capture into
 # $WORK/cap{1,2}.log with MAC_EXIT1/MAC_EXIT2.
