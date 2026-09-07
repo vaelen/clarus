@@ -292,21 +292,23 @@ settle_seconds() {
 
 # snow_run SECS DONE_CMD [SNOW_ARGS...] : boot $SNOW_WS in Snow, poll
 # DONE_CMD (via sh -c) every 2s until it succeeds or SECS of wall clock
-# elapse, then quit Snow gracefully and wait up to 20s for its process to
-# exit (runSnow). Two failure paths deliberately do NOT fall through to
-# the caller's extraction:
+# elapse, then quit Snow and wait up to 20s for its process to exit
+# (runSnow). Two failure paths deliberately do NOT fall through to the
+# caller's extraction:
 #   - Snow dying during the poll loop is caught within one poll tick;
-#   - a quit that needed a force-kill dies loudly, because guest HFS
-#     writes only reach the host-visible image on a CLEAN process exit,
-#     so extracting from it afterwards would assert against a possibly
-#     corrupt image.
+#   - a quit that needed a force-kill dies loudly: SIGKILL can land in the
+#     middle of an image write, so the image is untrustworthy afterwards
+#     and asserting against it would be asserting against possibly torn
+#     sectors. (This is NOT the older claim that guest writes only reach
+#     the host image on a clean exit -- Snow writes guest sectors through
+#     as the guest flushes them, measured; see snow_done_when_trailer.)
 # The done command is what the Go done() closure was: it may block for as
 # long as its own internal budgets allow (SECS is only the outer bound).
 snow_run() {
     _secs=$1
     _done=$2
     shift 2
-    [ -x "$SNOW_BIN" ] || die "$SNOW_BIN not found (snow/ symlink missing?)"
+    [ -x "$SNOW_BIN" ] || die "$SNOW_BIN not found (snow/ClarusSnow symlink missing?)"
     # Never launch alongside another ClarusSnow: two boots fight over the
     # screen. Deliberately NOT `pgrep -x Snow` -- that also matches
     # Andrew's BBS instance, which shares nothing with a test boot but the
@@ -316,6 +318,10 @@ snow_run() {
 
     "$SNOW_BIN" "$SNOW_WS" "$@" > "$WORK/snow.log" 2>&1 &
     SNOW_PID=$!
+    # snow_localtalk_b's background clicker is armed BEFORE this launch
+    # and so cannot see $SNOW_PID; it waits for this file instead, which
+    # is both "our own Snow is up" and "and this is its pid".
+    echo "$SNOW_PID" > "$WORK/snow.pid"
     # Safety net: never leave Snow on screen if this script dies below.
     trap 'kill -9 "$SNOW_PID" 2>/dev/null; rm -rf "$WORK"' EXIT
 
@@ -329,12 +335,22 @@ snow_run() {
 
     # Quit OUR pid, never the app name: `osascript -e 'quit app "Snow"'`
     # would also quit a BBS Snow running beside us (same application,
-    # different process). SIGTERM is Snow's clean shutdown -- it runs the
-    # normal exit path and flushes its pending image writes, measured
-    # against the extracted guest `out` below; the 20s wait and the
-    # force-kill failure path underneath are unchanged, so a build of
-    # Snow that ever stopped honouring it fails loudly instead of
-    # silently extracting from a half-written image.
+    # different process). That -- not any property of SIGTERM -- is the
+    # whole reason this is a signal.
+    #
+    # Whether Snow HANDLES SIGTERM (running its writeback_mode path) is
+    # UNVERIFIED: it exits promptly, but the shipped binary carries no
+    # signal-handling symbols (no SIGTERM/signal_hook/ctrlc strings), so
+    # most likely there is no handler and the writeback path is skipped.
+    # Nothing here depends on the answer, which is why it is acceptable:
+    # Snow writes guest sectors through to $SNOW_IMG as the guest flushes
+    # them (measured -- snow_done_when_trailer's own comment), and callers
+    # gate the quit on a done command that requires the wanted bytes to be
+    # in the HOST image already. The quit's flush behaviour is therefore
+    # not load-bearing for the extraction that follows it. A caller that
+    # instead quits on a timer (snow_settle_done) is trusting the guest to
+    # have flushed by then, which was already true before this change.
+    #
     # The shell's own "Terminated: 15" job notice for $SNOW_PID lands in
     # the test log here. It is the expected quit, not a failure -- the
     # real verdict is the graceful-exit loop below.
@@ -354,14 +370,7 @@ snow_run() {
     trap 'rm -rf "$WORK"' EXIT
 }
 
-# snow_localtalk_b : NAME-BASED, and so unsafe while a BBS `Snow` is up --
-# its System Events lookups say `process "Snow"`, which would find that
-# instance and post clicks into ITS window. Nothing in the MacTCP lane
-# uses it (no TCP test needs the LocalTalk bridge); a future task that
-# does needs to reach our own process by unix id first, the way snow_run's
-# quit now does.
-#
-# turn Snow's LocalTalk-over-UDP bridge on for SCC
+# snow_localtalk_b : turn Snow's LocalTalk-over-UDP bridge on for SCC
 # channel B (the printer port), which is the port the guest's own PRAM
 # has AppleTalk on. That bridge puts the emulated LocalTalk network on
 # 239.192.76.84:1954 -- the same LToUDP group every Mini vMac boot, the
@@ -397,7 +406,13 @@ snow_run() {
 # `--serial-bridge-b localtalk` flag upstream, the same one-line shape as
 # the LaunchAPPL AppleTalk patch.
 #
-# `window 1` is System Events' FRONTMOST window of the Snow process, not
+# Both System Events lookups below name OUR process by unix id (read from
+# $WORK/snow.pid, which snow_run writes at launch), never `process
+# "Snow"`: the binary we exec is named ClarusSnow, so a name lookup would
+# either miss it or -- worse -- find Andrew's BBS Snow and post clicks
+# into that window.
+#
+# `window 1` is System Events' FRONTMOST window of that process, not
 # necessarily the emulator window -- a modal Snow dialog (writeback ask,
 # a file picker) would be window 1 instead and the clicks would land on
 # it. Our own boots open none, and the log-line check below is what
@@ -424,13 +439,15 @@ snow_localtalk_b() {
         trap - EXIT
         _i=0
         _pos=
+        _pid=
         while [ $_i -lt 60 ]; do
             [ -d "$WORK" ] || exit 1          # parent gone; both EXIT traps rm $WORK
-            # $WORK/snow.log is created by snow_run's own launch
-            # redirection and by nothing else: until it exists, the only
-            # Snow that could be running is somebody else's.
-            if [ -f "$WORK/snow.log" ]; then
-                _pos=$(osascript -e 'tell application "System Events" to tell process "Snow" to get position of window 1' 2>/dev/null)
+            # $WORK/snow.pid is written by snow_run's own launch and by
+            # nothing else: until it exists, the only emulator that could
+            # be running is somebody else's.
+            if [ -f "$WORK/snow.pid" ]; then
+                _pid=$(cat "$WORK/snow.pid")
+                _pos=$(osascript -e "tell application \"System Events\" to get position of window 1 of (first process whose unix id is $_pid)" 2>/dev/null)
                 case "$_pos" in *,*) break ;; esac
                 _pos=
             fi
@@ -438,13 +455,13 @@ snow_localtalk_b() {
             _i=$(( _i + 1 ))
         done
         if [ -z "$_pos" ]; then
-            echo "snow_localtalk_b: no window from our own Snow after ${_i}s (snow.log $([ -f "$WORK/snow.log" ] && echo present || echo absent))"
+            echo "snow_localtalk_b: no window from our own Snow after ${_i}s (snow.pid $([ -f "$WORK/snow.pid" ] && echo "pid $_pid" || echo absent))"
             exit 1
         fi
         _x=${_pos%%,*}
         _y=${_pos##*, }
         echo "snow_localtalk_b: Snow window at $_x,$_y after ${_i}s"
-        osascript -e 'tell application "System Events" to set frontmost of process "Snow" to true' \
+        osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $_pid) to true" \
             > /dev/null 2>&1
         # Ports -> Channel B (printer) -> Enable LocalTalk (UDP). Neither
         # stream is discarded: a missing `swift` or a revoked Accessibility

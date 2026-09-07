@@ -91,10 +91,10 @@ emit68k -o "$WORK/chatcli.bin" --events testdata/ui/atalkchat_client.events \
 # snow_run makes this same refusal, but only AFTER snow_localtalk_b has
 # been armed below -- and an armed clicker whose parent then died on that
 # refusal is a clicker looking for a Snow window that is somebody else's.
-# (snow_localtalk_b's own $WORK/snow.log gate is the belt to this
+# (snow_localtalk_b's own $WORK/snow.pid gate is the belt to this
 # braces; both are cheap.)
-_other=$(pgrep -x Snow | tr '\n' ' ')
-[ -z "$_other" ] || die "another Snow process is already running (pid $_other) -- refusing to boot"
+_other=$(pgrep -x ClarusSnow | tr '\n' ' ')
+[ -z "$_other" ] || die "another ClarusSnow process is already running (pid $_other) -- refusing to boot"
 
 # The fixture COMPILES above need no network; the lock is taken as late
 # as possible (tests/lib_atalk.sh's own rule).
