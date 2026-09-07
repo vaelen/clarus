@@ -358,3 +358,35 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   breaks the lane until the offsets are re-measured. The clean fix is
   upstream, the same one-line shape as this phase's LaunchAPPL patch: a
   `--serial-bridge-b localtalk` mode in Snow. Worth asking for.
+
+### MacTCP phase (2026-09-08)
+
+- **A MacIP gateway on the host LToUDP stack**, so a System 6 Mini vMac
+  guest could reach TCP at all. MacTCP on the Mac Plus lane has no
+  Ethernet to talk to — the emulator cannot attach to a tap device —
+  and the only transport it and the host already share is the
+  LocalTalk-over-UDP group `239.192.76.84:1954` the runtime's own stack
+  is on. MacIP (IP datagrams encapsulated in DDP, RFC 1742's
+  KIP/AppleTalk gateway) is the 1980s answer, and the host stack is
+  already a real LocalTalk peer with a DDP layer, so the gateway half
+  would live in `runtime/host/rt_atalk.inc` beside the ATP layer:
+  answer the MacIP gateway NBP name, hand out an address, and bridge
+  DDP type 22 both ways to a host socket. That would put the native TCP
+  lane under T2 instead of only the opt-in Snow lane. Sized in the
+  hundreds of lines and worth it only if System 6 TCP itself becomes a
+  target — Snow (System 7, DaynaPORT SCSI Ethernet) already covers the
+  hardware proof.
+
+- **Snow port forwarding, inbound.** `snow_ethernet`'s NAT is
+  outbound-only: the guest (10.0.0.2, gateway 10.0.0.1) can dial out,
+  but nothing on the host can dial IN, and there is no DNS. So a test
+  where the HOST is the client and the guest is the server has to be
+  written as a self-connect on the guest's own address, which is
+  exactly what `tests/mactest/snow/tcp_selfconnect.sh` does. An
+  inbound port-forward option (Snow's own NAT config, or running the
+  emulator behind a host-side forwarder) would let the host lane's
+  `tcpdrive` peer drive a real Macintosh server. The other half of this
+  wish — a second Snow bundle so a test boot can coexist with Andrew's
+  BBS instance — is DONE (2026-09-08): `snow/ClarusSnow` is a symlink
+  into a separate `snow/Snow.app` copy, and `tests/lib_snow.sh` quits
+  by our own pid, never by app name.

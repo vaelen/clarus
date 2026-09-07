@@ -76,10 +76,16 @@ Snow has no headless mode; it opens its normal window and runs until quit.
 Start it in the background:
 
 ```sh
-SNOW=/Applications/Snow.app/Contents/MacOS/Snow
+SNOW=/Applications/Snow.app/Contents/MacOS/Snow   # in this repo: snow/ClarusSnow
 "$SNOW" path/to/MyMac.snoww --floppy "$PWD/MyDisk.dsk" > snow.log 2>&1 &
+SNOW_PID=$!
 ```
 
+- **Launch a copy of Snow that is yours.** In this repo the launch path
+  is `snow/ClarusSnow`, a symlink into our own `snow/Snow.app` copy, so
+  a test boot never collides with a Snow someone else is already
+  running: `pgrep -x Snow` finds THAT one, `pgrep -x ClarusSnow` finds
+  ours. Never touch a running Snow you did not start.
 - The positional argument is a workspace (`.snoww`) or a ROM file; the
   workspace is what selects the machine, ROM, PRAM and the bootable SCSI
   disk.
@@ -95,8 +101,12 @@ SNOW=/Applications/Snow.app/Contents/MacOS/Snow
   (Snow may occasionally re-insert it by itself; don't rely on that.)
   Alternative that avoids the eject entirely: start Snow without
   `--floppy` and, after boot, use **Drives > Floppy #1 > Load image…**.
-- Stop Snow cleanly from a script with `osascript -e 'quit app "Snow"'`
-  (macOS); `kill` works too, but discards unsaved floppy/PRAM state.
+- Stop Snow cleanly from a script by SIGTERMing the pid you launched:
+  `kill -TERM "$SNOW_PID"` (in this repo, `kill -TERM "$(pgrep -x
+  ClarusSnow)"`). Do NOT use `osascript -e 'quit app "Snow"'` — `Snow`
+  by name may be a different instance than yours, and quitting by name
+  takes that one down instead. A forced `kill -9` works too, but
+  discards unsaved floppy/PRAM state.
 
 Other useful flags: `--serial-bridge-a tcp:PORT` / `--serial-bridge-b …`
 (SCC serial to TCP or PTY), `-f`/`--zen` (fullscreen/zen; need a
@@ -164,7 +174,7 @@ simplest.
 ```sh
 #!/bin/sh
 set -e
-SNOW=/Applications/Snow.app/Contents/MacOS/Snow
+SNOW=/Applications/Snow.app/Contents/MacOS/Snow   # in this repo: snow/ClarusSnow
 WS=/path/to/MyMac.snoww          # boots a system disk
 PROG=/path/to/MyProgram.bin      # MacBinary
 IMG="$PWD/MyDisk.dsk"

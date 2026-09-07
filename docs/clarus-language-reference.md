@@ -1387,16 +1387,16 @@ An AppleTalk connection's events follow `connection`'s ordinary shape, with thes
 - `send` writes to the ADSP send queue; `received(data: text)` delivers whatever the stream reports pending, once per event-loop pass, binary-safe — every byte value 0-255 passes through unchanged.
 - `send` or `close` on a connection that was never opened is a runtime error, the same contract violation it is on every other transport.
 
+ADSP is part of System 7; on System 6 it comes from AppleTalk 57 or later, as the `.DSP` driver inside the `AppleTalk` system file. There is no feature query for it — a system without it makes `open(appletalk ...)`, `open(addr)`, and `listener.register` fail with `failed(err: error)`, the ordinary environmental-failure path.
+
 **TCP (MacTCP).** `c.open(tcp "a.b.c.d:port")` opens a TCP stream to a dotted-quad address — each octet 0–255, the port 1–65535. A host *name* is not accepted in this release, on either lane: resolving one needs MacTCP's Domain Name Resolver, which is a later phase, so a name arrives as `failed(err: error)` with *invalid connection spec*. The bare-string form `c.open("host:port")` is a compile error — *open needs a transport: tcp, appletalk, or serial*.
 
 A TCP connection's events follow `connection`'s ordinary shape, with these transport-specific rules:
 
-- The open is asynchronous like every other one: `opened` fires on a later pass of the event loop, when the active open completes. `failed(err: error)` reports a malformed spec, a host name, MacTCP absent, no free stream, a refused or unreachable peer, or a 30-second open timeout.
+- The open is asynchronous like every other one: `opened` fires on a later pass of the event loop, when the active open completes. `failed(err: error)` reports a malformed spec, a host name, MacTCP absent, no free stream, every connection slot already in use, a refused or unreachable peer, or a 30-second open timeout.
 - `send` appends to the connection's send queue, and the runtime pushes every chunk, so a line-oriented peer sees it at once. `received(data: text)` delivers whatever one completed receive carried, at most once per pass, binary-safe.
 - `closed` fires when the peer closes or the connection is reset. The slot is released, so a later `send` is the ordinary `connection not open` runtime error. A local `c.close()` never fires it.
 - `close()` drains the pending sends first, then closes gracefully with a 10-second cap, so a peer that never closes cannot pin the slot; bytes the peer sends after a local close are discarded. Re-opening the same variable afterwards is fine.
-
-ADSP is part of System 7; on System 6 it comes from AppleTalk 57 or later, as the `.DSP` driver inside the `AppleTalk` system file. There is no feature query for it — a system without it makes `open(appletalk ...)`, `open(addr)`, and `listener.register` fail with `failed(err: error)`, the ordinary environmental-failure path.
 
 ### Serial
 

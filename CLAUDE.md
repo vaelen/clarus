@@ -143,6 +143,25 @@ Tiered test gates:
   (`atalk_{browser,client,listener,server}`) -- `shake` pulls whatever
   the pump references into every program that uses AppleTalk, so a
   one-line pump edit is not confined to the listener golden.
+- **MacTCP test groups (MacTCP phase, 2026-09-08).** Three T1 groups
+  cover the TCP transport, and none of them needs `atalk_lock`:
+  `tests/tcp/` (end-to-end Clarus programs against the `tcpdrive` peer
+  tool -- `connect`, `listen`, `failed`, `lfailed`, `deny`, `every`,
+  `runerr`, `examples`, plus `waist68k`, which drives a probe through
+  the language surface and greps `emit68k --listing` for all sixteen
+  native waist entry points),
+  `tests/hostrt/tcp.sh` (the C unit test over `rt_tcp.inc`) and
+  `tests/bake/tcp.sh` (the `--rtbake` byte-identity twin the standing
+  rule above requires). They bind loopback ports only -- no multicast
+  group, no shared node-id space -- so they are safe under `make -j`.
+  `runtime/clarus/tcp.cla` + `tcp_68k.cla` are in the 68k superset like
+  the AppleTalk pair (spliced into EVERY native build, not usage-gated
+  like the host `tcp.cla`/`tcp_c.cla` pair), so they are in `bake.cla`'s
+  68k module list, and an edit that moves `tcp.cla`'s GLOBALS moves
+  every one of the 60 `testdata/cg68k/*.s` goldens, not just the TCP
+  ones -- the splice itself did exactly that (+438 B of A5 globals and
+  8 extra `rtTextNew` calls at boot in every native program, from
+  `tcp.cla`'s `rtTcpPending: text[8]`; see `docs/TODO.md`).
 - Opt-in lanes, SKIPped by both gates:
   - `CLARUS_CPRINT_MAC_TESTS=1` (alongside `CLARUS_MAC_TESTS=1`) enables
     the Retro68/cprint-gcc twins — `tests/mactest/{coresuite_mac,
@@ -152,11 +171,19 @@ Tiered test gates:
     case they check. Two known failures, unchanged from the retired Go
     lane: `FileHandleRW: create failed` and `DirOps: exists("") false` in
     the cprint CORE-suite boot (cprint-lane runtime gaps). The cprint
-    TOOLBOX twin is green — 38/38 since the compiler-cleanup phase
-    (2026-09-05) added the `rt_ext_TbFreeMem`/`rt_ext_TbClearWarmFreeMem`
-    shims whose absence used to make it fail to link. Lane deletion is
-    deferred to the 5f Retro68-retirement phase; the C printer's remaining
-    first-class role is host builds (`clarusc emit` + `cc`).
+    TOOLBOX twin (`toolbox_mac.sh`) no longer compiles at all and is
+    retired to a compile-error state pending the 5f Retro68 retirement:
+    the toolbox suite is now 68k-source-only, because its `AdspLeak`
+    case names the runtime's own native AppleTalk waist
+    (`rtAt68DspInitEnd`/`rtAdspDevClose`, which do not exist in
+    `atalk_c.cla`) and the `--testapi` early-visible module set is
+    68k-lane only (MacTCP-phase Ruling 10 — see the `--testapi` note
+    below). It was green 38/38 up to then, since the compiler-cleanup
+    phase (2026-09-05) added the
+    `rt_ext_TbFreeMem`/`rt_ext_TbClearWarmFreeMem` shims whose absence
+    used to make it fail to LINK. The CORE twin is unaffected. The C
+    printer's remaining first-class role is host builds (`clarusc emit`
+    + `cc`).
   - `CLARUS_SNOW_TESTS=1` enables the Snow (System 7 / Mac II) scripts
     under `tests/mactest/snow/`. `CLARUS_SNOW_TESTS=1 make test
     T=mactest/snow/clarusc_bake` (~30 min) is the standing rule after any
@@ -173,6 +200,25 @@ Tiered test gates:
     `tests/lib_snow.sh`'s `snow_localtalk_b` turns it on by posting
     CGEvent clicks into Snow's own in-window menu bar (see
     `docs/FUTURE.md`).
+    **Snow is launched as `snow/ClarusSnow`** (2026-09-08) — a symlink
+    into a SEPARATE `snow/Snow.app` copy, so a test boot can coexist
+    with the long-running Snow instance Andrew keeps for the BBS:
+    `pgrep -x Snow` is HIS and is never touched, `pgrep -x ClarusSnow`
+    is ours. **Never touch a running Snow you did not start.**
+    `tests/lib_snow.sh`'s `snow_run` refuses to boot only on a stray
+    `ClarusSnow`, and quits by the pid IT launched (`kill -TERM`), never
+    by app name — `osascript -e 'quit app "Snow"'` would take Andrew's
+    BBS down with it.
+    `snow_ethernet` attaches the DaynaPORT SCSI Ethernet adapter at SCSI
+    ID 3 in the scratch workspace (`Clarus.snoww` itself carries none):
+    the guest is 10.0.0.2, gateway 10.0.0.1, NAT **outbound-only** — no
+    inbound port forwarding, no DNS (`docs/FUTURE.md`). The standing TCP
+    hardware proof is `tests/mactest/snow/tcp_selfconnect.sh` (MacTCP
+    phase, 2026-09-08): it self-connects on the guest's OWN address
+    10.0.0.2, because MacTCP does not loop `127.0.0.1` back — an active
+    open to it returns 0 and the listener never completes (the phase's
+    probe wave measured it), so a self-test must dial the real
+    address.
   - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
     calibration bench, `tests/mactest/bench.sh`.
 - `tests/mactest/adsp_68k.sh` (the two-Mac ADSP stream boot, appletalk
@@ -227,6 +273,20 @@ Tiered test gates:
   file`, exit 1). Only the suites' GUI (`gui.cla`, `--events`-driven)
   builds pass it — `core`'s non-UI host CLI (`cli.cla`) doesn't need it;
   nothing outside the two suites does.
+  On the 68k lane the early-visible set is WIDER than the UI modules
+  (MacTCP phase, 2026-09-08): `sortedmap`, `datetime`(+`_68k`), `ser`,
+  `conn`(+`_68k`), `atalk`(+`_68k`) and `tcp`(+`_68k`) go in ahead of
+  `uitest.cla`, so a toolbox-suite case can drive the runtime's own
+  AppleTalk and TCP waists and not only the ROM. That list must stay a
+  strict PREFIX of the runtime manifest's own module order —
+  `driveManifestSplice` appends the remainder after it, and `bake.cla`'s
+  `bakeModuleList` moves `uitest.cla` to the matching spot, which is the
+  marker for where "early-visible" ends. Get the order wrong and only
+  `CLARUS_BAKE_FULL=1` catches it. The HOST lane is deliberately
+  unchanged (Ruling 10): `bakeModuleList`'s C-lane list carries no
+  conn/atalk/tcp at all, so early-splicing them there would desynchronise
+  from-source against bake for no gain — which is why the toolbox suite
+  is 68k-source-only and its cprint twin no longer builds.
 
 ### `core`/`toolbox` test suites (`testsuite/`)
 
@@ -352,9 +412,10 @@ enum + runner, not one boot per case.
   (pack3-standardfile phase, 2026-08-07) to an opt-in diagnostic behind
   `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under bare `CLARUS_MAC_TESTS=1`, so
   they no longer run as part of T2 by default.
-- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk}.cla`
+- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk,mactcp}.cla`
   (toolbox-cookbook phase; `standardfile`/`files` added by
-  pack3-standardfile, `appletalk` by the AppleTalk phase) is a
+  pack3-standardfile, `appletalk` by the AppleTalk phase, `mactcp` by the
+  MacTCP phase) is a
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new
   UI code instead of hand-declaring traps; `tests/testsuite/catalog.sh`
@@ -363,8 +424,19 @@ enum + runner, not one boot per case.
   catalog/directory family (`_HFSDispatch`'s `GetCatInfo`/`SetCatInfo`/
   `DirCreate`/`CatMove`, plus `PBH{Delete,Rename,Get/SetFInfo,OpenRF}Sync`)
   in the filesystem-api phase, 2026-08-26 — no longer just a Standard
-  File helper. See `docs/clarus-toolbox-cookbook.md` for worked
-  transcription examples.
+  File helper. `mactcp.cla` is the cookbook's §14 csCode-dispatched
+  driver shape a second time (one driver, `.IPP`, and no `extern record`
+  at all — a `TCPiopb`'s csParam is an eight-arm union `extern record`
+  cannot spell, so the runtime pokes absolute offsets into one
+  `NewPtrClear(102)` block). Its ULP timeout ACTION constants are
+  `tcpUlpActionReport = 0` and `tcpUlpActionAbort = 1` (the MacTCP
+  Programmer's Guide: "0 = report, nonzero = abort"; abort is the
+  driver's own default, applied when the validity bit is clear). They
+  deliberately do NOT share a spelling with the termination REASONS
+  `tcpULPTimeoutTerminate = 5` / `tcpULPAbort = 6`: `tcpUlpActionAbort`
+  (1) and `tcpULPAbort` (6) would otherwise differ only in letter case,
+  which the compiler cannot catch. See
+  `docs/clarus-toolbox-cookbook.md` for worked transcription examples.
   An `include "toolbox/..."` path that isn't found relative to the
   including file falls back to the compiler's own `toolbox/` directory
   (`<rtdir>/../../toolbox/<rest>`, since `<rtdir>` is `runtime/clarus/`)
@@ -408,9 +480,11 @@ enum + runner, not one boot per case.
   output module ⇒ `tests/asm68k/roundtrip.sh`, `tests/cg68k/vasm.sh` and
   the round-trip halves of `tests/cg68k/array_assign.sh` and
   `tests/cg68k/segments.sh` SKIP.
-- `snow/` → Snow emulator (`snow/Snow`) plus its `Clarus.snoww` workspace,
-  ROM and PRAM — the System 7 / Mac II lane. Missing ⇒ the whole
-  `tests/mactest/snow/` group SKIPs.
+- `snow/` → Snow emulator, launched as `snow/ClarusSnow` (a symlink into
+  our OWN `snow/Snow.app` copy, so a test boot never collides with
+  another running Snow — see the `CLARUS_SNOW_TESTS=1` bullet above),
+  plus its `Clarus.snoww` workspace, ROM and PRAM — the System 7 /
+  Mac II lane. Missing ⇒ the whole `tests/mactest/snow/` group SKIPs.
 
 To build a Mac app from C: `CMakeLists.txt` with `add_application(Name src.c)`, then
 

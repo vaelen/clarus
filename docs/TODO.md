@@ -247,17 +247,6 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   declared one -- applied to the whole family at once, so the next
   `text` out-parameter added does not have to remember the guard.
 
-## Compiler: cleanup
-
-### AppleTalk phase (2026-09-07)
-
-- **`lowSynthAtalkFire{Simple,Failed}` duplicate ~70 lines of the
-  connection dispatcher builders** (`clarusc/lower.cla`). The final
-  review recommended folding them; the fold edits code every `emitui`
-  and `cg68k` golden pins, for zero behaviour change, so it was deferred
-  to the MacTCP phase, where a third copy makes the case and the corpus
-  is reblessed anyway.
-
 ## Language: feature-support queries (after the AppleTalk release)
 
 - **A `system.has*()` family for optional platform features** (Andrew,
@@ -274,6 +263,43 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   AppleTalk implementation ships, not inside it.
 
 ## Runtime / Toolbox robustness
+
+### MacTCP phase (2026-09-08)
+
+- **`tcp.cla`'s `rtTcpPending: text[8]` global makes EVERY native
+  program pay for TCP at boot.** `runtime/clarus/tcp.cla` is in the 68k
+  superset (spliced into every native build, like `atalk.cla`), and its
+  per-slot pending-receive buffer is a fixed array of eight `text`
+  handles, so a program that never opens a connection still allocates
+  eight handles at startup and carries +438 B of A5 globals -- measured
+  on the splice commit, which moved all 60 `testdata/cg68k/*.s` goldens
+  (`arith.s`: A5 frame 6910 -> 7348, plus eight new `rtTextNew` calls in
+  the boot sequence). Two levers, either one enough: usage-gate
+  `tcp.cla` off the 68k superset the way the host lane already gates it
+  (`conn.cla`/`atalk.cla` would have to stop naming `rtTcp*`
+  unconditionally first), or keep ONE scratch `text` and give each slot
+  an offset into it. Not urgent -- 438 B of a 2 MB partition -- but it
+  is a cost every program pays for a feature most do not use.
+
+- **`rtTcpListenMsg` hardcodes errno 48 as "port in use"**
+  (`runtime/clarus/tcp.cla`). 48 is `EADDRINUSE` on BSD/macOS; Linux is
+  98, so a Linux host would report the generic "could not start
+  listener" for a port already in use -- and `tests/tcp/lfailed.sh`,
+  which asserts the specific wording, would fail there. The host waist
+  hands up a raw errno; the fix is to map it symbolically in
+  `runtime/host/rt_tcp.inc`, where `EADDRINUSE` is in scope, rather
+  than matching a number in Clarus.
+
+- **The cprint-lane script engine has no `delay` verb and ignores
+  unknown verbs silently** (`runtime/mac/rt_ui.c`,
+  `rt_ui_run_scripted`'s `strcmp(verb, ...)` chain, which has no final
+  `else`). The uiscript `delay N` verb this phase added (real-tick
+  waits in `--events` scripts) exists only in the native lane's engine,
+  so a `build-mac.sh --events` script using `delay` would not wait and
+  would say nothing about it. Only matters if a Retro68-lane build ever
+  drives a `delay` script -- nothing does today, and the lane is slated
+  for deletion in 5f -- but the silent fall-through is the half worth
+  fixing if the lane survives.
 
 ### native-array-return-and-fileh-guards phase (2026-09-06)
 

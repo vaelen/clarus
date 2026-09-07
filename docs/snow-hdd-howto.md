@@ -104,17 +104,27 @@ EOF
 ## 3. Start Snow
 
 ```sh
-SNOW=/Applications/Snow.app/Contents/MacOS/Snow
+SNOW=/Applications/Snow.app/Contents/MacOS/Snow   # in this repo: snow/ClarusSnow
 "$SNOW" "$PWD/MyMac-with-hd.snoww" > snow.log 2>&1 &
+SNOW_PID=$!
 ```
+
+In this repo the launch path is `snow/ClarusSnow`, a symlink into our own
+`snow/Snow.app` copy, so a test boot never collides with a Snow someone
+else is already running: `pgrep -x Snow` finds THAT one, `pgrep -x
+ClarusSnow` finds ours. Never touch a running Snow you did not start.
 
 `snow.log` shows `SCSI ID #1: loaded image file …/MyHD.hda` at start. The
 System boots from ID 0 and the new volume appears on the desktop under its
 `-l` name (~30–60 s after launch on a Mac II/System 7.1) — no eject, no
 menu fiddling. Double-click the program to run it.
 
-Stop Snow cleanly (`osascript -e 'quit app "Snow"'` on macOS); a forced
-`kill` can leave the image's HFS structures half-written.
+Stop Snow cleanly by SIGTERMing the pid you launched — `kill -TERM
+"$SNOW_PID"`, or `kill -TERM "$(pgrep -x ClarusSnow)"` in this repo. Do
+NOT use `osascript -e 'quit app "Snow"'`: `Snow` by name may be a
+different instance than yours, and quitting by name takes that one down
+instead. A forced `kill -9` can leave the image's HFS structures
+half-written.
 
 ## 4. Getting results back out
 
@@ -137,7 +147,7 @@ only after Snow's process has exited. Don't read the image mid-session.
 ```sh
 #!/bin/sh
 set -e
-SNOW=/Applications/Snow.app/Contents/MacOS/Snow
+SNOW=/Applications/Snow.app/Contents/MacOS/Snow   # in this repo: snow/ClarusSnow
 WS=/path/to/MyMac.snoww          # boots a system disk at SCSI 0
 PROG=/path/to/MyProgram.bin      # MacBinary
 DIR="$PWD/run"; mkdir -p "$DIR"; cd "$DIR"

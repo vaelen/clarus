@@ -171,7 +171,26 @@ option, from the `vaelen/Retro68` fork until upstream PR #316 lands, plus
 `system-extra-file = AppleTalk` in `~/.LaunchAPPL.cfg` — is carried in
 `CLAUDE.md`'s toolchain section). Remaining, in order:
 
-1. **MacTCP.**
+1. **MacTCP** — IN PROGRESS on branch `mactcp`, not merged. TCP as
+   `connection`'s third transport (`c.open(tcp "a.b.c.d:port")`) and
+   `listener`'s second (`l.listen(tcp port)`), on both lanes: MacTCP's
+   `.IPP` driver natively, through polled async parameter blocks with no
+   ASR, and BSD sockets on the host, so a host build is a working TCP
+   client and server. Dotted quads only — a host name needs the DNR,
+   which is the next phase. Spec:
+   `docs/superpowers/specs/2026-09-07-mactcp-design.md`.
+2. **DNR** — host names instead of dotted quads, on both lanes. Three
+   pieces first, in this order (spec §11): a C-convention `= ptr` extern
+   variant (arguments pushed right-to-left as longs, the caller pops,
+   result in D0 — the resolver's entry points are C, not pascal); the
+   resource-file search that finds the resolver code (`cdev`/`mtcp` in
+   the System Folder, then `cdev`/`ztcp` in Control Panels and the
+   System Folder); and a result-procedure probe (the DNR answers at
+   interrupt time, so A5 has to be set up). Then `open(tcp "host:port")`
+   takes a name, host lane included.
+3. **UDP** — connected-peer `open(udp "host:port")` on `connection`,
+   plus a separate datagram-server resource: a UDP server is not
+   accept-shaped, so it is not a `listener`. Recorded, after the DNR.
 
 Environment note: `snow/MacII.snoww` + its hdd image are already
 configured (2026-08-15): AppleTalk on the Printer port, a TCP listener

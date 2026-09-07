@@ -1263,7 +1263,38 @@ header line for each. Where the header names nothing, the guide is the
 only source and the catalog says so at the declaration: the driver name
 `.IPP` (p. 5), the connection-state values at
 `tcpStatusConnectionState` (p. 54), and the ULP timeout action byte, which
-five separate guide tables give as "0 = report, nonzero = abort".
+five separate guide tables give as "0 = report, nonzero = abort" -- the
+catalog spells those `tcpUlpActionReport = 0` and `tcpUlpActionAbort = 1`.
+The `Action` in the middle is not decoration: MacTCP.h's own termination
+reasons include `tcpULPAbort = 6`, and `tcpUlpActionAbort` (an action a
+caller WRITES) against `tcpULPAbort` (a reason the driver REPORTS) would
+otherwise differ only in letter case, which the compiler cannot catch.
+Transcribing an invented name into a family that already has a similar
+one is worth one deliberate prefix. The guide also warns (p. 42) that
+abort is the DRIVER's default -- what TCP applies when the matching
+validity bit is clear -- so a caller who wants abort sets both
+`tcpUlpActionAbort` and `tcpValidTimeoutAction`, and a caller who leaves
+the byte 0 without that bit gets abort anyway, not report.
+
+**Transcription tip: the catalog needs no ASR, and neither does the
+runtime.** MacTCP's asynchronous notification routine (the `notifyProc`
+`TCPCreate` takes) runs at interrupt time, which is the expensive half of
+this driver to transcribe -- an A5 world to set up, no allocation, no
+Toolbox. The runtime declines it outright: it passes `notifyProc` 0
+(guide p. 36) and instead keeps a receive command outstanding on the
+stream and reads `ioResult`@16 on LATER pump passes, exactly the polled
+`PBControlAsync` shape §14 uses for NBP. `ioResult` stays `1`
+(`inProgress`, MacTCP.h:95) while the driver owns the block and becomes
+the OSErr when it does not, so "is it done yet" is one word read per
+pump pass, on the program's own stack, with nothing running at interrupt
+time. The events that would otherwise need an ASR arrive the same way: a
+`TCPRcv` completes with `connectionClosing` or `connectionTerminated`
+when the peer closes or resets (guide p. 51). Two consequences worth
+carrying into any similar transcription: a block the driver still owns
+must never be reissued into (the runtime keeps a separate auxiliary
+block for the calls -- `tcpAbort`, `tcpRelease` -- that must run WHILE
+another is live), and `peekw` zero-extends, so a signed `ioResult` or
+driver refNum has to be sign-corrected before it is compared.
 
 ---
 
