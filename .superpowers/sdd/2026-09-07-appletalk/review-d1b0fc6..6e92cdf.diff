@@ -1,0 +1,163 @@
+# Review package: d1b0fc6..HEAD
+
+## Commits
+6e92cdf docs: close-out fix round 1 -- adsp_68k wall clock, AtalkSelf header clause
+
+## Files changed
+ CLAUDE.md                         |  8 ++++----
+ docs/HISTORY.md                   | 20 +++++++++++++-------
+ testsuite/toolbox/cases_atalk.cla |  6 ++++--
+ 3 files changed, 21 insertions(+), 13 deletions(-)
+
+## Diff
+diff --git a/CLAUDE.md b/CLAUDE.md
+index f7e9666..9eff907 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -169,24 +169,24 @@ Tiered test gates:
+     Snow as the ADSP listener, Mini vMac as the client, over LToUDP) also
+     needs `CLARUS_MAC_TESTS=1` for its client half **and a real, unlocked
+     display**: Snow's LocalTalk-over-UDP bridge has no launch flag, so
+     `tests/lib_snow.sh`'s `snow_localtalk_b` turns it on by posting
+     CGEvent clicks into Snow's own in-window menu bar (see
+     `docs/FUTURE.md`).
+   - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
+     calibration bench, `tests/mactest/bench.sh`.
+ - `tests/mactest/adsp_68k.sh` (the two-Mac ADSP stream boot, appletalk
+   phase 2026-09-07) runs both boots under plain `CLARUS_MAC_TESTS=1` and
+-  is 12/12 — ~20 s of emulator time once the pair is up, ~7 min for the
+-  whole script against its 420 s pair budget. Its `^failed -1273 ` grep
+-  over the SERVER capture stays as the guard for a LaunchAPPL that does
+-  NOT carry the `AppleTalk` system file (`.DSP`/`.XPP` then open `-43`):
++  is 12/12 in ~20 s; `run_mac_pair`'s 420 s is the per-boot timeout
++  ceiling, not the expected duration (both apps quit on their own). Its
++  `^failed -1273 ` grep over the SERVER capture stays as the guard for a
++  LaunchAPPL that does NOT carry the `AppleTalk` system file (`.DSP`/`.XPP` then open `-43`):
+   the script calls `skip` on that line BEFORE its first assertion,
+   because a `FAIL ` line would beat exit 77. See the LaunchAPPL
+   prerequisite under "Retro68 / Mac toolchain" below — without that
+   patch this script SKIPs and `mactest/toolbox_68k` goes RED (the
+   `AdspLeak` suite case has no skip verdict and FAILs with
+   `open .DSP err -43`). `tests/mactest/atalk_68k.sh` (NBP/ATP over the
+   ROM's own `.MPP`/`.ATP`) needs no such file.
+ - Golden blessing — five variables, and each must be set to exactly `1`
+   (`lib.sh`'s `env_set`; any other value, `0` included, is NOT a bless):
+   `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap goldens,
+diff --git a/docs/HISTORY.md b/docs/HISTORY.md
+index 8e02349..baf3b39 100644
+--- a/docs/HISTORY.md
++++ b/docs/HISTORY.md
+@@ -6162,22 +6162,23 @@ as `LaunchAPPL.orig`. The harness's stripped boot disk (System +
+ AutoQuit + the app) therefore now also carries AppleTalk 58.1.4, so
+ `.XPP`/`.DSP` open instead of answering `-43`. **That patch is
+ UNCOMMITTED in Andrew's Retro68 checkout and a fresh Retro68 build
+ silently loses it** — which is why `CLAUDE.md`'s "Retro68 / Mac
+ toolchain" section now records it as an environment prerequisite, and
+ why a machine without it gets a red `toolbox_68k` (`AdspLeak` FAILs with
+ `open .DSP err -43`) rather than a quiet skip. Task 13 then ran as four
+ dispatches.
+ 
+ **13a — the first green `mactest/adsp_68k`.** The first real run of the
+-pair, on the unmodified phase tip, was **3 PASS / 8 FAIL**: the server
+-registered its name (so `.DSP` really did open), the client's browse
++pair, on the unmodified phase tip, was **4 PASS (one of them vacuous on
++an empty client log) / 8 FAIL**: the server registered its name (so
++`.DSP` really did open), the client's browse
+ found `Chat-5627:ClarusChat2025 0.91.253`, and then `open` failed
+ **-1025**. -1025 is `nbpNoConfirm` — an NBP error, not an ADSP one — so
+ the failure was in the open-by-name path's own name resolve, before any
+ ADSP packet was ever sent. Root cause: `examples/atalkchat.cla`'s
+ `on brs.found` dialed `chat.open(appletalk name + ":" + chatType)`, but
+ `found`'s `name` is ALREADY NBP's `"Object:Type"` spelling on both lanes
+ — so the program asked for object `Chat-5627`, type
+ `ClarusChat2025:ClarusChat2025`, which nothing had registered, and the
+ lookup completed with zero tuples. The fix is one statement in the
+ example (`chat.open(appletalk name)`); no runtime edit, no compiler
+@@ -6230,23 +6231,27 @@ the ADSP listener, Mini vMac (System 6) as the client, over LToUDP, with
+ 73 / 73 s). The P5 interop probe is an appendix to `task-1-report.md`:
+ register on Snow and look up from the Plus, the reverse, and the host's
+ `atalkdrive` seeing both Snow names — all three resolve, net 0, zone
+ `*`, no router. **AppleTalk 58 on System 7 differs from the Mac Plus ROM
+ in exactly two ways that matter to this phase: `setSelfSend`
+ (csCode 256) returns err 0 instead of `-17`, and a self-lookup then
+ works — 1 tuple, against 0 before and after on the ROM. Task 1's
+ Amendment 3, the reason `AtalkSelf` is not a self-lookup case, is
+ therefore a Mac Plus ROM verdict, not an AppleTalk one**;
+ `testsuite/toolbox/cases_atalk.cla`'s header already scopes its claim to
+-"the Mac Plus ROM .MPP, which is what this suite boots", so it stands as
+-written. Nothing about System 7's `.DSP` behaved differently from 13a's
+-ROM measurements — same `dspCLInit` / `dspCLListen` /
++"the Mac Plus ROM .MPP, which is what this suite boots", and one clause
++of it was amended here: it used to explain the `-17` partly by the
++AppleTalk 58 file's ABSENCE from the boot disk, which Task 13a made
++false, and `AtalkSelf` is still green with that file present -- so the
++`-17` is the ROM `.MPP`'s own verdict and the header now says so.
++Nothing about System 7's `.DSP` behaved differently from 13a's ROM
++measurements — same `dspCLInit` / `dspCLListen` /
+ `dspOpen(ocAccept)` / `dspClose` shape, same socket handling, no runtime
+ change. Two lane facts fell out. Snow's guest screen is 640x480, so
+ `--events` click coordinates from the 512-wide Mini vMac lane do not
+ transfer; `adsp_listener.sh` restamps the Serve click and `die`s if the
+ restamp does not take. And **Snow's LocalTalk-over-UDP bridge is off by
+ default and reachable only through the menu bar Snow's egui draws inside
+ its own window** — no CLI mode, no `.snoww` field, no PRAM bit, no
+ settings key, each ruled out by measurement rather than assumption. So
+ `tests/lib_snow.sh` gained `snow_localtalk_b`, which clicks Ports →
+ Channel B (printer) → Enable LocalTalk (UDP) at offsets from the Snow
+@@ -6321,22 +6326,23 @@ test-merge.sh: bake/ full corpus PASS in 2s (7 passed)
+ test-merge.sh: PASS in 1350s
+ ```
+ 
+ The load-bearing `mactest/` results this time: **`adsp_68k` PASS in
+ 20 s at 12/12** -- the ADSP pair, green in a merge gate for the first
+ time -- **`toolbox_68k` PASS in 318 s at 40/40** with both `AtalkSelf`
+ and `AdspLeak` green, `toolbox_jiggle` PASS in 331 s at 40/40,
+ `atalk_68k` PASS in 216 s, `atalk_selfserve` PASS in 18 s,
+ `coresuite_68k` PASS at 83/83, and `smoke_bounce` + `tick` PASS. One
+ more script runs than at the first gate (21 passed against 20:
+-`adsp_68k` no longer skips) and one more skips (14 against 13: the new
+-`mactest/snow/adsp_listener`, which needs `CLARUS_SNOW_TESTS`). The
++`adsp_68k` no longer skips), and the skip total is unchanged at 14 --
++`adsp_68k` stopped skipping and the new `mactest/snow/adsp_listener`,
++which needs `CLARUS_SNOW_TESTS`, started. The
+ remaining skips are the opt-in cprint lane
+ (`CLARUS_CPRINT_MAC_TESTS`) and the Snow lane (`CLARUS_SNOW_TESTS`).
+ 
+ **Deferred / recorded.** The `progress.md` ledger in
+ `.superpowers/sdd/2026-09-07-appletalk/` carries every deferred minor
+ verbatim, one line per task, alongside every ruling and its stated cost
+ if wrong. The items that outlive the phase are in `docs/TODO.md` (the
+ class-wide `text` out-parameter hole; the listener teardown path has no
+ runtime test, only goldens; `atalk_lock`'s stale-holder STEAL path is
+ still racy between two waiters, the unlock half being guarded by a pid
+diff --git a/testsuite/toolbox/cases_atalk.cla b/testsuite/toolbox/cases_atalk.cla
+index 3ffd60d..2aefdc7 100644
+--- a/testsuite/toolbox/cases_atalk.cla
++++ b/testsuite/toolbox/cases_atalk.cla
+@@ -13,22 +13,24 @@
+ // the Names Table Entry, looks up a type nothing has registered, removes
+ // the name, then opens and closes a dynamic ATP socket.
+ //
+ // WHAT THIS CASE DELIBERATELY DOES NOT DO, and why. The design spec's
+ // original sketch was a self-lookup (find our own registered name) and
+ // an ATP self-transaction (async getRequest + sync sendRequest to our
+ // own address). Task 1's probe wave (task-1-report.md P3, Amendment 3)
+ // proved all three legs of that unavailable on the Mac Plus ROM .MPP,
+ // which is what this suite boots:
+ //   - `setSelfSend` (csCode 256) returns -17 (controlErr): the ROM .MPP
+-//     does not implement it, and the AppleTalk 58 System file whose
+-//     .MPP would is not on LaunchAPPL's stripped boot disk (P1).
++//     does not implement it, and the AppleTalk 58 file the boot disk now
++//     carries (Task 13a) does not displace the ROM's .MPP on a Mac Plus,
++//     so this stays -17 with the file present. System 7's AppleTalk 58
++//     answers err 0 and self-lookup then works -- Task 13c.
+ //   - a self-lookup therefore returns err 0 with numGotten 0, before and
+ //     after that call.
+ //   - a self-directed ATP sendRequest fails -1096 (reqFailed) after its
+ //     full retry budget, and the paired async getRequest never
+ //     completes.
+ // So the assertions below are exactly Amendment 3's table -- every row
+ // of it, and nothing that was not observed on real hardware. Note in
+ // particular that the node number is NOT asserted against a fixed value:
+ // it is acquired by LLAP at boot and differs run to run (106 and 18 were
+ // both seen). AtalkSelf itself opens neither .XPP nor .DSP -- it needs

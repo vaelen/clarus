@@ -1,0 +1,247 @@
+# Review package: 3800a6e..HEAD
+
+## Commits
+3d81282 test(snow): review round 1 -- never click somebody else's Snow, reap both halves
+
+## Files changed
+ tests/lib_snow.sh                   | 46 ++++++++++++++++++++++++++--------
+ tests/mactest/snow/adsp_listener.sh | 50 +++++++++++++++++++++++++++++++++----
+ 2 files changed, 80 insertions(+), 16 deletions(-)
+
+## Diff
+diff --git a/tests/lib_snow.sh b/tests/lib_snow.sh
+index ce7dfc0..a343a1e 100644
+--- a/tests/lib_snow.sh
++++ b/tests/lib_snow.sh
+@@ -335,52 +335,76 @@ snow_run() {
+ #     Channel B (printer)      (+310, +95)
+ #     Enable LocalTalk (UDP)   (+498, +184)
+ #
+ # Fragile by construction -- a Snow release that moves those menus breaks
+ # it -- but never SILENTLY: Snow logs "LocalTalk bridge enabled" on its
+ # own stdout ($WORK/snow.log), and this waits for that line and dies with
+ # the geometry it used if it never arrives. The right long-term fix is a
+ # `--serial-bridge-b localtalk` flag upstream, the same one-line shape as
+ # the LaunchAPPL AppleTalk patch.
+ #
++# `window 1` is System Events' FRONTMOST window of the Snow process, not
++# necessarily the emulator window -- a modal Snow dialog (writeback ask,
++# a file picker) would be window 1 instead and the clicks would land on
++# it. Our own boots open none, and the log-line check below is what
++# notices if one ever does.
++#
+ # snow_run BLOCKS for the whole boot, so this cannot be called after it:
+ # it arms a BACKGROUND clicker that waits for Snow's window to appear
+-# (up to 60s) and then clicks. Call it immediately BEFORE snow_run and
+-# `wait` for $SNOW_LTALK_PID afterwards. Clicking early is also correct
+-# on the guest's terms: the bridge only has to exist before the guest
+-# opens .MPP and acquires an LLAP node, which is ~35s into the boot
+-# (measured -- see adsp_listener.sh's own timing-budget comment).
++# (up to 60s) and then clicks. **It must only be started once snow_run is
++# about to launch**: it waits for $WORK/snow.log, which nothing but our
++# own snow_run creates, so an orphaned clicker (the caller died before
++# snow_run ever ran, e.g. on snow_run's own "another Snow is already
++# running" refusal) can never post clicks into somebody else's Snow
++# window. It also gives up the moment $WORK is gone, which is how both
++# EXIT traps in this file say "the parent is finished". `wait` for
++# $SNOW_LTALK_PID afterwards. Clicking early is also correct on the
++# guest's terms: the bridge only has to exist before the guest opens
++# .MPP and acquires an LLAP node, which is ~35s into the boot (measured
++# -- see adsp_listener.sh's own timing-budget comment).
+ snow_localtalk_b() {
+     (
+         # A backgrounded subshell inherits lib.sh's `rm -rf "$WORK"` EXIT
+         # trap in some shells; dropping it here keeps this from deleting
+         # the work directory the parent is still writing into.
+         trap - EXIT
+         _i=0
+         _pos=
+         while [ $_i -lt 60 ]; do
+-            _pos=$(osascript -e 'tell application "System Events" to tell process "Snow" to get position of window 1' 2>/dev/null)
+-            case "$_pos" in *,*) break ;; esac
+-            _pos=
++            [ -d "$WORK" ] || exit 1          # parent gone; both EXIT traps rm $WORK
++            # $WORK/snow.log is created by snow_run's own launch
++            # redirection and by nothing else: until it exists, the only
++            # Snow that could be running is somebody else's.
++            if [ -f "$WORK/snow.log" ]; then
++                _pos=$(osascript -e 'tell application "System Events" to tell process "Snow" to get position of window 1' 2>/dev/null)
++                case "$_pos" in *,*) break ;; esac
++                _pos=
++            fi
+             sleep 1
+             _i=$(( _i + 1 ))
+         done
+-        [ -n "$_pos" ] || { echo "snow_localtalk_b: no Snow window after ${_i}s"; exit 1; }
++        if [ -z "$_pos" ]; then
++            echo "snow_localtalk_b: no window from our own Snow after ${_i}s (snow.log $([ -f "$WORK/snow.log" ] && echo present || echo absent))"
++            exit 1
++        fi
+         _x=${_pos%%,*}
+         _y=${_pos##*, }
+         echo "snow_localtalk_b: Snow window at $_x,$_y after ${_i}s"
+         osascript -e 'tell application "System Events" to set frontmost of process "Snow" to true' \
+             > /dev/null 2>&1
+-        # Ports -> Channel B (printer) -> Enable LocalTalk (UDP).
++        # Ports -> Channel B (printer) -> Enable LocalTalk (UDP). Neither
++        # stream is discarded: a missing `swift` or a revoked Accessibility
++        # permission has to show up in ltalk.log, not masquerade as
++        # "Snow's menu layout moved".
+         for _off in "250 49" "310 95" "498 184"; do
+             swift "$ROOT/scripts/click.swift" \
+-                $(( _x + ${_off%% *} )) $(( _y + ${_off##* } )) > /dev/null 2>&1
++                $(( _x + ${_off%% *} )) $(( _y + ${_off##* } ))
+             sleep 1
+         done
+         _i=0
+         while [ $_i -lt 20 ]; do
+             if grep -q 'LocalTalk bridge enabled' "$WORK/snow.log" 2>/dev/null; then
+                 echo "snow_localtalk_b: $(grep 'LocalTalk bridge started' "$WORK/snow.log" | tail -1)"
+                 exit 0
+             fi
+             sleep 1
+             _i=$(( _i + 1 ))
+diff --git a/tests/mactest/snow/adsp_listener.sh b/tests/mactest/snow/adsp_listener.sh
+old mode 100644
+new mode 100755
+index 35142e4..4eaf71e
+--- a/tests/mactest/snow/adsp_listener.sh
++++ b/tests/mactest/snow/adsp_listener.sh
+@@ -44,20 +44,27 @@
+ # ---- the click ----
+ # The scripted server events file clicks the Serve button in GLOBAL
+ # screen coordinates, and ui.cla centers a window horizontally on the
+ # real screen (`left = (screenW - reqW) / 2`, rtUiOpen). Snow's monitor
+ # is 640x480, not the Mac Plus's 512x342, so a 300-wide window opens at
+ # left 170, not 106, and the committed testdata/ui/atalkchat_server.events
+ # click (156,64 -- correct for 512) lands on the desktop here. The sed
+ # below restamps it to 220,64, which is that same Serve button on a
+ # 640-wide screen. If it ever misses, `serving Chat-` never appears and
+ # server_registered fails loudly.
++#
++# Unlike adsp_68k.sh there is deliberately NO `failed -1273` boot-disk
++# skip here (the same ruling as the toolbox suite's AdspLeak case): a
++# machine that can run the Snow lane at all is by definition one with the
++# LaunchAPPL AppleTalk patch and a System 7 disk that carries .DSP, so
++# twelve loud FAILs are the right answer to a missing driver, not a
++# green-by-skip.
+ . "$(dirname "$0")/../../lib.sh" || exit 2
+ . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
+ . "$(dirname "$0")/../../lib_mac.sh" || die "helper lib failed to load"
+ . "$(dirname "$0")/../../lib_atalk.sh" || die "helper lib failed to load"
+ require_env CLARUS_SNOW_TESTS
+ require_env CLARUS_MAC_TESTS
+ 
+ DRIVE=$TOOLS/atalkdrive
+ require_tool "$DRIVE"
+ atalk_skip_unless_multicast
+@@ -74,71 +81,104 @@ sed "s/^click 156 64\$/click 220 64/" testdata/ui/atalkchat_server.events \
+ grep -qx 'click 220 64' "$WORK/server.events" \
+     || die "Serve click restamp did not take (testdata/ui/atalkchat_server.events changed?)"
+ 
+ emit68k -o "$WORK/chatsrv.bin" --events "$WORK/server.events" \
+     "$WORK/atalkchat.cla" > "$WORK/emit_srv.log" 2>&1 \
+     || die "clarusc emit68k atalkchat (server): $(tail -10 "$WORK/emit_srv.log")"
+ emit68k -o "$WORK/chatcli.bin" --events testdata/ui/atalkchat_client.events \
+     "$WORK/atalkchat.cla" > "$WORK/emit_cli.log" 2>&1 \
+     || die "clarusc emit68k atalkchat (client): $(tail -10 "$WORK/emit_cli.log")"
+ 
++# snow_run makes this same refusal, but only AFTER snow_localtalk_b has
++# been armed below -- and an armed clicker whose parent then died on that
++# refusal is a clicker looking for a Snow window that is somebody else's.
++# (snow_localtalk_b's own $WORK/snow.log gate is the belt to this
++# braces; both are cheap.)
++_other=$(pgrep -x Snow | tr '\n' ' ')
++[ -z "$_other" ] || die "another Snow process is already running (pid $_other) -- refusing to boot"
++
+ # The fixture COMPILES above need no network; the lock is taken as late
+ # as possible (tests/lib_atalk.sh's own rule).
+ atalk_lock
+ 
++# One cleanup for every exit path from here on: kill our two background
++# halves (and, by its own per-run cwd -- never by app name -- any
++# emulator the client half has started), drop the LToUDP lock, remove
++# $WORK. atalk_lock installed a trap without the kills, and snow_run
++# replaces the trap with one of its own, so this is installed here and
++# re-installed after snow_run returns. Both halves ALSO give up on their
++# own when $WORK disappears, which covers the one window neither trap
++# does: a `die` inside snow_run runs snow_run's trap, not this one.
++cleanup() {
++    [ -n "${SNOW_LTALK_PID:-}" ] && kill "$SNOW_LTALK_PID" 2>/dev/null
++    [ -n "${CLIPID:-}" ] && kill "$CLIPID" 2>/dev/null
++    pkill -f "$WORK/launch" 2>/dev/null
++    atalk_unlock
++    rm -rf "$WORK"
++    return 0
++}
++trap cleanup EXIT
++trap 'cleanup; exit 2' INT TERM
++
+ snow_disk
+ snow_put_bin "$WORK/chatsrv.bin" AtalkChat
+ 
+ # ---- the client half, running while snow_run blocks ----
+ # `trap - EXIT`: a backgrounded subshell would otherwise run lib.sh's own
+ # `rm -rf "$WORK"` when it finishes and delete the tree the parent is
+ # still writing into. run_mac's `die` path is wrapped in an inner
+ # subshell so that a client boot which dies still lets this function
+ # return -- the parent's own `[ -f "$CLI" ]` check below is what reports
+ # it, with client.out's diagnostic attached.
+ client_half() {
+     trap - EXIT
+     _end=$(( $(date +%s) + 240 ))
+     _t0=$(date +%s)
+     while [ "$(date +%s)" -lt "$_end" ]; do
++        # The parent is gone (every EXIT trap here removes $WORK) -- stop
++        # before booting an emulator nobody is left to read.
++        [ -d "$WORK" ] || return 0
+         "$DRIVE" lookup "$TYPE" > "$WORK/lk.out" 2>&1
+         if grep -q ":$TYPE" "$WORK/lk.out"; then
+             echo "listener visible after $(( $(date +%s) - _t0 ))s: $(tr '\n' '|' < "$WORK/lk.out")"
+             break
+         fi
+         sleep 3
+     done
+     grep -q ":$TYPE" "$WORK/lk.out" \
+         || echo "listener NEVER visible on the group in $(( $(date +%s) - _t0 ))s -- booting the client anyway"
++    [ -d "$WORK" ] || return 0
+     (
+         run_mac "$WORK/chatcli.bin" 300
+         echo "$MAC_EXIT" > "$WORK/client.exit"
+         mv "$WORK/cap.log" "$WORK/cli.log"
+     )
+ }
+ client_half > "$WORK/client.out" 2>&1 &
+ CLIPID=$!
+ 
+ # Snow's LocalTalk-over-UDP bridge is off by default and cannot be
+ # turned on from the command line or the workspace file -- see
+ # snow_localtalk_b's own header. Without it the Snow guest's AppleTalk
+ # is alive but talks to nobody, and every assertion below fails for a
+ # reason that has nothing to do with ADSP. Armed before snow_run (which
+ # blocks), checked after it.
+ snow_localtalk_b
+ 
+ snow_run 600 "$(snow_done_when_trailer 20)"
+-# snow_run installed its own EXIT trap and left `rm -rf "$WORK"` behind
+-# it, which drops atalk_lock's unlock. Restore it. A lock leaked by a
+-# crash in between is self-healing: atalk_lock steals a lock whose
+-# recorded holder pid is gone.
+-trap 'atalk_unlock; rm -rf "$WORK"' EXIT
++# snow_run installed its own EXIT trap and left `kill -9 <snow>;
++# rm -rf "$WORK"` behind it, which drops both the unlock and the
++# background-half kills. Restore ours. A lock leaked by a crash in
++# between is self-healing: atalk_lock steals a lock whose recorded holder
++# pid is gone.
++trap cleanup EXIT
++trap 'cleanup; exit 2' INT TERM
+ wait "$CLIPID" 2>/dev/null
+ # A bridge that never came up is a HARNESS fault, not a verdict about
+ # ADSP: every assertion below would fail, all twelve for the same reason.
+ # Die with the real one instead. (t_fail would also be wrong -- this
+ # script's contract is 12 result lines, adsp_68k.sh's, exactly.)
+ sed 's/^/  snow: /' "$WORK/ltalk.log"
+ wait "$SNOW_LTALK_PID" || die "LocalTalk bridge not enabled: $(tr '\n' ' ' < "$WORK/ltalk.log")"
+ 
+ snow_get ":System Folder:Startup Items:out" "$WORK/srv.raw"
+ capture_split "$WORK/srv.raw"

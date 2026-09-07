@@ -1,0 +1,466 @@
+# Review package: 8b4e3a7..HEAD
+
+## Commits
+3800a6e test(snow): System 7 ADSP listener proof; clarusc_bake gate re-run
+1a4b150 test(snow): snow_localtalk_b -- put Snow's emulated LocalTalk on the LToUDP group
+
+## Files changed
+ .../sdd/2026-09-07-appletalk/task-1-report.md      | 113 +++++++++++
+ tests/lib_snow.sh                                  |  85 +++++++++
+ tests/mactest/snow/adsp_listener.sh                | 209 +++++++++++++++++++++
+ 3 files changed, 407 insertions(+)
+
+## Diff
+diff --git a/.superpowers/sdd/2026-09-07-appletalk/task-1-report.md b/.superpowers/sdd/2026-09-07-appletalk/task-1-report.md
+index a00364d..7baaee2 100644
+--- a/.superpowers/sdd/2026-09-07-appletalk/task-1-report.md
++++ b/.superpowers/sdd/2026-09-07-appletalk/task-1-report.md
+@@ -557,10 +557,123 @@ answering the RTMP-req broadcasts.
+   later task wants to inspect Apple's own resource files with it, that
+   strictness has to be relaxed first. Not filed as debt — recorded here.
+ - **`progress.md` was appended to, not created.** The controller had
+   already created the ledger in the main repo; this task added its own
+   Task 1 row rather than overwriting a file another agent is actively
+   editing. Only `task-1-report.md` is committed on this branch, for the
+   same reason.
+ - Scratch deleted: `$SCRATCH/atprobe/`, and `build-68k/{Drivers,Register,
+   Lookup,SelfSend,SelfNbp,SelfNbp3,SelfNbp4,SelfFlag,SelfAtp}`. No stray
+   emulator processes were left running (`pgrep -lf minivmac` clean).
++
++---
++
++## P5 (Task 13c, 2026-09-07) — Snow / System 7 interop
++
++Run from `/Users/andrew/repos/clarus-wt/t13` on branch `appletalk-t13`, two
++Snow boots (the first without the LocalTalk bridge, the second with it),
++each paired with one Mini vMac boot on `macplus/`. Probe programs were
++throwaway Clarus, not trap-level: `p5snow.cla` (Snow) and `p5mac.cla`
++(Mini vMac) used the shipped `service`/`listener`/`serviceBrowser` surface
++for register and lookup, plus one `toolbox/appletalk.cla` call —
++`setSelfSend`, csCode 256, on an `NBPParam` whose `interval`@28 /
++`count`@29 are the same bytes as `newSelfFlag` / `oldSelfFlag`. Both
++sources were deleted afterwards; everything they printed is below.
++
++### The wire: Snow needs its LocalTalk bridge turned on by hand
++
++**Snow's emulated LocalTalk is NOT on the LToUDP group by default, and
++nothing outside its GUI can put it there.** First boot: the guest's own
++AppleTalk was completely alive — `.MPP` open, NBP register with
++verification `err 0`, `.DSP` open, node acquired — and *nothing* on the
++host saw it. Nine `atalkdrive lookup` sweeps across the app's 45 s of life
++returned zero tuples, and the Mini vMac peer found nothing either.
++
++Snow v1.5.0-b81dbcc has exactly one way to bridge SCC channel B to
++`239.192.76.84:1954`: **Ports → Channel B (printer) → Enable LocalTalk
++(UDP)**, in the menu bar egui draws *inside* the window. Ruled out, each
++measured:
++
++- `--serial-bridge-b localtalk` / `ltoudp` / `udp` → `WARN snowemu::app
++  Invalid serial bridge mode: '<v>'. Use 'pty' or 'tcp:PORT'`, then
++  ignored.
++- The `Workspace` serde field list in the binary (`…pram_path
++  extension_rom_path disks scsi_targets windows init_args model
++  scaling_algorithm pause_on_state_load shared_dir disassembly_labels
++  floppy_images custom_datetime shader_enabled shader_configs
++  ethernet_link_type`) has no serial-bridge field, so saving a `.snoww`
++  cannot carry it. `Clarus.snoww` and Andrew's networked `MacII.snoww`
++  are identical in this respect.
++- `~/Library/Application Support/snowemu/Snow/settings.json` does not
++  hold it either, so it does not survive a quit.
++- PRAM cannot help: `clarus.pram` and `macii.pram` differ in only two
++  bytes, `0x12` (`SPATalkB`, the AppleTalk node hint: 0x01 vs 0x16) and
++  `0xBB`. `SPConfig`@0x13 is `0x21` in **both** — port B already
++  `useATalk`. The guest side was never the problem.
++
++`tests/lib_snow.sh` gained `snow_localtalk_b` for this: three CGEvent
++clicks at fixed offsets from the Snow window's top-left corner (Ports
+++250,+49; Channel B +310,+95; Enable LocalTalk +498,+184), armed in the
++background before `snow_run` and verified against Snow's own
++`LocalTalk bridge enabled` stdout line, dying loudly if it never arrives.
++The real fix is a `--serial-bridge-b localtalk` flag upstream.
++
++With the bridge on, the host saw the guest 35 s after Snow launched.
++
++### Both directions
++
++**Snow (System 7, node 1) → Mini vMac (System 6, node 16)** — the Snow
++guest's own log, verbatim (`out`, after `##CLARUS-LOG##`):
++
++```
++gestalt atlk err 0 val 58
++served SnowP5:ClarusP5S
++registered SnowLsn:ClarusP5L
++zones 1 *
++done p1 0
++selfsend err 0 old 0
++found p2 SnowP5:ClarusP5S 0.1.252
++done p2 1
++done p3 0
++done p3 0
++found p3 MacP5:ClarusP5M 0.16.253
++done p3 1
++stopped
++```
++
++**Mini vMac → Snow** — the LaunchAPPL capture, verbatim:
++
++```
++served MacP5:ClarusP5M
++found SnowP5:ClarusP5S 0.1.252
++done 1
++stopped
++```
++
++**Host (`build-run/tools/atalkdrive`) → Snow**, both of the Snow guest's
++names, verbatim:
++
++```
++0.1.252 SnowP5:ClarusP5S@*
++0.1.251 SnowLsn:ClarusP5L@*
++```
++
++Both boots exited 0. The Snow node was `1` (the `SPATalkB` PRAM hint,
++uncontested); the Mini vMac node was `16`. Net 0 and zone `*` on both, no
++router — same routerless LocalTalk P2 saw.
++
++### What System 7's AppleTalk does differently from the Mac Plus ROM
++
++| | Mac Plus ROM (P1/P3) | System 7 / Snow (P5) |
++|---|---|---|
++| AppleTalk version | ROM `.MPP`, no Gestalt asked | Gestalt `'atlk'` err 0, **58** |
++| `.XPP` / `.DSP` | `-43`, absent from the boot disk | **present** — `lsn.register` opens `.DSP`, gets a dynamic ADSP socket and NBP-advertises it (`SnowLsn:ClarusP5L` at socket **251**) |
++| `setSelfSend` (csCode 256) | **`-17`** (controlErr) — not implemented | **`err 0`**, `oldSelfFlag 0` — implemented, and off by default |
++| self-lookup | `gotten 0` before and after | **`0` before, `1` after** — `found p2 SnowP5:ClarusP5S 0.1.252`. System 7's `.MPP` answers its own NBP lookups once self-send is on |
++| zone list, routerless | `["*"]` | `["*"]` — unchanged |
++| own node number | dynamic, 106 / 18 seen | **1**, taken from the PRAM `SPATalkB` hint and never contested |
++
++Amendment 3's reshaping of `AtalkSelf` therefore stands **for the Mini
++vMac lane only**. On System 7 the original spec sketch (register, then
++find your own name) works exactly as first imagined — provided
++`setSelfSend` is called first. Nothing in this phase depends on that; it
++is recorded for whoever writes a System 7 AppleTalk case later.
+diff --git a/tests/lib_snow.sh b/tests/lib_snow.sh
+index 9f2a651..ce7dfc0 100644
+--- a/tests/lib_snow.sh
++++ b/tests/lib_snow.sh
+@@ -299,20 +299,105 @@ snow_run() {
+             trap 'rm -rf "$WORK"' EXIT
+             die "Snow did not quit gracefully within 20s; force-killed pid $SNOW_PID -- disk image is untrustworthy after a forced kill, failing instead of extracting from it"
+         fi
+         sleep 1
+         _g=$(( _g + 1 ))
+     done
+     wait "$SNOW_PID" 2>/dev/null
+     trap 'rm -rf "$WORK"' EXIT
+ }
+ 
++# snow_localtalk_b : turn Snow's LocalTalk-over-UDP bridge on for SCC
++# channel B (the printer port), which is the port the guest's own PRAM
++# has AppleTalk on. That bridge puts the emulated LocalTalk network on
++# 239.192.76.84:1954 -- the same LToUDP group every Mini vMac boot, the
++# host `atalkdrive` tool and tests/atalk/ already share -- so it is what
++# makes a Snow guest visible to the rest of the AppleTalk lane. Without
++# it the guest still has a perfectly live AppleTalk stack (drivers open,
++# NBP registers, node acquired from the PRAM hint) talking to nobody:
++# measured, task-13c-report.md's network question.
++#
++# There is no non-GUI way to do this in Snow v1.5.0-b81dbcc:
++#   - `--serial-bridge-b` accepts only "pty" and "tcp:PORT"; any other
++#     value is a WARN ("Invalid serial bridge mode") and is ignored;
++#   - the setting is not one of the Workspace struct's serde fields, so
++#     saving a .snoww does not carry it (Clarus.snoww and Andrew's
++#     networked MacII.snoww are byte-identical in this respect);
++#   - it is not in ~/Library/Application Support/snowemu/Snow/settings.json
++#     either, so it does not survive a quit;
++#   - and the guest's PRAM only chooses which PORT AppleTalk uses -- it
++#     cannot reach the host side of the wire at all.
++# What is left is Snow's own Ports menu, which egui draws INSIDE the
++# window (Snow's macOS menu bar has just Apple + Snow, so System Events
++# cannot see it), clicked by screen position. All three items hang off
++# the window's TOP-LEFT corner, so these offsets do not depend on the
++# window's size or the guest's screen resolution:
++#     Ports                    (+250, +49)
++#     Channel B (printer)      (+310, +95)
++#     Enable LocalTalk (UDP)   (+498, +184)
++#
++# Fragile by construction -- a Snow release that moves those menus breaks
++# it -- but never SILENTLY: Snow logs "LocalTalk bridge enabled" on its
++# own stdout ($WORK/snow.log), and this waits for that line and dies with
++# the geometry it used if it never arrives. The right long-term fix is a
++# `--serial-bridge-b localtalk` flag upstream, the same one-line shape as
++# the LaunchAPPL AppleTalk patch.
++#
++# snow_run BLOCKS for the whole boot, so this cannot be called after it:
++# it arms a BACKGROUND clicker that waits for Snow's window to appear
++# (up to 60s) and then clicks. Call it immediately BEFORE snow_run and
++# `wait` for $SNOW_LTALK_PID afterwards. Clicking early is also correct
++# on the guest's terms: the bridge only has to exist before the guest
++# opens .MPP and acquires an LLAP node, which is ~35s into the boot
++# (measured -- see adsp_listener.sh's own timing-budget comment).
++snow_localtalk_b() {
++    (
++        # A backgrounded subshell inherits lib.sh's `rm -rf "$WORK"` EXIT
++        # trap in some shells; dropping it here keeps this from deleting
++        # the work directory the parent is still writing into.
++        trap - EXIT
++        _i=0
++        _pos=
++        while [ $_i -lt 60 ]; do
++            _pos=$(osascript -e 'tell application "System Events" to tell process "Snow" to get position of window 1' 2>/dev/null)
++            case "$_pos" in *,*) break ;; esac
++            _pos=
++            sleep 1
++            _i=$(( _i + 1 ))
++        done
++        [ -n "$_pos" ] || { echo "snow_localtalk_b: no Snow window after ${_i}s"; exit 1; }
++        _x=${_pos%%,*}
++        _y=${_pos##*, }
++        echo "snow_localtalk_b: Snow window at $_x,$_y after ${_i}s"
++        osascript -e 'tell application "System Events" to set frontmost of process "Snow" to true' \
++            > /dev/null 2>&1
++        # Ports -> Channel B (printer) -> Enable LocalTalk (UDP).
++        for _off in "250 49" "310 95" "498 184"; do
++            swift "$ROOT/scripts/click.swift" \
++                $(( _x + ${_off%% *} )) $(( _y + ${_off##* } )) > /dev/null 2>&1
++            sleep 1
++        done
++        _i=0
++        while [ $_i -lt 20 ]; do
++            if grep -q 'LocalTalk bridge enabled' "$WORK/snow.log" 2>/dev/null; then
++                echo "snow_localtalk_b: $(grep 'LocalTalk bridge started' "$WORK/snow.log" | tail -1)"
++                exit 0
++            fi
++            sleep 1
++            _i=$(( _i + 1 ))
++        done
++        echo "snow_localtalk_b: Snow never logged \"LocalTalk bridge enabled\" after clicking (+250,+49)/(+310,+95)/(+498,+184) from window origin $_x,$_y -- Snow's Ports menu layout probably moved"
++        exit 1
++    ) > "$WORK/ltalk.log" 2>&1 &
++    SNOW_LTALK_PID=$!
++}
++
+ # snow_settle_done SECS : print a DONE_CMD for snow_run that becomes true
+ # SECS from now -- the elapsed-time proxy for a guest with no completion
+ # signal at all (one that never quits, e.g. a real-tick event loop).
+ # A guest that ENDS its trace with the ##CLARUS-EXIT## trailer should use
+ # snow_done_when_trailer instead: that is a real signal, and Snow does
+ # write guest sectors through to $SNOW_IMG mid-boot (measured -- see that
+ # helper), so it can be polled.
+ snow_settle_done() {
+     echo "test \"\$(date +%s)\" -ge $(( $(date +%s) + $1 ))"
+ }
+diff --git a/tests/mactest/snow/adsp_listener.sh b/tests/mactest/snow/adsp_listener.sh
+new file mode 100644
+index 0000000..35142e4
+--- /dev/null
++++ b/tests/mactest/snow/adsp_listener.sh
+@@ -0,0 +1,209 @@
++#!/bin/sh
++# timeout: 30m
++# mactest/snow/adsp_listener (2026-09-07 appletalk spec 8.3/9.5, Task 13c):
++# the SYSTEM 7 half of the ADSP stream proof. Snow -- a Mac II booting
++# System 7 off the Clarus.snoww scratch clone -- runs
++# examples/atalkchat.cla as the ADSP LISTENER, and Mini vMac (System 6,
++# macplus/, via LaunchAPPL) runs the SAME binary source as the client.
++# The twelve assertions are tests/mactest/adsp_68k.sh's, verbatim; see
++# that script's header for what each one proves. What THIS script adds is
++# that the listener half runs on different system software, a different
++# CPU and a different emulator from the client -- so a green run says the
++# native ADSP bodies in runtime/clarus/atalk_68k.cla talk to System 7's
++# .DSP as well as to the Mac Plus ROM's, and that the two interoperate
++# over LocalTalk-over-UDP.
++#
++# ---- sequencing ----
++# Snow has no headless mode and snow_run BLOCKS for the whole boot, so
++# the client half runs in a background subshell started before it. That
++# subshell does not boot immediately: it polls `atalkdrive lookup` on the
++# shared multicast group until the server's OWN NBP name is registered,
++# which is a real signal (NBP answered) rather than a guessed sleep, and
++# only then calls run_mac. A client that boots before the listener exists
++# would burn its eight brs.find retries on an empty group.
++#
++# snow_run's done command is snow_done_when_trailer: the server quits
++# itself when the client closes the stream (`on chat.closed { quit }`),
++# and natQuit's ##CLARUS-EXIT## trailer reaches the live disk image
++# mid-boot. Both captures are then split with capture_split, the same
++# parse both lanes' `out` streams use.
++#
++# ---- timing budget ----
++# Measured on the P5 probe boot (task-13c-report.md): the host's
++# `atalkdrive lookup` first sees a Snow guest's NBP name 35 s after Snow
++# is launched -- System 7 boot, Startup Items launch, and NBP's own
++# ~3.2 s verified register, all in. The scripted server then has
++# 400 `tick 12` lines x Delay(10) ~= 66 s of real life before its own
++# watchdog quits it (examples/atalkchat.cla), and the client needs ~20 s
++# from LaunchAPPL start to `closing` (task-13a-report.md: the whole
++# two-boot Mini vMac pair is 20 s). So the exchange sits inside a ~66 s
++# server window with ~45 s of slack. snow_run's 600 s is the CEILING for
++# a boot that never writes a trailer, not an expectation; run_mac's own
++# 300 s and the client half's 240 s discovery bound sit under it.
++#
++# ---- the click ----
++# The scripted server events file clicks the Serve button in GLOBAL
++# screen coordinates, and ui.cla centers a window horizontally on the
++# real screen (`left = (screenW - reqW) / 2`, rtUiOpen). Snow's monitor
++# is 640x480, not the Mac Plus's 512x342, so a 300-wide window opens at
++# left 170, not 106, and the committed testdata/ui/atalkchat_server.events
++# click (156,64 -- correct for 512) lands on the desktop here. The sed
++# below restamps it to 220,64, which is that same Serve button on a
++# 640-wide screen. If it ever misses, `serving Chat-` never appears and
++# server_registered fails loudly.
++. "$(dirname "$0")/../../lib.sh" || exit 2
++. "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
++. "$(dirname "$0")/../../lib_mac.sh" || die "helper lib failed to load"
++. "$(dirname "$0")/../../lib_atalk.sh" || die "helper lib failed to load"
++require_env CLARUS_SNOW_TESTS
++require_env CLARUS_MAC_TESTS
++
++DRIVE=$TOOLS/atalkdrive
++require_tool "$DRIVE"
++atalk_skip_unless_multicast
++
++# Per-run NBP type, for the same reason adsp_68k.sh stamps one: the
++# client connects to the FIRST match of the type it searches, and the
++# loopback multicast group is shared with Andrew's own sessions and with
++# any concurrent gate run.
++TYPE=ClarusChat$$
++sed "s/ClarusChat/$TYPE/g" examples/atalkchat.cla > "$WORK/atalkchat.cla" \
++    || die "could not stamp a per-run NBP type into the example"
++sed "s/^click 156 64\$/click 220 64/" testdata/ui/atalkchat_server.events \
++    > "$WORK/server.events" || die "could not restamp the Serve click"
++grep -qx 'click 220 64' "$WORK/server.events" \
++    || die "Serve click restamp did not take (testdata/ui/atalkchat_server.events changed?)"
++
++emit68k -o "$WORK/chatsrv.bin" --events "$WORK/server.events" \
++    "$WORK/atalkchat.cla" > "$WORK/emit_srv.log" 2>&1 \
++    || die "clarusc emit68k atalkchat (server): $(tail -10 "$WORK/emit_srv.log")"
++emit68k -o "$WORK/chatcli.bin" --events testdata/ui/atalkchat_client.events \
++    "$WORK/atalkchat.cla" > "$WORK/emit_cli.log" 2>&1 \
++    || die "clarusc emit68k atalkchat (client): $(tail -10 "$WORK/emit_cli.log")"
++
++# The fixture COMPILES above need no network; the lock is taken as late
++# as possible (tests/lib_atalk.sh's own rule).
++atalk_lock
++
++snow_disk
++snow_put_bin "$WORK/chatsrv.bin" AtalkChat
++
++# ---- the client half, running while snow_run blocks ----
++# `trap - EXIT`: a backgrounded subshell would otherwise run lib.sh's own
++# `rm -rf "$WORK"` when it finishes and delete the tree the parent is
++# still writing into. run_mac's `die` path is wrapped in an inner
++# subshell so that a client boot which dies still lets this function
++# return -- the parent's own `[ -f "$CLI" ]` check below is what reports
++# it, with client.out's diagnostic attached.
++client_half() {
++    trap - EXIT
++    _end=$(( $(date +%s) + 240 ))
++    _t0=$(date +%s)
++    while [ "$(date +%s)" -lt "$_end" ]; do
++        "$DRIVE" lookup "$TYPE" > "$WORK/lk.out" 2>&1
++        if grep -q ":$TYPE" "$WORK/lk.out"; then
++            echo "listener visible after $(( $(date +%s) - _t0 ))s: $(tr '\n' '|' < "$WORK/lk.out")"
++            break
++        fi
++        sleep 3
++    done
++    grep -q ":$TYPE" "$WORK/lk.out" \
++        || echo "listener NEVER visible on the group in $(( $(date +%s) - _t0 ))s -- booting the client anyway"
++    (
++        run_mac "$WORK/chatcli.bin" 300
++        echo "$MAC_EXIT" > "$WORK/client.exit"
++        mv "$WORK/cap.log" "$WORK/cli.log"
++    )
++}
++client_half > "$WORK/client.out" 2>&1 &
++CLIPID=$!
++
++# Snow's LocalTalk-over-UDP bridge is off by default and cannot be
++# turned on from the command line or the workspace file -- see
++# snow_localtalk_b's own header. Without it the Snow guest's AppleTalk
++# is alive but talks to nobody, and every assertion below fails for a
++# reason that has nothing to do with ADSP. Armed before snow_run (which
++# blocks), checked after it.
++snow_localtalk_b
++
++snow_run 600 "$(snow_done_when_trailer 20)"
++# snow_run installed its own EXIT trap and left `rm -rf "$WORK"` behind
++# it, which drops atalk_lock's unlock. Restore it. A lock leaked by a
++# crash in between is self-healing: atalk_lock steals a lock whose
++# recorded holder pid is gone.
++trap 'atalk_unlock; rm -rf "$WORK"' EXIT
++wait "$CLIPID" 2>/dev/null
++# A bridge that never came up is a HARNESS fault, not a verdict about
++# ADSP: every assertion below would fail, all twelve for the same reason.
++# Die with the real one instead. (t_fail would also be wrong -- this
++# script's contract is 12 result lines, adsp_68k.sh's, exactly.)
++sed 's/^/  snow: /' "$WORK/ltalk.log"
++wait "$SNOW_LTALK_PID" || die "LocalTalk bridge not enabled: $(tr '\n' ' ' < "$WORK/ltalk.log")"
++
++snow_get ":System Folder:Startup Items:out" "$WORK/srv.raw"
++capture_split "$WORK/srv.raw"
++SRV_EXIT=$MAC_EXIT
++mv "$WORK/cap.log" "$WORK/srv.log"
++
++SRV=$WORK/srv.log
++CLI=$WORK/cli.log
++[ -f "$CLI" ] || { cat "$WORK/client.out"; die "the client boot produced no log: $(tail -5 "$WORK/client.out" | tr '\n' ' ')"; }
++
++# Everything, verbatim, into this test's own log: the server's per-run
++# name suffix and the entity the client actually picked exist nowhere
++# else, and a failure is unreadable without them. Prefixed so no line of
++# guest output can look like a result line to the runner.
++sed 's/^/  host: /' "$WORK/client.out"
++sed 's/^/  server: /' "$SRV"
++sed 's/^/  client: /' "$CLI"
++
++# want_line NAME FILE TEXT : FILE must contain TEXT as a WHOLE line --
++# an exact match is what keeps "received 5" from being satisfied by a
++# "received 57" (adsp_68k.sh's own helper, unchanged).
++want_line() {
++    if grep -qxF "$3" "$2"; then
++        t_pass "$1"
++    else
++        t_fail "$1" "log has no \"$3\" line: $(tr '\n' '|' < "$2")"
++    fi
++}
++
++CLI_EXIT=$(cat "$WORK/client.exit" 2>/dev/null)
++[ "$SRV_EXIT" = 0 ] && t_pass server_exit || t_fail server_exit "exit $SRV_EXIT, want 0"
++[ "$CLI_EXIT" = 0 ] && t_pass client_exit || t_fail client_exit "exit ${CLI_EXIT:-<none>}, want 0"
++
++# Server: the Serve click landed on the right widget and lsn.register was
++# reached. The name carries the example's own per-run suffix, so only the
++# prefix is fixed.
++if grep -q '^serving Chat-' "$SRV"; then
++    t_pass server_registered
++else
++    t_fail server_registered "server log has no \"serving Chat-...\" line: $(tr '\n' '|' < "$SRV")"
++fi
++# NBP advertised it, and System 7's .DSP delivered the incoming request
++# to dspCLListen, which the runtime accepted as an already-open
++# connection (spec 4.2).
++want_line server_accepted "$SRV" "accepted"
++# The 256-byte sweep, delivered in one piece.
++want_line server_sweep "$SRV" "received 256"
++# "hello", after the client saw the sweep's echo -- the lock step.
++want_line server_hello "$SRV" "received 5"
++# spec 4.1: on ADSP, `closed` is a real event -- the peer's close.
++want_line server_closed "$SRV" "closed"
++
++# Client: the NBP lookup found the System 7 listener's name and the ADSP
++# open to it completed.
++want_line client_opened "$CLI" "opened"
++# The echoes, ">"-prefixed by the server: 256+1 and 5+1.
++want_line client_sweep_echo "$CLI" "received 257"
++want_line client_hello_echo "$CLI" "received 6"
++# The byte-for-byte half of the echo proof; the client logs one per echo,
++# so a single `echo bad` anywhere is a failure.
++want_line client_echo_exact "$CLI" "echo ok"
++if grep -qxF "echo bad" "$CLI"; then
++    t_fail client_echo_bytes "client reported a byte mismatch in an echo"
++else
++    t_pass client_echo_bytes
++fi
++
++t_done

@@ -1,0 +1,740 @@
+# Review package: 3d81282..HEAD
+
+## Commits
+d1b0fc6 docs: AppleTalk phase close-out -- Task 13 record, LaunchAPPL prerequisite, found.name note
+
+## Files changed
+ CLAUDE.md                         |  42 ++++++--
+ docs/FUTURE.md                    |  21 ++++
+ docs/HISTORY.md                   | 206 +++++++++++++++++++++++++++++++-------
+ docs/ROADMAP.md                   |  17 ++--
+ docs/TODO.md                      |  12 ++-
+ docs/clarus-language-reference.md |   2 +
+ testsuite/toolbox/cases_atalk.cla |  62 ++++++++----
+ 7 files changed, 285 insertions(+), 77 deletions(-)
+
+## Diff
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 369cb42..f7e9666 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -158,33 +158,42 @@ Tiered test gates:
+     first-class role is host builds (`clarusc emit` + `cc`).
+   - `CLARUS_SNOW_TESTS=1` enables the Snow (System 7 / Mac II) scripts
+     under `tests/mactest/snow/`. `CLARUS_SNOW_TESTS=1 make test
+     T=mactest/snow/clarusc_bake` (~30 min) is the standing rule after any
+     change to `clarusc/bake.cla` or `clarusc/macgui.cla` — it is the only
+     proof `ClarusC.APPL`'s default bake path works on real hardware, and
+     neither T1 nor T2 boots it. It ends on the guest's own
+     `##CLARUS-EXIT##` trailer (a probe of the live disk image) rather than
+     a fixed settle timer — the language-runtime-cleanup phase, 2026-09-06;
+     the old 55-minute timer was a floor on every run, pass or fail.
++    `mactest/snow/adsp_listener` (AppleTalk phase, 2026-09-07 — System 7
++    Snow as the ADSP listener, Mini vMac as the client, over LToUDP) also
++    needs `CLARUS_MAC_TESTS=1` for its client half **and a real, unlocked
++    display**: Snow's LocalTalk-over-UDP bridge has no launch flag, so
++    `tests/lib_snow.sh`'s `snow_localtalk_b` turns it on by posting
++    CGEvent clicks into Snow's own in-window menu bar (see
++    `docs/FUTURE.md`).
+   - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
+     calibration bench, `tests/mactest/bench.sh`.
+ - `tests/mactest/adsp_68k.sh` (the two-Mac ADSP stream boot, appletalk
+-  phase 2026-09-07) runs under plain `CLARUS_MAC_TESTS=1` but SKIPs
+-  itself on today's toolchain: LaunchAPPL's stripped boot disk carries
+-  System + AutoQuit + the app and NOT the `AppleTalk` system file, so
+-  `.DSP`/`.XPP` open `-43` and the listener reports `failed -1273`. The
+-  script greps the SERVER capture for `^failed -1273 ` and calls `skip`
+-  BEFORE its first assertion (a `FAIL ` line would beat exit 77), so it
+-  is a clean SKIP rather than a red result. It retires itself: once
+-  LaunchAPPL copies `AppleTalk` onto the boot disk the grep misses and
+-  all twelve ADSP assertions run. `tests/mactest/atalk_68k.sh` (NBP/ATP over
+-  the ROM's own `.MPP`/`.ATP`) needs no such file and PASSes today.
++  phase 2026-09-07) runs both boots under plain `CLARUS_MAC_TESTS=1` and
++  is 12/12 — ~20 s of emulator time once the pair is up, ~7 min for the
++  whole script against its 420 s pair budget. Its `^failed -1273 ` grep
++  over the SERVER capture stays as the guard for a LaunchAPPL that does
++  NOT carry the `AppleTalk` system file (`.DSP`/`.XPP` then open `-43`):
++  the script calls `skip` on that line BEFORE its first assertion,
++  because a `FAIL ` line would beat exit 77. See the LaunchAPPL
++  prerequisite under "Retro68 / Mac toolchain" below — without that
++  patch this script SKIPs and `mactest/toolbox_68k` goes RED (the
++  `AdspLeak` suite case has no skip verdict and FAILs with
++  `open .DSP err -43`). `tests/mactest/atalk_68k.sh` (NBP/ATP over the
++  ROM's own `.MPP`/`.ATP`) needs no such file.
+ - Golden blessing — five variables, and each must be set to exactly `1`
+   (`lib.sh`'s `env_set`; any other value, `0` included, is NOT a bless):
+   `CLARUS_MAC_BLESS=1` rewrites the UI trace + PBM snap goldens,
+   `CLARUS_CG68K_BLESS=1` the `testdata/cg68k` `.s` goldens,
+   `CLARUS_BLESS_BEHAVIOR=1` the `selfhost` `.behavior` blobs,
+   `CLARUS_MODULES_BLESS=1` the `clarusc/test/*.out` module-driver stdout
+   goldens (`tests/selfhost/modules.sh`; added by the compiler-cleanup
+   phase's follow-up sweep, 2026-09-05), and
+   `CLRD_BLESS=1` the frozen `testdata/sertest/clrd_goldens/` CLRD
+   stdout/`.dat` blobs — that last one is deliberate-only: those goldens
+@@ -363,20 +372,33 @@ enum + runner, not one boot per case.
+   2026-08-22).
+ 
+ ## Retro68 / Mac toolchain (symlinks, not in git)
+ 
+ - `Retro68/` → Retro68 source. The Universal Interfaces headers the
+   `toolbox/` catalog is transcribed from are `toolchain/universal/CIncludes`
+   (CR-only line endings and MacRoman bytes — read them through
+   `LC_ALL=C tr '\r' '\n'`, a plain `grep -n` reports nothing).
+ - `toolchain/` → built cross-toolchain (`toolchain/bin`: gcc, Rez, LaunchAPPL,
+   hfsutils h* tools). Prebuilt samples: `../Retro68-build/build-target/Samples/`.
++- **LaunchAPPL carries a local patch (AppleTalk phase, 2026-09-07).**
++  `Retro68/LaunchAPPL/Client/MiniVMac.cc` has
++  `CopySystemFile("AppleTalk", false);` added after its debugger-file
++  copy, so the stripped boot disk LaunchAPPL builds (System + AutoQuit +
++  the app) also installs AppleTalk 58.1.4 and `.XPP`/`.DSP` open instead
++  of answering `-43`. Rebuilt with `make LaunchAPPL` in
++  `Retro68-build/build-host` and installed at
++  `Retro68-build/toolchain/bin/LaunchAPPL`; the pre-patch binary is kept
++  beside it as `LaunchAPPL.orig`. **The patch is UNCOMMITTED in the
++  Retro68 checkout, so a fresh Retro68 build silently loses it** — after
++  which `mactest/adsp_68k` SKIPs itself and `mactest/toolbox_68k` goes
++  RED on `AdspLeak` (`open .DSP err -43`). Re-apply the three lines and
++  rebuild.
+ - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
+ - `vasm/` → locally built `vasmm68k_mot` (the third-party 68000 assembler
+   used as an encoder oracle; rebuild recipe in
+   `tests/asm68k/roundtrip.sh`'s header). Missing or built without the bin
+   output module ⇒ `tests/asm68k/roundtrip.sh`, `tests/cg68k/vasm.sh` and
+   the round-trip halves of `tests/cg68k/array_assign.sh` and
+   `tests/cg68k/segments.sh` SKIP.
+ - `snow/` → Snow emulator (`snow/Snow`) plus its `Clarus.snoww` workspace,
+   ROM and PRAM — the System 7 / Mac II lane. Missing ⇒ the whole
+   `tests/mactest/snow/` group SKIPs.
+diff --git a/docs/FUTURE.md b/docs/FUTURE.md
+index ba5a1ca..ed19af4 100644
+--- a/docs/FUTURE.md
++++ b/docs/FUTURE.md
+@@ -357,10 +357,31 @@ Real debt and needed improvements stay in `docs/TODO.md`.
+ 
+ - **`hostrt/atalk` costs ~24 s of T1** (Task 2's report; `rt_atalk_test.c`
+   `main`'s own watchdog comment says the same) — three NBP registers,
+   each paying a 3 × 1 s verify lookup, plus the lookups the test itself
+   makes. It is the slowest host test. The only ~3 s lever is to drop one
+   of the three registers (there is no cheaper register: re-registering a
+   name that is still live answers `nbpDuplicate`, and `test_ext` already
+   re-registers the one `test_nbp` removed). Not taken — the verify
+   window is the ruled behavior, and one register per subtest keeps the
+   subtests independent.
++
++- **Snow's LocalTalk-over-UDP bridge has no launch flag** (Task 13c).
++  It is off by default and reachable only through the menu bar Snow's
++  egui draws inside its own window: `--serial-bridge-b localtalk` (and
++  `ltoudp`, and `udp`) get
++  `WARN snowemu::app Invalid serial bridge mode ... Use 'pty' or
++  'tcp:PORT'` and are then ignored, the `.snoww` workspace has no
++  serial-bridge field to serialize, PRAM only picks which GUEST port
++  AppleTalk uses, and Snow's own `settings.json` has no such key — each
++  measured, not assumed. So `tests/lib_snow.sh`'s `snow_localtalk_b`
++  clicks **Ports → Channel B (printer) → Enable LocalTalk (UDP)** at
++  fixed offsets from the Snow window's origin ((+250,+49) / (+310,+95) /
++  (+498,+184)) and then waits for Snow's own
++  `LocalTalk bridge enabled` log line, failing with the exact geometry
++  it used if that never arrives. Ratified for the opt-in Snow lane — it
++  fails loudly rather than silently, and the lane already needs a real
++  unlocked display — but it means every future Snow AppleTalk test
++  inherits a pixel click, and a Snow release that moves the Ports menu
++  breaks the lane until the offsets are re-measured. The clean fix is
++  upstream, the same one-line shape as this phase's LaunchAPPL patch: a
++  `--serial-bridge-b localtalk` mode in Snow. Worth asking for.
+diff --git a/docs/HISTORY.md b/docs/HISTORY.md
+index d8173e8..8e02349 100644
+--- a/docs/HISTORY.md
++++ b/docs/HISTORY.md
+@@ -5872,24 +5872,25 @@ edited).
+ 
+ Spec: `docs/superpowers/specs/2026-09-06-native-array-return-and-fileh-guards-design.md`;
+ plan `docs/superpowers/plans/2026-09-06-native-array-return-and-fileh-guards.md`;
+ per-task briefs, reports, reviews and the `progress.md` ledger in
+ `.superpowers/sdd/2026-09-06-native-array-return-and-fileh-guards/`.
+ 
+ ## AppleTalk phase (2026-09-07, branch `appletalk`)
+ 
+ Recorded on the same terms as the entries above: merging to `main` is
+ Andrew's call and had not happened when this was written. **This entry
+-covers Tasks 1-12 plus the final fix wave, all merged into `appletalk`.
+-Task 13 (the Snow proofs and the first green two-Mac ADSP run) is
+-BLOCKED on a toolchain patch outside this repo and lands after this
+-entry** — see "Task 13, still owed" below.
++covers all fourteen tasks plus the final fix wave, all merged into
++`appletalk`. Task 13 (the Snow proofs and the first green two-Mac ADSP
++run) was blocked on a toolchain patch outside this repo until
++2026-09-07, and was amended into this entry once it landed** — see
++"Task 13, done 2026-09-07" below.
+ 
+ **What it did.** Made AppleTalk real in Clarus: NBP discovery
+ (`serviceBrowser`), ATP request/response services (a new `service`
+ resource with `serve`/`reply`/`call`), and ADSP streams as
+ `connection`'s second transport with `listener` accepting them — on real
+ LocalTalk under Mini vMac, and, for discovery and RPC, **on the host as
+ a genuine LocalTalk-over-UDP peer on the same wire an emulator is on**.
+ It also cleared the two items the `serial-connection` phase left
+ recorded: host `stdio` and `pty` transports for `connection`, and
+ `every` timers in the host CLI pump. Fourteen tasks in five waves, each
+@@ -5898,22 +5899,23 @@ merged every task into `appletalk` and re-gated the merged tree. 83
+ files, +12,483/-348 outside `testdata/`.
+ 
+ **The probe wave came first, and it paid.** Task 1 booted four throwaway
+ Clarus programs on the emulated Mac Plus and returned verdicts that
+ reshaped three later tasks:
+ 
+ - **P1 — `.XPP` and `.DSP` are `-43` on a LaunchAPPL boot disk.**
+   `.MPP` and `.ATP` open clean (they are in the Mac Plus ROM); the two
+   drivers that live in the `AppleTalk` **system file** do not, because
+   LaunchAPPL builds its boot disk with System + AutoQuit + the app and
+-  nothing else. This is the whole reason Task 13 is blocked: every ADSP
+-  assertion in the harness needs a boot disk that carries that file.
++  nothing else. This is what blocked Task 13 until the LaunchAPPL patch
++  below: every ADSP assertion in the harness needs a boot disk that
++  carries that file.
+ - **P2 — LToUDP works, first try.** NBP `registerName` on one emulated
+   Mac, `lookupName` from a second, with a host sniffer capturing both
+   the LkUp and the LkUp-Reply on the multicast group. That result is
+   what made a host stack worth building at all.
+ - **P3 — there is no self-send on the Mac Plus ROM.** `setSelfSend` is
+   `-17` (controlErr), a self-lookup returns `gotten = 0` before and
+   after, and an ATP self-transaction times out at `-1096` with the async
+   `getRequest` never completing. The planned `AtalkSelf` suite case was
+   reshaped on the spot (open / register / lookup-miss / remove /
+   openATPSkt / closeATPSkt, no self-send, no self-transaction, no fixed
+@@ -5989,22 +5991,23 @@ non-UI `every` program now works on the host. Both are covered by new
+ 
+ **Tests and examples.** Three new groups — `tests/atalk/` (7 scripts),
+ `tests/atalkdrive/` (2), `tests/hostrt/atalk.sh` — plus
+ `tests/bake/atalk.sh` (the `emit68k_pair` twin landed in the same task
+ as the module, per the standing rule), `tests/bake/every_cli.sh`,
+ `tests/conntest/{every,pty,stdio,atalk_check}.sh`, and three gated
+ emulator boots: `mactest/atalk_68k.sh` (one boot + `atalkdrive` —
+ native `PSendResponse`/`PSendRequest` hardware-proved BOTH ways against
+ the host stack, 10/10 in 216 s), `mactest/atalk_selfserve.sh` (serve +
+ browse with no peer, written to pass on both boot disks), and
+-`mactest/adsp_68k.sh` (two boots, ADSP — SKIPs today, see below).
+-`tests/lib_atalk.sh` and `tests/lib_mac.sh`'s `run_mac_pair` are the new
++`mactest/adsp_68k.sh` (two boots, ADSP — it SKIPped itself until the
++LaunchAPPL `AppleTalk`-file patch of Task 13a, and has been 12/12 since;
++see below). `tests/lib_atalk.sh` and `tests/lib_mac.sh`'s `run_mac_pair` are the new
+ helpers. Examples: `atalkclock.cla`, `atalkchat.cla`, `atalkfind.cla`,
+ all three kept compiling by `tests/atalk/examples.sh`.
+ 
+ **Documentation.** The reference gained the Service Discovery / Services
+ material in Chapter 12 including a host-lane paragraph (a host build is
+ a real LocalTalk peer; discovery, `zones`, `serve`, `reply` and `call`
+ work for real; `connection.open(appletalk ...)`, `open(addr)` and
+ `listener.register` fail with a `failed` event because streams are
+ Macintosh-only this release; `zones` is always `["*"]`;
+ `CLARUS_ATALK_IFACE`); the cookbook gained 255 lines of worked AppleTalk
+@@ -6142,71 +6145,200 @@ its forward declarations.
+   confirmations, `atalk_wait_exit`'s up-to-15 s lifetime checks) times
+   five scripts, serialized on `atalk_lock` — measured at ~130 s of the
+   ~134 s, with `atalk/examples` at 0 s and `atalk/splice` at 1 s. Keeping
+   the lock was ruled correct (determinism on a group shared with live
+   emulator sessions beats the seconds); the lever, recorded in
+   `docs/FUTURE.md`, is the wait budgets.
+ - **`svc.call`'s type guard is a one-off.** Until real out-parameter
+   typing lands, the next `text` out-parameter added to the language has
+   to remember it (`docs/TODO.md`).
+ 
+-**Task 13, still owed.** Blocked on a one-line change to Andrew's
+-Retro68 checkout that this session was not permitted to make:
+-`CopySystemFile("AppleTalk", false)` in
+-`LaunchAPPL/Client/MiniVMac.cc`, plus a LaunchAPPL rebuild, so the
+-harness's stripped boot disk installs all four AppleTalk 58.1.4 drivers
+-instead of just what the ROM provides. With that in place, Task 13 adds:
+-
+-1. the **`AdspLeak` toolbox suite case** (toolbox count **39 -> 40**;
+-   the five hand-maintained sites move as usual);
+-2. the **first green `mactest/adsp_68k` run** — its self-retiring skip
+-   stops firing on its own, no test edit;
+-3. **`tests/mactest/snow/adsp_listener.sh`** — Snow (System 7, `.DSP`
+-   built in) as server against `macplus/` as client;
+-4. the **Snow interop probe** (P5: register on Snow / look up on the
+-   Plus, and the reverse), recorded as an appendix to Task 1's report;
+-5. the standing **`CLARUS_SNOW_TESTS=1 make test
+-   T=mactest/snow/clarusc_bake`** rerun (~30 min), owed because
+-   `clarusc/bake.cla` changed twice this phase — its 68k module list
+-   grew by `atalk.cla` + `atalk_68k.cla` AND its `lowStrIdx` install was
+-   fixed.
++**Task 13, done 2026-09-07.** The blocker was an environment gap, not a
++code one, and it was cleared by hand rather than by an upstream release:
++`Retro68/LaunchAPPL/Client/MiniVMac.cc` gained
++`CopySystemFile("AppleTalk", false);` right after its debugger-file copy,
++LaunchAPPL was rebuilt in `Retro68-build/build-host` and installed at
++`Retro68-build/toolchain/bin/LaunchAPPL`, with the previous binary kept
++as `LaunchAPPL.orig`. The harness's stripped boot disk (System +
++AutoQuit + the app) therefore now also carries AppleTalk 58.1.4, so
++`.XPP`/`.DSP` open instead of answering `-43`. **That patch is
++UNCOMMITTED in Andrew's Retro68 checkout and a fresh Retro68 build
++silently loses it** — which is why `CLAUDE.md`'s "Retro68 / Mac
++toolchain" section now records it as an environment prerequisite, and
++why a machine without it gets a red `toolbox_68k` (`AdspLeak` FAILs with
++`open .DSP err -43`) rather than a quiet skip. Task 13 then ran as four
++dispatches.
++
++**13a — the first green `mactest/adsp_68k`.** The first real run of the
++pair, on the unmodified phase tip, was **3 PASS / 8 FAIL**: the server
++registered its name (so `.DSP` really did open), the client's browse
++found `Chat-5627:ClarusChat2025 0.91.253`, and then `open` failed
++**-1025**. -1025 is `nbpNoConfirm` — an NBP error, not an ADSP one — so
++the failure was in the open-by-name path's own name resolve, before any
++ADSP packet was ever sent. Root cause: `examples/atalkchat.cla`'s
++`on brs.found` dialed `chat.open(appletalk name + ":" + chatType)`, but
++`found`'s `name` is ALREADY NBP's `"Object:Type"` spelling on both lanes
++— so the program asked for object `Chat-5627`, type
++`ClarusChat2025:ClarusChat2025`, which nothing had registered, and the
++lookup completed with zero tuples. The fix is one statement in the
++example (`chat.open(appletalk name)`); no runtime edit, no compiler
++edit, no golden moved, no assertion or timing touched. **Every native
++ADSP body written blind in Task 9 was correct on first hardware contact,
++on the paths this pair exercises** — `dspInit`, `dspOpen(ocRequest)`,
++`dspCLInit`/`dspCLListen`/`dspOpen(ocAccept)`,
++`dspStatus`/`dspRead`/`dspWrite`, `dspClose`/`dspRemove`. `dspCLDeny`
++and the error/abort paths remain uncovered. `adsp_68k` is 12/12, run
++twice. The ergonomic edge that produced the bug is now one sentence in
++the reference (below).
++
++**13b — `AdspLeak`, and the `--testapi` visibility boundary.** The
++briefed design — a suite case calling `rtAtEnsureUp` /
++`rtAt68DspInitEnd` / `rtAdspDevClose` / `rtLsnDevInit` — does not
++compile, and the finding is worth keeping: `--testapi` early-splices a
++FIXED thirteen-module list (`clarusc/drive.cla`'s `driveEarlySplice`,
++`clarusc/bake.cla`'s `bakeModuleList`), the UI family, ahead of the
++checker's first pass. The AppleTalk modules are in the 68k superset —
++spliced into every native build — but manifest-spliced AFTER that pass,
++so user code cannot name them. "Spliced into the program" and "visible
++to check#1" are different things. Ruling: build `AdspLeak` at the
++CATALOG level instead, the same "the catalog files supply the externs,
++this case only calls them" discipline `AtalkSelf` already follows — 20
++cycles each of `NewPtrClear` at the runtime's own block sizes plus
++`dspInit`/`dspRemove(abort)` and `dspCLInit`/`dspCLRemove(abort)` plus
++`DisposePtr`, with `FreeMem` compared for EXACT equality (no slack)
++after a one-cycle warm-up, and `.DSP`'s own open as the case's
++non-vacuity gate — a failed open FAILs with the OSErr, because this
++suite has no skip verdict and a silently-skipped leak check is worse
++than a red one. What it proves is that the ROM `.DSP`'s own
++init/remove pairs release everything they take at the runtime's block
++sizes, the half that genuinely cannot be known without hardware; what it
++does NOT prove is that `rtAt68DspFree` disposes what `rtAt68CcbEnsure`
++allocated. That limit is stated in the case header, in `runner.cla`'s
++case log, in `CLAUDE.md`'s count sentence, and in a `docs/TODO.md` entry
++scheduling the true-waist version (add the AppleTalk family to the
++early-visible set in both places) with MacTCP's corpus rebless. FreeMem
++was exactly flat on both loops and both lanes on the first try. Toolbox
++count **39 -> 40**, all five hand-maintained sites bumped; `toolbox_68k`
++40/40 and `toolbox_jiggle` 40/40. The suite's wall clock went
++**286 s -> 319 s of `run_mac`'s 420 s settle**, so ~100 s of headroom is
++left and the next toolbox case added here is likely the one that has to
++raise it.
++
++**13c — System 7, Snow, and the standing bake gate.**
++`tests/mactest/snow/adsp_listener.sh` is new: Snow (System 7, Mac II) as
++the ADSP listener, Mini vMac (System 6) as the client, over LToUDP, with
++`adsp_68k.sh`'s own twelve assertions — **12/12 four times** (72 / 73 /
++73 / 73 s). The P5 interop probe is an appendix to `task-1-report.md`:
++register on Snow and look up from the Plus, the reverse, and the host's
++`atalkdrive` seeing both Snow names — all three resolve, net 0, zone
++`*`, no router. **AppleTalk 58 on System 7 differs from the Mac Plus ROM
++in exactly two ways that matter to this phase: `setSelfSend`
++(csCode 256) returns err 0 instead of `-17`, and a self-lookup then
++works — 1 tuple, against 0 before and after on the ROM. Task 1's
++Amendment 3, the reason `AtalkSelf` is not a self-lookup case, is
++therefore a Mac Plus ROM verdict, not an AppleTalk one**;
++`testsuite/toolbox/cases_atalk.cla`'s header already scopes its claim to
++"the Mac Plus ROM .MPP, which is what this suite boots", so it stands as
++written. Nothing about System 7's `.DSP` behaved differently from 13a's
++ROM measurements — same `dspCLInit` / `dspCLListen` /
++`dspOpen(ocAccept)` / `dspClose` shape, same socket handling, no runtime
++change. Two lane facts fell out. Snow's guest screen is 640x480, so
++`--events` click coordinates from the 512-wide Mini vMac lane do not
++transfer; `adsp_listener.sh` restamps the Serve click and `die`s if the
++restamp does not take. And **Snow's LocalTalk-over-UDP bridge is off by
++default and reachable only through the menu bar Snow's egui draws inside
++its own window** — no CLI mode, no `.snoww` field, no PRAM bit, no
++settings key, each ruled out by measurement rather than assumption. So
++`tests/lib_snow.sh` gained `snow_localtalk_b`, which clicks Ports →
++Channel B (printer) → Enable LocalTalk (UDP) at offsets from the Snow
++window's origin and then waits for Snow's own `LocalTalk bridge enabled`
++log line, failing with the exact geometry it used if that never arrives.
++Ratified for the opt-in Snow lane — it fails loudly rather than
++silently, and that lane already needs a real unlocked display — with the
++clean fix (an upstream `--serial-bridge-b localtalk` mode, the same
++shape as the LaunchAPPL patch) recorded in `docs/FUTURE.md`. Finally,
++the standing `CLARUS_SNOW_TESTS=1 make test
++T=mactest/snow/clarusc_bake` rerun, owed because `clarusc/bake.cla`
++changed twice this phase (its 68k module list grew by `atalk.cla` +
++`atalk_68k.cla`, and its `lowStrIdx` install was fixed), is **PASS in
++2232 s** — 6/6, 37m12s of wall clock, `tickprobe_fork_identity`
++included, so the Mac-resident compiler's baked-`'CLIR'` output is still
++byte-identical to the host compiler's.
++
++**13d — close-out.** This record, the `docs/ROADMAP.md` /
++`CLAUDE.md` / `docs/TODO.md` / `docs/FUTURE.md` amendments, one
++reference sentence (`serviceBrowser.found`'s `name` is already
++`"Object:Type"` and goes straight into `open(appletalk ...)` — the edge
++13a's bug came from), two nits in `cases_atalk.cla` (a failed
++`dspRemove`/`dspCLRemove` now leaves the blocks the driver still
++references allocated instead of disposing them, and
++`rtAtErrMemFullLocal` is renamed `tbAdspMemFullErr`), and the final T2
++below.
+ 
+ **Gates.** T1 was run on every task's own worktree and again on
+ every merged tree; the wave-4 merged-tree gate
+ (`scripts/test-task.sh --smoke`, `a43b522`) was PASS in 146 s, and the
+ fix wave's own was PASS in 141 s. The full merge gate
+-(`CLARUS_MAC_TESTS=1 scripts/test-merge.sh`) was run at close-out on
+-`20d6fbf` -- the phase tip plus the regenerated bootstrap snapshot plus
+-the residual-nit commit -- and was **PASS in 1318 s**, every stage
+-green:
++(`CLARUS_MAC_TESTS=1 scripts/test-merge.sh`) was run TWICE. The first
++run was the Tasks 1-12 close-out on `20d6fbf` -- the then-phase tip plus
++the regenerated bootstrap snapshot plus the residual-nit commit -- and
++was **PASS in 1318 s**, every stage green:
+ 
+ ```
+ test-merge.sh: t1 body PASS in 130s        (104 passed, 33 skipped, 0 failed)
+ test-merge.sh: perfgate/ PASS in 0s        (1 passed)
+ test-merge.sh: selfhost/ PASS in 204s      (6 passed)
+ test-merge.sh: mactest/ PASS in 981s       (20 passed, 14 skipped, 0 failed)
+ test-merge.sh: bake/ full corpus PASS in 3s (7 passed)
+ test-merge.sh: PASS in 1318s
+ ```
+ 
+ The load-bearing `mactest/` results: **`atalk_68k` PASS in 216 s**
+ (native NBP/ATP against the host stack, both directions),
+ **`atalk_selfserve` PASS in 14 s**, `toolbox_68k` PASS in 303 s at
+ **39/39** with `AtalkSelf` green, `coresuite_68k` PASS at 83/83,
+ `smoke_bounce` and `tick` PASS (the load-bearing check on the reblessed
+ `cg68k` goldens), and **`adsp_68k` SKIP in 40 s with zero `FAIL` lines
+-in its log** -- the self-retiring `.DSP`-absent skip, exactly as
+-designed. The other 13 `mactest/` skips are the opt-in cprint lane
++in its log** -- the self-retiring `.DSP`-absent skip firing exactly as
++designed, because that gate ran before the LaunchAPPL patch. The other
++13 `mactest/` skips were the opt-in cprint lane
++(`CLARUS_CPRINT_MAC_TESTS`) and the Snow lane (`CLARUS_SNOW_TESTS`).
++The bootstrap snapshot was regenerated at that close-out (`3fd0767`)
++with `tests/selfhost/fixedpoint.sh`'s own Go-free recipe -- clarusc
++changed substantially this phase, so `snapshot_fresh` was red until
++then; nothing under `clarusc/` has changed since, so the snapshot did
++not need regenerating again for the second gate.
++
++The second run is the Task 13d close-out on the finished tree -- the
++same `CLARUS_MAC_TESTS=1 scripts/test-merge.sh`, with the `AppleTalk`
++file on the boot disk this time -- and was **PASS in 1350 s**:
++
++```
++test-merge.sh: t1 body PASS in 131s        (104 passed, 34 skipped, 0 failed)
++test-merge.sh: perfgate/ PASS in 0s        (1 passed)
++test-merge.sh: selfhost/ PASS in 208s      (6 passed)
++test-merge.sh: mactest/ PASS in 1009s      (21 passed, 14 skipped, 0 failed)
++test-merge.sh: bake/ full corpus PASS in 2s (7 passed)
++test-merge.sh: PASS in 1350s
++```
++
++The load-bearing `mactest/` results this time: **`adsp_68k` PASS in
++20 s at 12/12** -- the ADSP pair, green in a merge gate for the first
++time -- **`toolbox_68k` PASS in 318 s at 40/40** with both `AtalkSelf`
++and `AdspLeak` green, `toolbox_jiggle` PASS in 331 s at 40/40,
++`atalk_68k` PASS in 216 s, `atalk_selfserve` PASS in 18 s,
++`coresuite_68k` PASS at 83/83, and `smoke_bounce` + `tick` PASS. One
++more script runs than at the first gate (21 passed against 20:
++`adsp_68k` no longer skips) and one more skips (14 against 13: the new
++`mactest/snow/adsp_listener`, which needs `CLARUS_SNOW_TESTS`). The
++remaining skips are the opt-in cprint lane
+ (`CLARUS_CPRINT_MAC_TESTS`) and the Snow lane (`CLARUS_SNOW_TESTS`).
+-The bootstrap snapshot was regenerated at close-out (`3fd0767`) with
+-`tests/selfhost/fixedpoint.sh`'s own Go-free recipe -- clarusc changed
+-substantially this phase, so `snapshot_fresh` was red until then.
+ 
+ **Deferred / recorded.** The `progress.md` ledger in
+ `.superpowers/sdd/2026-09-07-appletalk/` carries every deferred minor
+ verbatim, one line per task, alongside every ruling and its stated cost
+ if wrong. The items that outlive the phase are in `docs/TODO.md` (the
+ class-wide `text` out-parameter hole; the listener teardown path has no
+ runtime test, only goldens; `atalk_lock`'s stale-holder STEAL path is
+ still racy between two waiters, the unlock half being guarded by a pid
+ check) and `docs/FUTURE.md` (T1's wait budgets). Explicitly NOT done and
+ recorded as such: the ~70 duplicated lines between
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index c2b688d..33c66d0 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -148,30 +148,31 @@ Focus (Andrew, 2026-08-15): make the tools more usable — expand the set
+ of Toolbox managers Clarus programs can reach, add the language features
+ that work needs, and retire old parts of the toolchain. The user-module
+ compilation cache is deliberately de-prioritized (see "Later").
+ 
+ ### Next: language usability
+ 
+ Items 1 (binary streams and files) and 2 (serial ports) of the original
+ list are DONE — `binary-files`, `transfer-crcs`, `filesystem-api`, and
+ `serial-connection` in `docs/HISTORY.md`. Remaining, in order:
+ 
+-1. **AppleTalk.** In progress on branch `appletalk` (spec
++1. **AppleTalk.** Complete on branch `appletalk` (spec
+    `docs/superpowers/specs/2026-09-06-appletalk-design.md`, plan
+    `docs/superpowers/plans/2026-09-07-appletalk.md`). **Not merged.**
+-   Tasks 1-12 and the final fix wave are complete, reviewed and merged
+-   into `appletalk`, and the phase record is in `docs/HISTORY.md`. What
+-   remains is Task 13 — the Snow proofs, the `AdspLeak` suite case, the
+-   first green `mactest/adsp_68k` run and the standing Snow
+-   `clarusc_bake` rerun — which is blocked on a one-line LaunchAPPL
+-   patch outside this repo (`CopySystemFile("AppleTalk", false)`), and
+-   Andrew's merge request.
++   All fourteen tasks and the final fix wave are complete, reviewed and
++   merged into `appletalk`; the phase record is in `docs/HISTORY.md` and
++   the full merge gate is green. All that remains is Andrew's merge
++   request. Environment prerequisite, carried in `CLAUDE.md`: the
++   `mactest/adsp_68k` and `toolbox_68k` boots need the one-line
++   `CopySystemFile("AppleTalk", false)` LaunchAPPL patch, which is
++   uncommitted in Andrew's Retro68 checkout and is lost by a fresh
++   Retro68 build.
+ 2. **MacTCP.**
+ 
+ Environment note: `snow/MacII.snoww` + its hdd image are already
+ configured (2026-08-15): AppleTalk on the Printer port, a TCP listener
+ (port 1984) bridging the Modem port, and a DaynaPORT SCSI Ethernet
+ adapter running a NATted MacTCP instance (the emulated Mac is 10.0.0.2,
+ gateway 10.0.0.1). Caveat: on a modern Mac the emulator cannot attach to
+ a tap device, so it can't reach the real Ethernet — AppleTalk runs over
+ UDP instead, which means two Snow instances running simultaneously can
+ see each other over AppleTalk (the way to test AppleTalk peer-to-peer).
+diff --git a/docs/TODO.md b/docs/TODO.md
+index a18fbf3..b6a7e96 100644
+--- a/docs/TODO.md
++++ b/docs/TODO.md
+@@ -154,26 +154,28 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
+   the concatenation across two lines.
+ 
+ ### AppleTalk phase (2026-09-07)
+ 
+ - **The listener teardown path has no runtime test.** The final fix
+   wave's I3 made `rtAtalkPump`'s listener arm call `rtLsnStop(i + 1)`
+   after `rtLsnSetFailed` when `rtLsnDevPoll` returns negative, so a
+   listener that loses its `dspCLListen` is torn down (NBP name removed,
+   device slot released, state back to `rtAtIdle`) instead of staying
+   `rtAtActive` and permanently deaf. Nothing exercises it: the failure
+-  needs a real `.DSP` that then fails, and `mactest/adsp_68k.sh` SKIPs on
+-  every current boot disk. The change is pinned only by goldens (four
++  needs a real `.DSP` that then fails, and no test drives one into
++  failing. The change is pinned only by goldens (four
+   `testdata/emitui/atalk_*.c.golden`, ten `testdata/cg68k/atalk_*.s`) --
+-  shape, not behaviour. Once the LaunchAPPL `AppleTalk`-file patch lands
+-  (Task 13), the cheap check is a subcase that kills the server mid-run
+-  and asserts the client's next `find` no longer sees the name.
++  shape, not behaviour. The cheap check is now buildable -- Task 13a's
++  LaunchAPPL `AppleTalk`-file patch means `mactest/adsp_68k.sh` runs
++  both boots against a real `.DSP` -- and is a subcase that kills the
++  server mid-run and asserts the client's next `find` no longer sees the
++  name.
+ 
+ - **`atalk_lock`'s stale-holder steal path is still racy between two
+   waiters** (`tests/lib_atalk.sh`). The fix wave closed the UNLOCK half
+   -- `atalk_unlock` now refuses to `rm -rf` a lock directory whose
+   `pid` file is not `$$`, so a waiter that stole a dead holder's lock and
+   then exited can no longer delete a second waiter's live lock. The STEAL
+   half is unguarded: two waiters can both pass the same dead holder's
+   `kill -0` check, and then waiter A `rm -rf`s the dead directory and
+   `mkdir`s its own (A now holds the lock) -- while waiter B, already past
+   its check, `rm -rf`s A's FRESH directory and `mkdir`s its own. Both
+diff --git a/docs/clarus-language-reference.md b/docs/clarus-language-reference.md
+index 043ca10..e780a59 100644
+--- a/docs/clarus-language-reference.md
++++ b/docs/clarus-language-reference.md
+@@ -1468,20 +1468,22 @@ A `serviceBrowser` finds registered AppleTalk entities — other programs' servi
+ | events | `found(name: string, addr: address)`, `done`, `failed(err: error)` |
+ 
+ `find` is an NBP lookup of `=:type@zone`, with `*` — the current zone — when no zone is given. It fires `found` once per match and then `done`. `done` always arrives, even when nothing matched, so a program knows when the list it is building from `found` is complete; a search that matches nothing is `done` with no `found`, not a failure. `find("=")` matches every registered entity in the zone, of every type: AppleTalk has no node-enumeration protocol of its own, and this lookup is what "list the machines" means on it.
+ 
+ `failed(err: error)` means the lookup could not be issued at all — AppleTalk unavailable, or a zone name the router rejected.
+ 
+ `zones(out)` is synchronous, not an event: it returns with `out` holding the router's zone list, having emptied whatever was in it first. A network with no router has no zone list to fetch, and `out` comes back holding the single name `"*"` — the current, only, zone — so a program never has to special-case the routerless case.
+ 
+ The `address` delivered by `found` is an inline value (Chapter 3), not a resource: store it, copy it, compare it, pass it to `connection.open` or `service.call`. `string(addr)` renders it as `net.node.socket` for display; there is no way back from that text to an `address`.
+ 
++The `name` delivered by `found` is already the full NBP `"Object:Type"` spelling — the very form `connection.open(appletalk "Name:Type")` and `service.call`'s string target take — so pass it straight through, and never append the type again: `find("ChatServer")` reports a match as `"Chat-7:ChatServer"`, and `c.open(appletalk name + ":ChatServer")` would then look up the type `"ChatServer:ChatServer"`, which nothing has registered.
++
+ ```rust
+ var browser: serviceBrowser
+ var conn: connection
+ var zoneNames: list of string
+ var seen: list of string
+ 
+ on App.launch {
+     browser.zones(zoneNames)
+     browser.find("ChatServer")
+ }
+diff --git a/testsuite/toolbox/cases_atalk.cla b/testsuite/toolbox/cases_atalk.cla
+index 1d34653..3ffd60d 100644
+--- a/testsuite/toolbox/cases_atalk.cla
++++ b/testsuite/toolbox/cases_atalk.cla
+@@ -262,122 +262,150 @@ func caseAtalkSelf(): TestResult {
+ // same separation rtAt68DspAux exists for in the runtime.
+ //
+ // Exact equality, not slack: unlike cases_leak.cla's LeakCheck (which
+ // brackets Memory-Manager-heavy handle traffic and needs jitter
+ // headroom), every cycle here is a strict NewPtrClear/DisposePtr pair in
+ // the application zone, so a single retained byte is a real finding.
+ const tbAdspPbSz: int = 68     // sizeof(DSPParamBlock) -- runtime rtAt68DspPbSz
+ const tbAdspQSz: int = 1024    // ADSP send/receive queue -- runtime rtAt68QSz
+ const tbAdspCycles: int = 20
+ 
++// tbAdspMemFullErr: memFullErr. Named locally rather than reusing the
++// runtime's rtAtErrMemFull for the same reason every extern in this file
++// is local -- runtime names are not in scope for a suite case (see
++// AdspLeak's header comment).
++const tbAdspMemFullErr: int = -108
++
+ // tbAdspFreeIf: DisposePtr unless the allocation failed. A partial
+ // allocation still has to give back what it got, or the FreeMem bracket
+ // would report the shortfall as a driver leak.
+ func tbAdspFreeIf(p: ptr) {
+     if p != ptr(0) {
+         DisposePtr(p)
+     }
+ }
+ 
+ // tbAdspEndCycle: one full connection-end lifecycle -- the five blocks
+ // rtAt68CcbEnsure allocates (CCB, send queue, receive queue, attention
+ // buffer, parameter block) plus the separate remove block, dspInit,
+-// dspRemove with the abort flag set, and every block back. Returns the
+-// OSErr; 0 on success.
++// dspRemove with the abort flag set, and every block back once the
++// driver has given it up. Returns the OSErr; 0 on success.
+ func tbAdspEndCycle(dspRef: int): int {
+     var ccb: ptr
+     var sendQ: ptr
+     var recvQ: ptr
+     var attn: ptr
+     var pbInit: ptr
+     var pbRem: ptr
+     var e: int
++    var driverHolds: bool
+ 
++    driverHolds = false
+     ccb = NewPtrClear(ccbSize)
+     sendQ = NewPtrClear(tbAdspQSz)
+     recvQ = NewPtrClear(tbAdspQSz)
+     attn = NewPtrClear(attnBufSize)
+     pbInit = NewPtrClear(tbAdspPbSz)
+     pbRem = NewPtrClear(tbAdspPbSz)
+-    e = rtAtErrMemFullLocal
++    e = tbAdspMemFullErr
+     if ccb != ptr(0) and sendQ != ptr(0) and recvQ != ptr(0) and attn != ptr(0) and pbInit != ptr(0) and pbRem != ptr(0) {
+         pokew(pbInit + dspIoCRefNum, dspRef)
+         pokew(pbInit + pbCsCode, dspInit)
+         pokel(pbInit + dspInitCcbPtr, int(ccb))
+         pokel(pbInit + dspInitUserRoutine, 0)
+         pokew(pbInit + dspInitSendQSize, tbAdspQSz)
+         pokel(pbInit + dspInitSendQueue, int(sendQ))
+         pokew(pbInit + dspInitRecvQSize, tbAdspQSz)
+         pokel(pbInit + dspInitRecvQueue, int(recvQ))
+         pokel(pbInit + dspInitAttnPtr, int(attn))
+         pokeb(pbInit + dspInitLocalSocket, 0)
+         e = PBControlSync(pbInit)
+         if e == 0 {
+-            // The CCB is ADSP's until dspRemove returns, so the remove
+-            // must succeed before any block below is disposed.
++            // The CCB, the two queues and the attention buffer are
++            // ADSP's from here until dspRemove returns, so a dspRemove
++            // that FAILS leaves the driver still referencing all four:
++            // they are deliberately not disposed below, because handing
++            // them back to the Memory Manager while the driver may still
++            // write into them is a use-after-free. The FreeMem bracket
++            // then reports the shortfall, but the case has already
++            // FAILed with this OSErr -- tbAdspEndCycle returns it and
++            // caseAdspLeak puts it in the detail with the cycle index.
++            driverHolds = true
+             pokew(pbRem + dspIoCRefNum, dspRef)
+             pokew(pbRem + pbCsCode, dspRemove)
+             pokew(pbRem + dspCcbRefNum, peekw(pbInit + dspCcbRefNum))
+             pokeb(pbRem + dspCloseAbort, 1)
+             e = PBControlSync(pbRem)
++            if e == 0 {
++                driverHolds = false
++            }
+         }
+     }
+-    tbAdspFreeIf(ccb)
+-    tbAdspFreeIf(sendQ)
+-    tbAdspFreeIf(recvQ)
+-    tbAdspFreeIf(attn)
++    if not driverHolds {
++        tbAdspFreeIf(ccb)
++        tbAdspFreeIf(sendQ)
++        tbAdspFreeIf(recvQ)
++        tbAdspFreeIf(attn)
++    }
++    // The parameter blocks are the caller's throughout: PBControlSync is
++    // synchronous, so neither is queued once it has returned.
+     tbAdspFreeIf(pbInit)
+     tbAdspFreeIf(pbRem)
+     return e
+ }
+ 
+ // tbAdspLsnCycle: the connection-LISTENER twin. dspCLInit takes only a
+ // CCB and a local socket -- no queues, no attention buffer (ADSP.h's
+ // TRinitParams; rtLsnDevInit sets exactly these two fields too) -- and
+ // localSocket 0 asks DDP for a dynamic socket, which dspCLRemove has to
+ // give back or twenty cycles would run the node out of them.
+ func tbAdspLsnCycle(dspRef: int): int {
+     var ccb: ptr
+     var pbInit: ptr
+     var pbRem: ptr
+     var e: int
++    var driverHolds: bool
+ 
++    driverHolds = false
+     ccb = NewPtrClear(ccbSize)
+     pbInit = NewPtrClear(tbAdspPbSz)
+     pbRem = NewPtrClear(tbAdspPbSz)
+-    e = rtAtErrMemFullLocal
++    e = tbAdspMemFullErr
+     if ccb != ptr(0) and pbInit != ptr(0) and pbRem != ptr(0) {
+         pokew(pbInit + dspIoCRefNum, dspRef)
+         pokew(pbInit + pbCsCode, dspCLInit)
+         pokel(pbInit + dspInitCcbPtr, int(ccb))
+         pokeb(pbInit + dspInitLocalSocket, 0)
+         e = PBControlSync(pbInit)
+         if e == 0 {
++            // Same rule as tbAdspEndCycle: the CCB is ADSP's until
++            // dspCLRemove returns, so a failed remove leaves it with the
++            // driver and it is not disposed.
++            driverHolds = true
+             pokew(pbRem + dspIoCRefNum, dspRef)
+             pokew(pbRem + pbCsCode, dspCLRemove)
+             pokew(pbRem + dspCcbRefNum, peekw(pbInit + dspCcbRefNum))
+             pokeb(pbRem + dspCloseAbort, 1)
+             e = PBControlSync(pbRem)
++            if e == 0 {
++                driverHolds = false
++            }
+         }
+     }
+-    tbAdspFreeIf(ccb)
++    if not driverHolds {
++        tbAdspFreeIf(ccb)
++    }
+     tbAdspFreeIf(pbInit)
+     tbAdspFreeIf(pbRem)
+     return e
+ }
+ 
+-// rtAtErrMemFullLocal: memFullErr. Named locally rather than reusing the
+-// runtime's rtAtErrMemFull for the same reason every extern in this file
+-// is local -- runtime names are not in scope for a suite case (see
+-// AdspLeak's header comment).
+-const rtAtErrMemFullLocal: int = -108
+-
+ func caseAdspLeak(): TestResult {
+     var openPb: IOParam
+     var nm: ptr
+     var end: ptr
+     var dspRef: int
+     var err: int
+     var before: int
+     var after: int
+     var i: int
+     var ran: int

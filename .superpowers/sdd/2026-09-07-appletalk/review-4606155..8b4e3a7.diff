@@ -1,0 +1,615 @@
+# Review package: 4606155..HEAD
+
+## Commits
+8b4e3a7 test(toolbox): AdspLeak -- ROM .DSP init/remove pairs are FreeMem-flat at the runtime's block sizes (40 cases)
+
+## Files changed
+ CLAUDE.md                         |  10 +-
+ docs/TODO.md                      |  16 +++
+ tests/mactest/toolbox_68k.sh      |   4 +-
+ tests/mactest/toolbox_jiggle.sh   |   2 +-
+ tests/mactest/toolbox_mac.sh      |   2 +-
+ testsuite/toolbox/cases_atalk.cla | 245 +++++++++++++++++++++++++++++++++++++-
+ testsuite/toolbox/runner.cla      |  21 +++-
+ 7 files changed, 289 insertions(+), 11 deletions(-)
+
+## Diff
+diff --git a/CLAUDE.md b/CLAUDE.md
+index e88243d..369cb42 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -239,21 +239,21 @@ enum + runner, not one boot per case.
+   pointer, including a bool-returning round trip) on both lanes — then
+   to 80 real by the string-perf phase's `StrPerf` case, which pins the
+   length-byte-only string-local init, the inline `s[i]`/`s.length`
+   codegen, and `text.clear()`/`reserve(n)` semantics -- then to 81 real
+   by the language-runtime-cleanup phase's `OpenRF` case, which
+   hardware-proves `file.openRF` (a resource fork opened as an ordinary
+   `filehandle`) on both lanes -- then to 82 real by the
+   native-array-return-and-fileh-guards phase's `ArrReturn` case, which
+   hardware-proves scalar-element fixed-array RETURNS (hidden-result-pointer
+   block copy) on both lanes) runs on
+-  host and natively; `testsuite/toolbox/` (39 `ToolboxTest` cases: 38 real +
++  host and natively; `testsuite/toolbox/` (40 `ToolboxTest` cases: 39 real +
+   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
+   legacy `testdata/ui` scenarios migrated in as cases, plus two new
+   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
+   by the test-consolidation phase, which migrated `formedit`/
+   `texteditor_bigfile` in as `FormEdit`/`BigText` — then to 23 real by the
+   toolbox-cookbook phase's `Catalog` case, which hardware-proves the
+   `toolbox/` catalog below — then to 24 real by the native-gaps-cleanup
+   phase's `FInfoStamp` case, which hardware-proves the doctype/creator
+   file-stamp rule on both lanes — then to 27 real by the mac-resident-
+   clarusc phase's `ResourceBake`/`WriteResStamp`/`FieldCap` cases — then
+@@ -282,21 +282,27 @@ enum + runner, not one boot per case.
+   paints) -- then to 37 real by the language-runtime-cleanup phase's
+   `CanvasIdle` and `WindowMenus` cases, which hardware-prove the buffered
+   canvas dirty gate (200 idle ticks cost no blit and no FreeMem churn)
+   and the `menus:` window-owned menu set (menu-bar band checksums across
+   an activation) -- then to 38 real by the AppleTalk phase's `AtalkSelf`
+   case, which hardware-proves the `toolbox/appletalk.cla` catalog against
+   the ROM `.MPP`/`.ATP` drivers: open both, NBP register with
+   verification, read the node's own net/node back out of the Names Table
+   Entry, look up a type nothing registered (err 0, 0 gotten -- the ROM
+   answers no self-lookup and has no `setSelfSend`), remove the name, then
+-  open and close a dynamic ATP socket)
++  open and close a dynamic ATP socket -- then to 39 real by the AppleTalk
++  phase's Task 13b `AdspLeak` case, which hardware-proves the ROM `.DSP`
++  `dspInit`/`dspRemove` and `dspCLInit`/`dspCLRemove` pairs leak nothing at
++  the runtime's own block sizes: 20 cycles of each, `FreeMem` exactly flat.
++  It does NOT cover `rtAt68DspFree`'s own bookkeeping -- a suite case cannot
++  name the AppleTalk runtime at all, since `--testapi`'s early-visible module
++  set does not include it, see `docs/TODO.md`)
+   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
+   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
+   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
+   (`cli_mac.cla` — `cli.cla` can't boot natively, see its own doc comment:
+   cg68k's non-UI startup stub fires `App.startCLI` with a never-marshaled
+   `args` list). Both suites also have a scriptable GUI front end
+   (`gui.cla`, driven by `--events` the same way the legacy UI goldens are).
+   **Both case counts are hand-maintained in FIVE places each**: core =
+   the runner's `nCoreCases`, `tests/mactest/coresuite_68k.sh`'s and
+   `coresuite_mac.sh`'s `suite_report_check` literals,
+diff --git a/docs/TODO.md b/docs/TODO.md
+index 3cd2d0f..a18fbf3 100644
+--- a/docs/TODO.md
++++ b/docs/TODO.md
+@@ -177,20 +177,36 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
+   `kill -0` check, and then waiter A `rm -rf`s the dead directory and
+   `mkdir`s its own (A now holds the lock) -- while waiter B, already past
+   its check, `rm -rf`s A's FRESH directory and `mkdir`s its own. Both
+   believe they hold the lock.
+   Pre-existing shape, never observed, and it only costs determinism on a
+   test group (two LToUDP stacks racing for node ids, which is exactly what
+   the lock exists to prevent). Real fix: make the steal an atomic
+   `mv`-into-place of a uniquely named directory, or drop the mkdir mutex
+   for `flock` on a lock FILE where the platform has it.
+ 
++- **`AdspLeak` proves the ROM's half of the ADSP lifecycle, not the
++  runtime's.** Task 13b's `testsuite/toolbox` case (`cases_atalk.cla`)
++  allocates the connection-end and listener blocks itself and pairs
++  `dspInit`/`dspRemove` and `dspCLInit`/`dspCLRemove` at the runtime's own
++  sizes, so it catches a driver that retains memory -- but not a
++  `rtAt68DspFree` that forgets a `DisposePtr`. The waist version
++  (`rtAt68DspInitEnd` + `rtAdspDevClose` called from the case) does not
++  compile: `--testapi` early-splices a fixed thirteen-module list
++  (`clarusc/drive.cla`'s `driveEarlySplice`, `clarusc/bake.cla`'s
++  `bakeModuleList`) and the AppleTalk modules are manifest-spliced after
++  the checker's first pass, so their names are invisible to user code.
++  Real fix: add the AppleTalk family to that early-visible set in BOTH
++  places -- a compiler change that shifts the testapi visibility boundary,
++  the bake manifest classification and the golden corpus, so schedule it
++  with the next phase that reblesses the corpus (MacTCP).
++
+ ## Compiler: type checking
+ 
+ ### AppleTalk phase (2026-09-07)
+ 
+ - **Text out-parameters accept a `string`, and nothing but `cc` catches
+   it.** Every `text` out-parameter in the language -- `file.readText(path,
+   t)`, `fh.readAt(pos, n, t)`, `svc.call(target, op, req, reply)` -- is
+   registered in `clarusc/check.cla` as an ordinary `psPlain(TextT)`
+   parameter, and a `string` argument is admitted there by the ordinary
+   string->text call-argument coercion. Lowering then passes an
+diff --git a/tests/mactest/toolbox_68k.sh b/tests/mactest/toolbox_68k.sh
+index 13837cc..4367032 100755
+--- a/tests/mactest/toolbox_68k.sh
++++ b/tests/mactest/toolbox_68k.sh
+@@ -1,27 +1,27 @@
+ #!/bin/sh
+ # timeout: 20m
+ # mactest/toolbox_68k -- port of internal/mactest/coresuite_test.go's
+ # TestToolboxSuiteOn68k: ONE native 68k boot of the toolbox suite's GUI
+ # (toolbox_files.txt, `--testapi` + `--bake`), driven by
+ # testdata/ui/toolboxsuite.events (one click on Run All, then quit). Every
+ # case here calls a REAL Toolbox trap or reads the REAL screen framebuffer
+-# in-process. Content-based gate, no trace/snap goldens; each of the 39
++# in-process. Content-based gate, no trace/snap goldens; each of the 40
+ # result lines is re-emitted so the runner reports per case.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
+ require_env CLARUS_MAC_TESTS
+ 
+ toolbox_emit68k "$WORK/toolboxsuite_gui.bin" testdata/ui/toolboxsuite.events
+ # 420, not 300: the suite's own wall clock on a Mac Plus was already
+ # 287 s of that 300 s budget before the AppleTalk phase, and AtalkSelf
+ # adds ~6.5 s of REAL AppleTalk time that cannot be shortened -- NBP
+ # runs its full retry budget on both registerName (verifyFlag on) and
+ # lookupName, ~3.2 s each at interval 8 / count 3 (task-1-report.md P2).
+ # The 13 s of headroom that left was going to bite the next case added
+ # here whatever it was. Still well inside the script's own 20m deadline.
+ run_mac "$WORK/toolboxsuite_gui.bin" 420
+ [ "$MAC_EXIT" = 0 ] || die "toolbox suite exit code $MAC_EXIT, want 0
+ capture:
+ $(cat "$WORK/cap.out")"
+-suite_report_check "$WORK/cap.out" 39
++suite_report_check "$WORK/cap.out" 40
+ t_done
+diff --git a/tests/mactest/toolbox_jiggle.sh b/tests/mactest/toolbox_jiggle.sh
+index d181c67..1f1965b 100755
+--- a/tests/mactest/toolbox_jiggle.sh
++++ b/tests/mactest/toolbox_jiggle.sh
+@@ -18,12 +18,12 @@
+ # dispatch and every UiNewPtr call is a lot more heap walking.
+ . "$(dirname "$0")/../lib.sh" || exit 2
+ . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
+ require_env CLARUS_MAC_TESTS
+ 
+ toolbox_emit68k "$WORK/toolboxsuite_jiggle_gui.bin" testdata/ui/toolboxsuite_jiggle.events
+ run_mac "$WORK/toolboxsuite_jiggle_gui.bin" 900
+ [ "$MAC_EXIT" = 0 ] || die "toolbox suite (jiggle) exit code $MAC_EXIT, want 0
+ capture:
+ $(cat "$WORK/cap.out")"
+-suite_report_check "$WORK/cap.out" 39
++suite_report_check "$WORK/cap.out" 40
+ t_done
+diff --git a/tests/mactest/toolbox_mac.sh b/tests/mactest/toolbox_mac.sh
+index c3f5d1b..7f12729 100755
+--- a/tests/mactest/toolbox_mac.sh
++++ b/tests/mactest/toolbox_mac.sh
+@@ -18,12 +18,12 @@ require_env CLARUS_CPRINT_MAC_TESTS
+ bin=$(build_mac toolboxsuite_gui_mac \
+     $(cat "$ROOT/tests/mactest/toolbox_files.txt") \
+     --test --events testdata/ui/toolboxsuite.events --testapi) || exit 1
+ 
+ # 420 for the same reason toolbox_68k.sh's own settle was raised: the
+ # suite's AtalkSelf case spends ~6.5 s in real NBP retries.
+ run_mac "$bin" 420
+ [ "$MAC_EXIT" = 0 ] || die "toolbox suite (Retro68) exit code $MAC_EXIT, want 0
+ capture:
+ $(cat "$WORK/cap.out")"
+-suite_report_check "$WORK/cap.out" 39
++suite_report_check "$WORK/cap.out" 40
+ t_done
+diff --git a/testsuite/toolbox/cases_atalk.cla b/testsuite/toolbox/cases_atalk.cla
+index 31f3df6..1d34653 100644
+--- a/testsuite/toolbox/cases_atalk.cla
++++ b/testsuite/toolbox/cases_atalk.cla
+@@ -1,14 +1,17 @@
+ // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+ // SPDX-License-Identifier: MIT
+ 
+-// cases_atalk.cla: AtalkSelf (AppleTalk phase Task 6) -- hardware-proves
++// cases_atalk.cla: AtalkSelf (AppleTalk phase Task 6) and AdspLeak
++// (Task 13b, at the foot of this file -- see its own header comment).
++//
++// AtalkSelf hardware-proves
+ // the shipped toolbox/appletalk.cla catalog against real ROM AppleTalk,
+ // in-process, the same "the catalog files supply the externs, this case
+ // only calls them" discipline cases_catalog.cla and cases_serial.cla
+ // already establish. It opens the real .MPP and .ATP drivers, registers
+ // an NBP name with verification on, reads its own net/node back out of
+ // the Names Table Entry, looks up a type nothing has registered, removes
+ // the name, then opens and closes a dynamic ATP socket.
+ //
+ // WHAT THIS CASE DELIBERATELY DOES NOT DO, and why. The design spec's
+ // original sketch was a self-lookup (find our own registered name) and
+@@ -21,22 +24,24 @@
+ //     .MPP would is not on LaunchAPPL's stripped boot disk (P1).
+ //   - a self-lookup therefore returns err 0 with numGotten 0, before and
+ //     after that call.
+ //   - a self-directed ATP sendRequest fails -1096 (reqFailed) after its
+ //     full retry budget, and the paired async getRequest never
+ //     completes.
+ // So the assertions below are exactly Amendment 3's table -- every row
+ // of it, and nothing that was not observed on real hardware. Note in
+ // particular that the node number is NOT asserted against a fixed value:
+ // it is acquired by LLAP at boot and differs run to run (106 and 18 were
+-// both seen). .XPP and .DSP are not opened at all: both are -43 (fnfErr)
+-// on this boot disk, and a harness fix for that is scheduled separately.
++// both seen). AtalkSelf itself opens neither .XPP nor .DSP -- it needs
++// neither, and when it was written both answered -43 (fnfErr) on
++// LaunchAPPL's stripped boot disk. That harness gap is now fixed (Task
++// 13a), which is what lets AdspLeak below open .DSP for real.
+ //
+ // Runtime cost: about 6.5 seconds. `registerName` with verifyFlag on
+ // broadcasts `count` lookups at `interval` before returning, and
+ // `lookupName` runs its full retry budget even when an answer arrives
+ // early (task-1-report.md P2) -- ~3.2 s each at interval 8 / count 3.
+ //
+ // Every parameter block below is a FRESH extern-record local, one per
+ // call, never reused: toolbox/appletalk.cla's Rule 2, which cost Task 1
+ // three hard hangs of the emulated Mac before it was understood. An
+ // extern record local is zero-initialized on declaration (language
+@@ -213,10 +218,244 @@ func caseAtalkSelf(): TestResult {
+     skClosePb.csCode = closeATPSkt
+     skClosePb.atpSocket = sock
+     err = PBControlSync(skClosePb)
+     if err != 0 {
+         detail = "closeATPSkt err " + tkIntToStr(err)
+         return tkFail("AtalkSelf", detail)
+     }
+ 
+     return tkPass("AtalkSelf")
+ }
++
++// ---- AdspLeak (AppleTalk phase Task 13b) ----
++
++// What AdspLeak proves: the ROM's .DSP driver retains NOTHING across an
++// init/remove pair -- for a connection end (dspInit/dspRemove) and for a
++// connection listener (dspCLInit/dspCLRemove) -- at the exact block sizes
++// runtime/clarus/atalk_68k.cla hands it, and that pairing those calls
++// with matching DisposePtrs leaves FreeMem EXACTLY where it started.
++// That is the half of the ADSP lifecycle nobody can settle by reading
++// source: whether the driver keeps a per-connection-end allocation of its
++// own that dspRemove does not give back.
++//
++// WHAT IT DELIBERATELY DOES NOT PROVE: rtAt68DspFree's own bookkeeping.
++// The blocks below are allocated and disposed by THIS case, not by
++// rtAt68CcbEnsure/rtAt68DspFree, so a future runtime edit that dropped
++// one of those DisposePtr calls would not be caught here. That is not a
++// design preference: a suite case CANNOT name rtAt68DspInitEnd /
++// rtAdspDevClose / rtAtEnsureUp at all, because `--testapi` early-splices
++// a FIXED thirteen-module list (core/str/text/list/map + the ui* family +
++// uitest.cla -- clarusc/drive.cla's driveEarlySplice, clarusc/bake.cla's
++// bakeModuleList) and the AppleTalk modules are not in it; they are
++// manifest-spliced AFTER the checker's first pass, so their names are
++// invisible to user code. Widening that set is a compiler change that
++// moves the bake manifest and the golden corpus -- recorded in
++// docs/TODO.md, scheduled with the next phase that reblesses goldens.
++//
++// The sizes below MIRROR the runtime's (rtAt68DspPbSz 68 = sizeof
++// DSPParamBlock, ADSP.h:193-216; rtAt68QSz 1024; ccbSize 242 and
++// attnBufSize 570 come straight from toolbox/appletalk.cla). Mirroring
++// is the point -- a leak the driver only exhibits at some other queue
++// size would not be the one the runtime can hit.
++//
++// Rule 2 (toolbox/appletalk.cla): every call below gets its OWN freshly
++// cleared parameter block -- dspInit and dspRemove never share one, the
++// same separation rtAt68DspAux exists for in the runtime.
++//
++// Exact equality, not slack: unlike cases_leak.cla's LeakCheck (which
++// brackets Memory-Manager-heavy handle traffic and needs jitter
++// headroom), every cycle here is a strict NewPtrClear/DisposePtr pair in
++// the application zone, so a single retained byte is a real finding.
++const tbAdspPbSz: int = 68     // sizeof(DSPParamBlock) -- runtime rtAt68DspPbSz
++const tbAdspQSz: int = 1024    // ADSP send/receive queue -- runtime rtAt68QSz
++const tbAdspCycles: int = 20
++
++// tbAdspFreeIf: DisposePtr unless the allocation failed. A partial
++// allocation still has to give back what it got, or the FreeMem bracket
++// would report the shortfall as a driver leak.
++func tbAdspFreeIf(p: ptr) {
++    if p != ptr(0) {
++        DisposePtr(p)
++    }
++}
++
++// tbAdspEndCycle: one full connection-end lifecycle -- the five blocks
++// rtAt68CcbEnsure allocates (CCB, send queue, receive queue, attention
++// buffer, parameter block) plus the separate remove block, dspInit,
++// dspRemove with the abort flag set, and every block back. Returns the
++// OSErr; 0 on success.
++func tbAdspEndCycle(dspRef: int): int {
++    var ccb: ptr
++    var sendQ: ptr
++    var recvQ: ptr
++    var attn: ptr
++    var pbInit: ptr
++    var pbRem: ptr
++    var e: int
++
++    ccb = NewPtrClear(ccbSize)
++    sendQ = NewPtrClear(tbAdspQSz)
++    recvQ = NewPtrClear(tbAdspQSz)
++    attn = NewPtrClear(attnBufSize)
++    pbInit = NewPtrClear(tbAdspPbSz)
++    pbRem = NewPtrClear(tbAdspPbSz)
++    e = rtAtErrMemFullLocal
++    if ccb != ptr(0) and sendQ != ptr(0) and recvQ != ptr(0) and attn != ptr(0) and pbInit != ptr(0) and pbRem != ptr(0) {
++        pokew(pbInit + dspIoCRefNum, dspRef)
++        pokew(pbInit + pbCsCode, dspInit)
++        pokel(pbInit + dspInitCcbPtr, int(ccb))
++        pokel(pbInit + dspInitUserRoutine, 0)
++        pokew(pbInit + dspInitSendQSize, tbAdspQSz)
++        pokel(pbInit + dspInitSendQueue, int(sendQ))
++        pokew(pbInit + dspInitRecvQSize, tbAdspQSz)
++        pokel(pbInit + dspInitRecvQueue, int(recvQ))
++        pokel(pbInit + dspInitAttnPtr, int(attn))
++        pokeb(pbInit + dspInitLocalSocket, 0)
++        e = PBControlSync(pbInit)
++        if e == 0 {
++            // The CCB is ADSP's until dspRemove returns, so the remove
++            // must succeed before any block below is disposed.
++            pokew(pbRem + dspIoCRefNum, dspRef)
++            pokew(pbRem + pbCsCode, dspRemove)
++            pokew(pbRem + dspCcbRefNum, peekw(pbInit + dspCcbRefNum))
++            pokeb(pbRem + dspCloseAbort, 1)
++            e = PBControlSync(pbRem)
++        }
++    }
++    tbAdspFreeIf(ccb)
++    tbAdspFreeIf(sendQ)
++    tbAdspFreeIf(recvQ)
++    tbAdspFreeIf(attn)
++    tbAdspFreeIf(pbInit)
++    tbAdspFreeIf(pbRem)
++    return e
++}
++
++// tbAdspLsnCycle: the connection-LISTENER twin. dspCLInit takes only a
++// CCB and a local socket -- no queues, no attention buffer (ADSP.h's
++// TRinitParams; rtLsnDevInit sets exactly these two fields too) -- and
++// localSocket 0 asks DDP for a dynamic socket, which dspCLRemove has to
++// give back or twenty cycles would run the node out of them.
++func tbAdspLsnCycle(dspRef: int): int {
++    var ccb: ptr
++    var pbInit: ptr
++    var pbRem: ptr
++    var e: int
++
++    ccb = NewPtrClear(ccbSize)
++    pbInit = NewPtrClear(tbAdspPbSz)
++    pbRem = NewPtrClear(tbAdspPbSz)
++    e = rtAtErrMemFullLocal
++    if ccb != ptr(0) and pbInit != ptr(0) and pbRem != ptr(0) {
++        pokew(pbInit + dspIoCRefNum, dspRef)
++        pokew(pbInit + pbCsCode, dspCLInit)
++        pokel(pbInit + dspInitCcbPtr, int(ccb))
++        pokeb(pbInit + dspInitLocalSocket, 0)
++        e = PBControlSync(pbInit)
++        if e == 0 {
++            pokew(pbRem + dspIoCRefNum, dspRef)
++            pokew(pbRem + pbCsCode, dspCLRemove)
++            pokew(pbRem + dspCcbRefNum, peekw(pbInit + dspCcbRefNum))
++            pokeb(pbRem + dspCloseAbort, 1)
++            e = PBControlSync(pbRem)
++        }
++    }
++    tbAdspFreeIf(ccb)
++    tbAdspFreeIf(pbInit)
++    tbAdspFreeIf(pbRem)
++    return e
++}
++
++// rtAtErrMemFullLocal: memFullErr. Named locally rather than reusing the
++// runtime's rtAtErrMemFull for the same reason every extern in this file
++// is local -- runtime names are not in scope for a suite case (see
++// AdspLeak's header comment).
++const rtAtErrMemFullLocal: int = -108
++
++func caseAdspLeak(): TestResult {
++    var openPb: IOParam
++    var nm: ptr
++    var end: ptr
++    var dspRef: int
++    var err: int
++    var before: int
++    var after: int
++    var i: int
++    var ran: int
++    var detail: string
++
++    // -- 1. Open .DSP. Unlike .MPP/.ATP this one is NOT in the Mac Plus
++    // ROM: it lives in the AppleTalk system file, so this is also the
++    // case's own environment gate. A failure FAILs with the OSErr (-43
++    // when the file is absent) rather than passing vacuously -- there is
++    // no "skip" verdict in this suite, and a silently-skipped leak check
++    // is worse than a red one.
++    nm = NewPtrClear(8)
++    if nm == ptr(0) {
++        return tkFail("AdspLeak", "NewPtrClear failed")
++    }
++    end = atPStr(nm, ".DSP")
++    openPb.ioNamePtr = nm
++    err = PBOpenSync(openPb)
++    dspRef = openPb.ioRefNum
++    DisposePtr(nm)
++    if err != 0 or dspRef == 0 {
++        detail = "open .DSP err " + tkIntToStr(err)
++        detail = detail + " refNum " + tkIntToStr(dspRef)
++        return tkFail("AdspLeak", detail)
++    }
++
++    // -- 2. Connection ends. One warm-up cycle OUTSIDE the bracket: the
++    // first dspInit on a freshly opened .DSP is what makes the driver
++    // build whatever per-driver state it keeps (and the Memory Manager
++    // grow the zone for our own first six blocks), and that one-time cost
++    // is not a leak. Everything after it must be free.
++    err = tbAdspEndCycle(dspRef)
++    if err != 0 {
++        detail = "end warmup err " + tkIntToStr(err)
++        return tkFail("AdspLeak", detail)
++    }
++    before = FreeMem()
++    i = 0
++    while i < tbAdspCycles {
++        err = tbAdspEndCycle(dspRef)
++        if err != 0 {
++            detail = "end cycle " + tkIntToStr(i) + " err " + tkIntToStr(err)
++            return tkFail("AdspLeak", detail)
++        }
++        ran = ran + 1
++        i = i + 1
++    }
++    after = FreeMem()
++    if after != before or ran != tbAdspCycles {
++        detail = "end before " + tkIntToStr(before) + " after " + tkIntToStr(after)
++        detail = detail + " cycles " + tkIntToStr(ran)
++        return tkFail("AdspLeak", detail)
++    }
++
++    // -- 3. Connection listeners, same shape, own warm-up.
++    err = tbAdspLsnCycle(dspRef)
++    if err != 0 {
++        detail = "listener warmup err " + tkIntToStr(err)
++        return tkFail("AdspLeak", detail)
++    }
++    before = FreeMem()
++    ran = 0
++    i = 0
++    while i < tbAdspCycles {
++        err = tbAdspLsnCycle(dspRef)
++        if err != 0 {
++            detail = "listener cycle " + tkIntToStr(i) + " err " + tkIntToStr(err)
++            return tkFail("AdspLeak", detail)
++        }
++        ran = ran + 1
++        i = i + 1
++    }
++    after = FreeMem()
++    if after != before or ran != tbAdspCycles {
++        detail = "listener before " + tkIntToStr(before) + " after " + tkIntToStr(after)
++        detail = detail + " cycles " + tkIntToStr(ran)
++        return tkFail("AdspLeak", detail)
++    }
++
++    return tkPass("AdspLeak")
++}
+diff --git a/testsuite/toolbox/runner.cla b/testsuite/toolbox/runner.cla
+index 7b32f62..6fb039a 100644
+--- a/testsuite/toolbox/runner.cla
++++ b/testsuite/toolbox/runner.cla
+@@ -145,20 +145,28 @@
+ // stable -- see that case's own header comment.
+ // CanvasIdle (cases_canvasidle.cla) is the language-runtime-cleanup
+ // phase's addition: hardware-proves a buffered canvas drawn once blits
+ // once and then costs nothing per event-loop pass (the dirty flag, spec
+ // 2.1) -- see that case's own header comment.
+ // WindowMenus (cases_winmenus.cla) is the language-runtime-cleanup
+ // phase's addition too: hardware-proves the `menus:` window property
+ // (spec 5) -- a claimed menu joins the bar only while a claiming window
+ // is frontmost, and leaves again when it closes -- see that case's own
+ // header comment.
++// AdspLeak (cases_atalk.cla) is the AppleTalk phase Task 13b
++// addition: hardware-proves the ROM .DSP driver retains nothing across
++// an init/remove pair -- dspInit/dspRemove for a connection end and
++// dspCLInit/dspCLRemove for a connection listener, twenty cycles each at
++// the block sizes runtime/clarus/atalk_68k.cla uses, FreeMem exactly
++// flat. It does NOT prove rtAt68DspFree's own bookkeeping: a suite case
++// cannot name the AppleTalk runtime at all -- see that case's own header
++// comment and docs/TODO.md.
+ 
+ enum ToolboxTest {
+     All
+     TickCountAdvances
+     MenuKeyMatches
+     CanvasChecksum
+     A5Live
+     GestaltNamed
+     EventXRec
+     UiTestVerbSmoke
+@@ -186,29 +194,30 @@ enum ToolboxTest {
+     LivePaint
+     SerialOpenWrite
+     AtalkSelf
+     NarrowPopup
+     LeakCheck
+     ScrollToEnd
+     ClearWarm
+     CasesTable
+     CanvasIdle
+     WindowMenus
++    AdspLeak
+     SelfCheck
+ }
+ 
+-// nTbCases is ToolboxTest's member count minus All: the 38 real cases
++// nTbCases is ToolboxTest's member count minus All: the 39 real cases
+ // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
+ // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
+ // a forgotten branch leaves casesRun short and SelfCheck fails instead of
+ // the suite silently shrinking.
+-const nTbCases: int = 39
++const nTbCases: int = 40
+ 
+ // tbCaseName maps a ToolboxTest member to its programmatic name, used as
+ // both the GUI's table row label and a TestResult's name.
+ func tbCaseName(t: ToolboxTest): string {
+     switch t {
+     case All {
+         return "All"
+     }
+     case TickCountAdvances {
+         return "TickCountAdvances"
+@@ -317,20 +326,23 @@ func tbCaseName(t: ToolboxTest): string {
+     }
+     case CasesTable {
+         return "CasesTable"
+     }
+     case CanvasIdle {
+         return "CanvasIdle"
+     }
+     case WindowMenus {
+         return "WindowMenus"
+     }
++    case AdspLeak {
++        return "AdspLeak"
++    }
+     case SelfCheck {
+         return "SelfCheck"
+     }
+     }
+     return "?"
+ }
+ 
+ // tbAllCases lists every real case (All excluded; SelfCheck included) --
+ // the GUI's table row order (gui.cla's App.startEmpty).
+ func tbAllCases(): list of ToolboxTest {
+@@ -366,20 +378,21 @@ func tbAllCases(): list of ToolboxTest {
+     l.add(LivePaint)
+     l.add(SerialOpenWrite)
+     l.add(AtalkSelf)
+     l.add(NarrowPopup)
+     l.add(LeakCheck)
+     l.add(ScrollToEnd)
+     l.add(ClearWarm)
+     l.add(CasesTable)
+     l.add(CanvasIdle)
+     l.add(WindowMenus)
++    l.add(AdspLeak)
+     l.add(SelfCheck)
+     return l
+ }
+ 
+ // tbHas reports whether l contains want.
+ func tbHas(l: list of ToolboxTest, want: ToolboxTest): bool {
+     var t: ToolboxTest
+     for t in l {
+         if t == want {
+             return true
+@@ -556,20 +569,24 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
+         casesRun = casesRun + 1
+     }
+     if wantAll or tbHas(deduped, CanvasIdle) {
+         results.add(caseCanvasIdle())
+         casesRun = casesRun + 1
+     }
+     if wantAll or tbHas(deduped, WindowMenus) {
+         results.add(caseWindowMenus())
+         casesRun = casesRun + 1
+     }
++    if wantAll or tbHas(deduped, AdspLeak) {
++        results.add(caseAdspLeak())
++        casesRun = casesRun + 1
++    }
+     if wantAll or tbHas(deduped, SelfCheck) {
+         if casesRun == nTbCases - 1 {
+             results.add(tkPass(tbCaseName(SelfCheck)))
+         } else {
+             selfDetail = "casesRun " + tkIntToStr(casesRun) + " != " + tkIntToStr(nTbCases - 1)
+             results.add(tkFail(tbCaseName(SelfCheck), selfDetail))
+         }
+     }
+ 
+     return results

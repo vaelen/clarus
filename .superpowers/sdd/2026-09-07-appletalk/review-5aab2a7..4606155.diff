@@ -1,0 +1,42 @@
+# Review package: 5aab2a7..HEAD
+
+## Commits
+4606155 fix(examples): atalkchat dials the NBP name it was given, not name+type
+
+## Files changed
+ examples/atalkchat.cla | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/examples/atalkchat.cla b/examples/atalkchat.cla
+index 36ed5b8..90235d4 100644
+--- a/examples/atalkchat.cla
++++ b/examples/atalkchat.cla
+@@ -164,21 +164,26 @@ on lsn.failed(err: error) {
+     quit
+ }
+ 
+ // ---- client side ----
+ 
+ on brs.found(name: string, addr: address) {
+     if not dialed {
+         dialed = true
+         log("found " + name + " " + string(addr))
+         setPeer(name + " " + string(addr))
+-        chat.open(appletalk name + ":" + chatType)
++        // `name` is already NBP's own "Object:Type" spelling (the same
++        // string rtAtDevLookupName/AtalkHLookupName hand `found` on both
++        // lanes), which IS the "Name:Type" spec `open(appletalk ...)`
++        // wants -- appending chatType again asked NBP to look up the type
++        // "ClarusChat:ClarusChat" and got nbpNoConfirm (-1025).
++        chat.open(appletalk name)
+     }
+ }
+ 
+ on brs.done {
+     if not dialed {
+         // The server may not have finished registering its name yet --
+         // it boots first, but NBP registration is itself a couple of
+         // seconds of network traffic. Each retry is a full lookup, so
+         // this is self-paced, not a spin.
+         tries = tries + 1
