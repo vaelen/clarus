@@ -9,6 +9,18 @@
 # No --bake on this lane (build-mac.sh has no such flag; the Go twin passes
 # none either), so cases_resources.cla's baked-resource lookup has nothing
 # to find here.
+#
+# THIS SCRIPT DOES NOT COMPILE AS OF THE MacTCP PHASE (debt 3, 2026-09-08),
+# and it fails in build_mac, not on a suite case. AdspLeak's section 4
+# (testsuite/toolbox/cases_atalk.cla, see its own header) names the NATIVE
+# AppleTalk waist -- rtAt68DspInitEnd/rtAdspDevClose -- which only
+# `clarusc emit68k --testapi` makes visible: drive.cla's driveEarlySplice
+# gates that widening on want68k, and rtAt68DspInitEnd has no counterpart
+# in runtime/clarus/atalk_c.cla at all. build-mac.sh goes through
+# `clarusc emit` (want68k false), so this suite no longer checks on this
+# lane. Left in place rather than deleted: the whole cprint lane is an
+# opt-in cross-lane diagnostic mactest/toolbox_68k already covers case for
+# case, and it is slated for deletion in the 5f Retro68-retirement phase.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_CPRINT_MAC_TESTS

@@ -255,6 +255,20 @@ func caseAtalkSelf(): TestResult {
 // lane (see its own list comment for why the early list has to stay a
 // PREFIX of the manifest order).
 //
+// SECTION 4 MAKES THIS SUITE 68k-SOURCE-ONLY. It names the NATIVE waist,
+// and that widening is `want68k`-gated: under `clarusc emit` (the host/
+// cprint lane) the atalk modules are not early-visible, and
+// rtAt68DspInitEnd does not exist in runtime/clarus/atalk_c.cla at all.
+// So tests/mactest/toolbox_mac.sh -- the opt-in
+// CLARUS_CPRINT_MAC_TESTS=1 Retro68 twin, which builds this same
+// toolbox_files.txt through build-mac.sh -- can no longer COMPILE the
+// suite. Deliberate: that lane is a cross-lane diagnostic the native
+// emit68k lane already covers case for case, and it is slated for
+// deletion in the 5f Retro68-retirement phase. Reviving it would mean
+// giving atalk_c.cla a host-lane waist twin AND early-splicing the
+// conn/atalk pair on the C lane too (which bakeModuleList's bkLaneC list
+// does not carry).
+//
 // The sizes below MIRROR the runtime's (rtAt68DspPbSz 68 = sizeof
 // DSPParamBlock, ADSP.h:193-216; rtAt68QSz 1024; ccbSize 242 and
 // attnBufSize 570 come straight from toolbox/appletalk.cla). Mirroring
