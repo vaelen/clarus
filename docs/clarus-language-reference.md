@@ -1455,7 +1455,7 @@ on server.accepted(c: connection) {
 
 When every connection slot is already in use the runtime denies the incoming request outright: the client's own `open` fails with `failed`, and the server sees nothing — no `accepted`, no `failed`. Refusing a client the program has no room for is not a server-side failure.
 
-`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, or the listener failing to start. A `failed` that arrives after a successful `register` also stops the listener — the name is removed and the listener released, exactly as if `stop()` had been called — so a program that wants to keep serving must `register` again. `l.stop()` is safe on a listener that was never started, and safe to call twice.
+`l.failed(err: error)` reports the listener's own environmental failures: the ADSP driver absent, the name already registered by another node, or the listener failing to start. After a successful `register`, what a `failed` costs depends on which failure it reports. A lost listen request — the listener's own machinery failing — tears the listener down: the name is removed and the listener released, exactly as if `stop()` had been called, so a program that wants to keep serving must `register` again. A single connection that could not be accepted does not: the listener stays registered and listening, the next client can still connect, and `register` on it fails with *listener already registered*. `l.stop()` is safe on a listener that was never started, and safe to call twice.
 
 ### Service Discovery
 

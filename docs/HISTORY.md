@@ -216,12 +216,13 @@ the condensed open follow-ups extracted from these entries.
     genuine LocalTalk-over-UDP peer on the same wire an emulator is on.
     Merged to `main` 2026-09-07 (fast-forward, then pushed). Full entry:
     "AppleTalk phase (2026-09-07, branch `appletalk`)" below.
-    (Items 1-11 above are the pre-2026-08 milestones. Every phase since
-    — `go-retirement`, `compiler-cleanup`, `language-runtime-cleanup`,
+    (Items 1-11 above are the pre-2026-08 milestones. The phases with
+    their own top-level `## … phase` section further down are
+    `go-retirement`, `compiler-cleanup`, `language-runtime-cleanup`,
     `native-array-return-and-fileh-guards` and `appletalk`, all merged to
-    `main` — is recorded as its own `## … phase` section further down;
-    this entry is here because `appletalk` closes the networking
-    milestone the list itself was tracking.)
+    `main`; the rest are bullets under the sections above. This entry is
+    here because `appletalk` closes the networking milestone the list
+    itself was tracking.)
 
 ## clarusc / self-hosting strategy (agreed in discussion, 2026-07-22)
 

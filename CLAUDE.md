@@ -51,9 +51,9 @@ script per Go test).
 
 - `make -j tools bootstrap` builds `build-run/tools/*` (the C helpers:
   `timeout`, `uiblob`, `resfork`, `clirhdr`, `tcpdrive`, `atalkdrive`) and
-  the two-stage
-  `build-run/clarusc-{snapshot,current}` compilers. Every test depends on
-  both targets, so make's own scheduling serializes the bootstrap.
+  the two-stage `build-run/clarusc-{snapshot,current}` compilers. Every
+  test depends on both targets, so make's own scheduling serializes the
+  bootstrap.
 - `make test T='<group>/<name> <group>/'` runs selected scripts. Each `T=`
   word is a prefix matched against `tests/<prefix>`, so `T=bake/` is a
   whole group and `T=cg68k/goldens` one script.
@@ -398,8 +398,8 @@ enum + runner, not one boot per case.
 - `macplus2/` → a second Mini vMac (`MacPlus2.app` + `vMac.ROM` + its
   own `disk1.dsk`, an identical copy of `macplus/`'s) —
   `tests/lib_mac.sh`'s `run_mac_pair` boots it as the second machine
-  for `tests/mactest/adsp_68k.sh`. Gitignored like `macplus/`; missing
-  ⇒ that script cannot run.
+  for `tests/mactest/adsp_68k.sh`. Gitignored like `macplus/`. Missing ⇒
+  that script SKIPs (`macplus2 not present`).
 - `vasm/` → locally built `vasmm68k_mot` (the third-party 68000 assembler
   used as an encoder oracle; rebuild recipe in
   `tests/asm68k/roundtrip.sh`'s header). Missing or built without the bin
