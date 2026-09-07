@@ -2,42 +2,55 @@
 // SPDX-License-Identifier: MIT
 
 // waist68k_probe.cla: the user program half of tests/tcp/waist68k.sh.
-// runtime/clarus/tcp_68k.cla is passed positionally beside it, so the
-// waist compiles as ordinary user code and every rtTcpDev* entry point
-// gets a real call site -- cg68k emits nothing for a function nobody
-// names, so without these calls the test would prove only that the file
-// parses.
+//
+// It used to name every rtTcpDev* entry point directly, with
+// runtime/clarus/tcp_68k.cla passed positionally beside it as ordinary
+// user code. Task 6's Ruling 1 splice made tcp_68k.cla a real runtime
+// module, and user code cannot name a runtime function at all (clarusc
+// checks the user program standalone before any runtime module is
+// consulted), so the probe now reaches the same sixteen functions
+// through the LANGUAGE instead: `open(tcp ...)`/`send`/`close` and
+// `listen(tcp ...)`/`stop` root tcp.cla, whose own calls are what keep
+// each rtTcpDev* alive through shake. waist68k.sh greps the listings for
+// all sixteen, so a missing one is still a FAIL.
 //
 // Nothing here RUNS: MacTCP is absent from every emulator this repo can
 // boot (spec %2), so the whole body is behind `if false`. The check is
 // the build, not the boot.
+var conn: connection
+var lsn: listener
 
 on App.startCLI(args: list of string) {
-    var p: ptr
-    var n: int
-    var b: bool
-
     log("waist ok")
     if false {
-        n = rtTcpDevInit()
-        n = rtTcpDevCreate(0)
-        n = rtTcpDevActiveOpen(0, 0x0A000001, 80)
-        n = rtTcpDevPoll(0)
-        n = rtTcpDevRecvLen(0)
-        p = rtTcpDevRecvPtr(0)
-        n = rtTcpDevRecvArm(0)
-        b = rtTcpDevSendBusy(0)
-        n = rtTcpDevSend(0, p, 1)
-        n = rtTcpDevClose(0)
-        rtTcpDevRelease(0)
-        n = rtTcpDevLsnOpen(0, 8080)
-        n = rtTcpDevLsnPoll(0)
-        n = rtTcpDevLsnAccept(0, 0)
-        rtTcpDevLsnDeny(0)
-        rtTcpDevLsnClose(0)
-        log(string(n) + string(int(p)))
-        if b {
-            log("busy")
-        }
+        conn.open(tcp "10.0.0.1:80")
+        conn.send("x")
+        conn.close()
+        lsn.listen(tcp 8080)
+        lsn.stop()
     }
+}
+
+on conn.opened {
+    conn.send("hi")
+}
+
+on conn.received(data: text) {
+    conn.send(data)
+}
+
+on conn.closed {
+    log("closed")
+}
+
+on conn.failed(err: error) {
+    log(err.message)
+}
+
+on lsn.accepted(c: connection) {
+    log("accepted")
+}
+
+on lsn.failed(err: error) {
+    log(err.message)
 }

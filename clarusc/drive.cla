@@ -1357,6 +1357,18 @@ func driveEarlySplice(testapi: bool): bool {
         earlyMods.add("conn_68k.cla")
         earlyMods.add("atalk.cla")
         earlyMods.add("atalk_68k.cla")
+        // MacTCP phase, Task 6 (Ruling 1): tcp.cla + tcp_68k.cla are NOT
+        // optional here. conn.cla and atalk.cla are in this early list
+        // and both NAME rtTcp* symbols (rtTcpOpen/rtTcpPollConn/
+        // rtTcpAlive, rtTcpPump/rtTcpLsnStop/rtLsnSlotTransport/
+        // rtTcpFree), and this list is checked as one unit before the
+        // manifest remainder exists -- leaving them out makes every
+        // --testapi 68k build fail with `undefined: rtTcpPump` and
+        // friends. bakeModuleList's uitest.cla boundary marker moves
+        // behind them to match, so both paths still agree on where
+        // early-visible ends.
+        earlyMods.add("tcp.cla")
+        earlyMods.add("tcp_68k.cla")
     }
     // runtime-ir-bake Task 5, fix round 2: uitest.cla STAYS in this
     // early-spliced list -- check#1 (driveCompile's own first
@@ -1726,6 +1738,17 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             neededMods.add("conn_68k.cla")
             neededMods.add("atalk.cla")
             neededMods.add("atalk_68k.cla")
+            // MacTCP phase, Task 6 (Ruling 1): tcp.cla + tcp_68k.cla
+            // join the 68k superset right behind the atalk pair, for
+            // the same reason -- conn.cla and atalk.cla are
+            // unconditional here and both now NAME rtTcp*
+            // (rtTcpOpen/rtTcpPollConn/rtTcpAlive, rtTcpPump/
+            // rtTcpLsnStop/rtLsnSlotTransport/rtTcpFree), so without
+            // these two every native build fails to check. Inside the
+            // early68k guard with them: driveEarlySplice already
+            // spliced all six on the --testapi path.
+            neededMods.add("tcp.cla")
+            neededMods.add("tcp_68k.cla")
         }
     } else if usesConn or usesAtalk {
         neededMods.add("conn.cla")

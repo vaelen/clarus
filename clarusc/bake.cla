@@ -482,6 +482,16 @@ func bakeModuleList(lane: int): list of string {
         // here, exactly as conn.cla/conn_c.cla always has been.
         mods.add("atalk.cla")
         mods.add("atalk_68k.cla")
+        // MacTCP phase, Task 6 (Ruling 1): tcp.cla + tcp_68k.cla join
+        // the 68k lane's full superset behind the atalk pair, mirroring
+        // driveManifestSplice's own `if want68k` splice (drive.cla).
+        // BEFORE uitest.cla, because driveEarlySplice's own early list
+        // now ends at tcp_68k.cla -- conn.cla and atalk.cla are in that
+        // list and NAME rtTcp*, so the pair has to be early-visible with
+        // them. uitest.cla, the boundary marker, moves behind them so
+        // both paths still agree on where early-visible ends.
+        mods.add("tcp.cla")
+        mods.add("tcp_68k.cla")
         // MacTCP phase, debt 3: the 68k lane's early-visible boundary --
         // driveEarlySplice's own early list ends here on this lane. See
         // the host-lane uitest.cla add above.
