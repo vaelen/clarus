@@ -301,6 +301,23 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   for deletion in 5f -- but the silent fall-through is the half worth
   fixing if the lane survives.
 
+- **The 68k stack heuristic prices every frame WITHOUT its temp pools.**
+  `clarusc/cg68k.cla`'s `cgStackHeuristic` sums `cgFuncFrameSizes` along
+  the deepest call chain, but the value in that list is recorded on the
+  MEASURE pass, where both temp pools are laid out EMPTY by construction
+  (`cgFuncSmallTmpNeed`/`cgFuncBigTmpNeed` are still 0), so the native
+  stack reserve under-counts by the sum of the string/record temp pools
+  along that chain. Pre-existing since the pools
+  became per-function (binary-files / compiler-cleanup phases); surfaced
+  by this phase's Task 9, which had to guard the real-pass write with
+  `if cgRecMode == 1` to fix a `--rtbake` identity failure (the baked
+  path carried the FINAL frame, the from-source path the measure one --
+  one differing byte in the startup `ADDA`) and left a `ponytail:`
+  comment at the site saying the under-reserve is a separate, real bug.
+  Not folded into a TCP task because fixing it changes every native
+  program's stack reserve and so moves every `testdata/cg68k` golden --
+  do it in a phase that is already reblessing the corpus.
+
 ### native-array-return-and-fileh-guards phase (2026-09-06)
 
 - **A resource fork that SHRINKS between `fstat` and the copy still

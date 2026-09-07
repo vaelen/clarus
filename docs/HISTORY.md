@@ -6387,6 +6387,561 @@ as `git diff 8ef9fe6..6646efb`; the code-only package the reviewer
 actually read IS committed).
 
 
+## MacTCP phase (2026-09-08, branch `mactcp`)
+
+Recorded on the same terms as the entries above: merging to `main` is
+Andrew's call and had not happened when this was written. This entry
+covers all thirteen tasks plus every fix round, all merged into
+`mactcp`.
+
+**What it did.** Made TCP real in Clarus: `connection`'s **third**
+transport (`c.open(tcp "a.b.c.d:port")`) and `listener`'s **second**
+(`l.listen(tcp port)`), on both lanes -- MacTCP's `.IPP` driver
+natively, through polled async parameter blocks with no ASR, and
+non-blocking BSD sockets on the host, so a host build is a working TCP
+client *and* server. Dotted quads only; a host name needs the DNR, which
+is the next roadmap phase. It also cleared the three debts the AppleTalk
+phase parked "until MacTCP reblesses the corpus". Thirteen tasks in five
+waves, each in its own worktree on `mactcp-tN` and each reviewed; the
+controller merged every task into `mactcp` and re-gated the merged tree.
+167 files, +163,751/-75,312 with the goldens and the regenerated
+bootstrap snapshot; **59 files, +5,391/-399 outside `testdata/`,
+`clarusc/clarusc.c` and the spec/plan** (this entry included).
+Thirteen tasks, then one final-review fix wave.
+
+**The new surface, exactly.** `open(tcp "host:port")` with a dotted-quad
+host and a 1-65535 port; every failure (malformed spec, a host name,
+MacTCP absent, no free stream, slot table full, refused peer, 30 s open
+timeout) arrives as `failed(err)` on a later pump pass, never a crash.
+`received(data)` at most once per pump pass per connection, binary-safe.
+`closed` for the peer's close or a reset -- a local `close()` never
+fires it, on any transport. `close()` drains pending sends first, then
+closes gracefully. `listen(tcp port)` hands an already-open connection
+to `accepted(c)` with no `opened`, the way `register` does; a full slot
+table aborts that client silently and re-arms; a failed re-arm tears the
+listener down like `register`'s lost-listen rule. The reference's old
+plain-string `open("host:port")` form is **gone**: a bare string is now
+a compile error (`open needs a transport: tcp, appletalk, or serial`),
+and so is `listen` without the keyword.
+
+**The probe wave came first, and it paid again.** Task 8 booted five
+throwaway Clarus programs on Snow's System 7 Mac II -- the only machine
+here with a TCP/IP stack -- and returned five verdicts, two of which
+changed the design:
+
+- **P1 -- `.IPP` opens (refNum `-52`) and `ipctlGetAddr` answers
+  10.0.0.2 / 255.0.0.0.** `snow_ethernet` (the DaynaPORT SCSI adapter
+  the helper stamps into the workspace) is proven end to end by that
+  alone: without the adapter the guest's MacTCP has no link and `.IPP`
+  never comes up. The probe's own first run misprinted the mask
+  (`0xFF000000` is a negative 32-bit int and the dotted printer used
+  truncating division) -- carried into Task 11 as the reason every
+  address is extracted through `pokel`/`peekb`.
+- **P2 -- `127.0.0.1` does NOT loop back on this stack, and the failure
+  mode is a lie.** The active open to `127.0.0.1` returned **err 0** --
+  success at the caller -- while the listener's passive open was still
+  `inProgress` after 900 ticks (15 s). A self-connect test that checked
+  only the active open's result would have reported a green connection
+  that does not exist. Dialing the guest's **own** address 10.0.0.2, the
+  passive open completes in **0 ticks**, before the synchronous active
+  open even returns. The spec's Q1 fallback became the primary
+  (Ruling 15): `examples/tcpchat.cla`'s `Self` button hardcodes
+  10.0.0.2 with a comment naming it a workspace property, because no
+  runtime own-address read exists -- the language has no IP address
+  value this phase.
+- **P3 -- a pushed receive completes in 1 tick, an unpushed one in 10.**
+  The runtime always sets `pushFlag`, so ~17 ms, one pump pass. The
+  unpushed number is documentation: an accidental `pushFlag = 0` would
+  be a latency bug, not a hang.
+- **P4 -- `tcpAbort` completes a pending `tcpRcv` synchronously**
+  (`inProgress` 1 before the call, `-23012` `connectionTerminated` read
+  immediately after `PBControlSync` returned, zero extra ticks), which
+  is exactly what `rtTcpDevRelease` assumes. **But `TCPClose` returns in
+  0 ticks leaving the stream in state 12 (finWait2), and `TCPRelease`
+  succeeds from there one tick later** -- so the close block's 10 s ULP
+  timeout with `tcpUlpActionAbort` **never fired**, because there was
+  nothing left to wait for. The spec's "a peer that never closes cannot
+  pin the slot" therefore had no enforcement on the Mac lane at all.
+  That is Ruling 16: `tcp.cla` got its **own** wall-clock Closing
+  deadline (600 ticks = 10 s from the `DevClose` issue; on expiry the
+  slot is released without firing `closed`), lane-neutral, so the
+  guarantee holds on both lanes. The host waist already enforced it
+  internally, so the host sees no behaviour change. The ULP abort is
+  still set -- it costs nothing -- but it is **not** described as
+  proven.
+- **P5 -- the new `delay N` script verb is honoured at the real tick
+  rate on Snow** (400 x `delay 12` = 4800 ticks = 79.8 s at 60.15
+  ticks/s; measured 122 s - 43 s of boot wall clock, a coarse but
+  comfortable match) and the app always ends on its own watchdog, never
+  early. It also caught the lane fact that sank the first boot: Snow's
+  guest screen is 640x480, so the `Serve` button is at **220,64**, not
+  the Mini vMac lane's `156 64`.
+
+**The three carried debts, all cleared.**
+
+- **Debt 1 -- the four duplicated fire-dispatcher builders** folded into
+  `lowSynthFire{Simple,Failed}` (`clarusc/lower.cla`, net +45/-136 in
+  one file). The AppleTalk phase's own review recommended the fold "when
+  a third copy makes the case unarguable"; TCP was that third copy.
+  **Zero golden churn** -- byte-identical `cg68k` and `emitui` goldens
+  across the fold is the proof of no behaviour change.
+- **Debt 2 -- `delay N`**, a real-tick wait verb in `--events` scripts
+  (`runtime/clarus/uiscript.cla`), which let `examples/atalkchat.cla`
+  drop its `Delay(10)` hack and gave Task 10's Snow script a way to hold
+  a UI program alive deterministically. Cost: 22 `testdata/cg68k/*.s`
+  and **all 25** `testdata/emitui/*.c.golden` moved, because `uiscript`
+  is spliced into every UI build.
+- **Debt 3 -- the `--testapi` early-visible module set** generalized
+  from the fixed thirteen-module UI family so `conn.cla`, `atalk.cla`
+  and (later) `tcp.cla` + `tcp_68k.cla` are nameable by a suite case
+  (`clarusc/drive.cla`'s `driveEarlySplice`, `clarusc/bake.cla`'s
+  `bakeModuleList`). Two rulings shaped it. **Ruling 10:** the widening
+  is **68k-lane only** -- the host `bakeModuleList` carries no
+  conn/atalk, and early-splicing them there would desynchronise
+  from-source against bake for no gain; the consequence is that the
+  `toolbox` suite is now 68k-source-only and the opt-in cprint twin
+  cannot compile it (documented in `cases_atalk.cla`, `toolbox_mac.sh`
+  and `CLAUDE.md`). **Ruling 11:** the early set is a strict **PREFIX**
+  of manifest order, not a separate bucket with a `driveIsLateEarlyMod`
+  predicate as the plan wrote it -- the grouping the plan described
+  lowers modules in the wrong order. The widening also pulled the five
+  `toolbox/` catalogs into early visibility, which surfaced a real
+  parity gap: the `--rtbake --testapi` symbol preload does not carry the
+  identical-repeat extern accommodation, so a user file redeclaring a
+  baked extern gets "redeclaration of X" under `--rtbake` while checking
+  clean from source. Worked around in
+  `testsuite/core/cases_ptrcall.cla` (`include "toolbox/memory.cla"`
+  instead of private copies) and recorded in `docs/TODO.md` with the
+  real fix and the tradeoff that has to be decided first.
+
+**The host lane** (`runtime/host/rt_tcp.inc`, `rt_tcp_test.c`, Task 5).
+211 lines of non-blocking BSD sockets -- one fd per connection slot (8)
+and per listener slot (2) -- behind the sixteen `rt_ext_TcpH*` entry
+points that are the phase's waist contract. Event codes 0-4, "errno <= 4
+is reported as EIO", a positive errno from `Poll` for a failed open and
+a **negative** one from `LsnPoll` for a dead listener. Its review found
+two real defects in the briefed C and both were fixed at the waist
+rather than one level up (Ruling 7): `Close` used to `shutdown(SHUT_WR)`
+immediately and discard an unflushed send remainder (EPIPE, bytes lost),
+and `Close` on a still-CONNECTING slot was a no-op that later surfaced
+as a spurious event 1. `tcp.cla` already guarantees drain-before-close
+at its own level; this is defense at the waist, and spec 4.1 says
+"pending sends drain first".
+
+**The native lane** (`runtime/clarus/tcp_68k.cla`, Task 7 -- 706 lines).
+The same sixteen entries over `.IPP`, every call `PBControlAsync` with
+`ioResult` polled on later pump passes and no interrupt-time code, which
+is the AppleTalk phase's discipline unchanged. `TCPRcv` (copying) rather
+than `TCPNoCopyRcv`: no RDS, no `TCPRcvBfrReturn` pairing, and a runtime
+that copies into its own `text` gains nothing from zero-copy. 8 KB
+stream receive buffer, 4 KB copy buffer, `pushFlag` always set, 30 s ULP
+on open and send, 10 s on close. Its review caught two hardware-shaped
+bugs by reading: a failed `TCPRelease` used to dispose the stream buffer
+and PBs anyway (a dangling pointer MacTCP still holds -- the slot is now
+left intact so `Create`/`LsnOpen` retry the release), and
+`rtTcpDevLsnPoll` was one-shot (a second poll after the first `1`
+returned 0 forever, wedging the listener -- now latched).
+
+**The lane-neutral state machine** (`runtime/clarus/tcp.cla`, Task 6 --
+447 lines) names nothing but `rtTcpDev*`, with `tcp_c.cla` (96 lines,
+host) and `tcp_68k.cla` as its twins: exactly the
+`conn.cla`/`conn_c.cla`/`conn_68k.cla` shape. `conn.cla` gained the
+tag-3 arms (open, send, close, poll, alive) and `atalk.cla`'s pump
+gained `rtTcpPump()` -- **above** `rtAtalkPump`'s `rtAtUp` guard, not
+where the brief placed it, because in a client-only build the brief's
+placement leaves `clar_lsn_fire_accepted` undefined and in a
+listener-only build `irUsesConn` is false. Its review found the sharper
+half of the same bug: the listener `failed` **drain** was still under
+that guard, so every TCP listener failure was silently discarded in a
+TCP-only program. Fixed, with a test.
+
+**The catalog** (`toolbox/mactcp.cla`, Task 4 -- 455 lines): real
+`.IPP`/MacTCP trap, constant and parameter-block declarations (155 of
+them) cited per declaration against `MacTCP.h` and the MacTCP
+Programmer's Guide, with `PBControlAsync` redeclared identically from
+`toolbox/appletalk.cla` so the file composes on its own -- one driver,
+`.IPP`, and **no `extern record` at all**, because a `TCPiopb`'s csParam
+is an eight-arm union `extern record` cannot spell, so the runtime pokes
+absolute offsets into one `NewPtrClear(102)` block. Two rulings
+came out of the review. **Ruling 6:** the brief had the ULP timeout
+action inverted -- the guide (p. 41 table, p. 42 prose: "0 = report,
+nonzero = abort", "abort (the default value)") is the only source, since
+`MacTCP.h` carries no comment; the values were corrected, not the names.
+**Ruling 8:** the invented action pair collided by case with MacTCP.h's
+own termination reasons (`tcpUlpAbort` action 1 vs `tcpULPAbort`
+termination 6), so the **invented** pair was renamed
+`tcpUlpActionAbort`/`tcpUlpActionReport` and the header's own
+identifiers kept. `tests/testsuite/catalog.sh` bind-checks it.
+
+**Compiler and splice.** The `tcp` contextual keyword through parse,
+check and lower (`parse.cla`, `ast.cla`, `check.cla`, `lower.cla`), with
+`checkBareTransport` producing the two new diagnostics from the
+receiver's own warm type memo. `tcp.cla` + `tcp_68k.cla` joined the
+**68k superset** (`drive.cla`'s `want68k` list, `bake.cla`'s
+`bakeModuleList`; the host lane splices `tcp.cla` + `tcp_c.cla`
+usage-gated, as it does for AppleTalk) -- Ruling
+1 moved that work forward from Task 9 to Task 6, because `conn.cla` and
+`atalk.cla` are in that superset and name `rtTcp*` unconditionally, so
+without the splice no native build checks at all. Task 9 also fixed a
+**pre-existing `--rtbake` identity bug** it tripped over:
+`cgFuncFrameSizes`'s real-pass write was captured into the baked
+`'CLIR'`, so a baked function carried its FINAL frame into the stack
+heuristic while a from-source compile used the measure-pass one -- one
+differing byte in the startup `ADDA`. Guarded with `if cgRecMode == 1`;
+zero golden churn from the fix alone.
+
+**Golden churn shape.** Three separate movements, each with a stated
+cause:
+
+- **Task 2 (`delay`)** -- 22 `testdata/cg68k/*.s` (the segment listings
+  of the five UI fixtures) and **25/25** `testdata/emitui/*.c.golden`.
+  `uiscript.cla` is in every UI build, so 100% of the emitui corpus is
+  the expected number, not a surprise.
+- **Task 6 (the splice)** -- **all 60** `testdata/cg68k/*.s`. `arith.s`
+  shows the shape: A5 globals frame **6910 -> 7348 bytes (+438)** and
+  **eight new `rtTextNew` calls** in the boot sequence, one per element
+  of `tcp.cla`'s `rtTcpPending: text[8]`. That is the phase's single
+  standing cost and **every native program pays it**, including one that
+  never opens a connection -- the same 68k-superset arithmetic that made
+  AppleTalk cost 1,596 -> 6,910 bytes. Recorded in `docs/TODO.md` with
+  two levers (usage-gate `tcp.cla` off the superset, or keep one scratch
+  `text` and give each slot an offset into it).
+- **Task 9 (Ruling 16 + fixtures)** -- 60 `.s` again, but the shape is
+  benign and was proved so: digit-stripped, **55 of the 60 differ by
+  exactly the same two lines** (the two new A5 globals `rtTcpCloseSent`
+  and `rtTcpCloseTick` in the header comment table; everything else in
+  the raw diff is offset renumbering, `7348 -> 7388`), and the other 5
+  are the connection/AppleTalk fixtures, whose digit-stripped diffs are
+  exactly what the source predicts (five `rtTcp68*` privates leave,
+  `rtTcpCloseExpired` arrives, `rtTcpStep` moves in packing order).
+  Plus 7 `emitui` goldens, because Ruling 16 put the deadline in the
+  **lane-neutral** `tcp.cla` -- putting it in `tcp_68k.cla` would have
+  had zero host churn, but the ruling is explicit that the guarantee is
+  lane-neutral.
+
+**The hardware lane is Snow only, and here is why.** `macplus/disk1.dsk`,
+`macplus2/disk1.dsk` and `~/mac/System 6.0.8.dsk` carry **no MacTCP**,
+and Mini vMac has no link layer MacTCP could drive (MacTCP over
+LocalTalk needs a MacIP gateway nothing here provides). The only
+emulator with a TCP/IP stack is Snow's Mac II -- `MacTCP` cdev/ztcp,
+`MacTCP DNR`, `MacTCP Prep`, the DaynaPORT driver, 10.0.0.2 via a
+NATted userland link. **That NAT is outbound-only** (no port
+forwarding), so the guest can dial the host and the host cannot dial the
+guest -- which is why the hardware test is a **guest self-connect**: one
+program holding both a listener and a client, dialing its own address.
+It proves our integration with the driver, not the network. That was the
+agreed scope from the spec, and it means **T2 gains nothing this phase**
+on the TCP surface: `tests/mactest/snow/tcp_selfconnect.sh` is behind
+`CLARUS_SNOW_TESTS=1` and neither T1 nor T2 boots it.
+
+**What TCP is NOT hardware-proved on (Ruling 21, recorded rather than
+claimed).** `tcp_selfconnect` was green on the **first** boot Task 11
+issued, green on its rerun, green at close-out, and green again on the
+finished post-fix-wave tree -- **13/13 four times** (Task 11's own
+commit is empty, by Ruling 21). What those 13
+assertions do not reach:
+the 600-tick Closing deadline (the self-connect's peer always closes),
+the close block's ULP abort (P4 showed it cannot fire from finWait2),
+`rtTcp68LsnDrop`'s failed-kill branch, `rtTcp68DrainSpin`'s bound,
+`LsnDeny` (the slot-table-full path), and multi-chunk sends -- the
+largest payload the test moves is 257 bytes. Everything else the native
+waist does was written blind against the guide and worked on first
+hardware contact, the same way the AppleTalk phase's ADSP bodies did.
+
+**The Snow harness change.** `tests/lib_snow.sh` gained `snow_ethernet`
+(stamping the DaynaPORT SCSI adapter into a workspace, verified
+diff-identical against the hand-built `MacII.snoww`) and, midway through
+the phase, a rule that outlives it: Andrew runs a **live BBS** in Snow,
+so the harness now launches `snow/ClarusSnow` (a symlink to a separate
+`snow/Snow.app`), refuses to start when a `ClarusSnow` it did not launch
+is up (`pgrep -x ClarusSnow`), and quits by `kill -TERM $SNOW_PID`
+against **our** pid -- never `osascript -e 'quit app "Snow"'`, which
+would have taken the BBS down. Every System Events lookup is scoped by
+that unix id. The two `docs/snow-*-howto.md` files and `CLAUDE.md` lost
+their `quit app "Snow"` recommendations for the same reason. Task 8 was
+BLOCKED for a whole wave by the BBS being up and issued **no boot** at
+all until it was safe to -- the rule was honoured before it was
+automated.
+
+**The acceptance app.** `examples/tcpchat.cla` (313 lines) is the TCP
+twin of `atalkchat`: `Serve` / `Connect` / `Self` buttons, a listener
+and a client in one program. Its `Self` button is what the Snow test
+drives. Its own review caught the failure mode that matters in a proof
+program: a byte-wrong echo used to log `echo bad` and nothing else --
+not a `failed`, not an assertion -- so a corrupt 257-byte sweep would
+have passed the hardware proof. It now reports `failed -1 echo
+mismatch`, and the Snow script's 13th assertion counts **exactly two**
+`echo ok` lines.
+
+**The DNR is the next phase, and the phase named its three pieces.**
+Name resolution is not a runtime feature here, it is a compiler feature:
+the resolver is a `'dnrp'` code resource inside the "MacTCP DNR" file
+(System 7, `cdev`/`mtcp`) or the MacTCP control panel (1.x,
+`cdev`/`ztcp`), whose first long word is a jump-table procedure called
+**C-convention** with a selector as its first argument -- and Clarus's
+`= ptr` extern clause is pascal-only. `docs/ROADMAP.md` now carries the
+three prerequisites in order: a C-convention `= ptr` variant (arguments
+pushed right-to-left as longs, caller pops, result in D0); the
+resource-file search that finds the resolver; and a result-procedure
+probe (the DNR answers at interrupt time, so A5 has to be set up). Then
+`open(tcp "host:port")` takes a name on both lanes. Dotted-quad-only was
+a deliberate decision, not an omission: the host lane could have
+resolved names for free, but a program must not pass on the host and
+fail on the Mac.
+
+**Tests.** One new group `tests/tcp/` (9 scripts: `connect`, `deny`,
+`every`, `examples`, `failed`, `lfailed`, `listen`, `runerr`,
+`waist68k` -- end-to-end Clarus programs against the `tcpdrive` peer
+tool, binding loopback ports only, so unlike `tests/atalk/` they need no
+shared-medium lock and are safe under `make -j`),
+`tests/hostrt/tcp.sh` (the six-scenario C unit test over
+`rt_tcp.inc`, grown to eight by Ruling 7's fixes), `tests/bake/tcp.sh`
+(the `emit68k_pair` twin, in the same task as the module, per the
+standing rule -- and it is what caught the `--rtbake` identity bug),
+`tests/lib_tcp.sh`, three `testdata/errors/tcp_*` diagnostics fixtures,
+two `testdata/cg68k/tcp_*` and two `testdata/emitui/tcp_*` golden
+fixtures, and the gated `tests/mactest/snow/tcp_selfconnect.sh`.
+
+**Documentation.** The reference's Chapter 12 gained the TCP material on
+both `connection` and `listener` (including the host-lane sentence: TCP
+streams work for real over BSD sockets, so a host build is a working
+client and server) and lost the plain-string `open` form; the cookbook
+gained section 15, "a second csCode-dispatched driver -- MacTCP", the
+worked transcription of `.IPP`'s parameter blocks beside `.MPP`'s;
+`docs/ROADMAP.md` carries the DNR's three prerequisites; `docs/FUTURE.md`
+gained the two levers this phase deliberately did not pull (a MacIP
+gateway on the host LToUDP stack, which would put the native TCP lane
+under T2 instead of the opt-in Snow lane, and inbound Snow port
+forwarding, which would make the hardware test a real two-machine one);
+`docs/TODO.md` gained the phase's own debts and lost what it closed; and
+`CLAUDE.md` gained the `snow/ClarusSnow` layout, the `tcp/` group and the
+Snow TCP lane.
+
+**Reviews.** Every implementation task was reviewed on `opus` against
+the spec, and eight needed a fix round (Tasks 3, 4, 5, 6, 7, 8, 10 and
+12); Tasks 1, 2 and 9 came back clean first time, and Task 11's
+"review" was the controller's own verification of the captured boot log
+rather than a diff review, since its commit is empty (Ruling 21). The
+final whole-branch review ran on `opus` over `git diff main...mactcp`
+concurrently with this close-out; its four Importants are below. The reviews
+found things the tests did not: the host `Close` defects, the two native
+waist defects, the listener-`failed` drain sitting under `rtAtUp`, the
+ULP case collision, and `tcpchat`'s silent `echo bad`. One review
+finding was itself wrong and is recorded as such (Task 10's "Important
+2": the reviewer's worktree predated Task 8's harness merge, so the Snow
+header's coexistence claim it called fabricated was true on the tip).
+
+**The final whole-branch review and its one fix wave.** The review
+(opus, `git diff main...mactcp` against the spec) returned four
+Importants, all fixed in one wave (`8acd145..e09b95a`, two commits):
+
+- **A failed receive re-arm pinned the slot for ever.**
+  `rtTcpDevRecvArm`'s error return was discarded at both of
+  `rtTcpPollConn`'s call sites. On the Mac lane a failed re-arm (a
+  `PBControlAsync` error, `invalidStreamPtr`) leaves NEITHER parameter
+  block live, so `rtTcpDevPoll` returns `rtTcpEvNone` for ever: no
+  `received`, no `closed`, and `rtTcpAlive()` still true -- and Ruling
+  16's own 600-tick deadline cannot reach it, because that arms only on
+  `rtTcpCloseSent`. A failed re-arm IS the close now: Established
+  releases, marks `stClosed` and fires `closed`; Closing releases
+  silently. The phase is **re-read** after the `received` fire rather
+  than reused, and only those two phases act -- a handler is user code,
+  and one that closed the slot must not then get a `closed` (a local
+  close never fires one), while one that closed AND reopened leaves the
+  slot Opening over a NEW stream that must not be released. Mac-only:
+  the host's `TcpHRecvArm` always returns 0.
+- **Nothing in the corpus had ever sent more than 257 bytes through the
+  language.** `rt_tcp_test.c`'s 5000-byte case drives
+  `rt_ext_TcpHSend` by hand without touching `tcp.cla`, so `rtTcpKick`'s
+  chunk loop, `rtTcpDropFront`'s requeue and the `rtTcpEvSent` re-kick
+  had no coverage on either lane. `tests/tcp/bigsend.sh` +
+  `testdata/bigsend.cla` is one `conn.send()` of 5000 bytes -- two
+  chunks -- with a deliberately non-periodic pattern
+  (`byte i = (i*7 + i/4096) mod 256`) so a whole-chunk drop or duplicate
+  cannot echo back byte-identical, verified in both directions
+  (`tcpdrive` byte-compares outbound, the program byte-compares the
+  echo). Breaking `rtTcpDropFront` by one byte in either direction fails
+  at byte 4096.
+- **`so_err` was read uninitialized** on `rt_tcp.inc`'s getsockopt
+  failure path (`||` short-circuits past the `so_err != 0` test, but the
+  next line reads it anyway). Initialized to 0, so that path reports
+  EIO deterministically.
+- Plus the comment/doc corrections, including `CLAUDE.md`'s cg68k golden
+  count (60 -> 65, the five new TCP listings).
+
+The wave's own churn was small and self-explaining: **11 of the 65
+`testdata/cg68k/*.s`, across 5 of the 40 fixtures** -- every one of them
+connection-carrying (`atalk_client`, `atalk_server`, `connfailprobe`,
+`tcp_client`, `tcp_server`; `shake` pulls `rtTcpPollConn` into anything
+reaching `conn.cla`) -- plus 4 `emitui` goldens, all the same hunk. No
+global grew, so the other 35 fixtures did not move.
+
+**Two gaps the review found in the PLAN rather than the code**, both
+recorded for the DNR phase: `rtTcpErrNoDriver` (`tcp.cla:33`) is
+declared and named in `tcp_68k.cla`'s header comment but never returned
+by either waist, so "MacTCP absent" arrives as a raw driver error rather
+than the phase's own constant; and `rtTcpDevRecvArm`'s error return was
+SPECIFIED in the waist contract while no task's brief ever told its
+caller to check it -- which is exactly the Important above. A waist
+entry that returns an error needs its consumer named in the same
+document.
+
+**Gates, and the three things they found at close-out.** T1
+(`scripts/test-task.sh`, `--smoke` where the task touched `runtime/` or
+`clarusc/`) was run on every task's own worktree and again on every
+merged tree (the wave-1 merged-tree gate, after the controller's own
+rebless, was PASS in 140 s with zero files churned). The bootstrap
+snapshot was regenerated once, at close-out
+(`tests/selfhost/fixedpoint.sh`'s own Go-free recipe): four tasks (1, 3,
+6, 9) changed `clarusc/` and none regenerated, so `snapshot_fresh` was
+red until then, with the first divergence at `clar_lit_86` -- Task 2's
+`delay` entering `uiscript.cla`'s literal pool. After it, `selfhost/` is
+6/6 and both halves hold (committed == fresh emission, and gen1 ==
+gen2); the fix wave's comment-only `clarusc/` edits did not move the
+generated C, so no second regeneration was needed.
+
+The merge gate (`scripts/test-merge.sh`) was run on the finished tree,
+after the fix wave:
+
+```
+test-merge.sh: t1 body PASS in 130s     (116 passed, 35 skipped, 0 failed)
+test-merge.sh: perfgate/ PASS in 1s     (1 passed)
+test-merge.sh: selfhost/ PASS in 207s   (6 passed)
+test-merge.sh: mactest/  FAILED         (19 passed, 15 skipped, 2 failed)
+test-merge.sh: bake/ full corpus        NOT REACHED (run separately: 6/7)
+```
+
+**Everything this phase built is green in it.** `toolbox_68k` PASS in
+316 s at **40/40**, `toolbox_jiggle` PASS in 322 s at 40/40,
+`coresuite_68k` PASS at **83/83**, **`adsp_68k` PASS in 19 s at 12/12**
+(Task 2's `delay` verb through a real two-Mac ADSP boot),
+`smoke_bounce`, `tick`, `ui_scenarios`, `native_compare`, `runerr_68k`,
+`connfailed` and `abort_68k` all PASS -- the load-bearing check on a
+corpus that was reblessed four times this phase. The three things that
+did not pass, none of them TCP:
+
+- **`mactest/atalk_68k` and `mactest/atalk_selfserve` failed on a
+  contaminated wire, not on code.** `atalk_selfserve`'s `zones` case
+  wants `zones 1 *` (no router on the LToUDP group) and got
+  **`zones 13 68k Mac Club`** -- then **`zones 21 68k Mac Club`** on an
+  immediate re-run. A zone list that grows between two runs is read off
+  the wire; nothing in this repository can produce it. Something on the
+  machine was bridging `239.192.76.84:1954` to a real AppleTalk internet
+  with a router on it, so NBP lookups became zone-scoped and
+  `atalk_68k`'s ATP transactions against the host `atalkdrive` peer
+  timed out at `-1096`. This is the hazard `CLAUDE.md`'s AppleTalk
+  section and the AppleTalk phase's own `atalk_lock` were written for --
+  the group is shared with whatever else is running -- except that a
+  mutex cannot exclude a bridge. Both scripts were green in the
+  AppleTalk phase's own T2 (216 s and 18 s) and both need re-running on
+  a quiet wire.
+- **`bake/full_corpus_suite_toolbox` is RED, and it is a real bug.**
+  `test-merge.sh` dies before its last stage, so that stage was run on
+  its own (it needs no emulator): 6 of 7 pass, and the toolbox one fails
+  with `toolbox/events.cla:132:1: redeclaration of TickCount` under
+  `--rtbake --testapi`. Task 9 gave `tcp.cla` its tick source as a plain
+  `external func TickCount()`, `toolbox/events.cla` declares the
+  byte-identical extern, and the `--rtbake --testapi` symbol preload is
+  the one path with no identical-repeat extern accommodation -- the gap
+  debt 3's widening put on record in `docs/TODO.md`, now actually
+  biting. It reproduces with the pre-close-out compiler chain, so
+  neither the snapshot nor the fix wave caused it. **Nothing but this
+  sweep could have caught it**: every per-task gate is T1, and T1 SKIPs
+  the `full_corpus_` scripts. That is the second time the standing
+  rule's own warning has come true, and the runtime already has the
+  convention that avoids it -- `runtime/clarus/ui.cla:361`'s
+  module-private `UiTickCount` with an `rt_ext_UiTickCount` twin, which
+  is what `tcp.cla` should have copied. Blast radius is compile-time and
+  narrow: from-source builds dedup the two externs, and `--rtbake`
+  without `--testapi` preloads no early symbols, so `full_corpus_cg68k`,
+  `full_corpus_emitui`, `full_corpus_selfcompile`, `tests/bake/tcp.sh`
+  and the Snow `clarusc_bake` boot are all green.
+
+An earlier T2 attempt, before the fix wave, got its first three stages
+green and then lost all thirteen `mactest/` boots to
+`Assertion failed: (sysvol), MiniVMac.cc:266` -- `hfs_mount` on
+`/Users/andrew/mac/macplus/disk1.dsk`, which `~/.LaunchAPPL.cfg` names
+as `system-image`, while a live Mini vMac session held its medium lock.
+Recorded because the diagnosis is not obvious from the message and the
+rule that governs it is the same one that governs the Snow BBS: the
+session was not touched and the gate was re-run afterwards.
+
+**The two Snow boots at close-out**, both under the phase's gate mutex,
+with `pgrep -x Snow` showing only Andrew's BBS (pid 64133, untouched)
+and `pgrep -x ClarusSnow` empty before each:
+
+- `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/tcp_selfconnect` --
+  **PASS in 55 s, 13/13** on the close-out tree with the regenerated
+  snapshot under it and **PASS in 54 s, 13/13** again after the fix wave
+  changed `tcp.cla`, with the guest log identical to Task 11's both
+  times
+  (`listening 2323` / `opened` / `accepted` / `received 256` /
+  `received 257` / `echo ok` / `received 5` / `received 6` / `echo ok` /
+  `closing` / `closed` / `##CLARUS-EXIT## 0`). Third and fourth green
+  runs of the script.
+- `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` -- the
+  standing rule after any change to `clarusc/bake.cla`, owed because
+  this phase changed its 68k module list: **PASS in 2624 s**, 6/6
+  (`bake_path_taken`, `no_clfs_fallback`, `dispatches`,
+  `no_error_markers`, `clean_exit`, `tickprobe_fork_identity`). The
+  guest's own log shows the real bake path (`clarusc: bake path (CLIR
+  resource)`, no `CLFS` fallback) and a 19 m 33 s emulated compile of
+  `tickprobe.cla` -- 11 m 49 s of it in Measure -- whose fork comes out
+  byte-identical to the host compiler's. So `ClarusC.APPL`'s default
+  bake path still works on real hardware after this phase's
+  `bakeModuleList` growth.
+
+**Accepted costs, stated precisely.**
+
+- **Every native program's A5 globals grew 6,910 -> 7,388 bytes** and
+  its boot sequence gained **eight `rtTextNew` calls**, because
+  `runtime/clarus/tcp.cla` + `tcp_68k.cla` are in the 68k superset --
+  spliced into every native build, not usage-gated the way the host
+  `tcp.cla`/`tcp_c.cla` pair is. A program that never opens a
+  connection pays all of it. Two levers in `docs/TODO.md`, either one
+  enough.
+- **The `toolbox` suite is 68k-source-only** (Ruling 10). The opt-in
+  cprint twin `toolbox_mac.sh` cannot compile it any more; that lane is
+  slated for deletion in 5f, and the native lane covers every case.
+- **The `--rtbake --testapi` symbol preload's identical-repeat extern
+  gap is no longer hypothetical.** Debt 3 pulled the five `toolbox/`
+  catalogs into early visibility; it was worked around once inside the
+  phase (`testsuite/core/cases_ptrcall.cla` now `include`s
+  `toolbox/memory.cla` instead of carrying private copies), and at
+  close-out it took down a gate: `bake/full_corpus_suite_toolbox` is RED
+  on `toolbox/events.cla:132:1: redeclaration of TickCount`, against
+  `tcp.cla`'s own identical declaration. See the gates section.
+- **`rtTcpListenMsg` hardcodes errno 48** as "port in use". 48 is
+  `EADDRINUSE` on BSD/macOS and 98 on Linux, so a Linux host reports the
+  generic message and `tests/tcp/lfailed.sh` would fail there
+  (`docs/TODO.md`, with the symbolic-mapping fix).
+- **The 68k stack heuristic under-reserves.** Not new and not this
+  phase's -- `cgStackHeuristic` prices every frame without its temp
+  pools -- but Task 9 had to touch the site to fix the `--rtbake`
+  identity bug, so the debt is now recorded in `docs/TODO.md` with the
+  reason it was not folded in (fixing it moves every native program's
+  stack reserve, and so every `cg68k` golden).
+
+**Deferred / recorded.** The `progress.md` ledger in
+`.superpowers/sdd/2026-09-07-mactcp/` carries every deferred minor
+verbatim, one line per task, alongside all 22 rulings and each one's
+stated cost if wrong. The items that outlive the phase are in
+`docs/TODO.md` (the `text[8]` boot cost; the errno-48 hardcode; the
+cprint script engine's missing `delay` arm and silent unknown-verb
+fall-through; the `--rtbake --testapi` extern-repeat gap; the stack
+heuristic) and `docs/FUTURE.md` (a MacIP gateway on the host LToUDP
+stack, which would put the native TCP lane under T2; inbound Snow port
+forwarding, which would make the hardware test a real two-machine one).
+Explicitly NOT done and recorded as such: the six paths in Ruling 21's
+list above, and IP `address` values / a `remoteAddress` getter /
+`system.hasTCP()` / UDP / OpenTransport, all out of scope by the spec.
+
+Spec: `docs/superpowers/specs/2026-09-07-mactcp-design.md`; plan
+`docs/superpowers/plans/2026-09-07-mactcp.md`; per-task briefs, reports,
+review packages and the `progress.md` ledger in
+`.superpowers/sdd/2026-09-07-mactcp/`.
+
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of
