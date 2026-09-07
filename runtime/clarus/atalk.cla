@@ -835,10 +835,13 @@ func rtAtalkPump() {
     // "port in use", "invalid port", "TCP unavailable", "listener
     // already registered", "listener failed" and "could not accept
     // connection" and then discarded every one of them: `on l.failed`
-    // never ran. Draining ahead of both pumps also matches this file's
-    // own stated ordering (a failure always precedes whatever the device
-    // does next) and costs an AppleTalk program nothing -- it fires the
-    // same event, one section earlier in the same pass.
+    // never ran. The drain sits immediately AFTER rtTcpPump() and ahead
+    // of the AppleTalk device pump and listener loop, so a failure
+    // rtTcpPump stages is still fired in the SAME pass that staged it,
+    // and an AppleTalk failure keeps this file's own stated ordering (a
+    // failure always precedes whatever the device does next) -- it costs
+    // an AppleTalk program nothing but firing the same event one section
+    // earlier in the pass.
     i = 0
     while i < rtLsnMax {
         if rtLsnPendFailedCode[i] != 0 {

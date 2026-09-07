@@ -5872,11 +5872,15 @@ func cgEmitFunc(f: int) {
     }
     // binary-files phase Task 8: record this function's own big-temp
     // high-water mark (cgFuncBigTmpHigh, bumped by every cgAllocBigTmpOff
-    // call during the cgStmts walk above, body and bail block alike) --
-    // same idempotent index-write discipline as cgFuncFrameSizes[f]
-    // above (cgEmitFunc runs twice per function, always computing the
-    // identical value from the same IR): a no-op re-write on the real
-    // pass, the actual recording on the measure pass.
+    // call during the cgStmts walk above, body and bail block alike).
+    // These two writes need no cgRecMode guard: the high-water marks ARE
+    // idempotent across cgEmitFunc's two passes -- the same IR drives the
+    // same cgAllocBigTmpOff/cgAllocSmallTmpOff sequence, so the real pass
+    // re-writes the identical value the measure pass recorded.
+    // cgFuncFrameSizes[f] above is NOT idempotent (the measure pass and
+    // the real pass compute DIFFERENT frame sizes), which is exactly why
+    // its write is guarded to the measure pass -- see the --rtbake
+    // identity failure documented there.
     cgFuncBigTmpNeed[f] = cgFuncBigTmpHigh
     // compiler-cleanup: same recording, for the small pool.
     cgFuncSmallTmpNeed[f] = cgFuncSmallTmpHigh
@@ -12141,7 +12145,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // Task 14.7 fallback if the inner expr isn't addressable).
             src2 = irIntrArgsHead(src2)
         } else if nm == "ui_value_at_ptr" {
-            // serial-connection Task 7 gap fix: lowSynthConnFireFailed
+            // serial-connection Task 7 gap fix: lowSynthFireFailed
             // (lower.cla) builds `err.message = ui_value_at_ptr(msgPtr,
             // string(255))` for any user program with an `on X.failed(err:
             // error)` connection handler -- unexercised until this task's

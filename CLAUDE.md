@@ -146,7 +146,9 @@ Tiered test gates:
 - **MacTCP test groups (MacTCP phase, 2026-09-08).** Three T1 groups
   cover the TCP transport, and none of them needs `atalk_lock`:
   `tests/tcp/` (end-to-end Clarus programs against the `tcpdrive` peer
-  tool -- `connect`, `listen`, `failed`, `lfailed`, `deny`, `every`,
+  tool -- `connect`, `bigsend` (ONE >4 KB `conn.send`, the only
+  coverage of `tcp.cla`'s chunk loop and `rtTcpDropFront`), `listen`,
+  `failed`, `lfailed`, `deny`, `every`,
   `runerr`, `examples`, plus `waist68k`, which drives a probe through
   the language surface and greps `emit68k --listing` for all sixteen
   native waist entry points),
@@ -158,7 +160,7 @@ Tiered test gates:
   the AppleTalk pair (spliced into EVERY native build, not usage-gated
   like the host `tcp.cla`/`tcp_c.cla` pair), so they are in `bake.cla`'s
   68k module list, and an edit that moves `tcp.cla`'s GLOBALS moves
-  every one of the 60 `testdata/cg68k/*.s` goldens, not just the TCP
+  every one of the 65 `testdata/cg68k/*.s` goldens, not just the TCP
   ones -- the splice itself did exactly that (+438 B of A5 globals and
   8 extra `rtTextNew` calls at boot in every native program, from
   `tcp.cla`'s `rtTcpPending: text[8]`; see `docs/TODO.md`).

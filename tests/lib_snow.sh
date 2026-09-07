@@ -421,11 +421,12 @@ snow_run() {
 # snow_run BLOCKS for the whole boot, so this cannot be called after it:
 # it arms a BACKGROUND clicker that waits for Snow's window to appear
 # (up to 60s) and then clicks. **It must only be started once snow_run is
-# about to launch**: it waits for $WORK/snow.log, which nothing but our
-# own snow_run creates, so an orphaned clicker (the caller died before
-# snow_run ever ran, e.g. on snow_run's own "another Snow is already
-# running" refusal) can never post clicks into somebody else's Snow
-# window. It also gives up the moment $WORK is gone, which is how both
+# about to launch**: it waits for $WORK/snow.pid (0cb265b), which nothing
+# but our own snow_run writes, and then asks System Events for the window
+# of THAT pid specifically -- so an orphaned clicker (the caller died
+# before snow_run ever ran, e.g. on snow_run's own "another Snow is
+# already running" refusal) can never post clicks into somebody else's
+# Snow window. It also gives up the moment $WORK is gone, which is how both
 # EXIT traps in this file say "the parent is finished". `wait` for
 # $SNOW_LTALK_PID afterwards. Clicking early is also correct on the
 # guest's terms: the bridge only has to exist before the guest opens
