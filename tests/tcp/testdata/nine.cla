@@ -1,0 +1,50 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, Task 6 (spec %4.2, "slot table full"): a server that
+// accepts and then simply HOLDS every client. args[0] is the port.
+//
+// It stores nothing: the runtime's slot table is what fills up (an
+// accepted slot is stOpen from the moment rtTcpPump claims it, whether or
+// not the program keeps the handle), so eight peers occupy all
+// rtConnMax slots and the ninth must be denied -- aborted and re-armed
+// silently, with no `failed` on this side. Naming `connection` in the
+// accepted handler's parameter is what pulls conn.cla in.
+var lsn: listener
+var accepted: int
+
+// No string-to-int conversion exists in the language (Ch3, Conversions),
+// so argv's decimal port is parsed here. Non-digits give 0, which
+// rtLsnListen rejects as an invalid port.
+func portOf(s: string): int {
+    var i: int
+    var v: int
+    var c: char
+
+    v = 0
+    i = 0
+    while i < s.length {
+        c = s[i]
+        if c < '0' or c > '9' {
+            return 0
+        }
+        v = v * 10 + (int(c) - int('0'))
+        i = i + 1
+    }
+    return v
+}
+
+on App.startCLI(args: list of string) {
+    lsn.listen(tcp portOf(args[0]))
+    log("listening")
+}
+
+on lsn.accepted(c: connection) {
+    accepted = accepted + 1
+    log("accepted")
+}
+
+on lsn.failed(err: error) {
+    log("lfailed " + string(err.code) + " " + err.message)
+    quit 1
+}

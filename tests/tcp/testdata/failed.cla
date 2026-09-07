@@ -1,0 +1,39 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, Task 6 (spec %4.1): the three open failures, all as
+// `failed` events on a later pump pass, never a crash.
+//   slot 0  127.0.0.1:1        refused by the stack -> a positive errno
+//   slot 1  example.invalid:80 a host NAME -> invalid spec (-2), the DNR
+//                              phase's job on both lanes
+//   slot 2  10.0.0.5           no port at all -> invalid spec (-2)
+var c0: connection
+var c1: connection
+var c2: connection
+var seen: int
+
+func report(slot: int, code: int, msg: string) {
+    log("failed " + string(slot) + " " + string(code) + " " + msg)
+    seen = seen + 1
+    if seen == 3 {
+        quit 0
+    }
+}
+
+on App.startCLI(args: list of string) {
+    c0.open(tcp "127.0.0.1:1")
+    c1.open(tcp "example.invalid:80")
+    c2.open(tcp "10.0.0.5")
+}
+
+on c0.failed(err: error) {
+    report(0, err.code, err.message)
+}
+
+on c1.failed(err: error) {
+    report(1, err.code, err.message)
+}
+
+on c2.failed(err: error) {
+    report(2, err.code, err.message)
+}

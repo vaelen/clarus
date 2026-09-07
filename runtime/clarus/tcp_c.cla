@@ -1,0 +1,96 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// tcp_c.cla: the C-lane rtTcpDev* waist (MacTCP phase, Task 6). Sixteen
+// thin wrappers over sixteen `TcpH`-prefixed externs (the family-prefix
+// convention conn_c.cla's own header explains) rendering as rt_ext_TcpH*
+// in runtime/host/rt_tcp.inc, the host's BSD-socket stand-in for MacTCP's
+// .IPP driver. tcp_68k.cla is this file's native twin, same sixteen
+// function names, real Device Manager calls instead.
+//
+// Never spliced onto the native lane (drive.cla adds this module only for
+// non-68k builds). Spec parsing, the phase machine and every event
+// decision live in tcp.cla; this file only renames.
+
+external func TcpHInit(): int
+external func TcpHCreate(slot: int): int
+external func TcpHActiveOpen(slot: int, ip: int, port: int): int
+external func TcpHPoll(slot: int): int
+external func TcpHRecvLen(slot: int): int
+external func TcpHRecvPtr(slot: int): ptr
+external func TcpHRecvArm(slot: int): int
+external func TcpHSendBusy(slot: int): int
+external func TcpHSend(slot: int, p: ptr, n: int): int
+external func TcpHClose(slot: int): int
+external func TcpHRelease(slot: int)
+external func TcpHLsnOpen(lsn: int, port: int): int
+external func TcpHLsnPoll(lsn: int): int
+external func TcpHLsnAccept(lsn: int, slot: int): int
+external func TcpHLsnDeny(lsn: int)
+external func TcpHLsnClose(lsn: int)
+
+func rtTcpDevInit(): int {
+    return TcpHInit()
+}
+
+func rtTcpDevCreate(slot: int): int {
+    return TcpHCreate(slot)
+}
+
+func rtTcpDevActiveOpen(slot: int, ip: int, port: int): int {
+    return TcpHActiveOpen(slot, ip, port)
+}
+
+func rtTcpDevPoll(slot: int): int {
+    return TcpHPoll(slot)
+}
+
+func rtTcpDevRecvLen(slot: int): int {
+    return TcpHRecvLen(slot)
+}
+
+func rtTcpDevRecvPtr(slot: int): ptr {
+    return TcpHRecvPtr(slot)
+}
+
+func rtTcpDevRecvArm(slot: int): int {
+    return TcpHRecvArm(slot)
+}
+
+// rtTcpDevSendBusy: the glue answers 0/1 as an int (rt_tcp.inc's own
+// signature), so the bool the waist is specified in is made here.
+func rtTcpDevSendBusy(slot: int): bool {
+    return TcpHSendBusy(slot) != 0
+}
+
+func rtTcpDevSend(slot: int, p: ptr, n: int): int {
+    return TcpHSend(slot, p, n)
+}
+
+func rtTcpDevClose(slot: int): int {
+    return TcpHClose(slot)
+}
+
+func rtTcpDevRelease(slot: int) {
+    TcpHRelease(slot)
+}
+
+func rtTcpDevLsnOpen(lsn: int, port: int): int {
+    return TcpHLsnOpen(lsn, port)
+}
+
+func rtTcpDevLsnPoll(lsn: int): int {
+    return TcpHLsnPoll(lsn)
+}
+
+func rtTcpDevLsnAccept(lsn: int, slot: int): int {
+    return TcpHLsnAccept(lsn, slot)
+}
+
+func rtTcpDevLsnDeny(lsn: int) {
+    TcpHLsnDeny(lsn)
+}
+
+func rtTcpDevLsnClose(lsn: int) {
+    TcpHLsnClose(lsn)
+}

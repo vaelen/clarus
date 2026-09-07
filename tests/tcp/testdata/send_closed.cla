@@ -1,0 +1,21 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, Task 6: the error-principle fence. A peer close releases
+// the slot before `closed` fires, so a `send` from inside that handler is
+// a contract violation -- the existing `connection not open` runtime
+// error, not a `failed` event. args[0] is "ip:port".
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    conn.open(tcp args[0])
+}
+
+on conn.closed {
+    conn.send("x")
+}
+
+on conn.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+    quit 1
+}

@@ -1,0 +1,59 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, Task 6: the host end-to-end SERVER fixture. args[0] is
+// the port to listen on. Echoes one client, then stops the listener when
+// that client closes -- after which nothing is open and the process must
+// exit on its own.
+//
+// `client` is the only `connection` global, so slot 0 is both its slot
+// and the accept's free slot (the atalkchat note).
+var lsn: listener
+var client: connection
+
+// The language has no string-to-int conversion (Ch3's Conversions
+// section: int() takes a fixed or a char), so a decimal port from argv is
+// parsed here. Non-digits give 0, which rtLsnListen rejects as an invalid
+// port -- exactly what a garbage argument deserves.
+func portOf(s: string): int {
+    var i: int
+    var v: int
+    var c: char
+
+    v = 0
+    i = 0
+    while i < s.length {
+        c = s[i]
+        if c < '0' or c > '9' {
+            return 0
+        }
+        v = v * 10 + (int(c) - int('0'))
+        i = i + 1
+    }
+    return v
+}
+
+on App.startCLI(args: list of string) {
+    lsn.listen(tcp portOf(args[0]))
+    log("listening")
+}
+
+on lsn.accepted(c: connection) {
+    client = c
+    log("accepted")
+    client.send("READY\n")
+}
+
+on lsn.failed(err: error) {
+    log("lfailed " + string(err.code) + " " + err.message)
+    quit 1
+}
+
+on client.received(data: text) {
+    client.send(data)
+}
+
+on client.closed {
+    log("closed")
+    lsn.stop()
+}

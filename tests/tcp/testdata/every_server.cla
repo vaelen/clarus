@@ -1,0 +1,49 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, Task 6: the CLI lifetime rule with a live TCP listener.
+// A listening program stays alive with no client at all, and its `every`
+// timer keeps firing -- so the ONLY thing that ends it is its own
+// `quit 0` at beat 20 (6 ticks = 100 ms, so ~2 s).
+var lsn: listener
+var beats: int
+
+func portOf(s: string): int {
+    var i: int
+    var v: int
+    var c: char
+
+    v = 0
+    i = 0
+    while i < s.length {
+        c = s[i]
+        if c < '0' or c > '9' {
+            return 0
+        }
+        v = v * 10 + (int(c) - int('0'))
+        i = i + 1
+    }
+    return v
+}
+
+on App.startCLI(args: list of string) {
+    lsn.listen(tcp portOf(args[0]))
+    log("listening")
+}
+
+on lsn.accepted(c: connection) {
+    log("accepted")
+}
+
+on lsn.failed(err: error) {
+    log("lfailed " + string(err.code) + " " + err.message)
+    quit 1
+}
+
+every 6 ticks {
+    beats = beats + 1
+    if beats == 20 {
+        log("beats " + string(beats))
+        quit 0
+    }
+}

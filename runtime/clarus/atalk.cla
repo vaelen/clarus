@@ -598,6 +598,8 @@ func rtLsnRegister(h: int, name: string, typ: string) {
 }
 
 // rtLsnStop: remove the name and the listener. Idempotent (spec %4.2).
+// Shared with TCP listeners (MacTCP phase, spec %4.2's own `l.stop()`),
+// which dispatch to tcp.cla's rtTcpLsnStop below.
 func rtLsnStop(h: int) {
     var slot: int
 
@@ -608,8 +610,14 @@ func rtLsnStop(h: int) {
     if rtLsnState[slot] != rtAtActive {
         return
     }
-    rtAtDevRemove(rtLsnName[slot], rtLsnType[slot])
-    rtLsnDevRemove(slot)
+    if rtLsnSlotTransport[slot] == rtConnTransportTcp {
+        // MacTCP phase, Task 6: a TCP listener has no NBP name and no
+        // ADSP device slot -- tcp.cla owns its whole teardown.
+        rtTcpLsnStop(slot)
+    } else {
+        rtAtDevRemove(rtLsnName[slot], rtLsnType[slot])
+        rtLsnDevRemove(slot)
+    }
     rtLsnState[slot] = rtAtIdle
     rtLsnName[slot] = ""
     rtLsnType[slot] = ""
@@ -809,6 +817,16 @@ func rtAtalkPump() {
     var j: int
     var e: int
 
+    // MacTCP phase, Task 6 (spec %5.6): the TCP listeners, whose whole
+    // state machine is tcp.cla's. They ride THIS pump rather than
+    // rtConnPump because this is the one gated on irUsesAtalk, which any
+    // `listener` var sets -- rtConnPump's own gate (irUsesConn) can be
+    // false in a listening program, and rtTcpPump reaches
+    // clar_lsn_fire_accepted, which only exists when usesAtalk anyway.
+    // ABOVE the rtAtUp guard on purpose: a TCP listener needs no
+    // AppleTalk stack, so nothing here may wait for one.
+    rtTcpPump()
+
     if not rtAtUp {
         return
     }
@@ -910,7 +928,10 @@ func rtAtalkPump() {
             clar_lsn_fire_failed(i, code, rtLsnPendFailedMsg[i])
             rtLsnPendFailedMsg[i] = ""
         }
-        if rtLsnState[i] == rtAtActive {
+        // MacTCP phase, Task 6: a TCP listener shares this slot table but
+        // is polled by tcp.cla's own rtTcpPump -- the ADSP device waist
+        // below knows nothing about it.
+        if rtLsnState[i] == rtAtActive and rtLsnSlotTransport[i] != rtConnTransportTcp {
             pr = rtLsnDevPoll(i)
             if pr < 0 {
                 // The listen request itself failed. The re-arm below

@@ -1,0 +1,396 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// tcp.cla: the shared TCP runtime (MacTCP phase, spec %5). conn.cla's
+// third transport (tag 3) and listener's second form. Lane-neutral: every
+// device-facing call goes through the rtTcpDev* waist -- tcp_68k.cla
+// (MacTCP through .IPP, polled async parameter blocks, no ASR) and
+// tcp_c.cla (BSD sockets via runtime/host/rt_tcp.inc) -- listed in the
+// plan's "Shared interface" section.
+//
+// Spliced after conn.cla and atalk.cla on both lanes (host: with them,
+// under `usesConn or usesAtalk`; 68k: the unconditional superset). Reads
+// conn.cla's slot table (rtConnState, rtConnSlotTransport, the fire
+// externs) and atalk.cla's listener table (rtLsnState, rtLsnSetFailed,
+// rtAtAppendBytes).
+//
+// Error principle (inherited): contract violations panic (nil resource,
+// send on a non-open slot); everything environmental is a staged `failed`
+// drained by the next pump pass, never fired from the call that caused it.
+//
+// Slot ownership: a slot is TCP's from rtTcpOpen/accept until
+// rtTcpRelease -- through Closing, even after conn.cla has marked it
+// stClosed for the user. rtConnClose must NOT clear rtConnSlotTransport
+// for tag 3 (the pump would stop polling the lingering close); this
+// module clears it at release, as atalk.cla's rtAdspFailed does for ADSP.
+
+const rtConnTransportTcp: int = 3
+const rtTcpEvNone: int = 0
+const rtTcpEvOpened: int = 1
+const rtTcpEvReceived: int = 2
+const rtTcpEvClosed: int = 3
+const rtTcpEvSent: int = 4
+const rtTcpErrNoDriver: int = -23000
+const rtTcpErrBadSpec: int = -2
+const rtTcpStreamBuf: int = 8192
+const rtTcpChunk: int = 4096
+
+// Phases, per connection slot.
+const rtTcpIdle: int = 0
+const rtTcpOpening: int = 1
+const rtTcpEstablished: int = 2
+const rtTcpClosing: int = 3
+
+var rtTcpPhase: int[8]
+var rtTcpPending: text[8]        // bytes queued behind the in-flight send
+var rtTcpUp: bool                // rtTcpDevInit succeeded once
+var rtLsnSlotTransport: int[2]   // 0 ADSP/unused, 3 TCP
+var rtLsnPort: int[2]
+var rtTcpLastErr: int
+
+// rtTcpParseIp/rtTcpParsePort: rtTcpParseSpec's out-params (no int by-ref).
+var rtTcpParseIp: int
+var rtTcpParsePort: int
+
+// rtTcpParseSpec: "a.b.c.d:port" -> packed big-endian ip + port. false on
+// anything else -- including a host NAME, which is the DNR phase's job on
+// both lanes (spec Q3).
+func rtTcpParseSpec(spec: string): bool {
+    var colonIdx: int
+    var host: string
+    var i: int
+    var start: int
+    var octets: int
+    var v: int
+    var ip: int
+
+    colonIdx = spec.indexOf(':')
+    if colonIdx <= 0 {
+        return false
+    }
+    host = spec[0, colonIdx]
+    rtTcpParsePort = rtConnParseInt(spec[colonIdx + 1, spec.length - colonIdx - 1])
+    if rtTcpParsePort < 1 or rtTcpParsePort > 65535 {
+        return false
+    }
+    ip = 0
+    octets = 0
+    start = 0
+    i = 0
+    while i <= host.length {
+        if i == host.length or host[i] == '.' {
+            if i == start {
+                return false
+            }
+            v = rtConnParseInt(host[start, i - start])
+            if v < 0 or v > 255 {
+                return false
+            }
+            ip = ip * 256 + v
+            octets = octets + 1
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if octets != 4 {
+        return false
+    }
+    rtTcpParseIp = ip
+    return true
+}
+
+func rtTcpEnsureUp(): int {
+    var e: int
+
+    if rtTcpUp {
+        return 0
+    }
+    e = rtTcpDevInit()
+    if e != 0 {
+        rtTcpLastErr = e
+        return e
+    }
+    rtTcpUp = true
+    return 0
+}
+
+// rtTcpFree: the slot is not TCP's (for listener accept scans).
+func rtTcpFree(slot: int): bool {
+    return rtTcpPhase[slot] == rtTcpIdle
+}
+
+// rtTcpRelease: back to Idle, whatever was in flight; clears conn.cla's
+// transport tag (the ADSP convention). Idempotent.
+func rtTcpRelease(slot: int) {
+    rtTcpDevRelease(slot)
+    rtTcpPhase[slot] = rtTcpIdle
+    rtTcpPending[slot].clear()
+    if rtConnSlotTransport[slot] == rtConnTransportTcp {
+        rtConnSlotTransport[slot] = 0
+    }
+}
+
+// rtTcpOpen: conn.cla's transport-3 arm. 0 = started (opened/failed come
+// from the pump); nonzero = failed now (conn.cla stages `failed`). A slot
+// still lingering in Closing is aborted and reused.
+func rtTcpOpen(slot: int, spec: string): int {
+    var e: int
+
+    if rtTcpPhase[slot] != rtTcpIdle {
+        rtTcpRelease(slot)
+    }
+    if not rtTcpParseSpec(spec) {
+        return rtTcpErrBadSpec
+    }
+    e = rtTcpEnsureUp()
+    if e != 0 {
+        return e
+    }
+    e = rtTcpDevCreate(slot)
+    if e != 0 {
+        return e
+    }
+    e = rtTcpDevActiveOpen(slot, rtTcpParseIp, rtTcpParsePort)
+    if e != 0 {
+        rtTcpDevRelease(slot)
+        return e
+    }
+    rtConnSlotTransport[slot] = rtConnTransportTcp
+    rtTcpPhase[slot] = rtTcpOpening
+    return 0
+}
+
+// rtTcpDropFront: drop the first n bytes of the slot's pending queue.
+// ponytail: O(len) per chunk -- a ring buffer only if a 64 KB send ever
+// shows up in a profile.
+func rtTcpDropFront(slot: int, n: int) {
+    var rest: text
+    var i: int
+
+    i = n
+    while i < rtTcpPending[slot].length {
+        rest.append(rtTcpPending[slot][i])
+        i = i + 1
+    }
+    rtTcpPending[slot].clear()
+    rtTcpPending[slot].append(rest)
+}
+
+// rtTcpKick: start the next chunk if nothing is in flight and bytes wait.
+func rtTcpKick(slot: int): int {
+    var n: int
+    var scratch: ptr
+    var e: int
+
+    if rtTcpDevSendBusy(slot) or rtTcpPending[slot].length == 0 {
+        return 0
+    }
+    n = rtTcpPending[slot].length
+    if n > rtTcpChunk {
+        n = rtTcpChunk
+    }
+    scratch = rtAtTextToPtr(rtTcpPending[slot])   // whole text; the waist copies the first n
+    if scratch == ptr(0) {
+        return rtAtErrMemFull
+    }
+    e = rtTcpDevSend(slot, scratch, n)
+    SerDisposePtr(scratch)
+    if e != 0 {
+        return e
+    }
+    rtTcpDropFront(slot, n)
+    return 0
+}
+
+// rtTcpWrite: conn.cla's transport-3 send arm (the slot is stOpen, so the
+// phase is Established). Queues, then kicks. Nonzero = a staged `failed`.
+func rtTcpWrite(slot: int, p: ptr, n: int): int {
+    rtAtAppendBytes(rtTcpPending[slot], p, n)
+    return rtTcpKick(slot)
+}
+
+// rtTcpStep: in Closing, issue the graceful close once the queue drained.
+func rtTcpStep(slot: int) {
+    if rtTcpPhase[slot] == rtTcpClosing and rtTcpPending[slot].length == 0 and not rtTcpDevSendBusy(slot) {
+        rtTcpDevClose(slot)
+    }
+}
+
+// rtTcpClose: conn.cla's transport-3 close arm. Never fires `closed`.
+func rtTcpClose(slot: int) {
+    if rtTcpPhase[slot] == rtTcpEstablished {
+        rtTcpPhase[slot] = rtTcpClosing
+        rtTcpStep(slot)
+    } else if rtTcpPhase[slot] == rtTcpOpening {
+        rtTcpRelease(slot)
+    }
+}
+
+// rtTcpPollConn: conn.cla's rtConnPump arm for a transport-3 slot -- one
+// waist event per pass, turned into conn.cla's own state + fire calls.
+func rtTcpPollConn(slot: int) {
+    var ev: int
+    var t: text
+    var e: int
+
+    if rtTcpPhase[slot] == rtTcpIdle {
+        return
+    }
+    ev = rtTcpDevPoll(slot)
+    if ev == rtTcpEvNone {
+        rtTcpStep(slot)
+        return
+    }
+    if ev != rtTcpEvOpened and ev != rtTcpEvReceived and ev != rtTcpEvClosed and ev != rtTcpEvSent {
+        // the open failed (MacTCP OSErr < 0, host errno > 4)
+        rtTcpRelease(slot)
+        rtConnSetFailed(slot, ev, "could not open connection")
+        return
+    }
+    if ev == rtTcpEvOpened {
+        rtTcpPhase[slot] = rtTcpEstablished
+        rtConnState[slot] = stOpen
+        clar_conn_fire_opened(slot)
+        return
+    }
+    if ev == rtTcpEvSent {
+        e = rtTcpKick(slot)
+        if e != 0 and rtConnPendFailedCode[slot] == 0 {
+            rtConnPendFailedCode[slot] = e
+            rtConnPendFailedMsg[slot] = "write failed"
+        }
+        rtTcpStep(slot)
+        return
+    }
+    if ev == rtTcpEvReceived {
+        if rtTcpPhase[slot] == rtTcpEstablished {
+            t = ""
+            rtAtAppendBytes(t, rtTcpDevRecvPtr(slot), rtTcpDevRecvLen(slot))
+            rtTcpDevRecvArm(slot)
+            clar_conn_fire_received(slot, t)
+        } else {
+            rtTcpDevRecvArm(slot)   // Closing: bytes after a local close are dropped
+        }
+        return
+    }
+    // rtTcpEvClosed
+    if rtTcpPhase[slot] == rtTcpEstablished {
+        rtTcpRelease(slot)
+        rtConnState[slot] = stClosed
+        clar_conn_fire_closed(slot)
+    } else {
+        rtTcpRelease(slot)
+    }
+}
+
+// ---- listener ----
+
+// rtLsnListen: `l.listen(tcp port)` (spec %4.2). Every failure is a
+// staged `failed`, never a panic -- except a nil listener, which is the
+// same contract violation rtLsnRegister treats as one.
+func rtLsnListen(h: int, port: int) {
+    var slot: int
+    var e: int
+
+    if h == 0 {
+        rtPanic("use of nil listener")
+    }
+    slot = h - 1
+    if rtLsnState[slot] == rtAtActive {
+        rtLsnSetFailed(slot, rtConnErrAlreadyOpen, "listener already registered")
+        return
+    }
+    if port < 1 or port > 65535 {
+        rtLsnSetFailed(slot, rtTcpErrBadSpec, "invalid port")
+        return
+    }
+    e = rtTcpEnsureUp()
+    if e != 0 {
+        rtLsnSetFailed(slot, e, "TCP unavailable")
+        return
+    }
+    e = rtTcpDevLsnOpen(slot, port)
+    if e != 0 {
+        rtLsnSetFailed(slot, e, rtTcpListenMsg(e))
+        return
+    }
+    rtLsnSlotTransport[slot] = rtConnTransportTcp
+    rtLsnPort[slot] = port
+    rtLsnState[slot] = rtAtActive
+}
+
+func rtTcpListenMsg(code: int): string {
+    if code == -23017 or code == 48 {   // duplicateSocket / EADDRINUSE
+        return "port in use"
+    }
+    return "could not start listener"
+}
+
+// rtTcpLsnStop: atalk.cla's rtLsnStop arm for a TCP listener.
+func rtTcpLsnStop(slot: int) {
+    rtTcpDevLsnClose(slot)
+    rtLsnSlotTransport[slot] = 0
+    rtLsnPort[slot] = 0
+}
+
+// rtTcpPump: the listeners (connections are polled from rtConnPump).
+func rtTcpPump() {
+    var i: int
+    var pr: int
+    var free: int
+    var j: int
+    var e: int
+
+    i = 0
+    while i < rtLsnMax {
+        if rtLsnState[i] == rtAtActive and rtLsnSlotTransport[i] == rtConnTransportTcp {
+            pr = rtTcpDevLsnPoll(i)
+            if pr < 0 {
+                rtLsnSetFailed(i, pr, "listener failed")
+                rtLsnStop(i + 1)
+            } else if pr == 1 {
+                free = -1
+                j = 0
+                while j < rtConnMax {
+                    if free < 0 and rtConnState[j] == stClosed and rtAdspPhase[j] == rtAdspNone and rtTcpFree(j) {
+                        free = j
+                    }
+                    j = j + 1
+                }
+                if free < 0 {
+                    rtTcpDevLsnDeny(i)
+                } else {
+                    e = rtTcpDevLsnAccept(i, free)
+                    if e != 0 {
+                        rtLsnSetFailed(i, e, "could not accept connection")
+                    } else {
+                        rtConnState[free] = stOpen
+                        rtConnSlotTransport[free] = rtConnTransportTcp
+                        rtTcpPhase[free] = rtTcpEstablished
+                        clar_lsn_fire_accepted(i, free + 1)
+                    }
+                }
+                e = rtTcpDevLsnOpen(i, rtLsnPort[i])
+                if e != 0 {
+                    // spec %4.2: a failed re-arm tears the listener down.
+                    rtLsnSetFailed(i, e, "listener failed")
+                    rtLsnStop(i + 1)
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+func rtTcpAlive(): bool {
+    var i: int
+
+    i = 0
+    while i < rtConnMax {
+        if rtTcpPhase[i] != rtTcpIdle {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}

@@ -1,0 +1,33 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// MacTCP phase, Task 6: the host end-to-end CLIENT fixture. args[0] is
+// "ip:port" (a tcpdrive listen peer). Greets with "READY\n" (CR on the
+// wire on both lanes), echoes everything back byte-exactly, and closes
+// itself when it sees "QQQ" -- after which the process must exit on its
+// own, the CLI lifetime rule.
+var conn: connection
+
+on App.startCLI(args: list of string) {
+    conn.open(tcp args[0])
+}
+
+on conn.opened {
+    conn.send("READY\n")
+}
+
+on conn.received(data: text) {
+    conn.send(data)
+    if data.indexOf("QQQ") >= 0 {
+        conn.close()
+    }
+}
+
+on conn.closed {
+    log("closed")
+}
+
+on conn.failed(err: error) {
+    log("failed " + string(err.code) + " " + err.message)
+    quit 1
+}
