@@ -306,6 +306,91 @@ snow_run() {
     trap 'rm -rf "$WORK"' EXIT
 }
 
+# snow_localtalk_b : turn Snow's LocalTalk-over-UDP bridge on for SCC
+# channel B (the printer port), which is the port the guest's own PRAM
+# has AppleTalk on. That bridge puts the emulated LocalTalk network on
+# 239.192.76.84:1954 -- the same LToUDP group every Mini vMac boot, the
+# host `atalkdrive` tool and tests/atalk/ already share -- so it is what
+# makes a Snow guest visible to the rest of the AppleTalk lane. Without
+# it the guest still has a perfectly live AppleTalk stack (drivers open,
+# NBP registers, node acquired from the PRAM hint) talking to nobody:
+# measured, task-13c-report.md's network question.
+#
+# There is no non-GUI way to do this in Snow v1.5.0-b81dbcc:
+#   - `--serial-bridge-b` accepts only "pty" and "tcp:PORT"; any other
+#     value is a WARN ("Invalid serial bridge mode") and is ignored;
+#   - the setting is not one of the Workspace struct's serde fields, so
+#     saving a .snoww does not carry it (Clarus.snoww and Andrew's
+#     networked MacII.snoww are byte-identical in this respect);
+#   - it is not in ~/Library/Application Support/snowemu/Snow/settings.json
+#     either, so it does not survive a quit;
+#   - and the guest's PRAM only chooses which PORT AppleTalk uses -- it
+#     cannot reach the host side of the wire at all.
+# What is left is Snow's own Ports menu, which egui draws INSIDE the
+# window (Snow's macOS menu bar has just Apple + Snow, so System Events
+# cannot see it), clicked by screen position. All three items hang off
+# the window's TOP-LEFT corner, so these offsets do not depend on the
+# window's size or the guest's screen resolution:
+#     Ports                    (+250, +49)
+#     Channel B (printer)      (+310, +95)
+#     Enable LocalTalk (UDP)   (+498, +184)
+#
+# Fragile by construction -- a Snow release that moves those menus breaks
+# it -- but never SILENTLY: Snow logs "LocalTalk bridge enabled" on its
+# own stdout ($WORK/snow.log), and this waits for that line and dies with
+# the geometry it used if it never arrives. The right long-term fix is a
+# `--serial-bridge-b localtalk` flag upstream, the same one-line shape as
+# the LaunchAPPL AppleTalk patch.
+#
+# snow_run BLOCKS for the whole boot, so this cannot be called after it:
+# it arms a BACKGROUND clicker that waits for Snow's window to appear
+# (up to 60s) and then clicks. Call it immediately BEFORE snow_run and
+# `wait` for $SNOW_LTALK_PID afterwards. Clicking early is also correct
+# on the guest's terms: the bridge only has to exist before the guest
+# opens .MPP and acquires an LLAP node, which is ~35s into the boot
+# (measured -- see adsp_listener.sh's own timing-budget comment).
+snow_localtalk_b() {
+    (
+        # A backgrounded subshell inherits lib.sh's `rm -rf "$WORK"` EXIT
+        # trap in some shells; dropping it here keeps this from deleting
+        # the work directory the parent is still writing into.
+        trap - EXIT
+        _i=0
+        _pos=
+        while [ $_i -lt 60 ]; do
+            _pos=$(osascript -e 'tell application "System Events" to tell process "Snow" to get position of window 1' 2>/dev/null)
+            case "$_pos" in *,*) break ;; esac
+            _pos=
+            sleep 1
+            _i=$(( _i + 1 ))
+        done
+        [ -n "$_pos" ] || { echo "snow_localtalk_b: no Snow window after ${_i}s"; exit 1; }
+        _x=${_pos%%,*}
+        _y=${_pos##*, }
+        echo "snow_localtalk_b: Snow window at $_x,$_y after ${_i}s"
+        osascript -e 'tell application "System Events" to set frontmost of process "Snow" to true' \
+            > /dev/null 2>&1
+        # Ports -> Channel B (printer) -> Enable LocalTalk (UDP).
+        for _off in "250 49" "310 95" "498 184"; do
+            swift "$ROOT/scripts/click.swift" \
+                $(( _x + ${_off%% *} )) $(( _y + ${_off##* } )) > /dev/null 2>&1
+            sleep 1
+        done
+        _i=0
+        while [ $_i -lt 20 ]; do
+            if grep -q 'LocalTalk bridge enabled' "$WORK/snow.log" 2>/dev/null; then
+                echo "snow_localtalk_b: $(grep 'LocalTalk bridge started' "$WORK/snow.log" | tail -1)"
+                exit 0
+            fi
+            sleep 1
+            _i=$(( _i + 1 ))
+        done
+        echo "snow_localtalk_b: Snow never logged \"LocalTalk bridge enabled\" after clicking (+250,+49)/(+310,+95)/(+498,+184) from window origin $_x,$_y -- Snow's Ports menu layout probably moved"
+        exit 1
+    ) > "$WORK/ltalk.log" 2>&1 &
+    SNOW_LTALK_PID=$!
+}
+
 # snow_settle_done SECS : print a DONE_CMD for snow_run that becomes true
 # SECS from now -- the elapsed-time proxy for a guest with no completion
 # signal at all (one that never quits, e.g. a real-tick event loop).
