@@ -171,7 +171,12 @@ on brs.found(name: string, addr: address) {
         dialed = true
         log("found " + name + " " + string(addr))
         setPeer(name + " " + string(addr))
-        chat.open(appletalk name + ":" + chatType)
+        // `name` is already NBP's own "Object:Type" spelling (the same
+        // string rtAtDevLookupName/AtalkHLookupName hand `found` on both
+        // lanes), which IS the "Name:Type" spec `open(appletalk ...)`
+        // wants -- appending chatType again asked NBP to look up the type
+        // "ClarusChat:ClarusChat" and got nbpNoConfirm (-1025).
+        chat.open(appletalk name)
     }
 }
 
