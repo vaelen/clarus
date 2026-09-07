@@ -262,3 +262,12 @@ static int rt_file_write_data(const uint8_t *path, const rt_text *t, const uint8
  * rt_ext_AtalkH* symbol is only referenced -- and so only linked -- when
  * the Clarus side actually calls it. */
 #include "rt_atalk.inc"
+
+/* TCP glue (2026-09-07 mactcp spec, Task 5): the host's BSD-socket waist
+ * for `connection`'s TCP transport and `listener`'s TCP half -- the native
+ * twin is tcp_68k.cla over MacTCP's .IPP driver. Included after
+ * rt_atalk.inc and unconditionally, same as every .inc above: cheap dead
+ * weight in a build that never calls it, since each rt_ext_TcpH* symbol is
+ * only referenced -- and so only linked -- when the Clarus side actually
+ * calls it. */
+#include "rt_tcp.inc"
