@@ -171,7 +171,7 @@ option, from the `vaelen/Retro68` fork until upstream PR #316 lands, plus
 `system-extra-file = AppleTalk` in `~/.LaunchAPPL.cfg` — is carried in
 `CLAUDE.md`'s toolchain section). Remaining, in order:
 
-1. **MacTCP** — IN PROGRESS on branch `mactcp`, not merged. TCP as
+1. **MacTCP** — MERGED to main 2026-09-08 (ff 2d258a4..8f1dd29). TCP as
    `connection`'s third transport (`c.open(tcp "a.b.c.d:port")`) and
    `listener`'s second (`l.listen(tcp port)`), on both lanes: MacTCP's
    `.IPP` driver natively, through polled async parameter blocks with no
