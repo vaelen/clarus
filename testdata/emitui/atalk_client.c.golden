@@ -1888,30 +1888,28 @@ static void clar_fn_rtAtalkPump(void) {
             if (cv_pr < 0) {
                 (cv_rtSvcArmed).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
                 clar_fn_rtSvcSetFailed(cv_i, cv_pr, &(clar_lit_151));
-            } else {
-                if (cv_pr == 1) {
-                    (cv_rtSvcArmed).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
-                    cv_n = clar_fn_rtAtDevAtpReqLen(cv_i);
-                    if (cv_n > 578) {
-                        cv_n = 578;
-                    }
-                    clar_fn_rtTextRelease((void*)cv___store3);
-                    rt_text * t1 = NULL;
-                    t1 = (rt_text *)clar_fn_rtTextNew();
-                    clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
-                    cv___store3 = t1;
-                    clar_fn_rtTextRelease((void*)cv_req);
-                    cv_req = cv___store3;
-                    cv___store3 = 0;
-                    clar_fn_rtAtAppendBytes(cv_req, clar_fn_rtAtDevAtpReqPtr(cv_i), cv_n);
-                    (cv_rtSvcInHandler).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 1;
-                    (cv_rtSvcReplied).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
-                    clar_fn_clar_svc_fire_request(cv_i, clar_fn_rtAtDevAtpReqOp(cv_i), cv_req, clar_fn_rtAtDevAtpReqFrom(cv_i));
-                    (cv_rtSvcInHandler).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
-                    if (!((cv_rtSvcReplied).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)])) {
-                        (cv_rtSvcReplied).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 1;
-                        clar_fn_rtAtDevAtpRespond(cv_i, CLAR_NEG32(1), (void *)(intptr_t)(0), 0);
-                    }
+            } else if (cv_pr == 1) {
+                (cv_rtSvcArmed).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
+                cv_n = clar_fn_rtAtDevAtpReqLen(cv_i);
+                if (cv_n > 578) {
+                    cv_n = 578;
+                }
+                clar_fn_rtTextRelease((void*)cv___store3);
+                rt_text * t1 = NULL;
+                t1 = (rt_text *)clar_fn_rtTextNew();
+                clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_6));
+                cv___store3 = t1;
+                clar_fn_rtTextRelease((void*)cv_req);
+                cv_req = cv___store3;
+                cv___store3 = 0;
+                clar_fn_rtAtAppendBytes(cv_req, clar_fn_rtAtDevAtpReqPtr(cv_i), cv_n);
+                (cv_rtSvcInHandler).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 1;
+                (cv_rtSvcReplied).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
+                clar_fn_clar_svc_fire_request(cv_i, clar_fn_rtAtDevAtpReqOp(cv_i), cv_req, clar_fn_rtAtDevAtpReqFrom(cv_i));
+                (cv_rtSvcInHandler).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
+                if (!((cv_rtSvcReplied).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)])) {
+                    (cv_rtSvcReplied).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 1;
+                    clar_fn_rtAtDevAtpRespond(cv_i, CLAR_NEG32(1), (void *)(intptr_t)(0), 0);
                 }
             }
             if ((!((cv_rtSvcArmed).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)])) && (!(clar_fn_rtAtDevAtpRespBusy(cv_i)))) {
@@ -1930,21 +1928,19 @@ static void clar_fn_rtAtalkPump(void) {
             (cv_rtBrsPendFailedCode).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
             clar_fn_clar_brs_fire_failed(cv_i, cv_code, (void*)(const uint8_t*)&((cv_rtBrsPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)]));
             clar_fn_rtStrStore((void*)&((cv_rtBrsPendFailedMsg).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)]), 255, (void*)(const uint8_t*)&(clar_lit_6));
-        } else {
-            if (((cv_rtBrsState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] == 1) && clar_fn_rtAtDevLookupDone(cv_i)) {
-                (cv_rtBrsState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
-                cv_n = clar_fn_rtAtDevLookupCount(cv_i);
-                cv_j = 0;
-                while (1) {
-                    if (!(((cv_j < cv_n) && ((cv_rtBrsState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] == 0)))) break;
-                    clar_str_255 t2;
-                    t2 = clar_fn_rtAtDevLookupName(cv_i, cv_j);
-                    clar_fn_clar_brs_fire_found(cv_i, (void*)(const uint8_t*)&(t2), clar_fn_rtAtDevLookupAddr(cv_i, cv_j));
-                    cv_j = CLAR_ADD32(cv_j, 1);
-                }
-                if ((cv_rtBrsState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] == 0) {
-                    clar_fn_clar_brs_fire_done(cv_i);
-                }
+        } else if (((cv_rtBrsState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] == 1) && clar_fn_rtAtDevLookupDone(cv_i)) {
+            (cv_rtBrsState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] = 0;
+            cv_n = clar_fn_rtAtDevLookupCount(cv_i);
+            cv_j = 0;
+            while (1) {
+                if (!(((cv_j < cv_n) && ((cv_rtBrsState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] == 0)))) break;
+                clar_str_255 t2;
+                t2 = clar_fn_rtAtDevLookupName(cv_i, cv_j);
+                clar_fn_clar_brs_fire_found(cv_i, (void*)(const uint8_t*)&(t2), clar_fn_rtAtDevLookupAddr(cv_i, cv_j));
+                cv_j = CLAR_ADD32(cv_j, 1);
+            }
+            if ((cv_rtBrsState).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)] == 0) {
+                clar_fn_clar_brs_fire_done(cv_i);
             }
         }
         cv_i = CLAR_ADD32(cv_i, 1);
@@ -1957,32 +1953,30 @@ static void clar_fn_rtAtalkPump(void) {
             if (cv_pr < 0) {
                 clar_fn_rtLsnSetFailed(cv_i, cv_pr, &(clar_lit_152));
                 clar_fn_rtLsnStop(CLAR_ADD32(cv_i, 1));
-            } else {
-                if (cv_pr == 1) {
-                    cv_free = CLAR_NEG32(1);
-                    cv_j = 0;
-                    while (1) {
-                        if (!((cv_j < 8))) break;
-                        if ((((cv_free < 0) && ((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && ((cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && clar_fn_rtTcpFree(cv_j)) {
-                            cv_free = cv_j;
-                        }
-                        cv_j = CLAR_ADD32(cv_j, 1);
+            } else if (cv_pr == 1) {
+                cv_free = CLAR_NEG32(1);
+                cv_j = 0;
+                while (1) {
+                    if (!((cv_j < 8))) break;
+                    if ((((cv_free < 0) && ((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && ((cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && clar_fn_rtTcpFree(cv_j)) {
+                        cv_free = cv_j;
                     }
-                    if (cv_free < 0) {
-                        clar_fn_rtLsnDevDeny(cv_i);
-                    } else {
-                        cv_e = clar_fn_rtLsnDevAccept(cv_i, cv_free);
-                        if (cv_e != 0) {
-                            clar_fn_rtLsnSetFailed(cv_i, cv_e, &(clar_lit_153));
-                        } else {
-                            (cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 1;
-                            (cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 1;
-                            (cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 3;
-                            clar_fn_clar_lsn_fire_accepted(cv_i, CLAR_ADD32(cv_free, 1));
-                        }
-                    }
-                    clar_fn_rtLsnDevListen(cv_i);
+                    cv_j = CLAR_ADD32(cv_j, 1);
                 }
+                if (cv_free < 0) {
+                    clar_fn_rtLsnDevDeny(cv_i);
+                } else {
+                    cv_e = clar_fn_rtLsnDevAccept(cv_i, cv_free);
+                    if (cv_e != 0) {
+                        clar_fn_rtLsnSetFailed(cv_i, cv_e, &(clar_lit_153));
+                    } else {
+                        (cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 1;
+                        (cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 1;
+                        (cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 3;
+                        clar_fn_clar_lsn_fire_accepted(cv_i, CLAR_ADD32(cv_free, 1));
+                    }
+                }
+                clar_fn_rtLsnDevListen(cv_i);
             }
         }
         cv_i = CLAR_ADD32(cv_i, 1);
@@ -2263,35 +2257,33 @@ static void clar_fn_rtTcpPump(void) {
             if (cv_pr < 0) {
                 clar_fn_rtLsnSetFailed(cv_i, cv_pr, &(clar_lit_152));
                 clar_fn_rtLsnStop(CLAR_ADD32(cv_i, 1));
-            } else {
-                if (cv_pr == 1) {
-                    cv_free = CLAR_NEG32(1);
-                    cv_j = 0;
-                    while (1) {
-                        if (!((cv_j < 8))) break;
-                        if ((((cv_free < 0) && ((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && ((cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && clar_fn_rtTcpFree(cv_j)) {
-                            cv_free = cv_j;
-                        }
-                        cv_j = CLAR_ADD32(cv_j, 1);
+            } else if (cv_pr == 1) {
+                cv_free = CLAR_NEG32(1);
+                cv_j = 0;
+                while (1) {
+                    if (!((cv_j < 8))) break;
+                    if ((((cv_free < 0) && ((cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && ((cv_rtAdspPhase).e[clar_fn_rtArrCheck((int32_t)(cv_j), 8)] == 0)) && clar_fn_rtTcpFree(cv_j)) {
+                        cv_free = cv_j;
                     }
-                    if (cv_free < 0) {
-                        clar_fn_rtTcpDevLsnDeny(cv_i);
-                    } else {
-                        cv_e = clar_fn_rtTcpDevLsnAccept(cv_i, cv_free);
-                        if (cv_e != 0) {
-                            clar_fn_rtLsnSetFailed(cv_i, cv_e, &(clar_lit_153));
-                        } else {
-                            (cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 1;
-                            (cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 3;
-                            (cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 2;
-                            clar_fn_clar_lsn_fire_accepted(cv_i, CLAR_ADD32(cv_free, 1));
-                        }
-                    }
-                    cv_e = clar_fn_rtTcpDevLsnOpen(cv_i, (cv_rtLsnPort).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)]);
+                    cv_j = CLAR_ADD32(cv_j, 1);
+                }
+                if (cv_free < 0) {
+                    clar_fn_rtTcpDevLsnDeny(cv_i);
+                } else {
+                    cv_e = clar_fn_rtTcpDevLsnAccept(cv_i, cv_free);
                     if (cv_e != 0) {
-                        clar_fn_rtLsnSetFailed(cv_i, cv_e, &(clar_lit_152));
-                        clar_fn_rtLsnStop(CLAR_ADD32(cv_i, 1));
+                        clar_fn_rtLsnSetFailed(cv_i, cv_e, &(clar_lit_153));
+                    } else {
+                        (cv_rtConnState).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 1;
+                        (cv_rtConnSlotTransport).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 3;
+                        (cv_rtTcpPhase).e[clar_fn_rtArrCheck((int32_t)(cv_free), 8)] = 2;
+                        clar_fn_clar_lsn_fire_accepted(cv_i, CLAR_ADD32(cv_free, 1));
                     }
+                }
+                cv_e = clar_fn_rtTcpDevLsnOpen(cv_i, (cv_rtLsnPort).e[clar_fn_rtArrCheck((int32_t)(cv_i), 2)]);
+                if (cv_e != 0) {
+                    clar_fn_rtLsnSetFailed(cv_i, cv_e, &(clar_lit_152));
+                    clar_fn_rtLsnStop(CLAR_ADD32(cv_i, 1));
                 }
             }
         }
@@ -2338,57 +2330,43 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
 
 static void clar_fn_clar_lsn_fire_accepted(int32_t cv_slot, int32_t cv_c) {
     if (cv_slot == 0) {
-    } else {
-        if (cv_slot == 1) {
-        }
+    } else if (cv_slot == 1) {
     }
 }
 
 static void clar_fn_clar_lsn_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg) {
     if (cv_slot == 0) {
-    } else {
-        if (cv_slot == 1) {
-        }
+    } else if (cv_slot == 1) {
     }
 }
 
 static void clar_fn_clar_brs_fire_found(int32_t cv_slot, void * cv_name, int32_t cv_addr) {
     if (cv_slot == 0) {
-    } else {
-        if (cv_slot == 1) {
-        }
+    } else if (cv_slot == 1) {
     }
 }
 
 static void clar_fn_clar_brs_fire_done(int32_t cv_slot) {
     if (cv_slot == 0) {
-    } else {
-        if (cv_slot == 1) {
-        }
+    } else if (cv_slot == 1) {
     }
 }
 
 static void clar_fn_clar_brs_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg) {
     if (cv_slot == 0) {
-    } else {
-        if (cv_slot == 1) {
-        }
+    } else if (cv_slot == 1) {
     }
 }
 
 static void clar_fn_clar_svc_fire_request(int32_t cv_slot, int32_t cv_op, rt_text * cv_req, int32_t cv_from) {
     if (cv_slot == 0) {
-    } else {
-        if (cv_slot == 1) {
-        }
+    } else if (cv_slot == 1) {
     }
 }
 
 static void clar_fn_clar_svc_fire_failed(int32_t cv_slot, int32_t cv_code, void * cv_msg) {
     if (cv_slot == 0) {
-    } else {
-        if (cv_slot == 1) {
-        }
+    } else if (cv_slot == 1) {
     }
 }
 

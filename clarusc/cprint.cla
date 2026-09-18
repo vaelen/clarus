@@ -4977,6 +4977,33 @@ func fpStripOuterParens(s: text): text {
 // regardless of which branch is taken or whether it exits early. A
 // condition with no temps (the overwhelming common case) is untouched:
 // still a plain, direct `if (cond) {`.
+//
+// bracket-depth fix: an `else` branch that is itself a single `if` node
+// (an `else if` chain) used to print as `} else {` + a fully nested
+// `if (...) {` + an extra closing `}` -- one extra C brace level per link
+// in the chain. clang's default `-fbracket-depth` is 256; the compiler's
+// own bootstrap snapshot contains a 268-arm synthesized dispatch chain
+// (`clar_ui_fire_staterows`, from `lowSynthFoldIfChain` in lower.cla) that
+// blew past it (gcc has no such limit, so nobody noticed on that lane).
+// fpIfElseChain below prints a same-shape `else if` chain FLAT --
+// `} else if (cond) {` at the SAME indent as the `if` it continues, same
+// as any ordinary C else-if ladder -- so N links cost one brace level,
+// not N. The one link that can't flatten is one whose condition itself
+// emits any C statement (any fpNewTmp-declared scratch, ARC-tracked or
+// not -- e.g. a KStr call result feeding a comparison, same as `t4` in
+// `rtMapHas(m, poolGet(name))`): that statement lands, textually, as the
+// last line of the PREVIOUS link's still-open `{ ... }` block (nothing
+// has closed it yet), so it is scoped to that block and invisible to an
+// `else if` condition one scope out -- `undeclared` from cc, not even a
+// leak. fpIfElseChain detects this by fpBody's own length (every code
+// path that can emit such a statement goes through fpEmit, so this is a
+// superset of the memory-audit dance's own fpStmtTmps-only check above),
+// and on growth throws the speculative lines away (fpExpr's only
+// side effects are appends to fpBody/fpStmtTmps-family/the monotonic
+// fpTmpN counter, so redoing it is safe) and recomputes the condition
+// fresh inside a reopened `} else { ... }` block -- today's nested
+// shape for that one link -- where the fresh temp IS properly scoped to
+// the `if` that consumes it. Flattening resumes for whatever follows it.
 func fpIfStmt(s: int) {
     var cond: text
     var flag: text
@@ -4994,12 +5021,73 @@ func fpIfStmt(s: int) {
     fpIndent = fpIndent + 1
     fpStmts(irIfThen(s))
     fpIndent = fpIndent - 1
-    if irIfElse(s) != -1 {
+    fpIfElseChain(irIfElse(s))
+}
+
+// fpIfElseChain prints the else side of an SIf (or of a previous link in
+// an else-if chain, already opened via `} else if (...) {`/`} else {` by
+// the caller). See fpIfStmt's doc comment for why this flattens instead
+// of nesting.
+func fpIfElseChain(e: int) {
+    var cond: text
+    var flag: text
+    var bodyMark: int
+    var tmpMark: int
+
+    if e == -1 {
+        fpEmit(toText("}"))
+        return
+    }
+    if irStmtNext(e) == -1 and irStmtKind(e) == SIf {
+        bodyMark = fpBody.count
+        tmpMark = fpStmtTmps.count
+        cond = fpStripOuterParens(fpExpr(irIfCond(e)))
+        if fpBody.count == bodyMark {
+            // Condition printed with no statements of its own -- safe
+            // on an `else if` line at the same indent as the `if` it
+            // continues.
+            fpEmit("} else if (" + cond + ") {")
+            fpIndent = fpIndent + 1
+            fpStmts(irIfThen(e))
+            fpIndent = fpIndent - 1
+            fpIfElseChain(irIfElse(e))
+            return
+        }
+        // Condition emitted a statement (a declared temp, ARC-tracked
+        // or not) while the previous link's block was still open --
+        // wrong scope for an `else if` line. Undo it (also wrong
+        // indent) and recompute fresh inside a reopened `else` block.
+        while fpBody.count > bodyMark {
+            fpBody.remove(fpBody.count - 1)
+        }
+        while fpStmtTmps.count > tmpMark {
+            fpStmtTmps.remove(fpStmtTmps.count - 1)
+            fpStmtTmpRel.remove(fpStmtTmpRel.count - 1)
+            fpStmtTmpIsRec.remove(fpStmtTmpIsRec.count - 1)
+            fpStmtTmpType.remove(fpStmtTmpType.count - 1)
+        }
         fpEmit(toText("} else {"))
         fpIndent = fpIndent + 1
-        fpStmts(irIfElse(s))
+        cond = fpStripOuterParens(fpExpr(irIfCond(e)))
+        if fpStmtTmps.count > tmpMark {
+            flag = fpNewTmp("int32_t")
+            fpEmit(flag + " = " + cond + ";")
+            fpFreeStmtTmps()
+            cond = flag
+        }
+        fpEmit("if (" + cond + ") {")
+        fpIndent = fpIndent + 1
+        fpStmts(irIfThen(e))
         fpIndent = fpIndent - 1
+        fpIfElseChain(irIfElse(e))
+        fpIndent = fpIndent - 1
+        fpEmit(toText("}"))
+        return
     }
+    fpEmit(toText("} else {"))
+    fpIndent = fpIndent + 1
+    fpStmts(e)
+    fpIndent = fpIndent - 1
     fpEmit(toText("}"))
 }
 
