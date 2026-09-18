@@ -10,6 +10,7 @@
  * Exit 0 when the script completes, 1 on a divergence (with the step
  * number, the reason, the byte offset and a 32-byte hex window), 2 on a
  * usage or socket error. */
+#define _DEFAULT_SOURCE 1 /* glibc: nanosleep under -std=c99 */
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>

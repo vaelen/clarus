@@ -7,8 +7,8 @@
 . "$(dirname "$0")/../lib.sh" || exit 2
 exe=build-run/clarusc-current
 [ -x "$exe" ] || die "$exe missing: the bootstrap prerequisite did not run"
-before=$(stat -f %m "$exe") || die "stat before"
+before=$(stat -c %Y "$exe" 2>/dev/null || stat -f %m "$exe") || die "stat before"   # GNU, then BSD
 make bootstrap > "$WORK/make.log" 2>&1 || die "make bootstrap: $(cat "$WORK/make.log")"
-after=$(stat -f %m "$exe") || die "stat after"
+after=$(stat -c %Y "$exe" 2>/dev/null || stat -f %m "$exe") || die "stat after"
 [ "$before" = "$after" ] || die "cache miss on warm tree: mtime $before -> $after
 $(cat "$WORK/make.log")"

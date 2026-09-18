@@ -379,7 +379,7 @@ static time_t rt_fh_unix_time(int32_t mac) {
     time_t approx;
     struct tm tmv;
 
-    approx = (time_t)((unsigned long)mac - RT_MAC_EPOCH_DELTA);
+    approx = (time_t)((unsigned long)(uint32_t)mac - RT_MAC_EPOCH_DELTA); /* uint32 first: Mac-epoch seconds passed 2^31 in 1972, so a plain int32 sign-extends to the 1890s */
     localtime_r(&approx, &tmv);
     return (time_t)((long)approx - tmv.tm_gmtoff);
 }

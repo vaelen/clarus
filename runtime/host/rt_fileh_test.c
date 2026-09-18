@@ -367,7 +367,9 @@ static void test_set_times(void) {
  * counts its 255-name limit in CHARACTERS, so 150 two-byte UTF-8 glyphs
  * make a legal 300-BYTE dirent that cannot fit a Str255. On a filesystem
  * that counts bytes (ext4, HFS+) the setup fopen() fails and this case
- * reports itself skipped instead of failing. */
+ * skips itself silently instead of failing -- silently because
+ * tests/lib.sh's run_c_test merges stderr and requires the whole output
+ * to be exactly "OK". */
 static void test_long_names(void) {
     uint8_t dir[256], buf[256];
     char name[512];
@@ -388,8 +390,7 @@ static void test_long_names(void) {
 
     f = fopen(path, "w");
     if (!f) {
-        fprintf(stderr, "SKIP: this filesystem rejects a 300-byte name (%s)\n", strerror(errno));
-        rmdir("fileh_test_longname");
+        rmdir("fileh_test_longname");   /* filesystem counts bytes: skip */
         return;
     }
     fclose(f);

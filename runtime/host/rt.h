@@ -1,5 +1,6 @@
 /* runtime/host/rt.h — host stand-in for the future Toolbox runtime. May use libc. */
 #ifndef CLARUS_RT_H
+#define _GNU_SOURCE 1 /* glibc hides POSIX/XSI (usleep, clock_gettime, tm_gmtoff, ip_mreq, ptsname...) under -std=c99 without this; a no-op on Darwin */
 #define CLARUS_RT_H
 #include <stdint.h>
 #include <string.h>

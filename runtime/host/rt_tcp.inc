@@ -85,7 +85,11 @@ static rt_tcp_lsn rt_tcp_lsns[RT_TCP_LSNS] = {
     { .fd = -1, .ready = -1 }, { .fd = -1, .ready = -1 }
 };
 
-static int32_t rt_tcp_err(void) { int e = errno; return e > 4 ? e : EIO; }
+/* Errnos are reported with their Mac/BSD numbers: tcp.cla's message table
+ * was written against those (48 = EADDRINUSE, "port in use"), and glibc
+ * numbers them differently (EADDRINUSE is 98 there). Only the ones tcp.cla
+ * names are mapped. */
+static int32_t rt_tcp_err(void) { int e = errno; if (e == EADDRINUSE) return 48; return e > 4 ? e : EIO; }
 static void rt_tcp_nonblock(int fd) { int f = fcntl(fd, F_GETFL, 0); fcntl(fd, F_SETFL, f | O_NONBLOCK); }
 static int rt_tcp_slot_ok(int32_t s) { return s >= 0 && s < RT_TCP_SLOTS; }
 static int rt_tcp_lsn_ok(int32_t l) { return l >= 0 && l < RT_TCP_LSNS; }

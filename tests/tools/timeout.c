@@ -7,6 +7,7 @@
  * date(1) has no sub-second field; tests/perfgate needs this).
  * SIGINT/SIGTERM/SIGHUP are forwarded to the group and then re-raised, so
  * a Ctrl-C at the make prompt never leaves the child running orphaned. */
+#define _DEFAULT_SOURCE 1 /* glibc: kill, sigaction under -std=c99 */
 #include <errno.h>
 #include <signal.h>
 #include <stdio.h>
