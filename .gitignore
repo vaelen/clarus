@@ -24,3 +24,6 @@ tests/mactest/uiprobe/build/
 /core_fileh_basic.dat
 /core_fileh_dat.dat
 /core_fileh_jnl.dat
+
+a.out
+/.claude
