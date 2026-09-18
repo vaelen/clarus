@@ -1,6 +1,19 @@
 /* runtime/host/rt.h — host stand-in for the future Toolbox runtime. May use libc. */
 #ifndef CLARUS_RT_H
-#define _GNU_SOURCE 1 /* glibc hides POSIX/XSI (usleep, clock_gettime, tm_gmtoff, ip_mreq, ptsname...) under -std=c99 without this; a no-op on Darwin */
+/* Feature-test macros, before any system header. glibc (and musl) hide
+ * everything past ISO C under -std=c99 unless asked; Darwin ignores both
+ * of these and shows everything by default. What the host runtime uses:
+ *   _XOPEN_SOURCE 700  POSIX.1-2008 + XSI: clock_gettime, localtime_r,
+ *                      nanosleep, fileno, mkstemp, ftruncate, sigaction,
+ *                      poll, and the XSI pty family (posix_openpt,
+ *                      grantpt, unlockpt, ptsname) for the serial pump.
+ *   _DEFAULT_SOURCE    the four BSD extras that are not POSIX at all:
+ *                      struct ip_mreq / IP_ADD_MEMBERSHIP (multicast has
+ *                      no POSIX API; the LToUDP stack needs it),
+ *                      cfmakeraw, tm_gmtoff, and usleep (dropped from
+ *                      POSIX in 2008). Everything else is standard. */
+#define _XOPEN_SOURCE 700
+#define _DEFAULT_SOURCE 1
 #define CLARUS_RT_H
 #include <stdint.h>
 #include <string.h>
