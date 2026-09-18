@@ -34,4 +34,12 @@
 # so a bare cold `make test T=perfgate/` cannot become the next flake.
 # If the emit path gets materially faster again, re-measure BOTH regimes
 # before tightening: a baseline set from warm numbers alone will flake cold.
-0.050
+# re-baselined 2026-09-19 (linux-portability): the checkout moved from the
+# Mac above to a Linux box (Ubuntu 24.04, gcc 13), where the same -O1
+# emit of every.cla measures ~93ms with glibc and ~124ms built with
+# musl-gcc (musl's allocator, not a regression -- the compiler source is
+# unchanged). 0.050 (limit 100ms) left glibc 7% of headroom and failed
+# musl outright. 0.100 (limit 200ms) keeps ~1.6x over the musl median and
+# ~2.1x over glibc's, so the cold regime (~40% slower, per the 2026-09-05
+# note above) still clears it, while anything in the 2x-and-up class trips.
+0.100
