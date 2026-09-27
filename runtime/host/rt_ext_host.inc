@@ -126,6 +126,18 @@ void rt_ext_CorePanic(const uint8_t *msg) {
     rt_panic(buf);
 }
 
+/* rt_ext_MemProbe: host body of clarusc/main.cla's feMemProbe seam (SE
+ * Wave 0). The phase name arrives as a Pascal string; rtm_dump prints
+ * only under CLARUS_MEM_PEAK, so an ordinary compile stays byte-silent.
+ * On the 68k lane the same extern is `= inline nop`. */
+void rt_ext_MemProbe(const uint8_t *phase) {
+    char buf[256];
+    uint8_t n = phase[0];
+    memmove(buf, phase + 1, (size_t)n);
+    buf[n] = '\0';
+    rtm_dump(buf);
+}
+
 /* rt_ext_CoreSetLastErr: core.cla's own extern name (Plan native-5d Task
  * 12.5, lastError storage-inversion fix) -- same "own prefixed name" and
  * str255-to-NUL-terminated-C-string conversion shape as rt_ext_CorePanic

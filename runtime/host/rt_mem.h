@@ -32,6 +32,13 @@ void   BlockMoveData(const void *src, void *dst, Size n);
 void   rt_mem_note_(void *block, const char *why);
 long   rt_mem_live_count(void);
 
+/* SE Wave 0 memory probe (rt_mem_host.inc). */
+typedef struct {
+    long live, peak, live68k, peak68k, peakAll68k, blocks, handles, allocs;
+} rtm_counters;
+void rtm_get(rtm_counters *out);   /* snapshot of the counters */
+void rtm_dump(const char *phase);  /* prints iff CLARUS_MEM_PEAK is "1" or "2"; ALWAYS resets peak/peak68k/allocs */
+
 #define RT_MEM_STR2(x) #x
 #define RT_MEM_STR(x) RT_MEM_STR2(x)
 #define RT_MEM_TAG (__FILE__ ":" RT_MEM_STR(__LINE__))
