@@ -1,0 +1,39 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// SE memory program Wave 0: the single-app memory budget on the Snow SE
+// (4 MB, System 6.0.8, launched via the boot-block autostart -- no
+// MultiFinder). Logs FreeMem/MaxBlock and the Memory Manager low-memory
+// globals, then quits. tests/mactest/snow/se_budget.sh reads the line.
+include "toolbox/memory.cla"
+
+app SeBudget {
+    name: "SeBudget"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "Snow SE memory budget probe."
+    id: "SEBU"
+}
+
+window Main {
+    title: "SeBudget"
+    size: 200, 100
+}
+
+func lowl(addr: int): int {
+    return peekl(ptr(addr))
+}
+
+on App.launch {
+    var line: string
+    line = "SEBUDGET FreeMem=" + string(FreeMem())
+    line = line + " MaxBlock=" + string(MaxBlock())
+    line = line + " ApplZone=" + string(lowl(0x02AA))
+    line = line + " ApplLimit=" + string(lowl(0x0130))
+    line = line + " HeapEnd=" + string(lowl(0x0114))
+    line = line + " CurStackBase=" + string(lowl(0x0908))
+    line = line + " BufPtr=" + string(lowl(0x010C))
+    line = line + " MemTop=" + string(lowl(0x0108))
+    log(line)
+    quit
+}
