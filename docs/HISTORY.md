@@ -6999,8 +6999,12 @@ on Opus.
 - **Task 6: the probe seam.** `feMemProbe(phase)` is called from
   `driveProgressPhase`/`driveProgressDone` in `drive.cla`. `main.cla`
   routes it to `MemProbe`. `macgui.cla` logs `  mem: free N KB, max M KB`
-  per phase, and it paints the stack at startup, then logs
-  `  stack: high-water N KB of M KB` after each compile.
+  per phase. ClarusC paints the stack right before each compile, in the
+  File > Compile handler (`gcStackPaint`, `gcCompile`,
+  `gcStackReport`), so the figure excludes `askOpen`'s own stack use and
+  every compile gets a fresh paint. It then logs
+  `  stack: high-water N KB of M KB`. The paint pattern is `0x5AA5C33C`,
+  a positive int literal, rather than the spec's `0xC1A5C1A5`.
 - **Task 7: `tests/memgate/peak.sh`** in T1, plus the snapshot
   regeneration. It has three subcases, and the budget is baseline + 1%.
 - **Task 8: `tests/mactest/snow/clarusc_memprobe.sh`**, the IIcx run.
@@ -7144,9 +7148,13 @@ blocks` (H = 12).
   `tests/run1.sh` truncates the shared log, and run 1's log was NUL-holed
   that way.
 
-**Gates.** T2 (`scripts/test-merge.sh`): `<T2 result>`.
+**Gates.** T2 (`scripts/test-merge.sh`) passed in 1311 s on
+`fc71d639`: t1 129 s, perfgate 1 s, selfhost 197 s, mactest 973 s (21
+pass, 17 opt-in skip, 0 fail), and the bake full corpus 4 s.
 `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (this wave
-touched `macgui.cla`): `<clarusc_bake result>`. The IIcx memprobe run
+touched `macgui.cla`) passed in 571 s on the Mac IIcx, 6/6 subcases:
+`bake_path_taken`, `no_clfs_fallback`, `dispatches`, `no_error_markers`,
+`clean_exit` and `tickprobe_fork_identity`. The IIcx memprobe run
 passed 5/5 in 606 s (run 1) and 675 s (run 2). The SE budget run passed
 in 22 s.
 

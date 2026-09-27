@@ -129,7 +129,9 @@ void rt_ext_CorePanic(const uint8_t *msg) {
 /* rt_ext_MemProbe: host body of clarusc/main.cla's feMemProbe seam (SE
  * Wave 0). The phase name arrives as a Pascal string; rtm_dump prints
  * only under CLARUS_MEM_PEAK, so an ordinary compile stays byte-silent.
- * On the 68k lane the same extern is `= inline nop`. */
+ * On the 68k lane main.cla declares MemProbe as a clause-less extern
+ * resolved to its own no-op nat_MemProbe (clarusc/main.cla), because
+ * `inline nop` with a string param aborts cg68k (docs/TODO.md). */
 void rt_ext_MemProbe(const uint8_t *phase) {
     char buf[256];
     uint8_t n = phase[0];

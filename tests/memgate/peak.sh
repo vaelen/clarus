@@ -27,7 +27,7 @@ measure() {
     fi
     grep '^memprobe:' "$WORK/$_name.err"
     _peak=$(sed -n 's/^memprobe: TOTAL | peakAll68k=\([0-9][0-9]*\)$/\1/p' "$WORK/$_name.err")
-    [ -n "$_peak" ] || { t_fail "$_name" "no memprobe TOTAL line"; return; }
+    case "$_peak" in ''|*[!0-9]*) t_fail "$_name" "unparseable memprobe TOTAL: $_peak"; return ;; esac
     _pct=$(awk -v p="$_peak" -v b="$_budget" 'BEGIN { printf "%.1f", 100 * p / b }')
     echo "$_name: peak $_peak / budget $_budget ($_pct%)"
     if [ "$_peak" -gt "$_budget" ]; then

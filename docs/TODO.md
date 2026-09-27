@@ -384,6 +384,15 @@ The SE memory program (2026-09-27) resumed work on this target. See
   assumed emulated ticks survive fast-forward, and they do not. Compare
   ticks only within one run. For a real timing number, force real time
   (`snow_realtime`) or count instructions instead.
+- **ClarusC's `out` log is near its cap after one compile.** The log
+  is `natLogCap` (4096 B) and silently truncates. The SE-wave-0 probes
+  add ~500 B per compile, so ONE `bookmarks.cla` compile now fills ~3
+  KB. The two-compile Snow sessions (`macresident.sh`,
+  `macresident_failed_compile.sh`) may therefore lose the second
+  compile's tail and hide an error marker there; their assertions cannot
+  turn red from it. Fix: raise `natLogCap` or grow the log onto a
+  handle. That changes output and moves every native golden (`natInit`'s
+  `MOVE.L #4096,D0`).
 
 ### ABI / performance
 
