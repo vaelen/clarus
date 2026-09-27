@@ -18,7 +18,13 @@
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 
-emit68k -o "$WORK/selfserve.bin" testdata/atalk/selfserve.cla \
+# The LocalTalk group this boot joins is a REAL network with other nodes
+# and zones (Linux emulator port, 2026-09-27), so the NBP type is stamped
+# per run: `done 0` and the `Nobody:` call's -1025 must not depend on
+# nobody else ever registering a ClarusSelfTest.
+sed "s/ClarusSelfTest/ClarusSelf$$/g" testdata/atalk/selfserve.cla > "$WORK/selfserve.cla" \
+    || die "could not stamp a per-run NBP type into the fixture"
+emit68k -o "$WORK/selfserve.bin" "$WORK/selfserve.cla" \
     > "$WORK/emit.log" 2>&1 \
     || die "clarusc emit68k selfserve: $(tail -10 "$WORK/emit.log")"
 
@@ -51,8 +57,13 @@ deny_line() {
 want_line served "served"
 deny_line no_svc_failure "svcfail"
 
-# zones(): no router and (on this disk) no .XPP -> the one-element ["*"].
-want_line zones "zones 1 *"
+# zones(): at least one zone, whatever the network has -- ["*"] with no
+# router, the real zone list behind one. Never an exact list.
+if grep -q '^zones [1-9][0-9]* ' "$LOG"; then
+    t_pass zones
+else
+    t_fail zones "log has no \"zones N NAME\" line with N >= 1: $(tr '\n' '|' < "$LOG")"
+fi
 
 # find(): the async PLookupName ran to completion and parsed zero tuples.
 # `done` is also what ends the program, so its absence is a watchdog quit.

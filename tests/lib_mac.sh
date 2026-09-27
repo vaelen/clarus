@@ -12,19 +12,60 @@
 
 MAC_EXIT=
 
-# run_mac BIN SECS : LaunchAPPL -e minivmac BIN with cwd=$WORK/launch
-# (LaunchAPPL makes its temp dir in cwd) under a SECS deadline. On expiry
-# the detached emulator survives the group kill, so sweep it up with pkill
-# and die -- exactly what RunMac's ctx.Err() branch does. The raw capture
-# lands in $WORK/cap.raw and is split by capture_split.
+# mac_launch DIR : the LaunchAPPL command line for one Mini vMac
+# boot, every option explicit so nothing depends on ~/.LaunchAPPL.cfg or a
+# RETRO68 prefix config (--config-file /dev/null replaces both defaults).
+# DIR is the machine directory (macplus/ or macplus2/): its Linux Mini vMac
+# binary is named after the directory, next to vMac.ROM, disk1.dsk
+# (System 6.0.8, the --system-image) and autoquit-1.1.1.dsk.
+#
+# Nothing here writes into DIR: LaunchAPPL COPIES the emulator binary into
+# its own temp dir under the cwd, builds a fresh disk1.dsk boot disk there,
+# symlinks the ROM, and only ever mounts the system and AutoQuit images
+# read-only (MiniVMac.cc). That matters because Andrew runs ./macplus/macplus
+# on macplus/disk1.dsk himself. `AppleTalk` is carried onto the stripped
+# boot disk (--system-extra-file, upstream PR #316) so .XPP/.DSP open.
+#
+# The binary must be a LocalTalk build (`-lt -lto udp`, Mini vMac's X11
+# api -- the SDL2 api has no LocalTalk) and must run in background
+# (WantInitRunInBackground 1, which `-lt` defaults on; else `-bg 1`): a
+# build that pauses when its window loses keyboard focus stalls a boot on
+# a desktop in use until its deadline (measured 2026-09-27: 1s of CPU in
+# 150s; toolbox_68k and toolbox_jiggle timed out). CLARUS_MINIVMAC=/abs/path overrides the
+# binary for both machines, e.g. to try a rebuild without touching DIR.
+mac_launch() {
+    _d=$ROOT/$1
+    _bin=${CLARUS_MINIVMAC:-$_d/$1}
+    [ -x "$_bin" ] || skip "$_bin (Linux Mini vMac) not present"
+    [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] \
+        || die "DISPLAY is not set -- emulator boots need an X display (e.g. DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority)"
+    MAC_LAUNCH="$ROOT/toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
+        --minivmac-dir $_d --minivmac-path $_bin --minivmac-rom ./vMac.ROM \
+        --system-image ./disk1.dsk --autoquit-image ./autoquit-1.1.1.dsk \
+        --system-extra-file AppleTalk"
+}
+
+# mac_kill_ours DIR : kill every emulator LaunchAPPL started under DIR --
+# its copy is DIR/<tempdir>/minivmac, so a pattern containing our own
+# unique $WORK path can only ever match our own boots, never Andrew's
+# ./macplus/macplus or another script's.
+mac_kill_ours() { pkill -f "^$1/[^ ]*/minivmac" 2>/dev/null; :; }
+
+# run_mac BIN SECS : LaunchAPPL BIN on macplus/ with cwd=$WORK/launch
+# (LaunchAPPL makes its temp dir -- and its copy of the emulator -- in cwd)
+# under a SECS deadline. On expiry the emulator is swept up by its $WORK
+# path and the script dies -- exactly what RunMac's ctx.Err() branch did.
+# The raw capture lands in $WORK/cap.raw and is split by capture_split.
 run_mac() {
+    mac_launch macplus
     mkdir -p "$WORK/launch"
-    ( cd "$WORK/launch" && "$TOOLS/timeout" "$2" \
-        "$ROOT/toolchain/bin/LaunchAPPL" -e minivmac "$1" \
+    # Word splitting of $MAC_LAUNCH is the point (no spaces in its paths).
+    # shellcheck disable=SC2086
+    ( cd "$WORK/launch" && "$TOOLS/timeout" "$2" $MAC_LAUNCH "$1" \
         > "$WORK/cap.raw" 2> "$WORK/cap.err" )
     _rc=$?
+    mac_kill_ours "$WORK/launch"
     if [ $_rc -eq 124 ]; then
-        pkill -f minivmac.app
         die "LaunchAPPL $1 timed out after $2s (emulator killed): $(head -5 "$WORK/cap.err")"
     fi
     [ $_rc -eq 0 ] || die "LaunchAPPL $1 failed ($_rc): $(head -5 "$WORK/cap.err")"
@@ -35,48 +76,39 @@ MAC_EXIT1=
 MAC_EXIT2=
 
 # run_mac_pair BIN1 BIN2 SECS (2026-09-06 appletalk spec 8.2, Task 11):
-# TWO Mini vMac boots at once -- BIN1 on macplus/ (the ~/.LaunchAPPL.cfg
-# default) and, 5 s later, BIN2 on macplus2/ via LaunchAPPL's own
-# per-invocation overrides, no second config file (spec 8.4). Each boot
-# gets its OWN cwd under $WORK, because LaunchAPPL makes its temp dir --
-# and the copy of the emulator app it actually runs -- in cwd; that cwd
-# string is also the only safe kill key. run_mac's own blanket
-# `pkill -f minivmac.app` must NOT be reused here: MiniVMac.cc copies
-# whatever bundle it is handed to a fixed `minivmac.app` name (Task 1 P4
-# (c)), so that one pattern matches BOTH halves of this pair and any
-# UNRELATED session's emulator as well -- and Andrew runs boots of his
-# own alongside the gate.
+# TWO Mini vMac boots at once -- BIN1 on macplus/ and, 5 s later, BIN2 on
+# macplus2/. Each boot gets its OWN cwd under $WORK, because LaunchAPPL
+# makes its temp dir -- and the copy of the emulator it actually runs -- in
+# cwd; that cwd string is also the only safe kill key (mac_kill_ours).
 #
 # Both boots run under the same SECS deadline, so the second can outlive
 # the first by at most the 5 s stagger. Either one failing (a timeout, or
-# LaunchAPPL itself erroring) sweeps up BOTH cwds and dies -- a surviving
-# detached emulator owns the machine's screen and would poison every
-# later boot in the group.
+# LaunchAPPL itself erroring) sweeps up BOTH cwds and dies.
 #
 # The captures land in $WORK/cap{1,2}.raw and are split by capture_split
 # into $WORK/cap1.{out,log} / $WORK/cap2.{out,log} with MAC_EXIT1 /
 # MAC_EXIT2 -- capture_split itself writes the un-numbered cap.* names,
 # so each split is renamed before the next one overwrites it.
 run_mac_pair() {
+    mac_launch macplus;  _lA=$MAC_LAUNCH
+    mac_launch macplus2; _lB=$MAC_LAUNCH
     mkdir -p "$WORK/launchA" "$WORK/launchB"
-    ( cd "$WORK/launchA" && "$TOOLS/timeout" "$3" \
-        "$ROOT/toolchain/bin/LaunchAPPL" -e minivmac "$1" \
+    # shellcheck disable=SC2086
+    ( cd "$WORK/launchA" && "$TOOLS/timeout" "$3" $_lA "$1" \
         > "$WORK/cap1.raw" 2> "$WORK/cap1.err" ) &
     _pidA=$!
     # The stagger is what makes the pair a server/client pair: BIN1 is
     # listening (or at least booting) before BIN2 starts looking for it.
     sleep 5
-    ( cd "$WORK/launchB" && "$TOOLS/timeout" "$3" \
-        "$ROOT/toolchain/bin/LaunchAPPL" -e minivmac \
-        --minivmac-dir "$ROOT/macplus2" --minivmac-path ./MacPlus2.app \
-        --system-image ./disk1.dsk --autoquit-image ./autoquit-1.1.1.dsk \
-        "$2" > "$WORK/cap2.raw" 2> "$WORK/cap2.err" ) &
+    # shellcheck disable=SC2086
+    ( cd "$WORK/launchB" && "$TOOLS/timeout" "$3" $_lB "$2" \
+        > "$WORK/cap2.raw" 2> "$WORK/cap2.err" ) &
     _pidB=$!
     wait "$_pidA"; _rcA=$?
     wait "$_pidB"; _rcB=$?
+    mac_kill_ours "$WORK/launchA"
+    mac_kill_ours "$WORK/launchB"
     if [ $_rcA -ne 0 ] || [ $_rcB -ne 0 ]; then
-        pkill -f "$WORK/launchA"
-        pkill -f "$WORK/launchB"
         # The guest's own partial stdout (cap*.raw) is the only evidence
         # of how far a timed-out boot actually got -- LaunchAPPL's stderr
         # says nothing about it.
