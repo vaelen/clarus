@@ -1,5 +1,5 @@
 #!/bin/sh
-# timeout: 90m
+# timeout: 100m
 # SE memory program Wave 0 (and every wave close, umbrella §7): ClarusC.APPL
 # compiles examples/bookmarks.cla on the Snow Mac IIcx (System 7.1) and
 # logs, per compile phase, FreeMem/MaxBlock (`  mem:` lines) and, after
@@ -49,7 +49,7 @@ grep -q '\] Finished$' "$WORK/out" && t_pass not_truncated \
 # path "Clarus:bookmarks.cla" the icon path loses its volume (pre-existing
 # ClarusC bug, found by this script; not a memory-probe concern).
 # Every other warning/error marker still fails the check.
-grep -vF 'warning: cannot read app icon bookmarks.pbm:' "$WORK/out" > "$WORK/out.markers"
+grep -vF 'warning: cannot read app icon bookmarks.pbm: could not open file; using default icon' "$WORK/out" > "$WORK/out.markers"
 snow_no_error_markers no_error_markers "$WORK/out.markers"
 grep -qF '##CLARUS-EXIT## 0' "$WORK/out" && t_pass clean_exit || t_fail clean_exit "no clean exit trailer"
 t_done

@@ -283,7 +283,13 @@ func feProgress(line: string) {
 // feMemProbe: after every compile phase line, the heap's FreeMem and
 // MaxBlock. A separate line so the phase line's own shape is untouched.
 func feMemProbe(phase: string) {
-    log("  mem: free " + numToStr(FreeMem() / 1024) + " KB, max " + numToStr(MaxBlock() / 1024) + " KB")
+    log("  mem: " + gcMemFreeMax())
+}
+
+// "free N KB, max M KB" -- shared by feMemProbe and the launch/pre-compile
+// probes (App.startEmpty, gcCompile).
+func gcMemFreeMax(): string {
+    return "free " + numToStr(FreeMem() / 1024) + " KB, max " + numToStr(MaxBlock() / 1024) + " KB"
 }
 
 // Stack high-water: paint the unused stack below the current SP with a
@@ -709,6 +715,7 @@ func gcCompile(w: Log, p: string) {
     // progress lines, which physically precede it) instead of ahead of
     // them. Nothing is lost.
     log(bakeMsg)
+    log("  mem: pre-compile " + gcMemFreeMax())
 
     entries.add(p)
 
@@ -809,6 +816,9 @@ func gcCompile(w: Log, p: string) {
 }
 
 on App.startEmpty {
+    // Launch probe (SE wave 0): heap state before anything ClarusC does,
+    // plus the zone's extent (ApplLimit 0x130 - ApplZone 0x2AA).
+    log("  mem: launch " + gcMemFreeMax() + ", zone " + numToStr((peekl(ptr(0x0130)) - peekl(ptr(0x02AA))) / 1024) + " KB")
     open Log
 }
 
