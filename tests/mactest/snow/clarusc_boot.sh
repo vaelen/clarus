@@ -4,17 +4,16 @@
 # clarusc_boot_test.go's TestClarusCBootOnSnow. Builds the Mac-resident
 # compiler's GUI front end with a single scripted "quit" baked in,
 # installs it into Startup Items, boots Snow, and checks the captured
-# trace for a window-open line and a clean exit. Runs on the System 6 SE
-# only (Linux emulator port, 2026-09-27): there the app is the boot
-# blocks' startup program with no MultiFinder, so its 48MB SIZE(-1)
-# partition is ignored and it gets the whole 4MB -- enough to open the
-# window and quit (measured PASS), though not for a compile (see
-# snow_skip_clarusc). Under System 7's Process Manager the partition does
-# not fit a 4MB machine.
+# trace for a window-open line and a clean exit. Defaults to the System 6
+# SE (Linux emulator port, 2026-09-27): there the app is the boot blocks'
+# startup program with no MultiFinder, so its 48MB SIZE(-1) partition is
+# ignored and it gets the whole 4MB -- enough to open the window and quit
+# (measured PASS), though not for a compile (see snow_clarusc_system).
+# SNOW_SYSTEM=7 boots it on the 128MB Mac IIcx instead, where the 48MB
+# partition fits under System 7's Process Manager.
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
-[ "${SNOW_SYSTEM:-6}" = 6 ] || snow_skip_clarusc
 
 BIN=$ROOT/build-68k/ClarusC/ClarusC.bin
 EVENTS=$ROOT/testdata/mac-resident/clarusc-boot.events

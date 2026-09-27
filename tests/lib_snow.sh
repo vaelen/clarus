@@ -11,14 +11,18 @@
 # CLARUS_SNOW_TESTS (never CLARUS_MAC_TESTS) and why two boots must never
 # overlap (snow_lock).
 #
-# Two machines, both a Macintosh SE with 4MB (snow/macse.rom, SE model,
-# default RAM), picked by SNOW_SYSTEM (default 6) or snow_disk's argument:
-#   6  snow/system6.snoww: SCSI 0 system6.img (System 6.0.8 + MultiFinder)
-#   7  snow/system7.snoww: SCSI 0 system7.img (System 7.1)
-# and SCSI 1 snow/clarus.img, the scratch "Clarus" volume, in both.
-# snow_disk clones both images into $WORK and boots a scratch workspace
-# naming the clones -- the pristine snow/ files are never written, and are
-# also what Andrew boots himself via snow/system6 / snow/system7.
+# Two machines, picked by SNOW_SYSTEM (default 6) or snow_disk's argument:
+#   6  snow/system6.snoww: a Macintosh SE, 4MB -- SCSI 0 system6.img
+#      (System 6.0.8 + MultiFinder; no MacTCP installed)
+#   7  snow/system7.snoww: a Macintosh IIcx, 128MB, RGB12 (512x384) --
+#      SCSI 0 system7.img (System 7.1, MacTCP at 10.0.0.2)
+# and SCSI 1 snow/clarus.img, the scratch "Clarus" volume, plus the Snow
+# "Ethernet" (NAT) target at SCSI 3, in both. The machine details are read
+# from the template, never assumed here. snow_disk clones the images (and a
+# PRAM file, if the template names one) into $WORK and boots a scratch
+# workspace naming the clones -- the pristine snow/ files are never
+# written, and are also what Andrew boots himself via snow/system6 /
+# snow/system7.
 #
 # Our process is identified by the PID snow_run launched and by nothing
 # else: `clarus-snow` is ALSO the binary behind Andrew's own snow/system6 and
@@ -87,9 +91,39 @@ _snow_hfs_start() {
     die "$1: no Apple_HFS partition in its partition map"
 }
 
+# _snow_abs PATH : a template path, relative to snow/, made absolute.
+_snow_abs() {
+    case "$1" in
+        /*) echo "$1" ;;
+        *) echo "$ROOT/snow/$1" ;;
+    esac
+}
+
+# _snow_ws_drop KEY : remove the top-level "KEY": VALUE member (one line or
+# a multi-line [...]/{...} block) from $SNOW_WS, then drop the trailing
+# comma a now-last member is left with (Snow's JSON reader rejects it).
+_snow_ws_drop() {
+    awk -v key="\"$1\":" '
+        !skip && index($0, key) { skip = 1; depth = 0 }
+        skip {
+            t = $0; o = gsub(/[[{]/, "", t)
+            t = $0; c = gsub(/[]}]/, "", t)
+            depth += o - c
+            if (depth <= 0) skip = 0
+            next
+        }
+        { print }' "$SNOW_WS" |
+    awk 'NR > 1 { if ($0 ~ /^[ \t]*[]}]/) sub(/,[ \t]*$/, "", prev); print prev }
+         { prev = $0 }
+         END { if (NR) print prev }' > "$SNOW_WS.new" || die "drop $1 from $SNOW_WS"
+    mv "$SNOW_WS.new" "$SNOW_WS"
+    grep -qF "\"$1\"" "$SNOW_WS" && die "$SNOW_WS: dropping $1 did not take"
+    :
+}
+
 # snow_disk [6|7] : clone the chosen machine's boot image and snow/clarus.img
-# into $WORK/snow and write a scratch workspace naming them, with rom_path
-# absolutized -- newSnowDisk, done fresh per script so a run never sees
+# into $WORK/snow and write a scratch workspace naming them, with every ROM
+# path absolutized and any PRAM file cloned -- newSnowDisk, done fresh per script so a run never sees
 # another run's (or a crashed run's) leftover debris. Sets SNOW_DIR,
 # SNOW_SYS, SNOW_IMG (the boot volume, where the app and its `out` live),
 # SNOW_CLARUS_IMG (the "Clarus" volume, where snow_put stages data) and
@@ -124,11 +158,27 @@ snow_disk() {
     cp "$ROOT/snow/$_clar" "$SNOW_CLARUS_IMG" || die "clone snow/$_clar"
     _snow_ws_sub Disk "$_boot" "$SNOW_IMG"
     _snow_ws_sub Disk "$_clar" "$SNOW_CLARUS_IMG"
-    _rom=$(_snow_ws_val rom_path "$_tpl")
-    _snow_ws_sub rom_path "$_rom" "$ROOT/snow/$_rom"
-    grep -q '"pram_path": null' "$SNOW_WS" \
-        || die "$_tpl: pram_path is not null -- it would name a pristine PRAM file"
-    for _f in "$ROOT/snow/$_rom" "$SNOW_IMG" "$SNOW_CLARUS_IMG"; do
+    _files="$SNOW_IMG $SNOW_CLARUS_IMG"
+    # ROMs are read-only to Snow: point at the snow/ originals. A null key
+    # has no quoted value, so _snow_ws_val skips it.
+    for _k in rom_path display_card_rom_path extension_rom_path; do
+        _v=$(_snow_ws_val $_k "$_tpl")
+        [ -n "$_v" ] || continue
+        _snow_ws_sub $_k "$_v" "$(_snow_abs "$_v")"
+        _files="$_files $(_snow_abs "$_v")"
+    done
+    # PRAM is written back by Snow: boot a clone, never the original.
+    _v=$(_snow_ws_val pram_path "$_tpl")
+    if [ -n "$_v" ]; then
+        cp "$(_snow_abs "$_v")" "$SNOW_DIR/pram.bin" || die "clone $_v"
+        _snow_ws_sub pram_path "$_v" "$SNOW_DIR/pram.bin"
+        _files="$_files $SNOW_DIR/pram.bin"
+    fi
+    # A template's own serial bridges name Andrew's ports (system7.snoww
+    # has carried Tcp 7777): a test boot has none unless snow_run is given
+    # --serial-bridge-a/-b itself.
+    _snow_ws_drop serial_bridges
+    for _f in $_files; do
         [ -f "$_f" ] || die "scratch workspace names a missing file: $_f"
     done
 }
@@ -227,22 +277,17 @@ snow_extract_app() {
     return 1
 }
 
-# snow_skip_clarusc : ClarusC.APPL (scripts/build-clarusc-mac.sh) is built
-# with a 48MB SIZE(-1) partition and needs ~14MB of live heap for a single
-# compile; both Snow machines are 4MB SEs. Skip, don't fail, until the
-# compiler fits (docs/superpowers/specs/2026-09-27-se-memory-footprint-
-# findings.md). CLARUS_SNOW_CLARUSC=1 boots it anyway.
-snow_skip_clarusc() {
+# snow_clarusc_system : for a script that COMPILES with ClarusC.APPL
+# (scripts/build-clarusc-mac.sh: a 48MB SIZE(-1) partition, ~14MB of live
+# heap per compile). Defaults SNOW_SYSTEM to 7 -- the 128MB Mac IIcx, where
+# ClarusC runs today -- and skips on the 4MB System 6 SE until the compiler
+# fits there (docs/superpowers/specs/2026-09-27-se-memory-footprint-
+# findings.md). CLARUS_SNOW_CLARUSC=1 boots the SE anyway.
+snow_clarusc_system() {
+    SNOW_SYSTEM=${SNOW_SYSTEM:-7}
+    [ "$SNOW_SYSTEM" = 7 ] && return 0
     [ "${CLARUS_SNOW_CLARUSC:-}" = 1 ] && return 0   # force a boot anyway
-    skip "ClarusC.APPL needs a 48MB partition (~14MB live heap per compile); the Snow machines are 4MB Macintosh SEs"
-}
-
-# snow_skip_no_network WHAT : Snow's LocalTalk bridge has no non-GUI switch
-# on Linux (the macOS lane clicked Snow's in-window Ports menu with
-# CGEvents; that clicker was removed, not ported), and the SE workspaces
-# carry no DaynaPORT/MacTCP. The Snow networked lanes wait for that.
-snow_skip_no_network() {
-    skip "$1: Snow LocalTalk/MacTCP lanes deferred on Linux -- no non-GUI bridge switch; re-enabled after the SE-memory program"
+    skip "ClarusC.APPL needs ~14MB of live heap per compile; the System 6 machine is a 4MB Macintosh SE (SNOW_SYSTEM=7 is the 128MB Mac IIcx)"
 }
 
 # --- resource forks --------------------------------------------------
@@ -371,7 +416,11 @@ snow_unlock() {
 # The done command may block for as long as its own internal budgets
 # allow (SECS is only the outer bound). SNOW_ARGS go to clarus-snow before
 # the workspace (e.g. --serial-bridge-a tcp:PORT; pick a free port -- never
-# the 6666/7777 Andrew's snow/system6 / snow/system7 use).
+# the 6666/7777 Andrew's snow/system6 / snow/system7 use). A boot has NO
+# serial bridge unless given one here: `--serial-bridge-b localtalk` (LToUDP
+# on the printer port, where the guest's AppleTalk lives) is passed only by
+# a script that needs AppleTalk, since it puts the guest on the shared,
+# routed 239.192.76.84:1954 group, which is atalk_lock's to hand out.
 snow_run() {
     _secs=$1
     _done=$2

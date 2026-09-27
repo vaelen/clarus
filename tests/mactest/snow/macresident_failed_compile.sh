@@ -18,7 +18,7 @@
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
-snow_skip_clarusc
+snow_clarusc_system
 
 BAD=$ROOT/testdata/mac-resident/badabort.cla
 TICK=$ROOT/testdata/cg68k/tickprobe.cla
