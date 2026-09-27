@@ -49,6 +49,8 @@ include "drive.cla"
 // build ever takes the bake path. Task 6 (Mac integration): gcCompile
 // below now DOES set haveRtbake, by default -- see its own doc comment.
 include "bake.cla"
+// SE wave 0: FreeMem/MaxBlock for feMemProbe below, from the catalog.
+include "../toolbox/memory.cla"
 
 // gcGet1NamedResource: a SECOND declaration of the same trap Get1NamedResource
 // (toolbox/resources.cla) already catalogs, with a `string` `name` param
@@ -275,6 +277,54 @@ func gcTickerAdd(line: string) {
 // matter.
 func feProgress(line: string) {
     log(line)
+}
+
+// ---- SE wave 0 on-target probes (always on; spec W3) ----
+// feMemProbe: after every compile phase line, the heap's FreeMem and
+// MaxBlock. A separate line so the phase line's own shape is untouched.
+func feMemProbe(phase: string) {
+    log("  mem: free " + numToStr(FreeMem() / 1024) + " KB, max " + numToStr(MaxBlock() / 1024) + " KB")
+}
+
+// Stack high-water: paint the unused stack below the current SP with a
+// pattern right before a compile, scan for the deepest overwritten long
+// right after. CurStackBase (0x908) is the stack's top, ApplLimit (0x130)
+// its floor (cg68k's startup SetApplLimit reserve).
+external func GcStackPtr(): ptr = inline sp
+const gcStackPat: int = 0x5AA5C33C
+var gcStackLo: int
+var gcStackHi: int
+
+func gcStackPaint() {
+    var a: int
+    gcStackLo = peekl(ptr(0x0130)) + 16
+    gcStackHi = int(GcStackPtr()) - 1024
+    if gcStackHi <= gcStackLo {
+        gcStackLo = 0
+        return
+    }
+    a = gcStackLo
+    while a < gcStackHi {
+        pokel(ptr(a), gcStackPat)
+        a = a + 4
+    }
+}
+
+func gcStackReport() {
+    var a: int
+    var top: int
+    var floor: int
+    if gcStackLo == 0 {
+        log("  stack: probe unavailable")
+        return
+    }
+    a = gcStackLo
+    while a < gcStackHi and peekl(ptr(a)) == gcStackPat {
+        a = a + 4
+    }
+    top = peekl(ptr(0x0908))
+    floor = peekl(ptr(0x0130))
+    log("  stack: high-water " + numToStr((top - a) / 1024) + " KB of " + numToStr((top - floor) / 1024) + " KB")
 }
 
 // The Log-window half of the progress seam (onlog phase), moved here
@@ -771,7 +821,9 @@ extend File {
             w = open Log
         }
         if askOpen(p, "TEXT") {
+            gcStackPaint()
             gcCompile(w, p)
+            gcStackReport()
         }
     }
 
