@@ -10,19 +10,13 @@
 // testdata/ui/texteditor_opendoc_setup.cla's file.writeText usage.
 // internal/mactest/snow_test.go rebuilds this via scripts/build-68k.sh.
 //
-// Path convention (empirically probed, task-4-report.md): this app
-// self-launches from ":System Folder:Startup Items:" (the harness's
-// proven no-click auto-launch mechanism -- Finder auto-opens everything
-// it finds in that folder at boot, application or not), so its own
-// default directory is Startup Items, two levels below the volume root
-// (root -> System Folder -> Startup Items). The harness plants
-// input/output files at the volume root instead of Startup Items --
-// dropping a plain document there too would make Finder try to
-// auto-open IT as well, at boot, throwing a blocking "could not be
-// opened" dialog before this app ever gets a turn. ":::NAME" is the HFS
-// partial-pathname up-level idiom (each extra leading colon beyond the
-// first means "one directory up"), so ":::Marker.txt"/":::Copy.txt"
-// reach the root from here regardless of the volume's name.
+// Path convention (Linux emulator port, 2026-09-27): the harness plants
+// input/output files on the scratch "Clarus" volume (SCSI 1), never next
+// to this app -- on System 7 it self-launches from ":System Folder:
+// Startup Items:" (the Finder would auto-open a document there too and
+// throw a blocking dialog), on System 6 from ":System Folder:" as the
+// boot blocks' startup program. "Clarus:NAME" is an absolute HFS pathname,
+// so it reaches the same file from either launch directory.
 app SnowRoundTrip {
     name: "SnowRoundTrip"
     version: "1.0"
@@ -36,13 +30,28 @@ window Main {
     size: 200, 100
 }
 
+var tries: int = 0
+
 on App.launch {
+    open Main
+}
+
+// The file round trip runs from the event loop, not App.launch: on System 6
+// this app is the boot blocks' startup program, launched BEFORE anything
+// has pulled the SCSI "Clarus" volume's disk-inserted event, and that
+// volume is only mounted once the app's own event loop runs (measured,
+// 2026-09-27: "could not open file" from App.launch). So retry the read
+// once a second for up to 20 s, then write and quit either way.
+every 60 ticks {
     var t: text
     var ok1: bool
     var ok2: bool
-    open Main
-    ok1 = file.readText(":::Marker.txt", t)
-    ok2 = file.writeText(":::Copy.txt", t, app.doctype, app.id)
+    tries = tries + 1
+    ok1 = file.readText("Clarus:Marker.txt", t)
+    if not ok1 and tries < 20 {
+        return
+    }
+    ok2 = file.writeText("Clarus:Copy.txt", t, app.doctype, app.id)
     // log() on the native (emit68k) lane is a capture-only stub (native.cla's
     // natLog) buffered into the "out" file by natQuit's own trailer, so
     // these are cheap extra signal for the harness to assert on. NOT alert():

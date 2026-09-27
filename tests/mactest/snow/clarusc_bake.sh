@@ -17,6 +17,7 @@
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
+snow_skip_clarusc
 
 TICK=$ROOT/testdata/cg68k/tickprobe.cla
 EVENTS=$ROOT/testdata/mac-resident/clarusc-bake-single.events
@@ -35,7 +36,7 @@ snow_put "$TICK" tickprobe.cla
 SETTLE=$(settle_seconds "${CLARUS_MACRESIDENT_SETTLE:-55m}")
 snow_run $(( SETTLE + 1200 )) "$(snow_done_when_trailer 30)"
 
-snow_get ":System Folder:Startup Items:out" "$WORK/out"
+snow_get "${SNOW_APPDIR}out" "$WORK/out"
 echo "--- app out ($(wc -c < "$WORK/out" | tr -d ' ') bytes)"
 cat "$WORK/out"
 echo "--- end app out"
@@ -54,7 +55,7 @@ else
 fi
 
 fire=$(snow_count 'T FIRE File.Compile.select' "$WORK/out")
-ask=$(snow_count 'T ASKOPEN :::' "$WORK/out")
+ask=$(snow_count 'T ASKOPEN Clarus:' "$WORK/out")
 if [ "$fire" != 1 ] || [ "$ask" != 1 ]; then
     t_fail dispatches "want 1 Compile.select dispatch + 1 real askOpen answer, got $fire/$ask"
     t_done

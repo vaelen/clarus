@@ -83,7 +83,7 @@ else
     t_fail serial_exchange "tcpdrive exit $(cat "$WORK/drive.rc" 2>/dev/null): $(tr '\n' ' ' < "$WORK/drive.log")"
 fi
 
-snow_get ":System Folder:Startup Items:out" "$WORK/out"
+snow_get "${SNOW_APPDIR}out" "$WORK/out"
 if grep -qF '##CLARUS-EXIT## 0' "$WORK/out"; then
     t_pass clean_exit
 else

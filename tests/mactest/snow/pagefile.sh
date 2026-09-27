@@ -48,7 +48,7 @@ else
     t_fail result_line_pass_16 "want the result line \"PASS 16\"; tcpdrive exit $(cat "$WORK/drive.rc" 2>/dev/null): $(tr '\n' ' ' < "$WORK/drive.log")"
 fi
 
-snow_get ":System Folder:Startup Items:out" "$WORK/out"
+snow_get "${SNOW_APPDIR}out" "$WORK/out"
 if grep -qF '##CLARUS-EXIT## 0' "$WORK/out"; then
     t_pass clean_exit
 else

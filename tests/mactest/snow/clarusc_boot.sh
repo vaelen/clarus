@@ -4,11 +4,17 @@
 # clarusc_boot_test.go's TestClarusCBootOnSnow. Builds the Mac-resident
 # compiler's GUI front end with a single scripted "quit" baked in,
 # installs it into Startup Items, boots Snow, and checks the captured
-# trace for a window-open line and a clean exit. Snow, not Mini vMac:
-# ClarusC.APPL's SIZE(-1) partition does not fit a 4MB Mac Plus.
+# trace for a window-open line and a clean exit. Runs on the System 6 SE
+# only (Linux emulator port, 2026-09-27): there the app is the boot
+# blocks' startup program with no MultiFinder, so its 48MB SIZE(-1)
+# partition is ignored and it gets the whole 4MB -- enough to open the
+# window and quit (measured PASS), though not for a compile (see
+# snow_skip_clarusc). Under System 7's Process Manager the partition does
+# not fit a 4MB machine.
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
+[ "${SNOW_SYSTEM:-6}" = 6 ] || snow_skip_clarusc
 
 BIN=$ROOT/build-68k/ClarusC/ClarusC.bin
 EVENTS=$ROOT/testdata/mac-resident/clarusc-boot.events
@@ -26,7 +32,7 @@ snow_put_bin "$BIN" ClarusC
 # make this boot slower.
 snow_run 180 "$(snow_settle_done 45)"
 
-snow_get ":System Folder:Startup Items:out" "$WORK/out"
+snow_get "${SNOW_APPDIR}out" "$WORK/out"
 out_has() {
     if grep -qF "$2" "$WORK/out"; then
         t_pass "$1"

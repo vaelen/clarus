@@ -1,5 +1,5 @@
-answer-open :::badabort.cla
+answer-open Clarus:badabort.cla
 menu 2 1
-answer-open :::tickprobe.cla
+answer-open Clarus:tickprobe.cla
 menu 2 1
 quit

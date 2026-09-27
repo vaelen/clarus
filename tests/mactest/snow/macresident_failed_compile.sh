@@ -18,6 +18,7 @@
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
+snow_skip_clarusc
 
 BAD=$ROOT/testdata/mac-resident/badabort.cla
 TICK=$ROOT/testdata/cg68k/tickprobe.cla
@@ -48,13 +49,13 @@ if [ -n "${CLARUS_MACRESIDENT_DONE:-}" ]; then
 fi
 snow_run $(( SETTLE + 1200 )) "$DONE"
 
-snow_get ":System Folder:Startup Items:out" "$WORK/out"
+snow_get "${SNOW_APPDIR}out" "$WORK/out"
 echo "--- app out ($(wc -c < "$WORK/out" | tr -d ' ') bytes)"
 cat "$WORK/out"
 echo "--- end app out"
 
 fire=$(snow_count 'T FIRE File.Compile.select' "$WORK/out")
-ask=$(snow_count 'T ASKOPEN :::' "$WORK/out")
+ask=$(snow_count 'T ASKOPEN Clarus:' "$WORK/out")
 if [ "$fire" != 2 ] || [ "$ask" != 2 ]; then
     t_fail dispatches "want 2 Compile.select dispatches + 2 real askOpen answers, got $fire/$ask (the settle window most likely expired before both compiles finished)"
     t_done

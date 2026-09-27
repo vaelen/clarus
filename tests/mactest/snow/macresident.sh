@@ -25,6 +25,7 @@
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
+snow_skip_clarusc
 
 TICK=$ROOT/testdata/cg68k/tickprobe.cla
 CATP=$ROOT/testdata/mac-resident/catprobe.cla
@@ -54,13 +55,13 @@ fi
 # sit above any wait the probe could plausibly need.
 snow_run $(( SETTLE + 1200 )) "$DONE"
 
-snow_get ":System Folder:Startup Items:out" "$WORK/out"
+snow_get "${SNOW_APPDIR}out" "$WORK/out"
 echo "--- app out ($(wc -c < "$WORK/out" | tr -d ' ') bytes)"
 cat "$WORK/out"
 echo "--- end app out"
 
 fire=$(snow_count 'T FIRE File.Compile.select' "$WORK/out")
-ask=$(snow_count 'T ASKOPEN :::' "$WORK/out")
+ask=$(snow_count 'T ASKOPEN Clarus:' "$WORK/out")
 if [ "$fire" != 2 ] || [ "$ask" != 2 ]; then
     t_fail dispatches "want 2 Compile.select dispatches + 2 real askOpen answers, got $fire/$ask (the settle window most likely expired before both compiles finished)"
     t_done
@@ -104,7 +105,7 @@ snow_disk
 snow_put_bin "$WORK/TickProbe.bin" TickProbe
 snow_run 180 "$(snow_settle_done 30)"
 
-snow_get ":System Folder:Startup Items:out" "$WORK/tickout"
+snow_get "${SNOW_APPDIR}out" "$WORK/tickout"
 if grep -qF 'T OPEN' "$WORK/tickout"; then
     t_pass tickprobe_window_open
 else
