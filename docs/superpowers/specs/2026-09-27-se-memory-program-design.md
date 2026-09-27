@@ -637,7 +637,7 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 | 5 Code and stack                   | not started                          | —                | —                |
 | Wave 6 decision                    | pending                              | —                | —                |
 
-`emulator-linux` must merge before Wave 0 starts, because Wave 0 relies
+`emulator-linux` is merged (2026-09-27), so Wave 0 can start. Wave 0 relies
 on the Snow lane. It also carries a host AppleTalk fix for routed
 networks (`rt_atalk.inc`: accept any zone name on NBP lookups, treat
 net 0 as matching any network).
