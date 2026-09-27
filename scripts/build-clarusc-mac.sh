@@ -90,7 +90,7 @@ fi
 #    for the same note. NOTE (Linux emulator port, 2026-09-27): that Mac II
 #    workspace is gone; the Snow machines are now 4MB Macintosh SEs
 #    (snow/system{6,7}.snoww), which this partition does not fit, so the
-#    tests/mactest/snow/ ClarusC scripts skip (snow_skip_clarusc).
+#    compiling tests/mactest/snow/ ClarusC scripts skip (snow_skip_clarusc).
 # --testapi (trace-noise phase, clir-load-perf): macgui.cla itself never
 # calls a UiTest* verb, so this is a no-op on the emitted binary (proven
 # byte-identical against a no-flag build of unmodified macgui.cla) --
