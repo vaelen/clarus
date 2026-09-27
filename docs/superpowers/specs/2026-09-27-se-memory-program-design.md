@@ -626,16 +626,16 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 
 ## 9. Status
 
-| Wave                               | Status                               | Branch           | Numbers recorded |
-|------------------------------------|--------------------------------------|------------------|------------------|
-| prerequisite: Linux emulator lanes | in progress (2026-09-27), not merged | `emulator-linux` | —                |
-| 0 Measurement                      | not started                          | —                | —                |
-| 1 Lifetimes                        | not started                          | —                | —                |
-| 2 Representation                   | not started                          | —                | —                |
-| 3 Narrow scalars                   | not started                          | —                | —                |
-| 4 Lazy runtime library             | not started                          | —                | —                |
-| 5 Code and stack                   | not started                          | —                | —                |
-| Wave 6 decision                    | pending                              | —                | —                |
+| Wave                               | Status                                 | Branch           | Numbers recorded                                                                           |
+|------------------------------------|----------------------------------------|------------------|--------------------------------------------------------------------------------------------|
+| prerequisite: Linux emulator lanes | merged to main 2026-09-27 (`62b718c4`) | `emulator-linux` | T1 116 pass / 0 fail; `mactest/` 30 pass, 6 opt-in skips, 0 fail (all 9 Snow scripts pass) |
+| 0 Measurement                      | not started                            | —                | —                                                                                          |
+| 1 Lifetimes                        | not started                            | —                | —                                                                                          |
+| 2 Representation                   | not started                            | —                | —                                                                                          |
+| 3 Narrow scalars                   | not started                            | —                | —                                                                                          |
+| 4 Lazy runtime library             | not started                            | —                | —                                                                                          |
+| 5 Code and stack                   | not started                            | —                | —                                                                                          |
+| Wave 6 decision                    | pending                                | —                | —                                                                                          |
 
 `emulator-linux` is merged (2026-09-27), so Wave 0 can start. Wave 0 relies
 on the Snow lane. It also carries a host AppleTalk fix for routed
