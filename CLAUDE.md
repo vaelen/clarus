@@ -126,7 +126,7 @@ Tiered test gates:
   `serve`, `zones`, `runerr`, plus `splice`/`examples`, which need no
   network), `tests/atalkdrive/` (the tool talking to itself) and
   `tests/hostrt/atalk.sh` (the C unit test over `rt_atalk.inc`). That
-  group is shared with any Mini vMac session running on the same
+  group is shared with any Mini vMac or Snow (LocalTalk bridge) session running on the same
   machine, and on Andrew's Linux box it is also a **real, routed
   LocalTalk network** (a router on net 6801, many zones and foreign
   nodes): a test must use per-run-unique NBP names/types, look up in
@@ -195,13 +195,20 @@ Tiered test gates:
     printer's remaining first-class role is host builds (`clarusc emit`
     + `cc`).
   - `CLARUS_SNOW_TESTS=1` enables the Snow scripts under
-    `tests/mactest/snow/`, booting a **Macintosh SE, 4 MB** (the
-    SE-memory program's acceptance machine). `tests/lib_snow.sh`'s
-    `snow_disk [6|7]` (default `SNOW_SYSTEM=6`) clones `snow/system6.img`
-    (System 6.0.8) or `snow/system7.img` (System 7.1) plus
-    `snow/clarus.img` (the second SCSI disk, volume `Clarus`) into
-    `$WORK/snow` and writes a scratch `.snoww` — the pristine images and
-    workspaces in `snow/` are never booted or written by tests. Test
+    `tests/mactest/snow/` on two machines: `SNOW_SYSTEM=6` (the default)
+    is a **Macintosh SE, 4 MB, System 6.0.8** — the SE-memory program's
+    acceptance machine; `SNOW_SYSTEM=7` is a **Mac IIcx, 128 MB,
+    System 7.1** (`rominator.rom`, 8•24 card, RGB12 512×384, 32-bit
+    addressing via `system7.pram`, starts in fast-forward — boots fine
+    that way, ~4.3–4.9×). `tests/lib_snow.sh`'s `snow_disk [6|7]` builds
+    the scratch machine from the template: it clones `snow/system{6,7}.img`
+    plus `snow/clarus.img` (the second SCSI disk, volume `Clarus`) into
+    `$WORK/snow`, absolutizes the ROM paths, copies a named PRAM
+    (System 7's) to `$WORK/snow/pram.bin`, drops the template's
+    `serial_bridges` block (a boot gets bridges only from its own
+    `snow_run` arguments), and keeps the Ethernet entry (SCSI 3, NAT) —
+    the pristine images and workspaces in `snow/` are never booted or
+    written by tests. Test
     apps autostart on System 6 by rewriting the scratch boot volume's
     boot-block startup program (`bbHelloName`, the LaunchAPPL trick —
     the app runs WITHOUT MultiFinder, and the Clarus volume mounts only
@@ -209,17 +216,24 @@ Tiered test gates:
     files go on the scratch `Clarus` volume. Done-detection is the
     guest's own `##CLARUS-EXIT##` trailer, probed in the live host image.
     **ClarusC.APPL does not fit the 4 MB SE yet** (that is the SE-memory
-    program's whole goal): `snow/clarusc_bake`, `macresident` and
-    `macresident_failed_compile` SKIP (`CLARUS_SNOW_CLARUSC=1` forces
-    them — they currently die `out of memory` at "Loading Baked
-    Runtime"); only `snow/clarusc_boot` (System 6) boots ClarusC.
-    The old standing rule — run `snow/clarusc_bake` after any
-    `clarusc/bake.cla`/`clarusc/macgui.cla` change — is suspended until
-    ClarusC fits again. Snow LocalTalk (`snow/adsp_listener`) and
-    MacTCP/Ethernet (`snow/tcp_selfconnect`) SKIP: Linux Snow has no
-    non-GUI switch for its LocalTalk bridge; both are deferred until
-    after the SE-memory program (`docs/FUTURE.md`; the full scripts are
-    in git at `c960bb96`).
+    program's whole goal — on the SE it dies `out of memory` at "Loading
+    Baked Runtime"), so `snow/clarusc_bake`, `macresident` and
+    `macresident_failed_compile` default to the Mac IIcx
+    (`snow_clarusc_system`: they SKIP only under `SNOW_SYSTEM=6`, unless
+    `CLARUS_SNOW_CLARUSC=1`); `snow/clarusc_boot` defaults to the SE.
+    `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (~9–18
+    min on the IIcx) is the standing rule after any change to
+    `clarusc/bake.cla` or `clarusc/macgui.cla` — the only on-target proof
+    `ClarusC.APPL`'s default bake path works, and neither T1 nor T2's
+    host stages boot it. `snow/adsp_listener` (System 7 IIcx listener,
+    Mini vMac client) gets LocalTalk from `snow_run … --serial-bridge-b
+    localtalk` — the only Snow script that joins the shared LToUDP group,
+    under `atalk_lock`; it forces real-time (`snow_realtime`) because its
+    tick-paced watchdog must overlap a real-time client.
+    `snow/tcp_selfconnect` runs on System 7 (`system6.img` has no MacTCP):
+    the guest is 10.0.0.2, gateway 10.0.0.1, NAT **outbound-only**, and it
+    self-connects on its OWN address because MacTCP does not loop
+    `127.0.0.1` back.
     **Snow process safety.** Test boots run `$WORK/snow/clarus-snow-test`
     (a symlink to `snow/clarus-snow`) and are tracked ONLY by the pid
     they launched plus the `$BR/snow.lock` mkdir mutex; they stop by
@@ -495,12 +509,16 @@ enum + runner, not one boot per case.
   output module ⇒ `tests/asm68k/roundtrip.sh`, `tests/cg68k/vasm.sh` and
   the round-trip halves of `tests/cg68k/array_assign.sh` and
   `tests/cg68k/segments.sh` SKIP.
-- `snow/` → Linux Snow `snow/clarus-snow`, `macse.rom`, and two
-  Macintosh SE (4 MB) setups: `snow/system6` (launcher script;
-  `system6.snoww` + `system6.img`, System 6.0.8 + MultiFinder, serial
-  bridge `tcp:6666`) and `snow/system7` (`system7.snoww` +
-  `system7.img`, System 7.1, `tcp:7777`); both mount `clarus.img` as
-  the second SCSI disk, volume `Clarus`. Those launchers are Andrew's
+- `snow/` → Linux Snow `snow/clarus-snow` and two machines:
+  `snow/system6` (launcher script; `system6.snoww` + `system6.img` +
+  `macse.rom`: Macintosh SE, 4 MB, System 6.0.8 + MultiFinder; the
+  launcher passes `--serial-bridge-a tcp:6666 --serial-bridge-b
+  localtalk`) and `snow/system7` (`system7.snoww` + `system7.img` +
+  `system7.pram` + `rominator.rom` + the 8•24 card ROM: Mac IIcx,
+  128 MB, System 7.1, 32-bit addressing, fast-forward; its launcher
+  passes no flags — the workspace itself carries `Tcp 7777` +
+  LocalTalk bridges). Both mount `clarus.img` as the second SCSI disk
+  (volume `Clarus`) and have Ethernet at SCSI 3. Those launchers are Andrew's
   own interactive sessions — tests clone the images instead (see the
   `CLARUS_SNOW_TESTS=1` bullet above). Missing ⇒ the whole
   `tests/mactest/snow/` group SKIPs.
