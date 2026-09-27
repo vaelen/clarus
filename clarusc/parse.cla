@@ -101,6 +101,7 @@ var cwPtr: int
 var cwDeref: int
 var cwNop: int
 var cwA5: int
+var cwSp: int
 var cwExternal: int
 var cwOverlay: int
 var cwExtern: int
@@ -139,6 +140,7 @@ func cwInit() {
     cwDeref = intern("deref")
     cwNop = intern("nop")
     cwA5 = intern("a5")
+    cwSp = intern("sp")
     cwExternal = intern("external")
     cwOverlay = intern("overlay")
     cwExtern = intern("extern")
@@ -1750,11 +1752,11 @@ func parseRegBind(codes: list of int, names: list of int) {
 
 // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
 // [ ":" type ] [ "=" ( "trap" INTLIT [ "sel" INTLIT | "seld0" INTLIT | regClause ]
-// | "inline" ( "deref" | "nop" | "a5" ) | "ptr" ) ]` where
+// | "inline" ( "deref" | "nop" | "a5" | "sp" ) | "ptr" ) ]` where
 // `regClause = "reg" [ "(" regBind { "," regBind } ")" ] [ "memerr" ]
 // [ "ret" REG ]` and `regBind = REG ":" IDENT` (Task 3, Ch13: `external
 // func`; trap/inline clause added Task 2, native-5d; `inline a5` added
-// Task 12, native-5e; `reg memerr` and `trap ... sel` both added Task 14,
+// Task 12, native-5e; `inline sp` added SE wave 0; `reg memerr` and `trap ... sel` both added Task 14,
 // native-5e; regClause's named form -- the parenthesized regBind list and
 // `ret REG` -- added Task 1, toolbox-integration Feature A; `trap ...
 // seld0` added mac-resident-clarusc Task 12, the AppleEvent Manager's own
@@ -1938,8 +1940,11 @@ func parseExternFuncDecl(): int {
             } else if curIsIdentIdx(cwA5) {
                 advance()
                 convFlag = 5
+            } else if curIsIdentIdx(cwSp) {
+                advance()
+                convFlag = 11
             } else {
-                parseErrorf(curLine(), curCol(), "expected \"deref\", \"nop\", or \"a5\", found " + tokKindQuoted(curKind()))
+                parseErrorf(curLine(), curCol(), "expected \"deref\", \"nop\", \"a5\", or \"sp\", found " + tokKindQuoted(curKind()))
             }
         } else if curIsIdentIdx(cwPtr) {
             // extern-ptr-call phase: `= ptr` -- pascal-convention call

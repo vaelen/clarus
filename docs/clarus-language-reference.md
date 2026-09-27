@@ -1956,7 +1956,7 @@ external func LAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9
 
 Some other Toolbox managers share a single trap word the same way, but distinguish the routine by PRELOADING the selector into D0 instead of pushing it — the AppleEvent Manager's own trap `0xA816` (every `AE*` routine) is the working example. `trap NNNN seld0 SELECTOR` names that shape: the selector is moved into D0 immediately before the trap, after every declared argument has already been pushed — no extra stack word, so no extra cleanup either. `seld0` and `sel` are two different selector-dispatch shapes for two different trap families; a routine's own Inside Macintosh/Universal-Interfaces `THREEWORDINLINE` encoding says which — `0x3F3C` (`MOVE.W #selector,-(SP)`) is `sel`, `0x303C` (`MOVE.W #selector,D0`) is `seld0`. Like `sel`, `seld0` is mutually exclusive with `reg` (`external func AEInstallEventHandler(theAEEventClass: int, theAEEventID: int, handler: ptr, handlerRefcon: int, isSysHandler: bool): word = trap 0xA816 seld0 0x091F`, toolbox/appleevents.cla).
 
-`= inline deref`, `= inline nop`, and `= inline a5` name no trap at all — they mark the external as a compiler-known intrinsic, expanded at the call site instead of dispatched through a trap number. `inline deref` requires the signature `(ptr): ptr` exactly, reading the pointer stored at its argument address (the common master-pointer-to-object-pointer step of following a Handle):
+`= inline deref`, `= inline nop`, `= inline a5` and `= inline sp` name no trap at all — they mark the external as a compiler-known intrinsic, expanded at the call site instead of dispatched through a trap number. `inline deref` requires the signature `(ptr): ptr` exactly, reading the pointer stored at its argument address (the common master-pointer-to-object-pointer step of following a Handle):
 
 ```rust
 external func HandleToPtr(h: ptr): ptr = inline deref
@@ -1972,6 +1972,12 @@ external func DebugBreak() = inline nop
 
 ```rust
 external func CurrentA5(): ptr = inline a5
+```
+
+`inline sp` requires zero parameters and a `ptr` return; it reads the current value of the 68k stack pointer (A7) at the call site. It is meant for stack-depth probes (paint-and-scan high-water measurement); the value is only meaningful relative to the low-memory globals `CurStackBase` (0x908) and `ApplLimit` (0x130). Native lane only: a C lane build resolves it as an ordinary `rt_ext_` extern.
+
+```rust
+external func CurrentSP(): ptr = inline sp
 ```
 
 Two `external func` declarations sharing a name are legal if and only if they are IDENTICAL: the same parameter list (types and order; parameter names may differ), the same return type, and the same trap/inline clause in full — trap word, `sel`, calling convention, every register binding, `memerr`, and `ret`. The checker merges an identical repeat into the first declaration; every call site resolves to that one entry, and no diagnostic is raised. Any other kind of same-name mismatch is a compile error naming both declaration sites. This is the same accommodation a C header gives a repeated `extern` prototype: a program can redeclare a trap the runtime already declares — transcribed independently from the same Inside Macintosh page — without a spurious redeclaration error:

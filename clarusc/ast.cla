@@ -170,7 +170,7 @@
 //                [named] memerr, 9=pascal trap with a D0-preload selector
 //                (`seld0`) -- 5/6 Task 12/14 native-5e, 7/8 Task 1
 //                toolbox-integration Feature A, 9 mac-resident-clarusc
-//                Task 12) -- intVal is what
+//                Task 12; 11=inline sp, SE wave 0) -- intVal is what
 //                distinguishes the inline/reg sub-forms, since c is -1 for
 //                all of them. Same a/b slot layout as DkFunc so
 //                funcDeclName/ParamsHead/RetType and checkFuncSig work
@@ -1781,7 +1781,8 @@ func externFuncSel(i: int): int {
 // mac-resident-clarusc Task 12 -- the AppleEvent Manager's own
 // selector-dispatch shape, distinct from conv 1's `sel`'s stack-pushed
 // selector), 10=pascal call through a runtime pointer (`= ptr`,
-// extern-ptr-call phase -- first param is the jump target).
+// extern-ptr-call phase -- first param is the jump target), 11=inline sp
+// (SE wave 0: MOVE.L A7,D0).
 func externFuncConv(i: int): int {
     return decls[i].intVal
 }

@@ -11059,7 +11059,7 @@ func cgAbortCheckAfterCall(fi: int) {
 // Task 9: ECallExt -- native trap-call ABI. Dispatches on the extern's
 // OWN registered clause (irExternConv, Task 2's registry: 1=pascal trap,
 // 2=reg trap, 3=inline deref, 4=inline nop, 5=inline a5 (Task 12), 6=reg
-// memerr (Task 14), 0=no clause) rather than on anything about the call
+// memerr (Task 14), 11=inline sp (SE wave 0), 0=no clause) rather than on anything about the call
 // site -- mirrors cgIntr's own by-NAME dispatch shape, one level removed
 // (by clause instead of by intrinsic name).
 // ================================================================
@@ -11547,6 +11547,14 @@ func cgCallExtA5(e: int) {
     a68Emit(OpMove, 4, AmAn, 5, 0, AmDn, 0, 0)
 }
 
+// cgCallExtSp implements `= inline sp` (SE wave 0): the current stack
+// pointer, MOVE.L A7,D0. Read at the call site, so it is the caller's SP
+// (no frame of its own). checkExternFunc guarantees zero params and a ptr
+// return. Used by clarusc/macgui.cla's stack high-water probe.
+func cgCallExtSp(e: int) {
+    a68Emit(OpMove, 4, AmAn, 7, 0, AmDn, 0, 0)
+}
+
 // cgCallExtNop implements `= inline nop`: evaluate every arg left to
 // right, for side effects only, and emit nothing else -- checkExternFunc
 // guarantees a void return, so there is no result to produce. Each arg is
@@ -11659,6 +11667,8 @@ func cgCallExt(e: int) {
         cgCallExtNop(e)
     } else if conv == 5 {
         cgCallExtA5(e)
+    } else if conv == 11 {
+        cgCallExtSp(e)
     } else if conv == 6 or conv == 8 {
         cgCallExtRegMemErr(e, xi)
     } else if conv == 10 {
