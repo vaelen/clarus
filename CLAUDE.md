@@ -15,10 +15,14 @@ Inside Macintosh declarations into Clarus `extern`/`callback` forms.
 - Design-first: brainstorm → spec → plan → implement (specs in
   `docs/superpowers/specs/`, plans in `docs/superpowers/plans/`).
 - Implementation is ALWAYS subagent-driven (superpowers:subagent-driven-development)
-  using cheaper models (`model: sonnet` for implementation and review tasks;
-  `haiku` for mechanical batch edits). The top-level (Fable) session designs,
-  dispatches, reviews, and integrates — it does not write implementation code
-  itself. Final whole-branch review may use the most capable model.
+  with `model: opus` for implementation and review tasks (Andrew, 2026-09-27:
+  fewer follow-up fixes beats cheaper dispatches); `haiku` only for purely
+  mechanical batch edits. The top-level session designs, dispatches,
+  reviews, and integrates — it does not write implementation code itself.
+- Implementation plans maximize parallelism: group tasks into independent
+  tracks touching disjoint files and dispatch them concurrently (separate
+  git worktrees when tracks would collide); golden reblesses and
+  `clarusc/clarusc.c` snapshot regenerations are serialization points.
 - Feature branch per plan; main stays green; merge only on request.
 - Toolbox calls (runtime included) go through `toolbox/*.cla`; when a new
   feature needs a new Toolbox routine, enable the rest of that manager's
@@ -122,8 +126,12 @@ Tiered test gates:
   `serve`, `zones`, `runerr`, plus `splice`/`examples`, which need no
   network), `tests/atalkdrive/` (the tool talking to itself) and
   `tests/hostrt/atalk.sh` (the C unit test over `rt_atalk.inc`). That
-  group is shared with any Mini vMac/Snow session running on the same
-  machine, so every script that puts a stack on it takes
+  group is shared with any Mini vMac session running on the same
+  machine, and on Andrew's Linux box it is also a **real, routed
+  LocalTalk network** (a router on net 6801, many zones and foreign
+  nodes): a test must use per-run-unique NBP names/types, look up in
+  its own zone explicitly, and never assert exact zone lists, names
+  tables or node counts. Every script that puts a stack on it takes
   `tests/lib_atalk.sh`'s `atalk_lock` first — a `mkdir` mutex under
   `build-run/`, holder pid inside, stolen if the holder died. A dozen
   stacks racing for 127 node ids under `make -j` is flaky in a way no
@@ -186,41 +194,42 @@ Tiered test gates:
     used to make it fail to LINK. The CORE twin is unaffected. The C
     printer's remaining first-class role is host builds (`clarusc emit`
     + `cc`).
-  - `CLARUS_SNOW_TESTS=1` enables the Snow (System 7 / Mac II) scripts
-    under `tests/mactest/snow/`. `CLARUS_SNOW_TESTS=1 make test
-    T=mactest/snow/clarusc_bake` (~30 min) is the standing rule after any
-    change to `clarusc/bake.cla` or `clarusc/macgui.cla` — it is the only
-    proof `ClarusC.APPL`'s default bake path works on real hardware, and
-    neither T1 nor T2 boots it. It ends on the guest's own
-    `##CLARUS-EXIT##` trailer (a probe of the live disk image) rather than
-    a fixed settle timer — the language-runtime-cleanup phase, 2026-09-06;
-    the old 55-minute timer was a floor on every run, pass or fail.
-    `mactest/snow/adsp_listener` (AppleTalk phase, 2026-09-07 — System 7
-    Snow as the ADSP listener, Mini vMac as the client, over LToUDP) also
-    needs `CLARUS_MAC_TESTS=1` for its client half **and a real, unlocked
-    display**: Snow's LocalTalk-over-UDP bridge has no launch flag, so
-    `tests/lib_snow.sh`'s `snow_localtalk_b` turns it on by posting
-    CGEvent clicks into Snow's own in-window menu bar (see
-    `docs/FUTURE.md`).
-    **Snow is launched as `snow/ClarusSnow`** (2026-09-08) — a symlink
-    into a SEPARATE `snow/Snow.app` copy, so a test boot can coexist
-    with the long-running Snow instance Andrew keeps for the BBS:
-    `pgrep -x Snow` is HIS and is never touched, `pgrep -x ClarusSnow`
-    is ours. **Never touch a running Snow you did not start.**
-    `tests/lib_snow.sh`'s `snow_run` refuses to boot only on a stray
-    `ClarusSnow`, and quits by the pid IT launched (`kill -TERM`), never
-    by app name — `osascript -e 'quit app "Snow"'` would take Andrew's
-    BBS down with it.
-    `snow_ethernet` attaches the DaynaPORT SCSI Ethernet adapter at SCSI
-    ID 3 in the scratch workspace (`Clarus.snoww` itself carries none):
-    the guest is 10.0.0.2, gateway 10.0.0.1, NAT **outbound-only** — no
-    inbound port forwarding, no DNS (`docs/FUTURE.md`). The standing TCP
-    hardware proof is `tests/mactest/snow/tcp_selfconnect.sh` (MacTCP
-    phase, 2026-09-08): it self-connects on the guest's OWN address
-    10.0.0.2, because MacTCP does not loop `127.0.0.1` back — an active
-    open to it returns 0 and the listener never completes (the phase's
-    probe wave measured it), so a self-test must dial the real
-    address.
+  - `CLARUS_SNOW_TESTS=1` enables the Snow scripts under
+    `tests/mactest/snow/`, booting a **Macintosh SE, 4 MB** (the
+    SE-memory program's acceptance machine). `tests/lib_snow.sh`'s
+    `snow_disk [6|7]` (default `SNOW_SYSTEM=6`) clones `snow/system6.img`
+    (System 6.0.8) or `snow/system7.img` (System 7.1) plus
+    `snow/clarus.img` (the second SCSI disk, volume `Clarus`) into
+    `$WORK/snow` and writes a scratch `.snoww` — the pristine images and
+    workspaces in `snow/` are never booted or written by tests. Test
+    apps autostart on System 6 by rewriting the scratch boot volume's
+    boot-block startup program (`bbHelloName`, the LaunchAPPL trick —
+    the app runs WITHOUT MultiFinder, and the Clarus volume mounts only
+    once its event loop runs), on System 7 via `Startup Items`; data
+    files go on the scratch `Clarus` volume. Done-detection is the
+    guest's own `##CLARUS-EXIT##` trailer, probed in the live host image.
+    **ClarusC.APPL does not fit the 4 MB SE yet** (that is the SE-memory
+    program's whole goal): `snow/clarusc_bake`, `macresident` and
+    `macresident_failed_compile` SKIP (`CLARUS_SNOW_CLARUSC=1` forces
+    them — they currently die `out of memory` at "Loading Baked
+    Runtime"); only `snow/clarusc_boot` (System 6) boots ClarusC.
+    The old standing rule — run `snow/clarusc_bake` after any
+    `clarusc/bake.cla`/`clarusc/macgui.cla` change — is suspended until
+    ClarusC fits again. Snow LocalTalk (`snow/adsp_listener`) and
+    MacTCP/Ethernet (`snow/tcp_selfconnect`) SKIP: Linux Snow has no
+    non-GUI switch for its LocalTalk bridge; both are deferred until
+    after the SE-memory program (`docs/FUTURE.md`; the full scripts are
+    in git at `c960bb96`).
+    **Snow process safety.** Test boots run `$WORK/snow/clarus-snow-test`
+    (a symlink to `snow/clarus-snow`) and are tracked ONLY by the pid
+    they launched plus the `$BR/snow.lock` mkdir mutex; they stop by
+    that pid (`kill -TERM`, `-9` after 20 s). Andrew runs his own
+    emulators beside them — his BBS (`~/bbs/snowemu`), `~/mac/macse`,
+    and `snow/system6`/`snow/system7` themselves, which use the same
+    `snow/clarus-snow` binary. **Never `pgrep`/`pkill` any emulator by
+    name, and never touch a process you did not start.** Test boots use
+    a serial-bridge port from `tcpdrive pick-port`, never 6666/7777
+    (Andrew's `snow/system6`/`snow/system7` ports).
   - `CLARUS_BENCH68K=1` (with `CLARUS_MAC_TESTS=1`) runs the 68k
     calibration bench, `tests/mactest/bench.sh`.
 - `tests/mactest/adsp_68k.sh` (the two-Mac ADSP stream boot, appletalk
@@ -230,9 +239,9 @@ Tiered test gates:
   `^failed -1273 ` grep over the SERVER capture stays as the guard for a
   LaunchAPPL that does NOT carry the `AppleTalk` system file (`.DSP`/`.XPP` then open `-43`):
   the script calls `skip` on that line BEFORE its first assertion,
-  because a `FAIL ` line would beat exit 77. See the LaunchAPPL
-  prerequisite under "Retro68 / Mac toolchain" below — without that
-  patch this script SKIPs and `mactest/toolbox_68k` goes RED (the
+  because a `FAIL ` line would beat exit 77. `tests/lib_mac.sh` passes
+  `--system-extra-file AppleTalk` itself (see "Running Mac apps"
+  below) — without it this script SKIPs and `mactest/toolbox_68k` goes RED (the
   `AdspLeak` suite case has no skip verdict and FAILs with
   `open .DSP err -43`). `tests/mactest/atalk_68k.sh` (NBP/ATP over the
   ROM's own `.MPP`/`.ATP`) and `tests/mactest/atalk_selfserve.sh` (serve
@@ -460,38 +469,41 @@ enum + runner, not one boot per case.
   `LC_ALL=C tr '\r' '\n'`, a plain `grep -n` reports nothing).
 - `toolchain/` → built cross-toolchain (`toolchain/bin`: gcc, Rez, LaunchAPPL,
   hfsutils h* tools). Prebuilt samples: `../Retro68-build/build-target/Samples/`.
-- **LaunchAPPL needs `system-extra-file = AppleTalk` (AppleTalk phase,
+- **LaunchAPPL needs `--system-extra-file AppleTalk` (AppleTalk phase,
   2026-09-07).** Stock LaunchAPPL builds its Mini vMac boot disk from
   only the System file, the debugger and a few extensions, so the
   `AppleTalk` file (the `.XPP`/`.DSP` drivers) is absent and both open
-  `-43`. The installed `toolchain/bin/LaunchAPPL` is built from Andrew's
-  fork (`github.com/vaelen/Retro68`, branch `system-extra-file`, upstream
-  PR autc04/Retro68#316), which adds a repeatable `--system-extra-file
-  NAME` option / config key; `~/.LaunchAPPL.cfg` carries
-  `system-extra-file = AppleTalk`. The pre-option binary is kept beside
-  it as `LaunchAPPL.orig`. A LaunchAPPL rebuilt from upstream without
-  that option (or a config missing the line) makes `mactest/adsp_68k`
-  SKIP itself and `mactest/toolbox_68k` go RED on `AdspLeak`
-  (`open .DSP err -43`); rebuild from the fork branch (or upstream once
-  the PR lands) and keep the config line. The `Retro68` checkout's
-  remotes are `origin` = the fork, `upstream` = autc04.
-- `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
-- `macplus2/` → a second Mini vMac (`MacPlus2.app` + `vMac.ROM` + its
-  own `disk1.dsk`, an identical copy of `macplus/`'s) —
-  `tests/lib_mac.sh`'s `run_mac_pair` boots it as the second machine
-  for `tests/mactest/adsp_68k.sh`. Gitignored like `macplus/`. Missing ⇒
-  that script SKIPs (`macplus2 not present`).
+  `-43`. The option is upstream now (autc04/Retro68#316, merged); the
+  `Retro68` checkout tracks upstream master (`origin` = autc04), and
+  `tests/lib_mac.sh` passes the option itself. Without it
+  `mactest/adsp_68k` SKIPs itself and `mactest/toolbox_68k` goes RED on
+  `AdspLeak` (`open .DSP err -43`).
+- `macplus/` → Linux Mini vMac `macplus/macplus` (Mac Plus, 4 MB) +
+  `vMac.ROM`, `disk1.dsk` (System 6.0.8 + MultiFinder), `disk2.dsk`,
+  `autoquit-1.1.1.dsk`. It must be a LocalTalk-over-UDP build that keeps
+  running when its window loses focus — a build that pauses unfocused
+  stalls every boot until its timeout. `CLARUS_MINIVMAC=/abs/path`
+  overrides the binary. Andrew also runs `./macplus/macplus` by hand;
+  tests never touch that directory's disks (LaunchAPPL copies the
+  emulator into its temp dir and mounts `disk1.dsk` read-only).
+- `macplus2/` → an identical second machine (`macplus2/macplus2`, own
+  disks) — `tests/lib_mac.sh`'s `run_mac_pair` boots it as the second
+  machine for `tests/mactest/adsp_68k.sh`. Missing ⇒ that script SKIPs.
 - `vasm/` → locally built `vasmm68k_mot` (the third-party 68000 assembler
   used as an encoder oracle; rebuild recipe in
   `tests/asm68k/roundtrip.sh`'s header). Missing or built without the bin
   output module ⇒ `tests/asm68k/roundtrip.sh`, `tests/cg68k/vasm.sh` and
   the round-trip halves of `tests/cg68k/array_assign.sh` and
   `tests/cg68k/segments.sh` SKIP.
-- `snow/` → Snow emulator, launched as `snow/ClarusSnow` (a symlink into
-  our OWN `snow/Snow.app` copy, so a test boot never collides with
-  another running Snow — see the `CLARUS_SNOW_TESTS=1` bullet above),
-  plus its `Clarus.snoww` workspace, ROM and PRAM — the System 7 /
-  Mac II lane. Missing ⇒ the whole `tests/mactest/snow/` group SKIPs.
+- `snow/` → Linux Snow `snow/clarus-snow`, `macse.rom`, and two
+  Macintosh SE (4 MB) setups: `snow/system6` (launcher script;
+  `system6.snoww` + `system6.img`, System 6.0.8 + MultiFinder, serial
+  bridge `tcp:6666`) and `snow/system7` (`system7.snoww` +
+  `system7.img`, System 7.1, `tcp:7777`); both mount `clarus.img` as
+  the second SCSI disk, volume `Clarus`. Those launchers are Andrew's
+  own interactive sessions — tests clone the images instead (see the
+  `CLARUS_SNOW_TESTS=1` bullet above). Missing ⇒ the whole
+  `tests/mactest/snow/` group SKIPs.
 
 To build a Mac app from C: `CMakeLists.txt` with `add_application(Name src.c)`, then
 
@@ -502,12 +514,19 @@ make -C build    # produces Name.bin (for LaunchAPPL), Name.APPL, Name.dsk
 
 ## Running Mac apps in the emulator
 
-`~/.LaunchAPPL.cfg` is already configured (minivmac backend: `macplus/MacPlus.app`,
-`macplus/vMac.ROM`, system image `~/mac/System 6.0.8.dsk`, AutoQuit at
-`~/mac/macplus/autoquit-1.1.1.dsk`).
+Emulator boots need an X display. This machine's shells often have none
+set, so export `DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority`
+first (`tests/lib_mac.sh`/`tests/lib_snow.sh` die with that hint when
+both `DISPLAY` and `WAYLAND_DISPLAY` are empty). There is no
+`~/.LaunchAPPL.cfg`; pass every option explicitly, exactly as
+`tests/lib_mac.sh`'s `mac_launch` does:
 
 ```sh
-toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
+toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
+    --minivmac-dir $PWD/macplus --minivmac-path $PWD/macplus/macplus \
+    --minivmac-rom ./vMac.ROM --system-image ./disk1.dsk \
+    --autoquit-image ./autoquit-1.1.1.dsk --system-extra-file AppleTalk \
+    App.bin   # takes MacBinary (.bin)
 ```
 
 - Build a Clarus program for Mac: `scripts/build-mac.sh <Name> <files.cla...> [--test]`
@@ -606,38 +625,31 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   script, and `texteditor`'s own script has absorbed `opendoc`/
   `opendoc_empty`/`texteditor_quit`'s coverage — none of those four have
   their own standalone scenario anymore.
-- This sandboxed display has a short (well under a minute of zero real HID
-  activity) idle-lock; a naive long `sleep` with no synthetic input during
-  manual real-input testing can look identical to a frozen app — nudge with
-  a synthetic `CGEvent(mouseMoved)` (no click) periodically during waits.
-
 - LaunchAPPL builds a stripped boot disk (System + AutoQuit + app), boots it
   in a fresh Mini vMac copy, and BLOCKS until the app quits — run it in the
   background. It creates a temp dir in the cwd (auto-removed on clean exit;
   delete it manually if you kill the process). Exit 0 = app ran and quit.
-- To run an app with the full Finder instead: copy `MacPlus.app` to a scratch
-  dir, put `vMac.ROM` and a bootable image as `Contents/mnvm_dat/disk1.dsk`
-  (app disk as `disk2.dsk`), and `open -na` the copy. Mini vMac auto-mounts
-  the `mnvm_dat` disks.
+- To use the full Finder interactively, Andrew's own launchers are
+  `./macplus/macplus` and `snow/system6`/`snow/system7` — but those use
+  the pristine disks, so never run test builds through them; stage a
+  copy of the directory (or `snow_disk`'s scratch clone) instead.
+- Snow runs its mouse in absolute mode: the host pointer passing over a
+  test Snow window moves the guest's cursor and can disturb a boot.
 
-### Controlling and screenshotting the emulator
+### Screenshotting the emulator (X11)
 
-The emulator window is the Mac's 512×342 screen at 2× (1024×684 + title bar).
+The Mac's 512×342 screen is drawn scaled in the emulator window. There is
+no scripted click/keyboard tool installed (`xdotool` is absent;
+`scripts/click.swift` is the old macOS CGEvent helper and does not run
+here) — prefer scripted `--events` builds over driving a live window.
 
 ```sh
-# window geometry {x, y, w, h}:
-osascript -e 'tell application "System Events" to tell process "minivmac" to get {position, size} of window 1'
-# screenshot that region:
-screencapture -x -Rx,y,w,h shot.png
-# mouse (CGEvent): screen coords = window origin + 2 × Mac coords
-swift scripts/click.swift <x> <y> [double]
-# keyboard (focus the window first):
-osascript -e 'tell application "System Events" to set frontmost of process "minivmac" to true'
-osascript -e 'tell application "System Events" to keystroke "text"'
+export DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority
+xwininfo -root -tree | grep -i -E 'mini vmac|snow'   # find the window id
+import -window <id> shot.png                         # screenshot it
 ```
 
-Screenshot → read the image → click at computed coords → screenshot again.
-System 6 boots in ~2-3 s; sleep ~10 s after launch before interacting.
+System 6 boots in a few seconds; wait ~10 s after launch before looking.
 
 ### Known issues
 
