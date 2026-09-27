@@ -277,11 +277,15 @@ if err != 0 {
 }
 ```
 
-`HLock`/`HUnlock`/`NewHandle`/`DisposeHandle`/`NewPtr`/`DisposePtr`/
-`GetHandleSize`/`BlockMoveData`/`MoreMasters` — the rest of `toolbox/
-memory.cla` — are all plain `reg` (no `memerr`) by the same bit-11 test;
-`SetHandleSize` is the one member of the family whose real error path
-doesn't come back in D0 at all.
+`HLock`/`HUnlock`/`NewHandle`/`DisposeHandle`/`NewPtr`/`NewPtrClear`/
+`DisposePtr`/`GetHandleSize`/`BlockMoveData`/`MoreMasters`/`CompactMem`/
+`FreeMem`/`MaxMem`/`MaxBlock`/`StackSpace`/`MaxApplZone`/`NewEmptyHandle`/
+`HPurge`/`HNoPurge`/`EmptyHandle`/`GetPtrSize`/`HGetState`/`HSetState` —
+most of the rest of `toolbox/memory.cla` — are all plain `reg` (no
+`memerr`) by the same bit-11 test; `SetHandleSize`, `PurgeMem`, `MoveHHi`,
+`ReserveMem` and `SetApplLimit` are the members of the family declared
+`reg memerr`, since each is a `PROCEDURE` whose real failure is reported
+through `MemErr`.
 
 ## 4. Walkthrough: the named-register form, and glue words — `Gestalt`
 

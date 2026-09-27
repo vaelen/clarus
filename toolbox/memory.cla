@@ -168,6 +168,94 @@
 //               rely on A0 after calling this declaration.
 //
 // All five new trap words are also bit-11-clear.
+//
+// SE-memory program Wave 0 (measurement infrastructure, 2026-09-28):
+// MaxBlock/StackSpace/MaxApplZone plus eight siblings. Every trap word
+// below is confirmed against Apple's own Universal Interfaces 3.4 --
+// CIncludes/MacMemory.h (read through `tr '\r' '\n'`) for the
+// `#pragma parameter` registers, and
+// Retro68/InterfacesAndLibraries/Interfaces/AIncludes/MacMemory.a for the
+// OPWORD -- and every register shape against Inside Macintosh's own
+// "On entry/On exit" tables (IM-II pp. II-29-50, IM-IV pp. IV-77-80).
+// Only the plain application-heap forms are declared (no ,SYS variants:
+// MaxBlockSys 0xA461, NewEmptyHandleSys 0xA566, ReserveMemSys 0xA440).
+// (Note for the heap-jiggle entries above: CompactMem/PurgeMem/FreeMem/
+// MaxMem DO appear in CIncludes/MacMemory.h -- l.859/892/925/991 -- so
+// their "zero matches" remark was mistaken; MoveHHi is at l.1051 too.)
+//
+//   MaxBlock      MacMemory.h:628-631 `#pragma parameter __D0 MaxBlock`
+//                 ... `long MaxBlock(void) ONEWORDINLINE(0xA061)`;
+//                 MacMemory.a:627 `_MaxBlock: OPWORD $A061`. No args, D0
+//                 result. (IM-IV p.IV-77's "function result (word)" is an
+//                 IM typo; the header says `long`, and it is a byte
+//                 count.)
+//   StackSpace    MacMemory.h:661-664 `#pragma parameter __D0 StackSpace`
+//                 ... `long StackSpace(void) ONEWORDINLINE(0xA065)`;
+//                 MacMemory.a:669 OPWORD $A065. No args, D0 result (same
+//                 IM-IV "(word)" typo as MaxBlock).
+//   MaxApplZone   MacMemory.h:1486 `void MaxApplZone(void)
+//                 ONEWORDINLINE(0xA063)` (no pragma -- zero args);
+//                 MacMemory.a:1742 OPWORD $A063. IM-IV p.IV-76: "On exit
+//                 D0: result code (word)"; declared void (the only result
+//                 code is noErr). In ROM from the 128K ROM on (IM-II marks
+//                 it [Not in ROM] for the 64K ROM only). clarusc/
+//                 cg68k.cla's startup stub already emits this trap word.
+//   NewEmptyHandle MacMemory.h:676-679 `#pragma parameter __A0
+//                 NewEmptyHandle` ... `ONEWORDINLINE(0xA166)`;
+//                 MacMemory.a:689 OPWORD $A166. No args, handle in A0
+//                 (`reg`'s default result register for a ptr).
+//   HPurge        MacMemory.h:739-742 `#pragma parameter HPurge(__A0)`
+//                 ... `ONEWORDINLINE(0xA049)`; MacMemory.a:771 OPWORD
+//                 $A049. h in A0; void like HLock (its only errors,
+//                 nilHandleErr/memWZErr, are caller bugs).
+//   HNoPurge      MacMemory.h:754-757 `#pragma parameter HNoPurge(__A0)`
+//                 ... `ONEWORDINLINE(0xA04A)`; MacMemory.a:791 OPWORD
+//                 $A04A. h in A0, void (as HPurge).
+//   EmptyHandle   MacMemory.h:1216-1219 `#pragma parameter
+//                 EmptyHandle(__A0)` ... `ONEWORDINLINE(0xA02B)`;
+//                 MacMemory.a:1407 OPWORD $A02B. h in A0, void (as
+//                 HPurge; IM-II p.II-40 also returns h in A0, unread).
+//   GetPtrSize    MacMemory.h:1081 declares only a CFM/glue prototype
+//                 (no pragma, no inline); MacMemory.a:1228 `_GetPtrSize:
+//                 OPWORD $A021`. Registers from IM-II p.II-37 / II-50:
+//                 "On entry A0: p; On exit D0: if >= 0, function result
+//                 (long word); if < 0, result code (word)" -- the same
+//                 shape as InlineGetHandleSize above. CAUTION: this is
+//                 the raw trap, so on error it returns a NEGATIVE OSErr,
+//                 not the 0 Apple's glue returns (MacMemory.h:1136 NOTE).
+//   HGetState     MacMemory.h:1261-1264 `#pragma parameter __D0
+//                 HGetState(__A0)` ... `SInt8 HGetState(Handle h)
+//                 ONEWORDINLINE(0xA069)`; MacMemory.a:1469 OPWORD $A069.
+//                 h in A0, flags byte in D0 -- declared `char` so only
+//                 the low byte is read (zero-extended); IM-IV p.IV-79 "On
+//                 exit D0: flags (byte)". Masks: MacMemory.h:81-86
+//                 (locked 0x80, purgeable 0x40, resource 0x20).
+//                 runtime/clarus/uitext.cla's UiHGetState is the same trap
+//                 declared `: int` for a pure save/restore round trip.
+//   HSetState     MacMemory.h:1276-1281 `#pragma parameter HSetState(__A0,
+//                 __D0)` ... `HSetState(Handle h, SInt8 flags)
+//                 ONEWORDINLINE(0xA06A)`; MacMemory.a:1490 OPWORD $A06A.
+//                 h in A0, flags in D0 (`char`, pairs with HGetState).
+//   ReserveMem    MacMemory.h:958-961 `#pragma parameter ReserveMem(__D0)`
+//                 ... `void ReserveMem(Size cbNeeded) ONEWORDINLINE(0xA040)`;
+//                 MacMemory.a:1073 OPWORD $A040 (IM-II's `ResrvMem`).
+//                 cbNeeded in D0; IM-II p.II-39 "On exit D0: result code
+//                 (word)", result memFullErr -- a void PROCEDURE with a real
+//                 failure mode, so `reg memerr` (as PurgeMem).
+//   SetApplLimit  MacMemory.h:1540-1543 `#pragma parameter
+//                 SetApplLimit(__A0)` ... `ONEWORDINLINE(0xA02D)`;
+//                 MacMemory.a:1818 OPWORD $A02D. zoneLimit (an ADDRESS,
+//                 not a byte count) in A0; IM-II p.II-29 "On exit D0:
+//                 result code (word)", result memFullErr -> `reg memerr`.
+//
+//   Skipped: PurgeSpace (IM-IV p.IV-77: "On exit A0: contig; D0: total"
+//   -- two outputs, and MacMemory.h:1293 gives it no inline at all);
+//   PurgeSpaceTotal/PurgeSpaceContiguous (MacMemory.h:1313/1328 -- the
+//   same 0xA062 split by result register; not needed yet); SetPtrSize,
+//   SetApplBase, HSetRBit/HClrRBit, the ,SYS variants -- outside this
+//   wave's measurement needs.
+//
+// All eleven new trap words are bit-11-clear.
 
 external func NewPtr(byteCount: int): ptr = trap 0xA11E reg
 external func NewPtrClear(byteCount: int): ptr = trap 0xA31E reg
@@ -185,3 +273,15 @@ external func PurgeMem(cbNeeded: int): int = trap 0xA04D reg memerr
 external func MoveHHi(h: ptr): int = trap 0xA064 reg memerr
 external func FreeMem(): int = trap 0xA01C reg
 external func MaxMem(): int = trap 0xA11D reg
+external func MaxBlock(): int = trap 0xA061 reg
+external func StackSpace(): int = trap 0xA065 reg
+external func MaxApplZone() = trap 0xA063 reg
+external func NewEmptyHandle(): ptr = trap 0xA166 reg
+external func HPurge(h: ptr) = trap 0xA049 reg
+external func HNoPurge(h: ptr) = trap 0xA04A reg
+external func EmptyHandle(h: ptr) = trap 0xA02B reg
+external func GetPtrSize(p: ptr): int = trap 0xA021 reg
+external func HGetState(h: ptr): char = trap 0xA069 reg
+external func HSetState(h: ptr, flags: char) = trap 0xA06A reg
+external func ReserveMem(cbNeeded: int): int = trap 0xA040 reg memerr
+external func SetApplLimit(zoneLimit: ptr): int = trap 0xA02D reg memerr
