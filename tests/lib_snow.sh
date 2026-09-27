@@ -124,7 +124,7 @@ _snow_ws_drop() {
 
 # snow_disk [6|7] : clone the chosen machine's boot image and snow/clarus.img
 # into $WORK/snow and write a scratch workspace naming them, with every ROM
-# path absolutized and any PRAM file cloned -- newSnowDisk, done fresh per script so a run never sees
+# path absolutized, any PRAM file cloned and sound forced off -- newSnowDisk, done fresh per script so a run never sees
 # another run's (or a crashed run's) leftover debris. Sets SNOW_DIR,
 # SNOW_SYS, SNOW_IMG (the boot volume, where the app and its `out` live),
 # SNOW_CLARUS_IMG (the "Clarus" volume, where snow_put stages data) and
@@ -179,6 +179,12 @@ snow_disk() {
     # has carried Tcp 7777): a test boot has none unless snow_run is given
     # --serial-bridge-a/-b itself.
     _snow_ws_drop serial_bridges
+    # A test boot is ALWAYS silent, whatever the template says
+    # (system6.snoww ships with sound on); a template missing the key dies
+    # here rather than booting with sound.
+    sed 's|"audio_disabled": *false|"audio_disabled": true|' "$SNOW_WS" > "$SNOW_WS.new" \
+        && mv "$SNOW_WS.new" "$SNOW_WS" || die "rewrite audio_disabled in $SNOW_WS"
+    grep -q '"audio_disabled": true' "$SNOW_WS" || die "$SNOW_WS: audio_disabled=true did not take"
     for _f in $_files; do
         [ -f "$_f" ] || die "scratch workspace names a missing file: $_f"
     done
