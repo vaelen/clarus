@@ -87,10 +87,12 @@ fi
 #    Block 129,868K verified), removing that ceiling -- raised to 48MB,
 #    comfortably covering the estimate with the 127MB now actually
 #    available. See clarusc/cg68k.cla's cgSizePartitionBytes doc comment
-#    for the same note. NOTE (Linux emulator port, 2026-09-27): that Mac II
-#    workspace is gone; the Snow machines are now 4MB Macintosh SEs
-#    (snow/system{6,7}.snoww), which this partition does not fit, so the
-#    compiling tests/mactest/snow/ ClarusC scripts skip (snow_skip_clarusc).
+#    for the same note. NOTE (Linux emulator port, 2026-09-27): the Snow
+#    System 7 machine (snow/system7.snoww) is again a 32-bit-clean
+#    rominator Mac IIcx with 128MB, which this partition fits; the System 6
+#    machine is a 4MB SE, which it does not, so the compiling
+#    tests/mactest/snow/ ClarusC scripts default to System 7
+#    (snow_clarusc_system).
 # --testapi (trace-noise phase, clir-load-perf): macgui.cla itself never
 # calls a UiTest* verb, so this is a no-op on the emitted binary (proven
 # byte-identical against a no-flag build of unmodified macgui.cla) --

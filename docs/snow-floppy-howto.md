@@ -113,12 +113,12 @@ Other useful flags: `--serial-bridge-a tcp:PORT` / `--serial-bridge-b …`
 (SCC serial to TCP or PTY), `-f`/`--zen` (fullscreen/zen; need a
 workspace/ROM argument). `Snow --help` lists them.
 
-Note that `--serial-bridge-*` takes only `pty` and `tcp:PORT` — anything
-else is a WARN ("Invalid serial bridge mode") and is ignored. Snow's
-LocalTalk-over-UDP bridge is *not* a bridge mode and has no flag: it is
-enabled per run from **Ports > Channel B (printer) > Enable LocalTalk
-(UDP)** in Snow's own in-window menu bar, which is what
-`tests/lib_snow.sh`'s `snow_localtalk_b` clicks by screen position.
+`--serial-bridge-*` takes `pty`, `tcp:PORT` or `localtalk` (LocalTalk
+over UDP; on channel B, the printer port, it is what the guest's
+AppleTalk uses -- `tests/mactest/snow/adsp_listener.sh` passes
+`--serial-bridge-b localtalk`). A workspace can also carry its own
+`serial_bridges` list; `tests/lib_snow.sh`'s `snow_disk` drops it from
+its scratch copy so a test boot binds only the ports it asks for.
 
 ### Minimal workspace JSON
 

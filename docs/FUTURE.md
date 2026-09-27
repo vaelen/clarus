@@ -358,8 +358,9 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   breaks the lane until the offsets are re-measured. The clean fix is
   upstream, the same one-line shape as this phase's LaunchAPPL patch: a
   `--serial-bridge-b localtalk` mode in Snow. Worth asking for.
-  (Linux emulator port, 2026-09-27: `snow_localtalk_b` is deleted and
-  `mactest/snow/adsp_listener` is a skip -- see that section below.)
+  DONE (2026-09-27): Linux Snow has `--serial-bridge-b localtalk`;
+  `snow_localtalk_b` is deleted and `mactest/snow/adsp_listener` passes
+  the flag through `snow_run`.
 
 ### MacTCP phase (2026-09-08)
 
@@ -392,19 +393,20 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   BBS instance — is DONE (2026-09-08): `snow/ClarusSnow` is a symlink
   into a separate `snow/Snow.app` copy, and `tests/lib_snow.sh` quits
   by our own pid, never by app name. (Linux emulator port, 2026-09-27:
-  `snow_ethernet` is deleted, the SE workspaces carry no DaynaPORT, and
-  `mactest/snow/tcp_selfconnect` is a skip -- see below.)
+  `snow_ethernet` is deleted -- both `snow/system{6,7}.snoww` templates
+  carry Snow's NAT "Ethernet" target at SCSI 3 themselves -- and
+  `mactest/snow/tcp_selfconnect` runs on the System 7 Mac IIcx, the only
+  image with MacTCP, guest 10.0.0.2 / gateway 10.0.0.1.)
 
 ### Linux emulator port (2026-09-27)
 
-- **Snow networked lanes.** Snow on Linux has no non-GUI way to switch
-  its LocalTalk bridge on (the macOS lane clicked Snow's in-window Ports
-  menu with CGEvents; that clicker was removed, not ported), and the SE
-  workspaces carry no DaynaPORT/MacTCP, so `mactest/snow/adsp_listener`
-  and `mactest/snow/tcp_selfconnect` skip. They come back with a Snow
-  `--serial-bridge-b localtalk`-style flag and an Ethernet/MacTCP SE
-  workspace, after the SE-memory program. The Mini vMac AppleTalk lane
-  (LocalTalk-over-UDP builds in `macplus/`, `macplus2/`) is unaffected.
+- **Snow networked lanes** -- BACK (2026-09-27). Snow gained
+  `--serial-bridge-b localtalk`, and both templates carry a NAT
+  "Ethernet" SCSI target; `mactest/snow/adsp_listener` (System 7 IIcx
+  listener, Mini vMac client) and `mactest/snow/tcp_selfconnect`
+  (System 7 IIcx; `system6.img` has no MacTCP) run again. A test boot
+  gets a serial bridge only from its own `snow_run` arguments --
+  `snow_disk` drops a template's `serial_bridges` (Andrew's ports).
 - **MultiFinder autolaunch on System 6.** `snow_put_bin` autolaunches on
   System 6 by rewriting the scratch boot volume's `bbHelloName` (the boot
   blocks' startup program, `MultiFinder` on `system6.img`) to the app,
@@ -413,10 +415,12 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   resource of `:System Folder:Finder Startup`, an undocumented format; if
   a test ever needs MultiFinder specifically, reverse that resource (one
   Set Startup in a scratch boot, diff the file) and write it instead.
-- **ClarusC.APPL on the SE.** The three compiling ClarusC Snow scripts
-  (`clarusc_bake`, `macresident`, `macresident_failed_compile`) skip
-  (`snow_skip_clarusc`): a compile needs ~14MB of live heap and the SE
-  has 4MB. `clarusc_boot` (open the window, quit) passes on System 6,
+- **ClarusC.APPL on the SE.** A compile needs ~14MB of live heap and the
+  SE has 4MB, so the three compiling ClarusC Snow scripts (`clarusc_bake`,
+  `macresident`, `macresident_failed_compile`) default to the System 7
+  machine -- now a 128MB Mac IIcx -- and skip only on `SNOW_SYSTEM=6`
+  (`snow_clarusc_system`; `CLARUS_SNOW_CLARUSC=1` forces the SE).
+  `clarusc_boot` (open the window, quit) passes on the System 6 SE,
   where the startup program gets all of memory and the 48MB SIZE(-1) is
-  ignored; it skips on System 7. `CLARUS_SNOW_CLARUSC=1` forces them. See
+  ignored. See
   `docs/superpowers/specs/2026-09-27-se-memory-footprint-findings.md`.

@@ -191,18 +191,18 @@ option, upstream since PR #316 merged — is now passed explicitly by
    plus a separate datagram-server resource: a UDP server is not
    accept-shaped, so it is not a `listener`. Recorded, after the DNR.
 
-Environment note (Linux emulator port, 2026-09-27): the Mac II Snow
-workspace with AppleTalk, a Modem-port TCP bridge and DaynaPORT MacTCP is
-gone. The emulator lanes now run on Linux: two 4MB Macintosh SE Snow
-workspaces (`snow/system6.snoww`, System 6.0.8; `snow/system7.snoww`,
-System 7.1) and the Linux Mini vMac Mac Plus pair (`macplus/`,
-`macplus2/`). The Mini vMac builds carry LocalTalk-over-UDP, on a
-multicast group that is a real, populated LocalTalk network (other zones
-and nodes -- tests use per-run NBP names/types and never assert exact
-zone lists or node counts). Snow's LocalTalk bridge has no non-GUI switch
-on Linux and no workspace has Ethernet, so the Snow AppleTalk/MacTCP
-scripts skip (`docs/FUTURE.md`'s Linux emulator port section). The serial bridge (`--serial-bridge-a tcp:PORT`) still
-works and is what `mactest/snow/serial_echo` and `pagefile` use.
+Environment note (Linux emulator port, 2026-09-27): the emulator lanes
+run on Linux: two Snow workspaces -- `snow/system6.snoww` (a 4MB
+Macintosh SE, System 6.0.8) and `snow/system7.snoww` (a 128MB Mac IIcx,
+System 7.1, MacTCP at 10.0.0.2 / gateway 10.0.0.1, where ClarusC.APPL
+runs) -- both with Snow's NAT "Ethernet" target (outbound-only), and the
+Linux Mini vMac Mac Plus pair (`macplus/`, `macplus2/`). Mini vMac and
+Snow (`--serial-bridge-b localtalk`) both carry LocalTalk-over-UDP, on a
+multicast group that is a real, routed LocalTalk network (a router on
+net 6801, other zones and nodes -- tests use per-run NBP names/types and
+never assert exact zone lists or node counts). The serial bridge
+(`--serial-bridge-a tcp:PORT`) is what `mactest/snow/serial_echo` and
+`pagefile` use.
 
 **Driving application: a BBS server** — first over the serial port,
 later over MacTCP networking.
