@@ -128,6 +128,12 @@ static void test_nbp(void) {
     CHECK(rt_at_nbp_lookup_count(B, 0) >= 1, "wildcard lookup found nothing");
     CHECK(found_obj(B, 0, nbp_obj), "wildcard lookup missed A's registered name");
 
+    /* Routed network: a router forwards a Mac's lookup carrying the
+     * segment's real zone name, not "*". Any zone must still match. */
+    rt_at_nbp_lookup_start(B, 2, nbp_obj, "ClarusTest", "Some Real Zone");
+    wait_lookup(B, 2);
+    CHECK(found_obj(B, 2, nbp_obj), "named-zone lookup missed A's registered name");
+
     rc = rt_at_nbp_register(B, nbp_obj, "ClarusTest", 201);
     CHECK(rc == -1027, "duplicate register did not return nbpDuplicate");
 
@@ -142,9 +148,11 @@ static void test_nbp(void) {
 }
 
 /* --- 4/5/6: ATP ----------------------------------------------------- */
+static uint16_t a_net;           /* the net B addresses A on (0, or a routed one) */
+
 static rt_at_addr a_addr(void) {
     rt_at_addr to;
-    to.net = 0;
+    to.net = a_net;
     to.node = rt_at_node(A);
     to.socket = (uint8_t)a_sock;
     return to;
@@ -216,6 +224,15 @@ static void test_atp(void) {
         CHECK(bad == 0, "replayed response body bytes wrong");
         CHECK(a_reqs == 1, "XO replay reached get_request instead of the XO list");
     }
+
+    /* 6b: routed network. B addresses A by the net a name tuple would
+     * carry (6801), but A answers in short-header DDP, which decodes as
+     * net 0 -- the responses must still be accepted as A's. */
+    a_reqs = 0;
+    a_net = 6801;
+    one_call("call addressed to net 6801");
+    a_net = 0;
+    CHECK(a_reqs == 1, "net-6801 call did not dequeue exactly one request");
 
     /* 7: oversize both ways. */
     rc = rt_at_atp_call(B, a_addr(), 1, big, RT_AT_MAXREQ + 1,

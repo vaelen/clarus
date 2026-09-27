@@ -382,9 +382,15 @@ static int rt_at_name_match(const char *pat, const char *s) {
     return strcasecmp(pat, s) == 0;
 }
 
-/* Our lane has exactly one zone, "*" (no router -- spec %2). */
+/* Any zone matches. A LocalTalk segment has exactly one zone, so a
+ * lookup that reached us is for ours: on a routerless lane it says "*",
+ * but on a routed one (Andrew's LToUDP group has a router on net 6801)
+ * the router forwards a Mac's lookup carrying the real zone NAME, which
+ * this stack -- it never asks the router what its zone is -- could not
+ * otherwise recognise. */
 static int rt_at_zone_match(const char *pat) {
-    return pat[0] == '\0' || strcmp(pat, "*") == 0 || strcasecmp(pat, "local") == 0;
+    (void)pat;
+    return 1;
 }
 
 /* rt_at_nbp_send: one NBP packet with `count` tuples already encoded in
@@ -782,8 +788,14 @@ int rt_at_atp_get_request(rt_atalk *a, int sock, rt_at_req *out) {
     return 1;
 }
 
+/* Net 0 on either side matches any network ("this network"): a Mac on a
+ * routed segment advertises its real net (e.g. 6801) in its NBP tuple,
+ * but its ATP responses arrive in LocalTalk short-header DDP, which
+ * carries no net at all (we decode that as 0). Node + socket must still
+ * match. */
 static int rt_at_same_peer(rt_at_addr x, rt_at_addr y) {
-    return x.net == y.net && x.node == y.node && x.socket == y.socket;
+    return (x.net == y.net || x.net == 0 || y.net == 0) &&
+           x.node == y.node && x.socket == y.socket;
 }
 
 /* rt_at_xo_find: the remembered transaction for (tid, peer), or NULL. */
@@ -875,8 +887,8 @@ static void rt_at_atp_in(rt_atalk *a, rt_at_addr from, uint8_t dstsock,
         int seq = d[1];
         /* The sender check matters on a shared multicast group: without it
          * a foreign peer that happens to reuse our TID could splice bytes
-         * into the response. (net is 0 on both sides on this routerless
-         * lane -- see rt_at_ddp_send.) */
+         * into the response. (A short-header reply decodes as net 0, which
+         * rt_at_same_peer lets match a named peer's real net.) */
         if (!r->active || dstsock != r->mysock || tid != r->tid) return;
         if (!rt_at_same_peer(from, r->to)) return;
         if (seq >= RT_AT_NPKT) return;
