@@ -183,6 +183,16 @@ snow_disk() {
     done
 }
 
+# snow_realtime : after snow_disk, boot at 1x even if the template starts
+# in fast-forward (snow/system7.snoww does, for ClarusC compiles). For a
+# guest paced in ticks against a REAL-time peer -- fast-forward shrinks
+# its tick-based windows in wall-clock time under the peer's feet.
+snow_realtime() {
+    sed 's|"start_fastforward": *true|"start_fastforward": false|' "$SNOW_WS" > "$SNOW_WS.new" \
+        && mv "$SNOW_WS.new" "$SNOW_WS" || die "rewrite start_fastforward in $SNOW_WS"
+    grep -q '"start_fastforward": false' "$SNOW_WS" || die "$SNOW_WS: start_fastforward=false did not take"
+}
+
 # _snow_set_hello NAME : System 6 autolaunch. Point the boot volume's boot
 # blocks' bbHelloName (the Str15 at +0x5A, "the startup program", which is
 # "MultiFinder" on system6.img) at NAME, a program in the blessed System
