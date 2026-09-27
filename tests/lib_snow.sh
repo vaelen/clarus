@@ -14,8 +14,9 @@
 # Two machines, picked by SNOW_SYSTEM (default 6) or snow_disk's argument:
 #   6  snow/system6.snoww: a Macintosh SE, 4MB -- SCSI 0 system6.img
 #      (System 6.0.8 + MultiFinder; no MacTCP installed)
-#   7  snow/system7.snoww: a Macintosh IIcx, 128MB, RGB12 (512x384) --
-#      SCSI 0 system7.img (System 7.1, MacTCP at 10.0.0.2)
+#   7  snow/system7.snoww: a Macintosh IIcx, 128MB, RGB12 (512x384),
+#      32-bit addressing (set in its PRAM, snow/system7.pram), starting in
+#      fast-forward -- SCSI 0 system7.img (System 7.1, MacTCP at 10.0.0.2)
 # and SCSI 1 snow/clarus.img, the scratch "Clarus" volume, plus the Snow
 # "Ethernet" (NAT) target at SCSI 3, in both. The machine details are read
 # from the template, never assumed here. snow_disk clones the images (and a
