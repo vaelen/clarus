@@ -3267,7 +3267,8 @@ func checkFuncSig(d: int) {
 // requires the signature to be exactly one ptr param returning ptr;
 // inline nop (conv 4) requires no return type; inline a5 (conv 5, Task 12,
 // native-5e: `MOVE.L A5,D0`, the running program's own A5 world base)
-// requires zero params and a ptr return; reg memerr (conv 6, Task 14,
+// requires zero params and a ptr return; inline sp (conv 11, SE wave 0:
+// MOVE.L A7,D0) requires zero params and a ptr return; reg memerr (conv 6, Task 14,
 // native-5e: a `void`-Pascal-signature Toolbox routine like SetHandleSize,
 // whose real result comes back via the MemErr low-memory global rather
 // than D0 -- cgCallExtRegMemErr's own doc comment, cg68k.cla) shares the
@@ -3371,6 +3372,9 @@ func checkExternFunc(d: int) {
     }
     if conv == 5 and (i != 0 or ret == -1 or typeKind(ret) != TyPtr) {
         emitDiag(declLine(d), declCol(d), "inline a5 requires signature (): ptr")
+    }
+    if conv == 11 and (i != 0 or ret == -1 or typeKind(ret) != TyPtr) {
+        emitDiag(declLine(d), declCol(d), "inline sp requires signature (): ptr")
     }
     // extern-ptr-call phase: `= ptr` (conv 10) requires at least one
     // parameter, and the FIRST declared parameter must be type ptr --

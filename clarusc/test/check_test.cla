@@ -981,6 +981,12 @@ on App.startEmpty {
     ln(src, "external func Bad(): int = inline nop")
     runCase("extern-inline-nop-bad-return", src)
 
+    // Case 148 (SE wave 0): `inline sp` requires zero params and a ptr
+    // return -- a param is rejected.
+    src = ""
+    ln(src, "external func BadSp(x: int): ptr = inline sp")
+    runCase("extern-inline-sp-bad-sig", src)
+
     // ---- Task 4 (native-5e): `word` extern param/return type ----
 
     // Case 73: a clean external func using `word` in both a param
