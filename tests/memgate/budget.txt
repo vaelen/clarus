@@ -1,0 +1,6 @@
+# tests/memgate/peak.sh budgets: peak live heap, 68k-equivalent bytes.
+# One "name bytes" line per subcase. Change log (newest first):
+# 2026-09-27 wave 0 baseline: measured peaks 11789468 / 14190252 / 10194664 + 1%.
+bookmarks_rtbake 11907363
+bookmarks_src 14332155
+hello_src 10296611

@@ -112,6 +112,16 @@ Tiered test gates:
   the machine's screen, so those scripts can never run in parallel), and
   the `bake/` full-corpus byte-identity sweep (`CLARUS_BAKE_FULL=1`).
   Each stage prints its own `test-merge.sh: <stage> PASS in Ns` line.
+- **Memory ratchet (SE memory program, Wave 0, 2026-09-27).**
+  `tests/memgate/peak.sh` (T1) measures a compile's peak live heap in
+  68k-equivalent bytes (round4(size) + 8-byte block header, + 4 per
+  handle) from the host runtime's counters and fails over
+  `tests/memgate/budget.txt` (measured peak + 1%; host allocation is
+  deterministic). `CLARUS_MEM_PEAK=1` makes any host clarus binary print
+  a `memprobe:` line per compile phase plus a `TOTAL` line at exit;
+  `=2` adds a per-tag histogram. `scripts/memcensus.sh FILE.cla` names
+  the compiler globals behind the bytes. A change that lowers a peak
+  lowers its budget in the same commit.
 - **Standing rule (compiler-cleanup phase, 2026-09-05).** A phase that
   adds a new value-typed runtime module (the `connection`/`filehandle`/
   datetime shape) adds its `tests/bake/<module>.sh` `emit68k_pair` twin
