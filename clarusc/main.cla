@@ -76,6 +76,22 @@ func feProgressStep(cur: int, total: int, label: string) {
 func feProgressTick() {
 }
 
+// feMemProbe: SE wave 0 per-phase memory probe. The host runtime's
+// rt_ext_MemProbe prints a `memprobe:` line only when CLARUS_MEM_PEAK is
+// set (tests/memgate/); otherwise silent. On the 68k lane (selfemit /
+// bake self-compile of this file) the clause-less extern resolves to
+// nat_MemProbe below, a no-op. (`= inline nop` was tried first: cg68k
+// aborts evaluating its string arg in value context.) nat_MemProbe lives
+// here, not in the runtime, so no runtime golden moves.
+external func MemProbe(phase: string)
+
+func nat_MemProbe(phase: string) {
+}
+
+func feMemProbe(phase: string) {
+    MemProbe(phase)
+}
+
 // feExpectedStamp is main.cla's own implementation of bake.cla's
 // front-end seam (see bkCheckRtbakeHeader's own doc comment) -- byte-
 // for-byte the SAME computation bkLoadRtbake used to do inline before

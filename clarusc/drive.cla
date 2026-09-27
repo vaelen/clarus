@@ -874,6 +874,9 @@ func driveProgressPhase(msg: string) {
     line = line + " ticks)"
     driveProgress(line)
     drvPhaseTicks = t
+    // SE wave 0: per-phase memory probe (front-end seam). Behind the
+    // want68k gate above, so the C `emit` lane never reaches it.
+    feMemProbe(msg)
 }
 
 // driveProgressDone: the front ends' shared tail after a successful
@@ -896,6 +899,7 @@ func driveProgressDone() {
     line = line + " ticks)"
     driveProgress(line)
     driveProgress("Finished")
+    feMemProbe("Done")
 }
 
 func expand(rawPath: string, entry: bool, key: string): bool {
