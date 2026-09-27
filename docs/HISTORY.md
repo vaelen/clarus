@@ -6957,6 +6957,213 @@ review packages and the `progress.md` ledger in
 `.superpowers/sdd/2026-09-07-mactcp/`.
 
 
+## SE memory program, Wave 0: measurement (2026-09-28, branch `se-wave0-measurement`)
+
+Recorded on the same terms as the entries above: merging to `main` is
+Andrew's call and had not happened when this was written. This entry
+covers all nine tasks and Task 8's one fix round, all merged into
+`se-wave0-measurement`.
+
+**What it did.** It gave the SE memory program
+(`docs/superpowers/specs/2026-09-27-se-memory-program-design.md`) a
+number to beat. That number is measured on the host, so it runs in T1
+with no emulator. Two on-target measurements pin it to reality. No
+memory was reduced; that starts in Wave 1. The work was 31 files,
++19,757/−7,137 before this docs commit, most of it the regenerated
+`clarusc/clarusc.c` snapshot. The tasks ran in four waves, each in its
+own worktree (`../clarus-w0-tN`, branch `w0-tN`), and each was reviewed
+on Opus.
+
+- **Task 1: host counters** (`runtime/host/rt_mem_host.inc`). Logical
+  `live`/`peak` plus 68k-equivalent `live68k`/`peak68k` (a block costs
+  `round4(size) + 8`, plus 4 for a handle's master pointer, per spec
+  W1), `peakAll68k`, `blocks`, `handles` and `allocs` are maintained on
+  every allocation path. `rtm_dump` prints one `memprobe:` line per
+  phase to stderr, only under `CLARUS_MEM_PEAK=1`; level 2 adds a tag
+  histogram. A `TOTAL | peakAll68k=N` line prints at exit. The
+  `rt_ext_MemProbe` extern and the `tests/hostrt/memprobe.sh` unit test
+  landed here too.
+- **Task 2: `= inline sp`**, the twin of `inline a5` (`MOVE.L A7,D0`).
+  It is extern convention 11, with the diagnostic `inline sp requires
+  signature (): ptr`. The reference's new fence shifted
+  `tests/reftest/manifest.txt` by one index.
+- **Task 3: `toolbox/memory.cla`** gained `MaxBlock` (0xA061) and eleven
+  siblings: `StackSpace`, `MaxApplZone`, `NewEmptyHandle`, `HPurge` and
+  others. Each trap word is verified against `MacMemory.h`/`.a` and IM.
+- **Task 4: the SE budget probe** (`testdata/snow/sebudget.cla`,
+  `tests/mactest/snow/se_budget.sh`, 22 s).
+- **Task 5: `scripts/memcensus.sh`**, a per-global heap census. It
+  generates `rtm_census()` from `build-run/clarusc-current.c`'s
+  `rt_list`/`rt_map`/`rt_intmap`/`rt_text` statics and prints the top
+  25 under each phase. It is a diagnostic, not a gate.
+- **Task 6: the probe seam.** `feMemProbe(phase)` is called from
+  `driveProgressPhase`/`driveProgressDone` in `drive.cla`. `main.cla`
+  routes it to `MemProbe`. `macgui.cla` logs `  mem: free N KB, max M KB`
+  per phase, and it paints the stack at startup, then logs
+  `  stack: high-water N KB of M KB` after each compile.
+- **Task 7: `tests/memgate/peak.sh`** in T1, plus the snapshot
+  regeneration. It has three subcases, and the budget is baseline + 1%.
+- **Task 8: `tests/mactest/snow/clarusc_memprobe.sh`**, the IIcx run.
+  Fix round 1 added the `launch` and `pre-compile` probes to
+  `macgui.cla`.
+- **Task 9:** this entry, the calibration, and the program doc's §9/§9.1.
+
+**The numbers.** The full tables are in the program design's §9.1.
+
+- **SE app budget** (Snow SE, 4 MB, System 6.0.8, single-app, no window
+  open): `SEBUDGET FreeMem=3651694 MaxBlock=3651430 ApplZone=270364
+  ApplLimit=4040916 HeapEnd=4040916 CurStackBase=4159146 BufPtr=4170186
+  MemTop=4194304`. The app space (`BufPtr − ApplZone`) is 3,899,822
+  bytes (3808 KB).
+- **ClarusC target** (spec §5.1: app space − 64 KB stack − 1.56 MB
+  resident code) is **2,274,286 bytes (2221 KB)**. With the measured
+  187 KB stack instead of 64 KB, it is 2,148,334 bytes (2098 KB). Until
+  Wave 4, the never-released 1,923,629-byte CLIR resource also sits in
+  that heap.
+- **Memgate baselines** (68k-equivalent bytes, H = 8, all peaking in
+  `Built fork`):
+
+  | Subcase            |       Peak |     Budget |
+  |--------------------|-----------:|-----------:|
+  | `bookmarks_rtbake` | 11,789,468 | 11,907,363 |
+  | `bookmarks_src`    | 14,190,252 | 14,332,155 |
+  | `hello_src`        | 10,194,664 | 10,296,611 |
+
+- **IIcx** (System 7.1, 32-bit, fast-forward, compiling `bookmarks.cla`
+  on the bake path): the heap zone at launch is 48400 KB and free is
+  48106 KB. Pre-compile free is 43949 KB. The low point is `Built fork`,
+  at 36071 KB free, which is **12035 KB used since launch**. The stack
+  high-water is **187 KB of a 735 KB reserve**. The compile took 81753
+  ticks (22m 42s) in run 1 and 89619 ticks (24m 53s) in run 2. The CLIR
+  load before the compile took another ~18–19 guest minutes.
+- **Census** at the peak: `cv_rtbakeBytes` 2.0 MB, `cv_irExprs` and
+  `cv_bkLdIrExprs` 1.25 MB each, `cv_a68Items` 1.1 MB (1967 of 16384
+  slots used), `cv_strPool` and `cv_bkLdStrPool` 1.0 MB each, then
+  `cv_bkLoadedSymbols`, `cv_irStmts`, `cv_bkLdIrStmts` and
+  `cv_cgObjHoles`. The bake loader's staging copies are still alive at
+  the peak. That confirms Wave 1's prototype C target.
+
+**Calibration** (spec §5.3). The zero point is the launch probe; the
+plan's "Installed baked runtime" point was superseded, see Rulings.
+IIcx used = launch free − free at the phase. Host = `live68k + 4 ×
+blocks` (H = 12).
+
+| Phase                   | IIcx used KB | Host (H=12) KB | Raw ratio | Excess KB |
+|-------------------------|-------------:|---------------:|----------:|----------:|
+| Parsed user program     |         9779 |           7688 |     1.272 |     +2091 |
+| Checked user program    |         9994 |           7710 |     1.296 |      +193 |
+| Installed baked runtime |        11644 |           9499 |     1.226 |      −139 |
+| Lowered                 |        11936 |           9502 |     1.256 |      +288 |
+| Shaken                  |         9918 |           9536 |     1.040 |     −2052 |
+| Measured                |        11764 |          11047 |     1.065 |      +335 |
+| Packed 4 segments       |        11766 |          11049 |     1.065 |         0 |
+| Emitted segment 1       |        11827 |          11119 |     1.064 |        −9 |
+| Emitted segment 2       |        11857 |          11148 |     1.064 |        +1 |
+| Emitted segment 3       |        11897 |          11188 |     1.063 |         0 |
+| Emitted segment 4       |        11907 |          11197 |     1.063 |         0 |
+| Built fork              |        12035 |          11325 |     1.063 |         0 |
+
+"Excess" is the per-phase ΔIIcx − Δhost.
+
+- **The data model is exact.** Where no new compiler pass's code loads
+  (`Packed` through `Built fork`), the Mac spent 271 KB and the host
+  modelled 279 KB.
+- **Each large excess has a Mac-only cause:**
+  - the never-released CLIR resource handle (1879 KB, by `Parsed`);
+  - each pass's CODE segments loading on first use and never unloaded
+    (+212/+193/+288/+335 KB at Parsed/Checked/Lowered/Measured, about
+    1028 KB in all);
+  - macgui freeing the 2 MB `rtbakeBytes` copy after `driveCompile`
+    returns (−2052 KB at `Shaken`). The host driver keeps that copy.
+- **Peak ratio.** The raw ratio is 1.063 at the phase boundary and 1.037
+  against the host's `peakAll68k + 4 × blocks` (11602 KB). Adjusted
+  (− resource, + the freed rtbake copy, − ~1028 KB of estimated resident
+  code) it is **0.987** at the boundary and **0.963** against the peak.
+  Resident code is inferred from this same data, not measured
+  independently. The partition is 50,331,648 bytes and the CODE is
+  ~1.56 MB in total. Even with no code subtracted, the adjusted ratio is
+  1.078. Every figure is inside 0.85–1.15, so **no model term is
+  flagged**.
+- **Wave 1 inputs:**
+  - the host gate charges ~2 MB (`rtbakeBytes`) that ClarusC does not
+    hold at its peak, until Wave 1 frees the blob in both drivers;
+  - `Installed`'s −139 KB, where the host counted more than the Mac
+    spent, is unexplained. It fits W2's pointer-width overcount, but
+    that is a hypothesis;
+  - the Mac-only CLIR resource is invisible to the gate, which is
+    Wave 4's job.
+- **Wave 5 inputs:**
+  - 64 KB of stack is not enough; the measured high-water is 187 KB;
+  - on-target ticks are not a usable metric under fast-forward (see
+    `docs/TODO.md`).
+
+**Rulings** (from the ledger, each with its stated cost if wrong):
+
+- Parallel implementers in separate git worktrees (`../clarus-w0-tN`,
+  branch `w0-tN`), overriding the skill's no-parallel default, because
+  CLAUDE.md and Andrew mandate parallel tracks. Cost if wrong: merge
+  conflicts, caught at the controller merge.
+- Every implementer and reviewer on Opus, overriding the skill's
+  cheap-model guidance (Andrew's standing rule of 2026-09-27). Cost:
+  tokens only.
+- The worktrees get absolute symlinks to `snow/`, `macplus/`,
+  `macplus2/`, `vasm/`, `Retro68/` and `toolchain/`, because tests need
+  them. Cost: none (read-only use via `lib_snow` clones).
+- The SE budget is measured with no window open. The budget is the
+  machine's free space; ClarusC's own Log window belongs to ClarusC's
+  measured heap. Cost if wrong: a budget a few KB optimistic (one
+  WindowRecord/GrafPort).
+- `MemProbe` is a clause-less extern with a no-op `nat_MemProbe` in
+  `main.cla` (the plan's fallback), because `= inline nop` with a
+  string param aborts cg68k (a pre-existing latent bug, now in
+  `docs/TODO.md`). Cost if wrong: none for output.
+- Tasks 5 and 8 started from `1283a997` while Task 7's review ran,
+  because they consume only memprobe output and the snapshot. Cost if
+  wrong: rebasing T5/T8 if T7's fixes touched the snapshot. They didn't.
+- The calibration could not be computed from Task 8's first data. Free
+  at `Parsed` was already ~10 MB below the partition, and the bake is
+  parsed before phase 1. So fix round 1 added the `launch` probe
+  (free/max plus the zone size `ApplLimit − ApplZone`, in
+  `App.startEmpty`) and the `pre-compile` probe (after
+  `gcResolveBakePath`), then re-ran the IIcx. Cost: one ~11 min boot
+  plus a macgui edit, covered by the bake gate at close.
+- The calibration zero point is the launch probe, not the plan's
+  "Installed baked runtime". The plan's point was set before we knew the
+  bake is parsed before phase 1. Cost if wrong: the table can be
+  recomputed from the saved log.
+
+**Deviations found by running.**
+- `natLogCap` (4096) did not need raising: `out` was 2906 bytes, and
+  3008 bytes with the extra probes.
+- gcLog timestamps every line, so the IIcx script anchors on
+  `'\] Finished$'`, not `^Finished`.
+- The IIcx script tolerates exactly one line, `warning: cannot read app
+  icon bookmarks.pbm: ...`. That warning comes from the pre-existing
+  `dirOf` bug (`docs/TODO.md`).
+- Never run `scripts/test-task.sh` while a gated Snow run is in flight:
+  `tests/run1.sh` truncates the shared log, and run 1's log was NUL-holed
+  that way.
+
+**Gates.** T2 (`scripts/test-merge.sh`): `<T2 result>`.
+`CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (this wave
+touched `macgui.cla`): `<clarusc_bake result>`. The IIcx memprobe run
+passed 5/5 in 606 s (run 1) and 675 s (run 2). The SE budget run passed
+in 22 s.
+
+**Deferred / recorded.** The `progress.md` ledger in
+`.superpowers/sdd/2026-09-27-se-wave0-measurement/` carries every
+deferred minor verbatim, one line per task. Three items outlive the
+wave and are in `docs/TODO.md`:
+- the cg68k abort on `= inline nop` with a string param;
+- `drive.cla` `dirOf` splitting only on `/`, which breaks HFS paths;
+- fast-forward tick variance.
+
+Spec: `docs/superpowers/specs/2026-09-27-se-wave0-measurement-design.md`;
+plan `docs/superpowers/plans/2026-09-27-se-wave0-measurement.md`;
+per-task briefs, reports and the ledger in
+`.superpowers/sdd/2026-09-27-se-wave0-measurement/`.
+
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of

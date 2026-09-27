@@ -193,6 +193,23 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Compiler: type checking
 
+### SE memory program, Wave 0 (2026-09-28)
+
+- **`= inline nop` with a `string` parameter passes the checker but
+  aborts cg68k.** A call such as `external func MemProbe(phase: string)
+  = inline nop` checks clean. On the 68k lane (`cg68k/selfemit`,
+  `bake/identity`), it then dies with `cg68k: cgExpr: EVarRef
+  non-scalar (str/rec/arr) reached in value context -- bind/store it
+  instead of reading its value directly` (`cg68k.cla` ~l.10303),
+  because the nop expansion still evaluates its arguments in value
+  context. Wave 0 worked around it: `main.cla`'s `MemProbe` is a
+  clause-less extern with a no-op `nat_MemProbe`. There are two fixes:
+  - have the `inline nop` call site skip argument evaluation, since
+    there is nothing to pass;
+  - or have the checker reject non-scalar parameters on `inline nop`.
+
+  The reference (~l.1965) shows only a no-parameter example.
+
 ### MacTCP phase (2026-09-08)
 
 - **The `--rtbake --testapi` symbol preload does not carry the
@@ -341,6 +358,32 @@ here matters until it resumes: compile-time performance and memory of
 clarusc running ON a 68k Mac, the baked runtime IR/object-code (`CLIR`)
 machinery that exists to make that fast, and the Snow boots that prove
 it. Recorded so the work is not lost, not scheduled.
+
+### SE memory program, Wave 0 (2026-09-28)
+
+The SE memory program (2026-09-27) resumed work on this target. See
+`docs/ROADMAP.md`.
+
+- **`drive.cla` `dirOf` splits only on `/`.** An HFS path such as
+  `Clarus:bookmarks.cla` gives `dirOf(...) == ""`, so the volume is
+  lost. `cgAppIconPath` (`drive.cla` ~l.1580) then resolves the `icon:`
+  file relative to the default directory, and ClarusC always logs
+  `warning: cannot read app icon bookmarks.pbm: could not open file;
+  using default icon`, even with the `.pbm` next to the source. The
+  Mac-built app gets the default icon. `tests/mactest/snow/
+  clarusc_memprobe.sh` filters out that exact line. The other callers
+  (`drive.cla` ~l.399 and ~l.1071, include resolution) probably have
+  the same blind spot for relative includes next to an HFS-path entry,
+  but that is unverified. Fix: split on `:` as well when the path
+  contains one, and join with `:` to match.
+- **On-target compile ticks are not reliable under Snow fast-forward.**
+  Two IIcx runs of the same ClarusC binary compiling the same
+  `bookmarks.cla` took 81753 and 89619 ticks. Single phases varied by
+  up to 7× (`Built fork` 6027 vs 815, `Measured` 39768 vs 50247), while
+  the mem/stack figures agreed to within ~45 KB. The program design's §7
+  assumed emulated ticks survive fast-forward, and they do not. Compare
+  ticks only within one run. For a real timing number, force real time
+  (`snow_realtime`) or count instructions instead.
 
 ### ABI / performance
 

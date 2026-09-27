@@ -1,7 +1,7 @@
 # Clarus Roadmap
 
 Living document — the authoritative record of sequencing and strategy
-going forward. Updated 2026-09-07. Lists only unfinished work.
+going forward. Updated 2026-09-28. Lists only unfinished work.
 
 - Completed phases are archived verbatim in `docs/HISTORY.md`.
 - Recorded-but-unscheduled debt and needed improvements: `docs/TODO.md`.
@@ -54,7 +54,7 @@ check (Gestalt) with a graceful fallback when the feature is absent.
   `language-runtime-cleanup` phase, 2026-09-06: it is a do-not-fix note,
   not work, and it was the only survivor of that section.)
 
-## Where we are (2026-09-07)
+## Where we are (2026-09-28)
 
 Everything through the `appletalk` phase is merged to `main` and pushed
 (`6e6e3d4`). In brief:
@@ -172,7 +172,14 @@ compilation + a linker. Program design (start here, including from a
 fresh session): `docs/superpowers/specs/2026-09-27-se-memory-program-design.md`;
 measured analysis:
 `docs/superpowers/specs/2026-09-27-se-memory-footprint-findings.md`.
-Prerequisite: the `emulator-linux` branch (Linux Snow/Mini vMac lanes).
+- **Wave 0 (measurement): done, pending merge** (branch
+  `se-wave0-measurement`, 2026-09-28). The host memory gate
+  `tests/memgate/` is in T1 at an 11,789,468-byte `bookmarks --rtbake`
+  baseline. The SE app space is 3808 KB, which gives ClarusC a heap
+  target of about 2221 KB. The IIcx per-phase baseline and the
+  calibration are in the program design's §9.1 and in `docs/HISTORY.md`.
+  Wave 1 (lifetimes) is next.
+
 The DNR/UDP items below resume after this program.
 
 ### Next: language usability

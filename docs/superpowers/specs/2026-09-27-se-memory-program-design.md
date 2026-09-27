@@ -1,6 +1,7 @@
 # SE memory program: ClarusC.APPL in 4 MB (program design, 2026-09-27)
 
-Status: **program design, approved 2026-09-27. No wave has started.**
+Status: **program design, approved 2026-09-27. Wave 0 (measurement) is
+complete, pending merge (2026-09-28); Wave 1 is next.**
 This is the umbrella document for a multi-wave program. Each wave gets
 its own spec (`docs/superpowers/specs/`) and plan
 (`docs/superpowers/plans/`) when it starts. This document holds
@@ -47,7 +48,7 @@ doc):
 | ClarusC.APPL CODE (47 segments)                              | 1.56 MB (~37% is duplicated `cg_free_globals` glue) |
 | `__clir_bake_68k__` resource (read, copied, never released)  |                                             1.92 MB |
 | Stack reserve (`SetApplLimit`)                               |                                              729 KB |
-| Budget on the SE (to be measured in Wave 0)                  |                                   ~3.0–3.3 MB total |
+| Budget on the SE (measured in Wave 0, §9.1)                  |      3808 KB app space; ClarusC heap target 2221 KB |
 
 A 6-line program costs 10 MB, because every compile checks and lowers
 the entire ~13k-line runtime and only then tree-shakes. Nothing in the
@@ -86,8 +87,8 @@ spec takes them as given.
 ## 3. Environment (Linux, as of 2026-09-27)
 
 Everything here is also in `CLAUDE.md`. The emulator infrastructure
-lives on branch `emulator-linux` (see §9: it must be merged before
-Wave 0 starts).
+came from branch `emulator-linux`, merged to `main` on 2026-09-27
+(`62b718c4`).
 
 - **Display.** Shells on this machine usually have no `DISPLAY`. Boots
   need `export DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority`.
@@ -226,7 +227,7 @@ Each wave commits a lower budget, and no later change may exceed it:
 
 | After wave | `bookmarks --rtbake` peak | Other exit criterion                                                             |
 |------------|--------------------------:|----------------------------------------------------------------------------------|
-| 0          |       baseline (~11.5 MB) | SE app budget measured and recorded; Mac IIcx per-phase baseline recorded        |
+| 0          |     11.79 MB (11,789,468) | SE app budget 3808 KB recorded; Mac IIcx per-phase baseline recorded (§9.1)      |
 | 1          |                    ≤ 6 MB | every task byte-identical                                                        |
 | 2          |                    ≤ 4 MB |                                                                                  |
 | 3          |                  ≤ 3.5 MB | serializer writes v2, loads v1                                                   |
@@ -607,8 +608,10 @@ At each wave close, run ClarusC.APPL on the Mac IIcx compiling
 - the per-phase `FreeMem`/`MaxBlock`;
 - the peak heap used;
 - the stack high-water;
-- the compile time in ticks. It is emulated, so it stays valid under
-  fast-forward. Recorded, not gated (D2).
+- the compile time in ticks. Recorded, not gated (D2). Wave 0 found
+  that ticks are **not** stable under Snow's fast-forward: two runs of
+  the same compile took 81753 and 89619 ticks (§9.1). Compare ticks
+  only within one run.
 
 ## 8. Dependencies
 
@@ -626,18 +629,207 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 
 ## 9. Status
 
-| Wave                               | Status                                 | Branch           | Numbers recorded                                                                           |
-|------------------------------------|----------------------------------------|------------------|--------------------------------------------------------------------------------------------|
-| prerequisite: Linux emulator lanes | merged to main 2026-09-27 (`62b718c4`) | `emulator-linux` | T1 116 pass / 0 fail; `mactest/` 30 pass, 6 opt-in skips, 0 fail (all 9 Snow scripts pass) |
-| 0 Measurement                      | not started                            | —                | —                                                                                          |
-| 1 Lifetimes                        | not started                            | —                | —                                                                                          |
-| 2 Representation                   | not started                            | —                | —                                                                                          |
-| 3 Narrow scalars                   | not started                            | —                | —                                                                                          |
-| 4 Lazy runtime library             | not started                            | —                | —                                                                                          |
-| 5 Code and stack                   | not started                            | —                | —                                                                                          |
-| Wave 6 decision                    | pending                                | —                | —                                                                                          |
+| Wave                               | Status                                 | Branch                 | Numbers recorded                                                                                                                                                                                       |
+|------------------------------------|----------------------------------------|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| prerequisite: Linux emulator lanes | merged to main 2026-09-27 (`62b718c4`) | `emulator-linux`       | T1 116 pass / 0 fail; `mactest/` 30 pass, 6 opt-in skips, 0 fail (all 9 Snow scripts pass)                                                                                                             |
+| 0 Measurement                      | complete (pending merge), 2026-09-28   | `se-wave0-measurement` | memgate peaks 11,789,468 (rtbake) / 14,190,252 (src) / 10,194,664 (hello); SE app space 3808 KB, ClarusC target 2221 KB; IIcx low point 12035 KB used, stack 187 KB; peak calibration 0.96–1.08 (§9.1) |
+| 1 Lifetimes                        | not started                            | —                      | —                                                                                                                                                                                                      |
+| 2 Representation                   | not started                            | —                      | —                                                                                                                                                                                                      |
+| 3 Narrow scalars                   | not started                            | —                      | —                                                                                                                                                                                                      |
+| 4 Lazy runtime library             | not started                            | —                      | —                                                                                                                                                                                                      |
+| 5 Code and stack                   | not started                            | —                      | —                                                                                                                                                                                                      |
+| Wave 6 decision                    | pending                                | —                      | —                                                                                                                                                                                                      |
 
-`emulator-linux` is merged (2026-09-27), so Wave 0 can start. Wave 0 relies
-on the Snow lane. It also carries a host AppleTalk fix for routed
+`emulator-linux` is merged (2026-09-27); Wave 0 relied on its Snow
+lane. That branch also carried a host AppleTalk fix for routed
 networks (`rt_atalk.inc`: accept any zone name on NBP lookups, treat
 net 0 as matching any network).
+
+### 9.1 Wave 0 measurements (2026-09-28)
+
+All of these come from branch `se-wave0-measurement`. The wave spec
+(`2026-09-27-se-wave0-measurement-design.md` §5) defines them. The task
+reports and the `progress.md` ledger are in
+`.superpowers/sdd/2026-09-27-se-wave0-measurement/`. Sizes are in bytes,
+and KB means 1024 bytes. "MB" follows the findings document, which uses
+decimal megabytes (the 1.92 MB CLIR is 1,923,629 bytes).
+
+**SE app budget** (Snow SE, 4 MB, System 6.0.8, single-app via the
+boot-block autostart, no window open; `tests/mactest/snow/se_budget.sh`).
+The raw line:
+
+```
+SEBUDGET FreeMem=3651694 MaxBlock=3651430 ApplZone=270364 ApplLimit=4040916 HeapEnd=4040916 CurStackBase=4159146 BufPtr=4170186 MemTop=4194304
+```
+
+| Quantity                                                    |         Bytes |       KB |
+|-------------------------------------------------------------|--------------:|---------:|
+| `FreeMem` after startup (heap available)                    |     3,651,694 |     3566 |
+| `MaxBlock`                                                  |     3,651,430 |     3566 |
+| App space, `BufPtr − ApplZone` (heap + stack together)      |     3,899,822 |     3808 |
+| Probe app's own stack, `CurStackBase − ApplLimit`           |       118,230 |      115 |
+| **ClarusC target** (spec §5.1): app space − 64 KB − 1.56 MB | **2,274,286** | **2221** |
+| Same, with the measured 187 KB stack in place of 64 KB      |     2,148,334 |     2098 |
+
+- The target is app space − a 65,536-byte stack − 1,560,000 bytes of
+  resident code. If "1.56 MB" is read as binary megabytes (1,635,779
+  bytes), the target is 76 KB lower, 2,198,507 bytes (2147 KB).
+- **64 KB of stack is not enough today.** ClarusC's measured high-water
+  on the IIcx is 187 KB (see below), which is why the second row
+  exists. Sizing the stack is a Wave 5 input.
+- **The target does not count the CLIR resource.** ClarusC reads the
+  1,923,629-byte `__clir_bake_68k__` resource and never releases it.
+  Until Wave 4 replaces that read, the resource sits in the same heap
+  and leaves about 0.35 MB of the target for everything else.
+- The budget is Snow's System 6 image. Andrew's real SE has more
+  INITs/cdevs, so its budget will be somewhat smaller.
+
+**Host memory gate** (`tests/memgate/budget.txt`, in T1). Peak live heap
+in 68k-equivalent bytes (H = 8). Every subcase peaks in the `Built fork`
+phase, and the peaks are identical across runs.
+
+| Subcase                      | Peak (bytes) | Budget = int(peak × 1.01) + 1 |
+|------------------------------|-------------:|------------------------------:|
+| `bookmarks_rtbake` (primary) |   11,789,468 |                    11,907,363 |
+| `bookmarks_src`              |   14,190,252 |                    14,332,155 |
+| `hello_src`                  |   10,194,664 |                    10,296,611 |
+
+A fresh run on 2026-09-28 of `bookmarks --rtbake`, with scratch output
+paths, peaked at 11,786,332, which is 3,136 bytes (0.03%) below Task 7's
+run. That run is the source of the calibration numbers below.
+
+**Mac IIcx per-phase baseline** (Snow IIcx, 128 MB, System 7.1, 32-bit
+addressing, fast-forward; `tests/mactest/snow/clarusc_memprobe.sh`,
+ClarusC compiling `examples/bookmarks.cla` on the bake path). Free and
+max come from the `mem:` lines. "Used" is launch free minus free at that
+phase. The mem columns come from run 2 (Task 8's fix round, saved log
+`build-run/memprobe-saved/clarusc_memprobe.fix1.log`). Run 1's mem
+values agree to within about 45 KB (its `Built fork` free was 36061 KB),
+and its ticks are in the last column.
+
+| Point                       |   Free KB | Max KB |   Used KB |        Ticks, run 1 |        Ticks, run 2 |
+|-----------------------------|----------:|-------:|----------:|--------------------:|--------------------:|
+| launch (heap zone 48400 KB) |     48106 |  48106 |         0 |                   — |                   — |
+| pre-compile (CLIR loaded)   |     43949 |  43948 |      4157 |                   — |                   — |
+| Parsed user program         |     38327 |  38327 |      9779 |                 398 |                 952 |
+| Checked user program        |     38112 |  38111 |      9994 |                1099 |                1216 |
+| Installed baked runtime     |     36462 |  36461 |     11644 |               13729 |               16833 |
+| Lowered                     |     36170 |  36169 |     11936 |                 236 |                 215 |
+| Shaken                      |     38188 |  38187 |      9918 |                 598 |                 639 |
+| Measured                    |     36342 |  36342 |     11764 |               39768 |               50247 |
+| Packed 4 segments           |     36340 |  36338 |     11766 |                 422 |                 459 |
+| Emitted segment 1           |     36279 |  36278 |     11827 |                7720 |                6246 |
+| Emitted segment 2           |     36249 |  36248 |     11857 |                3245 |                3174 |
+| Emitted segment 3           |     36209 |  36209 |     11897 |                4417 |                5204 |
+| Emitted segment 4           |     36199 |  36197 |     11907 |                4042 |                3570 |
+| **Built fork (low point)**  | **36071** |  36069 | **12035** |                6027 |                 815 |
+| Finished                    |     36172 |  36169 |     11934 |                   — |                   — |
+| **Compile total**           |           |        |           | **81753** (22m 42s) | **89619** (24m 53s) |
+
+- **Stack:** high-water 187 KB of a 735 KB reserve (`CurStackBase −
+  ApplLimit` on the IIcx), the same in both runs.
+- **Ticks are not stable under fast-forward.** §7 assumed they would be.
+  Two runs of the same binary on the same input differ by 9.6% in total,
+  and single phases differ by much more (`Measured` 39768 vs 50247,
+  `Built fork` 6027 vs 815). Compare ticks only within one run.
+- Outside the compile ticks, "Loading Baked Runtime" (the CLIR read and
+  verify, before "Starting") took about 18–19 minutes of guest time in
+  each run.
+- On the IIcx, `free` equals `max` to within 3 KB at every point, so this
+  machine says nothing about fragmentation on the SE.
+
+**Census, top 10 globals at the peak phase** (`scripts/memcensus.sh
+--rtbake examples/bookmarks.cla`, `Built fork`, host bytes = handle
+size):
+
+| #   | Global               |     Bytes |   Count | Elem size |     Cap |
+|-----|----------------------|----------:|--------:|----------:|--------:|
+| 1   | `cv_rtbakeBytes`     | 2,097,152 | 1923629 |         1 | 2097152 |
+| 2   | `cv_irExprs`         | 1,310,720 |   29189 |        40 |   32768 |
+| 3   | `cv_bkLdIrExprs`     | 1,310,720 |   28890 |        40 |   32768 |
+| 4   | `cv_a68Items`        | 1,179,648 |    1967 |        72 |   16384 |
+| 5   | `cv_strPool`         | 1,048,576 |    3336 |       256 |    4096 |
+| 6   | `cv_bkLdStrPool`     | 1,048,576 |    3123 |       256 |    4096 |
+| 7   | `cv_bkLoadedSymbols` |   294,912 |    5366 |        36 |    8192 |
+| 8   | `cv_irStmts`         |   229,376 |    7772 |        28 |    8192 |
+| 9   | `cv_bkLdIrStmts`     |   229,376 |    7665 |        28 |    8192 |
+| 10  | `cv_cgObjHoles`      |   196,608 |    3672 |        48 |    4096 |
+
+**Calibration** (spec §5.3). IIcx used at phase k = launch free (48106
+KB) − free at k. Host at k = `live68k + 4 × blocks` (H = 12) from the
+matching `memprobe:` line of the fresh `bookmarks --rtbake` run. The
+Δ columns are the change since the previous row. The excess column is
+ΔIIcx − Δhost, which is memory the Mac spent in that phase that the host
+model did not.
+
+| Phase                   | IIcx used KB | Host (H=12) KB | Raw ratio | ΔIIcx KB | Δhost KB | Excess KB |
+|-------------------------|-------------:|---------------:|----------:|---------:|---------:|----------:|
+| Parsed user program     |         9779 |           7688 |     1.272 |     9779 |     7688 |     +2091 |
+| Checked user program    |         9994 |           7710 |     1.296 |      215 |       22 |      +193 |
+| Installed baked runtime |        11644 |           9499 |     1.226 |     1650 |     1789 |      −139 |
+| Lowered                 |        11936 |           9502 |     1.256 |      292 |        4 |      +288 |
+| Shaken                  |         9918 |           9536 |     1.040 |    −2018 |       34 |     −2052 |
+| Measured                |        11764 |          11047 |     1.065 |     1846 |     1511 |      +335 |
+| Packed 4 segments       |        11766 |          11049 |     1.065 |        2 |        2 |         0 |
+| Emitted segment 1       |        11827 |          11119 |     1.064 |       61 |       70 |        −9 |
+| Emitted segment 2       |        11857 |          11148 |     1.064 |       30 |       29 |        +1 |
+| Emitted segment 3       |        11897 |          11188 |     1.063 |       40 |       40 |         0 |
+| Emitted segment 4       |        11907 |          11197 |     1.063 |       10 |       10 |         0 |
+| Built fork              |        12035 |          11325 |     1.063 |      128 |      128 |         0 |
+
+How to read it:
+
+- **Where no new compiler code loads, the model is exact.** From
+  `Packed` through `Built fork` the Mac spent 271 KB and the host
+  modelled 279 KB. The phases differ by at most 9 KB, and `Built fork`'s
+  128 KB matches exactly. This is the independent evidence that the
+  H = 12 cost model is right for data.
+- **The big excesses have known causes that the host never sees:**
+  - *Parsed* (+2091 KB): the CLIR resource handle (1,923,629 bytes, 1879
+    KB, read and never released) plus the code segments for the lexer,
+    parser and bake loader. Minus the resource, the excess is +212 KB.
+  - *Checked, Lowered, Measured* (+193, +288, +335 KB): the first run of
+    the checker, lowering and code-generation passes. ClarusC calls no
+    `UnloadSeg`, so each pass's CODE segments load then and stay
+    resident. That fits "cg ~310 KB" (§6 Wave 5).
+  - *Shaken* (−2052 KB): macgui's `gcCompile` sets `rtbakeBytes = ""`
+    right after `driveCompile` returns, which frees the 2 MB CLIR copy
+    (its capacity is 2,097,152 bytes). The host driver (`main.cla`)
+    never frees it, and the census still shows `cv_rtbakeBytes` resident
+    at `Built fork`.
+  - *Installed* (−139 KB): the host modelled more than the Mac spent.
+    This is unexplained, and it fits W2's pointer-width overcount (the
+    install copies tables that hold pointers). It is a hypothesis.
+- **Peak ratio.** IIcx low point (`Built fork`, 12035 KB used) against
+  the host:
+
+  | Comparison                                                                | IIcx KB | Host KB | Ratio |
+  |---------------------------------------------------------------------------|--------:|--------:|------:|
+  | raw, vs host `live68k + 4 × blocks` at the phase boundary                 |   12035 |   11325 | 1.063 |
+  | raw, vs host `peakAll68k + 4 × blocks` (11786332 + 4 × 23562)             |   12035 |   11602 | 1.037 |
+  | − CLIR resource (1879), + `rtbakeBytes` the Mac freed (2048), code kept   |   12204 |   11325 | 1.078 |
+  | same, also − ~1028 KB of code estimated as loaded after launch (boundary) |   11176 |   11325 | 0.987 |
+  | same, vs host peak                                                        |   11176 |   11602 | 0.963 |
+
+  - **What is known:** the partition is 50,331,648 bytes (the heap zone
+    at launch is 48400 KB), and ClarusC's CODE is about 1.56 MB over 47
+    segments. The launch state (CODE 1, the jump table and A5 world, and
+    runtime init) is 294 KB, which the launch zero point already
+    excludes. The resource and the rtbake copy are exact sizes.
+  - **What is not known:** exactly which segments are resident at the
+    peak. The ~1028 KB of code is inferred from the excess column (212
+    + 193 + 288 + 335), so it is not independent of this data. It also
+    includes the Log window and progress buffer. The ceiling is 1.56 MB
+    minus the part already resident at launch.
+  - Every adjusted ratio falls inside the 0.85–1.15 band, so **no model
+    term is flagged as wrong.** The 3.7% gap between the boundary and
+    peak rows is the host's intra-phase peak inside `Built fork` (+277
+    KB), which the Mac's once-per-phase sample cannot see.
+- **Wave 1 inputs from the calibration** (not model errors):
+  - The host gate charges about 2 MB that ClarusC does not hold at its
+    peak: `main.cla` keeps `rtbakeBytes` where macgui frees it. Wave 1's
+    "free the bake staging + blob after install" item removes it from
+    both drivers. Until then, the gate overstates ClarusC's real peak by
+    that amount.
+  - The Mac-only CLIR resource (1.88 MB) is invisible to the gate. It is
+    Wave 4's job, and until then the SE budget has to include it.

@@ -1,6 +1,7 @@
 # SE memory program, Wave 0: Measurement (spec, 2026-09-27)
 
-Status: **spec, awaiting review.** Branch `se-wave0-measurement`.
+Status: **complete (pending merge), 2026-09-28.** Branch `se-wave0-measurement`.
+The numbers are in the umbrella's §9.1 and the `docs/HISTORY.md` entry.
 Umbrella: `2026-09-27-se-memory-program-design.md` (§6 Wave 0 is the
 brief; its decision log D1–D12 is input, not open). Findings:
 `2026-09-27-se-memory-footprint-findings.md` §8.
