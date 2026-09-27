@@ -93,19 +93,23 @@ Wave 0 starts).
   need `export DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority`.
 - **Snow** (`snow/clarus-snow`):
   - `snow/system6`: SE, 4 MB, System 6.0.8 (`system6.snoww`,
-    `system6.img`). SCSI 1 is `clarus.img` (volume `Clarus`), SCSI 2 is
+    `system6.img`). SCSI 1 is `clarus.img` (volume `Clarus`), SCSI 3 is
     Ethernet; LocalTalk comes from `--serial-bridge-b localtalk`.
   - `snow/system7`: Mac IIcx, 128 MB, System 7.1, `rominator.rom`
     (32-bit clean), 8•24 display card, `system7.pram` (32-bit
     addressing), `start_fastforward: true`. SCSI 1 is `clarus.img`,
-    SCSI 2 is Ethernet.
+    SCSI 3 is Ethernet.
   - Test boots go through `tests/lib_snow.sh`: `snow_disk [6|7]` clones
     the template's disks, ROM paths and PRAM into `$WORK/snow`.
     `SNOW_SYSTEM` picks the machine; the default is 6, and the ClarusC
     scripts use 7. Boots use a private serial port.
-  - `docs/HISTORY.md` records that fast-forward *at boot* once hung the
-    old Mac II launch path. The `emulator-linux` work checks this on
-    the current Snow; see its report or the lane's comments.
+  - Fast-forward at boot works on the current Snow (~4.3–4.9x). It once
+    hung the old macOS Mac II lane (`docs/HISTORY.md`); no longer.
+    `snow/adsp_listener` forces real-time (`snow_realtime`).
+  - ClarusC on the IIcx (measured 2026-09-27): `clarusc_bake` passes in
+    ~9–18 min; `macresident` ~44 min; `macresident_failed_compile`
+    ~30 min. System 6 has no MacTCP; System 7's guest is 10.0.0.2
+    (gateway 10.0.0.1, NAT outbound-only).
 - **Mini vMac** (`macplus/macplus`, `macplus2/macplus2`): Linux
   LocalTalk builds, Mac Plus 4 MB, System 6.0.8. They are driven by
   LaunchAPPL (upstream Retro68, which includes `--system-extra-file`)
