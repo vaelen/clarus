@@ -167,9 +167,8 @@ of the original list are DONE — `binary-files`, `transfer-crcs`,
 `filesystem-api`, `serial-connection` and `appletalk` in
 `docs/HISTORY.md` (the AppleTalk phase merged to `main` 2026-09-07; its
 environment prerequisite — a LaunchAPPL with the `--system-extra-file`
-option, from the `vaelen/Retro68` fork until upstream PR #316 lands, plus
-`system-extra-file = AppleTalk` in `~/.LaunchAPPL.cfg` — is carried in
-`CLAUDE.md`'s toolchain section). Remaining, in order:
+option, upstream since PR #316 merged — is now passed explicitly by
+`tests/lib_mac.sh`'s `mac_launch`, with no `~/.LaunchAPPL.cfg`). Remaining, in order:
 
 1. **MacTCP** — MERGED to main 2026-09-08 (ff 2d258a4..8f1dd29). TCP as
    `connection`'s third transport (`c.open(tcp "a.b.c.d:port")`) and
@@ -192,20 +191,18 @@ option, from the `vaelen/Retro68` fork until upstream PR #316 lands, plus
    plus a separate datagram-server resource: a UDP server is not
    accept-shaped, so it is not a `listener`. Recorded, after the DNR.
 
-Environment note: `snow/MacII.snoww` + its hdd image are already
-configured (2026-08-15): AppleTalk on the Printer port, a TCP listener
-(port 1984) bridging the Modem port, and a DaynaPORT SCSI Ethernet
-adapter running a NATted MacTCP instance (the emulated Mac is 10.0.0.2,
-gateway 10.0.0.1). Caveat: on a modern Mac the emulator cannot attach to
-a tap device, so it can't reach the real Ethernet — AppleTalk runs over
-UDP instead, which means two Snow instances running simultaneously can
-see each other over AppleTalk (the way to test AppleTalk peer-to-peer).
-Snow's LocalTalk-over-UDP bridge is off by default and has no launch flag
-or workspace field — it is turned on per run from Snow's own in-window
-**Ports > Channel B (printer) > Enable LocalTalk (UDP)** menu, which is
-what `tests/lib_snow.sh`'s `snow_localtalk_b` clicks; once on, the guest
-joins the same `239.192.76.84:1954` group Mini vMac and the host
-`atalkdrive` tool are already on.
+Environment note (Linux emulator port, 2026-09-27): the Mac II Snow
+workspace with AppleTalk, a Modem-port TCP bridge and DaynaPORT MacTCP is
+gone. The emulator lanes now run on Linux: two 4MB Macintosh SE Snow
+workspaces (`snow/system6.snoww`, System 6.0.8; `snow/system7.snoww`,
+System 7.1) and the Linux Mini vMac Mac Plus pair (`macplus/`,
+`macplus2/`). The Mini vMac builds carry LocalTalk-over-UDP, on a
+multicast group that is a real, populated LocalTalk network (other zones
+and nodes -- tests use per-run NBP names/types and never assert exact
+zone lists or node counts). Snow's LocalTalk bridge has no non-GUI switch
+on Linux and no workspace has Ethernet, so the Snow AppleTalk/MacTCP
+scripts skip (`docs/FUTURE.md`'s Linux emulator port section). The serial bridge (`--serial-bridge-a tcp:PORT`) still
+works and is what `mactest/snow/serial_echo` and `pagefile` use.
 
 **Driving application: a BBS server** — first over the serial port,
 later over MacTCP networking.

@@ -13,7 +13,7 @@
 # is set alongside CLARUS_MAC_TESTS=1 (demoted to an opt-in cross-lane
 # localization oracle by the pack3-standardfile phase, 2026-08-07; the
 # native emit68k lane already covers every case they check). Lane deletion
-# is deferred to 5f Retro68-retirement. The Snow (System 7 / Mac II)
+# is deferred to 5f Retro68-retirement. The Snow (Macintosh SE, System 6/7)
 # scripts are opt-in the same way, behind CLARUS_SNOW_TESTS=1.
 #
 # Slow (~15m plus selfhost) -- run before merging to main, not per-task.

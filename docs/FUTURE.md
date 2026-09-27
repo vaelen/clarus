@@ -358,6 +358,8 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   breaks the lane until the offsets are re-measured. The clean fix is
   upstream, the same one-line shape as this phase's LaunchAPPL patch: a
   `--serial-bridge-b localtalk` mode in Snow. Worth asking for.
+  (Linux emulator port, 2026-09-27: `snow_localtalk_b` is deleted and
+  `mactest/snow/adsp_listener` is a skip -- see that section below.)
 
 ### MacTCP phase (2026-09-08)
 
@@ -389,4 +391,31 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   wish — a second Snow bundle so a test boot can coexist with Andrew's
   BBS instance — is DONE (2026-09-08): `snow/ClarusSnow` is a symlink
   into a separate `snow/Snow.app` copy, and `tests/lib_snow.sh` quits
-  by our own pid, never by app name.
+  by our own pid, never by app name. (Linux emulator port, 2026-09-27:
+  `snow_ethernet` is deleted, the SE workspaces carry no DaynaPORT, and
+  `mactest/snow/tcp_selfconnect` is a skip -- see below.)
+
+### Linux emulator port (2026-09-27)
+
+- **Snow networked lanes.** Snow on Linux has no non-GUI way to switch
+  its LocalTalk bridge on (the macOS lane clicked Snow's in-window Ports
+  menu with CGEvents; that clicker was removed, not ported), and the SE
+  workspaces carry no DaynaPORT/MacTCP, so `mactest/snow/adsp_listener`
+  and `mactest/snow/tcp_selfconnect` skip. They come back with a Snow
+  `--serial-bridge-b localtalk`-style flag and an Ethernet/MacTCP SE
+  workspace, after the SE-memory program. The Mini vMac AppleTalk lane
+  (LocalTalk-over-UDP builds in `macplus/`, `macplus2/`) is unaffected.
+- **MultiFinder autolaunch on System 6.** `snow_put_bin` autolaunches on
+  System 6 by rewriting the scratch boot volume's `bbHelloName` (the boot
+  blocks' startup program, `MultiFinder` on `system6.img`) to the app,
+  so the app runs under the single-application System 6 environment,
+  not MultiFinder. MultiFinder's own "Set Startup" list is the `fndr`
+  resource of `:System Folder:Finder Startup`, an undocumented format; if
+  a test ever needs MultiFinder specifically, reverse that resource (one
+  Set Startup in a scratch boot, diff the file) and write it instead.
+- **ClarusC.APPL on the SE.** The four ClarusC Snow scripts
+  (`clarusc_boot`, `clarusc_bake`, `macresident`,
+  `macresident_failed_compile`) skip (`snow_skip_clarusc`) because a
+  48MB-partition compiler does not fit a 4MB SE;
+  `CLARUS_SNOW_CLARUSC=1` boots them anyway. See
+  `docs/superpowers/specs/2026-09-27-se-memory-footprint-findings.md`.
