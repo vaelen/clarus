@@ -160,6 +160,21 @@ of Toolbox managers Clarus programs can reach, add the language features
 that work needs, and retire old parts of the toolchain. The user-module
 compilation cache is deliberately de-prioritized (see "Later").
 
+### Now: the SE memory program (2026-09-27)
+
+Make `ClarusC.APPL` compile a small program on a 4 MB Macintosh SE
+under System 6 (today it needs ~14 MB of heap, 1.56 MB of code and a
+729 KB stack). Six waves, 0 (measurement), 1 (lifetimes), 2
+(representation), 3 (narrow scalars: `uint8`/`int16`/`uint16`,
+2-byte enums, serializer v2), 4 (lazy runtime library), and 5 (code
+and stack: `segment` directive, overlays), then a go/no-go on separate
+compilation + a linker. Program design (start here, including from a
+fresh session): `docs/superpowers/specs/2026-09-27-se-memory-program-design.md`;
+measured analysis:
+`docs/superpowers/specs/2026-09-27-se-memory-footprint-findings.md`.
+Prerequisite: the `emulator-linux` branch (Linux Snow/Mini vMac lanes).
+The DNR/UDP items below resume after this program.
+
 ### Next: language usability
 
 Items 1 (binary streams and files), 2 (serial ports) and 3 (AppleTalk)
