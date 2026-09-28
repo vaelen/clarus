@@ -406,28 +406,46 @@ The SE memory program (2026-09-27) resumed work on this target. See
   `driveManifestSplice`), a `tests/bake/boxsize.sh` twin, and a snapshot
   regeneration FIRST (the old snapshot would not splice the new modules
   and could no longer compile the runtime).
+- **The host gate and the IIcx differ by ~2.7 MB at the low point, and
+  the gap is not re-attributed.** Host peak 3,668,312 bytes (3582 KB)
+  against 6272 KB used on the IIcx (program design §9.3). Wave 0's
+  calibration terms (the never-released 1879 KB CLIR resource, ~1 MB
+  of CODE loaded after launch) would cover it, but neither was
+  re-measured, and the host still counts host box/element sizes. Also
+  unattributed: ~100 KB more used at `pre-compile` than Wave 1 (beyond
+  `MoreMasters`' ~40 KB), and compile ticks halving in phases Wave 2 did
+  not target. Settle these before Wave 4 sizes its target.
+- **`MoreMasters`' 64 per call is unproven on the target.** `macgui.cla`
+  calls it 153 times assuming the zone's `moreMast` is 64; a memprobe
+  line peeking the zone header would confirm it. The comment's
+  "8-byte block header" is 8–12 B under 32-bit addressing.
+- **`rtListReserve` computes `n * elemsize` unchecked**, like
+  `rtListGrow`; a huge `n` can overflow before the resize.
+- **A crafted bake with a valid hash can make `bkFitCount` reserve tens
+  of MB.** It caps a count at remaining bytes / 4, but most elements
+  are far larger than 4 bytes on the wire, so a per-reader minimum
+  wire size would bound it properly. (A corrupt bake fails the body
+  hash first.)
+- **`text.reserve(n)` rounds up to a power of two** (through
+  `rtTextGrow`) while `list.reserve(n)` is exact. Task 8 had to
+  `shrink()` its blob after reserving; the reference should say which,
+  or the two should agree (changing `text.reserve` moves goldens).
+- **Task 3's encode-drift guard `abort()`s** instead of a clean
+  diagnostic and `false`: it is an internal invariant, but on the Mac it
+  kills ClarusC. `a68SelfExercise` also has no direct flush /
+  forward-reference fixup case (the goldens and bake twins cover it
+  indirectly).
+- **Smaller Wave 2 gaps:** `bkReadObjCode`'s per-function lists are not
+  pre-sized; `cgObjRunAdd` copies each run twice at capture; nothing
+  tests `bkObjRunScan`'s clamp directly; `dblcompile_bake` does not
+  assert that the `bkHeaderVerified` branch was taken; `memcensus.sh`
+  writes its duplicate-box table before its `n < 4096` guard (353
+  globals today), names only the last alias in `also=`, shares
+  `$BR/memcensus` with manual runs, and gives no message for a missing
+  FILE argument.
 
 ### SE memory program, Wave 1 (2026-09-28)
 
-- **`bookmarks --rtbake` is 32,860 bytes over Wave 1's 6 MB target**
-  (6,324,316; program design §9.2). The peak is a transient inside
-  `bkLoadRtbake`: the ~1.94 MB `rtbakeBytes` is live while the IR is
-  decoded, and the `bkRead*` readers grow their lists by `add` although
-  they read `n` first (at `bkReadIrExprs`' 16384 → 32768 step, 655 KB
-  and 1.31 MB blocks are live together). Levers, cheapest first:
-  - pre-size the `bkRead*` lists from `n` (needs a list
-    capacity/reserve primitive, or a grow to exactly `n`); this also
-    removes the tail slack (exprs 146 KB, types 62 KB, locals 17 KB,
-    stmts 13 KB);
-  - `.shrink()` each loaded list right after its read (helps only if it
-    runs before the peak moment);
-  - a packed `strPool` (3197 strings in 1 MB of 256-byte slots);
-  - release `rtbakeBytes` progressively during the parse, or parse from
-    the resource in chunks (up to 1.94 MB).
-
-  Which list's growth coincides with the peak is inferred, not
-  measured: memcensus samples only at phase boundaries. A
-  census-at-new-peak hook in `scripts/memcensus.sh` would settle it.
 - **A failed bake-path compile leaves the parse staging alive while
   ClarusC idles.** A compile that fails user check returns before
   `bkInstallArenas`, so the `bkLd*`/`bkLoaded*` staging (a few MB)
@@ -436,7 +454,7 @@ The SE memory program (2026-09-27) resumed work on this target. See
   one `bkFreeParseStaging()` in `gcCompile` after a failed
   `driveCompile`, or on `driveCompile`'s failure returns.
 - **`driveRtbakeFallback` restores `haveRtbake = true` over consumed
-  bytes (Wave 2: remove or rethink).** After a drift fallback the
+  bytes (Wave 2 left it as is: remove or rethink).** After a drift fallback the
   outer compile sets `haveRtbake = true` again, but its own bake parse
   already released `rtbakeBytes`, leaving (`haveRtbake = true`, bytes
   empty). It is harmless today only because every front end re-arms

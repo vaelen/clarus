@@ -187,7 +187,20 @@ measured analysis:
   revises its number), `bookmarks` from source at 8,605,188 and
   `hello-mac` at 8,531,984. On the IIcx the launch→low heap use fell
   from 12035 KB to 7977 KB. Numbers: the program design's §9.2 and
-  `docs/HISTORY.md`. Wave 2 (representation) is next.
+  `docs/HISTORY.md`.
+- **Wave 2 (representation): done, pending merge** (branch
+  `se-wave2-representation`, 2026-09-28). `list.reserve(n)` and
+  `text.removeFirst(n)`; a compact intern pool (one blob plus offsets);
+  per-function encode in the emit loop; the bake parse pre-sizes its
+  lists and frees the CLIR prefix as it goes; flat `cgObjRuns`;
+  68k-correct container box sizes; `MoreMasters` for ClarusC; a
+  peak-moment census. `bookmarks --rtbake` peaks at 3,668,312 bytes
+  (4 MB target met; now measured outside the repo, the way ClarusC
+  runs), `bookmarks` from source at 7,639,484 and `hello-mac` at
+  7,570,224. On the IIcx the launch→low heap use fell from 7977 KB to
+  6272 KB. Numbers: the program design's §9.3 and `docs/HISTORY.md`.
+  Wave 3 (narrow scalars) is next; `irExprs` (1.31 MB at the peak) is
+  its first target.
 
 The DNR/UDP items below resume after this program.
 

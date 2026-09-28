@@ -1,6 +1,10 @@
 # SE memory program, Wave 2: Representation (spec, 2026-09-28)
 
-Status: **spec, awaiting review.** Branch `se-wave2-representation`.
+Status: **implemented, pending merge (2026-09-28).** Branch
+`se-wave2-representation`. The exit is met: `bookmarks --rtbake`
+peaks at 3,668,312 bytes (budget 3,704,996), measured the
+ClarusC-shaped way (umbrella §9.3). Where the implementation departed
+from this text, a "Deviation" note says so below.
 Umbrella: `2026-09-27-se-memory-program-design.md` (§6 Wave 2 is the
 brief; D2, D10 and D12 are decided inputs). Wave 1's numbers and census:
 umbrella §9.2 and `docs/HISTORY.md`'s Wave 1 entry.
@@ -36,6 +40,11 @@ is the ~1 MB string pool, the whole-segment `a68Items` stream, and
   not reached, the wave records the measured figure and a peak-moment
   census, and revises its own number (umbrella §5.5). It may not skip
   the ratchet.
+  - **Result:** 3,668,312, so this number stands. The table above is
+    Wave 1's in-repo measurement, whose 6.32 MB parse peak was a
+    host-only read of the 4 MB `clarusc/clarusc.c` in the stamp check
+    (Task 4); memgate now measures this subcase from `$WORK`, where the
+    Wave 1 code peaks at 5,836,696. The peak is now at `Built fork`.
 - The other two memgate budgets drop to their new peaks + 1%.
 - Every golden is unchanged except by the one output-changing task
   (§3.6) and the new core-suite cases (§3.1).
@@ -107,6 +116,10 @@ t.removeFirst(n)     // text
   shape, and `bkInstallPool` moves it into place (Wave 1's
   install-by-move pattern).
 - **Expected:** −~0.9 MB in every phase after the first intern.
+- **Deviation (Task 2):** each blob entry is stored length-prefixed
+  (one length byte, then the bytes), so `poolGet(i)` is one
+  allocation-free `stringAt(off[i])`. Entry i still spans
+  `[off[i], off[i+1])`, length byte included; +1 B per entry.
 
 ### 3.3 Bake parse: pre-size and progressive free (`bake.cla`, `drive.cla`)
 
@@ -139,6 +152,12 @@ t.removeFirst(n)     // text
     bytes (Wave 1 Task 4 audit), so that is safe. Re-confirm it.
 - **Expected:** parse peak ≈ end-of-parse live + the largest remaining
   suffix at any moment, instead of + 1.94 MB.
+- **Deviation (Task 7):** the readers reserve the power of two that
+  doubling would reach (`bkFitCount`), not exactly `n`. With exact
+  capacity, the first user append after install doubled each whole
+  arena (+1.28 MB at `Lowered`, overall peak 5,291,324). So the
+  doubling transient is gone but the ~0.25 MB of tail slack is not
+  saved.
 
 ### 3.4 Per-function emit → encode → discard (`cg68k.cla`)
 
@@ -182,6 +201,15 @@ t.removeFirst(n)     // text
 - The CLAUDE.md standing rule applies: a new `_68k` runtime module gets
   its `tests/bake/<module>.sh` `emit68k_pair` twin in the same task.
 - The host lane is unchanged, so memgate is unchanged (R6).
+- **Deviation (Task 9):** no new `_68k` companions. New modules would
+  not be spliced by the committed snapshot, which builds
+  `clarusc-current`, so the bootstrap would break until a
+  regeneration. The four `rt*BoxSize` consts live in the
+  `datetime_c.cla`/`datetime_68k.cla` pair instead (spliced on every
+  build of both lanes), and the host `--testapi` early-visible set
+  widened to sortedmap, datetime(+lane) and ser to match. No new module
+  means no new bake twin; `tests/bake/datetime.sh` covers the pair.
+  A cleaner home is in `docs/TODO.md`.
 
 ### 3.7 `MoreMasters` for ClarusC (`macgui.cla`)
 
@@ -191,6 +219,10 @@ t.removeFirst(n)     // text
   nonrelocatable at the bottom of the heap).
 - Derive the count from the IIcx memprobe's handle count at the low
   point, plus headroom, and write the derivation in the comment.
+- **Deviation (Task 5):** the Wave 1 IIcx log has no handle count, so
+  the count came from the host memgate proxy (8157 handles at
+  `Built fork`): ceil(8157 × 1.2 / 64) = 153 calls. The 64 per call
+  (`moreMast`) is from the headers, not read back on the target.
 - Byte-identical for every program except ClarusC.APPL.
 
 ### 3.8 Peak-moment census (`scripts/memcensus.sh`, host runtime)

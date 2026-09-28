@@ -7317,6 +7317,195 @@ per-task briefs, reports and ledger were git-ignored scratch and were
 deleted after the final review; the rulings are in this entry.
 
 
+## SE memory program, Wave 2: representation (2026-09-28, branch `se-wave2-representation`)
+
+Not yet merged (merge only on Andrew's request). This entry covers
+Tasks 1–10 and Task 11's IIcx measurement, all on
+`se-wave2-representation` (85 files, +15,510/−14,281 from the plan
+commit `3fb75f6b` before this docs commit, most of it the
+twice-regenerated `clarusc/clarusc.c` snapshot). Wave A (Tasks 1–5) ran
+in parallel worktrees (`../clarus-w2-tN`, branch `w2-tN`) from
+`3fb75f6b`, merged in the order 5, 2, 3, 1, 4; Task 6 ran on the branch;
+Wave B (Tasks 7 and 8) ran in parallel worktrees, merged 8 then 7;
+Tasks 9 and 10 ran on the branch. Every task was reviewed on Opus.
+
+**What it did.** It shrank how the compiler represents what it holds.
+Every compiler-internal task passed the plan's identity check
+(bookmarks, hello-mac, texteditor and tcpchat: src, rtbake and C, plus
+`rt.clir`); Task 9 is the wave's one output-changing task.
+
+- **Task 1: `list.reserve(n)` and `text.removeFirst(n)`**, both lanes
+  (`rtListReserve`, `rtTextRemoveFirst`), on Wave 1's `irStorageRow`
+  shape (a new `irStorArg` column). `reserve` sizes to exactly `n`;
+  `removeFirst` moves the tail down and resizes the handle to the new
+  length, never allocating. New core-suite case `ReserveRemoveFirst`
+  (85 `CoreTest` cases), plus a `removefirst_freed` check in
+  `tests/hostrt/release_storage.sh`. Reference entries beside list
+  `shrink()` and text `reserve(n)`.
+- **Task 2: compact intern pool.** `strPool: list of string` (256 B per
+  entry) became `strBlob: text` plus `strOff: list of int` (sentinel
+  terminated); `intern`/`internText`/`poolGet` keep their contracts and
+  a new `poolCount()` replaces `.count`. Entries are stored
+  length-prefixed (see Rulings). `bkReadStrPool` decodes straight into
+  the new shape and `bkInstallPool` moves it. New
+  `testdata/lowlevel/pool_edges.cla` (`""`, a 255-byte string, high
+  bytes, an embedded NUL, a repeat) and `tests/hostrt/pool_edges.sh`.
+- **Task 3: per-function emit → encode → discard.** The non-listing,
+  non-capture emit loop calls a new `a68Flush()` after each function;
+  a forward reference to a label not yet bound records a fixup
+  (`a68FixOff`/`a68FixLbl`) that `a68Finish` patches at segment end
+  (design (b): labels are bound at emit time, so a function can
+  reference later ones). An "encode drift" guard aborts if an item's
+  address disagrees with the byte offset. All 13 forward-reference
+  kinds were seen and patched across the corpus. `--listing` and bake
+  capture keep the whole-segment path (spec R7).
+- **Task 4: peak-moment census.** `CLARUS_MEM_PEAK=3` plus
+  `scripts/memcensus.sh --at-peak` snapshot the top 25 globals whenever
+  the peak rises 64 KB past the last snapshot; census rows that share a
+  box print once with `also=`. New `tests/memgate/atpeak.sh` (T1). **It
+  found that the old `bookmarks_rtbake` peak was a host-only
+  artifact:** the host stamp check (`feExpectedStamp` →
+  `bkFindClarusC`) reads the 4 MB `clarusc/clarusc.c` while the CLIR
+  buffer is live, where ClarusC reads a 4-byte stamp resource. memgate
+  now runs that subcase from `$WORK`, outside the repo, and its budget
+  dropped with a written reason (see Rulings).
+- **Task 5: `MoreMasters` for ClarusC.** `macgui.cla`'s
+  `App.startEmpty` calls it 153 times after the launch probe:
+  ceil(8157 handles × 1.2 / 64) = 9792 master pointers, about 40 KB
+  nonrelocatable at the bottom of the zone. Every other program is
+  byte-identical (spec R4); an `app` header field is in
+  `docs/FUTURE.md`.
+- **Task 6:** snapshot regeneration, so the compiler source may call
+  `reserve`/`removeFirst` (spec R8).
+- **Task 7: bake parse pre-size and progressive free.** Every `bkRead*`
+  list reader that knows its count first calls
+  `reserve(bkFitCount(n))` (a power of two, see Rulings; 0 for a count
+  larger than the remaining bytes / 4, so a corrupt count reserves
+  nothing). `bkLoadSections` calls `bkLoadBuf.removeFirst(bkLoadPos)`
+  after any section that leaves the cursor ≥ 64 KB in, after the body
+  hash has walked the whole buffer; `bkLoadBase` tracks the bytes
+  removed (no reader needed rebasing). `dblcompile_bake` now takes
+  macgui's `bkHeaderVerified` path on every second compile and asserts
+  the harness's own bytes stay whole. `atpeak.sh` was retargeted, since
+  the peak left the parse.
+- **Task 8: flat `cgObjRuns`.** `list of text` (~4,400 handles) became
+  `cgObjRunBytes: text` plus `cgObjRunOff: list of int`;
+  `bkReadObjCode` pre-scans to reserve both. `text.reserve` rounds up to
+  a power of two, so the blob is `shrink()`ed after the parse.
+- **Task 9: 68k-correct box sizes** (the wave's one output-changing
+  task): native text 16, list 20, map 52, sortedmap 28 bytes (host keeps
+  32/40/112/56). The consts live in the `datetime_c.cla`/
+  `datetime_68k.cla` pair, and the host `--testapi` early-visible set
+  widened to match (see Rulings). Reblessed 46 `testdata/cg68k/*.s`
+  goldens, every changed line a box-size `MOVEQ` ahead of `_NewPtr`
+  (41 each of `#32→#16`, `#40→#20`, `#112→#52`, `#56→#28`), in its own
+  commit. Native `coresuite_68k` 85/85 and `toolbox_68k` 40/40.
+- **Task 10:** snapshot regeneration, the memgate ratchet and the
+  census.
+- **Task 11:** the IIcx re-measure, this entry, and the program
+  design's §9/§9.3.
+
+**The numbers.** Full tables, the per-task breakdown and the census are
+in the program design's §9.3.
+
+| Subcase            | Wave 1 peak | Wave 2 peak |    Budget |
+|--------------------|------------:|------------:|----------:|
+| `bookmarks_rtbake` |   6,324,316 |   3,668,312 | 3,704,996 |
+| `bookmarks_src`    |   8,605,188 |   7,639,484 | 7,715,879 |
+| `hello_src`        |   8,531,984 |   7,570,224 | 7,645,927 |
+
+- **The 4 MB exit is met:** 3,668,312 is 525,992 bytes (12.5%) under
+  4,194,304.
+- **The rtbake rows are not like-for-like.** Wave 1's 6,324,316 was the
+  host-only 4 MB stamp read (Task 4). Measured the ClarusC-shaped way
+  (from `$WORK`), the Wave 1 code peaked at 5,836,696, so Wave 2's own
+  saving on that path is 2,168,384 bytes (−37.1%).
+- The source-path saving (−965,704 / −961,760) is almost all Task 2's
+  pool. The rtbake saving is Task 7 (the parse peak, 4,875,420 →
+  3,372,444 at `Parsed`, alone) and Task 8 (−277,820 alone). Task 3's
+  emit-phase saving (−0.45 to −1.1 MB live) did not move any peak on
+  its own; it is why `Built fork` came down with the rest. Task 9 and
+  Task 5 move no host number (spec R6).
+- The peak is now at `Built fork` (3,668,312; runner-up `Parsed`,
+  3,372,076). At the peak: `irExprs` 1.31 MB (29,492 of 32,768 slots),
+  `irStmts` 229 KB, `cgObjHoles` 197 KB, `strIndex` 164 KB,
+  `cgObjRunBytes` 155 KB, `a68Items` 147 KB, `irTypes` 131 KB. That is
+  Wave 3's input.
+- **IIcx** (same machine and input as Waves 0 and 1): launch→low heap
+  used **6272 KB, down from 7977 KB** (−1705 KB, −21.4%; −5763 KB,
+  −47.9%, from Wave 0), still at `Built fork`. That includes ~40 KB of
+  `MoreMasters` preallocation, so the like-for-like saving is about
+  1745 KB. Stack high-water 187 KB of 737 KB, unchanged. Compile total
+  32864 ticks (Wave 1: 68040), 9m 7s guest. The bake re-parse span
+  ("Verifying Baked Runtime" → "Starting") is **2m 01s** (Wave 1:
+  5m 28s), so the progressive free's tail copies did not slow it.
+  - `Emitted segment 1` costs +75 KB (Wave 1: +509 KB) and 6202 ticks
+    (Wave 1: 16005): per-function encode removed Wave 1's `a68Items`
+    regrowth. `Measured` costs +687 KB (Wave 1: +811).
+  - `Parsed` is 1175 KB below Wave 1 and the gap holds to `Shaken`,
+    where the box sizes and the parse changes would show.
+  - Two observations, not claims: `pre-compile` is +141 KB above Wave 1
+    (~40 KB of it `MoreMasters`, the rest unattributed); and the ticks
+    halved even in phases Wave 2 did not target (`Checked` 690 → 171,
+    `Installed` 507 → 248, `Lowered` 190 → 114), one run each side.
+  - The IIcx low point (6272 KB used) sits ~2.7 MB above the host peak
+    (3582 KB). Wave 0's calibration charged the gap to the Mac-only
+    CLIR resource (1879 KB) and code segments loaded after launch
+    (~1 MB); that was not re-verified this wave (`docs/TODO.md`).
+
+**Rulings** (from the ledger, each with its stated cost if wrong):
+
+- Wave A = Tasks 1–5 in parallel worktrees, merge order 5, 4, 2, 3, 1
+  per the plan (the ledger records the actual order 5, 2, 3, 1, 4, with
+  Task 4 held for its fix round). Cost: merge conflicts.
+- Task 2 stores pool entries length-prefixed (Pascal) in the blob,
+  deviating from the spec's pure `[off[i], off[i+1])`: `poolGet` is then
+  one allocation-free `stringAt`. Cost: none functional, +1 B per
+  entry; the spec's §3.2 now says so.
+- `rtListReserve` sizes to exactly `n`, not through `rtListGrow`'s
+  doubling, because the spec wanted tail slack gone. Cost: a later push
+  after `reserve(n)` regrows from `n` by doubling, as usual.
+- memgate's `bookmarks_rtbake` subcase measures the ClarusC-shaped
+  path: `peak.sh` runs it from `$WORK`, and its budget dropped
+  6,387,378 → 5,895,063 with a written reason (lower-only holds; the
+  same principle as Wave 1's host-matches-ClarusC). Cost if wrong: the
+  host stamp check's memory is unguarded by memgate (host-only, not a
+  ClarusC cost).
+- Task 7 pre-sizes to the power of two doubling would have reached
+  (`bkFitCount`), not exactly `n`: with exact capacity the first user
+  append after install doubled each whole arena (+1.28 MB at `Lowered`,
+  overall peak 5,291,324). Cost: the spec §3.3's ~0.25 MB tail-slack
+  saving is not taken; the doubling transient is still gone.
+- The box-size consts stay in `datetime_c.cla`/`datetime_68k.cla`
+  (always spliced on both lanes, and known to the committed snapshot)
+  instead of new per-module `_68k` companions, which would have broken
+  the snapshot bootstrap until a regeneration. Cost: an odd home for
+  layout consts (`docs/TODO.md`).
+- The host `--testapi` early-visible set widened to sortedmap,
+  datetime(+lane) and ser, needed once the consts moved; consistent
+  with the MacTCP phase's Ruling 10 (which excluded only
+  conn/atalk/tcp), prefix order intact. Cost: CLAUDE.md's `--testapi`
+  paragraph had to change (done in Task 9's fix round).
+
+**Gates.** T2: <T2 result>.
+`CLARUS_SNOW_TESTS=1 make test T='mactest/snow/clarusc_bake
+mactest/snow/macresident_failed_compile'` (this wave touched `bake.cla`
+and `macgui.cla`): <clarusc_bake result>. The IIcx memprobe run passed
+5/5 in 367 s. Per-task T1 runs all passed (119–121 pass, 37 skip,
+0 fail, perfgate 1/1).
+
+**Deferred / recorded.** The `progress.md` ledger carries every
+deferred minor verbatim. The items that outlive the wave are in
+`docs/TODO.md`'s Wave 2 section. Wave 1's "33 KB over 6 MB" item is
+closed by this wave and removed
+from TODO.
+
+Spec: `docs/superpowers/specs/2026-09-28-se-wave2-representation-design.md`;
+plan `docs/superpowers/plans/2026-09-28-se-wave2-representation.md`. The
+per-task briefs, reports and ledger were git-ignored scratch and were
+deleted after the final review; the rulings are in this entry.
+
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of
