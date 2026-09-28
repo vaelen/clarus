@@ -474,6 +474,28 @@ func rtListShrink(l: ptr) {
     }
 }
 
+// rtListReserve (SE wave 2, `xs.reserve(n)`): pre-grow capacity to at
+// least n elements with at most one SetHandleSize -- the bake readers
+// know their counts up front, and a doubling grow holds old + new at
+// once. Sized to exactly n (not rtListGrow's doubling), so a reader
+// that fills to its count leaves no tail slack. No-op when cap already
+// suffices or n <= 0; never shrinks; count and contents unchanged.
+// Panics "out of memory" like implicit growth (rtListGrow).
+func rtListReserve(l: ptr, n: int) {
+    var rl: RtList
+    var err: int
+
+    rl = RtList(l)
+    if n <= rl.cap {
+        return
+    }
+    err = ListSetHandleSize(rl.data, n * rl.elemsize)
+    if err != 0 {
+        rtPanic("out of memory")
+    }
+    rl.cap = n
+}
+
 // rtListClone (clir-load-perf: `l.clone()`, IListClone intrinsic) -- a
 // fresh whole-list copy of src's elements as ONE ListBlockMoveData, legal
 // precisely because the checker (check.cla's own "clone" arm,

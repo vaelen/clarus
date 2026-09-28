@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // release_storage.cla: SE Wave 1 -- `.release()` really returns storage
+// (SE wave 2: and text `.removeFirst(n)` shrinks its handle)
 // (tests/hostrt/release_storage.sh). MemProbe is the host runtime's
 // rt_ext_MemProbe (rt_ext_host.inc): under CLARUS_MEM_PEAK=1 it prints
 // `memprobe: <phase> | live68k=N ... live=N ...`.
@@ -20,6 +21,7 @@ var recs: map of RsItem
 on App.startCLI(args: list of string) {
     var i: int
     var item: RsItem
+    var tb: text
 
     i = 0
     while i < 250000 {
@@ -62,5 +64,14 @@ on App.startCLI(args: list of string) {
     recs.shrink()
     recs.release()
     recs["again"] = item
+    // SE wave 2: removeFirst shrinks the text's handle to what is left.
+    i = 0
+    while i < 200000 {
+        tb.append("x")
+        i = i + 1
+    }
+    MemProbe("textfilled")
+    tb.removeFirst(190000)
+    MemProbe("textremoved")
     log("ok " + string(big.count + strs.count + recs.count))
 }

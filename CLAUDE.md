@@ -329,7 +329,7 @@ Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
 Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
-- `testsuite/core/` (84 `CoreTest` cases: 83 real + `SelfCheck`, grown
+- `testsuite/core/` (85 `CoreTest` cases: 84 real + `SelfCheck`, grown
   from 74 real (correctness-cleanup phase tip) by the binary-files
   phase's `TextBinary`/`Crc16`/`IntToStr`/`FileHandleRW` cases — the
   first three hardware-prove `text`'s new LE/word/setter binary
@@ -354,7 +354,11 @@ enum + runner, not one boot per case.
   block copy) on both lanes -- then to 83 real by SE wave 1's
   `ReleaseShrink` case, which proves `.release()`/`.shrink()` (storage
   dropped or trimmed, container still usable, aliases see it, element-
-  bearing release) across list/map/intmap/sortedmap/text) runs on
+  bearing release) across list/map/intmap/sortedmap/text -- then to 84
+  real by SE wave 2's `ReserveRemoveFirst` case, which proves list
+  `.reserve(n)` (contents kept, small n a no-op, aliases see it) and
+  text `.removeFirst(n)` (clamped to 0..len, aliases see it, append
+  after it)) runs on
   host and natively; `testsuite/toolbox/` (40 `ToolboxTest` cases: 39 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
@@ -432,7 +436,7 @@ enum + runner, not one boot per case.
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
   `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract
-  design: it asserts all 83 other cases ran in the same invocation
+  design: it asserts all 84 other cases ran in the same invocation
   (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
   `all`), never alone.
   (Exact file list: `tests/testsuite/core_cli.sh`.) `toolbox` has no host

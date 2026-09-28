@@ -2445,7 +2445,7 @@ func fpIntrCall(x: int): text {
         return t
     }
     if irStorageRow(nm) >= 0 {
-        return fpIntrStorage(nm, a0)
+        return fpIntrStorage(nm, a0, a1)
     }
 
     // Task 4 review fix (Important 3): a real unhandled intrinsic name --
@@ -2460,7 +2460,7 @@ func fpIntrCall(x: int): text {
 // cp*Ported in the emit path, so there is no raw-C rt_* arm. Its own
 // function rather than arms in a chain step, for the same 32KB-per-
 // function native-68k self-emit budget fpIntrAbort's comment describes.
-func fpIntrStorage(nm: int, a0: int): text {
+func fpIntrStorage(nm: int, a0: int, a1: int): text {
     var row: int
     var r: text
     var buf: text
@@ -2470,6 +2470,12 @@ func fpIntrStorage(nm: int, a0: int): text {
     if irStorDeep[row] {
         cpEmitElemReleaseWalk(buf, toStr(r), irExprType(a0))
         fpEmit(buf)
+    }
+    if irStorArg[row] {
+        // SE wave 2 (list_reserve, text_remove_first): receiver + int,
+        // ITextReserve's own printed shape.
+        fpEmit("clar_fn_" + poolGet(irStorFns[row]) + "((void*)" + r + ", (int32_t)(" + fpExpr(a1) + "));")
+        return toText("")
     }
     fpEmit("clar_fn_" + poolGet(irStorFns[row]) + "((void*)" + r + ");")
     return toText("")
