@@ -2528,7 +2528,7 @@ func resolveType(te: int): int {
     }
     case TxWord {
         // Task 4 (native-5e, Ch13): the checked type system treats a
-        // boundary `int16` (spelled `int16` before SE wave 3) exactly as
+        // boundary `int16` (spelled `word` before SE wave 3) exactly as
         // `int` -- callers pass ordinary int exprs, an int16 return reads
         // as int, and checkExternFunc's int/ptr/bool/char
         // param and return-type checks pass unchanged. The distinct
@@ -3364,7 +3364,7 @@ func checkExternFunc(d: int) {
     while p != -1 {
         k = typeKind(funcSigParam(sigIdx, i))
         if k != TyInt and k != TyPtr and k != TyBool and k != TyChar and k != TyStr and k != TyText {
-            emitDiag(declLine(p), declCol(p), "external parameters may only use int, ptr, bool, char, str, or text")
+            emitDiag(declLine(p), declCol(p), "external parameters may only use int, int16, ptr, bool, char, str, or text")
         }
         checkBoundaryNotNarrow(funcSigParam(sigIdx, i), declLine(p), declCol(p))
         if k == TyPtr {

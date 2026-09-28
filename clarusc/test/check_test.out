@@ -88,7 +88,7 @@ check_test.cla:4:12: ptr() expects an int or overlay, got string
 === extern-clean ===
 clean
 === extern-bad-param-type ===
-check_test.cla:1:17: external parameters may only use int, ptr, bool, char, str, or text
+check_test.cla:1:17: external parameters may only use int, int16, ptr, bool, char, str, or text
 === extern-body-not-allowed ===
 check_test.cla:1:25: expected declaration, found '{'
 === extern-wrong-arg-count ===

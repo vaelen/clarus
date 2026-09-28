@@ -87,12 +87,6 @@ var cwAppletalk: int
 var cwSerial: int
 var cwTcp: int
 var cwPad: int
-// cwWord/cwByte are no longer consulted (SE wave 3 removed the `word`/
-// `byte` type spellings), but interning them keeps the intern pool's
-// order -- and so the baked rt.clir -- byte-identical. Drop both together
-// only alongside a deliberate rt.clir change.
-var cwWord: int
-var cwByte: int
 var cwStr: int
 var cwTrap: int
 var cwSel: int
@@ -130,8 +124,6 @@ func cwInit() {
     cwSerial = intern("serial")
     cwTcp = intern("tcp")
     cwPad = intern("pad")
-    cwWord = intern("word")
-    cwByte = intern("byte")
     cwStr = intern("str")
     cwTrap = intern("trap")
     cwSel = intern("sel")
