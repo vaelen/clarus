@@ -193,6 +193,18 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Compiler: type checking
 
+### SE memory program, Wave 3 (2026-09-29)
+
+- **Boundary `int16`/`uint8` read back as `int`** (Task 6, ruling R10).
+  At an extern/callback signature or an `extern record` field, `int16`
+  and `uint8` parse as `word`/`byte` (`parse.cla`'s `parseExternType`/
+  `parseXRecFieldType`), so an extern result, a callback parameter or a
+  field read is typed `int`: `var s: int16; s = GetOSEvent(...)` needs
+  `int16(...)`. Resolve them to the narrow types instead while keeping
+  the KWord/`XFByte` lowering. That also needs D5-style `int` acceptance
+  at a callback's own `return`, so a body like `return w + n` (int
+  arithmetic, int16 return) keeps compiling.
+
 ### SE memory program, Wave 0 (2026-09-28)
 
 - **`= inline nop` with a `string` parameter passes the checker but

@@ -131,6 +131,11 @@ Transcribing that into Clarus takes four steps:
    Getting this step wrong is the single most common way a transcription
    compiles clean and then fails silently at runtime — the whole subject of
    §2 below.
+   (`int16` is accepted anywhere `word` is, and `uint8` anywhere an
+   `extern record`'s `byte` is — same marshaling, byte for byte, and a plain
+   `int` argument or field store is truncated the same way. `uint16`, and
+   `uint8` in a signature, are rejected: there is no unsigned-word or
+   byte-wide Toolbox-boundary marshaling.)
 
 ### Bit 11 is a real trap, not a pedantic rule
 

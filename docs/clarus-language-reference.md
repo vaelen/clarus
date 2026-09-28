@@ -191,6 +191,7 @@ An `address` is not a resource: it is a plain inline value, copied like an `int`
 - **Narrowing is explicit.** `int` → narrow, and one narrow type → a different one, is a build error (`cannot assign int to int16`). Convert with `uint8(x)`, `int16(x)` or `uint16(x)`, which accept an `int`, a `char` or another narrow type and keep the low 8 or 16 bits: `uint8(300)` is 44, `int16(40000)` is −25536, `uint16(-1)` is 65535. As with every conversion, converting to the same type is an error (`uint8() expects an int, char, int16 or uint16, got uint8`).
 - **Literals adopt the narrow type** where one is expected — an assignment target, an argument, a return value, a field default, a `case` label, or the other operand of a comparison — when the value is in range, and are a build error otherwise: `300 is out of range for uint8 (0..255)`, `-1 is out of range for uint16 (0..65535)`. Everywhere else a literal is an `int`.
 - `string(n)` renders any narrow value in decimal.
+- **At the Toolbox boundary** (Chapter 13), `int16` is another spelling of `word` in an `external func` or `callback func` signature (including `reg` parameters) and in an `extern record` field, and `uint8` is another spelling of `byte` in an `extern record` field. They marshal byte-for-byte alike, and, as for `word`/`byte`, a plain `int` is accepted there and truncated to the slot's width. They also keep `word`/`byte`'s typing on the way back: an extern result, a callback parameter or an extern record field declared `int16`/`uint8` reads back as `int`, so to store it in an `int16` variable, convert with `int16(...)`. `uint8` and `uint16` in an `external func` or `callback func` signature are a build error (`uint16 cannot cross the Toolbox boundary; use int16 or int`), and `uint16` is not an `extern record` field type.
 - A form `field` binds a narrow field like an `int` one, with the type's range checked at OK, and a table `column` shows it in decimal (Type-Driven Widget Behavior).
 
 ### Records and Defaults
@@ -1845,8 +1846,8 @@ The one way to take an extern record's address is **decay at an `external func` 
 | Clarus field type | bytes | alignment | notes |
 |---|---|---|---|
 | `bool` | 1 | 1 | Pascal `Boolean` |
-| `byte` | 1 | 1 | new contextual field-type name, unsigned byte (`SignedByte`/`Byte`); reads/writes as `int`, zero-extended |
-| `word` | 2 | 2 | `INTEGER`; reads back sign-extended (same as extern `word`) |
+| `byte` / `uint8` | 1 | 1 | new contextual field-type name, unsigned byte (`SignedByte`/`Byte`); reads/writes as `int`, zero-extended |
+| `word` / `int16` | 2 | 2 | `INTEGER`; reads back sign-extended (same as extern `word`) |
 | `int` | 4 | 2 | `LONGINT`/`OSType`/`Fixed` — 68k packs longs at 2 |
 | `ptr` | 4 | 2 | `Ptr`/`Handle`/`ProcPtr` fields |
 | nested `extern record` | its size | 2 | `Point` in `EventRecord`; nesting depth unbounded |
@@ -2052,7 +2053,7 @@ func callPlugin(h: ptr, pb: ptr): int {
 
 ### The `word` Extern Type
 
-The Toolbox's Pascal calling convention is built on 16-bit `INTEGER` arguments and results, not the 32-bit values every other Clarus `int` marshals as. `word` names that 16-bit width at the extern boundary — it is accepted ONLY as an `external func` parameter or return type:
+The Toolbox's Pascal calling convention is built on 16-bit `INTEGER` arguments and results, not the 32-bit values every other Clarus `int` marshals as. `word` names that 16-bit width at the extern boundary — it is accepted ONLY as an `external func` parameter or return type. `int16` is accepted in exactly the same positions and means exactly the same thing there: everything this section says about `word` applies to it unchanged (`uint8`/`uint16` are rejected in a signature — Narrow Integers, Chapter 3):
 
 ```
 externParam = IDENT ":" ( type | "word" ) ;

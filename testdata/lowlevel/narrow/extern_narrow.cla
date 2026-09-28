@@ -1,0 +1,61 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// extern_narrow.cla: SE wave 3 Task 6 (spec §3.2 step 1, D5). The 16-bit
+// signed and 8-bit unsigned narrow types at every Toolbox-boundary
+// position -- pascal trap params/returns, positional and named reg
+// params, `= ptr` params, callback params/returns, and extern record
+// fields. tests/lowlevel/extern_narrow.sh rewrites the two type names to
+// the legacy spellings and asserts both lanes emit byte-identical output.
+// Also the D5 rule: a plain int is accepted (and truncated) at those slots.
+extern record NPoint {
+    v: int16
+    h: int16
+}
+
+extern record NRec {
+    what: int16
+    flag: uint8
+    code: uint8
+    where: NPoint
+    message: int
+}
+
+external func SysBeep(duration: int16) = trap 0xA9C8
+external func EventAvail(eventMask: int16, theEvent: ptr): bool = trap 0xA971
+external func PostEvent(eventNum: int16, eventMsg: int): int16 = trap 0xA02F reg(a0: eventNum, d0: eventMsg) ret d0
+external func GetOSEvent(mask: int16, ev: ptr): int16 = trap 0xA031 reg
+external func CallIt(target: ptr, w: int16, n: int): int16 = ptr
+
+callback func narrowCb(w: int16, flag: bool, n: int): int16 {
+    if flag {
+        return w + n
+    }
+    return w
+}
+
+on App.startCLI(args: list of string) {
+    var r: NRec
+    var n: int
+    var s: int16
+    var b: uint8
+
+    n = 70000
+    s = 5
+    b = 200
+    r.what = n
+    r.flag = n
+    r.code = b
+    r.where.v = s
+    r.where.h = -3
+    r.message = r.what + r.flag
+    SysBeep(n)
+    SysBeep(s)
+    n = PostEvent(b, 0)
+    s = int16(GetOSEvent(n, r))
+    if EventAvail(-1, r) {
+        n = CallIt(narrowCb, n, 7)
+    }
+    n = narrowCb(s, true, n)
+    alert(string(n) + " " + string(s))
+}

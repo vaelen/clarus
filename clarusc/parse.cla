@@ -233,6 +233,13 @@ func curIsIdentIdx(idx: int): bool {
     return curTokKind == TkIdent and curTokNameIdx == idx
 }
 
+// curIsIdentName is curIsIdentIdx by string compare, for the narrow type
+// names (SE wave 3), which are deliberately never pre-interned (see
+// check.cla's narrowTypeNamed).
+func curIsIdentName(nm: string): bool {
+    return curTokKind == TkIdent and poolGet(curTokNameIdx) == nm
+}
+
 func parseErrorf(line: int, col: int, msg: string) {
     if parseAborted {
         return
@@ -1343,8 +1350,10 @@ func parseXRecFieldDecl(): int {
 
 // parseXRecFieldType parses one extern-record field's type -- Ch13's field
 // palette: `word`/`byte` (contextual, like `word` in an extern func
-// signature), `str[N]`, or (falling back to ordinary parseType) `bool`,
-// `int`, `ptr`, or a nested extern record's name. Anything else that
+// signature; SE wave 3: `int16`/`uint8` parse to the very same TxWord/
+// TxByte nodes, so they marshal byte-for-byte alike), `str[N]`, or
+// (falling back to ordinary parseType) `bool`, `int`, `ptr`, or a nested
+// extern record's name. Anything else that
 // parseType accepts (`text`, `fixed`, `char`, `string`, a plain
 // `record`/`overlay record` name, a list/map/array form, ...) parses fine
 // here too -- the checker rejects it against the palette, not the parser.
@@ -1358,12 +1367,12 @@ func parseXRecFieldType(): int {
     var col: int
     var n: Token
 
-    if curIsIdentIdx(cwWord) {
+    if curIsIdentIdx(cwWord) or curIsIdentName("int16") {
         tok = curTok()
         advance()
         return newWordType(tok.line, tok.col)
     }
-    if curIsIdentIdx(cwByte) {
+    if curIsIdentIdx(cwByte) or curIsIdentName("uint8") {
         tok = curTok()
         advance()
         return newByteType(tok.line, tok.col)
@@ -1678,10 +1687,16 @@ func parseFuncDecl(): int {
 // non-extern func params) treats it as a plain TxNamed identifier, which
 // resolveType then rejects as "undefined: word" like any other unknown
 // type name, exactly the "word means nothing outside externs" rule.
+// SE wave 3 (spec §3.2 step 1, D5): `int16` here parses to the same TxWord
+// node, so it checks as int (an int argument is accepted and truncated)
+// and marshals exactly as word. Like `word`, this ignores any user type
+// that shadows the name -- none could be legal at an extern position.
+// `uint8`/`uint16` stay ordinary names; checkExternFunc/checkCallbackFunc
+// reject them there.
 func parseExternType(): int {
     var tok: Token
 
-    if curIsIdentIdx(cwWord) {
+    if curIsIdentIdx(cwWord) or curIsIdentName("int16") {
         tok = curTok()
         advance()
         return newWordType(tok.line, tok.col)
