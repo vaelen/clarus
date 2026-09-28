@@ -87,6 +87,10 @@ var cwAppletalk: int
 var cwSerial: int
 var cwTcp: int
 var cwPad: int
+// cwWord/cwByte are no longer consulted (SE wave 3 removed the `word`/
+// `byte` type spellings), but interning them keeps the intern pool's
+// order -- and so the baked rt.clir -- byte-identical. Drop both together
+// only alongside a deliberate rt.clir change.
 var cwWord: int
 var cwByte: int
 var cwStr: int
@@ -1349,9 +1353,9 @@ func parseXRecFieldDecl(): int {
 }
 
 // parseXRecFieldType parses one extern-record field's type -- Ch13's field
-// palette: `word`/`byte` (contextual, like `word` in an extern func
-// signature; SE wave 3: `int16`/`uint8` parse to the very same TxWord/
-// TxByte nodes, so they marshal byte-for-byte alike), `str[N]`, or
+// palette: `int16`/`uint8` (contextual, like `int16` in an extern func
+// signature: they build TxWord/TxByte nodes, which marshal exactly as the
+// pre-SE-wave-3 `word`/`byte` spellings did), `str[N]`, or
 // (falling back to ordinary parseType) `bool`, `int`, `ptr`, or a nested
 // extern record's name. Anything else that
 // parseType accepts (`text`, `fixed`, `char`, `string`, a plain
@@ -1367,12 +1371,12 @@ func parseXRecFieldType(): int {
     var col: int
     var n: Token
 
-    if curIsIdentIdx(cwWord) or curIsIdentName("int16") {
+    if curIsIdentName("int16") {
         tok = curTok()
         advance()
         return newWordType(tok.line, tok.col)
     }
-    if curIsIdentIdx(cwByte) or curIsIdentName("uint8") {
+    if curIsIdentName("uint8") {
         tok = curTok()
         advance()
         return newByteType(tok.line, tok.col)
@@ -1679,24 +1683,21 @@ func parseFuncDecl(): int {
 }
 
 // parseExternType parses a type in `external func` param/return position,
-// where `word` (Task 4, native-5e, Ch13: the `word` extern type) is
-// contextually recognized -- the curIsIdentText pattern every other
-// contextual keyword in this file uses (trap/reg/inline/deref/nop above,
-// overlay/external elsewhere): outside this one call site, `word` is never
-// special -- ordinary parseType() (used by var decls, record fields,
-// non-extern func params) treats it as a plain TxNamed identifier, which
-// resolveType then rejects as "undefined: word" like any other unknown
-// type name, exactly the "word means nothing outside externs" rule.
-// SE wave 3 (spec §3.2 step 1, D5): `int16` here parses to the same TxWord
-// node, so it checks as int (an int argument is accepted and truncated)
-// and marshals exactly as word. Like `word`, this ignores any user type
-// that shadows the name -- none could be legal at an extern position.
+// where `int16` (Task 4, native-5e, Ch13: the 16-bit extern boundary
+// type, spelled `word` until SE wave 3) is contextually recognized and
+// builds a TxWord node rather than the ordinary narrow TxNamed type (spec
+// §3.2 step 1, D5): it checks as int (an int argument is accepted and
+// truncated) and marshals as a 16-bit Toolbox INTEGER. Everywhere else
+// ordinary parseType() handles `int16` as the narrow type. `word` is no
+// longer special anywhere -- it is an unknown type name ("undefined:
+// word"). This ignores any user type that shadows `int16` -- none could
+// be legal at an extern position.
 // `uint8`/`uint16` stay ordinary names; checkExternFunc/checkCallbackFunc
 // reject them there.
 func parseExternType(): int {
     var tok: Token
 
-    if curIsIdentIdx(cwWord) or curIsIdentName("int16") {
+    if curIsIdentName("int16") {
         tok = curTok()
         advance()
         return newWordType(tok.line, tok.col)
@@ -1705,9 +1706,9 @@ func parseExternType(): int {
 }
 
 // parseExternParam parses one `external func` parameter -- identical to
-// parseParam except its type goes through parseExternType, so `word` only
-// ever resolves inside an extern signature, never an ordinary parseParam
-// call (a non-extern func's parameter list).
+// parseParam except its type goes through parseExternType, so a boundary
+// `int16` (TxWord) only ever resolves inside an extern signature, never
+// an ordinary parseParam call (a non-extern func's parameter list).
 func parseExternParam(): int {
     var line: int
     var col: int
@@ -1998,9 +1999,9 @@ func parseExternFuncDecl(): int {
 // func`) -- same shape as parseFuncDecl (a callback DOES have a body,
 // unlike `external func`), except params/return go through
 // parseExternParam/parseExternType exactly like parseExternFuncDecl does,
-// so `word` is recognized in a callback signature too (Ch13's palette:
-// bool/char/word/int/ptr). parseExternType itself accepts ANY type name
-// (it only special-cases `word`, falling through to parseType()
+// so a boundary `int16` is recognized in a callback signature too (Ch13's
+// palette: bool/char/int16/int/ptr). parseExternType itself accepts ANY
+// type name (it only special-cases `int16`, falling through to parseType()
 // otherwise) -- check.cla's checkCallbackFunc is what actually restricts
 // the palette, the same "parser accepts, checker restricts" split
 // parseExternFuncDecl/checkExternFunc already use for `str`/`text`.

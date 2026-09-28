@@ -1615,7 +1615,7 @@ func a68SelfExercise() {
     a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)         // MOVE.L (A7)+,D0
     // Task 4 (native-5e): the size=2 (word) siblings of the two lines just
     // above -- pins the exact WORD-sized encodings cgCallExtPascal's new
-    // pascal `word` arg push / result pop use (MOVE.L at these same two
+    // pascal `int16` arg push / result pop use (MOVE.L at these same two
     // AmPreDec/AmPostInc modes was already covered; only the size field
     // differs, but a real vasm round-trip is cheap insurance).
     a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)          // MOVE.W D0,-(A7)

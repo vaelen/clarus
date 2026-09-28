@@ -2527,9 +2527,10 @@ func resolveType(te: int): int {
         return symbols[symIdx].typeIdx
     }
     case TxWord {
-        // Task 4 (native-5e, Ch13): the checked type system treats `word`
-        // exactly as `int` -- callers pass ordinary int exprs, a word
-        // return reads as int, and checkExternFunc's int/ptr/bool/char
+        // Task 4 (native-5e, Ch13): the checked type system treats a
+        // boundary `int16` (spelled `int16` before SE wave 3) exactly as
+        // `int` -- callers pass ordinary int exprs, an int16 return reads
+        // as int, and checkExternFunc's int/ptr/bool/char
         // param and return-type checks pass unchanged. The distinct
         // 16-bit-at-the-trap-boundary marshaling lives entirely in
         // lowResolveType (lower.cla) -- which reads this same TxWord
@@ -2679,7 +2680,7 @@ func checkRecordDecl(d: int) {
         if isXRec {
             // Task 4 (toolbox-integration Feature B): field types + the
             // running packed-size total both come from checkXRecFieldType,
-            // never resolveType -- byte/word/pad/str[N] are not ordinary
+            // never resolveType -- uint8/int16/pad/str[N] here are not ordinary
             // checked types, and pad fields (fieldName(f) == -1, see
             // parseXRecFieldDecl) contribute to the size total but get no
             // FieldInfo entry (unnamed, never selectable via `ev.field`).
@@ -2690,7 +2691,7 @@ func checkRecordDecl(d: int) {
                 } else if xr.badPadLen {
                     emitDiag(declLine(f), declCol(f), "pad length must be at least 1")
                 } else {
-                    emitDiag(declLine(f), declCol(f), "extern record field type must be bool, byte, word, int, ptr, str[N], pad[N], or an extern record")
+                    emitDiag(declLine(f), declCol(f), "extern record field type must be bool, uint8, int16, int, ptr, str[N], pad[N], or an extern record")
                 }
             } else {
                 // Classic MPW 68k packing: a 2-aligned field needs one pad
@@ -3549,7 +3550,7 @@ func checkExternFunc(d: int) {
 
 // checkBoundaryNotNarrow rejects uint8/uint16 in an extern or callback
 // signature (SE wave 3, spec §3.2 step 1). `int16` never reaches here: the
-// parser turns it into `word` at these positions (parseExternType). There
+// parser turns it into a TxWord node at these positions (parseExternType). There
 // is no byte-wide or unsigned-word marshaling at the Toolbox boundary, so
 // without this check the other two would silently marshal as a long.
 func checkBoundaryNotNarrow(t: int, line: int, col: int) {
@@ -3564,14 +3565,15 @@ func checkBoundaryNotNarrow(t: int, line: int, col: int) {
 // phase 2 by checkFuncBody like any DkFunc, since checkProgram's own
 // phase-2 dispatch treats the two kinds alike); this function adds the
 // ONE extra rule DkFunc doesn't need: every parameter and the return type
-// is restricted to bool/char/word/int/ptr -- what the compiler's
+// is restricted to bool/char/int16/int/ptr -- what the compiler's
 // generated pascal glue (cprint.cla's clar_cb_<name> wrapper) can marshal
 // across the Toolbox boundary (Ch13's callback-func section, the same
 // high-byte marshaling paragraph `external func` already documents).
-// `word` folds to plain int in the checked type system exactly like an
-// extern func's `word` does (TxWord's own doc comment, types.cla) -- the
-// checker cannot and need not tell a `word` param from a plain `int` one,
-// so the `k != TyInt` check below already covers word for free. No
+// A boundary `int16` (a TxWord node) folds to plain int in the checked
+// type system exactly like an extern func's does (TxWord's own doc
+// comment, types.cla) -- the checker cannot and need not tell an int16
+// param from a plain `int` one, so the `k != TyInt` check below already
+// covers it for free. No
 // dedup/merge logic is needed here (unlike checkExternFunc) -- checkFuncSig's
 // own dispatch already routes anything that isn't DkExternFunc through the
 // ordinary scopeDeclare-or-redeclaration-error path, and a callback (which
@@ -3596,7 +3598,7 @@ func checkCallbackFunc(d: int) {
     while p != -1 {
         k = typeKind(funcSigParam(sigIdx, i))
         if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
-            emitDiag(declLine(p), declCol(p), "callback parameter and return types must be bool, char, word, int, or ptr")
+            emitDiag(declLine(p), declCol(p), "callback parameter and return types must be bool, char, int16, int, or ptr")
         }
         checkBoundaryNotNarrow(funcSigParam(sigIdx, i), declLine(p), declCol(p))
         p = declNext(p)
@@ -3606,7 +3608,7 @@ func checkCallbackFunc(d: int) {
     if ret != -1 {
         k = typeKind(ret)
         if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
-            emitDiag(declLine(d), declCol(d), "callback parameter and return types must be bool, char, word, int, or ptr")
+            emitDiag(declLine(d), declCol(d), "callback parameter and return types must be bool, char, int16, int, or ptr")
         }
         checkBoundaryNotNarrow(ret, declLine(d), declCol(d))
     }

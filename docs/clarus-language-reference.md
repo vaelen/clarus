@@ -191,7 +191,7 @@ An `address` is not a resource: it is a plain inline value, copied like an `int`
 - **Narrowing is explicit.** `int` → narrow, and one narrow type → a different one, is a build error (`cannot assign int to int16`). Convert with `uint8(x)`, `int16(x)` or `uint16(x)`, which accept an `int`, a `char` or another narrow type and keep the low 8 or 16 bits: `uint8(300)` is 44, `int16(40000)` is −25536, `uint16(-1)` is 65535. As with every conversion, converting to the same type is an error (`uint8() expects an int, char, int16 or uint16, got uint8`).
 - **Literals adopt the narrow type** where one is expected — an assignment target, an argument, a return value, a field default, a `case` label, or the other operand of a comparison — when the value is in range, and are a build error otherwise: `300 is out of range for uint8 (0..255)`, `-1 is out of range for uint16 (0..65535)`. Everywhere else a literal is an `int`.
 - `string(n)` renders any narrow value in decimal.
-- **At the Toolbox boundary** (Chapter 13), `int16` is another spelling of `word` in an `external func` or `callback func` signature (including `reg` parameters) and in an `extern record` field, and `uint8` is another spelling of `byte` in an `extern record` field. They marshal byte-for-byte alike, and, as for `word`/`byte`, a plain `int` is accepted there and truncated to the slot's width. They also keep `word`/`byte`'s typing on the way back: an extern result, a callback parameter or an extern record field declared `int16`/`uint8` reads back as `int`, so to store it in an `int16` variable, convert with `int16(...)`. `uint8` and `uint16` in an `external func` or `callback func` signature are a build error (`uint16 cannot cross the Toolbox boundary; use int16 or int`), and `uint16` is not an `extern record` field type.
+- **At the Toolbox boundary** (Chapter 13), `int16` is also the 16-bit `INTEGER` type of an `external func` or `callback func` signature (including `reg` parameters) and of an `extern record` field, and `uint8` is the 1-byte field type of an `extern record`. There they are boundary types rather than ordinary narrow storage: a plain `int` is accepted and truncated to the slot's width, and an extern result, a callback parameter or an extern record field declared `int16`/`uint8` reads back as `int`, so to store it in an `int16` variable, convert with `int16(...)`. `uint8` and `uint16` in an `external func` or `callback func` signature are a build error (`uint16 cannot cross the Toolbox boundary; use int16 or int`), and `uint16` is not an `extern record` field type.
 - A form `field` binds a narrow field like an `int` one, with the type's range checked at OK, and a table `column` shows it in decimal (Type-Driven Widget Behavior).
 
 ### Records and Defaults
@@ -1768,7 +1768,7 @@ func ticksSince(start: int): int {
 }
 ```
 
-`external func` is a top-level declaration and may appear anywhere among a program's top-level declarations, like `record`, `func`, or `const`. It has no body — the form above, ending at the parameter list and optional return type, is complete. Return types are restricted to `int`, `ptr`, `bool`, and `char`; the return type may be omitted for a function with no result. Parameter types additionally allow `str` and `text`: a `str` parameter is marshalled as the address of the caller's Str255, borrowed for the call; a `text` parameter is passed as the underlying box pointer, likewise borrowed — the callee must not store either beyond the call. `int16` (below, alongside the trap/inline clauses it exists for) is also accepted in either position — an `int`-compatible 16-bit-at-the-boundary type, not a fifth independent scalar. A call to an `external func` is an ordinary call expression or call statement, indistinguishable at the call site from a call to a Clarus-defined function — `GetTicks()` above is called exactly like any other zero-argument function returning `int`.
+`external func` is a top-level declaration and may appear anywhere among a program's top-level declarations, like `record`, `func`, or `const`. It has no body — the form above, ending at the parameter list and optional return type, is complete. Return types are restricted to `int`, `ptr`, `bool`, and `char`; the return type may be omitted for a function with no result. Parameter types additionally allow `str` and `text`: a `str` parameter is marshalled as the address of the caller's Str255, borrowed for the call; a `text` parameter is passed as the underlying box pointer, likewise borrowed — the callee must not store either beyond the call. `int16` (The `int16` Extern Type, below, alongside the trap/inline clauses it exists for) is also accepted in either position — there it is an `int`-compatible 16-bit-at-the-boundary type: an external func's `int16`-typed parameter or return behaves like `int` in Clarus code, not like the narrow storage type of Chapter 3. A call to an `external func` is an ordinary call expression or call statement, indistinguishable at the call site from a call to a Clarus-defined function — `GetTicks()` above is called exactly like any other zero-argument function returning `int`.
 
 An `external func` may optionally name how its entry point is reached, with a trailing `= trap ...` or `= inline ...` clause — see Trap and Inline Clauses, below.
 
@@ -1846,15 +1846,15 @@ The one way to take an extern record's address is **decay at an `external func` 
 | Clarus field type | bytes | alignment | notes |
 |---|---|---|---|
 | `bool` | 1 | 1 | Pascal `Boolean` |
-| `byte` / `uint8` | 1 | 1 | new contextual field-type name, unsigned byte (`SignedByte`/`Byte`); reads/writes as `int`, zero-extended |
-| `word` / `int16` | 2 | 2 | `INTEGER`; reads back sign-extended (same as extern `word`) |
+| `uint8` | 1 | 1 | unsigned byte (`SignedByte`/`Byte`); reads/writes as `int`, zero-extended |
+| `int16` | 2 | 2 | `INTEGER`; reads back sign-extended (same as an extern `int16` result) |
 | `int` | 4 | 2 | `LONGINT`/`OSType`/`Fixed` — 68k packs longs at 2 |
 | `ptr` | 4 | 2 | `Ptr`/`Handle`/`ProcPtr` fields |
 | nested `extern record` | its size | 2 | `Point` in `EventRecord`; nesting depth unbounded |
 | `str[N]` (1 ≤ N ≤ 255) | N+1 | 1 | Pascal string buffer (`Str63` = `str[63]`): length byte + N bytes. Reads as `string` (copy out), assigns from `string` (truncating at N, length byte updated) |
 | `pad[N]` (N ≥ 1) | N | 1 | reserved/unused byte runs (`ParamBlockRec` filler); not readable or writable, occupies layout only, needs no field name — `pad[4]` alone is a complete field line |
 
-Total record size rounds up to even. Field offsets follow the classic MPW 68k packing rule exactly: each field aligned per the table above, no other padding inserted. `byte` and `pad` are contextual field-type names recognized ONLY inside an `extern record` body, the same way `word` is contextual only in an `external func` signature — elsewhere (a `var` declaration, an ordinary `record` field) they are ordinary identifiers. `pad` additionally has no named form: a field written `name: pad[N]` does NOT declare a pad run — "pad" is recognized only as a bare field line's own leading token, never after `name:`, so `name: pad[N]` instead falls through to the ordinary `type[N]` array-length grammar (an array of a nested type named `pad`), which is not itself in the palette and so is rejected with the same "extern record field type must be bool, byte, word, int, ptr, str[N], pad[N], or an extern record" diagnostic any other non-palette field type gets. `fixed`-typed fields are not supported in this phase (add on demand — `Fixed` transcribes as `int` and converts via the existing fixed conversions).
+Total record size rounds up to even. Field offsets follow the classic MPW 68k packing rule exactly: each field aligned per the table above, no other padding inserted. `pad` is a contextual field-type name recognized ONLY inside an `extern record` body — elsewhere (a `var` declaration, an ordinary `record` field) it is an ordinary identifier. `pad` additionally has no named form: a field written `name: pad[N]` does NOT declare a pad run — "pad" is recognized only as a bare field line's own leading token, never after `name:`, so `name: pad[N]` instead falls through to the ordinary `type[N]` array-length grammar (an array of a nested type named `pad`), which is not itself in the palette and so is rejected with the same "extern record field type must be bool, uint8, int16, int, ptr, str[N], pad[N], or an extern record" diagnostic any other non-palette field type gets. `fixed`-typed fields are not supported in this phase (add on demand — `Fixed` transcribes as `int` and converts via the existing fixed conversions).
 
 **Ordinary `record` packing:** the same discipline governs an ordinary `record`'s (Chapter 3) own field layout, independently of the palette above: `bool` and `char` fields pack at 1-byte alignment — their exact 1-byte size, no padding before or after, in an ordinary record or a fixed array alike; `bool` keeps that same 1-byte packing inside an `extern record` too, but `char` is excluded from the extern-record palette entirely (not a legal field type there — an extern record's 1-byte numeric field type is `uint8`, above). Every other ordinary-record field kind (`int`, `fixed`, `string(n)`, enum, nested `record`, `T[n]`, `text`, `list of T`, `map of T`, window and resource references) packs at 2-byte alignment (a degenerate 1-byte `T[n]` — `bool[1]`/`char[1]` — packs at 1-byte alignment instead, same as a bare `bool`/`char` field), in declaration order: a 2-byte-aligned field is padded up to the next even offset when the fields before it left an odd running size, and the record's total size is rounded up to even the same way. A `string(n)` field additionally occupies its even-rounded size — n+1 rounded up to even bytes — so the field after it starts on an even offset on every lane. A fixed array's elements follow the identical rule at element granularity — `bool[n]`/`char[n]` elements sit at stride 1, tightly packed with no inter-element padding, while every other element kind keeps its own natural stride. Both code generators (`cg68k` and the host-C `cprint` lane) implement this rule for `bool`/`char` (small-scalar-width phase) and for `string(n)` fields' 2-byte alignment and even-rounded size (strn-field-alignment phase, 2026-08-06 — the C lane realizes it with explicit pad members and an even-padded `clar_str_n` typedef), so the two lanes' record layouts coincide for those kinds; per-lane layouts are still never interchangeable — a native-computed field offset is never valid against a host build's struct, or vice versa, since each lane computes its own independently.
 
@@ -1884,7 +1884,7 @@ This is the normative mapping from Inside Macintosh's own type vocabulary to the
 
 | Inside Macintosh | Clarus |
 |---|---|
-| `INTEGER` / `OSErr` | `int16` — `external func` parameter/result (The `word` Extern Type, below) or extern-record field (Field Palette, above) |
+| `INTEGER` / `OSErr` | `int16` — `external func` parameter/result (The `int16` Extern Type, below) or extern-record field (Field Palette, above) |
 | `LONGINT` / `OSType` / `Fixed` | `int` |
 | `Boolean` | `bool` — 1 byte in every aggregate; word-marshaled into the high byte at the pascal trap boundary (Trap and Inline Clauses, below) |
 | `CHAR` (a CharParameter) | `int16` — **never** `char`. A CHAR parameter is a plain 16-bit `INTEGER` with the character code in the low byte; Clarus's `char` extern shape instead pads its value into the word's high byte, the same convention `bool` uses (Trap and Inline Clauses, below). Declaring a CHAR parameter `char` silently reads and writes the wrong byte at the trap boundary — the MenuKey lesson. |
@@ -2051,18 +2051,18 @@ func callPlugin(h: ptr, pb: ptr): int {
 }
 ```
 
-### The `word` Extern Type
+### The `int16` Extern Type
 
-The Toolbox's Pascal calling convention is built on 16-bit `INTEGER` arguments and results, not the 32-bit values every other Clarus `int` marshals as. `word` names that 16-bit width at the extern boundary — it is accepted ONLY as an `external func` parameter or return type. `int16` is accepted in exactly the same positions and means exactly the same thing there: everything this section says about `word` applies to it unchanged (`uint8`/`uint16` are rejected in a signature — Narrow Integers, Chapter 3):
+The Toolbox's Pascal calling convention is built on 16-bit `INTEGER` arguments and results, not the 32-bit values every other Clarus `int` marshals as. `int16` names that 16-bit width at the extern boundary when it appears as an `external func` (or `callback func`) parameter or return type. `uint8` and `uint16` are rejected in a signature (Narrow Integers, Chapter 3):
 
 ```
-externParam = IDENT ":" ( type | "word" ) ;
-externRet   = type | "word" ;
+externParam = IDENT ":" type ;     // type may be int16
+externRet   = type ;
 ```
 
-`word` is contextual, the same way `overlay` and `external` are: recognized only in an `external func`'s own parameter list or return type position; everywhere else (a `var` declaration, a `record` field, a non-extern function's parameter) it is an ordinary identifier, and a program may freely use `word` as a variable or field name.
+At these positions `int16` is a boundary type, not the ordinary narrow storage type of Chapter 3 (which it remains everywhere else — a `var` declaration, a `record` field, a non-extern function's parameter).
 
-Within Clarus code, an `int16`-typed parameter or return behaves exactly like `int` — callers pass ordinary `int` expressions, and a call returning `int16` reads back as `int`, usable anywhere an `int` is:
+Within Clarus code, an external func's `int16`-typed parameter or return behaves exactly like `int` — callers pass ordinary `int` expressions, and a call returning `int16` reads back as `int`, usable anywhere an `int` is:
 
 ```rust
 external func UiMoveTo(h: int16, v: int16) = trap 0xA893
@@ -2108,12 +2108,12 @@ type        = "int" | "bool" | "fixed" | "char" | "text" | "ptr"
 
 varDecl     = "var" IDENT ":" type [ "=" expr ] ;
 funcDecl    = "func" IDENT "(" [ params ] ")" [ ":" type ] block ;
-externDecl  = "external" "func" IDENT "(" [ params ] ")" [ ":" ( type | "word" ) ]
+externDecl  = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
             [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | regClause ]
                   | "inline" ( "deref" | "nop" | "a5" ) ) ] ;
             // regClause: see "Trap and Inline Clauses" (Chapter 13) for the full production
 params      = param { "," param } ;
-param       = IDENT ":" ( type | "word" ) ;
+param       = IDENT ":" type ;
 
 windowDecl  = "window" IDENT "{" { windowItem } "}" ;
 windowItem  = property | widgetDecl | varDecl | "form" "for" IDENT ;

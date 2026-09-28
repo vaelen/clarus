@@ -987,9 +987,10 @@ on App.startEmpty {
     ln(src, "external func BadSp(x: int): ptr = inline sp")
     runCase("extern-inline-sp-bad-sig", src)
 
-    // ---- Task 4 (native-5e): `word` extern param/return type ----
+    // ---- Task 4 (native-5e): the 16-bit extern param/return type,
+    // spelled `word` until SE wave 3 (Task 12) and `int16` since ----
 
-    // Case 73: a clean external func using `word` in both a param
+    // Case 73: a clean external func using `int16` in both a param
     // position (UiMoveTo, both params) and a return position
     // (UiFindWindow) -- proves the grammar parses and the checker accepts
     // it exactly like int (real Toolbox trap words: MoveTo 0xA893,
@@ -999,26 +1000,26 @@ on App.startEmpty {
     ln(src, "external func UiFindWindow(pt: int, wpOut: ptr): int16 = trap 0xA92C")
     runCase("extern-word-clean", src)
 
-    // Case 74: `word` means nothing outside an extern signature -- a plain
-    // var decl naming it as a type resolves through the ordinary TxNamed/
-    // resolveType path and fails "undefined", the same diagnostic any
-    // other unknown type name gets.
+    // Case 74: `word` is not a type at all (SE wave 3 removed the
+    // spelling; testdata/errors/extern_word_removed.cla covers the extern
+    // positions) -- a plain var decl naming it resolves through the
+    // ordinary TxNamed/resolveType path and fails "undefined", the same
+    // diagnostic any other unknown type name gets.
     src = ""
     ln(src, "var x: word")
     runCase("word-not-a-type-outside-extern", src)
 
     // Case 75: `word` as a non-extern func's parameter type is likewise
-    // just an unknown type name -- parseParam/parseType (not
-    // parseExternParam/parseExternType) handle it, so it never becomes a
-    // TxWord node here.
+    // just an unknown type name -- no parser path turns it into a TxWord
+    // node any more (only a boundary `int16` does, and only via
+    // parseExternParam/parseExternType).
     src = ""
     ln(src, "func F(w: word): int {")
     ln(src, "    return 1")
     ln(src, "}")
     runCase("word-param-non-extern", src)
 
-    // Case 76: `word` remains a perfectly ordinary identifier everywhere
-    // else -- a variable literally named `word` (int-typed) is clean, the
+    // Case 76: `word` is a perfectly ordinary identifier -- a variable literally named `word` (int-typed) is clean, the
     // non-regression the brief calls out by name.
     src = ""
     ln(src, "func F(): int {")
@@ -1187,7 +1188,7 @@ on App.startEmpty {
     // usage surface, plus every required error diagnostic, inside this
     // harness.
 
-    // Case 94: a light clean case -- word/int/ptr/nested-xrec/str[N] fields,
+    // Case 94: a light clean case -- int16/int/ptr/nested-xrec/str[N] fields,
     // a plain field read/write, arithmetic on a field read, and a nested
     // field read/write -- the same happy path xrec_accept.cla proves at
     // greater length.
@@ -1212,7 +1213,7 @@ on App.startEmpty {
     runCase("extern-xrec-clean", src)
 
     // Case 95: a field type outside the Ch13 palette (`text` -- also not
-    // bool/byte/word/int/ptr/str[N]/pad[N]/a nested extern record).
+    // bool/uint8/int16/int/ptr/str[N]/pad[N]/a nested extern record).
     src = ""
     ln(src, "extern record R {")
     ln(src, "    x: text")
@@ -1411,9 +1412,9 @@ on App.startEmpty {
     ln(src, "}")
     runCase("extern-xrec-dedup-conflicting-field-name", src)
 
-    // Case 111: `byte` fields plus a bare `pad[N]` field (no name, layout
+    // Case 111: `uint8` fields plus a bare `pad[N]` field (no name, layout
     // only) alongside ordinary int fields -- clean, with a field
-    // read/write on the `byte` field (reads/writes as `int`, Ch13).
+    // read/write on the `uint8` field (reads/writes as `int`, Ch13).
     src = ""
     ln(src, "extern record R {")
     ln(src, "    a: uint8")
@@ -1521,7 +1522,7 @@ on App.startEmpty {
     runCase("callback-decay-and-direct-call-clean", src)
 
     // Case 118: a callback PARAMETER type outside the palette (`text` --
-    // not bool/char/word/int/ptr).
+    // not bool/char/int16/int/ptr).
     src = ""
     ln(src, "callback func F(a: text): int {")
     ln(src, "    return 1")
@@ -1627,7 +1628,7 @@ on App.startEmpty {
     ln(src, "external func UiStrAddr(s: string): ptr")
     runCase("extern-dedup-str-param-clean", src)
 
-    // Case 128: same as above but with a `word` param -- the other
+    // Case 128: same as above but with an `int16` param -- the other
     // extern-param kind whose resolveType call could plausibly allocate a
     // non-singleton arena entry per call. Must also merge clean.
     src = ""

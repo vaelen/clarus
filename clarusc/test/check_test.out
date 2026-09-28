@@ -193,7 +193,7 @@ check_test.cla:2:1: redeclaration of F
 === extern-xrec-clean ===
 clean
 === extern-xrec-bad-field-type ===
-check_test.cla:2:5: extern record field type must be bool, byte, word, int, ptr, str[N], pad[N], or an extern record
+check_test.cla:2:5: extern record field type must be bool, uint8, int16, int, ptr, str[N], pad[N], or an extern record
 === extern-xrec-whole-assign ===
 check_test.cla:7:5: extern records cannot be assigned
 === extern-xrec-as-record-field ===
@@ -213,7 +213,7 @@ check_test.cla:2:5: str field length must be 1..255
 === extern-xrec-str-len-too-large ===
 check_test.cla:2:5: str field length must be 1..255
 === extern-xrec-named-pad-field ===
-check_test.cla:2:5: extern record field type must be bool, byte, word, int, ptr, str[N], pad[N], or an extern record
+check_test.cla:2:5: extern record field type must be bool, uint8, int16, int, ptr, str[N], pad[N], or an extern record
 === extern-xrec-nested-decay-clean ===
 clean
 === extern-xrec-nested-int-coercion-clean ===
@@ -241,9 +241,9 @@ check_test.cla:2:5: pad length must be at least 1
 === callback-decay-and-direct-call-clean ===
 clean
 === callback-param-type-not-in-palette ===
-check_test.cla:1:17: callback parameter and return types must be bool, char, word, int, or ptr
+check_test.cla:1:17: callback parameter and return types must be bool, char, int16, int, or ptr
 === callback-return-type-not-in-palette ===
-check_test.cla:1:1: callback parameter and return types must be bool, char, word, int, or ptr
+check_test.cla:1:1: callback parameter and return types must be bool, char, int16, int, or ptr
 === callback-name-as-var-init ===
 check_test.cla:5:18: callback function name can only be passed to an external function ptr parameter
 === callback-name-as-return-value ===

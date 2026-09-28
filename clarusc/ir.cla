@@ -143,9 +143,10 @@ enum IRKind {
     // lowIsRecBearing, cpEmitRcWalks) never sees this kind at all.
     KOverlay
 
-    // KWord (Task 4, native-5e, Ch13: the `word` extern type) marks a
-    // 16-bit-at-the-trap-boundary int -- it appears ONLY inside the extern
-    // registry's own param/return types (irExternParamTys/irExternRetTys,
+    // KWord (Task 4, native-5e, Ch13: the boundary `int16` extern type,
+    // formerly spelled `word`) marks a 16-bit-at-the-trap-boundary int --
+    // it appears ONLY inside the extern registry's own param/return types
+    // (irExternParamTys/irExternRetTys,
     // populated by lower.cla's lowResolveType reading a TxWord TypeExpr
     // straight off the AST), never as a real variable/field/local's type:
     // every OTHER lowering path goes through lowType(checked-type), and
@@ -284,10 +285,10 @@ enum IRExprKind {
 //
 // CvSExt16/CvIntNonZero (Task 4, toolbox-integration Feature B) are the
 // extern-record field READ extension ops Ch13's field palette requires,
-// unrelated to any checked-type conversion a program can write: a `word`
+// unrelated to any checked-type conversion a program can write: an `int16`
 // field's raw peekw result is zero-extended (peekw's own existing
 // contract), but the field itself must read back SIGN-extended (the same
-// rule an extern call's own `word` RESULT already follows, Feature A) --
+// rule an extern call's own `int16` RESULT already follows, Feature A) --
 // CvSExt16 makes that correction explicit as its own IR node rather than
 // silently baking it into a backend's peekw case, so both backends apply
 // it identically. CvIntNonZero normalizes a `bool` field's raw peekb

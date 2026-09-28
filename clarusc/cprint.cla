@@ -2138,11 +2138,11 @@ func fpConv(e: int): text {
     } else if op == CvOverlayToPtr {
         return "((void *)(" + x + "))"
     } else if op == CvSExt16 {
-        // Ch13 Field Palette: a `word` field reads sign-extended, but
+        // Ch13 Field Palette: an `int16` field reads sign-extended, but
         // peekw's own contract (rt_peekw, rt.h) zero-extends its raw
         // uint16_t into an int32_t -- this op corrects that, the same
         // "reinterpret the low 16 bits as signed, then widen" trick a
-        // `word` result-width rule elsewhere in Ch3 already uses: cast to
+        // `int16` result-width rule elsewhere in Ch3 already uses: cast to
         // int16_t (reinterpreting the zero-extended value's low 16 bits as
         // two's-complement signed) then back to int32_t (sign-extends).
         return "((int32_t)(int16_t)(" + x + "))"

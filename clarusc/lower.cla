@@ -6894,7 +6894,7 @@ func lowDecl(d: int) {
         // ordinary Clarus function with a restricted signature palette
         // (checkCallbackFunc, check.cla) -- its BODY lowers exactly like
         // any DkFunc's (lowFuncDecl reads paramType(p) straight off the
-        // AST via lowResolveType, so a `word` param already lowers to the
+        // AST via lowResolveType, so an `int16` param already lowers to the
         // precise KWord IR type here, independent of the checker's own
         // word-folds-to-int simplification -- see lowResolveType's TxWord
         // case). The generated pascal glue wrapper (cprint.cla) is a

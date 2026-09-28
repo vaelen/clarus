@@ -289,18 +289,19 @@ enum TypeExprKind {
     TxMap
     TxArray
 
-    // TxWord (Task 4, native-5e, Ch13: the `word` extern type) is built ONLY
-    // by parseExternType, inside an `external func` param/return type
-    // position -- nowhere else constructs it, so `word` used as an ordinary
-    // type name (a var decl, a non-extern param) still goes through
-    // TxNamed like any other identifier and fails resolveType's ordinary
-    // "undefined: word" path (word is not a registered type). No extra
-    // fields: like TxNamed's builtin scalar names, a TxWord node carries no
-    // payload beyond its own kind.
+    // TxWord (Task 4, native-5e, Ch13: the 16-bit extern boundary type,
+    // spelled `word` until SE wave 3 and `int16` since) is built ONLY by
+    // parseExternType (an `external func`/`callback func` param/return
+    // position) and parseXRecFieldType (an extern record field) -- nowhere
+    // else constructs it, so `int16` anywhere else is the ordinary narrow
+    // TxNamed type, and `word` is now just an unknown name everywhere
+    // ("undefined: word"). No extra fields: like TxNamed's builtin scalar
+    // names, a TxWord node carries no payload beyond its own kind.
     TxWord
 
     // TxByte/TxXStr/TxPad (Task 4, toolbox-integration Feature B: `extern
-    // record`) are built ONLY by parseXRecFieldType/parseXRecFieldDecl,
+    // record`; TxByte is the `uint8` field, spelled `byte` until SE wave 3)
+    // are built ONLY by parseXRecFieldType/parseXRecFieldDecl,
     // inside an `extern record` body -- the same "contextual, nowhere else"
     // discipline TxWord's own doc comment describes. TxByte carries no
     // payload (like TxWord). TxXStr is `str[N]` (a Pascal string buffer
@@ -2075,9 +2076,10 @@ func namedTypeName(i: int): int {
     return typeExprs[i].nameIdx
 }
 
-// newWordType builds a TxWord node (Task 4, native-5e: the `word` extern
-// type) -- see TypeExprKind's own doc comment for why this exists as its
-// own kind instead of reusing TxNamed.
+// newWordType builds a TxWord node (Task 4, native-5e: the boundary
+// `int16` extern type, formerly spelled `word`) -- see TypeExprKind's
+// own doc comment for why this exists as its own kind instead of
+// reusing TxNamed.
 func newWordType(line: int, col: int): int {
     var n: TypeExpr
 
@@ -2102,8 +2104,8 @@ func newStringType(n: int, line: int, col: int): int {
 }
 
 // newByteType builds a TxByte node (Task 4, toolbox-integration Feature B:
-// `extern record`'s `byte` field type) -- see TypeExprKind's own doc
-// comment.
+// `extern record`'s `uint8` field type, formerly spelled `byte`) -- see
+// TypeExprKind's own doc comment.
 func newByteType(line: int, col: int): int {
     var n: TypeExpr
 

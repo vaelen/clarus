@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// SE wave 3, Task 12: the `word`/`byte` extern type spellings are gone
+// (int16/uint8 replaced them). The old spellings are now just unknown type
+// names -- at an extern param and in an extern record field alike.
+external func Beep(x: word) = trap 0xA9C8
+
+extern record R {
+    b: byte
+}

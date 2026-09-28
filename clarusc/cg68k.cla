@@ -1956,7 +1956,7 @@ func cgSizeOfUncached(t: int): int {
         // defensive ("KWord never appears as a real variable/field/local's
         // type" -- IRKind's own doc comment) -- Task 8 (toolbox-
         // integration Feature C) makes it real: a `callback func`'s own
-        // `word`-typed param/return keeps genuine KWord in its irFuncs/
+        // `int16`-typed param/return keeps genuine KWord in its irFuncs/
         // IRLocal entry (lower.cla's DkCallbackFunc arm calls lowFuncBody,
         // whose param loop is `newIRLocal(paramName(p),
         // lowResolveType(paramType(p)))` -- lowResolveType, NOT the
@@ -1965,7 +1965,7 @@ func cgSizeOfUncached(t: int): int {
         // lowMustType(e)`, the CHECKER's own resolved type) is
         // indistinguishable from a plain `int` one, exactly as
         // checkCallbackFunc's own doc comment says ("the checker cannot
-        // and need not tell a `word` param from a plain `int` one") --
+        // and need not tell an int16 param from a plain `int` one") --
         // cgLoadVar/cgStoreScalarVar/cgPushArgs all key off an
         // EXPRESSION's irExprType, so EVERY read/write/re-push of a word
         // param already assumes a full 4-byte slot, regardless of what
@@ -5948,7 +5948,7 @@ func cgEmitFunc(f: int) {
 // comment for why that coincidence matters), but is kept as its own named
 // function: pascal width is a wire-protocol fact, cgSlotSizeOf a
 // Clarus-frame-layout fact, and the two are unrelated in general (see
-// cgEmitCallbackGlue's own doc comment for the `word` counterexample,
+// cgEmitCallbackGlue's own doc comment for the `int16` counterexample,
 // where a pascal `short` marshals into a 4-byte Clarus slot, not a
 // 2-byte one).
 func cgCbPascalWidth(t: int): int {
@@ -5982,14 +5982,14 @@ func cgCbPascalWidth(t: int): int {
 // The pascal/Clarus byte columns are IDENTICAL for bool/char/int/ptr but
 // DIVERGE for word (cgCbPascalWidth vs. cgSlotSizeOf) -- this is the one
 // non-obvious wrinkle a naive read of the marshaling misses. A `callback
-// func`'s own `word`-typed param/return DOES keep real KWord in its own
+// func`'s own `int16`-typed param/return DOES keep real KWord in its own
 // irFuncs/IRLocal entry (lower.cla's DkCallbackFunc doc comment:
 // lowFuncBody's param loop calls `lowResolveType(paramType(p))` directly
 // off the AST, not the checker's own word-folds-to-int `resolveType`) --
 // but every ORDINARY EXPRESSION referencing that same param inside the
 // body (a bare `n` in `return n`, lowIdent's `ty = lowMustType(e)`) IS the
 // checker's folded int type, exactly as checkCallbackFunc's own doc
-// comment says ("the checker cannot and need not tell a `word` param
+// comment says ("the checker cannot and need not tell an int16 param
 // from a plain `int` one"). Since cgLoadVar/cgStoreScalarVar/cgPushArgs
 // all key off an EXPRESSION's irExprType, every read/write/re-push of a
 // word param inside ordinary Clarus code already assumes a full 4-byte
@@ -7471,7 +7471,7 @@ func cgConv(e: int) {
         // holds the right bit pattern.
     } else if op == CvSExt16 {
         // Task 6 (toolbox-integration Feature B), Ch13 Field Palette: a
-        // `word` field reads sign-extended, but peekw's own contract
+        // `int16` field reads sign-extended, but peekw's own contract
         // (cgIntrPeek) zero-extends its raw 16-bit read into D0 -- D0's low
         // 16 bits already hold the correct bit pattern, so a plain EXT.L
         // re-derives the full signed 32-bit value from them, matching
@@ -11404,18 +11404,18 @@ func cgCallExtRegMemErr(e: int, xi: int) {
 // own gate first surfaced (missing window close box; native widgets never
 // receiving clicks, from `NewControl`'s `initiallyVisible`). Fixed below:
 // Bool/Char args are shifted into the high byte (`LSL.W #8`) before the
-// word push; `word`-typed args (a genuine 16-bit Toolbox INTEGER, not a
+// word push; `int16`-typed args (a genuine 16-bit Toolbox INTEGER, not a
 // byte value padded to a word) are unaffected and still pushed as a plain
 // `.W`. See this session's task-12-report.md continuation-session section
 // for the full A/B trace.
 //
-// `word` (Task 4, native-5e, Ch13) is the one shape here that depends on
+// `int16` (Task 4, native-5e, Ch13) is the one shape here that depends on
 // the EXTERN'S OWN DECLARED type, not the argument/result's own checked
 // type: the checker resolves a word param/return to plain int (check.cla's
 // resolveType), so an argument expression's own irExprType is always
 // int/bool/char/etc, never KWord -- only irExternParam(xi, j)/irExternRet
 // (the registry lower.cla's lowResolveType populated straight off the
-// AST) still knows a given slot was written `word`. That is why the arg
+// AST) still knows a given slot was written `int16`. That is why the arg
 // loop below tracks its own param index j and branches on
 // irExternParam(xi, j) instead of irExprType(a): the marshaling choice is
 // the CALLEE's, not the caller expression's own type.
@@ -11506,7 +11506,7 @@ func cgCallExtPascal(e: int, xi: int) {
     // all qualify); retIsSigned narrows that to "and the value read back
     // is sign-extended, not zero-extended" (word only -- Toolbox INTEGER
     // is signed, unlike a byte-sized Pascal bool/char result). Renamed
-    // from retIsWord/retIsWordType, which read as if only a `word`-typed
+    // from retIsWord/retIsWordType, which read as if only an `int16`-typed
     // extern qualified -- misleading, since bool/char share the slot-width
     // arm too.
     var retIsShortSlot: bool
