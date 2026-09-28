@@ -1,19 +1,30 @@
 #!/bin/sh
-# scripts/memcensus.sh [--rtbake] FILE.cla... -- SE memory program diagnostic.
+# scripts/memcensus.sh [--rtbake] [--at-peak] FILE.cla... -- SE memory program diagnostic.
 # Builds a census-enabled copy of the current compiler (its own globals
 # are file-static in build-run/clarusc-current.c, so the census must be
 # compiled into the same translation unit), then compiles FILE.cla for
 # the 68k lane with CLARUS_MEM_PEAK=2: each phase's memprobe line is
 # followed by the per-tag histogram and the top 25 compiler globals by
-# payload bytes. Not a test; nothing gates on it. Writes only under
+# payload bytes. --at-peak runs CLARUS_MEM_PEAK=3 instead and prints the
+# TOTAL line plus the LAST peakcensus snapshot (the census taken when the
+# overall peak last climbed 64 KB past the previous snapshot; the true
+# peak is within 64 KB of it). Nothing gates on this script but
+# tests/memgate/atpeak.sh's smoke check. Writes only under
 # build-run/memcensus/.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BR=$ROOT/build-run
 OUT=$BR/memcensus
 BAKE=
-if [ "$1" = --rtbake ]; then BAKE=1; shift; fi
-[ $# -ge 1 ] || { echo "usage: $0 [--rtbake] FILE.cla..." >&2; exit 2; }
+LVL=2
+while :; do
+    case "$1" in
+        --rtbake) BAKE=1; shift ;;
+        --at-peak) LVL=3; shift ;;
+        *) break ;;
+    esac
+done
+[ $# -ge 1 ] || { echo "usage: $0 [--rtbake] [--at-peak] FILE.cla..." >&2; exit 2; }
 make -C "$ROOT" -j tools bootstrap > /dev/null
 mkdir -p "$OUT"
 SRC=$BR/clarusc-current.c
@@ -40,7 +51,7 @@ static long rtm_hsz(Handle h) { return h ? (long)GetHandleSize(h) : 0; }
     r[n].count = p->count; r[n].elem = p->valsize; r[n].cap = p->cap; n++; }
 #define RTM_T(v) if (v && n < 4096) { struct rtm_text *p = (struct rtm_text *)v; r[n].n = #v; \
     r[n].bytes = rtm_hsz(p->h); r[n].count = p->len; r[n].elem = 1; r[n].cap = p->cap; n++; }
-void rtm_census(void) {
+void rtm_census(FILE *out, const char *prefix) {
   static rtm_row r[4096]; int n = 0, i, j;
 EOF
   sed -nE 's/^static rt_list \* ?(cv_[A-Za-z0-9_]+);$/  RTM_L(\1)/p
@@ -50,8 +61,8 @@ EOF
   for (i = 0; i < 25 && i < n; i++) { int b = i; rtm_row t;
     for (j = i + 1; j < n; j++) if (r[j].bytes > r[b].bytes) b = j;
     t = r[i]; r[i] = r[b]; r[b] = t;
-    fprintf(stderr, "memprobe:   census %10ld %s count=%ld elemsize=%ld cap=%ld\n",
-        r[i].bytes, r[i].n, r[i].count, r[i].elem, r[i].cap); }
+    fprintf(out, "%s %10ld %s count=%ld elemsize=%ld cap=%ld\n",
+        prefix, r[i].bytes, r[i].n, r[i].count, r[i].elem, r[i].cap); }
 }
 EOF
 } > "$OUT/clarusc-census.c"
@@ -60,9 +71,27 @@ ${CC:-cc} -O1 -w -DRTM_CENSUS -I "$ROOT/runtime/host" -o "$OUT/clarusc-census" \
     "$OUT/clarusc-census.c" "$ROOT/runtime/host/rt.c"
 
 cd "$ROOT"
+if [ "$LVL" = 3 ]; then
+    # The host CLI's feExpectedStamp reads all of clarusc/clarusc.c (4 MB)
+    # to stamp-check --rtbake; ClarusC.APPL reads a 4-byte resource. Run
+    # from a directory with no clarusc/clarusc.c above it (bkFindClarusC
+    # walks up), so bake and compile both stamp 0 and the peak found is
+    # the Mac-shaped one, not that host-only read.
+    for f; do set -- "$@" "$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"; shift; done
+    RUN=$(mktemp -d)
+    trap 'rm -rf "$RUN"' EXIT
+    cd "$RUN"
+fi
+set --  --rtdir "$ROOT/runtime/clarus/" -o "$OUT/out.bin" "$@"
 if [ -n "$BAKE" ]; then
-    "$OUT/clarusc-census" --bake-ir --lane 68k --rtdir runtime/clarus/ -o "$OUT/rt.clir"
-    CLARUS_MEM_PEAK=2 "$OUT/clarusc-census" emit68k --rtdir runtime/clarus/ --rtbake "$OUT/rt.clir" -o "$OUT/out.bin" "$@" 2>&1 | grep '^memprobe:'
+    "$OUT/clarusc-census" --bake-ir --lane 68k --rtdir "$ROOT/runtime/clarus/" -o "$OUT/rt.clir"
+    set -- --rtbake "$OUT/rt.clir" "$@"
+fi
+CLARUS_MEM_PEAK=$LVL "$OUT/clarusc-census" emit68k "$@" > "$OUT/log" 2>&1 \
+    || { cat "$OUT/log" >&2; exit 1; }
+if [ "$LVL" = 3 ]; then
+    awk '/^memprobe: TOTAL /{print} /^memprobe: peakcensus at /{n=0} /^memprobe: peakcensus /{s[n++]=$0}
+         END { for (i = 0; i < n; i++) print s[i] }' "$OUT/log"
 else
-    CLARUS_MEM_PEAK=2 "$OUT/clarusc-census" emit68k --rtdir runtime/clarus/ -o "$OUT/out.bin" "$@" 2>&1 | grep '^memprobe:'
+    grep '^memprobe:' "$OUT/log"
 fi

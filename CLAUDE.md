@@ -120,7 +120,10 @@ Tiered test gates:
   deterministic). `CLARUS_MEM_PEAK=1` makes any host clarus binary print
   a `memprobe:` line per compile phase plus a `TOTAL` line at exit;
   `=2` adds a per-tag histogram. `scripts/memcensus.sh FILE.cla` names
-  the compiler globals behind the bytes. A change that lowers a peak
+  the compiler globals behind the bytes; its `--at-peak` (`=3`,
+  composable with `--rtbake`) prints that census as of the last time the
+  overall peak climbed 64 KB, run from outside the repo so the host-only
+  4 MB `clarusc/clarusc.c` stamp read is not the peak. A change that lowers a peak
   lowers its budget in the same commit.
 - **Standing rule (compiler-cleanup phase, 2026-09-05).** A phase that
   adds a new value-typed runtime module (the `connection`/`filehandle`/
