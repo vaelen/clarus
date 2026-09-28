@@ -846,5 +846,10 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtFixMul"))
     } else if nm == IFixDiv() {
         shakeMarkAndEnqueue(intern("rtFixDiv"))
+
+    // ---- SE wave 1: .release()/.shrink() (ir.cla's irStorageRow table;
+    // a _deep variant's element walk is rooted as IListClearDeep's is) ----
+    } else if irStorageRow(nm) >= 0 {
+        shakeMarkAndEnqueue(irStorFns[irStorageRow(nm)])
     }
 }

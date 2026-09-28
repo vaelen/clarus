@@ -1,0 +1,53 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// release_storage.cla: SE Wave 1 -- `.release()` really returns storage
+// (tests/hostrt/release_storage.sh). MemProbe is the host runtime's
+// rt_ext_MemProbe (rt_ext_host.inc): under CLARUS_MEM_PEAK=1 it prints
+// `memprobe: <phase> | live68k=N ... live=N ...`.
+
+external func MemProbe(phase: string)
+
+record RsItem {
+    name: text
+    n: int
+}
+
+var big: list of int
+var strs: list of string
+var recs: map of RsItem
+
+on App.startCLI(args: list of string) {
+    var i: int
+    var item: RsItem
+
+    i = 0
+    while i < 250000 {
+        big.push(i)
+        i = i + 1
+    }
+    MemProbe("filled")
+    big.release()
+    MemProbe("released")
+    i = 0
+    while i < 2000 {
+        strs.push("element-" + string(i))
+        i = i + 1
+    }
+    MemProbe("strs")
+    strs.release()
+    MemProbe("strsreleased")
+    // element-bearing map: each value owns a text handle, freed by the
+    // release walk (the no_leak check below would catch a skipped walk).
+    i = 0
+    while i < 100 {
+        item.name = "rec-" + string(i)
+        item.n = i
+        recs["k" + string(i)] = item
+        i = i + 1
+    }
+    recs.shrink()
+    recs.release()
+    recs["again"] = item
+    log("ok " + string(big.count + strs.count + recs.count))
+}

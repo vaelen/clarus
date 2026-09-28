@@ -57,6 +57,7 @@ DurationStrShapes
 DateTimeStrVectors
 NowSanity
 ClearBasics
+ReleaseShrink
 ParamAliasGlobal
 ParamAliasHandle
 ParamBorrowChain

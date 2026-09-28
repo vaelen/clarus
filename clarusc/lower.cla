@@ -2296,6 +2296,8 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
         // to flat (no text/list/map anywhere), so no birth/retain
         // classification is needed here the way push/unshift/clear need.
         return newIRIntr(IListClone(), recv, ty)
+    } else if nm == "release" or nm == "shrink" {
+        return lowStorageMethod(recv, "list", nm, ty)
     }
     lowUnsupported("list method " + nm)
     return -1
@@ -2396,9 +2398,37 @@ func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool, im:
             return newIRIntr(clearDeepName, recv, ty)
         }
         return newIRIntr(clearName, recv, ty)
+    } else if nm == "release" or nm == "shrink" {
+        if im {
+            return lowStorageMethod(recv, "intmap", nm, ty)
+        } else if sorted {
+            return lowStorageMethod(recv, "sortedmap", nm, ty)
+        }
+        return lowStorageMethod(recv, "map", nm, ty)
     }
     lowUnsupported("map method " + nm)
     return -1
+}
+
+// lowStorageMethod (SE wave 1) lowers `.release()`/`.shrink()` on a
+// list/map/intmap/sortedmap/text receiver to one of ir.cla's irStorageRow
+// intrinsics, "<fam>_shrink" or "<fam>_drop_storage[_deep]". release()
+// takes the _deep variant exactly when clear() takes its ClearDeep twin
+// (the same element-type predicate trio, lowListMethod's "clear" arm);
+// text has no elements, so never.
+func lowStorageMethod(recv: int, fam: string, nm: string, ty: int): int {
+    var elemT: int
+
+    if nm == "shrink" {
+        return newIRIntr(intern(fam + "_shrink"), recv, ty)
+    }
+    if fam != "text" {
+        elemT = irtElem(irExprType(recv))
+        if lowEscapeTrackableKind(irtKind(elemT)) or lowIsRecBearing(elemT) or lowArrHeapScalarBearing(elemT) {
+            return newIRIntr(intern(fam + "_drop_storage_deep"), recv, ty)
+        }
+    }
+    return newIRIntr(intern(fam + "_drop_storage"), recv, ty)
 }
 
 // lowMethodArgs2 chains an already-lowered receiver IR expr with one
@@ -2478,6 +2508,8 @@ func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: i
         return newIRIntr(ITextClear(), recv, ty)
     } else if nm == "reserve" {
         return newIRIntr(ITextReserve(), lowMethodArgs2(recv, arg0), ty)
+    } else if nm == "release" or nm == "shrink" {
+        return lowStorageMethod(recv, "text", nm, ty)
     } else if nm == "hashStep" {
         // textOnlyMethods (check.cla) only reaches here for a text
         // receiver -- isText is always true, same as append above.

@@ -796,6 +796,60 @@ func rtMapClear(m: ptr) {
     }
 }
 
+// rtMapDropStorage (SE wave 1, `.release()`, map AND intmap -- same RtMap
+// box): all four handles (keys, vals, keypool, index) sized to 0 and
+// every count/capacity field zeroed -- the birth state rtMapNew leaves,
+// so the next insert re-materializes the index (indexcap 0 -> 8) exactly
+// as a fresh map's first insert does. Subsumes rtMapClear's resets; the
+// box stays, so every alias sees an empty map.
+func rtMapDropStorage(m: ptr) {
+    var rm: RtMap
+    var err: int
+
+    rm = RtMap(m)
+    err = MapSetHandleSize(rm.keys, 0)
+    err = MapSetHandleSize(rm.vals, 0)
+    err = MapSetHandleSize(rm.keypool, 0)
+    err = MapSetHandleSize(rm.index, 0)
+    rm.count = 0
+    rm.cap = 0
+    rm.valcap = 0
+    rm.poolused = 0
+    rm.poolcap = 0
+    rm.indexcap = 0
+    rm.tombs = 0
+}
+
+// mapShrinkTo (SE wave 1): the shared tail of rtMapShrink/rtIntMapShrink.
+// Entries are DENSE (remove is swap-with-last, module header), so "in
+// use" is exactly `count` entries and vals; the keypool is append-only,
+// so its in-use prefix is `poolused` (abandoned keys' bytes inside it
+// stay -- shrink never compacts). The index is left as it is: its slots
+// point at entry positions, which a trim of the tail never moves.
+func mapShrinkTo(m: ptr, stride: int) {
+    var rm: RtMap
+    var err: int
+
+    rm = RtMap(m)
+    if rm.cap > rm.count {
+        err = MapSetHandleSize(rm.keys, rm.count * stride)
+        rm.cap = rm.count
+    }
+    if rm.valcap > rm.count {
+        err = MapSetHandleSize(rm.vals, rm.count * rm.valsize)
+        rm.valcap = rm.count
+    }
+    if rm.poolcap > rm.poolused {
+        err = MapSetHandleSize(rm.keypool, rm.poolused)
+        rm.poolcap = rm.poolused
+    }
+}
+
+// rtMapShrink (SE wave 1, `.shrink()`): see mapShrinkTo.
+func rtMapShrink(m: ptr) {
+    mapShrinkTo(m, MAP_ENTRY_STRIDE)
+}
+
 // rtMapKeyAt (shared design constants' "Iteration contract" rule): panics
 // ("map key not found") on an out-of-range index. Copies the length byte
 // + that many content bytes from the keypool into the caller's Str255
@@ -1139,6 +1193,13 @@ func rtIntMapCount(m: ptr): int {
 // has zero key-type dependence (poolused was already always 0 here).
 func rtIntMapClear(m: ptr) {
     rtMapClear(m)
+}
+
+// rtIntMapShrink (SE wave 1, `.shrink()`): rtMapShrink with the intmap
+// entry stride (4, not 12). `.release()` needs no twin: rtMapDropStorage
+// has no stride dependence.
+func rtIntMapShrink(m: ptr) {
+    mapShrinkTo(m, INTMAP_ENTRY_STRIDE)
 }
 
 // rtIntMapKeyAt (shared design constants' "Iteration contract" rule):

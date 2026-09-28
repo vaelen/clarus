@@ -1337,6 +1337,9 @@ func irReset() {
     iIntMapClearIdx = -1
     iIntMapClearDeepIdx = -1
     iIntMapFreeVarIdx = -1
+    irStorIntrs.clear()
+    irStorFns.clear()
+    irStorDeep.clear()
     iRetainIdx = -1
     iReleaseIdx = -1
     iFixMulIdx = -1
@@ -4324,6 +4327,56 @@ func IIntMapClearDeep(): int {
         iIntMapClearDeepIdx = intern("intmap_clear_deep")
     }
     return iIntMapClearDeepIdx
+}
+
+// ---- SE wave 1: `.release()`/`.shrink()` intrinsics (spec L4: IR names
+// never say "release" -- that word already means rc-1). One table instead
+// of fourteen getters: irStorIntrs[i] is an intrinsic name, irStorFns[i]
+// the runtime function it calls (receiver is the one argument), and
+// irStorDeep[i] marks the `_drop_storage_deep` variants, which first run
+// clear()'s element-release walk. Lowering interns the names directly
+// (lowStorageMethod); shake, cprint and cg68k look them up here, after
+// every other intrinsic arm has missed. Built on first lookup; irReset
+// empties it, like every cached intrinsic index above.
+var irStorIntrs: list of int
+var irStorFns: list of int
+var irStorDeep: list of bool
+
+func irStorAdd(intr: string, fn: string, deep: bool) {
+    irStorIntrs.add(intern(intr))
+    irStorFns.add(intern(fn))
+    irStorDeep.add(deep)
+}
+
+// irStorFam registers one container family's three names; intmap reuses
+// rtMapDropStorage (same RtMap box, no stride dependence) but has its own
+// shrink (4-byte entries, not map's 12).
+func irStorFam(fam: string, dropFn: string, shrinkFn: string) {
+    irStorAdd(fam + "_drop_storage", dropFn, false)
+    irStorAdd(fam + "_drop_storage_deep", dropFn, true)
+    irStorAdd(fam + "_shrink", shrinkFn, false)
+}
+
+// irStorageRow returns nm's row in the table above, or -1.
+func irStorageRow(nm: int): int {
+    var i: int
+
+    if irStorIntrs.count == 0 {
+        irStorFam("list", "rtListDropStorage", "rtListShrink")
+        irStorFam("map", "rtMapDropStorage", "rtMapShrink")
+        irStorFam("intmap", "rtMapDropStorage", "rtIntMapShrink")
+        irStorFam("sortedmap", "rtSortedMapDropStorage", "rtSortedMapShrink")
+        irStorAdd("text_drop_storage", "rtTextDropStorage", false)
+        irStorAdd("text_shrink", "rtTextShrink", false)
+    }
+    i = 0
+    while i < irStorIntrs.count {
+        if irStorIntrs[i] == nm {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
 }
 
 // IIntMapFreeVar -- see ITextFreeVar's doc comment.

@@ -4813,6 +4813,25 @@ func cgClearDeepContainer(a0e: int, t: int, clearFn: int) {
     cgEmitPtrRcCall(clearFn, 6, ptrOff)
 }
 
+// cgIntrStorage (SE wave 1) emits `.release()`/`.shrink()` (ir.cla's
+// irStorageRow table): a plain one-pointer runtime call, or for a
+// _drop_storage_deep row cgClearDeepContainer's element-release walk
+// followed by the drop-storage call in place of the clear call -- drop
+// storage zeroes every count clear would, so the walk + drop pair is
+// exactly clear() then drop.
+func cgIntrStorage(e: int, nm: int) {
+    var row: int
+    var a0e: int
+
+    row = irStorageRow(nm)
+    if irStorDeep[row] {
+        a0e = irIntrArgsHead(e)
+        cgClearDeepContainer(a0e, irExprType(a0e), irStorFns[row])
+        return
+    }
+    cgIntr1(e, irStorFns[row], false)
+}
+
 func cgFindEnumByName(nameIdx: int): int {
     var i: int
     var nm: string
@@ -9545,6 +9564,10 @@ func cgIntr(e: int) {
     }
     if nm == IFileLoad() {
         cgIntrFileSaveLoad(e, rnFileLoad)
+        return
+    }
+    if irStorageRow(nm) >= 0 {
+        cgIntrStorage(e, nm)
         return
     }
 

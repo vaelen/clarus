@@ -1172,6 +1172,30 @@ func rtTextClear(t: ptr) {
     rt.len = 0
 }
 
+// rtTextDropStorage (SE wave 1, `.release()`): handle sized to 0, len =
+// cap = 0 -- the birth state. The box stays, so every alias sees it.
+func rtTextDropStorage(t: ptr) {
+    var rt: RtText
+    var err: int
+
+    rt = RtText(t)
+    err = TextSetHandleSize(rt.h, 0)
+    rt.len = 0
+    rt.cap = 0
+}
+
+// rtTextShrink (SE wave 1, `.shrink()`): capacity trimmed to len.
+func rtTextShrink(t: ptr) {
+    var rt: RtText
+    var err: int
+
+    rt = RtText(t)
+    if rt.cap > rt.len {
+        err = TextSetHandleSize(rt.h, rt.len)
+        rt.cap = rt.len
+    }
+}
+
 // rtTextReserve (string-perf phase, text.reserve(n)): pre-grow to at
 // least n bytes of capacity -- at most one SetHandleSize trap, vs. one
 // per doubling boundary when a per-char producer grows implicitly
