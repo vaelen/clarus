@@ -1,0 +1,1 @@
+../../testdata/errors/narrow_assign_int.cla:10:5: cannot assign int to int16

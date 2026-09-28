@@ -1197,7 +1197,7 @@ func splitDots(s: string): list of string {
 func typeName(t: int): string {
     switch typeKind(t) {
     case TyInt {
-        return "int"
+        return intTypeName(t)
     }
     case TyBool {
         return "bool"
@@ -1273,6 +1273,20 @@ func typeName(t: int): string {
     }
     }
     return "?"
+}
+
+// intTypeName spells a TyInt type: `int`, or its narrow name (SE wave 3).
+func intTypeName(t: int): string {
+    if tyIntWidth(t) == 8 {
+        return "uint8"
+    }
+    if tyIntWidth(t) == 16 {
+        if tyIntSigned(t) {
+            return "int16"
+        }
+        return "uint16"
+    }
+    return "int"
 }
 
 // kindName renders a bare TypeKind (no arena entry) for a OneOfKinds
@@ -2474,6 +2488,12 @@ func resolveType(te: int): int {
             return PtrT
         }
         symIdx = scopeLookup(curScope, nameIdx)
+        if symIdx == -1 {
+            et = narrowTypeNamed(nameIdx)
+            if et != -1 {
+                return et
+            }
+        }
         if symIdx == -1 or not symbols[symIdx].isType {
             emitDiag(typeExprLine(te), typeExprCol(te), "undefined: " + poolGet(nameIdx))
             return InvalidT
@@ -4173,7 +4193,9 @@ func checkBindsProperty(p: int, kind: string, formRecType: int): int {
     fk = typeKind(fieldType)
     compat = false
     if kind == "field" {
-        compat = fk == TyStr or fk == TyInt or fk == TyFixed
+        // A narrow int field does not bind yet: its form/serializer
+        // field code is SE wave 3 Task 4's (N3).
+        compat = fk == TyStr or (fk == TyInt and tyIntWidth(fieldType) == 0) or fk == TyFixed
     } else if kind == "check" {
         compat = fk == TyBool
     } else if kind == "popup" {
@@ -5524,7 +5546,31 @@ func checkIdent(e: int, expected: int): int {
     return InvalidT
 }
 
-func checkUnary(e: int): int {
+// checkIntLitAt types an integer literal (or a negated one: v is its
+// value, e the node to diagnose at) against expected -- SE wave 3's N1:
+// at a narrow-typed position an in-range literal adopts that narrow type
+// and an out-of-range one is an error; anywhere else it is `int`.
+func checkIntLitAt(e: int, v: int, expected: int): int {
+    if expected == -1 or expected == InvalidT or tyIntWidth(expected) == 0 {
+        return IntT
+    }
+    if not tyNarrowRangeOk(expected, v) {
+        emitDiag(exprLine(e), exprCol(e), numToStr(v) + " is out of range for " + typeName(expected) + " (" + numToStr(tyNarrowMin(expected)) + ".." + numToStr(tyNarrowMax(expected)) + ")")
+        return InvalidT
+    }
+    return expected
+}
+
+// isIntLitExpr: e is an integer literal or a negated one (N1's literal
+// positions treat `-5` as a literal).
+func isIntLitExpr(e: int): bool {
+    if exprKind(e) == ExIntLit {
+        return true
+    }
+    return exprKind(e) == ExUnary and unaryOp(e) == OpNeg and exprKind(unaryX(e)) == ExIntLit
+}
+
+func checkUnary(e: int, expected: int): int {
     var op: int
     var t: int
 
@@ -5537,6 +5583,12 @@ func checkUnary(e: int): int {
         if typeKind(t) != TyInt and typeKind(t) != TyFixed {
             emitDiag(exprLine(e), exprCol(e), "cannot negate " + typeName(t))
             return InvalidT
+        }
+        if exprKind(unaryX(e)) == ExIntLit {
+            return checkIntLitAt(e, -intLitVal(unaryX(e)), expected)
+        }
+        if typeKind(t) == TyInt {
+            return IntT // SE wave 3 (D4): negating a narrow int yields int
         }
         return t
     }
@@ -5678,10 +5730,16 @@ func checkComparison(e: int, allowEnum: bool): int {
         }
     } else {
         lt = checkExpr(x, -1)
-        if lt != InvalidT and typeKind(lt) == TyEnum {
+        if lt != InvalidT and (typeKind(lt) == TyEnum or tyIntWidth(lt) != 0) {
             rt = checkExpr(y, lt)
         } else {
             rt = checkExpr(y, -1)
+            // N1: `300 == a` -- a literal LEFT operand is typed against a
+            // narrow right operand too (re-checked; a literal has no other
+            // side effect).
+            if rt != InvalidT and tyIntWidth(rt) != 0 and isIntLitExpr(x) {
+                lt = checkExpr(x, rt)
+            }
         }
     }
     if lt == InvalidT or rt == InvalidT {
@@ -5733,6 +5791,11 @@ func checkComparison(e: int, allowEnum: bool): int {
             emitDiag(exprLine(e), exprCol(e), "maps cannot be compared")
             return InvalidT
         }
+    }
+    // SE wave 3 (D4): any two ints compare as 32-bit ints, whatever their
+    // narrow types.
+    if typeKind(lt) == TyInt and typeKind(rt) == TyInt {
+        return BoolT
     }
     if not compatible(lt, rt) and not compatible(rt, lt) {
         emitDiag(exprLine(e), exprCol(e), "type mismatch: " + typeName(lt) + " and " + typeName(rt))
@@ -6043,6 +6106,12 @@ func checkConversion(e: int, target: int, name: string): int {
     } else if target == PtrT {
         accepted = "an int or overlay"
         ok = typeKind(at) == TyInt or typeKind(at) == TyOverlay
+    } else if typeKind(target) == TyInt {
+        // SE wave 3: uint8(x)/int16(x)/uint16(x) truncate an int, a char
+        // or ANOTHER narrow type (a same-type conversion is an error, like
+        // every identity conversion).
+        accepted = "an int, char, " + narrowOthers(target)
+        ok = typeKind(at) == TyChar or (typeKind(at) == TyInt and not typesEqual(at, target))
     } else if typeKind(target) == TyEnum {
         accepted = "an int"
         ok = typeKind(at) == TyInt
@@ -6066,6 +6135,39 @@ func checkConversion(e: int, target: int, name: string): int {
         return InvalidT
     }
     return target
+}
+
+// narrowOthers names the two narrow types other than t, for
+// checkConversion's "expects" list: "int16 or uint16" for uint8, etc.
+func narrowOthers(t: int): string {
+    if tyIntWidth(t) == 8 {
+        return "int16 or uint16"
+    }
+    if tyIntSigned(t) {
+        return "uint8 or uint16"
+    }
+    return "uint8 or int16"
+}
+
+// narrowTypeNamed returns a fresh narrow int type when nameIdx spells
+// `uint8`/`int16`/`uint16`, else -1. The names are resolved only where a
+// name would otherwise be undefined (resolveType, checkIdentCall), and by
+// string compare, not a pre-interned cn* index: interning them would add
+// entries to the baked intern pool (see narrowIntT's doc comment).
+func narrowTypeNamed(nameIdx: int): int {
+    var nm: string
+
+    nm = poolGet(nameIdx)
+    if nm == "uint8" {
+        return narrowIntT(8)
+    }
+    if nm == "int16" {
+        return narrowIntT(-16)
+    }
+    if nm == "uint16" {
+        return narrowIntT(16)
+    }
+    return -1
 }
 
 // checkArgsCall type-checks a fixed-arity call's arguments against a
@@ -6147,6 +6249,7 @@ func checkArgsCall(e: int, argsHead: int, sigIdx: int, isExtern: bool): int {
 func checkIdentCall(e: int, fn: int): int {
     var nameIdx: int
     var symIdx: int
+    var narrowT: int
     var fillArg: int
 
     nameIdx = identName(fn)
@@ -6181,6 +6284,10 @@ func checkIdentCall(e: int, fn: int): int {
 
     symIdx = scopeLookup(curScope, nameIdx)
     if symIdx == -1 {
+        narrowT = narrowTypeNamed(nameIdx)
+        if narrowT != -1 {
+            return checkConversion(e, narrowT, poolGet(nameIdx))
+        }
         emitDiag(exprLine(e), exprCol(e), "undefined: " + poolGet(nameIdx))
         return InvalidT
     }
@@ -6353,7 +6460,7 @@ func checkExpr(e: int, expected: int): int {
 func checkExprInner(e: int, expected: int): int {
     switch exprKind(e) {
     case ExIntLit {
-        return IntT
+        return checkIntLitAt(e, intLitVal(e), expected)
     }
     case ExFixedLit {
         return FixedT
@@ -6381,7 +6488,7 @@ func checkExprInner(e: int, expected: int): int {
         return checkIdent(e, expected)
     }
     case ExUnary {
-        return checkUnary(e)
+        return checkUnary(e, expected)
     }
     case ExBinary {
         return checkBinary(e)

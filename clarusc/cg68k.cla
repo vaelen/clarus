@@ -15819,6 +15819,17 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     var objSegItemEnd: list of int
     var objSegTainted: list of bool
 
+    // SE wave 3 Task 1 (Ruling R1): emit68k learns the narrow int types in
+    // Task 3; until then refuse them outright rather than miscompile them
+    // as 4-byte ints. Any narrow use lowers to a narrow KInt IRType.
+    i = 0
+    while i < irTypes.count {
+        if irtIntWidth(i) != 0 {
+            abort("cg68k: narrow integer types are not yet supported by emit68k")
+        }
+        i = i + 1
+    }
+
     // Findings 1.4 (Task 13): fill every rn* pre-interned runtime-call
     // name BEFORE cg68Measure's own first cgEmitFunc call can need one --
     // 68k-only (cprint's host lane has no rn* consumers, findIRFuncIdxByName's

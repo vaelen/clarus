@@ -145,6 +145,12 @@
 // case: list `.reserve(n)` (contents kept, no-op when small, alias sees
 // it) and text `.removeFirst(n)` (0, middle, len, past len clamped,
 // alias sees it, append after).
+//
+// NarrowInts (cases_narrow.cla, SE wave 3 Task 1) is the 85th real case:
+// uint8/int16/uint16 widening, 32-bit arithmetic, truncating conversions,
+// literal adoption, and storage in locals/fields/arrays/lists/globals/
+// params/returns. emit68k compositions use cases_narrow_68k_stub.cla
+// until SE wave 3 Task 3 teaches emit68k the narrow types.
 
 enum CoreTest {
     All
@@ -232,16 +238,17 @@ enum CoreTest {
     PtrCall
     StrPerf
     OpenRF
+    NarrowInts
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 84 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 85 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 85
+const nCoreCases: int = 86
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -502,6 +509,9 @@ func coreCaseName(t: CoreTest): string {
     case OpenRF {
         return "OpenRF"
     }
+    case NarrowInts {
+        return "NarrowInts"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -606,6 +616,7 @@ func coreAllCases(): list of CoreTest {
     l.add(PtrCall)
     l.add(StrPerf)
     l.add(OpenRF)
+    l.add(NarrowInts)
     l.add(SelfCheck)
     return l
 }
@@ -978,6 +989,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, OpenRF) {
         results.add(caseOpenRF())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, NarrowInts) {
+        results.add(caseNarrowInts())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

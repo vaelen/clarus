@@ -24,6 +24,13 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   (read via `bkGetStr`'s `stringAt(pos + 3)` hop), so a pool-targeting
   packer still writes the 4-byte shape.
 
+- **`uint` (32-bit unsigned)** (SE wave 3, spec N7; Andrew 2026-09-28):
+  deferred when `uint8`/`int16`/`uint16` landed. Costs: unsigned
+  compares and divide on both lanes, a new `rtUIntToStr`, literal-range
+  work above 2^31, and C-lane signed/unsigned mixing hazards (C's usual
+  arithmetic conversions would turn `int < uint` into an unsigned
+  compare, breaking D4's "everything widens to `int`" rule).
+
 - **`text + char` concatenation** does not exist (append accepts char;
   `+` does not). Deliberate; revisit if it keeps surprising.
 

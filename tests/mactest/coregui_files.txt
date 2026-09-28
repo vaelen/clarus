@@ -22,4 +22,5 @@ testsuite/core/cases_textbinary.cla
 testsuite/core/cases_fileh.cla
 testsuite/core/cases_dirops.cla
 testsuite/core/cases_ptrcall.cla
+testsuite/core/cases_narrow_68k_stub.cla
 testsuite/core/gui.cla

@@ -43,6 +43,7 @@ testsuite/core/cases_textbinary.cla
 testsuite/core/cases_fileh.cla
 testsuite/core/cases_dirops.cla
 testsuite/core/cases_ptrcall.cla
+testsuite/core/cases_narrow_68k_stub.cla
 testsuite/core/cli_mac.cla"
 # lib.sh already cd'd to $ROOT, so these relative paths are what clarusc
 # sees; $@ carries them for the three emit68k runs below.

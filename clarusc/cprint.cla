@@ -933,11 +933,27 @@ func fpFreeStmtTmps() {
 // Type printing (types.go subset)
 // ================================================================
 
+// cpIntCTypeName spells a KInt: int32_t, or the narrow uint8_t/int16_t/
+// uint16_t (SE wave 3 -- C's integer promotion then gives D4's widening
+// and 32-bit arithmetic for free).
+func cpIntCTypeName(t: int): string {
+    if irtIntWidth(t) == 8 {
+        return "uint8_t"
+    }
+    if irtIntWidth(t) == 16 {
+        if irtIntSigned(t) {
+            return "int16_t"
+        }
+        return "uint16_t"
+    }
+    return "int32_t"
+}
+
 // cpCTypeName is the pure C type name for an IR type index (no side effects).
 func cpCTypeName(t: int): string {
     switch irtKind(t) {
     case KVoid { return "void" }
-    case KInt { return "int32_t" }
+    case KInt { return cpIntCTypeName(t) }
     case KBool { return "int32_t" }
     case KFixed { return "int32_t" }
     case KEnum { return "int32_t" }
@@ -1032,6 +1048,9 @@ func cpCSizeOfField(t: int): int {
     if k == KStr {
         return cgAlignUp(irtN(t) + 1, 2)
     }
+    if irtIntWidth(t) != 0 {
+        return irtIntWidth(t) / 8
+    }
     return 4
 }
 
@@ -1039,7 +1058,7 @@ func cpCAlignOfField(t: int): int {
     var k: IRKind
 
     k = irtKind(t)
-    if k == KChar or k == KBool {
+    if k == KChar or k == KBool or irtIntWidth(t) == 8 {
         return 1
     }
     return 2
@@ -1056,7 +1075,7 @@ func cpFieldCParity(t: int): int {
     var k: IRKind
 
     k = irtKind(t)
-    if k == KBool or k == KChar {
+    if k == KBool or k == KChar or irtIntWidth(t) == 8 {
         return 1
     }
     if k == KStr {
@@ -1079,7 +1098,7 @@ func cpFieldCAlign1(t: int): bool {
     var k: IRKind
 
     k = irtKind(t)
-    if k == KBool or k == KChar or k == KStr {
+    if k == KBool or k == KChar or k == KStr or irtIntWidth(t) == 8 {
         return true
     }
     if k == KArr {
@@ -1172,11 +1191,26 @@ func cpArrKey(t: int): string {
     return cpElemKey(irtElem(t)) + "_" + numToStr(irtN(t))
 }
 
+// cpIntElemKey: a KInt's cpElemKey fragment -- the narrow types need
+// their own, or `uint16[3]` would reuse int[3]'s clar_arr_int_3 typedef.
+func cpIntElemKey(t: int): string {
+    if irtIntWidth(t) == 8 {
+        return "uint8"
+    }
+    if irtIntWidth(t) == 16 {
+        if irtIntSigned(t) {
+            return "int16"
+        }
+        return "uint16"
+    }
+    return "int"
+}
+
 // cpElemKey renders t as an identifier fragment, for composing cpArrKey --
 // a full port of types.go's elemKey.
 func cpElemKey(t: int): string {
     switch irtKind(t) {
-    case KInt { return "int" }
+    case KInt { return cpIntElemKey(t) }
     case KBool { return "bool" }
     case KFixed { return "fixed" }
     case KChar { return "char" }
@@ -2099,6 +2133,8 @@ func fpConv(e: int): text {
         // int32_t) to exactly 1, matching Clarus bool's own C
         // representation (int32_t 0/1).
         return "((int32_t)((" + x + ") != 0))"
+    } else if op == CvIntToNarrow {
+        return "((" + cpCTypeName(irExprType(e)) + ")(" + x + "))"
     }
     // Task 4 review fix (Important 3): a real unhandled IRConvOp -- see
     // cpFatal's own doc comment.

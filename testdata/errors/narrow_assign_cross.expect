@@ -1,0 +1,1 @@
+../../testdata/errors/narrow_assign_cross.cla:9:5: cannot assign uint8 to int16

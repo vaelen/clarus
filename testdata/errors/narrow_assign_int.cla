@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// SE wave 3 (D4): int does not narrow implicitly -- uint8()/int16()/
+// uint16() is required.
+func f() {
+    var i: int
+    var x: int16
+    i = 5
+    x = i
+}

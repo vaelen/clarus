@@ -150,6 +150,9 @@ Clarus is statically typed. All types are known at compile time; values are eith
 | Type | Size | Storage | Description |
 |---|---|---|---|
 | `int` | 4 bytes | inline | 32-bit signed integer |
+| `uint8` | 1 byte | inline | unsigned 8-bit integer, 0..255 (see Narrow Integers below) |
+| `int16` | 2 bytes | inline | signed 16-bit integer, −32768..32767 |
+| `uint16` | 2 bytes | inline | unsigned 16-bit integer, 0..65535 |
 | `bool` | 1 byte | inline | `true` / `false` |
 | `fixed` | 4 bytes | inline | 16.16 fixed-point (Toolbox `Fixed`) |
 | `char` | 1 byte | inline | unsigned 8-bit Mac Roman character; doubles as a byte (0–255) for binary data |
@@ -178,6 +181,16 @@ An `address` is not a resource: it is a plain inline value, copied like an `int`
 `FileInfo` is a predeclared record (Chapter 12: Files) returned by `file.info` — an ordinary value, like any user record: assignable, copyable, a legal field, array, or `list of`/`map of` element type. A program may not declare its own `FileInfo` (the ordinary duplicate-declaration error). Its seven fields, in declaration order: `size: int` (data fork length in bytes; 0 for a folder), `rsrcSize: int` (resource fork length in bytes; 0 for a folder or on a host), `type: string` (Finder type, `""` on a host or for a folder), `creator: string` (Finder creator, `""` on a host or for a folder), `created: int` and `modified: int` (Macintosh-epoch seconds, the same clock as `now()`), and `isDir: bool`. A file with no Finder type set reads back `type == ""`, the same as a folder; `isDir` is the reliable discriminator.
 
 **Storage:** `bool` and `char` occupy exactly 1 byte inside every ordinary aggregate — records and arrays — on every target; `bool` occupies 1 byte inside an `extern record` too, but `char` is not a legal `extern record` field type at all (an extern record's 1-byte numeric field type is `byte` — see the Chapter 13 field palette). As a standalone local, parameter, or global, `bool`/`char` occupy a 2-byte slot (68000 even-address alignment). At `external func`/`trap` boundaries the Chapter 13 marshaling rules apply (a bool/char parameter or result travels in a 16-bit stack word).
+
+### Narrow Integers
+
+`uint8`, `int16` and `uint16` are storage types for integers that fit a smaller range: they cost 1, 2 and 2 bytes in records, arrays, and `list of`/`map of` elements. They are ordinary `int`s in every expression:
+
+- **Widening is implicit.** A narrow value assigns, passes, and returns wherever an `int` is expected.
+- **Arithmetic is 32-bit.** `+ - * / mod`, the bitwise operators (`>>` included), unary minus and the comparisons all work on the operands widened to `int`, and every result is `int`. Any two integer types compare with each other: an `int16` holding −1 does not equal a `uint16` holding 65535.
+- **Narrowing is explicit.** `int` → narrow, and one narrow type → a different one, is a build error (`cannot assign int to int16`). Convert with `uint8(x)`, `int16(x)` or `uint16(x)`, which accept an `int`, a `char` or another narrow type and keep the low 8 or 16 bits: `uint8(300)` is 44, `int16(40000)` is −25536, `uint16(-1)` is 65535. As with every conversion, converting to the same type is an error (`uint8() expects an int, char, int16 or uint16, got uint8`).
+- **Literals adopt the narrow type** where one is expected — an assignment target, an argument, a return value, a field default, a `case` label, or the other operand of a comparison — when the value is in range, and are a build error otherwise: `300 is out of range for uint8 (0..255)`, `-1 is out of range for uint16 (0..65535)`. Everywhere else a literal is an `int`.
+- `string(n)` renders any narrow value in decimal.
 
 ### Records and Defaults
 
