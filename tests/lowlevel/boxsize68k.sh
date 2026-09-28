@@ -1,6 +1,7 @@
 #!/bin/sh
 # lowlevel/boxsize68k.sh -- SE wave 2 final-review I2 guard. The 68k
-# container box sizes in runtime/clarus/datetime_68k.cla carry ZERO slack:
+# container box sizes in runtime/clarus/boxsize_68k.cla (datetime_68k.cla
+# until SE wave 3) carry ZERO slack:
 # each must equal 4 x its overlay record's field count, and every field must
 # be a 4-byte type on 68k (int/ptr). A field added to RtText/RtList/RtMap/
 # RtSortedMap without bumping the const under-sizes every native box (heap
@@ -8,7 +9,7 @@
 . "$(dirname "$0")/../lib.sh" || exit 2
 
 RT=$ROOT/runtime/clarus
-DT=$RT/datetime_68k.cla
+DT=$RT/boxsize_68k.cla
 [ -f "$DT" ] || die "missing $DT"
 
 # check RECORD FILE CONST

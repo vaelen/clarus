@@ -205,9 +205,9 @@ func rtSortedMapGrowVals(m: ptr, need: int) {
 // target: SortedMapNewPtr only guarantees "at least this many bytes," so a
 // little slack here is harmless, unlike an UNDER-sized box, which would
 // corrupt whatever heap memory follows it.
-// SE wave 2 Task 9: the const itself now lives in the per-lane datetime
-// companions (datetime_c.cla keeps the host value above; datetime_68k.cla
-// carries the exact 68k field sum) -- see datetime_68k.cla's own comment.
+// SE wave 3: the const itself now lives in the per-lane boxsize
+// companions (boxsize_c.cla keeps the host value above; boxsize_68k.cla
+// carries the exact 68k field sum) -- see boxsize_68k.cla's own comment.
 
 // rtSortedMapNew (rt_core.inc:622-636, `rt_map_new`) -- Plan 5c wave2a Task 4:
 // birth allocation is now entirely Clarus-owned, mirroring the C reference

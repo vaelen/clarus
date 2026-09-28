@@ -1,6 +1,14 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// boxsize_c.cla: SE wave 3: container box-size constants (rtTextBoxSize,
-// rtListBoxSize, rtMapBoxSize, rtSortedMapBoxSize). Empty until Task 8
-// moves them here from the datetime pair; see spec 3.5.
+// boxsize_c.cla: the C lane's container box sizes (SE wave 3, spec 3.5;
+// the values are SE wave 2's, unchanged). Each budgets a full 8-byte
+// slot per field so a 64-bit host's Handle width and padding always fit
+// (text.cla/list.cla/map.cla/sortedmap.cla explain the derivations).
+// boxsize_68k.cla carries the native values. Spliced right after
+// core.cla on every C-lane build, early-visible under --testapi, since
+// the container modules name these.
+const rtTextBoxSize: int = 32
+const rtListBoxSize: int = 40
+const rtMapBoxSize: int = 112
+const rtSortedMapBoxSize: int = 56

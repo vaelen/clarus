@@ -577,9 +577,9 @@ func mapPoolAppend(m: ptr, key: ptr): int {
 // this same 112-byte figure as "14 fields x 8-byte slots" -- the extra
 // slot beyond the 13 real fields is exactly this deliberate slack, not a
 // miscount.)
-// SE wave 2 Task 9: the const itself now lives in the per-lane datetime
-// companions (datetime_c.cla keeps the host value above; datetime_68k.cla
-// carries the exact 68k field sum) -- see datetime_68k.cla's own comment.
+// SE wave 3: the const itself now lives in the per-lane boxsize
+// companions (boxsize_c.cla keeps the host value above; boxsize_68k.cla
+// carries the exact 68k field sum) -- see boxsize_68k.cla's own comment.
 
 // rtMapNew: birth allocation is entirely Clarus-owned (rc=1, valsize/
 // count/cap/valcap/poolused/poolcap/indexcap/tombs poked, FOUR fresh empty
