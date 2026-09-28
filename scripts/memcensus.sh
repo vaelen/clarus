@@ -42,17 +42,21 @@ struct rtm_list { int32_t rc; Handle data; int32_t elemsize, count, cap; };
 struct rtm_map { int32_t rc; Handle keys, vals; int32_t valsize, count, cap, valcap;
     Handle keypool; int32_t poolused, poolcap; Handle index; int32_t indexcap, tombs; };
 struct rtm_text { int32_t rc; Handle h; int32_t len, cap; };
-typedef struct { const char *n; long bytes, count, elem, cap; } rtm_row;
+typedef struct { const char *n, *alias; void *box; long bytes, count, elem, cap; } rtm_row;
+/* Two globals holding one box (cv_rtbakeBytes/cv_bkLoadBuf) are one row:
+   the later name is printed as "also=" instead of counting the bytes twice. */
+#define RTM_DUP(v) { int k; for (k = 0; k < n && r[k].box != (void *)v; k++) {} \
+    if (k < n) { r[k].alias = #v; dup = 1; } else { r[n].box = (void *)v; r[n].alias = 0; } }
 static long rtm_hsz(Handle h) { return h ? (long)GetHandleSize(h) : 0; }
-#define RTM_L(v) if (v && n < 4096) { struct rtm_list *p = (struct rtm_list *)v; r[n].n = #v; \
+#define RTM_L(v) dup = 0; if (v) RTM_DUP(v) if (v && !dup && n < 4096) { struct rtm_list *p = (struct rtm_list *)v; r[n].n = #v; \
     r[n].bytes = rtm_hsz(p->data); r[n].count = p->count; r[n].elem = p->elemsize; r[n].cap = p->cap; n++; }
-#define RTM_M(v) if (v && n < 4096) { struct rtm_map *p = (struct rtm_map *)v; r[n].n = #v; \
+#define RTM_M(v) dup = 0; if (v) RTM_DUP(v) if (v && !dup && n < 4096) { struct rtm_map *p = (struct rtm_map *)v; r[n].n = #v; \
     r[n].bytes = rtm_hsz(p->keys) + rtm_hsz(p->vals) + rtm_hsz(p->keypool) + rtm_hsz(p->index); \
     r[n].count = p->count; r[n].elem = p->valsize; r[n].cap = p->cap; n++; }
-#define RTM_T(v) if (v && n < 4096) { struct rtm_text *p = (struct rtm_text *)v; r[n].n = #v; \
+#define RTM_T(v) dup = 0; if (v) RTM_DUP(v) if (v && !dup && n < 4096) { struct rtm_text *p = (struct rtm_text *)v; r[n].n = #v; \
     r[n].bytes = rtm_hsz(p->h); r[n].count = p->len; r[n].elem = 1; r[n].cap = p->cap; n++; }
 void rtm_census(FILE *out, const char *prefix) {
-  static rtm_row r[4096]; int n = 0, i, j;
+  static rtm_row r[4096]; int n = 0, i, j, dup;
 EOF
   sed -nE 's/^static rt_list \* ?(cv_[A-Za-z0-9_]+);$/  RTM_L(\1)/p
            s/^static rt_(int)?map \* ?(cv_[A-Za-z0-9_]+);$/  RTM_M(\2)/p
@@ -61,8 +65,9 @@ EOF
   for (i = 0; i < 25 && i < n; i++) { int b = i; rtm_row t;
     for (j = i + 1; j < n; j++) if (r[j].bytes > r[b].bytes) b = j;
     t = r[i]; r[i] = r[b]; r[b] = t;
-    fprintf(out, "%s %10ld %s count=%ld elemsize=%ld cap=%ld\n",
-        prefix, r[i].bytes, r[i].n, r[i].count, r[i].elem, r[i].cap); }
+    fprintf(out, "%s %10ld %s count=%ld elemsize=%ld cap=%ld%s%s\n",
+        prefix, r[i].bytes, r[i].n, r[i].count, r[i].elem, r[i].cap,
+        r[i].alias ? " also=" : "", r[i].alias ? r[i].alias : ""); }
 }
 EOF
 } > "$OUT/clarusc-census.c"

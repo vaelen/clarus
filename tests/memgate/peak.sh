@@ -12,7 +12,13 @@
 BUDGET=$ROOT/tests/memgate/budget.txt
 [ -f "$BUDGET" ] || die "missing $BUDGET"
 
-"$CLARUSC" --bake-ir --lane 68k --rtdir "$RTDIR" -o "$WORK/rt.clir" > "$WORK/bake.log" 2>&1 \
+# The rtbake subcase models ClarusC.APPL, so both its bake and its compile
+# run from $WORK (outside the repo): the host CLI's stamp check
+# (feExpectedStamp -> bkFindClarusC) would otherwise read the whole 4 MB
+# clarusc/clarusc.c, where ClarusC reads a 4-byte stamp resource. With no
+# clarusc.c above the cwd, bake and compile both stamp 0. The source
+# subcases never reach that read.
+(cd "$WORK" && "$CLARUSC" --bake-ir --lane 68k --rtdir "$RTDIR" -o "$WORK/rt.clir") > "$WORK/bake.log" 2>&1 \
     || die "bake-ir failed: $(tail -3 "$WORK/bake.log" | tr '\n' ' ')"
 
 measure() {
@@ -21,7 +27,7 @@ measure() {
     case "$_budget" in
         ''|*[!0-9]*) t_fail "$_name" "no numeric budget for $_name in $BUDGET"; return ;;
     esac
-    if ! CLARUS_MEM_PEAK=1 "$CLARUSC" emit68k "$@" -o "$WORK/$_name.bin" > /dev/null 2> "$WORK/$_name.err"; then
+    if ! (cd "$MEASURE_CWD" && CLARUS_MEM_PEAK=1 "$CLARUSC" emit68k "$@" -o "$WORK/$_name.bin") > /dev/null 2> "$WORK/$_name.err"; then
         t_fail "$_name" "emit68k failed: $(tail -3 "$WORK/$_name.err" | tr '\n' ' ')"
         return
     fi
@@ -39,7 +45,9 @@ measure() {
     t_pass "$_name"
 }
 
-measure bookmarks_rtbake --rtdir "$RTDIR" --rtbake "$WORK/rt.clir" examples/bookmarks.cla
+MEASURE_CWD=$WORK
+measure bookmarks_rtbake --rtdir "$RTDIR" --rtbake "$WORK/rt.clir" "$ROOT/examples/bookmarks.cla"
+MEASURE_CWD=$ROOT
 measure bookmarks_src --rtdir "$RTDIR" examples/bookmarks.cla
 measure hello_src --rtdir "$RTDIR" examples/hello-mac.cla
 t_done
