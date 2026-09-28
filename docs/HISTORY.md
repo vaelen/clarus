@@ -7297,9 +7297,13 @@ in the program design's §9.2.
   and `reserve(n)` is out of the spec's scope. Cost: a small Wave 2
   item.
 
-**Gates.** T2 (`scripts/test-merge.sh`): <T2 result>.
+**Gates.** T2: `scripts/test-merge.sh` PASS in 1242 s (t1 body 119
+pass/37 skip/0 fail; perfgate; selfhost/ 6/6; mactest/ 21 pass/17
+skip/0 fail; bake/ full corpus 7/7).
 `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (this wave
-touched `bake.cla` and `macgui.cla`): <clarusc_bake result>. The IIcx
+touched `bake.cla` and `macgui.cla`): `mactest/snow/clarusc_bake`
+PASS in 497 s and `mactest/snow/macresident_failed_compile` PASS in
+668 s (Mac IIcx, System 7.1). The IIcx
 memprobe run passed 5/5 in 981 s. Per-task T1 runs all passed (118–119
 pass, 37 skip, 0 fail, perfgate 1/1).
 

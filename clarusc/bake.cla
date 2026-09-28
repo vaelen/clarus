@@ -2346,14 +2346,13 @@ var bkLdEarlySymbolsCount: int
 // bkReadObjMeta into these globals (never a live global write MID-PARSE
 // -- the timing guarantee the staging convention exists for -- every
 // field below is built into a fully-local `lXxx` first and assigned
-// here only once, at the very end of a successful parse), and left
-// PRISTINE from there on (clir-load-perf Task 7, design B: they are
-// pending state a memoized parse must be able to replay from -- the
-// runtime/testapi boundary they used to be truncated to is applied as a
-// bounds check by cgObjPasteEligible instead; SE wave 1 removed the
-// memo -- every compile re-parses -- but kept that bounds-check shape,
-// and these tables are still never freed or truncated before the fork
-// is built, spec 4.3). MOST of these fields are
+// here only once, at the very end of a successful parse), and never
+// truncated afterwards: the runtime/testapi boundary is applied as a
+// bounds check by cgObjPasteEligible (clir-load-perf Task 7 moved it
+// there to protect a memoized parse; SE wave 1 removed that memo --
+// every compile re-parses -- and kept the cheaper bounds-check shape).
+// These tables are not freed before the fork is built, spec 4.3.
+// MOST of these fields are
 // then read by a future compile's own Measure-skip/paste link pass (Task
 // 3) -- but not all: the per-function StrLit First/Count/Flat triple and
 // the eight once-per-artifact size-bucket scalars below are staged the
@@ -2462,9 +2461,9 @@ var bkLdObjUiEventsSize: int
 // clir-load-perf Task 7 (design B) PROMOTED it: it is now exactly the
 // baked-index predicate cgObjPasteEligible (cg68k.cla) tests against,
 // replacing bkInstallObjCode's own in-place truncation of the four
-// per-function objcode index arrays (which design B cannot afford --
-// that truncation destroyed pending state a memoized parse must replay
-// from; audit findings F1/F2). Two consequences a future reader must
+// per-function objcode index arrays (design B's memoized parse could
+// not afford that truncation, audit findings F1/F2; SE wave 1 removed
+// the memo but kept the bounds check). Two consequences a future reader must
 // keep true:
 //   - driveReset() now RESETS it to 0 every compile (drive.cla), so it
 //     means "this compile installed a baked runtime prefix of N
@@ -3755,9 +3754,9 @@ func bkLoadSections(testapi: bool): bool {
 // the cursor for bkGetU32/bkGetByte) and then has five `return false`
 // exits after that point, every one of which used to leave the loader
 // holding a reference to the caller's ~1.3MB buffer for the rest of the
-// session -- `text` is a reference type, so a refused CLIR pinned the
-// exact memory design B exists to reclaim, for a whole ClarusC.APPL
-// session running on CLFS-source fallback. Clearing here rather than at
+// session -- `text` is a reference type, so a refused CLIR pinned
+// ~1.3MB for a whole ClarusC.APPL session running on CLFS-source
+// fallback. Clearing here rather than at
 // each of those five returns means a sixth one cannot reintroduce the
 // leak, and it covers BOTH callers (bkLoadRtbake and macgui.cla's
 // gcResolveBakePath, which checks the header directly).
@@ -4443,17 +4442,15 @@ func bkInstallArenas(testapi: bool) {
 // truncate the four per-function object-staging arrays (bkLdObjValid/
 // RunFirst/HoleFirst/NHoles) down to bkRuntimeFuncBoundary IN PLACE,
 // which is exactly the destructive-consume-of-pending-state design B
-// cannot have (Task 6 audit findings F1/F2): under memoization there is
-// no re-parse to rebuild what the truncation ate, and a session mixing a
-// non-testapi compile with a later --testapi one would permanently lose
-// the uitest functions' own paste eligibility. The truncation is now a
-// BOUNDS CHECK instead -- cgObjPasteEligible (cg68k.cla) rejects any
-// index at or past bkRuntimeFuncBoundary, which is recomputed by
-// bkInstallArenas on every compile from that compile's OWN testapi
-// split, so the pending arrays stay pristine and full-length forever.
-// Cheaper too: four copy loops per compile became one comparison. (SE
-// wave 1 removed the memo; the bounds check stays -- it is still the
-// cheaper shape.)
+// could not have (Task 6 audit findings F1/F2): under its memoized
+// parse there was no re-parse to rebuild what the truncation ate. The
+// truncation is now a BOUNDS CHECK instead -- cgObjPasteEligible
+// (cg68k.cla) rejects any index at or past bkRuntimeFuncBoundary, which
+// bkInstallArenas recomputes on every compile from that compile's OWN
+// testapi split. SE wave 1 removed the memo (every compile re-parses,
+// so the arrays are rebuilt fresh each time); the bounds check stays
+// because it is cheaper: four copy loops per compile became one
+// comparison.
 
 // ================================================================
 // --testapi checker-symbol preload (Task 5, deliverables (a)/(c))

@@ -422,6 +422,16 @@ The SE memory program (2026-09-27) resumed work on this target. See
   (`bkFreeParseStaging` at its top, Task 5). Nothing accumulates. Fix:
   one `bkFreeParseStaging()` in `gcCompile` after a failed
   `driveCompile`, or on `driveCompile`'s failure returns.
+- **`driveRtbakeFallback` restores `haveRtbake = true` over consumed
+  bytes (Wave 2: remove or rethink).** After a drift fallback the
+  outer compile sets `haveRtbake = true` again, but its own bake parse
+  already released `rtbakeBytes`, leaving (`haveRtbake = true`, bytes
+  empty). It is harmless today only because every front end re-arms
+  both per compile (`gcResolveBakePath`, `dblcompile_bake.cla`;
+  `main.cla` compiles once). A future front end that calls
+  `driveCompile` twice without re-arming `rtbakeBytes` gets a
+  bad-header diagnostic instead of a from-source compile. Drop the
+  assignment (leave it false) or have the fallback own re-arming.
 - **`irStorageRow` caches misses until `irReset`.** Since Task 5,
   `irStorAdd` probes `strIndex.get(intr, -1)` instead of interning, so
   an intrinsic name not yet in the pool gets row value −1 and stays

@@ -2068,11 +2068,16 @@ func driveRtbakeFallback(entries: list of string, testapi: bool): bool {
     resetDiags()
     astReset()
     ok = driveCompile(entries, testapi)
-    // Restored (not left false) so a LATER, unrelated compile in the same
-    // long-running process (macgui.cla's Mac-resident compiler, the one
-    // front end that calls driveCompile more than once) still tries the
-    // bake path fresh -- this fallback is scoped to "for that compile"
-    // only, per the design spec's own wording.
+    // Restored to true, but NOT a working re-arm on its own: this
+    // compile's own bake parse already consumed (released) rtbakeBytes,
+    // so what is left here is (haveRtbake = true, rtbakeBytes empty).
+    // Every current front end re-arms BOTH per compile before calling
+    // driveCompile (macgui.cla's gcResolveBakePath, clarusc/test/
+    // dblcompile_bake.cla; main.cla compiles once), which is what makes
+    // a LATER compile try the bake path fresh. A future front end that
+    // calls driveCompile again WITHOUT re-arming rtbakeBytes would get a
+    // bad-header diagnostic instead of a from-source compile. See
+    // docs/TODO.md (SE wave 1 final review M1).
     haveRtbake = true
     return ok
 }
@@ -2507,10 +2512,11 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         // truncating the per-function object staging to the boundary
         // bkInstallArenas just set irFuncs.count to. clir-load-perf Task
         // 7 (design B) deleted that step: the boundary is applied as a
-        // bounds check by cgObjPasteEligible (cg68k.cla) instead, so the
-        // parsed staging stays pristine for the next compile in this
-        // session. bkInstallArenas' own bkRuntimeFuncBoundary assignment,
-        // just above, is all the install this needs now.
+        // bounds check by cgObjPasteEligible (cg68k.cla) instead. (Its
+        // original reason -- keeping a memoized parse pristine for the
+        // next compile -- is gone since SE wave 1: every compile
+        // re-parses.) bkInstallArenas' own bkRuntimeFuncBoundary
+        // assignment, just above, is all the install this needs now.
         // fallback-trigger-narrowing Task 2: sever EVERY check-only
         // collision (bkManifestCollidedIdx, both case (a) and any case
         // (b) already excised from `combined` above) out of the chain
