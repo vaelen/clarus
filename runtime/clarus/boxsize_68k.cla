@@ -1,6 +1,21 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// boxsize_68k.cla: SE wave 3: container box-size constants (rtTextBoxSize,
-// rtListBoxSize, rtMapBoxSize, rtSortedMapBoxSize). Empty until Task 8
-// moves them here from the datetime pair; see spec 3.5.
+// boxsize_68k.cla: the native 68k container box sizes (SE wave 3, spec
+// 3.5; the values are SE wave 2's, unchanged): the EXACT sum of each
+// overlay record's fields at 68k widths (every int and ptr/Handle is 4
+// bytes, no padding), half or less of the host budget in boxsize_c.cla.
+// An UNDER-sized box corrupts the heap block after it, so each figure is
+// the field count x 4 and must grow with its record
+// (tests/lowlevel/boxsize68k.sh checks this):
+//   RtText      rc h len cap                                  4 x 4 = 16
+//   RtList      rc data elemsize count cap                    5 x 4 = 20
+//   RtMap       rc keys vals valsize count cap valcap keypool
+//               poolused poolcap index indexcap tombs        13 x 4 = 52
+//   RtSortedMap rc keys vals valsize count cap valcap         7 x 4 = 28
+// Spliced right after core.cla on every native build, early-visible
+// under --testapi, since the container modules name these.
+const rtTextBoxSize: int = 16
+const rtListBoxSize: int = 20
+const rtMapBoxSize: int = 52
+const rtSortedMapBoxSize: int = 28

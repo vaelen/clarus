@@ -423,16 +423,6 @@ The SE memory program (2026-09-27) resumed work on this target. See
 
 ### SE memory program, Wave 2 (2026-09-28)
 
-- **The container box-size consts live in an odd home.**
-  `rtTextBoxSize`/`rtListBoxSize`/`rtMapBoxSize`/`rtSortedMapBoxSize`
-  sit in `datetime_c.cla`/`datetime_68k.cla` (Task 9) only because that
-  is the one lane pair both the committed snapshot and the current
-  compiler splice on every build of either lane. Cleaner: a
-  `boxsize_c.cla`/`boxsize_68k.cla` pair, which needs a `bakeModuleList`
-  entry, a slot in both lanes' early lists (`driveEarlySplice` +
-  `driveManifestSplice`), a `tests/bake/boxsize.sh` twin, and a snapshot
-  regeneration FIRST (the old snapshot would not splice the new modules
-  and could no longer compile the runtime).
 - **The host gate and the IIcx differ by ~2.7 MB at the low point, and
   the gap is not re-attributed.** Host peak 3,668,312 bytes (3582 KB)
   against 6272 KB used on the IIcx (program design §9.3). Wave 0's

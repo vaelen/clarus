@@ -1351,25 +1351,19 @@ func driveEarlySplice(testapi: bool): bool {
     // to the matching spot on this lane, so both paths agree on where
     // "early-visible" ends.
     //
-    // Host lane: conn/atalk deliberately NOT early (sortedmap/datetime/
-    // ser are, since SE wave 2 Task 9 -- see below). bakeModuleList's
-    // bkLaneC list carries no conn/atalk at all (they stay usesConn-gated there), so
+    // Host lane deliberately unchanged: bakeModuleList's bkLaneC list
+    // carries no conn/atalk at all (they stay usesConn-gated there), so
     // early-splicing them here would make the two paths disagree about
     // the host early-visible set for no gain -- the toolbox suite this
-    // exists for is native-only.
-    // SE wave 2 Task 9: sortedmap/datetime(+lane)/ser are early on BOTH
-    // lanes now -- the datetime lane pair carries the container box-size
-    // consts text.cla/list.cla/map.cla/sortedmap.cla name, so check#1
-    // needs them visible here on the host lane too.
-    earlyMods.add("sortedmap.cla")
-    earlyMods.add("datetime.cla")
+    // exists for is native-only. (SE wave 2 Task 9 widened the host set
+    // with sortedmap/datetime(+lane)/ser while the box-size consts lived
+    // in the datetime pair; SE wave 3 moved them to the boxsize pair
+    // above and restored this.)
     if want68k {
+        earlyMods.add("sortedmap.cla")
+        earlyMods.add("datetime.cla")
         earlyMods.add("datetime_68k.cla")
-    } else {
-        earlyMods.add("datetime_c.cla")
-    }
-    earlyMods.add("ser.cla")
-    if want68k {
+        earlyMods.add("ser.cla")
         earlyMods.add("conn.cla")
         earlyMods.add("conn_68k.cla")
         earlyMods.add("atalk.cla")
@@ -1701,10 +1695,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     early68k = want68k and earlySpliceDone
     cpSortedMapPorted = true
     cpSerPorted = true
-    // SE wave 2 Task 9: driveEarlySplice now splices sortedmap/datetime
-    // (+lane)/ser on BOTH lanes, so this group keys on earlySpliceDone
-    // alone; early68k still gates the 68k-only conn/atalk/tcp pairs.
-    if not earlySpliceDone {
+    if not early68k {
         neededMods.add("sortedmap.cla")
         // datetime (2026-08-10 spec): datetime.cla + exactly one per-lane
         // rtNow variant. No cprint ported-flag exists for this family -- the
@@ -1866,10 +1857,12 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     }
 
     combined2 = combined
-    // SE wave 2 Task 9: a host --testapi build can now leave neededMods
-    // EMPTY (driveEarlySplice took sortedmap/datetime/ser too, and a
-    // conn/fileh-less program adds nothing more), but it still needs the
-    // testapi chain reassembly, prelude re-prepend and check#2 below.
+    // SE wave 2 Task 9: a --testapi build whose neededMods remainder is
+    // EMPTY still needs the testapi chain reassembly, prelude re-prepend
+    // and check#2 below. Unreachable since SE wave 3 restored the host
+    // early set (the host remainder always holds sortedmap/datetime/ser,
+    // the 68k one native.cla/fileh); kept as a guard should the early
+    // set ever swallow the whole manifest again.
     if neededMods.count > 0 or earlySpliceDone {
         if not haveRtDir and neededMods.count > 0 {
             rtDir = findRtDir(neededMods[0])

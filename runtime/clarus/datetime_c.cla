@@ -9,9 +9,7 @@
 // <= D0) even though this module is never spliced on the native lane,
 // so the trap word is never emitted -- datetime_68k.cla is the native
 // twin (a direct Time-global read, cheaper than the chip resync this
-// trap would perform). Always spliced (with datetime.cla) into every
-// C-lane build, so this pair also carries the host rt*BoxSize container
-// constants (bottom of file; datetime_68k.cla says why they live here).
+// trap would perform).
 
 extern record DtSecsBox {
     secs: int
@@ -25,14 +23,3 @@ func rtNow(): int {
     DtReadDateTime(box)
     return box.secs
 }
-
-// Container box sizes (SE wave 2 Task 9) -- the C lane's values, unchanged:
-// each budgets a full 8-byte slot per field so a 64-bit host's Handle
-// width and padding always fit (text.cla/list.cla/map.cla/sortedmap.cla
-// explain the derivations). datetime_68k.cla carries the native values.
-// They live in this lane pair because it is the one per-lane pair every
-// build splices on both lanes (see datetime_68k.cla).
-const rtTextBoxSize: int = 32
-const rtListBoxSize: int = 40
-const rtMapBoxSize: int = 112
-const rtSortedMapBoxSize: int = 56

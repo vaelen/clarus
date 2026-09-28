@@ -324,11 +324,12 @@ Tiered test gates:
   `driveManifestSplice` appends the remainder after it, and `bake.cla`'s
   `bakeModuleList` moves `uitest.cla` to the matching spot, which is the
   marker for where "early-visible" ends. Get the order wrong and only
-  `CLARUS_BAKE_FULL=1` catches it. The HOST lane's early set carries
-  `sortedmap`, `datetime`(+`_c`) and `ser` too (SE wave 2 Task 9: the
-  container box-size consts live in the datetime lane pair, and
-  `text`/`list`/`map`/`sortedmap` name them), so its `uitest.cla`
-  boundary now sits right after `ser.cla`. `conn`/`atalk`/`tcp` stay
+  `CLARUS_BAKE_FULL=1` catches it. The HOST lane's early set is `core`
+  through `uidialogs.cla` again (SE wave 3 restored it: wave
+  2 had widened it with `sortedmap`/`datetime`/`ser` while the container
+  box-size consts lived in the datetime pair; they now live in the
+  `boxsize_c`/`boxsize_68k` pair, early right after `core.cla` on both
+  lanes). `conn`/`atalk`/`tcp` stay
   68k-only (Ruling 10): `bakeModuleList`'s C-lane list carries none of
   them, so early-splicing them there would desynchronise from-source
   against bake for no gain — which is why the toolbox suite is
