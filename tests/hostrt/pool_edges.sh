@@ -2,8 +2,10 @@
 # hostrt/pool_edges.sh (SE wave 2 Task 2): the intern pool's edge strings
 # ("", 255 bytes, byte 0, bytes >= 0x80, a repeat) must compile to the SAME
 # bytes under the committed snapshot and the current sources -- the pool
-# numbering shows up in the literal pool. Stdout itself is pinned by
-# tests/lowlevel/run.sh (testdata/lowlevel/pool_edges.out).
+# numbering shows up in the literal pool. The snapshot-vs-current cmp is
+# vacuous once the snapshot is regenerated from these same sources; the
+# lasting guard is the pinned stdout, testdata/lowlevel/pool_edges.out
+# (checked by tests/lowlevel/run.sh).
 . "$(dirname "$0")/../lib.sh" || exit 2
 src=testdata/lowlevel/pool_edges.cla
 mkdir -p "$WORK/a" "$WORK/b"

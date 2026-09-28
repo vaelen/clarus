@@ -98,6 +98,7 @@ on App.startCLI(args: list of string) {
     var parsedBefore: int
     var elig: int
     var f: int
+    var bakeLen: int
 
     hostPaths = true
     rtDir = ""
@@ -112,6 +113,7 @@ on App.startCLI(args: list of string) {
         log("dblcompile_bake: cannot read bake file: " + args[0])
         quit 2
     }
+    bakeLen = bakeBytes.length
     i = 1
     while i < args.count {
         t0 = TickCount()
@@ -125,6 +127,19 @@ on App.startCLI(args: list of string) {
         driveReset()
         resetDiags()
         astReset()
+        // SE wave 2: every second compile takes macgui.cla's shape
+        // (gcResolveBakePath: the front end verifies the header itself,
+        // then driveCompile parses under bkHeaderVerified), so the
+        // progressive free (bkLoadSections' removeFirst on the shared
+        // box) runs on both entry paths within one process.
+        if (i & 1) == 0 {
+            if not bkCheckRtbakeHeader(rtbakeBytes, bkLane68k) {
+                log("dblcompile_bake: header refused (macgui shape): " + args[i])
+                quit 1
+            }
+            resetDiags()
+            bkHeaderVerified = true
+        }
         wantEmit = true
         want68k = true
         entries = cgFreshStringList()
@@ -147,6 +162,11 @@ on App.startCLI(args: list of string) {
         // the bytes.
         if rtbakeBytes.length != 0 {
             log("dblcompile_bake: rtbakeBytes still held after compile: " + args[i])
+            quit 1
+        }
+        // SE wave 2: the parse's removeFirst consumed only the copy.
+        if bakeBytes.length != bakeLen {
+            log("dblcompile_bake: source bake bytes shrank to " + numToStr(bakeBytes.length) + " (want " + numToStr(bakeLen) + "): " + args[i])
             quit 1
         }
         built = driveEmit68kFork("", false, 0, false)
