@@ -280,6 +280,38 @@ func rtUiParseInt(p: ptr, len: int, out: ptr): bool {
     return true
 }
 
+// rtUiParseNarrow parses Str255 `text` into a narrow int field at `out`
+// (SE wave 3, N3): the rtUiParseInt syntax, then the type's range, and a
+// leading `-` refuses an unsigned code even for "-0". The int lands over
+// text's own first 4 bytes, already consumed by then.
+func rtUiParseNarrow(text: ptr, ftype: int, out: ptr): bool {
+    var v: int
+
+    if ftype != rtUiFtI16 and peekb(text) > 0 and peekb(text + 1) == int('-') {
+        return false
+    }
+    if not rtUiParseInt(text + 1, peekb(text), text) {
+        return false
+    }
+    v = peekl(text)
+    if ftype == rtUiFtU8 {
+        if v > 255 {
+            return false
+        }
+        pokeb(out, v)
+        return true
+    }
+    if ftype == rtUiFtI16 {
+        if v < -32768 or v > 32767 {
+            return false
+        }
+    } else if v > 65535 {
+        return false
+    }
+    pokew(out, v)
+    return true
+}
+
 // rtUiParseFixed (rt_ui.c:4968-5025): 16.16 fixed out, mirroring
 // rtUiFixedToStr's OWN place-value scheme (uitable.cla) in reverse.
 // Integer part: same overflow-checked accumulation as rtUiParseInt,
@@ -519,8 +551,8 @@ func rtUiFormFill(inst: ptr) {
                 }
                 pokeb(text, baseLen)
                 UiBlockMoveData(base + 1, text + 1, baseLen)
-            } else if ftype == rtUiFtInt {
-                rtUiIntToPStr(peekl(base), text)
+            } else if ftype == rtUiFtInt or ftype >= rtUiFtU8 {
+                rtUiIntToPStr(rtUiIntFieldLoad(base, ftype), text)
             } else if ftype == rtUiFtFixed {
                 rtUiFixedToStr(peekl(base), text)
             } else if ftype == rtUiFtChar {
@@ -565,7 +597,7 @@ func rtUiFormFill(inst: ptr) {
 }
 
 // rtUiFormAccept (rt_ui.c:5111-5216). Declaration order over binds: only
-// INT/FIXED can actually fail; every other kind (STR/CHAR/BOOL/ENUM)
+// INT/FIXED and the narrow ints can actually fail; every other kind (STR/CHAR/BOOL/ENUM)
 // always succeeds, so writing it into rtUiModalBuf and moving on is safe
 // even though a LATER bind might still fail -- the partially-updated buf
 // is harmless scratch state, not yet visible to the program. On the
@@ -636,6 +668,13 @@ func rtUiFormAccept(inst: ptr) {
             rtUiWidgetGetStr(inst, wIdx, rtUiPropText, text)
             ok = rtUiParseInt(text + 1, peekb(text), base)
             if not ok {
+                rtUiFormInvalid(inst, wIdx)
+                UiDisposePtr(text)
+                return
+            }
+        } else if ftype >= rtUiFtU8 {
+            rtUiWidgetGetStr(inst, wIdx, rtUiPropText, text)
+            if not rtUiParseNarrow(text, ftype, base) {
                 rtUiFormInvalid(inst, wIdx)
                 UiDisposePtr(text)
                 return

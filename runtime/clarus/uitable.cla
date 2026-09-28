@@ -32,7 +32,7 @@
 // uidesc.cla's Layout/EnumArrays accessors) -- mirrors rt_ser.inc's own
 // ser_put_field byte layout exactly: a bool field is 1 byte at its base
 // address (small-scalar-width phase, 2026-08-05), same as char.
-// rtUiFtInt/Fixed/Bool/Char/Str/Enum
+// rtUiFtInt/Fixed/Bool/Char/Str/Enum/U8/I16/U16
 // (below) mirror ser.cla's own RtFtInt/Fixed/Bool/Char/Str/Enum numbering
 // exactly (both read the SAME uibFieldTypeNum-numbered blob/serialized
 // bytes, clarusc/uiblob.cla:269-291) but are this file's OWN constants,
@@ -250,6 +250,9 @@ const rtUiFtBool: int = 2
 const rtUiFtChar: int = 3
 const rtUiFtStr: int = 4
 const rtUiFtEnum: int = 5
+const rtUiFtU8: int = 6
+const rtUiFtI16: int = 7
+const rtUiFtU16: int = 8
 
 // ================================================================
 // ListRec field offsets (Lists.h `struct ListRec`, cross-checked against
@@ -426,6 +429,24 @@ func rtUiFixedToStr(v: int, out255: ptr) {
     UiDisposePtr(fbuf)
 }
 
+// rtUiIntFieldLoad reads an int-like field -- RtFtInt, or a narrow
+// RtFtU8/I16/U16 (SE wave 3, N3) -- widened to an int.
+func rtUiIntFieldLoad(base: ptr, ftype: int): int {
+    var v: int
+
+    if ftype == rtUiFtU8 {
+        return peekb(base)
+    }
+    if ftype == rtUiFtInt {
+        return peekl(base)
+    }
+    v = peekw(base)
+    if ftype == rtUiFtI16 and v >= 32768 {
+        v = v - 65536
+    }
+    return v
+}
+
 // rtUiTableDrawField (rt_ui.c:1075-1122): renders one field's value into
 // colRect (already ClipRect'd by the caller) by ftype -- mirrors
 // rt_ser.inc's own ser_put_field byte layout exactly, including RtFtBool's
@@ -451,8 +472,8 @@ func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr) {
 
     if ftype == rtUiFtStr {
         UiDrawText(base + 1, 0, peekb(base))
-    } else if ftype == rtUiFtInt {
-        v = peekl(base)
+    } else if ftype == rtUiFtInt or ftype >= rtUiFtU8 {
+        v = rtUiIntFieldLoad(base, ftype)
         numbuf = UiNewPtr(256)
         rtUiIntToPStr(v, numbuf)
         UiDrawText(numbuf + 1, 0, peekb(numbuf))

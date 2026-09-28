@@ -2207,10 +2207,11 @@ func lowCheckSerializableFields(recNameIdx: int, ctx: string) {
         k = typeKind(ft)
         if not (k == TyInt or k == TyBool or k == TyFixed or k == TyChar or k == TyStr or k == TyEnum) {
             lowUnsupported(ctx + ": record " + poolGet(recNameIdx) + " field " + poolGet(fieldInfos[fi].nameIdx) + " is not a value type")
-        } else if tyIntWidth(ft) != 0 {
-            // SE wave 3: narrow fields get serializer field codes in
-            // Task 7 (format v2); until then saving one would read or
-            // write 4 bytes of a 1- or 2-byte field.
+        } else if tyIntWidth(ft) != 0 and (ctx == "file.save" or ctx == "file.load") {
+            // SE wave 3: forms and tables handle narrow fields (RtFtU8/
+            // I16/U16, Task 4); the serializer learns them in Task 7
+            // (format v2). Until then saving one would read or write 4
+            // bytes of a 1- or 2-byte field.
             lowUnsupported(ctx + ": record " + poolGet(recNameIdx) + " field " + poolGet(fieldInfos[fi].nameIdx) + " is a narrow integer (not yet serializable)")
         }
         fi = fieldInfos[fi].next

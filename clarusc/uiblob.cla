@@ -242,7 +242,7 @@ func uibStr(poolIdx: int): int {
 // directly (no C macro spelling needed, unlike cprint.cla's
 // cpWidgetKindMacro/cpSerFieldRow, which this mirrors): RTUI_BUTTON..
 // RTUI_TABLE are 0..7 (runtime/mac/rt_ui.h:53-60); RT_FT_INT..RT_FT_ENUM
-// are 0..5 (cprint.cla:4158, cpEmitSerDescs' own doc comment). Both fail
+// are 0..5 and RT_FT_U8/I16/U16 6..8 (cpEmitSerDescs' own doc comment). Both fail
 // closed (Global Constraints' fail-closed rule) on an unrecognized kind,
 // matching cpWidgetKindMacro's own precedent exactly.
 // ================================================================
@@ -279,8 +279,21 @@ func uibWidgetKindNum(kindIdx: int): int {
     return -1
 }
 
-func uibFieldTypeNum(k: IRKind): int {
+func uibFieldTypeNum(t: int): int {
+    var k: IRKind
+
+    k = irtKind(t)
     if k == KInt {
+        // SE wave 3 (N3): the narrow ints are RtFtU8 6 / I16 7 / U16 8.
+        if irtN(t) == 8 {
+            return 6
+        }
+        if irtN(t) == -16 {
+            return 7
+        }
+        if irtN(t) == 16 {
+            return 8
+        }
         return 0
     }
     if k == KFixed {
@@ -623,7 +636,7 @@ func uibEmitLayout(recNameIdx: int): int {
                 m = irEnumMemberNext(m)
             }
         }
-        uibI32(uibLayouts, uibFieldTypeNum(k))
+        uibI32(uibLayouts, uibFieldTypeNum(t))
         if uibNativeLane {
             uibI32(uibLayouts, cgFieldOffset(recNameIdx, irFieldSlotName(f)))
         } else {

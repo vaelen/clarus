@@ -61,7 +61,7 @@
 //     headerOff, widthPx, widthFill, fieldIndex.
 //   Layout (2 + nFields*6 int32, at a form's or table's own layoutOff):
 //     recSize, nFields, then nFields field blocks of 6 int32 each (base =
-//     layoutOff + 8 + k*24): ftype (RtFtInt/Fixed/Bool/Char/Str/Enum,
+//     layoutOff + 8 + k*24): ftype (RtFtInt/Fixed/Bool/Char/Str/Enum/U8/I16/U16,
 //     ser.cla's own numbering), offset (byte offset within the bound
 //     record), strCap (RtFtStr only), enumCount (RtFtEnum only),
 //     enumLabelsOff, enumValuesOff (both -1 unless RtFtEnum).

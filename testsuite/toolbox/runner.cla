@@ -160,6 +160,9 @@
 // flat. It does NOT prove rtAt68DspFree's own bookkeeping: a suite case
 // cannot name the AppleTalk runtime at all -- see that case's own header
 // comment and docs/TODO.md.
+// NarrowForm (cases_narrowform.cla) is SE wave 3 Task 4's addition: a
+// form field bound to a `uint16` refuses an out-of-range value and a minus
+// sign at OK, then accepts an in-range one (spec N3).
 
 enum ToolboxTest {
     All
@@ -202,15 +205,16 @@ enum ToolboxTest {
     CanvasIdle
     WindowMenus
     AdspLeak
+    NarrowForm
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 39 real cases
+// nTbCases is ToolboxTest's member count minus All: the 40 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 40
+const nTbCases: int = 41
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -336,6 +340,9 @@ func tbCaseName(t: ToolboxTest): string {
     case AdspLeak {
         return "AdspLeak"
     }
+    case NarrowForm {
+        return "NarrowForm"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -386,6 +393,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(CanvasIdle)
     l.add(WindowMenus)
     l.add(AdspLeak)
+    l.add(NarrowForm)
     l.add(SelfCheck)
     return l
 }
@@ -578,6 +586,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, AdspLeak) {
         results.add(caseAdspLeak())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, NarrowForm) {
+        results.add(caseNarrowForm())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

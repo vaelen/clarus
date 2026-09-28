@@ -6832,6 +6832,21 @@ func cpEmitEnumArraysOnce(enumNameIdx: int) {
     abort("cprint: unknown enum " + name)
 }
 
+// cpIntFtype spells a KInt field's RT_FT_* code: RT_FT_INT, or for a
+// narrow int (SE wave 3, N3) RT_FT_U8 / RT_FT_I16 / RT_FT_U16.
+func cpIntFtype(t: int): string {
+    if irtN(t) == 8 {
+        return "RT_FT_U8"
+    }
+    if irtN(t) == -16 {
+        return "RT_FT_I16"
+    }
+    if irtN(t) == 16 {
+        return "RT_FT_U16"
+    }
+    return "RT_FT_INT"
+}
+
 // cpFieldDescRow renders one clar_fields_NAME[] entry (an rt_field_desc
 // literal, rt.h's Task 1 contract) for field slot f of record recName. Only
 // KInt/KFixed/KBool/KChar/KStr/KEnum can appear here -- lower.cla's
@@ -6854,7 +6869,7 @@ func cpFieldDescRow(recName: string, f: int): string {
     enumVals = "0"
     enumLabels = "0"
     if k == KInt {
-        ftype = "RT_FT_INT"
+        ftype = cpIntFtype(t)
     } else if k == KFixed {
         ftype = "RT_FT_FIXED"
     } else if k == KBool {
@@ -6970,7 +6985,7 @@ func cpSerFieldRow(recName: string, f: int): text {
     strCap = 0
     enumCount = 0
     if k == KInt {
-        ftype = "RT_FT_INT"
+        ftype = cpIntFtype(t)
     } else if k == KFixed {
         ftype = "RT_FT_FIXED"
     } else if k == KBool {
@@ -7004,6 +7019,7 @@ func cpSerFieldRow(recName: string, f: int): text {
 //   [1] = nFields                          -- field count
 //   then nFields field blocks, each "4 + enumCount" int32s (cpSerFieldRow):
 //     ftype      -- RT_FT_INT 0 / FIXED 1 / BOOL 2 / CHAR 3 / STR 4 / ENUM 5
+//                   / U8 6 / I16 7 / U16 8
 //     strCap     -- RT_FT_STR only, else 0
 //     offset     -- (int32_t)offsetof(clar_rec_<REC>, cv_<field>)
 //     enumCount  -- RT_FT_ENUM only, else 0
