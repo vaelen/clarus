@@ -784,9 +784,31 @@ func gcCompile(w: Log, p: string) {
 }
 
 on App.startEmpty {
+    var mm: int
+
     // Launch probe (SE wave 0): heap state before anything ClarusC does,
     // plus the zone's extent (ApplLimit 0x130 - ApplZone 0x2AA).
     log("  mem: launch " + gcMemFreeMax() + ", zone " + numToStr((peekl(ptr(0x0130)) - peekl(ptr(0x02AA))) / 1024) + " KB")
+    // SE wave 2 (spec 3.7/R4): preallocate master pointers before any
+    // compiler state exists. Master-pointer blocks are nonrelocatable;
+    // left to on-demand MoreMasters mid-compile they land wherever a
+    // free hole is and pin the heap into fragments. Allocated here, they
+    // pack at the bottom of the zone. Count: one MoreMasters call adds
+    // the zone's moreMast = 64 master pointers (application zone, 128K
+    // ROM and later, System 6 and 7). The Wave 1 IIcx memprobe log has
+    // no handle count, so the proxy is the host memgate's live handle
+    // count at `Built fork` for bookmarks_rtbake: 8157 (re-measured
+    // 2026-09-28; the per-segment max was 8226). ceil(8157 * 1.2 / 64)
+    // = 153 calls = 9792 master pointers, ~40 KB (153 * (256 + 8 hdr)).
+    // The runtime's own 4 startup calls (cg68k stub + native.cla) are
+    // not counted -- extra headroom. ClarusC-only: every other program
+    // stays byte-identical (an `app` header field was deferred, see
+    // docs/FUTURE.md).
+    mm = 0
+    while mm < 153 {
+        MoreMasters()
+        mm = mm + 1
+    }
     open Log
 }
 
