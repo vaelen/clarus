@@ -31044,6 +31044,10 @@ static int32_t clar_fn_lowExpr(int32_t cv_e) {
     cv___ret933 = 0;
     cv___switch29 = clar_fn_exprKind(cv_e);
     if (cv___switch29 == 1) {
+        cv_v = clar_fn_exprTypeGet(cv_e);
+        if (((cv_v != cv_InvalidT) && (clar_fn_typeKind(cv_v) == 1)) && (clar_fn_typeN(cv_v) != 0)) {
+            return clar_fn_newIRIntConst(clar_fn_intLitVal(cv_e), clar_fn_lowMustType(cv_e));
+        }
         return clar_fn_newIRIntConst(clar_fn_intLitVal(cv_e), cv_irIntT);
     } else if (cv___switch29 == 5) {
         cv_v = 0;
