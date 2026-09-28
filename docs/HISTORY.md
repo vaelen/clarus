@@ -6389,8 +6389,7 @@ actually read IS committed).
 
 ## MacTCP phase (2026-09-08, branch `mactcp`)
 
-Recorded on the same terms as the entries above: merging to `main` is
-Andrew's call and had not happened when this was written. This entry
+Merged to `main` 2026-09-28 (fast-forward `87dcf389..fadb19af`). This entry
 covers all thirteen tasks plus every fix round, all merged into
 `mactcp`.
 
@@ -6959,8 +6958,7 @@ review packages and the `progress.md` ledger in
 
 ## SE memory program, Wave 0: measurement (2026-09-28, branch `se-wave0-measurement`)
 
-Recorded on the same terms as the entries above: merging to `main` is
-Andrew's call and had not happened when this was written. This entry
+Merged to `main` 2026-09-28 (fast-forward `87dcf389..fadb19af`). This entry
 covers all nine tasks and Task 8's one fix round, all merged into
 `se-wave0-measurement`.
 
@@ -7176,8 +7174,7 @@ per-task briefs, reports and the ledger in
 
 ## SE memory program, Wave 1: lifetimes (2026-09-28, branch `se-wave1-lifetimes`)
 
-Recorded on the same terms as the entries above: merging to `main` is
-Andrew's call and had not happened when this was written. This entry
+Merged to `main` 2026-09-28 (fast-forward `87dcf389..fadb19af`). This entry
 covers Tasks 1–6 and Task 7's IIcx measurement, all on
 `se-wave1-lifetimes` (33 files, +14,753/−12,973 before this docs commit,
 most of it the twice-regenerated `clarusc/clarusc.c` snapshot). Tasks
@@ -7315,9 +7312,9 @@ parsed on every compile though only `--testapi` reads it; and the
 enum/serdesc measure sites not reset.
 
 Spec: `docs/superpowers/specs/2026-09-28-se-wave1-lifetimes-design.md`;
-plan `docs/superpowers/plans/2026-09-28-se-wave1-lifetimes.md`;
-per-task briefs, reports and the ledger in
-`.superpowers/sdd/2026-09-28-se-wave1-lifetimes/`.
+plan `docs/superpowers/plans/2026-09-28-se-wave1-lifetimes.md`. The
+per-task briefs, reports and ledger were git-ignored scratch and were
+deleted after the final review; the rulings are in this entry.
 
 
 ## Archived from ROADMAP, 2026-09-05 (verbatim)

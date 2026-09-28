@@ -178,8 +178,8 @@ measured analysis:
   3808 KB, which gives ClarusC a heap target of about 2221 KB. The IIcx
   per-phase baseline and the calibration are in the program design's
   §9.1 and in `docs/HISTORY.md`.
-- **Wave 1 (lifetimes): done, pending merge** (branch
-  `se-wave1-lifetimes`, 2026-09-28). `.release()`/`.shrink()` on every
+- **Wave 1 (lifetimes): merged** (branch `se-wave1-lifetimes`,
+  2026-09-28, fast-forward 87dcf389..fadb19af). `.release()`/`.shrink()` on every
   container; the compiler frees the AST, tokens and checker tables after
   lowering, resets `a68Items` per function in measure, installs the bake
   by move and re-parses it on every compile. `bookmarks --rtbake` peaks

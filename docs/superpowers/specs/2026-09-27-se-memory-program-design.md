@@ -1,7 +1,7 @@
 # SE memory program: ClarusC.APPL in 4 MB (program design, 2026-09-27)
 
 Status: **program design, approved 2026-09-27. Wave 0 (measurement) is
-merged (2026-09-28). Wave 1 (lifetimes) is complete, pending merge
+merged (2026-09-28). Wave 1 (lifetimes) is merged
 (2026-09-28), at 6,324,316 bytes against its 6 MB target (§9.2). Wave 2
 is next.**
 This is the umbrella document for a multi-wave program. Each wave gets
@@ -641,7 +641,7 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 |------------------------------------|----------------------------------------|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | prerequisite: Linux emulator lanes | merged to main 2026-09-27 (`62b718c4`) | `emulator-linux`       | T1 116 pass / 0 fail; `mactest/` 30 pass, 6 opt-in skips, 0 fail (all 9 Snow scripts pass)                                                                                                             |
 | 0 Measurement                      | merged to main 2026-09-28 (`87dcf389`) | `se-wave0-measurement` | memgate peaks 11,789,468 (rtbake) / 14,190,252 (src) / 10,194,664 (hello); SE app space 3808 KB, ClarusC target 2221 KB; IIcx low point 12035 KB used, stack 187 KB; peak calibration 0.96–1.08 (§9.1) |
-| 1 Lifetimes                        | complete (pending merge), 2026-09-28   | `se-wave1-lifetimes`   | memgate peaks 6,324,316 (rtbake, target 6 MB missed by 32,860) / 8,605,188 (src) / 8,531,984 (hello); IIcx low point 7977 KB used (−4058 KB), stack 187 KB (§9.2)                                      |
+| 1 Lifetimes                        | merged to main 2026-09-28 (`fadb19af`) | `se-wave1-lifetimes`   | memgate peaks 6,324,316 (rtbake, target 6 MB missed by 32,860) / 8,605,188 (src) / 8,531,984 (hello); IIcx low point 7977 KB used (−4058 KB), stack 187 KB (§9.2)                                      |
 | 2 Representation                   | not started                            | —                      | —                                                                                                                                                                                                      |
 | 3 Narrow scalars                   | not started                            | —                      | —                                                                                                                                                                                                      |
 | 4 Lazy runtime library             | not started                            | —                      | —                                                                                                                                                                                                      |

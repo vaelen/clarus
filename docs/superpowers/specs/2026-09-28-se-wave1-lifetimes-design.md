@@ -1,6 +1,6 @@
 # SE memory program, Wave 1: Lifetimes (spec, 2026-09-28)
 
-Status: **implemented, pending merge (2026-09-28).** Branch
+Status: **merged to main (2026-09-28, `fadb19af`).** Branch
 `se-wave1-lifetimes`. The 6 MB exit was missed by 32,860 bytes; §1's
 revision records the measured number and why.
 Umbrella: `2026-09-27-se-memory-program-design.md` (§6 Wave 1 is the
