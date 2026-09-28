@@ -1978,7 +1978,7 @@ LBL_231:
 LBL_229:
 LBL_225:
         JSR 1690(A5)
-        JSR 3354(A5)
+        JSR 4162(A5)
         BSR.W LBL_66
         JSR 1706(A5)
         JSR 2586(A5)
@@ -2351,7 +2351,7 @@ LBL_238:
         EORI.L #1,D0
         TST.L D0
         BEQ.W LBL_266
-        JSR 4162(A5)
+        JSR 3354(A5)
 LBL_266:
 LBL_235:
         UNLK A6

@@ -6188,7 +6188,8 @@ LBL_564:
         BEQ.W LBL_566
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
-        MOVE.L (A0),D0
+        CLR.L D0
+        MOVE.W (A0),D0
         MOVE.L D0,-12(A6)
         MOVE.L 16(A6),D0
         MOVE.L D0,-(A7)
@@ -11256,12 +11257,13 @@ LBL_782:
         BSR.W LBL_4
         ADDQ.L #8,A7
         MOVE.L D0,D1
-        MOVEQ #4,D0
+        MOVEQ #2,D0
         BSR.W LBL_244
         MOVEA.L (A7)+,A1
         ADDA.L D0,A1
         MOVEA.L A1,A0
-        MOVE.L (A0),D0
+        CLR.L D0
+        MOVE.W (A0),D0
         MOVE.L D0,D1
         MOVEQ #2,D0
         CMP.L D0,D1
@@ -12605,8 +12607,8 @@ LBL_239:
         DC.B $63
         DC.B $00
 LBL_240:
-        DC.L $00000002
-        DC.L $00000000
+        DC.W $0002
+        DC.W $0000
 LBL_241:
         DC.L $00018000
         DC.L $00024000

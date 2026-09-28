@@ -6479,7 +6479,7 @@ LBL_174:
         EXT.L D0
         MOVE.L D0,-4(A6)
 LBL_568:
-        JSR 4162(A5)
+        JSR 3354(A5)
 LBL_567:
         UNLK A6
         RTS

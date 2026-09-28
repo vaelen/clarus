@@ -5926,7 +5926,8 @@ LBL_536:
         BEQ.W LBL_538
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
-        MOVE.L (A0),D0
+        CLR.L D0
+        MOVE.W (A0),D0
         MOVE.L D0,-12(A6)
         MOVE.L 16(A6),D0
         MOVE.L D0,-(A7)

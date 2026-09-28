@@ -8211,7 +8211,8 @@ LBL_650:
         BEQ.W LBL_654
         MOVE.L -48(A6),D0
         MOVEA.L D0,A0
-        MOVE.L (A0),D0
+        CLR.L D0
+        MOVE.W (A0),D0
         MOVE.L D0,-72(A6)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
@@ -8836,14 +8837,14 @@ LBL_688:
         JSR 1306(A5)
         ADDQ.L #8,A7
         MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
+        MOVE.W D0,(A0)
         BRA.W LBL_692
 LBL_691:
         MOVE.L -52(A6),D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
+        MOVE.W D0,(A0)
 LBL_692:
 LBL_686:
 LBL_683:

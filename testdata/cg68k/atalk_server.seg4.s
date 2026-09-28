@@ -12337,9 +12337,10 @@ LBL_99:
 LBL_645:
         UNLK A6
         RTS
-        ; func clar_ui_fire_startempty  (JT slot 516)
+        ; func nat_UiConnPump  (JT slot 516)
 LBL_100:
         LINK A6,#-2100
+        JSR 4538(A5)
 LBL_646:
         UNLK A6
         RTS

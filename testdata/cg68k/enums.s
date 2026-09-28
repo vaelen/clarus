@@ -5926,7 +5926,8 @@ LBL_537:
         BEQ.W LBL_539
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
-        MOVE.L (A0),D0
+        CLR.L D0
+        MOVE.W (A0),D0
         MOVE.L D0,-12(A6)
         MOVE.L 16(A6),D0
         MOVE.L D0,-(A7)
@@ -10790,19 +10791,19 @@ LBL_749:
         UNLK A6
         RTS
         ; func handler_App_launch  (JT slot 163)
-        ;   local g : -4(A6)  size 4
-        ;   local back : -8(A6)  size 4
-        ;   local n : -12(A6)  size 4
+        ;   local g : -2(A6)  size 2
+        ;   local back : -4(A6)  size 2
+        ;   local n : -8(A6)  size 4
 LBL_162:
-        LINK A6,#-2112
+        LINK A6,#-2108
         MOVEQ #0,D0
-        MOVE.L D0,-4(A6)
+        MOVE.W D0,-2(A6)
+        MOVEQ #0,D0
+        MOVE.W D0,-4(A6)
         MOVEQ #0,D0
         MOVE.L D0,-8(A6)
-        MOVEQ #0,D0
-        MOVE.L D0,-12(A6)
         MOVEQ #1,D0
-        MOVE.L D0,-4(A6)
+        MOVE.W D0,-2(A6)
         MOVEQ #80,D0
         MOVE.L D0,D1
         LEA LBL_230(PC),A0
@@ -10818,10 +10819,13 @@ LBL_752:
         BSR.W LBL_4
         ADDA.W #262,A7
 LBL_751:
+        MOVE.W D0,-4(A6)
+        CLR.L D0
+        MOVE.W -4(A6),D0
         MOVE.L D0,-8(A6)
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-12(A6)
-        MOVE.L -8(A6),D1
+        CLR.L D0
+        MOVE.W -4(A6),D0
+        MOVE.L D0,D1
         MOVEQ #80,D0
         CMP.L D0,D1
         SEQ D0
@@ -10833,7 +10837,9 @@ LBL_751:
         BSR.W LBL_139
         ADDQ.L #4,A7
 LBL_753:
-        MOVE.L -4(A6),D1
+        CLR.L D0
+        MOVE.W -2(A6),D0
+        MOVE.L D0,D1
         MOVEQ #1,D0
         CMP.L D0,D1
         SEQ D0

@@ -1,6 +1,6 @@
 LBL_232:
         ; startup (JT slot 0)
-        ; globals (below A5, 7410 bytes total):
+        ; globals (below A5, 7408 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiClaimedMask : -12(A5)  size 4  type int
@@ -170,10 +170,10 @@ LBL_232:
         ;   gb : -7394(A5)  size 1  type bool
         ;   gp : -7398(A5)  size 4  type ptr
         ;   gf : -7402(A5)  size 4  type fixed
-        ;   gm : -7406(A5)  size 4  type enum
-        ;   gk : -7410(A5)  size 4  type int
-        LEA -7410(A5),A0
-        MOVE.W #3704,D0
+        ;   gm : -7404(A5)  size 2  type enum
+        ;   gk : -7408(A5)  size 4  type int
+        LEA -7408(A5),A0
+        MOVE.W #3703,D0
 LBL_234:
         CLR.W (A0)+
         DBRA D0,LBL_234
@@ -246,7 +246,7 @@ LBL_233:
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
         MOVE.L #1,D0
-        MOVE.L D0,-7410(A5)
+        MOVE.L D0,-7408(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -5934,7 +5934,8 @@ LBL_534:
         BEQ.W LBL_536
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
-        MOVE.L (A0),D0
+        CLR.L D0
+        MOVE.W (A0),D0
         MOVE.L D0,-12(A6)
         MOVE.L 16(A6),D0
         MOVE.L D0,-(A7)
@@ -10837,7 +10838,9 @@ LBL_752:
 LBL_753:
         TST.L D0
         BNE.W LBL_750
-        MOVE.L -7406(A5),D1
+        CLR.L D0
+        MOVE.W -7404(A5),D0
+        MOVE.L D0,D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SNE D0
@@ -10848,7 +10851,7 @@ LBL_750:
 LBL_751:
         TST.L D0
         BNE.W LBL_748
-        MOVE.L -7410(A5),D1
+        MOVE.L -7408(A5),D1
         MOVEQ #1,D0
         CMP.L D0,D1
         SNE D0
