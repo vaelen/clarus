@@ -31,9 +31,10 @@
 // File format: 'C' 'L' 'R' 'S', version byte 2 (SE wave 3; version 1 --
 // the format rt_ser.inc still writes, byte-exact with this one before
 // v2 -- loads too), container byte (0 REC / 1 LIST / 2 MAP), then the
-// payload -- REC: fields in descriptor order (INT/FIXED/ENUM 4 bytes BE;
-// I16/U16 2 bytes BE and U8 1 byte, v2 only -- a v1 file cannot hold
-// them; BOOL/CHAR 1 byte, BOOL
+// payload -- REC: fields in descriptor order (INT/FIXED 4 bytes BE; ENUM
+// 2 bytes BE in v2, 4 in v1 -- in memory it is always a 2-byte word, SE
+// wave 3 Task 9; I16/U16 2 bytes BE and U8 1 byte, v2 only -- a v1 file
+// cannot hold them; BOOL/CHAR 1 byte, BOOL
 // canonicalized 0/1 -- BOOL's in-memory field is 1 byte too, small-scalar-
 // width phase, but the disk byte was always canonicalized regardless).
 // LIST: 4-byte BE count then that many records. MAP: 4-byte BE count then
@@ -147,7 +148,7 @@ func rtSerPutField(out: text, rec: ptr, foffset: int, ftype: int, strCap: int) {
     var slen: int
 
     p = rec + foffset
-    if ftype == RtFtInt or ftype == RtFtFixed or ftype == RtFtEnum {
+    if ftype == RtFtInt or ftype == RtFtFixed {
         rtSerPutI32(out, peekl(p))
     } else if ftype == RtFtBool {
         v = peekb(p)
@@ -158,7 +159,7 @@ func rtSerPutField(out: text, rec: ptr, foffset: int, ftype: int, strCap: int) {
         }
     } else if ftype == RtFtChar or ftype == RtFtU8 {
         out.append(char(peekb(p)))
-    } else if ftype == RtFtI16 or ftype == RtFtU16 {
+    } else if ftype == RtFtI16 or ftype == RtFtU16 or ftype == RtFtEnum {
         v = peekw(p)
         out.append(char((v >> 8) & 255))
         out.append(char(v & 255))
@@ -358,9 +359,10 @@ func rtSerZeroPtr(p: ptr, n: int) {
 // rtSerGetField reads one field's disk bytes at descriptor block fp (see
 // the header comment for its shape) into rec+offset. ENUM validates
 // membership against the block's inline ordinal values before writing;
-// INT/FIXED/ENUM write back a full 4-byte int32, BOOL a single byte at the
+// INT/FIXED write back a full 4-byte int32, ENUM a 2-byte word (read as 4
+// disk bytes from a v1 file, 2 from v2), BOOL a single byte at the
 // field's base address (small-scalar-width phase -- see rtSerPutField).
-func rtSerGetField(t: text, rec: ptr, fp: ptr) {
+func rtSerGetField(t: text, rec: ptr, fp: ptr, v1: bool) {
     var ftype: int
     var strCap: int
     var foffset: int
@@ -384,7 +386,12 @@ func rtSerGetField(t: text, rec: ptr, fp: ptr) {
             pokel(p, v)
         }
     } else if ftype == RtFtEnum {
-        v = rtSerGetI32(t)
+        if v1 {
+            v = rtSerGetI32(t)
+        } else {
+            v = int(rtSerGetByte(t)) << 8
+            v = v + int(rtSerGetByte(t))
+        }
         if not rtSerBad {
             ok = false
             i = 0
@@ -397,7 +404,7 @@ func rtSerGetField(t: text, rec: ptr, fp: ptr) {
             if not ok {
                 rtSerBad = true
             } else {
-                pokel(p, v)
+                pokew(p, v)
             }
         }
     } else if ftype == RtFtBool {
@@ -445,10 +452,11 @@ func rtSerGetField(t: text, rec: ptr, fp: ptr) {
 }
 
 // rtSerGetRec walks desc's field blocks and reads each field of rec, in
-// descriptor order, stopping (per field) the moment rtSerBad is set --
-// fields already read before a failing one stay written, exactly matching
-// rt_ser.inc's ser_get_rec early-return-on-bad.
-func rtSerGetRec(t: text, rec: ptr, desc: ptr) {
+// descriptor order (v1: the file is format v1, whose ENUM is 4 bytes),
+// stopping (per field) the moment rtSerBad is set -- fields already read
+// before a failing one stay written, exactly matching rt_ser.inc's
+// ser_get_rec early-return-on-bad.
+func rtSerGetRec(t: text, rec: ptr, desc: ptr, v1: bool) {
     var nFields: int
     var fp: ptr
     var i: int
@@ -458,7 +466,7 @@ func rtSerGetRec(t: text, rec: ptr, desc: ptr) {
     fp = desc + 8
     i = 0
     while i < nFields and not rtSerBad {
-        rtSerGetField(t, rec, fp)
+        rtSerGetField(t, rec, fp, v1)
         enumCount = peekl(fp + 12)
         fp = fp + 16 + enumCount * 4
         i = i + 1
@@ -490,6 +498,7 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
     var b2: char
     var b3: char
     var verByte: char
+    var v1: bool
     var cbyte: char
     var count: int
     var i: int
@@ -535,20 +544,21 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
     if rtSerBad or (int(verByte) != RtSerVersion and int(verByte) != RtSerVersionV1) {
         return rtSerLoadFail(container, data)
     }
+    v1 = int(verByte) == RtSerVersionV1
     cbyte = rtSerGetByte(input)
     if rtSerBad or int(cbyte) != container {
         return rtSerLoadFail(container, data)
     }
 
     if container == RtSerRec {
-        rtSerGetRec(input, data, desc)
+        rtSerGetRec(input, data, desc, v1)
     } else if container == RtSerList {
         count = rtSerGetI32(input)
         scratch = SerNewPtr(recSize)
         i = 0
         while i < count and not rtSerBad {
             rtSerZeroPtr(scratch, recSize)
-            rtSerGetRec(input, scratch, desc)
+            rtSerGetRec(input, scratch, desc, v1)
             if not rtSerBad {
                 rtListPush(data, scratch)
             }
@@ -573,7 +583,7 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
                 }
                 if not rtSerBad {
                     rtSerZeroPtr(scratch, recSize)
-                    rtSerGetRec(input, scratch, desc)
+                    rtSerGetRec(input, scratch, desc, v1)
                     if not rtSerBad {
                         rtMapSet(data, key, scratch)
                     }

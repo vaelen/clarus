@@ -575,7 +575,7 @@ func rtUiFormFill(inst: ptr) {
                 UiSetControlValue(ctrl, 0)
             }
         } else if kind == rtUiKindPopup {
-            v = peekl(base)
+            v = peekw(base) // enum: a 2-byte word, both lanes (SE wave 3)
             enumCount = uidFieldEnumCount(layoutOff, fieldIdx)
             enumValuesOff = uidFieldEnumValuesOff(layoutOff, fieldIdx)
             sel = 0
@@ -722,9 +722,9 @@ func rtUiFormAccept(inst: ptr) {
             enumCount = uidFieldEnumCount(layoutOff, fieldIdx)
             enumValuesOff = uidFieldEnumValuesOff(layoutOff, fieldIdx)
             if enumCount > 0 and sel >= 0 and sel < enumCount {
-                pokel(base, uidEnumValue(enumValuesOff, sel))
+                pokew(base, uidEnumValue(enumValuesOff, sel))
             } else {
-                pokel(base, 0)
+                pokew(base, 0)
             }
         }
         b = b + 1

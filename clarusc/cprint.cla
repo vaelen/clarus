@@ -983,6 +983,19 @@ func cpRecFieldCType(t: int): string {
     if irtKind(t) == KBool {
         return "uint8_t"
     }
+    return cpElemCType(t)
+}
+
+// cpElemCType: the C type of an enum's STORAGE -- a record field or an
+// array/list/map/sortedmap/intmap element -- as opposed to cpCType's
+// value type. SE wave 3 (N8): an enum is 2 bytes in storage on both lanes
+// (uint16_t: members are 0..65535, zero-extended exactly like cg68k's
+// word load), while enum locals, params, globals and returns stay
+// cpCType's int32_t. Everything else is cpCType unchanged.
+func cpElemCType(t: int): string {
+    if irtKind(t) == KEnum {
+        return "uint16_t"
+    }
     return cpCType(t)
 }
 
@@ -991,6 +1004,9 @@ func cpRecFieldCType(t: int): string {
 func cpArrElemCTypeName(t: int): string {
     if irtKind(t) == KBool {
         return "uint8_t"
+    }
+    if irtKind(t) == KEnum {
+        return "uint16_t"
     }
     return cpCTypeName(t)
 }
@@ -1027,10 +1043,11 @@ func cpArrElemCTypeName(t: int): string {
 // the gap from the other direction.
 //
 // Only the six kinds uibFieldTypeNum accepts can reach here (it fails
-// closed on anything else), so the rules are short: int/fixed/enum are
+// closed on anything else), so the rules are short: int/fixed are
 // `int32_t` (4 bytes, 2-byte aligned -- m68k GCC's default
 // BIGGEST_ALIGNMENT is 16 bits, the same convention cpUiStateFieldCType's
-// own comment cites); `char`/`bool` are `uint8_t` (1 byte); `string(n)` is
+// own comment cites); an enum is `uint16_t` (2 bytes, SE wave 3 N8,
+// cpElemCType); `char`/`bool` are `uint8_t` (1 byte); `string(n)` is
 // `clar_str_n` = `struct { uint8_t len; uint8_t b[n]; }`, padded with a
 // trailing byte to even size when n+1 is odd (n+1 rounded up to even
 // bytes, 2-byte aligned via cpEmitRecords' explicit pad members -- the
@@ -1050,6 +1067,9 @@ func cpCSizeOfField(t: int): int {
     }
     if irtIntWidth(t) != 0 {
         return irtIntWidth(t) / 8
+    }
+    if k == KEnum {
+        return 2
     }
     return 4
 }
@@ -1905,7 +1925,7 @@ func fpIndexRef(e: int): text {
         }
         return "(" + fpExpr(irIndexRefX(e)) + ").e[rt_arr_check((int32_t)(" + fpExpr(irIndexRefI(e)) + "), " + numToStr(irtN(xt)) + ")]"
     } else if irtKind(xt) == KList {
-        return "(*(" + cpCType(irExprType(e)) + "*)rt_list_at(" + fpExpr(irIndexRefX(e)) + ", (int32_t)(" + fpExpr(irIndexRefI(e)) + ")))"
+        return "(*(" + cpElemCType(irExprType(e)) + "*)rt_list_at(" + fpExpr(irIndexRefX(e)) + ", (int32_t)(" + fpExpr(irIndexRefI(e)) + ")))"
     }
     return toText("")
 }
@@ -2204,7 +2224,10 @@ func fpCopyToTemp(e: int): text {
     // object. Untrack v here so only t (below) represents that object going
     // forward; the caller decides t's fate (memory-audit Task 6).
     fpHandoff(v)
-    t = fpNewTmp(cpCType(irExprType(e)))
+    // cpElemCType: the value is usually handed to the runtime by address
+    // as a container element, which copies elemSize bytes out of it (a
+    // 2-byte enum, SE wave 3).
+    t = fpNewTmp(cpElemCType(irExprType(e)))
     fpEmit(t + " = " + v + ";")
     return t
 }
@@ -3185,7 +3208,7 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
         if fpNeedsRelease(irExprType(x)) and (irtKind(irExprType(x)) != KArr or x == fpDiscardExprIdx) {
             t = fpNewTrackedTmp(irExprType(x))
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
         }
         if cpListPorted {
             fpEmit(fn + "((void*)" + l + ", (void*)&" + t + ");")
@@ -3252,7 +3275,7 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             if cpListPorted {
                 fpEmit(fn + "((void*)" + l + ", (void*)&" + t + ");")
             } else {
@@ -3310,7 +3333,7 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
         l = fpExpr(a0)
         s0 = fpExpr(a1)
         elemT = irExprType(a2)
-        ctype = cpCType(elemT)
+        ctype = cpElemCType(elemT)
         ref = "(*(" + ctype + "*)rt_list_at(" + l + ", (int32_t)(" + s0 + ")))"
         v = fpCopyToTemp(a2)
         fpHandoff(v)
@@ -3384,8 +3407,8 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
         // list/map anywhere) element type.
         elemT = irtElem(irExprType(x))
         t = fpNewTmp("rt_list *")
-        fpEmit(t + " = (rt_list *)clar_fn_rtListNew(sizeof(" + cpCType(elemT) + "));")
-        fpEmit("clar_fn_rtListClone((void*)" + t + ", (void*)" + fpExpr(a0) + ", sizeof(" + cpCType(elemT) + "));")
+        fpEmit(t + " = (rt_list *)clar_fn_rtListNew(sizeof(" + cpElemCType(elemT) + "));")
+        fpEmit("clar_fn_rtListClone((void*)" + t + ", (void*)" + fpExpr(a0) + ", sizeof(" + cpElemCType(elemT) + "));")
         return t
 
     // ---- map ----
@@ -3482,7 +3505,7 @@ func fpIntrCall5(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             if cpMapPorted {
                 fpEmit("clar_fn_rtMapGet((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
             } else {
@@ -3536,7 +3559,7 @@ func fpIntrCall5(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
             if cpMapPorted {
                 fpEmit("clar_fn_rtMapGetDv((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
@@ -3599,7 +3622,7 @@ func fpIntrCall5(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit("if (" + t + " != " + dv + ") { " + fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + "); " + fpHeapFn(irtKind(irExprType(x))) + "_release(" + dv + "); }")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";")
             if cpMapPorted {
                 fpEmit("clar_fn_rtMapGetDv((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
@@ -4181,7 +4204,7 @@ func fpIntrCall8(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             fpEmit("clar_fn_rtSortedMapGet((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
         }
         return t
@@ -4211,7 +4234,7 @@ func fpIntrCall8(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";")
             fpEmit("clar_fn_rtSortedMapGetDv((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
         }
@@ -4242,7 +4265,7 @@ func fpIntrCall8(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit("if (" + t + " != " + dv + ") { " + fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + "); " + fpHeapFn(irtKind(irExprType(x))) + "_release(" + dv + "); }")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";")
             fpEmit("clar_fn_rtSortedMapGetDv((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
         }
@@ -4370,7 +4393,7 @@ func fpIntrCall9(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             fpEmit("clar_fn_rtIntMapGet((void*)" + m + ", " + k + ", (void*)&" + t + ");")
         }
         return t
@@ -4400,7 +4423,7 @@ func fpIntrCall9(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";")
             fpEmit("clar_fn_rtIntMapGetDv((void*)" + m + ", " + k + ", (void*)&" + t + ");")
         }
@@ -4431,7 +4454,7 @@ func fpIntrCall9(nm: int, x: int, a0: int, a1: int, a2: int): text {
                 fpEmit("if (" + t + " != " + dv + ") { " + fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + "); " + fpHeapFn(irtKind(irExprType(x))) + "_release(" + dv + "); }")
             }
         } else {
-            t = fpNewTmp(cpCType(irExprType(x)))
+            t = fpNewTmp(cpElemCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";")
             fpEmit("clar_fn_rtIntMapGetDv((void*)" + m + ", " + k + ", (void*)&" + t + ");")
         }
@@ -4801,7 +4824,7 @@ func fpForListStmt(s: int) {
         fpEmit(cnt + " = rt_list_count(" + lt + ");")
     }
     ix = fpNewTmp("int32_t")
-    elemC = cpCType(irtElem(irExprType(irForListListV(s))))
+    elemC = cpElemCType(irtElem(irExprType(irForListListV(s))))
     vName = poolGet(irForListV(s))
     fpEmit("for (" + ix + " = 0; " + ix + " < " + cnt + "; " + ix + "++) {")
     fpIndent = fpIndent + 1
@@ -4845,6 +4868,8 @@ func fpForMapStmt(s: int) {
     var vNameIdx: int
     var sorted: bool
     var intM: bool
+    var vt: int
+    var vDst: text
 
     sorted = irtKind(irExprType(irForMapMapV(s))) == KSortedMap
     intM = irtKind(irExprType(irForMapMapV(s))) == KIntMap
@@ -4889,14 +4914,25 @@ func fpForMapStmt(s: int) {
     }
     vNameIdx = irForMapV(s)
     if vNameIdx != -1 {
+        // SE wave 3: an enum value is 2 bytes in the map but the loop
+        // variable is an int32_t local, so fetch it through a uint16_t
+        // temp first.
+        vt = irtElem(irExprType(irForMapMapV(s)))
+        vDst = "cv_" + poolGet(vNameIdx)
+        if irtKind(vt) == KEnum {
+            vDst = fpNewTmp(cpElemCType(vt))
+        }
         if intM {
-            fpEmit("clar_fn_rtIntMapValAt((void*)" + mt + ", " + ix + ", (void*)&cv_" + poolGet(vNameIdx) + ");")
+            fpEmit("clar_fn_rtIntMapValAt((void*)" + mt + ", " + ix + ", (void*)&" + vDst + ");")
         } else if sorted {
-            fpEmit("clar_fn_rtSortedMapValAt((void*)" + mt + ", " + ix + ", (void*)&cv_" + poolGet(vNameIdx) + ");")
+            fpEmit("clar_fn_rtSortedMapValAt((void*)" + mt + ", " + ix + ", (void*)&" + vDst + ");")
         } else if cpMapPorted {
-            fpEmit("clar_fn_rtMapValAt((void*)" + mt + ", " + ix + ", (void*)&cv_" + poolGet(vNameIdx) + ");")
+            fpEmit("clar_fn_rtMapValAt((void*)" + mt + ", " + ix + ", (void*)&" + vDst + ");")
         } else {
-            fpEmit("rt_map_val_at(" + mt + ", " + ix + ", &cv_" + poolGet(vNameIdx) + ");")
+            fpEmit("rt_map_val_at(" + mt + ", " + ix + ", &" + vDst + ");")
+        }
+        if irtKind(vt) == KEnum {
+            fpEmit("cv_" + poolGet(vNameIdx) + " = " + vDst + ";")
         }
     }
     fpStmts(irForMapBody(s))
@@ -5310,18 +5346,18 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
         // cast back to `rt_list *`) -- same "external delegation" pattern
         // KText's arm above established for rtTextNew.
         if cpListPorted {
-            fpEmit(dst + " = (rt_list *)clar_fn_rtListNew(sizeof(" + cpCType(irtElem(t)) + "));")
+            fpEmit(dst + " = (rt_list *)clar_fn_rtListNew(sizeof(" + cpElemCType(irtElem(t)) + "));")
         } else {
-            fpEmit(dst + " = rt_list_new(sizeof(" + cpCType(irtElem(t)) + "));")
+            fpEmit(dst + " = rt_list_new(sizeof(" + cpElemCType(irtElem(t)) + "));")
         }
     } else if k == KMap {
         // Plan 5b Task 11: cpMapPorted redirects the birth call (rtMapNew,
         // cast back to `rt_map *`) -- same "external delegation" pattern
         // KText/KList's arms above established for rtTextNew/rtListNew.
         if cpMapPorted {
-            fpEmit(dst + " = (rt_map *)clar_fn_rtMapNew(sizeof(" + cpCType(irtElem(t)) + "));")
+            fpEmit(dst + " = (rt_map *)clar_fn_rtMapNew(sizeof(" + cpElemCType(irtElem(t)) + "));")
         } else {
-            fpEmit(dst + " = rt_map_new(sizeof(" + cpCType(irtElem(t)) + "));")
+            fpEmit(dst + " = rt_map_new(sizeof(" + cpElemCType(irtElem(t)) + "));")
         }
     } else if k == KSortedMap {
         // map-hashtable phase Task 2: no raw C fallback -- always the
@@ -5330,7 +5366,7 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
         if not cpSortedMapPorted {
             cpFatal("sortedmap default-init without cpSortedMapPorted")
         }
-        fpEmit(dst + " = (rt_sortedmap *)clar_fn_rtSortedMapNew(sizeof(" + cpCType(irtElem(t)) + "));")
+        fpEmit(dst + " = (rt_sortedmap *)clar_fn_rtSortedMapNew(sizeof(" + cpElemCType(irtElem(t)) + "));")
     } else if k == KIntMap {
         // map-hashtable phase Task 7: no raw C fallback -- always the
         // Clarus-ported rtIntMapNew (cast back to `rt_intmap *`), same
@@ -5338,7 +5374,7 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
         if not cpIntMapPorted {
             cpFatal("intmap default-init without cpIntMapPorted")
         }
-        fpEmit(dst + " = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(" + cpCType(irtElem(t)) + "));")
+        fpEmit(dst + " = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(" + cpElemCType(irtElem(t)) + "));")
     } else if k == KRec {
         fpEmit(dst + " = clar_new_" + poolGet(irtName(t)) + "();")
     } else if k == KErr {
@@ -7267,7 +7303,8 @@ func cpUiStateFieldCType(t: int): string {
     if irtIntWidth(t) == 8 {
         return "uint16_t"
     }
-    return cpCType(t)
+    // SE wave 3 (N8): an enum state var is cg68k's 2-byte slot too.
+    return cpElemCType(t)
 }
 
 func cpEmitUiStateStruct(name: string, fieldsHead: int) {

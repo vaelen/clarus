@@ -84,4 +84,6 @@ PtrCall
 StrPerf
 OpenRF
 NarrowInts
+SerV1Enum
+EnumStorage
 SelfCheck

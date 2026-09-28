@@ -1940,8 +1940,13 @@ func cgSizeOfUncached(t: int): int {
     case KVoid {
         return 0
     }
-    case KInt, KFixed, KPtr, KEnum, KText, KList, KMap, KSortedMap, KIntMap, KWinRef, KUiState, KOverlay {
+    case KInt, KFixed, KPtr, KText, KList, KMap, KSortedMap, KIntMap, KWinRef, KUiState, KOverlay {
         return 4
+    }
+    case KEnum {
+        // SE wave 3 (D7/N8): an enum is a 16-bit word (0..65535) in every
+        // storage class; loads zero-extend (cgSz2Signed is false for it).
+        return 2
     }
     case KBool, KChar {
         return 1
@@ -4907,8 +4912,10 @@ func cgReserveEnumTableLabels() {
 // cgEmitPoolsBody's own doc comment) at the current stream position: one
 // DC.L per member, declaration order, bound to cgReserveEnumTableLabels'
 // own label -- the pool data cgEmitEnumConv's inline scan walks at
-// runtime. Enums are 4-byte native ints (irtKind KEnum, cgSizeOf's own
-// KEnum case), so DC.L (not DC.W) matches the scan's own CMP.L stride.
+// runtime. The scan compares the already-widened int in D0 (an enum is
+// stored as a 2-byte word, cgSizeOf's KEnum case, but the value being
+// converted is a 4-byte int), so the table stays DC.L to match the
+// scan's own CMP.L stride.
 func cgEmitEnumTables() {
     var i: int
     var ei: int
@@ -5601,7 +5608,7 @@ func cgEmitFunc(f: int) {
         // decision).
         sz = cgArgSlotSize(irLocalType(params[i]))
         paramOffsets[i] = offset
-        if irtIntWidth(irLocalType(params[i])) != 0 {
+        if cgIsWidenedArg(irLocalType(params[i])) {
             // SE wave 3: a narrow param arrives widened in a long slot;
             // address its low byte/word, so the ordinary MOVE.B/MOVE.W
             // load and store paths read and write it in place.
@@ -6381,13 +6388,19 @@ func cgArgSlotSize(t: int): int {
     if cgParamByRef(t) {
         return 4
     }
-    // SE wave 3: a narrow int is pushed as a long (the caller widened
-    // it), so the call ABI never depends on whether the argument
+    // SE wave 3: a narrow int or enum is pushed as a long (the caller
+    // widened it), so the call ABI never depends on whether the argument
     // expression or the parameter is the narrow one.
-    if irtIntWidth(t) != 0 {
+    if cgIsWidenedArg(t) {
         return 4
     }
     return cgSlotSizeOf(t)
+}
+
+// cgIsWidenedArg: a narrow int or an enum -- stored narrower than 4 bytes
+// but passed as a long argument slot whose low part the callee addresses.
+func cgIsWidenedArg(t: int): bool {
+    return irtIntWidth(t) != 0 or irtKind(t) == KEnum
 }
 
 // cgVarRefAt (Task 14.7) wraps a raw A6-relative scratch slot (off(A6) --

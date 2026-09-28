@@ -4,9 +4,12 @@
 # current clarusc and byte-compare stdout and every produced .dat file against
 # the pinned goldens in testdata/sertest/clrd_goldens.
 #
-# The goldens are a FROZEN baseline of the C serializer (rt_ser.inc), not a
-# live re-capture of clarusc's current output (history: the retired Go twin's
-# package doc, `git show go-harness-final^:internal/sertest/clrdcompare_test.go`).
+# The goldens are a FROZEN baseline of the serializer's file format -- once
+# rt_ser.inc's output, now runtime/clarus/ser.cla's (the only live save/load
+# path); re-pinned deliberately for format v2 by SE wave 3 (Task 7: version
+# byte 2; Task 9: 2-byte enum fields). They are not a live re-capture of
+# clarusc's current output (history: the retired Go twin's package doc,
+# `git show go-harness-final^:internal/sertest/clrdcompare_test.go`).
 # CLRD_BLESS=1 rewrites them; only ever do that deliberately.
 . "$(dirname "$0")/../lib.sh" || exit 2
 

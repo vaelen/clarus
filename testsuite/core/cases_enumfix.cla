@@ -10,6 +10,8 @@
 //   ConstCaseLabel      <- constants.cla (a const used as a switch case label)
 //   SwitchIntRange       <- switch.cla (int-subject multi-label case)
 //   SwitchIntMultiLabel  <- emit_switch.cla ("int multi-label ok")
+//   EnumStorage          <- new for SE wave 3 (2-byte enums in every
+//                           storage class, plus a v2 save/load)
 
 enum caseEnumProtocol {
     caseEnumGopher 0x01 "Gopher"
@@ -116,4 +118,123 @@ func caseSwitchIntMultiLabel(): TestResult {
         return tkFail("SwitchIntMultiLabel", "multi-label case did not match")
     }
     return tkPass("SwitchIntMultiLabel")
+}
+
+// EnumStorage (SE wave 3 Task 9): an enum is 2 bytes on both lanes in
+// every aggregate (native: everywhere). Values up to 65535 must read back
+// zero-extended, and a 2-byte slot must not bleed into its neighbours.
+enum caseEnumWide {
+    caseWideLo 1
+    caseWideMid 0x7FFF
+    caseWideHi 0xFFFF
+}
+
+record caseEnumHolder {
+    tag: char
+    e: caseEnumWide
+    n: int
+}
+
+var caseEnumGlobal: caseEnumWide
+
+func caseEnumEcho(e: caseEnumWide, n: int): caseEnumWide {
+    if n != -9 {
+        return caseWideLo
+    }
+    return e
+}
+
+func caseEnumStorage(): TestResult {
+    var e: caseEnumWide
+    var l: list of caseEnumWide
+    var m: map of caseEnumWide
+    var im: intmap of caseEnumWide
+    var a: caseEnumWide[3]
+    var rl: list of caseEnumHolder
+    var h: caseEnumHolder
+    var h2: caseEnumHolder
+    var t: text
+    var sum: int
+    var ok: bool
+
+    e = caseWideHi
+    if int(e) != 65535 {
+        return tkFail("EnumStorage", "local not zero-extended")
+    }
+    caseEnumGlobal = caseWideHi
+    if caseEnumGlobal != caseWideHi or int(caseEnumGlobal) != 65535 {
+        return tkFail("EnumStorage", "global round trip")
+    }
+    if caseEnumEcho(caseWideHi, -9) != caseWideHi or caseEnumEcho(caseWideMid, -9) != caseWideMid {
+        return tkFail("EnumStorage", "param/return round trip")
+    }
+    l.push(caseWideHi)
+    l.push(caseWideLo)
+    l.push(caseWideMid)
+    l[1] = caseWideHi
+    if l.count != 3 or l[0] != caseWideHi or l[1] != caseWideHi or l[2] != caseWideMid or int(l[0]) != 65535 {
+        return tkFail("EnumStorage", "list element round trip")
+    }
+    sum = 0
+    for x in l {
+        sum = sum + int(x)
+    }
+    if sum != 65535 + 65535 + 32767 {
+        return tkFail("EnumStorage", "for-in over list of enum")
+    }
+    m["hi"] = caseWideHi
+    m["mid"] = caseWideMid
+    if m["hi"] != caseWideHi or m.get("mid", caseWideLo) != caseWideMid or m.get("none", caseWideHi) != caseWideHi {
+        return tkFail("EnumStorage", "map value round trip")
+    }
+    sum = 0
+    for k, v in m {
+        sum = sum + int(v)
+    }
+    if sum != 65535 + 32767 {
+        return tkFail("EnumStorage", "for-in over map of enum")
+    }
+    im[3] = caseWideHi
+    if im.get(3, caseWideLo) != caseWideHi or im.get(4, caseWideMid) != caseWideMid {
+        return tkFail("EnumStorage", "intmap value round trip")
+    }
+    a[0] = caseWideHi
+    a[1] = caseWideLo
+    a[2] = caseWideHi
+    if a[0] != caseWideHi or a[1] != caseWideLo or int(a[2]) != 65535 {
+        return tkFail("EnumStorage", "array element round trip")
+    }
+    h.tag = 'x'
+    h.e = caseWideHi
+    h.n = -1
+    rl.push(h)
+    h.e = caseWideMid
+    h.n = 5
+    rl.push(h)
+    if rl[0].tag != 'x' or rl[0].e != caseWideHi or rl[0].n != -1 or rl[1].e != caseWideMid or rl[1].n != 5 {
+        return tkFail("EnumStorage", "record-in-list field round trip")
+    }
+    h.e = caseWideHi
+    h.n = -7
+    ok = file.save("core_enum_storage.dat", h, app.doctype, app.id)
+    if not ok {
+        return tkFail("EnumStorage", "save failed")
+    }
+    ok = file.load("core_enum_storage.dat", h2)
+    if not ok {
+        return tkFail("EnumStorage", "load failed")
+    }
+    if h2.tag != 'x' or h2.e != caseWideHi or h2.n != -7 {
+        return tkFail("EnumStorage", "save/load field round trip")
+    }
+    ok = file.readText("core_enum_storage.dat", t)
+    if not ok {
+        return tkFail("EnumStorage", "readText failed")
+    }
+    // magic 4 + version 1 + container 1, then tag 1 + e 2 + n 4: a v2
+    // enum field is 2 bytes on disk.
+    if t.length != 13 or t[4] != char(2) or t[7] != char(255) or t[8] != char(255) {
+        return tkFail("EnumStorage", "v2 file shape wrong")
+    }
+    return tkPass("EnumStorage")
 }

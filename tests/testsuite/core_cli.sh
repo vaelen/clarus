@@ -84,6 +84,15 @@ else
     fi
 fi
 
+# SerV1Enum writes its embedded v1 bytes before loading them; they must
+# stay the frozen fixture's bytes.
+n=v1_enum_fixture
+if cmp -s "$WORK/run_all/core_ser_v1enum.dat" "$ROOT/testdata/sertest/frozen_v1_enum.dat"; then
+    t_pass "$n"
+else
+    t_fail "$n" "core_ser_v1enum.dat differs from testdata/sertest/frozen_v1_enum.dat"
+fi
+
 # --- single case ------------------------------------------------------
 n=single_case
 run_case single StrIndexing

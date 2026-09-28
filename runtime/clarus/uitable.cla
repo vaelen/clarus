@@ -503,7 +503,7 @@ func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr) {
         UiDrawText(chBuf, 0, 1)
         UiDisposePtr(chBuf)
     } else if ftype == rtUiFtEnum {
-        v = peekl(base)
+        v = peekw(base) // enum: a 2-byte word, both lanes (SE wave 3)
         enumCount = uidFieldEnumCount(layoutOff, fieldIdx)
         enumLabelsOff = uidFieldEnumLabelsOff(layoutOff, fieldIdx)
         enumValuesOff = uidFieldEnumValuesOff(layoutOff, fieldIdx)

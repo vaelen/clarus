@@ -19,6 +19,8 @@
 //   SerNarrow            <- new for SE wave 3 (uint8/int16/uint16 fields
 //                          at their extremes round-trip through format
 //                          v2, and the header's version byte is 2)
+//   SerV1Enum            <- new for SE wave 3 (a frozen v1 file with a
+//                          4-byte enum field still loads)
 
 func caseSerBinRoundtrip(): TestResult {
     var t: text
@@ -228,4 +230,50 @@ func caseSerNarrow(): TestResult {
         return tkFail("SerNarrow", "file length not 26")
     }
     return tkPass("SerNarrow")
+}
+
+// SerV1Enum (SE wave 3 Task 9): a format-v1 file (4-byte enum field) still
+// loads now that v2 writes the enum as 2 bytes. The bytes below are
+// testdata/sertest/frozen_v1_enum.dat verbatim, written first so the case
+// runs on the Mac boot volume too; tests/testsuite/core_cli.sh cmp's the
+// written file against that fixture so the two can't drift apart.
+enum serV1Color {
+    serV1Red
+    serV1Green
+    serV1Blue
+}
+
+record SerV1Rec {
+    kind: serV1Color
+    n: int
+    name: string(8)
+}
+
+func caseSerV1Enum(): TestResult {
+    var t: text
+    var r: SerV1Rec
+    var ok: bool
+    var bytes: int[23] = [0x43, 0x4C, 0x52, 0x53, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0x2A, 2, 0x76, 0x31, 0, 0, 0, 0, 0, 0]
+
+    for i in 0 to 22 {
+        t.append(char(bytes[i]))
+    }
+    ok = file.writeText("core_ser_v1enum.dat", t, app.doctype, app.id)
+    if not ok {
+        return tkFail("SerV1Enum", "write failed")
+    }
+    ok = file.load("core_ser_v1enum.dat", r)
+    if not ok {
+        return tkFail("SerV1Enum", "v1 load failed")
+    }
+    if r.kind != serV1Blue {
+        return tkFail("SerV1Enum", "kind not Blue")
+    }
+    if r.n != 42 {
+        return tkFail("SerV1Enum", "n not 42")
+    }
+    if r.name != "v1" {
+        return tkFail("SerV1Enum", "name not v1")
+    }
+    return tkPass("SerV1Enum")
 }
