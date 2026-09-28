@@ -184,6 +184,7 @@ enum CoreTest {
     SerFileRoundtrip
     SerFileNameRoundtrip
     SerMixedScalarRec
+    SerNarrow
     MiscArithBasic
     MiscBreakContWhile
     MiscCrc8Smbus
@@ -241,13 +242,13 @@ enum CoreTest {
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 85 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 86 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 86
+const nCoreCases: int = 87
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -348,6 +349,9 @@ func coreCaseName(t: CoreTest): string {
     }
     case SerMixedScalarRec {
         return "SerMixedScalarRec"
+    }
+    case SerNarrow {
+        return "SerNarrow"
     }
     case MiscArithBasic {
         return "MiscArithBasic"
@@ -562,6 +566,7 @@ func coreAllCases(): list of CoreTest {
     l.add(SerFileRoundtrip)
     l.add(SerFileNameRoundtrip)
     l.add(SerMixedScalarRec)
+    l.add(SerNarrow)
     l.add(MiscArithBasic)
     l.add(MiscBreakContWhile)
     l.add(MiscCrc8Smbus)
@@ -776,6 +781,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, SerMixedScalarRec) {
         results.add(caseSerMixedScalarRec())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, SerNarrow) {
+        results.add(caseSerNarrow())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, MiscArithBasic) {

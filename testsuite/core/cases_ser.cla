@@ -16,6 +16,9 @@
 //                          fixture (interleaved char/bool/int/string/fixed
 //                          record round trip, pinning today's field-layout
 //                          behavior ahead of the ABI flip)
+//   SerNarrow            <- new for SE wave 3 (uint8/int16/uint16 fields
+//                          at their extremes round-trip through format
+//                          v2, and the header's version byte is 2)
 
 func caseSerBinRoundtrip(): TestResult {
     var t: text
@@ -168,4 +171,61 @@ func caseSerMixedScalarRec(): TestResult {
         return tkFail("SerMixedScalarRec", "g (fixed) wrong")
     }
     return tkPass("SerMixedScalarRec")
+}
+
+record SerNarrowRec {
+    a: uint8
+    b: int16
+    c: uint16
+    n: int
+    s: string(10)
+}
+
+func caseSerNarrow(): TestResult {
+    var r: SerNarrowRec
+    var r2: SerNarrowRec
+    var t: text
+    var ok: bool
+
+    r.a = 255
+    r.b = -32768
+    r.c = 65535
+    r.n = -7
+    r.s = "x"
+    ok = file.save("core_ser_narrow.dat", r, app.doctype, app.id)
+    if not ok {
+        return tkFail("SerNarrow", "save failed")
+    }
+    ok = file.load("core_ser_narrow.dat", r2)
+    if not ok {
+        return tkFail("SerNarrow", "load failed")
+    }
+    if r2.a != 255 {
+        return tkFail("SerNarrow", "a (uint8) wrong")
+    }
+    if r2.b != -32768 {
+        return tkFail("SerNarrow", "b (int16) wrong")
+    }
+    if r2.c != 65535 {
+        return tkFail("SerNarrow", "c (uint16) wrong")
+    }
+    if r2.n != -7 {
+        return tkFail("SerNarrow", "n (int) wrong")
+    }
+    if r2.s != "x" {
+        return tkFail("SerNarrow", "s (str) wrong")
+    }
+    ok = file.readText("core_ser_narrow.dat", t)
+    if not ok {
+        return tkFail("SerNarrow", "readText failed")
+    }
+    if t.length < 5 or t[4] != char(2) {
+        return tkFail("SerNarrow", "version byte not 2")
+    }
+    // magic 4 + version 1 + container 1, then a 1 + b 2 + c 2 + n 4 +
+    // s (1 + 10): narrow fields take their natural widths on disk.
+    if t.length != 26 {
+        return tkFail("SerNarrow", "file length not 26")
+    }
+    return tkPass("SerNarrow")
 }
