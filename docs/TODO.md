@@ -279,6 +279,21 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   ADSP lands, see `docs/FUTURE.md`). Scheduled AFTER the initial
   AppleTalk implementation ships, not inside it.
 
+## Language: canvas text font
+
+- **No way to choose a canvas's font or size** (Andrew, 2026-09-28,
+  from 68kBBS). `drawText` always uses the port's default -- a buffered
+  canvas's offscreen GrafPort is `OpenPort`ed fresh (system font) in
+  `uiwidgets.cla`, and reopened on every resize -- and program code
+  can't reach that port, so a log window that wants Courier 10 has no
+  clean route (68kBBS tried poking `txFont`/`txSize` through the
+  runtime's window-record layout and backed it out as too fragile).
+  Shape: a canvas method, e.g. `c.font(name: string, size: int)`
+  (`GetFNum` + `TextFont`/`TextSize` inside `rtUiCanvasBegin`'s port
+  discipline), stored per canvas so a resize's fresh port gets it
+  reapplied; possibly a `font:` widget attribute too. Host lane: accept
+  and ignore (or record for the scripted-UI trace).
+
 ## Runtime / Toolbox robustness
 
 ### MacTCP phase (2026-09-08)
