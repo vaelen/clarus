@@ -22,6 +22,7 @@
 //   [1] = nFields       -- field count
 //   then nFields field blocks, each "4 + enumCount" int32s, back to back:
 //     [0] ftype      -- RT_FT_INT 0 / FIXED 1 / BOOL 2 / CHAR 3 / STR 4 / ENUM 5
+//                       / U8 6 / I16 7 / U16 8
 //     [1] strCap     -- RT_FT_STR only, else 0
 //     [2] offset     -- byte offset of the field within one record
 //     [3] enumCount  -- RT_FT_ENUM only, else 0
@@ -101,6 +102,11 @@ const RtFtBool: int = 2
 const RtFtChar: int = 3
 const RtFtStr: int = 4
 const RtFtEnum: int = 5
+// SE wave 3 narrow ints (N3): emitted for forms and tables now; the
+// serializer reads and writes them from Task 7 (format v2).
+const RtFtU8: int = 6
+const RtFtI16: int = 7
+const RtFtU16: int = 8
 
 // ponytail: bounds the scratch record buffer used while iterating list/map
 // elements, same 2KB ceiling rt_ser.inc documents (RT_SER_MAX_REC) -- raise

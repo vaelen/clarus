@@ -4193,9 +4193,7 @@ func checkBindsProperty(p: int, kind: string, formRecType: int): int {
     fk = typeKind(fieldType)
     compat = false
     if kind == "field" {
-        // A narrow int field does not bind yet: its form/serializer
-        // field code is SE wave 3 Task 4's (N3).
-        compat = fk == TyStr or (fk == TyInt and tyIntWidth(fieldType) == 0) or fk == TyFixed
+        compat = fk == TyStr or fk == TyInt or fk == TyFixed
     } else if kind == "check" {
         compat = fk == TyBool
     } else if kind == "popup" {

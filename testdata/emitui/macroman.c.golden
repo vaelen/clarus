@@ -812,6 +812,7 @@ static void clar_fn_rtUiSetPopupSelAt(clar_rec_RtUiWinst * cv_w, int32_t cv_i, i
 static void clar_fn_rtUiPopupBoxInto(void * cv_inst, int32_t cv_wIdx, void * cv_out);
 static int32_t clar_fn_rtUiTableFillWidth(int32_t cv_colsOff, int32_t cv_nCols, int32_t cv_totalW);
 static void clar_fn_rtUiFixedToStr(int32_t cv_v, void * cv_out255);
+static int32_t clar_fn_rtUiIntFieldLoad(void * cv_base, int32_t cv_ftype);
 static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int32_t cv_fieldIdx, void * cv_colRect);
 static int32_t clar_fn_rtUiTableRowH(void);
 static int32_t clar_fn_rtUiTableHeaderH(void);
@@ -891,6 +892,7 @@ static void * clar_fn_rtUiLitLine(const clar_str_255 *cv_s);
 static void clar_fn_rtUiRunScripted(void);
 static int32_t clar_fn_rtUiScriptDispatchLine(void);
 static int32_t clar_fn_rtUiParseInt(void * cv_p, int32_t cv_len, void * cv_out);
+static int32_t clar_fn_rtUiParseNarrow(void * cv_text, int32_t cv_ftype, void * cv_out);
 static int32_t clar_fn_rtUiParseFixed(void * cv_p, int32_t cv_len, void * cv_out);
 static void clar_fn_rtUiFormInvalid(void * cv_inst, int32_t cv_wIdx);
 static int32_t clar_fn_rtUiFormCharOk(void * cv_te, int32_t cv_ch, int32_t cv_ftype);
@@ -4212,7 +4214,7 @@ static void clar_fn_rtUiHandleKey(void * cv_ev) {
                 cv_fieldIdx = clar_fn_uidFormFindFieldIndex(clar_fn_uidWinFormOff(cv_winIdx), (cv_w)->cv_focusIdx);
                 if (cv_fieldIdx != CLAR_NEG32(1)) {
                     cv_ftype = clar_fn_uidFieldFtype(clar_fn_uidFormLayoutOff(clar_fn_uidWinFormOff(cv_winIdx)), cv_fieldIdx);
-                    if (((cv_ftype == 0) || (cv_ftype == 1)) && (!(clar_fn_rtUiFormCharOk(clar_fn_rtUiTeAt(cv_w, (cv_w)->cv_focusIdx), cv_ch, cv_ftype)))) {
+                    if ((((cv_ftype == 0) || (cv_ftype == 1)) || (cv_ftype >= 6)) && (!(clar_fn_rtUiFormCharOk(clar_fn_rtUiTeAt(cv_w, (cv_w)->cv_focusIdx), cv_ch, cv_ftype)))) {
                         rt_ext_UiSysBeep(1);
                         return;
                     }
@@ -6450,6 +6452,23 @@ static void clar_fn_rtUiFixedToStr(int32_t cv_v, void * cv_out255) {
     rt_ext_UiDisposePtr(cv_fbuf);
 }
 
+static int32_t clar_fn_rtUiIntFieldLoad(void * cv_base, int32_t cv_ftype) {
+    int32_t cv_v;
+    cv_v = 0;
+    if (cv_ftype == 6) {
+        return rt_peekb(cv_base);
+    }
+    if (cv_ftype == 0) {
+        return rt_peekl(cv_base);
+    }
+    cv_v = rt_peekw(cv_base);
+    if ((cv_ftype == 7) && (cv_v >= 32768)) {
+        cv_v = CLAR_SUB32(cv_v, 65536);
+    }
+    return cv_v;
+    return 0;
+}
+
 static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int32_t cv_fieldIdx, void * cv_colRect) {
     void * cv_base;
     cv_base = 0;
@@ -6478,8 +6497,8 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
     rt_ext_UiMoveTo(CLAR_ADD32(rt_peekw((void *)((char *)(cv_colRect) + (2))), 2), CLAR_SUB32(rt_peekw((void *)((char *)(cv_colRect) + (4))), 3));
     if (cv_ftype == 4) {
         rt_ext_UiDrawText((void *)((char *)(cv_base) + (1)), 0, rt_peekb(cv_base));
-    } else if (cv_ftype == 0) {
-        cv_v = rt_peekl(cv_base);
+    } else if ((cv_ftype == 0) || (cv_ftype >= 6)) {
+        cv_v = clar_fn_rtUiIntFieldLoad(cv_base, cv_ftype);
         cv_numbuf = clar_fn_UiNewPtr(256);
         clar_fn_rtUiIntToPStr(cv_v, cv_numbuf);
         rt_ext_UiDrawText((void *)((char *)(cv_numbuf) + (1)), 0, rt_peekb(cv_numbuf));
@@ -8175,6 +8194,35 @@ static int32_t clar_fn_rtUiParseInt(void * cv_p, int32_t cv_len, void * cv_out) 
     return 0;
 }
 
+static int32_t clar_fn_rtUiParseNarrow(void * cv_text, int32_t cv_ftype, void * cv_out) {
+    int32_t cv_v;
+    cv_v = 0;
+    if (((cv_ftype != 7) && (rt_peekb(cv_text) > 0)) && (rt_peekb((void *)((char *)(cv_text) + (1))) == ((int32_t)(45)))) {
+        return 0;
+    }
+    if (!(clar_fn_rtUiParseInt((void *)((char *)(cv_text) + (1)), rt_peekb(cv_text), cv_text))) {
+        return 0;
+    }
+    cv_v = rt_peekl(cv_text);
+    if (cv_ftype == 6) {
+        if (cv_v > 255) {
+            return 0;
+        }
+        rt_pokeb(cv_out, cv_v);
+        return 1;
+    }
+    if (cv_ftype == 7) {
+        if ((cv_v < CLAR_NEG32(32768)) || (cv_v > 32767)) {
+            return 0;
+        }
+    } else if (cv_v > 65535) {
+        return 0;
+    }
+    rt_pokew(cv_out, cv_v);
+    return 1;
+    return 0;
+}
+
 static int32_t clar_fn_rtUiParseFixed(void * cv_p, int32_t cv_len, void * cv_out) {
     int32_t cv_i;
     cv_i = 0;
@@ -8405,8 +8453,8 @@ static void clar_fn_rtUiFormFill(void * cv_inst) {
                 }
                 rt_pokeb(cv_text, cv_baseLen);
                 rt_ext_UiBlockMoveData((void *)((char *)(cv_base) + (1)), (void *)((char *)(cv_text) + (1)), cv_baseLen);
-            } else if (cv_ftype == 0) {
-                clar_fn_rtUiIntToPStr(rt_peekl(cv_base), cv_text);
+            } else if ((cv_ftype == 0) || (cv_ftype >= 6)) {
+                clar_fn_rtUiIntToPStr(clar_fn_rtUiIntFieldLoad(cv_base, cv_ftype), cv_text);
             } else if (cv_ftype == 1) {
                 clar_fn_rtUiFixedToStr(rt_peekl(cv_base), cv_text);
             } else if (cv_ftype == 3) {
@@ -8516,6 +8564,13 @@ static void clar_fn_rtUiFormAccept(void * cv_inst) {
             clar_fn_rtUiWidgetGetStr(cv_inst, cv_wIdx, 1, cv_text);
             cv_ok = clar_fn_rtUiParseInt((void *)((char *)(cv_text) + (1)), rt_peekb(cv_text), cv_base);
             if (!(cv_ok)) {
+                clar_fn_rtUiFormInvalid(cv_inst, cv_wIdx);
+                rt_ext_UiDisposePtr(cv_text);
+                return;
+            }
+        } else if (cv_ftype >= 6) {
+            clar_fn_rtUiWidgetGetStr(cv_inst, cv_wIdx, 1, cv_text);
+            if (!(clar_fn_rtUiParseNarrow(cv_text, cv_ftype, cv_base))) {
                 clar_fn_rtUiFormInvalid(cv_inst, cv_wIdx);
                 rt_ext_UiDisposePtr(cv_text);
                 return;

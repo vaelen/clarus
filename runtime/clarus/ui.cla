@@ -2659,7 +2659,7 @@ func rtUiHandleKey(ev: ptr) {
                 fieldIdx = uidFormFindFieldIndex(uidWinFormOff(winIdx), w.focusIdx)
                 if fieldIdx != -1 {
                     ftype = uidFieldFtype(uidFormLayoutOff(uidWinFormOff(winIdx)), fieldIdx)
-                    if (ftype == rtUiFtInt or ftype == rtUiFtFixed) and not rtUiFormCharOk(rtUiTeAt(w, w.focusIdx), ch, ftype) {
+                    if (ftype == rtUiFtInt or ftype == rtUiFtFixed or ftype >= rtUiFtU8) and not rtUiFormCharOk(rtUiTeAt(w, w.focusIdx), ch, ftype) {
                         UiSysBeep(1)
                         return
                     }

@@ -1,0 +1,96 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_narrowform.cla: NarrowForm (SE wave 3 Task 4, spec N3) -- a form
+// `field` bound to a `uint16` record field. OK validation refuses a value
+// out of the type's range (70000) and a minus sign (-1) the same way it
+// refuses an int32 overflow in FormEdit: beep, refocus with the whole
+// field selected, form stays open, `accepted` does not fire. A corrected
+// retype (8080) then accepts and writes back through the 2-byte field.
+//
+// Click coordinates: a 200-wide form centers its content at
+// ((512-200)/2, 44) = (156, 44), the same derivation NarrowPopupWin uses.
+//   Port { at: 10, 10; width: 100 } -> local box x 10+70..10+170, y 10..30
+//     -> global x 236..336, y 54..74; click (256, 64).
+//   OK   { at: 10, 50; default }    -> local x 10..90, y 50..70
+//     -> global center (206, 104).
+const tbNfPortX: int = 256
+const tbNfPortY: int = 64
+const tbNfOkX:   int = 206
+const tbNfOkY:   int = 104
+
+record TbNfRec {
+    port: uint16
+}
+
+// Instrumentation globals, read after the form closed itself (same reason
+// as harness.cla's tbFeAccepted*).
+var tbNfAccepted: TbNfRec
+var tbNfAcceptedFired: bool
+
+window NarrowFormWin {
+    title: "Narrow Form"
+    size: 200, 100
+    form for TbNfRec
+
+    field Port { binds: port; label: "Port:"; at: 10, 10; width: 100 }
+
+    button OK     { at: 10, 50;  default }
+    button Cancel { at: 100, 50; cancel }
+}
+
+extend NarrowFormWin {
+    on accepted(r: TbNfRec) {
+        tbNfAccepted = r
+        tbNfAcceptedFired = true
+    }
+}
+
+func caseNarrowForm(): TestResult {
+    var editOk: bool
+    var rangeRejected: bool
+    var minusRejected: bool
+    var detail: string
+
+    tbNfAcceptedFired = false
+    editOk = true
+
+    edit NarrowFormWin, new TbNfRec
+
+    editOk = editOk and UiTestClick(tbNfPortX, tbNfPortY)
+    editOk = editOk and UiTestType("70000")
+    editOk = editOk and UiTestClick(tbNfOkX, tbNfOkY)
+    rangeRejected = not tbNfAcceptedFired
+    // The refusal selected the whole field, so each retype replaces it.
+    editOk = editOk and UiTestType("-1")
+    editOk = editOk and UiTestClick(tbNfOkX, tbNfOkY)
+    minusRejected = not tbNfAcceptedFired
+    editOk = editOk and UiTestType("8080")
+    editOk = editOk and UiTestClick(tbNfOkX, tbNfOkY)
+
+    if editOk and rangeRejected and minusRejected and tbNfAcceptedFired and tbNfAccepted.port == 8080 {
+        return tkPass("NarrowForm")
+    }
+    detail = "port " + tkIntToStr(tbNfAccepted.port)
+    if rangeRejected {
+        detail = detail + " rangeRejected true"
+    } else {
+        detail = detail + " rangeRejected false"
+    }
+    if minusRejected {
+        detail = detail + " minusRejected true"
+    } else {
+        detail = detail + " minusRejected false"
+    }
+    if tbNfAcceptedFired {
+        detail = detail + " acceptedFired true"
+    } else {
+        detail = detail + " acceptedFired false"
+    }
+    if editOk {
+        detail = detail + " editOk true"
+    } else {
+        detail = detail + " editOk false"
+    }
+    return tkFail("NarrowForm", detail)
+}

@@ -5010,7 +5010,8 @@ func cgFindSerdescLabel(recNameIdx: int): int {
 //         record slot, Task 14's own record-ABI fix)
 //   [1] = nFields
 //   then nFields field blocks, each "4 + enumCount" ints:
-//     ftype (0 INT/1 FIXED/2 BOOL/3 CHAR/4 STR/5 ENUM), strCap (STR only),
+//     ftype (0 INT/1 FIXED/2 BOOL/3 CHAR/4 STR/5 ENUM/6 U8/7 I16/8 U16),
+//     strCap (STR only),
 //     offset (cgFieldOffset -- same native authority as recSize above),
 //     enumCount (ENUM only), then enumCount inline ordinal values (ENUM
 //     only) -- cpSerEnumValsInline's own inline-not-referenced shape,
@@ -5050,7 +5051,7 @@ func cgBuildSerdescInts(recNameIdx: int): list of int {
         strCap = 0
         enumCount = 0
         if k == KInt {
-            ftype = 0
+            ftype = uibFieldTypeNum(t)
         } else if k == KFixed {
             ftype = 1
         } else if k == KBool {

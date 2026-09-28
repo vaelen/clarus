@@ -191,6 +191,7 @@ An `address` is not a resource: it is a plain inline value, copied like an `int`
 - **Narrowing is explicit.** `int` → narrow, and one narrow type → a different one, is a build error (`cannot assign int to int16`). Convert with `uint8(x)`, `int16(x)` or `uint16(x)`, which accept an `int`, a `char` or another narrow type and keep the low 8 or 16 bits: `uint8(300)` is 44, `int16(40000)` is −25536, `uint16(-1)` is 65535. As with every conversion, converting to the same type is an error (`uint8() expects an int, char, int16 or uint16, got uint8`).
 - **Literals adopt the narrow type** where one is expected — an assignment target, an argument, a return value, a field default, a `case` label, or the other operand of a comparison — when the value is in range, and are a build error otherwise: `300 is out of range for uint8 (0..255)`, `-1 is out of range for uint16 (0..65535)`. Everywhere else a literal is an `int`.
 - `string(n)` renders any narrow value in decimal.
+- A form `field` binds a narrow field like an `int` one, with the type's range checked at OK, and a table `column` shows it in decimal (Type-Driven Widget Behavior).
 
 ### Records and Defaults
 
@@ -1233,6 +1234,7 @@ A bound widget's behavior comes from the type of the field it binds to, with not
 |---|---|---|
 | `string(n)` | `field` | typing is limited to n characters |
 | `int` | `field` | typing is restricted to numeric input; a non-numeric value fails OK validation |
+| `uint8`, `int16`, `uint16` | `field` | numeric input, as for `int`; OK validation also fails for a value outside the type's range, or with a minus sign for `uint8`/`uint16`. A table `column` shows the value in decimal |
 | `fixed` | `field` | numeric input, including a decimal point |
 | `bool` | `check` | checkbox; `checked` mirrors the field |
 | enum | `popup` | popup items are the enum's member labels (member name when unlabeled — Chapter 3), in declaration order |
