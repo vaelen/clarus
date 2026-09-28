@@ -325,10 +325,34 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   and its switches have no `default:`, so codes 6–8 (`U8`/`I16`/`U16`)
   would be skipped silently. Delete it with its test, or add
   `default: rt_panic(...)` to its switches.
-- **`rt.h`'s `RT_FT_ENUM` comment still says 4 bytes** (Task 9):
-  `/* int32 value, 4B BE ... */`. Enum fields are 2 bytes on both lanes
-  and on disk in v2 (4 only in a v1 file). Comment-only; do it with the
-  `rt_ser.inc` entry above.
+- **A fresh `irTypes` entry per narrow-typed expression** (ruling R4).
+  `lowTypeAt` (`clarusc/lower.cla`) calls `irNarrowIntType` for every
+  uint8/int16/uint16-typed node it lowers -- including, since the final
+  review's fix, every int literal the checker typed narrow -- and
+  `irNarrowIntType` (`clarusc/ir.cla`) appends a new `KInt` entry each
+  time, like `irStrType`. Harmless for today's runtime and compiler
+  (neither is narrow-heavy), but a user program full of narrow locals,
+  fields and literals grows `irTypes` per use, not per type. Fix: a
+  lazily-created per-compile cache of the three narrow entries (tags 8,
+  -16, 16), created on first use rather than at init so no existing
+  program's `irTypes` indices move. Check the bake path first: a baked
+  runtime restores `irTypes` wholesale (`bkLdIrTypes`, `clarusc/bake.cla`),
+  so the cache must be reset (or re-derived) after that restore, never
+  carried across it pointing at a stale index.
+- **`NarrowForm` covers only `uint16`** (`testsuite/toolbox`). The
+  toolbox suite's form case exercises one narrow field kind; nothing
+  drives a form mixing `uint8`, an `int16` with a negative prefill and
+  an enum popup, and no case has a narrow `table` column. The modal
+  form/table field-type codes 6-8 are only covered for `uint16` on
+  hardware.
+- **Native coverage gaps for narrow/enum containers.** The core suite
+  (both lanes) now covers narrow fields in a `list of record` and a
+  `map of record` (and LIST/MAP save/load of them) via `EnumStorage`,
+  but nothing yet runs natively for: a `sortedmap` of a narrow type;
+  `for x in` over a `list of int16` (sign extension on the loop
+  variable); `for k, v in` over an enum-valued `sortedmap`/`intmap`;
+  and `pop()`/`first()`/`last()` on a `list of <enum>` (the 2-byte
+  out-temp path). Each is a few lines in an existing core case.
 
 ### MacTCP phase (2026-09-08)
 

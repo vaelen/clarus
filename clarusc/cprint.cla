@@ -1042,12 +1042,13 @@ func cpArrElemCTypeName(t: int): string {
 // this phase instead narrows the true field width to 1 everywhere, closing
 // the gap from the other direction.
 //
-// Only the six kinds uibFieldTypeNum accepts can reach here (it fails
+// Only the nine kinds uibFieldTypeNum accepts can reach here (it fails
 // closed on anything else), so the rules are short: int/fixed are
 // `int32_t` (4 bytes, 2-byte aligned -- m68k GCC's default
 // BIGGEST_ALIGNMENT is 16 bits, the same convention cpUiStateFieldCType's
 // own comment cites); an enum is `uint16_t` (2 bytes, SE wave 3 N8,
-// cpElemCType); `char`/`bool` are `uint8_t` (1 byte); `string(n)` is
+// cpElemCType); `char`/`bool` are `uint8_t` (1 byte), as is `uint8`;
+// `int16`/`uint16` are 2 bytes (irtIntWidth); `string(n)` is
 // `clar_str_n` = `struct { uint8_t len; uint8_t b[n]; }`, padded with a
 // trailing byte to even size when n+1 is odd (n+1 rounded up to even
 // bytes, 2-byte aligned via cpEmitRecords' explicit pad members -- the

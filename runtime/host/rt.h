@@ -233,10 +233,13 @@ int rt_file_write_res(const uint8_t *path, const rt_text *t, const uint8_t *type
 #define RT_FT_BOOL  2  /* 1B */
 #define RT_FT_CHAR  3  /* 1B */
 #define RT_FT_STR   4  /* 1 len byte + strCap data bytes (fixed width, zero-padded) */
-#define RT_FT_ENUM  5  /* int32 value, 4B BE; load validates membership in enumValues */
-#define RT_FT_U8    6  /* uint8_t: forms/tables (SE wave 3); not yet serializable */
-#define RT_FT_I16   7  /* int16_t: forms/tables (SE wave 3); not yet serializable */
-#define RT_FT_U16   8  /* uint16_t: forms/tables (SE wave 3); not yet serializable */
+#define RT_FT_ENUM  5  /* uint16_t field; 2B BE on disk in v2 (4B in v1); load validates membership in enumValues */
+/* The narrow kinds (SE wave 3) are v2-only: ser.cla (every build's
+   file.save/load) writes them at their natural widths; rt_ser.inc,
+   which still writes v1 with 4-byte enums, does not handle them. */
+#define RT_FT_U8    6  /* uint8_t, 1B */
+#define RT_FT_I16   7  /* int16_t, 2B BE */
+#define RT_FT_U16   8  /* uint16_t, 2B BE */
 
 typedef struct { short ftype; short strCap; long offset;
                  short enumCount; const int32_t *enumValues;
