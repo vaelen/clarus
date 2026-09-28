@@ -134,6 +134,11 @@ enum TypeKind {
 // TypeInfo is one entry in typeArena. Only the fields relevant to `kind`
 // are meaningful, matching types.go's Type struct:
 //   TyStr              n=capacity
+//   TyInt               n=narrow-width tag (SE wave 3): 0 = plain 32-bit
+//                       `int`, 8 = `uint8`, 16 = `uint16`, -16 = `int16`
+//                       (magnitude = width in bits, negative = signed
+//                       narrow). Read it only through tyIntWidth/
+//                       tyIntSigned below.
 //   TyArr               n=length; elem=element type index
 //   TyList, TyMap        elem=element/value type index
 //   TyEnum, TyRec, TyWindowRef, TyOverlay
@@ -422,6 +427,70 @@ func typesInit() {
     SaveChoiceT = seedSaveChoice()
 }
 
+// narrowIntT builds a narrow TyInt type (uint8/int16/uint16) from its
+// width tag (8, 16 or -16; see TypeInfo's schema comment). A fresh arena
+// entry per call, like strT -- deliberately NOT a typesInit singleton:
+// the bake serializes typeArena and the intern pool, so seeding anything
+// new there would move every baked index for programs that never name a
+// narrow type.
+func narrowIntT(tag: int): int {
+    var t: TypeInfo
+
+    t.kind = TyInt
+    t.n = tag
+    t.elem = -1
+    t.nameIdx = -1
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+// tyIntWidth is a TyInt type's narrow width in bits: 0 for plain `int`,
+// 8 for `uint8`, 16 for `int16`/`uint16`. 0 for any non-int kind.
+func tyIntWidth(t: int): int {
+    if typeKind(t) != TyInt {
+        return 0
+    }
+    if typeN(t) < 0 {
+        return -typeN(t)
+    }
+    return typeN(t)
+}
+
+// tyIntSigned reports whether a TyInt type is signed: `int` and `int16`
+// are, `uint8` and `uint16` are not.
+func tyIntSigned(t: int): bool {
+    return typeN(t) <= 0
+}
+
+// tyNarrowRangeOk reports whether the int value v fits t's range (N1's
+// literal rule): always true for plain `int`, else uint8 0..255, int16
+// -32768..32767, uint16 0..65535.
+func tyNarrowRangeOk(t: int, v: int): bool {
+    if tyIntWidth(t) == 0 {
+        return true
+    }
+    return v >= tyNarrowMin(t) and v <= tyNarrowMax(t)
+}
+
+// tyNarrowMin/tyNarrowMax are a narrow TyInt type's value range (for the
+// N1 diagnostic's "(lo..hi)"). Only meaningful when tyIntWidth(t) != 0.
+func tyNarrowMin(t: int): int {
+    if tyIntSigned(t) {
+        return -32768
+    }
+    return 0
+}
+
+func tyNarrowMax(t: int): int {
+    if tyIntWidth(t) == 8 {
+        return 255
+    }
+    if tyIntSigned(t) {
+        return 32767
+    }
+    return 65535
+}
+
 // typesReset empties typeArena and enumMembers, then re-seeds the
 // singletons via typesInit -- call between compiling independent programs.
 func typesReset() {
@@ -450,6 +519,11 @@ func assignable(src: int, dst: int): bool {
     dk = typeKind(dst)
     if sk == TyInvalid or dk == TyInvalid {
         return true
+    }
+    // SE wave 3 (D4): a narrow int widens implicitly to `int`; `int` ->
+    // narrow and narrow -> a different narrow type need a conversion.
+    if sk == TyInt and dk == TyInt {
+        return typeN(dst) == 0 or typeN(src) == typeN(dst)
     }
     // String -> Text is documented and one-way; Text -> String is not (see
     // the language reference's Text operations and Strings chapters).
@@ -521,6 +595,9 @@ func typesEqual(a: int, b: int): bool {
         return false
     }
     switch ak {
+    case TyInt {
+        return typeN(a) == typeN(b)
+    }
     case TyStr {
         return typeN(a) == typeN(b)
     }

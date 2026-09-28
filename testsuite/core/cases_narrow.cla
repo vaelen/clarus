@@ -1,0 +1,80 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_narrow.cla (SE wave 3): uint8/int16/uint16 semantics -- widening,
+// 32-bit arithmetic, truncating conversions, literal adoption, storage.
+record NarrowRec {
+    a: uint8
+    b: int16
+    c: uint16
+    n: int
+}
+
+var gU8: uint8
+var gI16: int16
+
+func narrowId16(x: int16): int16 {
+    return x
+}
+
+func narrowRetU16(): uint16 {
+    return 65535
+}
+
+func caseNarrowInts(): TestResult {
+    var a: uint8
+    var b: uint8
+    var s: int16
+    var u: uint16
+    var r: NarrowRec
+    var arr: uint16[3]
+    var l: list of int16
+    var i: int
+
+    a = 200
+    b = 100
+    if a + b != 300 {
+        return tkFail("NarrowInts", "uint8 sum did not widen")
+    }
+    s = -1
+    u = 65535
+    if s == u {
+        return tkFail("NarrowInts", "int16 -1 equals uint16 65535")
+    }
+    if uint8(300) != 44 or int16(40000) != -25536 or uint16(-1) != 65535 {
+        return tkFail("NarrowInts", "truncating conversion")
+    }
+    i = 70000
+    if uint16(i) != 4464 {
+        return tkFail("NarrowInts", "uint16 of int")
+    }
+    r.a = 255
+    r.b = -32768
+    r.c = 65535
+    r.n = 7
+    if r.a != 255 or r.b != -32768 or r.c != 65535 or r.n != 7 {
+        return tkFail("NarrowInts", "record field round trip")
+    }
+    arr[0] = 0
+    arr[2] = 65535
+    if arr[2] != 65535 or arr[0] != 0 {
+        return tkFail("NarrowInts", "array element round trip")
+    }
+    l.push(-32768)
+    l.push(32767)
+    if l[0] != -32768 or l[1] != 32767 {
+        return tkFail("NarrowInts", "list element round trip")
+    }
+    gU8 = 255
+    gI16 = -2
+    if gU8 != 255 or gI16 != -2 {
+        return tkFail("NarrowInts", "global round trip")
+    }
+    if narrowId16(-5) != -5 or narrowRetU16() != 65535 {
+        return tkFail("NarrowInts", "param/return round trip")
+    }
+    if string(s) != "-1" or string(u) != "65535" {
+        return tkFail("NarrowInts", "string() of narrow")
+    }
+    return tkPass("NarrowInts")
+}

@@ -399,7 +399,12 @@ func lowTypeAt(t: int, line: int, col: int): int {
     var recIdx: int
 
     switch typeKind(t) {
-    case TyInt { return irIntT }
+    case TyInt {
+        if typeN(t) == 0 {
+            return irIntT
+        }
+        return irNarrowIntType(typeN(t))
+    }
     case TyBool { return irBoolT }
     case TyFixed { return irFixedT }
     case TyChar { return irCharT }
@@ -532,6 +537,17 @@ func lowResolveType(tx: int): int {
             // forward-referenced `extern record` diagnoses at the `var`'s
             // own type annotation, not 0:0.
             return lowTypeAt(symbols[symIdx].typeIdx, typeExprLine(tx), typeExprCol(tx))
+        }
+        // SE wave 3: the narrow names resolve only when nothing in scope
+        // shadows them (check.cla's narrowTypeNamed, same rule).
+        if symIdx == -1 {
+            if nm == "uint8" {
+                return irNarrowIntType(8)
+            } else if nm == "int16" {
+                return irNarrowIntType(-16)
+            } else if nm == "uint16" {
+                return irNarrowIntType(16)
+            }
         }
         // check.Files already rejected an undefined type name; reaching
         // here on a checker-clean program would be a lowerer bug.
@@ -1437,6 +1453,12 @@ func lowCall(e: int): int {
         if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {
             return newIRConv(CvIntToEnum, lowExpr(callArgsHead(e)), identName(fn), ty)
         }
+        if symIdx == -1 and tyIntWidth(exprTypeGet(e)) != 0 {
+            // uint8(x)/int16(x)/uint16(x) (SE wave 3): checkIdentCall's
+            // narrowTypeNamed arm typed this call as the narrow type
+            // itself (ty); truncate to it.
+            return newIRConv(CvIntToNarrow, lowExpr(callArgsHead(e)), -1, ty)
+        }
         if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyOverlay {
             // `OverlayName(p)` (Ch13: Overlay Records) -- checkConversion
             // already required p: ptr; ty (lowMustType(e)) is the overlay
@@ -2185,6 +2207,11 @@ func lowCheckSerializableFields(recNameIdx: int, ctx: string) {
         k = typeKind(ft)
         if not (k == TyInt or k == TyBool or k == TyFixed or k == TyChar or k == TyStr or k == TyEnum) {
             lowUnsupported(ctx + ": record " + poolGet(recNameIdx) + " field " + poolGet(fieldInfos[fi].nameIdx) + " is not a value type")
+        } else if tyIntWidth(ft) != 0 {
+            // SE wave 3: narrow fields get serializer field codes in
+            // Task 7 (format v2); until then saving one would read or
+            // write 4 bytes of a 1- or 2-byte field.
+            lowUnsupported(ctx + ": record " + poolGet(recNameIdx) + " field " + poolGet(fieldInfos[fi].nameIdx) + " is a narrow integer (not yet serializable)")
         }
         fi = fieldInfos[fi].next
     }

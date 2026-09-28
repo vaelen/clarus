@@ -1,0 +1,13 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_narrow_68k_stub.cla (SE wave 3 Task 1, TEMPORARY): stands in for
+// cases_narrow.cla in the emit68k-only core compositions
+// (tests/mactest/coregui_files.txt, tests/cg68k/segments.sh) until Task 3
+// teaches emit68k the narrow types -- emit68k rejects them until then, and
+// runner.cla dispatches caseNarrowInts unconditionally. Task 3 deletes this
+// file and puts cases_narrow.cla back in both lists. It FAILs on purpose:
+// a stand-in must never report a pass for a case it did not run.
+func caseNarrowInts(): TestResult {
+    return tkFail("NarrowInts", "narrow integer types are not yet supported by emit68k")
+}

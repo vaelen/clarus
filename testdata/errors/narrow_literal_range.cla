@@ -1,0 +1,9 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// SE wave 3 (N1): an integer literal out of a narrow type's range is an
+// error where it would adopt that type.
+func f() {
+    var x: uint8
+    x = 300
+}

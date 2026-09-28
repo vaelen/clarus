@@ -1,0 +1,1 @@
+../../testdata/errors/narrow_literal_range.cla:8:9: 300 is out of range for uint8 (0..255)

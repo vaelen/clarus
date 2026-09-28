@@ -39,6 +39,10 @@
 //
 // ---- IRKind (irTypes arena entries) ----
 //   KVoid/KInt/KBool/KFixed/KChar/KText/KErr  no other field meaningful
+//   KInt   n=narrow-width tag (SE wave 3), the checker's TyInt tag
+//          verbatim: 0 = plain 32-bit int (every existing type), 8 = uint8,
+//          16 = uint16, -16 = int16. Read it through irtIntWidth/
+//          irtIntSigned.
 //   KStr   n=capacity
 //   KList  elem=element IRType index
 //   KMap   elem=value IRType index
@@ -303,6 +307,12 @@ enum IRConvOp {
     CvOverlayToPtr
     CvSExt16
     CvIntNonZero
+
+    // CvIntToNarrow (SE wave 3): uint8(x)/int16(x)/uint16(x) -- truncate
+    // an int, char or other narrow int to the node's own `ty` (a narrow
+    // KInt). Appended last so the bake's raw-ordinal serialization of
+    // every earlier op is unchanged.
+    CvIntToNarrow
 }
 
 record IRType {
@@ -1458,6 +1468,34 @@ func irtElem(i: int): int {
 
 func irtName(i: int): int {
     return irTypes[i].name
+}
+
+// irtIntWidth is a KInt type's narrow width in bits: 0 for plain 32-bit
+// `int`, 8 for uint8, 16 for int16/uint16; 0 for every other kind. The
+// backends key narrow storage (1/2-byte slots, loads, stores) and the
+// serializer/form field codes off it.
+func irtIntWidth(t: int): int {
+    if irtKind(t) != KInt {
+        return 0
+    }
+    if irtN(t) < 0 {
+        return -irtN(t)
+    }
+    return irtN(t)
+}
+
+// irtIntSigned: is a KInt type signed? `int` and int16 are (sign-extend
+// on load), uint8 and uint16 are not (zero-extend).
+func irtIntSigned(t: int): bool {
+    return irtN(t) <= 0
+}
+
+// irNarrowIntType builds a narrow KInt IRType from its width tag (8, 16
+// or -16; see the KInt schema line). A fresh entry per call, like
+// irStrType: narrow types are never singletons, so no existing program's
+// irTypes indices move.
+func irNarrowIntType(tag: int): int {
+    return newIRType(KInt, tag, -1, -1)
 }
 
 // irtNeedsCtor reports whether a value of type t's all-zero representation

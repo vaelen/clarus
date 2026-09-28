@@ -1,0 +1,10 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// SE wave 3 (D4): one narrow type does not assign to a different one,
+// even when every value would fit.
+func f() {
+    var a: uint8
+    var b: int16
+    b = a
+}

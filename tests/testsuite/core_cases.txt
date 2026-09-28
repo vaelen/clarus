@@ -82,4 +82,5 @@ DirOps
 PtrCall
 StrPerf
 OpenRF
+NarrowInts
 SelfCheck
