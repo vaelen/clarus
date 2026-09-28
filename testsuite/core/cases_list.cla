@@ -17,6 +17,9 @@
 // ClearBasics (layer1-compiler-perf phase, Task 8) is new -- proves
 // `.clear()` (count -> 0, capacity retained, re-add works) across all
 // four container families in one case: list, map, intmap, sortedmap.
+//
+// ReleaseShrink (SE wave 1, Task 1) is new -- proves `.release()` and
+// `.shrink()` across list/map/intmap/sortedmap/text (see its own comment).
 
 func caseListPushCountFirstLast(): TestResult {
     var l: list of int
@@ -194,4 +197,174 @@ func caseClearBasics(): TestResult {
     }
 
     return tkPass("ClearBasics")
+}
+
+// ReleaseShrink (SE wave 1, Task 1): `.release()` drops a container's
+// storage (count 0, then usable again; aliases see it, since containers
+// are shared by reference) and `.shrink()` trims capacity while keeping
+// contents and order -- list, map, intmap, sortedmap and text, plus the
+// element-bearing release paths (list of string, map of records).
+record caseRsItem {
+    name: text
+    n: int
+}
+
+func caseReleaseShrink(): TestResult {
+    var l: list of int
+    var b: list of int
+    var ls: list of string
+    var m: map of int
+    var im: intmap of int
+    var sm: sortedmap of int
+    var mr: map of caseRsItem
+    var item: caseRsItem
+    var t: text
+    var i: int
+    var before: string
+    var after: string
+
+    // list: release empties, stays usable
+    i = 0
+    while i < 100 {
+        l.push(i)
+        i = i + 1
+    }
+    l.release()
+    if l.count != 0 {
+        return tkFail("ReleaseShrink", "list release count")
+    }
+    l.push(7)
+    if l.count != 1 or l.first() != 7 {
+        return tkFail("ReleaseShrink", "list reuse after release")
+    }
+
+    // aliasing: release through one name is seen through the other
+    b = l
+    l.release()
+    if b.count != 0 {
+        return tkFail("ReleaseShrink", "alias did not see release")
+    }
+    b.push(9)
+    if l.count != 1 or l.first() != 9 {
+        return tkFail("ReleaseShrink", "alias reuse after release")
+    }
+
+    // shrink keeps contents
+    i = 0
+    while i < 50 {
+        l.push(i)
+        i = i + 1
+    }
+    l.shrink()
+    if l.count != 51 or l.first() != 9 {
+        return tkFail("ReleaseShrink", "list shrink contents")
+    }
+    l.push(99)
+    if l.count != 52 {
+        return tkFail("ReleaseShrink", "list push after shrink")
+    }
+
+    // element-bearing list
+    ls.push("alpha")
+    ls.push("beta")
+    ls.release()
+    if ls.count != 0 {
+        return tkFail("ReleaseShrink", "list of string release")
+    }
+    ls.push("gamma")
+    if ls.first() != "gamma" {
+        return tkFail("ReleaseShrink", "list of string reuse")
+    }
+
+    // map: delete, shrink, every survivor still found, order kept
+    m["a"] = 1
+    m["b"] = 2
+    m["c"] = 3
+    m["d"] = 4
+    m.remove("b")
+    for k, v in m {
+        before = before + k
+    }
+    m.shrink()
+    for k, v in m {
+        after = after + k
+    }
+    if before != after {
+        return tkFail("ReleaseShrink", "map shrink order")
+    }
+    if m.count != 3 or m.get("a", -1) != 1 or m.get("c", -1) != 3 or m.get("d", -1) != 4 or m.has("b") {
+        return tkFail("ReleaseShrink", "map shrink lookups")
+    }
+    m.release()
+    if m.count != 0 or m.has("a") {
+        return tkFail("ReleaseShrink", "map release")
+    }
+    m["z"] = 26
+    if m.get("z", -1) != 26 {
+        return tkFail("ReleaseShrink", "map reuse after release")
+    }
+
+    im[1] = 10
+    im[2] = 20
+    im.shrink()
+    if im.get(2, -1) != 20 {
+        return tkFail("ReleaseShrink", "intmap shrink")
+    }
+    im.release()
+    if im.count != 0 or im.has(1) {
+        return tkFail("ReleaseShrink", "intmap release")
+    }
+    im[5] = 50
+    if im.get(5, -1) != 50 {
+        return tkFail("ReleaseShrink", "intmap reuse")
+    }
+
+    sm["y"] = 2
+    sm["x"] = 1
+    sm.shrink()
+    if sm.get("x", -1) != 1 or sm.get("y", -1) != 2 {
+        return tkFail("ReleaseShrink", "sortedmap shrink")
+    }
+    sm.release()
+    if sm.count != 0 or sm.has("x") {
+        return tkFail("ReleaseShrink", "sortedmap release")
+    }
+    sm["w"] = 3
+    if sm.get("w", -1) != 3 {
+        return tkFail("ReleaseShrink", "sortedmap reuse")
+    }
+
+    // element-bearing map: records owning a text field
+    item.name = "first"
+    item.n = 1
+    mr["p"] = item
+    item.name = "second"
+    item.n = 2
+    mr["q"] = item
+    mr.release()
+    if mr.count != 0 or mr.has("p") {
+        return tkFail("ReleaseShrink", "map of records release")
+    }
+    item.name = "third"
+    item.n = 3
+    mr["r"] = item
+    if mr.count != 1 or not mr.has("r") {
+        return tkFail("ReleaseShrink", "map of records reuse")
+    }
+
+    // text
+    t.append("hello world")
+    t.shrink()
+    if t.length != 11 {
+        return tkFail("ReleaseShrink", "text shrink length")
+    }
+    t.release()
+    if t.length != 0 {
+        return tkFail("ReleaseShrink", "text release")
+    }
+    t.append("again")
+    if t.length != 5 {
+        return tkFail("ReleaseShrink", "text reuse")
+    }
+    return tkPass("ReleaseShrink")
 }

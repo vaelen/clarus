@@ -446,6 +446,34 @@ func rtListClear(l: ptr) {
     rl.count = 0
 }
 
+// rtListDropStorage (SE wave 1, `.release()`): back to the birth state --
+// data handle sized to 0, count = cap = 0. The caller (lowering) has
+// already run the element-release walk when the list holds references,
+// exactly as for clear(). The box itself stays: every alias keeps a
+// valid, empty list (reference: containers are shared by reference).
+func rtListDropStorage(l: ptr) {
+    var rl: RtList
+    var err: int
+
+    rl = RtList(l)
+    err = ListSetHandleSize(rl.data, 0)
+    rl.count = 0
+    rl.cap = 0
+}
+
+// rtListShrink (SE wave 1, `.shrink()`): capacity trimmed to count.
+// Never releases elements; a shrink cannot fail, so err is ignored.
+func rtListShrink(l: ptr) {
+    var rl: RtList
+    var err: int
+
+    rl = RtList(l)
+    if rl.cap > rl.count {
+        err = ListSetHandleSize(rl.data, rl.count * rl.elemsize)
+        rl.cap = rl.count
+    }
+}
+
 // rtListClone (clir-load-perf: `l.clone()`, IListClone intrinsic) -- a
 // fresh whole-list copy of src's elements as ONE ListBlockMoveData, legal
 // precisely because the checker (check.cla's own "clone" arm,

@@ -334,7 +334,9 @@ A `list of T` is a growable sequence. List operations are:
 - `l.remove(i)` — remove the element at index `i`
 - `l[i]` — access element at index `i` (returns `T`)
 - `l.count` — number of elements (returns `int`)
-- `l.clear()` — remove all elements; `count` becomes 0, capacity is retained. `.clear()` releases the elements it discards. It is O(1) for scalar element types and O(n) for reference-bearing element types (the elements are released first)
+- `l.clear()` — remove all elements; `count` becomes 0, capacity is retained. `.clear()` releases the elements it discards. It is O(1) for scalar element types and O(n) for reference-bearing element types (the elements are released first). Capacity is kept; use `release()` to free it.
+- `l.release()` — remove all elements (releasing them, exactly as `clear()` does) and free the list's storage: `count` and capacity become 0, as for a freshly declared list. The list stays usable; the next `add` allocates again. It acts on the container itself, so every reference to it (an alias made by assignment, a parameter, a global) sees the result.
+- `l.shrink()` — trim capacity to `count`, freeing the unused tail of the storage. Elements are kept, in order, and none is released; a no-op when capacity already equals `count`. Like `release()`, it acts on the container itself, shared by every reference to it.
 - `l.clone()` — return a new `list of T`, independent of `l`, holding a copy of every element (mutating the clone never affects `l`, and vice versa). Only legal when `T` is a *flat* type — no `text`, `list of`, or `map of` anywhere in it, recursively through record fields and fixed arrays (`int`/`bool`/`char`/`fixed`/enum/`string(n)`/`char[n]`/a record built only from those is fine). Cloning a non-flat element type is a check-time error: the clone is a single bulk copy of the backing store, which would alias a reference-typed element instead of copying it
 - `for x in l { … }` — iterate (see Chapter 5)
 
@@ -350,7 +352,9 @@ A `map of T` is a hashtable with string keys (up to 255 bytes) and values of fix
 - `m.has(k)` — test for key presence (returns `bool`)
 - `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)
-- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained. `.clear()` releases the values it discards (keys are inline strings, never released). It is O(1) for scalar value types and O(n) for reference-bearing value types (the values are released first)
+- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained. `.clear()` releases the values it discards (keys are inline strings, never released). It is O(1) for scalar value types and O(n) for reference-bearing value types (the values are released first). Capacity is kept; use `release()` to free it.
+- `m.release()` — remove all entries (releasing the values, exactly as `clear()` does) and free all of the map's storage: `count` and every capacity become 0, as for a freshly declared map. The map stays usable; the next insert allocates again. It acts on the container itself, so every reference to it (an alias made by assignment, a parameter, a global) sees the result.
+- `m.shrink()` — trim the entry, value and key storage to what the current entries use (the hash index is kept as it is). Entries, their values and the iteration order are kept, and nothing is released; a no-op when already tight. Like `release()`, it acts on the container itself, shared by every reference to it.
 - `for k, v in m { … }` — iterate (see Chapter 5)
 
 Keys are compared case-sensitively, byte-wise. Iteration (`for k, v in m`) visits entries in an unspecified but deterministic order (a given sequence of inserts and removes always replays the same order); use `sortedmap of T` when ascending key order matters.
@@ -365,7 +369,9 @@ A `sortedmap of T` is a string-keyed (up to 255 bytes) container of fixed-size v
 - `m.has(k)` — test for key presence (returns `bool`)
 - `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)
-- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained. `.clear()` releases the values it discards (keys are inline strings, never released). It is O(1) for scalar value types and O(n) for reference-bearing value types (the values are released first)
+- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained. `.clear()` releases the values it discards (keys are inline strings, never released). It is O(1) for scalar value types and O(n) for reference-bearing value types (the values are released first). Capacity is kept; use `release()` to free it.
+- `m.release()` — remove all entries (releasing the values, exactly as `clear()` does) and free the map's storage: `count` and capacity become 0, as for a freshly declared map. The map stays usable; the next insert allocates again. It acts on the container itself, so every reference to it (an alias made by assignment, a parameter, a global) sees the result.
+- `m.shrink()` — trim key and value storage to `count`. Entries are kept, in order, and nothing is released; a no-op when already tight. Like `release()`, it acts on the container itself, shared by every reference to it.
 - `for k, v in m { … }` — iterate (see Chapter 5)
 
 Keys are compared case-sensitively, byte-wise. Iteration (`for k, v in m`) visits entries in ascending key order (byte-wise) — deterministic regardless of insertion or removal history.
@@ -382,7 +388,8 @@ An `intmap of T` is an int-keyed hashtable of fixed-size values of type `T`, wit
 - `m.has(k)` — test for key presence (returns `bool`)
 - `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)
-- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained. `.clear()` releases the values it discards (keys are ints, never released). It is O(1) for scalar value types and O(n) for reference-bearing value types (the values are released first)
+- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained. `.clear()` releases the values it discards (keys are ints, never released). It is O(1) for scalar value types and O(n) for reference-bearing value types (the values are released first). Capacity is kept; use `release()` to free it.
+- `m.release()` / `m.shrink()` — as for `map of T`
 - `for k, v in m { … }` — iterate (see Chapter 5), `k` is `int`
 
 Iteration (`for k, v in m`) visits entries in an unspecified but deterministic order (a given sequence of inserts and removes always replays the same order) — same contract as `map of T`.
@@ -396,7 +403,9 @@ A `text` is an unbounded, resizable buffer of characters. A `string` value may b
 - Assignment: `t = "hello"`
 - Concatenation: `t = t + "world"`
 - `t.append(x)` — append `x` (a `string`, `char`, or `text`) in place. Unlike concatenation with `+`, which rebuilds the buffer, `append` grows it amortized (and accepts a `char` directly, which `+` does not) — the right tool for building large output in a loop.
-- `t.clear()` — reset length to 0 in place. Capacity and the underlying buffer are kept (no allocation, no shrink), so a reused buffer cleared each cycle appends again without re-growing — pair with `reserve` for trap-free hot loops.
+- `t.clear()` — reset length to 0 in place. Capacity and the underlying buffer are kept (no allocation, no shrink), so a reused buffer cleared each cycle appends again without re-growing — pair with `reserve` for trap-free hot loops. Capacity is kept; use `release()` to free it.
+- `t.release()` — reset length to 0 and free the buffer: capacity becomes 0, as for a freshly declared `text`. The text stays usable; the next `append` allocates again. It acts on the text itself, so every reference to it (an alias made by assignment, a parameter, a global) sees the result.
+- `t.shrink()` — trim capacity to the current length, freeing the unused tail of the buffer. The contents are kept; a no-op when already tight. Like `release()`, it acts on the text itself, shared by every reference to it.
 - `t.reserve(n)` — pre-grow capacity to at least `n` bytes (at most one underlying resize; a no-op when capacity already suffices; never shrinks). Fails the same way growth during `append` does if memory is exhausted. For producers that must append byte-at-a-time and cannot batch.
 - `t[i]` — the character at index `i` (returns `char`), 0-based; `t[i] = c` assigns in place
 - `t[start, len]` — slice, yielding a `string`; same strict-bounds rules as string slicing (above)

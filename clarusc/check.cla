@@ -1607,6 +1607,14 @@ func buildMethodTables() {
     sigAdd(psPlain(IntT))
     textOnlyMethods["reserve"] = sigEnd(-1)
 
+    // release/shrink (SE wave 1): drop all storage / trim capacity to
+    // length -- same zero-arg-void shape as clear above.
+    sigStart()
+    textOnlyMethods["release"] = sigEnd(-1)
+
+    sigStart()
+    textOnlyMethods["shrink"] = sigEnd(-1)
+
     // hashStep/intAt/stringAt/textAt (clir-load-perf Task 2, intAt
     // renamed post-review from u32At -- one signed int type, so the u32
     // name misdescribed the return): bulk range-read methods for a hot
@@ -2133,9 +2141,10 @@ func checkListMethod(lt: int, sel: int, argsHead: int): int {
         }
         return IntT
     }
-    if name == "clear" {
+    // release/shrink (SE wave 1): same zero-arg-void shape as clear.
+    if name == "clear" or name == "release" or name == "shrink" {
         if argCount != 0 {
-            emitDiag(exprLine(sel), exprCol(sel), "clear takes no arguments")
+            emitDiag(exprLine(sel), exprCol(sel), name + " takes no arguments")
         }
         return VoidT
     }
@@ -2211,9 +2220,10 @@ func checkMapMethod(mt: int, sel: int, argsHead: int, keyT: int): int {
         }
         return IntT
     }
-    if name == "clear" {
+    // release/shrink (SE wave 1): same zero-arg-void shape as clear.
+    if name == "clear" or name == "release" or name == "shrink" {
         if argCount != 0 {
-            emitDiag(exprLine(sel), exprCol(sel), "clear takes no arguments")
+            emitDiag(exprLine(sel), exprCol(sel), name + " takes no arguments")
         }
         return VoidT
     }

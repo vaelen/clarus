@@ -135,6 +135,11 @@
 // call proving signed-word/ptr/int marshalling both directions, plus a
 // bool-returning call proving the RESULT readback's bool/char arm
 // (unexercised by the word-returning call alone).
+//
+// ReleaseShrink (cases_list.cla, SE wave 1 Task 1) is the 83rd real
+// case: `.release()` (storage dropped, container stays usable, aliases
+// see it, element-bearing release) and `.shrink()` (contents and order
+// kept) across list/map/intmap/sortedmap/text.
 
 enum CoreTest {
     All
@@ -197,6 +202,7 @@ enum CoreTest {
     DateTimeStrVectors
     NowSanity
     ClearBasics
+    ReleaseShrink
     ParamAliasGlobal
     ParamAliasHandle
     ParamBorrowChain
@@ -223,13 +229,13 @@ enum CoreTest {
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 82 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 83 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 83
+const nCoreCases: int = 84
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -415,6 +421,9 @@ func coreCaseName(t: CoreTest): string {
     case ClearBasics {
         return "ClearBasics"
     }
+    case ReleaseShrink {
+        return "ReleaseShrink"
+    }
     case ParamAliasGlobal {
         return "ParamAliasGlobal"
     }
@@ -563,6 +572,7 @@ func coreAllCases(): list of CoreTest {
     l.add(DateTimeStrVectors)
     l.add(NowSanity)
     l.add(ClearBasics)
+    l.add(ReleaseShrink)
     l.add(ParamAliasGlobal)
     l.add(ParamAliasHandle)
     l.add(ParamBorrowChain)
@@ -858,6 +868,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, ClearBasics) {
         results.add(caseClearBasics())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, ReleaseShrink) {
+        results.add(caseReleaseShrink())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, ParamAliasGlobal) {
