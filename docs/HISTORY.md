@@ -7514,6 +7514,266 @@ per-task briefs, reports and ledger were git-ignored scratch and were
 deleted after the final review; the rulings are in this entry.
 
 
+## SE memory program, Wave 3: narrow scalars (2026-09-29, branch `se-wave3-narrow-scalars`)
+
+Complete on `se-wave3-narrow-scalars` (2026-09-29); not yet merged.
+This entry covers Tasks 1–13 and Task 14's IIcx measurement (193 files,
++131,418/−110,053 from the plan commit `7811631e` before this docs
+commit, most of it the three-times-regenerated `clarusc/clarusc.c`
+snapshot). Wave A (Tasks 1 and 2) ran in parallel worktrees
+(`../clarus-w3-tN`, branch `w3-tN`) from `7811631e`, merged 1 then 2;
+Wave A2 (Tasks 3 and 4) ran in parallel from that tip, merged 3 then 4
+plus one combined `narrow.s` rebless; Task 5 ran on the branch; Wave B
+(Tasks 6, 7 and 8) ran in parallel worktrees, merged 6, 7, 8; Tasks 9–13 ran alone on the branch, in order. Every task was
+implemented and reviewed on Opus.
+
+**What it did.** It added the narrow integer types, made enums 2 bytes,
+moved the serializer to format v2, retired the `word`/`byte` extern
+spellings, and let the compiler's biggest arena use the 2-byte enums.
+
+- **Task 1: `uint8`/`int16`/`uint16`, front end and C lane.** The width
+  tag is `TyInt`'s/`KInt`'s `n` field (0 `int`, 8 `uint8`, 16 `uint16`,
+  −16 `int16`), so every existing type encodes as before. The names are
+  resolved by string compare where a name would otherwise be
+  `undefined`, and are neither interned nor put in the universe scope,
+  because either would move every baked index. N1 literal typing at the
+  assignment, argument, return, field-default, case-label and comparison
+  positions (`300 is out of range for uint8 (0..255)`); implicit
+  widening, truncating `uint8(x)`/`int16(x)`/`uint16(x)` (a new
+  `CvIntToNarrow`, appended last). C lane: `uint8_t`/`int16_t`/
+  `uint16_t` and distinct array typedefs. New core case `NarrowInts`,
+  new `testdata/errors` fixtures, and the reference's "Narrow Integers"
+  section plus three scalar-table rows; `uint` is in `docs/FUTURE.md`.
+- **Task 2: box-size pair scaffolding.** Empty
+  `runtime/clarus/boxsize_c.cla`/`boxsize_68k.cla` right after
+  `core.cla` in `bakeModuleList`, `driveManifestSplice` and
+  `driveEarlySplice`, plus the `tests/bake/boxsize.sh` twin (the
+  standing rule). Byte-identical except `rt.clir`'s manifest (+65 B).
+- **Task 3: 68k codegen.** `uint8` packs like `char`; `int16`/`uint16`
+  take new `sz==2` arms (`cgLoadSz2`: `MOVE.W; EXT.L` signed,
+  `CLR.L; MOVE.W` unsigned; `cgStoreSz2`: `MOVE.W`) at every load and
+  store site. A narrow argument is pushed as a long and the callee
+  addresses its low word/byte. New `testdata/cg68k/narrow.cla` golden
+  and `tests/emitui/narrow_state.sh` (a `uint8` window-state var gets a
+  `uint16_t` slot like `bool`). **The native boot found a real bug,
+  fixed byte-identically:** `cgIntrListSet`/`cgIntrMapSet`/
+  `cgIntrIntMapSet` sized the stored value by the value expression's
+  type, so `m["hi"] = 32767` into a `map of int16` stored 4 bytes and
+  the runtime copied the high word; they now use the element type.
+- **Task 4: narrow fields in forms and tables (N3).** A `field` bound
+  to a narrow record field is numeric and fails OK when out of range or
+  negative for an unsigned type; a table column shows it as a decimal.
+  New `RtFt` codes 6–8 (`U8`/`I16`/`U16`) in `ser.cla`, `uitable.cla`
+  and `rt.h`. New toolbox case `NarrowForm` (`uint16` field: 70000 and
+  −1 refused, 8080 accepted). The range check lives in the UI runtime,
+  which every UI program splices, so 14 emitui and 66 `testdata/cg68k`
+  goldens moved in their own commit (ruling R7).
+- **Task 5:** snapshot regeneration (narrow types, boxsize modules).
+- **Task 6: `int16`/`uint8` at the Toolbox boundary.** A parser-level
+  alias: `int16` builds the `TxWord` node and `uint8` the `TxByte` node
+  in `parseExternType`/`parseXRecFieldType`, so marshaling is `KWord`'s
+  by construction and D5's truncation holds at extern arguments and
+  `extern record` stores. `uint16` anywhere at the boundary and `uint8`
+  in a signature are rejected (`<type> cannot cross the Toolbox
+  boundary; use int16 or int`, ruling R12). New
+  `tests/lowlevel/extern_narrow.sh`.
+- **Task 7: serializer v2 framing.** `RtSerVersion` 2 (v1 still loads);
+  the narrow codes write their natural 1/2/2 bytes. A frozen v1 file
+  with an enum field (`testdata/sertest/frozen_v1_enum.dat`, 23 B) was
+  written on the unchanged base first. New core case `SerNarrow`; CLRD
+  re-pinned for the version byte (ruling R13).
+- **Task 8: box sizes move into the boxsize pair**, and the host
+  `--testapi` early-visible set ends after `uidialogs.cla` again
+  (undoing Wave 2 Task 9's widening). Byte-identical, `rt.clir`
+  included. Closed Wave 2's "odd home" TODO entry.
+- **Task 9: enums are 2 bytes on both lanes** (the wave's main
+  output-changing task). Native: `KEnum` size 2, `CLR.L; MOVE.W`
+  loads, `MOVE.W` stores, an enum argument pushed as a long; enum value
+  tables stay `DC.L`. C lane: enum fields and elements are `uint16_t`
+  (ruling R14), locals/params/globals/returns stay `int32_t`.
+  Serializer: an enum is 2 bytes on disk in v2, 4 in v1 (narrowed on
+  load, the v1 flag threaded as a parameter so no `ser.cla` global lands
+  in every program). New core cases `SerV1Enum` (loads the frozen v1
+  bytes; `core_cli.sh` `cmp`s them against the fixture) and
+  `EnumStorage` (members 1/0x7FFF/0xFFFF across every storage class).
+  Reblessed 55 `testdata/cg68k` files, 15 emitui C goldens plus the
+  frozen `uiblob_probe` blob/dump, and CLRD again (each record's enum
+  `00 00 00 01` → `00 01`). Native `coresuite_68k` 89/89 and
+  `toolbox_68k` 41/41.
+- **Task 10: snapshot regeneration, then enum-field grouping.** The
+  regeneration alone is −131,584 on `bookmarks_rtbake` (the compiler is
+  now built with 2-byte enums). Then `IRExpr` puts `kind, convOp` first
+  and its two `bool`s last (host 36 → 32 bytes) and `A68Item` puts its
+  three enums first (72 → 68): −139,264. `IRStmt`/`IRType` have one enum
+  each and were left alone; no `uint8` field was adopted, since C
+  `bool` fields are already `uint8_t`.
+- **Task 11: the rename.** `word` → `int16` (325 lines) and `byte` →
+  `uint8` (extern-record fields) across `runtime/clarus/`, `toolbox/`,
+  `clarusc/`, `testsuite/`, `testdata/`, the reference and the cookbook.
+  Byte-identical, `rt.clir` included.
+- **Task 12: the removal.** `word`/`byte` are now `undefined: word`;
+  diagnostics say `int16`/`uint8`; new
+  `testdata/errors/extern_word_removed.cla`. The reference's section is
+  now "The `int16` Extern Type". `TxWord`/`TxByte` stay (ruling R11).
+- **Task 13:** the Task 12 follow-ups (ruling R15: the extern-parameter
+  diagnostic lists `int16`, the dead `cwWord`/`cwByte` interns are gone,
+  which moves `rt.clir` by 16 bytes), the final snapshot regeneration,
+  the memgate ratchet and the census.
+- **Task 14:** the IIcx re-measure, this entry, and the program
+  design's §9/§9.4.
+
+The core suite is 89 cases (85 → 89: `NarrowInts`, `SerNarrow`,
+`SerV1Enum`, `EnumStorage`) and the toolbox suite 41 (40 → 41:
+`NarrowForm`).
+
+**The numbers.** Full tables and the census are in the program design's
+§9.4.
+
+| Subcase            | Wave 2 peak | Wave 3 peak |    Budget |
+|--------------------|------------:|------------:|----------:|
+| `bookmarks_rtbake` |   3,668,312 |   3,399,176 | 3,433,168 |
+| `bookmarks_src`    |   7,639,484 |   7,377,444 | 7,451,219 |
+| `hello_src`        |   7,570,224 |   7,308,336 | 7,381,420 |
+
+- **The 3.5 MB exit is met:** 3,399,176 is 270,840 bytes (7.4%) under
+  3,670,016.
+- The `bookmarks_rtbake` path: 3,669,892 before Task 9 → 3,670,024
+  after it → 3,538,440 after Task 10's regeneration (2-byte enums in
+  the compiler itself) → 3,399,176 after the field grouping.
+- **About 75 KB of that is host-only.** The host's C layout aligns
+  `int` to 4, so the grouping took the host `IRExpr` 36 → 32 and
+  `A68Item` 72 → 68; on the 68k `IRExpr` goes 32 → 30 and `A68Item`
+  does not change (`budget.txt` records this).
+- The peak is still at `Built fork`. At the peak: `irExprs` 1.05 MB
+  (29,692 of 32,768 slots, 32 B), `irStmts` 229 KB, `cgObjHoles`
+  197 KB, `strIndex` 164 KB, `cgObjRunBytes` 156 KB, `a68Items`
+  139 KB, `irTypes` 131 KB.
+- **IIcx** (same machine and input as Waves 0–2): launch→low heap used
+  **6111 KB, down from 6272 KB** (−161 KB, −2.6%; −5924 KB, −49.2%,
+  from Wave 0), still at `Built fork`. The saving is in place by
+  `Parsed` (−150 KB) and holds through `Finished`. Stack high-water
+  187 KB of 737 KB, unchanged. The bake re-parse span is **1m 53s**
+  (Wave 2: 2m 01s). Compile total **35,298 ticks** (Wave 2: 32,864),
+  9m 48s guest.
+  - The +2434 ticks are almost all `Built fork` (1899 → 4296, +2397);
+    every other phase together moved +37. `Built fork` writes the
+    output's resource fork and its heap delta is Wave 2's (+127 vs
+    +128 KB). The wave's real code cost in ClarusC itself (2-byte enum
+    loads are `CLR.L; MOVE.W`, 4 bytes where `MOVE.L` was 2, and a
+    2-byte enum local loses the size-4 peephole) would spread over
+    every phase, and the per-phase ticks do not show it above
+    run-to-run noise. One run per side; not established.
+  - The IIcx saving (161 KB) is below the host's 269 KB less its
+    ~75 KB host-only share; the other ~33 KB is not attributed. Launch
+    free is 63 KB higher than Wave 2, also not attributed.
+
+**Rulings** (from the ledger, each with its stated cost if wrong):
+
+- **R1.** Between Tasks 1 and 3, a T1 test that `emit68k`s the core
+  suite would hit Task 1's temporary narrow-type rejection, so Task 1
+  may leave `cases_narrow.cla` out of 68k-only compositions until
+  Task 3 adds it back. Cost: Task 3 forgets to add it (it did not).
+- **R2.** Tasks 4, 7 and 9 keep `runtime/host/rt.h`'s `RT_FT_*` and
+  `rt_ser.inc` in sync with the `RtFt` numbering where they are live.
+  `rt.h` is live (cprint's field rows name the macros); `rt_ser.inc`
+  turned out to be dead (`cpSerPorted` is always true) and still
+  writes v1. Cost: a dead-weight file drifts (`docs/TODO.md`).
+- **R3.** The user asked for parallel Opus, so Task 11 also ran on
+  Opus rather than Haiku. Cost: a bit more spend.
+- **R4.** Task 1's fresh `IRType` per narrow-typed expression
+  (`irNarrowIntType`, like `irStrType`) is deferred: no compiler source
+  used narrow values before Task 10, and Task 10 adopted no `uint8`
+  field, so it never applied. Cost: `irTypes` growth in a self-compile
+  if the compiler ever uses narrow values.
+- **R5.** `int(narrow)` stays an error: widening is implicit and the
+  spec lists no `int()` rule. Cost: a one-line checker change later.
+- **R6.** Task 4 skipped its native boot in its worktree (`emit68k`
+  still rejected narrow types until Task 3 merged); the controller ran
+  the core and toolbox boots after merging Tasks 3 and 4 (core 86/86,
+  toolbox 41/41). Cost: a Task 4 native bug found one step later.
+- **R7.** Task 4's golden rebless (14 emitui + 66 `cg68k`, commit
+  `1a006bae`) accepted despite the plan's "byte-identical" label: N3
+  requires the range check in always-reachable UI table/form code.
+  Cost: +224 B per native program, +776 B for `bookmarks`. The wave
+  spec's §3.1 and §4 are amended.
+- **R8.** Between Tasks 3 and 6, extern/callback parameters declared
+  narrow were unmarshaled natively (pushed as longs), with no gate: no
+  code used them in that window. Cost: a user program in that window
+  miscompiles.
+- **R9.** The generated-snapshot task (Task 5) was verified by the
+  controller instead of a reviewer: only `clarusc/clarusc.c` changed,
+  `selfhost/fixedpoint` re-ran PASS, and the identity check was clean.
+  Cost: none beyond a missed stale snapshot, which fixedpoint catches.
+- **R10.** Boundary `int16`/`uint8` (extern returns, callback
+  parameters, `extern record` field reads) stay `int`-typed on read-back
+  (option (a)), documented in the reference's Narrow Integers bullet
+  and `docs/TODO.md`. Cost: a user-visible wart
+  (`s = int16(FindWindow(...))`) until the follow-up.
+- **R11.** Task 12 removes only the `word`/`byte` spellings and keeps
+  the `TxWord`/`TxByte` nodes, which the `int16`/`uint8` alias relies
+  on for marshaling; the spec's §3.2 step 3 is amended. Cost: internal
+  names still say Word/Byte.
+- **R12.** `uint16` (and `uint8` in signatures) is rejected at the
+  Toolbox boundary with a diagnostic: no unsigned-word marshaling
+  exists, and `byte` was never legal in a signature. Cost: a later
+  additive change.
+- **R13.** CLRD was re-pinned twice (the version byte in Task 7, the
+  enum width in Task 9) against the spec's "one deliberate re-pin", as
+  the plan split them; each re-pin was checked byte-exact. Cost: none
+  (the goldens end identical).
+- **R14.** The C lane stores enum fields and elements as `uint16_t`,
+  not the spec's `int16_t`: it matches the native zero-extension and
+  reads members 32768–65535 correctly. The wave spec's N8 and §3.3 and
+  the program design's D7 are amended. Cost: none observable for enums
+  under 32768 members.
+- **R15.** Task 12's three deferred minors (a `check.cla` comment, the
+  unused `cwWord`/`cwByte` interns, `int16` in the extern-parameter
+  diagnostic) were folded into Task 13 as step 0, before the final
+  regeneration, so the committed snapshot is not left stale by a later
+  clarusc edit. Cost: a slightly bigger Task 13; `rt.clir` and one
+  `.expect` moved deliberately.
+
+**Gates.** T2: <T2 result>.
+`CLARUS_SNOW_TESTS=1 make test T='mactest/snow/clarusc_bake
+mactest/snow/macresident_failed_compile'` (this wave touched
+`bake.cla`): <clarusc_bake result>. The IIcx memprobe run passed 5/5
+in 509 s. Per-task T1 runs all passed (122–125 pass, 37 skip, 0 fail,
+perfgate 1/1); `CLARUS_BAKE_FULL=1`
+`bake/` 33/33 in every task and merge that ran it.
+
+**Deferred / recorded.** Items that outlive the wave are in
+`docs/TODO.md`'s Wave 3 sections: the boundary read-back typing (R10),
+the extern-return diagnostic that omits `int16`, the LDEF/table draw
+path every non-UI native program carries, the size-2 peephole,
+`rt_ser.inc`'s dead weight, and `rt.h`'s stale `RT_FT_ENUM` comment.
+The smaller deferred minors, recorded here so they are not lost:
+
+- Coverage: `NarrowForm` covers only `uint16` (no `int16` negative
+  prefill, `uint8` store or narrow table column); no suite case holds a
+  narrow field in a `list of record`, a `sortedmap` of a narrow type,
+  or a for-in over a `list of int16`; the v1 load is tested for a
+  record container only (list and map v1 threading unexercised);
+  `sortedmap` get/getDv of an enum, for-in over `sortedmap`/`intmap` of
+  an enum, and list `pop`/`first`/`last` of an enum are unexercised.
+- Cosmetic: a shadowed narrow name gives `undefined: uint8`; the
+  listing prints narrow params as "size 4" and `cgKindName` "int" (the
+  golden pins it); `cprint.cla`'s stale "six kinds" comment and
+  `cpIntFtype` duplicating `uibFieldTypeNum`; `tests/bake/header.sh`'s
+  "19 modules" wording hides the lane-specific boxsize module;
+  `tests/bake/boxsize.sh`'s redundant existence guards; `drive.cla`'s
+  now-unreachable empty-remainder guard; CLAUDE.md's 68k early-set
+  sentence does not mention `boxsize_68k` after `core`; `ir.cla`'s
+  stale `argCopy` comment; `check_test` Case 76's overlong comment line;
+  `KWord` comments that still say "word" (they describe the width).
+- A pre-existing worktree `.claude/worktrees/agent-a017d7a66204df2cb`
+  (not this wave's) was left alone.
+
+Spec: `docs/superpowers/specs/2026-09-28-se-wave3-narrow-scalars-design.md`;
+plan `docs/superpowers/plans/2026-09-28-se-wave3-narrow-scalars.md`. The
+per-task briefs, reports and ledger are git-ignored scratch; the
+rulings are in this entry.
+
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of

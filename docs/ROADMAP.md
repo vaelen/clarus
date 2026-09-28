@@ -199,8 +199,22 @@ measured analysis:
   runs), `bookmarks` from source at 7,639,484 and `hello-mac` at
   7,570,224. On the IIcx the launch→low heap use fell from 7977 KB to
   6272 KB. Numbers: the program design's §9.3 and `docs/HISTORY.md`.
-  Wave 3 (narrow scalars) is next; `irExprs` (1.31 MB at the peak) is
-  its first target.
+- **Wave 3 (narrow scalars): complete on branch
+  `se-wave3-narrow-scalars`** (2026-09-29, not yet merged). The
+  `uint8`/`int16`/`uint16` types on both lanes (implicit widening,
+  truncating explicit conversions, range-checked literals, form and
+  table binding); enums are 2 bytes on both lanes; `file.save` writes
+  serializer format v2 and `file.load` still reads v1; the box-size
+  consts moved to their own `boxsize_c.cla`/`boxsize_68k.cla` pair; the
+  extern `word`/`byte` spellings are renamed to `int16`/`uint8` and
+  removed; the compiler's `IRExpr`/`A68Item` group their 2-byte enum
+  fields. `bookmarks --rtbake` peaks at 3,399,176 bytes (3.5 MB target
+  met), `bookmarks` from source at 7,377,444 and `hello-mac` at
+  7,308,336. On the IIcx the launch→low heap use fell from 6272 KB to
+  6111 KB. Numbers: the program design's §9.4 and `docs/HISTORY.md`.
+  Wave 4 (lazy runtime library: read the CLIR with `readAt`, no
+  whole-resource read) is next; the never-released 1879 KB CLIR
+  resource is its target.
 
 The DNR/UDP items below resume after this program.
 
