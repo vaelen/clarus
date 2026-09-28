@@ -2545,6 +2545,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         if diags.count > 0 {
             return false
         }
+        driveFreeFrontEnd()
         driveProgressPhase("Lowered")
         return true
     }
@@ -2565,8 +2566,63 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     if diags.count > 0 {
         return false
     }
+    driveFreeFrontEnd()
     driveProgressPhase("Lowered")
     return true
+}
+
+// driveFreeFrontEnd (SE wave 1, spec %4.1): drop the front end's state
+// once lowering has succeeded -- nothing downstream of lowerProgram reads
+// the AST, tokens, source, declFileTab or the checker tables (audited
+// 2026-09-28: shake, cg68k, cprint, app68k, uiblob, asm68k, peep68k,
+// res68k, drive's emit functions, main/macgui after driveCompile).
+// --bake-ir needs no guard here: it never calls driveCompile at all
+// (main.cla quits through bakeWriteFile first, whose own
+// bakeGenerateChain lowers the runtime itself), and bakeWriteFile is the
+// one reader of funcSigs/symbols/scopes/typeArena/recFieldsHeadByName/
+// declFileTab after lowering. The next compile's resets (resetDiags,
+// astReset, lexAll's toks.clear, checkReset -> typesReset/scopesReset and
+// its fresh-map block) rebuild every one of these before any read.
+// Fresh-container reassignment (spec L8); Task 5 switches to .release().
+func driveFreeFrontEnd() {
+    var ex: list of ExprNode
+    var st: list of StmtNode
+    var de: list of DeclNode
+    var te: list of TypeExpr
+    var tk: list of Token
+    var dft: list of int
+    var sy: list of Symbol
+    var sc: list of Scope
+    var fs: list of FuncSig
+    var ta: list of TypeInfo
+    var fsd: intmap of int
+    var frd: intmap of int
+    var fgd: intmap of int
+    var xsn: map of int
+    var xfd: map of int
+    var efd: map of int
+    var cfd: map of int
+    var rfh: intmap of int
+
+    exprs = ex
+    stmts = st
+    decls = de
+    typeExprs = te
+    toks = tk
+    lexSrc = ""
+    declFileTab = dft
+    symbols = sy
+    scopes = sc
+    funcSigs = fs
+    typeArena = ta
+    funcScopeByDecl = fsd
+    funcRetByDecl = frd
+    funcSigByDecl = fgd
+    xrecSizeByName = xsn
+    xrecFirstDeclByName = xfd
+    externFirstDeclByName = efd
+    constFirstDeclByName = cfd
+    recFieldsHeadByName = rfh
 }
 
 // driveEmit68kFork (Task 9, mac-resident-clarusc) lowers the already-
