@@ -6562,7 +6562,7 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
         rt_ext_UiDrawText(cv_chBuf, 0, 1);
         rt_ext_UiDisposePtr(cv_chBuf);
     } else if (cv_ftype == 5) {
-        cv_v = rt_peekl(cv_base);
+        cv_v = rt_peekw(cv_base);
         cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIdx);
         cv_enumLabelsOff = clar_fn_uidFieldEnumLabelsOff(cv_layoutOff, cv_fieldIdx);
         cv_enumValuesOff = clar_fn_uidFieldEnumValuesOff(cv_layoutOff, cv_fieldIdx);
@@ -8515,7 +8515,7 @@ static void clar_fn_rtUiFormFill(void * cv_inst) {
                 rt_ext_UiSetControlValue(cv_ctrl, 0);
             }
         } else if (cv_kind == 6) {
-            cv_v = rt_peekl(cv_base);
+            cv_v = rt_peekw(cv_base);
             cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIdx);
             cv_enumValuesOff = clar_fn_uidFieldEnumValuesOff(cv_layoutOff, cv_fieldIdx);
             cv_sel = 0;
@@ -8655,9 +8655,9 @@ static void clar_fn_rtUiFormAccept(void * cv_inst) {
             cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIdx);
             cv_enumValuesOff = clar_fn_uidFieldEnumValuesOff(cv_layoutOff, cv_fieldIdx);
             if (((cv_enumCount > 0) && (cv_sel >= 0)) && (cv_sel < cv_enumCount)) {
-                rt_pokel(cv_base, clar_fn_uidEnumValue(cv_enumValuesOff, cv_sel));
+                rt_pokew(cv_base, clar_fn_uidEnumValue(cv_enumValuesOff, cv_sel));
             } else {
-                rt_pokel(cv_base, 0);
+                rt_pokew(cv_base, 0);
             }
         }
         cv_b = CLAR_ADD32(cv_b, 1);

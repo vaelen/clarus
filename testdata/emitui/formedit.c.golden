@@ -527,7 +527,7 @@ typedef struct {
     clar_str_63 cv_name;
     clar_str_255 cv_url;
     int32_t cv_port;
-    int32_t cv_protocol;
+    uint16_t cv_protocol;
     uint8_t cv_favorite;
     uint8_t clar_pad0;
 } clar_rec_Bookmark;
@@ -561,7 +561,7 @@ static const int32_t clar_serdesc_Bookmark[] = {
     RT_FT_BOOL, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_favorite), 0,
 };
 
-typedef char clar_ui_layoutassert_Bookmark[(sizeof(clar_rec_Bookmark) == 330 && offsetof(clar_rec_Bookmark, cv_name) == 0 && offsetof(clar_rec_Bookmark, cv_url) == 64 && offsetof(clar_rec_Bookmark, cv_port) == 320 && offsetof(clar_rec_Bookmark, cv_protocol) == 324 && offsetof(clar_rec_Bookmark, cv_favorite) == 328) ? 1 : -1];
+typedef char clar_ui_layoutassert_Bookmark[(sizeof(clar_rec_Bookmark) == 328 && offsetof(clar_rec_Bookmark, cv_name) == 0 && offsetof(clar_rec_Bookmark, cv_url) == 64 && offsetof(clar_rec_Bookmark, cv_port) == 320 && offsetof(clar_rec_Bookmark, cv_protocol) == 324 && offsetof(clar_rec_Bookmark, cv_favorite) == 326) ? 1 : -1];
 
 typedef struct { char clar_ui_unused; } clar_uistate_Main;
 
@@ -613,19 +613,19 @@ static const unsigned char clar_ui_blob[] = {
     0, 0, 0, 4, 0, 0, 0, 48, 0, 0, 3, 120, 0, 0, 0, 3, 0, 0, 3, 72,
     0, 0, 4, 187, 0, 0, 0, 140, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 192,
     0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 4, 196, 0, 0, 0, 30,
-    0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 1, 74, 0, 0, 0, 5, 0, 0, 0, 4,
+    0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 1, 72, 0, 0, 0, 5, 0, 0, 0, 4,
     0, 0, 0, 0, 0, 0, 0, 63, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
     0, 0, 0, 4, 0, 0, 0, 64, 0, 0, 0, 255, 0, 0, 0, 0, 255, 255, 255, 255,
     255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 1, 64, 0, 0, 0, 0, 0, 0, 0, 0,
     255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 5, 0, 0, 1, 68, 0, 0, 0, 0,
-    0, 0, 0, 3, 0, 0, 4, 120, 0, 0, 4, 132, 0, 0, 0, 2, 0, 0, 1, 72,
-    0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 1, 74,
+    0, 0, 0, 3, 0, 0, 4, 120, 0, 0, 4, 132, 0, 0, 0, 2, 0, 0, 1, 70,
+    0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 1, 72,
     0, 0, 0, 5, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 63, 0, 0, 0, 0,
     255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 4, 0, 0, 0, 64, 0, 0, 0, 255,
     0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 1, 64,
     0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 5,
     0, 0, 1, 68, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 4, 144, 0, 0, 4, 156,
-    0, 0, 0, 2, 0, 0, 1, 72, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255,
+    0, 0, 0, 2, 0, 0, 1, 70, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255,
     255, 255, 255, 255, 0, 0, 4, 168, 0, 0, 4, 175, 0, 0, 4, 180, 0, 0, 0, 0,
     0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 4, 168, 0, 0, 4, 175, 0, 0, 4, 180,
     0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 6, 71, 111, 112, 104, 101, 114, 4,
@@ -6753,7 +6753,7 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
         rt_ext_UiDrawText(cv_chBuf, 0, 1);
         rt_ext_UiDisposePtr(cv_chBuf);
     } else if (cv_ftype == 5) {
-        cv_v = rt_peekl(cv_base);
+        cv_v = rt_peekw(cv_base);
         cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIdx);
         cv_enumLabelsOff = clar_fn_uidFieldEnumLabelsOff(cv_layoutOff, cv_fieldIdx);
         cv_enumValuesOff = clar_fn_uidFieldEnumValuesOff(cv_layoutOff, cv_fieldIdx);
@@ -8706,7 +8706,7 @@ static void clar_fn_rtUiFormFill(void * cv_inst) {
                 rt_ext_UiSetControlValue(cv_ctrl, 0);
             }
         } else if (cv_kind == 6) {
-            cv_v = rt_peekl(cv_base);
+            cv_v = rt_peekw(cv_base);
             cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIdx);
             cv_enumValuesOff = clar_fn_uidFieldEnumValuesOff(cv_layoutOff, cv_fieldIdx);
             cv_sel = 0;
@@ -8846,9 +8846,9 @@ static void clar_fn_rtUiFormAccept(void * cv_inst) {
             cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIdx);
             cv_enumValuesOff = clar_fn_uidFieldEnumValuesOff(cv_layoutOff, cv_fieldIdx);
             if (((cv_enumCount > 0) && (cv_sel >= 0)) && (cv_sel < cv_enumCount)) {
-                rt_pokel(cv_base, clar_fn_uidEnumValue(cv_enumValuesOff, cv_sel));
+                rt_pokew(cv_base, clar_fn_uidEnumValue(cv_enumValuesOff, cv_sel));
             } else {
-                rt_pokel(cv_base, 0);
+                rt_pokew(cv_base, 0);
             }
         }
         cv_b = CLAR_ADD32(cv_b, 1);

@@ -536,7 +536,7 @@ static clar_rec_Row clar_new_Row(void) {
 typedef struct {
     clar_str_63 cv_label;
     int32_t cv_qty;
-    int32_t cv_status;
+    uint16_t cv_status;
     uint8_t cv_flag;
     uint8_t clar_pad0;
 } clar_rec_FormRec;
@@ -581,7 +581,7 @@ static const int32_t clar_serdesc_FormRec[] = {
 
 typedef char clar_ui_layoutassert_Row[(sizeof(clar_rec_Row) == 68 && offsetof(clar_rec_Row, cv_name) == 0 && offsetof(clar_rec_Row, cv_count) == 64) ? 1 : -1];
 
-typedef char clar_ui_layoutassert_FormRec[(sizeof(clar_rec_FormRec) == 74 && offsetof(clar_rec_FormRec, cv_label) == 0 && offsetof(clar_rec_FormRec, cv_qty) == 64 && offsetof(clar_rec_FormRec, cv_status) == 68 && offsetof(clar_rec_FormRec, cv_flag) == 72) ? 1 : -1];
+typedef char clar_ui_layoutassert_FormRec[(sizeof(clar_rec_FormRec) == 72 && offsetof(clar_rec_FormRec, cv_label) == 0 && offsetof(clar_rec_FormRec, cv_qty) == 64 && offsetof(clar_rec_FormRec, cv_status) == 68 && offsetof(clar_rec_FormRec, cv_flag) == 70) ? 1 : -1];
 
 typedef struct {
     int32_t cv_state;
@@ -647,11 +647,11 @@ static const unsigned char clar_ui_blob[] = {
     0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 68, 0, 0, 0, 2,
     0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 63, 0, 0, 0, 0, 255, 255, 255, 255,
     255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0,
-    255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 74, 0, 0, 0, 4, 0, 0, 0, 4,
+    255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 72, 0, 0, 0, 4, 0, 0, 0, 4,
     0, 0, 0, 0, 0, 0, 0, 63, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
     0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255,
     255, 255, 255, 255, 0, 0, 0, 5, 0, 0, 0, 68, 0, 0, 0, 0, 0, 0, 0, 3,
-    0, 0, 4, 148, 0, 0, 4, 160, 0, 0, 0, 2, 0, 0, 0, 72, 0, 0, 0, 0,
+    0, 0, 4, 148, 0, 0, 4, 160, 0, 0, 0, 2, 0, 0, 0, 70, 0, 0, 0, 0,
     0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 5, 19, 0, 0, 5, 24,
     0, 0, 5, 31, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 2, 71, 111, 4,
     70, 108, 97, 103, 5, 66, 111, 97, 114, 100, 3, 76, 98, 108, 6, 83, 116, 97, 116, 117,
@@ -6751,7 +6751,7 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
         rt_ext_UiDrawText(cv_chBuf, 0, 1);
         rt_ext_UiDisposePtr(cv_chBuf);
     } else if (cv_ftype == 5) {
-        cv_v = rt_peekl(cv_base);
+        cv_v = rt_peekw(cv_base);
         cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIdx);
         cv_enumLabelsOff = clar_fn_uidFieldEnumLabelsOff(cv_layoutOff, cv_fieldIdx);
         cv_enumValuesOff = clar_fn_uidFieldEnumValuesOff(cv_layoutOff, cv_fieldIdx);
@@ -8704,7 +8704,7 @@ static void clar_fn_rtUiFormFill(void * cv_inst) {
                 rt_ext_UiSetControlValue(cv_ctrl, 0);
             }
         } else if (cv_kind == 6) {
-            cv_v = rt_peekl(cv_base);
+            cv_v = rt_peekw(cv_base);
             cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIdx);
             cv_enumValuesOff = clar_fn_uidFieldEnumValuesOff(cv_layoutOff, cv_fieldIdx);
             cv_sel = 0;
@@ -8844,9 +8844,9 @@ static void clar_fn_rtUiFormAccept(void * cv_inst) {
             cv_enumCount = clar_fn_uidFieldEnumCount(cv_layoutOff, cv_fieldIdx);
             cv_enumValuesOff = clar_fn_uidFieldEnumValuesOff(cv_layoutOff, cv_fieldIdx);
             if (((cv_enumCount > 0) && (cv_sel >= 0)) && (cv_sel < cv_enumCount)) {
-                rt_pokel(cv_base, clar_fn_uidEnumValue(cv_enumValuesOff, cv_sel));
+                rt_pokew(cv_base, clar_fn_uidEnumValue(cv_enumValuesOff, cv_sel));
             } else {
-                rt_pokel(cv_base, 0);
+                rt_pokew(cv_base, 0);
             }
         }
         cv_b = CLAR_ADD32(cv_b, 1);

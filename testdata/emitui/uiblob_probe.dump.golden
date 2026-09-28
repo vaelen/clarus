@@ -23,14 +23,14 @@ form 1 layoutOff=1068 nBinds=3 bindsOff=940
 bind 1 0 widgetIndex=0 fieldIndex=0
 bind 1 1 widgetIndex=1 fieldIndex=2
 bind 1 2 widgetIndex=2 fieldIndex=3
-layout form1 recSize=74 nFields=4
+layout form1 recSize=72 nFields=4
 field form1 0 ftype=4 offset=0 strCap=63 enumCount=0 enumLabelsOff=-1 enumValuesOff=-1
 field form1 1 ftype=0 offset=64 strCap=0 enumCount=0 enumLabelsOff=-1 enumValuesOff=-1
 field form1 2 ftype=5 offset=68 strCap=0 enumCount=3 enumLabelsOff=1172 enumValuesOff=1184
 enum form1 2 0 label="Open" value=0
 enum form1 2 1 label="Closed" value=1
 enum form1 2 2 label="Pending" value=2
-field form1 3 ftype=2 offset=72 strCap=0 enumCount=0 enumLabelsOff=-1 enumValuesOff=-1
+field form1 3 ftype=2 offset=70 strCap=0 enumCount=0 enumLabelsOff=-1 enumValuesOff=-1
 menu 0 name="File" title="File" nItems=3 itemsOff=812 isStd=0
 item 0 0 name="New" caption="New" key=78 separator=0
 item 0 1 name=- caption=- key=0 separator=1
