@@ -37,7 +37,7 @@ typedef struct {
     long live, peak, live68k, peak68k, peakAll68k, blocks, handles, allocs;
 } rtm_counters;
 void rtm_get(rtm_counters *out);   /* snapshot of the counters */
-void rtm_dump(const char *phase);  /* prints iff CLARUS_MEM_PEAK is "1" or "2"; ALWAYS resets peak/peak68k/allocs */
+void rtm_dump(const char *phase);  /* prints iff CLARUS_MEM_PEAK is "1", "2" or "3"; ALWAYS resets peak/peak68k/allocs */
 
 #define RT_MEM_STR2(x) #x
 #define RT_MEM_STR(x) RT_MEM_STR2(x)
