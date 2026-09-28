@@ -4,7 +4,16 @@
 // lib.cla: intern pool and numeric/character helpers shared by clarusc's
 // self-hosted modules (Tasks 5-9).
 
-var strPool: list of string
+// strBlob/strOff (SE wave 2, spec 3.2): the intern pool as one byte blob
+// plus start offsets -- entry i is strBlob[strOff[i] .. strOff[i+1]).
+// Each entry is stored Pascal-style (one length byte, then the bytes), so
+// poolGet is a single stringAt; a pool string is at most 255 bytes.
+// strOff carries one trailing sentinel (== strBlob.length), so the pool
+// has strOff.count - 1 entries. Replaces `list of string` (256 B per
+// entry, ~1 MB at bookmarks scale). Indices stay dense and in insertion
+// order; strIndex (string -> index) is unchanged.
+var strBlob: text
+var strOff: list of int
 var strIndex: map of int
 
 // intern returns s's index in the pool, adding it if not already present.
@@ -17,8 +26,15 @@ func intern(s: string): int {
     if idx != -1 {
         return idx
     }
-    idx = strPool.count
-    strPool.add(s)
+    if strOff.count == 0 {
+        // First intern with no libReset() yet (the module test drivers):
+        // seed the sentinel here.
+        strOff.add(0)
+    }
+    idx = strOff.count - 1
+    strBlob.append(char(s.length))
+    strBlob.append(s)
+    strOff.add(strBlob.length)
     strIndex[s] = idx
     return idx
 }
@@ -38,7 +54,14 @@ func internText(t: text): int {
 }
 
 func poolGet(i: int): string {
-    return strPool[i]
+    return strBlob.stringAt(strOff[i])
+}
+
+func poolCount(): int {
+    if strOff.count == 0 {
+        return 0
+    }
+    return strOff.count - 1
 }
 
 // libReset (memory-leak-fix Task 7): per-compile intern-pool reset. Flips
@@ -49,9 +72,12 @@ func poolGet(i: int): string {
 // task-6-report.md). Must run FIRST in driveReset(), before anything that
 // re-interns pool entries (e.g. cg68k.cla's rnInit()).
 func libReset() {
-    var p: list of string
+    var b: text
+    var o: list of int
     var ix: map of int
-    strPool = p
+    o.add(0)
+    strBlob = b
+    strOff = o
     strIndex = ix
 }
 

@@ -858,7 +858,7 @@ func lowAppConst(e: int): int {
 
 // lowBin builds a plain IR Bin node (lower.go's l.bin): op is interned here
 // so every call site hands it a bare source spelling from binOpSymbol/
-// unOpSymbol, matching ir.cla's "Bin.Op/Un.Op are interned strPool strings"
+// unOpSymbol, matching ir.cla's "Bin.Op/Un.Op are interned pool strings"
 // contract.
 func lowBin(opSym: string, ty: int, xAst: int, yAst: int): int {
     return newIRBin(intern(opSym), lowExpr(xAst), lowExpr(yAst), ty)

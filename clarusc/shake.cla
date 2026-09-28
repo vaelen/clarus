@@ -94,7 +94,7 @@ var shakeMarks: list of bool
 // since the walk below calls this at every ECallFn/EIntr/handler-name site
 // across the whole program. memory-leak-fix Task 7: explicitly `.clear()`'d
 // at the top of shakeProgram, below, before the repopulation loop --
-// lib.cla's intern pool (strPool/strIndex) is no longer never-reset
+// lib.cla's intern pool (strBlob/strOff/strIndex) is no longer never-reset
 // (libReset(), called from driveReset() every compile) -- pool indices
 // RECYCLE across compiles now, so a stale entry surviving here past a
 // libReset() could silently alias a DIFFERENT string's nameIdx in a later
