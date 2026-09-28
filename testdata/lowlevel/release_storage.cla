@@ -37,6 +37,19 @@ on App.startCLI(args: list of string) {
     MemProbe("strs")
     strs.release()
     MemProbe("strsreleased")
+    // shrink frees the unused tail: over-grow, pop most, shrink.
+    i = 0
+    while i < 250000 {
+        big.push(i)
+        i = i + 1
+    }
+    while big.count > 10 {
+        big.pop()
+    }
+    MemProbe("popped")
+    big.shrink()
+    MemProbe("shrunk")
+    big.release()
     // element-bearing map: each value owns a text handle, freed by the
     // release walk (the no_leak check below would catch a skipped walk).
     i = 0

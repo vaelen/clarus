@@ -564,6 +564,7 @@ func shakeWalkExpr(x: int) {
 // calls a ported clar_fn_ function, so it gets its own arm below.
 func shakeWalkIntr(x: int) {
     var nm: int
+    var row: int
 
     nm = irIntrName(x)
 
@@ -849,7 +850,10 @@ func shakeWalkIntr(x: int) {
 
     // ---- SE wave 1: .release()/.shrink() (ir.cla's irStorageRow table;
     // a _deep variant's element walk is rooted as IListClearDeep's is) ----
-    } else if irStorageRow(nm) >= 0 {
-        shakeMarkAndEnqueue(irStorFns[irStorageRow(nm)])
+    } else {
+        row = irStorageRow(nm)
+        if row >= 0 {
+            shakeMarkAndEnqueue(irStorFns[row])
+        }
     }
 }

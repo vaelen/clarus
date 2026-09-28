@@ -304,10 +304,14 @@ func caseReleaseShrink(): TestResult {
         return tkFail("ReleaseShrink", "map reuse after release")
     }
 
+    // remove first, so shrink compacts past a hole (4-byte-stride keys)
     im[1] = 10
     im[2] = 20
+    im[3] = 30
+    im[4] = 40
+    im.remove(2)
     im.shrink()
-    if im.get(2, -1) != 20 {
+    if im.count != 3 or im.get(1, -1) != 10 or im.get(3, -1) != 30 or im.get(4, -1) != 40 or im.has(2) {
         return tkFail("ReleaseShrink", "intmap shrink")
     }
     im.release()

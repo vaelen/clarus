@@ -570,25 +570,18 @@ func driveReset() {
     // per-function data against the fallback compile's OWN, differently-
     // numbered irFuncs -- an out-of-bounds (or silently wrong) index.
     //
-    // clir-load-perf Task 7 (design B) MOVED which global this resets:
-    // it used to be `bkLdObjValid = driveFreshBoolList()`, but under
-    // memoization bkLdObjValid is pending state -- the parse that filled
-    // it is not re-run on compile #2, so emptying it here would silently
-    // switch the whole object-code paste (stage 3.5's -41% emit68k win)
-    // off from the second compile of every app session onward, with no
-    // test going red (output stays byte-identical, just slower; audit
-    // finding F1). bkRuntimeFuncBoundary is the LIVE per-compile half of
-    // the same predicate (cgObjPasteEligible tests both), it is set by
-    // bkInstallArenas on every compile that installs a baked runtime, and
-    // zero here means "nothing baked is eligible" just as emphatically as
-    // an empty bkLdObjValid did -- while leaving the pending parse
-    // pristine. Still sufficient for the same reason as before: every
-    // other bkLdObj* field is only ever read from behind a
-    // cgObjPasteEligible(i) check. Safe at BOTH of this function's call
-    // sites (the drift-fallback point, right before the recursive
-    // driveCompile; macgui.cla's gcCompile, right before ITS OWN
-    // driveCompile) -- both run strictly before any `if haveRtbake` block
-    // that would legitimately re-install for the compile about to start.
+    // bkRuntimeFuncBoundary (not the bkLdObj* staging itself) is what
+    // this resets: it is the LIVE per-compile half of cgObjPasteEligible's
+    // predicate (cg68k.cla), set by bkInstallArenas on every compile that
+    // installs a baked runtime, and zero means "nothing baked is
+    // eligible". That is enough: every other bkLdObj* field is only read
+    // behind a cgObjPasteEligible(i) check, and the next bake-path compile
+    // re-parses (bkLoadRtbake) and refills the staging anyway -- there is
+    // no cross-compile parse memo to preserve (SE wave 1 removed it). Safe
+    // at BOTH of this function's call sites (the drift-fallback point,
+    // right before the recursive driveCompile; macgui.cla's gcCompile,
+    // right before ITS OWN driveCompile) -- both run strictly before any
+    // `if haveRtbake` block that would legitimately re-install.
     bkRuntimeFuncBoundary = 0
     // clir-load-perf Task 1: defensive reset, same rationale as the
     // resets above -- bkHeaderVerified is consume-once inside

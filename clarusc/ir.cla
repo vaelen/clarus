@@ -4342,9 +4342,22 @@ var irStorIntrs: list of int
 var irStorFns: list of int
 var irStorDeep: list of bool
 
+// Probes (never interns) the intrinsic name: one lowering never emitted is
+// absent from the pool, so its row stays -1 (matches no nm) and neither
+// name is added -- a program that never calls release()/shrink() interns
+// nothing here. Sound because the table is built after lowering (irReset
+// empties it before each lowerProgram), when every such name that will
+// ever exist this compile already does.
 func irStorAdd(intr: string, fn: string, deep: bool) {
-    irStorIntrs.add(intern(intr))
-    irStorFns.add(intern(fn))
+    var idx: int
+
+    idx = strIndex.get(intr, -1)
+    irStorIntrs.add(idx)
+    if idx == -1 {
+        irStorFns.add(-1)
+    } else {
+        irStorFns.add(intern(fn))
+    }
     irStorDeep.add(deep)
 }
 

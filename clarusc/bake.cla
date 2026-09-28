@@ -3868,6 +3868,12 @@ func bkLoadRtbake(buf: text, wantLane: int, testapi: bool): bool {
     var loadedMods: list of string
     var parsed: bool
 
+    // SE wave 1: a compile that failed between this parse and the end of
+    // its install sequence (a user-code check error, an abort) left its
+    // IR staging behind -- drop it before parsing on top of it. Never
+    // touches bkLdObj*/cgObjRuns/cgObjHoles (bkFreeParseStaging's own
+    // contract).
+    bkFreeParseStaging()
     if bkHeaderVerified {
         // Design A: the front end already verified THIS buffer.
         // Re-establish the parse preconditions bkCheckRtbakeHeader
