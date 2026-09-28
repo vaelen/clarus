@@ -1,7 +1,9 @@
 # SE memory program: ClarusC.APPL in 4 MB (program design, 2026-09-27)
 
 Status: **program design, approved 2026-09-27. Wave 0 (measurement) is
-complete, pending merge (2026-09-28); Wave 1 is next.**
+merged (2026-09-28). Wave 1 (lifetimes) is complete, pending merge
+(2026-09-28), at 6,324,316 bytes against its 6 MB target (§9.2). Wave 2
+is next.**
 This is the umbrella document for a multi-wave program. Each wave gets
 its own spec (`docs/superpowers/specs/`) and plan
 (`docs/superpowers/plans/`) when it starts. This document holds
@@ -228,7 +230,7 @@ Each wave commits a lower budget, and no later change may exceed it:
 | After wave | `bookmarks --rtbake` peak | Other exit criterion                                                             |
 |------------|--------------------------:|----------------------------------------------------------------------------------|
 | 0          |     11.79 MB (11,789,468) | SE app budget 3808 KB recorded; Mac IIcx per-phase baseline recorded (§9.1)      |
-| 1          |                    ≤ 6 MB | every task byte-identical                                                        |
+| 1          |   6.32 MB (6,324,316) [a] | every task byte-identical                                                        |
 | 2          |                    ≤ 4 MB |                                                                                  |
 | 3          |                  ≤ 3.5 MB | serializer writes v2, loads v1                                                   |
 | 4          |                  ≤ 1.2 MB | runtime library read with `readAt`; no whole-resource read                       |
@@ -236,6 +238,12 @@ Each wave commits a lower budget, and no later change may exceed it:
 
 The budgets are targets. A wave's spec may revise its own number with a
 measured justification. It may not remove the ratchet.
+
+[a] Wave 1's target was ≤ 6 MB (6,291,456). It measured 6,324,316, which
+misses by 32,860 bytes (0.5%), and its budget is 6,387,378. The wave
+spec's §1 records the revision and its justification: the peak is a
+transient inside the bake parse, and the levers that remove it are
+Wave 2 items (§9.2).
 
 ### 5.6 Documentation
 
@@ -632,8 +640,8 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 | Wave                               | Status                                 | Branch                 | Numbers recorded                                                                                                                                                                                       |
 |------------------------------------|----------------------------------------|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | prerequisite: Linux emulator lanes | merged to main 2026-09-27 (`62b718c4`) | `emulator-linux`       | T1 116 pass / 0 fail; `mactest/` 30 pass, 6 opt-in skips, 0 fail (all 9 Snow scripts pass)                                                                                                             |
-| 0 Measurement                      | complete (pending merge), 2026-09-28   | `se-wave0-measurement` | memgate peaks 11,789,468 (rtbake) / 14,190,252 (src) / 10,194,664 (hello); SE app space 3808 KB, ClarusC target 2221 KB; IIcx low point 12035 KB used, stack 187 KB; peak calibration 0.96–1.08 (§9.1) |
-| 1 Lifetimes                        | not started                            | —                      | —                                                                                                                                                                                                      |
+| 0 Measurement                      | merged to main 2026-09-28 (`87dcf389`) | `se-wave0-measurement` | memgate peaks 11,789,468 (rtbake) / 14,190,252 (src) / 10,194,664 (hello); SE app space 3808 KB, ClarusC target 2221 KB; IIcx low point 12035 KB used, stack 187 KB; peak calibration 0.96–1.08 (§9.1) |
+| 1 Lifetimes                        | complete (pending merge), 2026-09-28   | `se-wave1-lifetimes`   | memgate peaks 6,324,316 (rtbake, target 6 MB missed by 32,860) / 8,605,188 (src) / 8,531,984 (hello); IIcx low point 7977 KB used (−4058 KB), stack 187 KB (§9.2)                                      |
 | 2 Representation                   | not started                            | —                      | —                                                                                                                                                                                                      |
 | 3 Narrow scalars                   | not started                            | —                      | —                                                                                                                                                                                                      |
 | 4 Lazy runtime library             | not started                            | —                      | —                                                                                                                                                                                                      |
@@ -833,3 +841,167 @@ How to read it:
     that amount.
   - The Mac-only CLIR resource (1.88 MB) is invisible to the gate. It is
     Wave 4's job, and until then the SE budget has to include it.
+
+### 9.2 Wave 1 measurements (2026-09-28)
+
+All of these come from branch `se-wave1-lifetimes`. The wave spec is
+`2026-09-28-se-wave1-lifetimes-design.md`. The task reports, the IIcx
+write-up (`task-7-memprobe.md`) and the `progress.md` ledger are in
+`.superpowers/sdd/2026-09-28-se-wave1-lifetimes/`. Units are as in §9.1.
+
+**Host memory gate** (`tests/memgate/budget.txt`; 68k-equivalent bytes,
+H = 8; identical across three runs):
+
+| Subcase                      | Wave 0 peak | Wave 1 peak |     Change | Wave 1 budget |
+|------------------------------|------------:|------------:|-----------:|--------------:|
+| `bookmarks_rtbake` (primary) |  11,789,468 |   6,324,316 | −5,465,152 |     6,387,378 |
+| `bookmarks_src`              |  14,190,252 |   8,605,188 | −5,585,064 |     8,691,240 |
+| `hello_src`                  |  10,194,664 |   8,531,984 | −1,662,680 |     8,617,304 |
+
+- **The 6 MB target (6,291,456) is missed by 32,860 bytes (0.5%).** The
+  wave spec's §1 records the measured figure and revises its own number
+  (see "Where the rtbake peak is now", below).
+- The `bookmarks_rtbake` budget is 6,387,378, not peak + 1% (6,387,560):
+  Task 4 had already lowered it to that value, and budgets only go down.
+  The headroom is 0.99%.
+
+**What each task bought.** Tasks 2–4 ran in parallel from the same base,
+so each is measured alone on the Wave 0 base. The later rows are the
+merged branch.
+
+| Change                                                        | `bookmarks_rtbake` | `bookmarks_src` | `hello_src` |
+|---------------------------------------------------------------|-------------------:|----------------:|------------:|
+| Wave 0 baseline                                               |         11,789,468 |      14,190,252 |  10,194,664 |
+| Task 1 alone: `.release()`/`.shrink()` [b]                    |         11,807,132 |      14,286,344 |  10,208,836 |
+| Task 2 alone: free AST, tokens and checker tables after lower |         11,756,380 |       9,313,792 |   8,530,388 |
+| Task 3 alone: per-function `a68Items` reset in measure        |         11,199,644 |      10,650,284 |  10,193,128 |
+| Task 4 alone: bake install by move, re-parse, free the blob   |          6,324,136 |      14,190,252 |  10,194,664 |
+| Tasks 2 + 3 + 4 merged                                        |          6,324,136 |       8,534,088 |   8,530,388 |
+| + Task 1 (Wave A tip)                                         |          6,324,316 |       8,607,108 |   8,533,776 |
+| + Task 5: free sites use `.release()`; minors (final)         |          6,324,316 |       8,605,188 |   8,531,984 |
+
+[b] Task 1's implementer read its +96 KB on `bookmarks_src` as an IR
+arena list crossing a doubling boundary, not the size of the new code.
+
+- The rtbake gain is almost all Task 4 (−5.47 MB). The front-end frees
+  (Task 2) and the measure reset (Task 3, −25% on `bookmarks_src` alone)
+  carry the source path.
+- **Task 2's and Task 3's wins do not add.** Task 3 removes the measure
+  peak and Task 2 the front-end one, so the source-path peak moves
+  between phases, and the merged figure is not the sum of the two
+  deltas.
+
+**Where the rtbake peak is now** (`scripts/memcensus.sh --rtbake
+examples/bookmarks.cla`, Task 6). The peak moved from `Built fork` to
+the bake parse, reported under `Parsed user program`:
+
+```
+memprobe: Parsed user program | live68k=3887596 peak68k=6324316 live=3789260 peak=6314360 blocks=9788 handles=5008 allocs=27967
+```
+
+Top 10 at the end of that phase (live at the phase boundary, not at the
+peak moment; host bytes = handle size):
+
+| #   | Global                |     Bytes | Count | Elem size |   Cap |
+|-----|-----------------------|----------:|------:|----------:|------:|
+| 1   | `cv_bkLdIrExprs`      | 1,310,720 | 29120 |        40 | 32768 |
+| 2   | `cv_strPool`          | 1,048,576 |  3197 |       256 |  4096 |
+| 3   | `cv_bkLdIrStmts`      |   229,376 |  7718 |        28 |  8192 |
+| 4   | `cv_cgObjHoles`       |   196,608 |  3679 |        48 |  4096 |
+| 5   | `cv_strIndex`         |   163,840 |  3197 |         4 |  4096 |
+| 6   | `cv_bkLdIrTypes`      |   131,072 |  4283 |        16 |  8192 |
+| 7   | `cv_cgObjRuns`        |    65,536 |  4420 |         8 |  8192 |
+| 8   | `cv_bkLdIrLocals`     |    65,536 |  3000 |        16 |  4096 |
+| 9   | `cv_bkLdIrFuncs`      |    28,672 |   767 |        28 |  1024 |
+| 10  | `cv_bkLdIrFieldSlots` |    14,336 |   369 |        28 |   512 |
+
+- The peak (6.32 MB) sits inside `bkLoadRtbake`, before
+  `rtbakeBytes.release()`. Live at the phase end is 3.89 MB, so 2.43 MB
+  is transient. About 1.94 MB of that is `rtbakeBytes` itself (the CLIR
+  is 1,939,178 bytes), which is live while the whole IR is decoded. The
+  other ~0.5 MB fits list-doubling transients in the `bkRead*` readers:
+  `bkReadIrExprs` knows `n` (29120) up front but grows by `add`, so at
+  the 16384 → 32768 step the old 655 KB and new 1.31 MB blocks are live
+  together. This attribution is inferred; memcensus samples only at
+  phase boundaries.
+- **The revised Wave 1 number is the measured 6,324,316.** Closing the
+  last 33 KB needs either pre-sized `bkRead*` lists (a list
+  capacity/reserve primitive, out of Wave 1's scope per its spec §7) or
+  progressive release of `rtbakeBytes` during the parse. Either removes
+  far more than 33 KB, and both are Wave 2 candidates (`docs/TODO.md`).
+  Adding a task for them in Wave 1 was ruled against in the ledger.
+
+**Mac IIcx per-phase** (`tests/mactest/snow/clarusc_memprobe.sh`, same
+machine and input as §9.1; saved log
+`build-run/memprobe-saved/clarusc_memprobe.wave1.log`; one compile per
+boot). "Used" is measured from each run's own launch free: Wave 1's
+launch free is 48066 KB (zone 48398 KB), 40 KB below Wave 0's, most
+likely the slightly larger app.
+
+| Point                       | W0 used KB | W1 free KB | W1 used KB | W1 − W0 KB | W0 ticks, run 2 | W1 ticks |
+|-----------------------------|-----------:|-----------:|-----------:|-----------:|----------------:|---------:|
+| pre-compile (CLIR read)     |       4157 |      43990 |       4076 |        −81 |               — |        — |
+| Parsed user program         |       9779 |      42158 |       5908 |      −3871 |             952 |      465 |
+| Checked user program        |       9994 |      41910 |       6156 |      −3838 |            1216 |      690 |
+| Installed baked runtime     |      11644 |      41917 |       6149 |      −5495 |           16833 |      507 |
+| Lowered [c]                 |      11936 |      41654 |       6412 |      −5524 |             215 |      190 |
+| Shaken                      |       9918 |      41619 |       6447 |      −3471 |             639 |      534 |
+| Measured                    |      11764 |      40808 |       7258 |      −4506 |           50247 |    37860 |
+| Packed 4 segments           |      11766 |      40806 |       7260 |      −4506 |             459 |      358 |
+| Emitted segment 1           |      11827 |      40297 |       7769 |      −4058 |            6246 |    16005 |
+| Emitted segment 2           |      11857 |      40267 |       7799 |      −4058 |            3174 |     2588 |
+| Emitted segment 3           |      11897 |      40227 |       7839 |      −4058 |            5204 |     3699 |
+| Emitted segment 4           |      11907 |      40217 |       7849 |      −4058 |            3570 |     2752 |
+| **Built fork (low point)**  |  **12035** |      40089 |   **7977** |  **−4058** |             815 |     2341 |
+| Finished                    |      11934 |      40190 |       7876 |      −4058 |               — |        — |
+| **Compile total**           |            |            |            |            |           89619 |    68040 |
+
+[c] Task 2's front-end free runs before `driveProgressPhase("Lowered")`,
+so Wave 1's `Lowered` line is taken after the free and Wave 0's before
+it. `Parsed` is not like-for-like either: it now includes the bake
+re-parse and the `rtbakeBytes` release (see below). Compare the rows
+from `Measured` on, and the low point.
+
+- **Launch→low heap used: 12035 KB → 7977 KB, −4058 KB (−33.7%).** The
+  low point is still `Built fork`. Free equals max to within 1 KB at
+  every point.
+- **Stack:** high-water 187 KB of a 737 KB reserve, unchanged.
+- The Wave 0 dip at `Shaken` (macgui freeing the 2 MB `rtbakeBytes`
+  copy) is gone: `driveCompile` now frees it right after the bake parse,
+  so Wave 1's used climbs steadily to the low point.
+- **Where the per-compile re-parse is logged.** `bkLoadRtbake` (plus
+  `bkInstallPool` and `bkComputeManifestPaths`) runs at the top of
+  `driveCompile`, *before* `drvStartTicks` is set and before the
+  "Starting" line (`drive.cla` ~l.2129–2162). It was there in Wave 0 as
+  well, behind the `bkParsedValid` memo. So the re-parse is outside the
+  compile ticks altogether: it is the guest wall-clock span from
+  "Verifying Baked Runtime" to "Starting", **5m 28s** in Wave 1 (18m 46s
+  in Wave 0 run 2, when compile #1 also parsed). Its memory lands in the
+  `Parsed user program` row, since the `pre-compile` probe
+  (`macgui.cla` ~l.709) is taken before `driveCompile`. With one
+  compile per boot the log cannot show a compile #2; by construction
+  (spec L6) compile #2 now pays the same span, where Wave 0's skipped
+  it.
+  - Why the span shrank ~3.4× is not measured. The one parse-path change
+    is Task 4 skipping the CheckerSymbols section outside `--testapi`;
+    fast-forward variance (§9.1) cannot be ruled out either.
+- **"Installed baked runtime" is 507 ticks, not 13729–16833, and −7
+  KB.** That phase is `irReset` + `bkInstallArenas` (the re-parse is
+  not in it, see above). Wave 0's install cloned the staging with the
+  `bkCopy*` helpers so the memo stayed valid; Wave 1 moves it (Task 4),
+  which removes both the copy time and the 1650 KB the copies cost.
+- **`Emitted segment 1` costs +509 KB (Wave 0: +61 KB) and 16005 ticks
+  (Wave 0: 6246–7720).** This is the measure reset's cost moving, not a
+  leak. In Wave 0, `cg68Measure` ran the whole program into one
+  `a68Items` stream, so the list arrived at emission already grown to
+  whole-program size and segment 1 fit in it. Wave 1's
+  `cgMeasureDropItems` uses `.clear()`, which keeps capacity, so after
+  measure `a68Items` (and `a68CommentTexts`/`a68DataTexts`) is only as
+  large as the biggest single function (or pool entry). The
+  per-segment `a68Reset` (`cg68k.cla` ~l.15858) also keeps capacity, so
+  segment 1, the largest, regrows the lists by doubling, and segments
+  2–4 fit in what it left. From segment 2 on, the per-segment deltas
+  (+30/+40/+10 KB, `Built fork` +128 KB) equal Wave 0's exactly. The
+  extra ticks fit the regrowth (handle resizes, possibly relocation),
+  but tick variance under fast-forward is large enough that the time
+  figure is not established.

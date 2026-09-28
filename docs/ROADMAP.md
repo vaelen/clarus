@@ -172,13 +172,22 @@ compilation + a linker. Program design (start here, including from a
 fresh session): `docs/superpowers/specs/2026-09-27-se-memory-program-design.md`;
 measured analysis:
 `docs/superpowers/specs/2026-09-27-se-memory-footprint-findings.md`.
-- **Wave 0 (measurement): done, pending merge** (branch
-  `se-wave0-measurement`, 2026-09-28). The host memory gate
-  `tests/memgate/` is in T1 at an 11,789,468-byte `bookmarks --rtbake`
-  baseline. The SE app space is 3808 KB, which gives ClarusC a heap
-  target of about 2221 KB. The IIcx per-phase baseline and the
-  calibration are in the program design's §9.1 and in `docs/HISTORY.md`.
-  Wave 1 (lifetimes) is next.
+- **Wave 0 (measurement): merged** (branch `se-wave0-measurement`,
+  2026-09-28). The host memory gate `tests/memgate/` is in T1 at an
+  11,789,468-byte `bookmarks --rtbake` baseline. The SE app space is
+  3808 KB, which gives ClarusC a heap target of about 2221 KB. The IIcx
+  per-phase baseline and the calibration are in the program design's
+  §9.1 and in `docs/HISTORY.md`.
+- **Wave 1 (lifetimes): done, pending merge** (branch
+  `se-wave1-lifetimes`, 2026-09-28). `.release()`/`.shrink()` on every
+  container; the compiler frees the AST, tokens and checker tables after
+  lowering, resets `a68Items` per function in measure, installs the bake
+  by move and re-parses it on every compile. `bookmarks --rtbake` peaks
+  at 6,324,316 bytes (target 6 MB, missed by 32,860; the wave spec
+  revises its number), `bookmarks` from source at 8,605,188 and
+  `hello-mac` at 8,531,984. On the IIcx the launch→low heap use fell
+  from 12035 KB to 7977 KB. Numbers: the program design's §9.2 and
+  `docs/HISTORY.md`. Wave 2 (representation) is next.
 
 The DNR/UDP items below resume after this program.
 

@@ -394,6 +394,53 @@ The SE memory program (2026-09-27) resumed work on this target. See
   handle. That changes output and moves every native golden (`natInit`'s
   `MOVE.L #4096,D0`).
 
+### SE memory program, Wave 1 (2026-09-28)
+
+- **`bookmarks --rtbake` is 32,860 bytes over Wave 1's 6 MB target**
+  (6,324,316; program design §9.2). The peak is a transient inside
+  `bkLoadRtbake`: the ~1.94 MB `rtbakeBytes` is live while the IR is
+  decoded, and the `bkRead*` readers grow their lists by `add` although
+  they read `n` first (at `bkReadIrExprs`' 16384 → 32768 step, 655 KB
+  and 1.31 MB blocks are live together). Levers, cheapest first:
+  - pre-size the `bkRead*` lists from `n` (needs a list
+    capacity/reserve primitive, or a grow to exactly `n`); this also
+    removes the tail slack (exprs 146 KB, types 62 KB, locals 17 KB,
+    stmts 13 KB);
+  - `.shrink()` each loaded list right after its read (helps only if it
+    runs before the peak moment);
+  - a packed `strPool` (3197 strings in 1 MB of 256-byte slots);
+  - release `rtbakeBytes` progressively during the parse, or parse from
+    the resource in chunks (up to 1.94 MB).
+
+  Which list's growth coincides with the peak is inferred, not
+  measured: memcensus samples only at phase boundaries. A
+  census-at-new-peak hook in `scripts/memcensus.sh` would settle it.
+- **A failed bake-path compile leaves the parse staging alive while
+  ClarusC idles.** A compile that fails user check returns before
+  `bkInstallArenas`, so the `bkLd*`/`bkLoaded*` staging (a few MB)
+  stays until the next compile's `bkLoadRtbake` frees it first thing
+  (`bkFreeParseStaging` at its top, Task 5). Nothing accumulates. Fix:
+  one `bkFreeParseStaging()` in `gcCompile` after a failed
+  `driveCompile`, or on `driveCompile`'s failure returns.
+- **`irStorageRow` caches misses until `irReset`.** Since Task 5,
+  `irStorAdd` probes `strIndex.get(intr, -1)` instead of interning, so
+  an intrinsic name not yet in the pool gets row value −1 and stays
+  that way in the table. That is sound only because the table is built
+  after lowering and `irReset` empties it before every `lowerProgram`.
+  A caller that runs two lowerings back to back and consults the table
+  between them without an `irReset` (the `bakeGenerateChain` shape)
+  would see stale misses. The precondition is documented in `ir.cla`;
+  nothing enforces it.
+- **The CLIR FieldInfo section is parsed on every compile**, though
+  only the `--testapi` install reads it. Task 4 gated the
+  CheckerSymbols section this way (`bkLoadSections(testapi)`); FieldInfo
+  can be skipped the same way (`bkLoadPos = expectedPos`, the body hash
+  already covers its bytes).
+- **`cg68Measure` does not reset items in `cgEmitEnumTables`/
+  `cgEmitSerdescTables`.** They have their own per-entry measure
+  `before`s, but Task 3 reset only `cgEmitPoolsBody`'s. The tables are
+  small, so the saving is too.
+
 ### ABI / performance
 
 - **`cg_free_globals` is ~11 KB of glue duplicated into EVERY segment

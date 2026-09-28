@@ -7174,6 +7174,148 @@ per-task briefs, reports and the ledger in
 `.superpowers/sdd/2026-09-27-se-wave0-measurement/`.
 
 
+## SE memory program, Wave 1: lifetimes (2026-09-28, branch `se-wave1-lifetimes`)
+
+Recorded on the same terms as the entries above: merging to `main` is
+Andrew's call and had not happened when this was written. This entry
+covers Tasks 1–6 and Task 7's IIcx measurement, all on
+`se-wave1-lifetimes` (33 files, +14,753/−12,973 before this docs commit,
+most of it the twice-regenerated `clarusc/clarusc.c` snapshot). Tasks
+1–4 ran in parallel worktrees (`../clarus-w1-tN`, branch `w1-tN`) from
+the plan commit `5548f3f3`; Tasks 5 and 6 ran on the branch. Every task
+was reviewed on Opus.
+
+**What it did.** It freed what the compiler holds past its last use,
+without changing any compiled output (every task passed the plan's
+identity check over bookmarks, hello-mac, texteditor and tcpchat: src,
+rtbake and C, plus `rt.clir`).
+
+- **Task 1: `.release()`/`.shrink()`** on `list`, `map`/`intmap`,
+  `sortedmap` and `text`, both lanes (`rt<Type>DropStorage`/
+  `rt<Type>Shrink`, plus `rtIntMapShrink`, since intmap's 4-byte
+  entries differ from map's 12). One IR table (`irStorageRow`,
+  `ir.cla`) maps the 14 intrinsic names instead of 14 getters. New
+  core-suite case `ReleaseShrink` (84 `CoreTest` cases) and
+  `tests/hostrt/release_storage.sh` with its `testdata/lowlevel`
+  fixture. Reference entries next to each `clear()`.
+- **Task 2: `driveFreeFrontEnd`** (`drive.cla`) frees the four AST
+  arenas, `toks`, `lexSrc`, `declFileTab` and the checker tables
+  (19 globals) after `lowerProgram`, on both paths. No `--bake-ir`
+  guard is needed: `--bake-ir` exits in `main.cla` before
+  `driveCompile`.
+- **Task 3: `cgMeasureDropItems`** clears `a68Items`/
+  `a68CommentTexts`/`a68DataTexts` per function and per pool entry
+  in `cg68Measure` (label tables untouched).
+- **Task 4: the bake is installed by move and re-parsed on every
+  compile.** `bkParsedValid` and the eight `bkCopy*` helpers are gone;
+  `driveCompile` releases `rtbakeBytes` right after a successful parse,
+  on every front end (so the host gate now matches ClarusC);
+  `bkFreeParseStaging` drops the staging after install; CheckerSymbols
+  is parsed only under `--testapi`. `dblcompile_bake` now expects
+  `parsedBefore=0` on every compile, and `macresident_failed_compile`
+  expects one "Loading Baked Runtime" per compile.
+- **Task 5:** every free site uses `.release()` (`astReset` too);
+  folded minors: `bkFreeParseStaging` also runs at the top of
+  `bkLoadRtbake`, `irStorageRow` probes `strIndex` instead of interning
+  its names, and two test additions. `dblcompile_bake` hands
+  `driveCompile` a copy of its bytes each compile, since the release
+  would otherwise empty the harness's own buffer. It also carried
+  Wave 0's two deferred doc minors.
+- **Task 6:** snapshot regeneration, the memgate ratchet and the
+  census.
+- **Task 7:** the IIcx re-measure, this entry, and the program design's
+  §9/§9.2.
+
+**The numbers.** Full tables, the per-task breakdown and the census are
+in the program design's §9.2.
+
+| Subcase            | Wave 0 peak | Wave 1 peak |    Budget |
+|--------------------|------------:|------------:|----------:|
+| `bookmarks_rtbake` |  11,789,468 |   6,324,316 | 6,387,378 |
+| `bookmarks_src`    |  14,190,252 |   8,605,188 | 8,691,240 |
+| `hello_src`        |  10,194,664 |   8,531,984 | 8,617,304 |
+
+- **The 6 MB target was missed by 32,860 bytes.** The peak is now a
+  transient inside `bkLoadRtbake`, with the ~1.94 MB CLIR bytes live
+  while the `bkRead*` lists grow by doubling. The wave spec's §1 revises
+  its number to the measured figure; pre-sizing those lists or
+  releasing `rtbakeBytes` progressively are Wave 2 items
+  (`docs/TODO.md`).
+- Task 4 alone took `bookmarks_rtbake` from 11.79 to 6.32 MB. Task 3
+  alone took `bookmarks_src` down 25% (to 10,650,284) and Task 2 alone
+  to 9,313,792; merged, 8,605,188.
+- **IIcx** (same machine and input as Wave 0): launch→low heap used
+  **7977 KB, down from 12035 KB** (−4058 KB, −33.7%), still at `Built
+  fork`. Stack high-water 187 KB of 737 KB, unchanged. Compile total
+  68040 ticks (18m 54s).
+  - The per-compile re-parse runs before `driveCompile` starts its tick
+    count, so it is in no phase's ticks: it is the "Verifying Baked
+    Runtime" → "Starting" wall-clock span, 5m 28s (Wave 0: 18m 46s for
+    the same first-compile parse). "Installed baked runtime" fell from
+    13729–16833 ticks to 507, and from +1650 KB to −7 KB, because
+    install now moves the staging instead of copying it.
+  - `Emitted segment 1` grew from +61 KB to +509 KB and 16005 ticks:
+    after the measure reset, `a68Items` no longer arrives at emission
+    pre-grown to whole-program size, so segment 1 regrows it. Segments
+    2–4 and `Built fork` cost exactly what they did in Wave 0.
+  - Task 2's free runs before the `Lowered` progress line, and `Parsed`
+    now includes the bake re-parse, so those two rows are not
+    like-for-like with Wave 0.
+
+**Rulings** (from the ledger, each with its stated cost if wrong):
+
+- Tasks 1–4 in four parallel worktrees, overriding the skill's
+  no-parallel default (plan + CLAUDE.md). Cost: merge conflicts, none
+  hit.
+- Every Wave A `scripts/test-task.sh` run serialized across worktrees
+  with `flock`, because `atalk_lock` is per-worktree and perfgate needs
+  an idle box. Cost: wall clock only.
+- Wave A tasks did not lower memgate budgets; Task 6 ratcheted once
+  (Task 4 lowered `bookmarks_rtbake` itself, lower-only). Cost:
+  intermediate commits carried slack budgets.
+- **The snapshot was regenerated twice, not once as planned:** at the
+  start of Task 5 (so the snapshot understands `.release()`, because
+  `build-run/clarusc-current` is built BY the snapshot, Makefile l.41)
+  and again in Task 6 after Task 5's source changes. Cost: one extra
+  snapshot commit (`41ed98e5`).
+- Task 2 has no `--bake-ir` guard (see above). Cost if wrong: the
+  bake-ir writer would read freed tables, and the `bake/` twins would
+  fail.
+- Task 2's free runs before `driveProgressPhase("Lowered")`. The peak
+  is a max over phases, so memgate semantics hold. Cost: the Wave 0
+  per-phase comparison at `Lowered` is not like-for-like.
+- Task 3 left the `cgEmitEnumTables`/`cgEmitSerdescTables` measure
+  sites un-reset (brief scoped to pools). Cost: small missed savings,
+  in `docs/TODO.md`.
+- Failed-compile parse staging stays until the next compile's parse
+  (one choke point at the top of `bkLoadRtbake` rather than a guard on
+  every failure return). Cost: ClarusC idles holding a few MB after a
+  failed compile, in `docs/TODO.md`.
+- `bookmarks_rtbake`'s budget stays 6,387,378, although peak + 1% gave
+  6,387,560 (+182 B): budgets are lower-only. Cost: 0.99% headroom.
+- The 6 MB miss gets no extra task: the spec says record and revise,
+  and `reserve(n)` is out of the spec's scope. Cost: a small Wave 2
+  item.
+
+**Gates.** T2 (`scripts/test-merge.sh`): <T2 result>.
+`CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (this wave
+touched `bake.cla` and `macgui.cla`): <clarusc_bake result>. The IIcx
+memprobe run passed 5/5 in 981 s. Per-task T1 runs all passed (118–119
+pass, 37 skip, 0 fail, perfgate 1/1).
+
+**Deferred / recorded.** The `progress.md` ledger carries every
+deferred minor verbatim. Five items outlive the wave and are in
+`docs/TODO.md`: the 33 KB to 6 MB; failed-compile staging held while
+ClarusC idles; the `irStorageRow` miss-cache precondition; FieldInfo
+parsed on every compile though only `--testapi` reads it; and the
+enum/serdesc measure sites not reset.
+
+Spec: `docs/superpowers/specs/2026-09-28-se-wave1-lifetimes-design.md`;
+plan `docs/superpowers/plans/2026-09-28-se-wave1-lifetimes.md`;
+per-task briefs, reports and the ledger in
+`.superpowers/sdd/2026-09-28-se-wave1-lifetimes/`.
+
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of

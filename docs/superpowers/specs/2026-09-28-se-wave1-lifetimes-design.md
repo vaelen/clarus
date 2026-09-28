@@ -1,6 +1,8 @@
 # SE memory program, Wave 1: Lifetimes (spec, 2026-09-28)
 
-Status: **spec, awaiting review.** Branch `se-wave1-lifetimes`.
+Status: **implemented, pending merge (2026-09-28).** Branch
+`se-wave1-lifetimes`. The 6 MB exit was missed by 32,860 bytes; §1's
+revision records the measured number and why.
 Umbrella: `2026-09-27-se-memory-program-design.md` (§6 Wave 1 is the
 brief; D2 and D10 are decided inputs). Wave 0's numbers and findings:
 umbrella §9.1 and `docs/HISTORY.md`'s Wave 0 entry.
@@ -26,6 +28,27 @@ compiled output.
   on the IIcx (this wave touches `bake.cla` and `macgui.cla`); and
   `mactest/snow/clarusc_memprobe` on the IIcx, with its numbers recorded
   in umbrella §9.
+
+**Revision (2026-09-28, end of wave).** `bookmarks_rtbake` measured
+**6,324,316** bytes, 32,860 (0.5%) over the 6,291,456 target, from an
+11,789,468 baseline. The committed budget is 6,387,378. The wave's exit
+number is revised to that measured figure, for these reasons (Task 6's
+census; umbrella §9.2 has the tables):
+- The peak is a transient inside `bkLoadRtbake`, before
+  `rtbakeBytes.release()`. The phase ends at 3.89 MB live, so 2.43 MB
+  is transient. About 1.94 MB of that is the CLIR bytes themselves,
+  which must stay live while the IR is decoded; the other ~0.5 MB fits
+  the `bkRead*` lists growing by doubling (at `bkReadIrExprs`' 16384 →
+  32768 step, 655 KB and 1.31 MB blocks are live together).
+- Both levers that remove it are outside this spec. Pre-sizing the
+  `bkRead*` lists from the `n` they already read needs a list
+  capacity/reserve primitive (§7: not requested by D10). Releasing
+  `rtbakeBytes` progressively during the parse, or parsing in chunks,
+  changes the loader's structure (Wave 2/4 territory). Either one
+  removes far more than 33 KB.
+- The other exit items hold: the other two budgets were lowered to
+  peak + 1% (8,691,240 and 8,617,304), and every task was
+  byte-identical except the new core-suite case.
 
 ## 2. Decisions settled in this spec
 
@@ -209,6 +232,9 @@ the `rtbakeBytes` free. `astReset()` (`ast.cla`) switches as well: its
 - The IIcx re-run (`clarusc_memprobe`) records per-phase free, the
   launch→low heap used, and the stack high-water in umbrella §9. It
   also records compile #1's re-parse cost in ticks, which D2 accepts.
+  (As measured: the re-parse runs before `driveCompile` starts its
+  tick count, so it has no tick figure. It is the guest wall-clock span
+  "Verifying Baked Runtime" → "Starting", 5m 28s; umbrella §9.2.)
 
 ## 6. Output policy (umbrella §5.4)
 
