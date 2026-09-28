@@ -197,13 +197,20 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 - **Boundary `int16`/`uint8` read back as `int`** (Task 6, ruling R10).
   At an extern/callback signature or an `extern record` field, `int16`
-  and `uint8` parse as `word`/`byte` (`parse.cla`'s `parseExternType`/
-  `parseXRecFieldType`), so an extern result, a callback parameter or a
-  field read is typed `int`: `var s: int16; s = GetOSEvent(...)` needs
-  `int16(...)`. Resolve them to the narrow types instead while keeping
+  and `uint8` build the `TxWord`/`TxByte` nodes (`parse.cla`'s
+  `parseExternType`/`parseXRecFieldType`), so an extern result, a
+  callback parameter or a field read is typed `int`:
+  `var part: int16; part = FindWindow(pt, wp)` (FindWindow returns an
+  INTEGER) needs `int16(...)`. Resolve them to the narrow types instead while keeping
   the KWord/`XFByte` lowering. That also needs D5-style `int` acceptance
   at a callback's own `return`, so a body like `return w + n` (int
   arithmetic, int16 return) keeps compiling.
+- **The extern RETURN diagnostic omits `int16`** (Task 13 review).
+  `check.cla`'s "external functions may only use int, ptr, bool, or
+  char" is wrong since Wave 3: `int16` is a legal extern return too.
+  The parameter diagnostic got the same one-word fix in Task 13; this
+  one was left so the final snapshot would not go stale. Add `int16`
+  and move whichever `.expect`/`check_test.out` lines carry it.
 
 ### SE memory program, Wave 0 (2026-09-28)
 
@@ -308,6 +315,21 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Runtime / Toolbox robustness
 
+### SE memory program, Wave 3 (2026-09-29)
+
+- **`runtime/host/rt_ser.inc` is dead weight** (Task 7, ruling R2).
+  `drive.cla` sets `cpSerPorted = true` unconditionally, so every host
+  build routes `file.save`/`file.load` through `ser.cla`; only
+  `rt_ser_test.c` (`tests/hostrt/ser_leak.sh`) still reaches
+  `rt_file_save`/`rt_file_load`. It still writes v1 with 4-byte enums,
+  and its switches have no `default:`, so codes 6–8 (`U8`/`I16`/`U16`)
+  would be skipped silently. Delete it with its test, or add
+  `default: rt_panic(...)` to its switches.
+- **`rt.h`'s `RT_FT_ENUM` comment still says 4 bytes** (Task 9):
+  `/* int32 value, 4B BE ... */`. Enum fields are 2 bytes on both lanes
+  and on disk in v2 (4 only in a v1 file). Comment-only; do it with the
+  `rt_ser.inc` entry above.
+
 ### MacTCP phase (2026-09-08)
 
 - **`tcp.cla`'s `rtTcpPending: text[8]` global makes EVERY native
@@ -378,6 +400,27 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   loop and fail on a mismatch, or copy first and write the header last
   with the byte count actually copied.
 
+## Native code size
+
+### SE memory program, Wave 3 (2026-09-29)
+
+- **Every native program carries the whole UI table/form draw path.**
+  `ui.cla`/`uidialogs.cla`/`uitable.cla` (`rtUiTableDrawField` and the
+  LDEF path) are spliced into every native build, so even a non-UI
+  program pays for them: Task 4's narrow-field range check alone added
+  +224 B to every native program and +776 B to `bookmarks`, and Task 9's
+  2-byte enum column read moved even `arith.s`/`traps.s`/`xrec.s`. A
+  usage gate (only programs with a table or form get the path) is an SE
+  size lever. Moves every `testdata/cg68k` golden.
+- **No size-2 peephole shapes** (Task 9). `peep68k.cla` matches only
+  size-1 and size-4 load/store pairs, so a 2-byte enum (or `int16`/
+  `uint16`) local loses the store/reload peephole a 4-byte one gets,
+  and every 2-byte enum load is `CLR.L D0; MOVE.W src,D0` (4 bytes)
+  where the 4-byte enum was one 2-byte `MOVE.L` (visible in
+  `testdata/cg68k/enums.s`). This touches ClarusC.APPL's own code too.
+  Adding the word shapes to the peephole moves the goldens of every
+  program with enum locals.
+
 ## Compiler-on-Mac (`ClarusC.APPL`) — on hold
 
 The Mac-resident compiler target is on hold (Andrew, 2026-09-05). Nothing
@@ -431,7 +474,11 @@ The SE memory program (2026-09-27) resumed work on this target. See
   re-measured, and the host still counts host box/element sizes. Also
   unattributed: +141 KB used at `pre-compile` on the IIcx against Wave 1,
   of which only `MoreMasters`' ~40 KB is explained (~100 KB open), and compile ticks halving in phases Wave 2 did
-  not target. Settle these before Wave 4 sizes its target.
+  not target. Settle these before Wave 4 sizes its target. Wave 3
+  (program design §9.4): still ~2.7 MB (host 3,399,176 bytes = 3320 KB,
+  IIcx 6111 KB used); the host also credits ~75 KB of arena saving the
+  68k layout does not see, and Wave 3's +63 KB launch free and the
+  +2397 ticks in `Built fork` are unattributed.
 - **`MoreMasters`' 64 per call is unproven on the target.** `macgui.cla`
   calls it 153 times assuming the zone's `moreMast` is 64; a memprobe
   line peeking the zone header would confirm it. The comment's

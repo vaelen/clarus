@@ -1,6 +1,10 @@
 # SE memory program, Wave 3: Narrow scalars (spec, 2026-09-28)
 
-Status: **spec, awaiting review.** Branch `se-wave3-narrow-scalars`.
+Status: **implemented** (2026-09-29) on branch `se-wave3-narrow-scalars`.
+`bookmarks_rtbake` peaks at 3,399,176 bytes against the 3.5 MB exit
+(umbrella §9.4). Amendments made during implementation are marked
+"Amended" below; the rulings behind them are in `docs/HISTORY.md`'s
+Wave 3 entry.
 Umbrella: `2026-09-27-se-memory-program-design.md` (§6 Wave 3 is the
 brief; D3–D8 are decided inputs). Wave 2's numbers and at-peak census:
 umbrella §9.3 and `docs/HISTORY.md`'s Wave 2 entry.
@@ -33,16 +37,16 @@ arenas use the narrow types.
 
 ## 2. Decisions settled in this spec
 
-| #   | Decision                                                                                                                                                                                                                                                                                  |
-|-----|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| N1  | **Literal typing.** An integer literal whose value is in range adopts the narrow type expected at that point: an assignment target, an argument, a return, a field initializer, or a comparison operand of that type. An out-of-range literal there is a build error: `300 is out of range for uint8 (0..255)`, and `-1 is out of range for uint16 (0..65535)`. Elsewhere a literal is `int`, as today. |
-| N2  | **`text.wordAt`/`wordAtLE` keep returning `int`** (0–65535). Under D4 a later change to `uint16` would be compatible; making it now only adds churn.                                                                                                                                         |
-| N3  | **Form binding** (Andrew, 2026-09-28). A `field` bound to a `uint8`/`int16`/`uint16` record field behaves like an `int` field: numeric input only. OK validation also fails when the value is out of the type's range, or when it has a minus sign for `uint8`/`uint16`, exactly as a non-numeric value fails today. A table `column` shows the value as a decimal number. |
-| N4  | **One spec and one plan** (Andrew, 2026-09-28), with parallel waves inside the plan and the serialization points listed in §5.                                                                                                                                                           |
-| N5  | **The box-size constants move to their own lane pair**, `boxsize_c.cla`/`boxsize_68k.cla`, placed right after `core.cla` in every module list. The host `--testapi` early-visible set goes back to ending after `uidialogs.cla` (Wave 2 widened it only because the constants lived in the datetime pair). Andrew folded this into Wave 3. |
-| N6  | **Compiler arenas narrow only non-index fields**, mostly for free through N8: enum-typed kind/op/mode fields become 2 bytes on both lanes, and the plan groups them so that no padding eats the saving. Explicit `uint8` fields are used only where the measured saving justifies the conversions. Every arena index, name index, count and value stays `int`: a self-compile already has more than 65,535 expressions. Narrowed fields are grouped together in each record, so that no padding eats the saving on either lane. |
-| N8  | **D7 is revised: enums are 2 bytes on both lanes** (Andrew, 2026-09-28). The C lane also stores an enum-typed record field and an enum array/list/map element as `int16_t`. This matches the reference ("enums are 2 bytes"), gives the serializer one in-memory enum width, and lets the host memgate see the arena saving (§3.6). Enum locals, parameters, globals and returns keep their current C type (`int32_t`). The native lane follows §3.3 everywhere. |
-| N7  | **`uint` (32-bit unsigned) is deferred** to `docs/FUTURE.md`, with D3's cost list: unsigned compares and divide, a new `rtUIntToStr`, literal-range work, and C-lane mixing hazards.                                                                                                              |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+|-----|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| N1  | **Literal typing.** An integer literal whose value is in range adopts the narrow type expected at that point: an assignment target, an argument, a return, a field initializer, or a comparison operand of that type. An out-of-range literal there is a build error: `300 is out of range for uint8 (0..255)`, and `-1 is out of range for uint16 (0..65535)`. Elsewhere a literal is `int`, as today.                                                                                                                                                                                     |
+| N2  | **`text.wordAt`/`wordAtLE` keep returning `int`** (0–65535). Under D4 a later change to `uint16` would be compatible; making it now only adds churn.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| N3  | **Form binding** (Andrew, 2026-09-28). A `field` bound to a `uint8`/`int16`/`uint16` record field behaves like an `int` field: numeric input only. OK validation also fails when the value is out of the type's range, or when it has a minus sign for `uint8`/`uint16`, exactly as a non-numeric value fails today. A table `column` shows the value as a decimal number.                                                                                                                                                                                                                  |
+| N4  | **One spec and one plan** (Andrew, 2026-09-28), with parallel waves inside the plan and the serialization points listed in §5.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| N5  | **The box-size constants move to their own lane pair**, `boxsize_c.cla`/`boxsize_68k.cla`, placed right after `core.cla` in every module list. The host `--testapi` early-visible set goes back to ending after `uidialogs.cla` (Wave 2 widened it only because the constants lived in the datetime pair). Andrew folded this into Wave 3.                                                                                                                                                                                                                                                  |
+| N6  | **Compiler arenas narrow only non-index fields**, mostly for free through N8: enum-typed kind/op/mode fields become 2 bytes on both lanes, and the plan groups them so that no padding eats the saving. Explicit `uint8` fields are used only where the measured saving justifies the conversions. Every arena index, name index, count and value stays `int`: a self-compile already has more than 65,535 expressions. Narrowed fields are grouped together in each record, so that no padding eats the saving on either lane.                                                             |
+| N8  | **D7 is revised: enums are 2 bytes on both lanes** (Andrew, 2026-09-28). The C lane also stores an enum-typed record field and an enum array/list/map element as `uint16_t` (amended from `int16_t`, ruling R14: enum values run 0–65535, and `int16_t` would read members 32768–65535 back negative). This matches the reference ("enums are 2 bytes"), gives the serializer one in-memory enum width, and lets the host memgate see the arena saving (§3.6). Enum locals, parameters, globals and returns keep their current C type (`int32_t`). The native lane follows §3.3 everywhere. |
+| N7  | **`uint` (32-bit unsigned) is deferred** to `docs/FUTURE.md`, with D3's cost list: unsigned compares and divide, a new `rtUIntToStr`, literal-range work, and C-lane mixing hazards.                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 Decided inputs (umbrella §2), restated briefly: D3 (the three types, no
 `uint`); D4 (implicit widening, 32-bit arithmetic, explicit truncating
@@ -90,6 +94,10 @@ v1 still loads, one deliberate CLRD re-pin plus a frozen v1 fixture).
   - The peephole patterns are size-1/size-4 only, so word shapes do not
     match them. That is safe.
   - Byte-identical for every program that does not use the new types.
+    **Amended (ruling R7):** true of the compiler's output, but N3's
+    form range check lives in the UI runtime, which every UI program
+    splices, so Task 4 reblessed 14 emitui and 66 `testdata/cg68k`
+    goldens (+224 B per native program, +776 B for `bookmarks`).
 - **C lane:** `cpCType` (`cprint.cla` ~l.940) emits `uint8_t`/
   `int16_t`/`uint16_t`. C integer promotion already gives D4's
   semantics.
@@ -111,10 +119,13 @@ v1 still loads, one deliberate CLRD re-pin plus a frozen v1 fixture).
    `testsuite/`, `examples/`, `testdata/`, the reference, the cookbook
    and CLAUDE.md. Every compiled program is byte-identical except
    ClarusC.APPL, which bakes source text.
-3. Remove `TxWord`/`TxByte` (`ast.cla` ~l.292–315), their parse sites
-   (`parse.cla` ~l.1359/1682) and their checker sites (`check.cla`
-   ~l.2492–2525). Using the old spelling now gives an ordinary unknown
-   type diagnostic.
+3. Remove the `word`/`byte` spellings. Using the old spelling now
+   gives an ordinary unknown type diagnostic (`undefined: word`).
+   **Amended (ruling R11):** only the spellings go (the `parse.cla`
+   alias disjuncts, their interns and the diagnostic wording). The
+   `TxWord`/`TxByte` nodes (`ast.cla` ~l.292–315) and their checker
+   sites stay, because `int16`/`uint8` at the boundary build exactly
+   those nodes and rely on their `KWord` marshaling.
 
 ### 3.3 Enums are 2 bytes (D7, revised by N8) — **output-changing**
 
@@ -127,8 +138,9 @@ v1 still loads, one deliberate CLRD re-pin plus a frozen v1 fixture).
 - **C lane (N8):** `cpCType`'s `KEnum` case (`cprint.cla` ~l.943)
   stays `int32_t` for locals, parameters, globals and returns. The
   record-layout and element-type paths (`cpEmitLayouts` ~l.6801–6867,
-  plus the list/map element sizes) emit `int16_t` for an enum field or
-  element. C promotion does the widening on read.
+  plus the list/map element sizes) emit `uint16_t` for an enum field or
+  element (amended from `int16_t`, ruling R14). C promotion does the
+  widening on read, zero-extending like the native lane.
 - **Rebless:** most `testdata/cg68k/*.s` goldens, the emitui C goldens
   of programs with enum fields, and the bake twins move. It is its own
   isolated task, with a written reason per golden family.
@@ -151,7 +163,10 @@ v1 still loads, one deliberate CLRD re-pin plus a frozen v1 fixture).
   (`ser.cla` ~l.98–103, 132, ~366), and at `uidesc.cla` ~l.64–67, which
   shares the numbering.
 - **CLRD:** one deliberate re-pin of `testdata/sertest/clrd_goldens/`
-  with `CLRD_BLESS=1`, in the task that exists for it. Also add a new
+  with `CLRD_BLESS=1`, in the task that exists for it (amended, ruling
+  R13: re-pinned twice, once for the version byte and once for the enum
+  width, as the plan split them; each re-pin was checked byte-exact).
+  Also add a new
   frozen v1 `.dat` fixture that the core suite loads and checks field
   by field.
 - **Core suite:** a new case that saves a record holding every narrow
@@ -201,20 +216,24 @@ module it does not know cannot hold a constant the runtime needs.
   do not change. Code that depends on field order (positional record
   literals, if any) is audited.
 - Expected: `bookmarks_rtbake` goes from 3.67 to about 3.41 MB, under
-  the 3.5 MB exit.
+  the 3.5 MB exit. **Outcome:** 3,399,176 bytes (umbrella §9.4). The
+  host `IRExpr` went 40 → 36 (the regeneration) → 32 bytes (the
+  reorder) and `A68Item` 72 → 68. `bool` record fields were already
+  `uint8_t` in C, so no explicit `uint8` field was needed, and
+  `IRStmt`/`IRType` (one enum each) were left alone.
 
 ## 4. Output policy (umbrella §5.4)
 
-| Change                                                   | Label                                                                          |
-|----------------------------------------------------------|--------------------------------------------------------------------------------|
-| narrow types (§3.1)                                      | byte-identical for existing programs; new core cases                           |
-| extern acceptance, the rename, the removal (§3.2)        | byte-identical (ClarusC.APPL's baked source changes by design)                 |
-| 2-byte enums (§3.3)                                      | output-changing (both lanes, N8): isolated rebless, a reason per golden family |
-| serializer v2 (§3.4)                                     | output-changing: the deliberate CLRD re-pin; the new frozen v1 fixture         |
-| the box-size pair (§3.5)                                 | byte-identical                                                                 |
-| arena narrowing (§3.6)                                   | byte-identical (compiler internals); runs after §3.3                           |
-| snapshot regenerations                                   | serialization points                                                           |
-| memgate budgets                                          | ratchet down, one commit                                                       |
+| Change                                            | Label                                                                                                                     |
+|---------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| narrow types (§3.1)                               | byte-identical compiler output; the UI runtime's form range check (N3) moved the UI goldens (amended, R7); new core cases |
+| extern acceptance, the rename, the removal (§3.2) | byte-identical (ClarusC.APPL's baked source changes by design)                                                            |
+| 2-byte enums (§3.3)                               | output-changing (both lanes, N8): isolated rebless, a reason per golden family                                            |
+| serializer v2 (§3.4)                              | output-changing: the deliberate CLRD re-pin; the new frozen v1 fixture                                                    |
+| the box-size pair (§3.5)                          | byte-identical                                                                                                            |
+| arena narrowing (§3.6)                            | byte-identical (compiler internals); runs after §3.3                                                                      |
+| snapshot regenerations                            | serialization points                                                                                                      |
+| memgate budgets                                   | ratchet down, one commit                                                                                                  |
 
 ## 5. Sequencing
 
