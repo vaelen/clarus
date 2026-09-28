@@ -7319,7 +7319,7 @@ deleted after the final review; the rulings are in this entry.
 
 ## SE memory program, Wave 2: representation (2026-09-28, branch `se-wave2-representation`)
 
-Not yet merged (merge only on Andrew's request). This entry covers
+Merged to `main` 2026-09-28 (fast-forward to `378ccd10`). This entry covers
 Tasks 1–10 and Task 11's IIcx measurement, all on
 `se-wave2-representation` (85 files, +15,510/−14,281 from the plan
 commit `3fb75f6b` before this docs commit, most of it the

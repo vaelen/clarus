@@ -188,8 +188,8 @@ measured analysis:
   `hello-mac` at 8,531,984. On the IIcx the launch→low heap use fell
   from 12035 KB to 7977 KB. Numbers: the program design's §9.2 and
   `docs/HISTORY.md`.
-- **Wave 2 (representation): done, pending merge** (branch
-  `se-wave2-representation`, 2026-09-28). `list.reserve(n)` and
+- **Wave 2 (representation): merged** (branch
+  `se-wave2-representation`, 2026-09-28, fast-forward to `378ccd10`). `list.reserve(n)` and
   `text.removeFirst(n)`; a compact intern pool (one blob plus offsets);
   per-function encode in the emit loop; the bake parse pre-sizes its
   lists and frees the CLIR prefix as it goes; flat `cgObjRuns`;

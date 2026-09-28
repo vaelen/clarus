@@ -1,6 +1,6 @@
 # SE memory program, Wave 2: Representation (spec, 2026-09-28)
 
-Status: **implemented, pending merge (2026-09-28).** Branch
+Status: **merged to main (2026-09-28, `378ccd10`).** Branch
 `se-wave2-representation`. The exit is met: `bookmarks --rtbake`
 peaks at 3,668,312 bytes (budget 3,704,996), measured the
 ClarusC-shaped way (umbrella §9.3). Where the implementation departed
