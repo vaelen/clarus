@@ -149,8 +149,7 @@
 // NarrowInts (cases_narrow.cla, SE wave 3 Task 1) is the 85th real case:
 // uint8/int16/uint16 widening, 32-bit arithmetic, truncating conversions,
 // literal adoption, and storage in locals/fields/arrays/lists/globals/
-// params/returns. emit68k compositions use cases_narrow_68k_stub.cla
-// until SE wave 3 Task 3 teaches emit68k the narrow types.
+// params/returns, on both lanes.
 
 enum CoreTest {
     All

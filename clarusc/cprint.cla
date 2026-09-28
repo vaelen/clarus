@@ -7246,6 +7246,11 @@ func cpUiStateFieldCType(t: int): string {
     if irtKind(t) == KBool {
         return "int16_t"
     }
+    // SE wave 3: a uint8 state var gets the same 2-byte slot (cgSlotSizeOf)
+    // as a bool, for the same szassert reason.
+    if irtIntWidth(t) == 8 {
+        return "uint16_t"
+    }
     return cpCType(t)
 }
 

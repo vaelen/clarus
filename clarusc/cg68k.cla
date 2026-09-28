@@ -1932,6 +1932,10 @@ func cgSizeOfUncached(t: int): int {
     var k: IRKind
 
     k = irtKind(t)
+    // SE wave 3: a narrow int is its own width (uint8 1, int16/uint16 2).
+    if irtIntWidth(t) != 0 {
+        return irtIntWidth(t) / 8
+    }
     switch k {
     case KVoid {
         return 0
@@ -2087,13 +2091,20 @@ func cgSlotSizeOf(t: int): int {
 // regardless of element kind, orthogonal to this function's job of keeping
 // array-internal spacing packed.
 func cgArrElemStride(elemT: int): int {
-    var k: IRKind
-
-    k = irtKind(elemT)
-    if k == KChar or k == KBool {
+    if cgIsByteScalar(elemT) {
         return 1
     }
     return cgSlotSizeOf(elemT)
+}
+
+// cgIsByteScalar: the 1-byte scalars (bool, char, and SE wave 3's
+// uint8, which takes the char paths) -- packed at exactly 1 byte as an
+// array element or record field.
+func cgIsByteScalar(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    return k == KChar or k == KBool or irtIntWidth(t) == 8
 }
 
 // cgRecFieldSizeOf/cgRecFieldAlignOf: the record-field-ONLY layout
@@ -2120,20 +2131,14 @@ func cgArrElemStride(elemT: int): int {
 // local/global/param/array-element bool/char keeps cgSlotSizeOf/cgAlignOf
 // unchanged.
 func cgRecFieldSizeOf(t: int): int {
-    var k: IRKind
-
-    k = irtKind(t)
-    if k == KBool or k == KChar {
+    if cgIsByteScalar(t) {
         return 1
     }
     return cgSlotSizeOf(t)
 }
 
 func cgRecFieldAlignOf(t: int): int {
-    var k: IRKind
-
-    k = irtKind(t)
-    if k == KBool or k == KChar {
+    if cgIsByteScalar(t) {
         return 1
     }
     return cgAlignOf(t)
@@ -3426,6 +3431,8 @@ func cgStoreImmAt(reg: int, off: int, t: int, val: int) {
 func cgStoreD0At(reg: int, off: int, t: int) {
     if cgSizeOf(t) == 1 {
         a68Emit(OpMove, 1, AmDn, 0, 0, AmDisp16, reg, off)
+    } else if cgSizeOf(t) == 2 {
+        cgStoreSz2(AmDisp16, reg, off)
     } else {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, reg, off)
     }
@@ -3443,6 +3450,8 @@ func cgLoadD0At(reg: int, off: int, t: int) {
     if cgSizeOf(t) == 1 {
         a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
         a68Emit(OpMove, 1, AmDisp16, reg, off, AmDn, 0, 0)
+    } else if cgSizeOf(t) == 2 {
+        cgLoadSz2(cgSz2Signed(t), AmDisp16, reg, off)
     } else {
         a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
     }
@@ -5591,6 +5600,12 @@ func cgEmitFunc(f: int) {
         // decision).
         sz = cgArgSlotSize(irLocalType(params[i]))
         paramOffsets[i] = offset
+        if irtIntWidth(irLocalType(params[i])) != 0 {
+            // SE wave 3: a narrow param arrives widened in a long slot;
+            // address its low byte/word, so the ordinary MOVE.B/MOVE.W
+            // load and store paths read and write it in place.
+            paramOffsets[i] = offset + sz - cgSizeOf(irLocalType(params[i]))
+        }
         offset = offset + sz
         i = i - 1
     }
@@ -6365,6 +6380,12 @@ func cgArgSlotSize(t: int): int {
     if cgParamByRef(t) {
         return 4
     }
+    // SE wave 3: a narrow int is pushed as a long (the caller widened
+    // it), so the call ABI never depends on whether the argument
+    // expression or the parameter is the narrow one.
+    if irtIntWidth(t) != 0 {
+        return 4
+    }
     return cgSlotSizeOf(t)
 }
 
@@ -6797,9 +6818,40 @@ func cgLoadVar(e: int) {
         // byte into the low byte.
         a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
         a68Emit(OpMove, 1, AmDisp16, reg, off, AmDn, 0, 0)
+    } else if sz == 2 {
+        cgLoadSz2(cgSz2Signed(irExprType(e)), AmDisp16, reg, off)
     } else {
         a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
     }
+}
+
+// cgSz2Signed: whether a 2-byte scalar of type t widens by sign (int16)
+// or by zero (uint16) when loaded.
+func cgSz2Signed(t: int): bool {
+    return irtKind(t) == KInt and irtIntSigned(t)
+}
+
+// cgLoadSz2 (SE wave 3) loads the 2-byte value at <sm,sr,sv> into D0,
+// widened to 32 bits: MOVE.W + EXT.L when signed (int16), CLR.L +
+// MOVE.W when not (uint16; Task 9's 2-byte enums pass signed = false) --
+// the unsigned shape mirrors cgLoadVar's own CLR.L + MOVE.B byte load.
+// Every caller's D0 postcondition is therefore a normalized in-range
+// int, which is what lets arithmetic, compares and argument pushes stay
+// plain 32-bit.
+func cgLoadSz2(signed: bool, sm: A68Mode, sr: int, sv: int) {
+    if signed {
+        a68Emit(OpMove, 2, sm, sr, sv, AmDn, 0, 0)
+        a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+    } else {
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68Emit(OpMove, 2, sm, sr, sv, AmDn, 0, 0)
+    }
+}
+
+// cgStoreSz2 (SE wave 3) stores D0's low word at <dm,dr,dv> -- MOVE.W,
+// which truncates.
+func cgStoreSz2(dm: A68Mode, dr: int, dv: int) {
+    a68Emit(OpMove, 2, AmDn, 0, 0, dm, dr, dv)
 }
 
 func cgStoreScalarVar(dst: int) {
@@ -6812,6 +6864,8 @@ func cgStoreScalarVar(dst: int) {
     off = cgVarOff(dst)
     if sz == 1 {
         a68Emit(OpMove, 1, AmDn, 0, 0, AmDisp16, reg, off)
+    } else if sz == 2 {
+        cgStoreSz2(AmDisp16, reg, off)
     } else {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, reg, off)
     }
@@ -6830,6 +6884,8 @@ func cgLoadFieldScalar(e: int) {
     if sz == 1 {
         a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
         a68Emit(OpMove, 1, AmInd, 0, 0, AmDn, 0, 0)
+    } else if sz == 2 {
+        cgLoadSz2(cgSz2Signed(irExprType(e)), AmInd, 0, 0)
     } else {
         a68Emit(OpMove, 4, AmInd, 0, 0, AmDn, 0, 0)
     }
@@ -6867,6 +6923,8 @@ func cgEmitStoreScalarAny(dst: int, src: int) {
     a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
     if sz == 1 {
         a68Emit(OpMove, 1, AmDn, 0, 0, AmInd, 0, 0)
+    } else if sz == 2 {
+        cgStoreSz2(AmInd, 0, 0)
     } else {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmInd, 0, 0)
     }
@@ -7379,6 +7437,16 @@ func cgConv(e: int) {
         a68Bind(ldone)
     } else if op == CvIntToChar {
         a68Emit(OpAndInsn, 4, AmImm, 0, 0xFF, AmDn, 0, 0)
+    } else if op == CvIntToNarrow {
+        // SE wave 3: truncate to the target width and re-widen -- AND.L
+        // for uint8/uint16, EXT.L (sign-extends the low word) for int16.
+        if irtIntWidth(irExprType(e)) == 8 {
+            a68Emit(OpAndInsn, 4, AmImm, 0, 0xFF, AmDn, 0, 0)
+        } else if irtIntSigned(irExprType(e)) {
+            a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+        } else {
+            a68Emit(OpAndInsn, 4, AmImm, 0, 0xFFFF, AmDn, 0, 0)
+        }
     } else if op == CvIntToEnum {
         cgEmitEnumConv(irConvEnumName(e))
     } else if op == CvCharToInt or op == CvEnumToInt or op == CvIntToPtr or op == CvPtrToInt or op == CvPtrToOverlay or op == CvOverlayToPtr {
@@ -7998,6 +8066,8 @@ func cgIntrLoadScratch(off: int, t: int) {
     if cgSizeOf(t) == 1 {
         a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
         a68Emit(OpMove, 1, AmDisp16, 6, off, AmDn, 0, 0)
+    } else if cgSizeOf(t) == 2 {
+        cgLoadSz2(cgSz2Signed(t), AmDisp16, 6, off)
     } else {
         a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
     }
@@ -8013,6 +8083,9 @@ func cgCopyScratch(srcOff: int, dstOff: int, t: int) {
     if sz == 1 {
         a68Emit(OpMove, 1, AmDisp16, 6, srcOff, AmDn, 0, 0)
         a68Emit(OpMove, 1, AmDn, 0, 0, AmDisp16, 6, dstOff)
+    } else if sz == 2 {
+        a68Emit(OpMove, 2, AmDisp16, 6, srcOff, AmDn, 0, 0)
+        cgStoreSz2(AmDisp16, 6, dstOff)
     } else if sz <= 4 {
         a68Emit(OpMove, 4, AmDisp16, 6, srcOff, AmDn, 0, 0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, dstOff)
@@ -8295,7 +8368,10 @@ func cgIntrListSet(e: int, retainVariant: bool) {
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     a2e = irExprNext(a1e)
-    elemT = irExprType(a2e)
+    // The CONTAINER's element type, not the value's: a plain int literal
+    // stored into a narrow element (SE wave 3) must store at the
+    // element's width.
+    elemT = irtElem(irExprType(a0e))
     lOff = cgAllocTmpOff(irPtrT)
     iOff = cgAllocTmpOff(irIntT)
     vOff = cgAllocTmpOff(elemT)
@@ -8394,7 +8470,10 @@ func cgIntrMapSet(e: int, retainVariant: bool, sorted: bool) {
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     a2e = irExprNext(a1e)
-    elemT = irExprType(a2e)
+    // The CONTAINER's element type, not the value's: a plain int literal
+    // stored into a narrow element (SE wave 3) must store at the
+    // element's width.
+    elemT = irtElem(irExprType(a0e))
     mOff = cgAllocTmpOff(irPtrT)
     cgExpr(a0e)
     cgStoreD0At(6, mOff, irPtrT)
@@ -8655,7 +8734,10 @@ func cgIntrIntMapSet(e: int, retainVariant: bool) {
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     a2e = irExprNext(a1e)
-    elemT = irExprType(a2e)
+    // The CONTAINER's element type, not the value's: a plain int literal
+    // stored into a narrow element (SE wave 3) must store at the
+    // element's width.
+    elemT = irtElem(irExprType(a0e))
     mOff = cgAllocTmpOff(irPtrT)
     cgExpr(a0e)
     cgStoreD0At(6, mOff, irPtrT)
@@ -10699,7 +10781,7 @@ func cgPushArgs(argsHead: int): int {
                 // falling into cgExpr's generic value-context abort.
                 abort("cg68k: a fixed array whose elements carry a text/list/map (" + cgArrElemDesc(t) + ") cannot be passed by value natively -- pass a `list`, or put the array in a record and pass the record")
             }
-            sz = cgSlotSizeOf(t)
+            sz = cgArgSlotSize(t)
             ak = irExprKind(a)
             // compiler-cleanup: a bare pop/shift of a non-KRec handle kind
             // (KText/KList/KMap/KSortedMap/KIntMap) used directly as a call
@@ -15818,17 +15900,6 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     var objSegItemStart: list of int
     var objSegItemEnd: list of int
     var objSegTainted: list of bool
-
-    // SE wave 3 Task 1 (Ruling R1): emit68k learns the narrow int types in
-    // Task 3; until then refuse them outright rather than miscompile them
-    // as 4-byte ints. Any narrow use lowers to a narrow KInt IRType.
-    i = 0
-    while i < irTypes.count {
-        if irtIntWidth(i) != 0 {
-            abort("cg68k: narrow integer types are not yet supported by emit68k")
-        }
-        i = i + 1
-    }
 
     // Findings 1.4 (Task 13): fill every rn* pre-interned runtime-call
     // name BEFORE cg68Measure's own first cgEmitFunc call can need one --

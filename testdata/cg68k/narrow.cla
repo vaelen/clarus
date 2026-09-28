@@ -1,0 +1,62 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// narrow.cla: SE wave 3 Task 3's cg68k golden fixture -- uint8/int16/
+// uint16 in every storage class. Pins: 1-byte (uint8, the char paths)
+// and 2-byte (MOVE.W + EXT.L for int16, CLR.L + MOVE.W for uint16)
+// loads and MOVE.B/MOVE.W stores for a local, a global, a record field,
+// a fixed-array element, a list element and a map value; narrow params
+// pushed as longs and read from the low part of their long slot; narrow
+// returns; the three truncating conversions (CvIntToNarrow); a
+// negated literal at an int16 position; and a plain int literal stored
+// into a narrow map value / list element (stored at the CONTAINER's
+// element width, not the literal's). Compile-only coverage -- the
+// core suite's NarrowInts case is the runtime proof.
+record narrowRec {
+    a: uint8
+    b: int16
+    c: uint16
+    n: int
+}
+
+var narrowG8: uint8
+var narrowG16: int16
+
+func narrowAdd(x: uint8, y: int16, z: uint16): int {
+    return x + y + z
+}
+
+func narrowRet(): uint16 {
+    return 65535
+}
+
+on App.launch {
+    var a: uint8
+    var s: int16
+    var u: uint16
+    var r: narrowRec
+    var arr: int16[3]
+    var l: list of uint16
+    var m: map of int16
+    var i: int
+
+    a = 200
+    s = -32768
+    u = 65535
+    narrowG8 = a
+    narrowG16 = s
+    r.a = a
+    r.b = s
+    r.c = u
+    arr[1] = s
+    l.push(u)
+    m["k"] = s
+    m["j"] = 7
+    l[0] = 9
+    i = narrowAdd(a, s, u) + narrowRet()
+    i = i + r.a + r.b + r.c + arr[1] + l[0] + m.get("k", 0)
+    a = uint8(i)
+    s = int16(i)
+    u = uint16(i)
+    i = s >> 1
+}
