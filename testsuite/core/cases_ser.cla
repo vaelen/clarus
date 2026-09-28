@@ -20,7 +20,8 @@
 //                          at their extremes round-trip through format
 //                          v2, and the header's version byte is 2)
 //   SerV1Enum            <- new for SE wave 3 (a frozen v1 file with a
-//                          4-byte enum field still loads)
+//                          4-byte enum field still loads, as REC, LIST
+//                          and MAP)
 
 func caseSerBinRoundtrip(): TestResult {
     var t: text
@@ -274,6 +275,64 @@ func caseSerV1Enum(): TestResult {
     }
     if r.name != "v1" {
         return tkFail("SerV1Enum", "name not v1")
+    }
+    return serV1EnumContainers()
+}
+
+// serV1EnumContainers: the same v1 4-byte enum field inside a LIST file
+// (4-byte BE count, then records) and a MAP file (count, then 1 length
+// byte + key + record per entry). Hand-built like the REC bytes above.
+func serV1EnumContainers(): TestResult {
+    var t: text
+    var l: list of SerV1Rec
+    var m: map of SerV1Rec
+    var r: SerV1Rec
+    var ok: bool
+    // LIST: {Green, 7, "a"}, {Blue, -1, "bc"}
+    var lb: int[44] = [0x43, 0x4C, 0x52, 0x53, 1, 1, 0, 0, 0, 2,
+        0, 0, 0, 1, 0, 0, 0, 7, 1, 0x61, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 2, 0xFF, 0xFF, 0xFF, 0xFF, 2, 0x62, 0x63, 0, 0, 0, 0, 0, 0]
+    // MAP: "x" -> {Blue, 5, ""}, "yy" -> {Red, 0x01020304, "m"}
+    var mb: int[49] = [0x43, 0x4C, 0x52, 0x53, 1, 2, 0, 0, 0, 2,
+        1, 0x78, 0, 0, 0, 2, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2, 0x79, 0x79, 0, 0, 0, 0, 1, 2, 3, 4, 1, 0x6D, 0, 0, 0, 0, 0, 0, 0]
+
+    for i in 0 to 43 {
+        t.append(char(lb[i]))
+    }
+    ok = file.writeText("core_ser_v1enum_list.dat", t, app.doctype, app.id)
+    if not ok {
+        return tkFail("SerV1Enum", "list write failed")
+    }
+    ok = file.load("core_ser_v1enum_list.dat", l)
+    if not ok {
+        return tkFail("SerV1Enum", "v1 list load failed")
+    }
+    if l.count != 2 or l[0].kind != serV1Green or l[0].n != 7 or l[0].name != "a" or l[1].kind != serV1Blue or l[1].n != -1 or l[1].name != "bc" {
+        return tkFail("SerV1Enum", "v1 list contents wrong")
+    }
+    t.clear()
+    for i in 0 to 48 {
+        t.append(char(mb[i]))
+    }
+    ok = file.writeText("core_ser_v1enum_map.dat", t, app.doctype, app.id)
+    if not ok {
+        return tkFail("SerV1Enum", "map write failed")
+    }
+    ok = file.load("core_ser_v1enum_map.dat", m)
+    if not ok {
+        return tkFail("SerV1Enum", "v1 map load failed")
+    }
+    if m.count != 2 {
+        return tkFail("SerV1Enum", "v1 map count wrong")
+    }
+    r = m["x"]
+    if r.kind != serV1Blue or r.n != 5 or r.name != "" {
+        return tkFail("SerV1Enum", "v1 map entry x wrong")
+    }
+    r = m["yy"]
+    if r.kind != serV1Red or r.n != 0x01020304 or r.name != "m" {
+        return tkFail("SerV1Enum", "v1 map entry yy wrong")
     }
     return tkPass("SerV1Enum")
 }

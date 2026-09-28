@@ -11,7 +11,8 @@
 //   SwitchIntRange       <- switch.cla (int-subject multi-label case)
 //   SwitchIntMultiLabel  <- emit_switch.cla ("int multi-label ok")
 //   EnumStorage          <- new for SE wave 3 (2-byte enums in every
-//                           storage class, plus a v2 save/load)
+//                           storage class, plus a v2 save/load, and a
+//                           mixed narrow/enum/char record as LIST + MAP)
 
 enum caseEnumProtocol {
     caseEnumGopher 0x01 "Gopher"
@@ -235,6 +236,84 @@ func caseEnumStorage(): TestResult {
     // enum field is 2 bytes on disk.
     if t.length != 13 or t[4] != char(2) or t[7] != char(255) or t[8] != char(255) {
         return tkFail("EnumStorage", "v2 file shape wrong")
+    }
+    return caseEnumMixed()
+}
+
+// The mixed-width half of EnumStorage: narrow ints, two enums and a char
+// packed into one record, stored in a list and a map and saved/loaded as
+// LIST and MAP files, plus one call whose arguments mix every width.
+record caseEnumMix {
+    a: uint8
+    e1: caseEnumWide
+    b: int16
+    c: char
+    d: uint16
+    e2: caseEnumProtocol
+}
+
+func caseEnumMixCall(a: uint8, e: caseEnumWide, n: int, c: char, b: int16, p: caseEnumProtocol, d: uint16): int {
+    if e != caseWideHi or c != 'q' or p != caseEnumTelnet {
+        return -1
+    }
+    return a + n + b + d
+}
+
+func caseEnumMixOk(r: caseEnumMix, a: int, b: int, d: int): bool {
+    return r.a == a and r.e1 == caseWideHi and r.b == b and r.c == 'z' and r.d == d and r.e2 == caseEnumHTTP
+}
+
+func caseEnumMixed(): TestResult {
+    var r: caseEnumMix
+    var l: list of caseEnumMix
+    var m: map of caseEnumMix
+    var l2: list of caseEnumMix
+    var m2: map of caseEnumMix
+    var ok: bool
+
+    if caseEnumMixCall(255, caseWideHi, 100000, 'q', -32768, caseEnumTelnet, 65535) != 255 + 100000 - 32768 + 65535 {
+        return tkFail("EnumStorage", "mixed-width call arguments")
+    }
+    r.a = 255
+    r.e1 = caseWideHi
+    r.b = -32768
+    r.c = 'z'
+    r.d = 65535
+    r.e2 = caseEnumHTTP
+    l.push(r)
+    m["lo"] = r
+    r.a = 1
+    r.b = 32767
+    r.d = 2
+    l.push(r)
+    m["hi"] = r
+    if not caseEnumMixOk(l[0], 255, -32768, 65535) or not caseEnumMixOk(l[1], 1, 32767, 2) {
+        return tkFail("EnumStorage", "mixed record list round trip")
+    }
+    if not caseEnumMixOk(m["lo"], 255, -32768, 65535) or not caseEnumMixOk(m["hi"], 1, 32767, 2) {
+        return tkFail("EnumStorage", "mixed record map round trip")
+    }
+    ok = file.save("core_enum_mix_list.dat", l, app.doctype, app.id)
+    if not ok {
+        return tkFail("EnumStorage", "mixed list save failed")
+    }
+    ok = file.load("core_enum_mix_list.dat", l2)
+    if not ok or l2.count != 2 {
+        return tkFail("EnumStorage", "mixed list load failed")
+    }
+    if not caseEnumMixOk(l2[0], 255, -32768, 65535) or not caseEnumMixOk(l2[1], 1, 32767, 2) {
+        return tkFail("EnumStorage", "mixed list save/load contents")
+    }
+    ok = file.save("core_enum_mix_map.dat", m, app.doctype, app.id)
+    if not ok {
+        return tkFail("EnumStorage", "mixed map save failed")
+    }
+    ok = file.load("core_enum_mix_map.dat", m2)
+    if not ok or m2.count != 2 {
+        return tkFail("EnumStorage", "mixed map load failed")
+    }
+    if not caseEnumMixOk(m2["lo"], 255, -32768, 65535) or not caseEnumMixOk(m2["hi"], 1, 32767, 2) {
+        return tkFail("EnumStorage", "mixed map save/load contents")
     }
     return tkPass("EnumStorage")
 }
