@@ -1,7 +1,11 @@
 # tests/memgate/peak.sh budgets: peak live heap, 68k-equivalent bytes.
 # One "name bytes" line per subcase. Change log (newest first):
+# 2026-09-28 wave 1: .release/.shrink, front-end frees, measure reset,
+# bake install-by-move + re-parse + early rtbakeBytes free. Measured peaks
+# 6324316 / 8605188 / 8531984 + 1%. bookmarks_rtbake kept at 6387378:
+# formula would raise it by 182 B; lower-only rule.
 # 2026-09-28 SE wave 1 Task 4 (bake install-by-move, re-parse per compile, rtbakeBytes freed after parse): bookmarks_rtbake 11789468 -> 6324136, + 1%.
 # 2026-09-27 wave 0 baseline: measured peaks 11789468 / 14190252 / 10194664 + 1%.
 bookmarks_rtbake 6387378
-bookmarks_src 14332155
-hello_src 10296611
+bookmarks_src 8691240
+hello_src 8617304
