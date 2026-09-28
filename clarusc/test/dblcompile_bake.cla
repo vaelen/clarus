@@ -10,25 +10,20 @@
 // (the alternating-fixture oracle internal/mactest/leakgate_test.go's
 // DoubleCompile subtest already applies to dblcompile.cla).
 //
-// clir-load-perf Task 7 (design B) makes this the phase's PRIMARY
-// behavioral proof, because it is the only host front end that drives
-// driveCompile more than once in one process -- i.e. the only place
-// outside ClarusC.APPL where the parse memo (bkParsedValid) and
-// copy-on-install can be observed at all. Two things changed here:
-//
-//   - This harness now mirrors macgui.cla's real gcCompile sequence and
-//     FREES rtbakeBytes once bkParsedValid holds. That is not decoration:
-//     if compile #2 ever re-entered bkLoadRtbake it would parse an empty
-//     buffer and fail loudly, so the free is itself the assertion that
-//     the parse is memoized (Go-side (ii)).
-//   - It logs a BAKESTATE line per compile carrying the design-B
-//     observables the Go test asserts on: whether the parse was already
-//     memoized when the compile started, the pending object-code staging
-//     count (which must stay full-length and pristine forever now), this
-//     compile's own bkRuntimeFuncBoundary, and the number of functions
-//     cgObjPasteEligible actually accepts -- audit finding F1's own
-//     regression assertion, since a paste that silently switches off
-//     produces byte-IDENTICAL output and would otherwise go unnoticed.
+// clir-load-perf Task 7 made this the only host front end that drives
+// driveCompile more than once in one process, i.e. the host stand-in for
+// ClarusC.APPL's multi-compile session. SE wave 1 removed that phase's
+// parse memo (bkParsedValid): driveCompile now CONSUMES rtbakeBytes (a
+// successful parse frees it), so this harness -- like macgui.cla's
+// gcResolveBakePath -- hands driveCompile a fresh reference to the bake
+// bytes before EVERY compile. It logs a BAKESTATE line per compile:
+// parsedBefore (always 0 now -- kept so the log shape is stable; the
+// memo it used to observe no longer exists), the pending object-code
+// staging count, this compile's own bkRuntimeFuncBoundary, and the
+// number of functions cgObjPasteEligible actually accepts -- audit
+// finding F1's own regression assertion, since a paste that silently
+// switches off produces byte-IDENTICAL output and would otherwise go
+// unnoticed.
 //
 // Usage: scripts/clarus-run.sh clarusc/test/dblcompile_bake.cla -- \
 //            /path/to/rt68k.clir testdata/cg68k/tickprobe.cla ...
@@ -117,23 +112,16 @@ on App.startCLI(args: list of string) {
         log("dblcompile_bake: cannot read bake file: " + args[0])
         quit 2
     }
-    // Set once, kept for the whole process: rtbakeBytes doesn't change
-    // between compiles (mirrors rtDir/haveRtDir's own "resolved once,
-    // preserved across compiles" convention, drive.cla's driveReset doc
-    // comment). Since clir-load-perf Task 7 the BYTES are parsed once
-    // (bkParsedValid) and the buffer is released below, exactly as
-    // macgui.cla does; every compile's own INSTALL still runs fresh,
-    // copying the pending parse into the live arenas.
-    rtbakeBytes = bakeBytes
-    haveRtbake = true
-
     i = 1
     while i < args.count {
         t0 = TickCount()
         parsedBefore = 0
-        if bkParsedValid {
-            parsedBefore = 1
-        }
+        // SE wave 1: driveCompile frees rtbakeBytes after its parse, so
+        // re-arm it every compile. `text` is a reference type: this only
+        // shares bakeBytes, and driveCompile's `rtbakeBytes = ""` drops
+        // that share while bakeBytes keeps the harness's own copy.
+        rtbakeBytes = bakeBytes
+        haveRtbake = true
         driveReset()
         resetDiags()
         astReset()
@@ -142,12 +130,6 @@ on App.startCLI(args: list of string) {
         entries = cgFreshStringList()
         entries.add(args[i])
         ok = driveCompile(entries, false)
-        // macgui.cla's gcCompile does exactly this, in exactly this
-        // position (clir-load-perf Task 7) -- see this file's own header
-        // comment for why the free doubles as the memo assertion.
-        if bkParsedValid {
-            rtbakeBytes = ""
-        }
         if entryFailed {
             log("dblcompile_bake: cannot open entry file: " + args[i])
             quit 2
@@ -159,6 +141,12 @@ on App.startCLI(args: list of string) {
                 log(formatDiag(poolGet(diagPaths[di]), diags[di]))
                 di = di + 1
             }
+            quit 1
+        }
+        // SE wave 1 (spec L6): a successful bake-path compile consumed
+        // the bytes.
+        if rtbakeBytes.length != 0 {
+            log("dblcompile_bake: rtbakeBytes still held after compile: " + args[i])
             quit 1
         }
         built = driveEmit68kFork("", false, 0, false)

@@ -1947,11 +1947,11 @@ func bakeWriteFile(lane: int, outPath: string): bool {
 //   1. bkLoadRtbake parses the WHOLE file (header + every section) into
 //      the bkLd*/bkLoaded* pending globals below, touching no live
 //      compiler state at all.
-//   2. bkInstallPool copies the intern pool into live strPool/strIndex --
+//   2. bkInstallPool moves the intern pool into live strPool/strIndex --
 //      called BEFORE Phase A (driveCompile), since every baked IR
 //      arena's string-index fields are ABSOLUTE strPool indices captured
 //      at bake time; nothing else may intern() before this runs.
-//   3. bkInstallArenas copies everything else (the IR arenas, the
+//   3. bkInstallArenas moves everything else (the IR arenas, the
 //      lowering counters) into live state -- called AFTER check#1
 //      (driveCompile), so a bake's retained-but-uninstalled checker-
 //      symbol/declFileTab state (Task 5's own job -- see below) can
@@ -1987,22 +1987,6 @@ var bkLoadOverrun: bool
 // value can never bless a different buffer. Host front ends never set
 // it, so the host's single verify (inside bkLoadRtbake) is unchanged.
 var bkHeaderVerified: bool
-
-// bkParsedValid (clir-load-perf Task 7, design B): true iff the bkLd*/
-// bkLoaded* pending state below holds a COMPLETE, PRISTINE parse of
-// this session's bake -- i.e. drive.cla may install from it without
-// re-parsing the bytes. Deliberately NOT reset by driveReset(): surviving
-// across compiles is its entire purpose (ClarusC.APPL re-compiles in one
-// process and the CLIR resource cannot change under it). Reset on parse
-// failure and by the manifest-drift from-source fallback (drive.cla),
-// the two paths where the pending state must not be trusted again.
-//
-// What makes the memo safe is copy-on-install: every bkInstall* function
-// below now COPIES the pending containers into the live compiler globals
-// instead of aliasing them (Task 6's audit table -- 43 rows), so a
-// compile's own appends/element-mutations/.clear()s can never reach the
-// pending parse this flag blesses.
-var bkParsedValid: bool
 
 func bkGetByte(): int {
     var b: int
@@ -2366,7 +2350,10 @@ var bkLdEarlySymbolsCount: int
 // PRISTINE from there on (clir-load-perf Task 7, design B: they are
 // pending state a memoized parse must be able to replay from -- the
 // runtime/testapi boundary they used to be truncated to is applied as a
-// bounds check by cgObjPasteEligible instead). MOST of these fields are
+// bounds check by cgObjPasteEligible instead; SE wave 1 removed the
+// memo -- every compile re-parses -- but kept that bounds-check shape,
+// and these tables are still never freed or truncated before the fork
+// is built, spec 4.3). MOST of these fields are
 // then read by a future compile's own Measure-skip/paste link pass (Task
 // 3) -- but not all: the per-function StrLit First/Count/Flat triple and
 // the eight once-per-artifact size-bucket scalars below are staged the
@@ -3343,18 +3330,16 @@ func bkReadObjCode(): bool {
     // bkLdObjRuns/bkLdObjHoles pair.
     //
     // These two are the ONE place a reader writes LIVE state instead of
-    // pending state (Task 6 audit finding F3), and design B (bkParsedValid,
-    // above) leans on their WRITE-ONCE property: cgObjRuns/cgObjHoles are
+    // pending state (Task 6 audit finding F3): cgObjRuns/cgObjHoles are
     // .clear()ed/.add()ed only under `if cgBakeCapture` (cg68k.cla's
     // cgObjDumpSegment and the fork-side reset), which only the --bake-ir
     // generator ever sets -- never during a --rtbake compile -- and nothing
-    // resets them in driveReset or anywhere else. So a memoized parse
-    // leaves them populated and correct for every later compile in the
-    // session. Deliberately NOT moved to the install path: the obvious
+    // resets them in driveReset or anywhere else; every --rtbake compile's
+    // own parse (SE wave 1: one per compile) replaces them here.
+    // Deliberately NOT moved to the install path: the obvious
     // bkLdObjRuns/bkLdObjHoles pair is exactly what tipped cpEmitRelease
     // over the 32KB single-function segment ceiling once before (see
-    // bkLdObjValid's own doc comment). If that write-once property ever
-    // changes, design B's memo breaks with it.
+    // bkLdObjValid's own doc comment).
     cgObjRuns = lRuns
     cgObjHoles = lHoles
     return true
@@ -3551,7 +3536,7 @@ func bkReadObjMeta(): bool {
 // integrity proof: every reader must consume EXACTLY `len` bytes, or the
 // bake is corrupt (or this loader has a field-order bug) -- either way,
 // a clear diagnostic beats a garbled downstream compile.
-func bkLoadSections(): bool {
+func bkLoadSections(testapi: bool): bool {
     var n: int
     var i: int
     var id: int
@@ -3647,7 +3632,14 @@ func bkLoadSections(): bool {
         } else if id == bkSecLowCounters {
             bkReadLowCounters()
         } else if id == bkSecCheckerSymbols {
-            bkReadCheckerSymbols()
+            // SE wave 1: its only consumer (bkInstallCheckerSymbolsForTestapi)
+            // runs under --testapi alone, so skip the section otherwise --
+            // the body hash already covered its bytes.
+            if testapi {
+                bkReadCheckerSymbols()
+            } else {
+                bkLoadPos = expectedPos
+            }
         } else if id == bkSecFieldInfo {
             bkReadFieldInfo()
         } else if id == bkSecDeclFileTab {
@@ -3870,7 +3862,7 @@ func bkCheckRtbakeHeaderBody(buf: text, wantLane: int): bool {
 // own target -- bkLane68k for emit68k, bkLaneC for emit) and a freshly
 // recomputed stamp. Touches no live compiler state -- see
 // bkInstallPool/bkInstallArenas for that.
-func bkLoadRtbake(buf: text, wantLane: int): bool {
+func bkLoadRtbake(buf: text, wantLane: int, testapi: bool): bool {
     var i: int
     var n: int
     var loadedMods: list of string
@@ -3905,12 +3897,12 @@ func bkLoadRtbake(buf: text, wantLane: int): bool {
     }
     bkLoadedModules = loadedMods
 
-    parsed = bkLoadSections()
+    parsed = bkLoadSections(testapi)
     // clir-load-perf Task 7 (design B): drop the loader cursor's own
     // reference to the caller's buffer the moment the parse is over.
-    // Nothing reads bkLoadBuf outside a parse, and macgui.cla's
-    // gcCompile frees its rtbakeBytes copy right after driveCompile
-    // returns -- but a text is a REFERENCE, so that free reclaims the
+    // Nothing reads bkLoadBuf outside a parse, and driveCompile frees
+    // rtbakeBytes right after this returns true -- but a text is a
+    // REFERENCE, so that free reclaims the
     // ~1.3MB only if this reference is gone too. Covers a failed SECTION
     // parse too (bkLoadSections returning false lands here); a refused
     // HEADER never reaches this line, and is cleared by
@@ -3920,148 +3912,26 @@ func bkLoadRtbake(buf: text, wantLane: int): bool {
 }
 
 // ================================================================
-// Copy-on-install helpers (clir-load-perf Task 7, design B)
+// Install by move (SE wave 1, spec 4.3)
 // ================================================================
 //
-// One boring helper per element type that ISN'T a flat record -- Clarus
-// has no generics, so each of these remaining few is a small hand-rolled
-// deep copy rather than anything clever. Every bkInstall* function below
-// runs its pending container through one of these (or, for the flat-
-// record arenas `bkInstallArenas` itself installs, straight through the
-// list method `.clone()` -- clir-load-perf Task 13, below) instead of
-// assigning it straight into the live global: `text`/`list`/`map`/
-// `intmap` are REFERENCE types (the language reference's own Value and
-// Reference Semantics section), so the old `irExprs = bkLdIrExprs` shape
-// aliased the two -- fine while every compile re-parsed the bake from
-// bytes, fatal once bkParsedValid memoizes the parse (compile #1's user
-// IR would be appended into the pending arenas through the alias, and
-// compile #2's own irReset() would .clear() them outright before the
-// install could read them -- a total loss, not a subtle corruption).
-//
-// Every record type in this file's arenas is int/bool/enum-field-only
-// (a flat, byte-copyable record -- verified empirically by Task 6's
-// audit probe) EXCEPT Scope, whose `names: intmap of int` is a
-// reference field and gets its own deep copy (bkCopyListScope) below,
-// and FuncSig, whose `params: list of int` is deliberately NOT
-// deep-copied -- it is built fresh at construction (types.cla's
-// newFuncSig, bake.cla's own loader) and no `funcSigs[i].params`
-// mutation site exists anywhere in clarusc/*.cla (Task 6 audit, Step
-// 3); a future writer of that field must revisit this decision. Both
-// stay hand-rolled loops -- checker-barred from `.clone()` by design
-// (Task 13's own "clone" arm, check.cla, restricts it to a flat element
-// type; a reference-typed field disqualifies both). Every OTHER record
-// arena that flowed through a `dst.add(src[i])` loop here used to live
-// in this file too, until Task 13 replaced each with a direct
-// `bkLdX.clone()` call at its own `bkInstallArenas` call site (field-
-// measured 4m21s/15706-guest-tick per-compile cost on real Mac II
-// hardware) and deleted the now-dead wrapper.
+// Every bkInstall* function below MOVES its pending container into the
+// live compiler global (plain assignment -- `list`/`map`/`intmap` are
+// reference types) and then leaves the pending global as a fresh empty
+// container, so the live global is the ONLY reference left. That is
+// safe because the parse is no longer memoized: every compile re-parses
+// the bake from its front end's fresh bytes (driveCompile), so nothing
+// ever needs the pending copy again once it is installed. (clir-load-
+// perf Task 7's design B copied instead, to keep a once-per-session
+// parse pristine; that memo cost a second full copy of the baked
+// runtime for the whole compile.) What a move leaves behind in the
+// staging globals -- the parse-only scalars, the testapi-only checker
+// state a non-testapi compile never installs -- is dropped by
+// bkFreeParseStaging at the end of the install sequence. The bkLdObj*
+// tables are NOT staging in this sense: codegen reads them until the
+// fork is built (spec 4.3), so nothing here touches them.
 
-func bkCopyListTypeInfo(src: list of TypeInfo): list of TypeInfo {
-    var dst: list of TypeInfo
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListEnumMemberInfo(src: list of EnumMemberInfo): list of EnumMemberInfo {
-    var dst: list of EnumMemberInfo
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListFieldInfo(src: list of FieldInfo): list of FieldInfo {
-    var dst: list of FieldInfo
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListFuncSig(src: list of FuncSig): list of FuncSig {
-    var dst: list of FuncSig
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListSymbol(src: list of Symbol): list of Symbol {
-    var dst: list of Symbol
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyListString(src: list of string): list of string {
-    var dst: list of string
-    var i: int
-
-    i = 0
-    while i < src.count {
-        dst.add(src[i])
-        i = i + 1
-    }
-    return dst
-}
-
-func bkCopyIntmapInt(src: intmap of int): intmap of int {
-    var dst: intmap of int
-    var k: int
-    var v: int
-
-    for k, v in src {
-        dst[k] = v
-    }
-    return dst
-}
-
-// bkCopyListScope is the one deep copy: Scope.names is an `intmap of
-// int`, i.e. a REFERENCE field that a plain `.add` would share with the
-// pending parse -- and types.cla's scopeDeclare writes
-// `scopes[scope].names[key] = idx` on every top-level declaration a
-// user program makes, which without this would land inside the pending
-// scope and stay visible to every later compile in the session (Task 6
-// audit finding F4).
-func bkCopyListScope(src: list of Scope): list of Scope {
-    var dst: list of Scope
-    var s: Scope
-    var i: int
-
-    i = 0
-    while i < src.count {
-        s = src[i]
-        s.names = bkCopyIntmapInt(src[i].names)
-        dst.add(s)
-        i = i + 1
-    }
-    return dst
-}
-
-// bkInstallPool copies the intern-pool prefix into live strPool/strIndex
+// bkInstallPool moves the intern-pool prefix into live strPool/strIndex
 // -- called by driveCompile BEFORE Phase A (see its own doc comment for
 // why: every baked IR arena's string-index fields are absolute strPool
 // indices captured at bake time, so nothing may intern() a NEW string
@@ -4076,13 +3946,12 @@ func bkCopyListScope(src: list of Scope): list of Scope {
 func bkInstallPool() {
     var freshIndex: map of int
     var i: int
+    var e0: list of string
 
-    // Copy, not alias (Task 7, design B): lib.cla's intern() appends
-    // every new user identifier/literal to the LIVE strPool all compile
-    // long, and libReset() rebinds rather than clears -- so an alias
-    // would pollute the pending pool with one compile's user strings at
-    // a time, unboundedly, across a ClarusC.APPL session.
-    strPool = bkCopyListString(bkLdStrPool)
+    strPool = bkLdStrPool
+    // Staging reset after a move -- keep as a reassignment (not
+    // .release()): the list now belongs to strPool.
+    bkLdStrPool = e0
     freshIndex = driveFreshIntMap()
     strIndex = freshIndex
     i = 0
@@ -4133,11 +4002,14 @@ func bkInstallPool() {
 // mismatch. enumMembers travels the same way (seedSaveChoice, called
 // from the SAME typesInit(), is equally deterministic).
 func bkInstallTypeArenaPrefix() {
-    // Copies (Task 7, design B): types.cla appends to both arenas all
-    // check long AND typesReset() .clear()s them at the top of the next
-    // compile -- through an alias that would empty the pending parse.
-    typeArena = bkCopyListTypeInfo(bkLoadedTypeArena)
-    enumMembers = bkCopyListEnumMemberInfo(bkLoadedEnumMembers)
+    var e0: list of TypeInfo
+    var e1: list of EnumMemberInfo
+
+    typeArena = bkLoadedTypeArena
+    enumMembers = bkLoadedEnumMembers
+    // Staging resets after a move -- keep as reassignments.
+    bkLoadedTypeArena = e0
+    bkLoadedEnumMembers = e1
 }
 
 // bkInstallFieldInfo (fallback-trigger-narrowing Task 2): the same
@@ -4156,11 +4028,14 @@ func bkInstallTypeArenaPrefix() {
 // but not `.fieldName` on it -- see bkSecFieldInfo's own doc comment for
 // how this was found.
 func bkInstallFieldInfo() {
-    // Copies (Task 7, design B): check.cla appends to fieldInfos (and
-    // mutates fieldInfos[tail].next) plus writes recFieldsHeadByName on
-    // every user record decl; checkReset() .clear()s fieldInfos.
-    fieldInfos = bkCopyListFieldInfo(bkLoadedFieldInfos)
-    recFieldsHeadByName = bkCopyIntmapInt(bkLoadedRecFieldsHeadByName)
+    var e0: list of FieldInfo
+    var e1: intmap of int
+
+    fieldInfos = bkLoadedFieldInfos
+    recFieldsHeadByName = bkLoadedRecFieldsHeadByName
+    // Staging resets after a move -- keep as reassignments.
+    bkLoadedFieldInfos = e0
+    bkLoadedRecFieldsHeadByName = e1
 }
 
 // bkComputeManifestPaths (Task 5, deliverable (b)) builds bkManifestPaths
@@ -4180,6 +4055,8 @@ func bkComputeManifestPaths() {
     var bareMod: string
     var p: string
     var m: map of bool
+    var e0: list of string
+    var e1: list of int
 
     if bkLoadedModules.count > 0 {
         prefixLen = rtModuleKey("").length
@@ -4262,6 +4139,9 @@ func bkComputeManifestPaths() {
         i = i + 1
     }
     bkManifestPaths = m
+    // SE wave 1: this is the last reader of both tables -- drop them.
+    bkLoadedModules = e0
+    bkLoadedDeclFileTab = e1
 }
 
 // bkInstallArenas is the second install step -- called by driveCompile
@@ -4304,103 +4184,112 @@ func bkInstallArenas(testapi: bool) {
     var i: int
     var filteredIdx: intmap of int
     var nm: int
-    var srcFuncs: list of IRFunc
-    var srcStrLits: list of int
-    var truncFuncs: list of IRFunc
-    var truncStrLits: list of int
-    var j: int
+    var junkFunc: IRFunc
+    var junkInt: int
     var nArrLits: int
+    var nVals: int
     var startSum: int
     var arrStart: list of int
-    var arrElemT: list of int
-    var arrN: list of int
-    var arrVals: list of int
     var freshArrLitMemo: intmap of int
     var freshStrIdx: map of int
     var strKey: string
     var strVal: int
+    var eTypes: list of IRType
+    var eStmts: list of IRStmt
+    var eExprs: list of IRExpr
+    var eLocals: list of IRLocal
+    var eFuncs: list of IRFunc
+    var eGlobals: list of IRGlobal
+    var eFieldSlots: list of IRFieldSlot
+    var eRecords: list of IRRecordLayout
+    var eEnumMembers: list of IREnumMember
+    var eEnums: list of IREnumLayout
+    var eWidgetDescs: list of IRWidgetDesc
+    var eColumnDescs: list of IRColumnDesc
+    var eBindDescs: list of IRBindDesc
+    var eWindowDescs: list of IRWindowDesc
+    var eMenuItemDescs: list of IRMenuItemDesc
+    var eMenuDescs: list of IRMenuDesc
+    var eWinHandlers: list of IRWinHandlers
+    var eWidgetHandlerEntries: list of IRWidgetHandlerEntry
+    var eMenuHandlerEntries: list of IRMenuHandlerEntry
+    var eEveryEntries: list of IREveryEntry
+    var eLayoutNeeded: intmap of int
+    var eRcWalkNeeded: intmap of int
 
-    // Every assignment in this function COPIES its pending container
-    // (clir-load-perf Task 7, design B -- see bkParsedValid's own doc
-    // comment): ir.cla appends to, element-mutates, and finally
-    // .clear()s each of these arenas every compile, so aliasing them to
-    // the memoized parse would destroy it. Field measurement on real
-    // emulated Mac II hardware (post-Task-10 phase debt) clocked the
-    // per-element `.add()` loops this used to route through at 4m21s
-    // (15706 guest ticks) per compile -- every arena below is a FLAT
-    // record type (int/bool/enum fields only, ir.cla's own record
-    // definitions), so `.clone()`'s one-`BlockMoveData` bulk copy
-    // (list.cla) is exactly the fix, same as this phase's own C design's
-    // `textAt` replacing a per-byte append loop. `Scope`/`FuncSig` (each
-    // has a reference-typed field of their own -- `names`/`params`) and
-    // the two `intmap of int` pending maps just below keep their
-    // existing loop/deep-copy helpers -- `clone()` is checker-barred for
-    // a non-flat element type by design (see check.cla's own "clone"
-    // arm), and neither Scope nor FuncSig is installed by this function
-    // anyway (they're bkInstallCheckerSymbolsForTestapi's own arenas).
-    irTypes = bkLdIrTypes.clone()
-    irStmts = bkLdIrStmts.clone()
-    irExprs = bkLdIrExprs.clone()
-    irLocals = bkLdIrLocals.clone()
+    // Install by MOVE (SE wave 1, spec 4.3 -- see this section's banner
+    // above): each pending container becomes the live global, and the
+    // pending global is left as a fresh empty container. Every `bkLdX =
+    // eX` / `bkLdX = driveFreshIntList()` reset below is a staging reset
+    // after a move -- it must stay a REASSIGNMENT (never `.release()`),
+    // because the storage now belongs to the live global.
+    irTypes = bkLdIrTypes
+    bkLdIrTypes = eTypes
+    irStmts = bkLdIrStmts
+    bkLdIrStmts = eStmts
+    irExprs = bkLdIrExprs
+    bkLdIrExprs = eExprs
+    irLocals = bkLdIrLocals
+    bkLdIrLocals = eLocals
 
-    // The non-testapi truncation loops already build FRESH lists (that
-    // is what truncFuncs/truncStrLits are) by copying only a PREFIX of
-    // the source -- not the whole-list copy `.clone()` does -- so they
-    // keep their own loops unchanged; only the testapi arm (a whole-list
-    // copy) becomes `.clone()`. The two paths still agree that srcFuncs/
-    // srcStrLits never alias bkLdIrFuncs/bkLdIrStrLits.
-    if testapi {
-        srcFuncs = bkLdIrFuncs.clone()
-        srcStrLits = bkLdIrStrLits.clone()
-    } else {
-        i = 0
-        while i < bkLdIrFuncs.count and i < bkLdBaseIrFuncsCount {
-            truncFuncs.add(bkLdIrFuncs[i])
-            i = i + 1
+    // A non-testapi install truncates irFuncs/irStrLits back to the
+    // base/uitest boundary (see this function's own doc comment): move
+    // the whole list, then pop the uitest tail off it -- a few dozen
+    // entries, once per compile.
+    irFuncs = bkLdIrFuncs
+    bkLdIrFuncs = eFuncs
+    irStrLits = bkLdIrStrLits
+    bkLdIrStrLits = driveFreshIntList()
+    if not testapi {
+        while irFuncs.count > bkLdBaseIrFuncsCount {
+            junkFunc = irFuncs.pop()
         }
-        srcFuncs = truncFuncs
-        i = 0
-        while i < bkLdIrStrLits.count and i < bkLdBaseIrStrLitsCount {
-            truncStrLits.add(bkLdIrStrLits[i])
-            i = i + 1
+        while irStrLits.count > bkLdBaseIrStrLitsCount {
+            junkInt = irStrLits.pop()
         }
-        srcStrLits = truncStrLits
     }
 
     // Array literals (format version 8, language-runtime-cleanup spec
-    // %4.4): the same base/uitest truncation srcStrLits just got --
+    // %4.4): the same base/uitest truncation irStrLits just got --
     // uitest.cla's own literals are not part of a non-testapi install.
     // irArrLitStart is rebuilt here as the prefix sum of the surviving
     // lengths rather than baked, so a truncation can never leave a stale
     // offset behind.
-    nArrLits = bkLdIrArrLitElemT.count
+    irArrLitElemT = bkLdIrArrLitElemT
+    irArrLitN = bkLdIrArrLitN
+    irArrLitVals = bkLdIrArrLitVals
+    bkLdIrArrLitElemT = driveFreshIntList()
+    bkLdIrArrLitN = driveFreshIntList()
+    bkLdIrArrLitVals = driveFreshIntList()
+    nArrLits = irArrLitElemT.count
     if not testapi {
         if bkLdBaseIrArrLitsCount < nArrLits {
             nArrLits = bkLdBaseIrArrLitsCount
         }
     }
+    while irArrLitElemT.count > nArrLits {
+        junkInt = irArrLitElemT.pop()
+        junkInt = irArrLitN.pop()
+    }
     startSum = 0
     i = 0
     while i < nArrLits {
-        arrElemT.add(bkLdIrArrLitElemT[i])
-        arrN.add(bkLdIrArrLitN[i])
         arrStart.add(startSum)
-        j = 0
-        while j < bkLdIrArrLitN[i] {
-            arrVals.add(bkLdIrArrLitVals[startSum + j])
-            j = j + 1
-        }
-        startSum = startSum + bkLdIrArrLitN[i]
+        startSum = startSum + irArrLitN[i]
         i = i + 1
+    }
+    irArrLitStart = arrStart
+    nVals = startSum
+    while irArrLitVals.count > nVals {
+        junkInt = irArrLitVals.pop()
     }
 
     // No by-name filter needed any more (see this function's own doc
-    // comment) -- srcFuncs (already truncated above for non-testapi)
+    // comment) -- irFuncs (already truncated above for non-testapi)
     // installs verbatim; irFuncIdxByName still needs its own fresh
-    // build (not a straight copy of the loaded map) since a non-testapi
-    // truncation drops entries the loaded map's own indices would still
-    // reference.
-    irFuncs = srcFuncs
+    // build (not the loaded map) since a non-testapi truncation drops
+    // entries the loaded map's own indices would still reference.
+    //
     // object-code-linker Task 2: the object-code boundary global, set
     // here so it exists for a future compile's own link pass regardless
     // of whether the artifact carries any object sections at all (lane
@@ -4418,27 +4307,38 @@ func bkInstallArenas(testapi: bool) {
     }
     irFuncIdxByName = filteredIdx
 
-    irCbGlueNames = bkLdIrCbGlueNames.clone()
-    irGlobals = bkLdIrGlobals.clone()
-    irFieldSlots = bkLdIrFieldSlots.clone()
-    irRecords = bkLdIrRecords.clone()
-    irEnumMembers = bkLdIrEnumMembers.clone()
-    irEnums = bkLdIrEnums.clone()
-    irWidgetDescs = bkLdIrWidgetDescs.clone()
-    irColumnDescs = bkLdIrColumnDescs.clone()
-    irBindDescs = bkLdIrBindDescs.clone()
-    irWindowDescs = bkLdIrWindowDescs.clone()
-    irMenuItemDescs = bkLdIrMenuItemDescs.clone()
-    irMenuDescs = bkLdIrMenuDescs.clone()
-    irWinHandlers = bkLdIrWinHandlers.clone()
-    irWidgetHandlerEntries = bkLdIrWidgetHandlerEntries.clone()
-    irMenuHandlerEntries = bkLdIrMenuHandlerEntries.clone()
-    irEveryEntries = bkLdIrEveryEntries.clone()
-    irStrLits = srcStrLits
-    irArrLitElemT = arrElemT
-    irArrLitStart = arrStart
-    irArrLitN = arrN
-    irArrLitVals = arrVals
+    irCbGlueNames = bkLdIrCbGlueNames
+    bkLdIrCbGlueNames = driveFreshIntList()
+    irGlobals = bkLdIrGlobals
+    bkLdIrGlobals = eGlobals
+    irFieldSlots = bkLdIrFieldSlots
+    bkLdIrFieldSlots = eFieldSlots
+    irRecords = bkLdIrRecords
+    bkLdIrRecords = eRecords
+    irEnumMembers = bkLdIrEnumMembers
+    bkLdIrEnumMembers = eEnumMembers
+    irEnums = bkLdIrEnums
+    bkLdIrEnums = eEnums
+    irWidgetDescs = bkLdIrWidgetDescs
+    bkLdIrWidgetDescs = eWidgetDescs
+    irColumnDescs = bkLdIrColumnDescs
+    bkLdIrColumnDescs = eColumnDescs
+    irBindDescs = bkLdIrBindDescs
+    bkLdIrBindDescs = eBindDescs
+    irWindowDescs = bkLdIrWindowDescs
+    bkLdIrWindowDescs = eWindowDescs
+    irMenuItemDescs = bkLdIrMenuItemDescs
+    bkLdIrMenuItemDescs = eMenuItemDescs
+    irMenuDescs = bkLdIrMenuDescs
+    bkLdIrMenuDescs = eMenuDescs
+    irWinHandlers = bkLdIrWinHandlers
+    bkLdIrWinHandlers = eWinHandlers
+    irWidgetHandlerEntries = bkLdIrWidgetHandlerEntries
+    bkLdIrWidgetHandlerEntries = eWidgetHandlerEntries
+    irMenuHandlerEntries = bkLdIrMenuHandlerEntries
+    bkLdIrMenuHandlerEntries = eMenuHandlerEntries
+    irEveryEntries = bkLdIrEveryEntries
+    bkLdIrEveryEntries = eEveryEntries
     // Task 7 fix round 1: the install just REPLACED irArrLits, so every
     // IR index lowArrLitIrIdx memoized is now meaningless -- and unlike
     // lowStrIdx (which the bake deliberately saves and RESTORES, so the
@@ -4455,21 +4355,30 @@ func bkInstallArenas(testapi: bool) {
     // 11 fix round 1 root-caused for lowStrIdx (see its own doc comment,
     // lower.cla).
     lowArrLitIrIdx = freshArrLitMemo
-    irExternNames = bkLdIrExternNames.clone()
-    irExternRetTys = bkLdIrExternRetTys.clone()
-    irExternParamStart = bkLdIrExternParamStart.clone()
-    irExternParamCountArr = bkLdIrExternParamCountArr.clone()
-    irExternParamTys = bkLdIrExternParamTys.clone()
-    irExternTrapWords = bkLdIrExternTrapWords.clone()
-    irExternConvs = bkLdIrExternConvs.clone()
-    irExternSels = bkLdIrExternSels.clone()
-    irExternParamRegs = bkLdIrExternParamRegs.clone()
-    irExternRetRegs = bkLdIrExternRetRegs.clone()
-    // Unchanged: `intmap of int`, not a `list of T` -- clone() is a list
-    // method, so these two pending maps keep their existing deep-copy
-    // helper (out of this task's scope by design, see comment above).
-    irLayoutNeededByName = bkCopyIntmapInt(bkLdIrLayoutNeededByName)
-    irRcWalkNeededByName = bkCopyIntmapInt(bkLdIrRcWalkNeededByName)
+    irExternNames = bkLdIrExternNames
+    bkLdIrExternNames = driveFreshIntList()
+    irExternRetTys = bkLdIrExternRetTys
+    bkLdIrExternRetTys = driveFreshIntList()
+    irExternParamStart = bkLdIrExternParamStart
+    bkLdIrExternParamStart = driveFreshIntList()
+    irExternParamCountArr = bkLdIrExternParamCountArr
+    bkLdIrExternParamCountArr = driveFreshIntList()
+    irExternParamTys = bkLdIrExternParamTys
+    bkLdIrExternParamTys = driveFreshIntList()
+    irExternTrapWords = bkLdIrExternTrapWords
+    bkLdIrExternTrapWords = driveFreshIntList()
+    irExternConvs = bkLdIrExternConvs
+    bkLdIrExternConvs = driveFreshIntList()
+    irExternSels = bkLdIrExternSels
+    bkLdIrExternSels = driveFreshIntList()
+    irExternParamRegs = bkLdIrExternParamRegs
+    bkLdIrExternParamRegs = driveFreshIntList()
+    irExternRetRegs = bkLdIrExternRetRegs
+    bkLdIrExternRetRegs = driveFreshIntList()
+    irLayoutNeededByName = bkLdIrLayoutNeededByName
+    bkLdIrLayoutNeededByName = eLayoutNeeded
+    irRcWalkNeededByName = bkLdIrRcWalkNeededByName
+    bkLdIrRcWalkNeededByName = eRcWalkNeeded
 
     irHasLaunch = bkLdIrHasLaunch
     irHasStartEmpty = bkLdIrHasStartEmpty
@@ -4538,7 +4447,9 @@ func bkInstallArenas(testapi: bool) {
 // index at or past bkRuntimeFuncBoundary, which is recomputed by
 // bkInstallArenas on every compile from that compile's OWN testapi
 // split, so the pending arrays stay pristine and full-length forever.
-// Cheaper too: four copy loops per compile became one comparison.
+// Cheaper too: four copy loops per compile became one comparison. (SE
+// wave 1 removed the memo; the bounds check stays -- it is still the
+// cheaper shape.)
 
 // ================================================================
 // --testapi checker-symbol preload (Task 5, deliverables (a)/(c))
@@ -4599,23 +4510,124 @@ func bkInstallCheckerSymbolsForTestapi() {
     var k: int
     var v: int
     var srcNames: intmap of int
+    var e0: list of FuncSig
+    var e1: list of Symbol
+    var e2: list of Scope
 
-    // Copies (Task 7, design B): all three are append-only arenas the
-    // user's own checkPhase1 keeps growing, types.cla .clear()s/.pop()s
-    // all three at the next checkReset(), and scopeDeclare writes
-    // straight into scopes[topScope].names -- see bkCopyListScope for
-    // why that one needs the deep copy (audit finding F4).
-    funcSigs = bkCopyListFuncSig(bkLoadedFuncSigs)
-    symbols = bkCopyListSymbol(bkLoadedSymbols)
-    scopes = bkCopyListScope(bkLoadedScopes)
-    if bkLoadedScopes.count <= topScope {
+    // Install by move (SE wave 1): the three staging resets below are
+    // reassignments after a move -- keep them that way.
+    funcSigs = bkLoadedFuncSigs
+    symbols = bkLoadedSymbols
+    scopes = bkLoadedScopes
+    bkLoadedFuncSigs = e0
+    bkLoadedSymbols = e1
+    bkLoadedScopes = e2
+    if scopes.count <= topScope {
         return
     }
-    srcNames = bkLoadedScopes[topScope].names
+    srcNames = scopes[topScope].names
     for k, v in srcNames {
         if v < bkLdEarlySymbolsCount {
             filteredTopNames[k] = v
         }
     }
     scopes[topScope].names = filteredTopNames
+}
+
+// bkFreeParseStaging (SE wave 1, spec 4.3): drop every pending parse
+// container the install sequence did not move out -- the parse-only
+// tables no install consumes (bkLdIrFuncIdxByName, bkLdLowStrIdx), the
+// testapi-only checker state a non-testapi (or non-UI) compile never
+// installs, and, on driveRtbakeFallback's path (taken before
+// bkInstallArenas), the whole IR staging. After an ordinary install most
+// of these are already empty, so the reset is a no-op for them. The
+// scalar bkLd* staging (counts, flags) holds no heap and is left alone.
+// Deliberately does NOT touch bkLdObj* or cgObjRuns/cgObjHoles: codegen
+// reads those until the fork is built. Every line here is a true free
+// (Task 5 may switch these to .release()), unlike the staging resets
+// inside the bkInstall* moves.
+func bkFreeParseStaging() {
+    var eIrTypes: list of IRType
+    var eIrStmts: list of IRStmt
+    var eIrExprs: list of IRExpr
+    var eIrLocals: list of IRLocal
+    var eIrFuncs: list of IRFunc
+    var eIrGlobals: list of IRGlobal
+    var eIrFieldSlots: list of IRFieldSlot
+    var eIrRecords: list of IRRecordLayout
+    var eIrEnumMembers: list of IREnumMember
+    var eIrEnums: list of IREnumLayout
+    var eIrWidgetDescs: list of IRWidgetDesc
+    var eIrColumnDescs: list of IRColumnDesc
+    var eIrBindDescs: list of IRBindDesc
+    var eIrWindowDescs: list of IRWindowDesc
+    var eIrMenuItemDescs: list of IRMenuItemDesc
+    var eIrMenuDescs: list of IRMenuDesc
+    var eIrWinHandlers: list of IRWinHandlers
+    var eIrWidgetHandlerEntries: list of IRWidgetHandlerEntry
+    var eIrMenuHandlerEntries: list of IRMenuHandlerEntry
+    var eIrEveryEntries: list of IREveryEntry
+    var eIrFuncIdxByName: intmap of int
+    var eIrLayoutNeededByName: intmap of int
+    var eIrRcWalkNeededByName: intmap of int
+    var eLowStrIdx: map of int
+    var eStrPool: list of string
+    var eFuncSigs: list of FuncSig
+    var eSymbols: list of Symbol
+    var eScopes: list of Scope
+    var eTypeArena: list of TypeInfo
+    var eEnumMembers: list of EnumMemberInfo
+    var eFieldInfos: list of FieldInfo
+    var eRecHeads: intmap of int
+    var eMods: list of string
+
+    bkLdIrTypes = eIrTypes
+    bkLdIrStmts = eIrStmts
+    bkLdIrExprs = eIrExprs
+    bkLdIrLocals = eIrLocals
+    bkLdIrFuncs = eIrFuncs
+    bkLdIrGlobals = eIrGlobals
+    bkLdIrFieldSlots = eIrFieldSlots
+    bkLdIrRecords = eIrRecords
+    bkLdIrEnumMembers = eIrEnumMembers
+    bkLdIrEnums = eIrEnums
+    bkLdIrWidgetDescs = eIrWidgetDescs
+    bkLdIrColumnDescs = eIrColumnDescs
+    bkLdIrBindDescs = eIrBindDescs
+    bkLdIrWindowDescs = eIrWindowDescs
+    bkLdIrMenuItemDescs = eIrMenuItemDescs
+    bkLdIrMenuDescs = eIrMenuDescs
+    bkLdIrWinHandlers = eIrWinHandlers
+    bkLdIrWidgetHandlerEntries = eIrWidgetHandlerEntries
+    bkLdIrMenuHandlerEntries = eIrMenuHandlerEntries
+    bkLdIrEveryEntries = eIrEveryEntries
+    bkLdIrCbGlueNames = driveFreshIntList()
+    bkLdIrStrLits = driveFreshIntList()
+    bkLdIrArrLitElemT = driveFreshIntList()
+    bkLdIrArrLitN = driveFreshIntList()
+    bkLdIrArrLitVals = driveFreshIntList()
+    bkLdIrExternNames = driveFreshIntList()
+    bkLdIrExternRetTys = driveFreshIntList()
+    bkLdIrExternParamStart = driveFreshIntList()
+    bkLdIrExternParamCountArr = driveFreshIntList()
+    bkLdIrExternParamTys = driveFreshIntList()
+    bkLdIrExternTrapWords = driveFreshIntList()
+    bkLdIrExternConvs = driveFreshIntList()
+    bkLdIrExternSels = driveFreshIntList()
+    bkLdIrExternParamRegs = driveFreshIntList()
+    bkLdIrExternRetRegs = driveFreshIntList()
+    bkLdIrFuncIdxByName = eIrFuncIdxByName
+    bkLdIrLayoutNeededByName = eIrLayoutNeededByName
+    bkLdIrRcWalkNeededByName = eIrRcWalkNeededByName
+    bkLdLowStrIdx = eLowStrIdx
+    bkLdStrPool = eStrPool
+    bkLoadedFuncSigs = eFuncSigs
+    bkLoadedSymbols = eSymbols
+    bkLoadedScopes = eScopes
+    bkLoadedTypeArena = eTypeArena
+    bkLoadedEnumMembers = eEnumMembers
+    bkLoadedFieldInfos = eFieldInfos
+    bkLoadedRecFieldsHeadByName = eRecHeads
+    bkLoadedModules = eMods
+    bkLoadedDeclFileTab = driveFreshIntList()
 }

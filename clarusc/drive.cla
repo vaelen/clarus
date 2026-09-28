@@ -90,10 +90,12 @@ var haveRtDir: bool
 // driveCompile (below) and driveManifestSplice's now-skipped call. Left
 // at its zero value (false/"") by every caller that doesn't set it --
 // today, that's every caller except main.cla's emit/emit68k handling.
-// Deliberately NOT reset by driveReset(): like rtDir/haveRtDir, once a
-// front end has resolved which bake file backs this process's compiles,
-// that doesn't change compile to compile (internal/bake's DoubleCompile-
-// style leak-gate variant relies on exactly this -- see its own harness).
+// Not reset by driveReset(), but CONSUMED by driveCompile (SE wave 1,
+// spec L6): a successful bkLoadRtbake frees rtbakeBytes, so every front
+// end sets rtbakeBytes (and haveRtbake) afresh before EACH driveCompile
+// that should use the bake -- macgui.cla's gcResolveBakePath re-reads the
+// CLIR resource per compile, clarusc/test/dblcompile_bake.cla re-assigns
+// its own copy per compile, main.cla compiles once per process.
 var haveRtbake: bool
 var rtbakeBytes: text
 
@@ -2061,15 +2063,11 @@ func driveRtbakeFallback(entries: list of string, testapi: bool): bool {
     var ok: bool
 
     haveRtbake = false
-    // clir-load-perf Task 7 (design B): a fallen-back session must
-    // RE-PARSE if the bake becomes usable again -- the pending state
-    // describes a runtime whose sources have since changed on disk, so
-    // nothing may be installed from it again without a fresh parse (and
-    // rtbakeBytes is deliberately still held: macgui only frees the
-    // buffer while bkParsedValid holds, so the next compile's
-    // gcResolveBakePath re-reads the resource and this one's own re-parse
-    // has bytes to work from).
-    bkParsedValid = false
+    // SE wave 1: the from-source recompile below never reads rtbakeBytes
+    // (already freed by this compile's own successful parse) or the
+    // parse staging -- drop the staging now rather than carry it through
+    // a whole from-source compile.
+    bkFreeParseStaging()
     bkManifestDriftPath = ""
     driveReset()
     resetDiags()
@@ -2139,19 +2137,14 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         if want68k {
             wantLane = bkLane68k
         }
-        // clir-load-perf Task 7 (design B): parse the CLIR ONCE per
-        // process. bkParsedValid stays true across compiles (driveReset
-        // deliberately does not clear it) because the pending bkLd*/
-        // bkLoaded* state is now COPIED into the live globals by every
-        // bkInstall* call below, never aliased -- so a compile cannot
-        // reach back and corrupt the parse it was installed from. The
-        // installs themselves still run every compile, unchanged.
-        if not bkParsedValid {
-            if not bkLoadRtbake(rtbakeBytes, wantLane) {
-                return false
-            }
-            bkParsedValid = true
+        if not bkLoadRtbake(rtbakeBytes, wantLane, testapi) {
+            return false
         }
+        // SE wave 1 (spec L6): the bytes are dead once parsed --
+        // every compile re-parses from its front end's fresh copy.
+        // (Failure above leaves them untouched; nothing reads them after
+        // that either -- driveRtbakeFallback re-runs from source.)
+        rtbakeBytes = ""
         bkInstallPool()
         bkComputeManifestPaths()
         bkManifestDriftPath = ""
@@ -2512,6 +2505,9 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         // for a non-UI --testapi bake install to keep that a plain
         // truncated (non-testapi-shaped) install wouldn't already match.
         bkInstallArenas(testapi and isUiProg)
+        // SE wave 1: the install sequence is complete -- drop what it
+        // left in the parse staging (bkLdObj* stays for codegen).
+        bkFreeParseStaging()
         // object-code-linker Task 2 used to call bkInstallObjCode() here,
         // truncating the per-function object staging to the boundary
         // bkInstallArenas just set irFuncs.count to. clir-load-perf Task

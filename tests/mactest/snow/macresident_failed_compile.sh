@@ -86,17 +86,17 @@ else
     t_fail clean_exit "app out missing the clean exit trailer (##CLARUS-EXIT## 0) from the script's own final quit"
 fi
 
-# clir-load-perf design B: the CLIR resource is read/verified/parsed at
-# most ONCE per app session (bkParsedValid), so gcResolveBakePath's own
-# pre-parse Status-bar announcement must appear exactly once across the
-# whole two-compile session. The "(Step" suffix is unique to
-# feProgressStep's rendering, which distinguishes it from the log()
-# trailer copy of the same words.
+# SE wave 1 removed clir-load-perf's parse memo (bkParsedValid): the
+# CLIR resource is read/verified/parsed once PER COMPILE, so
+# gcResolveBakePath's own pre-parse Status-bar announcement must appear
+# exactly twice across the two-compile session. The "(Step" suffix is
+# unique to feProgressStep's rendering, which distinguishes it from the
+# log() trailer copy of the same words.
 loads=$(snow_count 'Loading Baked Runtime (Step' "$WORK/out")
-if [ "$loads" = 1 ]; then
-    t_pass one_bake_load
+if [ "$loads" = 2 ]; then
+    t_pass bake_load_per_compile
 else
-    t_fail one_bake_load "app out has $loads \"Loading Baked Runtime\" stage lines, want exactly 1 (compile #2 should skip the reload via bkParsedValid)"
+    t_fail bake_load_per_compile "app out has $loads \"Loading Baked Runtime\" stage lines, want exactly 2 (one per compile -- the CLIR is re-read every compile)"
 fi
 
 # The second, successful compile must have produced a real, byte-correct

@@ -5,7 +5,8 @@
 # design B. Per run: the leak/growth gate, the fork byte-identity oracle
 # (which under copy-on-install also proves compile #2+ emits the same
 # bytes as #1), and checkDesignBStates over the harness's BAKESTATE lines
-# -- the CLIR is parsed exactly once per process, the object-code paste
+# -- the CLIR is re-parsed on every compile (SE wave 1; parsedBefore is
+# always 0 -- the memo it used to observe is gone), the object-code paste
 # stays armed on every compile, the pending object staging never shrinks
 # below the runtime-function boundary, and the installed state is
 # identical on every compile.
@@ -44,8 +45,7 @@ check_states() {
                 else if (kv[1] == "eligible")  el = kv[2] + 0
                 else bad("unknown BAKESTATE key " kv[1] " in line " $0)
             }
-            wantpb = (n == 0) ? 0 : 1
-            if (pb != wantpb) bad("compile #" n ": parsedBefore=" pb ", want " wantpb " (design B parses the CLIR exactly once per process)")
+            if (pb != 0) bad("compile #" n ": parsedBefore=" pb ", want 0 (wave 1: the CLIR is re-parsed on every compile)")
             if (bd <= 0) bad("compile #" n ": bkRuntimeFuncBoundary=" bd ", want > 0 (no baked runtime installed?)")
             if (el <= 0) bad("compile #" n ": " el " paste-eligible functions, want > 0 -- the object-code paste is silently off (audit finding F1)")
             if (ov < bd) bad("compile #" n ": pending bkLdObjValid.count=" ov " < boundary=" bd " -- pending object staging was truncated in place (audit finding F2)")
