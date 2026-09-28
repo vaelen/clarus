@@ -371,9 +371,7 @@ enum + runner, not one boot per case.
   text `.removeFirst(n)` (clamped to 0..len, aliases see it, append
   after it) -- then to 85 real by SE wave 3's `NarrowInts` case, which
   proves `uint8`/`int16`/`uint16` widening, truncating conversions,
-  literal adoption and storage (emit68k compositions carry
-  `cases_narrow_68k_stub.cla`, a deliberate FAIL, until wave 3 Task 3
-  teaches emit68k the narrow types)) runs on
+  literal adoption and storage on both lanes) runs on
   host and natively; `testsuite/toolbox/` (40 `ToolboxTest` cases: 39 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new

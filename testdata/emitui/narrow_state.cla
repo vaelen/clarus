@@ -1,0 +1,30 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// narrow_state.cla: SE wave 3 Task 3 -- window-scoped uint8/int16/uint16
+// vars. uibStateSize sizes each at a 2-byte slot (cgSlotSizeOf), so
+// cprint's clar_uistate_<Win> must give a uint8 field a 2-byte C type
+// too, or clar_ui_szassert_Main fails to compile. No golden: checked by
+// tests/emitui/narrow_state.sh, which compiles the emitted C.
+
+window Main {
+    title: "Main"
+    size: 200, 100
+
+    label Status { at: 10, 10; text: "Hi" }
+
+    var a: uint8
+    var b: uint8
+    var s: int16
+    var u: uint16
+}
+
+on App.launch {
+    var m: Main
+
+    m = open Main
+    m.a = 255
+    m.s = -2
+    m.u = 65535
+    m.b = 7
+}
