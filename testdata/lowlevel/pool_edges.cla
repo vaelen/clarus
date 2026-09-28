@@ -1,0 +1,24 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// pool_edges.cla (SE wave 2 Task 2): the compiler's intern pool edge
+// strings as literals -- "", a 255-byte literal, byte 0 and bytes >= 0x80,
+// and one literal interned twice. Prints each literal's length and crc16;
+// tests/lowlevel/run.sh pins stdout, tests/hostrt/pool_edges.sh pins the
+// snapshot-vs-current emit68k/emit bytes (literal-pool numbering).
+
+func show(tag: string, s: string) {
+    var t: text = ""
+    t.append(s)
+    alert(tag + " " + string(s.length) + " " + string(t.crc16(0, 0, t.length)))
+}
+
+on App.startCLI(args: list of string) {
+    show("empty", "")
+    show("long", "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abc")
+    show("high", "\x80\xFF\xC9\x8E")
+    show("nul", "a\x00b")
+    show("twiceA", "same-literal")
+    show("twiceB", "same-literal")
+    show("empty2", "")
+}

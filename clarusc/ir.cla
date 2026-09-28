@@ -9,8 +9,8 @@
 // intrusive singly-linked lists threaded through each node's own `next`
 // field, with the sequence's head stored in whatever node/record owns it.
 // Every name and every string literal is interned into the shared
-// strPool/intern (lib.cla) -- ir.go's Type.Name and every *.Name string
-// field become a strPool index here.
+// the intern pool (lib.cla) -- ir.go's Type.Name and every *.Name string
+// field become a pool index here.
 //
 // This module holds no logic beyond constructors/accessors: lower.cla
 // (Task 6+) is the only writer, cprint.cla (Task 9+) is the only reader.
@@ -796,8 +796,8 @@ var irEveryTail: int
 var irEveryCount: int
 
 // irStrLits is the literal pool (ir.go's Program.StrLits): each entry is a
-// strPool index, in the order literals are added; a StrConst's Idx field
-// indexes THIS list, not strPool directly, matching the brief's contract.
+// pool index, in the order literals are added; a StrConst's Idx field
+// indexes THIS list, not the pool directly, matching the brief's contract.
 var irStrLits: list of int
 
 // irArrLits (language-runtime-cleanup, spec %4.4): array literals, one
@@ -3287,7 +3287,7 @@ func irEveryEntryNext(i: int): int {
 // irStrLits (literal pool) constructors and accessors
 // ================================================================
 
-// irAddStrLit appends strPoolIdx (an already-interned strPool index) to
+// irAddStrLit appends strPoolIdx (an already-interned pool index) to
 // the literal pool and returns its irStrLits index -- the value a
 // StrConst's Idx field stores.
 func irAddStrLit(strPoolIdx: int): int {
@@ -3349,7 +3349,7 @@ func irArrLitIdx(e: int): int {
 
 // ================================================================
 // Intrinsic-name constants (internal/ir/intrinsics.go:18-76, verbatim).
-// Each returns its name interned into strPool -- the exact value lower.cla
+// Each returns its name interned into the pool -- the exact value lower.cla
 // writes into an Intr node's Name field and cprint.cla switches on. Each
 // `var iXxxIdx: int = -1` + `if iXxxIdx == -1 { iXxxIdx = intern(...) }`
 // pair is a process-lifetime lazy-init idiom -- SAME class as

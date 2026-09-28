@@ -202,7 +202,7 @@ var a68Items: list of A68Item
 
 // Side tables for the three fields most items never use (findings 1.6b):
 // trap names go through the shared intern pool (trapNameIdx into
-// strPool, lib.cla); comment/data-bytes text is per-module since it is
+// intern pool, lib.cla); comment/data-bytes text is per-module since it is
 // not shared/deduped like identifiers. -1 in the record means "none".
 var a68CommentTexts: list of string
 var a68DataTexts: list of text

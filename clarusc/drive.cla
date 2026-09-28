@@ -2114,8 +2114,8 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     // (below) does any lexing/parsing of user code. This has to happen
     // before Phase A, not after check#1 like the arena install below:
     // every baked IR arena's own string-index fields (an IRFunc's name,
-    // for instance) are ABSOLUTE strPool indices captured at bake time,
-    // so the baked strings must occupy strPool's low indices (0..K-1)
+    // for instance) are ABSOLUTE pool indices captured at bake time,
+    // so the baked strings must occupy the pool's low indices (0..K-1)
     // before ANYTHING else calls intern() -- and Phase A's lexer does,
     // continuously, as soon as it starts. See bake.cla's own loader doc
     // comment for the two-stage install this splits into (pool now,

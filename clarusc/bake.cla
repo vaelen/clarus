@@ -1348,17 +1348,17 @@ func bkWriteIrScalars(): text {
 // Non-arena blocks
 // ================================================================
 
-// bkWriteStrPool: the intern pool (lib.cla's strPool), verbatim,
+// bkWriteStrPool: the intern pool (lib.cla's strBlob/strOff), verbatim,
 // length-prefixed per entry -- user parsing interns on top of this at
 // load time (append-only, so baked indices never move).
 func bkWriteStrPool(): text {
     var sec: text
     var i: int
 
-    bkPutU32(sec, strPool.count)
+    bkPutU32(sec, poolCount())
     i = 0
-    while i < strPool.count {
-        bkPutStr(sec, strPool[i])
+    while i < poolCount() {
+        bkPutStr(sec, poolGet(i))
         i = i + 1
     }
     return sec
@@ -1947,9 +1947,9 @@ func bakeWriteFile(lane: int, outPath: string): bool {
 //   1. bkLoadRtbake parses the WHOLE file (header + every section) into
 //      the bkLd*/bkLoaded* pending globals below, touching no live
 //      compiler state at all.
-//   2. bkInstallPool moves the intern pool into live strPool/strIndex --
+//   2. bkInstallPool moves the intern pool into live strBlob/strOff/strIndex --
 //      called BEFORE Phase A (driveCompile), since every baked IR
-//      arena's string-index fields are ABSOLUTE strPool indices captured
+//      arena's string-index fields are ABSOLUTE pool indices captured
 //      at bake time; nothing else may intern() before this runs.
 //   3. bkInstallArenas moves everything else (the IR arenas, the
 //      lowering counters) into live state -- called AFTER check#1
@@ -2294,7 +2294,8 @@ var bkLdIrErrT: int
 var bkLdIrPtrT: int
 var bkLdIrWordT: int
 
-var bkLdStrPool: list of string
+var bkLdStrBlob: text
+var bkLdStrOff: list of int
 
 var bkLdLowSwitchN: int
 var bkLdUiMenuCount: int
@@ -3019,18 +3020,28 @@ func bkReadIrScalars() {
     bkLdIrWordT = bkGetU32()
 }
 
-func bkReadStrPool(): list of string {
+// bkReadStrPool decodes the pool section straight into lib.cla's
+// blob-plus-offsets shape (bkLdStrBlob/bkLdStrOff, sentinel included);
+// bkInstallPool moves both into strBlob/strOff.
+func bkReadStrPool() {
     var n: int
     var i: int
-    var l: list of string
+    var s: string
+    var b: text
+    var o: list of int
 
     n = bkGetU32()
+    o.add(0)
     i = 0
     while i < n {
-        l.add(bkGetStr())
+        s = bkGetStr()
+        b.append(char(s.length))
+        b.append(s)
+        o.add(b.length)
         i = i + 1
     }
-    return l
+    bkLdStrBlob = b
+    bkLdStrOff = o
 }
 
 func bkReadLowCounters() {
@@ -3627,7 +3638,7 @@ func bkLoadSections(testapi: bool): bool {
         } else if id == bkSecIrScalars {
             bkReadIrScalars()
         } else if id == bkSecStrPool {
-            bkLdStrPool = bkReadStrPool()
+            bkReadStrPool()
         } else if id == bkSecLowCounters {
             bkReadLowCounters()
         } else if id == bkSecCheckerSymbols {
@@ -3936,32 +3947,35 @@ func bkLoadRtbake(buf: text, wantLane: int, testapi: bool): bool {
 // tables are NOT staging in this sense: codegen reads them until the
 // fork is built (spec 4.3), so nothing here touches them.
 
-// bkInstallPool moves the intern-pool prefix into live strPool/strIndex
+// bkInstallPool moves the intern-pool prefix into live strBlob/strOff/strIndex
 // -- called by driveCompile BEFORE Phase A (see its own doc comment for
-// why: every baked IR arena's string-index fields are absolute strPool
+// why: every baked IR arena's string-index fields are absolute pool
 // indices captured at bake time, so nothing may intern() a NEW string
 // before this runs, or a user identifier could steal one of those low
 // indices out from under the baked arenas). Rebuilds strIndex alongside
-// (not just strPool) so a user identifier/literal identical to a baked
+// (not just the pool) so a user identifier/literal identical to a baked
 // one dedups against it via the ordinary intern() path, the same as any
 // other repeated string -- a nice-to-have (avoids pool bloat), not
-// load-bearing (nothing downstream iterates strPool/strIndex; every
+// load-bearing (nothing downstream iterates strBlob/strOff/strIndex; every
 // consumer is a by-index poolGet or a by-value map lookup, per this
 // task's report).
 func bkInstallPool() {
     var freshIndex: map of int
     var i: int
-    var e0: list of string
+    var e0: text
+    var e1: list of int
 
-    strPool = bkLdStrPool
+    strBlob = bkLdStrBlob
+    strOff = bkLdStrOff
     // Staging reset after a move -- keep as a reassignment (not
-    // .release()): the list now belongs to strPool.
-    bkLdStrPool = e0
+    // .release()): the blob/offsets now belong to strBlob/strOff.
+    bkLdStrBlob = e0
+    bkLdStrOff = e1
     freshIndex = driveFreshIntMap()
     strIndex = freshIndex
     i = 0
-    while i < strPool.count {
-        strIndex[strPool[i]] = i
+    while i < poolCount() {
+        strIndex[poolGet(i)] = i
         i = i + 1
     }
 }
@@ -3972,7 +3986,7 @@ func bkInstallPool() {
 // BEFORE the user program's own checkPhase1 creates any type of its own
 // -- the same "install a verbatim-identical prefix, so baked indices
 // stay valid, before anything else can intern/allocate on top of it"
-// discipline bkInstallPool already uses for strPool, applied here to
+// discipline bkInstallPool already uses for the intern pool, applied here to
 // typeArena instead.
 //
 // Why this is needed at all (found the hard way, via a real crash): NOT
@@ -3996,7 +4010,7 @@ func bkInstallPool() {
 // UiTest* function, which is why it never tripped this).
 //
 // Safe by the identical determinism argument bkInstallPool's own doc
-// comment already makes for strPool: typesInit()'s singleton seeding is
+// comment already makes for pool: typesInit()'s singleton seeding is
 // unconditional and first (typesReset -> typesInit, called at the very
 // top of checkReset(), before ANYTHING else in this compile could
 // intern/allocate a type) in BOTH the bake generator's own checkReset()
@@ -4589,7 +4603,8 @@ func bkFreeParseStaging() {
     bkLdIrLayoutNeededByName.release()
     bkLdIrRcWalkNeededByName.release()
     bkLdLowStrIdx.release()
-    bkLdStrPool.release()
+    bkLdStrBlob.release()
+    bkLdStrOff.release()
     bkLoadedFuncSigs.release()
     bkLoadedSymbols.release()
     bkLoadedScopes.release()
