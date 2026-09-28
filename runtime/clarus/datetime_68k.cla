@@ -6,8 +6,9 @@
 // same single MOVE.L Apple's own GetDateTime glue performs
 // (TWOWORDINLINE 0x20B8, 0x020C; CIncludes/DateTimeUtils.h). Time is
 // maintained by the one-second interrupt, so this read never touches
-// the clock chip. Spliced (with datetime.cla) only for want68k programs
-// that use a datetime builtin; datetime_c.cla is the C-lane twin.
+// the clock chip. Always spliced (with datetime.cla) into every native
+// build; datetime_c.cla is the C-lane twin. The pair also carries the
+// rt*BoxSize container constants (below, and why they live here).
 
 func rtNow(): int {
     return peekl(ptr(0x020C))

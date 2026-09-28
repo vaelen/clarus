@@ -9,7 +9,9 @@
 // <= D0) even though this module is never spliced on the native lane,
 // so the trap word is never emitted -- datetime_68k.cla is the native
 // twin (a direct Time-global read, cheaper than the chip resync this
-// trap would perform).
+// trap would perform). Always spliced (with datetime.cla) into every
+// C-lane build, so this pair also carries the host rt*BoxSize container
+// constants (bottom of file; datetime_68k.cla says why they live here).
 
 extern record DtSecsBox {
     secs: int
