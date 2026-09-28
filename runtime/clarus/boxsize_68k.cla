@@ -1,0 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// boxsize_68k.cla: SE wave 3: container box-size constants (rtTextBoxSize,
+// rtListBoxSize, rtMapBoxSize, rtSortedMapBoxSize). Empty until Task 8
+// moves them here from the datetime pair; see spec 3.5.

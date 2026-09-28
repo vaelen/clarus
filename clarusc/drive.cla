@@ -1308,6 +1308,13 @@ func driveEarlySplice(testapi: bool): bool {
     }
 
     earlyMods.add("core.cla")
+    // SE wave 3 (spec 3.5): the box-size lane pair, right after core.cla
+    // (same spot as driveManifestSplice and bakeModuleList).
+    if want68k {
+        earlyMods.add("boxsize_68k.cla")
+    } else {
+        earlyMods.add("boxsize_c.cla")
+    }
     earlyMods.add("str.cla")
     earlyMods.add("text.cla")
     earlyMods.add("list.cla")
@@ -1631,6 +1638,12 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     if not earlySpliceDone {
         cpCorePorted = true
         neededMods.add("core.cla")
+        // SE wave 3 (spec 3.5): the box-size lane pair, right after core.cla.
+        if want68k {
+            neededMods.add("boxsize_68k.cla")
+        } else {
+            neededMods.add("boxsize_c.cla")
+        }
         cpStrPorted = true
         neededMods.add("str.cla")
         cpTextPorted = true
