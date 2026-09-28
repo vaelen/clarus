@@ -4829,6 +4829,12 @@ func cgIntrStorage(e: int, nm: int) {
         cgClearDeepContainer(a0e, irExprType(a0e), irStorFns[row])
         return
     }
+    if irStorArg[row] {
+        // SE wave 2 (list_reserve, text_remove_first): receiver + int,
+        // ITextReserve's own call shape.
+        cgIntr2(e, irStorFns[row], false, false)
+        return
+    }
     cgIntr1(e, irStorFns[row], false)
 }
 

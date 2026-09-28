@@ -1615,6 +1615,12 @@ func buildMethodTables() {
     sigStart()
     textOnlyMethods["shrink"] = sigEnd(-1)
 
+    // removeFirst (SE wave 2): drop the first n bytes in place -- same
+    // one-int-arg-void shape as reserve above.
+    sigStart()
+    sigAdd(psPlain(IntT))
+    textOnlyMethods["removeFirst"] = sigEnd(-1)
+
     // hashStep/intAt/stringAt/textAt (clir-load-perf Task 2, intAt
     // renamed post-review from u32At -- one signed int type, so the u32
     // name misdescribed the return): bulk range-read methods for a hot
@@ -2127,7 +2133,8 @@ func checkListMethod(lt: int, sel: int, argsHead: int): int {
         }
         return elem
     }
-    if name == "remove" {
+    // reserve (SE wave 2): same one-int-arg-void shape as remove.
+    if name == "remove" or name == "reserve" {
         if argCount != 1 {
             emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
             return VoidT

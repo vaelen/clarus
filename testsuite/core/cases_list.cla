@@ -20,6 +20,9 @@
 //
 // ReleaseShrink (SE wave 1, Task 1) is new -- proves `.release()` and
 // `.shrink()` across list/map/intmap/sortedmap/text (see its own comment).
+//
+// ReserveRemoveFirst (SE wave 2, Task 1) is new -- proves list
+// `.reserve(n)` and text `.removeFirst(n)` (see its own comment).
 
 func caseListPushCountFirstLast(): TestResult {
     var l: list of int
@@ -371,4 +374,80 @@ func caseReleaseShrink(): TestResult {
         return tkFail("ReleaseShrink", "text reuse")
     }
     return tkPass("ReleaseShrink")
+}
+
+// ReserveRemoveFirst (SE wave 2, Task 1): list `.reserve(n)` keeps count
+// and contents, later pushes still work, a smaller/zero/negative n is a
+// no-op, and an alias sees it (same box); text `.removeFirst(n)` at 0, in
+// the middle, at len and past len (clamped), seen through an alias, then
+// append/reuse after it.
+func caseReserveRemoveFirst(): TestResult {
+    var l: list of int
+    var b: list of int
+    var t: text
+    var u: text
+    var i: int
+
+    // reserve: contents unchanged, pushes still work, smaller n is a no-op
+    l.push(1)
+    l.push(2)
+    l.reserve(100)
+    if l.count != 2 or l.first() != 1 {
+        return tkFail("ReserveRemoveFirst", "reserve changed contents")
+    }
+    i = 0
+    while i < 98 {
+        l.push(i)
+        i = i + 1
+    }
+    if l.count != 100 {
+        return tkFail("ReserveRemoveFirst", "push after reserve")
+    }
+    l.reserve(5)
+    l.reserve(0)
+    l.reserve(-3)
+    if l.count != 100 or l.first() != 1 {
+        return tkFail("ReserveRemoveFirst", "small reserve not a no-op")
+    }
+    // alias sees reserve (same box)
+    b = l
+    b.reserve(500)
+    b.push(7)
+    if l.count != 101 {
+        return tkFail("ReserveRemoveFirst", "alias after reserve")
+    }
+
+    // removeFirst: 0, middle, all, past the end
+    t.append("hello world")
+    t.removeFirst(0)
+    if t.length != 11 {
+        return tkFail("ReserveRemoveFirst", "removeFirst(0)")
+    }
+    t.removeFirst(6)
+    if t.length != 5 or t[0] != 'w' or t[4] != 'd' {
+        return tkFail("ReserveRemoveFirst", "removeFirst middle")
+    }
+    u = t
+    u.removeFirst(2)
+    if t.length != 3 or t[0] != 'r' {
+        return tkFail("ReserveRemoveFirst", "alias did not see removeFirst")
+    }
+    t.append("XY")
+    if t.length != 5 or t[3] != 'X' {
+        return tkFail("ReserveRemoveFirst", "append after removeFirst")
+    }
+    t.removeFirst(5)
+    if t.length != 0 {
+        return tkFail("ReserveRemoveFirst", "removeFirst all")
+    }
+    t.append("abc")
+    t.removeFirst(99)
+    if t.length != 0 {
+        return tkFail("ReserveRemoveFirst", "removeFirst past end")
+    }
+    t.append("z")
+    if t.length != 1 or t[0] != 'z' {
+        return tkFail("ReserveRemoveFirst", "reuse after removeFirst")
+    }
+    return tkPass("ReserveRemoveFirst")
 }

@@ -140,6 +140,11 @@
 // case: `.release()` (storage dropped, container stays usable, aliases
 // see it, element-bearing release) and `.shrink()` (contents and order
 // kept) across list/map/intmap/sortedmap/text.
+//
+// ReserveRemoveFirst (cases_list.cla, SE wave 2 Task 1) is the 84th real
+// case: list `.reserve(n)` (contents kept, no-op when small, alias sees
+// it) and text `.removeFirst(n)` (0, middle, len, past len clamped,
+// alias sees it, append after).
 
 enum CoreTest {
     All
@@ -203,6 +208,7 @@ enum CoreTest {
     NowSanity
     ClearBasics
     ReleaseShrink
+    ReserveRemoveFirst
     ParamAliasGlobal
     ParamAliasHandle
     ParamBorrowChain
@@ -229,13 +235,13 @@ enum CoreTest {
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 83 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 84 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 84
+const nCoreCases: int = 85
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -424,6 +430,9 @@ func coreCaseName(t: CoreTest): string {
     case ReleaseShrink {
         return "ReleaseShrink"
     }
+    case ReserveRemoveFirst {
+        return "ReserveRemoveFirst"
+    }
     case ParamAliasGlobal {
         return "ParamAliasGlobal"
     }
@@ -573,6 +582,7 @@ func coreAllCases(): list of CoreTest {
     l.add(NowSanity)
     l.add(ClearBasics)
     l.add(ReleaseShrink)
+    l.add(ReserveRemoveFirst)
     l.add(ParamAliasGlobal)
     l.add(ParamAliasHandle)
     l.add(ParamBorrowChain)
@@ -872,6 +882,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, ReleaseShrink) {
         results.add(caseReleaseShrink())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, ReserveRemoveFirst) {
+        results.add(caseReserveRemoveFirst())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, ParamAliasGlobal) {

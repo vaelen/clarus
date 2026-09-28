@@ -1196,6 +1196,38 @@ func rtTextShrink(t: ptr) {
     }
 }
 
+// rtTextRemoveFirst (SE wave 2, `t.removeFirst(n)`): drop the first n
+// bytes in place -- the tail moves down (overlapping move; BlockMoveData
+// handles overlap), len -= n, and the handle shrinks to the new length
+// (cap = len). n is clamped to 0..len. Acts on the shared box (every
+// alias sees it) and never allocates: the bake parse uses it to free the
+// consumed CLIR prefix. A shrinking SetHandleSize cannot fail, so err is
+// ignored, and nothing is dereferenced after it.
+func rtTextRemoveFirst(t: ptr, n: int) {
+    var rt: RtText
+    var err: int
+    var k: int
+    var rest: int
+    var mp: ptr
+
+    rt = RtText(t)
+    k = n
+    if k < 0 {
+        k = 0
+    }
+    if k > rt.len {
+        k = rt.len
+    }
+    rest = rt.len - k
+    if k > 0 and rest > 0 {
+        mp = TextHandleDeref(rt.h)
+        TextBlockMoveData(mp + k, mp, rest)
+    }
+    err = TextSetHandleSize(rt.h, rest)
+    rt.len = rest
+    rt.cap = rest
+}
+
 // rtTextReserve (string-perf phase, text.reserve(n)): pre-grow to at
 // least n bytes of capacity -- at most one SetHandleSize trap, vs. one
 // per doubling boundary when a per-char producer grows implicitly

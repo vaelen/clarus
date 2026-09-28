@@ -2298,6 +2298,9 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
         return newIRIntr(IListClone(), recv, ty)
     } else if nm == "release" or nm == "shrink" {
         return lowStorageMethod(recv, "list", nm, ty)
+    } else if nm == "reserve" {
+        // SE wave 2: an irStorageRow row with an int argument.
+        return newIRIntr(intern("list_reserve"), lowMethodArgs2(recv, argsHead), ty)
     }
     lowUnsupported("list method " + nm)
     return -1
@@ -2510,6 +2513,9 @@ func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: i
         return newIRIntr(ITextReserve(), lowMethodArgs2(recv, arg0), ty)
     } else if nm == "release" or nm == "shrink" {
         return lowStorageMethod(recv, "text", nm, ty)
+    } else if nm == "removeFirst" {
+        // SE wave 2: an irStorageRow row with an int argument.
+        return newIRIntr(intern("text_remove_first"), lowMethodArgs2(recv, arg0), ty)
     } else if nm == "hashStep" {
         // textOnlyMethods (check.cla) only reaches here for a text
         // receiver -- isText is always true, same as append above.
