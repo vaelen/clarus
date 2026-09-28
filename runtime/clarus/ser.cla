@@ -28,9 +28,12 @@
 //     [3] enumCount  -- RT_FT_ENUM only, else 0
 //     [4..] enumCount inline ordinal values -- RT_FT_ENUM only
 //
-// File format, byte-exact with rt_ser.inc: 'C' 'L' 'R' 'S', version byte 1,
-// container byte (0 REC / 1 LIST / 2 MAP), then the payload -- REC: fields
-// in descriptor order (INT/FIXED/ENUM 4 bytes BE; BOOL/CHAR 1 byte,
+// File format: 'C' 'L' 'R' 'S', version byte 2 (SE wave 3; version 1 --
+// the format rt_ser.inc still writes, byte-exact with this one before
+// v2 -- loads too), container byte (0 REC / 1 LIST / 2 MAP), then the
+// payload -- REC: fields in descriptor order (INT/FIXED/ENUM 4 bytes BE;
+// I16/U16 2 bytes BE and U8 1 byte, v2 only -- a v1 file cannot hold
+// them; BOOL/CHAR 1 byte, BOOL
 // canonicalized 0/1 -- BOOL's in-memory field is 1 byte too, small-scalar-
 // width phase, but the disk byte was always canonicalized regardless).
 // LIST: 4-byte BE count then that many records. MAP: 4-byte BE count then
@@ -90,7 +93,9 @@ const RtSerMagic0: char = 'C'
 const RtSerMagic1: char = 'L'
 const RtSerMagic2: char = 'R'
 const RtSerMagic3: char = 'S'
-const RtSerVersion: int = 1
+// file.save writes RtSerVersion; file.load accepts 1 and 2.
+const RtSerVersion: int = 2
+const RtSerVersionV1: int = 1
 
 const RtSerRec: int = 0
 const RtSerList: int = 1
@@ -102,8 +107,8 @@ const RtFtBool: int = 2
 const RtFtChar: int = 3
 const RtFtStr: int = 4
 const RtFtEnum: int = 5
-// SE wave 3 narrow ints (N3): emitted for forms and tables now; the
-// serializer reads and writes them from Task 7 (format v2).
+// SE wave 3 narrow ints (N3): stored at their natural widths (1/2/2
+// bytes, BE) in format v2.
 const RtFtU8: int = 6
 const RtFtI16: int = 7
 const RtFtU16: int = 8
@@ -151,8 +156,12 @@ func rtSerPutField(out: text, rec: ptr, foffset: int, ftype: int, strCap: int) {
         } else {
             out.append(char(0))
         }
-    } else if ftype == RtFtChar {
+    } else if ftype == RtFtChar or ftype == RtFtU8 {
         out.append(char(peekb(p)))
+    } else if ftype == RtFtI16 or ftype == RtFtU16 {
+        v = peekw(p)
+        out.append(char((v >> 8) & 255))
+        out.append(char(v & 255))
     } else {
         slen = peekb(p)
         out.append(char(slen))
@@ -400,10 +409,18 @@ func rtSerGetField(t: text, rec: ptr, fp: ptr) {
                 pokeb(p, 0)
             }
         }
-    } else if ftype == RtFtChar {
+    } else if ftype == RtFtChar or ftype == RtFtU8 {
         b = rtSerGetByte(t)
         if not rtSerBad {
             pokeb(p, int(b))
+        }
+    } else if ftype == RtFtI16 or ftype == RtFtU16 {
+        // The in-memory field is exactly 2 bytes, so the low 16 bits are
+        // the whole value: int16's sign lives in bit 15 either way.
+        v = int(rtSerGetByte(t)) << 8
+        v = v + int(rtSerGetByte(t))
+        if not rtSerBad {
+            pokew(p, v)
         }
     } else {
         slen = int(rtSerGetByte(t))
@@ -515,7 +532,7 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
         return rtSerLoadFail(container, data)
     }
     verByte = rtSerGetByte(input)
-    if rtSerBad or int(verByte) != RtSerVersion {
+    if rtSerBad or (int(verByte) != RtSerVersion and int(verByte) != RtSerVersionV1) {
         return rtSerLoadFail(container, data)
     }
     cbyte = rtSerGetByte(input)

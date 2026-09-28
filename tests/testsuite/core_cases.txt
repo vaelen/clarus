@@ -29,6 +29,7 @@ SerBinRoundtrip
 SerFileRoundtrip
 SerFileNameRoundtrip
 SerMixedScalarRec
+SerNarrow
 MiscArithBasic
 MiscBreakContWhile
 MiscCrc8Smbus
