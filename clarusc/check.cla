@@ -3365,6 +3365,7 @@ func checkExternFunc(d: int) {
         if k != TyInt and k != TyPtr and k != TyBool and k != TyChar and k != TyStr and k != TyText {
             emitDiag(declLine(p), declCol(p), "external parameters may only use int, ptr, bool, char, str, or text")
         }
+        checkBoundaryNotNarrow(funcSigParam(sigIdx, i), declLine(p), declCol(p))
         if k == TyPtr {
             ptrCount = ptrCount + 1
         } else if k == TyInt or k == TyBool or k == TyChar {
@@ -3381,6 +3382,7 @@ func checkExternFunc(d: int) {
         if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
             emitDiag(declLine(d), declCol(d), "external functions may only use int, ptr, bool, or char")
         }
+        checkBoundaryNotNarrow(ret, declLine(d), declCol(d))
     }
 
     conv = externFuncConv(d)
@@ -3545,6 +3547,17 @@ func checkExternFunc(d: int) {
     }
 }
 
+// checkBoundaryNotNarrow rejects uint8/uint16 in an extern or callback
+// signature (SE wave 3, spec §3.2 step 1). `int16` never reaches here: the
+// parser turns it into `word` at these positions (parseExternType). There
+// is no byte-wide or unsigned-word marshaling at the Toolbox boundary, so
+// without this check the other two would silently marshal as a long.
+func checkBoundaryNotNarrow(t: int, line: int, col: int) {
+    if typeKind(t) == TyInt and tyIntWidth(t) != 0 {
+        emitDiag(line, col, intTypeName(t) + " cannot cross the Toolbox boundary; use int16 or int")
+    }
+}
+
 // checkCallbackFunc checks a DkCallbackFunc decl (Task 7, toolbox-
 // integration Feature C: `callback func`). checkFuncSig works unchanged
 // (same a/b/c slot layout as DkFunc -- including a real body, checked in
@@ -3585,6 +3598,7 @@ func checkCallbackFunc(d: int) {
         if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
             emitDiag(declLine(p), declCol(p), "callback parameter and return types must be bool, char, word, int, or ptr")
         }
+        checkBoundaryNotNarrow(funcSigParam(sigIdx, i), declLine(p), declCol(p))
         p = declNext(p)
         i = i + 1
     }
@@ -3594,6 +3608,7 @@ func checkCallbackFunc(d: int) {
         if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
             emitDiag(declLine(d), declCol(d), "callback parameter and return types must be bool, char, word, int, or ptr")
         }
+        checkBoundaryNotNarrow(ret, declLine(d), declCol(d))
     }
 }
 
