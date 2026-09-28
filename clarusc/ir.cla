@@ -9,7 +9,7 @@
 // intrusive singly-linked lists threaded through each node's own `next`
 // field, with the sequence's head stored in whatever node/record owns it.
 // Every name and every string literal is interned into the shared
-// the intern pool (lib.cla) -- ir.go's Type.Name and every *.Name string
+// intern pool (lib.cla) -- ir.go's Type.Name and every *.Name string
 // field become a pool index here.
 //
 // This module holds no logic beyond constructors/accessors: lower.cla

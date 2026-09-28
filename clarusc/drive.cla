@@ -2061,7 +2061,11 @@ func driveRtbakeFallback(entries: list of string, testapi: bool): bool {
     // SE wave 1: the from-source recompile below never reads rtbakeBytes
     // (already freed by this compile's own successful parse) or the
     // parse staging -- drop the staging now rather than carry it through
-    // a whole from-source compile.
+    // a whole from-source compile. Both callers run after a SUCCESSFUL
+    // parse, so the buffer is already released (SE wave 2 re-confirmed:
+    // the progressive free's partly consumed buffer only exists after a
+    // FAILED parse, which returns false from driveCompile and never
+    // reaches here; nothing below reads rtbakeBytes or bkLoadBuf).
     bkFreeParseStaging()
     bkManifestDriftPath = ""
     driveReset()
@@ -2142,8 +2146,10 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         }
         // SE wave 1 (spec L6): the bytes are dead once parsed --
         // every compile re-parses from its front end's fresh copy.
-        // (Failure above leaves them untouched; nothing reads them after
-        // that either -- driveRtbakeFallback re-runs from source.)
+        // (A failed parse may leave them partly consumed -- SE wave 2's
+        // progressive free drops decoded prefixes as it goes -- and
+        // nothing reads them after that: this returns false, and every
+        // front end re-arms fresh bytes before its next compile.)
         rtbakeBytes.release()
         bkInstallPool()
         bkComputeManifestPaths()

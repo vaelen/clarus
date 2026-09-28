@@ -1966,6 +1966,14 @@ func bakeWriteFile(lane: int, outPath: string): bool {
 var bkLoadBuf: text
 var bkLoadPos: int
 
+// bkLoadBase (SE wave 2): bytes bkLoadSections has already dropped off
+// bkLoadBuf's front (progressive free), so bkLoadBase + bkLoadPos is the
+// absolute file offset. Reset with bkLoadPos at the start of every
+// parse. No reader stores an absolute offset today (every position the
+// parse compares is relative to the live cursor: expectedPos, the
+// trailing-byte check); a future one must add bkLoadBase.
+var bkLoadBase: int
+
 // bkLoadOverrun (final-review fix wave): set true the first time
 // bkGetByte is asked to read past bkLoadBuf's end, instead of indexing
 // out of range (an uncatchable runtime error, per Chapter 3 -- "raises a
@@ -2168,6 +2176,8 @@ func bkReadIrArrLits() {
     var vals: list of int
 
     n = bkGetU32()
+    elemT.reserve(bkFitCount(n))
+    lens.reserve(bkFitCount(n))
     i = 0
     while i < n {
         elemT.add(bkGetU32())
@@ -2185,12 +2195,38 @@ func bkReadIrArrLits() {
     bkLdIrArrLitVals = vals
 }
 
+// bkFitCount (SE wave 2): the capacity to reserve for a list about to
+// receive n decoded elements -- the power of two (>= 4) rtListGrow's
+// doubling would end at anyway, so the parse skips the doubling
+// transient (old + new block live at once) but the installed arena
+// keeps the same headroom as before: user lowering appends to irExprs,
+// strOff and friends right after install, and an exact-n reserve made
+// the first user append double the whole arena (+1.28 MB live for
+// bookmarks --rtbake). Returns 0 (reserve is then a no-op) unless the
+// unread bytes could hold n elements of at least 4 wire bytes each
+// (every pre-sized element carries a u32), so a corrupt count reserves
+// nothing and the reader's own overrun checks refuse it, instead of
+// reserve panicking out of memory first.
+func bkFitCount(n: int): int {
+    var c: int
+
+    if n <= 0 or n > (bkLoadBuf.length - bkLoadPos) / 4 {
+        return 0
+    }
+    c = 4
+    while c < n {
+        c = c * 2
+    }
+    return c
+}
+
 func bkReadIntList(): list of int {
     var n: int
     var i: int
     var l: list of int
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         l.add(bkGetU32())
@@ -2542,6 +2578,7 @@ func bkReadIrTypes(): list of IRType {
     var l: list of IRType
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.k = IRKind(bkGetU32())
@@ -2561,6 +2598,7 @@ func bkReadIrStmts(): list of IRStmt {
     var l: list of IRStmt
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.kind = IRStmtKind(bkGetU32())
@@ -2583,6 +2621,7 @@ func bkReadIrExprs(): list of IRExpr {
     var l: list of IRExpr
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.kind = IRExprKind(bkGetU32())
@@ -2608,6 +2647,7 @@ func bkReadIrLocals(): list of IRLocal {
     var l: list of IRLocal
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.name = bkGetU32()
@@ -2627,6 +2667,7 @@ func bkReadIrFuncs(): list of IRFunc {
     var l: list of IRFunc
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.name = bkGetU32()
@@ -2677,6 +2718,7 @@ func bkReadIrGlobals(): list of IRGlobal {
     var l: list of IRGlobal
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.name = bkGetU32()
@@ -2696,6 +2738,7 @@ func bkReadIrFieldSlots(): list of IRFieldSlot {
     var l: list of IRFieldSlot
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.name = bkGetU32()
@@ -2718,6 +2761,7 @@ func bkReadIrRecords(): list of IRRecordLayout {
     var l: list of IRRecordLayout
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.name = bkGetU32()
@@ -2737,6 +2781,7 @@ func bkReadIrEnumMembers(): list of IREnumMember {
     var l: list of IREnumMember
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.name = bkGetU32()
@@ -2756,6 +2801,7 @@ func bkReadIrEnums(): list of IREnumLayout {
     var l: list of IREnumLayout
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.name = bkGetU32()
@@ -2773,6 +2819,7 @@ func bkReadIrWidgetDescs(): list of IRWidgetDesc {
     var l: list of IRWidgetDesc
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.nameIdx = bkGetU32()
@@ -2807,6 +2854,7 @@ func bkReadIrColumnDescs(): list of IRColumnDesc {
     var l: list of IRColumnDesc
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.headerIdx = bkGetU32()
@@ -2827,6 +2875,7 @@ func bkReadIrBindDescs(): list of IRBindDesc {
     var l: list of IRBindDesc
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.widgetIndex = bkGetU32()
@@ -2845,6 +2894,7 @@ func bkReadIrWindowDescs(): list of IRWindowDesc {
     var l: list of IRWindowDesc
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.nameIdx = bkGetU32()
@@ -2872,6 +2922,7 @@ func bkReadIrMenuItemDescs(): list of IRMenuItemDesc {
     var l: list of IRMenuItemDesc
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.nameIdx = bkGetU32()
@@ -2892,6 +2943,7 @@ func bkReadIrMenuDescs(): list of IRMenuDesc {
     var l: list of IRMenuDesc
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.nameIdx = bkGetU32()
@@ -2911,6 +2963,7 @@ func bkReadIrWinHandlers(): list of IRWinHandlers {
     var l: list of IRWinHandlers
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.winTypeNameIdx = bkGetU32()
@@ -2937,6 +2990,7 @@ func bkReadIrWidgetHandlerEntries(): list of IRWidgetHandlerEntry {
     var l: list of IRWidgetHandlerEntry
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.widgetIndex = bkGetU32()
@@ -2960,6 +3014,7 @@ func bkReadIrMenuHandlerEntries(): list of IRMenuHandlerEntry {
     var l: list of IRMenuHandlerEntry
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.menuNameIdx = bkGetU32()
@@ -2982,6 +3037,7 @@ func bkReadIrEveryEntries(): list of IREveryEntry {
     var l: list of IREveryEntry
 
     n = bkGetU32()
+    l.reserve(bkFitCount(n))
     i = 0
     while i < n {
         e.funcNameIdx = bkGetU32()
@@ -3034,6 +3090,7 @@ func bkReadStrPool() {
     var o: list of int
 
     n = bkGetU32()
+    o.reserve(bkFitCount(n + 1))
     o.add(0)
     i = 0
     while i < n {
@@ -3087,6 +3144,7 @@ func bkReadCheckerSymbols() {
     var lEnumMembers: list of EnumMemberInfo
 
     n = bkGetU32()
+    lFuncSigs.reserve(bkFitCount(n))
     i = 0
     while i < n {
         pn = bkGetU32()
@@ -3104,6 +3162,7 @@ func bkReadCheckerSymbols() {
     bkLoadedFuncSigs = lFuncSigs
 
     n = bkGetU32()
+    lSymbols.reserve(bkFitCount(n))
     i = 0
     while i < n {
         sym.nameIdx = bkGetU32()
@@ -3125,6 +3184,7 @@ func bkReadCheckerSymbols() {
     bkLoadedSymbols = lSymbols
 
     n = bkGetU32()
+    lScopes.reserve(bkFitCount(n))
     i = 0
     while i < n {
         scope.parent = bkGetU32()
@@ -3135,6 +3195,7 @@ func bkReadCheckerSymbols() {
     bkLoadedScopes = lScopes
 
     n = bkGetU32()
+    lTypeArena.reserve(bkFitCount(n))
     i = 0
     while i < n {
         ti.kind = TypeKind(bkGetU32())
@@ -3147,6 +3208,7 @@ func bkReadCheckerSymbols() {
     bkLoadedTypeArena = lTypeArena
 
     n = bkGetU32()
+    lEnumMembers.reserve(bkFitCount(n))
     i = 0
     while i < n {
         em.nameIdx = bkGetU32()
@@ -3169,6 +3231,7 @@ func bkReadFieldInfo() {
     var lFieldInfos: list of FieldInfo
 
     n = bkGetU32()
+    lFieldInfos.reserve(bkFitCount(n))
     i = 0
     while i < n {
         fi.nameIdx = bkGetU32()
@@ -3481,18 +3544,28 @@ func bkReadObjMeta(): bool {
 
     count = bkGetU32()
     lSize = driveFreshIntList()
+    lSize.reserve(bkFitCount(count))
     lFrame = driveFreshIntList()
+    lFrame.reserve(bkFitCount(count))
     lStrLitFirst = driveFreshIntList()
+    lStrLitFirst.reserve(bkFitCount(count))
     lStrLitCount = driveFreshIntList()
+    lStrLitCount.reserve(bkFitCount(count))
     lStrLitFlat = driveFreshIntList()
     lEnumTableFirst = driveFreshIntList()
+    lEnumTableFirst.reserve(bkFitCount(count))
     lEnumTableCount = driveFreshIntList()
+    lEnumTableCount.reserve(bkFitCount(count))
     lEnumTableFlat = driveFreshIntList()
     lSerdescFirst = driveFreshIntList()
+    lSerdescFirst.reserve(bkFitCount(count))
     lSerdescCount = driveFreshIntList()
+    lSerdescCount.reserve(bkFitCount(count))
     lSerdescFlat = driveFreshIntList()
     lUsesUiBlob = driveFreshBoolList()
+    lUsesUiBlob.reserve(bkFitCount(count))
     lUsesUiEvents = driveFreshBoolList()
+    lUsesUiEvents.reserve(bkFitCount(count))
     i = 0
     while i < count {
         lSize.add(bkGetU32())
@@ -3745,6 +3818,18 @@ func bkLoadSections(testapi: bool): bool {
             emitDiag(1, 1, "--rtbake: section " + numToStr(id) + " framing mismatch (corrupt bake)")
             return false
         }
+        // SE wave 2 progressive free: drop the decoded prefix once 64 KB
+        // has piled up. Safe only because the body hash (bkCheckRtbake-
+        // HeaderBody, or the front end's own check under
+        // bkHeaderVerified) already walked the WHOLE buffer before this
+        // parse began. removeFirst consumes the one shared box
+        // (rtbakeBytes, macgui's clirBuf); every front end hands
+        // driveCompile fresh bytes per compile.
+        if bkLoadPos >= 65536 {
+            bkLoadBase = bkLoadBase + bkLoadPos
+            bkLoadBuf.removeFirst(bkLoadPos)
+            bkLoadPos = 0
+        }
         i = i + 1
     }
     // runtime-ir-bake Task 6 fix round 1: a truncated OR overlong buffer
@@ -3878,6 +3963,7 @@ func bkCheckRtbakeHeaderBody(buf: text, wantLane: int): bool {
 
     bkLoadBuf = buf
     bkLoadPos = 4
+    bkLoadBase = 0
     version = bkGetU32()
     if version != bkFormatVersion {
         emitDiag(1, 1, "--rtbake: format version " + numToStr(version) + " unsupported (want " + numToStr(bkFormatVersion) + ")")
@@ -3959,6 +4045,7 @@ func bkLoadRtbake(buf: text, wantLane: int, testapi: bool): bool {
         bkLoadOverrun = false
         bkLoadBuf = buf
         bkLoadPos = 19
+        bkLoadBase = 0
     } else {
         if not bkCheckRtbakeHeader(buf, wantLane) {
             return false
@@ -4076,7 +4163,7 @@ func bkInstallPool() {
 // UiTest* function, which is why it never tripped this).
 //
 // Safe by the identical determinism argument bkInstallPool's own doc
-// comment already makes for pool: typesInit()'s singleton seeding is
+// comment already makes for the intern pool: typesInit()'s singleton seeding is
 // unconditional and first (typesReset -> typesInit, called at the very
 // top of checkReset(), before ANYTHING else in this compile could
 // intern/allocate a type) in BOTH the bake generator's own checkReset()
