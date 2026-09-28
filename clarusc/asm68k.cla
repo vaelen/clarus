@@ -178,13 +178,15 @@ const DKindAlign: int = 4
 // kind reads only the fields relevant to it (see the kind-by-kind field
 // map in the header comment above).
 record A68Item {
-    kind: int
+    // SE wave 3 (N6): the three 2-byte enum fields are grouped first so
+    // no padding eats them (72 -> 68 bytes on the host C lane).
     op: A68Op
-    size: int
     sm: A68Mode
+    dm: A68Mode
+    kind: int
+    size: int
     sr: int
     sv: int
-    dm: A68Mode
     dr: int
     dv: int
     label: int

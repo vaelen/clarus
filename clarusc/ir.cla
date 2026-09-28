@@ -333,15 +333,19 @@ record IRStmt {
 }
 
 record IRExpr {
+    // SE wave 3 (N6): the two 2-byte enum fields lead, then the int
+    // fields, then the two bools, so no padding eats the narrow widths
+    // (36 -> 32 bytes on the host C lane). Every consumer names fields;
+    // the bake serializes field by field, so the order is not observable.
     kind: IRExprKind
+    convOp: IRConvOp
     a: int
     b: int
     name: int
     intVal: int
-    global: bool
-    convOp: IRConvOp
     ty: int
     next: int
+    global: bool
     // argCopy (param-abi phase, Task 3): true when this KStr/KRec call-arg
     // expression needs a COPY at the call site rather than a borrow --
     // set only by lower.cla's lowArgNeedsCopy classifier, for user-function
