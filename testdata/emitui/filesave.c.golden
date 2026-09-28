@@ -1753,8 +1753,12 @@ static void clar_fn_rtSerPutField(rt_text * cv_out, void * cv_rec, int32_t cv_fo
         } else {
             clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)(0))));
         }
-    } else if (cv_ftype == 3) {
+    } else if ((cv_ftype == 3) || (cv_ftype == 6)) {
         clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)(rt_peekb(cv_p)))));
+    } else if ((cv_ftype == 7) || (cv_ftype == 8)) {
+        cv_v = rt_peekw(cv_p);
+        clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)(((cv_v >> 8) & 255)))));
+        clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)((cv_v & 255)))));
     } else {
         cv_slen = rt_peekb(cv_p);
         clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)(cv_slen))));
@@ -1875,7 +1879,7 @@ static int32_t clar_fn_rtFileSave(void * cv_path, int32_t cv_container, void * c
     clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(76));
     clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(82));
     clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(83));
-    clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)(1))));
+    clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)(2))));
     clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)(cv_container))));
     if (cv_container == 0) {
         clar_fn_rtSerPutRec(cv_out, cv_data, cv_desc);
@@ -1989,10 +1993,16 @@ static void clar_fn_rtSerGetField(rt_text * cv_t, void * cv_rec, void * cv_fp) {
                 rt_pokeb(cv_p, 0);
             }
         }
-    } else if (cv_ftype == 3) {
+    } else if ((cv_ftype == 3) || (cv_ftype == 6)) {
         cv_b = clar_fn_rtSerGetByte(cv_t);
         if (!(cv_rtSerBad)) {
             rt_pokeb(cv_p, ((int32_t)(cv_b)));
+        }
+    } else if ((cv_ftype == 7) || (cv_ftype == 8)) {
+        cv_v = CLAR_SHL32(((int32_t)(clar_fn_rtSerGetByte(cv_t))), 8);
+        cv_v = CLAR_ADD32(cv_v, ((int32_t)(clar_fn_rtSerGetByte(cv_t))));
+        if (!(cv_rtSerBad)) {
+            rt_pokew(cv_p, cv_v);
         }
     } else {
         cv_slen = ((int32_t)(clar_fn_rtSerGetByte(cv_t)));
@@ -2107,7 +2117,7 @@ static int32_t clar_fn_rtFileLoad(void * cv_path, int32_t cv_container, void * c
         return cv___ret3;
     }
     cv_verByte = clar_fn_rtSerGetByte(cv_input);
-    if (cv_rtSerBad || (((int32_t)(cv_verByte)) != 1)) {
+    if (cv_rtSerBad || ((((int32_t)(cv_verByte)) != 2) && (((int32_t)(cv_verByte)) != 1))) {
         cv___ret3 = clar_fn_rtSerLoadFail(cv_container, cv_data);
         clar_fn_rtTextRelease((void*)cv_input);
         return cv___ret3;
