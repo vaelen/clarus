@@ -218,7 +218,7 @@ const bkSecFieldInfo: int = 47
 
 // bkSecObjCode/bkSecObjMeta (format version 6, object-code-linker Task
 // 2): the per-reachable-runtime-function captured object -- byte runs +
-// typed hole records (bkSecObjCode, cg68k.cla's own cgObjRuns/
+// typed hole records (bkSecObjCode, cg68k.cla's own cgObjRunBytes/cgObjRunOff/
 // cgObjHoles) and Measure-time metadata (bkSecObjMeta, cg68k.cla's own
 // cgFuncSize/cgFuncFrameSizes/cgFuncStrLits-family plus the once-per-
 // artifact fixed-cost buckets and per-pool-entry size tables). 68k lane
@@ -1627,6 +1627,7 @@ func bkWriteObjCode(lane: int): text {
     var h: CgObjHole
     var corruptedOne: bool
     var sym: int
+    var run: text
 
     // Bound by irFuncs.count, not cgObjValid.count directly: cg68Measure/
     // cg68ProgramFork run AFTER cg68SynthCbGlue inside cgObjCaptureRuntime,
@@ -1652,7 +1653,8 @@ func bkWriteObjCode(lane: int): text {
             bkPutU32(sec, cgObjNHoles[i])
             k = 0
             while k <= cgObjNHoles[i] {
-                bkPutBytes(sec, cgObjRuns[cgObjRunFirst[i] + k])
+                run = cgObjRunText(cgObjRunFirst[i] + k)
+                bkPutBytes(sec, run)
                 if k < cgObjNHoles[i] {
                     h = cgObjHoles[cgObjHoleFirst[i] + k]
                     bkPutByte(sec, h.kind)
@@ -2361,13 +2363,14 @@ var bkLdEarlySymbolsCount: int
 // -- see each field's own doc comment for why. See bkWriteObjCode/
 // bkWriteObjMeta for the exact field-for-field wire shape.
 //
-// The flat run/hole payload itself (bkReadObjCode's own lRuns/lHoles)
-// is assigned straight into cg68k.cla's OWN cgObjRuns/cgObjHoles below,
-// not a separate bkLdObjRuns/bkLdObjHoles pair: those two are the
-// largest, most release-expensive fields in this whole section (a `list
-// of text` and a `list of CgObjHole` each need their own per-element
-// walk in cg_free_globals, duplicated into EVERY segment's own glue
-// bundle -- cgEmitRcWalks), and cgObjRuns/cgObjHoles already exist as
+// The flat run/hole payload itself (bkReadObjCode's own lRunBytes/
+// lRunOff/lHoles) is assigned straight into cg68k.cla's OWN
+// cgObjRunBytes/cgObjRunOff/cgObjHoles below, not a separate bkLdObj*
+// set: they are the largest fields in this whole section (the runs were a
+// `list of text` until SE wave 2 flattened them, and a `list of
+// CgObjHole` still needs its own per-element walk in cg_free_globals,
+// duplicated into EVERY segment's own glue bundle -- cgEmitRcWalks), and
+// cgObjRunBytes/cgObjRunOff/cgObjHoles already exist as
 // program-level globals for the CAPTURE side of this exact same format
 // (cg68k.cla's own capture-globals doc comment). The two sides never
 // run in the same process at the same time (one is --bake-ir, the other
@@ -3262,6 +3265,54 @@ func bkObjRelocSymValid(kind: int, cls: int, sym: int): bool {
     return false
 }
 
+// bkObjRunScan (SE wave 2): bkReadObjCode's read-only pre-scan of the
+// obj-code section body after its count -- totals the runs and their
+// bytes into bkObjScanRuns/bkObjScanBytes, then restores the cursor. Each
+// run length is clamped to what is left of the buffer, so a corrupt
+// section cannot ask for a huge reserve; the real parse still does every
+// check. bkObjHoleBytes is one hole record's wire size (bkWriteObjCode:
+// kind, cls, sym(4), op, size, sm, sr, sv(4), dm, dr, dv(4), srcSlot).
+const bkObjHoleBytes: int = 21
+var bkObjScanRuns: int
+var bkObjScanBytes: int
+
+func bkObjRunScan(count: int) {
+    var pos: int
+    var over: bool
+    var i: int
+    var k: int
+    var nHoles: int
+    var n: int
+
+    pos = bkLoadPos
+    over = bkLoadOverrun
+    bkObjScanRuns = 0
+    bkObjScanBytes = 0
+    i = 0
+    while i < count and bkLoadPos < bkLoadBuf.length {
+        if bkGetBool() {
+            nHoles = bkGetU32()
+            k = 0
+            while k <= nHoles and bkLoadPos < bkLoadBuf.length {
+                n = bkGetU32()
+                if n < 0 or n > bkLoadBuf.length - bkLoadPos {
+                    n = bkLoadBuf.length - bkLoadPos
+                }
+                bkLoadPos = bkLoadPos + n
+                bkObjScanRuns = bkObjScanRuns + 1
+                bkObjScanBytes = bkObjScanBytes + n
+                if k < nHoles {
+                    bkLoadPos = bkLoadPos + bkObjHoleBytes
+                }
+                k = k + 1
+            }
+        }
+        i = i + 1
+    }
+    bkLoadPos = pos
+    bkLoadOverrun = over
+}
+
 // bkReadObjCode (format v6, object-code-linker Task 2) mirrors
 // bkWriteObjCode field-for-field into bkLdObj* staging. Returns false
 // the moment a hole's own symIdx fails bkObjRelocSymValid -- the
@@ -3282,7 +3333,9 @@ func bkReadObjCode(): bool {
     var lRunFirst: list of int
     var lHoleFirst: list of int
     var lNHoles: list of int
-    var lRuns: list of text
+    var lRunBytes: text
+    var lRunOff: list of int
+    var run: text
     var lHoles: list of CgObjHole
 
     count = bkGetU32()
@@ -3290,19 +3343,27 @@ func bkReadObjCode(): bool {
     lRunFirst = driveFreshIntList()
     lHoleFirst = driveFreshIntList()
     lNHoles = driveFreshIntList()
-    lRuns = cgFreshTextList()
+    // SE wave 2: the runs go straight into one blob plus offsets
+    // (cg68k.cla's cgObjRunBytes/cgObjRunOff), sized exactly by a
+    // read-only pre-scan so neither grows by doubling.
+    bkObjRunScan(count)
+    lRunBytes.reserve(bkObjScanBytes)
+    lRunOff.reserve(bkObjScanRuns + 1)
+    lRunOff.add(0)
     i = 0
     while i < count {
         valid = bkGetBool()
         lValid.add(valid)
-        lRunFirst.add(lRuns.count)
+        lRunFirst.add(lRunOff.count - 1)
         lHoleFirst.add(lHoles.count)
         nHoles = 0
         if valid {
             nHoles = bkGetU32()
             k = 0
             while k <= nHoles {
-                lRuns.add(bkGetBytes())
+                run = bkGetBytes()
+                lRunBytes.append(run)
+                lRunOff.add(lRunBytes.length)
                 if k < nHoles {
                     kind = bkGetByte()
                     cls = bkGetByte()
@@ -3331,6 +3392,9 @@ func bkReadObjCode(): bool {
         lNHoles.add(nHoles)
         i = i + 1
     }
+    // text.reserve rounds capacity up to a power of two (rtTextGrow's
+    // doubling): trim the blob to its exact size.
+    lRunBytes.shrink()
     bkLdObjValid = lValid
     bkLdObjRunFirst = lRunFirst
     bkLdObjHoleFirst = lHoleFirst
@@ -3340,7 +3404,8 @@ func bkReadObjCode(): bool {
     // bkLdObjRuns/bkLdObjHoles pair.
     //
     // These two are the ONE place a reader writes LIVE state instead of
-    // pending state (Task 6 audit finding F3): cgObjRuns/cgObjHoles are
+    // pending state (Task 6 audit finding F3): cgObjRunBytes/cgObjRunOff/
+    // cgObjHoles are
     // .clear()ed/.add()ed only under `if cgBakeCapture` (cg68k.cla's
     // cgObjDumpSegment and the fork-side reset), which only the --bake-ir
     // generator ever sets -- never during a --rtbake compile -- and nothing
@@ -3350,7 +3415,8 @@ func bkReadObjCode(): bool {
     // bkLdObjRuns/bkLdObjHoles pair is exactly what tipped cpEmitRelease
     // over the 32KB single-function segment ceiling once before (see
     // bkLdObjValid's own doc comment).
-    cgObjRuns = lRuns
+    cgObjRunBytes = lRunBytes
+    cgObjRunOff = lRunOff
     cgObjHoles = lHoles
     return true
 }
@@ -3881,7 +3947,7 @@ func bkLoadRtbake(buf: text, wantLane: int, testapi: bool): bool {
     // SE wave 1: a compile that failed between this parse and the end of
     // its install sequence (a user-code check error, an abort) left its
     // IR staging behind -- drop it before parsing on top of it. Never
-    // touches bkLdObj*/cgObjRuns/cgObjHoles (bkFreeParseStaging's own
+    // touches bkLdObj*/cgObjRunBytes/cgObjRunOff/cgObjHoles (bkFreeParseStaging's own
     // contract).
     bkFreeParseStaging()
     if bkHeaderVerified {
@@ -4557,7 +4623,7 @@ func bkInstallCheckerSymbolsForTestapi() {
 // bkInstallArenas), the whole IR staging. After an ordinary install most
 // of these are already empty, so the reset is a no-op for them. The
 // scalar bkLd* staging (counts, flags) holds no heap and is left alone.
-// Deliberately does NOT touch bkLdObj* or cgObjRuns/cgObjHoles: codegen
+// Deliberately does NOT touch bkLdObj* or cgObjRunBytes/cgObjRunOff/cgObjHoles: codegen
 // reads those until the fork is built. Every line here is a true free,
 // hence .release(): nothing else holds these boxes (a bkInstall* move
 // re-points its staging name at a fresh box, so the live global never

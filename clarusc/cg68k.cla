@@ -14893,13 +14893,36 @@ var cgObjRunFirst: list of int
 var cgObjHoleFirst: list of int
 var cgObjNHoles: list of int
 
-// cgObjRuns: flat, one entry per captured byte run across the WHOLE
-// capture (every segment cg68ProgramFork packs this call), in the order
-// cgObjDumpSegment appends them.
-var cgObjRuns: list of text
+// cgObjRunBytes/cgObjRunOff (SE wave 2): every captured byte run across
+// the WHOLE capture (every segment cg68ProgramFork packs this call), in
+// the order cgObjDumpSegment appends them, as one byte blob plus start
+// offsets: run r is cgObjRunBytes[cgObjRunOff[r] .. cgObjRunOff[r+1]).
+// cgObjRunOff carries one trailing sentinel (== cgObjRunBytes.length,
+// lib.cla's strBlob/strOff convention), so there are cgObjRunOff.count - 1
+// runs; before any capture or load it is empty (cgObjRunCount() == 0).
+// Replaces `list of text` (one handle pair per run, ~4.4K runs).
+var cgObjRunBytes: text
+var cgObjRunOff: list of int
+
+func cgObjRunCount(): int {
+    if cgObjRunOff.count == 0 {
+        return 0
+    }
+    return cgObjRunOff.count - 1
+}
+
+func cgObjRunLen(r: int): int {
+    return cgObjRunOff[r + 1] - cgObjRunOff[r]
+}
+
+// cgObjRunText returns run r as its own fresh text (a68DcBytes keeps the
+// text it is handed; the bake writer frames it with bkPutBytes).
+func cgObjRunText(r: int): text {
+    return cgObjRunBytes.textAt(cgObjRunOff[r], cgObjRunLen(r))
+}
 
 // cgObjHoles: flat, one entry per captured hole, same ordering
-// convention as cgObjRuns.
+// convention as the runs.
 var cgObjHoles: list of CgObjHole
 
 // cgObjHoleSymOut: cgObjHoleOf's own out-parameter (Clarus functions
@@ -15159,20 +15182,14 @@ func cgObjRecordHole(idx: int, cls: int, sym: int) {
     cgObjHoles.add(h)
 }
 
-// cgObjSlice returns b[start, start+n) as its own copy -- text has no
-// slice operator, so this is a plain byte-by-byte append, mirroring
-// every other per-byte text-building loop in this file.
-func cgObjSlice(b: text, start: int, n: int): text {
+// cgObjRunAdd appends b[start, start+n) to the flat run blob as the
+// next run (cgObjRunOff's sentinel is already in place).
+func cgObjRunAdd(b: text, start: int, n: int) {
     var t: text
-    var i: int
 
-    t = ""
-    i = 0
-    while i < n {
-        t.append(b[start + i])
-        i = i + 1
-    }
-    return t
+    t = b.textAt(start, n)
+    cgObjRunBytes.append(t)
+    cgObjRunOff.add(cgObjRunBytes.length)
 }
 
 // cgObjDumpSegment (called once per segment, right after that segment's
@@ -15181,7 +15198,7 @@ func cgObjSlice(b: text, start: int, n: int): text {
 // scratch, populated by its function loop and passed straight through,
 // see that block's own doc comment for why these are params, not
 // globals) and appends its byte runs + hole records into the flat,
-// whole-capture cgObjRuns/cgObjHoles arrays.
+// whole-capture cgObjRunBytes/cgObjRunOff/cgObjHoles arrays.
 //
 // Fix round 1 (review finding I1, Amendment A3's own "fails the bake
 // loudly" clause): returns false, after logging a specific reason, on
@@ -15240,7 +15257,7 @@ func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segIte
             }
 
             cgObjValid[f] = true
-            cgObjRunFirst[f] = cgObjRuns.count
+            cgObjRunFirst[f] = cgObjRunCount()
             cgObjHoleFirst[f] = cgObjHoles.count
             nh = 0
             runStart = 0
@@ -15261,13 +15278,13 @@ func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segIte
                         return false
                     }
                     nh = nh + 1
-                    cgObjRuns.add(cgObjSlice(b, a0 + runStart, (a68Items[i].addr - a0) - runStart))
+                    cgObjRunAdd(b, a0 + runStart, (a68Items[i].addr - a0) - runStart)
                     cgObjRecordHole(i, cls, cgObjHoleSymOut)
                     runStart = (a68Items[i].addr - a0) + a68Items[i].len
                 }
                 i = i + 1
             }
-            cgObjRuns.add(cgObjSlice(b, a0 + runStart, (a1 - a0) - runStart))
+            cgObjRunAdd(b, a0 + runStart, (a1 - a0) - runStart)
             cgObjNHoles[f] = nh
 
             // Amendment A3's subsuming per-function assertion: the
@@ -15276,7 +15293,7 @@ func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segIte
             sumLen = 0
             p = cgObjRunFirst[f]
             while p <= cgObjRunFirst[f] + nh {
-                sumLen = sumLen + cgObjRuns[p].length
+                sumLen = sumLen + cgObjRunLen(p)
                 p = p + 1
             }
             if sumLen + 4 * nh != cgFuncSize[f] {
@@ -15305,7 +15322,7 @@ func cgObjDumpSegment(segFuncIdx: list of int, segItemStart: list of int, segIte
 // Amendment A6, capture the whole baked set unconditionally, truncate to
 // the testapi boundary later, at install time, alongside the IR), then
 // run the real per-segment emission pipeline once (cg68ProgramFork,
-// cgBakeCapture set) to populate cgObjRuns/cgObjHoles/cgFuncSize-family
+// cgBakeCapture set) to populate cgObjRunBytes/cgObjRunOff/cgObjHoles/cgFuncSize-family
 // via its own capture hooks.
 //
 // cg68SynthCbGlue's own irFuncs growth (newIRFunc, one per
@@ -15381,7 +15398,7 @@ func cgObjCaptureRuntime(): bool {
 
 // ================================================================
 // object-code-linker Task 3: Measure-skip + paste-with-fixups link
-// pass -- consumes the bkLdObj*/cgObjRuns/cgObjHoles staging Task 2's
+// pass -- consumes the bkLdObj*/cgObjRunBytes/cgObjRunOff/cgObjHoles staging Task 2's
 // loader populated on a --rtbake compile. Two hook points: cg68Measure's
 // own per-function loop (above) substitutes a baked function's own
 // measured size/frame/pool-usage data for a real cgEmitFunc call;
@@ -15743,6 +15760,7 @@ func cgObjPasteFunc(f: int) {
     var hf: int
     var nh: int
     var k: int
+    var run: text
 
     rf = bkLdObjRunFirst[f]
     hf = bkLdObjHoleFirst[f]
@@ -15751,7 +15769,8 @@ func cgObjPasteFunc(f: int) {
     a68Bind(cgFuncLabels[f])
     k = 0
     while k <= nh {
-        a68DcBytes(cgObjRuns[rf + k])
+        run = cgObjRunText(rf + k)
+        a68DcBytes(run)
         if k < nh {
             cgObjPasteHole(cgObjHoles[hf + k])
         }
@@ -15845,7 +15864,7 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     base = cgSegBase(outPath)
 
     // object-code-linker Task 2: reset the whole-capture accumulators
-    // once per cg68ProgramFork call, not per segment -- cgObjRuns/
+    // once per cg68ProgramFork call, not per segment -- cgObjRunBytes/cgObjRunOff/
     // cgObjHoles are FLAT across every segment this call packs, indexed
     // per-function via cgObjRunFirst/cgObjHoleFirst/cgObjNHoles (see
     // this file's own capture-globals doc comment, above).
@@ -15854,7 +15873,9 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
         cgObjRunFirst = cgFreshIntListSized(irFuncs.count)
         cgObjHoleFirst = cgFreshIntListSized(irFuncs.count)
         cgObjNHoles = cgFreshIntListSized(irFuncs.count)
-        cgObjRuns.clear()
+        cgObjRunBytes.clear()
+        cgObjRunOff.clear()
+        cgObjRunOff.add(0)
         cgObjHoles.clear()
     }
 
@@ -15985,7 +16006,7 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
 
         // object-code-linker Task 2: this segment's own bytes are final
         // now (a68Finish just succeeded) -- dump every function this
-        // segment captured into the flat cgObjRuns/cgObjHoles arrays.
+        // segment captured into the flat cgObjRunBytes/cgObjRunOff/cgObjHoles arrays.
         if cgBakeCapture {
             if not cgObjDumpSegment(objSegFuncIdx, objSegItemStart, objSegItemEnd, objSegTainted) {
                 return false
@@ -16042,7 +16063,7 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     if cgBakeCapture {
         // object-code-linker Task 2: bake-time capture needs no real
         // fork built -- every byte/hole this call was for is already in
-        // cgObjRuns/cgObjHoles (cgObjDumpSegment, above); skip building
+        // cgObjRunBytes/cgObjRunOff/cgObjHoles (cgObjDumpSegment, above); skip building
         // and writing an unused fork (also avoids needing a meaningful
         // outPath -- cgObjCaptureRuntime passes a placeholder).
         return true
