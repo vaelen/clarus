@@ -171,6 +171,16 @@ Real debt and needed improvements stay in `docs/TODO.md`.
 
 ## Runtime / Toolbox (if it ever bites)
 
+- **An `app` header field for master pointers** (SE wave 2, spec R4,
+  2026-09-28): a `masters: N` field beside `stack:` that makes the
+  native startup stub call `MoreMasters` N times, so any handle-heavy
+  program can pack its nonrelocatable master-pointer blocks at the
+  bottom of the heap. Considered and deferred: only ClarusC.APPL needs
+  it today, and it does it by hand (`clarusc/macgui.cla`'s
+  `App.startEmpty`, 153 calls), which keeps every other program
+  byte-identical. Revisit when a second program measures
+  master-pointer fragmentation.
+
 - **Re-evaluate how window-owned menu sets are drawn** (Andrew,
   2026-09-06; language-runtime-cleanup design §5): the first
   implementation rebuilds the menu bar on every activate/close that
