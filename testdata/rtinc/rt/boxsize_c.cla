@@ -1,0 +1,9 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Stand-in for the UNCONDITIONAL boxsize_c.cla manifest entry (SE wave 3,
+// spec 3.5) in this fake runtime-module directory. Deliberately empty, same
+// reason as this directory's datetime_c.cla stand-in: driveManifestSplice
+// always adds "boxsize_c.cla" to neededMods on the C lane, so
+// --rtdir testdata/rtinc/rt needs SOME file by that name. The real module
+// lives at runtime/clarus/boxsize_c.cla.

@@ -429,6 +429,13 @@ func bakeModuleList(lane: int): list of string {
     // gate), even though it's included here.
     mods.add("prelude.cla")
     mods.add("core.cla")
+    // SE wave 3 (spec 3.5): the box-size lane pair, early-visible on both
+    // lanes, right after core.cla (matching drive.cla's two splices).
+    if lane == bkLane68k {
+        mods.add("boxsize_68k.cla")
+    } else {
+        mods.add("boxsize_c.cla")
+    }
     mods.add("str.cla")
     mods.add("text.cla")
     mods.add("list.cla")
