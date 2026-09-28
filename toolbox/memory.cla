@@ -170,7 +170,7 @@
 // All five new trap words are also bit-11-clear.
 //
 // SE-memory program Wave 0 (measurement infrastructure, 2026-09-28):
-// MaxBlock/StackSpace/MaxApplZone plus eight siblings. Every trap word
+// MaxBlock/StackSpace/MaxApplZone plus nine siblings. Every trap word
 // below is confirmed against Apple's own Universal Interfaces 3.4 --
 // CIncludes/MacMemory.h (read through `tr '\r' '\n'`) for the
 // `#pragma parameter` registers, and
@@ -255,7 +255,7 @@
 //   SetApplBase, HSetRBit/HClrRBit, the ,SYS variants -- outside this
 //   wave's measurement needs.
 //
-// All eleven new trap words are bit-11-clear.
+// All twelve new trap words are bit-11-clear.
 
 external func NewPtr(byteCount: int): ptr = trap 0xA11E reg
 external func NewPtrClear(byteCount: int): ptr = trap 0xA31E reg

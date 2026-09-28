@@ -7160,11 +7160,13 @@ in 22 s.
 
 **Deferred / recorded.** The `progress.md` ledger in
 `.superpowers/sdd/2026-09-27-se-wave0-measurement/` carries every
-deferred minor verbatim, one line per task. Three items outlive the
+deferred minor verbatim, one line per task. Four items outlive the
 wave and are in `docs/TODO.md`:
 - the cg68k abort on `= inline nop` with a string param;
 - `drive.cla` `dirOf` splitting only on `/`, which breaks HFS paths;
-- fast-forward tick variance.
+- fast-forward tick variance;
+- ClarusC's `out` log headroom: the probes fill ~3 KB of `natLogCap`'s
+  4096 B in one compile, so a two-compile session can lose its tail.
 
 Spec: `docs/superpowers/specs/2026-09-27-se-wave0-measurement-design.md`;
 plan `docs/superpowers/plans/2026-09-27-se-wave0-measurement.md`;

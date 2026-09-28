@@ -389,12 +389,13 @@ var typeExprs: list of TypeExpr
 // astReset empties all four arenas. Call between compiling independent
 // programs (mirrors lexAll's clear-on-entry / lib.cla's resetDiags -- Task
 // 5's established pattern for arenas that must not leak across programs in
-// the differential harness).
+// the differential harness). .release(), not .clear(): the next compile
+// refills them from empty, so their old storage is freed, not kept.
 func astReset() {
-    exprs.clear()
-    stmts.clear()
-    decls.clear()
-    typeExprs.clear()
+    exprs.release()
+    stmts.release()
+    decls.release()
+    typeExprs.release()
 }
 
 // boolToInt/intToBool convert between Clarus bool and the 0/1 ints stored

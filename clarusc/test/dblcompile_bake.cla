@@ -15,7 +15,7 @@
 // ClarusC.APPL's multi-compile session. SE wave 1 removed that phase's
 // parse memo (bkParsedValid): driveCompile now CONSUMES rtbakeBytes (a
 // successful parse frees it), so this harness -- like macgui.cla's
-// gcResolveBakePath -- hands driveCompile a fresh reference to the bake
+// gcResolveBakePath -- hands driveCompile a fresh copy of the bake
 // bytes before EVERY compile. It logs a BAKESTATE line per compile:
 // parsedBefore (always 0 now -- kept so the log shape is stable; the
 // memo it used to observe no longer exists), the pending object-code
@@ -117,10 +117,10 @@ on App.startCLI(args: list of string) {
         t0 = TickCount()
         parsedBefore = 0
         // SE wave 1: driveCompile frees rtbakeBytes after its parse, so
-        // re-arm it every compile. `text` is a reference type: this only
-        // shares bakeBytes, and driveCompile's `rtbakeBytes = ""` drops
-        // that share while bakeBytes keeps the harness's own copy.
-        rtbakeBytes = bakeBytes
+        // re-arm it every compile -- with a COPY: driveCompile's
+        // rtbakeBytes.release() empties the box itself, so a shared
+        // reference would empty bakeBytes for the next compile too.
+        rtbakeBytes = bakeBytes.textAt(0, bakeBytes.length)
         haveRtbake = true
         driveReset()
         resetDiags()

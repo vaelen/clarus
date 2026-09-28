@@ -94,8 +94,10 @@ var haveRtDir: bool
 // spec L6): a successful bkLoadRtbake frees rtbakeBytes, so every front
 // end sets rtbakeBytes (and haveRtbake) afresh before EACH driveCompile
 // that should use the bake -- macgui.cla's gcResolveBakePath re-reads the
-// CLIR resource per compile, clarusc/test/dblcompile_bake.cla re-assigns
-// its own copy per compile, main.cla compiles once per process.
+// CLIR resource per compile, clarusc/test/dblcompile_bake.cla hands it a
+// fresh copy per compile, main.cla compiles once per process. The free is
+// rtbakeBytes.release(), which empties the box itself -- a front end must
+// never hand over a box it still wants to read.
 var haveRtbake: bool
 var rtbakeBytes: text
 
@@ -2144,7 +2146,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         // every compile re-parses from its front end's fresh copy.
         // (Failure above leaves them untouched; nothing reads them after
         // that either -- driveRtbakeFallback re-runs from source.)
-        rtbakeBytes = ""
+        rtbakeBytes.release()
         bkInstallPool()
         bkComputeManifestPaths()
         bkManifestDriftPath = ""
@@ -2579,46 +2581,30 @@ func driveCompile(entries: list of string, testapi: bool): bool {
 // declFileTab after lowering. The next compile's resets (resetDiags,
 // astReset, lexAll's toks.clear, checkReset -> typesReset/scopesReset and
 // its fresh-map block) rebuild every one of these before any read.
-// Fresh-container reassignment (spec L8); Task 5 switches to .release().
+// .release() empties the box in place, so every alias sees it: audited
+// (SE wave 1 Task 5) that none of these outlives the compile under another
+// name -- lexSrc shares only expand()'s dead local src; the bake installs'
+// staging names were re-pointed at fresh boxes by their moves.
 func driveFreeFrontEnd() {
-    var ex: list of ExprNode
-    var st: list of StmtNode
-    var de: list of DeclNode
-    var te: list of TypeExpr
-    var tk: list of Token
-    var dft: list of int
-    var sy: list of Symbol
-    var sc: list of Scope
-    var fs: list of FuncSig
-    var ta: list of TypeInfo
-    var fsd: intmap of int
-    var frd: intmap of int
-    var fgd: intmap of int
-    var xsn: map of int
-    var xfd: map of int
-    var efd: map of int
-    var cfd: map of int
-    var rfh: intmap of int
-
-    exprs = ex
-    stmts = st
-    decls = de
-    typeExprs = te
-    toks = tk
-    lexSrc = ""
-    declFileTab = dft
-    symbols = sy
-    scopes = sc
-    funcSigs = fs
-    typeArena = ta
-    funcScopeByDecl = fsd
-    funcRetByDecl = frd
-    funcSigByDecl = fgd
-    xrecSizeByName = xsn
-    xrecFirstDeclByName = xfd
-    externFirstDeclByName = efd
-    constFirstDeclByName = cfd
-    recFieldsHeadByName = rfh
+    exprs.release()
+    stmts.release()
+    decls.release()
+    typeExprs.release()
+    toks.release()
+    lexSrc.release()
+    declFileTab.release()
+    symbols.release()
+    scopes.release()
+    funcSigs.release()
+    typeArena.release()
+    funcScopeByDecl.release()
+    funcRetByDecl.release()
+    funcSigByDecl.release()
+    xrecSizeByName.release()
+    xrecFirstDeclByName.release()
+    externFirstDeclByName.release()
+    constFirstDeclByName.release()
+    recFieldsHeadByName.release()
 }
 
 // driveEmit68kFork (Task 9, mac-resident-clarusc) lowers the already-

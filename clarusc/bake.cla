@@ -4055,8 +4055,6 @@ func bkComputeManifestPaths() {
     var bareMod: string
     var p: string
     var m: map of bool
-    var e0: list of string
-    var e1: list of int
 
     if bkLoadedModules.count > 0 {
         prefixLen = rtModuleKey("").length
@@ -4140,8 +4138,8 @@ func bkComputeManifestPaths() {
     }
     bkManifestPaths = m
     // SE wave 1: this is the last reader of both tables -- drop them.
-    bkLoadedModules = e0
-    bkLoadedDeclFileTab = e1
+    bkLoadedModules.release()
+    bkLoadedDeclFileTab.release()
 }
 
 // bkInstallArenas is the second install step -- called by driveCompile
@@ -4543,91 +4541,59 @@ func bkInstallCheckerSymbolsForTestapi() {
 // of these are already empty, so the reset is a no-op for them. The
 // scalar bkLd* staging (counts, flags) holds no heap and is left alone.
 // Deliberately does NOT touch bkLdObj* or cgObjRuns/cgObjHoles: codegen
-// reads those until the fork is built. Every line here is a true free
-// (Task 5 may switch these to .release()), unlike the staging resets
-// inside the bkInstall* moves.
+// reads those until the fork is built. Every line here is a true free,
+// hence .release(): nothing else holds these boxes (a bkInstall* move
+// re-points its staging name at a fresh box, so the live global never
+// shares one of them) -- unlike the staging resets inside the moves,
+// which must stay reassignments.
 func bkFreeParseStaging() {
-    var eIrTypes: list of IRType
-    var eIrStmts: list of IRStmt
-    var eIrExprs: list of IRExpr
-    var eIrLocals: list of IRLocal
-    var eIrFuncs: list of IRFunc
-    var eIrGlobals: list of IRGlobal
-    var eIrFieldSlots: list of IRFieldSlot
-    var eIrRecords: list of IRRecordLayout
-    var eIrEnumMembers: list of IREnumMember
-    var eIrEnums: list of IREnumLayout
-    var eIrWidgetDescs: list of IRWidgetDesc
-    var eIrColumnDescs: list of IRColumnDesc
-    var eIrBindDescs: list of IRBindDesc
-    var eIrWindowDescs: list of IRWindowDesc
-    var eIrMenuItemDescs: list of IRMenuItemDesc
-    var eIrMenuDescs: list of IRMenuDesc
-    var eIrWinHandlers: list of IRWinHandlers
-    var eIrWidgetHandlerEntries: list of IRWidgetHandlerEntry
-    var eIrMenuHandlerEntries: list of IRMenuHandlerEntry
-    var eIrEveryEntries: list of IREveryEntry
-    var eIrFuncIdxByName: intmap of int
-    var eIrLayoutNeededByName: intmap of int
-    var eIrRcWalkNeededByName: intmap of int
-    var eLowStrIdx: map of int
-    var eStrPool: list of string
-    var eFuncSigs: list of FuncSig
-    var eSymbols: list of Symbol
-    var eScopes: list of Scope
-    var eTypeArena: list of TypeInfo
-    var eEnumMembers: list of EnumMemberInfo
-    var eFieldInfos: list of FieldInfo
-    var eRecHeads: intmap of int
-    var eMods: list of string
-
-    bkLdIrTypes = eIrTypes
-    bkLdIrStmts = eIrStmts
-    bkLdIrExprs = eIrExprs
-    bkLdIrLocals = eIrLocals
-    bkLdIrFuncs = eIrFuncs
-    bkLdIrGlobals = eIrGlobals
-    bkLdIrFieldSlots = eIrFieldSlots
-    bkLdIrRecords = eIrRecords
-    bkLdIrEnumMembers = eIrEnumMembers
-    bkLdIrEnums = eIrEnums
-    bkLdIrWidgetDescs = eIrWidgetDescs
-    bkLdIrColumnDescs = eIrColumnDescs
-    bkLdIrBindDescs = eIrBindDescs
-    bkLdIrWindowDescs = eIrWindowDescs
-    bkLdIrMenuItemDescs = eIrMenuItemDescs
-    bkLdIrMenuDescs = eIrMenuDescs
-    bkLdIrWinHandlers = eIrWinHandlers
-    bkLdIrWidgetHandlerEntries = eIrWidgetHandlerEntries
-    bkLdIrMenuHandlerEntries = eIrMenuHandlerEntries
-    bkLdIrEveryEntries = eIrEveryEntries
-    bkLdIrCbGlueNames = driveFreshIntList()
-    bkLdIrStrLits = driveFreshIntList()
-    bkLdIrArrLitElemT = driveFreshIntList()
-    bkLdIrArrLitN = driveFreshIntList()
-    bkLdIrArrLitVals = driveFreshIntList()
-    bkLdIrExternNames = driveFreshIntList()
-    bkLdIrExternRetTys = driveFreshIntList()
-    bkLdIrExternParamStart = driveFreshIntList()
-    bkLdIrExternParamCountArr = driveFreshIntList()
-    bkLdIrExternParamTys = driveFreshIntList()
-    bkLdIrExternTrapWords = driveFreshIntList()
-    bkLdIrExternConvs = driveFreshIntList()
-    bkLdIrExternSels = driveFreshIntList()
-    bkLdIrExternParamRegs = driveFreshIntList()
-    bkLdIrExternRetRegs = driveFreshIntList()
-    bkLdIrFuncIdxByName = eIrFuncIdxByName
-    bkLdIrLayoutNeededByName = eIrLayoutNeededByName
-    bkLdIrRcWalkNeededByName = eIrRcWalkNeededByName
-    bkLdLowStrIdx = eLowStrIdx
-    bkLdStrPool = eStrPool
-    bkLoadedFuncSigs = eFuncSigs
-    bkLoadedSymbols = eSymbols
-    bkLoadedScopes = eScopes
-    bkLoadedTypeArena = eTypeArena
-    bkLoadedEnumMembers = eEnumMembers
-    bkLoadedFieldInfos = eFieldInfos
-    bkLoadedRecFieldsHeadByName = eRecHeads
-    bkLoadedModules = eMods
-    bkLoadedDeclFileTab = driveFreshIntList()
+    bkLdIrTypes.release()
+    bkLdIrStmts.release()
+    bkLdIrExprs.release()
+    bkLdIrLocals.release()
+    bkLdIrFuncs.release()
+    bkLdIrGlobals.release()
+    bkLdIrFieldSlots.release()
+    bkLdIrRecords.release()
+    bkLdIrEnumMembers.release()
+    bkLdIrEnums.release()
+    bkLdIrWidgetDescs.release()
+    bkLdIrColumnDescs.release()
+    bkLdIrBindDescs.release()
+    bkLdIrWindowDescs.release()
+    bkLdIrMenuItemDescs.release()
+    bkLdIrMenuDescs.release()
+    bkLdIrWinHandlers.release()
+    bkLdIrWidgetHandlerEntries.release()
+    bkLdIrMenuHandlerEntries.release()
+    bkLdIrEveryEntries.release()
+    bkLdIrCbGlueNames.release()
+    bkLdIrStrLits.release()
+    bkLdIrArrLitElemT.release()
+    bkLdIrArrLitN.release()
+    bkLdIrArrLitVals.release()
+    bkLdIrExternNames.release()
+    bkLdIrExternRetTys.release()
+    bkLdIrExternParamStart.release()
+    bkLdIrExternParamCountArr.release()
+    bkLdIrExternParamTys.release()
+    bkLdIrExternTrapWords.release()
+    bkLdIrExternConvs.release()
+    bkLdIrExternSels.release()
+    bkLdIrExternParamRegs.release()
+    bkLdIrExternRetRegs.release()
+    bkLdIrFuncIdxByName.release()
+    bkLdIrLayoutNeededByName.release()
+    bkLdIrRcWalkNeededByName.release()
+    bkLdLowStrIdx.release()
+    bkLdStrPool.release()
+    bkLoadedFuncSigs.release()
+    bkLoadedSymbols.release()
+    bkLoadedScopes.release()
+    bkLoadedTypeArena.release()
+    bkLoadedEnumMembers.release()
+    bkLoadedFieldInfos.release()
+    bkLoadedRecFieldsHeadByName.release()
+    bkLoadedModules.release()
+    bkLoadedDeclFileTab.release()
 }
