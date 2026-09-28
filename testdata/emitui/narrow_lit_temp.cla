@@ -1,0 +1,24 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// narrow_lit_temp.cla: tests/emitui/narrow_lit_temp.sh's fixture. A plain
+// int literal handed BY ADDRESS to a narrow container slot (push/unshift/
+// map/intmap/sortedmap set) must be spilled to a temp of the slot's own
+// width: the runtime copies elemSize bytes from &temp, so an int32_t
+// temp stores 0 on a big-endian (Retro68 cprint) target.
+var gl: list of int16
+
+on App.launch {
+    var l: list of uint8
+    var m: map of uint8
+    var im: intmap of int16
+    var sm: sortedmap of uint16
+
+    l.push(7)
+    l.unshift(9)
+    gl.push(12)
+    m["x"] = 250
+    im[3] = 300
+    sm["k"] = 60000
+    log(string(l[0] + gl[0] + m.get("x", 1) + im.get(3, 0) + sm.get("k", 0)))
+}

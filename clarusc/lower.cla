@@ -658,6 +658,16 @@ func lowExpr(e: int): int {
 
     switch exprKind(e) {
     case ExIntLit {
+        // A literal the checker typed narrow (it sits at a uint8/int16/
+        // uint16 position) keeps that type, so a temp spilled for it is
+        // declared at the slot's own width -- `l.push(7)` on a `list of
+        // uint8` copies elemSize bytes from &temp, which only reads the
+        // value on a big-endian target if the temp IS that wide. Every
+        // other literal stays the irIntT singleton (no new IRType entry).
+        v = exprTypeGet(e)
+        if v != InvalidT and typeKind(v) == TyInt and typeN(v) != 0 {
+            return newIRIntConst(intLitVal(e), lowMustType(e))
+        }
         return newIRIntConst(intLitVal(e), irIntT)
     }
     case ExBoolLit {
