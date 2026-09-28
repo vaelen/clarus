@@ -227,6 +227,17 @@ var a68Pc: int
 var a68BytesOut: text
 var a68UnresolvedId: int
 
+// a68FixOff/a68FixLbl (SE wave 2, per-function encode): the PC-relative
+// extension words a68Flush encoded while their label was still unbound
+// (a forward reference to a later function, a glue helper, the free-
+// globals stub, an rc walk or a pool entry). a68FixOff[k] is the word's
+// byte offset in a68BytesOut -- which equals its address, since
+// a68BytesOut holds exactly the bytes of every already-encoded item,
+// from segment address 0 on -- and a68FixLbl[k] the label it targets.
+// a68Finish patches them once every label is bound.
+var a68FixOff: list of int
+var a68FixLbl: list of int
+
 // ================================================================
 // Reset / labels
 // ================================================================
@@ -240,6 +251,8 @@ func a68Reset() {
     a68Pc = 0
     a68BytesOut = ""
     a68UnresolvedId = -1
+    a68FixOff.clear()
+    a68FixLbl.clear()
 }
 
 func a68NewLabel(): int {
@@ -501,10 +514,11 @@ func a68CommentMarker() {
 // once more to actually assemble a68BytesOut. Every label's address is
 // ALREADY known at this point (a68Bind resolved it immediately when
 // called), so this second pass needs no further layout work -- only
-// encoding.
+// encoding. (SE wave 2: it appends to whatever a68Flush already
+// encoded this segment, then patches a68Flush's forward-reference
+// fixups; with no a68Flush it is the old whole-segment encode.)
 func a68Finish(): bool {
     var i: int
-    var out: text
 
     a68UnresolvedId = -1
     i = 0
@@ -516,14 +530,51 @@ func a68Finish(): bool {
         i = i + 1
     }
 
-    out = ""
+    a68EncodeItems()
     i = 0
-    while i < a68Items.count {
-        a68EncodeItem(out, i)
+    while i < a68FixOff.count {
+        a68BytesOut.setWordAt(a68FixOff[i], a68LabelAddr[a68FixLbl[i]] - a68FixOff[i])
         i = i + 1
     }
-    a68BytesOut = out
     return true
+}
+
+// a68EncodeItems appends every current item's bytes to a68BytesOut.
+// Items are contiguous from the first byte a68BytesOut does not hold
+// yet, so each item's addr must equal a68BytesOut.length -- checked,
+// since a drift here would silently misplace every later fixup.
+func a68EncodeItems() {
+    var i: int
+
+    i = 0
+    while i < a68Items.count {
+        if a68Items[i].addr != a68BytesOut.length {
+            abort("asm68k: encode drift at item " + numToStr(i))
+        }
+        a68EncodeItem(a68BytesOut, i)
+        i = i + 1
+    }
+}
+
+// a68Flush (SE wave 2, spec %3.4 -- per-function emit -> encode ->
+// discard) encodes every pending item into a68BytesOut now and drops the
+// items (.clear() keeps capacity, as cg68k's cgMeasureDropItems does),
+// so a68Items is bounded by one function instead of one segment. Safe
+// because (1) a68Bind fixes a label's address at bind time and the only
+// later mover, a68Relayout (the peephole's), rewrites only the function
+// being emitted -- so once a function is done, every address it bound
+// is final; (2) the encoder's only cross-item read is a68PatchDisp's
+// label address, and a label not yet bound is recorded in
+// a68FixOff/a68FixLbl and patched by a68Finish; (3) nothing reads an
+// earlier function's items after it is emitted. The caller must not
+// flush when it still needs the items: the --listing printer and the
+// bake object capture (cgObjDumpSegment) both walk the whole segment's
+// items after a68Finish, so they keep the whole-segment path.
+func a68Flush() {
+    a68EncodeItems()
+    a68Items.clear()
+    a68CommentTexts.clear()
+    a68DataTexts.clear()
 }
 
 func a68Bytes(): text {
@@ -768,6 +819,13 @@ func a68PatchDisp(idx: int, isSource: bool): int {
     } else {
         extAddr = a68Items[idx].addr + 2 + a68PrecedingSourceExtBytes(idx)
         label = a68Items[idx].dv
+    }
+    // Only a68Flush can get here with an unbound label (a68Finish checks
+    // every label first): record a fixup and emit a zero placeholder.
+    if not a68LabelDefined[label] {
+        a68FixOff.add(extAddr)
+        a68FixLbl.add(label)
+        return 0
     }
     return a68LabelAddr[label] - extAddr
 }

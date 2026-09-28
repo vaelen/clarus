@@ -15940,6 +15940,17 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
                     } else {
                         cgEmitFunc(i)
                     }
+                    // SE wave 2 (spec %3.4): encode this function's items
+                    // now and drop them -- a68Flush's doc comment names
+                    // the invariant (every address it bound is final;
+                    // a still-unbound label becomes a fixup a68Finish
+                    // patches). Not under --listing (R7): the listing
+                    // printer walks the whole segment's items after
+                    // a68Finish. The capture branch above keeps them too
+                    // (cgObjDumpSegment reads them by index).
+                    if not listing {
+                        a68Flush()
+                    }
                 }
             }
             driveProgressTick()
