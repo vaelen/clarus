@@ -23,3 +23,14 @@ func rtNow(): int {
     DtReadDateTime(box)
     return box.secs
 }
+
+// Container box sizes (SE wave 2 Task 9) -- the C lane's values, unchanged:
+// each budgets a full 8-byte slot per field so a 64-bit host's Handle
+// width and padding always fit (text.cla/list.cla/map.cla/sortedmap.cla
+// explain the derivations). datetime_68k.cla carries the native values.
+// They live in this lane pair because it is the one per-lane pair every
+// build splices on both lanes (see datetime_68k.cla).
+const rtTextBoxSize: int = 32
+const rtListBoxSize: int = 40
+const rtMapBoxSize: int = 112
+const rtSortedMapBoxSize: int = 56

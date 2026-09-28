@@ -193,7 +193,9 @@ func rtListGrow(l: ptr, need: int) {
 // pointer-width slot) safely covers both: ListNewPtr only guarantees "at
 // least this many bytes," so a little slack here is harmless, unlike an
 // UNDER-sized box, which would corrupt whatever heap memory follows it.
-const rtListBoxSize: int = 40
+// SE wave 2 Task 9: the const itself now lives in the per-lane datetime
+// companions (datetime_c.cla keeps the host value above; datetime_68k.cla
+// carries the exact 68k field sum) -- see datetime_68k.cla's own comment.
 
 // rtListNew (rt_core.inc:512-523, rt_list_new) -- Plan 5c wave2a Task 3:
 // birth allocation is now entirely Clarus-owned, mirroring the C reference

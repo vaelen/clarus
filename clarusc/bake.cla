@@ -443,17 +443,14 @@ func bakeModuleList(lane: int): list of string {
     // MacTCP phase, debt 3: uitest.cla is the early-visible BOUNDARY
     // marker (bakeGenerateChain records earlyVisibleAsmHeadsBoundary at
     // it), so it sits at the end of whatever driveEarlySplice's own
-    // early list is for this lane -- which is these twelve on the host
-    // lane, but twelve + sortedmap/datetime(+lane)/ser + the conn/atalk
-    // pairs on 68k (drive.cla's own list comment says why). Moving it
+    // early list is for this lane -- these twelve + sortedmap/
+    // datetime(+lane)/ser on the host lane (SE wave 2 Task 9), plus the
+    // conn/atalk/tcp pairs on 68k (drive.cla's own list comment says why). Moving it
     // does NOT move any BASE module: bakeGenerateChain lowers base
     // (everything but uitest.cla) and uitest.cla in two separate passes,
     // in base's own bakeModuleList order, so the baked IR arenas are
     // byte-identical either way -- only the checker-symbol boundary
     // (bkGenEarlySymbolsCount) and the manifest early-visible flags move.
-    if lane != bkLane68k {
-        mods.add("uitest.cla")
-    }
     mods.add("sortedmap.cla")
     mods.add("datetime.cla")
     if lane == bkLane68k {
@@ -462,6 +459,12 @@ func bakeModuleList(lane: int): list of string {
         mods.add("datetime_c.cla")
     }
     mods.add("ser.cla")
+    // SE wave 2 Task 9: the host lane's early-visible boundary now sits
+    // after ser.cla, matching driveEarlySplice (the datetime lane pair
+    // carries the container box-size consts the early modules name).
+    if lane != bkLane68k {
+        mods.add("uitest.cla")
+    }
     if lane == bkLane68k {
         // connection (serial-connection phase, Task 6): conn.cla +
         // conn_68k.cla join the 68k lane's full superset unconditionally

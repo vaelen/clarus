@@ -12,3 +12,23 @@
 func rtNow(): int {
     return peekl(ptr(0x020C))
 }
+
+// Container box sizes (SE wave 2 Task 9) -- the native 68k values: the
+// EXACT sum of each overlay record's fields at 68k widths (every int and
+// ptr/Handle is 4 bytes, no padding), half or less of the host budget in
+// datetime_c.cla. An UNDER-sized box corrupts the heap block after it, so
+// each figure is the field count x 4 and must grow with its record:
+//   RtText      rc h len cap                                  4 x 4 = 16
+//   RtList      rc data elemsize count cap                    5 x 4 = 20
+//   RtMap       rc keys vals valsize count cap valcap keypool
+//               poolused poolcap index indexcap tombs        13 x 4 = 52
+//   RtSortedMap rc keys vals valsize count cap valcap         7 x 4 = 28
+// Why this pair and not text_68k.cla etc.: datetime_68k.cla/datetime_c.cla
+// are the only lane pair that BOTH the committed bootstrap snapshot and
+// the current compiler splice on every build of either lane, so the
+// snapshot keeps compiling this runtime (a new module would leave it with
+// an undefined rtTextBoxSize until the next snapshot regeneration).
+const rtTextBoxSize: int = 16
+const rtListBoxSize: int = 20
+const rtMapBoxSize: int = 52
+const rtSortedMapBoxSize: int = 28
