@@ -1351,8 +1351,9 @@ func parseXRecFieldDecl(): int {
 // parseXRecFieldType parses one extern-record field's type -- Ch13's field
 // palette: `word`/`byte` (contextual, like `word` in an extern func
 // signature; SE wave 3: `int16`/`uint8` parse to the very same TxWord/
-// TxByte nodes, so they marshal byte-for-byte alike), `str[N]`, or (falling back to ordinary parseType) `bool`,
-// `int`, `ptr`, or a nested extern record's name. Anything else that
+// TxByte nodes, so they marshal byte-for-byte alike), `str[N]`, or
+// (falling back to ordinary parseType) `bool`, `int`, `ptr`, or a nested
+// extern record's name. Anything else that
 // parseType accepts (`text`, `fixed`, `char`, `string`, a plain
 // `record`/`overlay record` name, a list/map/array form, ...) parses fine
 // here too -- the checker rejects it against the palette, not the parser.

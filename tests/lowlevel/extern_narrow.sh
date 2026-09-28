@@ -49,4 +49,9 @@ rejected cb_uint16_param 'callback func cb(a: uint16) {
 rejected cb_uint8_ret 'callback func cb(): uint8 {
     return 1
 }' 'uint8 cannot cross the Toolbox boundary'
+rejected xrec_uint16_field 'extern record R {
+    a: uint16
+}' 'extern record field type must be'
+rejected reg_uint8_param 'external func F(a: uint8, p: ptr) = trap 0xA031 reg(d0: a, a0: p)' 'uint8 cannot cross the Toolbox boundary'
+rejected ptrcall_uint8_param 'external func F(target: ptr, a: uint8) = ptr' 'uint8 cannot cross the Toolbox boundary'
 t_done
