@@ -7487,10 +7487,18 @@ in the program design's §9.3.
   conn/atalk/tcp), prefix order intact. Cost: CLAUDE.md's `--testapi`
   paragraph had to change (done in Task 9's fix round).
 
-**Gates.** T2: <T2 result>.
+**Gates.** T2: `scripts/test-merge.sh` PASS in 1289 s (t1 body 121
+pass/37 skip/0 fail; perfgate; selfhost/ 6/6; mactest/ 21 pass/17
+skip/0 fail; bake/ full corpus 7/7).
 `CLARUS_SNOW_TESTS=1 make test T='mactest/snow/clarusc_bake
 mactest/snow/macresident_failed_compile'` (this wave touched `bake.cla`
-and `macgui.cla`): <clarusc_bake result>. The IIcx memprobe run passed
+and `macgui.cla`): `mactest/snow/clarusc_bake` PASS in 475 s and
+`mactest/snow/macresident_failed_compile` PASS in 748 s (Mac IIcx,
+System 7.1). The final-review fix wave added two T1 guards:
+`cg68k/goldens` now also `cmp`s each fixture's flushed (non-`--listing`)
+`out.bin` against its `--listing` build (I1), and
+`lowlevel/boxsize68k` pins each 68k box-size const to 4 x its overlay
+record's all-int/ptr field count (I2). The IIcx memprobe run passed
 5/5 in 367 s. Per-task T1 runs all passed (119–121 pass, 37 skip,
 0 fail, perfgate 1/1).
 

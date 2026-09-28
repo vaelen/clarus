@@ -427,8 +427,8 @@ The SE memory program (2026-09-27) resumed work on this target. See
   calibration terms (the never-released 1879 KB CLIR resource, ~1 MB
   of CODE loaded after launch) would cover it, but neither was
   re-measured, and the host still counts host box/element sizes. Also
-  unattributed: ~100 KB more used at `pre-compile` than Wave 1 (beyond
-  `MoreMasters`' ~40 KB), and compile ticks halving in phases Wave 2 did
+  unattributed: +141 KB used at `pre-compile` on the IIcx against Wave 1,
+  of which only `MoreMasters`' ~40 KB is explained (~100 KB open), and compile ticks halving in phases Wave 2 did
   not target. Settle these before Wave 4 sizes its target.
 - **`MoreMasters`' 64 per call is unproven on the target.** `macgui.cla`
   calls it 153 times assuming the zone's `moreMast` is 64; a memprobe
@@ -445,6 +445,18 @@ The SE memory program (2026-09-27) resumed work on this target. See
   `rtTextGrow`) while `list.reserve(n)` is exact. Task 8 had to
   `shrink()` its blob after reserving; the reference should say which,
   or the two should agree (changing `text.reserve` moves goldens).
+  The concrete cost: `bkReadObjCode`'s obj-code blob
+  (`lRunBytes.reserve`) briefly takes 256 KB for 154,668 B before the
+  `shrink()` -- on the 4 MB SE an extra ~107 KB contiguous request at
+  parse time, and the trimmed tail leaves a hole mid-heap (not at the
+  measured peak, which is `Built fork`).
+- **`bkReadStrPool`'s blob is not pre-sized.** It reserves the offsets
+  list but grows the blob by doubling -- the kind of transient Wave 2
+  removed elsewhere. `expectedPos - bkLoadPos` (the section length) is
+  an upper bound to reserve up front. Perf only.
+- **`bkLoadBase` is write-only** (`bake.cla`): set as `removeFirst`
+  trims `bkLoadBuf`, read by nothing (every parse position is
+  relative). Delete it, or keep it knowingly as diagnostic state.
 - **Task 3's encode-drift guard `abort()`s** instead of a clean
   diagnostic and `false`: it is an internal invariant, but on the Mac it
   kills ClarusC. `a68SelfExercise` also has no direct flush /

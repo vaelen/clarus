@@ -6,6 +6,12 @@
 # out.segN.s against its own committed golden (segment 1 keeps the
 # un-suffixed <name>.s; segment N>1 uses <name>.segN.s).
 # CLARUS_CG68K_BLESS=1 rewrites the goldens instead of comparing.
+# Each fixture is then emitted again WITHOUT --listing and its out.bin must
+# be byte-identical to the --listing build's (SE wave 2 final-review I1):
+# --listing skips a68Flush and encodes whole segments (the path cg68k/vasm
+# cross-checks), while every production build takes the per-function flush
+# + forward-label fixup path, which no other T1 check compares against an
+# independent encode. Same basename in both dirs -- MacBinary embeds it.
 . "$(dirname "$0")/../lib.sh" || exit 2
 
 GDIR=$ROOT/testdata/cg68k
@@ -74,8 +80,16 @@ for fixture in "$GDIR"/*.cla; do
         done
     fi
 
+    mkdir -p "$run/flush" || die "mkdir $run/flush"
+    if ! out=$("$CLARUSC" emit68k -o "$run/flush/out.bin" "$fixture" 2>&1); then
+        echo "$out"
+        bad="$bad flush(emit failed)"
+    elif ! cmp "$run/out.bin" "$run/flush/out.bin"; then
+        bad="$bad flush(out.bin differs from --listing build)"
+    fi
+
     if [ -n "$bad" ]; then
-        t_fail "$name" "listing does not match golden(s):$bad"
+        t_fail "$name" "listing/flush check failed:$bad"
     else
         t_pass "$name"
     fi
