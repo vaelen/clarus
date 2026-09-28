@@ -13574,6 +13574,9 @@ func cgEmitPoolsBody() {
     while i < cgCurPoolStrLits.count {
         idx = cgCurPoolStrLits[i]
         s = poolGet(irStrLitPoolIdx(idx))
+        if cgMeasuringPoolSizes {
+            cgMeasureDropItems()
+        }
         before = a68SizeSoFar()
         a68Bind(cgStrLitLabels[idx])
         a68DcB(s.length)
@@ -13607,6 +13610,9 @@ func cgEmitPoolsBody() {
     i = 0
     while i < cgCurPoolArrLits.count {
         idx = cgCurPoolArrLits[i]
+        if cgMeasuringPoolSizes {
+            cgMeasureDropItems()
+        }
         before = a68SizeSoFar()
         a68Bind(cgArrLitLabels[idx])
         stride = cgArrElemStride(irArrLitElemT[idx])
@@ -13643,6 +13649,9 @@ func cgEmitPoolsBody() {
     // The two are gated independently (a segment can need one without
     // the other).
     if cgUiBlobLabel != -1 {
+        if cgMeasuringPoolSizes {
+            cgMeasureDropItems()
+        }
         before = a68SizeSoFar()
         cgEmitUiBlobPool()
         if cgMeasuringPoolSizes {
@@ -13650,6 +13659,9 @@ func cgEmitPoolsBody() {
         }
     }
     if cgUiEventsLabel != -1 {
+        if cgMeasuringPoolSizes {
+            cgMeasureDropItems()
+        }
         before = a68SizeSoFar()
         cgEmitUiEventsPool()
         if cgMeasuringPoolSizes {
@@ -14079,6 +14091,20 @@ func cg68WriteImageWrap(outPath: string): bool {
     return true
 }
 
+// cgMeasureDropItems (SE wave 1, spec %4.2): measure needs only each
+// function's size (a68SizeSoFar() is a68Pc, not a sum over items) and
+// the label tables; the items themselves are dead once cgFuncSize has
+// the size. peepFunc(startIdx) only touches [startIdx, count), a68Relayout
+// rebases from absolute addresses, and the comment/data texts are read
+// only by a68Finish/the listing after the per-segment a68Reset(). Keep
+// a68Pc and a68LabelAddr/a68LabelDefined -- cross-function label ids.
+// Never a68Reset() here.
+func cgMeasureDropItems() {
+    a68Items.clear()
+    a68CommentTexts.clear()
+    a68DataTexts.clear()
+}
+
 // cg68Measure runs the WHOLE program (startup + cg_init_globals, every
 // reachable function, the duplicated-glue bundle, the constant pool)
 // through the real emitter EXACTLY ONCE, into one throwaway a68 stream,
@@ -14320,6 +14346,7 @@ func cg68Measure(): bool {
                 cgFuncUsesUiEvents[i] = bkLdObjFuncUsesUiEvents[i]
                 cgObjApplyGlueUsage(i)
             } else {
+                cgMeasureDropItems()
                 before = a68SizeSoFar()
                 // Task 15 (findings 1.8): bump the epoch per cgRecFuncIdx
                 // change -- each function gets its own recording context.
@@ -14392,6 +14419,7 @@ func cg68Measure(): bool {
     cgUiEventsSize = 0
 
     cgMeasuringPoolSizes = true
+    cgMeasureDropItems()
     before = a68SizeSoFar()
     cgEmitPoolsBody()
     cgPoolSize = a68SizeSoFar() - before
