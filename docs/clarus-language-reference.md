@@ -180,7 +180,7 @@ An `address` is not a resource: it is a plain inline value, copied like an `int`
 
 `FileInfo` is a predeclared record (Chapter 12: Files) returned by `file.info` — an ordinary value, like any user record: assignable, copyable, a legal field, array, or `list of`/`map of` element type. A program may not declare its own `FileInfo` (the ordinary duplicate-declaration error). Its seven fields, in declaration order: `size: int` (data fork length in bytes; 0 for a folder), `rsrcSize: int` (resource fork length in bytes; 0 for a folder or on a host), `type: string` (Finder type, `""` on a host or for a folder), `creator: string` (Finder creator, `""` on a host or for a folder), `created: int` and `modified: int` (Macintosh-epoch seconds, the same clock as `now()`), and `isDir: bool`. A file with no Finder type set reads back `type == ""`, the same as a folder; `isDir` is the reliable discriminator.
 
-**Storage:** `bool` and `char` occupy exactly 1 byte inside every ordinary aggregate — records and arrays — on every target; `bool` occupies 1 byte inside an `extern record` too, but `char` is not a legal `extern record` field type at all (an extern record's 1-byte numeric field type is `byte` — see the Chapter 13 field palette). As a standalone local, parameter, or global, `bool`/`char` occupy a 2-byte slot (68000 even-address alignment). At `external func`/`trap` boundaries the Chapter 13 marshaling rules apply (a bool/char parameter or result travels in a 16-bit stack word).
+**Storage:** `bool` and `char` occupy exactly 1 byte inside every ordinary aggregate — records and arrays — on every target; `bool` occupies 1 byte inside an `extern record` too, but `char` is not a legal `extern record` field type at all (an extern record's 1-byte numeric field type is `uint8` — see the Chapter 13 field palette). As a standalone local, parameter, or global, `bool`/`char` occupy a 2-byte slot (68000 even-address alignment). At `external func`/`trap` boundaries the Chapter 13 marshaling rules apply (a bool/char parameter or result travels in a 16-bit stack word).
 
 ### Narrow Integers
 
@@ -1768,7 +1768,7 @@ func ticksSince(start: int): int {
 }
 ```
 
-`external func` is a top-level declaration and may appear anywhere among a program's top-level declarations, like `record`, `func`, or `const`. It has no body — the form above, ending at the parameter list and optional return type, is complete. Return types are restricted to `int`, `ptr`, `bool`, and `char`; the return type may be omitted for a function with no result. Parameter types additionally allow `str` and `text`: a `str` parameter is marshalled as the address of the caller's Str255, borrowed for the call; a `text` parameter is passed as the underlying box pointer, likewise borrowed — the callee must not store either beyond the call. `word` (below, alongside the trap/inline clauses it exists for) is also accepted in either position — an `int`-compatible 16-bit-at-the-boundary type, not a fifth independent scalar. A call to an `external func` is an ordinary call expression or call statement, indistinguishable at the call site from a call to a Clarus-defined function — `GetTicks()` above is called exactly like any other zero-argument function returning `int`.
+`external func` is a top-level declaration and may appear anywhere among a program's top-level declarations, like `record`, `func`, or `const`. It has no body — the form above, ending at the parameter list and optional return type, is complete. Return types are restricted to `int`, `ptr`, `bool`, and `char`; the return type may be omitted for a function with no result. Parameter types additionally allow `str` and `text`: a `str` parameter is marshalled as the address of the caller's Str255, borrowed for the call; a `text` parameter is passed as the underlying box pointer, likewise borrowed — the callee must not store either beyond the call. `int16` (below, alongside the trap/inline clauses it exists for) is also accepted in either position — an `int`-compatible 16-bit-at-the-boundary type, not a fifth independent scalar. A call to an `external func` is an ordinary call expression or call statement, indistinguishable at the call site from a call to a Clarus-defined function — `GetTicks()` above is called exactly like any other zero-argument function returning `int`.
 
 An `external func` may optionally name how its entry point is reached, with a trailing `= trap ...` or `= inline ...` clause — see Trap and Inline Clauses, below.
 
@@ -1813,24 +1813,24 @@ An `extern record` declares a Mac-packed-layout struct transcribed straight from
 
 ```rust
 extern record Point {
-    v: word
-    h: word
+    v: int16
+    h: int16
 }
 
 extern record EventRecord {
-    what: word
+    what: int16
     message: int
     when: int
     where: Point
-    modifiers: word
+    modifiers: int16
 }
 
 extern record SFReply {
     good: bool
     copy: bool
     fType: int
-    vRefNum: word
-    version: word
+    vRefNum: int16
+    version: int16
     fName: str[63]
 }
 ```
@@ -1856,7 +1856,7 @@ The one way to take an extern record's address is **decay at an `external func` 
 
 Total record size rounds up to even. Field offsets follow the classic MPW 68k packing rule exactly: each field aligned per the table above, no other padding inserted. `byte` and `pad` are contextual field-type names recognized ONLY inside an `extern record` body, the same way `word` is contextual only in an `external func` signature — elsewhere (a `var` declaration, an ordinary `record` field) they are ordinary identifiers. `pad` additionally has no named form: a field written `name: pad[N]` does NOT declare a pad run — "pad" is recognized only as a bare field line's own leading token, never after `name:`, so `name: pad[N]` instead falls through to the ordinary `type[N]` array-length grammar (an array of a nested type named `pad`), which is not itself in the palette and so is rejected with the same "extern record field type must be bool, byte, word, int, ptr, str[N], pad[N], or an extern record" diagnostic any other non-palette field type gets. `fixed`-typed fields are not supported in this phase (add on demand — `Fixed` transcribes as `int` and converts via the existing fixed conversions).
 
-**Ordinary `record` packing:** the same discipline governs an ordinary `record`'s (Chapter 3) own field layout, independently of the palette above: `bool` and `char` fields pack at 1-byte alignment — their exact 1-byte size, no padding before or after, in an ordinary record or a fixed array alike; `bool` keeps that same 1-byte packing inside an `extern record` too, but `char` is excluded from the extern-record palette entirely (not a legal field type there — an extern record's 1-byte numeric field type is `byte`, above). Every other ordinary-record field kind (`int`, `fixed`, `string(n)`, enum, nested `record`, `T[n]`, `text`, `list of T`, `map of T`, window and resource references) packs at 2-byte alignment (a degenerate 1-byte `T[n]` — `bool[1]`/`char[1]` — packs at 1-byte alignment instead, same as a bare `bool`/`char` field), in declaration order: a 2-byte-aligned field is padded up to the next even offset when the fields before it left an odd running size, and the record's total size is rounded up to even the same way. A `string(n)` field additionally occupies its even-rounded size — n+1 rounded up to even bytes — so the field after it starts on an even offset on every lane. A fixed array's elements follow the identical rule at element granularity — `bool[n]`/`char[n]` elements sit at stride 1, tightly packed with no inter-element padding, while every other element kind keeps its own natural stride. Both code generators (`cg68k` and the host-C `cprint` lane) implement this rule for `bool`/`char` (small-scalar-width phase) and for `string(n)` fields' 2-byte alignment and even-rounded size (strn-field-alignment phase, 2026-08-06 — the C lane realizes it with explicit pad members and an even-padded `clar_str_n` typedef), so the two lanes' record layouts coincide for those kinds; per-lane layouts are still never interchangeable — a native-computed field offset is never valid against a host build's struct, or vice versa, since each lane computes its own independently.
+**Ordinary `record` packing:** the same discipline governs an ordinary `record`'s (Chapter 3) own field layout, independently of the palette above: `bool` and `char` fields pack at 1-byte alignment — their exact 1-byte size, no padding before or after, in an ordinary record or a fixed array alike; `bool` keeps that same 1-byte packing inside an `extern record` too, but `char` is excluded from the extern-record palette entirely (not a legal field type there — an extern record's 1-byte numeric field type is `uint8`, above). Every other ordinary-record field kind (`int`, `fixed`, `string(n)`, enum, nested `record`, `T[n]`, `text`, `list of T`, `map of T`, window and resource references) packs at 2-byte alignment (a degenerate 1-byte `T[n]` — `bool[1]`/`char[1]` — packs at 1-byte alignment instead, same as a bare `bool`/`char` field), in declaration order: a 2-byte-aligned field is padded up to the next even offset when the fields before it left an odd running size, and the record's total size is rounded up to even the same way. A `string(n)` field additionally occupies its even-rounded size — n+1 rounded up to even bytes — so the field after it starts on an even offset on every lane. A fixed array's elements follow the identical rule at element granularity — `bool[n]`/`char[n]` elements sit at stride 1, tightly packed with no inter-element padding, while every other element kind keeps its own natural stride. Both code generators (`cg68k` and the host-C `cprint` lane) implement this rule for `bool`/`char` (small-scalar-width phase) and for `string(n)` fields' 2-byte alignment and even-rounded size (strn-field-alignment phase, 2026-08-06 — the C lane realizes it with explicit pad members and an even-padded `clar_str_n` typedef), so the two lanes' record layouts coincide for those kinds; per-lane layouts are still never interchangeable — a native-computed field offset is never valid against a host build's struct, or vice versa, since each lane computes its own independently.
 
 Multi-byte fields read and write in the machine's native byte order — the same `peekw`/`peekl`/`pokew`/`pokel` contract Chapter 13's `peek`/`poke` section already documents: big-endian on the 68k target, host-endian on a host build. An `extern record` is all-scalar storage, structurally outside automatic reference counting — never retained or released, the same as an overlay record or a plain `ptr`.
 
@@ -1884,11 +1884,11 @@ This is the normative mapping from Inside Macintosh's own type vocabulary to the
 
 | Inside Macintosh | Clarus |
 |---|---|
-| `INTEGER` / `OSErr` | `word` — `external func` parameter/result (The `word` Extern Type, below) or extern-record field (Field Palette, above) |
+| `INTEGER` / `OSErr` | `int16` — `external func` parameter/result (The `word` Extern Type, below) or extern-record field (Field Palette, above) |
 | `LONGINT` / `OSType` / `Fixed` | `int` |
 | `Boolean` | `bool` — 1 byte in every aggregate; word-marshaled into the high byte at the pascal trap boundary (Trap and Inline Clauses, below) |
-| `CHAR` (a CharParameter) | `word` — **never** `char`. A CHAR parameter is a plain 16-bit `INTEGER` with the character code in the low byte; Clarus's `char` extern shape instead pads its value into the word's high byte, the same convention `bool` uses (Trap and Inline Clauses, below). Declaring a CHAR parameter `char` silently reads and writes the wrong byte at the trap boundary — the MenuKey lesson. |
-| `SignedByte` / `Byte` | `byte` — extern-record field only (Field Palette, above) |
+| `CHAR` (a CharParameter) | `int16` — **never** `char`. A CHAR parameter is a plain 16-bit `INTEGER` with the character code in the low byte; Clarus's `char` extern shape instead pads its value into the word's high byte, the same convention `bool` uses (Trap and Inline Clauses, below). Declaring a CHAR parameter `char` silently reads and writes the wrong byte at the trap boundary — the MenuKey lesson. |
+| `SignedByte` / `Byte` | `uint8` — extern-record field only (Field Palette, above) |
 | `Str255` / `StrN` | `str` parameter, the caller's Str255 address borrowed for the call (`external func`, above), or `str[N]` extern-record field (Field Palette, above) |
 | `VAR` parameter | `ptr` — an extern-record variable or field lvalue decays to its address at the call site (`extern record`, above) |
 | `Point` passed by value | a 4-byte extern record passed where the callee declares an `int` parameter (`extern record`, above) |
@@ -1902,9 +1902,9 @@ A trap word's bit 11 (`trap & 0x0800`) is the normative test for which calling c
 A `callback func` declares an ordinary Clarus function the Toolbox itself calls back through, via compiler-generated pascal-convention glue — a List Manager LDEF, a control's action procedure, a dialog filter, or any other Inside Macintosh entry point that expects a raw function pointer. `callback` is contextual, recognized only immediately before `func`; elsewhere it is an ordinary identifier. A `callback func` is a top-level declaration only — one may not be nested inside another function.
 
 ```rust
-external func UiTrackControl(ctl: ptr, startPt: int, action: ptr): word
+external func UiTrackControl(ctl: ptr, startPt: int, action: ptr): int16
 
-callback func myAction(ctl: ptr, part: word) {
+callback func myAction(ctl: ptr, part: int16) {
     var offset: int = part
 }
 
@@ -1914,7 +1914,7 @@ func track(ctl: ptr, startPt: int) {
 }
 ```
 
-A callback's parameter and return types are restricted to `bool`, `char`, `word`, `int`, and `ptr` — the same by-value scalars a pascal-convention `external func` already marshals (no `str`/`text`, records, or containers; no defaults). The compiler generates the glue that reads each argument at its fixed pascal-convention stack offset and writes the result back the same way, following the marshaling rule the trap clause above already documents: a `word` sign-extends, and `bool`/`char` occupy a full word but live in its high byte. A callback's own BODY is ordinary Clarus code with no awareness of that boundary at all — the glue is entirely compiler-generated, never hand-written.
+A callback's parameter and return types are restricted to `bool`, `char`, `int16`, `int`, and `ptr` — the same by-value scalars a pascal-convention `external func` already marshals (no `str`/`text`, records, or containers; no defaults). The compiler generates the glue that reads each argument at its fixed pascal-convention stack offset and writes the result back the same way, following the marshaling rule the trap clause above already documents: an `int16` sign-extends, and `bool`/`char` occupy a full word but live in its high byte. A callback's own BODY is ordinary Clarus code with no awareness of that boundary at all — the glue is entirely compiler-generated, never hand-written.
 
 The bare name of a callback decays to its glue's address only where an `external func` parameter is declared `ptr` — `myAction` passed to `UiTrackControl`'s `action` parameter, above. A callback name used anywhere else — a variable initializer, a non-`ptr` or non-extern argument, a return value, a container element — is a build-time error. A callback may also be called directly, like any ordinary function (`myAction(ctl, 1)`, above); a direct call bypasses the glue entirely and runs the body straight, since underneath a callback's body is nothing but an ordinary Clarus function.
 
@@ -1950,11 +1950,11 @@ regBind   = REG ":" IDENT ;   // REG in { d0, d1, d2, a0, a1 }, lowercase
 external func TickCount(): int = trap 0xA975
 ```
 
-A `bool` or `char` parameter or result under the plain `trap` clause still occupies a full 16-bit stack word — Pascal never packs sub-word arguments — but the value itself lives in that word's HIGH-order byte (the word's own, lowest, address), not its low byte: pushing a `bool`/`char` argument shifts the value up 8 bits before the word push, and reading a `bool`/`char` result shifts the popped word down 8 bits before use. This is normative and empirically verified (native-5e Task 12, against a real ROM trap and a real Toolbox struct field on Mini vMac hardware) — an earlier (5d-era) low-byte claim for this same convention was wrong and is superseded by this paragraph. `word` (below) parameters and results are unaffected: a `word` is a genuine 16-bit value, not a narrower value padded into a word, so it always occupies the word's full span with no shift.
+A `bool` or `char` parameter or result under the plain `trap` clause still occupies a full 16-bit stack word — Pascal never packs sub-word arguments — but the value itself lives in that word's HIGH-order byte (the word's own, lowest, address), not its low byte: pushing a `bool`/`char` argument shifts the value up 8 bits before the word push, and reading a `bool`/`char` result shifts the popped word down 8 bits before use. This is normative and empirically verified (native-5e Task 12, against a real ROM trap and a real Toolbox struct field on Mini vMac hardware) — an earlier (5d-era) low-byte claim for this same convention was wrong and is superseded by this paragraph. `int16` (below) parameters and results are unaffected: an `int16` is a genuine 16-bit value, not a narrower value padded into a word, so it always occupies the word's full span with no shift.
 
 Appending `reg` selects the register calling convention some traps use instead, in either of two forms. The POSITIONAL form (below) assigns registers by declaration order; a NAMED form (further below) binds each register to a parameter explicitly.
 
-At most two `ptr` parameters, passed in A0 then A1 (declaration order), and at most two `int`/`bool`/`char`/`word` parameters, passed in D0 then D1 (declaration order) — a third parameter of either kind, or any `str`/`text` parameter, is an error, since none of those has a register slot under `reg`:
+At most two `ptr` parameters, passed in A0 then A1 (declaration order), and at most two `int`/`bool`/`char`/`int16` parameters, passed in D0 then D1 (declaration order) — a third parameter of either kind, or any `str`/`text` parameter, is an error, since none of those has a register slot under `reg`:
 
 ```rust
 external func BlockMove(src: ptr, dst: ptr, count: int) = trap 0xA02E reg
@@ -1966,22 +1966,22 @@ external func BlockMove(src: ptr, dst: ptr, count: int) = trap 0xA02E reg
 external func SetHandleSize(h: ptr, newSize: int): int = trap 0xA024 reg memerr
 ```
 
-`reg` also accepts a NAMED form, `reg( REG: paramName, ... )`, binding each register explicitly to one declared parameter by name instead of assigning by position. Register names are contextual identifiers (like `reg` itself), lowercase only, drawn from the closed set `d0 d1 d2 a0 a1` — matching the listing printer's own lowercase spelling; any other spelling, including `d3` or `a5`, is an error (`a5`/`a6`/`a7` are the globals base, frame, and stack registers, never available here). Every declared parameter must be bound exactly once, every bound name must name a real parameter, and no register may be bound twice; unlike the positional form above, the named form has no 2+2 count limit — it is bounded only by the register table itself. Parameter types are the same set the positional form accepts (`int`, `bool`, `char`, `word`, `ptr`; `str`/`text` remain rejected):
+`reg` also accepts a NAMED form, `reg( REG: paramName, ... )`, binding each register explicitly to one declared parameter by name instead of assigning by position. Register names are contextual identifiers (like `reg` itself), lowercase only, drawn from the closed set `d0 d1 d2 a0 a1` — matching the listing printer's own lowercase spelling; any other spelling, including `d3` or `a5`, is an error (`a5`/`a6`/`a7` are the globals base, frame, and stack registers, never available here). Every declared parameter must be bound exactly once, every bound name must name a real parameter, and no register may be bound twice; unlike the positional form above, the named form has no 2+2 count limit — it is bounded only by the register table itself. Parameter types are the same set the positional form accepts (`int`, `bool`, `char`, `int16`, `ptr`; `str`/`text` remain rejected):
 
 ```rust
-external func PostEvent(eventNum: word, eventMsg: int): word =
+external func PostEvent(eventNum: int16, eventMsg: int): int16 =
     trap 0xA02F reg(a0: eventNum, d0: eventMsg) ret d0
 ```
 
-An optional trailing `ret REG` names the result register, for either form of `reg`; omitted, the default is today's rule — `A0` for a `ptr` result, `D0` otherwise. `ret` on a `void` extern (no declared return type) is an error, and `ret` is mutually exclusive with `memerr` (which already names the result's source — the low-memory global, not a register). Reading the result from whichever register, named or defaulted: an `int` or `ptr` result uses its full 32 bits; a `word` result reads its low 16 bits, SIGN-extended (Toolbox `INTEGER`/`OSErr`); a `bool` or `char` result reads its low byte, zero-extended — see the `word` correction just below.
+An optional trailing `ret REG` names the result register, for either form of `reg`; omitted, the default is today's rule — `A0` for a `ptr` result, `D0` otherwise. `ret` on a `void` extern (no declared return type) is an error, and `ret` is mutually exclusive with `memerr` (which already names the result's source — the low-memory global, not a register). Reading the result from whichever register, named or defaulted: an `int` or `ptr` result uses its full 32 bits; an `int16` result reads its low 16 bits, SIGN-extended (Toolbox `INTEGER`/`OSErr`); a `bool` or `char` result reads its low byte, zero-extended — see the `int16` correction just below.
 
 Some Toolbox packages share a single trap word across many routines, distinguished by a selector word the caller pushes immediately before the trap — the List Manager's `LNew`/`LDispose`/`LAddRow`/etc. all dispatch through the one trap `0xA9E7` this way. `trap NNNN sel SELECTOR` names that shape: `SELECTOR` (an unsigned 16-bit value, decimal or hex) is pushed as one more Pascal-convention stack word, closest to the trap itself, after every declared argument — the trap dispatcher pops it along with the rest, so no separate caller cleanup is needed. `sel` and `reg` are mutually exclusive — a selector-dispatch trap is always Pascal-convention:
 
 ```rust
-external func LAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7 sel 0x0008
+external func LAddRow(count: int16, rowNum: int16, lHandle: ptr): int16 = trap 0xA9E7 sel 0x0008
 ```
 
-Some other Toolbox managers share a single trap word the same way, but distinguish the routine by PRELOADING the selector into D0 instead of pushing it — the AppleEvent Manager's own trap `0xA816` (every `AE*` routine) is the working example. `trap NNNN seld0 SELECTOR` names that shape: the selector is moved into D0 immediately before the trap, after every declared argument has already been pushed — no extra stack word, so no extra cleanup either. `seld0` and `sel` are two different selector-dispatch shapes for two different trap families; a routine's own Inside Macintosh/Universal-Interfaces `THREEWORDINLINE` encoding says which — `0x3F3C` (`MOVE.W #selector,-(SP)`) is `sel`, `0x303C` (`MOVE.W #selector,D0`) is `seld0`. Like `sel`, `seld0` is mutually exclusive with `reg` (`external func AEInstallEventHandler(theAEEventClass: int, theAEEventID: int, handler: ptr, handlerRefcon: int, isSysHandler: bool): word = trap 0xA816 seld0 0x091F`, toolbox/appleevents.cla).
+Some other Toolbox managers share a single trap word the same way, but distinguish the routine by PRELOADING the selector into D0 instead of pushing it — the AppleEvent Manager's own trap `0xA816` (every `AE*` routine) is the working example. `trap NNNN seld0 SELECTOR` names that shape: the selector is moved into D0 immediately before the trap, after every declared argument has already been pushed — no extra stack word, so no extra cleanup either. `seld0` and `sel` are two different selector-dispatch shapes for two different trap families; a routine's own Inside Macintosh/Universal-Interfaces `THREEWORDINLINE` encoding says which — `0x3F3C` (`MOVE.W #selector,-(SP)`) is `sel`, `0x303C` (`MOVE.W #selector,D0`) is `seld0`. Like `sel`, `seld0` is mutually exclusive with `reg` (`external func AEInstallEventHandler(theAEEventClass: int, theAEEventID: int, handler: ptr, handlerRefcon: int, isSysHandler: bool): int16 = trap 0xA816 seld0 0x091F`, toolbox/appleevents.cla).
 
 `= inline deref`, `= inline nop`, `= inline a5` and `= inline sp` name no trap at all — they mark the external as a compiler-known intrinsic, expanded at the call site instead of dispatched through a trap number. `inline deref` requires the signature `(ptr): ptr` exactly, reading the pointer stored at its argument address (the common master-pointer-to-object-pointer step of following a Handle):
 
@@ -2019,10 +2019,10 @@ external func TickCount(): int = trap 0xA975
 `= ptr` names no trap and no compiler intrinsic; it calls through a pointer the program already holds at run time — a loaded code resource, a `ProcPtr` handed back from the Toolbox, any machine-code entry point reachable only by value rather than by a fixed trap number. The declaration's first parameter is the call target: it must exist and must be declared `ptr`, and it is consumed as the jump address rather than pushed as an argument — a zero-parameter `= ptr` declaration, or one whose first parameter is any other type, is a compile-time error (`= ptr requires a first parameter of type ptr`):
 
 ```rust
-external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
+external func PluginMain(entry: ptr, verb: int16, param: ptr): int = ptr
 ```
 
-Every parameter after the target, and the return type, follow the plain pascal `trap` clause's own marshalling rules exactly (Trap and Inline Clauses, above) — the same type sets (`int`/`ptr`/`bool`/`char`/`word`/`str`/`text` parameters; `int`/`ptr`/`bool`/`char`/`word`, or no return type), the same high-byte `bool`/`char` convention, the same borrowed-address treatment for `str`/`text`. A `= ptr` declaration with no parameters besides the target is fine — the call still marshals a target and nothing else.
+Every parameter after the target, and the return type, follow the plain pascal `trap` clause's own marshalling rules exactly (Trap and Inline Clauses, above) — the same type sets (`int`/`ptr`/`bool`/`char`/`int16`/`str`/`text` parameters; `int`/`ptr`/`bool`/`char`/`int16`, or no return type), the same high-byte `bool`/`char` convention, the same borrowed-address treatment for `str`/`text`. A `= ptr` declaration with no parameters besides the target is fine — the call still marshals a target and nothing else.
 
 `ptr` takes no suffix: none of `sel`, `seld0`, `reg`, `memerr`, or `ret` may follow it — those all modify a `trap` clause's dispatch or calling convention, and `= ptr` is Pascal-convention-only with no trap word to select and no convention to override. The grammar itself has no production for a suffix in that position, so writing one is a plain parse error, not a checked diagnostic the way an incompatible `reg`/`sel` combination under `trap` is.
 
@@ -2039,7 +2039,7 @@ The declaration is a calling contract, not a binding: nothing in it ties the cal
 ```rust
 external func HLock(h: ptr) = trap 0xA029 reg               // toolbox/memory.cla
 external func HandleToPtr(h: ptr): ptr = inline deref
-external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
+external func PluginMain(entry: ptr, verb: int16, param: ptr): int = ptr
 
 // h: ptr — a resource Handle from GetResource, e.g. GetResource('PLUG', 128)
 // pb: ptr — a parameter block the plugin's caller has already built
@@ -2062,11 +2062,11 @@ externRet   = type | "word" ;
 
 `word` is contextual, the same way `overlay` and `external` are: recognized only in an `external func`'s own parameter list or return type position; everywhere else (a `var` declaration, a `record` field, a non-extern function's parameter) it is an ordinary identifier, and a program may freely use `word` as a variable or field name.
 
-Within Clarus code, a `word`-typed parameter or return behaves exactly like `int` — callers pass ordinary `int` expressions, and a call returning `word` reads back as `int`, usable anywhere an `int` is:
+Within Clarus code, an `int16`-typed parameter or return behaves exactly like `int` — callers pass ordinary `int` expressions, and a call returning `int16` reads back as `int`, usable anywhere an `int` is:
 
 ```rust
-external func UiMoveTo(h: word, v: word) = trap 0xA893
-external func UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C
+external func UiMoveTo(h: int16, v: int16) = trap 0xA893
+external func UiFindWindow(pt: int, wpOut: ptr): int16 = trap 0xA92C
 
 func openAt(pt: int, wpOut: ptr): int {
     var kind: int = UiFindWindow(pt, wpOut)
@@ -2075,9 +2075,9 @@ func openAt(pt: int, wpOut: ptr): int {
 }
 ```
 
-The distinction matters only at the trap boundary itself. A `word` argument pushes as a single 16-bit stack word rather than `int`'s 32-bit long — the Pascal calling convention's own `bool`/`char` push shape, one stack word per argument regardless of width. A `word` result is popped back off its reserved stack slot and SIGN-extended to fill the full 32-bit value the rest of Clarus code sees — Toolbox `INTEGER` is signed (a coordinate, a row number, an index that can carry a negative sentinel), unlike the zero-extended `bool`/`char` result.
+The distinction matters only at the trap boundary itself. An `int16` argument pushes as a single 16-bit stack word rather than `int`'s 32-bit long — the Pascal calling convention's own `bool`/`char` push shape, one stack word per argument regardless of width. An `int16` result is popped back off its reserved stack slot and SIGN-extended to fill the full 32-bit value the rest of Clarus code sees — Toolbox `INTEGER` is signed (a coordinate, a row number, an index that can carry a negative sentinel), unlike the zero-extended `bool`/`char` result.
 
-Under EITHER form of the `reg` calling convention (positional or named, above), a `word` PARAMETER has no separate marshaling of its own: it occupies a full D-register slot exactly like `int`, since `reg` never narrows to a stack word in the first place. A `word` RESULT is different — this corrects an earlier revision of this paragraph, which said a `word` result also occupies a full register slot like `int`: it does not. A `word` result under `reg` reads back from its result register's low 16 bits, SIGN-extended — the same `INTEGER`/`OSErr` signedness rule as a `word` result under the plain `trap` convention above, just sourced from a register instead of a popped stack slot. The one real call site that returns a `word` under `reg`, `UiGestaltErr` (`runtime/clarus/ui.cla`), already sign-extends its result this way; this correction makes the written rule match it.
+Under EITHER form of the `reg` calling convention (positional or named, above), an `int16` PARAMETER has no separate marshaling of its own: it occupies a full D-register slot exactly like `int`, since `reg` never narrows to a stack word in the first place. An `int16` RESULT is different — this corrects an earlier revision of this paragraph, which said an `int16` result also occupies a full register slot like `int`: it does not. An `int16` result under `reg` reads back from its result register's low 16 bits, SIGN-extended — the same `INTEGER`/`OSErr` signedness rule as an `int16` result under the plain `trap` convention above, just sourced from a register instead of a popped stack slot. The one real call site that returns an `int16` under `reg`, `UiGestaltErr` (`runtime/clarus/ui.cla`), already sign-extends its result this way; this correction makes the written rule match it.
 
 ## Appendix A: Grammar (EBNF)
 

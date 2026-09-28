@@ -30,24 +30,24 @@
 // arguments in that same malformed output).
 
 extern record Point {
-    v: word
-    h: word
+    v: int16
+    h: int16
 }
 
 extern record EventRecord {
-    what: word
+    what: int16
     message: int
     when: int
     where: Point
-    modifiers: word
+    modifiers: int16
 }
 
 extern record SFReply {
     good: bool
     copy: bool
     fType: int
-    vRefNum: word
-    version: word
+    vRefNum: int16
+    version: int16
     fName: str[63]
 }
 
@@ -104,7 +104,7 @@ func fieldReadWrite(): int {
 // fieldReadWrite doesn't otherwise touch.
 extern record ByteAndPad {
     origin: Point
-    flags: byte
+    flags: uint8
     pad[3]
     tag: int
 }

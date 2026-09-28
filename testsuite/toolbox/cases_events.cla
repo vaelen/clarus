@@ -22,13 +22,13 @@
 // (the fixed, correct declaration this one mirrors) for the full story.
 external func TbTickCount(): int = trap 0xA975
 
-// TbMenuKey: _MenuKey (0xA93E), `ch: word` (not `char`) -- MenuKey's real
+// TbMenuKey: _MenuKey (0xA93E), `ch: int16` (not `char`) -- MenuKey's real
 // ABI is CharParameter, a plain 16-bit INTEGER with the char code in the
 // LOW byte, not the `bool`/`char` extern shape's padded-high-byte word.
 // The 5faaa6c-era bug shape declared this as `ch: char`, which marshals
 // into the word's HIGH byte, so a real cmd-key char code (low byte) never
 // matched any menu's key equivalent and MenuKey always returned 0.
-external func TbMenuKey(ch: word): int = trap 0xA93E
+external func TbMenuKey(ch: int16): int = trap 0xA93E
 
 // TbHiliteMenu: _HiliteMenu (0xA938), same signature as the runtime's own
 // UiHiliteMenu (ui.cla:236). Real MenuKey hilites the matched menu's title
@@ -37,7 +37,7 @@ external func TbMenuKey(ch: word): int = trap 0xA93E
 // rtUiMenuDispatch (which calls UiHiliteMenu(0) first), so without this
 // local call the File title would stay inverted for the rest of the suite
 // run.
-external func TbHiliteMenu(menuId: word) = trap 0xA938
+external func TbHiliteMenu(menuId: int16) = trap 0xA938
 
 // caseTickCountAdvances: read TbTickCount, then re-read it in a loop
 // bounded to ~50k iterations (the reg-bug shape above would burn the

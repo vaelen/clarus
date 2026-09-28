@@ -35,16 +35,16 @@
 // contract); EXT.L immediately after `ev.what`'s peekw-then-sign-extend
 // field read (CvSExt16).
 extern record Point {
-    v: word
-    h: word
+    v: int16
+    h: int16
 }
 
 extern record EventRecord {
-    what: word
+    what: int16
     message: int
     when: int
     where: Point
-    modifiers: word
+    modifiers: int16
 }
 
 var gev: EventRecord

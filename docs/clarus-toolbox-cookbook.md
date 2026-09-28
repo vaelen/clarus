@@ -46,7 +46,7 @@ Transcribing that into Clarus takes four steps:
 
 1. **Read off the name and parameters**, matching each Inside Macintosh type
    against the reference's own transcription table (Ch13). `CHAR` here is a
-   `CharParameter`, which the table calls out specially: it maps to `word`,
+   `CharParameter`, which the table calls out specially: it maps to `int16`,
    **never** `char` — more on why in §2.
 2. **Find the routine's trap word.** It is not in the Pascal signature above;
    it lives in Inside Macintosh's trap-word appendix (the "Trap Macros and
@@ -125,9 +125,9 @@ Transcribing that into Clarus takes four steps:
    `= trap` clause must declare — set means the Toolbox/Pascal convention,
    clear means the OS/register convention. `0xA93E & 0x0800 == 0x0800`, so
    `MenuKey` is bit-11-set: plain `trap 0xA93E`, no `reg` clause.
-4. **Watch for a param/result type that needs `word`, not the "obvious"
+4. **Watch for a param/result type that needs `int16`, not the "obvious"
    Clarus type** — `CHAR`, `Boolean`, `INTEGER`, and `OSErr` all transcribe
-   to `word`, per the table; only `LONGINT`/`OSType`/`Fixed` become `int`.
+   to `int16`, per the table; only `LONGINT`/`OSType`/`Fixed` become `int`.
    Getting this step wrong is the single most common way a transcription
    compiles clean and then fails silently at runtime — the whole subject of
    §2 below.
@@ -181,7 +181,7 @@ question is `ch`'s type. Inside Macintosh's `MenuKey` signature declares `ch:
 CHAR` — a `CharParameter`. The reference's transcription table has a
 dedicated row for exactly this case:
 
-> `CHAR` (a CharParameter) | `word` — **never** `char`. A CHAR parameter is a
+> `CHAR` (a CharParameter) | `int16` — **never** `char`. A CHAR parameter is a
 > plain 16-bit `INTEGER` with the character code in the low byte; Clarus's
 > `char` extern shape instead pads its value into the word's high byte, the
 > same convention `bool` uses. Declaring a CHAR parameter `char` silently
@@ -211,12 +211,12 @@ never fires from the keyboard." That is the silent failure mode: the
 function compiles, links, runs, and returns a plausible-looking `int` every
 single call — it is just always wrong.
 
-The fix is the row's own prescription — declare `ch` as `word`:
+The fix is the row's own prescription — declare `ch` as `int16`:
 
 ```rust
-// Correct: CharParameter transcribes to `word`, per Ch13's transcription
+// Correct: CharParameter transcribes to `int16`, per Ch13's transcription
 // table.
-external func TbMenuKey(ch: word): int = trap 0xA93E
+external func TbMenuKey(ch: int16): int = trap 0xA93E
 ```
 
 This is `testsuite/toolbox/cases_events.cla`'s real `TbMenuKey` declaration,
@@ -248,7 +248,7 @@ where does the error code actually live?
 `SetHandleSize`'s trap word is `0xA024`. `0xA024 & 0x0800 == 0` — bit 11
 clear, register convention. Register-convention parameters are assigned by
 declaration order: at most two `ptr` params in A0 then A1, at most two
-`int`/`bool`/`char`/`word` params in D0 then D1 (Ch13, "Trap and Inline
+`int`/`bool`/`char`/`int16` params in D0 then D1 (Ch13, "Trap and Inline
 Clauses"). `SetHandleSize(h: ptr, newSize: int)` fits that exactly — `h` in
 A0, `newSize` in D0.
 
@@ -311,7 +311,7 @@ A1, OSErr in D0", and you write this:
 
 ```rust
 // WRONG -- do not copy
-external func Gestalt(selector: int, response: ptr): word =
+external func Gestalt(selector: int, response: ptr): int16 =
     trap 0xA1AD reg(d0: selector, a1: response) ret d0
 ```
 
@@ -331,7 +331,7 @@ word, so the trap is transcribed twice — once per result register — and
 callers pair the two:
 
 ```rust
-external func GestaltErr(selector: int): word = trap 0xA1AD reg(d0: selector) ret d0
+external func GestaltErr(selector: int): int16 = trap 0xA1AD reg(d0: selector) ret d0
 external func GestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector) ret a0
 ```
 
@@ -407,35 +407,35 @@ even. `Point` first, since `EventRecord` nests it:
 
 ```rust
 extern record Point {
-    v: word
-    h: word
+    v: int16
+    h: int16
 }
 ```
 
-`Point`'s own diagram is `v, h: INTEGER` — both `word` (2 bytes, 2-byte
+`Point`'s own diagram is `v, h: INTEGER` — both `int16` (2 bytes, 2-byte
 alignment per the palette), so `Point` is 4 bytes total, `v`@0, `h`@2. Now
 `EventRecord`, walking the palette one field at a time:
 
 | Field | IM type | Clarus type | bytes | offset |
 |---|---|---|---|---|
-| `what` | `INTEGER` | `word` | 2 | 0 |
+| `what` | `INTEGER` | `int16` | 2 | 0 |
 | `message` | `LONGINT` | `int` | 4 | 2 |
 | `when` | `LONGINT` | `int` | 4 | 6 |
 | `where` | `Point` | nested `extern record` | 4 | 10 |
-| `modifiers` | `INTEGER` | `word` | 2 | 14 |
+| `modifiers` | `INTEGER` | `int16` | 2 | 14 |
 
-Every field here is already 2-byte-aligned by the palette's own rule (`word`
+Every field here is already 2-byte-aligned by the palette's own rule (`int16`
 aligns at 2, `int` aligns at 2, a nested extern record aligns at 2), so there
 is no padding to insert anywhere — the running offset is already even before
 every field. Total size: 16 bytes, already even, so no rounding needed:
 
 ```rust
 extern record EventRecord {
-    what: word
+    what: int16
     message: int
     when: int
     where: Point
-    modifiers: word
+    modifiers: int16
 }
 ```
 
@@ -450,7 +450,7 @@ func` call site — the one address-of the language provides (Ch13, `extern
 record`):
 
 ```rust
-external func TbEventAvail(mask: word, ev: ptr): bool = trap 0xA971
+external func TbEventAvail(mask: int16, ev: ptr): bool = trap 0xA971
 
 func waitForEvent(): int {
     var ev: EventRecord
@@ -472,7 +472,7 @@ before the trap. The List Manager is the canonical example: `LNew`,
 Clauses") transcribes `LAddRow`:
 
 ```rust
-external func LAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7 sel 0x0008
+external func LAddRow(count: int16, rowNum: int16, lHandle: ptr): int16 = trap 0xA9E7 sel 0x0008
 ```
 
 `sel 0x0008` names `LAddRow`'s own selector within the shared `0xA9E7` trap;
@@ -497,9 +497,9 @@ reference's own schematic example uses exactly this shape, a `TrackControl`
 action procedure:
 
 ```rust
-external func UiTrackControl(ctl: ptr, startPt: int, action: ptr): word
+external func UiTrackControl(ctl: ptr, startPt: int, action: ptr): int16
 
-callback func myAction(ctl: ptr, part: word) {
+callback func myAction(ctl: ptr, part: int16) {
     var offset: int = part
 }
 
@@ -525,7 +525,7 @@ itself is `trap 0xA968` (`runtime/clarus/uiwidgets.cla`), bit-11-set, plain
 Pascal, taking the callback's glue address as an ordinary `ptr` parameter:
 
 ```rust
-callback func rtUiScrollbarAction(ctrl: ptr, part: word) {
+callback func rtUiScrollbarAction(ctrl: ptr, part: int16) {
     // ... reads the control's own refCon to find which textview and
     // scroll axis, computes a step, applies it via UiSetControlValue and
     // UiTEScroll ...
@@ -535,8 +535,8 @@ callback func rtUiScrollbarAction(ctrl: ptr, part: word) {
 UiTrackControl(ctrl, wherePt, rtUiScrollbarAction)
 ```
 
-`part` is declared `word`, not `int`: `ControlActionUPP` declares it pascal
-`short`, and `word` is the one callback-palette type that reproduces a pascal
+`part` is declared `int16`, not `int`: `ControlActionUPP` declares it pascal
+`short`, and `int16` is the one callback-palette type that reproduces a pascal
 short's sign-extending marshal at the boundary — the same reasoning as
 `MenuKey`'s `ch` parameter in §2, just on the callback side of the
 convention instead of the `external func` side. The same file also calls
@@ -936,7 +936,7 @@ The worked shape, end to end — fetch, lock, deref, call:
 ```rust
 external func HLock(h: ptr) = trap 0xA029 reg              // toolbox/memory.cla
 external func HandleToPtr(h: ptr): ptr = inline deref       // Ch13, reference
-external func PluginMain(entry: ptr, verb: word, param: ptr): int = ptr
+external func PluginMain(entry: ptr, verb: int16, param: ptr): int = ptr
 
 // h: ptr — a resource Handle from GetResource, e.g. GetResource('PLUG', 128)
 // pb: ptr — a parameter block the plugin's caller has already built
@@ -1004,22 +1004,22 @@ LookupName arm, spelled out field by field with the union arms it uses:
 ```rust
 extern record NBPLookupParam {
     qLink: ptr          //  0  driver-owned queue link
-    qType: word         //  4
-    ioTrap: word        //  6
+    qType: int16        //  4
+    ioTrap: int16       //  6
     ioCmdAddr: ptr      //  8
     ioCompletion: ptr   // 12
-    ioResult: word      // 16  1 (ioInProgress) until an async call finishes
+    ioResult: int16     // 16  1 (ioInProgress) until an async call finishes
     userData: int       // 18  NOT ioNamePtr — see below
-    reqTID: word        // 22
-    ioRefNum: word      // 24  the .MPP refNum PBOpenSync handed back
-    csCode: word        // 26  the call selector: lookupName = 251
-    interval: byte      // 28
-    count: byte         // 29
+    reqTID: int16       // 22
+    ioRefNum: int16     // 24  the .MPP refNum PBOpenSync handed back
+    csCode: int16       // 26  the call selector: lookupName = 251
+    interval: uint8     // 28
+    count: uint8        // 29
     entityPtr: ptr      // 30  union NBPPtrs, Lookup arm
     retBuffPtr: ptr     // 34  union LookupConfirmParams, Lookup arm
-    retBuffSize: word   // 38
-    maxToGet: word      // 40
-    numGotten: word     // 42
+    retBuffSize: int16  // 38
+    maxToGet: int16     // 40
+    numGotten: int16    // 42
     pad[8]              //     44 → 52, per Rule 1 below
 }
 ```

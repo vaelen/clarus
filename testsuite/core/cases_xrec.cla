@@ -34,8 +34,8 @@ extern record XRSFReply {
     good: bool
     copy: bool
     fType: int
-    vRefNum: word
-    version: word
+    vRefNum: int16
+    version: int16
     fName: str[63]
 }
 

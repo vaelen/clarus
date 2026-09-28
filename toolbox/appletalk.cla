@@ -298,17 +298,17 @@ const sktClosedErr: int = -3109    // MacErrors.h:1225 -- ATP: socket closed
 // (AppleTalk.h:565-580); padded to 52 per Rule 1.
 extern record NBPParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     userData: int
-    reqTID: word
-    ioRefNum: word
-    csCode: word
-    interval: byte
-    count: byte
+    reqTID: int16
+    ioRefNum: int16
+    csCode: int16
+    interval: uint8
+    count: uint8
     entityPtr: ptr
     pad[18]
 }
@@ -321,19 +321,19 @@ extern record NBPParam {
 // interval 8 / count 3, measured (task-1-report.md P2).
 extern record NBPRegParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     userData: int
-    reqTID: word
-    ioRefNum: word
-    csCode: word
-    interval: byte
-    count: byte
+    reqTID: int16
+    ioRefNum: int16
+    csCode: int16
+    interval: uint8
+    count: uint8
     ntQElPtr: ptr
-    verifyFlag: byte
+    verifyFlag: uint8
     pad[17]
 }
 
@@ -346,22 +346,22 @@ extern record NBPRegParam {
 // below). Real NBPparms is 44 bytes; padded to 52 per Rule 1.
 extern record NBPLookupParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     userData: int
-    reqTID: word
-    ioRefNum: word
-    csCode: word
-    interval: byte
-    count: byte
+    reqTID: int16
+    ioRefNum: int16
+    csCode: int16
+    interval: uint8
+    count: uint8
     entityPtr: ptr
     retBuffPtr: ptr
-    retBuffSize: word
-    maxToGet: word
-    numGotten: word
+    retBuffSize: int16
+    maxToGet: int16
+    numGotten: int16
     pad[8]
 }
 
@@ -379,29 +379,29 @@ extern record NBPLookupParam {
 // 52-byte floor.
 extern record ATPParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     userData: int
-    reqTID: word
-    ioRefNum: word
-    csCode: word
-    atpSocket: byte
-    atpFlags: byte
-    addrNet: word
-    addrNode: byte
-    addrSocket: byte
-    reqLength: word
+    reqTID: int16
+    ioRefNum: int16
+    csCode: int16
+    atpSocket: uint8
+    atpFlags: uint8
+    addrNet: int16
+    addrNode: uint8
+    addrSocket: uint8
+    reqLength: int16
     reqPointer: ptr
     bdsPointer: ptr
-    numOfBuffs: byte
-    timeOutVal: byte
-    numOfResps: byte
-    retryCount: byte
-    intBuff: word
-    TRelTime: byte
+    numOfBuffs: uint8
+    timeOutVal: uint8
+    numOfResps: uint8
+    retryCount: uint8
+    intBuff: int16
+    TRelTime: uint8
     pad[5]
 }
 
@@ -413,23 +413,23 @@ extern record ATPParam {
 // the first call of a sequence and then leaves it alone. Real size 112.
 extern record XCallParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     cmdResult: int
-    ioVRefNum: word
-    ioRefNum: word
-    csCode: word
-    xppSubCode: word
-    xppTimeout: byte
-    xppRetry: byte
-    filler1: word
+    ioVRefNum: int16
+    ioRefNum: int16
+    csCode: int16
+    xppSubCode: int16
+    xppTimeout: uint8
+    xppRetry: uint8
+    filler1: int16
     zipBuffPtr: ptr
-    zipNumZones: word
-    zipLastFlag: byte
-    filler2: byte
+    zipNumZones: int16
+    zipLastFlag: uint8
+    filler2: uint8
     pad[70]
 }
 
@@ -443,17 +443,17 @@ extern record XCallParam {
 // reached through the dspXxx offset constants below. Real size 68.
 extern record DSPParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
-    ioCRefNum: word
-    csCode: word
+    ioVRefNum: int16
+    ioCRefNum: int16
+    csCode: int16
     qStatus: int
-    ccbRefNum: word
+    ccbRefNum: int16
     pad[34]
 }
 
@@ -466,9 +466,9 @@ extern record DSPParam {
 // with NewPtrClear + bdsEntrySz arithmetic and poked by offset; this
 // record is the one-entry case and the offset documentation for both.
 extern record BDSElement {
-    buffSize: word
+    buffSize: int16
     buffPtr: ptr
-    dataSize: word
+    dataSize: int16
     userBytes: int
 }
 

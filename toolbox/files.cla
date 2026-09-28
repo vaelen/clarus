@@ -44,13 +44,13 @@
 
 extern record VolumeParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
+    ioVRefNum: int16
     pad[40]
 }
 
@@ -99,16 +99,16 @@ external func PBSetVolSync(paramBlock: ptr): int = trap 0xA015 reg
 
 extern record FileParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
-    ioFRefNum: word
+    ioVRefNum: int16
+    ioFRefNum: int16
     pad[2]
-    ioFDirIndex: word
+    ioFDirIndex: int16
     pad[2]
     fdType: int
     fdCreator: int
@@ -170,31 +170,31 @@ external func PBSetFInfoSync(paramBlock: ptr): int = trap 0xA00D reg
 // `cases_serial.cla`) ever wrote that pad, so this changes nothing for
 // them. A positioned-I/O open (PBOpenSync, toolbox/devices.cla) needs a
 // real `ioPermssn` value (`fsRdWrPerm` below) to get read/write access;
-// the byte-field spelling (`byte`, not a 2nd VolumeParam/FileParam-style
+// the byte-field spelling (`uint8`, not a 2nd VolumeParam/FileParam-style
 // `pad[2]`) is the language reference's own extern-record field palette
-// (docs/clarus-language-reference.md, "Field Palette": `byte` is 1 byte,
+// (docs/clarus-language-reference.md, "Field Palette": `uint8` is 1 byte,
 // reads/writes as `int`, zero-extended) -- the first extern record in
 // this catalog to need a *named* 1-byte field rather than opaque filler,
-// so there's no `byte`-field precedent elsewhere in this file to match;
+// so there's no `uint8`-field precedent elsewhere in this file to match;
 // this is the plain form the language itself defines for the case.
 
 extern record IOParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
-    ioRefNum: word
-    ioVersNum: byte
-    ioPermssn: byte
+    ioVRefNum: int16
+    ioRefNum: int16
+    ioVersNum: uint8
+    ioPermssn: uint8
     ioMisc: ptr
     ioBuffer: ptr
     ioReqCount: int
     ioActCount: int
-    ioPosMode: word
+    ioPosMode: int16
     ioPosOffset: int
 }
 
@@ -385,30 +385,30 @@ const fsFromMark: int = 3
 
 extern record HFileParam {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
-    ioFRefNum: word
-    ioFVersNum: byte
-    filler1: byte
-    ioFDirIndex: word
-    ioFlAttrib: byte
-    ioFlVersNum: byte
+    ioVRefNum: int16
+    ioFRefNum: int16
+    ioFVersNum: uint8
+    filler1: uint8
+    ioFDirIndex: int16
+    ioFlAttrib: uint8
+    ioFlVersNum: uint8
     fdType: int
     fdCreator: int
-    fdFlags: word
-    fdLocationV: word
-    fdLocationH: word
-    fdFldr: word
+    fdFlags: int16
+    fdLocationV: int16
+    fdLocationH: int16
+    fdFldr: int16
     ioDirID: int
-    ioFlStBlk: word
+    ioFlStBlk: int16
     ioFlLgLen: int
     ioFlPyLen: int
-    ioFlRStBlk: word
+    ioFlRStBlk: int16
     ioFlRLgLen: int
     ioFlRPyLen: int
     ioFlCrDat: int
@@ -452,27 +452,27 @@ extern record HFileParam {
 
 extern record CInfoPBRec {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
-    ioFRefNum: word
-    ioFVersNum: byte
-    filler1: byte
-    ioFDirIndex: word
-    ioFlAttrib: byte
-    ioACUser: byte
+    ioVRefNum: int16
+    ioFRefNum: int16
+    ioFVersNum: uint8
+    filler1: uint8
+    ioFDirIndex: int16
+    ioFlAttrib: uint8
+    ioACUser: uint8
     fdType: int
     fdCreator: int
     pad[8]
     ioDirID: int
-    ioDrNmFls: word
+    ioDrNmFls: int16
     ioFlLgLen: int
     ioFlPyLen: int
-    ioFlRStBlk: word
+    ioFlRStBlk: int16
     ioFlRLgLen: int
     ioFlRPyLen: int
     ioFlCrDat: int
@@ -497,13 +497,13 @@ extern record CInfoPBRec {
 
 extern record CMovePBRec {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
+    ioVRefNum: int16
     filler1: int
     ioNewName: ptr
     filler2: int
@@ -535,16 +535,16 @@ extern record CMovePBRec {
 
 extern record HIOParamRename {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
-    ioRefNum: word
-    ioVersNum: byte
-    ioPermssn: byte
+    ioVRefNum: int16
+    ioRefNum: int16
+    ioVersNum: uint8
+    ioPermssn: uint8
     ioMisc: ptr
     pad[16]
     ioDirID: int

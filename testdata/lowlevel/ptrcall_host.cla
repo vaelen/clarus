@@ -12,9 +12,9 @@
 // callback_host.cla's fixed-shape CbInvoke seam.
 external func NewPtr(size: int): ptr = trap 0xA11E reg
 external func DisposePtr(p: ptr) = trap 0xA01F reg
-external func PtrCallMixed(entry: ptr, w: word, flag: bool, out: ptr, n: int): int = ptr
+external func PtrCallMixed(entry: ptr, w: int16, flag: bool, out: ptr, n: int): int = ptr
 
-callback func mixed(w: word, flag: bool, out: ptr, n: int): int {
+callback func mixed(w: int16, flag: bool, out: ptr, n: int): int {
     pokel(out, n + w)
     if flag {
         return n * 2

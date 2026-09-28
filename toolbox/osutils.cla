@@ -90,10 +90,10 @@
 
 const gestaltSystemVersion: int = 0x73797376
 
-external func GestaltErr(selector: int): word = trap 0xA1AD reg(d0: selector) ret d0
+external func GestaltErr(selector: int): int16 = trap 0xA1AD reg(d0: selector) ret d0
 external func GestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector) ret a0
 external func Delay(numTicks: int): int = trap 0xA03B reg(a0: numTicks) ret d0
-external func SysBeep(duration: word) = trap 0xA9C8
+external func SysBeep(duration: int16) = trap 0xA9C8
 
 // ---- Date-Time Utilities (IM II "Date and Time Operations") ----
 //
@@ -119,19 +119,19 @@ external func SysBeep(duration: word) = trap 0xA9C8
 // On exit DO" block.
 
 extern record DateTimeRec {
-    year: word
-    month: word
-    day: word
-    hour: word
-    minute: word
-    second: word
-    dayOfWeek: word
+    year: int16
+    month: int16
+    day: int16
+    hour: int16
+    minute: int16
+    second: int16
+    dayOfWeek: int16
 }
 
 // _ReadDateTime (0xA039): re-reads the battery-backed clock chip
 // (slow, serial) and rewrites the Time global; boot-time resync, not a
 // routine time read. A0 = VAR secs (unsigned long), OSErr <= D0.
-external func ReadDateTime(time: ptr): word = trap 0xA039 reg(a0: time) ret d0
+external func ReadDateTime(time: ptr): int16 = trap 0xA039 reg(a0: time) ret d0
 
 // _SecondsToDate / Secs2Date (0xA9C6): unsigned seconds => D0,
 // DateTimeRec pointer => A0, no result. Fills year (full year), month

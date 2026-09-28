@@ -29,16 +29,16 @@
 // brief's draft: it exercises both peekw's true (zero-extend) contract AND
 // the field path's (sign-extend) correction, distinctly.
 extern record Point {
-    v: word
-    h: word
+    v: int16
+    h: int16
 }
 
 extern record EventRecord {
-    what: word
+    what: int16
     message: int
     when: int
     where: Point
-    modifiers: word
+    modifiers: int16
 }
 
 external func XRecAddr(p: ptr): ptr

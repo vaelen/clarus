@@ -41,11 +41,11 @@
 // `callback func`.
 include "../../toolbox/memory.cla"
 
-external func PtrCallRound(entry: ptr, w: word, flag: bool, out: ptr, n: int): word = ptr
+external func PtrCallRound(entry: ptr, w: int16, flag: bool, out: ptr, n: int): int16 = ptr
 external func PtrCallFlag(entry: ptr, x: int): bool = ptr
 external func PtrCallVoid(entry: ptr, out: ptr) = ptr
 
-callback func pcMixed(w: word, flag: bool, out: ptr, n: int): word {
+callback func pcMixed(w: int16, flag: bool, out: ptr, n: int): int16 {
     pokel(out, n + w)
     if flag {
         return w - 100

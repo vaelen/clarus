@@ -99,8 +99,8 @@ extern record SFReply {
     good: bool
     copy: bool
     fType: int
-    vRefNum: word
-    version: word
+    vRefNum: int16
+    version: int16
     fName: str[63]
 }
 
@@ -116,6 +116,6 @@ extern record Str255 {
 }
 
 external func SFPutFile(where: int, prompt: ptr, origName: ptr, dlgHook: ptr, reply: ptr) = trap 0xA9EA sel 0x0001
-external func SFGetFile(where: int, prompt: ptr, fileFilter: ptr, numTypes: word, typeList: ptr, dlgHook: ptr, reply: ptr) = trap 0xA9EA sel 0x0002
-external func SFPPutFile(where: int, prompt: ptr, origName: ptr, dlgHook: ptr, reply: ptr, dlgID: word, filterProc: ptr) = trap 0xA9EA sel 0x0003
-external func SFPGetFile(where: int, prompt: ptr, fileFilter: ptr, numTypes: word, typeList: ptr, dlgHook: ptr, reply: ptr, dlgID: word, filterProc: ptr) = trap 0xA9EA sel 0x0004
+external func SFGetFile(where: int, prompt: ptr, fileFilter: ptr, numTypes: int16, typeList: ptr, dlgHook: ptr, reply: ptr) = trap 0xA9EA sel 0x0002
+external func SFPPutFile(where: int, prompt: ptr, origName: ptr, dlgHook: ptr, reply: ptr, dlgID: int16, filterProc: ptr) = trap 0xA9EA sel 0x0003
+external func SFPGetFile(where: int, prompt: ptr, fileFilter: ptr, numTypes: int16, typeList: ptr, dlgHook: ptr, reply: ptr, dlgID: int16, filterProc: ptr) = trap 0xA9EA sel 0x0004

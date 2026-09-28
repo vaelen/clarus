@@ -995,8 +995,8 @@ on App.startEmpty {
     // it exactly like int (real Toolbox trap words: MoveTo 0xA893,
     // FindWindow 0xA92C).
     src = ""
-    ln(src, "external func UiMoveTo(h: word, v: word) = trap 0xA893")
-    ln(src, "external func UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C")
+    ln(src, "external func UiMoveTo(h: int16, v: int16) = trap 0xA893")
+    ln(src, "external func UiFindWindow(pt: int, wpOut: ptr): int16 = trap 0xA92C")
     runCase("extern-word-clean", src)
 
     // Case 74: `word` means nothing outside an extern signature -- a plain
@@ -1193,11 +1193,11 @@ on App.startEmpty {
     // greater length.
     src = ""
     ln(src, "extern record Point {")
-    ln(src, "    v: word")
-    ln(src, "    h: word")
+    ln(src, "    v: int16")
+    ln(src, "    h: int16")
     ln(src, "}")
     ln(src, "extern record EventRecord {")
-    ln(src, "    what: word")
+    ln(src, "    what: int16")
     ln(src, "    where: Point")
     ln(src, "}")
     ln(src, "func F(): int {")
@@ -1337,11 +1337,11 @@ on App.startEmpty {
     // nested extern-record field lvalue" rule.
     src = ""
     ln(src, "extern record Point {")
-    ln(src, "    v: word")
-    ln(src, "    h: word")
+    ln(src, "    v: int16")
+    ln(src, "    h: int16")
     ln(src, "}")
     ln(src, "extern record EventRecord {")
-    ln(src, "    what: word")
+    ln(src, "    what: int16")
     ln(src, "    where: Point")
     ln(src, "}")
     ln(src, "external func F(p: ptr) = trap 0xA000 reg")
@@ -1356,11 +1356,11 @@ on App.startEmpty {
     // idiom this rule exists for.
     src = ""
     ln(src, "extern record Point {")
-    ln(src, "    v: word")
-    ln(src, "    h: word")
+    ln(src, "    v: int16")
+    ln(src, "    h: int16")
     ln(src, "}")
     ln(src, "extern record EventRecord {")
-    ln(src, "    what: word")
+    ln(src, "    what: int16")
     ln(src, "    where: Point")
     ln(src, "}")
     ln(src, "external func F(n: int) = trap 0xA000 reg")
@@ -1379,11 +1379,11 @@ on App.startEmpty {
     src = ""
     ln(src, "extern record R {")
     ln(src, "    x: int")
-    ln(src, "    y: word")
+    ln(src, "    y: int16")
     ln(src, "}")
     ln(src, "extern record R {")
     ln(src, "    x: int")
-    ln(src, "    y: word")
+    ln(src, "    y: int16")
     ln(src, "}")
     runCase("extern-xrec-dedup-identical-clean", src)
 
@@ -1416,7 +1416,7 @@ on App.startEmpty {
     // read/write on the `byte` field (reads/writes as `int`, Ch13).
     src = ""
     ln(src, "extern record R {")
-    ln(src, "    a: byte")
+    ln(src, "    a: uint8")
     ln(src, "    pad[3]")
     ln(src, "    b: int")
     ln(src, "}")
@@ -1631,8 +1631,8 @@ on App.startEmpty {
     // extern-param kind whose resolveType call could plausibly allocate a
     // non-singleton arena entry per call. Must also merge clean.
     src = ""
-    ln(src, "external func UiWordAddr(w: word): ptr")
-    ln(src, "external func UiWordAddr(w: word): ptr")
+    ln(src, "external func UiWordAddr(w: int16): ptr")
+    ln(src, "external func UiWordAddr(w: int16): ptr")
     runCase("extern-dedup-word-param-clean", src)
 
     // Case 129: two `string`-param externs differing in DECLARED WIDTH

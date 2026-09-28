@@ -49,7 +49,7 @@
 // (Inside Macintosh, Event Manager) -- only the calling convention
 // differs, and this is the one this file's plain `= trap` clause (no
 // `reg`) actually matches.
-external func TbEventAvail(mask: word, ev: ptr): bool = trap 0xA971
+external func TbEventAvail(mask: int16, ev: ptr): bool = trap 0xA971
 
 // TbXRecAddr: clause-less extern -> nat_TbXRecAddr fallback (verified
 // against testdata/cg68k/traps.cla's own TCustomOp/nat_TCustomOp pair,

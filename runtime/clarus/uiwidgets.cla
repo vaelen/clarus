@@ -26,7 +26,7 @@
 // DrawControls). rt_ui_widget_set_int/get_int's popup SELECTED prop also
 // uses SetControlValue/GetControlValue -- in the produces list (rtUiWidget
 // SetInt/GetInt) even though no popup widget can be CREATED this slice.
-external func UiNewControlRaw(owningWindow: ptr, boundsRect: ptr, controlTitle: ptr, initiallyVisible: bool, initialValue: word, minimumValue: word, maximumValue: word, procId: word, controlReference: int): ptr = trap 0xA954
+external func UiNewControlRaw(owningWindow: ptr, boundsRect: ptr, controlTitle: ptr, initiallyVisible: bool, initialValue: int16, minimumValue: int16, maximumValue: int16, procId: int16, controlReference: int): ptr = trap 0xA954
 
 // UiNewControl: allocation-waist wrapper, see ui.cla's UiNewPtr.
 func UiNewControl(owningWindow: ptr, boundsRect: ptr, controlTitle: ptr, initiallyVisible: bool, initialValue: int, minimumValue: int, maximumValue: int, procId: int, controlReference: int): ptr {
@@ -34,11 +34,11 @@ func UiNewControl(owningWindow: ptr, boundsRect: ptr, controlTitle: ptr, initial
     return UiNewControlRaw(owningWindow, boundsRect, controlTitle, initiallyVisible, initialValue, minimumValue, maximumValue, procId, controlReference)
 }
 
-external func UiMoveControl(theControl: ptr, h: word, v: word) = trap 0xA959
-external func UiSizeControl(theControl: ptr, w: word, h: word) = trap 0xA95C
-external func UiHiliteControl(theControl: ptr, hiliteState: word) = trap 0xA95D
-external func UiSetControlValue(theControl: ptr, newValue: word) = trap 0xA963
-external func UiGetControlValue(theControl: ptr): word = trap 0xA960
+external func UiMoveControl(theControl: ptr, h: int16, v: int16) = trap 0xA959
+external func UiSizeControl(theControl: ptr, w: int16, h: int16) = trap 0xA95C
+external func UiHiliteControl(theControl: ptr, hiliteState: int16) = trap 0xA95D
+external func UiSetControlValue(theControl: ptr, newValue: int16) = trap 0xA963
+external func UiGetControlValue(theControl: ptr): int16 = trap 0xA960
 external func UiSetControlTitle(theControl: ptr, title: ptr) = trap 0xA95F
 external func UiDrawControls(theWindow: ptr) = trap 0xA969
 // UiFindControl/UiTrackControl (Controls.h, trap 0xA96C/0xA968, PASCAL
@@ -51,8 +51,8 @@ external func UiDrawControls(theWindow: ptr) = trap 0xA969
 // TrackControl's `actionProc` is always `ptr(0)` (NULL) at every call
 // site this slice makes -- no scrollbar/live-tracking action proc is
 // needed for a plain button/check.
-external func UiFindControl(testPoint: int, theWindow: ptr, theControl: ptr): word = trap 0xA96C
-external func UiTrackControl(theControl: ptr, startPoint: int, actionProc: ptr): word = trap 0xA968
+external func UiFindControl(testPoint: int, theWindow: ptr, theControl: ptr): int16 = trap 0xA96C
+external func UiTrackControl(theControl: ptr, startPoint: int, actionProc: ptr): int16 = trap 0xA968
 
 // ---- QuickDraw drawing / geometry ----
 // rt_ui_draw_default_outline (:2750-2759, PenSize/FrameRoundRect/
@@ -67,10 +67,10 @@ external func UiTrackControl(theControl: ptr, startPoint: int, actionProc: ptr):
 // canvas_hit :3099-3110), rt_ui_flush_buffered_canvases (:2177-2196,
 // CopyBits). InsetRect backs rt_ui_draw_default_outline (:2754) and rt_ui_
 // handle_mouse_down's drag-bounds inset (:3467).
-external func UiMoveTo(h: word, v: word) = trap 0xA893
-external func UiLineTo(h: word, v: word) = trap 0xA891
-external func UiSetRect(r: ptr, left: word, top: word, right: word, bottom: word) = trap 0xA8A7
-external func UiInsetRect(r: ptr, dh: word, dv: word) = trap 0xA8A9
+external func UiMoveTo(h: int16, v: int16) = trap 0xA893
+external func UiLineTo(h: int16, v: int16) = trap 0xA891
+external func UiSetRect(r: ptr, left: int16, top: int16, right: int16, bottom: int16) = trap 0xA8A7
+external func UiInsetRect(r: ptr, dh: int16, dv: int16) = trap 0xA8A9
 external func UiEqualRect(rect1: ptr, rect2: ptr): bool = trap 0xA8A6
 external func UiEraseRect(r: ptr) = trap 0xA8A3
 external func UiFrameRect(r: ptr) = trap 0xA8A1
@@ -80,11 +80,11 @@ external func UiValidRect(goodRect: ptr) = trap 0xA92A
 external func UiPtInRect(pt: int, r: ptr): bool = trap 0xA8AD
 external func UiFrameOval(r: ptr) = trap 0xA8B7
 external func UiFillOval(r: ptr, pat: ptr) = trap 0xA8BB
-external func UiPenSize(width: word, height: word) = trap 0xA89B
+external func UiPenSize(width: int16, height: int16) = trap 0xA89B
 external func UiPenNormal() = trap 0xA89E
-external func UiFrameRoundRect(r: ptr, ovalWidth: word, ovalHeight: word) = trap 0xA8B0
+external func UiFrameRoundRect(r: ptr, ovalWidth: int16, ovalHeight: int16) = trap 0xA8B0
 external func UiDrawString(s: ptr) = trap 0xA884
-external func UiCopyBits(srcBits: ptr, dstBits: ptr, srcRect: ptr, dstRect: ptr, mode: word, maskRgn: ptr) = trap 0xA8EC
+external func UiCopyBits(srcBits: ptr, dstBits: ptr, srcRect: ptr, dstRect: ptr, mode: int16, maskRgn: ptr) = trap 0xA8EC
 external func UiNewRgnRaw(): ptr = trap 0xA8D8
 
 // UiNewRgn: allocation-waist wrapper, see ui.cla's UiNewPtr.
@@ -118,7 +118,7 @@ external func UiEndUpdate(theWindow: ptr) = trap 0xA923
 // unmodified file). Justification constants (TextEdit.h): teJustLeft=0,
 // teJustCenter=1, teJustRight=-1 -- rt_ui.c always passes teJustLeft; no
 // Clarus `const` declared here, callers pass the literal `0`.
-external func UiTextBox(text: ptr, length: int, box: ptr, just: word) = trap 0xA9CE
+external func UiTextBox(text: ptr, length: int, box: ptr, just: int16) = trap 0xA9CE
 
 // ---- Canvas offscreen GrafPort management (Ch11) ----
 // rt_ui_canvas_make/rt_ui_canvas_dispose (:2122-2159): a canvas's own
@@ -128,8 +128,8 @@ external func UiTextBox(text: ptr, length: int, box: ptr, just: word) = trap 0xA
 // self-assert the CURRENT port per rt_ui.h's PORT DISCIPLINE RULE.
 external func UiOpenPort(port: ptr) = trap 0xA86F
 external func UiClosePort(port: ptr) = trap 0xA87D
-external func UiPortSize(width: word, height: word) = trap 0xA876
-external func UiSetOrigin(h: word, v: word) = trap 0xA878
+external func UiPortSize(width: int16, height: int16) = trap 0xA876
+external func UiSetOrigin(h: int16, v: int16) = trap 0xA878
 external func UiSetPortBits(bm: ptr) = trap 0xA875
 
 // ================================================================

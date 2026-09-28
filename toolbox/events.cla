@@ -63,7 +63,7 @@
 //                 11 set: matches.
 //   Point         AIncludes/MacTypes.a:483 `Point RECORD 0 / v ds.w 1
 //                 offset $0 / h ds.w 1 offset $2 / sizeof $4` -- matches
-//                 `v: word` then `h: word` exactly.
+//                 `v: int16` then `h: int16` exactly.
 //   EventRecord   AIncludes/Events.a:131 `EventRecord RECORD 0 / what
 //                 ds.w 1 offset $0 / message ds.l 1 offset $2 / when
 //                 ds.l 1 offset $6 / where ds Point offset $A / modifiers
@@ -86,16 +86,16 @@
 // everyEvent covers the curated use cases; add on demand.
 
 extern record Point {
-    v: word
-    h: word
+    v: int16
+    h: int16
 }
 
 extern record EventRecord {
-    what: word
+    what: int16
     message: int
     when: int
     where: Point
-    modifiers: word
+    modifiers: int16
 }
 
 // Event codes (EventRecord.what)
@@ -126,9 +126,9 @@ const controlKey: int = 0x1000
 const charCodeMask: int = 0x000000FF
 const keyCodeMask: int = 0x0000FF00
 
-external func GetNextEvent(eventMask: word, theEvent: ptr): bool = trap 0xA970
-external func EventAvail(eventMask: word, theEvent: ptr): bool = trap 0xA971
-external func PostEvent(eventNum: word, eventMsg: int): word = trap 0xA02F reg(a0: eventNum, d0: eventMsg) ret d0
+external func GetNextEvent(eventMask: int16, theEvent: ptr): bool = trap 0xA970
+external func EventAvail(eventMask: int16, theEvent: ptr): bool = trap 0xA971
+external func PostEvent(eventNum: int16, eventMsg: int): int16 = trap 0xA02F reg(a0: eventNum, d0: eventMsg) ret d0
 external func TickCount(): int = trap 0xA975
 external func Button(): bool = trap 0xA974
 external func StillDown(): bool = trap 0xA973

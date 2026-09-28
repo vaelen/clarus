@@ -5,14 +5,14 @@
 // signature-driven `callback func` glue emission (cgEmitCallbackGlue)
 // and ECbAddr's JT-entry-address decay (cgCallExtUiGlueAddr, reused).
 //
-//   cbHandler(sel: bool, n: word): int -- pins the bool zero-extend/
+//   cbHandler(sel: bool, n: int16): int -- pins the bool zero-extend/
 //     high-byte pascal-arg read AND the word sign-extend pascal-arg
 //     read, plus the int MOVE.L result-slot write on the return side.
 //   cbBool(sel: bool): bool -- pins the bool RESULT write: MOVE.B to the
 //     HIGH (base) byte of the result slot, same convention as an
 //     incoming bool arg. Layout: one bool param (pascal width 2) at
 //     8(A6); resultOffset = 8+2 = 10(A6) -- expect `MOVE.B D0,10(A6)`.
-//   cbWord(n: word): word -- pins the word RESULT write: a plain MOVE.W
+//   cbWord(n: int16): int16 -- pins the word RESULT write: a plain MOVE.W
 //     to the result slot (no sign/zero-extend needed on the way out).
 //     Layout: one word param (pascal width 2) at 8(A6); resultOffset =
 //     8+2 = 10(A6) -- expect `MOVE.W D0,10(A6)`. Also proves the
@@ -39,7 +39,7 @@
 // (same "synthetic signature" caveat traps.cla's own FixtureMixedTrap
 // documents).
 
-callback func cbHandler(sel: bool, n: word): int {
+callback func cbHandler(sel: bool, n: int16): int {
     if sel {
         return n
     }
@@ -50,7 +50,7 @@ callback func cbBool(sel: bool): bool {
     return sel
 }
 
-callback func cbWord(n: word): word {
+callback func cbWord(n: int16): int16 {
     return n
 }
 

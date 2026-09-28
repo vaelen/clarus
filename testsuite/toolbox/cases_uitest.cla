@@ -83,7 +83,7 @@
 // call; see that function's own doc comment for the full reasoning. The
 // native (cg68k) lane needs no glue -- the `= trap ... reg(...)` clause
 // compiles straight to the TRAP instruction there.
-external func TbPostEvent(eventNum: word, eventMsg: int): word = trap 0xA02F reg(a0: eventNum, d0: eventMsg) ret d0
+external func TbPostEvent(eventNum: int16, eventMsg: int): int16 = trap 0xA02F reg(a0: eventNum, d0: eventMsg) ret d0
 
 // caseUiTestVerbSmoke: opens UiProbe, clicks Poke via UiTestClick at its
 // derived global center, and separately confirms UiTestVerb rejects an

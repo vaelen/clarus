@@ -62,7 +62,7 @@
 // any window ever shows) finished construction. Point/Cell by-value
 // params pack v (high 16) / h (low 16) into one `int`, same convention as
 // every other by-value Point/Cell this port uses (ui.cla's rt_ext_ui_pt). ----
-external func UiLNewRaw(rView: ptr, dataBounds: ptr, cSize: int, theProc: word, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7 sel 0x0044
+external func UiLNewRaw(rView: ptr, dataBounds: ptr, cSize: int, theProc: int16, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7 sel 0x0044
 
 // UiLNew: allocation-waist wrapper, see ui.cla's UiNewPtr.
 func UiLNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: int, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr {
@@ -71,15 +71,15 @@ func UiLNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: int, theWindow: pt
 }
 
 external func UiLDispose(lHandle: ptr) = trap 0xA9E7 sel 0x0028
-external func UiLAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7 sel 0x0008
-external func UiLDelRow(count: word, rowNum: word, lHandle: ptr) = trap 0xA9E7 sel 0x0024
+external func UiLAddRow(count: int16, rowNum: int16, lHandle: ptr): int16 = trap 0xA9E7 sel 0x0008
+external func UiLDelRow(count: int16, rowNum: int16, lHandle: ptr) = trap 0xA9E7 sel 0x0024
 external func UiLGetSelect(next: bool, theCell: ptr, lHandle: ptr): bool = trap 0xA9E7 sel 0x003C
 external func UiLSetSelect(setIt: bool, theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x005C
-external func UiLSize(listWidth: word, listHeight: word, lHandle: ptr) = trap 0xA9E7 sel 0x0060
+external func UiLSize(listWidth: int16, listHeight: int16, lHandle: ptr) = trap 0xA9E7 sel 0x0060
 external func UiLActivate(act: bool, lHandle: ptr) = trap 0xA9E7 sel 0x0000
 external func UiLSetDrawingMode(drawIt: bool, lHandle: ptr) = trap 0xA9E7 sel 0x002C
 external func UiLUpdate(theRgn: ptr, lHandle: ptr) = trap 0xA9E7 sel 0x0064
-external func UiLClick(pt: int, modifiers: word, lHandle: ptr): bool = trap 0xA9E7 sel 0x0018
+external func UiLClick(pt: int, modifiers: int16, lHandle: ptr): bool = trap 0xA9E7 sel 0x0018
 
 // ---- Menu Manager additions (SetMenuItemText/GetMenuHandle/PopUpMenuSelect
 // -- ui.cla already declares NewMenu/AppendMenu/AppendMenuStr/InsertMenu/
@@ -87,9 +87,9 @@ external func UiLClick(pt: int, modifiers: word, lHandle: ptr): bool = trap 0xA9
 // Verified against Retro68's own Menus.h (SetMenuItemText 0xA947 @:2758,
 // GetMenuHandle 0xA949 @:2487, PopUpMenuSelect 0xA80B @:2192-2193) and
 // cross-checked against Multiverse.h (:6008-6091, same three trap words). --
-external func UiSetMenuItemText(theMenu: ptr, item: word, itemString: ptr) = trap 0xA947
-external func UiGetMenuHandle(menuId: word): ptr = trap 0xA949
-external func UiPopUpMenuSelect(theMenu: ptr, top: word, left: word, popUpItem: word): int = trap 0xA80B
+external func UiSetMenuItemText(theMenu: ptr, item: int16, itemString: ptr) = trap 0xA947
+external func UiGetMenuHandle(menuId: int16): ptr = trap 0xA949
+external func UiPopUpMenuSelect(theMenu: ptr, top: int16, left: int16, popUpItem: int16): int = trap 0xA80B
 
 // ---- QuickDraw/QuickdrawText additions this slice's draw code needs.
 // InvertRect 0xA8A4 (QuickDraw.h:3046, aliased MacInvertRect; Multiverse.h
@@ -102,7 +102,7 @@ external func UiPopUpMenuSelect(theMenu: ptr, top: word, left: word, popUpItem: 
 // verified here too; it is gone -- see the block below UiLocalToGlobal
 // for the whole account, which is the only telling of it.) ----
 external func UiInvertRect(r: ptr) = trap 0xA8A4
-external func UiDrawText(textBuf: ptr, firstByte: word, byteCount: word) = trap 0xA885
+external func UiDrawText(textBuf: ptr, firstByte: int16, byteCount: int16) = trap 0xA885
 external func UiGetFontInfo(info: ptr) = trap 0xA88B
 external func UiLocalToGlobal(pt: ptr) = trap 0xA870
 // UiNumToString is GONE (language-runtime-cleanup Task 2). It used to be
@@ -586,8 +586,8 @@ func rtUiMakeLdefStub(): ptr {
 // CLAR_PASCAL-qualified) on the Mac lane, and through cg68k's own
 // signature-driven glue (cgEmitCallbackGlue) natively; the OLD
 // hand-written rt_ext_ui_ldef pascal wrapper this replaces is gone.
-// `msg`/`dataOffset`/`dataLen` are `word` (not `int`): Lists.h's
-// ListDefProcPtr declares them pascal `short`, and `word` is the one
+// `msg`/`dataOffset`/`dataLen` are `int16` (not `int`): Lists.h's
+// ListDefProcPtr declares them pascal `short`, and `int16` is the one
 // callback-palette type that reproduces a pascal short's sign-extending
 // marshal (cgCbPascalWidth/cpCbWireType) -- `cellPacked` stays `int`
 // (Cell's 4 raw bytes copy through unchanged, no sign-extension, exactly
@@ -604,7 +604,7 @@ func rtUiMakeLdefStub(): ptr {
 // off that one int, so it never needs to find its owning RtUiWinst/widget
 // index at all (same design the C reference's own header comment states
 // for `wd->extra`).
-callback func rtUiLdefDraw(msg: word, select: bool, rectPtr: ptr, cellPacked: int, dataOffset: word, dataLen: word, lh: ptr) {
+callback func rtUiLdefDraw(msg: int16, select: bool, rectPtr: ptr, cellPacked: int, dataOffset: int16, dataLen: int16, lh: ptr) {
     var lhMp: ptr
     var tableOff: int
     var rowsIdx: int

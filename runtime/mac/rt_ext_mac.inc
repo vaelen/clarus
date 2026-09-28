@@ -858,7 +858,7 @@ int32_t rt_ext_PBGetFInfoSync(void *pb) { return (int32_t)PBGetFInfoSync((ParmBl
  * ptr/int/word params, to whatever pointer/struct type the real header
  * declares; ret type matches each emitted `extern` line exactly (OSErr
  * as `int32_t` for the PB family, `short` unchanged for AE, matching
- * files.cla/devices.cla's `: int` and appleevents.cla's `: word`).
+ * files.cla/devices.cla's `: int` and appleevents.cla's `: int16`).
  *
  * Plain ParmBlkPtr family (toolbox/files.cla, one trap word each, no
  * selector): PBSetVolSync/PBSetFInfoSync/PBCreateSync/PBOpenRFSync/
@@ -956,7 +956,7 @@ void rt_ext_SFPGetFile(int32_t where, void *prompt, void *fileFilter, short numT
  * catalog externs a Clarus program calls directly to install/dispatch ITS
  * OWN handlers). `isSysHandler: bool`/`handler: ptr` marshal as
  * `uint8_t`/`void *` per cpEmitExternProtos; the emitted extern's bool
- * param is `int32_t` here (files.cla's `: word` neighbors return `short`,
+ * param is `int32_t` here (files.cla's `: int16` neighbors return `short`,
  * but appleevents.cla declares `isSysHandler: bool`, which marshals as
  * the same width as every other cprint bool param -- matching the emitted
  * `extern short rt_ext_AEInstallEventHandler(int32_t, int32_t, void *,

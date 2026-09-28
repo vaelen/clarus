@@ -74,5 +74,5 @@ const kAEOpenDocuments: int = 0x6F646F63 // 'odoc'
 const kAEPrintDocuments: int = 0x70646F63 // 'pdoc'
 const kAEQuitApplication: int = 0x71756974 // 'quit'
 
-external func AEInstallEventHandler(theAEEventClass: int, theAEEventID: int, handler: ptr, handlerRefcon: int, isSysHandler: bool): word = trap 0xA816 seld0 0x091F
-external func AEProcessAppleEvent(theEventRecord: ptr): word = trap 0xA816 seld0 0x021B
+external func AEInstallEventHandler(theAEEventClass: int, theAEEventID: int, handler: ptr, handlerRefcon: int, isSysHandler: bool): int16 = trap 0xA816 seld0 0x091F
+external func AEProcessAppleEvent(theEventRecord: ptr): int16 = trap 0xA816 seld0 0x021B

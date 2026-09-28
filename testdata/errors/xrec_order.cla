@@ -22,5 +22,5 @@ func f() {
 }
 
 extern record SomeXRec {
-    v: word
+    v: int16
 }

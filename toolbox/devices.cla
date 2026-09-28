@@ -67,47 +67,47 @@
 
 extern record CntrlReset {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
-    ioCRefNum: word
-    csCode: word
-    csParam0: word
+    ioVRefNum: int16
+    ioCRefNum: int16
+    csCode: int16
+    csParam0: int16
     pad[20]
 }
 
 extern record CntrlCount {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
-    ioCRefNum: word
-    csCode: word
+    ioVRefNum: int16
+    ioCRefNum: int16
+    csCode: int16
     csCount: int
     pad[18]
 }
 
 extern record CntrlSetBuf {
     qLink: ptr
-    qType: word
-    ioTrap: word
+    qType: int16
+    ioTrap: int16
     ioCmdAddr: ptr
     ioCompletion: ptr
-    ioResult: word
+    ioResult: int16
     ioNamePtr: ptr
-    ioVRefNum: word
-    ioCRefNum: word
-    csCode: word
+    ioVRefNum: int16
+    ioCRefNum: int16
+    csCode: int16
     serBPtr: ptr
-    serBLen: word
+    serBLen: int16
     pad[16]
 }
 

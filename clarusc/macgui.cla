@@ -88,7 +88,7 @@ external func gcGet1NamedResource(theType: int, name: string): ptr = trap 0xA820
 // standalone, before any catalog/runtime module is spliced in, so a
 // catalog include isn't reachable here). Used by gcCompile's `aborted`
 // handler to beep before showing the alert (design doc %4/%3.5).
-external func SysBeep(duration: word) = trap 0xA9C8
+external func SysBeep(duration: int16) = trap 0xA9C8
 
 // gcClfsType packs 'CLFS' big-endian (C=0x43 L=0x4C F=0x46 S=0x53) --
 // the same resource type file.readResource's native implementation

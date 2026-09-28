@@ -262,11 +262,11 @@ external func NatExitToShell() = trap 0xA9F4
 // two more trap declarations verbatim.
 // Trap word verified against the SAME source toolbox/osutils.cla
 // already cites: NatSysBeep matches toolbox/osutils.cla:96's own
-// `external func SysBeep(duration: word) = trap 0xA9C8` (Sound.h,
+// `external func SysBeep(duration: int16) = trap 0xA9C8` (Sound.h,
 // ONEWORDINLINE(0xA9C8), no `#pragma parameter` -> bit 11 SET
 // (0xA9C8 & 0x0800 != 0) -> pascal, stack arg, no `reg`), copied
 // verbatim.
-external func NatSysBeep(duration: word) = trap 0xA9C8
+external func NatSysBeep(duration: int16) = trap 0xA9C8
 
 // ---- module state (all below-A5 globals -- zeroed by startup's own
 // zero loop before natInit ever runs, so natOpened/natDone/natRef/

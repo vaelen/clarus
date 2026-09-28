@@ -1974,7 +1974,7 @@ func cgSizeOfUncached(t: int): int {
         // loop (cgSlotSizeOf(irLocalType(params[i]))) reserving only 2
         // bytes for that slot while every expression-level access read/
         // wrote 4 -- a real adjacent-slot-corruption bug, caught by this
-        // task's own callback.cla golden (`n: word` at 8(A6) size 2
+        // task's own callback.cla golden (`n: int16` at 8(A6) size 2
         // reading via a bare 4-byte MOVE.L, bleeding into the next
         // param's own 2-byte slot). Returning 4 makes the frame
         // RESERVATION match what every consumer already assumes -- the

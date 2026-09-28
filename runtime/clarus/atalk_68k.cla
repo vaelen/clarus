@@ -20,7 +20,7 @@
 //    outstanding request (atalk.cla's rtSvcArmed), and the calls that
 //    must run WHILE a block is live (dspCLDeny, dspCLRemove, dspClose,
 //    dspRemove) use the separate rtAt68DspAux block instead.
-// 3. `peekw` ZERO-extends, but ioResult and every other `word` that can
+// 3. `peekw` ZERO-extends, but ioResult and every other `int16` that can
 //    be negative is signed: rtAt68SignW does the correction, and the
 //    "still pending" test is `== 1` (ioInProgress) rather than a sign-
 //    dependent comparison. `-39` read raw is 65497, which no `<= 0`
@@ -169,7 +169,7 @@ var rtAt68DspAux: ptr
 
 // ---- Primitives ----
 
-// rtAt68SignW: peekw and a `word` field disagree -- peekw zero-extends,
+// rtAt68SignW: peekw and an `int16` field disagree -- peekw zero-extends,
 // so every 16-bit value that can be negative (ioResult, a driver refNum,
 // an OSErr) comes back through here.
 func rtAt68SignW(v: int): int {

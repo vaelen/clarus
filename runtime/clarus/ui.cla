@@ -60,9 +60,9 @@
 //
 // Every 16-bit Toolbox INTEGER (window/control coordinates, short counts,
 // short IDs/refnums/indices, WindowPartCode/ControlPartCode/MenuID/
-// EventMask) is `word` (Task 4's extern type, docs/clarus-language-
-// reference.md's own worked examples `UiMoveTo(h: word, v: word) = trap
-// 0xA893` and `UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C` are
+// EventMask) is `int16` (Task 4's extern type, docs/clarus-language-
+// reference.md's own worked examples `UiMoveTo(h: int16, v: int16) = trap
+// 0xA893` and `UiFindWindow(pt: int, wpOut: ptr): int16 = trap 0xA92C` are
 // used verbatim below). A 4-byte Toolbox by-value struct (a Point argument
 // -- MenuSelect/DragWindow/GrowWindow/TrackBox/TrackGoAway/PtInRect/
 // FindWindow's own `pt`) is `int` (packed v/h, v in the high word, matching
@@ -240,7 +240,7 @@ external func UiSetPort(port: ptr) = trap 0xA873
 // lane and rt_ui_script_click (:2760-2782, 4102-4173, DrawGrowIcon/
 // FindWindow).
 external func UiFrontWindow(): ptr = trap 0xA924
-external func UiNewWindowRaw(wStorage: ptr, boundsRect: ptr, title: ptr, visible: bool, procId: word, behind: ptr, goAwayFlag: bool, refCon: int): ptr = trap 0xA913
+external func UiNewWindowRaw(wStorage: ptr, boundsRect: ptr, title: ptr, visible: bool, procId: int16, behind: ptr, goAwayFlag: bool, refCon: int): ptr = trap 0xA913
 
 // UiNewWindow: allocation-waist wrapper, see UiNewPtr above.
 func UiNewWindow(wStorage: ptr, boundsRect: ptr, title: ptr, visible: bool, procId: int, behind: ptr, goAwayFlag: bool, refCon: int): ptr {
@@ -257,11 +257,11 @@ external func UiGetWTitle(theWindow: ptr, title: ptr) = trap 0xA919
 external func UiSelectWindow(theWindow: ptr) = trap 0xA91F
 external func UiDragWindow(theWindow: ptr, startPt: int, boundsRect: ptr) = trap 0xA925
 external func UiGrowWindow(theWindow: ptr, startPt: int, bBox: ptr): int = trap 0xA92B
-external func UiSizeWindow(theWindow: ptr, w: word, h: word, fUpdate: bool) = trap 0xA91D
-external func UiZoomWindow(theWindow: ptr, partCode: word, front: bool) = trap 0xA83A
-external func UiTrackBox(theWindow: ptr, thePt: int, partCode: word): bool = trap 0xA83B
+external func UiSizeWindow(theWindow: ptr, w: int16, h: int16, fUpdate: bool) = trap 0xA91D
+external func UiZoomWindow(theWindow: ptr, partCode: int16, front: bool) = trap 0xA83A
+external func UiTrackBox(theWindow: ptr, thePt: int, partCode: int16): bool = trap 0xA83B
 external func UiTrackGoAway(theWindow: ptr, thePt: int): bool = trap 0xA91E
-external func UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C
+external func UiFindWindow(pt: int, wpOut: ptr): int16 = trap 0xA92C
 
 // ---- Menu Manager ----
 // rt_ui_build_menus/rt_ui_build_apple_menu (:2198-2384, NewMenu/AppendMenu/
@@ -276,7 +276,7 @@ external func UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C
 // popup KIND itself being out of scope), rt_ui_table_draw_field/friends'
 // CountMItems use is out of scope (table kind), but rt_ui_widget_get_int's
 // popup SELECTED-count use (:5339-5723, in the produces list) needs it.
-external func UiNewMenuRaw(menuId: word, menuTitle: ptr): ptr = trap 0xA931
+external func UiNewMenuRaw(menuId: int16, menuTitle: ptr): ptr = trap 0xA931
 
 // UiNewMenu: allocation-waist wrapper, see UiNewPtr above.
 func UiNewMenu(menuId: int, menuTitle: ptr): ptr {
@@ -286,17 +286,17 @@ func UiNewMenu(menuId: int, menuTitle: ptr): ptr {
 
 external func UiDisposeMenu(theMenu: ptr) = trap 0xA932
 external func UiAppendMenu(theMenu: ptr, data: ptr) = trap 0xA933
-external func UiInsertMenu(theMenu: ptr, beforeId: word) = trap 0xA935
-external func UiDeleteMenu(menuId: word) = trap 0xA936
+external func UiInsertMenu(theMenu: ptr, beforeId: int16) = trap 0xA935
+external func UiDeleteMenu(menuId: int16) = trap 0xA936
 external func UiDrawMenuBar() = trap 0xA937
-external func UiHiliteMenu(menuId: word) = trap 0xA938
-external func UiEnableItem(theMenu: ptr, item: word) = trap 0xA939
-external func UiDisableItem(theMenu: ptr, item: word) = trap 0xA93A
-external func UiCountMItems(theMenu: ptr): word = trap 0xA950
-external func UiGetMenuItemText(theMenu: ptr, item: word, itemString: ptr) = trap 0xA946
+external func UiHiliteMenu(menuId: int16) = trap 0xA938
+external func UiEnableItem(theMenu: ptr, item: int16) = trap 0xA939
+external func UiDisableItem(theMenu: ptr, item: int16) = trap 0xA93A
+external func UiCountMItems(theMenu: ptr): int16 = trap 0xA950
+external func UiGetMenuItemText(theMenu: ptr, item: int16, itemString: ptr) = trap 0xA946
 external func UiAppendResMenu(theMenu: ptr, theType: int) = trap 0xA94D
 external func UiMenuSelect(startPt: int): int = trap 0xA93D
-// ch is `word`, not `char`: MenuKey's real ABI is CharParameter (a
+// ch is `int16`, not `char`: MenuKey's real ABI is CharParameter (a
 // numeric 16-bit short, char code in the word's LOW byte -- Menus.h),
 // same as UiTEKey below in uitext.cla. A `char` param would go through
 // cgCallExtPascal's byte-in-HIGH-byte pascal-Boolean/Char push, so the
@@ -304,7 +304,7 @@ external func UiMenuSelect(startPt: int): int = trap 0xA93D
 // scripted goldens dispatch menu keys through the script engine, never
 // this trap, so only a real native boot shows it (found with TickProbe,
 // 2026-08-03, alongside the UiTickCount convention fix above).
-external func UiMenuKey(ch: word): int = trap 0xA93E
+external func UiMenuKey(ch: int16): int = trap 0xA93E
 
 // ---- Event Manager ----
 // rt_ui_run's real event loop (:4467-4530, WaitNextEvent), rt_ui_run_
@@ -314,8 +314,8 @@ external func UiMenuKey(ch: word): int = trap 0xA93E
 // handle_mouse_down (:3421-3499, SysBeep on a disabled-menu-bar or
 // disabled-widget click), rt_ui_handle_key (:3557-3673, SysBeep on an
 // unhandled key).
-external func UiWaitNextEvent(eventMask: word, theEvent: ptr, sleep: int, mouseRgn: ptr): bool = trap 0xA860
-external func UiGetNextEvent(eventMask: word, theEvent: ptr): bool = trap 0xA970
+external func UiWaitNextEvent(eventMask: int16, theEvent: ptr, sleep: int, mouseRgn: ptr): bool = trap 0xA860
+external func UiGetNextEvent(eventMask: int16, theEvent: ptr): bool = trap 0xA970
 // _FlushEvents is 0xA032 -- `0xA032 & 0x0800 == 0`, bit 11 clear, an OS
 // trap using REGISTER convention, NOT the two-word Pascal-stack shape a
 // plain `= trap` clause assumes (same bit-11 rule cases_event.cla's own
@@ -341,7 +341,7 @@ external func UiFlushEvents(masks: int) = trap 0xA032 reg
 external func UiStillDown(): bool = trap 0xA973
 external func UiGetMouse(mouseLoc: ptr) = trap 0xA972
 external func UiGlobalToLocal(pt: ptr) = trap 0xA871
-external func UiSysBeep(duration: word) = trap 0xA9C8
+external func UiSysBeep(duration: int16) = trap 0xA9C8
 
 // ---- Gestalt / OS Utility / Dialog Manager (Alert family) ----
 // rt_ui_startup's System 7 check (:3727-3816, Gestalt/FlushEvents),
@@ -370,13 +370,13 @@ external func UiTickCount(): int = trap 0xA975
 // read off Gestalt.h's `#pragma parameter` line was a misreading of glue
 // as trap contract. Two declarations because `reg` names one result
 // register; see this file's own header comment and toolbox/osutils.cla.
-external func UiGestaltErr(selector: int): word = trap 0xA1AD reg(d0: selector) ret d0
+external func UiGestaltErr(selector: int): int16 = trap 0xA1AD reg(d0: selector) ret d0
 external func UiGestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector) ret a0
 external func UiHideCursor() = trap 0xA852
-external func UiOpenDeskAcc(deskAccName: ptr): word = trap 0xA9B6
+external func UiOpenDeskAcc(deskAccName: ptr): int16 = trap 0xA9B6
 external func UiParamText(param0: ptr, param1: ptr, param2: ptr, param3: ptr) = trap 0xA98B
-external func UiNoteAlert(alertId: word, modalFilter: ptr): word = trap 0xA987
-external func UiAlert(alertId: word, modalFilter: ptr): word = trap 0xA985
+external func UiNoteAlert(alertId: int16, modalFilter: ptr): int16 = trap 0xA987
+external func UiAlert(alertId: int16, modalFilter: ptr): int16 = trap 0xA985
 
 // ================================================================
 // Task 7 Step 4: function bodies. Ported directly by the controlling
@@ -504,7 +504,7 @@ external func UiAEProcessEvent(evBuf: ptr)
 // real port so far; the C reference's OWN odoc handler, rt_ext_mac.inc's
 // rt_ext_ui_ae_odoc, is itself untested by any golden), so there is no
 // "existing" path to route to.
-callback func aeQuitHandler(theAppleEvent: ptr, reply: ptr, handlerRefcon: int): word {
+callback func aeQuitHandler(theAppleEvent: ptr, reply: ptr, handlerRefcon: int): int16 {
     rtUiQuit()
     // Reached only if rtUiQuit's own close cascade was CANCELLED (some
     // window's closeRequest ran `cancel`) -- the ordinary quit path calls
@@ -515,7 +515,7 @@ callback func aeQuitHandler(theAppleEvent: ptr, reply: ptr, handlerRefcon: int):
     return 0 // noErr
 }
 
-callback func aeOappHandler(theAppleEvent: ptr, reply: ptr, handlerRefcon: int): word {
+callback func aeOappHandler(theAppleEvent: ptr, reply: ptr, handlerRefcon: int): int16 {
     // No-op acknowledge: nat_UiLaunchReal (below) already ran the
     // program's own startup (UiFireStartEmpty) unconditionally BEFORE
     // installing this handler, so there is nothing left to do when the

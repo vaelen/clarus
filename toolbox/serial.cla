@@ -70,7 +70,7 @@ const baud57600: int = 0
 //
 // stop15/stop20 (Serial.h:67-68: `stop15 = -32768L`, `stop20 = -16384`)
 // are DELIBERATELY OMITTED: both are C `int` values with bit 15 set, and
-// Clarus's `word` extern field type sign-extends on read -- correctly
+// Clarus's `int16` extern field type sign-extends on read -- correctly
 // using either needs an unsigned/bit-pattern reinterpretation this
 // catalog has no real caller for today (nothing in the serial-connection
 // design needs 1.5 or 2 stop bits; 8N1's `stop10` below is the only

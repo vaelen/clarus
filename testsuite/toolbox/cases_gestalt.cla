@@ -37,7 +37,7 @@
 // nonzero one -- a real answer here is a small BCD system version, and
 // nothing else is acceptable.
 
-external func TbGestaltErr(selector: int): word = trap 0xA1AD reg(d0: selector) ret d0
+external func TbGestaltErr(selector: int): int16 = trap 0xA1AD reg(d0: selector) ret d0
 external func TbGestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector) ret a0
 
 // caseGestaltNamed: selector 'sysv' = gestaltSystemVersion = 0x73797376

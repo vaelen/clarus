@@ -16,7 +16,7 @@
 // 5a proved the real Gestalt trap returns its response in A0, not through
 // an A1 pointer, so do not copy this as a Gestalt transcription; see
 // toolbox/osutils.cla for the real declaration pair.
-external func TbGestalt(selector: int, response: ptr): word =
+external func TbGestalt(selector: int, response: ptr): int16 =
     trap 0xA1AD reg(d0: selector, a1: response) ret d0
 
 on App.startCLI(args: list of string) {
