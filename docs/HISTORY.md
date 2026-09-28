@@ -7733,10 +7733,18 @@ The core suite is 89 cases (85 → 89: `NarrowInts`, `SerNarrow`,
   clarusc edit. Cost: a slightly bigger Task 13; `rt.clir` and one
   `.expect` moved deliberately.
 
-**Gates.** T2: <T2 result>.
+**Gates.** T2 (`scripts/test-merge.sh`, on the final tip after the
+final-review fix wave): PASS in 1283 s -- t1 126 pass / 37 skip / 0
+fail, perfgate, `selfhost/` 6/6, `mactest/` 21 pass / 17 skip (native
+core 89/89, toolbox 41/41), `bake/` full corpus 7/7.
 `CLARUS_SNOW_TESTS=1 make test T='mactest/snow/clarusc_bake
 mactest/snow/macresident_failed_compile'` (this wave touched
-`bake.cla`): <clarusc_bake result>. The IIcx memprobe run passed 5/5
+`bake.cla`), on the Mac IIcx: `clarusc_bake` PASS (440 s),
+`macresident_failed_compile` PASS (678 s). Final whole-branch review:
+"with fixes" -- one Important (Ruling R16: the C lane gave a narrow
+literal an `int32_t` temp on push/unshift/map-set, endian-dependent;
+fixed at the root in `lower.cla`'s `ExIntLit`, snapshot regenerated,
+native boot re-run) plus TODO records; scoped re-review clean. The IIcx memprobe run passed 5/5
 in 509 s. Per-task T1 runs all passed (122–125 pass, 37 skip, 0 fail,
 perfgate 1/1); `CLARUS_BAKE_FULL=1`
 `bake/` 33/33 in every task and merge that ran it.
