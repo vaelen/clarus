@@ -51,20 +51,20 @@ include "drive.cla"
 include "bake.cla"
 // SE wave 0: FreeMem/MaxBlock for feMemProbe below, from the catalog.
 include "../toolbox/memory.cla"
-// SE wave 4 Task 7: GetAppParms, VolumeParam and PBSetVolSync, for
-// gcOpenOwnDataFork.
+// SE wave 4 Task 7: GetAppParms, for gcOpenOwnDataFork.
 include "../toolbox/segload.cla"
-include "../toolbox/files.cla"
 
-// gcPBGetVolSync, gcPBHSetVolSync, gcPBGetFCBInfoSync and their records:
+// gcPBHGetVolSync, gcPBHSetVolSync, gcPBGetFCBInfoSync and their records:
 // File Manager calls declared locally rather than in toolbox/files.cla,
 // because the runtime splices files.cla into every UI program and the C
 // printer prototypes every extern it declares -- adding them there would
 // move every emitui golden. Move them into files.cla when a phase may.
-//   PBGetVolSync      CIncludes/Files.h:1382-1384 `#pragma parameter __D0
-//                     PBGetVolSync(__A0)` ... `ONEWORDINLINE(0xA014)`;
-//                     AIncludes/Files.a:1502 `_PBGetVolSync: OPWORD $A014`.
-//                     The register shape of files.cla's PBSetVolSync.
+//   PBHGetVolSync     CIncludes/Files.h:2736-2738 `#pragma parameter __D0
+//                     PBHGetVolSync(__A0)` ... `PBHGetVolSync(WDPBPtr)
+//                     ONEWORDINLINE(0xA214)`. Returns the default in
+//                     ioVRefNum and its real volume and folder in
+//                     ioWDVRefNum + ioWDDirID (TN 140: PBGetVol alone
+//                     loses a default set as a bare dirID).
 //   PBHSetVolSync     CIncludes/Files.h:2708-2710 `#pragma parameter __D0
 //                     PBHSetVolSync(__A0)` ... `PBHSetVolSync(WDPBPtr)
 //                     ONEWORDINLINE(0xA215)`; Files.a:3069 `OPWORD $A215`.
@@ -75,7 +75,7 @@ include "../toolbox/files.cla"
 //                     #8,D0 / dc.w $A260` -- _HFSDispatch selector 8 in D0,
 //                     files.cla's PBGetCatInfoSync shape.
 // GcWDPB is WDPBRec (Files.h:1135-1150): ioNamePtr@18 ioVRefNum@22
-// ioWDDirID@48, 52 bytes. GcFCBPB is FCBPBRec (Files.h:1153-1175):
+// ioWDVRefNum@32 ioWDDirID@48, 52 bytes. GcFCBPB is FCBPBRec (Files.h:1153-1175):
 // ioRefNum@24 ioFCBIndx@28 ioFCBVRefNum@52 ioFCBParID@58, 62 bytes.
 extern record GcWDPB {
     qLink: ptr
@@ -86,7 +86,9 @@ extern record GcWDPB {
     ioResult: int16
     ioNamePtr: ptr
     ioVRefNum: int16
-    pad[24]
+    pad[8]
+    ioWDVRefNum: int16
+    pad[14]
     ioWDDirID: int
 }
 
@@ -110,7 +112,7 @@ extern record GcFCBPB {
 
 external func gcPBHSetVolSync(paramBlock: ptr): int = trap 0xA215 reg
 external func gcPBGetFCBInfoSync(paramBlock: ptr, selector: int): int = trap 0xA260 reg(a0: paramBlock, d0: selector) ret d0
-external func gcPBGetVolSync(paramBlock: ptr): int = trap 0xA014 reg
+external func gcPBHGetVolSync(paramBlock: ptr): int = trap 0xA214 reg
 
 // gcGet1NamedResource: a SECOND declaration of the same trap Get1NamedResource
 // (toolbox/resources.cla) already catalogs, with a `string` `name` param
@@ -697,8 +699,8 @@ func gcOpenOwnDataFork(): filehandle {
     var i: int
     var fcb: GcFCBPB
     var wd: GcWDPB
-    var vp: VolumeParam
-    var saved: int
+    var savedVol: int
+    var savedDir: int
     var err: int
     var fh: filehandle
 
@@ -721,16 +723,18 @@ func gcOpenOwnDataFork(): filehandle {
         gcOwnForkErr = "PBGetFCBInfo error " + numToStr(err)
         return nil
     }
-    // The caller's default directory, to put back. Without it the open
-    // cannot be done safely (the default would be left moved), so a
-    // failure here refuses rather than guess.
-    vp.ioNamePtr = ptr(0)
-    err = gcPBGetVolSync(vp)
+    // The caller's default directory, to put back: its real volume and
+    // folder (ioWDVRefNum + ioWDDirID), which survive a default set as a
+    // bare dirID. Without it the open cannot be done safely (the default
+    // would be left moved), so a failure here refuses rather than guess.
+    wd.ioNamePtr = ptr(0)
+    err = gcPBHGetVolSync(wd)
     if err != 0 {
-        gcOwnForkErr = "PBGetVol error " + numToStr(err)
+        gcOwnForkErr = "PBHGetVol error " + numToStr(err)
         return nil
     }
-    saved = vp.ioVRefNum
+    savedVol = wd.ioWDVRefNum
+    savedDir = wd.ioWDDirID
     wd.ioNamePtr = ptr(0)
     wd.ioVRefNum = fcb.ioFCBVRefNum
     wd.ioWDDirID = fcb.ioFCBParID
@@ -743,10 +747,56 @@ func gcOpenOwnDataFork(): filehandle {
     if fh == nil {
         gcOwnForkErr = lastError.message
     }
-    vp.ioNamePtr = ptr(0)
-    vp.ioVRefNum = int16(saved)
-    err = PBSetVolSync(vp)
+    wd.ioNamePtr = ptr(0)
+    wd.ioVRefNum = int16(savedVol)
+    wd.ioWDDirID = savedDir
+    err = gcPBHSetVolSync(wd)
+    if err != 0 {
+        log("clarusc: cannot restore the default directory (PBHSetVol error " + numToStr(err) + ")")
+    }
     return fh
+}
+
+// gcScriptedSetDefault makes the folder of a scripted askOpen answer (a
+// full pathname, "Vol:folder:file") the default directory -- the side
+// effect the real Standard File path has (nat_UiSFGetFile's PBSetVol to
+// the reply's folder) and the scripted answer path does not. Done here,
+// not in the runtime, so no compiled program changes; it lets a scripted
+// compile run with the default away from ClarusC's own folder, as a real
+// one does. A bare name (no colon) leaves the default alone.
+func gcScriptedSetDefault(path: string) {
+    var n: int
+    var i: int
+    var name: ptr
+    var wd: GcWDPB
+    var err: int
+
+    n = 0
+    i = 0
+    while i < path.length {
+        if path[i] == ':' {
+            n = i + 1
+        }
+        i = i + 1
+    }
+    if n == 0 {
+        return
+    }
+    name = NewPtr(256)
+    pokeb(name, n)
+    i = 0
+    while i < n {
+        pokeb(name + 1 + i, int(path[i]))
+        i = i + 1
+    }
+    wd.ioNamePtr = name
+    wd.ioVRefNum = 0
+    wd.ioWDDirID = 0
+    err = gcPBHSetVolSync(wd)
+    DisposePtr(name)
+    if err != 0 {
+        log("clarusc: scripted askOpen: PBHSetVol error " + numToStr(err))
+    }
 }
 
 // gcCompile runs one compile (gcCompileRun) and closes the library
@@ -935,6 +985,9 @@ extend File {
             w = open Log
         }
         if askOpen(p, "TEXT") {
+            if rtUiScripted {
+                gcScriptedSetDefault(p)
+            }
             gcStackPaint()
             gcCompile(w, p)
             gcStackReport()

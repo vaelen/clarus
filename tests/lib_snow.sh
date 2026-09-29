@@ -267,22 +267,25 @@ snow_get_bin() {
 }
 
 # snow_extract_app NAME OUT : extract a bare-named app written by
-# file.writeRes, trying the boot volume root then $SNOW_APPDIR --
-# natWriteRes pokes no ioDirID, so the landing directory is not a sure
-# thing (macResidentExtractApp). On a miss at both, prints an hls listing
-# of both directories (re-mounting first, since the loop always unmounts)
+# file.writeRes, trying the boot volume root, $SNOW_APPDIR, then the
+# "Clarus" volume root -- natWriteRes pokes no ioDirID, so the landing
+# directory is the default one, and a scripted ClarusC compile moves the
+# default to the answered source's folder (macgui.cla's
+# gcScriptedSetDefault, as the real Standard File dialog does)
+# (macResidentExtractApp). On a miss everywhere, prints an hls listing
+# of each directory (re-mounting first, since the loop always unmounts)
 # and returns 1; the caller t_fails so the listings stay in the log.
 snow_extract_app() {
     _nm=$1
     _out=$2
-    for _cand in ":$_nm" "$SNOW_APPDIR$_nm"; do
-        snow_mount
-        if HOME=$SNOW_DIR "$SNOW_HFS/hcopy" -m "$_cand" "$_out" > "$WORK/hcopy.log" 2>&1; then
+    for _cand in "$SNOW_IMG|:$_nm" "$SNOW_IMG|$SNOW_APPDIR$_nm" "$SNOW_CLARUS_IMG|:$_nm"; do
+        snow_mount "${_cand%%|*}"
+        if HOME=$SNOW_DIR "$SNOW_HFS/hcopy" -m "${_cand#*|}" "$_out" > "$WORK/hcopy.log" 2>&1; then
             snow_umount
-            echo "$_nm extracted from $_cand ($(wc -c < "$_out" | tr -d ' ') bytes)"
+            echo "$_nm extracted from ${_cand#*|} ($(wc -c < "$_out" | tr -d ' ') bytes)"
             return 0
         fi
-        echo "miss $_cand: $(tr '\n' ' ' < "$WORK/hcopy.log")"
+        echo "miss ${_cand#*|}: $(tr '\n' ' ' < "$WORK/hcopy.log")"
         snow_umount
     done
     snow_mount
@@ -290,6 +293,10 @@ snow_extract_app() {
     HOME=$SNOW_DIR "$SNOW_HFS/hls" -l ":" 2>&1
     echo "$SNOW_APPDIR listing:"
     HOME=$SNOW_DIR "$SNOW_HFS/hls" -l "$SNOW_APPDIR" 2>&1
+    snow_umount
+    snow_mount "$SNOW_CLARUS_IMG"
+    echo "Clarus volume root listing:"
+    HOME=$SNOW_DIR "$SNOW_HFS/hls" -l ":" 2>&1
     snow_umount
     return 1
 }
