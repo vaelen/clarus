@@ -14,7 +14,8 @@
 # that splice; 25 -> 27 in the MacTCP phase's Task 6, when the tcp pair
 # did; 27/18 -> 28/19 in SE wave 3 Task 2, when the boxsize lane pair
 # (boxsize_68k.cla / boxsize_c.cla, one per lane) joined both lists.
-# sections 46 is bkSectionCount. version 8 is language-runtime-cleanup's
+# sections 48 is bkSectionCount (47 -> 48 in SE wave 4 Task 2:
+# +bkSecShakeSummary). version 8 is language-runtime-cleanup's
 # format (IRWindowDesc gained menuMask; v7 was clir-load-perf Task 4's
 # hash swap, FNV-mul -> shift-add).
 . "$(dirname "$0")/../lib.sh" || exit 2
@@ -49,8 +50,8 @@ for lane in 68k c; do
         || t_fail "$lane/modules" "modules = $got, want $modules; keys: $(sed -n 's/^module //p' "$WORK/$lane.hdr" | tr '\n' ' ')"
 
     got=$(clir_field sections "$WORK/$lane.hdr")
-    [ "$got" = 47 ] && t_pass "$lane/sections" \
-        || t_fail "$lane/sections" "sections = $got, want 47 (bkSectionCount, language-runtime-cleanup: +bkSecIrArrLits)"
+    [ "$got" = 48 ] && t_pass "$lane/sections" \
+        || t_fail "$lane/sections" "sections = $got, want 48 (bkSectionCount, SE wave 4 Task 2: +bkSecShakeSummary)"
 
     # Every module key follows rtModuleKey's "runtime/clarus/NAME" scheme
     # (Go: filepath.Dir(m) == "runtime/clarus", i.e. exactly one path

@@ -134,6 +134,83 @@ var shakeCurFunc: int
 var shakeEdgesFrom: list of int
 var shakeEdgesTo: list of int
 
+// ---- baked call-graph summary (SE wave 4, Task 2; spec 3.2) ----
+//
+// shakeRecording turns shakeMarkAndEnqueue into a recorder: instead of
+// resolving/marking, it appends the name it was handed to shakeRecNames.
+// bake.cla's bkBuildShakeSummary sets it and runs the ordinary
+// shakeWalkStmts/shakeWalkExpr over one runtime body at a time, so the
+// baked summary is, by construction, the exact name sequence the walk
+// below would hand shakeMarkAndEnqueue for that body (walk order,
+// duplicates kept -- every call site is an edge, and the order fixes the
+// worklist order and so the edge order cgStackHeuristic reads).
+//
+// Names, not irFuncs indices: a name resolves per compile through
+// shakeFuncIdxByName, exactly as the IR walk does, so a callee that is
+// absent from the bake (a synthesized dispatcher, a usage-gated module)
+// still resolves the way from source would. Pool indices are stable: the
+// baked intern pool is installed verbatim, and bkBuildShakeSummary
+// refuses to bake if recording interned a new name.
+//
+// shakeSumStart/shakeSumNames hold the installed summary (bkInstallArenas
+// moves it in): entry e's names are shakeSumNames[shakeSumStart[e] ..
+// shakeSumStart[e+1]), entries 0..shakeSumFuncs-1 being baked irFuncs
+// bodies and the rest baked irGlobals' init expressions. shakeProgram
+// uses it only while bkRuntimeFuncBoundary > 0 (a baked runtime is
+// installed THIS compile -- driveReset zeroes it), for function indices
+// below that boundary and the first shakeSumGlobals globals.
+var shakeRecording: bool
+var shakeRecNames: list of int
+var shakeSumFuncs: int
+var shakeSumGlobals: int
+var shakeSumStart: list of int
+var shakeSumNames: list of int
+
+// shakeReplayed counts runtime bodies/initializers replayed from the
+// summary by the last shakeProgram (the --shake-dump `R` line).
+var shakeReplayed: int
+
+// shakeDumpPath (--shake-dump FILE, main.cla): when set, shakeProgram
+// writes its marks (`M name`, irFuncs order) and edges (`E from to`, edge
+// order) plus `R shakeReplayed` to that file -- tests/bake/shakesum.sh.
+var shakeDumpPath: string
+
+// shakeReplay hands summary entry e's names to shakeMarkAndEnqueue, in
+// baked order -- the replay of one walked body.
+func shakeReplay(e: int) {
+    var j: int
+
+    j = shakeSumStart[e]
+    while j < shakeSumStart[e + 1] {
+        shakeMarkAndEnqueue(shakeSumNames[j])
+        j = j + 1
+    }
+    shakeReplayed = shakeReplayed + 1
+}
+
+// shakeWriteDump writes the --shake-dump file (see shakeDumpPath).
+func shakeWriteDump() {
+    var out: text
+    var i: int
+
+    i = 0
+    while i < irFuncs.count {
+        if shakeMarks[i] {
+            out.append("M " + poolGet(irFuncName(i)) + "\n")
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < shakeEdgesFrom.count {
+        out.append("E " + poolGet(irFuncName(shakeEdgesFrom[i])) + " " + poolGet(irFuncName(shakeEdgesTo[i])) + "\n")
+        i = i + 1
+    }
+    out.append("R " + numToStr(shakeReplayed) + "\n")
+    if not file.writeText(shakeDumpPath, out, fileTypeText, "????") {
+        log("clarusc: cannot write " + shakeDumpPath + ": " + lastError.message)
+    }
+}
+
 // shakeAddRoot registers an extra root by interned name, consulted the next
 // time shakeProgram runs.
 func shakeAddRoot(nameIdx: int) {
@@ -169,6 +246,10 @@ func shakeEdgeTo(i: int): int {
 func shakeMarkAndEnqueue(nameIdx: int) {
     var idx: int
 
+    if shakeRecording {
+        shakeRecNames.add(nameIdx)
+        return
+    }
     idx = shakeFuncIdxByName.get(nameIdx, -1)
     if idx == -1 {
         return
@@ -205,6 +286,7 @@ func shakeProgram() {
     shakeEdgesFrom = shakeFreshIntList()
     shakeEdgesTo = shakeFreshIntList()
     shakeCurFunc = -1
+    shakeReplayed = 0
     shakeFuncIdxByName.clear()
 
     i = 0
@@ -293,9 +375,14 @@ func shakeProgram() {
     }
 
     // ---- globals' own init expressions (may embed ECallFn/EIntr) ----
+    // A baked runtime global replays its summary entry (see shakeSumStart).
     i = 0
     while i < irGlobals.count {
-        shakeWalkExpr(irGlobalInit(i))
+        if bkRuntimeFuncBoundary > 0 and i < shakeSumGlobals {
+            shakeReplay(shakeSumFuncs + i)
+        } else {
+            shakeWalkExpr(irGlobalInit(i))
+        }
         i = i + 1
     }
 
@@ -360,10 +447,17 @@ func shakeProgram() {
     while wi < shakeWorklist.count {
         fIdx = shakeWorklist[wi]
         shakeCurFunc = fIdx
-        shakeWalkStmts(irFuncBodyHead(fIdx))
+        if fIdx < bkRuntimeFuncBoundary and fIdx < shakeSumFuncs {
+            shakeReplay(fIdx)
+        } else {
+            shakeWalkStmts(irFuncBodyHead(fIdx))
+        }
         wi = wi + 1
     }
     shakeCurFunc = -1
+    if shakeDumpPath != "" {
+        shakeWriteDump()
+    }
 }
 
 // shakeFreshBoolList/shakeFreshIntList hand back a genuinely empty list --
