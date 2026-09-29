@@ -222,6 +222,7 @@ extern void rt_ext_UiLocalToGlobal(void *);
 extern void * rt_ext_UiCbAddr(void *);
 extern void * rt_ext_UiStrAddr(const uint8_t *);
 extern void rt_ext_UiTestEmit(void *);
+extern int32_t rt_ext_UiTraceOn(void);
 extern void * rt_ext_UiCurrentA5(void);
 extern int32_t rt_ext_UiCompactMem(int32_t);
 extern void rt_ext_UiScreenBits(void *, void *, void *);

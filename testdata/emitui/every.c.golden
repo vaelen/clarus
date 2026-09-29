@@ -223,6 +223,7 @@ extern void rt_ext_UiLocalToGlobal(void *);
 extern void * rt_ext_UiCbAddr(void *);
 extern void * rt_ext_UiStrAddr(const uint8_t *);
 extern void rt_ext_UiTestEmit(void *);
+extern int32_t rt_ext_UiTraceOn(void);
 extern void * rt_ext_UiCurrentA5(void);
 extern int32_t rt_ext_UiCompactMem(int32_t);
 extern void rt_ext_UiScreenBits(void *, void *, void *);
@@ -7262,6 +7263,9 @@ static void clar_fn_rtUiTraceOpen(int32_t cv_winIdx, void * cv_inst) {
     cv_id = clar_fn_rtUiTraceNextId(cv_winIdx);
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     (cv_w)->cv_traceId = cv_id;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_46)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidWinName(cv_winIdx));
@@ -7273,6 +7277,9 @@ static void clar_fn_rtUiTraceOpen(int32_t cv_winIdx, void * cv_inst) {
 static void clar_fn_rtUiTraceClose(int32_t cv_winIdx, void * cv_inst) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_48)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidWinName(cv_winIdx));
@@ -7284,6 +7291,9 @@ static void clar_fn_rtUiTraceClose(int32_t cv_winIdx, void * cv_inst) {
 static void clar_fn_rtUiTraceFire1(void * cv_namePtr, const clar_str_255 *cv_event) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_49)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
@@ -7295,6 +7305,9 @@ static void clar_fn_rtUiTraceFire1(void * cv_namePtr, const clar_str_255 *cv_eve
 static void clar_fn_rtUiTraceFire2(void * cv_namePtr, void * cv_wnamePtr, const clar_str_255 *cv_event) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_49)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
@@ -7308,6 +7321,9 @@ static void clar_fn_rtUiTraceFire2(void * cv_namePtr, void * cv_wnamePtr, const 
 static void clar_fn_rtUiTraceMenuSelectFor(int32_t cv_k) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_49)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuHandlerMenuName(cv_k));
@@ -7320,6 +7336,9 @@ static void clar_fn_rtUiTraceMenuSelectFor(int32_t cv_k) {
 static void clar_fn_rtUiTraceEveryFire(int32_t cv_n) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_52)));
     clar_fn_rtUiTextAppendInt(cv_t, cv_n);
@@ -7342,7 +7361,7 @@ static void clar_fn_rtUiTraceDimCheck(int32_t cv_k, int32_t cv_enable) {
         return;
     }
     cv_prev = rt_peekb((void *)((char *)(cv_rtUiDimPrevArr) + (cv_k)));
-    if ((!(cv_rtUiDimFirst)) && (cv_prev != cv_enableInt)) {
+    if (((!(cv_rtUiDimFirst)) && (cv_prev != cv_enableInt)) && rt_ext_UiTraceOn()) {
         cv_t = clar_fn_rtTextNew();
         clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_53)));
         clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuHandlerMenuName(cv_k));
@@ -7365,7 +7384,7 @@ static void clar_fn_rtUiTraceStdEditDim(int32_t cv_enable) {
     } else {
         cv_enableInt = 0;
     }
-    if (cv_rtUiDimFirst || (cv_rtUiStdEditDimPrev == cv_enable)) {
+    if ((cv_rtUiDimFirst || (cv_rtUiStdEditDimPrev == cv_enable)) || (!(rt_ext_UiTraceOn()))) {
         cv_rtUiStdEditDimPrev = cv_enable;
         return;
     }
@@ -7417,7 +7436,7 @@ static void clar_fn_rtUiTraceFrontCheck(void) {
         return;
     }
     cv_rtUiTraceLastFront = cv_cur;
-    if (cv_cur != (void *)(intptr_t)(0)) {
+    if ((cv_cur != (void *)(intptr_t)(0)) && rt_ext_UiTraceOn()) {
         cv_t = clar_fn_rtTextNew();
         clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_58)));
         clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidWinName((((clar_rec_RtUiWinst *)(cv_cur)))->cv_winIdx));
@@ -7430,6 +7449,9 @@ static void clar_fn_rtUiTraceFrontCheck(void) {
 static void clar_fn_rtUiTraceAbout(void) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_59)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidAppName());
@@ -7471,6 +7493,9 @@ static void * clar_fn_rtUiPropNamePtr(int32_t cv_prop) {
 static void clar_fn_rtUiTraceSetStr(void * cv_namePtr, void * cv_wnamePtr, int32_t cv_prop, void * cv_s) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_68)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
@@ -7488,6 +7513,9 @@ static void clar_fn_rtUiTraceSetBool(void * cv_namePtr, void * cv_wnamePtr, int3
     cv_t = 0;
     int32_t cv_vi;
     cv_vi = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     if (cv_v) {
         cv_vi = 1;
     } else {
@@ -7508,6 +7536,9 @@ static void clar_fn_rtUiTraceSetBool(void * cv_namePtr, void * cv_wnamePtr, int3
 static void clar_fn_rtUiTraceSetInt(void * cv_namePtr, void * cv_wnamePtr, int32_t cv_prop, int32_t cv_v) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_68)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
@@ -7523,6 +7554,9 @@ static void clar_fn_rtUiTraceSetInt(void * cv_namePtr, void * cv_wnamePtr, int32
 static void clar_fn_rtUiTraceInvalid(void * cv_namePtr, void * cv_wnamePtr) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_49)));
     clar_fn_rtUiTextAppendStrSafe(cv_t, cv_namePtr);
@@ -7534,6 +7568,9 @@ static void clar_fn_rtUiTraceInvalid(void * cv_namePtr, void * cv_wnamePtr) {
 static void clar_fn_rtUiTraceAskPath(const clar_str_255 *cv_verb, void * cv_pathPStr) {
     void * cv_t;
     cv_t = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_70)));
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&((*cv_verb))));
@@ -7547,6 +7584,9 @@ static void clar_fn_rtUiTraceOpenDoc(void * cv_pathPtr, int32_t cv_pathLen) {
     cv_t = 0;
     void * cv_pathText;
     cv_pathText = 0;
+    if (!(rt_ext_UiTraceOn())) {
+        return;
+    }
     cv_t = clar_fn_rtTextNew();
     clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_71)));
     cv_pathText = clar_fn_rtTextNew();
