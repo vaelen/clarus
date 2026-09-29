@@ -341,7 +341,7 @@ Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
 Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
-- `testsuite/core/` (89 `CoreTest` cases: 88 real + `SelfCheck`, grown
+- `testsuite/core/` (90 `CoreTest` cases: 89 real + `SelfCheck`, grown
   from 74 real (correctness-cleanup phase tip) by the binary-files
   phase's `TextBinary`/`Crc16`/`IntToStr`/`FileHandleRW` cases — the
   first three hardware-prove `text`'s new LE/word/setter binary
@@ -378,7 +378,9 @@ enum + runner, not one boot per case.
   header's version byte is 2 -- then to 88 real by SE wave 3 Task 9's
   `SerV1Enum` (a frozen format-v1 file with a 4-byte enum field still
   loads) and `EnumStorage` (a 2-byte enum in every storage class plus a
-  v2 save/load) cases) runs on
+  v2 save/load) cases -- then to 89 real by the log-trace-optin detour's
+  `LogFile` case, which checks `app.writeLog`/`app.flushLog`'s exact file
+  bytes, a switch and a failed open on both lanes) runs on
   host and natively; `testsuite/toolbox/` (41 `ToolboxTest` cases: 40 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
@@ -459,7 +461,7 @@ enum + runner, not one boot per case.
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
   `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract
-  design: it asserts all 88 other cases ran in the same invocation
+  design: it asserts all 89 other cases ran in the same invocation
   (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
   `all`), never alone.
   (Exact file list: `tests/testsuite/core_cli.sh`.) `toolbox` has no host
@@ -603,8 +605,15 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   and the `##CLARUS-EXIT##`/`##CLARUS-LOG##` trailer at quit. `--events`
   implies it. A build without either is PRODUCTION: it creates no `out`
   file and builds no trace lines (`tests/mactest/nolog.sh` pins that).
-  So every test that BOOTS a native binary passes `--capture` or
-  `--events`; compile-only tests (cg68k goldens, bake twins, size) pass
+  A production program opts into a log with `app.writeLog(name)` (plus
+  `app.trace(true)` for the UI trace), buffered 4 KB at a time and
+  written in the production format (no trailer, no markers). So every
+  test that BOOTS a native binary passes `--capture` or `--events`,
+  except the production-log boots: `nolog.sh`'s `nolog`/`logout`
+  subcases, and `mactest/snow/macresident`'s TickProbe launch (compiled
+  on the Mac by ClarusC.APPL, so production; `testdata/cg68k/tickprobe.cla`
+  calls `app.writeLog("out")` + `app.trace(true)` itself).
+  Compile-only tests (cg68k goldens, bake twins, size) pass
   neither. `scripts/build-68k.sh` takes `--capture` but never implies it
   (real apps are built with it); `build-clarusc-mac.sh` adds it only
   with `--events`. Both scripts use the snapshot compiler, so they need

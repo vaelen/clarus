@@ -86,6 +86,9 @@ static inline int32_t clar_mod32(int32_t x, int32_t y) {
 void rt_alert(const uint8_t *s);                                      /* stdout + \n; CR bytes rendered as LF */
 void rt_log(const uint8_t *s);                                        /* stderr + \n; CR bytes rendered as LF (Ch12) */
 void rt_quit(int32_t code);                                           /* `quit [code]` statement: exit(code) */
+void rt_app_write_log(const uint8_t *name);                           /* app.writeLog: append-open NAME as the log file */
+void rt_app_flush_log(void);                                          /* app.flushLog: write the pending log buffer */
+void rt_app_trace(int32_t on);                                        /* app.trace: no-op off the native lane */
 
 extern int32_t rt_lasterr_code;
 extern uint8_t rt_lasterr_msg[256];                                    /* a str255 */

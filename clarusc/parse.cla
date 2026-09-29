@@ -738,7 +738,15 @@ func parsePrimary(): int {
         // this rule, same tradeoff "app" already accepts at decl position.
         advance() // 'app'
         advance() // '.'
-        return newAppConst(parseMemberName(), line, col)
+        idx = parseMemberName()
+        if curKind() == TkLParen {
+            // `app.writeLog(...)`/`app.flushLog()`/`app.trace(...)` (log-
+            // trace-optin): a call, so hand parsePostfix an ordinary
+            // `app`.NAME select to wrap -- checkMethodCall/lowMethodCall
+            // recognize the `app` receiver by name, like `file`.
+            return newSelect(newIdent(cwApp, line, col), idx, line, col)
+        }
+        return newAppConst(idx, line, col)
     }
     if t.kind == TkIdent {
         advance()

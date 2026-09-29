@@ -1041,18 +1041,22 @@ func rtUiAlertMsg(msg: ptr) {
     var t: ptr
     var empty: ptr
 
-    t = rtTextNew()
-    len = peekb(msg)
-    i = 0
-    while i < len {
-        c = peekb(msg + 1 + i)
-        if c == 13 {
-            c = 10
+    // log-trace-optin: the copy is a trace line, built only while the
+    // trace is on (UiTraceOn: capture mode or app.trace(true)).
+    if UiTraceOn() {
+        t = rtTextNew()
+        len = peekb(msg)
+        i = 0
+        while i < len {
+            c = peekb(msg + 1 + i)
+            if c == 13 {
+                c = 10
+            }
+            rtTextAppendChar(t, c)
+            i = i + 1
         }
-        rtTextAppendChar(t, c)
-        i = i + 1
+        rtUiEmitLine(t)
     }
-    rtUiEmitLine(t)
     if not rtUiScripted {
         empty = rtUiEmptyPStrGet()
         UiParamText(msg, empty, empty, empty)

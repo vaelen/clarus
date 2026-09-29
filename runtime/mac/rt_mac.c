@@ -52,6 +52,12 @@ static void rt_mac_toolbox_init(void)
    behavior changes. */
 void rt_mac_init_toolbox(void) { rt_mac_toolbox_init(); }
 
+/* app.writeLog/flushLog/trace (log-trace-optin): the native lane's feature;
+ * no-ops here so Retro68/cprint builds still link. */
+void rt_app_write_log(const uint8_t *name) { (void)name; }
+void rt_app_flush_log(void) { }
+void rt_app_trace(int32_t on) { (void)on; }
+
 #ifndef RT_MAC_TEST
 void rt_alert(const uint8_t *s)
 {

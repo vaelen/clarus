@@ -1,0 +1,66 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// logfile.cla: tests/hostrt/logfile.sh's fixture -- app.writeLog/flushLog
+// on the host lane. args[0] picks the subcase; the script checks the
+// files it leaves in the cwd.
+
+on App.startCLI(args: list of string) {
+    var mode: string
+    var t: text
+    var s: string
+    var i: int
+    var xs: list of int
+
+    mode = args[0]
+    if mode == "a1" {
+        app.writeLog("L.txt")
+        log("a")
+        log("b")
+    } else if mode == "a2" {
+        app.writeLog("L.txt")
+        log("c")
+    } else if mode == "flush" {
+        app.writeLog("L2.txt")
+        log("x")
+        app.flushLog()
+        if not file.readText("L2.txt", t) {
+            alert("read failed")
+        }
+        alert(string(t.length))
+    } else if mode == "burst" {
+        app.writeLog("B.txt")
+        i = 0
+        while i < 300 {
+            s = "line " + string(i)
+            while s.length < 20 {
+                s = s + "."
+            }
+            log(s)
+            i = i + 1
+        }
+    } else if mode == "maxline" {
+        app.writeLog("M.txt")
+        s = ""
+        while s.length < 255 {
+            s = s + "m"
+        }
+        log(s)
+    } else if mode == "switch" {
+        app.writeLog("A.txt")
+        log("1")
+        app.writeLog("B2.txt")
+        log("2")
+    } else if mode == "panic" {
+        app.writeLog("P.txt")
+        log("before")
+        i = xs[3]
+    } else if mode == "badpath" {
+        app.writeLog("nosuchdir/x.txt")
+        alert("err " + string(lastError.code))
+        log("y")
+    } else {
+        log("q")
+    }
+    app.trace(true)
+}

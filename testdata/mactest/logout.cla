@@ -1,0 +1,15 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// logout.cla: tests/mactest/nolog.sh's production-log fixture. Built
+// WITHOUT --capture, it opts into a log file named `out` (the file
+// LaunchAPPL hands back), so the capture must be exactly its three lines:
+// no ##CLARUS-EXIT## trailer, no ##CLARUS-LOG## marker.
+
+on App.launch {
+    app.writeLog("out")
+    log("l1")
+    log("l2")
+    log("l3")
+    quit 0
+}

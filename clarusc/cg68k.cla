@@ -9152,6 +9152,36 @@ func cgIntr(e: int) {
         }
         return
     }
+    if nm == IAppWriteLog() {
+        // natAppWriteLog(name, creator): the app's creator (app.id, '????'
+        // without one) rides along as a packed int so the runtime can stamp
+        // a freshly created log file TEXT/<creator>. Read here, not in
+        // lower, so an `app` section declared after the call still counts.
+        args = cgFreshIntList()
+        args.add(irIntrArgsHead(e))
+        args.add(newIRIntConst(cgAppCreatorPacked(), irIntT))
+        addrs = cgFreshBoolList()
+        addrs.add(true)
+        addrs.add(false)
+        if not cgCallRuntime(intern("natAppWriteLog"), args, addrs) {
+            abort("cg68k: cgIntr: natAppWriteLog call failed")
+        }
+        return
+    }
+    if nm == IAppFlushLog() or nm == IAppTrace() {
+        args = cgFreshIntList()
+        addrs = cgFreshBoolList()
+        if nm == IAppTrace() {
+            args.add(irIntrArgsHead(e))
+            addrs.add(false)
+            if not cgCallRuntime(intern("natAppTrace"), args, addrs) {
+                abort("cg68k: cgIntr: natAppTrace call failed")
+            }
+        } else if not cgCallRuntime(intern("natAppFlushLog"), args, addrs) {
+            abort("cg68k: cgIntr: natAppFlushLog call failed")
+        }
+        return
+    }
     if nm == IQuit() {
         a0e = irIntrArgsHead(e)
         a68EmitBr(OpBsr, 0, cgFreeGlobalsLbl)
@@ -11080,6 +11110,26 @@ func cgCallRuntime1(nameIdx: int, reg: int, off: int): bool {
     return true
 }
 
+// cgAppCreatorPacked: app.id as a big-endian four-char code ('????' when
+// the program has no `app` section or no id), for natAppWriteLog.
+func cgAppCreatorPacked(): int {
+    var s: string
+    var v: int
+    var i: int
+
+    s = "????"
+    if irAppId != -1 {
+        s = padTo4(poolGet(irAppId))
+    }
+    v = 0
+    i = 0
+    while i < 4 {
+        v = (v << 8) | int(s[i])
+        i = i + 1
+    }
+    return v
+}
+
 // cgEmitAbortDefaultCheck (attempt-abort phase Task 4, design doc %3.5;
 // Ruling: the native UI top-level default is FULL-STRENGTH, not the C
 // lane's own disclosed narrowing) prints the shared top-level
@@ -11111,6 +11161,11 @@ func cgEmitAbortDefaultCheck(ui: bool) {
     if ui {
         a68Emit(OpMove, 2, AmImm, 0, 30, AmPreDec, 7, 0)
         a68EmitTrap(0xA9C8, "_SysBeep")
+        // log-trace-optin: the report also goes into an open log file
+        // (production mode only; natAbortLog is a no-op under --capture).
+        if not cgCallRuntime1(intern("natAbortLog"), 5, cgAbortMsgOff) {
+            abort("cg68k: cgEmitAbortDefaultCheck: natAbortLog call failed")
+        }
         if not cgCallRuntime1(intern("rtUiAlertMsg"), 5, cgAbortMsgOff) {
             abort("cg68k: cgEmitAbortDefaultCheck: rtUiAlertMsg call failed")
         }

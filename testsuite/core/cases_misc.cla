@@ -277,8 +277,8 @@ func caseMiscLongCondChain(): TestResult {
 // with no backend-specific arm -- and this case is what proves that on
 // real 68k hardware.
 //
-// Nothing else in the suite calls log(), so these two globals see only
-// what caseOnLog itself logs.
+// Only caseOnLog and caseLogFile (cases_logfile.cla) call log(); each
+// resets these two globals first.
 var clOnLogSeen: list of string
 var clOnLogDepth: int
 

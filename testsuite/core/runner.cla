@@ -155,6 +155,9 @@
 // 3 Task 9, are the 87th and 88th real cases: a frozen format-v1 file
 // (4-byte enum) still loads, and a 2-byte enum survives every storage
 // class plus a v2 save/load.
+//
+// LogFile (cases_logfile.cla, log-trace-optin) is the 89th real case:
+// app.writeLog/app.flushLog's exact file bytes, a switch, a failed open.
 
 enum CoreTest {
     All
@@ -246,16 +249,17 @@ enum CoreTest {
     NarrowInts
     SerV1Enum
     EnumStorage
+    LogFile
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 88 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 89 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 89
+const nCoreCases: int = 90
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -528,6 +532,9 @@ func coreCaseName(t: CoreTest): string {
     case EnumStorage {
         return "EnumStorage"
     }
+    case LogFile {
+        return "LogFile"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -636,6 +643,7 @@ func coreAllCases(): list of CoreTest {
     l.add(NarrowInts)
     l.add(SerV1Enum)
     l.add(EnumStorage)
+    l.add(LogFile)
     l.add(SelfCheck)
     return l
 }
@@ -1024,6 +1032,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, EnumStorage) {
         results.add(caseEnumStorage())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, LogFile) {
+        results.add(caseLogFile())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

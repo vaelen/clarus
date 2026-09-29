@@ -98,9 +98,12 @@ fi
 # standalone on a FRESH disk with no --events (the real, non-scripted
 # rtUiRun/UiTickCount event loop) -- proof the byte-identity check isn't
 # comparing two equally broken outputs. macResidentLaunchSettle: 30s, and
-# a timer is the only option here: TickProbe never quits (that IS the
-# test -- it must still be ticking when the settle ends), so it writes no
-# ##CLARUS-EXIT## trailer for snow_done_when_trailer to see.
+# a timer is the only option here: the on-Mac compile is a PRODUCTION
+# build (ClarusC.APPL passes no --capture), so there is no
+# ##CLARUS-EXIT## trailer for snow_done_when_trailer to see. Its `out` is
+# the log TickProbe opts into itself (log-trace-optin: app.writeLog("out")
+# + app.trace(true) in App.launch) -- trace lines only, written when the
+# app quits after 60 real ticks, well inside the 30 s settle.
 snow_disk
 snow_put_bin "$WORK/TickProbe.bin" TickProbe
 snow_run 180 "$(snow_settle_done 30)"
@@ -115,6 +118,11 @@ if grep -qF 'T FRONT' "$WORK/tickout"; then
     t_pass tickprobe_window_front
 else
     t_fail tickprobe_window_front "TickProbe out missing window-front trace: $(tr '\n' ' ' < "$WORK/tickout")"
+fi
+if grep -qF '##CLARUS-' "$WORK/tickout"; then
+    t_fail tickprobe_production_log "TickProbe out has capture markers, want a production log"
+else
+    t_pass tickprobe_production_log
 fi
 ticks=$(snow_count 'T FIRE every.' "$WORK/tickout")
 if [ "$ticks" -ge 60 ]; then

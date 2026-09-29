@@ -24,6 +24,13 @@
 // clean ##CLARUS-EXIT## capture); a regressed one never fires the every
 // block, the app sits in rtUiRun forever, and the boot times out --
 // which is the test failure.
+//
+// log-trace-optin: App.launch opts into a production log named `out` with
+// the UI trace on, so a production build (ClarusC.APPL's on-Mac compile,
+// booted by mactest/snow/macresident) still leaves its T OPEN/T FRONT/
+// T FIRE every. lines in `out`, flushed when it quits. A --capture build
+// (mactest/tick) already owns `out`: the second open fails (lastError,
+// logging stays off) and the capture protocol is unchanged.
 
 app TickProbe {
     name: "TickProbe"
@@ -43,6 +50,8 @@ window Probe {
 }
 
 on App.launch {
+    app.writeLog("out")
+    app.trace(true)
     open Probe
 }
 

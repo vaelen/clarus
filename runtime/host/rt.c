@@ -15,8 +15,47 @@
 #include <time.h>
 #include "rt_mem_host.inc"
 
+/* app.writeLog/flushLog (log-trace-optin): the opt-in log file. rt_log
+ * lines (and the panic report) are CR->LF rendered + LF into rt_wl_buf
+ * and fwritten when the next line would not fit, on rt_app_flush_log, and
+ * at exit (atexit, so quit, panic and a normal return all flush). A line
+ * is at most 256 bytes (log takes a str255), so it always fits the buffer. */
+#define RT_WL_CAP 4096
+static FILE *rt_wl_file = NULL;
+static char rt_wl_buf[RT_WL_CAP];
+static size_t rt_wl_len = 0;
+
+void rt_app_flush_log(void) {
+    if (!rt_wl_file || rt_wl_len == 0) return;
+    fwrite(rt_wl_buf, 1, rt_wl_len, rt_wl_file);
+    fflush(rt_wl_file);
+    rt_wl_len = 0;
+}
+
+static void rt_wl_close(void) {
+    if (!rt_wl_file) return;
+    rt_app_flush_log();
+    fclose(rt_wl_file);
+    rt_wl_file = NULL;
+}
+
+/* rt_wl_add appends n bytes (CR rendered as LF) plus a trailing LF. */
+static void rt_wl_add(const char *p, size_t n) {
+    if (!rt_wl_file) return;
+    if (rt_wl_len + n + 1 > RT_WL_CAP) rt_app_flush_log();
+    for (size_t i = 0; i < n; i++) rt_wl_buf[rt_wl_len++] = p[i] == '\r' ? '\n' : p[i];
+    rt_wl_buf[rt_wl_len++] = '\n';
+}
+
+void rt_app_trace(int32_t on) { (void)on; } /* no UI trace on the host */
+
 void rt_panic(const char *msg) {
     fprintf(stderr, "runtime error: %s\n", msg);
+    if (rt_wl_file) {
+        char line[300]; /* msg is at most a str255's 255 bytes */
+        snprintf(line, sizeof line, "runtime error: %s", msg);
+        rt_wl_add(line, strlen(line));
+    }
     exit(3);
 }
 
@@ -43,6 +82,7 @@ void rt_log(const uint8_t *s) {
         fputc(c == '\r' ? '\n' : c, stderr);
     }
     fputc('\n', stderr);
+    rt_wl_add((const char *)s + 1, len);
 }
 
 /* Forward decl: rt_file_write_data is `static` and defined below (Task 1,
@@ -125,6 +165,22 @@ static void path_to_cstr(char *buf, const uint8_t *path255) {
     memmove(buf, path255 + 1, (size_t)n);
     buf[n] = '\0';
     rt_fh_posix_path(buf);
+}
+
+void rt_app_write_log(const uint8_t *name) {
+    static int registered = 0;
+    char cpath[256];
+    rt_wl_close();
+    path_to_cstr(cpath, name);
+    rt_wl_file = fopen(cpath, "ab");
+    if (!rt_wl_file) {
+        rt_set_lasterr(2, "could not open file");
+        return;
+    }
+    if (!registered) {
+        registered = 1;
+        atexit(rt_wl_close);
+    }
 }
 
 int rt_file_read_text(const uint8_t *path, rt_text *t) {

@@ -2588,6 +2588,15 @@ func fpIntrCall1(nm: int, x: int, a0: int, a1: int, a2: int): text {
     } else if nm == ILog() {
         fpEmit("rt_log(" + fpStrAddr(a0) + ");")
         return toText("")
+    } else if nm == IAppWriteLog() {
+        fpEmit("rt_app_write_log(" + fpStrAddr(a0) + ");")
+        return toText("")
+    } else if nm == IAppFlushLog() {
+        fpEmit(toText("rt_app_flush_log();"))
+        return toText("")
+    } else if nm == IAppTrace() {
+        fpEmit("rt_app_trace(" + fpExpr(a0) + ");")
+        return toText("")
     } else if nm == IAbort() {
         return fpIntrAbort(a0)
 

@@ -1,0 +1,4 @@
+../../testdata/errors/app_log_calls.cla:6:18: cannot use int where string is expected
+../../testdata/errors/app_log_calls.cla:7:15: cannot use string where bool is expected
+../../testdata/errors/app_log_calls.cla:8:5: wrong number of arguments to flushLog
+../../testdata/errors/app_log_calls.cla:9:5: undefined: bogus

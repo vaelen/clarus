@@ -86,4 +86,5 @@ OpenRF
 NarrowInts
 SerV1Enum
 EnumStorage
+LogFile
 SelfCheck

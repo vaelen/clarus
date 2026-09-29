@@ -1505,6 +1505,9 @@ func lowMethodCall(e: int, fn: int): int {
     if exprKind(selectX(fn)) == ExIdent and poolGet(identName(selectX(fn))) == "file" {
         return lowFileCall(e, fn, ty)
     }
+    if exprKind(selectX(fn)) == ExIdent and poolGet(identName(selectX(fn))) == "app" {
+        return lowAppCall(e, fn, ty)
+    }
     xk = typeKind(exprTypeGet(selectX(fn)))
     if xk == TyWidget {
         // Widget methods: selectX(fn) is itself a widget-select
@@ -2083,6 +2086,20 @@ func lowTextviewMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
     head = recv.instIR
     irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
     return newIRIntr(IUiScrollToEnd(), head, ty)
+}
+
+// lowAppCall lowers app.writeLog/flushLog/trace (log-trace-optin) to their
+// statement intrinsics; checkMethodCall already limited the name to these.
+func lowAppCall(e: int, fn: int, ty: int): int {
+    var nm: string
+
+    nm = poolGet(selectName(fn))
+    if nm == "writeLog" {
+        return newIRIntr(IAppWriteLog(), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "flushLog" {
+        return newIRIntr(IAppFlushLog(), -1, ty)
+    }
+    return newIRIntr(IAppTrace(), lowArgs(callArgsHead(e)), ty)
 }
 
 // lowFileCall lowers `file.fn(args)` (expr.go's lowerFileCall): readText/

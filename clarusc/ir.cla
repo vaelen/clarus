@@ -1363,6 +1363,9 @@ func irReset() {
     iAlertIdx = -1
     iQuitIdx = -1
     iLogIdx = -1
+    iAppWriteLogIdx = -1
+    iAppFlushLogIdx = -1
+    iAppTraceIdx = -1
     iAbortIdx = -1
     iPeekBIdx = -1
     iPeekWIdx = -1
@@ -4526,6 +4529,37 @@ func ILog(): int {
         iLogIdx = intern("log")
     }
     return iLogIdx
+}
+
+// IAppWriteLog/IAppFlushLog/IAppTrace (log-trace-optin): app.writeLog(name)/
+// app.flushLog()/app.trace(on) -- statement intrinsics like ILog. cg68k
+// calls natAppWriteLog (plus the app's packed creator)/natAppFlushLog/
+// natAppTrace; cprint calls rt_app_write_log/rt_app_flush_log/rt_app_trace.
+var iAppWriteLogIdx: int = -1
+
+func IAppWriteLog(): int {
+    if iAppWriteLogIdx == -1 {
+        iAppWriteLogIdx = intern("app_write_log")
+    }
+    return iAppWriteLogIdx
+}
+
+var iAppFlushLogIdx: int = -1
+
+func IAppFlushLog(): int {
+    if iAppFlushLogIdx == -1 {
+        iAppFlushLogIdx = intern("app_flush_log")
+    }
+    return iAppFlushLogIdx
+}
+
+var iAppTraceIdx: int = -1
+
+func IAppTrace(): int {
+    if iAppTraceIdx == -1 {
+        iAppTraceIdx = intern("app_trace")
+    }
+    return iAppTraceIdx
 }
 
 // IAbort (attempt-abort phase Task 2, design doc %3.1/%3.3) is

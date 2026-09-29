@@ -23,4 +23,5 @@ testsuite/core/cases_fileh.cla
 testsuite/core/cases_dirops.cla
 testsuite/core/cases_ptrcall.cla
 testsuite/core/cases_narrow.cla
+testsuite/core/cases_logfile.cla
 testsuite/core/gui.cla

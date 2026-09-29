@@ -925,7 +925,7 @@ A Clarus program responds to application-level events through top-level event ha
 
 `on App.log(line: string)` subscribes to the program's own diagnostic stream: every `log(...)` call (Chapter 12) fires it once, with that call's line. It is optional, and only one is meaningful: as with the other `App` handlers, a second declaration of the same event silently replaces the first. Four rules define it:
 
-1. **The persistent channel comes first.** The line reaches the platform's diagnostic stream (standard error on a command-line host; the log the Macintosh runtime writes at exit) *before* the handler runs. A handler that aborts or crashes cannot cost the line.
+1. **The persistent channel comes first.** The line reaches the platform's diagnostic stream (standard error on a command-line host; on the Macintosh, the log file, when the program has enabled one with `app.writeLog` — Chapter 12's Log File and Tracing) *before* the handler runs. A handler that aborts or crashes cannot cost the line.
 2. **The handler runs synchronously**, inside the `log(...)` call, before that statement completes.
 3. **It does not re-enter.** A `log(...)` called from inside the handler — directly or through anything the handler calls — still reaches the persistent channel, but does *not* fire the handler again. Nesting is impossible by construction, so a handler may log freely.
 4. **Only your own `log(...)` calls reach it.** The runtime's own writes to the same stream — the crash report a panic emits, the message an uncaught `abort` prints (Chapter 5), the Macintosh UI trace — never fire the handler. Neither does an unwinding program: no `log(...)` statement runs while an abort is propagating.
@@ -1677,9 +1677,27 @@ Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 n
 
 ### Logging
 
-`log(msg: string)` writes a diagnostic line to the platform's diagnostic stream: on a command-line host, standard error; on the Macintosh, a destination reserved for a later release (a log file or debugging window) — programs use it identically either way. Diagnostics belong in `log`; user-facing output belongs in `alert` or files.
+`log(msg: string)` writes a diagnostic line to the platform's diagnostic stream: on a command-line host, standard error; on the Macintosh, the program's log file, if it has enabled one with `app.writeLog` (below), and nowhere otherwise — programs use it identically either way. A command-line program can also enable a log file; its lines then go to both. Diagnostics belong in `log`; user-facing output belongs in `alert` or files.
 
 A program that declares `on App.log(line: string)` (Chapter 7) also receives every one of these lines as an event, after it has reached the stream — the way to put a program's own diagnostics on screen, into a file, or anywhere else, without changing a single `log(...)` call site.
+
+### Log File and Tracing
+
+A program writes nothing to disk for its diagnostics unless it asks to. Three statements in the `app` namespace control the log file; each may be called from any handler, any number of times:
+
+| Call | Effect |
+|---|---|
+| `app.writeLog(name: string)` | Turns the log file on. Opens `name` (a path resolved like every other `file` path), creating it as a `TEXT` file with the application's own creator (`app.id`) if it doesn't exist; an existing file is **appended to**, never truncated. Lines logged before the first call are not kept. Calling it again writes out anything pending to the current file, closes it, and switches to `name`. If `name` can't be opened, logging stays off and `lastError` is set; the call does not abort. |
+| `app.flushLog()` | Writes the pending lines to the log file now. Does nothing while logging is off or nothing is pending. Call it from a timer or `every` handler to bound how much a crash could lose. |
+| `app.trace(on: bool)` | Turns the Macintosh UI trace on or off (off by default). While on, the runtime adds a line for each window opened, menu chosen, timer fired, and similar UI event to the log. Does nothing on a command-line host or in a program with no windows or menus. |
+
+With the log file on, it receives, in order: every `log(...)` line; the UI trace lines, while `app.trace(true)` is in effect; on the Macintosh, the text of each `alert(...)` in a program with no windows or menus; and the report of a runtime error or an uncaught `abort` (Chapter 5). Each line is written as its own text followed by a line feed, with any carriage return in it rendered as a line feed. There are no timestamps and no markers.
+
+Lines collect in a 4 KB buffer, which is written to the file in one piece when the next line would not fit, on `app.flushLog()`, when the program quits (normally or with `quit n`), and immediately after a runtime error or uncaught-abort report is added. Everything written is on disk once the program has quit.
+
+`on App.log` (Chapter 7) fires for every `log(...)` call whether or not a log file is on — the log file and the handler are independent consumers of the same lines.
+
+Test builds of a native program use the compiler's `--capture` mode (implied by `--events`), which keeps the runtime's own test-capture file; `app.writeLog` still writes the named file there too.
 
 ### Date and Time
 

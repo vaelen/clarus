@@ -102,6 +102,9 @@ const natFsRdWrPerm: int = 3
 // this protocol appends at the current mark, exactly like rt_mac.c's own
 // rt_test_write (never seeks).
 const natFsAtMark: int = 0
+// fsFromLEOF + ioPosOffset@46: the log writer's append-at-EOF write.
+const natFsFromLEOF: int = 2
+const natIoPosOffset: int = 46
 
 const natLogCap: int = 4096
 
@@ -288,8 +291,29 @@ var natArgs: list of string(255)
 // `emit68k --capture` (or --events), before cg_init_globals -- so keep it
 // initializer-free (see natSetCapture). False (the zeroed default) is
 // production mode: natInit opens nothing, and natAlert/natLog/
-// nat_UiTestEmit write nothing.
+// nat_UiTestEmit write only to an app.writeLog file (natWl*, below).
 var natCapture: bool
+
+// ---- app.writeLog/flushLog/trace (log-trace-optin): the production log
+// writer. natWlPb/natWlBuf/natWlName are allocated by the first
+// app.writeLog, never before (a program that never asks for a log
+// allocates and writes nothing). Lines are CR->LF rendered + LF into
+// natWlBuf (natLogCap bytes) and written when the next line would not
+// fit, on app.flushLog, before a panic quits, and at quit. Each write
+// opens the file, appends at its EOF, closes it and flushes the volume:
+// the file is never held open between writes, because an open-for-write
+// path makes every other open of it (file.readText of the log itself)
+// fail with opWrErr. A line can never exceed the buffer (log takes a
+// Str255, a trace line is capped at 511 bytes), so there is no
+// direct-write path. In capture mode the same writer runs beside the
+// `out` protocol, which it never touches. All initializer-free: the
+// zeroed defaults are "no log, trace off".
+var natWlPb: ptr
+var natWlBuf: ptr
+var natWlName: ptr
+var natWlLen: int
+var natWlOpen: bool
+var natTraceOn: bool
 
 // natPanicBuf/natEmptyStr: nat_CorePanic's own preallocated, natPb-
 // adjacent scratch (NewPtrCLEAR'd once in natInit, never touched again
@@ -516,7 +540,119 @@ func natSetCapture() {
 // nat_UiTraceOn: uiscript.cla's `external func UiTraceOn(): bool` --
 // whether the rtUiTrace* builders should build their `T ...` lines at all.
 func nat_UiTraceOn(): bool {
-    return natCapture
+    return natCapture or natTraceOn
+}
+
+// natAppTrace: app.trace(enable). Capture mode's trace is always on
+// (nat_UiTraceOn), so app.trace(false) changes nothing there. `enable` is
+// an int, not a bool: cgCallRuntime pushes every argument as a long, and
+// a bool parameter's 2-byte slot would read the wrong half of it.
+func natAppTrace(enable: int) {
+    natTraceOn = enable != 0
+}
+
+// natWlOpenFile opens natWlName read/write on natWlPb; the refnum, or -1.
+func natWlOpenFile(): int {
+    pokel(natWlPb + natIoNamePtr, int(natWlName))
+    pokew(natWlPb + natIoVRefNum, 0)
+    pokel(natWlPb + natIoMisc, 0)
+    pokeb(natWlPb + natIoPermssn, natFsRdWrPerm)
+    NatOpen(natWlPb)
+    if peekw(natWlPb + natIoResult) != 0 {
+        return -1
+    }
+    return peekw(natWlPb + natIoRefNum)
+}
+
+// natWlCloseFile closes refnum ref, then flushes the default volume.
+func natWlCloseFile(ref: int) {
+    pokew(natWlPb + natIoRefNum, ref)
+    NatClose(natWlPb)
+    pokel(natWlPb + natIoNamePtr, 0)
+    pokew(natWlPb + natIoVRefNum, 0)
+    NatFlushVol(natWlPb)
+}
+
+// natAppFlushLog: app.flushLog() -- open, append the buffer at EOF
+// (fsFromLEOF, offset 0), close, FlushVol. A file that can no longer be
+// opened drops the pending lines rather than growing without bound.
+func natAppFlushLog() {
+    var ref: int
+
+    if not natWlOpen or natWlLen == 0 {
+        return
+    }
+    ref = natWlOpenFile()
+    if ref >= 0 {
+        pokew(natWlPb + natIoRefNum, ref)
+        pokel(natWlPb + natIoBuffer, int(natWlBuf))
+        pokel(natWlPb + natIoReqCount, natWlLen)
+        pokew(natWlPb + natIoPosMode, natFsFromLEOF)
+        pokel(natWlPb + natIoPosOffset, 0)
+        NatWrite(natWlPb)
+        natWlCloseFile(ref)
+    }
+    natWlLen = 0
+}
+
+// natWlAdd appends Str255 s to the log buffer (a no-op with no log on).
+func natWlAdd(s: ptr) {
+    if not natWlOpen {
+        return
+    }
+    if natWlLen + peekb(s) + 1 > natLogCap {
+        natAppFlushLog()
+    }
+    natWlLen = natWlLen + natCrLf(s, natWlBuf + natWlLen)
+}
+
+// natAppWriteLog: app.writeLog(name). Writes out anything pending for the
+// current log, then creates `name` (stamped TEXT/creator, the app's packed
+// app.id, when new) and proves it opens read/write. A failed open leaves
+// logging off and sets lastError -- no abort. Same Create/SetFInfo/Open
+// discipline as natFileWriteText, on the log writer's own PB.
+func natAppWriteLog(name: ptr, creator: int) {
+    var ref: int
+
+    natAppFlushLog()
+    natWlOpen = false
+    if natWlPb == ptr(0) {
+        natWlPb = NatNewPtr(natPbSize)
+        natWlBuf = NatNewPtr(natLogCap)
+        natWlName = NatNewPtr(256)
+    }
+    TextBlockMoveData(name, natWlName, peekb(name) + 1)
+    pokel(natWlPb + natIoNamePtr, int(natWlName))
+    pokew(natWlPb + natIoVRefNum, 0)
+    NatCreate(natWlPb)
+    // natWlPb is reused, so zero the FInfo region (ioFDirIndex through
+    // fdFldr, 28..47) rather than trusting NewPtrClear, as natInit does.
+    pokel(natWlPb + natIoMisc, 0)
+    pokel(natWlPb + natIoActCount, 0)
+    pokel(natWlPb + natIoPosMode, 0)
+    if peekw(natWlPb + natIoResult) == 0 {
+        pokel(natWlPb + natIoFdType, (int('T') << 24) | (int('E') << 16) | (int('X') << 8) | int('T'))
+        pokel(natWlPb + natIoFdCreator, creator)
+        NatSetFInfo(natWlPb)
+    }
+    ref = natWlOpenFile()
+    if ref < 0 {
+        rtSetLastErr(2, "could not open file")
+        return
+    }
+    natWlCloseFile(ref)
+    natWlLen = 0
+    natWlOpen = true
+}
+
+// natAbortLog: a UI program's uncaught-abort report (cgEmitAbortDefaultCheck)
+// into the log file. Production only -- capture mode's report is the
+// rtUiAlertMsg trace line, unchanged -- and only with trace off, since
+// with trace on that same trace line already lands in the log.
+func natAbortLog(s: ptr) {
+    if not natCapture and not natTraceOn {
+        natWlAdd(s)
+    }
 }
 
 // natAlert appends s live: CR->LF + trailing LF, written immediately and
@@ -525,6 +661,7 @@ func natAlert(s: ptr) {
     var n: int
 
     if not natCapture {
+        natWlAdd(s)
         return
     }
     natInit()
@@ -541,6 +678,7 @@ func natLog(s: ptr) {
     var n: int
     var i: int
 
+    natWlAdd(s)
     if not natCapture {
         return
     }
@@ -558,8 +696,8 @@ func natLog(s: ptr) {
 // ##CLARUS-LOG##\n" followed by the buffered log bytes -- then closes
 // and flushes and calls ExitToShell. Byte-identical to rt_mac.c's
 // rt_test_atexit, guarded (natDone) against running twice the same way.
-// Production mode (not natCapture): no trailer, no close -- straight to
-// ExitToShell.
+// Production mode (not natCapture): no trailer -- write out any pending
+// app.writeLog lines (both modes), then straight to ExitToShell.
 func natQuit(code: int) {
     var n: int
 
@@ -567,6 +705,7 @@ func natQuit(code: int) {
         return
     }
     natDone = true
+    natAppFlushLog()
     if not natCapture {
         NatExitToShell()
     }
@@ -710,8 +849,13 @@ func nat_CorePanic(msg: string) {
         pokeb(natPanicBuf + 1 + i, int(full[i]))
         i = i + 1
     }
-    natAlert(natPanicBuf)
+    // Production natAlert would add the line to the log file a second
+    // time (natLog adds it, in both modes); capture keeps its live copy.
+    if natCapture {
+        natAlert(natPanicBuf)
+    }
     natLog(natPanicBuf)
+    natAppFlushLog()
     if natQdInited and peekb(UiTestScript()) == 0 {
         NatSysBeep(30)
         UiParamText(natPanicBuf, natEmptyStr, natEmptyStr, natEmptyStr)
@@ -1359,6 +1503,9 @@ func nat_UiTestEmit(s: ptr) {
     var n: int
 
     if not natCapture {
+        if natTraceOn {
+            natWlAddText(s)
+        }
         return
     }
     natInit()
@@ -1370,6 +1517,28 @@ func nat_UiTestEmit(s: ptr) {
     n = n + 1
     natWriteBytes(natUiEmitBuf, n)
     natFlush()
+}
+
+// natWlAddText appends one trace line (a text box, already rendered) plus
+// LF to the log buffer -- nat_UiTestEmit's production arm.
+func natWlAddText(s: ptr) {
+    var rt: RtText
+    var n: int
+
+    if not natWlOpen {
+        return
+    }
+    rt = RtText(s)
+    n = rt.len
+    if n > 511 {
+        n = 511
+    }
+    if natWlLen + n + 1 > natLogCap {
+        natAppFlushLog()
+    }
+    n = rtTextToBytes(s, natWlBuf + natWlLen, n)
+    pokeb(natWlBuf + natWlLen + n, 10)
+    natWlLen = natWlLen + n + 1
 }
 
 // nat_UiRtQuit: ui.cla's `external func UiRtQuit(code: int)` -- the

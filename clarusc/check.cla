@@ -573,6 +573,7 @@ var listenerMethods: map of int
 var serviceBrowserMethods: map of int
 var serviceMethods: map of int
 var fileFuncs: map of int
+var appFuncs: map of int
 var filehandleMethods: map of int
 var canvasMethods: map of int
 var canvasProperties: map of int
@@ -1783,6 +1784,19 @@ func buildMethodTables() {
     sigAdd(psPlain(TextT))
     serviceMethods["call"] = sigEnd(BoolT)
 
+    // app.writeLog(name)/app.flushLog()/app.trace(on) (log-trace-optin):
+    // statement calls on the `app` namespace, lowered by lowAppCall.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    appFuncs["writeLog"] = sigEnd(-1)
+
+    sigStart()
+    appFuncs["flushLog"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(BoolT))
+    appFuncs["trace"] = sigEnd(-1)
+
     sigStart()
     sigAdd(psPlain(strT(255)))
     sigAdd(psPlain(TextT))
@@ -2262,6 +2276,9 @@ func checkMethodCall(sel: int, argsHead: int): int {
     var t4: int
 
     x = selectX(sel)
+    if exprKind(x) == ExIdent and poolGet(identName(x)) == "app" {
+        return checkTableMethod(appFuncs, sel, argsHead)
+    }
     if exprKind(x) == ExIdent and identName(x) == cnFile {
         name = poolGet(selectName(sel))
         if name == "save" or name == "load" {

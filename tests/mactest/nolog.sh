@@ -15,31 +15,71 @@
 # any handler runs, must still write `out` with "##CLARUS-EXIT## 3" and
 # the panic text in the log -- natSetCapture has to run before
 # cg_init_globals, not after it.
+#
+# log-trace-optin subcases: logout (a production build of
+# testdata/mactest/logout.cla that calls app.writeLog("out") -- the
+# capture must be exactly "l1\nl2\nl3\n") and tracelog (a production
+# build of testdata/cg68k/tickprobe.cla, whose app.writeLog("out") +
+# app.trace(true) must leave its UI trace lines in out).
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 
-emit68k -o "$WORK/nolog.bin" testdata/mactest/nolog.cla \
-    > "$WORK/emit.log" 2>&1 \
-    || die "clarusc emit68k nolog: $(tail -10 "$WORK/emit.log")"
-
-# run_mac's LaunchAPPL call, minus capture_split (which dies on a missing
-# trailer -- the whole point here).
+# prod_boot NAME SRC : a production emit68k (no --capture) of SRC, booted
+# with run_mac's LaunchAPPL call minus capture_split (which dies on a
+# missing trailer -- the whole point here). Leaves the raw capture in
+# $WORK/NAME.raw and LaunchAPPL's exit code in $rc.
+prod_boot() {
+    emit68k -o "$WORK/$1.bin" "$2" > "$WORK/$1.emit" 2>&1 \
+        || die "clarusc emit68k $1: $(tail -10 "$WORK/$1.emit")"
+    mkdir -p "$WORK/launch_$1"
+    # shellcheck disable=SC2086
+    ( cd "$WORK/launch_$1" && "$TOOLS/timeout" 180 $MAC_LAUNCH "$WORK/$1.bin" \
+        > "$WORK/$1.raw" 2> "$WORK/$1.err" )
+    rc=$?
+    mac_kill_ours "$WORK/launch_$1"
+    [ $rc -eq 124 ] && die "LaunchAPPL $1.bin timed out (emulator killed): $(head -5 "$WORK/$1.err")"
+    [ $rc -eq 0 ] || t_fail "$1" "LaunchAPPL exit $rc, want 0: $(head -5 "$WORK/$1.err")"
+}
 mac_launch macplus
-mkdir -p "$WORK/launch"
-# shellcheck disable=SC2086
-( cd "$WORK/launch" && "$TOOLS/timeout" 180 $MAC_LAUNCH "$WORK/nolog.bin" \
-    > "$WORK/cap.raw" 2> "$WORK/cap.err" )
-rc=$?
-mac_kill_ours "$WORK/launch"
-[ $rc -eq 124 ] && die "LaunchAPPL nolog.bin timed out (emulator killed): $(head -5 "$WORK/cap.err")"
 
-if [ $rc -ne 0 ]; then
-    t_fail launch "LaunchAPPL exit $rc, want 0: $(head -5 "$WORK/cap.err")"
-elif [ -s "$WORK/cap.raw" ]; then
-    t_fail empty "capture not empty ($(wc -c < "$WORK/cap.raw") bytes): $(head -5 "$WORK/cap.raw")"
-else
-    t_pass nolog
+prod_boot nolog testdata/mactest/nolog.cla
+if [ $rc -eq 0 ]; then
+    if [ -s "$WORK/nolog.raw" ]; then
+        t_fail nolog "capture not empty ($(wc -c < "$WORK/nolog.raw") bytes): $(head -5 "$WORK/nolog.raw")"
+    else
+        t_pass nolog
+    fi
+fi
+
+# logout: a production build that opts in with app.writeLog("out") -- the
+# capture is exactly its log lines, in the production format.
+prod_boot logout testdata/mactest/logout.cla
+printf 'l1\nl2\nl3\n' > "$WORK/logout.want"
+if [ $rc -eq 0 ]; then
+    if cmp -s "$WORK/logout.raw" "$WORK/logout.want"; then
+        t_pass logout
+    else
+        t_fail logout "capture is not exactly l1/l2/l3: $(od -c "$WORK/logout.raw" | head -5)"
+    fi
+fi
+
+# tracelog: testdata/cg68k/tickprobe.cla built WITHOUT --capture calls
+# app.writeLog("out") + app.trace(true) itself -- the production UI trace
+# (the same boot mactest/snow/macresident makes of the on-Mac-compiled
+# TickProbe). Its out must hold the trace lines and no capture markers.
+prod_boot tracelog testdata/cg68k/tickprobe.cla
+if [ $rc -eq 0 ]; then
+    fires=$(grep -c '^T FIRE every\.' "$WORK/tracelog.raw")
+    if grep -q '##CLARUS-' "$WORK/tracelog.raw"; then
+        t_fail tracelog "capture markers in a production log: $(head -3 "$WORK/tracelog.raw")"
+    elif ! grep -q '^T OPEN' "$WORK/tracelog.raw" || ! grep -q '^T FRONT' "$WORK/tracelog.raw"; then
+        t_fail tracelog "no T OPEN/T FRONT: $(head -5 "$WORK/tracelog.raw")"
+    elif [ "$fires" -lt 60 ]; then
+        t_fail tracelog "only $fires T FIRE every. lines, want >= 60"
+    else
+        t_pass tracelog
+    fi
 fi
 
 emit68k --capture -o "$WORK/initpanic.bin" testdata/mactest/initpanic.cla \

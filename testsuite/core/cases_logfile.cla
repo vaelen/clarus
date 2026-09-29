@@ -1,0 +1,57 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_logfile.cla (log-trace-optin): app.writeLog/app.flushLog on both
+// lanes. Natively the suite runs in capture mode, where the log file is
+// written beside (never instead of) the `out` protocol, so this case
+// proves the production writer's exact bytes: no markers, one LF per line,
+// a switch closing the old file, and a failed open leaving logging off.
+// App.log (cases_misc.cla's handler) fires for every line either way;
+// depth 1 keeps that handler from adding its own "onlog-inner" line.
+func caseLogFile(): TestResult {
+    var t: text
+
+    clOnLogSeen.clear()
+    clOnLogDepth = 1
+    file.delete("core_log.txt")
+    file.delete("core_log2.txt")
+
+    app.writeLog("core_log.txt")
+    log("one")
+    app.flushLog()
+    if not file.readText("core_log.txt", t) {
+        return tkFail("LogFile", "read core_log.txt failed")
+    }
+    if t != "one\x0A" {
+        return tkFail("LogFile", "core_log.txt after flush: " + tkIntToStr(t.length) + " bytes")
+    }
+
+    app.writeLog("core_log2.txt")
+    log("two")
+    app.flushLog()
+    if not file.readText("core_log.txt", t) or t != "one\x0A" {
+        return tkFail("LogFile", "core_log.txt changed after the switch")
+    }
+    if not file.readText("core_log2.txt", t) or t != "two\x0A" {
+        return tkFail("LogFile", "core_log2.txt: " + tkIntToStr(t.length) + " bytes")
+    }
+
+    // A failed open sets lastError, leaves logging off (closing
+    // core_log2.txt), and does not abort; log still works.
+    app.writeLog("nosuchdir:x.txt")
+    if lastError.code != 2 or lastError.message != "could not open file" {
+        return tkFail("LogFile", "bad path lastError " + tkIntToStr(lastError.code) + " " + lastError.message)
+    }
+    log("z")
+    if not file.readText("core_log2.txt", t) or t != "two\x0A" {
+        return tkFail("LogFile", "log after a failed writeLog reached the old file")
+    }
+
+    if clOnLogSeen.count != 3 or clOnLogSeen[2] != "z" {
+        return tkFail("LogFile", "App.log saw " + tkIntToStr(clOnLogSeen.count) + " lines, want 3")
+    }
+    if not file.delete("core_log.txt") or not file.delete("core_log2.txt") {
+        return tkFail("LogFile", "cleanup failed")
+    }
+    return tkPass("LogFile")
+}
