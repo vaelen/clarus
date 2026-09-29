@@ -88,8 +88,7 @@ func feExpectedStamp(): int {
 on App.startCLI(args: list of string) {
     var i: int
     var entries: list of string
-    var ok: bool
-    var built: bool
+    var r: int
     var t0: int
     var t1: int
     var fork: text
@@ -125,12 +124,15 @@ on App.startCLI(args: list of string) {
         want68k = true
         entries = cgFreshStringList()
         entries.add(args[i])
-        ok = driveCompile(entries, false)
-        if entryFailed {
+        // driveCompileFork: ClarusC.APPL's own compile, library fallback
+        // included (tests/bake/resident_fallback.sh).
+        r = driveCompileFork(entries)
+        rtbakeFh.close()
+        if r == 1 and entryFailed {
             log("dblcompile_bake: cannot open entry file: " + args[i])
             quit 2
         }
-        if not ok {
+        if r == 1 {
             log("dblcompile_bake: compile FAILED: " + args[i])
             di = 0
             while di < diags.count {
@@ -139,9 +141,7 @@ on App.startCLI(args: list of string) {
             }
             quit 1
         }
-        built = driveEmit68kFork("", false, 0, false)
-        rtbakeFh.close()
-        if not built {
+        if r == 2 {
             log("dblcompile_bake: emit68k failed: " + args[i])
             quit 1
         }

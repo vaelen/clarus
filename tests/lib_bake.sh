@@ -95,3 +95,22 @@ extend Probe {
 }
 CLA
 }
+
+# clir_retag_section IN OUT FROM TO : copy library IN to OUT with the
+# section directory's id FROM rewritten to TO (payloads untouched) -- a
+# directory that still has the right section count and unique, known ids,
+# but not the lane's own set. The directory sits after the module list:
+# body_off, the module count (2), each key as len(1)+bytes, the section
+# count (2), then id(2) off(4) len(4) per `section` line, in order.
+clir_retag_section() {
+    "$CLIRHDR" "$1" > "$WORK/retag.hdr" || return 1
+    _at=$(awk -v from="$3" '
+        NR == 1 { for (i = 1; i <= NF; i++) if ($i ~ /^body_off=/) at = substr($i, 10) + 2; next }
+        $1 == "module" { at += 1 + length($2); next }
+        $1 == "section" { if (!dir) { at += 2; dir = 1 } if ($2 == from) { print at; exit } at += 10 }
+    ' "$WORK/retag.hdr")
+    [ -n "$_at" ] || return 1
+    cp "$1" "$2" || return 1
+    printf "\\$(printf %03o $(($4 / 256)))\\$(printf %03o $(($4 % 256)))" \
+        | dd of="$2" bs=1 seek="$_at" conv=notrunc 2>/dev/null
+}

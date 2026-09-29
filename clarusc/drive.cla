@@ -98,6 +98,13 @@ var haveRtbake: bool
 var rtbakeFh: filehandle
 var rtbakeBase: int
 
+// driveLibFailed (SE wave 4 Task 7): the baked library failed to load in
+// THIS compile -- bkLoadRtbake refused it in driveCompile, or
+// bkLoadObjCode refused its object code after shake. The host CLI just
+// fails (exit 1); the resident compiler (driveCompileFork) falls back to
+// a from-source compile instead. Cleared by driveReset().
+var driveLibFailed: bool
+
 // seenPaths keys the include-once set (driver.go's `seen`), keyed by the
 // path after normalizePath's lexical cleanup: "//" and "./" segments
 // collapsed and "seg/.." pairs resolved, so "sub/common.cla" and
@@ -584,6 +591,12 @@ func driveReset() {
     // (bkLoadObjCode) -- codegen is done with it once its fork is built.
     bkObjBuf.release()
     bkLdObjPos.release()
+    // SE wave 4 Task 7: the loader's reference to the previous compile's
+    // library -- a failed bake-path compile, or a C-lane `emit --rtbake`
+    // (which never reaches bkLoadObjCode), would otherwise leave it for
+    // the next one. The front end owns the handle and closes it.
+    bkLibFh = nil
+    driveLibFailed = false
 }
 
 // findRtDir resolves the default --rtdir when the flag is omitted: it walks
@@ -2079,23 +2092,59 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
 func driveRtbakeFallback(entries: list of string, testapi: bool): bool {
     var ok: bool
 
-    haveRtbake = false
-    // SE wave 1: the from-source recompile below never reads the parse
-    // staging -- drop it now rather than carry it through a whole
-    // from-source compile -- nor the library (SE wave 4: the loader's
-    // handle reference goes too; the front end still owns and closes it).
-    bkFreeParseStaging()
-    bkLibFh = nil
-    bkManifestDriftPath = ""
-    driveReset()
-    resetDiags()
-    astReset()
+    driveDropLibrary()
     ok = driveCompile(entries, testapi)
     // Restored to true so the front end's own state is as it set it; every
     // front end re-arms haveRtbake/rtbakeFh/rtbakeBase per compile anyway
     // (clarusc/test/dblcompile_bake.cla; main.cla compiles once).
     haveRtbake = true
     return ok
+}
+
+// driveDropLibrary abandons the baked library for the rest of THIS
+// compile and resets for a from-source driveCompile. SE wave 1: the
+// from-source recompile never reads the parse staging -- drop it now
+// rather than carry it through a whole from-source compile -- nor the
+// library (driveReset drops the loader's handle reference; the front end
+// still owns and closes the handle).
+func driveDropLibrary() {
+    haveRtbake = false
+    bkFreeParseStaging()
+    driveReset()
+    resetDiags()
+    astReset()
+}
+
+// driveCompileFork (SE wave 4 Task 7) is the resident compiler's compile
+// (macgui.cla's gcCompile): driveCompile, then driveEmit68kFork. When the
+// baked library fails to load (driveLibFailed) -- its directory or a
+// section at driveCompile, its object code after shake -- the compile is
+// not the user's fault: log why and compile once more from source, the
+// CLFS fallback a refused header gets. Returns 0 built (driveLastFork),
+// 1 compile failed (entryFailed or diags), 2 emit failed.
+func driveCompileFork(entries: list of string): int {
+    var r: int
+
+    r = driveCompileForkOnce(entries)
+    if driveLibFailed {
+        if diags.count > 0 {
+            log(formatDiag(poolGet(diagPaths[0]), diags[0]))
+        }
+        log("clarusc: CLFS-source fallback (CLIR library failed to load)")
+        driveDropLibrary()
+        r = driveCompileForkOnce(entries)
+    }
+    return r
+}
+
+func driveCompileForkOnce(entries: list of string): int {
+    if not driveCompile(entries, false) {
+        return 1
+    }
+    if not driveEmit68kFork("", false, 0, false) {
+        return 2
+    }
+    return 0
 }
 
 func driveCompile(entries: list of string, testapi: bool): bool {
@@ -2154,6 +2203,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
             wantLane = bkLane68k
         }
         if not bkLoadRtbake(rtbakeFh, rtbakeBase, wantLane, testapi) {
+            driveLibFailed = true
             return false
         }
         bkInstallPool()
@@ -2656,6 +2706,7 @@ func driveEmit68kFork(outPath: string, listing: bool, segLimit: int, nopeep: boo
     // functions' object code now that shake has marked them (a no-op
     // otherwise).
     if not bkLoadObjCode() {
+        driveLibFailed = true
         return false
     }
     driveProgressPhase("Shaken")

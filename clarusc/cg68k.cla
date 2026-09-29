@@ -596,15 +596,14 @@ var cgLastCreator: string(7)
 // generalized to typed blobs by runtime-ir-bake Task 6) hold one entry
 // per resource main.cla wants folded into the emitted .bin's resource
 // fork -- one entry per `emit68k --bake FILE` flag (cliResolveBake, main.
-// cla; always type "CLFS") IN FLAG ORDER, then (Task 6) one more pair of
-// entries for `emit68k --bake-ir FILE` (cliResolveBakeIr: the CLIR
-// artifact + its stamp sidecar, both ALSO type "CLFS" today -- see
-// bake.cla's bkClirResourceName doc comment for why this task didn't
-// need a second Mac resource TYPE to make the loader typed-blob-aware).
+// cla; always type "CLFS") IN FLAG ORDER, then one more entry for
+// `emit68k --bake-ir FILE` (cliResolveBakeIr: the CLIR library's stamp
+// sidecar, also type "CLFS"; the library itself goes in the data fork,
+// cgDataForkPath below).
 // main.cla sets all three before calling cg68Program, same hand-off
 // pattern as cgEventsBytes above: cgBakeNames[i] is the resource's own
-// name (a --bake FILE's own path, verbatim, or one of bake.cla's two
-// reserved constants), cgBakeTypes[i] is its Mac resource type,
+// name (a --bake FILE's own path, verbatim, or bake.cla's reserved
+// bkStampResourceName), cgBakeTypes[i] is its Mac resource type,
 // cgBakeDatas[i] is its raw bytes. Empty (all three zero-length lists)
 // for a build with no `--bake`/`--bake-ir` flag at all, which is every
 // build except the Mac-resident compiler's own self-baking build --
@@ -613,6 +612,14 @@ var cgLastCreator: string(7)
 var cgBakeNames: list of string
 var cgBakeTypes: list of string
 var cgBakeDatas: list of text
+
+// cgDataForkPath (SE wave 4 Task 7): a file whose bytes become the
+// emitted image's DATA fork -- main.cla sets it from `emit68k --bake-ir
+// FILE`, the CLIR library ClarusC.APPL reads lazily out of its own data
+// fork (spec 3.4, W2). Empty for every other build: no data fork. A path,
+// not the bytes, so the library is read only at the MacBinary wrap
+// (cg68WriteImageWrap) and holds no clarusc global.
+var cgDataForkPath: string
 
 // cgSizePartitionBytes (Task 10, mac-resident-clarusc) overrides the
 // SIZE(-1) resource's preferred/minimum partition (app68k.cla's
@@ -14264,8 +14271,14 @@ func cg68BuildFork(jtEntries: list of int, jtSegNums: list of int, segBytes: lis
 // cg68BuildFork) then this, in sequence.
 func cg68WriteImageWrap(outPath: string): bool {
     var img: text
+    var data: text
 
-    img = app68WrapFork(cgAppName(outPath), cgLastCreator, cgLastFork)
+    data = ""
+    if cgDataForkPath != "" and not file.readText(cgDataForkPath, data) {
+        log("cg68WriteImageWrap: cannot read data fork " + cgDataForkPath + ": " + lastError.message)
+        return false
+    }
+    img = app68WrapFork(cgAppName(outPath), cgLastCreator, data, cgLastFork)
     // native-gaps-cleanup Task 2: file.writeText's own mandatory type/
     // creator args -- fileTypeApplication ('APPL') describes this output
     // (a native 68k application image) exactly; creator is the SAME value
@@ -15732,7 +15745,7 @@ func cgObjBuildFuncStrLits(f: int): list of int {
     var found: bool
 
     l = cgFreshIntList()
-    p = bkLdObjPos[f]
+    p = bkObjRecPos(f)
     nh = bkObjBuf.intAt(p)
     p = bkObjRunEnd(p + 4)
     k = 0
@@ -15782,7 +15795,7 @@ func cgObjBuildFuncArrLits(f: int): list of int {
     var found: bool
 
     l = cgFreshIntList()
-    p = bkLdObjPos[f]
+    p = bkObjRecPos(f)
     nh = bkObjBuf.intAt(p)
     p = bkObjRunEnd(p + 4)
     k = 0
@@ -15837,7 +15850,7 @@ func cgObjApplyGlueUsage(f: int) {
     var h: CgObjHole
     var junk: int
 
-    p = bkLdObjPos[f]
+    p = bkObjRecPos(f)
     nh = bkObjBuf.intAt(p)
     p = bkObjRunEnd(p + 4)
     k = 0
@@ -15984,7 +15997,7 @@ func cgObjPasteFunc(f: int) {
     var k: int
     var run: text
 
-    p = bkLdObjPos[f]
+    p = bkObjRecPos(f)
     nh = bkObjBuf.intAt(p)
     p = p + 4
     a68CommentMarker()

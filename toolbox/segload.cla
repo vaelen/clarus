@@ -1,0 +1,43 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/segload.cla: curated Segment Loader declarations (Inside
+// Macintosh II, "The Segment Loader"), SE wave 4 Task 7 -- ClarusC.APPL
+// finds its own file with GetAppParms to read the runtime library out of
+// its data fork (clarusc/macgui.cla's gcOpenOwnDataFork). The rest of the
+// manager's trap interface comes with it, per the Toolbox-first
+// principle (CLAUDE.md).
+//
+// Every trap word below is confirmed against Apple's own Universal
+// Interfaces 3.4 (toolchain/universal/CIncludes, Retro68/
+// InterfacesAndLibraries/Interfaces/AIncludes). All three have bit 11 set
+// (trap & 0x0800 != 0), no `#pragma parameter` -- Toolbox (pascal)
+// convention, stack arguments left to right:
+//
+//   GetAppParms  CIncludes/SegLoad.h:117-121: `EXTERN_API( void )
+//                GetAppParms(Str255 apName, short * apRefNum, Handle *
+//                apParam) ONEWORDINLINE(0xA9F5);`. Corroborated in
+//                AIncludes/SegLoad.a:106 `_GetAppParms: OPWORD $A9F5`.
+//                All three are fill targets, so all three are `ptr`
+//                (cookbook 9(c)): apName a 256-byte Str255 buffer, apRefNum
+//                a 2-byte slot (the application file's volume -- a working
+//                directory refnum under HFS), apParam a 4-byte slot (the
+//                Finder-parameters handle).
+//   UnloadSeg    CIncludes/SegLoad.h:162-163: `EXTERN_API( void )
+//                UnloadSeg(void * routineAddr) ONEWORDINLINE(0xA9F1);`.
+//                Corroborated in AIncludes/SegLoad.a:134 `_UnloadSeg:
+//                OPWORD $A9F1`.
+//   ExitToShell  CIncludes/Processes.h:359-360 ("previously in
+//                SegLoad.h"): `EXTERN_API( void ) ExitToShell(void)
+//                ONEWORDINLINE(0xA9F4);`. Corroborated in AIncludes/
+//                Processes.a:416 `_ExitToShell: OPWORD $A9F4`.
+//
+// Not declared: CountAppFiles/GetAppFiles/ClrAppFiles are library glue
+// over the Finder-parameters handle with no trap of their own
+// (SegLoad.a:58-90 is IMPORT_CFM_FUNCTION only); LoadSeg is the Segment
+// Loader's own jump-table target, never called directly; Launch/Chain
+// are superseded by the Process Manager's LaunchApplication.
+
+external func GetAppParms(apName: ptr, apRefNum: ptr, apParam: ptr) = trap 0xA9F5
+external func UnloadSeg(routineAddr: ptr) = trap 0xA9F1
+external func ExitToShell() = trap 0xA9F4

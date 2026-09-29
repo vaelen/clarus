@@ -51,6 +51,21 @@ include "drive.cla"
 include "bake.cla"
 // SE wave 0: FreeMem/MaxBlock for feMemProbe below, from the catalog.
 include "../toolbox/memory.cla"
+// SE wave 4 Task 7: GetAppParms, VolumeParam and PBSetVolSync, for
+// gcOpenOwnDataFork.
+include "../toolbox/segload.cla"
+include "../toolbox/files.cla"
+
+// gcPBGetVolSync: PBGetVolSync, declared locally rather than in
+// toolbox/files.cla. CIncludes/Files.h:1382-1384: `#pragma parameter
+// __D0 PBGetVolSync(__A0)` ... `EXTERN_API( OSErr ) PBGetVolSync(
+// ParmBlkPtr paramBlock) ONEWORDINLINE(0xA014);` (AIncludes/Files.a:1502
+// `_PBGetVolSync: OPWORD $A014`) -- the register shape of files.cla's
+// PBSetVolSync, and of native.cla's NatGetVol. Not in the catalog because
+// the runtime splices files.cla into every UI program, and the C printer
+// prototypes every extern it declares: one more would move every emitui
+// golden. Add it there when a phase may move them.
+external func gcPBGetVolSync(paramBlock: ptr): int = trap 0xA014 reg
 
 // gcGet1NamedResource: a SECOND declaration of the same trap Get1NamedResource
 // (toolbox/resources.cla) already catalogs, with a `string` `name` param
@@ -574,21 +589,105 @@ func gcLog(w: Log, line: string) {
 // of gcCompile purely to keep gcCompile itself under macgui.cla's
 // per-function 32KB native segment budget.
 //
-// SE wave 4 Task 6: a CLIR v9 library is read lazily through a
-// filehandle (bake.cla's bkLoadRtbake), which the __clir_bake_68k__
-// resource (a whole-library file.readResource) cannot feed, so every
-// compile takes the CLFS-source fallback until Task 7 moves the library
-// into this application's data fork and opens it with file.openRead.
+// SE wave 4 Task 7 (spec 3.4, W2): the CLIR v9 library lives in this
+// application's own DATA fork (scripts/build-clarusc-mac.sh, `emit68k
+// --bake-ir`), opened read-only and handed to the lazy loader as rtbakeFh
+// at base 0 -- the Resource Manager never loads it whole. An empty data
+// fork, or a header the stamp check refuses, falls back to CLFS-source.
+// A library that passes here but fails later (its directory, a section,
+// its object code) falls back inside driveCompileFork. gcCompile closes
+// the handle when the compile is over.
 func gcResolveBakePath(): string {
+    var fh: filehandle
+
     haveRtbake = false
-    return "clarusc: CLFS-source fallback (CLIR v9 library not in the data fork yet)"
+    rtbakeFh = nil
+    // Pre-compile feedback (attempt-abort Task 7, spec %5): opening the
+    // library and the header check can precede driveCompile's own first
+    // progress line, so both get a Status-bar step (step 0 of
+    // drvFixedSteps -- driveCompile resets the stage counter at its own
+    // top, so this borrowed step number never collides) plus a
+    // timestamped log line, in the SAME format driveProgress itself uses.
+    feProgressStep(0, 10, "Loading Baked Runtime")
+    feProgress("[" + dateTimeStr(now()) + "] Loading Baked Runtime")
+    fh = gcOpenOwnDataFork()
+    if fh == nil {
+        return "clarusc: CLFS-source fallback (cannot open this application's data fork: " + lastError.message + ")"
+    }
+    if fh.size() == 0 {
+        fh.close()
+        return "clarusc: CLFS-source fallback (no CLIR library in this application's data fork)"
+    }
+    feProgressStep(0, 10, "Verifying Baked Runtime")
+    feProgress("[" + dateTimeStr(now()) + "] Verifying Baked Runtime")
+    if not bkCheckRtbakeHeader(fh, 0, bkLane68k) {
+        fh.close()
+        resetDiags()
+        return "clarusc: CLFS-source fallback (CLIR library refused -- format/version/lane/stamp mismatch)"
+    }
+    bkLoadBuf.release()
+    resetDiags()
+    haveRtbake = true
+    rtbakeFh = fh
+    rtbakeBase = 0
+    return "clarusc: bake path (CLIR library in the data fork)"
 }
 
-func gcCompile(w: Log, p: string) {
-    var entries: list of string
-    var ok: bool
+// gcOpenOwnDataFork opens this application's own file read-only: its
+// data fork holds the runtime library. GetAppParms (toolbox/segload.cla)
+// names the file and its volume -- a working-directory refnum under HFS.
+// file.openRead resolves a name against the default volume, which a
+// Standard File dialog moves (askOpen sets it to the picked file's
+// folder), so the application's volume is made the default just for the
+// open and the caller's default put back: the compile's own reads and
+// writes resolve against the picked folder.
+func gcOpenOwnDataFork(): filehandle {
+    var ap: ptr
+    var name: string
     var i: int
-    var built: bool
+    var vp: VolumeParam
+    var saved: int
+    var junk: int
+    var fh: filehandle
+
+    ap = NewPtr(264)
+    GetAppParms(ap, ap + 256, ap + 260)
+    name = ""
+    i = 1
+    while i <= peekb(ap) {
+        name = name + char(peekb(ap + i))
+        i = i + 1
+    }
+    vp.ioNamePtr = ptr(0)
+    junk = gcPBGetVolSync(vp)
+    saved = vp.ioVRefNum
+    vp.ioNamePtr = ptr(0)
+    vp.ioVRefNum = int16(peekw(ap + 256))
+    junk = PBSetVolSync(vp)
+    DisposePtr(ap)
+    fh = file.openRead(name)
+    vp.ioNamePtr = ptr(0)
+    vp.ioVRefNum = int16(saved)
+    junk = PBSetVolSync(vp)
+    return fh
+}
+
+// gcCompile runs one compile (gcCompileRun) and closes the library
+// handle gcResolveBakePath opened for it, however the compile ended --
+// gcCompileRun's own `attempt` catches every abort, so this always runs.
+func gcCompile(w: Log, p: string) {
+    gcCompileRun(w, p)
+    if rtbakeFh != nil {
+        rtbakeFh.close()
+        rtbakeFh = nil
+    }
+    haveRtbake = false
+}
+
+func gcCompileRun(w: Log, p: string) {
+    var entries: list of string
+    var r: int
+    var i: int
     var appName: string
     var creator: string
     var fork: text
@@ -653,24 +752,27 @@ func gcCompile(w: Log, p: string) {
     // drive.cla/lower.cla. Without this, one of those internal-invariant
     // aborts would hit the synthesized top-level UI default (design doc
     // %3.5) and quit the whole app -- exactly the "silent ExitToShell"
-    // defect (spec %1) this phase exists to fix. The existing ok/
-    // entryFailed/built/wrote failure branches below are unrelated,
+    // defect (spec %1) this phase exists to fix. The existing r/
+    // entryFailed/wrote failure branches below are unrelated,
     // ordinary compile failures (not aborts) and keep their own
     // log+alert+return shape unchanged.
     attempt {
-        ok = driveCompile(entries, false)
+        // driveCompileFork (drive.cla): driveCompile, then driveEmit68kFork,
+        // with the from-source fallback when the baked library fails to
+        // load (SE wave 4 Task 7). 0 built, 1 compile failed, 2 emit failed.
+        r = driveCompileFork(entries)
 
         // entryFailed (an unreadable entry file) is checked BEFORE diags,
         // exactly like main.cla's own startCLI -- driveCompile leaves diags
         // empty in this case.
-        if entryFailed {
+        if r == 1 and entryFailed {
             gcFlushProgress(w)
             gcLog(w, "cannot open entry file: " + p)
             alert("cannot open entry file: " + p)
             return
         }
 
-        if not ok {
+        if r == 1 {
             gcFlushProgress(w)
             i = 0
             while i < diags.count {
@@ -681,8 +783,7 @@ func gcCompile(w: Log, p: string) {
             return
         }
 
-        built = driveEmit68kFork("", false, 0, false)
-        if not built {
+        if r == 2 {
             gcFlushProgress(w)
             gcLog(w, "emit68k failed")
             alert("emit68k failed")

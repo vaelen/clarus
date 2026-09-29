@@ -96,18 +96,14 @@ const bkMagic: string = "CLIR"
 // printer prints runtime bodies from IR, it has no object code to paste.
 const bkFormatVersion: int = 9
 
-// bkClirResourceName/bkStampResourceName (runtime-ir-bake Task 6, Mac
-// integration): reserved 'CLFS' resource names ClarusC.APPL's own build
-// (scripts/build-clarusc-mac.sh) embeds the CLIR artifact and its tiny
-// stamp sidecar under -- deliberately NOT shaped like a real module path
-// (no "/" or ".cla"), so neither can ever collide with a real
-// runtime/toolbox module key or a user-chosen entry file. Read back via
-// the ordinary, unmodified `file.readResource(name, out)` builtin
-// (macgui.cla's feExpectedStamp/gcCompile) -- reusing that single
-// existing mechanism, rather than teaching the resource layer a second
-// Mac resource TYPE, is this task's own deliberate simplification: see
-// its report for the tradeoff.
-const bkClirResourceName: string = "__clir_bake_68k__"
+// bkStampResourceName (runtime-ir-bake Task 6, Mac integration): the
+// reserved 'CLFS' resource name ClarusC.APPL's own build (scripts/
+// build-clarusc-mac.sh) embeds the CLIR library's tiny stamp sidecar
+// under -- deliberately NOT shaped like a real module path (no "/" or
+// ".cla"), so it can never collide with a real runtime/toolbox module key
+// or a user-chosen entry file. Read back via the ordinary
+// `file.readResource(name, out)` builtin (macgui.cla's feExpectedStamp).
+// The library itself lives in the app's data fork (SE wave 4 Task 7).
 const bkStampResourceName: string = "__clarusc_stamp__"
 
 // bkLastStamp (Task 6): the int stamp bakeWriteFile just computed for
@@ -270,6 +266,20 @@ const bkSecGlobalInits: int = 52
 // bodies and has no GlobalInits.
 const bkSectionCount68k: int = 47
 const bkSectionCountC: int = 48
+
+// bkSectionInLane: section id belongs in a lane's library -- every id
+// bakeWriteFile writes, minus IrStmts/IrExprs on the 68k lane and minus
+// GlobalInits on the c lane. With the exact per-lane count and unique ids,
+// the loader's directory check then requires exactly the lane's set.
+func bkSectionInLane(id: int, lane: int): bool {
+    if id == bkSecIrStmts or id == bkSecIrExprs {
+        return lane == bkLaneC
+    }
+    if id == bkSecGlobalInits {
+        return lane == bkLane68k
+    }
+    return (id >= bkSecIrTypes and id <= bkSecIrScalars) or (id >= bkSecStrPool and id <= bkSecShakeSummary)
+}
 
 // bkHeaderMax: the header, module list and directory are read in one
 // readAt of at most this many bytes (28 modules and 48 sections are about
@@ -3783,6 +3793,16 @@ func bkReadObjIndex(secOff: int, secLen: int): bool {
     return true
 }
 
+// bkObjRecPos: where baked function f's object record starts in
+// bkObjBuf. Aborts if bkLoadObjCode did not read it -- paste or a hole
+// scan on an unread record would decode whatever bytes sit at offset -1.
+func bkObjRecPos(f: int): int {
+    if f < 0 or f >= bkLdObjPos.count or bkLdObjPos[f] < 0 {
+        abort("--rtbake: object code of baked function " + numToStr(f) + " was not read (not reachable at shake?)")
+    }
+    return bkLdObjPos[f]
+}
+
 // bkObjCheckFunc walks baked function f's record in bkObjBuf -- every run
 // and hole inside the record, which it must fill exactly -- and checks
 // each hole's reloc symbol (bkObjRelocSymValid). Logs why and returns
@@ -3795,7 +3815,7 @@ func bkObjCheckFunc(f: int): bool {
     var n: int
     var h: CgObjHole
 
-    p = bkLdObjPos[f]
+    p = bkObjRecPos(f)
     e = p + bkObjLen(f)
     nh = bkObjBuf.intAt(p)
     p = p + 4
@@ -4378,8 +4398,8 @@ func bkLoadRtbake(fh: filehandle, base: int, wantLane: int, testapi: bool): bool
     }
     bkLoadedModules = loadedMods
 
-    // The directory: the lane's full section set, each id once, every
-    // section inside the file.
+    // The directory: exactly the lane's section set (bkSectionInLane),
+    // each id once, every section inside the file.
     want = bkSectionCountC
     if wantLane == bkLane68k {
         want = bkSectionCount68k
@@ -4392,7 +4412,7 @@ func bkLoadRtbake(fh: filehandle, base: int, wantLane: int, testapi: bool): bool
         ids.add(bkGetU16())
         offs.add(bkGetU32())
         lens.add(bkGetU32())
-        ok = not bkLoadOverrun and offs[i] >= 0 and lens[i] >= 0 and offs[i] <= size - lens[i]
+        ok = not bkLoadOverrun and offs[i] >= 0 and lens[i] >= 0 and offs[i] <= size - lens[i] and bkSectionInLane(ids[i], wantLane)
         j = 0
         while ok and j < i {
             ok = ids[j] != ids[i]

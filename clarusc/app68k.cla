@@ -172,12 +172,11 @@ func app68Crc16(data: text): int {
     return crc
 }
 
-// app68BuildHeader builds the 128-byte MacBinary II header. rsrcLen is
-// the RAW (unpadded) resource fork byte length -- the outer 128-byte
-// padding of the whole file happens after this header + the resource
-// fork are both appended (app68Build), never inside this header's own
-// "resource fork length" field.
-func app68BuildHeader(appName: string(31), creator: string(7), rsrcLen: int): text {
+// app68BuildHeader builds the 128-byte MacBinary II header. dataLen and
+// rsrcLen are the RAW (unpadded) data and resource fork byte lengths --
+// the 128-byte padding of each fork happens as they are appended
+// (app68WrapFork), never inside this header's own length fields.
+func app68BuildHeader(appName: string(31), creator: string(7), dataLen: int, rsrcLen: int): text {
     var h: text
     var crcVal: int
 
@@ -193,7 +192,7 @@ func app68BuildHeader(appName: string(31), creator: string(7), rsrcLen: int): te
     while h.length < 83 {                 // 73: Finder flags hi; 74: reserved;
         h.append(char(0))                 // 75-76/77-78/79-80: icon v/h/folder id;
     }                                     // 81: protected; 82: reserved
-    app68PutLong(h, 0)                    // 83-86: data fork length (no data fork)
+    app68PutLong(h, dataLen)              // 83-86: data fork length
     app68PutLong(h, rsrcLen)              // 87-90: resource fork length
     app68PutLong(h, 0)                    // 91-94: creation date (fixed, no clock)
     app68PutLong(h, 0)                    // 95-98: modification date (fixed, no clock)
@@ -621,16 +620,22 @@ func app68BuildFork(segBytes: list of text, jtEntries: list of int, jtSegNums: l
     return app68BuildResourceFork(resTypes, resIds, resNames, resDatas)
 }
 
-// app68WrapFork is app68Build's other half: wrap an already-built resource
-// fork (app68BuildFork's return, or any equivalent) in a 128-byte
-// MacBinary II header and pad the whole thing to a multiple of 128 bytes.
-// Split out so both app68Build (below) and cg68k.cla's cg68WriteImageWrap
-// (the host `emit68k` tail, after driveEmit68kFork) share one wrap
-// implementation instead of two copies drifting apart.
-func app68WrapFork(appName: string(31), creator: string(7), fork: text): text {
+// app68WrapFork is app68Build's other half: wrap a data fork (usually
+// empty) and an already-built resource fork (app68BuildFork's return, or
+// any equivalent) in a 128-byte MacBinary II header, each fork padded to
+// a multiple of 128 bytes. Split out so both app68Build (below) and
+// cg68k.cla's cg68WriteImageWrap (the host `emit68k` tail, after
+// driveEmit68kFork) share one wrap implementation instead of two copies
+// drifting apart. An empty data fork adds no bytes, so every image
+// without one is unchanged.
+func app68WrapFork(appName: string(31), creator: string(7), data: text, fork: text): text {
     var out: text
 
-    out = app68BuildHeader(appName, creator, fork.length)
+    out = app68BuildHeader(appName, creator, data.length, fork.length)
+    out.append(data)
+    while out.length mod 128 != 0 {
+        out.append(char(0))
+    }
     out.append(fork)
     while out.length mod 128 != 0 {
         out.append(char(0))
@@ -643,5 +648,5 @@ func app68WrapFork(appName: string(31), creator: string(7), fork: text): text {
 // single call for any caller that wants the finished MacBinary image and
 // doesn't care about the fork/wrap seam.
 func app68Build(appName: string(31), creator: string(7), segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int, extraTypes: list of string, extraIds: list of int, extraNames: list of string, extraDatas: list of text): text {
-    return app68WrapFork(appName, creator, app68BuildFork(segBytes, jtEntries, jtSegNums, segJtFirst, segJtCount, belowA5, extraTypes, extraIds, extraNames, extraDatas))
+    return app68WrapFork(appName, creator, "", app68BuildFork(segBytes, jtEntries, jtSegNums, segJtFirst, segJtCount, belowA5, extraTypes, extraIds, extraNames, extraDatas))
 }

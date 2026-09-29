@@ -2,7 +2,7 @@
 # timeout: 100m
 # The baked-'CLIR' path on real hardware -- ported from internal/mactest/
 # clarusc_bake_test.go's TestClarusCBakePathOnSnow. Builds ClarusC.APPL with
-# the CLIR resource baked in (build-clarusc-mac.sh's default), boots it with
+# the CLIR library in its data fork (build-clarusc-mac.sh's default), boots it with
 # ONE scripted compile of tickprobe.cla, and requires the trace to name the
 # BAKE path specifically (never the CLFS-source fallback) and the produced
 # app to be byte-identical to the host compiler's own output.
@@ -43,10 +43,10 @@ echo "--- end app out"
 
 # The compile must have taken the BAKE path, not silently fallen back to
 # CLFS-source (what a stamp/version/lane mismatch would do invisibly).
-if grep -qF 'clarusc: bake path (CLIR resource)' "$WORK/out"; then
+if grep -qF 'clarusc: bake path (CLIR library in the data fork)' "$WORK/out"; then
     t_pass bake_path_taken
 else
-    t_fail bake_path_taken "bake path not taken -- want gcResolveBakePath's log() line \"clarusc: bake path (CLIR resource)\" in the captured trace"
+    t_fail bake_path_taken "bake path not taken -- want gcResolveBakePath's log() line \"clarusc: bake path (CLIR library in the data fork)\" in the captured trace"
 fi
 if grep -qF 'CLFS-source fallback' "$WORK/out"; then
     t_fail no_clfs_fallback "compile fell back to CLFS-source (want the bake path)"

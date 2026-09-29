@@ -10,6 +10,13 @@
 # exactly like build-68k.sh's own step 1 (cached on clarusc.c's mtime).
 # Output: build-68k/ClarusC/ClarusC.bin
 #
+# Environment overrides (tests/bake/clarusc_container.sh):
+#   CLARUSC_BIN      the clarusc binary to use instead of the snapshot
+#                    bootstrap (e.g. build-run/clarusc-current, when this
+#                    tree's compiler has moved past the committed snapshot)
+#   CLARUSC_MAC_OUT  output directory instead of build-68k/ClarusC (the
+#                    CLIR library is written there too, as clarusc-mac.clir)
+#
 # --events FILE: a scripted-event source file, pass-through to
 # `clarusc emit68k --events FILE` -- same purpose as build-68k.sh's own
 # --events (deterministic UI driving, e.g. a boot-smoke test that just
@@ -17,11 +24,13 @@
 #
 # CLIR bake (runtime-ir-bake Task 6, Mac integration): by DEFAULT, this
 # script also runs `clarusc --bake-ir --lane 68k` to generate the 68k-lane
-# runtime IR artifact, then embeds it (plus its stamp sidecar) via
-# `emit68k --bake-ir FILE` -- so ClarusC.APPL consumes the baked runtime
-# by default, per the phase's own plan (clarusc/macgui.cla's gcCompile:
-# CLIR resource present + accepted -> bake path; absent or refused ->
-# CLFS-source fallback, same as always). --no-bake-ir skips both steps,
+# runtime library, then embeds it via `emit68k --bake-ir FILE` -- the
+# library as the application's DATA fork (SE wave 4 Task 7: read lazily
+# with file.openRead, never loaded whole), its stamp sidecar as a CLFS
+# resource -- so ClarusC.APPL consumes the baked runtime by default
+# (clarusc/macgui.cla's gcResolveBakePath: library present + accepted ->
+# bake path; absent or refused -> CLFS-source fallback, same as always).
+# --no-bake-ir skips both steps,
 # for building a from-source-only ClarusC.APPL (fallback-path testing, or
 # isolating a bake-specific bug).
 #
@@ -48,10 +57,16 @@ done
 # 1. bootstrap clarusc from the committed snapshot (cached on clarusc.c's
 #    mtime, same recipe as build-68k.sh/clarus-run.sh's own step 1).
 mkdir -p build-run
-CLARUSC="$ROOT/build-run/clarusc"
-if [ ! -x "$CLARUSC" ] || [ clarusc/clarusc.c -nt "$CLARUSC" ]; then
-    cc -O1 -Iruntime/host -o "$CLARUSC" clarusc/clarusc.c runtime/host/rt.c
+if [ -n "${CLARUSC_BIN:-}" ]; then
+    CLARUSC="$CLARUSC_BIN"
+else
+    CLARUSC="$ROOT/build-run/clarusc"
+    if [ ! -x "$CLARUSC" ] || [ clarusc/clarusc.c -nt "$CLARUSC" ]; then
+        cc -O1 -Iruntime/host -o "$CLARUSC" clarusc/clarusc.c runtime/host/rt.c
+    fi
 fi
+OUT="${CLARUSC_MAC_OUT:-build-68k/ClarusC}"
+mkdir -p "$OUT"
 
 # 2. one --bake flag per runtime/clarus + toolbox source file.
 BAKES=""
@@ -66,13 +81,13 @@ if [ -n "$EVENTS" ]; then
 fi
 
 # 2b. by default, generate the 68k-lane CLIR runtime bake with the SAME
-#     bootstrapped $CLARUSC, then embed it (+ its stamp sidecar,
+#     $CLARUSC, then embed it (data fork + stamp resource,
 #     cliResolveBakeIr/main.cla) via `--bake-ir` below. --bake-ir also
 #     writes CLIR_PATH.stamp unconditionally (main.cla's bakeIrMode) --
 #     no separate step needed here.
 BAKE_IR_ARG=""
 if [ "$BAKE_IR" = "1" ]; then
-    CLIR_PATH="$ROOT/build-run/clarusc-mac.clir"
+    CLIR_PATH="$OUT/clarusc-mac.clir"
     "$CLARUSC" --bake-ir --lane 68k --rtdir runtime/clarus/ -o "$CLIR_PATH"
     BAKE_IR_ARG="--bake-ir $CLIR_PATH"
 fi
@@ -105,7 +120,6 @@ fi
 # feProgressTick brackets around its own spinner repaint so it doesn't
 # flood the captured trace. Without --testapi, ordinary programs cannot
 # name ANY runtime/clarus symbol at all (see this repo's CLAUDE.md).
-mkdir -p build-68k/ClarusC
-"$CLARUSC" emit68k --testapi --rtdir runtime/clarus/ -o build-68k/ClarusC/ClarusC.bin \
+"$CLARUSC" emit68k --testapi --rtdir runtime/clarus/ -o "$OUT/ClarusC.bin" \
     $BAKES $EVENTS_ARG $BAKE_IR_ARG --partition 50331648 clarusc/macgui.cla
-echo "built: build-68k/ClarusC/ClarusC.bin"
+echo "built: $OUT/ClarusC.bin"

@@ -113,13 +113,15 @@ static void read_file(const char *path)
 /* --- MacBinary header ------------------------------------------------
  * image_test.go: length >= 128 and a multiple of 128, header[0] == 0,
  * name length in 1..63, the resource fork must fit in the remaining
- * bytes, and every byte past it must be zero padding.
+ * bytes, and every byte past it must be zero padding. A data fork (length
+ * at 83; ClarusC.APPL's runtime library, SE wave 4 Task 7) comes first,
+ * padded to 128 with zeros, and the resource fork follows it.
  */
 static void parse_macbinary(void)
 {
     const u8 *h = img;
-    u32 rsrclen;
-    long i;
+    u32 rsrclen, datalen;
+    long i, rstart;
     if (imglen < 128)
         die("image too short: %ld bytes", imglen);
     if (imglen % 128 != 0)
@@ -128,13 +130,20 @@ static void parse_macbinary(void)
         die("header[0] (version byte) = %d, want 0", h[0]);
     if (h[1] == 0 || h[1] > 63)
         die("header[1] (name length) = %d, out of range", h[1]);
+    datalen = be32(h + 83);
     rsrclen = be32(h + 87);
-    if ((long)rsrclen > imglen - 128)
-        die("resource fork length %u exceeds remaining image bytes %ld", rsrclen, imglen - 128);
-    for (i = 128 + (long)rsrclen; i < imglen; i++)
+    if ((long)datalen > imglen - 128)
+        die("data fork length %u exceeds remaining image bytes %ld", datalen, imglen - 128);
+    rstart = 128 + ((long)datalen + 127) / 128 * 128;
+    for (i = 128 + (long)datalen; i < rstart; i++)
+        if (img[i] != 0)
+            die("non-zero data fork padding byte at image offset %ld", i);
+    if ((long)rsrclen > imglen - rstart)
+        die("resource fork length %u exceeds remaining image bytes %ld", rsrclen, imglen - rstart);
+    for (i = rstart + (long)rsrclen; i < imglen; i++)
         if (img[i] != 0)
             die("non-zero padding byte at image offset %ld", i);
-    rfork = img + 128;
+    rfork = img + rstart;
     rforklen = rsrclen;
 }
 

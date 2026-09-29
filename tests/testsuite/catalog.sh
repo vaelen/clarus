@@ -54,6 +54,12 @@ on App.startCLI(args: list of string) {
     vp.ioNamePtr = ptr(0)
     vp.ioVRefNum = 0
     err = PBSetVolSync(vp)
+    p = NewPtr(264)
+    GetAppParms(p, p + 256, p + 260)
+    UnloadSeg(ptr(0))
+    if err == 12345 {
+        ExitToShell()
+    }
     SFGetFile((100 << 16) | 100, pr, ptr(0), 1, tl, ptr(0), rep)
     SFPutFile((100 << 16) | 100, pr, pr, ptr(0), rep)
     if rep.good {
@@ -158,6 +164,7 @@ if "$CLARUSC" "$WORK/driver.cla" \
         "$ROOT/toolbox/serial.cla" \
         "$ROOT/toolbox/appletalk.cla" \
         "$ROOT/toolbox/mactcp.cla" \
+        "$ROOT/toolbox/segload.cla" \
         > "$WORK/catalog.log" 2>&1; then
     t_pass "$n"
 else
