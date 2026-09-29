@@ -56,15 +56,60 @@ include "../toolbox/memory.cla"
 include "../toolbox/segload.cla"
 include "../toolbox/files.cla"
 
-// gcPBGetVolSync: PBGetVolSync, declared locally rather than in
-// toolbox/files.cla. CIncludes/Files.h:1382-1384: `#pragma parameter
-// __D0 PBGetVolSync(__A0)` ... `EXTERN_API( OSErr ) PBGetVolSync(
-// ParmBlkPtr paramBlock) ONEWORDINLINE(0xA014);` (AIncludes/Files.a:1502
-// `_PBGetVolSync: OPWORD $A014`) -- the register shape of files.cla's
-// PBSetVolSync, and of native.cla's NatGetVol. Not in the catalog because
-// the runtime splices files.cla into every UI program, and the C printer
-// prototypes every extern it declares: one more would move every emitui
-// golden. Add it there when a phase may move them.
+// gcPBGetVolSync, gcPBHSetVolSync, gcPBGetFCBInfoSync and their records:
+// File Manager calls declared locally rather than in toolbox/files.cla,
+// because the runtime splices files.cla into every UI program and the C
+// printer prototypes every extern it declares -- adding them there would
+// move every emitui golden. Move them into files.cla when a phase may.
+//   PBGetVolSync      CIncludes/Files.h:1382-1384 `#pragma parameter __D0
+//                     PBGetVolSync(__A0)` ... `ONEWORDINLINE(0xA014)`;
+//                     AIncludes/Files.a:1502 `_PBGetVolSync: OPWORD $A014`.
+//                     The register shape of files.cla's PBSetVolSync.
+//   PBHSetVolSync     CIncludes/Files.h:2708-2710 `#pragma parameter __D0
+//                     PBHSetVolSync(__A0)` ... `PBHSetVolSync(WDPBPtr)
+//                     ONEWORDINLINE(0xA215)`; Files.a:3069 `OPWORD $A215`.
+//                     Sets the default volume AND directory (ioVRefNum +
+//                     ioWDDirID).
+//   PBGetFCBInfoSync  CIncludes/Files.h:2851 `#pragma parameter __D0
+//                     PBGetFCBInfoSync(__A0)`; Files.a:3316-3318 `moveq
+//                     #8,D0 / dc.w $A260` -- _HFSDispatch selector 8 in D0,
+//                     files.cla's PBGetCatInfoSync shape.
+// GcWDPB is WDPBRec (Files.h:1135-1150): ioNamePtr@18 ioVRefNum@22
+// ioWDDirID@48, 52 bytes. GcFCBPB is FCBPBRec (Files.h:1153-1175):
+// ioRefNum@24 ioFCBIndx@28 ioFCBVRefNum@52 ioFCBParID@58, 62 bytes.
+extern record GcWDPB {
+    qLink: ptr
+    qType: int16
+    ioTrap: int16
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: int16
+    ioNamePtr: ptr
+    ioVRefNum: int16
+    pad[24]
+    ioWDDirID: int
+}
+
+extern record GcFCBPB {
+    qLink: ptr
+    qType: int16
+    ioTrap: int16
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: int16
+    ioNamePtr: ptr
+    ioVRefNum: int16
+    ioRefNum: int16
+    pad[2]
+    ioFCBIndx: int16
+    pad[22]
+    ioFCBVRefNum: int16
+    pad[4]
+    ioFCBParID: int
+}
+
+external func gcPBHSetVolSync(paramBlock: ptr): int = trap 0xA215 reg
+external func gcPBGetFCBInfoSync(paramBlock: ptr, selector: int): int = trap 0xA260 reg(a0: paramBlock, d0: selector) ret d0
 external func gcPBGetVolSync(paramBlock: ptr): int = trap 0xA014 reg
 
 // gcGet1NamedResource: a SECOND declaration of the same trap Get1NamedResource
@@ -612,7 +657,7 @@ func gcResolveBakePath(): string {
     feProgress("[" + dateTimeStr(now()) + "] Loading Baked Runtime")
     fh = gcOpenOwnDataFork()
     if fh == nil {
-        return "clarusc: CLFS-source fallback (cannot open this application's data fork: " + lastError.message + ")"
+        return "clarusc: CLFS-source fallback (cannot open this application's data fork: " + gcOwnForkErr + ")"
     }
     if fh.size() == 0 {
         fh.close()
@@ -635,21 +680,29 @@ func gcResolveBakePath(): string {
 
 // gcOpenOwnDataFork opens this application's own file read-only: its
 // data fork holds the runtime library. GetAppParms (toolbox/segload.cla)
-// names the file and its volume -- a working-directory refnum under HFS.
-// file.openRead resolves a name against the default volume, which a
-// Standard File dialog moves (askOpen sets it to the picked file's
-// folder), so the application's volume is made the default just for the
-// open and the caller's default put back: the compile's own reads and
-// writes resolve against the picked folder.
+// gives the file's name and apRefNum -- the refnum of the application's
+// OPEN RESOURCE FILE (IM II-58, CurApRefNum), not a volume refnum -- so
+// PBGetFCBInfo on it names the volume (ioFCBVRefNum) and folder
+// (ioFCBParID) the file lives in. file.openRead resolves a name against
+// the default directory, which a Standard File dialog moves (askOpen sets
+// it to the picked file's folder), so the application's folder is made
+// the default (PBHSetVol) just for the open and the caller's default put
+// back: the compile's own reads and writes resolve against the picked
+// folder. Any failure returns nil with gcOwnForkErr saying why.
+var gcOwnForkErr: string
+
 func gcOpenOwnDataFork(): filehandle {
     var ap: ptr
     var name: string
     var i: int
+    var fcb: GcFCBPB
+    var wd: GcWDPB
     var vp: VolumeParam
     var saved: int
-    var junk: int
+    var err: int
     var fh: filehandle
 
+    gcOwnForkErr = ""
     ap = NewPtr(264)
     GetAppParms(ap, ap + 256, ap + 260)
     name = ""
@@ -658,17 +711,41 @@ func gcOpenOwnDataFork(): filehandle {
         name = name + char(peekb(ap + i))
         i = i + 1
     }
-    vp.ioNamePtr = ptr(0)
-    junk = gcPBGetVolSync(vp)
-    saved = vp.ioVRefNum
-    vp.ioNamePtr = ptr(0)
-    vp.ioVRefNum = int16(peekw(ap + 256))
-    junk = PBSetVolSync(vp)
+    fcb.ioNamePtr = ptr(0)
+    fcb.ioVRefNum = 0
+    fcb.ioRefNum = int16(peekw(ap + 256))
+    fcb.ioFCBIndx = 0
     DisposePtr(ap)
+    err = gcPBGetFCBInfoSync(fcb, 8)
+    if err != 0 {
+        gcOwnForkErr = "PBGetFCBInfo error " + numToStr(err)
+        return nil
+    }
+    // The caller's default directory, to put back. Without it the open
+    // cannot be done safely (the default would be left moved), so a
+    // failure here refuses rather than guess.
+    vp.ioNamePtr = ptr(0)
+    err = gcPBGetVolSync(vp)
+    if err != 0 {
+        gcOwnForkErr = "PBGetVol error " + numToStr(err)
+        return nil
+    }
+    saved = vp.ioVRefNum
+    wd.ioNamePtr = ptr(0)
+    wd.ioVRefNum = fcb.ioFCBVRefNum
+    wd.ioWDDirID = fcb.ioFCBParID
+    err = gcPBHSetVolSync(wd)
+    if err != 0 {
+        gcOwnForkErr = "PBHSetVol error " + numToStr(err)
+        return nil
+    }
     fh = file.openRead(name)
+    if fh == nil {
+        gcOwnForkErr = lastError.message
+    }
     vp.ioNamePtr = ptr(0)
     vp.ioVRefNum = int16(saved)
-    junk = PBSetVolSync(vp)
+    err = PBSetVolSync(vp)
     return fh
 }
 

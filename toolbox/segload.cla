@@ -20,9 +20,12 @@
 //                AIncludes/SegLoad.a:106 `_GetAppParms: OPWORD $A9F5`.
 //                All three are fill targets, so all three are `ptr`
 //                (cookbook 9(c)): apName a 256-byte Str255 buffer, apRefNum
-//                a 2-byte slot (the application file's volume -- a working
-//                directory refnum under HFS), apParam a 4-byte slot (the
-//                Finder-parameters handle).
+//                a 2-byte slot, apParam a 4-byte slot (the Finder-
+//                parameters handle). apRefNum is the reference number of
+//                the application's open RESOURCE FILE (IM II-58; the same
+//                value as CurApRefNum), not a volume or working-directory
+//                refnum: to find the file's folder, pass it as ioRefNum to
+//                PBGetFCBInfo (ioFCBVRefNum, ioFCBParID).
 //   UnloadSeg    CIncludes/SegLoad.h:162-163: `EXTERN_API( void )
 //                UnloadSeg(void * routineAddr) ONEWORDINLINE(0xA9F1);`.
 //                Corroborated in AIncludes/SegLoad.a:134 `_UnloadSeg:
