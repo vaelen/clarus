@@ -7886,7 +7886,7 @@ rulings are in this entry.
 
 ## SE memory program, Wave 4: lazy runtime library (2026-09-29, branch `se-wave4-lazy-library`)
 
-Not yet merged (pending the final review and Andrew's go-ahead).
+Merged to `main` 2026-09-29 (fast-forward to `f62e67d5`).
 This entry covers Tasks 1–8 and Task 9's IIcx measurement (49 files,
 +18,035/−15,225 from `main` before this docs commit, most of it the
 twice-regenerated `clarusc/clarusc.c` snapshot). Wave A (Tasks 1–4) ran

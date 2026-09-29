@@ -216,8 +216,8 @@ measured analysis:
   `log-trace-optin`, 2026-09-29, fast-forward to `96311612`): production native apps write no
   `out` file; `app.writeLog`/`flushLog`/`trace` opt in; `--capture`
   keeps the test protocol. See `docs/HISTORY.md`.
-- **Wave 4 (lazy runtime library): complete on branch
-  `se-wave4-lazy-library`, 2026-09-29, pending merge.** The CLIR library
+- **Wave 4 (lazy runtime library): merged** (branch
+  `se-wave4-lazy-library`, 2026-09-29, fast-forward to `f62e67d5`). The CLIR library
   is format v9 (a header + section directory, no runtime IR bodies on
   the 68k lane, a call-graph summary shake walks instead of IR, and a
   per-function object-code index read lazily with `readAt`); every

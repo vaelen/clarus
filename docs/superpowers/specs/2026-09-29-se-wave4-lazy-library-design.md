@@ -1,7 +1,6 @@
 # SE memory program, Wave 4: Lazy runtime library (spec, 2026-09-29)
 
-Status: **implemented on branch `se-wave4-lazy-library` (2026-09-29),
-pending merge.** `bookmarks_rtbake` 1,194,744 (budget 1,206,692; target
+Status: **merged to main** (2026-09-29, `f62e67d5`). `bookmarks_rtbake` 1,194,744 (budget 1,206,692; target
 1,258,291 met); measurements in the umbrella's §9.5, rulings and
 deviations from this spec in `docs/HISTORY.md`'s Wave 4 entry.
 Umbrella: `2026-09-27-se-memory-program-design.md` (§6 Wave 4 is the

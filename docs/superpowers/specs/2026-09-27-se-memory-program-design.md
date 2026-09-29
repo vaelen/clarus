@@ -6,9 +6,9 @@ merged (2026-09-28). Wave 1 (lifetimes) is merged
 (representation) is merged (2026-09-28), at 3,668,312
 bytes against its 4 MB target (§9.3). Wave 3 (narrow scalars) is
 merged (2026-09-29), at 3,399,176 bytes against its
-3.5 MB target (§9.4). Wave 4 (lazy runtime library) is complete on
-its branch (2026-09-29), at 1,194,744 bytes against its 1.2 MB target
-(§9.5), pending merge.**
+3.5 MB target (§9.4). Wave 4 (lazy runtime library) is merged to
+main (2026-09-29, `f62e67d5`), at 1,194,744 bytes against its 1.2 MB target
+(§9.5).**
 This is the umbrella document for a multi-wave program. Each wave gets
 its own spec (`docs/superpowers/specs/`) and plan
 (`docs/superpowers/plans/`) when it starts. This document holds
@@ -663,7 +663,7 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 | 1 Lifetimes                        | merged to main 2026-09-28 (`fadb19af`)    | `se-wave1-lifetimes`      | memgate peaks 6,324,316 (rtbake, target 6 MB missed by 32,860) / 8,605,188 (src) / 8,531,984 (hello); IIcx low point 7977 KB used (−4058 KB), stack 187 KB (§9.2)                                      |
 | 2 Representation                   | merged to main 2026-09-28 (`378ccd10`)    | `se-wave2-representation` | memgate peaks 3,668,312 (rtbake, 4 MB target met) / 7,639,484 (src) / 7,570,224 (hello); IIcx low point 6272 KB used (−1705 KB), stack 187 KB (§9.3)                                                   |
 | 3 Narrow scalars                   | merged to main 2026-09-29 (`3642e8ec`)    | `se-wave3-narrow-scalars` | memgate peaks 3,399,176 (rtbake, 3.5 MB target met) / 7,377,444 (src) / 7,308,336 (hello); IIcx low point 6111 KB used (−161 KB), stack 187 KB (§9.4)                                                  |
-| 4 Lazy runtime library             | on branch 2026-09-29, not yet merged      | `se-wave4-lazy-library`   | memgate peaks 1,194,744 (rtbake, 1.2 MB target met) / 6,923,184 (src) / 6,919,612 (hello); IIcx low point 2443 KB used (−3668 KB), stack 194 KB (§9.5)                                                 |
+| 4 Lazy runtime library             | merged to main 2026-09-29 (`f62e67d5`)    | `se-wave4-lazy-library`   | memgate peaks 1,194,744 (rtbake, 1.2 MB target met) / 6,923,184 (src) / 6,919,612 (hello); IIcx low point 2443 KB used (−3668 KB), stack 194 KB (§9.5)                                                 |
 | 5 Code and stack                   | not started                               | —                         | —                                                                                                                                                                                                      |
 | Wave 6 decision                    | pending                                   | —                         | —                                                                                                                                                                                                      |
 
