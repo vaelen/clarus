@@ -538,4 +538,15 @@ int32_t rt_ext_DateToSeconds(void *d) {
  * always on (the host has no UI lane; kept in step with the mac lane). */
 int32_t rt_ext_UiTraceOn(void) { return 1; }
 
+/* rt_ext_DrvStackPtr: host body of clarusc/drive.cla's `inline sp`
+ * extern (SE wave 5). The host has no 68k stack to guard, so 0 tells
+ * drvStackGuard to return at once. rt_ext_DrvStackForce: the TESTONLY
+ * CLARUS_STACKGUARD_FORCE=N (tests/bake/stackguard.sh), 0 when unset;
+ * the 68k lane resolves it to drive.cla's nat_DrvStackForce. */
+void *rt_ext_DrvStackPtr(void) { return NULL; }
+int32_t rt_ext_DrvStackForce(void) {
+    const char *v = getenv("CLARUS_STACKGUARD_FORCE");
+    return v ? (int32_t)atol(v) : 0;
+}
+
 #endif /* CLARUS_RT_EXT_HOST_INC */

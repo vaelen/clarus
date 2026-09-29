@@ -7,6 +7,11 @@ include "../lex.cla"
 include "../ast.cla"
 include "../parse.cla"
 
+// drive.cla's depth guard (SE wave 5), which parse.cla calls: this driver
+// does not include drive.cla, and the host guard is a no-op anyway.
+func drvStackGuard() {
+}
+
 // renderExpr recursively renders expr i as a fully-parenthesized
 // expression string -- extends ast_test.cla's version (Task 6) with the
 // ExprKinds this driver's real parsed programs actually produce.

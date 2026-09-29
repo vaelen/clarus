@@ -409,6 +409,7 @@ func parseExpr(): int {
     var y: int
     var line: int
     var col: int
+    drvStackGuard()
 
     x = parseAnd()
     while curKind() == TkOr and not parseAborted {
@@ -515,6 +516,7 @@ func parseUnary(): int {
     var line: int
     var col: int
     var x: int
+    drvStackGuard()
 
     if curKind() == TkMinus or curKind() == TkNot or curKind() == TkTilde {
         line = curLine()
@@ -689,6 +691,7 @@ func parsePrimary(): int {
     var col: int
     var nameTok: Token
     var idx: int
+    drvStackGuard()
 
     t = curTok()
     line = t.line
@@ -903,6 +906,7 @@ func parseBlockVars(allowVars: bool): int {
 func parseStmt(): int {
     var line: int
     var col: int
+    drvStackGuard()
 
     if curKind() == TkIf { return parseIfStmt() }
     if curKind() == TkWhile { return parseWhileStmt() }
