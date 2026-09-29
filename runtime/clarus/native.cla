@@ -584,10 +584,12 @@ func natWlCloseFile(ref: int) {
 
 // natAppFlushLog: app.flushLog() -- open, append the buffer at EOF
 // (fsFromLEOF, offset 0), close, FlushVol. A file that can no longer be
-// opened drops the pending lines (lastError says so) rather than growing
-// without bound.
+// opened, or whose write fails (e.g. disk full), drops the pending lines
+// (lastError says so) rather than growing without bound. The write's
+// ioResult is read before the close reuses the PB.
 func natAppFlushLog() {
     var ref: int
+    var werr: int
 
     if not natWlOpen or natWlLen == 0 {
         return
@@ -600,7 +602,11 @@ func natAppFlushLog() {
         pokew(natWlPb + natIoPosMode, natFsFromLEOF)
         pokel(natWlPb + natIoPosOffset, 0)
         NatWrite(natWlPb)
+        werr = peekw(natWlPb + natIoResult)
         natWlCloseFile(ref)
+        if werr != 0 {
+            rtSetLastErr(2, "could not write log file")
+        }
     } else {
         rtSetLastErr(2, "could not write log file")
     }
