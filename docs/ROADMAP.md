@@ -199,8 +199,8 @@ measured analysis:
   runs), `bookmarks` from source at 7,639,484 and `hello-mac` at
   7,570,224. On the IIcx the launch→low heap use fell from 7977 KB to
   6272 KB. Numbers: the program design's §9.3 and `docs/HISTORY.md`.
-- **Wave 3 (narrow scalars): complete on branch
-  `se-wave3-narrow-scalars`** (2026-09-29, not yet merged). The
+- **Wave 3 (narrow scalars): merged** (branch
+  `se-wave3-narrow-scalars`, 2026-09-29, fast-forward to `3642e8ec`). The
   `uint8`/`int16`/`uint16` types on both lanes (implicit widening,
   truncating explicit conversions, range-checked literals, form and
   table binding); enums are 2 bytes on both lanes; `file.save` writes

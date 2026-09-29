@@ -7516,7 +7516,7 @@ deleted after the final review; the rulings are in this entry.
 
 ## SE memory program, Wave 3: narrow scalars (2026-09-29, branch `se-wave3-narrow-scalars`)
 
-Complete on `se-wave3-narrow-scalars` (2026-09-29); not yet merged.
+Merged to `main` 2026-09-29 (fast-forward to `3642e8ec`).
 This entry covers Tasks 1–13 and Task 14's IIcx measurement (193 files,
 +131,418/−110,053 from the plan commit `7811631e` before this docs
 commit, most of it the three-times-regenerated `clarusc/clarusc.c`

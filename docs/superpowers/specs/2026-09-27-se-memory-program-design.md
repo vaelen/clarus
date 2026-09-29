@@ -5,7 +5,7 @@ merged (2026-09-28). Wave 1 (lifetimes) is merged
 (2026-09-28), at 6,324,316 bytes against its 6 MB target (§9.2). Wave 2
 (representation) is merged (2026-09-28), at 3,668,312
 bytes against its 4 MB target (§9.3). Wave 3 (narrow scalars) is
-complete on its branch (2026-09-29), at 3,399,176 bytes against its
+merged (2026-09-29), at 3,399,176 bytes against its
 3.5 MB target (§9.4). Wave 4 is next.**
 This is the umbrella document for a multi-wave program. Each wave gets
 its own spec (`docs/superpowers/specs/`) and plan
@@ -656,7 +656,7 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 | 0 Measurement                      | merged to main 2026-09-28 (`87dcf389`)    | `se-wave0-measurement`    | memgate peaks 11,789,468 (rtbake) / 14,190,252 (src) / 10,194,664 (hello); SE app space 3808 KB, ClarusC target 2221 KB; IIcx low point 12035 KB used, stack 187 KB; peak calibration 0.96–1.08 (§9.1) |
 | 1 Lifetimes                        | merged to main 2026-09-28 (`fadb19af`)    | `se-wave1-lifetimes`      | memgate peaks 6,324,316 (rtbake, target 6 MB missed by 32,860) / 8,605,188 (src) / 8,531,984 (hello); IIcx low point 7977 KB used (−4058 KB), stack 187 KB (§9.2)                                      |
 | 2 Representation                   | merged to main 2026-09-28 (`378ccd10`)    | `se-wave2-representation` | memgate peaks 3,668,312 (rtbake, 4 MB target met) / 7,639,484 (src) / 7,570,224 (hello); IIcx low point 6272 KB used (−1705 KB), stack 187 KB (§9.3)                                                   |
-| 3 Narrow scalars                   | complete on branch 2026-09-29, not merged | `se-wave3-narrow-scalars` | memgate peaks 3,399,176 (rtbake, 3.5 MB target met) / 7,377,444 (src) / 7,308,336 (hello); IIcx low point 6111 KB used (−161 KB), stack 187 KB (§9.4)                                                  |
+| 3 Narrow scalars                   | merged to main 2026-09-29 (`3642e8ec`)    | `se-wave3-narrow-scalars` | memgate peaks 3,399,176 (rtbake, 3.5 MB target met) / 7,377,444 (src) / 7,308,336 (hello); IIcx low point 6111 KB used (−161 KB), stack 187 KB (§9.4)                                                  |
 | 4 Lazy runtime library             | not started                               | —                         | —                                                                                                                                                                                                      |
 | 5 Code and stack                   | not started                               | —                         | —                                                                                                                                                                                                      |
 | Wave 6 decision                    | pending                                   | —                         | —                                                                                                                                                                                                      |

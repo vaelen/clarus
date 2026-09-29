@@ -1,6 +1,6 @@
 # SE memory program, Wave 3: Narrow scalars (spec, 2026-09-28)
 
-Status: **implemented** (2026-09-29) on branch `se-wave3-narrow-scalars`.
+Status: **merged to main (2026-09-29, `3642e8ec`).** Branch `se-wave3-narrow-scalars`.
 `bookmarks_rtbake` peaks at 3,399,176 bytes against the 3.5 MB exit
 (umbrella §9.4). Amendments made during implementation are marked
 "Amended" below; the rulings behind them are in `docs/HISTORY.md`'s
