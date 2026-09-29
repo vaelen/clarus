@@ -4303,7 +4303,7 @@ LBL_420:
 LBL_419:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 2282(A5)
+        JSR 2274(A5)
         ADDQ.L #4,A7
 LBL_417:
         UNLK A6
@@ -7053,7 +7053,7 @@ LBL_123:
         BEQ.W LBL_581
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2266(A5)
+        JSR 2258(A5)
         ADDQ.L #4,A7
 LBL_581:
         MOVE.L 8(A6),D0

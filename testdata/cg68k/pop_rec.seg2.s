@@ -75,8 +75,24 @@ LBL_20:
 LBL_18:
         UNLK A6
         RTS
-        ; func clar_cb_aeOappHandler (JT slot 201) -- pascal callback glue for aeOappHandler
+        ; func clar_cb_aeQuitHandler (JT slot 201) -- pascal callback glue for aeQuitHandler
 LBL_3:
+        LINK A6,#0
+        ;   theAppleEvent : 16(A6)  pascal size 4
+        MOVE.L 16(A6),-(A7)
+        ;   reply : 12(A6)  pascal size 4
+        MOVE.L 12(A6),-(A7)
+        ;   handlerRefcon : 8(A6)  pascal size 4
+        MOVE.L 8(A6),-(A7)
+        JSR 706(A5)
+        ADDA.W #12,A7
+        MOVE.W D0,20(A6)
+        UNLK A6
+        MOVE.L (A7)+,A0
+        ADDA.W #12,A7
+        JMP (A0)
+        ; func clar_cb_aeOappHandler (JT slot 202) -- pascal callback glue for aeOappHandler
+LBL_4:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
         MOVE.L 16(A6),-(A7)
@@ -90,21 +106,6 @@ LBL_3:
         UNLK A6
         MOVE.L (A7)+,A0
         ADDA.W #12,A7
-        JMP (A0)
-        ; func clar_cb_rtUiScrollbarAction (JT slot 202) -- pascal callback glue for rtUiScrollbarAction
-LBL_4:
-        LINK A6,#0
-        ;   ctrl : 10(A6)  pascal size 4
-        MOVE.L 10(A6),-(A7)
-        ;   part : 8(A6)  pascal size 2
-        MOVE.W 8(A6),D0
-        EXT.L D0
-        MOVE.L D0,-(A7)
-        JSR 890(A5)
-        ADDQ.L #8,A7
-        UNLK A6
-        MOVE.L (A7)+,A0
-        ADDQ.L #6,A7
         JMP (A0)
         ; func clar_cb_rtUiLdefDraw (JT slot 203) -- pascal callback glue for rtUiLdefDraw
 LBL_5:

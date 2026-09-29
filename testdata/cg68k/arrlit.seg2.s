@@ -1,9 +1,13 @@
-        ; func clar_ui_fire_menu  (JT slot 194)
-        ;   param handlerIdx : 12(A6)  size 4
-        ;   param frontInstOrNil : 8(A6)  size 4
+        ; func clar_ui_fire_widget  (JT slot 195)
+        ;   param winIdx : 28(A6)  size 4
+        ;   param inst : 24(A6)  size 4
+        ;   param widgetIdx : 20(A6)  size 4
+        ;   param ev : 16(A6)  size 4
+        ;   param a : 12(A6)  size 4
+        ;   param b : 8(A6)  size 4
 LBL_0:
         LINK A6,#-2100
-        LEA LBL_9(PC),A0
+        LEA LBL_8(PC),A0
         MOVE.L A0,-(A7)
         JSR 1258(A5)
         ADDQ.L #4,A7
@@ -15,11 +19,12 @@ LBL_0:
 LBL_18:
         UNLK A6
         RTS
-        ; func clar_ui_fire_every  (JT slot 195)
-        ;   param idx : 8(A6)  size 4
+        ; func clar_ui_fire_menu  (JT slot 196)
+        ;   param handlerIdx : 12(A6)  size 4
+        ;   param frontInstOrNil : 8(A6)  size 4
 LBL_1:
         LINK A6,#-2100
-        LEA LBL_10(PC),A0
+        LEA LBL_9(PC),A0
         MOVE.L A0,-(A7)
         JSR 1258(A5)
         ADDQ.L #4,A7
@@ -31,12 +36,11 @@ LBL_1:
 LBL_19:
         UNLK A6
         RTS
-        ; func clar_ui_fire_releasevars  (JT slot 196)
-        ;   param winIdx : 12(A6)  size 4
-        ;   param inst : 8(A6)  size 4
+        ; func clar_ui_fire_every  (JT slot 197)
+        ;   param idx : 8(A6)  size 4
 LBL_2:
         LINK A6,#-2100
-        LEA LBL_11(PC),A0
+        LEA LBL_10(PC),A0
         MOVE.L A0,-(A7)
         JSR 1258(A5)
         ADDQ.L #4,A7
@@ -48,9 +52,26 @@ LBL_2:
 LBL_20:
         UNLK A6
         RTS
-        ; func clar_ui_fire_staterows  (JT slot 197)
-        ;   param rowsIdx : 8(A6)  size 4
+        ; func clar_ui_fire_releasevars  (JT slot 198)
+        ;   param winIdx : 12(A6)  size 4
+        ;   param inst : 8(A6)  size 4
 LBL_3:
+        LINK A6,#-2100
+        LEA LBL_11(PC),A0
+        MOVE.L A0,-(A7)
+        JSR 1258(A5)
+        ADDQ.L #4,A7
+        BSR.W LBL_17
+        MOVEQ #1,D0
+        MOVE.L D0,-(A7)
+        JSR 1266(A5)
+        ADDQ.L #4,A7
+LBL_21:
+        UNLK A6
+        RTS
+        ; func clar_ui_fire_staterows  (JT slot 199)
+        ;   param rowsIdx : 8(A6)  size 4
+LBL_4:
         LINK A6,#-2100
         MOVE.L 8(A6),D1
         MOVE.L #153,D0
@@ -58,12 +79,12 @@ LBL_3:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_22
+        BEQ.W LBL_23
         LEA -7096(A5),A0
         MOVE.L A0,D0
-        BRA.W LBL_21
-        BRA.W LBL_23
-LBL_22:
+        BRA.W LBL_22
+        BRA.W LBL_24
+LBL_23:
         LEA LBL_12(PC),A0
         MOVE.L A0,-(A7)
         JSR 1258(A5)
@@ -74,35 +95,13 @@ LBL_22:
         JSR 1266(A5)
         ADDQ.L #4,A7
         MOVEQ #0,D0
-        BRA.W LBL_21
-LBL_23:
-LBL_21:
-        UNLK A6
-        RTS
-        ; func clar_ui_fire_startempty  (JT slot 198)
-LBL_4:
-        LINK A6,#-2100
+        BRA.W LBL_22
 LBL_24:
+LBL_22:
         UNLK A6
         RTS
-        ; func clar_cb_aeQuitHandler (JT slot 199) -- pascal callback glue for aeQuitHandler
-LBL_5:
-        LINK A6,#0
-        ;   theAppleEvent : 16(A6)  pascal size 4
-        MOVE.L 16(A6),-(A7)
-        ;   reply : 12(A6)  pascal size 4
-        MOVE.L 12(A6),-(A7)
-        ;   handlerRefcon : 8(A6)  pascal size 4
-        MOVE.L 8(A6),-(A7)
-        JSR 698(A5)
-        ADDA.W #12,A7
-        MOVE.W D0,20(A6)
-        UNLK A6
-        MOVE.L (A7)+,A0
-        ADDA.W #12,A7
-        JMP (A0)
         ; func clar_cb_aeOappHandler (JT slot 200) -- pascal callback glue for aeOappHandler
-LBL_6:
+LBL_5:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
         MOVE.L 16(A6),-(A7)
@@ -118,7 +117,7 @@ LBL_6:
         ADDA.W #12,A7
         JMP (A0)
         ; func clar_cb_rtUiScrollbarAction (JT slot 201) -- pascal callback glue for rtUiScrollbarAction
-LBL_7:
+LBL_6:
         LINK A6,#0
         ;   ctrl : 10(A6)  pascal size 4
         MOVE.L 10(A6),-(A7)
@@ -133,7 +132,7 @@ LBL_7:
         ADDQ.L #6,A7
         JMP (A0)
         ; func clar_cb_rtUiLdefDraw (JT slot 202) -- pascal callback glue for rtUiLdefDraw
-LBL_8:
+LBL_7:
         LINK A6,#0
         ;   msg : 26(A6)  pascal size 2
         MOVE.W 26(A6),D0
@@ -381,6 +380,10 @@ LBL_37:
 LBL_13:
         DC.B $10
         DC.B $64,$69,$76,$69,$73,$69,$6F,$6E,$20,$62,$79,$20,$7A,$65,$72,$6F
+        DC.B $00
+LBL_8:
+        DC.B $28
+        DC.B $63,$6C,$61,$72,$5F,$75,$69,$5F,$66,$69,$72,$65,$5F,$77,$69,$64,$67,$65,$74,$3A,$20,$77,$69,$6E,$49,$64,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
         DC.B $00
 LBL_9:
         DC.B $2A
