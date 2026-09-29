@@ -432,12 +432,3 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   resource of `:System Folder:Finder Startup`, an undocumented format; if
   a test ever needs MultiFinder specifically, reverse that resource (one
   Set Startup in a scratch boot, diff the file) and write it instead.
-- **ClarusC.APPL on the SE.** A compile needs ~14MB of live heap and the
-  SE has 4MB, so the three compiling ClarusC Snow scripts (`clarusc_bake`,
-  `macresident`, `macresident_failed_compile`) default to the System 7
-  machine -- now a 128MB Mac IIcx -- and skip only on `SNOW_SYSTEM=6`
-  (`snow_clarusc_system`; `CLARUS_SNOW_CLARUSC=1` forces the SE).
-  `clarusc_boot` (open the window, quit) passes on the System 6 SE,
-  where the startup program gets all of memory and the 48MB SIZE(-1) is
-  ignored. See
-  `docs/superpowers/specs/2026-09-27-se-memory-footprint-findings.md`.

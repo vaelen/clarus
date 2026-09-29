@@ -302,16 +302,12 @@ snow_extract_app() {
 }
 
 # snow_clarusc_system : for a script that COMPILES with ClarusC.APPL
-# (scripts/build-clarusc-mac.sh: a 48MB SIZE(-1) partition, ~14MB of live
-# heap per compile). Defaults SNOW_SYSTEM to 7 -- the 128MB Mac IIcx, where
-# ClarusC runs today -- and skips on the 4MB System 6 SE until the compiler
-# fits there (docs/superpowers/specs/2026-09-27-se-memory-footprint-
-# findings.md). CLARUS_SNOW_CLARUSC=1 boots the SE anyway.
+# (scripts/build-clarusc-mac.sh). Defaults SNOW_SYSTEM to 6 -- the 4MB
+# System 6 Macintosh SE, which ClarusC fits since SE memory program Wave 5
+# (docs/superpowers/specs/2026-09-30-se-wave5-close-design.md section 1).
+# The 128MB Mac IIcx stays available as SNOW_SYSTEM=7.
 snow_clarusc_system() {
-    SNOW_SYSTEM=${SNOW_SYSTEM:-7}
-    [ "$SNOW_SYSTEM" = 7 ] && return 0
-    [ "${CLARUS_SNOW_CLARUSC:-}" = 1 ] && return 0   # force a boot anyway
-    skip "ClarusC.APPL needs ~14MB of live heap per compile; the System 6 machine is a 4MB Macintosh SE (SNOW_SYSTEM=7 is the 128MB Mac IIcx)"
+    SNOW_SYSTEM=${SNOW_SYSTEM:-6}
 }
 
 # --- resource forks --------------------------------------------------

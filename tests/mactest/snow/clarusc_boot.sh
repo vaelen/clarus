@@ -8,7 +8,7 @@
 # SE (Linux emulator port, 2026-09-27): there the app is the boot blocks'
 # startup program with no MultiFinder, so its 48MB SIZE(-1) partition is
 # ignored and it gets the whole 4MB -- enough to open the window and quit
-# (measured PASS), though not for a compile (see snow_clarusc_system).
+# (measured PASS); since SE wave 5 compiles fit there too (snow_clarusc_system).
 # SNOW_SYSTEM=7 boots it on the 128MB Mac IIcx instead, where the 48MB
 # partition fits under System 7's Process Manager.
 . "$(dirname "$0")/../../lib.sh" || exit 2

@@ -1,11 +1,14 @@
 #!/bin/sh
 # timeout: 100m
 # SE memory program Wave 0 (and every wave close, umbrella §7): ClarusC.APPL
-# compiles examples/bookmarks.cla on the Snow Mac IIcx (System 7.1) and
-# logs, per compile phase, FreeMem/MaxBlock (`  mem:` lines) and, after
+# compiles examples/bookmarks.cla on Snow -- the SE (System 6.0.8) by
+# default since Wave 5, the Mac IIcx (System 7.1) under SNOW_SYSTEM=7 --
+# and logs, per compile phase, FreeMem/MaxBlock (`  mem:` lines) and, after
 # the compile, its stack high-water (`  stack:`). The numbers are
-# recorded in the SE program design doc §9; this script asserts only that
-# the probes ran and the log was not truncated at natLogCap.
+# recorded in the SE program design doc §9; this script asserts that the
+# probes ran and the log was not truncated at natLogCap, and on the SE
+# gates the lowest per-phase FreeMem against se_floor.txt (KB, its last
+# non-comment line).
 . "$(dirname "$0")/../../lib.sh" || exit 2
 . "$(dirname "$0")/../../lib_snow.sh" || die "helper lib failed to load"
 require_env CLARUS_SNOW_TESTS
@@ -52,4 +55,12 @@ grep -q '\] Finished$' "$WORK/out" && t_pass not_truncated \
 grep -vF 'warning: cannot read app icon bookmarks.pbm: could not open file; using default icon' "$WORK/out" > "$WORK/out.markers"
 snow_no_error_markers no_error_markers "$WORK/out.markers"
 grep -qF '##CLARUS-EXIT## 0' "$WORK/out" && t_pass clean_exit || t_fail clean_exit "no clean exit trailer"
+if [ "$SNOW_SYS" = 6 ]; then
+    # The first "free N KB" on each `  mem:` line.
+    min=$(awk '/^  mem: /{for(i=1;i<NF;i++)if($i=="free"){n=$(i+1)+0; if(m==""||n<m)m=n; break}} END{print m}' "$WORK/out")
+    floor=$(grep -v '^#' "$(dirname "$0")/se_floor.txt" | grep . | tail -1)
+    echo "memprobe: lowest free ${min:-none} KB (floor $floor)"
+    [ -n "$min" ] && [ "$min" -ge "$floor" ] && t_pass se_floor \
+        || t_fail se_floor "lowest free ${min:-none} KB < floor $floor KB"
+fi
 t_done
