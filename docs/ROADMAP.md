@@ -215,8 +215,8 @@ measured analysis:
   Wave 4 (lazy runtime library: read the CLIR with `readAt`, no
   whole-resource read) is next; the never-released 1879 KB CLIR
   resource is its target.
-- **Detour: opt-in log file and UI trace: done** (branch
-  `log-trace-optin`, 2026-09-29): production native apps write no
+- **Detour: opt-in log file and UI trace: merged** (branch
+  `log-trace-optin`, 2026-09-29, fast-forward to `96311612`): production native apps write no
   `out` file; `app.writeLog`/`flushLog`/`trace` opt in; `--capture`
   keeps the test protocol. See `docs/HISTORY.md`.
 

@@ -1,6 +1,6 @@
 # Opt-in log file and UI trace (spec, 2026-09-29)
 
-Status: **implemented** (branch `log-trace-optin`, 2026-09-29). A detour
+Status: **merged to main** (2026-09-29, `96311612`). A detour
 before SE Wave 4, raised by Andrew's BBS: a native Clarus app writes and
 `FlushVol`s its `out` file on every UI trace line, so a timer-driven app
 hits the disk every tick and wears out an SD card.
