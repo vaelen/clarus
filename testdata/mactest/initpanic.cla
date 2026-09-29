@@ -1,0 +1,19 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// initpanic.cla: tests/mactest/nolog.sh's capture-order fixture. A global
+// initializer panics (list index out of range) before any handler runs;
+// built WITH --capture, the panic must still reach `out` with the
+// ##CLARUS-EXIT## 3 trailer (natSetCapture runs before cg_init_globals).
+
+func boom(): int {
+    var xs: list of int
+    return xs[3]
+}
+
+var g: int = boom()
+
+on App.launch {
+    log("unreachable")
+    quit 0
+}

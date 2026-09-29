@@ -9,6 +9,12 @@
 # the assertion is exit 0 plus an empty capture (in particular, no
 # ##CLARUS-EXIT## trailer). Before production mode existed this boot
 # captured "##CLARUS-EXIT## 0 / ##CLARUS-LOG## / x" (35 bytes).
+#
+# Second subcase (initpanic): the opposite direction. A --capture build of
+# testdata/mactest/initpanic.cla, whose GLOBAL INITIALIZER panics before
+# any handler runs, must still write `out` with "##CLARUS-EXIT## 3" and
+# the panic text in the log -- natSetCapture has to run before
+# cg_init_globals, not after it.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
@@ -34,5 +40,17 @@ elif [ -s "$WORK/cap.raw" ]; then
     t_fail empty "capture not empty ($(wc -c < "$WORK/cap.raw") bytes): $(head -5 "$WORK/cap.raw")"
 else
     t_pass nolog
+fi
+
+emit68k --capture -o "$WORK/initpanic.bin" testdata/mactest/initpanic.cla \
+    > "$WORK/emit2.log" 2>&1 \
+    || die "clarusc emit68k initpanic: $(tail -10 "$WORK/emit2.log")"
+run_mac "$WORK/initpanic.bin" 180
+if [ "$MAC_EXIT" != 3 ]; then
+    t_fail initpanic "exit code $MAC_EXIT, want 3"
+elif ! grep -q 'runtime error' "$WORK/cap.log"; then
+    t_fail initpanic "panic text missing from the captured log: $(head -3 "$WORK/cap.log")"
+else
+    t_pass initpanic
 fi
 t_done

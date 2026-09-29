@@ -285,7 +285,8 @@ var natArgs: list of string(255)
 // truncated at startup, live alert/trace lines, the ##CLARUS-EXIT##/
 // ##CLARUS-LOG## trailer at quit. Set only by natSetCapture, which
 // cg68k.cla's startup JSRs when the program was built with
-// `emit68k --capture` (or --events). False (the zeroed default) is
+// `emit68k --capture` (or --events), before cg_init_globals -- so keep it
+// initializer-free (see natSetCapture). False (the zeroed default) is
 // production mode: natInit opens nothing, and natAlert/natLog/
 // nat_UiTestEmit write nothing.
 var natCapture: bool
@@ -504,8 +505,10 @@ func natInit() {
 }
 
 // natSetCapture turns on the test-capture protocol (natCapture). JSR'd by
-// cg68k.cla's startup, after cg_init_globals and before natInit, only in
-// a `--capture`/`--events` build.
+// cg68k.cla's startup, after the below-A5 zero loop and before
+// cg_init_globals (so a global initializer's log/panic is captured), only
+// in a `--capture`/`--events` build. natCapture must therefore never get
+// an initializer, or cg_init_globals would reset it.
 func natSetCapture() {
     natCapture = true
 }

@@ -3304,14 +3304,16 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     a68EmitTrap(0xA063, "_MaxApplZone")
     a68EmitTrap(0xA036, "_MoreMasters")
 
+    // Capture mode (cgCaptureMode): flip natCapture on after the zero
+    // loop and BEFORE cg_init_globals, so a global initializer that logs
+    // or panics already takes the capture path. cg_init_globals never
+    // stores natCapture's slot (it has no initializer), so it survives.
+    cgEmitStartupCallIfPresent("natSetCapture", cgCaptureMode)
+
     // Task 12: cg_init_globals runs BEFORE natInit -- see this function's
     // own doc comment above for why the Task 11 order (natInit first) is
     // no longer safe now that cg_init_globals has a real body.
     a68EmitBr(OpBsr, 0, initGlobalsLbl)
-
-    // Capture mode (cgCaptureMode): flip natCapture on after
-    // cg_init_globals (which would zero it) and before natInit reads it.
-    cgEmitStartupCallIfPresent("natSetCapture", cgCaptureMode)
 
     // natInit opens the `out` capture file -- same "by-name via JT,
     // comment if absent" contract as natQuit's own tail call below, so a

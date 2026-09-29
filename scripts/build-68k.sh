@@ -31,7 +31,7 @@ set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NAME=""
 case "$1" in
-*.cla) ;; # leave NAME empty, derived below; $1 stays in the arg stream
+*.cla|--*) ;; # leave NAME empty, derived below; $1 stays in the arg stream
 *) NAME="$1"; shift ;;
 esac
 FILES=()
