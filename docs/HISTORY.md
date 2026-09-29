@@ -7785,6 +7785,7 @@ rulings are in this entry.
 ## Opt-in log file and UI trace (2026-09-29, branch `log-trace-optin`)
 
 Merged to `main` 2026-09-29 (fast-forward to `96311612`).
+
 A detour before SE Wave 4, raised by Andrew's BBS: a native Clarus app
 wrote and `FlushVol`ed its `out` file on every UI trace line, so a
 timer-driven app hit the disk every tick and wore out an SD card. Three
