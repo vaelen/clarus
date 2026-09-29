@@ -520,7 +520,10 @@ The SE memory program (2026-09-27) resumed work on this target. See
   handle-typed clarusc global adds a release there. At Task 6, 2 more
   such globals fit and a third failed `function cgPackProgram exceeds
   the 32KB segment limit`; Task 8 removed 2 net, so about 4 fit now.
-  Fix: split `cgPackProgram` or trim globals.
+  Fix: split `cgPackProgram` or trim globals. (SE wave 5: the glue is
+  table-driven now -- 4 bytes a global instead of ~18, and ~8.5 KB
+  smaller per segment -- so the pressure is largely gone; re-measure
+  before acting on this.)
 - **The library-load fallback reruns the whole compile from source**
   (`driveCompileFork`) -- slow on the Mac, but only on a corrupt
   library. It logs only `diags[0]` before falling back.
@@ -695,23 +698,22 @@ The SE memory program (2026-09-27) resumed work on this target. See
 
 ### ABI / performance
 
-- **`cg_free_globals` is ~11 KB of glue duplicated into EVERY segment
-  of ClarusC.APPL** (language-runtime-cleanup Task 7 found the symptom;
-  measured 2026-09-06 on a `--listing` self-emit of `clarusc/macgui.cla`:
-  46 segments, 3667 instructions / 369 release `JSR`s / ~11 KB per
-  segment, ~500 KB of the 1.5 MB binary). The routine is backend-
-  synthesized (not an `irFunc`), so it has no jump-table entry and is
-  re-emitted per segment; it unrolls one `MOVE.L off(A5),D0; ...; JSR`
-  group per handle-typed global, so ANY new compiler global shrinks every
-  segment's 32 KB budget at once. That is what pushed `fpIntrCall3` over
-  the ceiling (Task 7 split it into `fpIntrCall3`/`fpIntrCall3b` to
-  recover ~10 KB) and the next compiler feature will hit the same wall.
-  Two levers, either of which recovers a third of every segment: (a) a
-  table-driven loop -- a constant-pool table of (A5 offset, kind) pairs
-  and one release loop, ~200 bytes per segment instead of ~11 KB; (b) a
-  jump-table slot so the routine lives in segment 1 only. Only
-  ClarusC.APPL is anywhere near the ceiling (a user program has a
-  handful of globals), which is why this sits in the on-hold section.
+- **RESOLVED (SE wave 5): `cg_free_globals` was ~11 KB of glue
+  duplicated into EVERY segment of ClarusC.APPL.** It unrolled one
+  release per handle-typed global (10,972 bytes x 49 segments at
+  f5a38fc1). Lever (a) landed: each segment's copy is now one loop over
+  a DC.W (A5 offset, kind) table plus one release body per distinct kind
+  (`cgEmitFreeGlobalsStub`), 2,404 bytes for ClarusC's 377 table entries
+  and 9 kinds. ClarusC.APPL's CODE total went 1,607,548 -> 1,141,980
+  bytes (50 -> 36 CODE resources); `tests/bake/clarusc_codesize.sh`
+  holds it under 1,193,734. What is left, if it ever matters: the 9 kind
+  bodies are 892 bytes a segment, 5 of them inline list walks that
+  differ only in the per-element release (a shared walk taking the
+  element routine would save ~380 bytes x 35 segments); lever (b), a
+  jump-table slot, would remove the rest. The duplicated record walks
+  and arithmetic helpers were measured at the same time and are small
+  (432 + 352 bytes a segment for ClarusC, ~38 KB in all), so they stay
+  duplicated.
 
 - **param-abi RSS increase (+4-9%) unexplained** — profile before
   further Layer-2/3 memory work; suspects are the call-site copy temps

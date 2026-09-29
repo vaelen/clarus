@@ -1,0 +1,15 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// none.cla (SE wave 5, tests/cg68k/freeglobals.sh): a program with no
+// handle-typed globals of its own -- only scalars and a bounded string.
+// cg_free_globals releases just what the always-spliced runtime owns.
+
+var count: int = 3
+var name: string(31) = "none"
+
+on App.launch {
+    count = count + name.length
+    log("none " + string(count))
+    quit 0
+}
