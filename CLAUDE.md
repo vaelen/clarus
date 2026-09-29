@@ -243,6 +243,9 @@ Tiered test gates:
     `tests/mactest/snow/se_floor.txt` (KB; later waves may only raise it),
     and `clarusc_deep` compiles a 20000-deep parenthesized expression and
     requires the `source too deeply nested` diagnostic plus a clean exit.
+    The floor is set on Snow's clean System 6 image; Andrew's real SE
+    has more INITs/cdevs and so less free memory, so passing it does not
+    guarantee the real machine fits.
     `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (on the
     SE) is the standing rule after any change to
     `clarusc/bake.cla` or `clarusc/macgui.cla` — the only on-target proof

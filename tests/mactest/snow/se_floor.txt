@@ -2,5 +2,7 @@
 # FreeMem while compiling examples/bookmarks.cla on the Snow SE
 # (System 6.0.8, single-app). Set to floor(0.9 x measured); later waves
 # may only raise it. One comment line per change.
+# Caveat: measured on Snow's clean System 6 image; a real SE with more
+# INITs/cdevs has less free memory.
 # 2026-09-30 placeholder: set at Wave 5 close.
 0

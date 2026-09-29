@@ -7,7 +7,10 @@
 # the app must then quit normally (`##CLARUS-EXIT## 0`) -- never a stack
 # overflow crash or a hang (snow_run's ceiling plus the trailer check).
 # 20000 levels exhausts even a ~20-byte-per-level parse chain in 320 KB of
-# stack; if the guard does not fire, raise DEPTH.
+# stack. If the guard does not fire, raise DEPTH -- but also check for
+# the other failure modes: the lexer running out of memory on the long
+# token stream first, or the app's out log filling (natLogCap) before the
+# diagnostic is written.
 #
 # Needs Wave 5 Task 3's guard (the diagnostic) and Task 1's disk mount
 # (the SE compile reads deep.cla from the Clarus volume), so it passes
