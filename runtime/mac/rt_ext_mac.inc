@@ -667,6 +667,11 @@ void rt_ext_UiTestEmit(void *s) {
 void rt_ext_UiTestEmit(void *s) { (void)s; }
 #endif
 
+/* rt_ext_UiTraceOn: uiscript.cla's `external func UiTraceOn(): bool` --
+ * always on here; rt_ext_UiTestEmit above already decides (RT_MAC_TEST)
+ * whether a built trace line goes anywhere. */
+int32_t rt_ext_UiTraceOn(void) { return 1; }
+
 /* rt_ui_test_script's weak default: moved here from rt_ui.c, which is
  * never linked (build-mac.sh drops it from the CMake source list
  * entirely) -- without this, a build with no `--events` override (a

@@ -597,6 +597,18 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   the first arg is a `.cla` file). `--events FILE` pours a scripted-event
   file into the native constant pool for deterministic UI driving, the
   native counterpart to `build-mac.sh`'s own `--events` below.
+- **Capture vs production (log-trace-optin phase, 2026-09-29).**
+  `clarusc emit68k --capture` selects the test capture protocol: the
+  `out` file LaunchAPPL/Snow read back, with live alert/UI-trace lines
+  and the `##CLARUS-EXIT##`/`##CLARUS-LOG##` trailer at quit. `--events`
+  implies it. A build without either is PRODUCTION: it creates no `out`
+  file and builds no trace lines (`tests/mactest/nolog.sh` pins that).
+  So every test that BOOTS a native binary passes `--capture` or
+  `--events`; compile-only tests (cg68k goldens, bake twins, size) pass
+  neither. `scripts/build-68k.sh` takes `--capture` but never implies it
+  (real apps are built with it); `build-clarusc-mac.sh` adds it only
+  with `--events`. Both scripts use the snapshot compiler, so they need
+  a snapshot that knows the flag.
 - Build the Mac-resident compiler itself (`ClarusC.APPL` — a real Mac app
   that runs `clarusc emit68k` ON the Mac, compiling OTHER `.cla` programs
   with no host involved): `scripts/build-clarusc-mac.sh [--events FILE]`

@@ -11,7 +11,7 @@ SNOW_SYSTEM=6
 export SNOW_SYSTEM
 
 BIN=$ROOT/build-68k/SeBudget/SeBudget.bin
-"$ROOT/scripts/build-68k.sh" testdata/snow/sebudget.cla > "$WORK/build.log" 2>&1 \
+"$ROOT/scripts/build-68k.sh" testdata/snow/sebudget.cla --capture > "$WORK/build.log" 2>&1 \
     || die "build-68k.sh testdata/snow/sebudget.cla: $(tail -5 "$WORK/build.log" | tr '\n' ' ')"
 [ -f "$BIN" ] || die "$BIN not built"
 

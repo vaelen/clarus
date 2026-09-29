@@ -347,7 +347,7 @@ on App.startCLI(args: list of string) {
             i = i + 1
             if i >= args.count {
                 if emitMode68k {
-                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
+                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
                 } else if bakeIrMode {
                     log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
                 } else {
@@ -361,7 +361,7 @@ on App.startCLI(args: list of string) {
             i = i + 1
             if i >= args.count {
                 if emitMode68k {
-                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
+                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
                 } else if bakeIrMode {
                     log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
                 } else if emitMode {
@@ -472,6 +472,12 @@ on App.startCLI(args: list of string) {
             }
             eventsPath = args[i]
             haveEvents = true
+            cgCaptureMode = true
+        } else if emitMode68k and args[i] == "--capture" {
+            // Test-capture protocol (runtime/clarus/native.cla's natCapture):
+            // the `out` file with its ##CLARUS-EXIT## trailer. --events
+            // implies it; without either, the build is production (no `out`).
+            cgCaptureMode = true
         } else if emitMode68k and args[i] == "--bake" {
             // Task 5 (mac-resident-clarusc): repeatable -- one 'CLFS'
             // resource per flag, baked into the emitted .bin's resource
@@ -550,7 +556,7 @@ on App.startCLI(args: list of string) {
         quit 2
     }
     if emitMode68k and not haveOutPath {
-        log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
+        log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
         quit 2
     }
     if bakeIrMode and not haveOutPath {

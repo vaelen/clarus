@@ -1,6 +1,6 @@
 #!/bin/bash
-# build-68k.sh NAME file.cla... [--events FILE]
-# build-68k.sh file.cla... [--events FILE]   (NAME derived, Task 13 parity
+# build-68k.sh NAME file.cla... [--events FILE] [--capture]
+# build-68k.sh file.cla... [--events FILE] [--capture]   (NAME derived, Task 13 parity
 #                                              with build-mac.sh's own Task 6)
 # Emits a native 68k .bin directly via `clarusc emit68k` -- no C, no cmake,
 # no Retro68. Bootstraps clarusc from the committed snapshot exactly like
@@ -22,6 +22,11 @@
 # doc comment) -- the native-boot counterpart to build-mac.sh's own
 # --events (which round-trips the file through a generated C string
 # literal for the cprint lane instead).
+#
+# --capture: pass-through to `clarusc emit68k --capture`, the test-capture
+# protocol (an `out` file with the ##CLARUS-EXIT## trailer). NOT implied
+# here: without it (and without --events, which implies it inside
+# clarusc) the build is a production app that writes no `out` file.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NAME=""
@@ -31,9 +36,11 @@ case "$1" in
 esac
 FILES=()
 EVENTS=""
+CAPTURE_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --events) shift; EVENTS="$1" ;;
+        --capture) CAPTURE_ARGS=(--capture) ;;
         *) FILES+=("$1") ;;
     esac
     shift
@@ -67,5 +74,5 @@ EVENTS_ARGS=()
 if [ -n "$EVENTS" ]; then
     EVENTS_ARGS=(--events "$EVENTS")
 fi
-"$CLARUSC" emit68k --rtdir "$ROOT/runtime/clarus/" -o "$OUT/$NAME.bin" "${EVENTS_ARGS[@]}" "${FILES[@]}"
+"$CLARUSC" emit68k --rtdir "$ROOT/runtime/clarus/" -o "$OUT/$NAME.bin" "${EVENTS_ARGS[@]}" "${CAPTURE_ARGS[@]}" "${FILES[@]}"
 echo "built: $OUT/$NAME.bin"

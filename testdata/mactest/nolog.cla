@@ -1,0 +1,11 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// nolog.cla: tests/mactest/nolog.sh's fixture. Built WITHOUT --capture
+// (a production native build), so `log` must write nothing: no `out`
+// file, no ##CLARUS-EXIT## trailer.
+
+on App.launch {
+    log("x")
+    quit 0
+}

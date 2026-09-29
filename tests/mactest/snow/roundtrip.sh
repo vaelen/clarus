@@ -11,7 +11,7 @@
 require_env CLARUS_SNOW_TESTS
 
 BIN=$ROOT/build-68k/SnowRoundTrip/SnowRoundTrip.bin
-"$ROOT/scripts/build-68k.sh" testdata/snow/roundtrip.cla > "$WORK/build.log" 2>&1 \
+"$ROOT/scripts/build-68k.sh" testdata/snow/roundtrip.cla --capture > "$WORK/build.log" 2>&1 \
     || die "build-68k.sh testdata/snow/roundtrip.cla: $(tail -5 "$WORK/build.log" | tr '\n' ' ')"
 [ -f "$BIN" ] || die "$BIN not built"
 

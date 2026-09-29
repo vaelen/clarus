@@ -30,7 +30,7 @@ for name in smoke strcontainers arr_whole_assign; do
     # --- native image ---------------------------------------------------
     run=$WORK/nat_$name
     mkdir -p "$run" || die "mkdir $run"
-    if ! emit68k -o "$run/native.bin" --listing "$fixture" > "$WORK/emit.log" 2>&1; then
+    if ! emit68k --capture -o "$run/native.bin" --listing "$fixture" > "$WORK/emit.log" 2>&1; then
         t_fail "$name" "clarusc emit68k --listing $fixture failed: $(tail -10 "$WORK/emit.log")"
         continue
     fi

@@ -40,6 +40,14 @@ external func UiStrAddr(s: string): ptr
 // (mirrors rt_mac.c's own pattern -- this task's own brief).
 external func UiTestEmit(s: ptr)
 
+// UiTraceOn: whether the rtUiTrace* builders below build their `T ...`
+// lines at all -- checked first, so a production build allocates no
+// trace `text` per event or tick. Clause-less like UiTestEmit: the
+// native lane resolves nat_UiTraceOn (native.cla, capture mode), the C
+// lane rt_ext_UiTraceOn (always on; the Retro68 lane keeps its own
+// RT_MAC_TEST capture).
+external func UiTraceOn(): bool
+
 // UiCurrentA5 (plan's own reverse-waist glue-extern table): the A5 world
 // base, needed by rtUiTestSnap (below) to walk qd.screenBits without a
 // hand-derived offset. cprint shim -> `(void *)SetCurrentA5()`-equivalent
@@ -401,6 +409,9 @@ func rtUiTraceOpen(winIdx: int, inst: ptr) {
     id = rtUiTraceNextId(winIdx)
     w = RtUiWinst(inst)
     w.traceId = id
+    if not UiTraceOn() {
+        return
+    }
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T OPEN "))
     rtUiTextAppendStrSafe(t, uidWinName(winIdx))
@@ -411,6 +422,10 @@ func rtUiTraceOpen(winIdx: int, inst: ptr) {
 
 func rtUiTraceClose(winIdx: int, inst: ptr) {
     var t: ptr
+
+    if not UiTraceOn() {
+        return
+    }
 
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T CLOSE "))
@@ -425,6 +440,10 @@ func rtUiTraceClose(winIdx: int, inst: ptr) {
 func rtUiTraceFire1(namePtr: ptr, event: string) {
     var t: ptr
 
+    if not UiTraceOn() {
+        return
+    }
+
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T FIRE "))
     rtUiTextAppendStrSafe(t, namePtr)
@@ -435,6 +454,10 @@ func rtUiTraceFire1(namePtr: ptr, event: string) {
 
 func rtUiTraceFire2(namePtr: ptr, wnamePtr: ptr, event: string) {
     var t: ptr
+
+    if not UiTraceOn() {
+        return
+    }
 
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T FIRE "))
@@ -452,6 +475,10 @@ func rtUiTraceFire2(namePtr: ptr, wnamePtr: ptr, event: string) {
 func rtUiTraceMenuSelectFor(k: int) {
     var t: ptr
 
+    if not UiTraceOn() {
+        return
+    }
+
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T FIRE "))
     rtUiTextAppendStrSafe(t, uidMenuHandlerMenuName(k))
@@ -464,6 +491,10 @@ func rtUiTraceMenuSelectFor(k: int) {
 // rtUiTraceEveryFire (rt_ui.c:426-431): `T FIRE every.<n>`.
 func rtUiTraceEveryFire(n: int) {
     var t: ptr
+
+    if not UiTraceOn() {
+        return
+    }
 
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T FIRE every."))
@@ -489,7 +520,7 @@ func rtUiTraceDimCheck(k: int, enable: bool) {
         return
     }
     prev = peekb(rtUiDimPrevArr + k)
-    if not rtUiDimFirst and prev != enableInt {
+    if not rtUiDimFirst and prev != enableInt and UiTraceOn() {
         t = rtTextNew()
         rtTextAppendStr(t, UiStrAddr("T DIM "))
         rtUiTextAppendStrSafe(t, uidMenuHandlerMenuName(k))
@@ -514,7 +545,7 @@ func rtUiTraceStdEditDim(enable: bool) {
     } else {
         enableInt = 0
     }
-    if rtUiDimFirst or rtUiStdEditDimPrev == enable {
+    if rtUiDimFirst or rtUiStdEditDimPrev == enable or not UiTraceOn() {
         rtUiStdEditDimPrev = enable
         return
     }
@@ -566,7 +597,7 @@ func rtUiTraceFrontCheck() {
         return
     }
     rtUiTraceLastFront = cur
-    if cur != ptr(0) {
+    if cur != ptr(0) and UiTraceOn() {
         t = rtTextNew()
         rtTextAppendStr(t, UiStrAddr("T FRONT "))
         rtUiTextAppendStrSafe(t, uidWinName(RtUiWinst(cur).winIdx))
@@ -580,6 +611,10 @@ func rtUiTraceFrontCheck() {
 // <about>`.
 func rtUiTraceAbout() {
     var t: ptr
+
+    if not UiTraceOn() {
+        return
+    }
 
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T ABOUT "))
@@ -624,6 +659,10 @@ func rtUiPropNamePtr(prop: int): ptr {
 func rtUiTraceSetStr(namePtr: ptr, wnamePtr: ptr, prop: int, s: ptr) {
     var t: ptr
 
+    if not UiTraceOn() {
+        return
+    }
+
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T SET "))
     rtUiTextAppendStrSafe(t, namePtr)
@@ -639,6 +678,10 @@ func rtUiTraceSetStr(namePtr: ptr, wnamePtr: ptr, prop: int, s: ptr) {
 func rtUiTraceSetBool(namePtr: ptr, wnamePtr: ptr, prop: int, v: bool) {
     var t: ptr
     var vi: int
+
+    if not UiTraceOn() {
+        return
+    }
 
     if v {
         vi = 1
@@ -660,6 +703,10 @@ func rtUiTraceSetBool(namePtr: ptr, wnamePtr: ptr, prop: int, v: bool) {
 func rtUiTraceSetInt(namePtr: ptr, wnamePtr: ptr, prop: int, v: int) {
     var t: ptr
 
+    if not UiTraceOn() {
+        return
+    }
+
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T SET "))
     rtUiTextAppendStrSafe(t, namePtr)
@@ -679,6 +726,10 @@ func rtUiTraceSetInt(namePtr: ptr, wnamePtr: ptr, prop: int, v: int) {
 func rtUiTraceInvalid(namePtr: ptr, wnamePtr: ptr) {
     var t: ptr
 
+    if not UiTraceOn() {
+        return
+    }
+
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T FIRE "))
     rtUiTextAppendStrSafe(t, namePtr)
@@ -692,6 +743,10 @@ func rtUiTraceInvalid(namePtr: ptr, wnamePtr: ptr) {
 // already copied out of the ring by the caller).
 func rtUiTraceAskPath(verb: string, pathPStr: ptr) {
     var t: ptr
+
+    if not UiTraceOn() {
+        return
+    }
 
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T "))
@@ -708,6 +763,10 @@ func rtUiTraceAskPath(verb: string, pathPStr: ptr) {
 func rtUiTraceOpenDoc(pathPtr: ptr, pathLen: int) {
     var t: ptr
     var pathText: ptr
+
+    if not UiTraceOn() {
+        return
+    }
 
     t = rtTextNew()
     rtTextAppendStr(t, UiStrAddr("T OPENDOC "))

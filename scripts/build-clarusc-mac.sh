@@ -59,7 +59,10 @@ for f in runtime/clarus/*.cla toolbox/*.cla; do BAKES="$BAKES --bake $f"; done
 
 EVENTS_ARG=""
 if [ -n "$EVENTS" ]; then
-    EVENTS_ARG="--events $EVENTS"
+    # --events implies --capture inside clarusc; spelled out so the
+    # capture-mode build (the `out` test protocol) is visible here. A plain
+    # build is production: ClarusC.APPL writes no `out` file.
+    EVENTS_ARG="--events $EVENTS --capture"
 fi
 
 # 2b. by default, generate the 68k-lane CLIR runtime bake with the SAME

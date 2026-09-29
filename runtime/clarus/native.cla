@@ -281,6 +281,15 @@ var natOpened: bool
 var natDone: bool
 var natArgs: list of string(255)
 
+// natCapture selects the test-capture protocol: `out` created and
+// truncated at startup, live alert/trace lines, the ##CLARUS-EXIT##/
+// ##CLARUS-LOG## trailer at quit. Set only by natSetCapture, which
+// cg68k.cla's startup JSRs when the program was built with
+// `emit68k --capture` (or --events). False (the zeroed default) is
+// production mode: natInit opens nothing, and natAlert/natLog/
+// nat_UiTestEmit write nothing.
+var natCapture: bool
+
 // natPanicBuf/natEmptyStr: nat_CorePanic's own preallocated, natPb-
 // adjacent scratch (NewPtrCLEAR'd once in natInit, never touched again
 // until a panic) -- built so nat_CorePanic's own beep+alert path (below)
@@ -399,11 +408,22 @@ func natFlush() {
 // registration (cg68k.cla's startup/IQuit/nat_CorePanic wiring calls
 // natQuit's trailer unconditionally on every exit path instead; see the
 // file header). Idempotent (natOpened guards every entry point).
+// Capture mode only (natCapture): a production build opens no file and
+// allocates only nat_CorePanic's scratch.
 func natInit() {
     if natOpened {
         return
     }
     natOpened = true
+
+    if not natCapture {
+        // Production: no `out` file. nat_CorePanic still needs its
+        // allocation-free alert scratch.
+        natRef = -1
+        natPanicBuf = NatNewPtr(256)
+        natEmptyStr = NatNewPtr(1)
+        return
+    }
 
     natPb = NatNewPtr(natPbSize)
     natBuf = NatNewPtr(256)
@@ -483,11 +503,27 @@ func natInit() {
     NatSetEOF(natPb)
 }
 
+// natSetCapture turns on the test-capture protocol (natCapture). JSR'd by
+// cg68k.cla's startup, after cg_init_globals and before natInit, only in
+// a `--capture`/`--events` build.
+func natSetCapture() {
+    natCapture = true
+}
+
+// nat_UiTraceOn: uiscript.cla's `external func UiTraceOn(): bool` --
+// whether the rtUiTrace* builders should build their `T ...` lines at all.
+func nat_UiTraceOn(): bool {
+    return natCapture
+}
+
 // natAlert appends s live: CR->LF + trailing LF, written immediately and
 // flushed -- byte-identical to rt_mac.c's rt_alert (RT_MAC_TEST arm).
 func natAlert(s: ptr) {
     var n: int
 
+    if not natCapture {
+        return
+    }
     natInit()
     n = natCrLf(s, natBuf)
     natWriteBytes(natBuf, n)
@@ -502,6 +538,9 @@ func natLog(s: ptr) {
     var n: int
     var i: int
 
+    if not natCapture {
+        return
+    }
     natInit()
     n = natCrLf(s, natBuf)
     i = 0
@@ -516,6 +555,8 @@ func natLog(s: ptr) {
 // ##CLARUS-LOG##\n" followed by the buffered log bytes -- then closes
 // and flushes and calls ExitToShell. Byte-identical to rt_mac.c's
 // rt_test_atexit, guarded (natDone) against running twice the same way.
+// Production mode (not natCapture): no trailer, no close -- straight to
+// ExitToShell.
 func natQuit(code: int) {
     var n: int
 
@@ -523,6 +564,9 @@ func natQuit(code: int) {
         return
     }
     natDone = true
+    if not natCapture {
+        NatExitToShell()
+    }
     natInit()
 
     // "##CLARUS-EXIT## " (16 bytes)
@@ -1311,6 +1355,9 @@ var natUiEmitBuf: ptr = ptr(0)
 func nat_UiTestEmit(s: ptr) {
     var n: int
 
+    if not natCapture {
+        return
+    }
     natInit()
     if natUiEmitBuf == ptr(0) {
         natUiEmitBuf = NatNewPtr(512)

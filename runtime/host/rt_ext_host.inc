@@ -524,4 +524,8 @@ int32_t rt_ext_DateToSeconds(void *d) {
     return (int32_t)secs;
 }
 
+/* rt_ext_UiTraceOn: uiscript.cla's `external func UiTraceOn(): bool`,
+ * always on (the host has no UI lane; kept in step with the mac lane). */
+int32_t rt_ext_UiTraceOn(void) { return 1; }
+
 #endif /* CLARUS_RT_EXT_HOST_INC */

@@ -72,7 +72,7 @@ else
 fi
 HOSTNODE=$(sed -n 's/^serving node=\([0-9]*\).*/\1/p' "$WORK/srv.out")
 
-emit68k -o "$WORK/atalkclock.bin" examples/atalkclock.cla testdata/atalk/clockdrive.cla \
+emit68k --capture -o "$WORK/atalkclock.bin" examples/atalkclock.cla testdata/atalk/clockdrive.cla \
     > "$WORK/emit.log" 2>&1 \
     || die "clarusc emit68k atalkclock: $(tail -10 "$WORK/emit.log")"
 

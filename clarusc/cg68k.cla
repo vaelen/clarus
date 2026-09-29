@@ -550,6 +550,13 @@ var cgUiEventsLabel: int
 // trailing NUL either way.
 var cgEventsBytes: text
 
+// cgCaptureMode: `emit68k --capture` (implied by --events; main.cla sets
+// it). When set, cgEmitStartup JSRs native.cla's natSetCapture before
+// natInit, selecting today's `out` test-capture protocol. Unset (every
+// production build, and everything ClarusC.APPL compiles), the startup
+// never references it and natCapture keeps its zero-initialized false.
+var cgCaptureMode: bool
+
 // cgAppRawName/cgAppIconPath (Task 13, native-5e resource parity) --
 // main.cla sets both before calling cg68Program, resolved the same way
 // `clarusc appinfo`'s own name/icon fallback logic already does (name
@@ -3301,6 +3308,10 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     // own doc comment above for why the Task 11 order (natInit first) is
     // no longer safe now that cg_init_globals has a real body.
     a68EmitBr(OpBsr, 0, initGlobalsLbl)
+
+    // Capture mode (cgCaptureMode): flip natCapture on after
+    // cg_init_globals (which would zero it) and before natInit reads it.
+    cgEmitStartupCallIfPresent("natSetCapture", cgCaptureMode)
 
     // natInit opens the `out` capture file -- same "by-name via JT,
     // comment if absent" contract as natQuit's own tail call below, so a

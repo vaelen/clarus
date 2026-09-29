@@ -24,7 +24,7 @@ require_env CLARUS_MAC_TESTS
 # nobody else ever registering a ClarusSelfTest.
 sed "s/ClarusSelfTest/ClarusSelf$$/g" testdata/atalk/selfserve.cla > "$WORK/selfserve.cla" \
     || die "could not stamp a per-run NBP type into the fixture"
-emit68k -o "$WORK/selfserve.bin" "$WORK/selfserve.cla" \
+emit68k --capture -o "$WORK/selfserve.bin" "$WORK/selfserve.cla" \
     > "$WORK/emit.log" 2>&1 \
     || die "clarusc emit68k selfserve: $(tail -10 "$WORK/emit.log")"
 

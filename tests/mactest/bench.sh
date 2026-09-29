@@ -17,7 +17,7 @@ require_env CLARUS_BENCH68K
 require_env CLARUS_MAC_TESTS
 
 # --- parse/lex benchmark (clarusc's own lexer, no ast/parse) -----------
-emit68k -o "$WORK/parsebench.bin" \
+emit68k --capture -o "$WORK/parsebench.bin" \
     clarusc/lib.cla clarusc/tok.cla clarusc/lex.cla \
     toolbox/events.cla testdata/bench/parsebench.cla > "$WORK/emit.log" 2>&1 \
     || die "clarusc emit68k parsebench: $(tail -10 "$WORK/emit.log")"
@@ -32,7 +32,7 @@ else
 fi
 
 # --- string-cost calibration benchmark --------------------------------
-emit68k -o "$WORK/strbench.bin" \
+emit68k --capture -o "$WORK/strbench.bin" \
     toolbox/events.cla testdata/bench/strbench.cla > "$WORK/emit.log" 2>&1 \
     || die "clarusc emit68k strbench: $(tail -10 "$WORK/emit.log")"
 

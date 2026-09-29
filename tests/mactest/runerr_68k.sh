@@ -17,7 +17,7 @@ for base in oob listindex divzero modzero; do
     fixture=testdata/runerr/$base.cla
     want=$(cat "testdata/runerr/$base.err") || die "reading testdata/runerr/$base.err"
 
-    emit68k -o "$WORK/err$base.bin" "$fixture" > "$WORK/emit.log" 2>&1 \
+    emit68k --capture -o "$WORK/err$base.bin" "$fixture" > "$WORK/emit.log" 2>&1 \
         || die "clarusc emit68k $fixture: $(tail -10 "$WORK/emit.log")"
     run_mac "$WORK/err$base.bin" 180
 
