@@ -234,17 +234,20 @@ Tiered test gates:
     once its event loop runs), on System 7 via `Startup Items`; data
     files go on the scratch `Clarus` volume. Done-detection is the
     guest's own `##CLARUS-EXIT##` trailer, probed in the live host image.
-    **ClarusC.APPL does not fit the 4 MB SE yet** (that is the SE-memory
-    program's whole goal — before SE wave 4 it died `out of memory` at
-    "Loading Baked Runtime"; after it, its IIcx low point is 2443 KB used
-    against the SE's ~2221 KB target, not yet tried on the SE), so
-    `snow/clarusc_bake`, `macresident` and
-    `macresident_failed_compile` default to the Mac IIcx
-    (`snow_clarusc_system`: they SKIP only under `SNOW_SYSTEM=6`, unless
-    `CLARUS_SNOW_CLARUSC=1`); `snow/clarusc_boot` defaults to the SE.
-    `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (~2 min
-    on the IIcx since SE wave 4's lazy library; ~9–18 min before) is
-    the standing rule after any change to
+    **ClarusC.APPL fits the 4 MB SE since SE wave 5**, so the ClarusC
+    scripts (`snow/clarusc_bake`, `clarusc_memprobe`, `clarusc_deep`,
+    `macresident`, `macresident_failed_compile`) default to the SE
+    (`snow_clarusc_system`); `SNOW_SYSTEM=7` runs them on the Mac IIcx.
+    `snow/clarusc_boot` defaults to the SE too. On the SE,
+    `clarusc_memprobe` gates ClarusC's lowest per-phase FreeMem against
+    `tests/mactest/snow/se_floor.txt` (KB; later waves may only raise it),
+    and `clarusc_deep` compiles a 20000-deep parenthesized expression and
+    requires the `source too deeply nested` diagnostic plus a clean exit.
+    The floor is set on Snow's clean System 6 image; Andrew's real SE
+    has more INITs/cdevs and so less free memory, so passing it does not
+    guarantee the real machine fits.
+    `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (on the
+    SE) is the standing rule after any change to
     `clarusc/bake.cla` or `clarusc/macgui.cla` — the only on-target proof
     `ClarusC.APPL`'s default bake path works, and neither T1 nor T2's
     host stages boot it. `snow/adsp_listener` (System 7 IIcx listener,

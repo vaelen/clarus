@@ -108,9 +108,10 @@ fi
 #    for the same note. NOTE (Linux emulator port, 2026-09-27): the Snow
 #    System 7 machine (snow/system7.snoww) is again a 32-bit-clean
 #    rominator Mac IIcx with 128MB, which this partition fits; the System 6
-#    machine is a 4MB SE, which it does not, so the compiling
-#    tests/mactest/snow/ ClarusC scripts default to System 7
-#    (snow_clarusc_system).
+#    machine is a 4MB SE, which it does not -- but there the app runs as
+#    the startup program and gets all of memory, which ClarusC fits since
+#    SE wave 5, so the compiling tests/mactest/snow/ ClarusC scripts
+#    default to the SE (snow_clarusc_system).
 # --testapi (trace-noise phase, clir-load-perf): macgui.cla itself never
 # calls a UiTest* verb, so this is a no-op on the emitted binary (proven
 # byte-identical against a no-flag build of unmodified macgui.cla) --
