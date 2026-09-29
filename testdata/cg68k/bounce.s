@@ -1,6 +1,6 @@
 LBL_250:
         ; startup (JT slot 0)
-        ; globals (below A5, 7392 bytes total):
+        ; globals (below A5, 7394 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiClaimedMask : -12(A5)  size 4  type int
@@ -155,19 +155,20 @@ LBL_250:
         ;   natOpened : -7090(A5)  size 1  type bool
         ;   natDone : -7092(A5)  size 1  type bool
         ;   natArgs : -7096(A5)  size 4  type list
-        ;   natPanicBuf : -7100(A5)  size 4  type ptr
-        ;   natEmptyStr : -7104(A5)  size 4  type ptr
-        ;   natErrCode : -7108(A5)  size 4  type int
-        ;   natErrMsg : -7364(A5)  size 256  type str
-        ;   natFilePb : -7368(A5)  size 4  type ptr
-        ;   natFileReady : -7370(A5)  size 1  type bool
-        ;   natUiEmitBuf : -7374(A5)  size 4  type ptr
-        ;   natQdInited : -7376(A5)  size 1  type bool
-        ;   natQdGlobals : -7380(A5)  size 4  type ptr
-        ;   rtFh68kLastErr : -7384(A5)  size 4  type int
-        ;   rtFh68kState : -7388(A5)  size 4  type ptr
-        LEA -7392(A5),A0
-        MOVE.W #3695,D0
+        ;   natCapture : -7098(A5)  size 1  type bool
+        ;   natPanicBuf : -7102(A5)  size 4  type ptr
+        ;   natEmptyStr : -7106(A5)  size 4  type ptr
+        ;   natErrCode : -7110(A5)  size 4  type int
+        ;   natErrMsg : -7366(A5)  size 256  type str
+        ;   natFilePb : -7370(A5)  size 4  type ptr
+        ;   natFileReady : -7372(A5)  size 1  type bool
+        ;   natUiEmitBuf : -7376(A5)  size 4  type ptr
+        ;   natQdInited : -7378(A5)  size 1  type bool
+        ;   natQdGlobals : -7382(A5)  size 4  type ptr
+        ;   rtFh68kLastErr : -7386(A5)  size 4  type int
+        ;   rtFh68kState : -7390(A5)  size 4  type ptr
+        LEA -7394(A5),A0
+        MOVE.W #3696,D0
 LBL_252:
         CLR.W (A0)+
         DBRA D0,LBL_252
@@ -180,12 +181,12 @@ LBL_252:
         JSR 3258(A5)
         ; UI startup: rtUiStartup / [App.launch] / rtUiLaunch / rtUiRun
         BSR.W LBL_200
-        JSR 3402(A5)
+        JSR 3466(A5)
         JSR 1858(A5)
         JSR 1850(A5)
         BSR.W LBL_249
         CLR.L -(A7)
-        JSR 3282(A5)
+        JSR 3298(A5)
         RTS
 LBL_251:
         ; cg_init_globals
@@ -253,7 +254,7 @@ LBL_0:
         MOVE.L D0,-(A7)
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3298(A5)
+        JSR 3314(A5)
         ADDQ.L #8,A7
 LBL_253:
         UNLK A6
@@ -264,7 +265,7 @@ LBL_1:
         LINK A6,#-2100
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3290(A5)
+        JSR 3306(A5)
         ADDQ.L #4,A7
 LBL_254:
         UNLK A6
@@ -5998,7 +5999,7 @@ LBL_167:
         MOVE.L D0,-(A7)
         MOVE.L #1903520116,D0
         MOVE.L D0,-(A7)
-        LEA 3626(A5),A0
+        LEA 3642(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -6016,7 +6017,7 @@ LBL_167:
         MOVE.L D0,-(A7)
         MOVE.L #1868656752,D0
         MOVE.L D0,-(A7)
-        LEA 3634(A5),A0
+        LEA 3650(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -6030,7 +6031,7 @@ LBL_167:
         EXT.L D0
         MOVE.L D0,-4(A6)
 LBL_539:
-        JSR 3418(A5)
+        JSR 3634(A5)
 LBL_538:
         UNLK A6
         RTS
@@ -7022,7 +7023,7 @@ LBL_579:
         MOVE.L D0,-24(A6)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3458(A5)
+        JSR 3442(A5)
         ADDQ.L #4,A7
         MOVE.L -24(A6),D1
         MOVEQ #0,D0
@@ -7945,7 +7946,7 @@ LBL_621:
 LBL_620:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 3386(A5)
+        JSR 3426(A5)
         ADDQ.L #4,A7
 LBL_618:
         UNLK A6
@@ -9826,7 +9827,7 @@ LBL_200:
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
         MOVE.L D0,-8(A6)
-        JSR 3450(A5)
+        JSR 3434(A5)
         MOVE.L #65535,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
@@ -11621,7 +11622,7 @@ LBL_804:
         MOVE.L D0,-24(A6)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3458(A5)
+        JSR 3442(A5)
         ADDQ.L #4,A7
         MOVE.L -24(A6),D1
         MOVEQ #6,D0
@@ -11875,7 +11876,7 @@ LBL_208:
         MOVE.L D0,-4(A6)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3458(A5)
+        JSR 3442(A5)
         ADDQ.L #4,A7
         MOVE.L -4(A6),D1
         MOVEQ #6,D0
