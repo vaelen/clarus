@@ -2170,12 +2170,18 @@ var drvSgCalls: int
 // of every recursive parse/check/lower/codegen walker. On the host
 // DrvStackPtr returns 0 and the guard does nothing (bar the TESTONLY
 // forced abort, checked first so the host test can reach it).
+// drvStackAbort is drvStackGuard's cold abort, kept out of the guard's
+// own frame (the guard runs on every recursive walker entry).
+func drvStackAbort() {
+    abort("source too deeply nested")
+}
+
 func drvStackGuard() {
     var sp: int
     if drvSgForce > 0 {
         drvSgCalls = drvSgCalls + 1
         if drvSgCalls == drvSgForce {
-            abort("source too deeply nested")
+            drvStackAbort()
         }
     }
     sp = int(DrvStackPtr())
@@ -2183,7 +2189,7 @@ func drvStackGuard() {
         return
     }
     if sp - peekl(ptr(0x0130)) < 65536 {
-        abort("source too deeply nested")
+        drvStackAbort()
     }
 }
 

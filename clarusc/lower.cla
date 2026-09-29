@@ -649,6 +649,26 @@ func lowUnsupported(what: string) {
     abort("clarusc emit: unsupported construct: " + what + " (not yet implemented)")
 }
 
+// lowStrLit lowers a string literal, its poolGet string temp kept out of
+// lowExpr's frame (see lowUnsupportedKind).
+func lowStrLit(e: int): int {
+    return newIRStrConst(lowInternStr(poolGet(stringLitIdx(e))), irStrType(255))
+}
+
+// lowUnary lowers a unary expression; its unOpSymbol string temp stays
+// out of lowExpr's frame (see lowUnsupportedKind).
+func lowUnary(e: int): int {
+    return newIRUn(intern(unOpSymbol(unaryOp(e))), lowExpr(unaryX(e)), lowMustType(e))
+}
+
+// lowUnsupportedKind is lowUnsupported(what + numToStr(n)) with the
+// concat in ITS frame, not the caller's: lowStmt/lowExpr are on every
+// nested statement's/expression's recursion cycle, and a concat temp is a
+// 512-byte big-temp slot in the native frame (SE wave 5).
+func lowUnsupportedKind(what: string, n: int) {
+    lowUnsupported(what + numToStr(n))
+}
+
 // ================================================================
 // Expression lowering (expr.go subset)
 // ================================================================
@@ -685,10 +705,10 @@ func lowExpr(e: int): int {
         return newIRIntConst(fixedLitRaw(e), irFixedT)
     }
     case ExStringLit {
-        return newIRStrConst(lowInternStr(poolGet(stringLitIdx(e))), irStrType(255))
+        return lowStrLit(e)
     }
     case ExUnary {
-        return newIRUn(intern(unOpSymbol(unaryOp(e))), lowExpr(unaryX(e)), lowMustType(e))
+        return lowUnary(e)
     }
     case ExBinary {
         return lowBinary(e)
@@ -742,7 +762,7 @@ func lowExpr(e: int): int {
         return lowArrLitFromChecker(arrLitIdxOf.get(e, -1), lowMustType(e))
     }
     }
-    lowUnsupported("expression kind " + numToStr(int(exprKind(e))))
+    lowUnsupportedKind("expression kind ", int(exprKind(e)))
     return -1
 }
 
@@ -3827,7 +3847,7 @@ func lowStmt(s: int): int {
         return lowAttempt(s)
     }
     }
-    lowUnsupported("statement kind " + numToStr(int(stmtKind(s))))
+    lowUnsupportedKind("statement kind ", int(stmtKind(s)))
     return -1
 }
 

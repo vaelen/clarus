@@ -6047,7 +6047,19 @@ func cgEmitFunc(f: int) {
     // the REAL pass, cgFuncBigTmpNeed[f] already holds that recorded
     // max, so this lays out the exact right size up front and
     // cgAllocBigTmpOff never needs to grow the list again.
-    bigTmpCount = cgBigTmpFloor
+    // SE wave 5: the floor applies on the MEASURE pass only (it is
+    // cgAllocBigTmpOff's growth anchor there, nothing more); the real
+    // pass lays out exactly the recorded need, as cg_init_globals
+    // already does. The floor used to put 2048 never-touched bytes in
+    // EVERY native frame -- ~2 KB per active call, which made ClarusC's
+    // recursive walkers ~2.1 KB per frame on the SE's stack. Code size is
+    // unchanged (LINK's immediate and every d16(A6) are fixed-width), and
+    // cgAllocBigTmpOff's measure/emit mismatch abort still guards the
+    // real pass against touching a slot past the recorded need.
+    bigTmpCount = 0
+    if cgRecMode == 1 {
+        bigTmpCount = cgBigTmpFloor
+    }
     if cgFuncBigTmpNeed[f] > bigTmpCount {
         bigTmpCount = cgFuncBigTmpNeed[f]
     }
@@ -10713,6 +10725,17 @@ var cgUiCurCancelOff: int = 0
 var cgAbortFlagOff: int = 0
 var cgAbortMsgOff: int = 0
 
+// SE wave 5: cgExpr's two string-building arms, moved out so their
+// big-temp slots do not inflate cgExpr's frame on every nested
+// expression's recursion cycle (see cgStmtAbortAssign).
+func cgCbAddrValue(e: int) {
+    cgCallExtUiGlueAddr("clar_cb_" + poolGet(irCbAddrName(e)))
+}
+
+func cgExprAbortKind(k: int) {
+    abort("cg68k: cgExpr: expr kind " + numToStr(k) + " has no value-context representation (str/rec construct -- bind/store it instead)")
+}
+
 func cgExpr(e: int) {
     var k: IRExprKind
     drvStackGuard()
@@ -10789,14 +10812,14 @@ func cgExpr(e: int) {
         // name -- lower.cla's lowCallArgs) -- a ptr-typed call argument
         // always routes through cgExpr, never cgExprAddr (task-7-report's
         // own probe already confirmed this).
-        cgCallExtUiGlueAddr("clar_cb_" + poolGet(irCbAddrName(e)))
+        cgCbAddrValue(e)
     } else {
         // EStrConst (str value in a scalar context), ENewRec (constructed
         // directly into its destination by cgEmitStoreRec/cgEmitReturnRec,
         // never legally reached in bare value context). Task 14.7: no
         // silent-zero degrade -- fail loud naming the kind, matching every
         // other "should never happen" arm in this file.
-        abort("cg68k: cgExpr: expr kind " + numToStr(int(k)) + " has no value-context representation (str/rec construct -- bind/store it instead)")
+        cgExprAbortKind(int(k))
     }
 }
 
@@ -13490,6 +13513,19 @@ func cgIsHandleKind(k: IRKind): bool {
 // own tracked temps must release BEFORE the branch out, not after --
 // unreachable code after an unconditional jump is pointless); every other
 // statement kind gets the flush here, at the tail.
+// SE wave 5: cgStmt's cold abort messages live in these two helpers so
+// their string-concat temps (a 512-byte big-temp slot each) sit in a
+// short-lived frame, not in cgStmt's own -- cgStmt is on every nested
+// statement's recursion cycle (cgStmt -> cgIfStmt/cgAttemptStmt ->
+// cgStmts -> cgStmt), and ClarusC runs it on the SE's fixed stack.
+func cgStmtAbortAssign(dstK: int, dstKind: int) {
+    abort("cg68k: cgStmt: SAssign dst kind " + numToStr(dstK) + " kind " + numToStr(dstKind) + " unsupported natively")
+}
+
+func cgStmtAbortKind(k: int) {
+    abort("cg68k: cgStmt: stmt kind " + numToStr(k) + " unsupported")
+}
+
 func cgStmt(s: int) {
     var k: IRStmtKind
     var dst: int
@@ -13598,7 +13634,7 @@ func cgStmt(s: int) {
             // than silently dropping the store (Task 14.7's own lesson --
             // a plausible-looking wrong value is strictly worse than a
             // build error).
-            abort("cg68k: cgStmt: SAssign dst kind " + numToStr(int(dstK)) + " kind " + numToStr(int(dstKind)) + " unsupported natively")
+            cgStmtAbortAssign(int(dstK), int(dstKind))
         }
     } else if k == SStoreStr {
         cgEmitStoreStr(irStoreStrDst(s), irStoreStrSrc(s))
@@ -13627,7 +13663,7 @@ func cgStmt(s: int) {
         // own lesson, cited throughout this file) applied to the one
         // dispatcher in cg68k.cla that didn't already have a hard-fail
         // fallback of its own.
-        abort("cg68k: cgStmt: stmt kind " + numToStr(int(k)) + " unsupported")
+        cgStmtAbortKind(int(k))
     }
 
     if k != SReturn and k != SBreak and k != SContinue {

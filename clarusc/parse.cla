@@ -341,6 +341,29 @@ func expect(k: TokKind): Token {
 // interned name equals idx (the contextual keyword `of` in `list
 // of`/`map of`, etc.), else records a syntax error quoting s (the display
 // text for the diagnostic).
+// expectIdentName is expect(TkIdent).nameIdx with the returned Token (a
+// record result, so a 512-byte big-temp slot in the native frame) held in
+// ITS frame rather than the caller's -- parseAttemptStmt/parsePrimary are
+// on nested statements'/expressions' recursion cycles (SE wave 5).
+func expectIdentName(): int {
+    var t: Token
+
+    t = expect(TkIdent)
+    return t.nameIdx
+}
+
+// expectKind is expect(k) with its discarded Token result in ITS frame
+// (same reason as expectIdentName).
+func expectKind(k: TokKind) {
+    expect(k)
+}
+
+// parseErrorFound reports msg + tokKindQuoted(k), the concat kept out of
+// the recursive caller's frame (see expectIdentName).
+func parseErrorFound(line: int, col: int, msg: string, k: TokKind) {
+    parseErrorf(line, col, msg + tokKindQuoted(k))
+}
+
 func expectIdentIdx(idx: int, s: string) {
     if not curIsIdentIdx(idx) {
         parseErrorf(curLine(), curCol(), "expected \"" + s + "\", found " + tokKindQuoted(curKind()))
@@ -562,10 +585,10 @@ func parsePostfix(): int {
             if curKind() == TkComma {
                 advance()
                 lenExpr = parseExpr()
-                expect(TkRBracket)
+                expectKind(TkRBracket)
                 x = newSlice(x, idx, lenExpr, line, col)
             } else {
-                expect(TkRBracket)
+                expectKind(TkRBracket)
                 x = newIndex(x, idx, line, col)
             }
         } else if curKind() == TkLParen {
@@ -689,7 +712,6 @@ func parsePrimary(): int {
     var t: Token
     var line: int
     var col: int
-    var nameTok: Token
     var idx: int
     drvStackGuard()
 
@@ -757,21 +779,19 @@ func parsePrimary(): int {
     }
     if t.kind == TkNew {
         advance()
-        nameTok = expect(TkIdent)
-        return newNewExpr(nameTok.nameIdx, line, col)
+        return newNewExpr(expectIdentName(), line, col)
     }
     if t.kind == TkOpen {
         advance()
-        nameTok = expect(TkIdent)
-        return newOpenExpr(nameTok.nameIdx, line, col)
+        return newOpenExpr(expectIdentName(), line, col)
     }
     if t.kind == TkLParen {
         advance()
         idx = parseExpr()
-        expect(TkRParen)
+        expectKind(TkRParen)
         return idx
     }
-    parseErrorf(line, col, "expected expression, found " + tokKindQuoted(t.kind))
+    parseErrorFound(line, col, "expected expression, found ", t.kind)
     return -1
 }
 
@@ -1080,17 +1100,17 @@ func parseAttemptStmt(): int {
     var line: int
     var col: int
     var body: int
-    var binder: Token
+    var binder: int
     var handler: int
 
     line = curLine()
     col = curCol()
     advance() // 'attempt'
     body = parseBlock()
-    expect(TkAborted)
-    binder = expect(TkIdent)
+    expectKind(TkAborted)
+    binder = expectIdentName()
     handler = parseBlock()
-    return newAttempt(body, binder.nameIdx, handler, line, col)
+    return newAttempt(body, binder, handler, line, col)
 }
 
 // parseReturnStmt parses `"return" [ expr ]`. A return with no value is
