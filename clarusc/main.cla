@@ -441,6 +441,16 @@ on App.startCLI(args: list of string) {
             haveRtbakeFlag = true
         } else if emitMode68k and args[i] == "--listing" {
             listingFlag = true
+        } else if (emitMode or emitMode68k) and args[i] == "--shake-dump" {
+            // SE wave 4 Task 2 (undocumented test hook, like --nopeep):
+            // shakeProgram writes its marks and edges to FILE -- see
+            // shake.cla's shakeDumpPath and tests/bake/shakesum.sh.
+            i = i + 1
+            if i >= args.count {
+                log("clarusc: --shake-dump needs a FILE")
+                quit 2
+            }
+            shakeDumpPath = args[i]
         } else if emitMode68k and args[i] == "--nopeep" {
             // peephole68k diagnostic escape hatch (deliberately
             // undocumented, like --seglimit): skip the peephole pass so

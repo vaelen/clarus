@@ -238,7 +238,17 @@ const bkSecObjMeta: int = 49
 // the round trip, and cgRelClsPoolArr relocations name entries in it.
 const bkSecIrArrLits: int = 50
 
-const bkSectionCount: int = 47
+// bkSecShakeSummary (SE wave 4 Task 2, spec 3.2): the call-graph summary
+// shakeProgram replays for baked runtime bodies (shake.cla's shakeSumStart
+// doc comment). Payload: u32 nFuncs, then an int list of nFuncs +
+// nGlobals + 1 start offsets, then the flat int list of callee NAME pool
+// indices -- entries 0..nFuncs-1 are irFuncs bodies, the rest irGlobals'
+// init expressions. Written from the live IR by bkBuildShakeSummary and
+// checked against the bake's own object-capture shake
+// (bkCheckShakeSummary) on the 68k lane.
+const bkSecShakeSummary: int = 51
+
+const bkSectionCount: int = 48
 
 // ================================================================
 // Byte-buffer primitives -- explicit one-byte-at-a-time big-endian
@@ -560,6 +570,14 @@ var bkGenEarlySymbolsCount: int
 // bkGenEarlySymbolsCount's own boundary exactly (uitest.cla is the last
 // early-visible module in bakeModuleList's fixed order either way).
 var bkGenEarlyVisibleAsmHeadsBoundary: int
+
+// bkGenShake* (SE wave 4 Task 2): bkBuildShakeSummary's output, written by
+// bkWriteShakeSummary -- see bkSecShakeSummary.
+var bkGenShakeFuncs: int
+// bkGenPoolCount: the intern-pool size bkWriteStrPool froze into the file.
+var bkGenPoolCount: int
+var bkGenShakeStart: list of int
+var bkGenShakeNames: list of int
 
 // bkPathIsUitest reports whether pathIdx (an interned path-pool index,
 // resolved via poolGet) names uitest.cla -- a plain basename suffix match
@@ -1366,6 +1384,7 @@ func bkWriteStrPool(): text {
     var sec: text
     var i: int
 
+    bkGenPoolCount = poolCount()
     bkPutU32(sec, poolCount())
     i = 0
     while i < poolCount() {
@@ -1823,6 +1842,121 @@ func bkWriteObjMeta(lane: int): text {
 // for the caller to print, exactly as driveCompile's own contract) or a
 // write failure (logged directly, same as emitMode's own write-failure
 // path in main.cla).
+// bkBuildShakeSummary (SE wave 4 Task 2): records, for every generated
+// irFuncs body and then every irGlobals init expression, the name sequence
+// shake.cla's own walk hands shakeMarkAndEnqueue (shakeRecording mode --
+// see shake.cla's summary block). Runs from bkWriteShakeSummary, AFTER
+// bkSecStrPool is frozen, so the walk's own lazy intern()s (the
+// iXxxIdx intrinsic names, as the capture's shake already does) never
+// reach the baked pool. Every RECORDED name must be inside that frozen
+// pool, or its index would mean a different string in a user compile --
+// refused loudly rather than baked.
+func bkBuildShakeSummary() {
+    var i: int
+    var starts: list of int
+    var names: list of int
+
+    shakeRecNames = names
+    shakeRecording = true
+    starts.add(0)
+    i = 0
+    while i < irFuncs.count {
+        shakeWalkStmts(irFuncBodyHead(i))
+        starts.add(shakeRecNames.count)
+        i = i + 1
+    }
+    i = 0
+    while i < irGlobals.count {
+        shakeWalkExpr(irGlobalInit(i))
+        starts.add(shakeRecNames.count)
+        i = i + 1
+    }
+    shakeRecording = false
+    bkGenShakeFuncs = irFuncs.count
+    bkGenShakeStart = starts
+    bkGenShakeNames = shakeRecNames
+    shakeRecNames = shakeFreshIntList()
+    i = 0
+    while i < bkGenShakeNames.count {
+        if bkGenShakeNames[i] >= bkGenPoolCount {
+            abort("clarusc --bake-ir: shake summary names " + poolGet(bkGenShakeNames[i]) + ", which is not in the baked intern pool")
+        }
+        i = i + 1
+    }
+}
+
+func bkWriteShakeSummary(): text {
+    var sec: text
+
+    bkBuildShakeSummary()
+    bkPutU32(sec, bkGenShakeFuncs)
+    sec.append(bkWriteIntList(bkGenShakeStart))
+    sec.append(bkWriteIntList(bkGenShakeNames))
+    return sec
+}
+
+// bkCheckShakeSummary (SE wave 4 Task 2): the bake's self-check that the
+// summary equals the IR walk. cgObjCaptureRuntime's shakeProgram just
+// walked every rooted runtime body from IR (no summary is installed in the
+// bake process) and left its edges in walk order, each walked body's
+// edges contiguous. For every baked function that walk marked, its edges
+// must be exactly its summary names resolved through the same
+// shakeFuncIdxByName (unresolved names record no edge, as in
+// shakeMarkAndEnqueue). Aborts the bake on any difference.
+func bkCheckShakeSummary() {
+    var f: int
+    var k: int
+    var j: int
+    var tgt: int
+    var seen: list of bool
+
+    f = 0
+    while f < bkGenShakeFuncs {
+        seen.add(false)
+        f = f + 1
+    }
+    k = 0
+    while k < shakeEdgeCount() {
+        f = shakeEdgeFrom(k)
+        if f >= bkGenShakeFuncs {
+            k = k + 1
+        } else {
+            if seen[f] {
+                abort("clarusc --bake-ir: shake summary check: edges of " + poolGet(irFuncName(f)) + " are not contiguous")
+            }
+            seen[f] = true
+            j = bkGenShakeStart[f]
+            while j < bkGenShakeStart[f + 1] {
+                tgt = shakeFuncIdxByName.get(bkGenShakeNames[j], -1)
+                if tgt != -1 {
+                    if k >= shakeEdgeCount() or shakeEdgeFrom(k) != f or shakeEdgeTo(k) != tgt {
+                        abort("clarusc --bake-ir: shake summary differs from the IR walk in " + poolGet(irFuncName(f)))
+                    }
+                    k = k + 1
+                }
+                j = j + 1
+            }
+            if k < shakeEdgeCount() and shakeEdgeFrom(k) == f {
+                abort("clarusc --bake-ir: shake summary misses an edge of " + poolGet(irFuncName(f)))
+            }
+        }
+    }
+    // A walked body with no edges must summarize to no resolvable name.
+    f = 0
+    while f < bkGenShakeFuncs {
+        if shakeReachable(f) and not seen[f] {
+            j = bkGenShakeStart[f]
+            while j < bkGenShakeStart[f + 1] {
+                if shakeFuncIdxByName.get(bkGenShakeNames[j], -1) != -1 {
+                    abort("clarusc --bake-ir: shake summary has an edge the IR walk lacks in " + poolGet(irFuncName(f)))
+                }
+                j = j + 1
+            }
+        }
+        f = f + 1
+    }
+}
+
 func bakeWriteFile(lane: int, outPath: string): bool {
     var out: text
     var body: text
@@ -1892,6 +2026,7 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     bkEmitSection(body, bkSecUitestBounds, bkWriteUitestBounds())
     bkEmitSection(body, bkSecCheckerVisibility, bkWriteCheckerVisibility())
     bkEmitSection(body, bkSecManifestHashes, bkWriteManifestHashes())
+    bkEmitSection(body, bkSecShakeSummary, bkWriteShakeSummary())
 
     // object-code-linker Task 2: bake-time object capture runs HERE,
     // after every OTHER section has already been copied into `body` as
@@ -1912,6 +2047,7 @@ func bakeWriteFile(lane: int, outPath: string): bool {
             log("clarusc --bake-ir: object-code capture failed")
             return false
         }
+        bkCheckShakeSummary()
     }
     bkEmitSection(body, bkSecObjCode, bkWriteObjCode(lane))
     bkEmitSection(body, bkSecObjMeta, bkWriteObjMeta(lane))
@@ -2296,6 +2432,11 @@ var bkLdIrWidgetHandlerEntries: list of IRWidgetHandlerEntry
 var bkLdIrMenuHandlerEntries: list of IRMenuHandlerEntry
 var bkLdIrEveryEntries: list of IREveryEntry
 var bkLdIrStrLits: list of int
+// bkLdShake* (SE wave 4 Task 2): bkSecShakeSummary staging, moved into
+// shake.cla's shakeSum* by bkInstallArenas.
+var bkLdShakeFuncs: int
+var bkLdShakeStart: list of int
+var bkLdShakeNames: list of int
 // bkLdIrArrLit* (format version 8): the loaded array-literal pool -- three
 // parallel lists exactly as ir.cla holds them, minus irArrLitStart (a
 // derived prefix sum, rebuilt by bkInstallArenas).
@@ -3774,6 +3915,10 @@ func bkLoadSections(testapi: bool): bool {
             bkLdIrStrLits = bkReadIntList()
         } else if id == bkSecIrArrLits {
             bkReadIrArrLits()
+        } else if id == bkSecShakeSummary {
+            bkLdShakeFuncs = bkGetU32()
+            bkLdShakeStart = bkReadIntList()
+            bkLdShakeNames = bkReadIntList()
         } else if id == bkSecIrExternNames {
             bkLdIrExternNames = bkReadIntList()
         } else if id == bkSecIrExternRetTys {
@@ -4573,6 +4718,17 @@ func bkInstallArenas(testapi: bool) {
     bkLdIrLayoutNeededByName = eLayoutNeeded
     irRcWalkNeededByName = bkLdIrRcWalkNeededByName
     bkLdIrRcWalkNeededByName = eRcWalkNeeded
+
+    // SE wave 4 Task 2: the shake summary, by move. shakeProgram gates it
+    // on bkRuntimeFuncBoundary (set above), so a non-testapi truncation
+    // needs nothing here: the dropped uitest entries are simply never
+    // consulted. Globals are not truncated, so all baked ones use it.
+    shakeSumFuncs = bkLdShakeFuncs
+    shakeSumGlobals = bkLdShakeStart.count - 1 - bkLdShakeFuncs
+    shakeSumStart = bkLdShakeStart
+    shakeSumNames = bkLdShakeNames
+    bkLdShakeStart = driveFreshIntList()
+    bkLdShakeNames = driveFreshIntList()
 
     irHasLaunch = bkLdIrHasLaunch
     irHasStartEmpty = bkLdIrHasStartEmpty
