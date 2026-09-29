@@ -7782,6 +7782,104 @@ per-task briefs, reports and ledger are git-ignored scratch; the
 rulings are in this entry.
 
 
+## Opt-in log file and UI trace (2026-09-29, branch `log-trace-optin`)
+
+A detour before SE Wave 4, raised by Andrew's BBS: a native Clarus app
+wrote and `FlushVol`ed its `out` file on every UI trace line, so a
+timer-driven app hit the disk every tick and wore out an SD card. Three
+tasks, run serially on the branch tip (all three touch `native.cla`),
+each implemented and reviewed on Opus. Commits `6677028c`..HEAD (plan
+commit `abeb46fc`).
+
+**What it did.** A production native program writes nothing to disk
+unless it asks to; when it asks, it writes in 4 KB chunks. Every test
+boot keeps the old capture protocol byte for byte.
+
+- **Task 1: capture mode.** `emit68k --capture` (implied by `--events`)
+  sets `cgCaptureMode`; the startup calls the runtime's new
+  `natSetCapture` right after the below-A5 zero loop and BEFORE
+  `cg_init_globals`, so a global initializer that panics in a capture
+  build still reports through the capture (review fix; pinned by the
+  `mactest/nolog` `initpanic` subcase). A no-flag build emits no call.
+  In production `natInit` opens no `out` and allocates only the panic
+  alert's scratch; `natAlert`/`natLog`/`nat_UiTestEmit` return at once;
+  `natQuit` goes straight to `ExitToShell`. The UI trace builders gate
+  on a new `UiTraceOn()` (stateful ones keep their bookkeeping so a
+  later `app.trace(true)` sees no stale state). Every boot test passes
+  `--capture` or `--events`; compile-only tests pass neither.
+  `build-68k.sh --capture` is a passthrough; `build-clarusc-mac.sh`
+  adds it with `--events`. New `tests/mactest/nolog.sh`.
+- **Task 2: `app.writeLog(name)`/`app.flushLog()`/`app.trace(on)`.**
+  Parsed as ordinary `app.NAME(...)` calls, checked through a new
+  `appFuncs` table, lowered to three intrinsics. Native: a 4 KB buffer
+  allocated on the first `writeLog`; the file is created `TEXT` with
+  the app's creator, appended to, and opened/appended/closed on every
+  flush (so `file.readText` of the log works mid-run); the folder is
+  fixed at the `writeLog` call (`PBGetVol` → `natWlVRef`), so a later
+  Standard File dialog cannot move it (review fix; `nolog` `logvol`
+  subcase, RED on the old code). A full buffer flushes itself; panic,
+  uncaught abort and quit flush. Trace lines and (UI) `alert` text go
+  into the log only while `app.trace(true)`. Host: `rt.c` buffers
+  `log` lines to the file too (stderr unchanged); `app.trace` is a
+  no-op. New core case `LogFile` (89 → 90), `tests/hostrt/logfile.sh`,
+  `testdata/errors/app_log_calls`, `nolog` subcases `logout`/
+  `tracelog`/`logvol`. Reference: new "Log File and Tracing" section.
+  A runtime entry reached through `cgCallRuntime` must not take a
+  `bool` parameter (every argument is pushed as a long; the callee read
+  the wrong half) — `natAppTrace` takes an `int`.
+- **Task 3:** a failed native log WRITE (not just a failed open) now
+  sets `lastError`, as the reference says (ruling R5); the bootstrap
+  snapshot was regenerated, so `build-68k.sh --capture` works
+  (checked: `scripts/build-68k.sh testdata/mactest/nolog.cla --capture`
+  built `nolog.bin`).
+
+**Rulings.**
+
+| Ruling | What                                                                                                                                                               | Cost                                                                         |
+|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------|
+| R1     | Tasks run serially on the branch tip (all touch `native.cla`).                                                                                                     | No parallelism.                                                              |
+| R2     | No Snow runs (Andrew); the emulator proof is the Mini vMac `mactest/` group.                                                                                       | Snow-only paths (`lib_snow.sh` build helpers) unverified by boot.            |
+| R3     | Snow `macresident`'s TickProbe (compiled on-Mac by ClarusC.APPL, i.e. production) opts in with `app.writeLog("out")` + `app.trace(true)`; `macresident.sh` adapts. | Unverified by boot (R2); if wrong, `macresident` fails on the next Snow run. |
+| R4     | Accepted deviations: no long-line direct-write path (lines are ≤255/511 B by construction), open/append/close per flush, `natAppTrace` takes an `int`.             | None measured; one open/close per flush.                                     |
+| R5     | `natAppFlushLog` ignored `NatWrite`'s ioResult; Task 3 checks it and sets `lastError`.                                                                             | Tiny (moved every `testdata/cg68k` golden once more).                        |
+
+**Memgate** (no budget touched):
+
+| Subcase          | Peak    | Budget  | Peak / budget |
+|------------------|---------|---------|---------------|
+| bookmarks_rtbake | 3404000 | 3433168 | 99.2%         |
+| bookmarks_src    | 7381036 | 7451219 | 99.1%         |
+| hello_src        | 7377464 | 7381420 | 99.9%         |
+
+`hello_src` rose ~62 KB over the pre-detour tip (a container step in
+"Lowered", not proportional growth; `bookmarks_src` fell 3.5 KB).
+
+**Gates** (on the final code):
+- `scripts/test-task.sh` (T1): PASS in 130 s, 127 passed, 38 skipped,
+  0 failed; perfgate 1/1.
+- `CLARUS_MAC_TESTS=1 make -j1 test T=mactest/` (Mini vMac): 22 passed,
+  17 skipped (the usual cprint/Snow/bench/appres gates), 0 failed.
+  Core suite 90 PASS (`LogFile` included), toolbox 41; `nolog`'s
+  subcases `nolog`/`logout`/`logvol`/`tracelog`/`initpanic` all pass;
+  `ui_scenarios`/`smoke_bounce` pass with no bless (capture
+  byte-identical).
+- `CLARUS_BAKE_FULL=1 make test T=bake/`: 33/33.
+- `make test T=selfhost/`: 6/6 after the snapshot regeneration.
+
+**Not run: Snow**, by Andrew's instruction (2026-09-29), although the
+spec's exit listed `mactest/snow/clarusc_bake` on the IIcx. So these are
+unverified by boot: the Snow `macresident` TickProbe change (R3), and
+`build-68k.sh`/`build-clarusc-mac.sh --capture` through the regenerated
+snapshot on the Snow scripts that use them (`se_budget`, `roundtrip`,
+and the ClarusC scripts). ClarusC.APPL was not rebuilt or booted.
+
+Deferred items are in `docs/TODO.md` ("Opt-in log file" entries).
+Spec: `docs/superpowers/specs/2026-09-29-log-trace-optin-design.md`;
+plan `docs/superpowers/plans/2026-09-29-log-trace-optin.md`. The
+per-task briefs, reports and ledger are git-ignored scratch; the
+rulings are in this entry.
+
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of

@@ -12,6 +12,21 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Test coverage gaps (recorded by audits, mostly need real input/hardware)
 
+### Opt-in log file (2026-09-29)
+
+- **Native `app.trace(false)` is untested.** `nolog`'s `tracelog`
+  subcase only turns trace on; nothing proves turning it off again stops
+  trace lines reaching the log (the host `app.trace` is a no-op).
+- **No native production panic after `app.writeLog`.** `nat_CorePanic`'s
+  production path (log the report, flush, then the ALRT) is covered on
+  the host (`hostrt/logfile` `panic`) and in capture builds, not by a
+  production native boot that checks the log file holds the report.
+- **Snow `macresident` is unverified** (Snow not run this detour): its
+  TickProbe now opts in with `app.writeLog("out")` + `app.trace(true)`
+  (ruling R3), and `build-68k.sh`/`build-clarusc-mac.sh --capture` go
+  through the regenerated snapshot on the Snow scripts. Run
+  `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/` before relying on it.
+
 - **cprint-lane `UiLaunchReal`** (real AppleEvent glue in
   `rt_ext_mac.inc`) has no test — every Retro68 build uses `--events`;
   needs a no-events Mac-lane smoke or real Finder launch.
@@ -315,6 +330,18 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Runtime / Toolbox robustness
 
+### Opt-in log file (2026-09-29)
+
+- **`natWlVRef` is a working-directory refnum.** `app.writeLog` records
+  `PBGetVol`'s ioVRefNum, which under HFS is a WD refnum. If the app
+  (or a Standard File call) closes that WD with `PBCloseWD`, later
+  flushes fail with lastError. A `PBGetWDInfo` → real vRefNum + dirID
+  pair (`PBHOpen`) would survive it.
+- **`natWlPb`'s `ioFVersNum` is not zeroed before `Create`.** The PB is
+  reused (`natAppWriteLog` re-zeroes only the FInfo region), so
+  whatever byte 26 holds from an earlier call is passed to `Create`.
+  HFS ignores it; MFS would not. Zero it to be safe.
+
 ### SE memory program, Wave 3 (2026-09-29)
 
 - **`runtime/host/rt_ser.inc` is dead weight** (Task 7, ruling R2).
@@ -426,6 +453,16 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Native code size
 
+### Opt-in log file (2026-09-29)
+
+- **The log writer is in every native program.** `cg68AddRoots` roots
+  every `nat*` function, so `natAppWriteLog`/`natAppFlushLog`/
+  `natAppTrace`/`natAbortLog`/`natWl*` (a few hundred bytes) ship in
+  every native build whether it calls `app.writeLog` or not; four
+  `testdata/cg68k` fixtures gained a segment. An SE size lever: rename
+  the intrinsic-only entries off the `nat*` prefix and root them only
+  when the program uses `app.writeLog`/`flushLog`/`trace`.
+
 ### SE memory program, Wave 3 (2026-09-29)
 
 - **Every native program carries the whole UI table/form draw path.**
@@ -457,6 +494,14 @@ it. Recorded so the work is not lost, not scheduled.
 
 The SE memory program (2026-09-27) resumed work on this target. See
 `docs/ROADMAP.md`.
+
+### Opt-in log file (2026-09-29)
+
+- **`memgate` `hello_src` is at 99.9% of its budget** (peak 7,377,464
+  / 7,381,420 B) after the detour's runtime growth (+62 KB, a container
+  step during "Lowered"; `bookmarks_src` fell). The next few hundred
+  bytes of `native.cla` may trip it. Budgets are lower-only, so the fix
+  is a memory saving, not a raise.
 
 - **`drive.cla` `dirOf` splits only on `/`.** An HFS path such as
   `Clarus:bookmarks.cla` gives `dirOf(...) == ""`, so the volume is
