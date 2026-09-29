@@ -39,20 +39,25 @@
 
 static int rt_fh_errno = 0;
 
-/* rt_ext_FhHOpen: the file must already exist -- O_RDWR, no O_CREAT
- * (spec %3.1: file.open's own contract). */
-int32_t rt_ext_FhHOpen(const uint8_t *path) {
+/* rt_fh_open: the file must already exist -- no O_CREAT (spec %3.1:
+ * file.open's own contract). O_RDWR for file.open, O_RDONLY for
+ * file.openRead (SE wave 4), whose pwrite/ftruncate then fail EBADF/EINVAL
+ * and surface as writeAt/setSize's ordinary false + lastError. */
+static int32_t rt_fh_open(const uint8_t *path, int flags) {
     char cpath[256];
     int fd;
 
     path_to_cstr(cpath, path);
-    fd = open(cpath, O_RDWR);
+    fd = open(cpath, flags);
     if (fd < 0) {
         rt_fh_errno = errno;
         return 0;
     }
     return (int32_t)(fd + 1);
 }
+
+int32_t rt_ext_FhHOpen(const uint8_t *path) { return rt_fh_open(path, O_RDWR); }
+int32_t rt_ext_FhHOpenRead(const uint8_t *path) { return rt_fh_open(path, O_RDONLY); }
 
 /* ==================== resource fork (language-runtime-cleanup, spec %6.3) ====================
  * macOS: the fork is the file's com.apple.ResourceFork xattr, reachable as

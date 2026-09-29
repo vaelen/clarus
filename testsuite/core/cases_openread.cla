@@ -1,0 +1,61 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_openread.cla (SE wave 4, Task 3): file.openRead(path), the
+// read-only `filehandle`, on both lanes. Reads work; writeAt/append/
+// setSize fail with false + lastError and never crash; a missing path is
+// nil + lastError. flush on a read-only handle has nothing to write and
+// succeeds on both lanes (FlushFile and fsync both accept a read-only
+// file), so it is only called here, not asserted.
+
+func caseOpenRead(): TestResult {
+    var f: filehandle
+    var out: text
+    var ok: bool
+
+    f = file.create("core_openread.dat", "TEXT", "CLRS")
+    if f == nil {
+        return tkFail("OpenRead", "create failed")
+    }
+    if not f.writeAt(0, "hello") {
+        return tkFail("OpenRead", "writeAt failed")
+    }
+    f.close()
+
+    f = file.openRead("core_openread.dat")
+    if f == nil {
+        return tkFail("OpenRead", "openRead failed")
+    }
+    ok = f.readAt(0, 5, out)
+    if not ok or out != "hello" {
+        return tkFail("OpenRead", "readAt wrong")
+    }
+    if f.size() != 5 {
+        return tkFail("OpenRead", "size wrong")
+    }
+
+    if f.writeAt(0, "HELLO") or lastError.message != "write failed" {
+        return tkFail("OpenRead", "writeAt on read-only did not fail")
+    }
+    if f.setSize(1) or lastError.message != "setSize failed" {
+        return tkFail("OpenRead", "setSize on read-only did not fail")
+    }
+    // After setSize's message, so a stale "write failed" cannot pass.
+    if f.append("!") or lastError.message != "write failed" {
+        return tkFail("OpenRead", "append on read-only did not fail")
+    }
+    ok = f.flush()
+
+    ok = f.readAt(0, 5, out)
+    if not ok or out != "hello" or f.size() != 5 {
+        return tkFail("OpenRead", "contents changed through read-only handle")
+    }
+    f.close()
+
+    f = file.openRead("core_openread_missing.dat")
+    if f != nil or lastError.message != "open failed" {
+        return tkFail("OpenRead", "openRead of missing file wrong")
+    }
+
+    return tkPass("OpenRead")
+}

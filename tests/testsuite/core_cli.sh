@@ -43,6 +43,7 @@ if ! host_build "$WORK/core_cli" \
         testsuite/core/cases_ptrcall.cla \
         testsuite/core/cases_narrow.cla \
         testsuite/core/cases_logfile.cla \
+        testsuite/core/cases_openread.cla \
         testsuite/core/cli.cla > "$WORK/build.log" 2>&1; then
     die "build core CLI: $(tail -10 "$WORK/build.log")"
 fi
