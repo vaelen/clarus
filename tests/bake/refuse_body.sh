@@ -46,4 +46,24 @@ elif grep -q 'corrupt header' "$WORK/laneset.log"; then
 else
     t_fail lane_set "expected the corrupt-header (section directory) diagnostic, got: $(head -5 "$WORK/laneset.log" | tr '\n' ' ')"
 fi
+# A corrupt shake summary (section 51) is refused as a framing mismatch
+# (bake.cla's bkShakeSummaryValid), not left for shakeReplay to index out
+# of range. Its payload is funcs(4) | count(4) start[0](4) start[1](4) ...;
+# start[1] becomes 0x7fffffff, past the name list's end.
+SUMOFF=$("$CLIRHDR" "$VALID" | awk '$1 == "section" && $2 == 51 { print $4 }')
+[ -n "$SUMOFF" ] || die "no shake-summary section in $VALID"
+cp "$VALID" "$WORK/corrupt-sum-68k.clir" || die "cp failed"
+printf '\177\377\377\377' | dd of="$WORK/corrupt-sum-68k.clir" bs=1 seek=$((SUMOFF + 12)) conv=notrunc 2>/dev/null \
+    || die "dd failed"
+if "$CLARUSC" emit68k --rtbake "$WORK/corrupt-sum-68k.clir" -o "$WORK/sum.bin" \
+        "$ROOT/testdata/cg68k/arith.cla" > "$WORK/sum.log" 2>&1; then
+    t_fail summary_exit "clarusc emit68k --rtbake <corrupt-summary>: expected nonzero exit, got success"
+else
+    t_pass summary_exit
+fi
+if grep -q 'section 51 framing mismatch' "$WORK/sum.log"; then
+    t_pass summary_diagnostic
+else
+    t_fail summary_diagnostic "expected a section 51 framing diagnostic, got: $(tail -3 "$WORK/sum.log" | tr '\n' ' ')"
+fi
 t_done

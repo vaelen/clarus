@@ -546,15 +546,20 @@ The SE memory program (2026-09-27) resumed work on this target. See
   leaves `core_openread.dat` in the cwd (as `cases_fileh` does);
   `shake.cla` ~l.592 has a redundant `fIdx < shakeSumFuncs` guard;
   `--shake-dump` reflects only the last `shakeProgram` run (say so in
-  a comment); `lower.cla` ~l.8433 has a stale "TAINTS" comment;
-  `asm68k`'s `trapNameIdx` field comment should mention the
+  a comment); `asm68k`'s `trapNameIdx` field comment should mention the
   synth-call tag; Task 1's +1024 B on both `_src` memgate subcases is
   unexplained; `tests/bake/untaint.sh` should `grep -m1`; the header
   read log counts `bkHeaderMax` (4096) bytes, not the bytes used;
   `app68Build` (`app68k.cla` ~l.660) is unused and lacks
-  `app68BuildFork`'s note (delete it); `macgui.cla` ~l.1252's
-  `NewPtr(256)` (test path) is not nil-checked; `cgFuncPoolAt` rescans
+  `app68BuildFork`'s note (delete it); `cgFuncPoolAt` rescans
   its range per call (quadratic at bake time, small n).
+- **The fixed-headroom reserves may fight `reserve`'s rounding**:
+  `drive.cla` ~l.2680 (`irTypes.shrink()` then `reserve(count + 64)`)
+  and `cg68k.cla` ~l.2004 (`cgSizeOf`'s `cgSizeMemo.reserve(irTypes.count
+  + 64)`) aim for small fixed headroom instead of doubling slack, but if
+  list `reserve(n)` rounds up to a power of two they save less than
+  their comments claim (or nothing). Wave 5: verify against the rtbake
+  census at the peak, then keep, drop or reword them.
 
 ### Opt-in log file (2026-09-29)
 
@@ -779,11 +784,8 @@ The SE memory program (2026-09-27) resumed work on this target. See
 
 - **Comment-drift minors** (clir-load-perf): `bkLoadOverrun` names only
   `bkGetByte` as a setter (four exist); `rtTextStringAt` cites a moved
-  idiom. SE Wave 4 left more: `bake.cla` ~l.60–72 still describes the
-  v4 `bkHeaderBodyHash` and ~l.402 a body-integrity check (v9 has no
-  body hash; `bkHashTextFrom` may be dead); `cg68k.cla` ~l.15721 says
-  `bkLdObjValid` is written by `bkReadObjCode` (gone);
-  `scripts/memcensus.sh` ~l.46 names `cv_rtbakeBytes` (gone).
+  idiom. SE Wave 4 left `scripts/memcensus.sh` ~l.46 naming
+  `cv_rtbakeBytes` (gone).
 
 ### Test coverage
 

@@ -14617,6 +14617,9 @@ func cg68Measure(): bool {
                 cgFuncUsesUiEvents[i] = bkLdObjFuncUsesUiEvents[i]
                 cgObjApplyGlueUsage(i)
             } else {
+                if cgObjLibMissing(i) {
+                    return false
+                }
                 cgMeasureDropItems()
                 before = a68SizeSoFar()
                 // Task 15 (findings 1.8): bump the epoch per cgRecFuncIdx
@@ -15718,7 +15721,7 @@ func cgObjCaptureRuntime(): bool {
 // cgObjPasteEligible: is irFuncs index i a valid, loaded, in-bounds
 // baked object this compile can paste instead of re-generating? False
 // on every non-bake compile (bkLdObjValid stays at its empty default,
-// only ever written by bkReadObjCode, which only a --rtbake parse
+// only ever written by bkReadObjIndex, which only a --rtbake load
 // reaches) and false for any index past THIS compile's own runtime
 // function boundary or not captured valid.
 //
@@ -15743,6 +15746,22 @@ func cgObjPasteEligible(i: int): bool {
         return false
     }
     return bkLdObjValid[i]
+}
+
+// cgObjLibMissing: reachable function i is baked (below this compile's
+// runtime boundary) but has no pasteable object record. Since CLIR v9 the
+// 68k library carries no IR bodies, so cgEmitFunc would emit an empty
+// prologue/epilogue -- a library failure, not a user error: log it and
+// set driveLibFailed (ClarusC falls back to CLFS source; the host
+// --rtbake CLI exits 1). Measure and the per-segment paste loop each
+// check it before cgEmitFunc.
+func cgObjLibMissing(i: int): bool {
+    if i >= bkRuntimeFuncBoundary {
+        return false
+    }
+    log("--rtbake: object-code section: reachable function " + numToStr(i) + " has no object record")
+    driveLibFailed = true
+    return true
 }
 
 // cgObjAddFlatSlice appends flat[first, first+count), tagged kind k, to
@@ -16238,6 +16257,9 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
                     if cgObjPasteEligible(i) {
                         cgObjPasteFunc(i)
                     } else {
+                        if cgObjLibMissing(i) {
+                            return false
+                        }
                         cgEmitFunc(i)
                     }
                     // SE wave 2 (spec %3.4): encode this function's items

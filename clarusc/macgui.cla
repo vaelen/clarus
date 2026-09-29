@@ -706,6 +706,10 @@ func gcOpenOwnDataFork(): filehandle {
 
     gcOwnForkErr = ""
     ap = NewPtr(264)
+    if ap == ptr(0) {
+        gcOwnForkErr = "out of memory"
+        return nil
+    }
     GetAppParms(ap, ap + 256, ap + 260)
     name = ""
     i = 1
@@ -783,6 +787,10 @@ func gcScriptedSetDefault(path: string) {
         return
     }
     name = NewPtr(256)
+    if name == ptr(0) {
+        log("clarusc: scripted askOpen: out of memory")
+        return
+    }
     pokeb(name, n)
     i = 0
     while i < n {

@@ -391,6 +391,10 @@ on App.startCLI(args: list of string) {
             // reimplementation possible to get wrong. See
             // bkWriteObjCode's own doc comment for what this sets.
             bkCorruptObjCodeTestOnly = true
+        } else if bakeIrMode and args[i] == "--empty-objcode-testonly" {
+            // SE wave 4 final review: undocumented, like the flag above --
+            // see bkEmptyObjCodeTestOnly's own doc comment (bake.cla).
+            bkEmptyObjCodeTestOnly = true
         } else if bakeIrMode and args[i] == "--objstats-testonly" {
             // SE wave 4 Task 1: undocumented, like the flag above --
             // tests/bake/untaint.sh's window onto cgObjValid (see

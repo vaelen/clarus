@@ -8433,10 +8433,10 @@ func lowUiSynthExternName(externNameIdx: int): int {
     // rtAtalkPump's own ECallExt down cg68k's ordinary extern dispatch
     // and aborted the bake with "extern clar_svc_fire_failed has no trap
     // clause and no nat_ fallback". Answering unconditionally routes it
-    // to cgCallExtUiSynth instead, which TAINTS the capture under
-    // cgBakeCapture rather than crashing -- the identical treatment the
-    // connection five have always had, and the reason they never hit
-    // this.
+    // to cgCallExtUiSynth instead, which under cgBakeCapture records a
+    // cgHoleSynthCall paste hole (SE wave 4 Task 1; it used to taint the
+    // capture) rather than crashing -- the identical treatment the
+    // connection five get, and the reason they never hit this.
     if nm == "clar_lsn_fire_accepted" { return intern("clar_lsn_fire_accepted") }
     if nm == "clar_lsn_fire_failed" { return intern("clar_lsn_fire_failed") }
     if nm == "clar_brs_fire_found" { return intern("clar_brs_fire_found") }

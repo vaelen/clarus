@@ -65,19 +65,16 @@ const bkMagic: string = "CLIR"
 // baked copy instead of forcing an unconditional fallback -- see
 // bkWriteManifestHashes/bkReadManifestHashes and drive.cla's expand()
 // for the collision branch that consumes this. Version 4 (final-review
-// fix wave) added bkHeaderBodyHash, a 4-byte FNV hash (bkHashTextFrom,
-// below) over every byte AFTER the header, stored in the header itself
-// and verified by bkCheckRtbakeHeader BEFORE any section is parsed -- a
-// truncated or corrupted buffer is refused there, in front of BOTH the
-// host loader's full parse (bkLoadRtbake) and macgui.cla's own
-// bake-vs-fallback decision (gcResolveBakePath), instead of surfacing as
-// a hard compile failure only after the Mac side already committed to
-// the bake path. Version 3 (runtime-ir-bake Task 5, fix round 2) added
-// bkSecCheckerVisibility (the testapi-visible checker-symbol boundary --
-// see that section's own doc comment). Version 2 added bkSecUitestBounds
-// (the base/uitest IR-arena boundary counts). Pre-release format; the
-// loader refuses any other version outright (no compat shim), per this
-// phase's own controller resolution.
+// fix wave) added a header hash over every byte after the header,
+// checked before any section was parsed; v9 dropped it (below) -- a lazy,
+// partial read cannot verify one, so the loader refuses corruption by
+// structure (the section directory, per-section framing, the ObjCode
+// index and per-record checks) instead. Version 3 (runtime-ir-bake
+// Task 5, fix round 2) added bkSecCheckerVisibility (the testapi-visible
+// checker-symbol boundary -- see that section's own doc comment).
+// Version 2 added bkSecUitestBounds (the base/uitest IR-arena boundary
+// counts). Pre-release format; the loader refuses any other version
+// outright (no compat shim), per this phase's own controller resolution.
 // v7: body/stamp/manifest hash switched from FNV-mul to shift-add -- layout unchanged.
 // v8 (language-runtime-cleanup): added bkSecIrArrLits (the array-literal
 // constant pool, spec %4.4) and one extra U32 in bkSecUitestBounds (that
@@ -399,11 +396,9 @@ func bkHashText(data: text): int {
 }
 
 // bkHashTextFrom is bkHashText's own body, starting at an arbitrary
-// offset rather than 0 -- bkCheckRtbakeHeader's body-integrity check
-// (format v4) needs to hash everything in a loaded buffer AFTER the
-// fixed-size header without ever materializing that (up to ~1.1MB)
-// remainder as a `string` slice, which Chapter 3's 255-byte slice cap
-// would reject outright; walking `data[i]` by index has no such limit.
+// offset rather than 0 -- split out for format v4-v8's header body hash
+// (v9 dropped it; bkHashText is the only caller now). Walks `data[i]` by
+// index, so it never materializes a `string` slice (255-byte cap).
 func bkHashTextFrom(data: text, start: int): int {
     var h: int
     var i: int
@@ -1860,6 +1855,13 @@ func bkWriteManifestHashes(): text {
 // wherever the test program reaches -- never used outside that one test.
 var bkCorruptObjCodeTestOnly: bool
 
+// bkEmptyObjCodeTestOnly (SE wave 4 final review): set by main.cla's
+// undocumented `--bake-ir --empty-objcode-testonly` flag -- bkWriteObjCode
+// then writes every record empty (a well-formed index with no valid
+// function), so tests/bake/refuse_objcode.sh and resident_fallback.sh can
+// drive cg68k.cla's cgObjLibMissing guard. Never used outside those tests.
+var bkEmptyObjCodeTestOnly: bool
+
 // bkWriteObjCode (format v9; v6 object-code-linker Task 2) -- bkSecObjCode:
 //   count(4) | off(4) x (count + 1) | data
 // The index: per irFuncs-index function, its record's offset into `data`,
@@ -1902,7 +1904,7 @@ func bkWriteObjCode(lane: int): text {
     i = 0
     while i < count {
         offs.add(data.length)
-        if cgObjValid[i] {
+        if cgObjValid[i] and not bkEmptyObjCodeTestOnly {
             bkPutU32(data, cgObjNHoles[i])
             corruptedOne = false
             k = 0
@@ -4127,6 +4129,33 @@ func bkReadObjMeta(): bool {
     return true
 }
 
+// bkShakeSummaryValid: the loaded shake summary is structurally sound --
+// its start list runs from 0 to the name list's length without
+// decreasing, and the function entries fit in it (the rest are global
+// entries, so their count is never negative). shake.cla's shakeReplay
+// indexes both lists unchecked; a corrupt summary is refused as a
+// framing mismatch instead.
+func bkShakeSummaryValid(): bool {
+    var i: int
+    var n: int
+
+    n = bkLdShakeStart.count
+    if n == 0 or bkLdShakeStart[0] != 0 or bkLdShakeStart[n - 1] != bkLdShakeNames.count {
+        return false
+    }
+    if bkLdShakeFuncs < 0 or bkLdShakeFuncs > n - 1 {
+        return false
+    }
+    i = 1
+    while i < n {
+        if bkLdShakeStart[i] < bkLdShakeStart[i - 1] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
 // bkLoadSection reads the resident section id (library offset off,
 // length len) into bkLoadBuf and dispatches it to its own reader. Every
 // reader must consume EXACTLY len bytes without running off the end, or
@@ -4208,6 +4237,9 @@ func bkLoadSection(id: int, off: int, len: int, testapi: bool): bool {
         bkLdShakeFuncs = bkGetU32()
         bkLdShakeStart = bkReadIntList()
         bkLdShakeNames = bkReadIntList()
+        if not bkShakeSummaryValid() {
+            bkLoadOverrun = true
+        }
     } else if id == bkSecIrExternNames {
         bkLdIrExternNames = bkReadIntList()
     } else if id == bkSecIrExternRetTys {

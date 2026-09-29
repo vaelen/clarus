@@ -30,4 +30,22 @@ if grep -q 'object-code section' "$WORK/log" && grep -q 'out of range' "$WORK/lo
 else
     t_fail diagnostic "expected a clear object-code reloc-symbol-out-of-range diagnostic, got: $(head -5 "$WORK/log" | tr '\n' ' ')"
 fi
+# A library whose index marks every record empty (`--empty-objcode-testonly`)
+# passes bkLoadObjCode -- it reads nothing -- but CLIR v9's 68k library has
+# no IR bodies to fall back on, so Measure must refuse the first reachable
+# baked function (cg68k.cla's cgObjLibMissing) instead of emitting it empty.
+EMPTY=$WORK/empty-objcode-68k.clir
+"$CLARUSC" --bake-ir --lane 68k --empty-objcode-testonly -o "$EMPTY" \
+    || die "clarusc --bake-ir --lane 68k --empty-objcode-testonly failed"
+if "$CLARUSC" emit68k --rtbake "$EMPTY" -o "$WORK/empty.bin" \
+        "$ROOT/testdata/cg68k/arith.cla" > "$WORK/empty.log" 2>&1; then
+    t_fail empty_exit "clarusc emit68k --rtbake <empty-objcode>: expected nonzero exit, got success"
+else
+    t_pass empty_exit
+fi
+if grep -q 'has no object record' "$WORK/empty.log"; then
+    t_pass empty_diagnostic
+else
+    t_fail empty_diagnostic "expected a missing-object-record diagnostic, got: $(tail -3 "$WORK/empty.log" | tr '\n' ' ')"
+fi
 t_done

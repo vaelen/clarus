@@ -5,9 +5,12 @@
 # gcCompile calls) logs why and compiles from source, where the host
 # `--rtbake` CLI exits 1 (refuse_objcode.sh, refuse_body.sh). Driven
 # through clarusc/test/dblcompile_bake.cla, the host harness that calls
-# driveCompileFork the way ClarusC does. Two failures, one per load stage:
+# driveCompileFork the way ClarusC does. Three failures, one per load stage:
 #   objcode: a corrupt object-code section, found by bkLoadObjCode after
 #            shake (driveEmit68kFork);
+#   empty:   an object-code index with no valid record, found by cg68k.cla's
+#            cgObjLibMissing in Measure (the bodyless library cannot
+#            code-generate a baked function itself);
 #   laneset: a directory without the lane's own section set, refused by
 #            bkLoadRtbake before Phase A (driveCompile).
 # Each must log the fallback and build the same fork as the good library.
@@ -24,6 +27,8 @@ GOOD=$WORK/good.clir
 bake_ir 68k "$GOOD"
 "$CLARUSC" --bake-ir --lane 68k --corrupt-objcode-testonly -o "$WORK/objcode.clir" \
     || die "clarusc --bake-ir --corrupt-objcode-testonly failed"
+"$CLARUSC" --bake-ir --lane 68k --empty-objcode-testonly -o "$WORK/empty.clir" \
+    || die "clarusc --bake-ir --empty-objcode-testonly failed"
 clir_retag_section "$GOOD" "$WORK/laneset.clir" 52 2 || die "clir_retag_section failed"
 host_build "$WORK/dblcompile_bake" clarusc/test/dblcompile_bake.cla > "$WORK/build.log" 2>&1 \
     || die "build clarusc/test/dblcompile_bake.cla failed: $(tail -5 "$WORK/build.log")"
@@ -39,7 +44,7 @@ if grep -q 'CLFS-source fallback' "$WORK/good.log"; then
     die "the good library fell back: $(grep 'fallback' "$WORK/good.log")"
 fi
 
-for c in objcode laneset; do
+for c in objcode empty laneset; do
     if ! run "$c" "$WORK/$c.clir"; then
         t_fail "$c" "compile failed instead of falling back: $(tail -5 "$WORK/$c.log" | tr '\n' ' ')"
     elif ! grep -q 'clarusc: CLFS-source fallback (CLIR library failed to load)' "$WORK/$c.log"; then
@@ -52,6 +57,8 @@ for c in objcode laneset; do
 done
 grep -q 'object-code section' "$WORK/objcode.log" && t_pass objcode_reason \
     || t_fail objcode_reason "the object-code diagnostic was not logged"
+grep -q 'has no object record' "$WORK/empty.log" && t_pass empty_reason \
+    || t_fail empty_reason "the missing-object-record diagnostic was not logged"
 grep -q 'corrupt header' "$WORK/laneset.log" && t_pass laneset_reason \
     || t_fail laneset_reason "the corrupt-header diagnostic was not logged"
 t_done
