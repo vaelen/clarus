@@ -21,7 +21,10 @@
 # capture must be exactly "l1\nl2\nl3\n") and tracelog (a production
 # build of testdata/cg68k/tickprobe.cla, whose app.writeLog("out") +
 # app.trace(true) must leave its UI trace lines in out), plus logvol (the
-# log stays in its own folder after the default directory moves).
+# log stays in its own folder after the default directory moves), and
+# logpanic (a production build of testdata/mactest/logpanic.cla that
+# logs one line and then panics -- out must be exactly that line plus the
+# runtime error line).
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
@@ -75,6 +78,18 @@ if [ $rc -eq 0 ]; then
         t_pass logvol
     else
         t_fail logvol "capture is not \"sublog ok\": $(od -c "$WORK/logvol.raw" | head -5)"
+    fi
+fi
+
+# logpanic: a production runtime panic flushes the log before quitting
+# and writes nothing else (no trailer, no second copy of the error line).
+prod_boot logpanic testdata/mactest/logpanic.cla
+printf 'before\nruntime error: list index out of range\n' > "$WORK/logpanic.want"
+if [ $rc -eq 0 ]; then
+    if cmp -s "$WORK/logpanic.raw" "$WORK/logpanic.want"; then
+        t_pass logpanic
+    else
+        t_fail logpanic "capture is not before + the runtime error line: $(od -c "$WORK/logpanic.raw" | head -5)"
     fi
 fi
 

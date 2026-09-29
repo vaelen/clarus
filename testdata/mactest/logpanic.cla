@@ -1,0 +1,20 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// logpanic.cla: tests/mactest/nolog.sh's production-panic fixture. Built
+// WITHOUT --capture, it opts into a log file named `out`, logs one line,
+// then panics (list index out of range): the capture must be exactly the
+// line plus the runtime error line -- the panic path flushes the log
+// before quitting, and writes no capture trailer.
+
+func boom(): int {
+    var xs: list of int
+    return xs[3]
+}
+
+on App.launch {
+    app.writeLog("out")
+    log("before")
+    log(string(boom()))
+    quit 0
+}
