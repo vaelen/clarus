@@ -226,7 +226,7 @@ const bkSecFieldInfo: int = 47
 // 2): the per-reachable-runtime-function captured object -- byte runs +
 // typed hole records (bkSecObjCode, cg68k.cla's own cgObjRunBytes/cgObjRunOff/
 // cgObjHoles) and Measure-time metadata (bkSecObjMeta, cg68k.cla's own
-// cgFuncSize/cgFuncFrameSizes/cgFuncStrLits-family plus the once-per-
+// cgFuncSize/cgFuncFrameSizes/cgFuncPoolRefs plus the once-per-
 // artifact fixed-cost buckets and per-pool-entry size tables). 68k lane
 // only; written empty (count 0) on lane c. See bkWriteObjCode/
 // bkWriteObjMeta for the exact wire shape and bkReadObjIndex/
@@ -1990,9 +1990,9 @@ func bkWriteObjMeta(lane: int): text {
         // simply always include, needing no per-function bookkeeping.
         strLits = driveFreshIntList()
         k = 0
-        while k < cgFuncStrLits[i].count {
-            if cgFuncStrLits[i][k] != cgListOobMsgIdx {
-                strLits.add(cgFuncStrLits[i][k])
+        while k < cgFuncPoolCount(i, cgPoolKStr) {
+            if cgFuncPoolAt(i, cgPoolKStr, k) != cgListOobMsgIdx {
+                strLits.add(cgFuncPoolAt(i, cgPoolKStr, k))
             }
             k = k + 1
         }
@@ -2002,16 +2002,16 @@ func bkWriteObjMeta(lane: int): text {
             bkPutU32(sec, strLits[k])
             k = k + 1
         }
-        bkPutU32(sec, cgFuncEnumTables[i].count)
+        bkPutU32(sec, cgFuncPoolCount(i, cgPoolKEnum))
         k = 0
-        while k < cgFuncEnumTables[i].count {
-            bkPutU32(sec, cgFuncEnumTables[i][k])
+        while k < cgFuncPoolCount(i, cgPoolKEnum) {
+            bkPutU32(sec, cgFuncPoolAt(i, cgPoolKEnum, k))
             k = k + 1
         }
-        bkPutU32(sec, cgFuncSerdescs[i].count)
+        bkPutU32(sec, cgFuncPoolCount(i, cgPoolKSerdesc))
         k = 0
-        while k < cgFuncSerdescs[i].count {
-            bkPutU32(sec, cgFuncSerdescs[i][k])
+        while k < cgFuncPoolCount(i, cgPoolKSerdesc) {
+            bkPutU32(sec, cgFuncPoolAt(i, cgPoolKSerdesc, k))
             k = k + 1
         }
         bkPutBool(sec, cgFuncUsesUiBlob[i])
@@ -2808,14 +2808,14 @@ var bkLdObjFuncFrameSize: list of int
 // it; this is not a stylistic preference.
 // bkLdObjFuncStrLitFirst/Count/Flat are staged and truncated like every
 // other field in this section but DELIBERATELY UNCONSUMED by Task 3's
-// link pass: cgObjBuildFuncStrLits (cg68k.cla) rebuilds a baked
+// link pass: cgObjAddFuncStrLits (cg68k.cla) rebuilds a baked
 // function's own strlit pool-ref set entirely from that function's own
 // hole list instead, in stored order -- the wire array here can't be
 // used directly because Amendment A2 filters cgListOobMsgIdx OUT of it
 // at write time (its bake-time numeric index isn't valid at compile
 // time), which destroys the panic entry's real chronological position
 // among the surviving entries; re-deriving from holes reproduces that
-// position exactly (see cgObjBuildFuncStrLits' own doc comment for the
+// position exactly (see cgObjAddFuncStrLits' own doc comment for the
 // full story, including the byte-identity regression this cost before
 // the fix). A future reader must not wire these three fields into
 // cg68Measure as a shortcut -- they are validated at load time
@@ -3964,7 +3964,7 @@ func bkObjPoolIdxValid(flat: list of int, first: int, count: int, bound: int): b
 // index list names something outside that pool's own installed range.
 // The wire shape is UNCHANGED (still count-then-elements per pool per
 // function, matching bkWriteObjMeta exactly, which reads straight off
-// cg68k.cla's own `list of list of int` cgFuncStrLits/etc) -- only the
+// cg68k.cla's own flat cgFuncPoolRefs, one kind at a time) -- only the
 // STAGING shape flattens (bkLdObjFuncStrLitFirst/Count into one shared
 // bkLdObjFuncStrLitFlat, per pool).
 func bkReadObjMeta(): bool {

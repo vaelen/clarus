@@ -402,7 +402,7 @@ func app68TypeIndexOf(types: list of string, t: string): int {
 // never need to pre-order their resTypes/resIds/resDatas/resNames
 // quadruples.
 func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resNames: list of string, resDatas: list of text): text {
-    var data: text
+    var dataLen: int
     var map: text
     var out: text
     var n: int
@@ -483,15 +483,16 @@ func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resNa
         ti = ti + 1
     }
 
-    // data section: length-prefixed resource data, in `order`.
-    data = ""
+    // data section: length-prefixed resource data, in `order`. Only the
+    // offsets are computed here; the bytes go straight into `out` below,
+    // pre-sized, so no separate copy of the data section is ever live
+    // (SE wave 4: this doubled the fork's transient peak).
+    dataLen = 0
     dataOffs = app68FreshIntList()
     i = 0
     while i < order.count {
-        idx = order[i]
-        dataOffs.add(data.length)
-        app68PutLong(data, resDatas[idx].length)
-        data.append(resDatas[idx])
+        dataOffs.add(dataLen)
+        dataLen = dataLen + 4 + resDatas[order[i]].length
         i = i + 1
     }
 
@@ -550,15 +551,23 @@ func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resNa
     map.append(names)
 
     out = ""
+    out.reserve(256 + dataLen + map.length)
     app68PutLong(out, 256)                     // data offset from fork start
-    app68PutLong(out, 256 + data.length)       // map offset from fork start
-    app68PutLong(out, data.length)             // data length
+    app68PutLong(out, 256 + dataLen)           // map offset from fork start
+    app68PutLong(out, dataLen)                 // data length
     app68PutLong(out, map.length)              // map length
     while out.length < 256 {                   // 240 reserved (system-use) bytes
         out.append(char(0))
     }
-    out.append(data)
+    i = 0
+    while i < order.count {
+        idx = order[i]
+        app68PutLong(out, resDatas[idx].length)
+        out.append(resDatas[idx])
+        i = i + 1
+    }
     out.append(map)
+    out.shrink()                               // reserve rounds up to a power of two
     return out
 }
 
@@ -579,33 +588,32 @@ func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resNa
 // hand the raw fork straight to `file.writeRes` instead of paying for a
 // MacBinary wrap it will immediately strip back off.
 func app68BuildFork(segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int, extraTypes: list of string, extraIds: list of int, extraNames: list of string, extraDatas: list of text): text {
-    var code0: text
-    var codeRes: list of text
     var i: int
     var resTypes: list of string
     var resIds: list of int
     var resNames: list of string
     var resDatas: list of text
 
-    code0 = app68BuildCode0(jtEntries, jtSegNums, belowA5)
-    codeRes = app68FreshTextList()
-    codeRes.add(code0)
-    i = 0
-    while i < segBytes.count {
-        codeRes.add(app68BuildCodeN(segBytes[i], segJtFirst[i], segJtCount[i]))
-        i = i + 1
-    }
-
     resTypes = app68FreshStringList()
     resIds = app68FreshIntList()
     resNames = app68FreshStringList()
     resDatas = app68FreshTextList()
+    resDatas.add(app68BuildCode0(jtEntries, jtSegNums, belowA5))
     i = 0
-    while i < codeRes.count {
+    while i < segBytes.count {
+        // CONSUMES segBytes: each segment's storage is released as soon as
+        // its CODE resource holds a tight copy, so the segment bytes and
+        // their copies are never all live at once (SE wave 4).
+        resDatas.add(app68BuildCodeN(segBytes[i], segJtFirst[i], segJtCount[i]))
+        resDatas[i + 1].shrink()
+        segBytes[i].release()
+        i = i + 1
+    }
+    i = 0
+    while i < resDatas.count {
         resTypes.add("CODE")
         resIds.add(i)
         resNames.add("")
-        resDatas.add(codeRes[i])
         i = i + 1
     }
     i = 0
@@ -632,6 +640,7 @@ func app68WrapFork(appName: string(31), creator: string(7), data: text, fork: te
     var out: text
 
     out = app68BuildHeader(appName, creator, data.length, fork.length)
+    out.reserve(128 + (data.length + 127) / 128 * 128 + (fork.length + 127) / 128 * 128)
     out.append(data)
     while out.length mod 128 != 0 {
         out.append(char(0))

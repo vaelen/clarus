@@ -777,7 +777,7 @@ func cgRecordStrLit(litIdx: int) {
     }
     cgStrLitSeen[litIdx] = cgSeenEpoch
     if cgRecMode == 1 {
-        cgFuncStrLits[cgRecFuncIdx].add(litIdx)
+        cgFuncPoolRefs.add(litIdx * 4 + cgPoolKStr)
     } else if cgRecMode == 2 {
         cgSeg1StrLits.add(litIdx)
     } else if cgRecMode == 3 {
@@ -796,7 +796,7 @@ func cgRecordArrLit(litIdx: int) {
     }
     cgArrLitSeen[litIdx] = cgSeenEpoch
     if cgRecMode == 1 {
-        cgFuncArrLits[cgRecFuncIdx].add(litIdx)
+        cgFuncPoolRefs.add(litIdx * 4 + cgPoolKArr)
     } else if cgRecMode == 2 {
         cgSeg1ArrLits.add(litIdx)
     } else if cgRecMode == 3 {
@@ -813,7 +813,7 @@ func cgRecordEnumTable(ei: int) {
     }
     cgEnumSeen[ei] = cgSeenEpoch
     if cgRecMode == 1 {
-        cgFuncEnumTables[cgRecFuncIdx].add(ei)
+        cgFuncPoolRefs.add(ei * 4 + cgPoolKEnum)
     } else if cgRecMode == 2 {
         cgSeg1EnumTables.add(ei)
     } else if cgRecMode == 3 {
@@ -830,7 +830,7 @@ func cgRecordSerdesc(ri: int) {
     }
     cgSerdescSeen[ri] = cgSeenEpoch
     if cgRecMode == 1 {
-        cgFuncSerdescs[cgRecFuncIdx].add(ri)
+        cgFuncPoolRefs.add(ri * 4 + cgPoolKSerdesc)
     } else if cgRecMode == 2 {
         cgSeg1Serdescs.add(ri)
     } else if cgRecMode == 3 {
@@ -909,6 +909,68 @@ func cgPoolDeltaAndUnion(cand: list of int, sizes: list of int, segSet: list of 
             delta = delta + sizes[idx]
         }
         i = i + 1
+    }
+    return delta
+}
+
+// cgFuncPoolCount/cgFuncPoolAt read function f's kind-k entries of
+// cgFuncPoolRefs back: how many, and the n-th (0-based) index, in order.
+func cgFuncPoolCount(f: int, k: int): int {
+    var j: int
+    var n: int
+
+    n = 0
+    j = cgFuncPoolFirst[f]
+    while j < cgFuncPoolFirst[f + 1] {
+        if cgFuncPoolRefs[j] mod 4 == k {
+            n = n + 1
+        }
+        j = j + 1
+    }
+    return n
+}
+
+func cgFuncPoolAt(f: int, k: int, n: int): int {
+    var j: int
+    var v: int
+    var left: int
+
+    left = n
+    j = cgFuncPoolFirst[f]
+    while j < cgFuncPoolFirst[f + 1] {
+        v = cgFuncPoolRefs[j]
+        if v mod 4 == k {
+            if left == 0 {
+                return v / 4
+            }
+            left = left - 1
+        }
+        j = j + 1
+    }
+    return -1
+}
+
+// cgFuncPoolDelta is cgPoolDeltaPeek (commit false) / cgPoolDeltaAndUnion
+// (commit true) over function f's kind-k entries of cgFuncPoolRefs.
+func cgFuncPoolDelta(f: int, k: int, commit: bool, sizes: list of int, segSet: list of int, segBits: list of bool): int {
+    var j: int
+    var idx: int
+    var delta: int
+
+    delta = 0
+    j = cgFuncPoolFirst[f]
+    while j < cgFuncPoolFirst[f + 1] {
+        if cgFuncPoolRefs[j] mod 4 == k {
+            idx = cgFuncPoolRefs[j] / 4
+            if not segBits[idx] {
+                if commit {
+                    segSet.add(idx)
+                    segBits[idx] = true
+                }
+                delta = delta + sizes[idx]
+            }
+        }
+        j = j + 1
     }
     return delta
 }
@@ -1281,17 +1343,23 @@ var cgArrLitSeen: list of int
 var cgEnumSeen: list of int
 var cgSerdescSeen: list of int
 
-// cgFuncStrLits[i]/cgFuncEnumTables[i]/cgFuncSerdescs[i]/
-// cgFuncUsesUiBlob[i]/cgFuncUsesUiEvents[i] are irFuncs index i's own
-// constant-pool needs (str-lit / enum-table / serdesc indices, deduped;
-// empty/false for an unreachable function, same convention as
-// cgFuncSize; every unreachable index of the four int lists shares one
-// empty list, never written -- see cg68Measure). cgSeg1*/cgGlue* are the matching buckets for the two
-// fixed-cost glue regions (see cgRecMode's own comment just above).
-var cgFuncStrLits: list of list of int
-var cgFuncArrLits: list of list of int
-var cgFuncEnumTables: list of list of int
-var cgFuncSerdescs: list of list of int
+// cgFuncPoolRefs/cgFuncPoolFirst/cgFuncUsesUiBlob[i]/cgFuncUsesUiEvents[i]
+// are irFuncs index i's own constant-pool needs. SE wave 4: one flat list
+// for every function instead of four lists per function (the per-list
+// boxes and handles cost ~110 KB at Measured for bookmarks): function i
+// owns cgFuncPoolRefs[cgFuncPoolFirst[i], cgFuncPoolFirst[i + 1]), each
+// entry `index * 4 + kind` (cgPoolKStr/Arr/Enum/Serdesc), each kind's
+// entries deduped and in first-reference order (cgFuncPoolCount/
+// cgFuncPoolAt read one kind back). An unreachable function's range is
+// empty and its UsesUi flags false, same convention as cgFuncSize.
+// cgSeg1*/cgGlue* are the matching buckets for the two fixed-cost glue
+// regions (see cgRecMode's own comment just above).
+const cgPoolKStr: int = 0
+const cgPoolKArr: int = 1
+const cgPoolKEnum: int = 2
+const cgPoolKSerdesc: int = 3
+var cgFuncPoolRefs: list of int
+var cgFuncPoolFirst: list of int
 var cgFuncUsesUiBlob: list of bool
 var cgFuncUsesUiEvents: list of bool
 
@@ -1930,6 +1998,11 @@ var cgSizeMemo: list of int
 func cgSizeOf(t: int): int {
     var sz: int
 
+    if cgSizeMemo.count < irTypes.count {
+        // SE wave 4: grow in fixed steps, not by doubling (irTypes is
+        // near-final by now; doubling left ~15 KB of slack).
+        cgSizeMemo.reserve(irTypes.count + 64)
+    }
     while cgSizeMemo.count < irTypes.count {
         cgSizeMemo.add(-1)
     }
@@ -14328,7 +14401,6 @@ func cg68Measure(): bool {
     var allArrLits: list of int
     var allEnumTables: list of int
     var allSerdescs: list of int
-    var noPoolRefs: list of int
 
     a68Reset()
     cgResetCodegenState()
@@ -14407,32 +14479,15 @@ func cg68Measure(): bool {
     // cgFuncSize/cgFuncFrameSizes below -- filled in as the function
     // loop, cgEmitStartup+cgEmitInitGlobalsStub, and the glue bundle run
     // further down (cgRecMode toggled around each).
-    cgFuncStrLits = cgFreshIntListList()
-    cgFuncArrLits = cgFreshIntListList()
-    cgFuncEnumTables = cgFreshIntListList()
-    cgFuncSerdescs = cgFreshIntListList()
+    // cgFuncPoolFirst gets function i's start just before function i is
+    // measured, in the function loop below, so everything cgRecord*
+    // appends while cgRecFuncIdx == i lands in i's own range.
+    cgFuncPoolRefs = cgFreshIntList()
+    cgFuncPoolFirst = cgFreshIntList()
     cgFuncUsesUiBlob = cgFreshBoolList()
     cgFuncUsesUiEvents = cgFreshBoolList()
-    // SE wave 4 (spec %3.5): only a shake-reachable function gets its own
-    // four lists. Every unreachable index shares ONE empty list: nothing
-    // records into it (cgRecord* writes only cgFuncX[cgRecFuncIdx], and
-    // cgRecFuncIdx is set only for reachable functions in the loop below)
-    // and every reader (cgPackProgram, bake's per-function section) just
-    // sees an empty set.
-    noPoolRefs = cgFreshIntList()
     i = 0
     while i < irFuncs.count {
-        if shakeReachable(i) {
-            cgFuncStrLits.add(cgFreshIntList())
-            cgFuncArrLits.add(cgFreshIntList())
-            cgFuncEnumTables.add(cgFreshIntList())
-            cgFuncSerdescs.add(cgFreshIntList())
-        } else {
-            cgFuncStrLits.add(noPoolRefs)
-            cgFuncArrLits.add(noPoolRefs)
-            cgFuncEnumTables.add(noPoolRefs)
-            cgFuncSerdescs.add(noPoolRefs)
-        }
         cgFuncUsesUiBlob.add(false)
         cgFuncUsesUiEvents.add(false)
         i = i + 1
@@ -14538,6 +14593,7 @@ func cg68Measure(): bool {
     cgFuncSize = cgFreshIntList()
     i = 0
     while i < irFuncs.count {
+        cgFuncPoolFirst.add(cgFuncPoolRefs.count)
         if shakeReachable(i) {
             // object-code-linker Task 3: a baked+valid function's own
             // size/frame/pool-usage came out of a REAL Measure pass at
@@ -14553,10 +14609,10 @@ func cg68Measure(): bool {
             if cgObjPasteEligible(i) {
                 cgFuncSize.add(bkLdObjFuncSize[i])
                 cgFuncFrameSizes[i] = bkLdObjFuncFrameSize[i]
-                cgFuncStrLits[i] = cgObjBuildFuncStrLits(i)
-                cgFuncArrLits[i] = cgObjBuildFuncArrLits(i)
-                cgFuncEnumTables[i] = cgObjFlatSlice(bkLdObjFuncEnumTableFlat, bkLdObjFuncEnumTableFirst[i], bkLdObjFuncEnumTableCount[i])
-                cgFuncSerdescs[i] = cgObjFlatSlice(bkLdObjFuncSerdescFlat, bkLdObjFuncSerdescFirst[i], bkLdObjFuncSerdescCount[i])
+                cgObjAddFuncStrLits(i)
+                cgObjAddFuncArrLits(i)
+                cgObjAddFlatSlice(bkLdObjFuncEnumTableFlat, bkLdObjFuncEnumTableFirst[i], bkLdObjFuncEnumTableCount[i], cgPoolKEnum)
+                cgObjAddFlatSlice(bkLdObjFuncSerdescFlat, bkLdObjFuncSerdescFirst[i], bkLdObjFuncSerdescCount[i], cgPoolKSerdesc)
                 cgFuncUsesUiBlob[i] = bkLdObjFuncUsesUiBlob[i]
                 cgFuncUsesUiEvents[i] = bkLdObjFuncUsesUiEvents[i]
                 cgObjApplyGlueUsage(i)
@@ -14578,6 +14634,7 @@ func cg68Measure(): bool {
         driveProgressTick()
         i = i + 1
     }
+    cgFuncPoolFirst.add(cgFuncPoolRefs.count)
 
     before = a68SizeSoFar()
     // Task 15 (findings 1.8): bump the epoch before this recording
@@ -14780,10 +14837,10 @@ func cgPackProgram(): bool {
             placed = false
             s = 0
             while s < segUsed.count {
-                candDelta = cgPoolDeltaPeek(cgFuncStrLits[i], cgStrLitSize, segStrSets[s], segStrBits[s])
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncArrLits[i], cgArrLitSize, segArrSets[s], segArrBits[s])
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncEnumTables[i], cgEnumTableSize, segEnumSets[s], segEnumBits[s])
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncSerdescs[i], cgSerdescSize, segSerdescSets[s], segSerdescBits[s])
+                candDelta = cgFuncPoolDelta(i, cgPoolKStr, false, cgStrLitSize, segStrSets[s], segStrBits[s])
+                candDelta = candDelta + cgFuncPoolDelta(i, cgPoolKArr, false, cgArrLitSize, segArrSets[s], segArrBits[s])
+                candDelta = candDelta + cgFuncPoolDelta(i, cgPoolKEnum, false, cgEnumTableSize, segEnumSets[s], segEnumBits[s])
+                candDelta = candDelta + cgFuncPoolDelta(i, cgPoolKSerdesc, false, cgSerdescSize, segSerdescSets[s], segSerdescBits[s])
                 if cgFuncUsesUiBlob[i] and not segUiBlob[s] {
                     candDelta = candDelta + cgUiBlobSize
                 }
@@ -14793,10 +14850,10 @@ func cgPackProgram(): bool {
                 totalDelta = sz + candDelta
                 if segUsed[s] + totalDelta <= segAvail[s] {
                     segUsed[s] = segUsed[s] + totalDelta
-                    cgPoolDeltaAndUnion(cgFuncStrLits[i], cgStrLitSize, segStrSets[s], segStrBits[s])
-                    cgPoolDeltaAndUnion(cgFuncArrLits[i], cgArrLitSize, segArrSets[s], segArrBits[s])
-                    cgPoolDeltaAndUnion(cgFuncEnumTables[i], cgEnumTableSize, segEnumSets[s], segEnumBits[s])
-                    cgPoolDeltaAndUnion(cgFuncSerdescs[i], cgSerdescSize, segSerdescSets[s], segSerdescBits[s])
+                    cgFuncPoolDelta(i, cgPoolKStr, true, cgStrLitSize, segStrSets[s], segStrBits[s])
+                    cgFuncPoolDelta(i, cgPoolKArr, true, cgArrLitSize, segArrSets[s], segArrBits[s])
+                    cgFuncPoolDelta(i, cgPoolKEnum, true, cgEnumTableSize, segEnumSets[s], segEnumBits[s])
+                    cgFuncPoolDelta(i, cgPoolKSerdesc, true, cgSerdescSize, segSerdescSets[s], segSerdescBits[s])
                     if cgFuncUsesUiBlob[i] {
                         segUiBlob[s] = true
                     }
@@ -14837,10 +14894,10 @@ func cgPackProgram(): bool {
                     newUiEvents = true
                 }
 
-                candDelta = cgPoolDeltaPeek(cgFuncStrLits[i], cgStrLitSize, newStrSet, newStrBits)
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncArrLits[i], cgArrLitSize, newArrSet, newArrBits)
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncEnumTables[i], cgEnumTableSize, newEnumSet, newEnumBits)
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncSerdescs[i], cgSerdescSize, newSerdescSet, newSerdescBits)
+                candDelta = cgFuncPoolDelta(i, cgPoolKStr, false, cgStrLitSize, newStrSet, newStrBits)
+                candDelta = candDelta + cgFuncPoolDelta(i, cgPoolKArr, false, cgArrLitSize, newArrSet, newArrBits)
+                candDelta = candDelta + cgFuncPoolDelta(i, cgPoolKEnum, false, cgEnumTableSize, newEnumSet, newEnumBits)
+                candDelta = candDelta + cgFuncPoolDelta(i, cgPoolKSerdesc, false, cgSerdescSize, newSerdescSet, newSerdescBits)
                 if cgFuncUsesUiBlob[i] and not newUiBlob {
                     candDelta = candDelta + cgUiBlobSize
                 }
@@ -14854,10 +14911,10 @@ func cgPackProgram(): bool {
                     return false
                 }
 
-                cgPoolDeltaAndUnion(cgFuncStrLits[i], cgStrLitSize, newStrSet, newStrBits)
-                cgPoolDeltaAndUnion(cgFuncArrLits[i], cgArrLitSize, newArrSet, newArrBits)
-                cgPoolDeltaAndUnion(cgFuncEnumTables[i], cgEnumTableSize, newEnumSet, newEnumBits)
-                cgPoolDeltaAndUnion(cgFuncSerdescs[i], cgSerdescSize, newSerdescSet, newSerdescBits)
+                cgFuncPoolDelta(i, cgPoolKStr, true, cgStrLitSize, newStrSet, newStrBits)
+                cgFuncPoolDelta(i, cgPoolKArr, true, cgArrLitSize, newArrSet, newArrBits)
+                cgFuncPoolDelta(i, cgPoolKEnum, true, cgEnumTableSize, newEnumSet, newEnumBits)
+                cgFuncPoolDelta(i, cgPoolKSerdesc, true, cgSerdescSize, newSerdescSet, newSerdescBits)
                 if cgFuncUsesUiBlob[i] {
                     newUiBlob = true
                 }
@@ -15688,30 +15745,42 @@ func cgObjPasteEligible(i: int): bool {
     return bkLdObjValid[i]
 }
 
-// cgObjFlatSlice copies flat[first, first+count) into a fresh list --
-// bkLdObjFuncEnumTableFlat/SerdescFlat's own per-function First/Count
-// pair (Task 2's flat-not-nested staging shape, chosen to keep
-// cg_free_globals cheap -- see bkLdObjValid's own doc comment)
-// unflattened back into the per-function `list of int` cgFuncEnumTables/
-// cgFuncSerdescs already want.
-func cgObjFlatSlice(flat: list of int, first: int, count: int): list of int {
-    var l: list of int
+// cgObjAddFlatSlice appends flat[first, first+count), tagged kind k, to
+// cgFuncPoolRefs -- bkLdObjFuncEnumTableFlat/SerdescFlat's own
+// per-function First/Count pair (Task 2's flat-not-nested staging shape)
+// copied into the current function's cgFuncPoolRefs range.
+func cgObjAddFlatSlice(flat: list of int, first: int, count: int, k: int) {
     var i: int
 
-    l = cgFreshIntList()
     i = 0
     while i < count {
-        l.add(flat[first + i])
+        cgFuncPoolRefs.add(flat[first + i] * 4 + k)
         i = i + 1
     }
-    return l
 }
 
-// cgObjBuildFuncStrLits reconstructs baked function f's own strlit pool-
-// ref set for cgFuncStrLits[f] -- built ENTIRELY from f's own hole list,
+// cgObjAddPoolRef appends v (already tagged) to the current function's
+// cgFuncPoolRefs range -- the last cgFuncPoolFirst entry onward -- unless
+// the range already holds it: the first-reference dedup cgRecord*'s
+// epoch guard gives a real Measure.
+func cgObjAddPoolRef(v: int) {
+    var j: int
+
+    j = cgFuncPoolFirst[cgFuncPoolFirst.count - 1]
+    while j < cgFuncPoolRefs.count {
+        if cgFuncPoolRefs[j] == v {
+            return
+        }
+        j = j + 1
+    }
+    cgFuncPoolRefs.add(v)
+}
+
+// cgObjAddFuncStrLits reconstructs baked function f's own strlit pool-
+// ref set in cgFuncPoolRefs -- built ENTIRELY from f's own hole list,
 // not from bkLdObjFuncStrLitFlat's wire array, and deliberately so: a
 // real Measure's cgRecordStrLit records a strlit index into
-// cgFuncStrLits[i] on its FIRST reference only (cgStrLitSeen's own
+// cgFuncPoolRefs on its FIRST reference only (cgStrLitSeen's own
 // per-function epoch guard dedups repeats), in the exact chronological
 // order cgStmts walks the function body -- and every strlit reference
 // this backend ever emits takes the SAME position-dependent
@@ -15728,23 +15797,19 @@ func cgObjFlatSlice(flat: list of int, first: int, count: int): list of int {
 // list-index bounds checks all hole the SAME dedup'd panic entry, and
 // real Measure records it interleaved (between two ordinary strlit
 // refs, mid-function), not trailing -- cgPackProgram's own segment pool
-// SET accumulates in cgFuncStrLits' iteration order (cgPoolDeltaAndUnion),
+// SET accumulates in cgFuncPoolRefs' iteration order (cgFuncPoolDelta),
 // so a wrong relative order here can reorder the shared string pool's
 // own on-disk bytes for whichever segment first discovers an entry via
 // this function, well past merely getting the SIZE right (which the
 // hole-count-vs-dedup fix, immediately below in git history, already
 // covers on its own).
-func cgObjBuildFuncStrLits(f: int): list of int {
-    var l: list of int
+func cgObjAddFuncStrLits(f: int) {
     var p: int
     var nh: int
     var k: int
-    var j: int
     var h: CgObjHole
     var sym: int
-    var found: bool
 
-    l = cgFreshIntList()
     p = bkObjRecPos(f)
     nh = bkObjBuf.intAt(p)
     p = bkObjRunEnd(p + 4)
@@ -15758,26 +15823,15 @@ func cgObjBuildFuncStrLits(f: int): list of int {
             } else {
                 sym = h.sym
             }
-            found = false
-            j = 0
-            while j < l.count {
-                if l[j] == sym {
-                    found = true
-                }
-                j = j + 1
-            }
-            if not found {
-                l.add(sym)
-            }
+            cgObjAddPoolRef(sym * 4 + cgPoolKStr)
         }
         k = k + 1
     }
-    return l
 }
 
-// cgObjBuildFuncArrLits reconstructs baked function f's own array-literal
-// pool-ref set for cgFuncArrLits[f] (language-runtime-cleanup, spec %4.4)
-// -- built from f's own hole list, exactly like cgObjBuildFuncStrLits
+// cgObjAddFuncArrLits reconstructs baked function f's own array-literal
+// pool-ref set in cgFuncPoolRefs (language-runtime-cleanup, spec %4.4)
+// -- built from f's own hole list, exactly like cgObjAddFuncStrLits
 // above and for the same reason: every array-literal reference this
 // backend emits is the SAME `LEA d16(PC),An` shape (cgExprAddr's EArrLit
 // arm is the only producer), so a hole-list scan in stored order
@@ -15785,16 +15839,12 @@ func cgObjBuildFuncStrLits(f: int): list of int {
 // Unlike the enum-table/serdesc sets there is no wire array to read
 // instead -- and none is needed, since this class has no Amendment-A2
 // style filtered entry to lose the position of either.
-func cgObjBuildFuncArrLits(f: int): list of int {
-    var l: list of int
+func cgObjAddFuncArrLits(f: int) {
     var p: int
     var nh: int
     var k: int
-    var j: int
     var h: CgObjHole
-    var found: bool
 
-    l = cgFreshIntList()
     p = bkObjRecPos(f)
     nh = bkObjBuf.intAt(p)
     p = bkObjRunEnd(p + 4)
@@ -15803,21 +15853,10 @@ func cgObjBuildFuncArrLits(f: int): list of int {
         h = bkObjHoleAt(p)
         p = bkObjRunEnd(p + bkObjHoleBytes)
         if h.kind == cgHoleLabel and h.cls == cgRelClsPoolArr {
-            found = false
-            j = 0
-            while j < l.count {
-                if l[j] == h.sym {
-                    found = true
-                }
-                j = j + 1
-            }
-            if not found {
-                l.add(h.sym)
-            }
+            cgObjAddPoolRef(h.sym * 4 + cgPoolKArr)
         }
         k = k + 1
     }
-    return l
 }
 
 // cgObjApplyGlueUsage replays baked function f's own mul32/div32/mod32
@@ -16302,6 +16341,13 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
         // outPath -- cgObjCaptureRuntime passes a placeholder).
         return true
     }
+    // SE wave 4: every segment is encoded, so the assembler's item buffer
+    // (sized by the largest function) and the lazily read runtime object
+    // code are dead; drop their storage before the fork is assembled, the
+    // compile's peak. Both containers stay usable (driveReset releases
+    // bkObjBuf again; a68Reset only clears a68Items).
+    a68Items.release()
+    bkObjBuf.release()
     driveProgressStage("Building Fork")
     if not cg68BuildFork(jtEntries, jtSegNums, segBytes) {
         return false

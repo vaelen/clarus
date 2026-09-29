@@ -2674,6 +2674,11 @@ func driveFreeFrontEnd() {
     externFirstDeclByName.release()
     constFirstDeclByName.release()
     recFieldsHeadByName.release()
+    // SE wave 4: the type arena is nearly complete once lowered (codegen
+    // adds a handful); trade its power-of-two growth slack (~60 KB at
+    // bookmarks scale) for a small fixed headroom.
+    irTypes.shrink()
+    irTypes.reserve(irTypes.count + 64)
 }
 
 // driveEmit68kFork (Task 9, mac-resident-clarusc) lowers the already-
