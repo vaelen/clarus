@@ -3311,6 +3311,12 @@ func bkObjRelocSymValid(kind: int, cls: int, sym: int): bool {
     if kind == cgHoleCbGlueAddr {
         return sym >= 0 and sym < bkLdIrCbGlueNames.count
     }
+    if kind == cgHoleSynthCall {
+        // an intern-pool index (the reverse-waist extern's name) -- it
+        // must be in the baked pool, or a compile's own later intern()
+        // could reuse it.
+        return sym >= 0 and sym < bkLdStrOff.count - 1
+    }
     // kind == cgHoleLabel
     if cls == cgRelClsPoolStr {
         return sym >= 0 and sym < bkLdIrStrLits.count
@@ -3349,6 +3355,10 @@ func bkObjRelocSymValid(kind: int, cls: int, sym: int): bool {
 const bkObjHoleBytes: int = 21
 var bkObjScanRuns: int
 var bkObjScanBytes: int
+// bkObjScanHoles (SE wave 4 Task 1): the hole count, so cgObjHoles is
+// sized exactly instead of doubling (untaint's extra holes crossed a
+// power of two: +200 KB of CgObjHole capacity on bookmarks_rtbake).
+var bkObjScanHoles: int
 
 func bkObjRunScan(count: int) {
     var pos: int
@@ -3362,6 +3372,7 @@ func bkObjRunScan(count: int) {
     over = bkLoadOverrun
     bkObjScanRuns = 0
     bkObjScanBytes = 0
+    bkObjScanHoles = 0
     i = 0
     while i < count and bkLoadPos < bkLoadBuf.length {
         if bkGetBool() {
@@ -3377,6 +3388,7 @@ func bkObjRunScan(count: int) {
                 bkObjScanBytes = bkObjScanBytes + n
                 if k < nHoles {
                     bkLoadPos = bkLoadPos + bkObjHoleBytes
+                    bkObjScanHoles = bkObjScanHoles + 1
                 }
                 k = k + 1
             }
@@ -3423,6 +3435,7 @@ func bkReadObjCode(): bool {
     bkObjRunScan(count)
     lRunBytes.reserve(bkObjScanBytes)
     lRunOff.reserve(bkObjScanRuns + 1)
+    lHoles.reserve(bkObjScanHoles)
     lRunOff.add(0)
     i = 0
     while i < count {
