@@ -677,7 +677,7 @@ LBL_128:
         MOVE.L D0,-24(A6)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3498(A5)
+        JSR 3506(A5)
         ADDQ.L #4,A7
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
@@ -1594,7 +1594,7 @@ LBL_206:
 LBL_204:
 LBL_200:
         JSR 1634(A5)
-        JSR 3514(A5)
+        JSR 3522(A5)
         BSR.W LBL_60
         JSR 1650(A5)
         JSR 2530(A5)

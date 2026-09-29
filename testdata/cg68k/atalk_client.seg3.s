@@ -11930,7 +11930,7 @@ LBL_870:
         JSR 298(A5)
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-        MOVE.L -7434(A5),D0
+        MOVE.L -7438(A5),D0
         MOVE.L D0,-4(A6)
 LBL_871:
         MOVE.L A1,-(A7)
@@ -11940,13 +11940,13 @@ LBL_871:
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         MOVE.L A1,-(A7)
-        MOVE.L -7438(A5),D0
+        MOVE.L -7442(A5),D0
         MOVE.L D0,-(A7)
         JSR 194(A5)
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         MOVE.L A1,-(A7)
-        MOVE.L -7442(A5),D0
+        MOVE.L -7446(A5),D0
         MOVE.L D0,-(A7)
         JSR 194(A5)
         ADDQ.L #4,A7

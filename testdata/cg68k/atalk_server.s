@@ -1,6 +1,6 @@
 LBL_252:
         ; startup (JT slot 0)
-        ; globals (below A5, 7422 bytes total):
+        ; globals (below A5, 7426 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiClaimedMask : -12(A5)  size 4  type int
@@ -159,24 +159,25 @@ LBL_252:
         ;   natWlPb : -7102(A5)  size 4  type ptr
         ;   natWlBuf : -7106(A5)  size 4  type ptr
         ;   natWlName : -7110(A5)  size 4  type ptr
-        ;   natWlLen : -7114(A5)  size 4  type int
-        ;   natWlOpen : -7116(A5)  size 1  type bool
-        ;   natTraceOn : -7118(A5)  size 1  type bool
-        ;   natPanicBuf : -7122(A5)  size 4  type ptr
-        ;   natEmptyStr : -7126(A5)  size 4  type ptr
-        ;   natErrCode : -7130(A5)  size 4  type int
-        ;   natErrMsg : -7386(A5)  size 256  type str
-        ;   natFilePb : -7390(A5)  size 4  type ptr
-        ;   natFileReady : -7392(A5)  size 1  type bool
-        ;   natUiEmitBuf : -7396(A5)  size 4  type ptr
-        ;   natQdInited : -7398(A5)  size 1  type bool
-        ;   natQdGlobals : -7402(A5)  size 4  type ptr
-        ;   rtFh68kLastErr : -7406(A5)  size 4  type int
-        ;   rtFh68kState : -7410(A5)  size 4  type ptr
-        ;   svc : -7414(A5)  size 4  type int
-        ;   lsn : -7418(A5)  size 4  type int
-        LEA -7422(A5),A0
-        MOVE.W #3710,D0
+        ;   natWlVRef : -7114(A5)  size 4  type int
+        ;   natWlLen : -7118(A5)  size 4  type int
+        ;   natWlOpen : -7120(A5)  size 1  type bool
+        ;   natTraceOn : -7122(A5)  size 1  type bool
+        ;   natPanicBuf : -7126(A5)  size 4  type ptr
+        ;   natEmptyStr : -7130(A5)  size 4  type ptr
+        ;   natErrCode : -7134(A5)  size 4  type int
+        ;   natErrMsg : -7390(A5)  size 256  type str
+        ;   natFilePb : -7394(A5)  size 4  type ptr
+        ;   natFileReady : -7396(A5)  size 1  type bool
+        ;   natUiEmitBuf : -7400(A5)  size 4  type ptr
+        ;   natQdInited : -7402(A5)  size 1  type bool
+        ;   natQdGlobals : -7406(A5)  size 4  type ptr
+        ;   rtFh68kLastErr : -7410(A5)  size 4  type int
+        ;   rtFh68kState : -7414(A5)  size 4  type ptr
+        ;   svc : -7418(A5)  size 4  type int
+        ;   lsn : -7422(A5)  size 4  type int
+        LEA -7426(A5),A0
+        MOVE.W #3712,D0
 LBL_254:
         CLR.W (A0)+
         DBRA D0,LBL_254
@@ -252,9 +253,9 @@ LBL_253:
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
         MOVE.L #1,D0
-        MOVE.L D0,-7414(A5)
-        MOVE.L #1,D0
         MOVE.L D0,-7418(A5)
+        MOVE.L #1,D0
+        MOVE.L D0,-7422(A5)
         UNLK A6
         RTS
         ; func rtSetLastErr  (JT slot 1)

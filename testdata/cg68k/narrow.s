@@ -1,6 +1,6 @@
 LBL_234:
         ; startup (JT slot 0)
-        ; globals (below A5, 7414 bytes total):
+        ; globals (below A5, 7418 bytes total):
         ;   rtUiMenuHandlesArr : -4(A5)  size 4  type ptr
         ;   rtUiNMenusVal : -8(A5)  size 4  type int
         ;   rtUiClaimedMask : -12(A5)  size 4  type int
@@ -159,24 +159,25 @@ LBL_234:
         ;   natWlPb : -7102(A5)  size 4  type ptr
         ;   natWlBuf : -7106(A5)  size 4  type ptr
         ;   natWlName : -7110(A5)  size 4  type ptr
-        ;   natWlLen : -7114(A5)  size 4  type int
-        ;   natWlOpen : -7116(A5)  size 1  type bool
-        ;   natTraceOn : -7118(A5)  size 1  type bool
-        ;   natPanicBuf : -7122(A5)  size 4  type ptr
-        ;   natEmptyStr : -7126(A5)  size 4  type ptr
-        ;   natErrCode : -7130(A5)  size 4  type int
-        ;   natErrMsg : -7386(A5)  size 256  type str
-        ;   natFilePb : -7390(A5)  size 4  type ptr
-        ;   natFileReady : -7392(A5)  size 1  type bool
-        ;   natUiEmitBuf : -7396(A5)  size 4  type ptr
-        ;   natQdInited : -7398(A5)  size 1  type bool
-        ;   natQdGlobals : -7402(A5)  size 4  type ptr
-        ;   rtFh68kLastErr : -7406(A5)  size 4  type int
-        ;   rtFh68kState : -7410(A5)  size 4  type ptr
-        ;   narrowG8 : -7412(A5)  size 1  type int
-        ;   narrowG16 : -7414(A5)  size 2  type int
-        LEA -7414(A5),A0
-        MOVE.W #3706,D0
+        ;   natWlVRef : -7114(A5)  size 4  type int
+        ;   natWlLen : -7118(A5)  size 4  type int
+        ;   natWlOpen : -7120(A5)  size 1  type bool
+        ;   natTraceOn : -7122(A5)  size 1  type bool
+        ;   natPanicBuf : -7126(A5)  size 4  type ptr
+        ;   natEmptyStr : -7130(A5)  size 4  type ptr
+        ;   natErrCode : -7134(A5)  size 4  type int
+        ;   natErrMsg : -7390(A5)  size 256  type str
+        ;   natFilePb : -7394(A5)  size 4  type ptr
+        ;   natFileReady : -7396(A5)  size 1  type bool
+        ;   natUiEmitBuf : -7400(A5)  size 4  type ptr
+        ;   natQdInited : -7402(A5)  size 1  type bool
+        ;   natQdGlobals : -7406(A5)  size 4  type ptr
+        ;   rtFh68kLastErr : -7410(A5)  size 4  type int
+        ;   rtFh68kState : -7414(A5)  size 4  type ptr
+        ;   narrowG8 : -7416(A5)  size 1  type int
+        ;   narrowG16 : -7418(A5)  size 2  type int
+        LEA -7418(A5),A0
+        MOVE.W #3708,D0
 LBL_236:
         CLR.W (A0)+
         DBRA D0,LBL_236
@@ -448,7 +449,7 @@ LBL_247:
 LBL_248:
         TST.L D0
         BEQ.W LBL_249
-        LEA LBL_193(PC),A0
+        LEA LBL_192(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -469,7 +470,7 @@ LBL_5:
         EORI.L #1,D0
         TST.L D0
         BEQ.W LBL_251
-        LEA LBL_194(PC),A0
+        LEA LBL_193(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -538,7 +539,7 @@ LBL_254:
         BEQ.W LBL_255
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
-        LEA LBL_195(PC),A0
+        LEA LBL_194(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_0
         ADDQ.L #8,A7
@@ -662,7 +663,7 @@ LBL_260:
         BEQ.W LBL_261
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
-        LEA LBL_195(PC),A0
+        LEA LBL_194(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_0
         ADDQ.L #8,A7
@@ -710,7 +711,7 @@ LBL_264:
 LBL_265:
         TST.L D0
         BEQ.W LBL_266
-        LEA LBL_196(PC),A0
+        LEA LBL_195(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -809,7 +810,7 @@ LBL_272:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_273
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -846,7 +847,7 @@ LBL_11:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_275
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -896,7 +897,7 @@ LBL_275:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_276
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -1140,7 +1141,7 @@ LBL_286:
         BEQ.W LBL_287
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
-        LEA LBL_195(PC),A0
+        LEA LBL_194(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_0
         ADDQ.L #8,A7
@@ -1457,7 +1458,7 @@ LBL_296:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_297
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -1495,7 +1496,7 @@ LBL_20:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_299
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -1552,7 +1553,7 @@ LBL_299:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_300
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -1738,7 +1739,7 @@ LBL_311:
 LBL_312:
         TST.L D0
         BEQ.W LBL_313
-        LEA LBL_199(PC),A0
+        LEA LBL_198(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -2323,7 +2324,7 @@ LBL_336:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_340
-        LEA LBL_200(PC),A0
+        LEA LBL_199(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -2490,7 +2491,7 @@ LBL_350:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_351
-        LEA LBL_200(PC),A0
+        LEA LBL_199(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -2611,7 +2612,7 @@ LBL_40:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_355
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -2864,7 +2865,7 @@ LBL_368:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_369
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -3122,7 +3123,7 @@ LBL_48:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_378
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -3158,7 +3159,7 @@ LBL_378:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_379
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -3185,7 +3186,7 @@ LBL_379:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_380
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -3240,7 +3241,7 @@ LBL_380:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_381
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -3281,7 +3282,7 @@ LBL_381:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_382
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -3654,7 +3655,7 @@ LBL_53:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_395
-        LEA LBL_201(PC),A0
+        LEA LBL_200(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -3805,7 +3806,7 @@ LBL_401:
 LBL_402:
         TST.L D0
         BEQ.W LBL_403
-        LEA LBL_201(PC),A0
+        LEA LBL_200(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -5029,7 +5030,7 @@ LBL_467:
         BSR.W LBL_72
         ADDQ.L #4,A7
         MOVE.L D0,-(A7)
-        LEA LBL_202(PC),A0
+        LEA LBL_201(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_143
         ADDQ.L #8,A7
@@ -5286,7 +5287,7 @@ LBL_478:
         BSR.W LBL_72
         ADDQ.L #4,A7
         MOVE.L D0,-(A7)
-        LEA LBL_203(PC),A0
+        LEA LBL_202(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_143
         ADDQ.L #8,A7
@@ -7565,7 +7566,7 @@ LBL_611:
         EORI.L #1,D0
         TST.L D0
         BEQ.W LBL_614
-        LEA LBL_204(PC),A0
+        LEA LBL_203(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-40(A6)
         MOVE.L -40(A6),D1
@@ -8149,7 +8150,7 @@ LBL_141:
         BEQ.W LBL_644
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1586(A5)
+        JSR 1578(A5)
         ADDQ.L #4,A7
 LBL_644:
         MOVE.L 8(A6),D0
@@ -8177,7 +8178,7 @@ LBL_646:
         MOVE.L D0,-4(A6)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_206(PC),A0
+        LEA LBL_205(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8193,7 +8194,7 @@ LBL_646:
         ADDQ.L #8,A7
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_205(PC),A0
+        LEA LBL_204(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8232,7 +8233,7 @@ LBL_648:
         MOVE.L D0,-4(A6)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_207(PC),A0
+        LEA LBL_206(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8245,7 +8246,7 @@ LBL_648:
         ADDQ.L #8,A7
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_208(PC),A0
+        LEA LBL_207(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8332,7 +8333,7 @@ LBL_654:
         MOVE.L D0,-12(A6)
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_209(PC),A0
+        LEA LBL_208(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8348,7 +8349,7 @@ LBL_654:
         ADDQ.L #8,A7
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_208(PC),A0
+        LEA LBL_207(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8364,7 +8365,7 @@ LBL_654:
         ADDQ.L #8,A7
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_205(PC),A0
+        LEA LBL_204(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8447,7 +8448,42 @@ LBL_665:
         MOVE.L D0,-8(A6)
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
+        LEA LBL_208(PC),A0
+        MOVE.L A0,D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_16
+        ADDQ.L #8,A7
+        MOVE.L -8(A6),D0
+        MOVE.L D0,-(A7)
+        MOVE.L -24(A5),D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_77
+        ADDQ.L #4,A7
+        MOVE.L D0,-(A7)
+        BSR.W LBL_138
+        ADDQ.L #8,A7
+        MOVE.L -8(A6),D0
+        MOVE.L D0,-(A7)
         LEA LBL_209(PC),A0
+        MOVE.L A0,D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_16
+        ADDQ.L #8,A7
+        MOVE.L -8(A6),D0
+        MOVE.L D0,-(A7)
+        MOVE.L -4(A6),D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_140
+        ADDQ.L #8,A7
+        MOVE.L -8(A6),D0
+        MOVE.L D0,-(A7)
+        BSR.W LBL_141
+        ADDQ.L #4,A7
+        BSR.W LBL_11
+        MOVE.L D0,-8(A6)
+        MOVE.L -8(A6),D0
+        MOVE.L D0,-(A7)
+        LEA LBL_208(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8482,7 +8518,7 @@ LBL_665:
         MOVE.L D0,-8(A6)
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_209(PC),A0
+        LEA LBL_208(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8517,7 +8553,7 @@ LBL_665:
         MOVE.L D0,-8(A6)
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_209(PC),A0
+        LEA LBL_208(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8534,41 +8570,6 @@ LBL_665:
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
         LEA LBL_212(PC),A0
-        MOVE.L A0,D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_16
-        ADDQ.L #8,A7
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L -4(A6),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_140
-        ADDQ.L #8,A7
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_141
-        ADDQ.L #4,A7
-        BSR.W LBL_11
-        MOVE.L D0,-8(A6)
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        LEA LBL_209(PC),A0
-        MOVE.L A0,D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_16
-        ADDQ.L #8,A7
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L -24(A5),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_77
-        ADDQ.L #4,A7
-        MOVE.L D0,-(A7)
-        BSR.W LBL_138
-        ADDQ.L #8,A7
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        LEA LBL_213(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8659,7 +8660,7 @@ LBL_672:
         MOVE.L D0,-12(A6)
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_214(PC),A0
+        LEA LBL_213(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8678,7 +8679,7 @@ LBL_672:
         ADDQ.L #8,A7
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
-        LEA LBL_205(PC),A0
+        LEA LBL_204(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_16
@@ -8872,7 +8873,7 @@ LBL_684:
         BEQ.W LBL_686
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
-        LEA LBL_215(PC),A0
+        LEA LBL_214(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_0
         ADDQ.L #8,A7
@@ -8920,7 +8921,7 @@ LBL_686:
         BEQ.W LBL_688
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
-        LEA LBL_216(PC),A0
+        LEA LBL_215(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_0
         ADDQ.L #8,A7
@@ -9133,7 +9134,7 @@ LBL_680:
         MOVEQ #100,D0
         OR.L D1,D0
         MOVE.L D0,-(A7)
-        LEA LBL_197(PC),A0
+        LEA LBL_196(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -9265,7 +9266,7 @@ LBL_707:
         MOVEQ #100,D0
         OR.L D1,D0
         MOVE.L D0,-(A7)
-        LEA LBL_217(PC),A0
+        LEA LBL_216(PC),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVE.L 12(A6),D0
@@ -9375,7 +9376,7 @@ LBL_151:
         BSR.W LBL_72
         ADDQ.L #4,A7
         MOVE.L D0,-(A7)
-        LEA LBL_218(PC),A0
+        LEA LBL_217(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_143
         ADDQ.L #8,A7
@@ -9450,7 +9451,7 @@ LBL_153:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_713
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -9486,7 +9487,7 @@ LBL_713:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_714
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -9513,7 +9514,7 @@ LBL_714:
         ANDI.L #1,D0
         TST.L D0
         BEQ.W LBL_715
-        LEA LBL_198(PC),A0
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -9736,7 +9737,7 @@ LBL_727:
 LBL_728:
         TST.L D0
         BEQ.W LBL_729
-        LEA LBL_201(PC),A0
+        LEA LBL_200(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
@@ -10107,13 +10108,13 @@ LBL_748:
         MOVE.L (A7)+,D0
         DC.W $A31E  ; NatNewPtr
         MOVE.L A0,D0
-        MOVE.L D0,-7122(A5)
+        MOVE.L D0,-7126(A5)
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
         DC.W $A31E  ; NatNewPtr
         MOVE.L A0,D0
-        MOVE.L D0,-7126(A5)
+        MOVE.L D0,-7130(A5)
         BRA.W LBL_747
 LBL_749:
         MOVEQ #64,D0
@@ -10147,13 +10148,13 @@ LBL_749:
         MOVE.L (A7)+,D0
         DC.W $A31E  ; NatNewPtr
         MOVE.L A0,D0
-        MOVE.L D0,-7122(A5)
+        MOVE.L D0,-7126(A5)
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
         DC.W $A31E  ; NatNewPtr
         MOVE.L A0,D0
-        MOVE.L D0,-7126(A5)
+        MOVE.L D0,-7130(A5)
         MOVE.L -7068(A5),D1
         MOVEQ #50,D0
         ADD.L D1,D0
@@ -10363,7 +10364,7 @@ LBL_165:
         TST.L D0
         BNE.W LBL_753
         CLR.L D0
-        MOVE.B -7118(A5),D0
+        MOVE.B -7122(A5),D0
         BRA.W LBL_754
 LBL_753:
         MOVEQ #1,D0
@@ -10381,7 +10382,7 @@ LBL_166:
         CMP.L D0,D1
         SNE D0
         ANDI.L #1,D0
-        MOVE.B D0,-7118(A5)
+        MOVE.B D0,-7122(A5)
 LBL_755:
         UNLK A6
         RTS
@@ -10399,7 +10400,7 @@ LBL_167:
         MOVEQ #22,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
-        MOVEQ #0,D0
+        MOVE.L -7114(A5),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
         MOVE.L -7102(A5),D1
@@ -10473,7 +10474,7 @@ LBL_168:
         MOVEQ #22,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
-        MOVEQ #0,D0
+        MOVE.L -7114(A5),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
         MOVE.L -7102(A5),D0
@@ -10490,11 +10491,11 @@ LBL_169:
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         CLR.L D0
-        MOVE.B -7116(A5),D0
+        MOVE.B -7120(A5),D0
         EORI.L #1,D0
         TST.L D0
         BNE.W LBL_760
-        MOVE.L -7114(A5),D1
+        MOVE.L -7118(A5),D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SEQ D0
@@ -10534,7 +10535,7 @@ LBL_762:
         MOVEQ #36,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
-        MOVE.L -7114(A5),D0
+        MOVE.L -7118(A5),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
         MOVE.L -7102(A5),D1
@@ -10559,9 +10560,17 @@ LBL_762:
         MOVE.L D0,-(A7)
         BSR.W LBL_168
         ADDQ.L #4,A7
+        BRA.W LBL_764
 LBL_763:
+        MOVEQ #2,D0
+        MOVE.L D0,-(A7)
+        LEA LBL_220(PC),A0
+        MOVE.L A0,-(A7)
+        BSR.W LBL_0
+        ADDQ.L #8,A7
+LBL_764:
         MOVEQ #0,D0
-        MOVE.L D0,-7114(A5)
+        MOVE.L D0,-7118(A5)
 LBL_759:
         UNLK A6
         RTS
@@ -10570,13 +10579,13 @@ LBL_759:
 LBL_170:
         LINK A6,#-2100
         CLR.L D0
-        MOVE.B -7116(A5),D0
+        MOVE.B -7120(A5),D0
         EORI.L #1,D0
         TST.L D0
-        BEQ.W LBL_765
-        BRA.W LBL_764
-LBL_765:
-        MOVE.L -7114(A5),D0
+        BEQ.W LBL_766
+        BRA.W LBL_765
+LBL_766:
+        MOVE.L -7118(A5),D0
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVEA.L D0,A0
@@ -10593,23 +10602,23 @@ LBL_765:
         SGT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_766
+        BEQ.W LBL_767
         BSR.W LBL_169
-LBL_766:
-        MOVE.L -7114(A5),D0
+LBL_767:
+        MOVE.L -7118(A5),D0
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -7106(A5),D1
-        MOVE.L -7114(A5),D0
+        MOVE.L -7118(A5),D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_159
         ADDQ.L #8,A7
         MOVE.L (A7)+,D1
         ADD.L D1,D0
-        MOVE.L D0,-7114(A5)
-LBL_764:
+        MOVE.L D0,-7118(A5)
+LBL_765:
         UNLK A6
         RTS
         ; func natAppWriteLog  (JT slot 172)
@@ -10622,14 +10631,14 @@ LBL_171:
         MOVE.L D0,-4(A6)
         BSR.W LBL_169
         MOVEQ #0,D0
-        MOVE.B D0,-7116(A5)
+        MOVE.B D0,-7120(A5)
         MOVE.L -7102(A5),D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_768
+        BEQ.W LBL_769
         MOVEQ #64,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
@@ -10648,7 +10657,7 @@ LBL_171:
         DC.W $A31E  ; NatNewPtr
         MOVE.L A0,D0
         MOVE.L D0,-7110(A5)
-LBL_768:
+LBL_769:
         MOVE.L 12(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -7110(A5),D0
@@ -10669,16 +10678,27 @@ LBL_768:
         MOVEQ #18,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
-        MOVE.L -7110(A5),D0
+        MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
+        MOVE.L -7102(A5),D0
+        MOVE.L D0,-(A7)
+        MOVEA.L (A7)+,A0
+        DC.W $A014  ; NatGetVol
         MOVE.L -7102(A5),D1
         MOVEQ #22,D0
         ADD.L D1,D0
+        MOVEA.L D0,A0
+        CLR.L D0
+        MOVE.W (A0),D0
+        MOVE.L D0,-7114(A5)
+        MOVE.L -7102(A5),D1
+        MOVEQ #18,D0
+        ADD.L D1,D0
         MOVE.L D0,-(A7)
-        MOVEQ #0,D0
+        MOVE.L -7110(A5),D0
         MOVEA.L (A7)+,A0
-        MOVE.W D0,(A0)
+        MOVE.L D0,(A0)
         MOVE.L -7102(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
@@ -10716,7 +10736,7 @@ LBL_768:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_769
+        BEQ.W LBL_770
         MOVE.L -7102(A5),D1
         MOVEQ #32,D0
         ADD.L D1,D0
@@ -10755,7 +10775,7 @@ LBL_768:
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A00D  ; NatSetFInfo
-LBL_769:
+LBL_770:
         BSR.W LBL_167
         MOVE.L D0,-4(A6)
         MOVE.L -4(A6),D1
@@ -10764,24 +10784,24 @@ LBL_769:
         SLT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_770
+        BEQ.W LBL_771
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
         LEA LBL_221(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_0
         ADDQ.L #8,A7
-        BRA.W LBL_767
-LBL_770:
+        BRA.W LBL_768
+LBL_771:
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_168
         ADDQ.L #4,A7
         MOVEQ #0,D0
-        MOVE.L D0,-7114(A5)
+        MOVE.L D0,-7118(A5)
         MOVEQ #1,D0
-        MOVE.B D0,-7116(A5)
-LBL_767:
+        MOVE.B D0,-7120(A5)
+LBL_768:
         UNLK A6
         RTS
         ; func natAbortLog  (JT slot 173)
@@ -10792,22 +10812,14 @@ LBL_172:
         MOVE.B -7098(A5),D0
         EORI.L #1,D0
         TST.L D0
-        BEQ.W LBL_772
-        CLR.L D0
-        MOVE.B -7118(A5),D0
-        EORI.L #1,D0
-        BRA.W LBL_773
-LBL_772:
-        MOVEQ #0,D0
-LBL_773:
-        TST.L D0
-        BEQ.W LBL_774
+        BEQ.W LBL_773
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_170
         ADDQ.L #4,A7
-LBL_774:
-LBL_771:
+        BSR.W LBL_169
+LBL_773:
+LBL_772:
         UNLK A6
         RTS
         ; func natAlert  (JT slot 174)
@@ -10821,13 +10833,13 @@ LBL_173:
         MOVE.B -7098(A5),D0
         EORI.L #1,D0
         TST.L D0
-        BEQ.W LBL_776
+        BEQ.W LBL_775
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_170
         ADDQ.L #4,A7
-        BRA.W LBL_775
-LBL_776:
+        BRA.W LBL_774
+LBL_775:
         BSR.W LBL_163
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
@@ -10843,7 +10855,7 @@ LBL_776:
         BSR.W LBL_161
         ADDQ.L #8,A7
         BSR.W LBL_162
-LBL_775:
+LBL_774:
         UNLK A6
         RTS
         ; func natLog  (JT slot 175)
@@ -10864,9 +10876,9 @@ LBL_174:
         MOVE.B -7098(A5),D0
         EORI.L #1,D0
         TST.L D0
-        BEQ.W LBL_778
-        BRA.W LBL_777
-LBL_778:
+        BEQ.W LBL_777
+        BRA.W LBL_776
+LBL_777:
         BSR.W LBL_163
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
@@ -10877,25 +10889,25 @@ LBL_778:
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
         MOVE.L D0,-8(A6)
-LBL_779:
+LBL_778:
         MOVE.L -8(A6),D1
         MOVE.L -4(A6),D0
         CMP.L D0,D1
         SLT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_781
+        BEQ.W LBL_780
         MOVE.L -7084(A5),D1
         MOVE.L #4096,D0
         CMP.L D0,D1
         SLT D0
         ANDI.L #1,D0
-        BRA.W LBL_782
-LBL_781:
+        BRA.W LBL_781
+LBL_780:
         MOVEQ #0,D0
-LBL_782:
+LBL_781:
         TST.L D0
-        BEQ.W LBL_780
+        BEQ.W LBL_779
         MOVE.L -7080(A5),D1
         MOVE.L -7084(A5),D0
         ADD.L D1,D0
@@ -10916,9 +10928,9 @@ LBL_782:
         MOVEQ #1,D0
         ADD.L D1,D0
         MOVE.L D0,-8(A6)
-        BRA.W LBL_779
-LBL_780:
-LBL_777:
+        BRA.W LBL_778
+LBL_779:
+LBL_776:
         UNLK A6
         RTS
         ; func natQuit  (JT slot 176)
@@ -10931,9 +10943,9 @@ LBL_175:
         CLR.L D0
         MOVE.B -7092(A5),D0
         TST.L D0
-        BEQ.W LBL_784
-        BRA.W LBL_783
-LBL_784:
+        BEQ.W LBL_783
+        BRA.W LBL_782
+LBL_783:
         MOVEQ #1,D0
         MOVE.B D0,-7092(A5)
         BSR.W LBL_169
@@ -10941,9 +10953,9 @@ LBL_784:
         MOVE.B -7098(A5),D0
         EORI.L #1,D0
         TST.L D0
-        BEQ.W LBL_785
+        BEQ.W LBL_784
         DC.W $A9F4  ; NatExitToShell
-LBL_785:
+LBL_784:
         BSR.W LBL_163
         MOVE.L -7072(A5),D0
         MOVE.L D0,-(A7)
@@ -11202,7 +11214,7 @@ LBL_785:
         SGE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_786
+        BEQ.W LBL_785
         MOVE.L -7068(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
@@ -11214,10 +11226,10 @@ LBL_785:
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A001  ; NatClose
-LBL_786:
+LBL_785:
         BSR.W LBL_162
         DC.W $A9F4  ; NatExitToShell
-LBL_783:
+LBL_782:
         UNLK A6
         RTS
         ; func nat_CorePanic  (JT slot 177)
@@ -11255,22 +11267,22 @@ LBL_176:
         CLR.L D0
         MOVE.B (A0),D0
         MOVE.L D0,-260(A6)
-        MOVE.L -7122(A5),D0
+        MOVE.L -7126(A5),D0
         MOVE.L D0,-(A7)
         MOVE.L -260(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.B D0,(A0)
         MOVEQ #0,D0
         MOVE.L D0,-264(A6)
-LBL_788:
+LBL_787:
         MOVE.L -264(A6),D1
         MOVE.L -260(A6),D0
         CMP.L D0,D1
         SLT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_789
-        MOVE.L -7122(A5),D1
+        BEQ.W LBL_788
+        MOVE.L -7126(A5),D1
         MOVEQ #1,D0
         ADD.L D1,D0
         MOVE.L D0,D1
@@ -11285,12 +11297,12 @@ LBL_788:
         CLR.L D0
         MOVE.B (A0),D0
         CMP.L D0,D1
-        BCS.W LBL_790
+        BCS.W LBL_789
         MOVE.L A0,-(A7)
         MOVE.L D1,-(A7)
         BSR.W LBL_9
         ADDQ.L #8,A7
-LBL_790:
+LBL_789:
         ADDA.L D1,A0
         CLR.L D0
         MOVE.B 1(A0),D0
@@ -11300,26 +11312,26 @@ LBL_790:
         MOVEQ #1,D0
         ADD.L D1,D0
         MOVE.L D0,-264(A6)
-        BRA.W LBL_788
-LBL_789:
+        BRA.W LBL_787
+LBL_788:
         CLR.L D0
         MOVE.B -7098(A5),D0
         TST.L D0
-        BEQ.W LBL_791
-        MOVE.L -7122(A5),D0
+        BEQ.W LBL_790
+        MOVE.L -7126(A5),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_173
         ADDQ.L #4,A7
-LBL_791:
-        MOVE.L -7122(A5),D0
+LBL_790:
+        MOVE.L -7126(A5),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_174
         ADDQ.L #4,A7
         BSR.W LBL_169
         CLR.L D0
-        MOVE.B -7398(A5),D0
+        MOVE.B -7402(A5),D0
         TST.L D0
-        BEQ.W LBL_792
+        BEQ.W LBL_791
         LEA LBL_229(PC),A0
         MOVE.L A0,D0
         MOVEA.L D0,A0
@@ -11330,22 +11342,22 @@ LBL_791:
         CMP.L D0,D1
         SEQ D0
         ANDI.L #1,D0
-        BRA.W LBL_793
-LBL_792:
+        BRA.W LBL_792
+LBL_791:
         MOVEQ #0,D0
-LBL_793:
+LBL_792:
         TST.L D0
-        BEQ.W LBL_794
+        BEQ.W LBL_793
         MOVEQ #30,D0
         MOVE.W D0,-(A7)
         DC.W $A9C8  ; NatSysBeep
-        MOVE.L -7122(A5),D0
-        MOVE.L D0,-(A7)
         MOVE.L -7126(A5),D0
         MOVE.L D0,-(A7)
-        MOVE.L -7126(A5),D0
+        MOVE.L -7130(A5),D0
         MOVE.L D0,-(A7)
-        MOVE.L -7126(A5),D0
+        MOVE.L -7130(A5),D0
+        MOVE.L D0,-(A7)
+        MOVE.L -7130(A5),D0
         MOVE.L D0,-(A7)
         DC.W $A98B  ; UiParamText
         CLR.W -(A7)
@@ -11356,12 +11368,12 @@ LBL_793:
         DC.W $A985  ; UiAlert
         MOVE.W (A7)+,D0
         EXT.L D0
-LBL_794:
+LBL_793:
         MOVEQ #3,D0
         MOVE.L D0,-(A7)
         BSR.W LBL_175
         ADDQ.L #4,A7
-LBL_787:
+LBL_786:
         UNLK A6
         RTS
         ; func nat_CoreSetLastErr  (JT slot 178)
@@ -11370,8 +11382,8 @@ LBL_787:
 LBL_177:
         LINK A6,#-2100
         MOVE.L 12(A6),D0
-        MOVE.L D0,-7130(A5)
-        LEA -7386(A5),A0
+        MOVE.L D0,-7134(A5)
+        LEA -7390(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L #255,D0
         MOVE.L D0,-(A7)
@@ -11379,15 +11391,15 @@ LBL_177:
         MOVE.L A0,-(A7)
         BSR.W LBL_6
         ADDA.W #12,A7
-LBL_795:
+LBL_794:
         UNLK A6
         RTS
         ; func natLastErrCode  (JT slot 179)
 LBL_178:
         LINK A6,#-2100
-        MOVE.L -7130(A5),D0
-        BRA.W LBL_796
-LBL_796:
+        MOVE.L -7134(A5),D0
+        BRA.W LBL_795
+LBL_795:
         UNLK A6
         RTS
         ; func natLastErrMsg  (JT slot 180)
@@ -11396,12 +11408,12 @@ LBL_179:
         LINK A6,#-2100
         MOVE.L 8(A6),-(A7)
         MOVE.L #255,-(A7)
-        LEA -7386(A5),A0
+        LEA -7390(A5),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_6
         ADDA.W #12,A7
-        BRA.W LBL_797
-LBL_797:
+        BRA.W LBL_796
+LBL_796:
         UNLK A6
         RTS
         ; func natArgsList  (JT slot 181)
@@ -11418,7 +11430,7 @@ LBL_180:
         LEA -4(A6),A0
         MOVE.L 0(A0),D0
         MOVE.L D0,-2060(A6)
-LBL_799:
+LBL_798:
         MOVE.L A1,-(A7)
         MOVE.L -2060(A6),D0
         MOVE.L D0,-(A7)
@@ -11435,52 +11447,52 @@ LBL_799:
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         MOVE.L -4(A6),D0
-        BRA.W LBL_798
-LBL_798:
+        BRA.W LBL_797
+LBL_797:
         UNLK A6
         RTS
         ; func natFileEnsurePb  (JT slot 182)
 LBL_181:
         LINK A6,#-2100
         CLR.L D0
-        MOVE.B -7392(A5),D0
+        MOVE.B -7396(A5),D0
         TST.L D0
-        BEQ.W LBL_801
-        BRA.W LBL_800
-LBL_801:
+        BEQ.W LBL_800
+        BRA.W LBL_799
+LBL_800:
         MOVEQ #1,D0
-        MOVE.B D0,-7392(A5)
+        MOVE.B D0,-7396(A5)
         MOVEQ #64,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
         DC.W $A31E  ; NatNewPtr
         MOVE.L A0,D0
-        MOVE.L D0,-7390(A5)
-LBL_800:
+        MOVE.L D0,-7394(A5)
+LBL_799:
         UNLK A6
         RTS
         ; func natFileFlush  (JT slot 183)
 LBL_182:
         LINK A6,#-2100
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #18,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #22,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A013  ; NatFlushVol
-LBL_802:
+LBL_801:
         UNLK A6
         RTS
         ; func natFileWriteText  (JT slot 184)
@@ -11528,7 +11540,7 @@ LBL_183:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_804
+        BEQ.W LBL_803
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
         LEA LBL_223(PC),A0
@@ -11536,8 +11548,8 @@ LBL_183:
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_803
-LBL_804:
+        BRA.W LBL_802
+LBL_803:
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_3
@@ -11552,7 +11564,7 @@ LBL_804:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_805
+        BEQ.W LBL_804
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
         LEA LBL_224(PC),A0
@@ -11560,28 +11572,28 @@ LBL_804:
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_803
-LBL_805:
+        BRA.W LBL_802
+LBL_804:
         BSR.W LBL_181
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #18,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L 20(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #22,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A008  ; NatCreate
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #16,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -11593,38 +11605,38 @@ LBL_805:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_806
-        MOVE.L -7390(A5),D1
+        BEQ.W LBL_805
+        MOVE.L -7394(A5),D1
         MOVEQ #28,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #32,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -26(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #36,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -30(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A00D  ; NatSetFInfo
-LBL_806:
-        MOVE.L -7390(A5),D0
+LBL_805:
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A000  ; NatOpen
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #16,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -11636,7 +11648,7 @@ LBL_806:
         SNE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_807
+        BEQ.W LBL_806
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
         LEA LBL_221(PC),A0
@@ -11644,30 +11656,30 @@ LBL_806:
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_803
-LBL_807:
-        MOVE.L -7390(A5),D1
+        BRA.W LBL_802
+LBL_806:
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
         CLR.L D0
         MOVE.W (A0),D0
         MOVE.L D0,-16(A6)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #28,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A012  ; NatSetEOF
@@ -11688,7 +11700,7 @@ LBL_807:
         SGT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_808
+        BEQ.W LBL_807
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
         LEA 4(A0),A0
@@ -11703,39 +11715,39 @@ LBL_807:
         MOVEA.L D0,A0
         MOVE.L (A0),D0
         MOVE.L D0,-8(A6)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #32,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -8(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #36,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -12(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #44,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A003  ; NatWrite
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #40,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -11748,7 +11760,7 @@ LBL_807:
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A02A  ; NatHUnlock
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #16,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -11760,19 +11772,19 @@ LBL_807:
         SNE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_809
+        BEQ.W LBL_808
         MOVEQ #1,D0
         MOVE.B D0,-22(A6)
-LBL_809:
 LBL_808:
-        MOVE.L -7390(A5),D1
+LBL_807:
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A001  ; NatClose
@@ -11780,30 +11792,30 @@ LBL_808:
         CLR.L D0
         MOVE.B -22(A6),D0
         TST.L D0
-        BNE.W LBL_810
+        BNE.W LBL_809
         MOVE.L -20(A6),D1
         MOVE.L -12(A6),D0
         CMP.L D0,D1
         SNE D0
         ANDI.L #1,D0
-        BRA.W LBL_811
-LBL_810:
+        BRA.W LBL_810
+LBL_809:
         MOVEQ #1,D0
-LBL_811:
+LBL_810:
         TST.L D0
-        BEQ.W LBL_812
+        BEQ.W LBL_811
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
-        LEA LBL_219(PC),A0
+        LEA LBL_218(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_803
-LBL_812:
+        BRA.W LBL_802
+LBL_811:
         MOVEQ #1,D0
-        BRA.W LBL_803
-LBL_803:
+        BRA.W LBL_802
+LBL_802:
         UNLK A6
         RTS
         ; func natFileReadText  (JT slot 185)
@@ -11836,25 +11848,25 @@ LBL_184:
         MOVEQ #0,D0
         MOVE.B D0,-30(A6)
         BSR.W LBL_181
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #18,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L 12(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #22,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A000  ; NatOpen
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #16,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -11866,7 +11878,7 @@ LBL_184:
         SNE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_814
+        BEQ.W LBL_813
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
         LEA LBL_221(PC),A0
@@ -11874,9 +11886,9 @@ LBL_184:
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_813
-LBL_814:
-        MOVE.L -7390(A5),D1
+        BRA.W LBL_812
+LBL_813:
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -11895,61 +11907,61 @@ LBL_814:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_815
-        LEA LBL_198(PC),A0
+        BEQ.W LBL_814
+        LEA LBL_197(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
         ADDQ.L #4,A7
-LBL_815:
+LBL_814:
         MOVEQ #0,D0
         MOVE.L D0,-28(A6)
         MOVEQ #0,D0
         MOVE.B D0,-30(A6)
-LBL_816:
+LBL_815:
         CLR.L D0
         MOVE.B -30(A6),D0
         EORI.L #1,D0
         TST.L D0
-        BEQ.W LBL_817
-        MOVE.L -7390(A5),D1
+        BEQ.W LBL_816
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -12(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #32,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -24(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #36,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L #32768,D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #44,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A002  ; NatRead
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #40,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
         MOVE.L (A0),D0
         MOVE.L D0,-16(A6)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #16,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -11962,26 +11974,26 @@ LBL_816:
         SNE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_818
+        BEQ.W LBL_817
         MOVE.L -20(A6),D1
         MOVE.L #65497,D0
         CMP.L D0,D1
         SNE D0
         ANDI.L #1,D0
-        BRA.W LBL_819
-LBL_818:
+        BRA.W LBL_818
+LBL_817:
         MOVEQ #0,D0
-LBL_819:
+LBL_818:
         TST.L D0
-        BEQ.W LBL_820
-        MOVE.L -7390(A5),D1
+        BEQ.W LBL_819
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -12(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A001  ; NatClose
@@ -11991,20 +12003,20 @@ LBL_819:
         DC.W $A01F  ; TextDisposePtr
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
-        LEA LBL_220(PC),A0
+        LEA LBL_219(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_813
-LBL_820:
+        BRA.W LBL_812
+LBL_819:
         MOVE.L -16(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
         SGT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_821
+        BEQ.W LBL_820
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -28(A6),D1
@@ -12038,38 +12050,38 @@ LBL_820:
         MOVE.L -16(A6),D0
         ADD.L D1,D0
         MOVE.L D0,-28(A6)
-LBL_821:
+LBL_820:
         MOVE.L -20(A6),D1
         MOVE.L #65497,D0
         CMP.L D0,D1
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BNE.W LBL_822
+        BNE.W LBL_821
         MOVE.L -16(A6),D1
         MOVE.L #32768,D0
         CMP.L D0,D1
         SLT D0
         ANDI.L #1,D0
-        BRA.W LBL_823
-LBL_822:
+        BRA.W LBL_822
+LBL_821:
         MOVEQ #1,D0
-LBL_823:
+LBL_822:
         TST.L D0
-        BEQ.W LBL_824
+        BEQ.W LBL_823
         MOVEQ #1,D0
         MOVE.B D0,-30(A6)
-LBL_824:
-        BRA.W LBL_816
-LBL_817:
-        MOVE.L -7390(A5),D1
+LBL_823:
+        BRA.W LBL_815
+LBL_816:
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -12(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A001  ; NatClose
@@ -12087,8 +12099,8 @@ LBL_817:
         MOVE.L (A7)+,D0
         MOVE.L D0,(A0)
         MOVEQ #1,D0
-        BRA.W LBL_813
-LBL_813:
+        BRA.W LBL_812
+LBL_812:
         UNLK A6
         RTS
         ; func natFileName  (JT slot 186)
@@ -12120,14 +12132,14 @@ LBL_185:
         MOVE.L D0,-8(A6)
         MOVEQ #0,D0
         MOVE.L D0,-12(A6)
-LBL_826:
+LBL_825:
         MOVE.L -12(A6),D1
         MOVE.L -4(A6),D0
         CMP.L D0,D1
         SLT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_827
+        BEQ.W LBL_826
         MOVE.L 8(A6),D1
         MOVEQ #1,D0
         ADD.L D1,D0
@@ -12144,18 +12156,18 @@ LBL_826:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_828
+        BEQ.W LBL_827
         MOVE.L -12(A6),D1
         MOVEQ #1,D0
         ADD.L D1,D0
         MOVE.L D0,-8(A6)
-LBL_828:
+LBL_827:
         MOVE.L -12(A6),D1
         MOVEQ #1,D0
         ADD.L D1,D0
         MOVE.L D0,-12(A6)
-        BRA.W LBL_826
-LBL_827:
+        BRA.W LBL_825
+LBL_826:
         MOVE.L -4(A6),D1
         MOVE.L -8(A6),D0
         SUB.L D0,D1
@@ -12168,14 +12180,14 @@ LBL_827:
         MOVE.B D0,(A0)
         MOVEQ #0,D0
         MOVE.L D0,-12(A6)
-LBL_829:
+LBL_828:
         MOVE.L -12(A6),D1
         MOVE.L -20(A6),D0
         CMP.L D0,D1
         SLT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_830
+        BEQ.W LBL_829
         MOVE.L 12(A6),D1
         MOVEQ #1,D0
         ADD.L D1,D0
@@ -12201,9 +12213,9 @@ LBL_829:
         MOVEQ #1,D0
         ADD.L D1,D0
         MOVE.L D0,-12(A6)
-        BRA.W LBL_829
-LBL_830:
-LBL_825:
+        BRA.W LBL_828
+LBL_829:
+LBL_824:
         UNLK A6
         RTS
         ; func natReadResource  (JT slot 187)
@@ -12240,7 +12252,7 @@ LBL_186:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_832
+        BEQ.W LBL_831
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
         LEA LBL_225(PC),A0
@@ -12248,8 +12260,8 @@ LBL_186:
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_831
-LBL_832:
+        BRA.W LBL_830
+LBL_831:
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
@@ -12284,7 +12296,7 @@ LBL_832:
         SGT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_833
+        BEQ.W LBL_832
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -12(A6),D0
@@ -12295,7 +12307,7 @@ LBL_832:
         MOVEA.L (A7)+,A1
         MOVEA.L (A7)+,A0
         DC.W $A22E  ; TextBlockMoveData
-LBL_833:
+LBL_832:
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
@@ -12310,8 +12322,8 @@ LBL_833:
         MOVE.L (A7)+,D0
         MOVE.L D0,(A0)
         MOVEQ #1,D0
-        BRA.W LBL_831
-LBL_831:
+        BRA.W LBL_830
+LBL_830:
         UNLK A6
         RTS
         ; func natWriteRes  (JT slot 188)
@@ -12359,7 +12371,7 @@ LBL_187:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_835
+        BEQ.W LBL_834
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
         LEA LBL_223(PC),A0
@@ -12367,8 +12379,8 @@ LBL_187:
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_834
-LBL_835:
+        BRA.W LBL_833
+LBL_834:
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_3
@@ -12383,7 +12395,7 @@ LBL_835:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_836
+        BEQ.W LBL_835
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
         LEA LBL_224(PC),A0
@@ -12391,28 +12403,28 @@ LBL_835:
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_834
-LBL_836:
+        BRA.W LBL_833
+LBL_835:
         BSR.W LBL_181
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #18,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L 20(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #22,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A008  ; NatCreate
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #16,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -12424,52 +12436,52 @@ LBL_836:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_837
-        MOVE.L -7390(A5),D1
+        BEQ.W LBL_836
+        MOVE.L -7394(A5),D1
         MOVEQ #28,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #32,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -26(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #36,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -30(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A00D  ; NatSetFInfo
-LBL_837:
-        MOVE.L -7390(A5),D1
+LBL_836:
+        MOVE.L -7394(A5),D1
         MOVEQ #18,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L 20(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #22,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A00A  ; NatOpenRF
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #16,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -12481,7 +12493,7 @@ LBL_837:
         SNE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_838
+        BEQ.W LBL_837
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
         LEA LBL_221(PC),A0
@@ -12489,30 +12501,30 @@ LBL_837:
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_834
-LBL_838:
-        MOVE.L -7390(A5),D1
+        BRA.W LBL_833
+LBL_837:
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
         CLR.L D0
         MOVE.W (A0),D0
         MOVE.L D0,-16(A6)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #28,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A012  ; NatSetEOF
@@ -12533,7 +12545,7 @@ LBL_838:
         SGT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_839
+        BEQ.W LBL_838
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
         LEA 4(A0),A0
@@ -12548,39 +12560,39 @@ LBL_838:
         MOVEA.L D0,A0
         MOVE.L (A0),D0
         MOVE.L D0,-8(A6)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #32,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -8(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #36,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -12(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #44,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A003  ; NatWrite
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #40,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -12593,7 +12605,7 @@ LBL_838:
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A02A  ; NatHUnlock
-        MOVE.L -7390(A5),D1
+        MOVE.L -7394(A5),D1
         MOVEQ #16,D0
         ADD.L D1,D0
         MOVEA.L D0,A0
@@ -12605,19 +12617,19 @@ LBL_838:
         SNE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_840
+        BEQ.W LBL_839
         MOVEQ #1,D0
         MOVE.B D0,-22(A6)
-LBL_840:
 LBL_839:
-        MOVE.L -7390(A5),D1
+LBL_838:
+        MOVE.L -7394(A5),D1
         MOVEQ #24,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        MOVE.L -7390(A5),D0
+        MOVE.L -7394(A5),D0
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A001  ; NatClose
@@ -12625,30 +12637,30 @@ LBL_839:
         CLR.L D0
         MOVE.B -22(A6),D0
         TST.L D0
-        BNE.W LBL_841
+        BNE.W LBL_840
         MOVE.L -20(A6),D1
         MOVE.L -12(A6),D0
         CMP.L D0,D1
         SNE D0
         ANDI.L #1,D0
-        BRA.W LBL_842
-LBL_841:
+        BRA.W LBL_841
+LBL_840:
         MOVEQ #1,D0
-LBL_842:
+LBL_841:
         TST.L D0
-        BEQ.W LBL_843
+        BEQ.W LBL_842
         MOVEQ #2,D0
         MOVE.L D0,-(A7)
-        LEA LBL_219(PC),A0
+        LEA LBL_218(PC),A0
         MOVE.L A0,-(A7)
         BSR.W LBL_0
         ADDQ.L #8,A7
         MOVEQ #0,D0
-        BRA.W LBL_834
-LBL_843:
+        BRA.W LBL_833
+LBL_842:
         MOVEQ #1,D0
-        BRA.W LBL_834
-LBL_834:
+        BRA.W LBL_833
+LBL_833:
         UNLK A6
         RTS
         ; func nat_SerFileWriteData  (JT slot 189)
@@ -12669,13 +12681,13 @@ LBL_188:
         BSR.W LBL_183
         ADDA.W #16,A7
         TST.L D0
-        BEQ.W LBL_845
+        BEQ.W LBL_844
         MOVEQ #1,D0
-        BRA.W LBL_844
-LBL_845:
-        MOVEQ #0,D0
-        BRA.W LBL_844
+        BRA.W LBL_843
 LBL_844:
+        MOVEQ #0,D0
+        BRA.W LBL_843
+LBL_843:
         UNLK A6
         RTS
         ; func nat_SerFileReadTextInto  (JT slot 190)
@@ -12690,13 +12702,13 @@ LBL_189:
         BSR.W LBL_184
         ADDQ.L #8,A7
         TST.L D0
-        BEQ.W LBL_847
+        BEQ.W LBL_846
         MOVEQ #1,D0
-        BRA.W LBL_846
-LBL_847:
-        MOVEQ #0,D0
-        BRA.W LBL_846
+        BRA.W LBL_845
 LBL_846:
+        MOVEQ #0,D0
+        BRA.W LBL_845
+LBL_845:
         UNLK A6
         RTS
         ; func nat_UiRtQuit  (JT slot 191)
@@ -12707,25 +12719,25 @@ LBL_190:
         MOVE.L D0,-(A7)
         BSR.W LBL_175
         ADDQ.L #4,A7
-LBL_848:
+LBL_847:
         UNLK A6
         RTS
         ; func nat_UiMacInitToolbox  (JT slot 192)
 LBL_191:
         LINK A6,#-2100
         CLR.L D0
-        MOVE.B -7398(A5),D0
+        MOVE.B -7402(A5),D0
         TST.L D0
-        BEQ.W LBL_850
-        BRA.W LBL_849
-LBL_850:
+        BEQ.W LBL_849
+        BRA.W LBL_848
+LBL_849:
         MOVE.L #206,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0
         DC.W $A31E  ; NatNewPtr
         MOVE.L A0,D0
-        MOVE.L D0,-7402(A5)
-        MOVE.L -7402(A5),D1
+        MOVE.L D0,-7406(A5)
+        MOVE.L -7406(A5),D1
         MOVE.L #202,D0
         ADD.L D1,D0
         MOVE.L D0,-(A7)
@@ -12741,36 +12753,9 @@ LBL_850:
         MOVE.L D0,-(A7)
         DC.W $A97B  ; NatInitDialogs
         MOVEQ #1,D0
-        MOVE.B D0,-7398(A5)
+        MOVE.B D0,-7402(A5)
         DC.W $A850  ; NatInitCursor
-LBL_849:
-        UNLK A6
-        RTS
-        ; func nat_UiScreenBounds  (JT slot 193)
-        ;   param out : 8(A6)  size 4
-LBL_192:
-        LINK A6,#-2100
-        MOVE.L 8(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L -7402(A5),D1
-        MOVEQ #86,D0
-        ADD.L D1,D0
-        MOVEA.L D0,A0
-        MOVE.L (A0),D0
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
-        MOVE.L 8(A6),D1
-        MOVEQ #4,D0
-        ADD.L D1,D0
-        MOVE.L D0,-(A7)
-        MOVE.L -7402(A5),D1
-        MOVEQ #90,D0
-        ADD.L D1,D0
-        MOVEA.L D0,A0
-        MOVE.L (A0),D0
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
-LBL_851:
+LBL_848:
         UNLK A6
         RTS
 LBL_230:
@@ -12801,7 +12786,7 @@ LBL_230:
 LBL_231:
         ; cg_div32: D1=left / D0=right -> D0 (truncate toward zero, C99)
         TST.L D0
-        BNE.W LBL_852
+        BNE.W LBL_850
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
@@ -12813,7 +12798,7 @@ LBL_231:
         MOVEA.L A7,A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
-LBL_852:
+LBL_850:
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
         MOVE.L D4,-(A7)
@@ -12824,19 +12809,19 @@ LBL_852:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_853
+        BPL.W LBL_851
         NEG.L D2
         MOVE.L #1,D4
-LBL_853:
+LBL_851:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_854
+        BPL.W LBL_852
         NEG.L D3
         MOVE.L #1,D5
-LBL_854:
+LBL_852:
         CLR.L D6
         MOVE.W #31,D7
-LBL_855:
+LBL_853:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -12844,16 +12829,16 @@ LBL_855:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_856
+        BCS.W LBL_854
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_856:
-        DBRA D7,LBL_855
+LBL_854:
+        DBRA D7,LBL_853
         EOR.L D5,D4
         TST.L D4
-        BEQ.W LBL_857
+        BEQ.W LBL_855
         NEG.L D2
-LBL_857:
+LBL_855:
         MOVE.L D2,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -12865,7 +12850,7 @@ LBL_857:
 LBL_232:
         ; cg_mod32: D1=left mod D0=right -> D0 (sign follows dividend, C99)
         TST.L D0
-        BNE.W LBL_858
+        BNE.W LBL_856
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
@@ -12877,7 +12862,7 @@ LBL_232:
         MOVEA.L A7,A0
         MOVE.L A0,-(A7)
         BSR.W LBL_1
-LBL_858:
+LBL_856:
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
         MOVE.L D4,-(A7)
@@ -12888,19 +12873,19 @@ LBL_858:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_859
+        BPL.W LBL_857
         NEG.L D2
         MOVE.L #1,D4
-LBL_859:
+LBL_857:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_860
+        BPL.W LBL_858
         NEG.L D3
         MOVE.L #1,D5
-LBL_860:
+LBL_858:
         CLR.L D6
         MOVE.W #31,D7
-LBL_861:
+LBL_859:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -12908,15 +12893,15 @@ LBL_861:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_862
+        BCS.W LBL_860
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_862:
-        DBRA D7,LBL_861
+LBL_860:
+        DBRA D7,LBL_859
         TST.L D4
-        BEQ.W LBL_863
+        BEQ.W LBL_861
         NEG.L D6
-LBL_863:
+LBL_861:
         MOVE.L D6,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -12978,7 +12963,7 @@ LBL_233:
         MOVEA.L (A7)+,A1
         MOVE.L -7096(A5),D0
         MOVE.L D0,-4(A6)
-LBL_864:
+LBL_862:
         MOVE.L A1,-(A7)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
@@ -12992,98 +12977,102 @@ LBL_227:
         DC.B $10
         DC.B $64,$69,$76,$69,$73,$69,$6F,$6E,$20,$62,$79,$20,$7A,$65,$72,$6F
         DC.B $00
-LBL_193:
+LBL_192:
         DC.B $18
         DC.B $61,$72,$72,$61,$79,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
         DC.B $00
-LBL_194:
+LBL_193:
         DC.B $19
         DC.B $6E,$6F,$20,$65,$6E,$75,$6D,$20,$6D,$65,$6D,$62,$65,$72,$20,$77,$69,$74,$68,$20,$76,$61,$6C,$75,$65
-LBL_195:
+LBL_194:
         DC.B $10
         DC.B $73,$74,$72,$69,$6E,$67,$20,$74,$72,$75,$6E,$63,$61,$74,$65,$64
         DC.B $00
-LBL_196:
+LBL_195:
         DC.B $19
         DC.B $73,$74,$72,$69,$6E,$67,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-LBL_198:
+LBL_197:
         DC.B $0D
         DC.B $6F,$75,$74,$20,$6F,$66,$20,$6D,$65,$6D,$6F,$72,$79
-LBL_199:
+LBL_198:
         DC.B $17
         DC.B $6C,$69,$73,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-LBL_200:
+LBL_199:
         DC.B $12
         DC.B $6D,$61,$70,$3A,$20,$69,$6E,$64,$65,$78,$20,$63,$6F,$72,$72,$75,$70,$74
         DC.B $00
-LBL_201:
+LBL_200:
         DC.B $11
         DC.B $6D,$61,$70,$20,$6B,$65,$79,$20,$6E,$6F,$74,$20,$66,$6F,$75,$6E,$64
-LBL_202:
+LBL_201:
         DC.B $06
         DC.B $63,$6C,$6F,$73,$65,$64
         DC.B $00
-LBL_203:
+LBL_202:
         DC.B $0C
         DC.B $63,$6C,$6F,$73,$65,$52,$65,$71,$75,$65,$73,$74
         DC.B $00
-LBL_204:
+LBL_203:
         DC.B $01
         DC.B $3F
-LBL_206:
+LBL_205:
         DC.B $08
         DC.B $54,$20,$43,$4C,$4F,$53,$45,$20
         DC.B $00
-LBL_205:
+LBL_204:
         DC.B $01
         DC.B $20
-LBL_207:
+LBL_206:
         DC.B $07
         DC.B $54,$20,$46,$49,$52,$45,$20
-LBL_208:
+LBL_207:
         DC.B $01
         DC.B $2E
-LBL_209:
+LBL_208:
         DC.B $06
         DC.B $54,$20,$44,$49,$4D,$20
         DC.B $00
-LBL_210:
+LBL_209:
         DC.B $05
         DC.B $2E,$43,$75,$74,$20
-LBL_211:
+LBL_210:
         DC.B $06
         DC.B $2E,$43,$6F,$70,$79,$20
         DC.B $00
-LBL_212:
+LBL_211:
         DC.B $07
         DC.B $2E,$50,$61,$73,$74,$65,$20
-LBL_213:
+LBL_212:
         DC.B $07
         DC.B $2E,$43,$6C,$65,$61,$72,$20
-LBL_214:
+LBL_213:
         DC.B $08
         DC.B $54,$20,$46,$52,$4F,$4E,$54,$20
         DC.B $00
-LBL_215:
+LBL_214:
         DC.B $2A
         DC.B $61,$73,$6B,$4F,$70,$65,$6E,$20,$66,$69,$6C,$74,$65,$72,$20,$6D,$75,$73,$74,$20,$68,$61,$76,$65,$20,$61,$74,$20,$6D,$6F,$73,$74,$20,$34,$20,$65,$6E,$74,$72,$69,$65,$73
         DC.B $00
-LBL_216:
+LBL_215:
         DC.B $31
         DC.B $61,$73,$6B,$4F,$70,$65,$6E,$20,$66,$69,$6C,$74,$65,$72,$20,$65,$6E,$74,$72,$79,$20,$6D,$75,$73,$74,$20,$62,$65,$20,$61,$74,$20,$6D,$6F,$73,$74,$20,$34,$20,$63,$68,$61,$72,$61,$63,$74,$65,$72,$73
 LBL_226:
         DC.B $17
         DC.B $6C,$69,$73,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-LBL_197:
+LBL_196:
         DC.B $00
         DC.B $00
-LBL_217:
+LBL_216:
         DC.B $08
         DC.B $53,$61,$76,$65,$20,$61,$73,$3A
         DC.B $00
-LBL_218:
+LBL_217:
         DC.B $09
         DC.B $63,$61,$6E,$63,$65,$6C,$6C,$65,$64
+LBL_220:
+        DC.B $18
+        DC.B $63,$6F,$75,$6C,$64,$20,$6E,$6F,$74,$20,$77,$72,$69,$74,$65,$20,$6C,$6F,$67,$20,$66,$69,$6C,$65
+        DC.B $00
 LBL_221:
         DC.B $13
         DC.B $63,$6F,$75,$6C,$64,$20,$6E,$6F,$74,$20,$6F,$70,$65,$6E,$20,$66,$69,$6C,$65
@@ -13097,11 +13086,11 @@ LBL_223:
 LBL_224:
         DC.B $29
         DC.B $66,$69,$6C,$65,$20,$63,$72,$65,$61,$74,$6F,$72,$20,$6D,$75,$73,$74,$20,$62,$65,$20,$61,$74,$20,$6D,$6F,$73,$74,$20,$34,$20,$63,$68,$61,$72,$61,$63,$74,$65,$72,$73
-LBL_219:
+LBL_218:
         DC.B $14
         DC.B $63,$6F,$75,$6C,$64,$20,$6E,$6F,$74,$20,$77,$72,$69,$74,$65,$20,$66,$69,$6C,$65
         DC.B $00
-LBL_220:
+LBL_219:
         DC.B $13
         DC.B $63,$6F,$75,$6C,$64,$20,$6E,$6F,$74,$20,$72,$65,$61,$64,$20,$66,$69,$6C,$65
 LBL_225:

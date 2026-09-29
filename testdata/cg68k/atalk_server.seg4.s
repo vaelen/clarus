@@ -12313,7 +12313,7 @@ LBL_639:
         ; func natLastErrCode  (JT slot 517)
 LBL_93:
         LINK A6,#-2100
-        MOVE.L -7130(A5),D0
+        MOVE.L -7134(A5),D0
         BRA.W LBL_640
 LBL_640:
         UNLK A6
