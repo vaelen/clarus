@@ -1,14 +1,15 @@
 #!/bin/sh
 # Port of internal/bake/bakeidentity_test.go's
-# TestRtbakeCorruptBodyRefused: the loader must refuse a bake whose BODY
-# (past the header -- module manifest or any IR section) was corrupted, via
-# the format-v4 bodyHash check -- clear diagnostic, nonzero exit. Every
-# header field (magic/version/lane/stamp) still matches here, so this
-# proves the bodyHash check catches a class the pre-v4 header check
-# couldn't.
+# TestRtbakeCorruptBodyRefused, retargeted to CLIR v9 (SE wave 4 Task 6):
+# v9 has no body hash (W6 -- a lazy, partial read cannot verify one), so a
+# corrupt library is refused by structure instead. `clirhdr --flip-body`
+# flips the first byte after the stamp -- the module count's high byte --
+# which throws the module list and section directory off; the loader must
+# refuse with a clear diagnostic and a nonzero exit, never read on into
+# garbage. Every header field (magic/version/lane/stamp) still matches.
 #
-# `clirhdr --flip-body` is the script-side CorruptBodyFixture (bake.go):
-# generated, not committed, same reasoning as refuse_stamp.sh's own note.
+# The fixture is generated, not committed, same reasoning as
+# refuse_stamp.sh's own note.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
@@ -24,9 +25,9 @@ else
     t_pass exit
 fi
 
-if grep -q 'body hash mismatch' "$WORK/log"; then
+if grep -q 'corrupt header' "$WORK/log"; then
     t_pass diagnostic
 else
-    t_fail diagnostic "expected a clear body-hash-mismatch diagnostic, got: $(head -5 "$WORK/log" | tr '\n' ' ')"
+    t_fail diagnostic "expected a clear corrupt-header diagnostic, got: $(head -5 "$WORK/log" | tr '\n' ' ')"
 fi
 t_done

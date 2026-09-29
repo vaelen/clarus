@@ -10,9 +10,9 @@
 # clarusc/clarusc.c is regenerated and the real stamp changes.
 #
 # --flip-body is the CorruptBodyFixture counterpart. Flipping the first
-# body byte lands on the module count's high byte, so the result is NOT
-# expected to still parse (Go's own byte patch behaves identically); all
-# this checks is that the flip is a single in-place byte at body_off.
+# byte after the stamp (body_off, CLIR v9) lands on the module count's
+# high byte, so the result is NOT expected to still parse; all this
+# checks is that the flip is a single in-place byte at body_off.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 

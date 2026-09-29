@@ -14,17 +14,19 @@
 # that splice; 25 -> 27 in the MacTCP phase's Task 6, when the tcp pair
 # did; 27/18 -> 28/19 in SE wave 3 Task 2, when the boxsize lane pair
 # (boxsize_68k.cla / boxsize_c.cla, one per lane) joined both lists.
-# sections 48 is bkSectionCount (47 -> 48 in SE wave 4 Task 2:
-# +bkSecShakeSummary). version 8 is language-runtime-cleanup's
-# format (IRWindowDesc gained menuMask; v7 was clir-load-perf Task 4's
-# hash swap, FNV-mul -> shift-add).
+# sections 47 (68k) / 48 (c) are bkSectionCount68k/bkSectionCountC: 48
+# on both lanes after SE wave 4 Task 2 (+bkSecShakeSummary); CLIR v9 (SE
+# wave 4 Task 6) drops IrStmts/IrExprs from the 68k library and adds
+# bkSecGlobalInits, the c library keeps its bodies. version 9 is that
+# format: a section directory, no body hash, an indexed ObjCode section
+# (v8 was language-runtime-cleanup's IRWindowDesc.menuMask).
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
 for lane in 68k c; do
     case $lane in
-        68k) modules=28 ;;
-        c)   modules=19 ;;
+        68k) modules=28 sections=47 ;;
+        c)   modules=19 sections=48 ;;
     esac
 
     bake_ir "$lane" "$WORK/$lane.clir"
@@ -34,8 +36,8 @@ for lane in 68k c; do
     fi
 
     got=$(clir_field version "$WORK/$lane.hdr")
-    [ "$got" = 8 ] && t_pass "$lane/version" \
-        || t_fail "$lane/version" "version = $got, want 8 (language-runtime-cleanup: +bkSecIrArrLits, +bkSecUitestBounds arrlit boundary, +IRWindowDesc.menuMask)"
+    [ "$got" = 9 ] && t_pass "$lane/version" \
+        || t_fail "$lane/version" "version = $got, want 9 (SE wave 4 Task 6: section directory, no body hash, no 68k IR bodies, indexed ObjCode)"
 
     got=$(clir_field lane "$WORK/$lane.hdr")
     [ "$got" = "$lane" ] && t_pass "$lane/lanetag" \
@@ -50,8 +52,18 @@ for lane in 68k c; do
         || t_fail "$lane/modules" "modules = $got, want $modules; keys: $(sed -n 's/^module //p' "$WORK/$lane.hdr" | tr '\n' ' ')"
 
     got=$(clir_field sections "$WORK/$lane.hdr")
-    [ "$got" = 48 ] && t_pass "$lane/sections" \
-        || t_fail "$lane/sections" "sections = $got, want 48 (bkSectionCount, SE wave 4 Task 2: +bkSecShakeSummary)"
+    [ "$got" = "$sections" ] && t_pass "$lane/sections" \
+        || t_fail "$lane/sections" "sections = $got, want $sections (bkSectionCount68k/bkSectionCountC)"
+
+    # The 68k library carries no IR bodies (IrStmts 2, IrExprs 3) and has
+    # the GlobalInits arena (52); the c library is the other way round.
+    ids=$(awk '$1 == "section" && ($2 == 2 || $2 == 3 || $2 == 52) { print $2 }' "$WORK/$lane.hdr" | tr '\n' ' ')
+    case $lane in
+        68k) want="52 " ;;
+        c)   want="2 3 " ;;
+    esac
+    [ "$ids" = "$want" ] && t_pass "$lane/bodies" \
+        || t_fail "$lane/bodies" "body/GlobalInits sections = '$ids', want '$want'"
 
     # Every module key follows rtModuleKey's "runtime/clarus/NAME" scheme
     # (Go: filepath.Dir(m) == "runtime/clarus", i.e. exactly one path

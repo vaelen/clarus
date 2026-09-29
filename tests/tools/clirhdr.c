@@ -1,32 +1,31 @@
-/* tests/tools/clirhdr.c -- print a 'CLIR' bake artifact's header and
- * section framing, or write a one-byte-flipped copy of it.
+/* tests/tools/clirhdr.c -- print a 'CLIR' library's header and section
+ * directory, or write a one-byte-flipped copy of it.
  *
  * usage: clirhdr FILE                   -- print the header (below)
  *        clirhdr --flip-stamp FILE OUT  -- copy, first stamp byte ^= 0xFF
- *        clirhdr --flip-body  FILE OUT  -- copy, first body  byte ^= 0xFF
+ *        clirhdr --flip-body  FILE OUT  -- copy, first byte after the
+ *                                          stamp (the module count) ^= 0xFF
  *
- * A field-for-field port of internal/bake/bake.go's ParseHeader (every
- * need(n) bounds check and the trailing-byte accounting included) over
- * clarusc/bake.cla's format:
+ * clarusc/bake.cla's format v9 (SE wave 4 Task 6):
  *
  *   magic 'CLIR' | formatVersion(4) | laneTag(1) | stampLen(2) | stamp |
- *   bodyHash(4) | moduleCount(2) | [keyLen(1) key]... |
- *   sectionCount(2) | [id(2) len(4) payload]...
+ *   moduleCount(2) | [keyLen(1) key]... |
+ *   sectionCount(2) | [id(2) off(4) len(4)]... | payloads
  *
- * All multi-byte fields are big-endian.  The section table must account
- * for every remaining byte -- a structural well-formedness check, not a
- * section-content decode, which is the loader's job.
+ * All multi-byte fields are big-endian; off is from the start of the file.
+ * The payloads must tile the rest of the file exactly, in directory order
+ * -- a structural well-formedness check, not a section-content decode,
+ * which is the loader's job.
  *
  * Print form: one header line of space-separated key=value pairs
  *
- *   version=7 lane=68k stamp=001bd50d bodyhash=05369397 modules=23 \
- *       sections=46 body_off=17
+ *   version=9 lane=68k stamp=001bd50d modules=28 sections=47 body_off=15
  *
- * then one `module <key>` line per module in manifest order, then one
- * `section <id> <len> <off>` line per section in table order.  A framing
- * error prints `parse error at N: reason` on stderr and exits 1; the
- * flip modes mirror bake.go's CorruptStampFixture/CorruptBodyFixture,
- * which parse the artifact before patching it in place.
+ * (body_off: the offset just past the stamp, where the module list
+ * starts), then one `module <key>` line per module in manifest order, then
+ * one `section <id> <len> <off>` line per directory entry.  A framing
+ * error prints `parse error at N: reason` on stderr and exits 1; the flip
+ * modes parse the file before patching it in place.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -122,7 +121,7 @@ static void spew(const char *path, const unsigned char *buf, long n) {
 
 int main(int argc, char **argv) {
     const char *mode = NULL, *path, *outp = NULL;
-    unsigned long version, lane, stamp_len, body_hash, module_count, section_count;
+    unsigned long version, lane, stamp_len, module_count, section_count;
     long stamp_off, body_off, *mod_off, *mod_len, *sec_id, *sec_len, *sec_off;
     unsigned long i;
     char m[160];
@@ -153,7 +152,6 @@ int main(int argc, char **argv) {
     need((long)stamp_len);
     stamp_off = pos;
     pos += (long)stamp_len;
-    body_hash = take32();
     body_off = pos;
 
     module_count = take16();
@@ -171,11 +169,18 @@ int main(int argc, char **argv) {
     sec_len = xalloc(section_count * sizeof *sec_len);
     sec_off = xalloc(section_count * sizeof *sec_off);
     for (i = 0; i < section_count; i++) {
-        need(6);
+        need(10);
         sec_id[i] = (long)take16();
+        sec_off[i] = (long)take32();
         sec_len[i] = (long)take32();
+    }
+    /* The payloads tile the rest of the file, in directory order. */
+    for (i = 0; i < section_count; i++) {
+        if (sec_off[i] != pos) {
+            snprintf(m, sizeof m, "section %ld starts at %ld, want %ld", sec_id[i], sec_off[i], pos);
+            parse_error(m);
+        }
         need(sec_len[i]);
-        sec_off[i] = pos;
         pos += sec_len[i];
     }
 
@@ -194,10 +199,6 @@ int main(int argc, char **argv) {
             }
             at = stamp_off;
         } else {
-            if (body_off >= dlen) {
-                fprintf(stderr, "clirhdr: empty body, cannot corrupt\n");
-                return 1;
-            }
             at = body_off;
         }
         data[at] ^= 0xFF;
@@ -211,8 +212,7 @@ int main(int argc, char **argv) {
     else                printf("%lu", lane);
     printf(" stamp=");
     for (i = 0; i < stamp_len; i++) printf("%02x", data[stamp_off + (long)i]);
-    printf(" bodyhash=%08lx modules=%lu sections=%lu body_off=%ld\n",
-           body_hash, module_count, section_count, body_off);
+    printf(" modules=%lu sections=%lu body_off=%ld\n", module_count, section_count, body_off);
     for (i = 0; i < module_count; i++)
         printf("module %.*s\n", (int)mod_len[i], (const char *)data + mod_off[i]);
     for (i = 0; i < section_count; i++)
