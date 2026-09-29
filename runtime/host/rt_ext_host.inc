@@ -140,6 +140,16 @@ void rt_ext_MemProbe(const uint8_t *phase) {
     rtm_dump(buf);
 }
 
+/* rt_ext_BakeReadLog: host body of clarusc/bake.cla's BakeReadLog (SE
+ * wave 4 Task 6) -- one `bakeread: ID BYTES` line on stderr per library
+ * read when CLARUS_BAKE_READLOG=1 (tests/bake/lazyread.sh), else silent.
+ * The 68k lane resolves the extern to bake.cla's no-op nat_BakeReadLog. */
+void rt_ext_BakeReadLog(int32_t id, int32_t bytes) {
+    const char *v = getenv("CLARUS_BAKE_READLOG");
+    if (v && strcmp(v, "1") == 0)
+        fprintf(stderr, "bakeread: %ld %ld\n", (long)id, (long)bytes);
+}
+
 /* rt_ext_CoreSetLastErr: core.cla's own extern name (Plan native-5d Task
  * 12.5, lastError storage-inversion fix) -- same "own prefixed name" and
  * str255-to-NUL-terminated-C-string conversion shape as rt_ext_CorePanic

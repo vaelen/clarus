@@ -15606,8 +15606,9 @@ func cgObjCaptureRuntime(): bool {
 
 // ================================================================
 // object-code-linker Task 3: Measure-skip + paste-with-fixups link
-// pass -- consumes the bkLdObj*/cgObjRunBytes/cgObjRunOff/cgObjHoles staging Task 2's
-// loader populated on a --rtbake compile. Two hook points: cg68Measure's
+// pass -- consumes the bkLdObj* staging and the reachable functions'
+// object records (bkObjBuf, read after shake by bake.cla's bkLoadObjCode)
+// on a --rtbake compile. Two hook points: cg68Measure's
 // own per-function loop (above) substitutes a baked function's own
 // measured size/frame/pool-usage data for a real cgEmitFunc call;
 // cg68ProgramFork's own per-segment function loop (below) substitutes a
@@ -15722,7 +15723,7 @@ func cgObjFlatSlice(flat: list of int, first: int, count: int): list of int {
 // covers on its own).
 func cgObjBuildFuncStrLits(f: int): list of int {
     var l: list of int
-    var hf: int
+    var p: int
     var nh: int
     var k: int
     var j: int
@@ -15731,11 +15732,13 @@ func cgObjBuildFuncStrLits(f: int): list of int {
     var found: bool
 
     l = cgFreshIntList()
-    hf = bkLdObjHoleFirst[f]
-    nh = bkLdObjNHoles[f]
+    p = bkLdObjPos[f]
+    nh = bkObjBuf.intAt(p)
+    p = bkObjRunEnd(p + 4)
     k = 0
     while k < nh {
-        h = cgObjHoles[hf + k]
+        h = bkObjHoleAt(p)
+        p = bkObjRunEnd(p + bkObjHoleBytes)
         if h.kind == cgHoleLabel and (h.cls == cgRelClsPoolStr or h.cls == cgRelClsPanicMsg) {
             if h.cls == cgRelClsPanicMsg {
                 sym = cgListOobMsgIdx
@@ -15771,7 +15774,7 @@ func cgObjBuildFuncStrLits(f: int): list of int {
 // style filtered entry to lose the position of either.
 func cgObjBuildFuncArrLits(f: int): list of int {
     var l: list of int
-    var hf: int
+    var p: int
     var nh: int
     var k: int
     var j: int
@@ -15779,11 +15782,13 @@ func cgObjBuildFuncArrLits(f: int): list of int {
     var found: bool
 
     l = cgFreshIntList()
-    hf = bkLdObjHoleFirst[f]
-    nh = bkLdObjNHoles[f]
+    p = bkLdObjPos[f]
+    nh = bkObjBuf.intAt(p)
+    p = bkObjRunEnd(p + 4)
     k = 0
     while k < nh {
-        h = cgObjHoles[hf + k]
+        h = bkObjHoleAt(p)
+        p = bkObjRunEnd(p + bkObjHoleBytes)
         if h.kind == cgHoleLabel and h.cls == cgRelClsPoolArr {
             found = false
             j = 0
@@ -15826,17 +15831,19 @@ func cgObjBuildFuncArrLits(f: int): list of int {
 // its own glue-bundle-size accounting, both of which the getter already
 // provides idempotently.
 func cgObjApplyGlueUsage(f: int) {
-    var hf: int
+    var p: int
     var nh: int
     var k: int
     var h: CgObjHole
     var junk: int
 
-    hf = bkLdObjHoleFirst[f]
-    nh = bkLdObjNHoles[f]
+    p = bkLdObjPos[f]
+    nh = bkObjBuf.intAt(p)
+    p = bkObjRunEnd(p + 4)
     k = 0
     while k < nh {
-        h = cgObjHoles[hf + k]
+        h = bkObjHoleAt(p)
+        p = bkObjRunEnd(p + bkObjHoleBytes)
         if h.kind == cgHoleLabel and h.cls == cgRelClsGlue {
             if h.sym == 1 {
                 junk = cgMul32Label()
@@ -15958,7 +15965,8 @@ func cgObjPasteHole(h: CgObjHole) {
 }
 
 // cgObjPasteFunc re-materializes baked function f from its captured
-// runs+holes instead of running cgEmitFunc -- Task 1's own proven paste
+// runs+holes (its record in bkObjBuf, decoded in place -- format v9)
+// instead of running cgEmitFunc -- Task 1's own proven paste
 // mechanic: a68CommentMarker()+a68Bind(cgFuncLabels[f]) shapes the item
 // stream exactly like cgEmitFunc's own non-listing entry (both zero-
 // length, so the bind lands at the same address either way), then every
@@ -15970,23 +15978,26 @@ func cgObjPasteHole(h: CgObjHole) {
 // KindData/KindBind barriers, so no cross-function peephole window is
 // lost by skipping it here).
 func cgObjPasteFunc(f: int) {
-    var rf: int
-    var hf: int
+    var p: int
+    var n: int
     var nh: int
     var k: int
     var run: text
 
-    rf = bkLdObjRunFirst[f]
-    hf = bkLdObjHoleFirst[f]
-    nh = bkLdObjNHoles[f]
+    p = bkLdObjPos[f]
+    nh = bkObjBuf.intAt(p)
+    p = p + 4
     a68CommentMarker()
     a68Bind(cgFuncLabels[f])
     k = 0
     while k <= nh {
-        run = cgObjRunText(rf + k)
+        n = bkObjBuf.intAt(p)
+        run = bkObjBuf.textAt(p + 4, n)
         a68DcBytes(run)
+        p = p + 4 + n
         if k < nh {
-            cgObjPasteHole(cgObjHoles[hf + k])
+            cgObjPasteHole(bkObjHoleAt(p))
+            p = p + bkObjHoleBytes
         }
         k = k + 1
     }

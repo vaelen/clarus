@@ -16,6 +16,8 @@
 
 BAKE=$WORK/rt68k.clir
 bake_ir 68k "$BAKE"
+CBAKE=$WORK/rtc.clir
+bake_ir c "$CBAKE"
 
 # The atalk/tcp bake twins keep their fixture in a heredoc; reuse it.
 for t in atalk tcp; do
@@ -23,22 +25,25 @@ for t in atalk tcp; do
     [ -s "$WORK/$t.cla" ] || die "could not extract the $t.sh fixture"
 done
 
-for f in examples/bookmarks.cla examples/hello-mac.cla examples/texteditor.cla \
-         examples/tcpchat.cla "$WORK/atalk.cla" "$WORK/tcp.cla"; do
-    nm=$(basename "$f" .cla)
+# pair NAME EMIT BAKEFILE FILE: one from-source/--rtbake dump comparison.
+# The C lane (host `emit`) has no bake self-check of its own, and once the
+# 68k library drops IR bodies the summary is shake's only source for baked
+# runtime functions on both lanes.
+pair() {
+    nm=$1 emit=$2 bk=$3 f=$4
     s=$WORK/$nm.src.dump
     b=$WORK/$nm.bake.dump
-    if ! "$CLARUSC" emit68k --shake-dump "$s" -o "$WORK/$nm.src.bin" "$f" > "$WORK/$nm.src.log" 2>&1; then
+    if ! "$CLARUSC" $emit --shake-dump "$s" -o "$WORK/$nm.src.out" "$f" > "$WORK/$nm.src.log" 2>&1; then
         t_fail "$nm" "from-source compile failed: $(tail -2 "$WORK/$nm.src.log" | tr '\n' ' ')"
-        continue
+        return
     fi
-    if ! "$CLARUSC" emit68k --rtbake "$BAKE" --shake-dump "$b" -o "$WORK/$nm.bake.bin" "$f" > "$WORK/$nm.bake.log" 2>&1; then
+    if ! "$CLARUSC" $emit --rtbake "$bk" --shake-dump "$b" -o "$WORK/$nm.bake.out" "$f" > "$WORK/$nm.bake.log" 2>&1; then
         t_fail "$nm" "--rtbake compile failed: $(tail -2 "$WORK/$nm.bake.log" | tr '\n' ' ')"
-        continue
+        return
     fi
     if grep -q 'falling back' "$WORK/$nm.bake.log"; then
         t_fail "$nm" "--rtbake fell back to from-source"
-        continue
+        return
     fi
     # Clarus "\n" is CR; turn the dumps into ordinary lines.
     tr '\r' '\n' < "$s" > "$s.n"
@@ -49,7 +54,7 @@ for f in examples/bookmarks.cla examples/hello-mac.cla examples/texteditor.cla \
     rb=$(sed -n 's/^R //p' "$b")
     if [ "$rs" != 0 ] || [ -z "$rb" ] || [ "$rb" -le 0 ]; then
         t_fail "$nm" "replay counts: source '$rs' (want 0), rtbake '$rb' (want > 0)"
-        continue
+        return
     fi
     grep -v '^R ' "$s" > "$s.me"
     grep -v '^R ' "$b" > "$b.me"
@@ -60,5 +65,15 @@ for f in examples/bookmarks.cla examples/hello-mac.cla examples/texteditor.cla \
     else
         t_fail "$nm" "marks/edges differ: $(diff "$s.me" "$b.me" | head -3 | tr '\n' ' ')"
     fi
+}
+
+for f in examples/bookmarks.cla examples/hello-mac.cla examples/texteditor.cla \
+         examples/tcpchat.cla "$WORK/atalk.cla" "$WORK/tcp.cla"; do
+    pair "$(basename "$f" .cla)" emit68k "$BAKE" "$f"
+done
+# tcpchat and the twins use connection/AppleTalk, which the C-lane bake
+# omits (from-source fallback), so the C pair covers the other three.
+for f in examples/bookmarks.cla examples/hello-mac.cla examples/texteditor.cla; do
+    pair "c-$(basename "$f" .cla)" emit "$CBAKE" "$f"
 done
 t_done

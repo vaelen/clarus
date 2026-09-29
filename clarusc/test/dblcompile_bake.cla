@@ -3,7 +3,7 @@
 // (memory-leak-fix Task 1's own harness), same per-compile sequence
 // (driveReset/resetDiags/astReset -> driveCompile -> driveEmit68kFork)
 // repeated in ONE host process, once per entry, but with haveRtbake/
-// rtbakeBytes set so every compile installs the SAME baked runtime image
+// rtbakeFh set so every compile installs the SAME baked runtime image
 // instead of splicing/checking/lowering runtime source. Proves the
 // install path itself doesn't leak (0 block growth across repeats) and
 // doesn't leave stale state a DIFFERENT entry's compile could observe
@@ -13,10 +13,11 @@
 // clir-load-perf Task 7 made this the only host front end that drives
 // driveCompile more than once in one process, i.e. the host stand-in for
 // ClarusC.APPL's multi-compile session. SE wave 1 removed that phase's
-// parse memo (bkParsedValid): driveCompile now CONSUMES rtbakeBytes (a
-// successful parse frees it), so this harness -- like macgui.cla's
-// gcResolveBakePath -- hands driveCompile a fresh copy of the bake
-// bytes before EVERY compile. It logs a BAKESTATE line per compile:
+// parse memo (bkParsedValid), so every compile re-reads the library; SE
+// wave 4 (CLIR v9) reads it lazily through a filehandle, which this
+// harness opens with file.openRead before EVERY compile and closes after
+// it, the shape ClarusC.APPL's data-fork library takes. It logs a
+// BAKESTATE line per compile:
 // parsedBefore (always 0 now -- kept so the log shape is stable; the
 // memo it used to observe no longer exists), the pending object-code
 // staging count, this compile's own bkRuntimeFuncBoundary, and the
@@ -94,11 +95,9 @@ on App.startCLI(args: list of string) {
     var fork: text
     var wrote: bool
     var di: int
-    var bakeBytes: text
     var parsedBefore: int
     var elig: int
     var f: int
-    var bakeLen: int
 
     hostPaths = true
     rtDir = ""
@@ -108,38 +107,20 @@ on App.startCLI(args: list of string) {
         log("usage: dblcompile_bake BAKE_FILE ENTRY...")
         quit 2
     }
-    bakeBytes = ""
-    if not file.readText(args[0], bakeBytes) {
-        log("dblcompile_bake: cannot read bake file: " + args[0])
-        quit 2
-    }
-    bakeLen = bakeBytes.length
     i = 1
     while i < args.count {
         t0 = TickCount()
         parsedBefore = 0
-        // SE wave 1: driveCompile frees rtbakeBytes after its parse, so
-        // re-arm it every compile -- with a COPY: driveCompile's
-        // rtbakeBytes.release() empties the box itself, so a shared
-        // reference would empty bakeBytes for the next compile too.
-        rtbakeBytes = bakeBytes.textAt(0, bakeBytes.length)
+        rtbakeFh = file.openRead(args[0])
+        if rtbakeFh == nil {
+            log("dblcompile_bake: cannot open bake file: " + args[0])
+            quit 2
+        }
+        rtbakeBase = 0
         haveRtbake = true
         driveReset()
         resetDiags()
         astReset()
-        // SE wave 2: every second compile takes macgui.cla's shape
-        // (gcResolveBakePath: the front end verifies the header itself,
-        // then driveCompile parses under bkHeaderVerified), so the
-        // progressive free (bkLoadSections' removeFirst on the shared
-        // box) runs on both entry paths within one process.
-        if (i & 1) == 0 {
-            if not bkCheckRtbakeHeader(rtbakeBytes, bkLane68k) {
-                log("dblcompile_bake: header refused (macgui shape): " + args[i])
-                quit 1
-            }
-            resetDiags()
-            bkHeaderVerified = true
-        }
         wantEmit = true
         want68k = true
         entries = cgFreshStringList()
@@ -158,18 +139,8 @@ on App.startCLI(args: list of string) {
             }
             quit 1
         }
-        // SE wave 1 (spec L6): a successful bake-path compile consumed
-        // the bytes.
-        if rtbakeBytes.length != 0 {
-            log("dblcompile_bake: rtbakeBytes still held after compile: " + args[i])
-            quit 1
-        }
-        // SE wave 2: the parse's removeFirst consumed only the copy.
-        if bakeBytes.length != bakeLen {
-            log("dblcompile_bake: source bake bytes shrank to " + numToStr(bakeBytes.length) + " (want " + numToStr(bakeLen) + "): " + args[i])
-            quit 1
-        }
         built = driveEmit68kFork("", false, 0, false)
+        rtbakeFh.close()
         if not built {
             log("dblcompile_bake: emit68k failed: " + args[i])
             quit 1

@@ -84,7 +84,17 @@ const bkMagic: string = "CLIR"
 // pool's base/uitest boundary, bkGenBaseIrArrLitsCount); the object-code
 // relocation dispatch gained cgRelClsPoolArr; IRWindowDesc gained menuMask
 // -- one more u32 per window-desc entry in bkSecIrUi.
-const bkFormatVersion: int = 8
+// v9 (SE wave 4 Task 6, spec 3.3): built to be read lazily, a section at a
+// time, through a filehandle (bkLoadRtbake). The header drops the body hash
+// (W6: a partial read cannot verify one); a section directory (id, offset,
+// length per section) follows the module list. The 68k library carries no
+// IR bodies: IrStmts/IrExprs are gone, bkSecGlobalInits holds only the
+// runtime global initializers' expression trees (renumbered into their own
+// arena) and IrLocals only parameters. ObjCode leads with a per-function
+// (offset, length) index so a compile reads just its reachable functions'
+// records. The c library keeps IrStmts/IrExprs/IrLocals whole -- the C
+// printer prints runtime bodies from IR, it has no object code to paste.
+const bkFormatVersion: int = 9
 
 // bkClirResourceName/bkStampResourceName (runtime-ir-bake Task 6, Mac
 // integration): reserved 'CLFS' resource names ClarusC.APPL's own build
@@ -222,9 +232,9 @@ const bkSecFieldInfo: int = 47
 // cgObjHoles) and Measure-time metadata (bkSecObjMeta, cg68k.cla's own
 // cgFuncSize/cgFuncFrameSizes/cgFuncStrLits-family plus the once-per-
 // artifact fixed-cost buckets and per-pool-entry size tables). 68k lane
-// only; written empty (count 0) on lane c so bkSectionCount's own
-// round-trip check stays lane-uniform. See bkWriteObjCode/bkWriteObjMeta
-// for the exact wire shape and bkReadObjCode for the loader side (there
+// only; written empty (count 0) on lane c. See bkWriteObjCode/
+// bkWriteObjMeta for the exact wire shape and bkReadObjIndex/
+// bkLoadObjCode for the loader side (there
 // is no install step any more -- clir-load-perf Task 7 replaced
 // bkInstallObjCode's truncation with cgObjPasteEligible's bounds check).
 const bkSecObjCode: int = 48
@@ -248,7 +258,24 @@ const bkSecIrArrLits: int = 50
 // (bkCheckShakeSummary) on the 68k lane.
 const bkSecShakeSummary: int = 51
 
-const bkSectionCount: int = 48
+// bkSecGlobalInits (format v9, 68k lane only): every runtime global's
+// initializer expression tree in bkSecIrExprs' own wire shape, renumbered
+// into a small arena of its own (bkGlobalInitExprMap); bkSecIrGlobals'
+// init fields point into it. It installs as the irExprs prefix, which is
+// all cgEmitInitGlobalsStub needs (shake replays the summary instead).
+const bkSecGlobalInits: int = 52
+
+// Sections per lane (the loader's directory-count check): the 68k library
+// drops IrStmts/IrExprs and adds GlobalInits; the c library keeps both
+// bodies and has no GlobalInits.
+const bkSectionCount68k: int = 47
+const bkSectionCountC: int = 48
+
+// bkHeaderMax: the header, module list and directory are read in one
+// readAt of at most this many bytes (28 modules and 48 sections are about
+// 1.5 KB today). ponytail: fixed cap; add a directory-length field if the
+// module list ever outgrows it.
+const bkHeaderMax: int = 4096
 
 // ================================================================
 // Byte-buffer primitives -- explicit one-byte-at-a-time big-endian
@@ -310,8 +337,7 @@ func bkPutStrShort(out: text, s: string) {
 }
 
 // bkPutBytes (object-code-linker Task 2): 4-byte BE length + raw bytes,
-// verbatim -- the same framing bkEmitSection itself uses for a whole
-// section's payload, reused here per OBJECT-CODE byte run (a captured
+// verbatim -- used per OBJECT-CODE byte run (a captured
 // function's own post-peephole machine code), which unlike a pool string
 // can exceed the 255-byte cap bkPutStr's own `string` parameter carries.
 func bkPutBytes(out: text, data: text) {
@@ -319,12 +345,21 @@ func bkPutBytes(out: text, data: text) {
     out.append(data)
 }
 
-// bkEmitSection frames one section's already-built payload into out:
-// sectionId (2) + byteLen (4) + payload, per the brief's format block.
-func bkEmitSection(out: text, id: int, payload: text) {
-    bkPutU16(out, id)
-    bkPutU32(out, payload.length)
-    out.append(payload)
+// bkAddSection appends one section's payload to the body under
+// construction (bkWrBody) and its directory entry -- id(2), body-relative
+// offset(4), length(4) -- to bkWrDir; bakeWriteFile turns the offsets
+// into file offsets once the header's size is known. (Two text globals,
+// not id/offset/length lists: every handle-typed global costs a release
+// in cg_free_globals, duplicated into every segment of a self-compiled
+// clarusc, whose biggest function sits at the 32KB segment limit.)
+var bkWrBody: text
+var bkWrDir: text
+
+func bkAddSection(id: int, payload: text) {
+    bkPutU16(bkWrDir, id)
+    bkPutU32(bkWrDir, bkWrBody.length)
+    bkPutU32(bkWrDir, payload.length)
+    bkWrBody.append(payload)
 }
 
 // ================================================================
@@ -927,7 +962,11 @@ func bkWriteIrLocals(): text {
     return sec
 }
 
-func bkWriteIrFuncs(): text {
+// bkWriteIrFuncs: bodyless (the 68k library, format v9) writes paramsHead
+// renumbered into the parameter-only IrLocals (localMap) and no locals
+// or body at all (-1): every baked function pastes its object code, so
+// nothing reads them.
+func bkWriteIrFuncs(bodyless: bool, localMap: intmap of int): text {
     var sec: text
     var i: int
 
@@ -935,11 +974,181 @@ func bkWriteIrFuncs(): text {
     i = 0
     while i < irFuncs.count {
         bkPutU32(sec, irFuncs[i].name)
-        bkPutU32(sec, irFuncs[i].paramsHead)
-        bkPutU32(sec, irFuncs[i].ret)
-        bkPutU32(sec, irFuncs[i].localsHead)
-        bkPutU32(sec, irFuncs[i].bodyHead)
+        if bodyless {
+            bkPutU32(sec, bkMapIdx(localMap, irFuncs[i].paramsHead))
+            bkPutU32(sec, irFuncs[i].ret)
+            bkPutU32(sec, -1)
+            bkPutU32(sec, -1)
+        } else {
+            bkPutU32(sec, irFuncs[i].paramsHead)
+            bkPutU32(sec, irFuncs[i].ret)
+            bkPutU32(sec, irFuncs[i].localsHead)
+            bkPutU32(sec, irFuncs[i].bodyHead)
+        }
         i = i + 1
+    }
+    return sec
+}
+
+// ---- Bodyless library (format v9, 68k lane) ----
+//
+// The parameter-only IrLocals and the GlobalInits arena renumber the
+// nodes they keep in ascending original order: bkParamLocalMap and
+// bkGlobalInitExprMap map an old arena index to its new one (the count
+// of kept nodes below it).
+
+// bkMapIdx renumbers one arena reference; -1 stays -1. A reference the
+// map does not cover would silently point at the wrong node after
+// install, so it aborts the bake instead.
+func bkMapIdx(m: intmap of int, i: int): int {
+    var v: int
+
+    if i == -1 {
+        return -1
+    }
+    v = m.get(i, -2)
+    if v == -2 {
+        abort("clarusc --bake-ir: bodyless library: arena index " + numToStr(i) + " was not renumbered")
+    }
+    return v
+}
+
+// bkMarkExpr marks root and every expression it reaches: the child slots
+// ir.cla's IRExprKind table documents (a: EFieldRef/EIndexRef/EBin/EUn/
+// EConv; b: EIndexRef/EBin and the ECallFn/ECallExt/EIntr argument-list
+// head) and `next` (argument-list chaining).
+func bkMarkExpr(mark: list of bool, root: int) {
+    var k: IRExprKind
+    var x: int
+
+    x = root
+    while x != -1 {
+        mark[x] = true
+        k = irExprs[x].kind
+        if k == EFieldRef or k == EIndexRef or k == EBin or k == EUn or k == EConv {
+            bkMarkExpr(mark, irExprs[x].a)
+        }
+        if k == EIndexRef or k == EBin or k == ECallFn or k == ECallExt or k == EIntr {
+            bkMarkExpr(mark, irExprs[x].b)
+        }
+        x = irExprs[x].next
+    }
+}
+
+// bkMarkMap numbers the marked indices in ascending order.
+func bkMarkMap(mark: list of bool): intmap of int {
+    var m: intmap of int
+    var i: int
+    var n: int
+
+    n = 0
+    i = 0
+    while i < mark.count {
+        if mark[i] {
+            m[i] = n
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return m
+}
+
+// bkParamLocalMap: every function's parameter chain.
+func bkParamLocalMap(): intmap of int {
+    var mark: list of bool
+    var i: int
+    var p: int
+
+    i = 0
+    while i < irLocals.count {
+        mark.add(false)
+        i = i + 1
+    }
+    i = 0
+    while i < irFuncs.count {
+        p = irFuncs[i].paramsHead
+        while p != -1 {
+            mark[p] = true
+            p = irLocals[p].next
+        }
+        i = i + 1
+    }
+    return bkMarkMap(mark)
+}
+
+// bkGlobalInitExprMap: every node of every global initializer's tree.
+func bkGlobalInitExprMap(): intmap of int {
+    var mark: list of bool
+    var i: int
+
+    i = 0
+    while i < irExprs.count {
+        mark.add(false)
+        i = i + 1
+    }
+    i = 0
+    while i < irGlobals.count {
+        bkMarkExpr(mark, irGlobals[i].init)
+        i = i + 1
+    }
+    return bkMarkMap(mark)
+}
+
+// bkWriteParamLocals: bkWriteIrLocals' wire shape over the parameters
+// alone (localMap's keys, ascending), `next` renumbered.
+func bkWriteParamLocals(localMap: intmap of int): text {
+    var sec: text
+    var o: int
+
+    bkPutU32(sec, localMap.count)
+    o = 0
+    while o < irLocals.count {
+        if localMap.has(o) {
+            bkPutU32(sec, irLocals[o].name)
+            bkPutU32(sec, irLocals[o].t)
+            bkPutU32(sec, bkMapIdx(localMap, irLocals[o].next))
+            bkPutBool(sec, irLocals[o].nobirth)
+        }
+        o = o + 1
+    }
+    return sec
+}
+
+// bkWriteGlobalInits: bkWriteIrExprs' wire shape over the initializer
+// trees alone (exprMap's keys, ascending), every child slot renumbered
+// (see bkMarkExpr).
+func bkWriteGlobalInits(exprMap: intmap of int): text {
+    var sec: text
+    var o: int
+    var k: IRExprKind
+    var a: int
+    var b: int
+
+    bkPutU32(sec, exprMap.count)
+    o = 0
+    while o < irExprs.count {
+        if exprMap.has(o) {
+            k = irExprs[o].kind
+            a = irExprs[o].a
+            if k == EFieldRef or k == EIndexRef or k == EBin or k == EUn or k == EConv {
+                a = bkMapIdx(exprMap, a)
+            }
+            b = irExprs[o].b
+            if k == EIndexRef or k == EBin or k == ECallFn or k == ECallExt or k == EIntr {
+                b = bkMapIdx(exprMap, b)
+            }
+            bkPutU32(sec, int(k))
+            bkPutU32(sec, a)
+            bkPutU32(sec, b)
+            bkPutU32(sec, irExprs[o].name)
+            bkPutU32(sec, irExprs[o].intVal)
+            bkPutBool(sec, irExprs[o].global)
+            bkPutU32(sec, int(irExprs[o].convOp))
+            bkPutU32(sec, irExprs[o].ty)
+            bkPutU32(sec, bkMapIdx(exprMap, irExprs[o].next))
+            bkPutBool(sec, irExprs[o].argCopy)
+        }
+        o = o + 1
     }
     return sec
 }
@@ -972,7 +1181,9 @@ func bkWriteIrCbGlueNames(): text {
     return sec
 }
 
-func bkWriteIrGlobals(): text {
+// bkWriteIrGlobals: bodyless renumbers init into bkSecGlobalInits
+// (exprMap).
+func bkWriteIrGlobals(bodyless: bool, exprMap: intmap of int): text {
     var sec: text
     var i: int
 
@@ -981,7 +1192,11 @@ func bkWriteIrGlobals(): text {
     while i < irGlobals.count {
         bkPutU32(sec, irGlobals[i].name)
         bkPutU32(sec, irGlobals[i].t)
-        bkPutU32(sec, irGlobals[i].init)
+        if bodyless {
+            bkPutU32(sec, bkMapIdx(exprMap, irGlobals[i].init))
+        } else {
+            bkPutU32(sec, irGlobals[i].init)
+        }
         bkPutBool(sec, irGlobals[i].initBirth)
         i = i + 1
     }
@@ -1626,38 +1841,38 @@ func bkWriteManifestHashes(): text {
 
 // bkCorruptObjCodeTestOnly (object-code-linker Task 2): set by main.cla's
 // own undocumented `--bake-ir --corrupt-objcode-testonly` flag --
-// bkWriteObjCode, when true, overwrites the FIRST call-kind hole's own
-// reloc symbol with an impossibly large value, so internal/bake's
-// corrupt-object-section refusal test gets a structurally-valid bake
-// whose reloc symbol is genuinely out of range, with a genuinely correct
-// body hash (computed over the real, corrupted body by the real
-// bkHashText) -- never used outside that one test. See main.cla's own
-// flag-parsing doc comment for why this exists instead of a Go-side
-// byte patch.
+// bkWriteObjCode, when true, overwrites the first call-kind hole's reloc
+// symbol in EVERY function with an impossibly large value, so
+// tests/bake/refuse_objcode.sh gets a structurally-valid library whose
+// reloc symbols are genuinely out of range. Every function, not just the
+// first (format v9): a compile validates only the object code it reads,
+// which is its reachable functions', so the fixture must be corrupt
+// wherever the test program reaches -- never used outside that one test.
 var bkCorruptObjCodeTestOnly: bool
 
-// bkWriteObjCode (format v6, object-code-linker Task 2): bkSecObjCode --
-// per irFuncs-index function, its captured post-peephole byte runs
-// interleaved with typed hole records (run[0],hole[0],...,hole[n-1],
-// run[n], n+1 runs for n holes -- Task 1's own chosen capture
-// representation; see cg68k.cla's own capture-globals doc comment,
-// above cg68ProgramFork, for the hole kind/class/symbol encoding this
-// mirrors field-for-field). Reads cg68k.cla's live cgObj* globals
-// directly, the same "bake.cla's writer reads another module's live
-// global verbatim" pattern bkWriteFieldInfo already uses for check.cla's
-// fieldInfos -- valid here because bakeWriteFile calls this AFTER its
-// own capture step (cgObjCaptureRuntime) has already run for lane 68k;
-// lane c (or a 68k bake that somehow never captured -- defensive) writes
-// count 0, since cgObjValid stays at its empty default otherwise.
+// bkWriteObjCode (format v9; v6 object-code-linker Task 2) -- bkSecObjCode:
+//   count(4) | off(4) x (count + 1) | data
+// The index: per irFuncs-index function, its record's offset into `data`,
+// plus a closing sentinel (data's length) -- records are contiguous, so
+// function f's record is data[off[f] .. off[f+1]), empty when f was not
+// captured valid (lib.cla's strBlob/strOff convention). A record is the
+// function's captured post-peephole byte runs interleaved with typed hole
+// records -- nHoles(4) then run[0],hole[0],...,hole[n-1],run[n], a run
+// being len(4)+bytes and a hole bkObjHoleBytes bytes (kind, cls, sym(4),
+// op, size, sm, sr, sv(4), dm, dr, dv(4), srcSlot; cg68k.cla's CgObjHole).
+// Records are laid out in function order, so a compile's reachable
+// neighbours read as one span (bkLoadObjCode). Reads cg68k.cla's live
+// cgObj* capture globals; lane c (no capture) writes count 0.
 func bkWriteObjCode(lane: int): text {
     var sec: text
+    var data: text
+    var offs: list of int
     var count: int
     var i: int
     var k: int
     var h: CgObjHole
     var corruptedOne: bool
     var sym: int
-    var run: text
 
     // Bound by irFuncs.count, not cgObjValid.count directly: cg68Measure/
     // cg68ProgramFork run AFTER cg68SynthCbGlue inside cgObjCaptureRuntime,
@@ -1674,42 +1889,48 @@ func bkWriteObjCode(lane: int): text {
     if lane == bkLane68k {
         count = irFuncs.count
     }
-    sec = ""
-    bkPutU32(sec, count)
     i = 0
     while i < count {
-        bkPutBool(sec, cgObjValid[i])
+        offs.add(data.length)
         if cgObjValid[i] {
-            bkPutU32(sec, cgObjNHoles[i])
+            bkPutU32(data, cgObjNHoles[i])
+            corruptedOne = false
             k = 0
             while k <= cgObjNHoles[i] {
-                run = cgObjRunText(cgObjRunFirst[i] + k)
-                bkPutBytes(sec, run)
+                bkPutBytes(data, cgObjRunText(cgObjRunFirst[i] + k))
                 if k < cgObjNHoles[i] {
                     h = cgObjHoles[cgObjHoleFirst[i] + k]
-                    bkPutByte(sec, h.kind)
-                    bkPutByte(sec, h.cls)
+                    bkPutByte(data, h.kind)
+                    bkPutByte(data, h.cls)
                     sym = h.sym
                     if bkCorruptObjCodeTestOnly and not corruptedOne and h.kind == cgHoleCall {
                         sym = 999999999
                         corruptedOne = true
                     }
-                    bkPutU32(sec, sym)
-                    bkPutByte(sec, h.op)
-                    bkPutByte(sec, h.size)
-                    bkPutByte(sec, h.sm)
-                    bkPutByte(sec, h.sr)
-                    bkPutU32(sec, h.sv)
-                    bkPutByte(sec, h.dm)
-                    bkPutByte(sec, h.dr)
-                    bkPutU32(sec, h.dv)
-                    bkPutBool(sec, h.srcSlot)
+                    bkPutU32(data, sym)
+                    bkPutByte(data, h.op)
+                    bkPutByte(data, h.size)
+                    bkPutByte(data, h.sm)
+                    bkPutByte(data, h.sr)
+                    bkPutU32(data, h.sv)
+                    bkPutByte(data, h.dm)
+                    bkPutByte(data, h.dr)
+                    bkPutU32(data, h.dv)
+                    bkPutBool(data, h.srcSlot)
                 }
                 k = k + 1
             }
         }
         i = i + 1
     }
+    offs.add(data.length)
+    bkPutU32(sec, count)
+    i = 0
+    while i <= count {
+        bkPutU32(sec, offs[i])
+        i = i + 1
+    }
+    sec.append(data)
     return sec
 }
 
@@ -1830,18 +2051,15 @@ func bkWriteObjMeta(lane: int): text {
 // ================================================================
 
 // bakeWriteFile runs the generator (bakeGenerateChain) for lane, then
-// serializes every section into outPath in the brief's format (format
-// v4, final-review fix wave -- added bodyHash):
-//   magic(4) formatVersion(4) laneTag(1) stampLen(2) stamp bodyHash(4)
-//   moduleCount(2) [keyLen(1) key]... sectionCount(2) [id(2) len(4) payload]...
-// bodyHash (bkHashTextFrom) covers everything from moduleCount onward --
-// the whole "body" -- built into its own buffer first so the hash can be
-// computed before the header (which embeds it) is ever written; see
-// bkCheckRtbakeHeader for the read-side verification this exists for.
-// Returns false on a checker/lowering diagnostic (diags stays populated
-// for the caller to print, exactly as driveCompile's own contract) or a
-// write failure (logged directly, same as emitMode's own write-failure
-// path in main.cla).
+// serializes every section into outPath in format v9:
+//   magic(4) formatVersion(4) laneTag(1) stampLen(2) stamp
+//   moduleCount(2) [keyLen(1) key]... sectionCount(2) [id(2) off(4) len(4)]...
+//   payloads, in directory order, tiling the rest of the file
+// Offsets are from the start of the library, so a reader can fetch any
+// one section with readAt (bkLoadRtbake). Returns false on a checker/
+// lowering diagnostic (diags stays populated for the caller to print,
+// exactly as driveCompile's own contract) or a write failure (logged
+// directly, same as emitMode's own write-failure path in main.cla).
 // bkBuildShakeSummary (SE wave 4 Task 2): records, for every generated
 // irFuncs body and then every irGlobals init expression, the name sequence
 // shake.cla's own walk hands shakeMarkAndEnqueue (shakeRecording mode --
@@ -1959,77 +2177,85 @@ func bkCheckShakeSummary() {
 
 func bakeWriteFile(lane: int, outPath: string): bool {
     var out: text
-    var body: text
     var mods: list of string
     var stamp: text
     var compilerSrc: text
     var i: int
-    var bodyHash: int
+    var bodyless: bool
+    var hdrLen: int
+    var n: int
+    var e0: text
+    var e1: text
+    var localMap: intmap of int
+    var exprMap: intmap of int
 
     if not bakeGenerateChain(lane) {
         return false
     }
 
     mods = bakeModuleList(lane)
-
-    body = ""
-    bkPutU16(body, mods.count)
-    i = 0
-    while i < mods.count {
-        bkPutStrShort(body, rtModuleKey(mods[i]))
-        i = i + 1
+    bodyless = lane == bkLane68k
+    if bodyless {
+        localMap = bkParamLocalMap()
+        exprMap = bkGlobalInitExprMap()
     }
+    bkWrBody = e0
+    bkWrDir = e1
 
-    bkPutU16(body, bkSectionCount)
-    bkEmitSection(body, bkSecIrTypes, bkWriteIrTypes())
-    bkEmitSection(body, bkSecIrStmts, bkWriteIrStmts())
-    bkEmitSection(body, bkSecIrExprs, bkWriteIrExprs())
-    bkEmitSection(body, bkSecIrLocals, bkWriteIrLocals())
-    bkEmitSection(body, bkSecIrFuncs, bkWriteIrFuncs())
-    bkEmitSection(body, bkSecIrFuncIdxByName, bkWriteIrFuncIdxByName())
-    bkEmitSection(body, bkSecIrCbGlueNames, bkWriteIrCbGlueNames())
-    bkEmitSection(body, bkSecIrGlobals, bkWriteIrGlobals())
-    bkEmitSection(body, bkSecIrFieldSlots, bkWriteIrFieldSlots())
-    bkEmitSection(body, bkSecIrRecords, bkWriteIrRecords())
-    bkEmitSection(body, bkSecIrEnumMembers, bkWriteIrEnumMembers())
-    bkEmitSection(body, bkSecIrEnums, bkWriteIrEnums())
-    bkEmitSection(body, bkSecIrWidgetDescs, bkWriteIrWidgetDescs())
-    bkEmitSection(body, bkSecIrColumnDescs, bkWriteIrColumnDescs())
-    bkEmitSection(body, bkSecIrBindDescs, bkWriteIrBindDescs())
-    bkEmitSection(body, bkSecIrWindowDescs, bkWriteIrWindowDescs())
-    bkEmitSection(body, bkSecIrMenuItemDescs, bkWriteIrMenuItemDescs())
-    bkEmitSection(body, bkSecIrMenuDescs, bkWriteIrMenuDescs())
-    bkEmitSection(body, bkSecIrWinHandlers, bkWriteIrWinHandlers())
-    bkEmitSection(body, bkSecIrWidgetHandlerEntries, bkWriteIrWidgetHandlerEntries())
-    bkEmitSection(body, bkSecIrMenuHandlerEntries, bkWriteIrMenuHandlerEntries())
-    bkEmitSection(body, bkSecIrEveryEntries, bkWriteIrEveryEntries())
-    bkEmitSection(body, bkSecIrStrLits, bkWriteIrStrLits())
-    bkEmitSection(body, bkSecIrArrLits, bkWriteIrArrLits())
-    bkEmitSection(body, bkSecIrExternNames, bkWriteIntList(irExternNames))
-    bkEmitSection(body, bkSecIrExternRetTys, bkWriteIntList(irExternRetTys))
-    bkEmitSection(body, bkSecIrExternParamStart, bkWriteIntList(irExternParamStart))
-    bkEmitSection(body, bkSecIrExternParamCountArr, bkWriteIntList(irExternParamCountArr))
-    bkEmitSection(body, bkSecIrExternParamTys, bkWriteIntList(irExternParamTys))
-    bkEmitSection(body, bkSecIrExternTrapWords, bkWriteIntList(irExternTrapWords))
-    bkEmitSection(body, bkSecIrExternConvs, bkWriteIntList(irExternConvs))
-    bkEmitSection(body, bkSecIrExternSels, bkWriteIntList(irExternSels))
-    bkEmitSection(body, bkSecIrExternParamRegs, bkWriteIntList(irExternParamRegs))
-    bkEmitSection(body, bkSecIrExternRetRegs, bkWriteIntList(irExternRetRegs))
-    bkEmitSection(body, bkSecIrLayoutNeededByName, bkWriteIrLayoutNeededByName())
-    bkEmitSection(body, bkSecIrRcWalkNeededByName, bkWriteIrRcWalkNeededByName())
-    bkEmitSection(body, bkSecIrScalars, bkWriteIrScalars())
-    bkEmitSection(body, bkSecStrPool, bkWriteStrPool())
-    bkEmitSection(body, bkSecLowCounters, bkWriteLowCounters())
-    bkEmitSection(body, bkSecCheckerSymbols, bkWriteCheckerSymbols())
-    bkEmitSection(body, bkSecFieldInfo, bkWriteFieldInfo())
-    bkEmitSection(body, bkSecDeclFileTab, bkWriteDeclFileTab())
-    bkEmitSection(body, bkSecUitestBounds, bkWriteUitestBounds())
-    bkEmitSection(body, bkSecCheckerVisibility, bkWriteCheckerVisibility())
-    bkEmitSection(body, bkSecManifestHashes, bkWriteManifestHashes())
-    bkEmitSection(body, bkSecShakeSummary, bkWriteShakeSummary())
+    bkAddSection(bkSecIrTypes, bkWriteIrTypes())
+    if bodyless {
+        bkAddSection(bkSecIrLocals, bkWriteParamLocals(localMap))
+        bkAddSection(bkSecGlobalInits, bkWriteGlobalInits(exprMap))
+    } else {
+        bkAddSection(bkSecIrStmts, bkWriteIrStmts())
+        bkAddSection(bkSecIrExprs, bkWriteIrExprs())
+        bkAddSection(bkSecIrLocals, bkWriteIrLocals())
+    }
+    bkAddSection(bkSecIrFuncs, bkWriteIrFuncs(bodyless, localMap))
+    bkAddSection(bkSecIrFuncIdxByName, bkWriteIrFuncIdxByName())
+    bkAddSection(bkSecIrCbGlueNames, bkWriteIrCbGlueNames())
+    bkAddSection(bkSecIrGlobals, bkWriteIrGlobals(bodyless, exprMap))
+    bkAddSection(bkSecIrFieldSlots, bkWriteIrFieldSlots())
+    bkAddSection(bkSecIrRecords, bkWriteIrRecords())
+    bkAddSection(bkSecIrEnumMembers, bkWriteIrEnumMembers())
+    bkAddSection(bkSecIrEnums, bkWriteIrEnums())
+    bkAddSection(bkSecIrWidgetDescs, bkWriteIrWidgetDescs())
+    bkAddSection(bkSecIrColumnDescs, bkWriteIrColumnDescs())
+    bkAddSection(bkSecIrBindDescs, bkWriteIrBindDescs())
+    bkAddSection(bkSecIrWindowDescs, bkWriteIrWindowDescs())
+    bkAddSection(bkSecIrMenuItemDescs, bkWriteIrMenuItemDescs())
+    bkAddSection(bkSecIrMenuDescs, bkWriteIrMenuDescs())
+    bkAddSection(bkSecIrWinHandlers, bkWriteIrWinHandlers())
+    bkAddSection(bkSecIrWidgetHandlerEntries, bkWriteIrWidgetHandlerEntries())
+    bkAddSection(bkSecIrMenuHandlerEntries, bkWriteIrMenuHandlerEntries())
+    bkAddSection(bkSecIrEveryEntries, bkWriteIrEveryEntries())
+    bkAddSection(bkSecIrStrLits, bkWriteIrStrLits())
+    bkAddSection(bkSecIrArrLits, bkWriteIrArrLits())
+    bkAddSection(bkSecIrExternNames, bkWriteIntList(irExternNames))
+    bkAddSection(bkSecIrExternRetTys, bkWriteIntList(irExternRetTys))
+    bkAddSection(bkSecIrExternParamStart, bkWriteIntList(irExternParamStart))
+    bkAddSection(bkSecIrExternParamCountArr, bkWriteIntList(irExternParamCountArr))
+    bkAddSection(bkSecIrExternParamTys, bkWriteIntList(irExternParamTys))
+    bkAddSection(bkSecIrExternTrapWords, bkWriteIntList(irExternTrapWords))
+    bkAddSection(bkSecIrExternConvs, bkWriteIntList(irExternConvs))
+    bkAddSection(bkSecIrExternSels, bkWriteIntList(irExternSels))
+    bkAddSection(bkSecIrExternParamRegs, bkWriteIntList(irExternParamRegs))
+    bkAddSection(bkSecIrExternRetRegs, bkWriteIntList(irExternRetRegs))
+    bkAddSection(bkSecIrLayoutNeededByName, bkWriteIrLayoutNeededByName())
+    bkAddSection(bkSecIrRcWalkNeededByName, bkWriteIrRcWalkNeededByName())
+    bkAddSection(bkSecIrScalars, bkWriteIrScalars())
+    bkAddSection(bkSecStrPool, bkWriteStrPool())
+    bkAddSection(bkSecLowCounters, bkWriteLowCounters())
+    bkAddSection(bkSecCheckerSymbols, bkWriteCheckerSymbols())
+    bkAddSection(bkSecFieldInfo, bkWriteFieldInfo())
+    bkAddSection(bkSecDeclFileTab, bkWriteDeclFileTab())
+    bkAddSection(bkSecUitestBounds, bkWriteUitestBounds())
+    bkAddSection(bkSecCheckerVisibility, bkWriteCheckerVisibility())
+    bkAddSection(bkSecManifestHashes, bkWriteManifestHashes())
+    bkAddSection(bkSecShakeSummary, bkWriteShakeSummary())
 
     // object-code-linker Task 2: bake-time object capture runs HERE,
-    // after every OTHER section has already been copied into `body` as
+    // after every OTHER section has already been copied into the body as
     // fixed bytes -- not any earlier. cg68Measure (run internally by
     // cgObjCaptureRuntime's own cg68ProgramFork call) calls
     // cgReservePanicMsgs, which unconditionally APPENDS a synthesized
@@ -2039,9 +2265,9 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     // glue names, notably -- see cgObjCaptureRuntime's own doc comment
     // for why that call is unavoidable). None of that may leak into
     // bkSecIrStrLits/bkSecStrPool/bkSecIrFuncs, which is exactly what
-    // placing the capture call after those sections' own bkEmitSection
+    // placing the capture call after those sections' own bkAddSection
     // calls (all of them, above) guarantees for free: the bytes are
-    // already frozen into `body` by the time any of this runs.
+    // already frozen into the body by the time any of this runs.
     if lane == bkLane68k {
         if not cgObjCaptureRuntime() {
             log("clarusc --bake-ir: object-code capture failed")
@@ -2049,10 +2275,8 @@ func bakeWriteFile(lane: int, outPath: string): bool {
         }
         bkCheckShakeSummary()
     }
-    bkEmitSection(body, bkSecObjCode, bkWriteObjCode(lane))
-    bkEmitSection(body, bkSecObjMeta, bkWriteObjMeta(lane))
-
-    bodyHash = bkHashText(body)
+    bkAddSection(bkSecObjCode, bkWriteObjCode(lane))
+    bkAddSection(bkSecObjMeta, bkWriteObjMeta(lane))
 
     out = ""
     out.append(bkMagic)
@@ -2075,9 +2299,31 @@ func bakeWriteFile(lane: int, outPath: string): bool {
     bkPutU16(out, stamp.length)
     out.append(stamp)
 
-    bkPutU32(out, bodyHash)
+    bkPutU16(out, mods.count)
+    i = 0
+    while i < mods.count {
+        bkPutStrShort(out, rtModuleKey(mods[i]))
+        i = i + 1
+    }
 
-    out.append(body)
+    // The directory: offsets are file offsets, so they start past the
+    // directory itself (2 + 10 bytes per entry).
+    n = bkWrDir.length / 10
+    hdrLen = out.length + 2 + 10 * n
+    bkPutU16(out, n)
+    i = 0
+    while i < n {
+        bkPutU16(out, bkWrDir.wordAt(10 * i))
+        bkPutU32(out, hdrLen + bkWrDir.intAt(10 * i + 2))
+        bkPutU32(out, bkWrDir.intAt(10 * i + 6))
+        i = i + 1
+    }
+    bkWrDir.release()
+    if out.length > bkHeaderMax {
+        abort("clarusc --bake-ir: header + module list + directory is " + numToStr(out.length) + " bytes; bkHeaderMax is " + numToStr(bkHeaderMax))
+    }
+    out.append(bkWrBody)
+    bkWrBody.release()
 
     if not file.writeText(outPath, out, fileTypeData, "????") {
         log("clarusc --bake-ir: cannot write " + outPath + ": " + lastError.message)
@@ -2087,63 +2333,67 @@ func bakeWriteFile(lane: int, outPath: string): bool {
 }
 
 // ================================================================
-// Loader: `--rtbake FILE` on the host emit/emit68k paths (runtime-ir-bake
-// Task 4). Mirrors the writer above section-for-section, field-for-field,
-// in the same fixed order bakeWriteFile emits them -- consuming exactly
-// what bkWrite* produced. Two-stage install, matching drive.cla's own
-// pipeline order (load+verify stamp -> [check user] -> install -> lower
-// user):
-//   1. bkLoadRtbake parses the WHOLE file (header + every section) into
-//      the bkLd*/bkLoaded* pending globals below, touching no live
-//      compiler state at all.
-//   2. bkInstallPool moves the intern pool into live strBlob/strOff/strIndex --
-//      called BEFORE Phase A (driveCompile), since every baked IR
-//      arena's string-index fields are ABSOLUTE pool indices captured
-//      at bake time; nothing else may intern() before this runs.
-//   3. bkInstallArenas moves everything else (the IR arenas, the
-//      lowering counters) into live state -- called AFTER check#1
-//      (driveCompile), so a bake's retained-but-uninstalled checker-
-//      symbol/declFileTab state (Task 5's own job -- see below) can
-//      never influence check#1's diagnostics for user code.
+// Loader: `--rtbake FILE` (runtime-ir-bake Task 4; format v9, SE wave 4
+// Task 6). Mirrors the writer above section-for-section, field-for-field.
+// The library is read through a filehandle plus the library's base offset
+// in that file, never whole:
+//   1. bkLoadRtbake reads the header and directory (bkCheckRtbakeHeader,
+//      one readAt), then each resident section on its own into the
+//      bkLd*/bkLoaded* pending globals below -- touching no live compiler
+//      state -- plus the ObjCode section's per-function index alone.
+//   2. bkInstallPool moves the intern pool into live strBlob/strOff/
+//      strIndex -- called BEFORE Phase A (driveCompile), since every baked
+//      arena's string-index fields are ABSOLUTE pool indices captured at
+//      bake time; nothing else may intern() before this runs.
+//   3. bkInstallArenas moves everything else (the IR arenas, the lowering
+//      counters) into live state -- called AFTER check#1 (driveCompile).
+//   4. bkLoadObjCode, after shake (driveEmit68kFork), reads the object
+//      records of just the reachable baked functions into bkObjBuf.
 // ================================================================
 
-// bkLoadBuf/bkLoadPos: the read cursor. A module-level pair, not a
-// scalar out-param (Ch3: user functions cannot fill one) -- the read
-// counterpart of bkPutByte's own `out: text` in-place-mutation idiom.
+// bkLoadBuf/bkLoadPos: the read cursor over the bytes of ONE section (or
+// the header), read by bkLoadRtbake. A module-level pair, not a scalar
+// out-param (Ch3: user functions cannot fill one) -- the read counterpart
+// of bkPutByte's own `out: text` in-place-mutation idiom.
 var bkLoadBuf: text
 var bkLoadPos: int
 
-// bkLoadBase (SE wave 2): bytes bkLoadSections has already dropped off
-// bkLoadBuf's front (progressive free), so bkLoadBase + bkLoadPos is the
-// absolute file offset. Reset with bkLoadPos at the start of every
-// parse. No reader stores an absolute offset today (every position the
-// parse compares is relative to the live cursor: expectedPos, the
-// trailing-byte check); a future one must add bkLoadBase.
-var bkLoadBase: int
-
 // bkLoadOverrun (final-review fix wave): set true the first time
 // bkGetByte is asked to read past bkLoadBuf's end, instead of indexing
-// out of range (an uncatchable runtime error, per Chapter 3 -- "raises a
-// runtime error" -- straight out of a hand-crafted or bit-flipped bake).
-// Defense in depth for the narrow window before bkCheckRtbakeHeader's
-// own body-hash check runs (or if the hash field itself were truncated,
-// which the header's own length check already rules out) -- the hash
-// check is expected to catch every ordinary corruption/truncation case
-// first. Checked, and refused loudly, at the end of a full parse
-// (bkLoadSections); reset at the start of every bkCheckRtbakeHeader call
-// so repeated compiles in one process (macgui.cla) don't carry a stale
-// flag forward.
+// out of range (an uncatchable runtime error, per Chapter 3). With no
+// body hash (format v9) this is the loader's corruption net: every
+// section's reader runs over exactly its own directory-sized buffer, so a
+// corrupt count runs off the end, and the loader refuses the library.
+// Reset at the start of every bkCheckRtbakeHeader call and per section.
 var bkLoadOverrun: bool
 
-// bkHeaderVerified (clir-load-perf Task 1, design A): set by a front
-// end (macgui's gcResolveBakePath) immediately after ITS successful
-// bkCheckRtbakeHeader on the exact buffer it then hands to
-// driveCompile as rtbakeBytes -- bkLoadRtbake consumes it (read +
-// reset) to skip re-hashing ~1.3MB it verified seconds earlier.
-// Consume-once: never survives past one bkLoadRtbake call, so a stale
-// value can never bless a different buffer. Host front ends never set
-// it, so the host's single verify (inside bkLoadRtbake) is unchanged.
-var bkHeaderVerified: bool
+// bkLibFh/bkLibBase: the library this compile loaded -- the filehandle
+// the front end opened and the library's offset within that file. Kept
+// until bkLoadObjCode reads the object code after shake; the front end
+// owns the handle (opens and closes it).
+var bkLibFh: filehandle
+var bkLibBase: int
+
+// bkReadAt reads n bytes at library offset off into out, and reports the
+// read (id: the section id, 0 for the header, -1 for an object-code span)
+// through BakeReadLog. A short read (truncated library) or an I/O error
+// returns false.
+func bkReadAt(id: int, off: int, n: int, out: text): bool {
+    if not bkLibFh.readAt(bkLibBase + off, n, out) {
+        return false
+    }
+    BakeReadLog(id, out.length)
+    return out.length == n
+}
+
+// BakeReadLog (tests/bake/lazyread.sh): the host runtime prints a
+// `bakeread: ID BYTES` line per call when CLARUS_BAKE_READLOG=1, else
+// nothing. On the 68k lane the clause-less extern resolves to the no-op
+// nat_BakeReadLog below (the MemProbe pattern, main.cla).
+external func BakeReadLog(id: int, bytes: int)
+
+func nat_BakeReadLog(id: int, bytes: int) {
+}
 
 func bkGetByte(): int {
     var b: int
@@ -2249,45 +2499,6 @@ func bkGetStr(): string {
     s = bkLoadBuf.stringAt(bkLoadPos + 3)
     bkLoadPos = bkLoadPos + 4 + n
     return s
-}
-
-// bkGetBytes (object-code-linker Task 2) mirrors bkPutBytes: a 4-byte BE
-// length followed by that many raw bytes.
-//
-// clir-load-perf Task 5 (design C): one bulk t.textAt call behind two
-// soft pre-checks, instead of a per-byte bkGetByte + append loop. Same
-// shape as bkGetStr's own rewrite above: pre-check 1 (4 bytes for the
-// length prefix) makes the intAt read panic-unreachable; pre-check 2
-// mirrors textAt's own STRICT bounds (rtTextTextAt, text.cla: `n < 0` and
-// `pos > rt.len - n`) -- checked as `n > bkLoadBuf.length - bkLoadPos - 4`
-// rather than the addition form `bkLoadPos + 4 + n > bkLoadBuf.length`:
-// CLAR_ADD32 wraps, so a huge n (e.g. a corrupt length field near
-// 0x7FFFFFFx) can make that sum overflow back under length and pass the
-// guard, reaching textAt's STRICT panic. The subtraction form's RHS is
-// never negative here (pre-check 1 already established
-// `bkLoadPos + 4 <= bkLoadBuf.length`), so it can't wrap the same way.
-// `n < 0` is still checked explicitly, since a huge negative n would
-// otherwise satisfy the subtraction check while still failing textAt's
-// own `n < 0` bound. Overrun/refusal returns "" (empty text), matching
-// the current empty-start behavior.
-func bkGetBytes(): text {
-    var n: int
-    var t: text
-
-    if bkLoadPos + 4 > bkLoadBuf.length {
-        bkLoadOverrun = true
-        bkLoadPos = bkLoadBuf.length
-        return ""
-    }
-    n = bkLoadBuf.intAt(bkLoadPos)
-    if n < 0 or n > bkLoadBuf.length - bkLoadPos - 4 {
-        bkLoadOverrun = true
-        bkLoadPos = bkLoadBuf.length
-        return ""
-    }
-    t = bkLoadBuf.textAt(bkLoadPos + 4, n)
-    bkLoadPos = bkLoadPos + 4 + n
-    return t
 }
 
 func bkGetStrShort(): string {
@@ -2507,7 +2718,6 @@ var bkLoadedSymbols: list of Symbol
 var bkLoadedScopes: list of Scope
 var bkLoadedTypeArena: list of TypeInfo
 var bkLoadedEnumMembers: list of EnumMemberInfo
-var bkLoadedDeclFileTab: list of int
 
 // bkLoadedFieldInfos/bkLoadedRecFieldsHeadByName (format version 5,
 // fallback-trigger-narrowing Task 2): check.cla's own record-field side
@@ -2532,49 +2742,46 @@ var bkLdBaseIrArrLitsCount: int
 var bkLdEarlyFuncSigsCount: int
 var bkLdEarlySymbolsCount: int
 
-// bkLdObj* (format version 6, object-code-linker Task 2): the
-// bkSecObjCode/bkSecObjMeta staging -- parsed by bkReadObjCode/
-// bkReadObjMeta into these globals (never a live global write MID-PARSE
-// -- the timing guarantee the staging convention exists for -- every
-// field below is built into a fully-local `lXxx` first and assigned
-// here only once, at the very end of a successful parse), and never
+// bkLdObj* (format version 6, object-code-linker Task 2; v9 SE wave 4
+// Task 6): the bkSecObjCode/bkSecObjMeta staging. bkReadObjMeta and
+// bkReadObjIndex parse into locals and assign here only at the end of a
+// successful parse (the staging convention's timing guarantee). Never
 // truncated afterwards: the runtime/testapi boundary is applied as a
-// bounds check by cgObjPasteEligible (clir-load-perf Task 7 moved it
-// there to protect a memoized parse; SE wave 1 removed that memo --
-// every compile re-parses -- and kept the cheaper bounds-check shape).
-// These tables are not freed before the fork is built, spec 4.3.
-// MOST of these fields are
-// then read by a future compile's own Measure-skip/paste link pass (Task
-// 3) -- but not all: the per-function StrLit First/Count/Flat triple and
-// the eight once-per-artifact size-bucket scalars below are staged the
-// same as everything else, then deliberately left unconsumed
-// -- see each field's own doc comment for why. See bkWriteObjCode/
-// bkWriteObjMeta for the exact field-for-field wire shape.
+// bounds check by cgObjPasteEligible (clir-load-perf Task 7). Codegen
+// reads these until the fork is built (spec 4.3).
 //
-// The flat run/hole payload itself (bkReadObjCode's own lRunBytes/
-// lRunOff/lHoles) is assigned straight into cg68k.cla's OWN
-// cgObjRunBytes/cgObjRunOff/cgObjHoles below, not a separate bkLdObj*
-// set: they are the largest fields in this whole section (the runs were a
-// `list of text` until SE wave 2 flattened them, and a `list of
-// CgObjHole` still needs its own per-element walk in cg_free_globals,
-// duplicated into EVERY segment's own glue bundle -- cgEmitRcWalks), and
-// cgObjRunBytes/cgObjRunOff/cgObjHoles already exist as
-// program-level globals for the CAPTURE side of this exact same format
-// (cg68k.cla's own capture-globals doc comment). The two sides never
-// run in the same process at the same time (one is --bake-ir, the other
-// is a later --rtbake compile reading what --bake-ir wrote), so sharing
-// the storage costs nothing and avoids two more `var`s of exactly the
-// two priciest shapes in this file -- found the hard way running
-// TestSelfEmit68k: this section's own additions, unreviewed, tipped an
-// unrelated, already-near-the-32KB-ceiling cprint.cla function
-// (cpEmitRelease) over its own single-function segment limit when
-// self-compiling clarusc. The TIMING guarantee is identical either way
-// (assigned once, after the whole parse succeeds); only the field NAME
-// differs from the brief's own "bkLdObj*" literal spelling.
+// The object code itself is lazy (format v9): bkReadObjIndex keeps only
+// the per-function index -- bkLdObjValid (captured valid, i.e. a non-empty
+// record) and bkLdObjOff (record offsets into the section's data, which
+// starts at library offset bkObjDataOff, plus a closing sentinel; record
+// f is [bkLdObjOff[f], bkLdObjOff[f+1]), bkObjLen). bkLoadObjCode,
+// after shake, reads the reachable functions' records into bkObjBuf and
+// sets bkLdObjPos[f] to each one's offset there (-1: not read). Paste and
+// Measure decode runs and holes straight out of bkObjBuf
+// (bkObjHoleAt) -- no per-hole records are built.
+//
+// Flat `list of int`s rather than nested lists, deliberately: a nested
+// list needs a per-element release walk in cg_free_globals, duplicated
+// into every segment's glue bundle, and self-compiling clarusc runs close
+// to the 32KB single-function ceiling (cprint.cla's cpEmitRelease tipped
+// over it once).
 var bkLdObjValid: list of bool
-var bkLdObjRunFirst: list of int
-var bkLdObjHoleFirst: list of int
-var bkLdObjNHoles: list of int
+var bkLdObjOff: list of int
+var bkLdObjPos: list of int
+var bkObjDataOff: int
+var bkObjBuf: text
+
+// bkObjLim* (format v9): the baked arenas' sizes, saved at the end of
+// bkLoadRtbake for bkObjRelocSymValid -- the lazy object read runs after
+// install, when the staging lists these came from are empty and the live
+// arenas already carry user entries.
+var bkObjLimFuncs: int
+var bkObjLimCbGlue: int
+var bkObjLimPool: int
+var bkObjLimStrLits: int
+var bkObjLimArrLits: int
+var bkObjLimEnums: int
+var bkObjLimRecords: int
 
 var bkLdObjFuncSize: list of int
 var bkLdObjFuncFrameSize: list of int
@@ -3435,41 +3642,43 @@ func bkReadManifestHashes() {
     bkManifestEarlyVisible = early
 }
 
-// bkObjRelocSymValid (object-code-linker Task 2) is bkReadObjCode's own
-// corruption gate: a structurally-valid-but-corrupt bake (a flipped
-// symIdx byte, say) must be refused HERE, before a future link pass
-// (Task 3) ever hands an attacker- or bit-rot-controlled index to
-// cgCallFunc/cgJtDisp/cgStrLitLabels and friends. kind/cls per this
-// file's own bkSecObjCode doc comment (cg68k.cla's cgHole*/cgRelCls*
-// constants, visible here the same whole-program way every other
-// cg68k.cla symbol already is from bake.cla). cgRelClsPanicMsg carries
-// no numeric index at all (Amendment A2 -- resolved from the live
-// cgListOobMsgIdx global at link time), so any sym is valid there.
+// bkObjRelocSymValid (object-code-linker Task 2) is the lazy object
+// read's corruption gate (bkObjCheckFunc): a structurally-valid-but-
+// corrupt library (a flipped symIdx byte, say) must be refused before a
+// paste ever hands an attacker- or bit-rot-controlled index to
+// cgCallFunc/cgJtDisp/cgStrLitLabels and friends. kind/cls per
+// bkWriteObjCode's own doc comment (cg68k.cla's cgHole*/cgRelCls*
+// constants); the bounds are the baked arenas' own sizes (bkObjLim*).
+// cgRelClsPanicMsg carries no numeric index at all (Amendment A2 --
+// resolved from the live cgListOobMsgIdx global at link time), so any sym
+// is valid there. An unknown kind is refused outright.
 func bkObjRelocSymValid(kind: int, cls: int, sym: int): bool {
     if kind == cgHoleCall or kind == cgHoleJtAddr {
-        return sym >= 0 and sym < bkLdIrFuncs.count
+        return sym >= 0 and sym < bkObjLimFuncs
     }
     if kind == cgHoleCbGlueAddr {
-        return sym >= 0 and sym < bkLdIrCbGlueNames.count
+        return sym >= 0 and sym < bkObjLimCbGlue
     }
     if kind == cgHoleSynthCall {
         // an intern-pool index (the reverse-waist extern's name) -- it
         // must be in the baked pool, or a compile's own later intern()
         // could reuse it.
-        return sym >= 0 and sym < bkLdStrOff.count - 1
+        return sym >= 0 and sym < bkObjLimPool
     }
-    // kind == cgHoleLabel
+    if kind != cgHoleLabel {
+        return false
+    }
     if cls == cgRelClsPoolStr {
-        return sym >= 0 and sym < bkLdIrStrLits.count
+        return sym >= 0 and sym < bkObjLimStrLits
     }
     if cls == cgRelClsPoolArr {
-        return sym >= 0 and sym < bkLdIrArrLitElemT.count
+        return sym >= 0 and sym < bkObjLimArrLits
     }
     if cls == cgRelClsPoolEnum {
-        return sym >= 0 and sym < bkLdIrEnums.count
+        return sym >= 0 and sym < bkObjLimEnums
     }
     if cls == cgRelClsPoolSer or cls == cgRelClsRcRetain or cls == cgRelClsRcRelease {
-        return sym >= 0 and sym < bkLdIrRecords.count
+        return sym >= 0 and sym < bkObjLimRecords
     }
     if cls == cgRelClsPoolUiBlob or cls == cgRelClsPoolUiEvt {
         return sym == 0
@@ -3478,7 +3687,7 @@ func bkObjRelocSymValid(kind: int, cls: int, sym: int): bool {
         return sym >= 1 and sym <= 4
     }
     if cls == cgRelClsFuncLabel {
-        return sym >= 0 and sym < bkLdIrFuncs.count
+        return sym >= 0 and sym < bkObjLimFuncs
     }
     if cls == cgRelClsPanicMsg {
         return true
@@ -3486,167 +3695,225 @@ func bkObjRelocSymValid(kind: int, cls: int, sym: int): bool {
     return false
 }
 
-// bkObjRunScan (SE wave 2): bkReadObjCode's read-only pre-scan of the
-// obj-code section body after its count -- totals the runs and their
-// bytes into bkObjScanRuns/bkObjScanBytes, then restores the cursor. Each
-// run length is clamped to what is left of the buffer, so a corrupt
-// section cannot ask for a huge reserve; the real parse still does every
-// check. bkObjHoleBytes is one hole record's wire size (bkWriteObjCode:
-// kind, cls, sym(4), op, size, sm, sr, sv(4), dm, dr, dv(4), srcSlot).
+// bkObjHoleBytes is one hole record's wire size (bkWriteObjCode: kind,
+// cls, sym(4), op, size, sm, sr, sv(4), dm, dr, dv(4), srcSlot).
 const bkObjHoleBytes: int = 21
-var bkObjScanRuns: int
-var bkObjScanBytes: int
-// bkObjScanHoles (SE wave 4 Task 1): the hole count, so cgObjHoles is
-// sized exactly instead of doubling (untaint's extra holes crossed a
-// power of two: +200 KB of CgObjHole capacity on bookmarks_rtbake).
-var bkObjScanHoles: int
 
-func bkObjRunScan(count: int) {
-    var pos: int
-    var over: bool
-    var i: int
-    var k: int
-    var nHoles: int
-    var n: int
+// bkObjHoleAt decodes the hole record at bkObjBuf offset p.
+func bkObjHoleAt(p: int): CgObjHole {
+    var h: CgObjHole
 
-    pos = bkLoadPos
-    over = bkLoadOverrun
-    bkObjScanRuns = 0
-    bkObjScanBytes = 0
-    bkObjScanHoles = 0
-    i = 0
-    while i < count and bkLoadPos < bkLoadBuf.length {
-        if bkGetBool() {
-            nHoles = bkGetU32()
-            k = 0
-            while k <= nHoles and bkLoadPos < bkLoadBuf.length {
-                n = bkGetU32()
-                if n < 0 or n > bkLoadBuf.length - bkLoadPos {
-                    n = bkLoadBuf.length - bkLoadPos
-                }
-                bkLoadPos = bkLoadPos + n
-                bkObjScanRuns = bkObjScanRuns + 1
-                bkObjScanBytes = bkObjScanBytes + n
-                if k < nHoles {
-                    bkLoadPos = bkLoadPos + bkObjHoleBytes
-                    bkObjScanHoles = bkObjScanHoles + 1
-                }
-                k = k + 1
-            }
-        }
-        i = i + 1
-    }
-    bkLoadPos = pos
-    bkLoadOverrun = over
+    h.kind = int(bkObjBuf[p])
+    h.cls = int(bkObjBuf[p + 1])
+    h.sym = bkObjBuf.intAt(p + 2)
+    h.op = int(bkObjBuf[p + 6])
+    h.size = int(bkObjBuf[p + 7])
+    h.sm = int(bkObjBuf[p + 8])
+    h.sr = int(bkObjBuf[p + 9])
+    h.sv = bkObjBuf.intAt(p + 10)
+    h.dm = int(bkObjBuf[p + 14])
+    h.dr = int(bkObjBuf[p + 15])
+    h.dv = bkObjBuf.intAt(p + 16)
+    h.srcSlot = int(bkObjBuf[p + 20]) != 0
+    return h
 }
 
-// bkReadObjCode (format v6, object-code-linker Task 2) mirrors
-// bkWriteObjCode field-for-field into bkLdObj* staging. Returns false
-// the moment a hole's own symIdx fails bkObjRelocSymValid -- the
-// dispatcher (bkLoadSections, below) turns that into the same
-// emitDiag-then-refuse message path every other structural check here
-// already uses, never a crash or a half-installed object set.
-func bkReadObjCode(): bool {
-    var count: int
-    var i: int
-    var k: int
-    var nHoles: int
-    var valid: bool
-    var kind: int
-    var cls: int
-    var sym: int
-    var h: CgObjHole
-    var lValid: list of bool
-    var lRunFirst: list of int
-    var lHoleFirst: list of int
-    var lNHoles: list of int
-    var lRunBytes: text
-    var lRunOff: list of int
-    var run: text
-    var lHoles: list of CgObjHole
+// bkObjRunEnd returns the offset just past the run (len(4) + bytes) at
+// bkObjBuf offset p -- the next hole, or the record's end after its last
+// run.
+func bkObjRunEnd(p: int): int {
+    return p + 4 + bkObjBuf.intAt(p)
+}
 
-    count = bkGetU32()
+// bkObjLen: baked function f's object record length (0: not captured).
+func bkObjLen(f: int): int {
+    return bkLdObjOff[f + 1] - bkLdObjOff[f]
+}
+
+// bkReadObjIndex (format v9) reads just the ObjCode section's index --
+// its count and the count + 1 record offsets -- from the section at
+// library offset secOff, length secLen, into bkLdObjValid/bkLdObjOff.
+// The offsets must run from 0 to the data's length without decreasing,
+// and a non-empty record must at least hold its hole count.
+func bkReadObjIndex(secOff: int, secLen: int): bool {
+    var count: int
+    var dataLen: int
+    var i: int
+    var off: int
+    var prev: int
+    var lValid: list of bool
+    var lOff: list of int
+
+    if secLen < 4 or not bkReadAt(bkSecObjCode, secOff, 4, bkLoadBuf) {
+        emitDiag(1, 1, "--rtbake: object-code section: truncated index")
+        return false
+    }
+    count = bkLoadBuf.intAt(0)
+    if count < 0 or count > (secLen - 8) / 4 {
+        emitDiag(1, 1, "--rtbake: object-code section: bad function count " + numToStr(count))
+        return false
+    }
+    dataLen = secLen - 8 - 4 * count
+    if not bkReadAt(bkSecObjCode, secOff + 4, 4 * count + 4, bkLoadBuf) {
+        emitDiag(1, 1, "--rtbake: object-code section: truncated index")
+        return false
+    }
     lValid = driveFreshBoolList()
-    lRunFirst = driveFreshIntList()
-    lHoleFirst = driveFreshIntList()
-    lNHoles = driveFreshIntList()
-    // SE wave 2: the runs go straight into one blob plus offsets
-    // (cg68k.cla's cgObjRunBytes/cgObjRunOff), sized exactly by a
-    // read-only pre-scan so neither grows by doubling.
-    bkObjRunScan(count)
-    lRunBytes.reserve(bkObjScanBytes)
-    lRunOff.reserve(bkObjScanRuns + 1)
-    lHoles.reserve(bkObjScanHoles)
-    lRunOff.add(0)
+    lValid.reserve(bkFitCount(count))
+    lOff = driveFreshIntList()
+    lOff.reserve(bkFitCount(count + 1))
+    prev = 0
     i = 0
-    while i < count {
-        valid = bkGetBool()
-        lValid.add(valid)
-        lRunFirst.add(lRunOff.count - 1)
-        lHoleFirst.add(lHoles.count)
-        nHoles = 0
-        if valid {
-            nHoles = bkGetU32()
-            k = 0
-            while k <= nHoles {
-                run = bkGetBytes()
-                lRunBytes.append(run)
-                lRunOff.add(lRunBytes.length)
-                if k < nHoles {
-                    kind = bkGetByte()
-                    cls = bkGetByte()
-                    sym = bkGetU32()
-                    h.kind = kind
-                    h.cls = cls
-                    h.sym = sym
-                    h.op = bkGetByte()
-                    h.size = bkGetByte()
-                    h.sm = bkGetByte()
-                    h.sr = bkGetByte()
-                    h.sv = bkGetU32()
-                    h.dm = bkGetByte()
-                    h.dr = bkGetByte()
-                    h.dv = bkGetU32()
-                    h.srcSlot = bkGetBool()
-                    if not bkObjRelocSymValid(kind, cls, sym) {
-                        emitDiag(1, 1, "--rtbake: object-code section: reloc symbol " + numToStr(sym) + " out of range (kind " + numToStr(kind) + ", class " + numToStr(cls) + ")")
-                        return false
-                    }
-                    lHoles.add(h)
-                }
-                k = k + 1
-            }
+    while i <= count {
+        off = bkLoadBuf.intAt(4 * i)
+        if off < prev or off > dataLen or (off > prev and off - prev < 4) or (i == 0 and off != 0) or (i == count and off != dataLen) {
+            emitDiag(1, 1, "--rtbake: object-code section: index entry " + numToStr(i) + " out of range")
+            return false
         }
-        lNHoles.add(nHoles)
+        if i > 0 {
+            lValid.add(off > prev)
+        }
+        lOff.add(off)
+        prev = off
         i = i + 1
     }
-    // text.reserve rounds capacity up to a power of two (rtTextGrow's
-    // doubling): trim the blob to its exact size.
-    lRunBytes.shrink()
     bkLdObjValid = lValid
-    bkLdObjRunFirst = lRunFirst
-    bkLdObjHoleFirst = lHoleFirst
-    bkLdObjNHoles = lNHoles
-    // See bkLdObjValid's own doc comment: the flat run/hole payload
-    // reuses cg68k.cla's own capture-side globals instead of a separate
-    // bkLdObjRuns/bkLdObjHoles pair.
-    //
-    // These two are the ONE place a reader writes LIVE state instead of
-    // pending state (Task 6 audit finding F3): cgObjRunBytes/cgObjRunOff/
-    // cgObjHoles are
-    // .clear()ed/.add()ed only under `if cgBakeCapture` (cg68k.cla's
-    // cgObjDumpSegment and the fork-side reset), which only the --bake-ir
-    // generator ever sets -- never during a --rtbake compile -- and nothing
-    // resets them in driveReset or anywhere else; every --rtbake compile's
-    // own parse (SE wave 1: one per compile) replaces them here.
-    // Deliberately NOT moved to the install path: the obvious
-    // bkLdObjRuns/bkLdObjHoles pair is exactly what tipped cpEmitRelease
-    // over the 32KB single-function segment ceiling once before (see
-    // bkLdObjValid's own doc comment).
-    cgObjRunBytes = lRunBytes
-    cgObjRunOff = lRunOff
-    cgObjHoles = lHoles
+    bkLdObjOff = lOff
+    bkObjDataOff = secOff + 8 + 4 * count
     return true
+}
+
+// bkObjCheckFunc walks baked function f's record in bkObjBuf -- every run
+// and hole inside the record, which it must fill exactly -- and checks
+// each hole's reloc symbol (bkObjRelocSymValid). Logs why and returns
+// false on the first fault.
+func bkObjCheckFunc(f: int): bool {
+    var p: int
+    var e: int
+    var nh: int
+    var k: int
+    var n: int
+    var h: CgObjHole
+
+    p = bkLdObjPos[f]
+    e = p + bkObjLen(f)
+    nh = bkObjBuf.intAt(p)
+    p = p + 4
+    if nh < 0 or nh > (e - p) / bkObjHoleBytes {
+        log("--rtbake: object-code section: bad hole count in function " + numToStr(f))
+        return false
+    }
+    k = 0
+    while k <= nh {
+        if p > e - 4 {
+            log("--rtbake: object-code section: function " + numToStr(f) + " record truncated")
+            return false
+        }
+        n = bkObjBuf.intAt(p)
+        if n < 0 or n > e - p - 4 {
+            log("--rtbake: object-code section: function " + numToStr(f) + " run out of range")
+            return false
+        }
+        p = p + 4 + n
+        if k < nh {
+            if p > e - bkObjHoleBytes {
+                log("--rtbake: object-code section: function " + numToStr(f) + " record truncated")
+                return false
+            }
+            h = bkObjHoleAt(p)
+            if not bkObjRelocSymValid(h.kind, h.cls, h.sym) {
+                log("--rtbake: object-code section: reloc symbol " + numToStr(h.sym) + " out of range (kind " + numToStr(h.kind) + ", class " + numToStr(h.cls) + ")")
+                return false
+            }
+            p = p + bkObjHoleBytes
+        }
+        k = k + 1
+    }
+    if p != e {
+        log("--rtbake: object-code section: function " + numToStr(f) + " record has trailing bytes")
+        return false
+    }
+    return true
+}
+
+// bkObjWanted: baked function f's object code is needed this compile --
+// captured valid, inside this compile's runtime boundary, and reachable.
+func bkObjWanted(f: int): bool {
+    return f < bkRuntimeFuncBoundary and bkLdObjValid[f] and shakeReachable(f)
+}
+
+// bkLoadObjCode (format v9, spec 3.3) reads the object records of this
+// compile's reachable baked functions into bkObjBuf -- called once shake
+// has run (driveEmit68kFork), before Measure. Records sit in function
+// order, so runs of reachable neighbours are read as one span. A no-op
+// when no baked runtime is installed. Drops the loader's reference to
+// the library's filehandle when done (the front end closes it).
+func bkLoadObjCode(): bool {
+    var n: int
+    var f: int
+    var g: int
+    var total: int
+    var start: int
+    var end: int
+    var span: text
+    var pos: list of int
+    var buf: text
+    var ok: bool
+
+    n = bkLdObjValid.count
+    if bkRuntimeFuncBoundary == 0 or n == 0 {
+        return true
+    }
+    if n > bkRuntimeFuncBoundary {
+        n = bkRuntimeFuncBoundary
+    }
+    total = 0
+    f = 0
+    while f < n {
+        pos.add(-1)
+        if bkObjWanted(f) {
+            total = total + bkObjLen(f)
+        }
+        f = f + 1
+    }
+    buf.reserve(total)
+    f = 0
+    while f < n {
+        if bkObjWanted(f) {
+            start = bkLdObjOff[f]
+            end = bkLdObjOff[f + 1]
+            pos[f] = buf.length
+            g = f + 1
+            while g < n and bkObjWanted(g) and bkLdObjOff[g] == end {
+                pos[g] = buf.length + end - start
+                end = bkLdObjOff[g + 1]
+                g = g + 1
+            }
+            if not bkReadAt(-1, bkObjDataOff + start, end - start, span) {
+                log("--rtbake: object-code section: short read (truncated library)")
+                bkLibFh = nil
+                return false
+            }
+            buf.append(span)
+            f = g
+        } else {
+            f = f + 1
+        }
+    }
+    span.release()
+    bkLibFh = nil
+    buf.shrink()
+    bkObjBuf = buf
+    bkLdObjPos = pos
+    ok = true
+    f = 0
+    while f < n and ok {
+        if pos[f] != -1 {
+            ok = bkObjCheckFunc(f)
+        }
+        f = f + 1
+    }
+    return ok
 }
 
 // bkObjPoolIdxValid (object-code-linker Task 2): bkReadObjMeta's own
@@ -3673,7 +3940,7 @@ func bkObjPoolIdxValid(flat: list of int, first: int, count: int, bound: int): b
 
 // bkReadObjMeta (format v6, object-code-linker Task 2) mirrors
 // bkWriteObjMeta field-for-field into bkLdObj* staging, refusing (same
-// message path as bkReadObjCode) the moment a function's own pool-ref
+// message path as bkReadObjIndex) the moment a function's own pool-ref
 // index list names something outside that pool's own installed range.
 // The wire shape is UNCHANGED (still count-then-elements per pool per
 // function, matching bkWriteObjMeta exactly, which reads straight off
@@ -3781,12 +4048,12 @@ func bkReadObjMeta(): bool {
     }
     // fix round 1 (review finding I2): the once-per-artifact fixed
     // buckets below are read into LOCALS too, same as everything above
-    // -- a post-dispatch framing refusal (bkLoadSections' own
-    // expectedPos check, run by the CALLER after this function returns)
+    // -- a post-dispatch framing refusal (bkLoadSection's own
+    // length check, run after this function returns)
     // must never land after a live bkLdObj* global was already written,
     // or a truncated/corrupt section could leave the staging state
     // half-updated even though the load as a whole gets refused.
-    // bkReadObjCode already has this shape (locals throughout, one
+    // bkReadObjIndex already has this shape (locals throughout, one
     // assignment block at the very end); this mirrors it.
     lSeg1ExtraSize = bkGetU32()
     lGlueBundleSize = bkGetU32()
@@ -3840,189 +4107,137 @@ func bkReadObjMeta(): bool {
     return true
 }
 
-// bkLoadSections reads the section table (sectionCount, then that many
-// `id(2) len(4) payload(len)` frames) and dispatches each to its own
-// reader by id -- section ORDER in the file always matches bkWriteFile's
-// own fixed emission order, but this dispatches by id rather than
-// assuming that, so a future format extension (a reordered or additional
-// section) fails loudly (an unknown id) instead of silently
-// misinterpreting bytes. The post-dispatch bkLoadPos check is a free
-// integrity proof: every reader must consume EXACTLY `len` bytes, or the
-// bake is corrupt (or this loader has a field-order bug) -- either way,
-// a clear diagnostic beats a garbled downstream compile.
-func bkLoadSections(testapi: bool): bool {
-    var n: int
-    var i: int
-    var id: int
-    var len: int
-    var expectedPos: int
-
-    n = bkGetU16()
-    if n != bkSectionCount {
-        emitDiag(1, 1, "--rtbake: bad section count " + numToStr(n) + " (want " + numToStr(bkSectionCount) + ")")
+// bkLoadSection reads the resident section id (library offset off,
+// length len) into bkLoadBuf and dispatches it to its own reader. Every
+// reader must consume EXACTLY len bytes without running off the end, or
+// the library is corrupt (or this loader has a field-order bug) -- either
+// way, a clear diagnostic beats a garbled downstream compile. The ObjCode
+// section is not read here: only its index is (bkReadObjIndex), and the
+// testapi-only checker symbols are skipped unless testapi.
+func bkLoadSection(id: int, off: int, len: int, testapi: bool): bool {
+    if id == bkSecObjCode {
+        return bkReadObjIndex(off, len)
+    }
+    if (id == bkSecCheckerSymbols or id == bkSecFieldInfo) and not testapi {
+        // Checker-side sections: their only consumers (bkInstallChecker-
+        // SymbolsForTestapi, bkInstallFieldInfo) run under --testapi alone.
+        return true
+    }
+    if id == bkSecDeclFileTab {
+        // Written, never read: bkComputeManifestPaths takes the same path
+        // set from bkSecManifestHashes.
+        return true
+    }
+    if not bkReadAt(id, off, len, bkLoadBuf) {
+        emitDiag(1, 1, "--rtbake: section " + numToStr(id) + " short read (truncated library)")
         return false
     }
-    i = 0
-    while i < n {
-        id = bkGetU16()
-        len = bkGetU32()
-        expectedPos = bkLoadPos + len
-        if id == bkSecIrTypes {
-            bkLdIrTypes = bkReadIrTypes()
-        } else if id == bkSecIrStmts {
-            bkLdIrStmts = bkReadIrStmts()
-        } else if id == bkSecIrExprs {
-            bkLdIrExprs = bkReadIrExprs()
-        } else if id == bkSecIrLocals {
-            bkLdIrLocals = bkReadIrLocals()
-        } else if id == bkSecIrFuncs {
-            bkLdIrFuncs = bkReadIrFuncs()
-        } else if id == bkSecIrFuncIdxByName {
-            bkLdIrFuncIdxByName = bkReadIntIntMap()
-        } else if id == bkSecIrCbGlueNames {
-            bkLdIrCbGlueNames = bkReadIntList()
-        } else if id == bkSecIrGlobals {
-            bkLdIrGlobals = bkReadIrGlobals()
-        } else if id == bkSecIrFieldSlots {
-            bkLdIrFieldSlots = bkReadIrFieldSlots()
-        } else if id == bkSecIrRecords {
-            bkLdIrRecords = bkReadIrRecords()
-        } else if id == bkSecIrEnumMembers {
-            bkLdIrEnumMembers = bkReadIrEnumMembers()
-        } else if id == bkSecIrEnums {
-            bkLdIrEnums = bkReadIrEnums()
-        } else if id == bkSecIrWidgetDescs {
-            bkLdIrWidgetDescs = bkReadIrWidgetDescs()
-        } else if id == bkSecIrColumnDescs {
-            bkLdIrColumnDescs = bkReadIrColumnDescs()
-        } else if id == bkSecIrBindDescs {
-            bkLdIrBindDescs = bkReadIrBindDescs()
-        } else if id == bkSecIrWindowDescs {
-            bkLdIrWindowDescs = bkReadIrWindowDescs()
-        } else if id == bkSecIrMenuItemDescs {
-            bkLdIrMenuItemDescs = bkReadIrMenuItemDescs()
-        } else if id == bkSecIrMenuDescs {
-            bkLdIrMenuDescs = bkReadIrMenuDescs()
-        } else if id == bkSecIrWinHandlers {
-            bkLdIrWinHandlers = bkReadIrWinHandlers()
-        } else if id == bkSecIrWidgetHandlerEntries {
-            bkLdIrWidgetHandlerEntries = bkReadIrWidgetHandlerEntries()
-        } else if id == bkSecIrMenuHandlerEntries {
-            bkLdIrMenuHandlerEntries = bkReadIrMenuHandlerEntries()
-        } else if id == bkSecIrEveryEntries {
-            bkLdIrEveryEntries = bkReadIrEveryEntries()
-        } else if id == bkSecIrStrLits {
-            bkLdIrStrLits = bkReadIntList()
-        } else if id == bkSecIrArrLits {
-            bkReadIrArrLits()
-        } else if id == bkSecShakeSummary {
-            bkLdShakeFuncs = bkGetU32()
-            bkLdShakeStart = bkReadIntList()
-            bkLdShakeNames = bkReadIntList()
-        } else if id == bkSecIrExternNames {
-            bkLdIrExternNames = bkReadIntList()
-        } else if id == bkSecIrExternRetTys {
-            bkLdIrExternRetTys = bkReadIntList()
-        } else if id == bkSecIrExternParamStart {
-            bkLdIrExternParamStart = bkReadIntList()
-        } else if id == bkSecIrExternParamCountArr {
-            bkLdIrExternParamCountArr = bkReadIntList()
-        } else if id == bkSecIrExternParamTys {
-            bkLdIrExternParamTys = bkReadIntList()
-        } else if id == bkSecIrExternTrapWords {
-            bkLdIrExternTrapWords = bkReadIntList()
-        } else if id == bkSecIrExternConvs {
-            bkLdIrExternConvs = bkReadIntList()
-        } else if id == bkSecIrExternSels {
-            bkLdIrExternSels = bkReadIntList()
-        } else if id == bkSecIrExternParamRegs {
-            bkLdIrExternParamRegs = bkReadIntList()
-        } else if id == bkSecIrExternRetRegs {
-            bkLdIrExternRetRegs = bkReadIntList()
-        } else if id == bkSecIrLayoutNeededByName {
-            bkLdIrLayoutNeededByName = bkReadIntIntMap()
-        } else if id == bkSecIrRcWalkNeededByName {
-            bkLdIrRcWalkNeededByName = bkReadIntIntMap()
-        } else if id == bkSecIrScalars {
-            bkReadIrScalars()
-        } else if id == bkSecStrPool {
-            bkReadStrPool()
-        } else if id == bkSecLowCounters {
-            bkReadLowCounters()
-        } else if id == bkSecCheckerSymbols {
-            // SE wave 1: its only consumer (bkInstallCheckerSymbolsForTestapi)
-            // runs under --testapi alone, so skip the section otherwise --
-            // the body hash already covered its bytes.
-            if testapi {
-                bkReadCheckerSymbols()
-            } else {
-                bkLoadPos = expectedPos
-            }
-        } else if id == bkSecFieldInfo {
-            bkReadFieldInfo()
-        } else if id == bkSecDeclFileTab {
-            bkLoadedDeclFileTab = bkReadIntList()
-        } else if id == bkSecUitestBounds {
-            bkReadUitestBounds()
-        } else if id == bkSecCheckerVisibility {
-            bkReadCheckerVisibility()
-        } else if id == bkSecManifestHashes {
-            bkReadManifestHashes()
-        } else if id == bkSecObjCode {
-            // object-code-linker Task 2: bkReadObjCode already emitDiag's
-            // its own specific reloc-symIdx message before returning
-            // false -- propagate straight through, no second diagnostic.
-            if not bkReadObjCode() {
-                return false
-            }
-        } else if id == bkSecObjMeta {
-            if not bkReadObjMeta() {
-                return false
-            }
-        } else {
-            emitDiag(1, 1, "--rtbake: unknown section id " + numToStr(id))
+    bkLoadPos = 0
+    bkLoadOverrun = false
+    if id == bkSecIrTypes {
+        bkLdIrTypes = bkReadIrTypes()
+    } else if id == bkSecIrStmts {
+        bkLdIrStmts = bkReadIrStmts()
+    } else if id == bkSecIrExprs or id == bkSecGlobalInits {
+        // bkSecGlobalInits is IrExprs-shaped: it installs as the irExprs
+        // prefix (the 68k library carries no other expressions).
+        bkLdIrExprs = bkReadIrExprs()
+    } else if id == bkSecIrLocals {
+        bkLdIrLocals = bkReadIrLocals()
+    } else if id == bkSecIrFuncs {
+        bkLdIrFuncs = bkReadIrFuncs()
+    } else if id == bkSecIrFuncIdxByName {
+        bkLdIrFuncIdxByName = bkReadIntIntMap()
+    } else if id == bkSecIrCbGlueNames {
+        bkLdIrCbGlueNames = bkReadIntList()
+    } else if id == bkSecIrGlobals {
+        bkLdIrGlobals = bkReadIrGlobals()
+    } else if id == bkSecIrFieldSlots {
+        bkLdIrFieldSlots = bkReadIrFieldSlots()
+    } else if id == bkSecIrRecords {
+        bkLdIrRecords = bkReadIrRecords()
+    } else if id == bkSecIrEnumMembers {
+        bkLdIrEnumMembers = bkReadIrEnumMembers()
+    } else if id == bkSecIrEnums {
+        bkLdIrEnums = bkReadIrEnums()
+    } else if id == bkSecIrWidgetDescs {
+        bkLdIrWidgetDescs = bkReadIrWidgetDescs()
+    } else if id == bkSecIrColumnDescs {
+        bkLdIrColumnDescs = bkReadIrColumnDescs()
+    } else if id == bkSecIrBindDescs {
+        bkLdIrBindDescs = bkReadIrBindDescs()
+    } else if id == bkSecIrWindowDescs {
+        bkLdIrWindowDescs = bkReadIrWindowDescs()
+    } else if id == bkSecIrMenuItemDescs {
+        bkLdIrMenuItemDescs = bkReadIrMenuItemDescs()
+    } else if id == bkSecIrMenuDescs {
+        bkLdIrMenuDescs = bkReadIrMenuDescs()
+    } else if id == bkSecIrWinHandlers {
+        bkLdIrWinHandlers = bkReadIrWinHandlers()
+    } else if id == bkSecIrWidgetHandlerEntries {
+        bkLdIrWidgetHandlerEntries = bkReadIrWidgetHandlerEntries()
+    } else if id == bkSecIrMenuHandlerEntries {
+        bkLdIrMenuHandlerEntries = bkReadIrMenuHandlerEntries()
+    } else if id == bkSecIrEveryEntries {
+        bkLdIrEveryEntries = bkReadIrEveryEntries()
+    } else if id == bkSecIrStrLits {
+        bkLdIrStrLits = bkReadIntList()
+    } else if id == bkSecIrArrLits {
+        bkReadIrArrLits()
+    } else if id == bkSecShakeSummary {
+        bkLdShakeFuncs = bkGetU32()
+        bkLdShakeStart = bkReadIntList()
+        bkLdShakeNames = bkReadIntList()
+    } else if id == bkSecIrExternNames {
+        bkLdIrExternNames = bkReadIntList()
+    } else if id == bkSecIrExternRetTys {
+        bkLdIrExternRetTys = bkReadIntList()
+    } else if id == bkSecIrExternParamStart {
+        bkLdIrExternParamStart = bkReadIntList()
+    } else if id == bkSecIrExternParamCountArr {
+        bkLdIrExternParamCountArr = bkReadIntList()
+    } else if id == bkSecIrExternParamTys {
+        bkLdIrExternParamTys = bkReadIntList()
+    } else if id == bkSecIrExternTrapWords {
+        bkLdIrExternTrapWords = bkReadIntList()
+    } else if id == bkSecIrExternConvs {
+        bkLdIrExternConvs = bkReadIntList()
+    } else if id == bkSecIrExternSels {
+        bkLdIrExternSels = bkReadIntList()
+    } else if id == bkSecIrExternParamRegs {
+        bkLdIrExternParamRegs = bkReadIntList()
+    } else if id == bkSecIrExternRetRegs {
+        bkLdIrExternRetRegs = bkReadIntList()
+    } else if id == bkSecIrLayoutNeededByName {
+        bkLdIrLayoutNeededByName = bkReadIntIntMap()
+    } else if id == bkSecIrRcWalkNeededByName {
+        bkLdIrRcWalkNeededByName = bkReadIntIntMap()
+    } else if id == bkSecIrScalars {
+        bkReadIrScalars()
+    } else if id == bkSecStrPool {
+        bkReadStrPool()
+    } else if id == bkSecLowCounters {
+        bkReadLowCounters()
+    } else if id == bkSecCheckerSymbols {
+        bkReadCheckerSymbols()
+    } else if id == bkSecFieldInfo {
+        bkReadFieldInfo()
+    } else if id == bkSecUitestBounds {
+        bkReadUitestBounds()
+    } else if id == bkSecCheckerVisibility {
+        bkReadCheckerVisibility()
+    } else if id == bkSecManifestHashes {
+        bkReadManifestHashes()
+    } else if id == bkSecObjMeta {
+        if not bkReadObjMeta() {
             return false
         }
-        if bkLoadPos != expectedPos {
-            emitDiag(1, 1, "--rtbake: section " + numToStr(id) + " framing mismatch (corrupt bake)")
-            return false
-        }
-        // SE wave 2 progressive free: drop the decoded prefix once 64 KB
-        // has piled up. Safe only because the body hash (bkCheckRtbake-
-        // HeaderBody, or the front end's own check under
-        // bkHeaderVerified) already walked the WHOLE buffer before this
-        // parse began. removeFirst consumes the one shared box
-        // (rtbakeBytes, macgui's clirBuf); every front end hands
-        // driveCompile fresh bytes per compile.
-        if bkLoadPos >= 65536 {
-            bkLoadBase = bkLoadBase + bkLoadPos
-            bkLoadBuf.removeFirst(bkLoadPos)
-            bkLoadPos = 0
-        }
-        i = i + 1
-    }
-    // runtime-ir-bake Task 6 fix round 1: a truncated OR overlong buffer
-    // is refused loudly here, on BOTH lanes -- every section's own
-    // framing check (above) only proves internal self-consistency
-    // between adjacent length fields; it says nothing about whether the
-    // WHOLE buffer this parse just walked is the artifact's real,
-    // complete extent. A short copy (a lane's own resource/file read
-    // silently clamping) would, in the general case, either run off the
-    // end of a too-short bkLoadBuf (an out-of-range index -- a loud
-    // runtime error already, not a silent gap) or, if the clamp happened
-    // to land past every section this parse actually touched, leave
-    // trailing bytes unconsumed with no error at all otherwise -- this
-    // catches exactly that second case.
-    if bkLoadPos != bkLoadBuf.length {
-        emitDiag(1, 1, "--rtbake: trailing " + numToStr(bkLoadBuf.length - bkLoadPos) + " unconsumed byte(s) after the last section (truncated or overlong bake)")
+    } else {
+        emitDiag(1, 1, "--rtbake: unknown section id " + numToStr(id))
         return false
     }
-    // bkLoadOverrun: defense in depth (its own doc comment, above) --
-    // the body-hash check should already have refused any buffer that
-    // could trigger this, so reaching here loud rather than silent means
-    // that check itself was somehow bypassed or its own field truncated.
-    if bkLoadOverrun {
-        emitDiag(1, 1, "--rtbake: read past end of buffer while parsing (corrupt or truncated bake)")
+    if bkLoadOverrun or bkLoadPos != len {
+        emitDiag(1, 1, "--rtbake: section " + numToStr(id) + " framing mismatch (corrupt library)")
         return false
     }
     return true
@@ -4034,105 +4249,66 @@ func bkLoadSections(testapi: bool): bool {
 // hashing clarusc/clarusc.c inline, so each front end can answer however
 // fits its own filesystem. The host CLI (main.cla, clarusc/test/
 // dblcompile*.cla) re-hashes clarusc/clarusc.c off disk (bkFindClarusC/
-// bkHashText, unchanged from Task 3/4's own behavior -- a pure refactor,
-// not a behavior change there). macgui.cla (Task 6, Mac integration) has
-// no clarusc/clarusc.c on ClarusC.APPL's own boot disk at all (baking the
-// 3.5MB bootstrap C file just to re-hash it on a 68k CPU every compile
-// would be both wasteful and slow) -- it reads a tiny 4-byte stamp
-// sidecar baked alongside the CLIR resource instead (bkStampResourceName,
-// computed by the SAME `--bake-ir` run that generated the CLIR artifact,
-// so the two always agree by construction; see macgui.cla's own
-// feExpectedStamp for the full reasoning).
+// bkHashText). macgui.cla has no clarusc/clarusc.c on ClarusC.APPL's own
+// boot disk at all -- it reads a tiny 4-byte stamp sidecar baked
+// alongside the library instead (computed by the SAME `--bake-ir` run
+// that generated the library, so the two always agree by construction;
+// see macgui.cla's own feExpectedStamp).
 //
-// bkCheckRtbakeHeader validates buf's header (magic, format version,
-// lane, stamp, body-hash -- format v4, final-review fix wave) against
-// wantLane, WITHOUT parsing the rest of the file into section structures
-// -- split out of bkLoadRtbake (below, which continues into the full
-// parse on success) so a front end can cheaply ask "would this bake be
-// accepted?" BEFORE committing to it (macgui.cla's gcCompile: the
-// never-cached, per-compile bake-vs-fallback decision, Task 6 -- a
-// refused bake must never surface as a user-facing compile failure, so
-// the decision has to be made, and acted on, before driveCompile's own
-// unconditional `if not bkLoadRtbake(...) { return false }` would
-// otherwise fail the whole compile). The body-hash check DOES walk every
-// byte after the header (bkHashTextFrom) to compute the comparison hash
-// -- not free, but still no section-structure parsing -- so a truncated
-// buffer, a section-level bit flip, or any other body corruption is
-// caught HERE, before a front end can ever act on "accepted", instead of
-// only surfacing later inside bkLoadRtbake's own full parse (which used
-// to run only after macgui.cla had already committed to the bake path).
-// On success, leaves bkLoadBuf/bkLoadPos positioned right after the
-// body-hash field, for bkLoadRtbake's own caller-visible contract
-// (unchanged) to continue parsing from.
+// bkCheckRtbakeHeader (format v9: a header-only stamp and version check,
+// W6) reads the header, module list and directory in one readAt of at
+// most bkHeaderMax bytes at library offset 0 of fh (base: the library's
+// offset in that file) and validates magic, format version, lane and
+// stamp against wantLane -- WITHOUT reading any section, so a front end
+// can cheaply ask "would this library be accepted?" before committing to
+// it. On success it leaves the header bytes in bkLoadBuf with the cursor
+// just past the stamp (the module list), and bkLibFh/bkLibBase set, for
+// bkLoadRtbake to parse on from; on failure it leaves neither behind.
 //
 // Stamp contract (Task 4's own open question (a)): the stamp is a hash of
-// the committed clarusc/clarusc.c snapshot (bake.cla's own bkHashText/
-// bkFindClarusC, Task 3) on the host lane; the Mac lane's own sidecar
-// (above) is that SAME value, computed once at bake-generation time.
-// Known gap, accepted for this phase (see Task 4's own report): a dev
+// the committed clarusc/clarusc.c snapshot (bkHashText/bkFindClarusC) on
+// the host lane; the Mac lane's own sidecar (above) is that SAME value,
+// computed once at bake-generation time. Known gap, accepted: a dev
 // binary built from EDITED .cla sources still stamps/checks against the
 // COMMITTED snapshot, since bkFindClarusC always reads clarusc/clarusc.c
-// off disk, never the running binary's own (possibly different) source
-// -- both the generator (bake.cla, unmodified since Task 3) and every
-// loader share that exact same proxy, so a bake generated and loaded by
-// binaries built from the same checkout always agree, and the snapshot
-// is regenerated at every phase close (CLAUDE.md), keeping drift bounded
-// to "mid-phase, uncommitted .cla edits" -- exactly the same caveat any
-// other snapshot-bootstrapped tool in this repo already carries.
-// bkCheckRtbakeHeader is a thin refusal-path wrapper around
-// bkCheckRtbakeHeaderBody (below), added by clir-load-perf Task 7's own
-// fix round: the body assigns bkLoadBuf = buf partway through (it needs
-// the cursor for bkGetU32/bkGetByte) and then has five `return false`
-// exits after that point, every one of which used to leave the loader
-// holding a reference to the caller's ~1.3MB buffer for the rest of the
-// session -- `text` is a reference type, so a refused CLIR pinned
-// ~1.3MB for a whole ClarusC.APPL session running on CLFS-source
-// fallback. Clearing here rather than at
-// each of those five returns means a sixth one cannot reintroduce the
-// leak, and it covers BOTH callers (bkLoadRtbake and macgui.cla's
-// gcResolveBakePath, which checks the header directly).
-//
-// The SUCCESS path deliberately leaves bkLoadBuf/bkLoadPos exactly as
-// the body left them (buffer set, cursor at 19): bkLoadRtbake parses
-// straight on from there.
-func bkCheckRtbakeHeader(buf: text, wantLane: int): bool {
-    if bkCheckRtbakeHeaderBody(buf, wantLane) {
+// off disk, never the running binary's own (possibly different) source --
+// the generator and every loader share that exact same proxy, so a bake
+// generated and loaded by binaries built from the same checkout always
+// agree, and the snapshot is regenerated at every phase close (CLAUDE.md).
+func bkCheckRtbakeHeader(fh: filehandle, base: int, wantLane: int): bool {
+    if bkCheckRtbakeHeaderBody(fh, base, wantLane) {
         return true
     }
-    bkLoadBuf = ""
+    bkLoadBuf.release()
+    bkLibFh = nil
     return false
 }
 
-func bkCheckRtbakeHeaderBody(buf: text, wantLane: int): bool {
+func bkCheckRtbakeHeaderBody(fh: filehandle, base: int, wantLane: int): bool {
     var magic: string
     var version: int
     var lane: int
     var stampLen: int
     var stamp: int
     var expectStamp: int
-    var bodyHash: int
-    var actualBodyHash: int
-    var i: int
-    var n: int
 
     bkLoadOverrun = false
-
-    // Header is magic(4) + formatVersion(4) + laneTag(1) + stampLen(2) +
-    // stamp(4) + bodyHash(4) = 19 bytes (format v4, final-review fix
-    // wave -- was 15 before bodyHash was added).
-    if buf.length < 19 {
-        emitDiag(1, 1, "--rtbake: file too short to be a CLIR bake")
+    bkLibFh = fh
+    bkLibBase = base
+    // magic(4) + formatVersion(4) + laneTag(1) + stampLen(2) + stamp(4):
+    // 15 bytes; a short read past them is fine (the file may be smaller
+    // than bkHeaderMax).
+    if not fh.readAt(base, bkHeaderMax, bkLoadBuf) or bkLoadBuf.length < 15 {
+        emitDiag(1, 1, "--rtbake: file too short to be a CLIR library")
         return false
     }
-    magic = buf[0, 4]
+    BakeReadLog(0, bkLoadBuf.length)
+    magic = bkLoadBuf[0, 4]
     if magic != bkMagic {
-        emitDiag(1, 1, "--rtbake: bad magic (not a CLIR bake)")
+        emitDiag(1, 1, "--rtbake: bad magic (not a CLIR library)")
         return false
     }
-
-    bkLoadBuf = buf
     bkLoadPos = 4
-    bkLoadBase = 0
     version = bkGetU32()
     if version != bkFormatVersion {
         emitDiag(1, 1, "--rtbake: format version " + numToStr(version) + " unsupported (want " + numToStr(bkFormatVersion) + ")")
@@ -4149,84 +4325,51 @@ func bkCheckRtbakeHeaderBody(buf: text, wantLane: int): bool {
         return false
     }
     stamp = bkGetU32()
-
     expectStamp = feExpectedStamp()
     if stamp != expectStamp {
         emitDiag(1, 1, "--rtbake: stamp mismatch (bake=" + numToStr(stamp) + ", this compiler=" + numToStr(expectStamp) + "); regenerate with --bake-ir")
         return false
     }
-
-    bodyHash = bkGetU32()
-    // Everything from here (bkLoadPos) to buf.length is "the body" --
-    // exactly what bakeWriteFile hashed before writing the header.
-    // clir-load-perf Task 5 (design C): walk it in ~32KB chunks through
-    // the bulk t.hashStep method instead of bkHashTextFrom's per-byte
-    // loop -- same djb2-shape seed/step, so this is bit-identical to
-    // bkHashTextFrom(buf, bkLoadPos) (proven by Task 2's core-suite
-    // "hashStep split" case); bkHashTextFrom itself stays untouched as
-    // the reference implementation and the cold-path form the
-    // manifest/stamp callers still use.
-    actualBodyHash = bkFnvSeed
-    i = bkLoadPos
-    while i < buf.length {
-        n = 32768
-        if i + n > buf.length {
-            n = buf.length - i
-        }
-        actualBodyHash = buf.hashStep(actualBodyHash, i, n)
-        // Liveness pulse (attempt-abort Task 7 contract): one tick per
-        // 32KB chunk, same cadence the per-byte loop's (i & 0x7FFF)
-        // gate produced.
-        driveProgressTick()
-        i = i + n
-    }
-    if actualBodyHash != bodyHash {
-        emitDiag(1, 1, "--rtbake: body hash mismatch (corrupt or truncated bake); regenerate with --bake-ir")
-        return false
-    }
     return true
 }
 
-// bkLoadRtbake parses buf (the raw --rtbake FILE contents) into the
-// bkLd*/bkLoaded* pending globals above, validating the header
-// (bkCheckRtbakeHeader, above) against wantLane (the CURRENT compile's
-// own target -- bkLane68k for emit68k, bkLaneC for emit) and a freshly
-// recomputed stamp. Touches no live compiler state -- see
-// bkInstallPool/bkInstallArenas for that.
-func bkLoadRtbake(buf: text, wantLane: int, testapi: bool): bool {
+// bkLoadRtbake loads the library at offset base of fh (the front end
+// opened it; `--rtbake FILE` is base 0 of FILE) into the bkLd*/bkLoaded*
+// pending globals above, validating the header (bkCheckRtbakeHeader)
+// against wantLane (bkLane68k for emit68k, bkLaneC for emit) first -- a
+// refused header reads and stages nothing. Then the module list and
+// directory, then every resident section, one readAt each. Touches no
+// live compiler state -- see bkInstallPool/bkInstallArenas for that. The
+// object code stays in the file for bkLoadObjCode.
+func bkLoadRtbake(fh: filehandle, base: int, wantLane: int, testapi: bool): bool {
     var i: int
+    var j: int
     var n: int
+    var want: int
+    var size: int
     var loadedMods: list of string
-    var parsed: bool
+    var ids: list of int
+    var offs: list of int
+    var lens: list of int
+    var ok: bool
 
     // SE wave 1: a compile that failed between this parse and the end of
     // its install sequence (a user-code check error, an abort) left its
-    // IR staging behind -- drop it before parsing on top of it. Never
-    // touches bkLdObj*/cgObjRunBytes/cgObjRunOff/cgObjHoles (bkFreeParseStaging's own
-    // contract).
+    // IR staging behind -- drop it before parsing on top of it.
     bkFreeParseStaging()
-    if bkHeaderVerified {
-        // Design A: the front end already verified THIS buffer.
-        // Re-establish the parse preconditions bkCheckRtbakeHeader
-        // normally leaves behind (cursor past the 19-byte header,
-        // overrun flag clear), without the ~1.3MB body re-hash.
-        bkHeaderVerified = false
-        bkLoadOverrun = false
-        bkLoadBuf = buf
-        bkLoadPos = 19
-        bkLoadBase = 0
-    } else {
-        if not bkCheckRtbakeHeader(buf, wantLane) {
-            return false
-        }
+    // A refused library must leave no object index behind (driveReset
+    // already dropped the previous compile's object code).
+    bkLdObjValid = driveFreshBoolList()
+    if not bkCheckRtbakeHeader(fh, base, wantLane) {
+        return false
     }
 
     // runtime-ir-bake Task 5 (b): retained (not discarded) into
     // bkLoadedModules -- bkComputeManifestPaths (below) turns these
-    // module KEYS (rtModuleKey's "runtime/clarus/NAME" form, written by
-    // bkWriteFile) into the disk-path identity expand()'s own dedup uses,
-    // so a user `include` of one of these SAME files is detected during
-    // Phase A instead of silently double-declaring against the baked IR.
+    // module KEYS (rtModuleKey's "runtime/clarus/NAME" form) into the
+    // disk-path identity expand()'s own dedup uses, so a user `include`
+    // of one of these SAME files is detected during Phase A instead of
+    // silently double-declaring against the baked IR.
     n = bkGetU16()
     i = 0
     while i < n {
@@ -4235,18 +4378,57 @@ func bkLoadRtbake(buf: text, wantLane: int, testapi: bool): bool {
     }
     bkLoadedModules = loadedMods
 
-    parsed = bkLoadSections(testapi)
-    // clir-load-perf Task 7 (design B): drop the loader cursor's own
-    // reference to the caller's buffer the moment the parse is over.
-    // Nothing reads bkLoadBuf outside a parse, and driveCompile frees
-    // rtbakeBytes right after this returns true -- but a text is a
-    // REFERENCE, so that free reclaims the
-    // ~1.3MB only if this reference is gone too. Covers a failed SECTION
-    // parse too (bkLoadSections returning false lands here); a refused
-    // HEADER never reaches this line, and is cleared by
-    // bkCheckRtbakeHeader's own wrapper instead -- see its doc comment.
-    bkLoadBuf = ""
-    return parsed
+    // The directory: the lane's full section set, each id once, every
+    // section inside the file.
+    want = bkSectionCountC
+    if wantLane == bkLane68k {
+        want = bkSectionCount68k
+    }
+    n = bkGetU16()
+    size = fh.size() - base
+    ok = not bkLoadOverrun and n == want
+    i = 0
+    while ok and i < n {
+        ids.add(bkGetU16())
+        offs.add(bkGetU32())
+        lens.add(bkGetU32())
+        ok = not bkLoadOverrun and offs[i] >= 0 and lens[i] >= 0 and offs[i] <= size - lens[i]
+        j = 0
+        while ok and j < i {
+            ok = ids[j] != ids[i]
+            j = j + 1
+        }
+        i = i + 1
+    }
+    bkLoadBuf.release()
+    if not ok {
+        bkLibFh = nil
+        emitDiag(1, 1, "--rtbake: corrupt header (module list or section directory)")
+        return false
+    }
+
+    ok = true
+    i = 0
+    while ok and i < n {
+        ok = bkLoadSection(ids[i], offs[i], lens[i], testapi)
+        driveProgressTick()
+        i = i + 1
+    }
+    bkLoadBuf.release()
+    if not ok {
+        bkLibFh = nil
+        return false
+    }
+    // The baked arenas' sizes, for the lazy object read's reloc checks
+    // (bkObjLim*'s own doc comment).
+    bkObjLimFuncs = bkLdIrFuncs.count
+    bkObjLimCbGlue = bkLdIrCbGlueNames.count
+    bkObjLimPool = bkLdStrOff.count - 1
+    bkObjLimStrLits = bkLdIrStrLits.count
+    bkObjLimArrLits = bkLdIrArrLitElemT.count
+    bkObjLimEnums = bkLdIrEnums.count
+    bkObjLimRecords = bkLdIrRecords.count
+    return true
 }
 
 // ================================================================
@@ -4395,6 +4577,7 @@ func bkComputeManifestPaths() {
     var prefixLen: int
     var bareMod: string
     var p: string
+    var junk: int
     var m: map of bool
 
     if bkLoadedModules.count > 0 {
@@ -4413,7 +4596,7 @@ func bkComputeManifestPaths() {
             // bkManifestHashes like any other module -- this is the ONLY
             // place it's skipped). This narrows the drift guard for
             // prelude.cla, it does NOT disable it: the SECOND loop below
-            // (bkLoadedDeclFileTab) unconditionally re-adds every baked
+            // (bkManifestHashes' keys) unconditionally re-adds every baked
             // decl's own file path, prelude.cla included, using the
             // disk-path string --bake-ir time itself recorded -- so on an
             // ordinary invocation (use-time's own findRtDir resolution
@@ -4466,21 +4649,18 @@ func bkComputeManifestPaths() {
     // the runtime side to dedup against, so without this, a suite
     // composition that directly names a nested-include file collides
     // (two declarations of the same names) instead of falling back.
-    // Reuses bkLoadedDeclFileTab (Task 4's own retained table, already
-    // loaded) rather than a new serialized field -- every baked decl's
-    // OWN file is already recorded there, nested includes included, so
-    // no format change is needed for this part.
-    i = 0
-    while i < bkLoadedDeclFileTab.count {
-        if bkLoadedDeclFileTab[i] != -1 {
-            m[poolGet(bkLoadedDeclFileTab[i])] = true
-        }
-        i = i + 1
+    // The paths are bkManifestHashes' keys: bkWriteManifestHashes wrote
+    // one entry per distinct file the bake expanded, nested includes
+    // included, keyed by the same bake-time disk-path string every baked
+    // decl's declFileTab entry names. (It read the checker-side
+    // bkSecDeclFileTab until CLIR v9, which reads that section never:
+    // spec 3.3 keeps the checker sections off the ordinary compile path.)
+    for p, junk in bkManifestHashes {
+        m[p] = true
     }
     bkManifestPaths = m
-    // SE wave 1: this is the last reader of both tables -- drop them.
+    // SE wave 1: this is the last reader of the module list -- drop it.
     bkLoadedModules.release()
-    bkLoadedDeclFileTab.release()
 }
 
 // bkInstallArenas is the second install step -- called by driveCompile
@@ -4946,5 +5126,4 @@ func bkFreeParseStaging() {
     bkLoadedFieldInfos.release()
     bkLoadedRecFieldsHeadByName.release()
     bkLoadedModules.release()
-    bkLoadedDeclFileTab.release()
 }

@@ -426,7 +426,7 @@ on App.startCLI(args: list of string) {
             // runtime-ir-bake Task 4: opts this compile into the baked
             // CLIR image instead of splicing/checking/lowering the
             // runtime chain from source -- drive.cla's driveCompile
-            // reads haveRtbake/rtbakeBytes (set below, once the whole
+            // reads haveRtbake/rtbakeFh (set below, once the whole
             // flag list is known and the lane -- want68k -- is settled).
             i = i + 1
             if i >= args.count {
@@ -637,12 +637,16 @@ on App.startCLI(args: list of string) {
     // checker symbols instead of re-parsing uitest.cla from source (see
     // its own doc comment, drive.cla). No CLI-level refusal needed here
     // any more (Task 4's own, now removed).
+    // SE wave 4 Task 6: the library is read lazily through this handle
+    // (bake.cla's bkLoadRtbake, then bkLoadObjCode after shake), never
+    // whole; the process exit closes it.
     if haveRtbakeFlag {
-        rtbakeBytes = ""
-        if not file.readText(rtbakePath, rtbakeBytes) {
+        rtbakeFh = file.openRead(rtbakePath)
+        if rtbakeFh == nil {
             log("clarusc: cannot read --rtbake " + rtbakePath + ": " + lastError.message)
             quit 1
         }
+        rtbakeBase = 0
         haveRtbake = true
     }
 

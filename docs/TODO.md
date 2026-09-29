@@ -621,11 +621,6 @@ The SE memory program (2026-09-27) resumed work on this target. See
   between them without an `irReset` (the `bakeGenerateChain` shape)
   would see stale misses. The precondition is documented in `ir.cla`;
   nothing enforces it.
-- **The CLIR FieldInfo section is parsed on every compile**, though
-  only the `--testapi` install reads it. Task 4 gated the
-  CheckerSymbols section this way (`bkLoadSections(testapi)`); FieldInfo
-  can be skipped the same way (`bkLoadPos = expectedPos`, the body hash
-  already covers its bytes).
 - **`cg68Measure` does not reset items in `cgEmitEnumTables`/
   `cgEmitSerdescTables`.** They have their own per-entry measure
   `before`s, but Task 3 reset only `cgEmitPoolsBody`'s. The tables are

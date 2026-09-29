@@ -568,84 +568,20 @@ func gcLog(w: Log, line: string) {
 // main.cla's startCLI makes, but only ONCE (per-process); here, EVERY
 // compile.
 // gcResolveBakePath (runtime-ir-bake Task 6) decides, fresh for THIS
-// compile, whether to take the CLIR bake path (the DEFAULT) or fall back
-// to CLFS-source -- setting haveRtbake/rtbakeBytes (drive.cla's own
-// per-compile-owned globals, reset here every call, never cached across
-// compiles, matching driveCompile's own "install re-parses from scratch
-// every call" discipline: bake.cla's own doc comment; TestLeakGate/
-// DoubleCompileBake is the oracle for this on the host side) and
-// returning a short status line naming which path ran, and why. Split
-// out of gcCompile (which just logs the result on two channels -- see
-// its own doc comment) purely to keep gcCompile itself under macgui.
-// cla's per-function 32KB native segment budget, same reasoning as main.
-// cla's cliResolveBake split (Task 5).
+// compile, whether to take the CLIR bake path or fall back to CLFS-source
+// -- setting haveRtbake (drive.cla's own per-compile-owned global) and
+// returning a short status line naming which path ran, and why. Split out
+// of gcCompile purely to keep gcCompile itself under macgui.cla's
+// per-function 32KB native segment budget.
 //
-// Fallback is taken whenever the resource is absent, unreadable, or its
-// header is refused (format/version/lane/stamp/body-hash mismatch --
-// bkCheckRtbakeHeader, the SAME check bake.cla's own bkLoadRtbake runs
-// internally, factored out so this decision can be made BEFORE
-// committing to driveCompile: a refused bake must never surface as a
-// user-facing compile failure, only a silent, logged fallback). The
-// body-hash check (format v4, final-review fix wave) covers every byte
-// after the header -- a truncated resource read or a corrupted section
-// is now refused HERE too, not just inside driveCompile's own later full
-// parse, so this claim now holds for section-level corruption as well
-// as the header fields it always covered.
-//
-// A fourth reason exists but is NOT decided here: fallback-trigger-
-// narrowing's per-module source hash (format v5, bkManifestHashes) can
-// still trigger a from-source fallback for an otherwise-accepted bake,
-// when a user `include` collides with a manifest module whose on-disk
-// bytes have drifted from what the bake carries. That check runs per
-// include, inside driveCompile itself (drive.cla's own expand()/
-// driveCompile), well after this function has already returned "bake
-// path" -- it logs its own line ("clarusc --rtbake: <path> differs from
-// the baked copy; falling back to a from-source compile") through the
-// same feProgress() seam gcCompile's bakeMsg uses below, so a drifted
-// compile shows both lines in the Log window: this function's initial
-// "bake path" verdict, then drive.cla's own drift line once the
-// collision is actually reached.
+// SE wave 4 Task 6: a CLIR v9 library is read lazily through a
+// filehandle (bake.cla's bkLoadRtbake), which the __clir_bake_68k__
+// resource (a whole-library file.readResource) cannot feed, so every
+// compile takes the CLFS-source fallback until Task 7 moves the library
+// into this application's data fork and opens it with file.openRead.
 func gcResolveBakePath(): string {
-    var clirBuf: text
-
     haveRtbake = false
-    rtbakeBytes = ""
-    // SE wave 1: no parse memo -- driveCompile consumes (frees)
-    // rtbakeBytes on every successful parse, so the bytes are read from
-    // the CLIR resource afresh on EVERY compile (the clear above also
-    // drops a failed earlier parse's bytes on a refused/absent resource).
-    if not feHasKey(bkClirResourceName) {
-        return "clarusc: CLFS-source fallback (no CLIR resource baked into this app)"
-    }
-    clirBuf = ""
-    // Pre-compile feedback (attempt-abort Task 7, spec %5): the resource
-    // read and the header check are the two slow steps that can precede
-    // driveCompile's own first progress line, so both get a Status-bar
-    // step (step 0 of drvFixedSteps -- driveCompile resets the stage
-    // counter at its own top, drive.cla:1799, so this borrowed step
-    // number never collides) plus a timestamped log line, in the SAME
-    // format driveProgress itself uses. Reached directly via
-    // feProgressStep/feProgress (not driveProgress/driveProgressStage --
-    // those live in drive.cla and gate on want68k, which gcCompile now
-    // arms before calling this function, but this function is itself
-    // part of the macgui.cla front end that DEFINES those seams, so
-    // calling them straight is the least-indirect path).
-    feProgressStep(0, 10, "Loading Baked Runtime")
-    feProgress("[" + dateTimeStr(now()) + "] Loading Baked Runtime")
-    if not file.readResource(bkClirResourceName, clirBuf) {
-        return "clarusc: CLFS-source fallback (CLIR resource present but unreadable: " + lastError.message + ")"
-    }
-    feProgressStep(0, 10, "Verifying Baked Runtime")
-    feProgress("[" + dateTimeStr(now()) + "] Verifying Baked Runtime")
-    if not bkCheckRtbakeHeader(clirBuf, bkLane68k) {
-        resetDiags()
-        return "clarusc: CLFS-source fallback (CLIR resource refused -- format/version/lane/stamp/body-hash mismatch)"
-    }
-    resetDiags()
-    haveRtbake = true
-    bkHeaderVerified = true
-    rtbakeBytes = clirBuf
-    return "clarusc: bake path (CLIR resource)"
+    return "clarusc: CLFS-source fallback (CLIR v9 library not in the data fork yet)"
 }
 
 func gcCompile(w: Log, p: string) {

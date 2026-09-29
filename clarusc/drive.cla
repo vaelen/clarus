@@ -82,24 +82,21 @@ var drvPreludeAsmIdx: int = -1
 var rtDir: string
 var haveRtDir: bool
 
-// haveRtbake/rtbakeBytes (runtime-ir-bake Task 4): the host CLI's
-// `--rtbake FILE` opt-in, mirroring rtDir/haveRtDir's own "front end sets
-// these before calling driveCompile" convention. rtbakeBytes is the raw
-// '.clir' file content (main.cla reads it via file.readText, same as
-// --events/--bake); haveRtbake gates the whole bake-path branch inside
-// driveCompile (below) and driveManifestSplice's now-skipped call. Left
-// at its zero value (false/"") by every caller that doesn't set it --
-// today, that's every caller except main.cla's emit/emit68k handling.
-// Not reset by driveReset(), but CONSUMED by driveCompile (SE wave 1,
-// spec L6): a successful bkLoadRtbake frees rtbakeBytes, so every front
-// end sets rtbakeBytes (and haveRtbake) afresh before EACH driveCompile
-// that should use the bake -- macgui.cla's gcResolveBakePath re-reads the
-// CLIR resource per compile, clarusc/test/dblcompile_bake.cla hands it a
-// fresh copy per compile, main.cla compiles once per process. The free is
-// rtbakeBytes.release(), which empties the box itself -- a front end must
-// never hand over a box it still wants to read.
+// haveRtbake/rtbakeFh/rtbakeBase (runtime-ir-bake Task 4; SE wave 4 Task
+// 6): the `--rtbake FILE` opt-in, mirroring rtDir/haveRtDir's own "front
+// end sets these before calling driveCompile" convention. rtbakeFh is an
+// open filehandle on the file holding the CLIR library and rtbakeBase the
+// library's offset in it (main.cla: file.openRead(FILE), base 0); the
+// loader reads it a section at a time (bake.cla's bkLoadRtbake) and the
+// reachable object code after shake (bkLoadObjCode, driveEmit68kFork), so
+// the front end keeps the handle open through driveEmit68kFork and closes
+// it afterwards. haveRtbake gates the whole bake-path branch inside
+// driveCompile (below). Left at its zero value (false/nil) by every
+// caller that doesn't set it. Not reset by driveReset(); every front end
+// sets all three before EACH driveCompile that should use the bake.
 var haveRtbake: bool
-var rtbakeBytes: text
+var rtbakeFh: filehandle
+var rtbakeBase: int
 
 // seenPaths keys the include-once set (driver.go's `seen`), keyed by the
 // path after normalizePath's lexical cleanup: "//" and "./" segments
@@ -583,12 +580,10 @@ func driveReset() {
     // right before ITS OWN driveCompile) -- both run strictly before any
     // `if haveRtbake` block that would legitimately re-install.
     bkRuntimeFuncBoundary = 0
-    // clir-load-perf Task 1: defensive reset, same rationale as the
-    // resets above -- bkHeaderVerified is consume-once inside
-    // bkLoadRtbake, so this is a no-op on the ordinary sequence; it
-    // exists so a future aborted/reordered front-end path can never
-    // leave a stale "verified" blessing for a buffer that was not.
-    bkHeaderVerified = false
+    // SE wave 4 Task 6: the previous compile's lazily read object code
+    // (bkLoadObjCode) -- codegen is done with it once its fork is built.
+    bkObjBuf.release()
+    bkLdObjPos.release()
 }
 
 // findRtDir resolves the default --rtdir when the flag is omitted: it walks
@@ -2085,30 +2080,20 @@ func driveRtbakeFallback(entries: list of string, testapi: bool): bool {
     var ok: bool
 
     haveRtbake = false
-    // SE wave 1: the from-source recompile below never reads rtbakeBytes
-    // (already freed by this compile's own successful parse) or the
-    // parse staging -- drop the staging now rather than carry it through
-    // a whole from-source compile. Both callers run after a SUCCESSFUL
-    // parse, so the buffer is already released (SE wave 2 re-confirmed:
-    // the progressive free's partly consumed buffer only exists after a
-    // FAILED parse, which returns false from driveCompile and never
-    // reaches here; nothing below reads rtbakeBytes or bkLoadBuf).
+    // SE wave 1: the from-source recompile below never reads the parse
+    // staging -- drop it now rather than carry it through a whole
+    // from-source compile -- nor the library (SE wave 4: the loader's
+    // handle reference goes too; the front end still owns and closes it).
     bkFreeParseStaging()
+    bkLibFh = nil
     bkManifestDriftPath = ""
     driveReset()
     resetDiags()
     astReset()
     ok = driveCompile(entries, testapi)
-    // Restored to true, but NOT a working re-arm on its own: this
-    // compile's own bake parse already consumed (released) rtbakeBytes,
-    // so what is left here is (haveRtbake = true, rtbakeBytes empty).
-    // Every current front end re-arms BOTH per compile before calling
-    // driveCompile (macgui.cla's gcResolveBakePath, clarusc/test/
-    // dblcompile_bake.cla; main.cla compiles once), which is what makes
-    // a LATER compile try the bake path fresh. A future front end that
-    // calls driveCompile again WITHOUT re-arming rtbakeBytes would get a
-    // bad-header diagnostic instead of a from-source compile. See
-    // docs/TODO.md (SE wave 1 final review M1).
+    // Restored to true so the front end's own state is as it set it; every
+    // front end re-arms haveRtbake/rtbakeFh/rtbakeBase per compile anyway
+    // (clarusc/test/dblcompile_bake.cla; main.cla compiles once).
     haveRtbake = true
     return ok
 }
@@ -2168,16 +2153,9 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         if want68k {
             wantLane = bkLane68k
         }
-        if not bkLoadRtbake(rtbakeBytes, wantLane, testapi) {
+        if not bkLoadRtbake(rtbakeFh, rtbakeBase, wantLane, testapi) {
             return false
         }
-        // SE wave 1 (spec L6): the bytes are dead once parsed --
-        // every compile re-parses from its front end's fresh copy.
-        // (A failed parse may leave them partly consumed -- SE wave 2's
-        // progressive free drops decoded prefixes as it goes -- and
-        // nothing reads them after that: this returns false, and every
-        // front end re-arms fresh bytes before its next compile.)
-        rtbakeBytes.release()
         bkInstallPool()
         bkComputeManifestPaths()
         bkManifestDriftPath = ""
@@ -2674,6 +2652,12 @@ func driveEmit68kFork(outPath: string, listing: bool, segLimit: int, nopeep: boo
     cg68SynthCbGlue()
     driveProgressStage("Shaking")
     shakeProgram()
+    // SE wave 4 Task 6: a --rtbake compile reads its reachable baked
+    // functions' object code now that shake has marked them (a no-op
+    // otherwise).
+    if not bkLoadObjCode() {
+        return false
+    }
     driveProgressPhase("Shaken")
     return cg68ProgramFork(outPath, listing, segLimit)
 }
