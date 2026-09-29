@@ -545,8 +545,12 @@ func natSetCapture() {
 
 // nat_UiTraceOn: uiscript.cla's `external func UiTraceOn(): bool` --
 // whether the rtUiTrace* builders should build their `T ...` lines at all.
+// Production builds them only while there is a log to take them
+// (natWlOpen): app.trace(true) with no app.writeLog allocates nothing per
+// tick. The builders keep their change-detection bookkeeping either way,
+// so a writeLog after trace(true) still gets correct trace lines.
 func nat_UiTraceOn(): bool {
-    return natCapture or natTraceOn
+    return natCapture or (natTraceOn and natWlOpen)
 }
 
 // natAppTrace: app.trace(enable). Capture mode's trace is always on
