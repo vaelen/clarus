@@ -6,7 +6,9 @@ merged (2026-09-28). Wave 1 (lifetimes) is merged
 (representation) is merged (2026-09-28), at 3,668,312
 bytes against its 4 MB target (§9.3). Wave 3 (narrow scalars) is
 merged (2026-09-29), at 3,399,176 bytes against its
-3.5 MB target (§9.4). Wave 4 is next.**
+3.5 MB target (§9.4). Wave 4 (lazy runtime library) is complete on
+its branch (2026-09-29), at 1,194,744 bytes against its 1.2 MB target
+(§9.5), pending merge.**
 This is the umbrella document for a multi-wave program. Each wave gets
 its own spec (`docs/superpowers/specs/`) and plan
 (`docs/superpowers/plans/`) when it starts. This document holds
@@ -236,7 +238,7 @@ Each wave commits a lower budget, and no later change may exceed it:
 | 1          |   6.32 MB (6,324,316) [a] | every task byte-identical                                                        |
 | 2          |   3.67 MB (3,668,312) [b] | ≤ 4 MB met                                                                       |
 | 3          |   3.40 MB (3,399,176) [c] | serializer writes v2, loads v1                                                   |
-| 4          |                  ≤ 1.2 MB | runtime library read with `readAt`; no whole-resource read                       |
+| 4          |   1.19 MB (1,194,744) [d] | runtime library read with `readAt`; no whole-resource read                       |
 | 5          |      within the SE budget | ClarusC compiles `bookmarks.cla` on the SE; `snow/clarusc_bake` passes on the SE |
 
 The budgets are targets. A wave's spec may revise its own number with a
@@ -257,6 +259,10 @@ the same Wave 1 code measured that way peaks at 5,836,696 (§9.3).
 [c] Wave 3's target was ≤ 3.5 MB (3,670,016) and it measured 3,399,176
 (budget 3,433,168), 270,840 bytes (7.4%) under. The host counts about
 75 KB of the arena saving that the 68k layout does not see (§9.4).
+
+[d] Wave 4's target was ≤ 1.2 MB (1,258,291) and it measured 1,194,744
+(budget 1,206,692), 63,547 bytes (5.1%) under. The wave spec's §1
+number stands (§9.5).
 
 ### 5.6 Documentation
 
@@ -657,7 +663,7 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 | 1 Lifetimes                        | merged to main 2026-09-28 (`fadb19af`)    | `se-wave1-lifetimes`      | memgate peaks 6,324,316 (rtbake, target 6 MB missed by 32,860) / 8,605,188 (src) / 8,531,984 (hello); IIcx low point 7977 KB used (−4058 KB), stack 187 KB (§9.2)                                      |
 | 2 Representation                   | merged to main 2026-09-28 (`378ccd10`)    | `se-wave2-representation` | memgate peaks 3,668,312 (rtbake, 4 MB target met) / 7,639,484 (src) / 7,570,224 (hello); IIcx low point 6272 KB used (−1705 KB), stack 187 KB (§9.3)                                                   |
 | 3 Narrow scalars                   | merged to main 2026-09-29 (`3642e8ec`)    | `se-wave3-narrow-scalars` | memgate peaks 3,399,176 (rtbake, 3.5 MB target met) / 7,377,444 (src) / 7,308,336 (hello); IIcx low point 6111 KB used (−161 KB), stack 187 KB (§9.4)                                                  |
-| 4 Lazy runtime library             | not started                               | —                         | —                                                                                                                                                                                                      |
+| 4 Lazy runtime library             | on branch 2026-09-29, not yet merged      | `se-wave4-lazy-library`   | memgate peaks 1,194,744 (rtbake, 1.2 MB target met) / 6,923,184 (src) / 6,919,612 (hello); IIcx low point 2443 KB used (−3668 KB), stack 194 KB (§9.5)                                                 |
 | 5 Code and stack                   | not started                               | —                         | —                                                                                                                                                                                                      |
 | Wave 6 decision                    | pending                                   | —                         | —                                                                                                                                                                                                      |
 
@@ -1348,3 +1354,146 @@ Observations, not claims:
 - **The host gate and the IIcx still differ by ~2.7 MB at the low
   point** (host peak 3,399,176 bytes = 3320 KB; IIcx 6111 KB used), the
   gap §9.3 left open for Wave 4 (`docs/TODO.md`).
+
+### 9.5 Wave 4 measurements (2026-09-29)
+
+All of these come from branch `se-wave4-lazy-library`. The wave spec
+is `2026-09-29-se-wave4-lazy-library-design.md`. The rulings are in
+`docs/HISTORY.md`'s Wave 4 entry. Units are as in §9.1.
+
+**Host memory gate** (`tests/memgate/budget.txt`; 68k-equivalent bytes,
+H = 8; identical across three runs):
+
+| Subcase                      | Wave 3 peak | Wave 4 peak |     Change | Wave 4 budget |
+|------------------------------|------------:|------------:|-----------:|--------------:|
+| `bookmarks_rtbake` (primary) |   3,399,176 |   1,194,744 | −2,204,432 |     1,206,692 |
+| `bookmarks_src`              |   7,377,444 |   6,923,184 |   −454,260 |     6,992,416 |
+| `hello_src`                  |   7,308,336 |   6,919,612 |   −388,724 |     6,988,809 |
+
+- **The 1.2 MB target (1,258,291) is met**, with 63,547 bytes (5.1%)
+  to spare. The wave spec's §1 number stands.
+- `hello_src`'s change is net of the log/trace detour's +69 KB, which
+  landed between the waves (it was at 7,377,464, 99.9% of its budget,
+  when Wave 4 started).
+
+**What each step bought** (`bookmarks_rtbake` from `$WORK`, as in
+§9.3; "—" = not measured separately):
+
+| Change                                                          | `bookmarks_rtbake` | `bookmarks_src` | `hello_src` |
+|-----------------------------------------------------------------|-------------------:|----------------:|------------:|
+| Wave 3 final                                                    |          3,399,176 |       7,377,444 |   7,308,336 |
+| Wave 4 start (after the log/trace detour)                       |          3,404,020 |       7,381,036 |   7,377,464 |
+| Wave A (Tasks 1–4) + Task 5 snapshot                            |          3,374,496 |       6,923,320 |   6,919,748 |
+| Task 6: CLIR v9, no IR bodies, lazy object code                 |          1,827,512 |       6,923,304 |   6,919,732 |
+| Task 7: library in ClarusC's data fork                          |          1,827,512 |       6,923,612 |   6,920,040 |
+| Task 8 step 1: pre-sized fork, segments released as copied      |          1,581,420 |               — |           — |
+| Task 8 step 2: flat per-function pool refs                      |          1,434,984 |               — |           — |
+| Task 8 step 3: `a68Items`/`bkObjBuf` released before the fork   |          1,269,936 |               — |           — |
+| Task 8 step 4: `irTypes` shrink, `cgSizeMemo` +64 growth; final |          1,194,744 |       6,923,184 |   6,919,612 |
+
+- **The from-source saving is Task 4** (−458,752 on both: `toks`
+  393,216 + `lexSrc` 65,536, freed after the last parse and before
+  lowering, where that peak sits). Task 4's reachable-only codegen
+  lists were −72,900 on `bookmarks_rtbake`.
+- Task 1 (+22 KB: object code for the 26 formerly tainted functions)
+  and Task 2 (+21 KB: the resident call-graph summary) raised the
+  rtbake peak before Task 6 removed the IR bodies (−1,546,984).
+  Task 6 also found a dead 131 KB `bkLoadBuf` box that survived to
+  the peak.
+- **Lazy read** (`tests/bake/lazyread.sh`, measured at Task 6): a
+  `hello-mac` compile reads 278,211 bytes of the 775,953-byte 68k
+  library (39,537 of 293,205 bytes of object code), `bookmarks` reads
+  389,457 (150,783). Neither reads a runtime IR body; CheckerSymbols
+  and FieldInfo are read only under `--testapi`.
+
+**Where the rtbake peak is now** (`scripts/memcensus.sh --rtbake
+--at-peak examples/bookmarks.cla`, Task 8). The peak moved from
+`Built fork` to `Emitted segment 4`. Top entries at the peak moment:
+
+| #   | Global           |   Bytes | Count |   Cap | Note                  |
+|-----|------------------|--------:|------:|------:|-----------------------|
+| 1   | `cv_strIndex`    | 163,840 |  3388 |  4096 | `map of int`          |
+| 2   | `cv_bkObjBuf`    | 150,783 |     — | exact | reachable object code |
+| 3   | `cv_a68Items`    | 139,264 |    17 |  2048 | 68 B per item         |
+| 4   | `cv_irTypes`     |  70,912 |  4369 |  4432 | 16 B per type         |
+| 5   | `cv_strBlob`     |  65,536 | 42507 | 65536 |                       |
+| 6   | `cv_irLocals`    |  32,768 |  1364 |  2048 |                       |
+| 7   | `cv_a68BytesOut` |  32,768 | 16330 | 32768 |                       |
+
+- `irExprs` (1 MB at Wave 3's peak) and `irStmts` are gone from the
+  top: runtime bodies are no longer installed.
+- `strIndex` is now the largest entry. An open-addressed index over
+  `strBlob`/`strOff` would save ~130 KB, but it rewrites `intern`, the
+  hot path of every compile, so it is left for Wave 5.
+- `a68Items` is sized by the largest function during emission; the
+  68-byte record is the lever left.
+
+**Mac IIcx per-phase** (`tests/mactest/snow/clarusc_memprobe.sh`, same
+machine and input as §9.1–§9.4; saved log
+`build-run/memprobe-saved/clarusc_memprobe.wave4.log`; one compile per
+boot). "Used" is measured from each run's own launch free: Wave 4's is
+48122 KB (Wave 3: 48177 KB); zone 48382 KB (Wave 3: 48398 KB). The
+compile took the bake path (`clarusc: bake path (CLIR library in the
+data fork)`), so `pre-compile` is now only the header check.
+
+| Point                   | W3 free KB | W4 free KB | W3 used KB | W4 used KB | W4 − W3 KB | W3 ticks | W4 ticks |
+|-------------------------|-----------:|-----------:|-----------:|-----------:|-----------:|---------:|---------:|
+| pre-compile             |      43949 |      47851 |       4228 |        271 |      −3957 |        — |        — |
+| Parsed user program     |      43594 |      47003 |       4583 |       1119 |      −3464 |      174 |      184 |
+| Checked user program    |      43316 |      46757 |       4861 |       1365 |      −3496 |      175 |      196 |
+| Installed baked runtime |      43327 |      46729 |       4850 |       1393 |      −3457 |      206 |      269 |
+| Lowered                 |      43093 |      46518 |       5084 |       1604 |      −3480 |      114 |      125 |
+| Shaken                  |      43026 |      46332 |       5151 |       1790 |      −3361 |      500 |      477 |
+| Measured                |      42350 |      45868 |       5827 |       2254 |      −3573 |    16371 |     1079 |
+| Packed 4 segments       |      42349 |      45866 |       5828 |       2256 |      −3572 |      195 |      135 |
+| Emitted segment 1       |      42273 |      45761 |       5904 |       2361 |      −3543 |     6017 |     1056 |
+| Emitted segment 2       |      42241 |      45728 |       5936 |       2394 |      −3542 |     2141 |      275 |
+| Emitted segment 3       |      42204 |      45691 |       5973 |       2431 |      −3542 |     2818 |      427 |
+| Emitted segment 4       |      42193 |      45679 |       5984 |   **2443** |      −3541 |     2260 |      619 |
+| Built fork              |      42066 |      45954 |   **6111** |       2168 |      −3943 |     4296 |      131 |
+| Finished                |      42166 |      45958 |       6011 |       2164 |      −3847 |        — |        — |
+| **Compile total**       |            |            |            |            |            |    35298 |     4993 |
+
+| Metric                                      |  Wave 0 |  Wave 1 |  Wave 2 |  Wave 3 |  Wave 4 |
+|---------------------------------------------|--------:|--------:|--------:|--------:|--------:|
+| Launch→low heap used (KB)                   |   12035 |    7977 |    6272 |    6111 |    2443 |
+| Stack high-water (KB of reserve)            |       — | 187/737 | 187/737 | 187/737 | 194/752 |
+| Compile ticks (total)                       |   89619 |   68040 |   32864 |   35298 |    4993 |
+| Compile wall clock (guest)                  |       — | 18m 54s |   9m 7s |  9m 48s |  1m 23s |
+| "Verifying Baked Runtime" → "Starting" span | 18m 46s |  5m 28s |  2m 01s |  1m 53s |     27s |
+
+- **Launch→low heap used: 6111 KB → 2443 KB, −3668 KB (−60.0%)**;
+  −9592 KB (−79.7%) from Wave 0. The low point moved from `Built fork`
+  to `Emitted segment 4`, as on the host: Task 8 releases `a68Items`
+  and `bkObjBuf` before the fork, and `Built fork` now frees 275 KB.
+- **The saving is in place by `pre-compile`** (−3957 KB: the 1879 KB
+  CLIR resource is no longer read or hashed) and holds
+  at −3361 to −3573 KB through `Emitted segment 4`.
+- **The SE target is 2221 KB** (§9.1). The IIcx low point is 222 KB
+  above it. That is Wave 5's gap, before its own code and stack levers.
+- **Stack:** high-water 194 KB (Wave 3: 187 KB); the reserve reads
+  752 KB (Wave 3: 737 KB). Neither change is attributed.
+- **The "Verifying → Starting" span is 27 s** (18:26:21 → 18:26:48;
+  Wave 3: 1m 53s). The whole-body hash is gone (the wave spec's W6: a
+  header stamp instead) and nothing is re-parsed; what the 27 s is
+  spent on is not broken down.
+
+Observations, not claims:
+
+- **Compile ticks fell 86% (35298 → 4993).** `Measured` (16371 →
+  1079), the four `Emitted segment` phases (13236 → 2377) and `Built
+  fork` (4296 → 131) account for almost all of it. That fits the 26
+  formerly tainted runtime functions being pasted instead of generated
+  (Task 1), per-function lists for reachable functions only (Task 4)
+  and the pre-sized fork with no data copy (Task 8), but it is not
+  attributed per task. Ticks are unreliable under fast-forward
+  (`docs/TODO.md`), though not by an order of magnitude. One run per
+  side.
+- `Parsed` adds 848 KB over `pre-compile` (Wave 3: 355 KB). Wave 3's
+  `pre-compile` came right after reading the library resource, so the
+  two deltas do not measure the same heap state; not attributed.
+- **The host gate and the IIcx now differ by ~1.3 MB at the low
+  point** (host 1,194,744 bytes = 1167 KB; IIcx 2443 KB used), down
+  from ~2.7 MB. The CLIR resource term of Wave 0's calibration is gone;
+  the ~1 MB of CODE loaded after launch would cover most of the rest,
+  but it was not re-measured (`docs/TODO.md`).

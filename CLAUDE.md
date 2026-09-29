@@ -235,13 +235,16 @@ Tiered test gates:
     files go on the scratch `Clarus` volume. Done-detection is the
     guest's own `##CLARUS-EXIT##` trailer, probed in the live host image.
     **ClarusC.APPL does not fit the 4 MB SE yet** (that is the SE-memory
-    program's whole goal — on the SE it dies `out of memory` at "Loading
-    Baked Runtime"), so `snow/clarusc_bake`, `macresident` and
+    program's whole goal — before SE wave 4 it died `out of memory` at
+    "Loading Baked Runtime"; after it, its IIcx low point is 2443 KB used
+    against the SE's ~2221 KB target, not yet tried on the SE), so
+    `snow/clarusc_bake`, `macresident` and
     `macresident_failed_compile` default to the Mac IIcx
     (`snow_clarusc_system`: they SKIP only under `SNOW_SYSTEM=6`, unless
     `CLARUS_SNOW_CLARUSC=1`); `snow/clarusc_boot` defaults to the SE.
-    `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (~9–18
-    min on the IIcx) is the standing rule after any change to
+    `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (~2 min
+    on the IIcx since SE wave 4's lazy library; ~9–18 min before) is
+    the standing rule after any change to
     `clarusc/bake.cla` or `clarusc/macgui.cla` — the only on-target proof
     `ClarusC.APPL`'s default bake path works, and neither T1 nor T2's
     host stages boot it. `snow/adsp_listener` (System 7 IIcx listener,
@@ -489,10 +492,11 @@ enum + runner, not one boot per case.
   (pack3-standardfile phase, 2026-08-07) to an opt-in diagnostic behind
   `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under bare `CLARUS_MAC_TESTS=1`, so
   they no longer run as part of T2 by default.
-- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk,mactcp}.cla`
+- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk,mactcp,segload}.cla`
   (toolbox-cookbook phase; `standardfile`/`files` added by
   pack3-standardfile, `appletalk` by the AppleTalk phase, `mactcp` by the
-  MacTCP phase) is a
+  MacTCP phase, `segload` — `GetAppParms`/`UnloadSeg`/`ExitToShell` — by
+  SE wave 4) is a
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new
   UI code instead of hand-declaring traps; `tests/testsuite/catalog.sh`
@@ -637,7 +641,25 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   module); `--partition N` overrides
   the SIZE(-1) resource's partition (ClarusC.APPL itself needs more than
   the ordinary 2MB default — see `docs/HISTORY.md`'s mac-resident-clarusc
-  phase entry). `file.readResource(name, out)`/`file.writeRes(path,
+  phase entry). By default the script also bakes the 68k-lane CLIR
+  runtime library (`clarusc --bake-ir --lane 68k`, written next to the
+  `.bin` as `clarusc-mac.clir`) and passes it to `emit68k --bake-ir
+  FILE`, which since SE wave 4 (2026-09-29) puts the library in the
+  app's DATA fork (CLIR v9: a header + section directory, no runtime IR
+  bodies, per-function object code read lazily with `readAt`) and only
+  its 4-byte stamp in a `CLFS` resource (`__clarusc_stamp__`); the old
+  whole-library `__clir_bake_68k__` resource is gone. ClarusC.APPL finds
+  its own file with `GetAppParms` (name + resource-file refnum) and
+  `PBGetFCBInfo` (its volume and folder), makes that folder the default
+  with `PBHSetVol` around `file.openRead(name)`, and restores the
+  caller's default (`PBHGetVol`/`PBHSetVol`); an empty, unopenable,
+  mismatched (format/version/lane/stamp) or corrupt library falls back
+  to compiling the runtime from the `CLFS` sources, with a logged
+  `clarusc: CLFS-source fallback (...)` line. `--no-bake-ir` builds a
+  from-source-only ClarusC; `CLARUSC_BIN`/`CLARUSC_MAC_OUT` override the
+  compiler and output directory (`tests/bake/clarusc_container.sh`
+  checks the MacBinary layout, `tests/bake/resident_fallback.sh` the
+  fallback). `file.readResource(name, out)`/`file.writeRes(path,
   fork, doctype, creator)` are the underlying resource-fork intrinsics
   (Mac-only; a host build's `readResource` always returns `false`) — see
   `docs/clarus-language-reference.md`'s own entry for both. The
@@ -647,7 +669,9 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   hardware-proved on System 6 and System 7; the language-runtime-cleanup
   phase, 2026-09-06, added `file.openRF`, which opens a file's RESOURCE
   fork as an ordinary `filehandle` — native `PBOpenRFSync`, host xattr
-  with an AppleDouble `._` sidecar fallback), `string(n)` (the
+  with an AppleDouble `._` sidecar fallback, and SE wave 4, 2026-09-29,
+  `file.openRead`, a read-only `filehandle` — `fsRdPerm`/`O_RDONLY`,
+  writes and `setSize` fail with `lastError`), `string(n)` (the
   int-to-decimal-string conversion, `string(i)`, joining `int()`/
   `fixed()`/`char()`/`ptr()` -- not the pre-existing bounded-capacity
   TYPE syntax of the same name; the compiler-cleanup phase, 2026-09-05,

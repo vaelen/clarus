@@ -212,13 +212,26 @@ measured analysis:
   met), `bookmarks` from source at 7,377,444 and `hello-mac` at
   7,308,336. On the IIcx the launch→low heap use fell from 6272 KB to
   6111 KB. Numbers: the program design's §9.4 and `docs/HISTORY.md`.
-  Wave 4 (lazy runtime library: read the CLIR with `readAt`, no
-  whole-resource read) is next; the never-released 1879 KB CLIR
-  resource is its target.
 - **Detour: opt-in log file and UI trace: merged** (branch
   `log-trace-optin`, 2026-09-29, fast-forward to `96311612`): production native apps write no
   `out` file; `app.writeLog`/`flushLog`/`trace` opt in; `--capture`
   keeps the test protocol. See `docs/HISTORY.md`.
+- **Wave 4 (lazy runtime library): complete on branch
+  `se-wave4-lazy-library`, 2026-09-29, pending merge.** The CLIR library
+  is format v9 (a header + section directory, no runtime IR bodies on
+  the 68k lane, a call-graph summary shake walks instead of IR, and a
+  per-function object-code index read lazily with `readAt`); every
+  runtime function now pastes (the 26 tainted ones became paste holes);
+  ClarusC.APPL carries the library in its own DATA fork, found with
+  `GetAppParms` + `PBGetFCBInfo`, and falls back to the `CLFS` sources
+  if it is missing or refused; `file.openRead` (read-only `filehandle`);
+  the tokens and lexer text are freed after the last parse; a pre-sized
+  output fork. `bookmarks --rtbake` peaks at 1,194,744 bytes (1.2 MB
+  target met), `bookmarks` from source at 6,923,184 and `hello-mac` at
+  6,919,612. On the IIcx the launch→low heap use fell from 6111 KB to
+  2443 KB (the SE target is 2221 KB) and the compile from 35,298 to
+  4,993 ticks. Numbers: the program design's §9.5 and
+  `docs/HISTORY.md`. Wave 5 (code and stack) is next.
 
 The DNR/UDP items below resume after this program.
 

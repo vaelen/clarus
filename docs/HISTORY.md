@@ -7884,6 +7884,222 @@ per-task briefs, reports and ledger are git-ignored scratch; the
 rulings are in this entry.
 
 
+## SE memory program, Wave 4: lazy runtime library (2026-09-29, branch `se-wave4-lazy-library`)
+
+Not yet merged (pending the final review and Andrew's go-ahead).
+This entry covers Tasks 1–8 and Task 9's IIcx measurement (49 files,
++18,035/−15,225 from `main` before this docs commit, most of it the
+twice-regenerated `clarusc/clarusc.c` snapshot). Wave A (Tasks 1–4) ran
+as four parallel worktrees (`../clarus-w4-tN`, branch `w4-tN`) from the
+plan commit `71929415` and merged in the order 1, 4, 2, 3 (`c33907e9`);
+Tasks 5–8 ran alone on the branch, in order. Every task was implemented
+and reviewed on Opus.
+
+**What it did.** ClarusC's compile path no longer loads the runtime
+library whole. A compile reads a small resident index from the library
+in ClarusC.APPL's own data fork, walks a baked call-graph summary
+instead of runtime IR, and reads only the object code of the runtime
+functions its program reaches. The 68k library carries no runtime IR
+bodies at all.
+
+- **Task 1: untaint the runtime.** The 26 runtime functions that call a
+  per-program synthesized dispatcher (`clar_ui_fire_*`, `clar_conn_*`,
+  ...) were "tainted" and not captured. Such a call is now a 4-byte
+  placeholder `JSR 0(A5)` tagged through the A68Item's `trapNameIdx`
+  and recorded as a new paste hole kind, `cgHoleSynthCall = 5`; paste
+  resolves it per program. The taint mechanism is deleted. 781 of 781
+  runtime functions are valid (`tests/bake/untaint.sh`, through the
+  hidden `--objstats-testonly` flag). Reserving the exact hole count
+  was needed: without it `cgObjHoles` crossed a power of two (+200 KB).
+- **Task 2: call-graph summary.** A new `ShakeSummary` section (id 51)
+  records, per baked function and global initializer, the callee names
+  shake's own walk produces; `shakeProgram` replays it for runtime
+  functions, so shake needs no runtime IR. The bake checks the summary
+  against a real IR walk and aborts on any mismatch. New
+  `tests/bake/shakesum.sh` (`--shake-dump` from source vs `--rtbake`,
+  68k and, from Task 6, C lane).
+- **Task 3: `file.openRead(path)`**, a read-only `filehandle` on both
+  lanes (native `fsRdPerm`, host `O_RDONLY`): writes, `append` and
+  `setSize` fail with `lastError`, `flush` succeeds, a missing path
+  gives nil. New core case `OpenRead` (90 → 91); reference updated.
+- **Task 4: early front-end free.** `toks` and `lexSrc` are released
+  after the last parse (after Phase A on the bake path, after the
+  manifest splice's expand loop from source), and only shake-reachable
+  functions get per-function codegen lists. −458,752 on both
+  from-source subcases, −72,900 on `bookmarks_rtbake`.
+- **Task 5:** snapshot regeneration (`file.openRead`).
+- **Task 6: CLIR v9.** A header (magic, version 9, lane, stamp) plus a
+  module list and a section directory, then the payloads; no body hash
+  (the stamp is the version check). The 68k lane writes no
+  IrStmts/IrExprs, a new `GlobalInits` section (id 52) with only the
+  expression nodes runtime global initializers reach, and parameters
+  only in IrLocals (47 sections); the C lane keeps its bodies (48).
+  ObjCode is `count | offsets | data`. The loader checks the header
+  before staging anything, reads each resident section with `readAt`,
+  and reads only the object-code index; `bkLoadObjCode` reads the
+  records of the reachable functions after shake, coalesced into
+  spans, and validates them. CheckerSymbols and FieldInfo are read only
+  under `--testapi`; DeclFileTab is never read. Host `--rtbake` uses
+  `file.openRead`; `CLARUS_BAKE_READLOG=1` logs every read. New
+  `tests/bake/lazyread.sh`; `bodyhash.sh` became `stamphash.sh`; the
+  format fixtures were retargeted to v9. −1,546,984 on
+  `bookmarks_rtbake` (including a dead 131 KB `bkLoadBuf` box).
+- **Task 7: the library in the data fork.** `emit68k --bake-ir FILE`
+  now puts the library in the MacBinary data fork (the stamp stays a
+  `CLFS` resource, `__clarusc_stamp__`); the `__clir_bake_68k__`
+  resource is gone. ClarusC finds its own file with `GetAppParms`,
+  then `PBGetFCBInfo` on its resource-file refnum for the volume and
+  folder, sets that folder as the default around `file.openRead`, and
+  restores the caller's default. A library that is missing, empty,
+  refused (format/version/lane/stamp) or fails to load falls back to
+  the `CLFS` sources (`driveCompileFork` recompiles from source after
+  a load failure). The directory check now also requires each section
+  to belong to the lane (it had crashed on a retagged section). New
+  `toolbox/segload.cla` catalog file (`GetAppParms`, `UnloadSeg`,
+  `ExitToShell`); new `tests/bake/clarusc_container.sh` and
+  `tests/bake/resident_fallback.sh`; `build-clarusc-mac.sh` takes
+  `CLARUSC_BIN`/`CLARUSC_MAC_OUT`. Review fix round 1: the first
+  version used `apRefNum` (a file refnum) as a volume refnum.
+- **Task 8: trims, final regeneration, ratchet.** A pre-sized output
+  fork (no data copy; each segment released as its `CODE` copy is
+  made): −246,092. Flat per-function pool refs (`cgFuncPoolRefs` +
+  `cgFuncPoolFirst` replace four list-of-list globals): −146,436.
+  `a68Items` and `bkObjBuf` released before the fork: −165,048.
+  `irTypes` shrunk after lowering (+64 headroom), `cgSizeMemo` grows by
+  64: −75,192. ClarusC saves and restores the default with
+  `PBHGetVol`/`PBHSetVol`, and a scripted `askOpen` now moves the
+  default the way a real `SFGetFile` does (ruling R13);
+  `snow_extract_app` also looks at the Clarus volume root. The
+  snapshot was regenerated and the budgets ratcheted.
+- **Task 9:** the IIcx gates and re-measure, this entry, and the
+  program design's §9/§9.5.
+
+The core suite is 91 cases (90 → 91: `OpenRead`); the toolbox suite is
+unchanged at 41. Every compiled program stayed byte-identical to its
+from-source build in every task (the identity check and the
+`CLARUS_BAKE_FULL=1` sweep); no golden moved.
+
+**The numbers.** Full tables and the census are in the program design's
+§9.5.
+
+| Subcase            | Wave 3 peak | Wave 4 peak |    Budget |
+|--------------------|------------:|------------:|----------:|
+| `bookmarks_rtbake` |   3,399,176 |   1,194,744 | 1,206,692 |
+| `bookmarks_src`    |   7,377,444 |   6,923,184 | 6,992,416 |
+| `hello_src`        |   7,308,336 |   6,919,612 | 6,988,809 |
+
+- **The 1.2 MB exit is met:** 1,194,744 is 63,547 bytes (5.1%) under
+  1,258,291. From the wave's start (3,404,020, after the log/trace
+  detour) that is −2,209,276 (−64.9%).
+- The peak moved from `Built fork` to `Emitted segment 4`. At the peak:
+  `strIndex` 164 KB, `bkObjBuf` 151 KB (exactly the reachable object
+  code), `a68Items` 139 KB, `irTypes` 71 KB. `irExprs`/`irStmts` are
+  gone from the top.
+- A `hello-mac` compile reads 278,211 bytes of the 775,953-byte 68k
+  library, `bookmarks` 389,457 (Task 6).
+- **IIcx** (same machine and input as Waves 0–3): launch→low heap used
+  **2443 KB, down from 6111 KB** (−3668 KB, −60.0%; −9592 KB, −79.7%,
+  from Wave 0), now at `Emitted segment 4`. The SE target is 2221 KB,
+  222 KB below. The saving is in place by `pre-compile` (−3957 KB: no
+  1879 KB resource read, no body hash). Stack high-water 194 KB of
+  752 KB (Wave 3: 187 of 737; not attributed). The "Verifying →
+  Starting" span is **27 s** (Wave 3: 1m 53s). Compile total **4,993
+  ticks** (Wave 3: 35,298), 1m 23s guest; `Measured`, the segment
+  emits and `Built fork` account for almost all of the drop. One run
+  per side; not attributed per task.
+  - The host gate and the IIcx now differ by ~1.3 MB at the low point
+    (down from ~2.7 MB).
+
+**Rulings** (from the ledger, each with its stated cost if wrong):
+
+- **R1.** Wave A's Tasks 1–4 ran as four concurrent implementers in
+  separate worktrees (CLAUDE.md and the plan mandate parallel tracks,
+  overriding the skill's no-parallel default). Cost: merge conflicts in
+  `cg68k.cla`, resolved at integration.
+- **R2.** A file "open for writing elsewhere" is not a required failure
+  case for `file.openRead`: Mac `fsRdPerm` and POSIX `O_RDONLY` both
+  legitimately succeed beside a writer. The core case covers the
+  missing file and writes through the read-only handle. Cost: a later
+  test adds that case.
+- **R3.** A read-only handle's `flush()` succeeds (a no-op) instead of
+  failing: flushing a read-only file writes nothing and both OSes
+  accept it; the controller's earlier ruling over-reached. Cost: 2
+  lines on the host and an FCB permission check on the 68k later.
+- **R4.** Task 3's `hello_src` +616 B (100.0% of budget) was accepted
+  unratcheted: Task 4's −458 KB landed in the same merge wave, and
+  Task 8 ratchets. Cost: none (T1 stays green once Task 4 merges).
+- **R5.** `ShakeSummary` stores callee NAMES (interned) in walk order
+  with duplicates, not sorted `irFuncs` indices as the plan said:
+  shake's edge order and multiplicity feed the worklist and
+  `cgStackHeuristic` (byte-identity), and synthesized dispatchers have
+  no bake index. The spec's §3.2 intent (shake without IR) is met.
+  Cost: a summary ~2× larger than planned (15.9 KB); it can be packed
+  as u16 pool indices.
+- **R6.** Memgate headroom after Tasks 2 and 3 (`hello_src` 100.0%,
+  rtbake 99.8%) was accepted with no budget edit before Task 8: Task 4
+  merges in the same wave. Cost: T1 red mid-merge, fixed by merge
+  order.
+- **R7.** A `cgHoleSynthCall`'s `sym` is the pool index of the
+  reverse-waist EXTERN's name (mapped through `lowUiSynthExternName` at
+  paste), not the dispatcher's: dispatcher names are interned after the
+  pool freezes. Cost: none functional; Task 6 had to keep that pool
+  entry resident.
+- **R8.** Wave A merged in the order 1, 4, 2, 3, not 1, 2, 3, 4:
+  Task 1's +22 KB and Task 2's +21 KB together exceed the rtbake budget
+  without Task 4's −73 KB, so merging Task 4 second keeps every
+  intermediate T1 green. Cost: none.
+- **R9.** Task 5 (a generated 4 MB snapshot) had no reviewer seat:
+  `selfhost/fixedpoint` 6/6 is the only meaningful review, and the
+  controller checked that the commit touched `clarusc/clarusc.c` alone.
+  Cost: none.
+- **R10.** The C-lane library keeps its IR bodies (cprint prints
+  runtime bodies for host `emit --rtbake`); the spec's goal and exit
+  are ClarusC's 68k path, and W3 keeps host from-source whole. Cost:
+  host C `--rtbake` stays heavy (no measured gate on it).
+- **R11.** `PBGetVolSync` (and, after the fix round and Task 8,
+  `PBGetFCBInfoSync`, `PBHGetVolSync`, `PBHSetVolSync`) stay declared
+  locally in `macgui.cla`, not in `toolbox/files.cla`: adding one to the
+  catalog put a new extern prototype into every UI program's emitted C
+  and moved the emitui goldens, and spec §4 allowed no golden move for
+  that task. Cost: catalog entries missing; add them with a deliberate
+  golden rebless later.
+- **R12.** `build-clarusc-mac.sh` keeps `--bake-ir FILE` (now meaning:
+  library into the data fork + stamp resource) instead of a new
+  `--data-fork` flag. Cost: a flag rename later.
+- **R13.** Task 8 added the scripted `askOpen`'s default-directory move
+  in `macgui.cla` (imitating `SFGetFile`'s `PBSetVol` to the reply's
+  folder) plus the `PBHGetVol`/`PBHSetVol` save/restore, so the IIcx
+  `clarusc_bake` run proves the different-folder discovery, the only
+  hardware proof available. Cost: the scripted `askOpen` may behave
+  differently from real Standard File; a real launch is still the final
+  word.
+
+**Gates.** T2 (`scripts/test-merge.sh`, on the final tip): <T2 result>.
+`CLARUS_SNOW_TESTS=1 make test T='mactest/snow/clarusc_bake
+mactest/snow/macresident mactest/snow/macresident_failed_compile'`, on
+the Mac IIcx: <clarusc_bake result>. Task 9's first IIcx pass had all
+four Snow scripts green: `clarusc_bake` PASS in 129 s on the bake path
+(`clarusc: bake path (CLIR library in the data fork)`, no `CLFS`
+fallback; "Installed baked runtime" 226 ticks), `macresident` and
+`macresident_failed_compile` PASS (which also boot-verifies the
+log/trace detour's TickProbe change, that entry's R3), and
+`clarusc_memprobe` 5/5. Per-task T1 runs all passed (127–132 pass,
+38 skip, 0 fail, perfgate 1/1); `CLARUS_BAKE_FULL=1` `bake/` passed in
+every task that ran it (33–38 scripts, growing with the new ones).
+
+**Deferred / recorded.** Items that outlive the wave are in
+`docs/TODO.md`'s Wave 4 section: the `strIndex` trim (~130 KB, Wave 5),
+the host/IIcx gap, the `files.cla` catalog entries (R11), the
+read-only `flush` (R3), the tight self-compile segment, the whole-compile
+fallback, the default-directory restore form, stale comments, and the
+reviewers' smaller minors.
+
+Spec: `docs/superpowers/specs/2026-09-29-se-wave4-lazy-library-design.md`;
+plan `docs/superpowers/plans/2026-09-29-se-wave4-lazy-library.md`. The
+per-task briefs, reports and ledger are git-ignored scratch; the
+rulings are in this entry.
+
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of

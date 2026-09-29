@@ -499,13 +499,64 @@ it. Recorded so the work is not lost, not scheduled.
 The SE memory program (2026-09-27) resumed work on this target. See
 `docs/ROADMAP.md`.
 
-### Opt-in log file (2026-09-29)
+### SE memory program, Wave 4 (2026-09-29)
 
-- **`memgate` `hello_src` is at 99.9% of its budget** (peak 7,377,464
-  / 7,381,420 B) after the detour's runtime growth (+62 KB, a container
-  step during "Lowered"; `bookmarks_src` fell). The next few hundred
-  bytes of `native.cla` may trip it. Budgets are lower-only, so the fix
-  is a memory saving, not a raise. Address it first thing in SE Wave 4.
+- **`strIndex` is the largest entry at the rtbake peak** (164 KB: a
+  `map of int` whose keypool duplicates `strBlob`). An open-addressed
+  index over `strBlob`/`strOff` saves ~130 KB but rewrites `intern`,
+  the hot path of every compile, and bake's pool install. Wave 5
+  lever, with `a68Items`' 68-byte record (139 KB at the peak).
+- **The Toolbox calls ClarusC's discovery uses are not in the
+  catalog** (ruling R11): `PBGetVolSync`, `PBGetFCBInfoSync`,
+  `PBHGetVolSync`, `PBHSetVolSync` and the `FCBPBRec`/`WDPBRec` records
+  are declared locally in `macgui.cla`. Moving them into
+  `toolbox/files.cla` adds prototypes to every UI program's emitted C
+  and moves the emitui goldens; do it in a phase that blesses.
+- **A read-only `filehandle`'s `flush()` succeeds** (ruling R3). To
+  make it fail: `fcntl(F_GETFL)` in the host `FhHFlush`, the FCB
+  write-permission bit on the 68k.
+- **The self-compile segment budget is tight.** `cgPackProgram`'s
+  segment carries the per-segment `cg_free_globals` glue, and every
+  handle-typed clarusc global adds a release there. At Task 6, 2 more
+  such globals fit and a third failed `function cgPackProgram exceeds
+  the 32KB segment limit`; Task 8 removed 2 net, so about 4 fit now.
+  Fix: split `cgPackProgram` or trim globals.
+- **The library-load fallback reruns the whole compile from source**
+  (`driveCompileFork`) -- slow on the Mac, but only on a corrupt
+  library. It logs only `diags[0]` before falling back.
+- **ClarusC restores the caller's default as (volume, dirID)**, not
+  the WD refnum it had; a later `PBGetVol`-only caller would see just
+  the volume. Nothing in ClarusC does that today. An exact WD restore
+  is optional.
+- **The scripted `askOpen` default move is an imitation** (ruling
+  R13): `gcScriptedSetDefault` sets the default from the answer's
+  folder prefix, as `SFGetFile` does; a real launch with a real dialog
+  remains the final proof of the different-folder discovery.
+- **Object-code corruption is caught at the lazy read, not at load**:
+  a compile only validates the records it reads, so a corrupt record
+  of an unreached function is never noticed. The compile still fails
+  cleanly (or falls back on ClarusC).
+- **DeclFileTab is written but never read** (its path set comes from
+  `bkSecManifestHashes`' keys): a dead section in every library.
+- **Smaller Wave 4 minors** (from the task reviews):
+  `cg68k.cla` ~l.1281 overlong doc-comment line; `driveFreeFrontEnd`'s
+  comment should say its `toks`/`lexSrc` release is now a safety net;
+  `rtFhDevOpenRead` is a deliberate near-copy of `rtFhDevOpen` (golden-
+  preserving) and needs a comment saying why; the `OpenRead` case
+  leaves `core_openread.dat` in the cwd (as `cases_fileh` does);
+  `shake.cla` ~l.592 has a redundant `fIdx < shakeSumFuncs` guard;
+  `--shake-dump` reflects only the last `shakeProgram` run (say so in
+  a comment); `lower.cla` ~l.8433 has a stale "TAINTS" comment;
+  `asm68k`'s `trapNameIdx` field comment should mention the
+  synth-call tag; Task 1's +1024 B on both `_src` memgate subcases is
+  unexplained; `tests/bake/untaint.sh` should `grep -m1`; the header
+  read log counts `bkHeaderMax` (4096) bytes, not the bytes used;
+  `app68Build` (`app68k.cla` ~l.660) is unused and lacks
+  `app68BuildFork`'s note (delete it); `macgui.cla` ~l.1252's
+  `NewPtr(256)` (test path) is not nil-checked; `cgFuncPoolAt` rescans
+  its range per call (quadratic at bake time, small n).
+
+### Opt-in log file (2026-09-29)
 
 - **`drive.cla` `dirOf` splits only on `/`.** An HFS path such as
   `Clarus:bookmarks.cla` gives `dirOf(...) == ""`, so the volume is
@@ -551,7 +602,12 @@ The SE memory program (2026-09-27) resumed work on this target. See
   (program design §9.4): still ~2.7 MB (host 3,399,176 bytes = 3320 KB,
   IIcx 6111 KB used); the host also credits ~75 KB of arena saving the
   68k layout does not see, and Wave 3's +63 KB launch free and the
-  +2397 ticks in `Built fork` are unattributed.
+  +2397 ticks in `Built fork` are unattributed. Wave 4 (§9.5): ~1.3 MB
+  (host 1,194,744 bytes = 1167 KB, IIcx 2443 KB used); the CLIR
+  resource term is gone, the ~1 MB CODE term was not re-measured, and
+  Wave 4's +848 KB at `Parsed`, 86% tick drop, stack 187 → 194 KB and
+  737 → 752 KB reserve, and 27 s "Verifying → Starting" span are
+  unattributed.
 - **`MoreMasters`' 64 per call is unproven on the target.** `macgui.cla`
   calls it 153 times assuming the zone's `moreMast` is 64; a memprobe
   line peeking the zone header would confirm it. The comment's
@@ -561,33 +617,27 @@ The SE memory program (2026-09-27) resumed work on this target. See
 - **A crafted bake with a valid hash can make `bkFitCount` reserve tens
   of MB.** It caps a count at remaining bytes / 4, but most elements
   are far larger than 4 bytes on the wire, so a per-reader minimum
-  wire size would bound it properly. (A corrupt bake fails the body
-  hash first.)
+  wire size would bound it properly. (Since CLIR v9 there is no body
+  hash; the section directory bounds each reader to its section's
+  length, which caps the damage at that length / 4 elements.)
 - **`text.reserve(n)` rounds up to a power of two** (through
   `rtTextGrow`) while `list.reserve(n)` is exact. Task 8 had to
   `shrink()` its blob after reserving; the reference should say which,
   or the two should agree (changing `text.reserve` moves goldens).
-  The concrete cost: `bkReadObjCode`'s obj-code blob
-  (`lRunBytes.reserve`) briefly takes 256 KB for 154,668 B before the
-  `shrink()` -- on the 4 MB SE an extra ~107 KB contiguous request at
-  parse time, and the trimmed tail leaves a hole mid-heap (not at the
-  measured peak, which is `Built fork`).
+  The concrete cost now: `app68k.cla` ~l.89 reserves the output fork
+  (Wave 4 Task 8) and gets up to 2× before the `shrink()` -- slack at
+  the peak, and a hole mid-heap on the SE.
 - **`bkReadStrPool`'s blob is not pre-sized.** It reserves the offsets
   list but grows the blob by doubling -- the kind of transient Wave 2
   removed elsewhere. `expectedPos - bkLoadPos` (the section length) is
   an upper bound to reserve up front. Perf only.
-- **`bkLoadBase` is write-only** (`bake.cla`): set as `removeFirst`
-  trims `bkLoadBuf`, read by nothing (every parse position is
-  relative). Delete it, or keep it knowingly as diagnostic state.
 - **Task 3's encode-drift guard `abort()`s** instead of a clean
   diagnostic and `false`: it is an internal invariant, but on the Mac it
   kills ClarusC. `a68SelfExercise` also has no direct flush /
   forward-reference fixup case (the goldens and bake twins cover it
   indirectly).
-- **Smaller Wave 2 gaps:** `bkReadObjCode`'s per-function lists are not
-  pre-sized; `cgObjRunAdd` copies each run twice at capture; nothing
-  tests `bkObjRunScan`'s clamp directly; `dblcompile_bake` does not
-  assert that the `bkHeaderVerified` branch was taken; `memcensus.sh`
+- **Smaller Wave 2 gaps:** `cgObjRunAdd` copies each run twice at
+  capture; `memcensus.sh`
   writes its duplicate-box table before its `n < 4096` guard (353
   globals today), names only the last alias in `also=`, shares
   `$BR/memcensus` with manual runs, and gives no message for a missing
@@ -612,6 +662,10 @@ The SE memory program (2026-09-27) resumed work on this target. See
   `driveCompile` twice without re-arming `rtbakeBytes` gets a
   bad-header diagnostic instead of a from-source compile. Drop the
   assignment (leave it false) or have the fallback own re-arming.
+  Since Wave 4 the front end's `rtbakeFh` stays open across the
+  fallback (`driveDropLibrary` drops only the loader's reference), so
+  the restored flag may now point at a usable handle: re-check, and
+  delete this entry if so.
 - **`irStorageRow` caches misses until `irReset`.** Since Task 5,
   `irStorAdd` probes `strIndex.get(intr, -1)` instead of interning, so
   an intrinsic name not yet in the pool gets row value −1 and stays
@@ -709,13 +763,6 @@ The SE memory program (2026-09-27) resumed work on this target. See
   (`TestRtbakeDriftFallback` appends a comment byte); stronger variant
   (add + call a new extern) recorded, unimplemented.
 
-- **Taint-and-discard is silent/uncounted** (object-code-linker): a
-  "captured N of M, D discarded" log line or floor assertion would
-  surface silent baked-set shrinkage.
-
-- **`bkObjRelocSymValid` never validates `kind` range** — `kind=99`
-  falls through the class switch as `Label`.
-
 - **`srcSlot` derivation over-broad** (cg68k paste fixups): claims any
   A5-relative source is the hole rather than exactly the classified
   slot.
@@ -730,15 +777,13 @@ The SE memory program (2026-09-27) resumed work on this target. See
   `cgObjApplyGlueUsage`-style replay or it silently reproduces
   object-code-linker Task 3's bug 3.
 
-- **`bkReadObjCode` spins on a corrupt `nHoles` count** before the
-  framing check fires (pre-existing).
-
-- **Comment-drift minors** (clir-load-perf): `bkParsedValid` should
-  state "lane cannot change mid-session"; `bkLoadOverrun` names only
+- **Comment-drift minors** (clir-load-perf): `bkLoadOverrun` names only
   `bkGetByte` as a setter (four exist); `rtTextStringAt` cites a moved
-  idiom; `bkCheckRtbakeHeader`'s header doc still names
-  `bkHashTextFrom`; `drive.cla`'s "rtbakeBytes still held"
-  parenthetical is wrong for the memoized drift-interleaving case.
+  idiom. SE Wave 4 left more: `bake.cla` ~l.60–72 still describes the
+  v4 `bkHeaderBodyHash` and ~l.402 a body-integrity check (v9 has no
+  body hash; `bkHashTextFrom` may be dead); `cg68k.cla` ~l.15721 says
+  `bkLdObjValid` is written by `bkReadObjCode` (gone);
+  `scripts/memcensus.sh` ~l.46 names `cv_rtbakeBytes` (gone).
 
 ### Test coverage
 

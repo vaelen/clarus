@@ -1,6 +1,9 @@
 # SE memory program, Wave 4: Lazy runtime library (spec, 2026-09-29)
 
-Status: **spec, awaiting review.** Branch `se-wave4-lazy-library`.
+Status: **implemented on branch `se-wave4-lazy-library` (2026-09-29),
+pending merge.** `bookmarks_rtbake` 1,194,744 (budget 1,206,692; target
+1,258,291 met); measurements in the umbrella's §9.5, rulings and
+deviations from this spec in `docs/HISTORY.md`'s Wave 4 entry.
 Umbrella: `2026-09-27-se-memory-program-design.md` (§6 Wave 4 is the
 brief; D1, D2, D12 are decided inputs). Wave 3's numbers: umbrella §9.4.
 
@@ -33,14 +36,14 @@ functions its program reaches, and never loads runtime IR bodies at all.
 
 ## 2. Decisions (Andrew, 2026-09-29)
 
-| #   | Decision                                                                                                                                                                                                                  |
-|-----|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| W1  | **One wave, the full set**: untaint, shake summary, no IR bodies, the data-fork `readAt` library, plus the extra levers toward 1.2 MB (§3.5). The number self-revises if missed.                                            |
-| W2  | **The library lives in ClarusC.APPL's data fork.** A 68k application's code is in its resource fork (`CODE` resources); its data fork is empty today (0 bytes, measured). One file ships; the library cannot drift from its compiler. |
-| W3  | **The host from-source path stays whole-runtime.** It is the byte-identity oracle every bake test compares against. It only gets the early token/lexer free (§3.5).                                                        |
+| #   | Decision                                                                                                                                                                                                                                                                             |
+|-----|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| W1  | **One wave, the full set**: untaint, shake summary, no IR bodies, the data-fork `readAt` library, plus the extra levers toward 1.2 MB (§3.5). The number self-revises if missed.                                                                                                     |
+| W2  | **The library lives in ClarusC.APPL's data fork.** A 68k application's code is in its resource fork (`CODE` resources); its data fork is empty today (0 bytes, measured). One file ships; the library cannot drift from its compiler.                                                |
+| W3  | **The host from-source path stays whole-runtime.** It is the byte-identity oracle every bake test compares against. It only gets the early token/lexer free (§3.5).                                                                                                                  |
 | W4  | **The on-demand checker interface is out of scope.** ClarusC compiles with `testapi = false` (`clarusc/macgui.cla` `gcCompile` → `driveCompile(entries, false)`), which already skips the checker-symbol section (`bake.cla:3794-3802`). Only host `--testapi` suite builds read it. |
-| W5  | **Read-only open is user-facing**: `file.openRead(path)` returns a read-only `filehandle` on both lanes.                                                                                                                  |
-| W6  | **The version check is a header stamp** (format version + compiler stamp). The full-body hash goes (1m53s on the IIcx in Wave 3, and incompatible with partial reads).                                                    |
+| W5  | **Read-only open is user-facing**: `file.openRead(path)` returns a read-only `filehandle` on both lanes.                                                                                                                                                                             |
+| W6  | **The version check is a header stamp** (format version + compiler stamp). The full-body hash goes (1m53s on the IIcx in Wave 3, and incompatible with partial reads).                                                                                                               |
 
 ## 3. Work
 
@@ -170,15 +173,15 @@ The list is `nat_UiLaunchReal`, `rtUiOpen`, `rtUiTeardownWindow`,
 
 ## 4. Output policy
 
-| Change                                         | Label                                                                                   |
-|------------------------------------------------|-----------------------------------------------------------------------------------------|
-| untaint, shake summary, lazy load               | byte-identical for every compiled program (bake identity gates, full-corpus sweep)       |
-| CLIR v9 format                                  | output-changing for the library itself: `tests/bake/` format fixtures move once          |
-| `file.openRead`                                 | byte-identical for programs that do not call it; runtime growth moves goldens once       |
-| ClarusC.APPL container                          | output-changing for ClarusC.APPL only (data fork added, resource removed)                |
-| extra levers                                    | byte-identical (compiler internals)                                                       |
-| snapshot regenerations                          | serialization points                                                                     |
-| memgate budgets                                 | ratchet down, one commit                                                                 |
+| Change                            | Label                                                                              |
+|-----------------------------------|------------------------------------------------------------------------------------|
+| untaint, shake summary, lazy load | byte-identical for every compiled program (bake identity gates, full-corpus sweep) |
+| CLIR v9 format                    | output-changing for the library itself: `tests/bake/` format fixtures move once    |
+| `file.openRead`                   | byte-identical for programs that do not call it; runtime growth moves goldens once |
+| ClarusC.APPL container            | output-changing for ClarusC.APPL only (data fork added, resource removed)          |
+| extra levers                      | byte-identical (compiler internals)                                                |
+| snapshot regenerations            | serialization points                                                               |
+| memgate budgets                   | ratchet down, one commit                                                           |
 
 ## 5. Sequencing
 
