@@ -27,8 +27,8 @@ static size_t rt_wl_len = 0;
 
 void rt_app_flush_log(void) {
     if (!rt_wl_file || rt_wl_len == 0) return;
-    fwrite(rt_wl_buf, 1, rt_wl_len, rt_wl_file);
-    fflush(rt_wl_file);
+    if (fwrite(rt_wl_buf, 1, rt_wl_len, rt_wl_file) != rt_wl_len || fflush(rt_wl_file) != 0)
+        rt_set_lasterr(2, "could not write log file");
     rt_wl_len = 0;
 }
 

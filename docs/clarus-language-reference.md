@@ -1697,7 +1697,9 @@ Lines collect in a 4 KB buffer, which is written to the file in one piece when t
 
 `on App.log` (Chapter 7) fires for every `log(...)` call whether or not a log file is on — the log file and the handler are independent consumers of the same lines.
 
-Test builds of a native program use the compiler's `--capture` mode (implied by `--events`), which keeps the runtime's own test-capture file; `app.writeLog` still writes the named file there too.
+`app.writeLog`'s `name` is resolved against the default folder at the time of the call, so a later `askOpen` or `askSave` (which make the chosen folder the default) does not move the log. If a write to the log file fails, the pending lines are dropped and `lastError` is set.
+
+Test builds of a native program use the compiler's `--capture` mode (implied by `--events`), which keeps the runtime's own test-capture file. There, `app.writeLog` still writes the named file, but it receives only `log(...)` lines and runtime-error reports (a command-line program's uncaught `abort` is logged, so it arrives too); UI trace lines, `alert(...)` text and a GUI program's uncaught-abort report go only to the capture file, and `app.trace(false)` has no effect.
 
 ### Date and Time
 

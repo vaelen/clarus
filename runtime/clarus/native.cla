@@ -176,6 +176,11 @@ external func NatWrite(pb: ptr): int = trap 0xA003 reg
 external func NatSetEOF(pb: ptr): int = trap 0xA012 reg
 external func NatClose(pb: ptr): int = trap 0xA001 reg
 external func NatFlushVol(pb: ptr): int = trap 0xA013 reg
+// NatGetVol (log-trace-optin): PBGetVolSync, Files.h:1384
+// `ONEWORDINLINE(0xA014)`, `#pragma parameter __D0 PBGetVolSync(__A0)` --
+// the same bare `reg` shape as NatFlushVol. natAppWriteLog records the
+// default directory (a working-directory refnum under HFS) with it.
+external func NatGetVol(pb: ptr): int = trap 0xA014 reg
 external func NatRead(pb: ptr): int = trap 0xA002 reg
 external func NatHLock(h: ptr) = trap 0xA029 reg
 external func NatHUnlock(h: ptr) = trap 0xA02A reg
@@ -311,6 +316,7 @@ var natCapture: bool
 var natWlPb: ptr
 var natWlBuf: ptr
 var natWlName: ptr
+var natWlVRef: int
 var natWlLen: int
 var natWlOpen: bool
 var natTraceOn: bool
@@ -551,10 +557,13 @@ func natAppTrace(enable: int) {
     natTraceOn = enable != 0
 }
 
-// natWlOpenFile opens natWlName read/write on natWlPb; the refnum, or -1.
+// natWlOpenFile opens natWlName read/write on natWlPb, relative to the
+// directory app.writeLog recorded (natWlVRef) -- not the current default,
+// which askOpen/askSave move to the folder the user picked. The refnum,
+// or -1.
 func natWlOpenFile(): int {
     pokel(natWlPb + natIoNamePtr, int(natWlName))
-    pokew(natWlPb + natIoVRefNum, 0)
+    pokew(natWlPb + natIoVRefNum, natWlVRef)
     pokel(natWlPb + natIoMisc, 0)
     pokeb(natWlPb + natIoPermssn, natFsRdWrPerm)
     NatOpen(natWlPb)
@@ -564,18 +573,19 @@ func natWlOpenFile(): int {
     return peekw(natWlPb + natIoRefNum)
 }
 
-// natWlCloseFile closes refnum ref, then flushes the default volume.
+// natWlCloseFile closes refnum ref, then flushes the log's volume.
 func natWlCloseFile(ref: int) {
     pokew(natWlPb + natIoRefNum, ref)
     NatClose(natWlPb)
     pokel(natWlPb + natIoNamePtr, 0)
-    pokew(natWlPb + natIoVRefNum, 0)
+    pokew(natWlPb + natIoVRefNum, natWlVRef)
     NatFlushVol(natWlPb)
 }
 
 // natAppFlushLog: app.flushLog() -- open, append the buffer at EOF
 // (fsFromLEOF, offset 0), close, FlushVol. A file that can no longer be
-// opened drops the pending lines rather than growing without bound.
+// opened drops the pending lines (lastError says so) rather than growing
+// without bound.
 func natAppFlushLog() {
     var ref: int
 
@@ -591,6 +601,8 @@ func natAppFlushLog() {
         pokel(natWlPb + natIoPosOffset, 0)
         NatWrite(natWlPb)
         natWlCloseFile(ref)
+    } else {
+        rtSetLastErr(2, "could not write log file")
     }
     natWlLen = 0
 }
@@ -610,7 +622,14 @@ func natWlAdd(s: ptr) {
 // current log, then creates `name` (stamped TEXT/creator, the app's packed
 // app.id, when new) and proves it opens read/write. A failed open leaves
 // logging off and sets lastError -- no abort. Same Create/SetFInfo/Open
-// discipline as natFileWriteText, on the log writer's own PB.
+// discipline as natFileWriteText, on the log writer's own PB. `name`
+// resolves against the default directory as of THIS call (recorded in
+// natWlVRef), so a later Standard File dialog cannot move the log.
+//
+// Capture mode: natInit holds `out` open for writing, so writeLog("out")
+// fails here with opWrErr and logging stays off -- that collision is what
+// keeps this writer's stream and the capture stream apart
+// (testdata/cg68k/tickprobe.cla relies on it).
 func natAppWriteLog(name: ptr, creator: int) {
     var ref: int
 
@@ -622,8 +641,10 @@ func natAppWriteLog(name: ptr, creator: int) {
         natWlName = NatNewPtr(256)
     }
     TextBlockMoveData(name, natWlName, peekb(name) + 1)
+    pokel(natWlPb + natIoNamePtr, 0)
+    NatGetVol(natWlPb)
+    natWlVRef = peekw(natWlPb + natIoVRefNum)
     pokel(natWlPb + natIoNamePtr, int(natWlName))
-    pokew(natWlPb + natIoVRefNum, 0)
     NatCreate(natWlPb)
     // natWlPb is reused, so zero the FInfo region (ioFDirIndex through
     // fdFldr, 28..47) rather than trusting NewPtrClear, as natInit does.
@@ -646,12 +667,14 @@ func natAppWriteLog(name: ptr, creator: int) {
 }
 
 // natAbortLog: a UI program's uncaught-abort report (cgEmitAbortDefaultCheck)
-// into the log file. Production only -- capture mode's report is the
-// rtUiAlertMsg trace line, unchanged -- and only with trace off, since
-// with trace on that same trace line already lands in the log.
+// into the log file, written out at once -- before the modal alert that
+// follows. Production only: capture mode's report is the rtUiAlertMsg
+// trace line, unchanged. With app.trace(true) that alert's trace line
+// follows the report in the log too.
 func natAbortLog(s: ptr) {
-    if not natCapture and not natTraceOn {
+    if not natCapture {
         natWlAdd(s)
+        natAppFlushLog()
     }
 }
 

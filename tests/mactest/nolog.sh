@@ -20,7 +20,8 @@
 # testdata/mactest/logout.cla that calls app.writeLog("out") -- the
 # capture must be exactly "l1\nl2\nl3\n") and tracelog (a production
 # build of testdata/cg68k/tickprobe.cla, whose app.writeLog("out") +
-# app.trace(true) must leave its UI trace lines in out).
+# app.trace(true) must leave its UI trace lines in out), plus logvol (the
+# log stays in its own folder after the default directory moves).
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
@@ -61,6 +62,19 @@ if [ $rc -eq 0 ]; then
         t_pass logout
     else
         t_fail logout "capture is not exactly l1/l2/l3: $(od -c "$WORK/logout.raw" | head -5)"
+    fi
+fi
+
+# logvol: the default directory moves (PBSetVol, as askOpen/askSave do)
+# after app.writeLog -- the lines flushed after the move must still land
+# in the log's own folder (the fixture checks and reports via `out`).
+prod_boot logvol testdata/mactest/logvol.cla
+printf 'sublog ok\n' > "$WORK/logvol.want"
+if [ $rc -eq 0 ]; then
+    if cmp -s "$WORK/logvol.raw" "$WORK/logvol.want"; then
+        t_pass logvol
+    else
+        t_fail logvol "capture is not \"sublog ok\": $(od -c "$WORK/logvol.raw" | head -5)"
     fi
 fi
 

@@ -1,0 +1,78 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// logvol.cla: tests/mactest/nolog.sh's logvol fixture. A production log
+// must stay in the directory it was opened in when the default directory
+// moves afterwards -- askOpen/askSave do exactly that (PBSetVol to the
+// working directory of the folder the user picked).
+//
+// The log is opened in a fresh :logsub folder (PBOpenWD + PBSetVol, the
+// calls a dialog reply leads to), then the default moves back to the
+// volume root before the flush. The root holds the System file, so the
+// File Manager's search path would find a root-level name anyway; a log
+// in :logsub is the only shape where a flush that resolved against the
+// NEW default would miss (fnfErr, lines dropped). The result is then
+// checked and reported through a second log named `out`.
+
+include "toolbox/memory.cla"
+include "toolbox/files.cla"
+
+// PBOpenWDSync: _HFSDispatch (0xA260) selector 1, the same register shape
+// as toolbox/files.cla's PBGetCatInfoSync. PBGetVolSync: Files.h:1384,
+// ONEWORDINLINE(0xA014), `#pragma parameter __D0 PBGetVolSync(__A0)`.
+// WDPBRec/VolumeParam: ioNamePtr@18, ioVRefNum@22 (52/64 bytes).
+external func PBOpenWDSync(pb: ptr, selector: int): int = trap 0xA260 reg(a0: pb, d0: selector) ret d0
+external func PBGetVolSync(pb: ptr): int = trap 0xA014 reg
+
+func pstr(s: string): ptr {
+    var p: ptr
+    var i: int
+
+    p = NewPtrClear(256)
+    pokeb(p, s.length)
+    i = 0
+    while i < s.length {
+        pokeb(p + 1 + i, int(s[i]))
+        i = i + 1
+    }
+    return p
+}
+
+on App.launch {
+    var pb: ptr
+    var root: int
+    var t: text
+    var ok: bool
+
+    pb = NewPtrClear(64)
+    PBGetVolSync(pb)
+    root = peekw(pb + 22)
+
+    file.makeDir(":logsub")
+    pokel(pb + 18, int(pstr(":logsub")))
+    pokel(pb + 48, 0)
+    ok = PBOpenWDSync(pb, 1) == 0
+    pokel(pb + 18, 0)
+    ok = ok and PBSetVolSync(pb) == 0
+
+    app.writeLog("sublog")
+    log("a")
+
+    // The "dialog": the default directory moves away from the log's.
+    pokew(pb + 22, root)
+    ok = ok and PBSetVolSync(pb) == 0
+    log("b")
+    app.flushLog()
+
+    app.writeLog("out")
+    if not ok {
+        log("setup failed")
+    } else if not file.readText(":logsub:sublog", t) {
+        log("sublog missing")
+    } else if t != "a\x0Ab\x0A" {
+        log("sublog has " + string(t.length) + " bytes")
+    } else {
+        log("sublog ok")
+    }
+    quit 0
+}
