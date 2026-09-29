@@ -1907,6 +1907,11 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             i = i + 1
         }
         drvSpliceActive = false
+        // SE wave 4 (spec %3.5): the from-source path's last expand() is
+        // just above -- free the token arena and lexer source before
+        // check#2 and lowering instead of in driveFreeFrontEnd.
+        toks.release()
+        lexSrc.release()
 
         if earlySpliceDone {
             // runtime-ir-bake Task 5, fix round 2: testapi order --
@@ -2305,6 +2310,15 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     if haveRtbake and bkManifestDriftPath != "" {
         log("clarusc --rtbake: " + bkManifestDriftPath + " differs from the baked copy; falling back to a from-source compile")
         return driveRtbakeFallback(entries, testapi)
+    }
+    // SE wave 4 (spec %3.5): Phase A is the bake path's LAST lex/parse
+    // (driveEarlySplice/driveManifestSplice never run there), so the
+    // token arena and lexer source go now instead of after lowering.
+    // The from-source path frees them after driveManifestSplice's expand
+    // loop instead. Diagnostics carry line/col/path, never source text.
+    if haveRtbake {
+        toks.release()
+        lexSrc.release()
     }
     driveProgressPhase("Parsed user program")
     // Everything expanded so far is the user program's own; everything a

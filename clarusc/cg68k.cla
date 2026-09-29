@@ -1278,7 +1278,8 @@ var cgSerdescSeen: list of int
 // cgFuncUsesUiBlob[i]/cgFuncUsesUiEvents[i] are irFuncs index i's own
 // constant-pool needs (str-lit / enum-table / serdesc indices, deduped;
 // empty/false for an unreachable function, same convention as
-// cgFuncSize). cgSeg1*/cgGlue* are the matching buckets for the two
+// cgFuncSize; every unreachable index of the four int lists shares one
+// empty list, never written -- see cg68Measure). cgSeg1*/cgGlue* are the matching buckets for the two
 // fixed-cost glue regions (see cgRecMode's own comment just above).
 var cgFuncStrLits: list of list of int
 var cgFuncArrLits: list of list of int
@@ -14314,6 +14315,7 @@ func cg68Measure(): bool {
     var allArrLits: list of int
     var allEnumTables: list of int
     var allSerdescs: list of int
+    var noPoolRefs: list of int
 
     a68Reset()
     cgResetCodegenState()
@@ -14398,12 +14400,26 @@ func cg68Measure(): bool {
     cgFuncSerdescs = cgFreshIntListList()
     cgFuncUsesUiBlob = cgFreshBoolList()
     cgFuncUsesUiEvents = cgFreshBoolList()
+    // SE wave 4 (spec %3.5): only a shake-reachable function gets its own
+    // four lists. Every unreachable index shares ONE empty list: nothing
+    // records into it (cgRecord* writes only cgFuncX[cgRecFuncIdx], and
+    // cgRecFuncIdx is set only for reachable functions in the loop below)
+    // and every reader (cgPackProgram, bake's per-function section) just
+    // sees an empty set.
+    noPoolRefs = cgFreshIntList()
     i = 0
     while i < irFuncs.count {
-        cgFuncStrLits.add(cgFreshIntList())
-        cgFuncArrLits.add(cgFreshIntList())
-        cgFuncEnumTables.add(cgFreshIntList())
-        cgFuncSerdescs.add(cgFreshIntList())
+        if shakeReachable(i) {
+            cgFuncStrLits.add(cgFreshIntList())
+            cgFuncArrLits.add(cgFreshIntList())
+            cgFuncEnumTables.add(cgFreshIntList())
+            cgFuncSerdescs.add(cgFreshIntList())
+        } else {
+            cgFuncStrLits.add(noPoolRefs)
+            cgFuncArrLits.add(noPoolRefs)
+            cgFuncEnumTables.add(noPoolRefs)
+            cgFuncSerdescs.add(noPoolRefs)
+        }
         cgFuncUsesUiBlob.add(false)
         cgFuncUsesUiEvents.add(false)
         i = i + 1
