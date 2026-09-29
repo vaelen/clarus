@@ -8018,7 +8018,7 @@ static void clar_fn_rtUiPumpPassive(void) {
     cv_gotEvent = 0;
     clar_fn_rtUiTablesSync();
     cv_ev = clar_fn_UiNewPtr(16);
-    cv_gotEvent = rt_ext_UiGetNextEvent(320, cv_ev);
+    cv_gotEvent = rt_ext_UiGetNextEvent(448, cv_ev);
     while (1) {
         if (!(cv_gotEvent)) break;
         cv_what = rt_peekw((void *)((char *)(cv_ev) + (0)));
@@ -8027,7 +8027,7 @@ static void clar_fn_rtUiPumpPassive(void) {
         } else if (cv_what == 8) {
             clar_fn_rtUiHandleActivate((void *)(intptr_t)(rt_peekl((void *)((char *)(cv_ev) + (2)))), ((rt_peekw((void *)((char *)(cv_ev) + (14))) & 1) != 0));
         }
-        cv_gotEvent = rt_ext_UiGetNextEvent(320, cv_ev);
+        cv_gotEvent = rt_ext_UiGetNextEvent(448, cv_ev);
     }
     rt_ext_UiDisposePtr(cv_ev);
 }

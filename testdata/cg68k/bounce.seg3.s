@@ -5497,7 +5497,7 @@ LBL_63:
         ADDQ.L #4,A7
         MOVE.L D0,-4(A6)
         CLR.W -(A7)
-        MOVE.L #320,D0
+        MOVE.L #448,D0
         MOVE.W D0,-(A7)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
@@ -5568,7 +5568,7 @@ LBL_481:
 LBL_483:
 LBL_482:
         CLR.W -(A7)
-        MOVE.L #320,D0
+        MOVE.L #448,D0
         MOVE.W D0,-(A7)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
