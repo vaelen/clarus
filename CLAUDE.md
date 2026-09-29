@@ -185,7 +185,7 @@ Tiered test gates:
   the AppleTalk pair (spliced into EVERY native build, not usage-gated
   like the host `tcp.cla`/`tcp_c.cla` pair), so they are in `bake.cla`'s
   68k module list, and an edit that moves `tcp.cla`'s GLOBALS moves
-  every one of the 68 `testdata/cg68k/*.s` goldens, not just the TCP
+  every one of the 74 `testdata/cg68k/*.s` goldens, not just the TCP
   ones -- the splice itself did exactly that (+438 B of A5 globals and
   8 extra `rtTextNew` calls at boot in every native program, from
   `tcp.cla`'s `rtTcpPending: text[8]`; see `docs/TODO.md`).
