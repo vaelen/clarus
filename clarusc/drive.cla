@@ -2147,6 +2147,46 @@ func driveCompileForkOnce(entries: list of string): int {
     return 0
 }
 
+external func DrvStackPtr(): ptr = inline sp
+
+// DrvStackForce (TESTONLY, tests/bake/stackguard.sh): the host runtime
+// returns CLARUS_STACKGUARD_FORCE's value (0 when unset), making
+// drvStackGuard abort on its Nth call in the process -- the same
+// abort/attempt path a real overflow takes, which only a native build
+// can reach. On the 68k lane the clause-less extern resolves to the
+// nat_DrvStackForce below (the MemProbe pattern, main.cla): never forced.
+external func DrvStackForce(): int
+
+func nat_DrvStackForce(): int {
+    return 0
+}
+
+var drvSgForce: int
+var drvSgCalls: int
+
+// drvStackGuard aborts the compile when the native stack is nearly
+// exhausted (SE wave 5): ClarusC's reserve is a measured 384 KB, and
+// a 68k stack overflow silently corrupts the heap. Called at the top
+// of every recursive parse/check/lower/codegen walker. On the host
+// DrvStackPtr returns 0 and the guard does nothing (bar the TESTONLY
+// forced abort, checked first so the host test can reach it).
+func drvStackGuard() {
+    var sp: int
+    if drvSgForce > 0 {
+        drvSgCalls = drvSgCalls + 1
+        if drvSgCalls == drvSgForce {
+            abort("source too deeply nested")
+        }
+    }
+    sp = int(DrvStackPtr())
+    if sp == 0 {
+        return
+    }
+    if sp - peekl(ptr(0x0130)) < 65536 {
+        abort("source too deeply nested")
+    }
+}
+
 func driveCompile(entries: list of string, testapi: bool): bool {
     var i: int
     var h: int
@@ -2155,6 +2195,10 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     var wantLane: int
     var isUiProg: bool
     var earlySkip: list of int
+
+    // Read once per compile; drvSgCalls is never reset, so a forced
+    // abort fires once per process and the next compile runs clean.
+    drvSgForce = DrvStackForce()
 
     // findings 1.4 fix round 1: invalidate cg68k.cla's cgFindRecordByName/
     // cgSizeOf lookup caches (cgRecIdxByName, cgSizeMemo) HERE, not only on

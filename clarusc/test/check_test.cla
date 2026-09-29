@@ -18,6 +18,10 @@ include "../check.cla"
 // supplies its own no-op here rather than widening the module's deps.
 func driveProgressTick() { }
 
+// drvStackGuard seam stub, same reasoning: parse.cla/check.cla call drive.cla's
+// depth guard (SE wave 5), a no-op on the host anyway.
+func drvStackGuard() { }
+
 // runCase lexes, parses, and (if the parse was clean) type-checks src,
 // then alerts either "clean" or every diagnostic -- one line per
 // diagnostic family, cross-checked against `clarus check` on the

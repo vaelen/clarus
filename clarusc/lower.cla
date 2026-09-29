@@ -655,6 +655,7 @@ func lowUnsupported(what: string) {
 
 func lowExpr(e: int): int {
     var v: int
+    drvStackGuard()
 
     switch exprKind(e) {
     case ExIntLit {
@@ -3770,6 +3771,7 @@ func lowCountedStore(dst: int, srcAst: int, t: int): int {
 // lowStmt lowers one statement, returning its irStmts index, or -1 for a
 // statement that contributes no IR node.
 func lowStmt(s: int): int {
+    drvStackGuard()
     switch stmtKind(s) {
     case StExprStmt {
         return newIRExprStmt(lowExpr(exprStmtX(s)))

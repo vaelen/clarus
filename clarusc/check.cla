@@ -4977,6 +4977,7 @@ func checkBlock(b: int) {
 // switch's own "no match, no else -> does nothing" rule) rather than
 // silently half-checked.
 func checkStmt(s: int) {
+    drvStackGuard()
     switch stmtKind(s) {
     case StAssign {
         checkAssignStmt(s)
@@ -6489,6 +6490,7 @@ func checkCall(e: int, expected: int): int {
 // returning it.
 func checkExpr(e: int, expected: int): int {
     var t: int
+    drvStackGuard()
     t = checkExprInner(e, expected)
     exprTypeOf[e] = t
     return t

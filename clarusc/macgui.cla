@@ -533,6 +533,10 @@ app ClarusC {
     author: "Andrew C. Young <andrew@vaelen.org>"
     about: "The Mac-resident Clarus compiler."
     id: "CLRC"
+    // SE wave 5: 2x the largest measured high-water (194 KB, IIcx, Wave 4
+    // memprobe), re-measured at each ClarusC-affecting wave close;
+    // drvStackGuard (drive.cla) keeps 64 KB in hand.
+    stack: 393216
 }
 
 window Log {

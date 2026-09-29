@@ -6604,6 +6604,7 @@ func cgMaterializeToTemp(e: int): int {
 
 func cgExprAddr(e: int) {
     var k: IRExprKind
+    drvStackGuard()
 
     k = irExprKind(e)
     if k == EVarRef {
@@ -10533,6 +10534,7 @@ var cgAbortMsgOff: int = 0
 
 func cgExpr(e: int) {
     var k: IRExprKind
+    drvStackGuard()
 
     k = irExprKind(e)
     if k == EIntConst {
@@ -13316,6 +13318,7 @@ func cgStmt(s: int) {
     var savedType: list of int
     var savedNext: int
     var savedBigNext: int
+    drvStackGuard()
 
     savedOffs = cgStmtTmpOffs
     savedType = cgStmtTmpType
