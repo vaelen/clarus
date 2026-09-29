@@ -5,4 +5,5 @@
 # Caveat: measured on Snow's clean System 6 image; a real SE with more
 # INITs/cdevs has less free memory.
 # 2026-09-30 placeholder: set at Wave 5 close.
-0
+# 2026-09-30 Wave 5 close: measured lowest free 1130 KB (Emitted segment 4), floor(0.9 x 1130) = 1017.
+1017
