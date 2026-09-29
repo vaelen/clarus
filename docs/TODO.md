@@ -536,6 +536,14 @@ The SE memory program (2026-09-27) resumed work on this target. See
   a compile only validates the records it reads, so a corrupt record
   of an unreached function is never noticed. The compile still fails
   cleanly (or falls back on ClarusC).
+- **A short ShakeSummary is not cross-checked at load**: the section is
+  validated structurally (`bkShakeSummaryValid`), but a summary with
+  fewer function entries than `bkRuntimeFuncBoundary` is not compared
+  with `bkLdIrFuncs.count`, so a corrupt library could under-mark
+  reachability (the bodyless-library guard `cgObjLibMissing` then
+  likely catches the missing record). `main.cla` ~l.384's
+  `--corrupt-objcode-testonly` comment still talks about the v4 body
+  hash.
 - **DeclFileTab is written but never read** (its path set comes from
   `bkSecManifestHashes`' keys): a dead section in every library.
 - **Smaller Wave 4 minors** (from the task reviews):
