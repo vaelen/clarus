@@ -195,9 +195,11 @@ Tiered test gates:
     toolbox_mac,runerr_mac,abort_mac,appres}.sh`. Demoted off T2 by the
     pack3-standardfile phase (2026-08-07) and kept only as a cross-lane
     localization oracle: the native `emit68k` lane already covers every
-    case they check. Two known failures, unchanged from the retired Go
-    lane: `FileHandleRW: create failed` and `DirOps: exists("") false` in
-    the cprint CORE-suite boot (cprint-lane runtime gaps). The cprint
+    case they check. Three known failures in the cprint CORE-suite boot
+    (cprint-lane runtime gaps): `FileHandleRW: create failed` and
+    `DirOps: exists("") false`, unchanged from the retired Go lane, and
+    `LogFile` (log-trace-optin phase: `rt_app_write_log` is a no-op in
+    `runtime/mac/rt_mac.c`, so no log file is ever written). The cprint
     TOOLBOX twin (`toolbox_mac.sh`) no longer compiles at all and is
     retired to a compile-error state pending the 5f Retro68 retirement:
     the toolbox suite is now 68k-source-only, because its `AdspLeak`
@@ -609,8 +611,9 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   `app.trace(true)` for the UI trace), buffered 4 KB at a time and
   written in the production format (no trailer, no markers). So every
   test that BOOTS a native binary passes `--capture` or `--events`,
-  except the production-log boots: `nolog.sh`'s `nolog`/`logout`
-  subcases, and `mactest/snow/macresident`'s TickProbe launch (compiled
+  except the production-log boots: `nolog.sh`'s `nolog`, `logout`,
+  `logvol`, `logpanic` and `tracelog` subcases (its sixth, `initpanic`,
+  is a `--capture` boot), and `mactest/snow/macresident`'s TickProbe launch (compiled
   on the Mac by ClarusC.APPL, so production; `testdata/cg68k/tickprobe.cla`
   calls `app.writeLog("out")` + `app.trace(true)` itself).
   Compile-only tests (cg68k goldens, bake twins, size) pass

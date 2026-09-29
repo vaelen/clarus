@@ -17,10 +17,14 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 - **Native `app.trace(false)` is untested.** `nolog`'s `tracelog`
   subcase only turns trace on; nothing proves turning it off again stops
   trace lines reaching the log (the host `app.trace` is a no-op).
-- **No native production panic after `app.writeLog`.** `nat_CorePanic`'s
-  production path (log the report, flush, then the ALRT) is covered on
-  the host (`hostrt/logfile` `panic`) and in capture builds, not by a
-  production native boot that checks the log file holds the report.
+- **`PBSetFInfo` on a 64-byte PB.** `natPbSize = 64`, and every
+  native `NatSetFInfo` (`natInit`'s `out`, `natAppWriteLog`,
+  `natFileWriteText` and `natWriteRes` on `natFilePb`) passes such a block.
+  IM's `SetFileInfo` also reads `ioFlCrDat` (offset 72) and `ioFlMdDat`
+  (76), which lie past the end, so a newly created file may get its
+  dates from neighbouring heap bytes. Grow the PB to 80 and set both
+  dates (`GetDateTime`), or confirm against IM that the call ignores
+  them.
 - **Snow `macresident` is unverified** (Snow not run this detour): its
   TickProbe now opts in with `app.writeLog("out")` + `app.trace(true)`
   (ruling R3), and `build-68k.sh`/`build-clarusc-mac.sh --capture` go
@@ -501,7 +505,7 @@ The SE memory program (2026-09-27) resumed work on this target. See
   / 7,381,420 B) after the detour's runtime growth (+62 KB, a container
   step during "Lowered"; `bookmarks_src` fell). The next few hundred
   bytes of `native.cla` may trip it. Budgets are lower-only, so the fix
-  is a memory saving, not a raise.
+  is a memory saving, not a raise. Address it first thing in SE Wave 4.
 
 - **`drive.cla` `dirOf` splits only on `/`.** An HFS path such as
   `Clarus:bookmarks.cla` gives `dirOf(...) == ""`, so the volume is

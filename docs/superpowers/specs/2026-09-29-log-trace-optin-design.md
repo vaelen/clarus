@@ -1,9 +1,9 @@
 # Opt-in log file and UI trace (spec, 2026-09-29)
 
-Status: **spec, awaiting review.** A detour before SE Wave 4, raised by
-Andrew's BBS: a native Clarus app writes and `FlushVol`s its `out` file
-on every UI trace line, so a timer-driven app hits the disk every tick
-and wears out an SD card.
+Status: **implemented** (branch `log-trace-optin`, 2026-09-29). A detour
+before SE Wave 4, raised by Andrew's BBS: a native Clarus app writes and
+`FlushVol`s its `out` file on every UI trace line, so a timer-driven app
+hits the disk every tick and wears out an SD card.
 
 Anchors below are as of `main` at `99a2be8c`.
 

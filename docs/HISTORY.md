@@ -7842,6 +7842,8 @@ boot keeps the old capture protocol byte for byte.
 | R3     | Snow `macresident`'s TickProbe (compiled on-Mac by ClarusC.APPL, i.e. production) opts in with `app.writeLog("out")` + `app.trace(true)`; `macresident.sh` adapts. | Unverified by boot (R2); if wrong, `macresident` fails on the next Snow run. |
 | R4     | Accepted deviations: no long-line direct-write path (lines are ≤255/511 B by construction), open/append/close per flush, `natAppTrace` takes an `int`.             | None measured; one open/close per flush.                                     |
 | R5     | `natAppFlushLog` ignored `NatWrite`'s ioResult; Task 3 checks it and sets `lastError`.                                                                             | Tiny (moved every `testdata/cg68k` golden once more).                        |
+| R6     | Task 3 (ioResult fix, snapshot, docs) reviewed inside the final whole-branch review, not by its own task review.                                                   | One fewer review seat.                                                       |
+| R7     | One final fix wave: `nat_UiTraceOn` also needs `natWlOpen`, native production-panic `nolog` subcase, docs, PBSetFInfo TODO.                                        | One more `testdata/cg68k` rebless and one boot.                              |
 
 **Memgate** (no budget touched):
 
