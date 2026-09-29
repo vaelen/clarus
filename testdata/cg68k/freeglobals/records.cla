@@ -1,0 +1,33 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// records.cla (SE wave 5, tests/cg68k/freeglobals.sh): the program's own
+// handle-typed globals are all records with release walks -- two record
+// types, a nested one, and a fixed array of records, so cg_free_globals'
+// table carries record kinds (cg_release_<Rec>) interleaved in
+// declaration order and one entry per array element.
+
+record Name {
+    first: text
+    last: text
+}
+
+record Entry {
+    id: int
+    who: Name
+    note: text
+}
+
+var owner: Name
+var head: Entry
+var slots: Entry[3]
+var other: Name
+
+on App.launch {
+    owner.first = "Ada"
+    head.who.last = "Lovelace"
+    slots[1].note = "second"
+    other.last = "Byron"
+    log("records " + string(owner.first.length + slots[1].note.length))
+    quit 0
+}

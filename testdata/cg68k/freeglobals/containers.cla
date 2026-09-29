@@ -1,0 +1,22 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// containers.cla (SE wave 5, tests/cg68k/freeglobals.sh): an array-of-
+// text global beside list and map globals (one of them with text values,
+// so its release walks its elements) -- cg_free_globals' table carries
+// one entry per array element plus the container kinds, in declaration
+// order.
+
+var words: text[4]
+var nums: list of int
+var names: map of text
+var more: list of text
+
+on App.launch {
+    words[2] = "two"
+    nums.push(7)
+    names["k"] = "v"
+    more.push("m")
+    log("containers " + string(words[2].length + nums.count + names.count + more.count))
+    quit 0
+}

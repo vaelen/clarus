@@ -1131,7 +1131,9 @@ var cgMod32Lbl: int
 // function-emission loop runs (cg68Program), read here. Task 15: this is
 // now a PER-SEGMENT label (cg_free_globals is duplicated into every
 // segment -- see the Task 15 header comment below), reassigned fresh at
-// the top of each segment's own real-emission pass.
+// the top of each segment's own real-emission pass. SE wave 5: the body
+// behind it is table-driven (cgEmitFreeGlobalsStub); the label and its
+// calling convention (a plain BSR, no arguments) are unchanged.
 var cgFreeGlobalsLbl: int
 
 // ================================================================
@@ -1173,19 +1175,23 @@ var cgFreeGlobalsLbl: int
 // all of them into EVERY segment that might need one, so a call from
 // ANY segment's own code to "the" mul32 helper (or free_globals, or a
 // given record's walk pair) is always an intra-segment BSR.W to THAT
-// segment's own local copy. This is a deliberate simplification (this
-// file's own report elaborates): these routines are small, fixed-size,
-// self-contained (mul32/div32/mod32 never call anything else at all;
-// the RC walkers and free_globals only ever call OTHER duplicated glue
-// or ordinary irFuncs runtime functions, cgCallFunc's normal case),
-// so their total footprint never grows with program size the way user
-// functions do -- duplicating a few hundred bytes of glue into each of
-// N segments is a bounded, one-time cost, and it means this file never
-// needs a second (glue-flavored) jump-table/cross-segment mechanism at
-// all. startup and cg_init_globals are the two exceptions: both run
-// EXACTLY once, always from within segment 1 itself, so they stay
-// segment-1-only, undupped, matching the plan's own "Startup function
-// stays JT slot 0 in CODE 1" requirement.
+// segment's own local copy. mul32/div32/mod32 never call anything else
+// at all; the RC walkers and free_globals only ever call OTHER
+// duplicated glue or ordinary irFuncs runtime functions (cgCallFunc's
+// normal case), so this file never needs a second (glue-flavored)
+// jump-table/cross-segment mechanism. The arithmetic helpers and the RC
+// walks stay duplicated as they are: small and fixed-size (for ClarusC,
+// 352 + 432 bytes a segment at SE wave 5). cg_free_globals did NOT stay
+// small: it unrolled one release per handle-typed global, which for
+// ClarusC was ~11 KB x ~50 segments, about a third of its CODE
+// (docs/TODO.md's former "ABI / performance" entry). SE wave 5 made it
+// TABLE-DRIVEN (cgEmitFreeGlobalsStub): one loop over a DC.W (A5
+// offset, kind) table plus one release body per distinct kind, so each
+// segment's copy grows by 4 bytes per global, not ~18. startup and
+// cg_init_globals are the two exceptions: both run EXACTLY once, always
+// from within segment 1 itself, so they stay segment-1-only, undupped,
+// matching the plan's own "Startup function stays JT slot 0 in CODE 1"
+// requirement.
 //
 // POOL DUPLICATION POLICY. Rather than tracking, per function, exactly
 // which string-literal/enum-table pool entries it references (and
@@ -5576,9 +5582,116 @@ func cgEmitInitGlobalsStub(lbl: int) {
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
 
+// cgFgCollect appends the release leaves of a global of type t at off(A5)
+// to offs/types, in exactly the order cgReleaseAt(5, off, t) visits them:
+// a Text/List/Map/SortedMap/IntMap slot or a handle-bearing record is one
+// leaf; a fixed array recurses per element when the element needs it;
+// every other kind releases nothing. cg_free_globals' table is built from
+// this list, so its order IS the pre-table unrolled order.
+func cgFgCollect(off: int, t: int, offs: list of int, types: list of int) {
+    var k: IRKind
+    var et: int
+    var i: int
+
+    k = irtKind(t)
+    if k == KText or k == KList or k == KMap or k == KSortedMap or k == KIntMap {
+        offs.add(off)
+        types.add(t)
+    } else if k == KRec {
+        if irRecHasHandleField(irtName(t)) {
+            offs.add(off)
+            types.add(t)
+        }
+    } else if k == KArr {
+        et = irtElem(t)
+        if irtNeedsCtor(et) {
+            i = 0
+            while i < irtN(t) {
+                cgFgCollect(off + i * cgArrElemStride(et), et, offs, types)
+                i = i + 1
+            }
+        }
+    }
+}
+
+// cgFgSameType: are IR types a and b structurally equal? They are
+// not interned, so compare kind, n, name and element recursively.
+func cgFgSameType(a: int, b: int): bool {
+    if a == b {
+        return true
+    }
+    if a == -1 or b == -1 {
+        return false
+    }
+    if irtKind(a) != irtKind(b) or irtN(a) != irtN(b) or irtName(a) != irtName(b) {
+        return false
+    }
+    return cgFgSameType(irtElem(a), irtElem(b))
+}
+
+// cgFgSameRelease: does cgReleaseAt(0, 0, t) emit the same code for
+// release leaves a and b, so they can share one table kind? Text always
+// does; a record releases through its own cg_release_<Rec>; a container
+// whose elements need no walk is just its family's lastref-free release
+// whatever the element type, and one with a walk needs structurally equal
+// element types.
+func cgFgSameRelease(a: int, b: int): bool {
+    var k: IRKind
+    var wa: bool
+
+    k = irtKind(a)
+    if k != irtKind(b) {
+        return false
+    }
+    if k == KText {
+        return true
+    }
+    if k == KRec {
+        return irtName(a) == irtName(b)
+    }
+    wa = cgContainerElemNeedsWalk(irtElem(a))
+    if wa != cgContainerElemNeedsWalk(irtElem(b)) {
+        return false
+    }
+    return not wa or cgFgSameType(irtElem(a), irtElem(b))
+}
+
+// FreeGlobalsDump (tests/cg68k/freeglobals.sh): the host runtime prints
+// `freeglobals: SEG IDX A5OFF KIND` per table entry when
+// CLARUS_FREEGLOBALS_DUMP=1, else nothing. On the 68k lane the
+// clause-less extern resolves to the no-op nat_FreeGlobalsDump below (the
+// MemProbe pattern, main.cla).
+external func FreeGlobalsDump(seg: int, idx: int, off: int, kind: int)
+
+func nat_FreeGlobalsDump(seg: int, idx: int, off: int, kind: int) {
+}
+
+// cgEmitFreeGlobalsStub (SE wave 5): cg_free_globals is TABLE-DRIVEN. It
+// used to unroll one cgReleaseAt per global (~18 bytes per text global,
+// ~11 KB for ClarusC, duplicated into every segment). Now each segment
+// carries one loop over a DC.W table of (A5 offset, kind) pairs -- one
+// per release leaf, cgFgCollect's order, which is the old unrolled order
+// -- ended by a 0,0 entry, plus one inline release body per distinct
+// kind (cgFgSameRelease), selected by a compare chain. The body is the very
+// cgReleaseAt the unrolled code ran, addressed through A0 (reg 0, off 0,
+// cgReleaseExpr's shape) instead of off(A5). Like the unrolled code, the
+// loop releases every entry unconditionally (no nil test) and does not
+// clear the slot. -4(A6) holds the table cursor across the
+// release calls (no callee-saved registers); the deep-release scratch
+// sits below it. A program with no release leaves keeps the old empty
+// LINK/UNLK/RTS body, byte for byte, and emits no table.
 func cgEmitFreeGlobalsStub(lbl: int) {
     var i: int
+    var k: int
     var frameSize: int
+    var offs: list of int
+    var types: list of int
+    var kinds: list of int
+    var kindTypes: list of int
+    var tblLbl: int
+    var loopLbl: int
+    var doneLbl: int
+    var nextLbl: int
 
     a68Bind(lbl)
     if a68ListingOn {
@@ -5586,15 +5699,83 @@ func cgEmitFreeGlobalsStub(lbl: int) {
     } else {
         a68CommentMarker()
     }
-    frameSize = 0 - cgReserveDeepScratch(0)
-    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
+    offs = cgFreshIntList()
+    types = cgFreshIntList()
     i = 0
     while i < irGlobals.count {
-        cgReleaseAt(5, cgGlobalOffsets[i], irGlobalType(i))
+        cgFgCollect(cgGlobalOffsets[i], irGlobalType(i), offs, types)
         i = i + 1
     }
+    if offs.count == 0 {
+        frameSize = 0 - cgReserveDeepScratch(0)
+        a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
+        a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
+        a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+        return
+    }
+    kinds = cgFreshIntList()
+    kindTypes = cgFreshIntList()
+    i = 0
+    while i < types.count {
+        k = 0
+        while k < kindTypes.count and not cgFgSameRelease(kindTypes[k], types[i]) {
+            k = k + 1
+        }
+        if k == kindTypes.count {
+            kindTypes.add(types[i])
+        }
+        kinds.add(k)
+        if offs[i] >= 0 or offs[i] < -32768 {
+            abort("cg68k: cg_free_globals: global offset " + numToStr(offs[i]) + " outside the table's negative int16 range")
+        }
+        if cgRecMode == 0 {
+            FreeGlobalsDump(cgCurFuncSegment, i, offs[i], k)
+        }
+        i = i + 1
+    }
+
+    frameSize = 0 - cgReserveDeepScratch(-4)
+    tblLbl = a68NewLabel()
+    loopLbl = a68NewLabel()
+    doneLbl = a68NewLabel()
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
+    a68Emit(OpLea, 0, AmPCLabel, 0, tblLbl, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmDisp16, 6, -4)
+    a68Bind(loopLbl)
+    a68Emit(OpMovea, 4, AmDisp16, 6, -4, AmAn, 0, 0)
+    a68Emit(OpMove, 2, AmPostInc, 0, 0, AmDn, 0, 0)
+    a68EmitBr(OpBcc, 7, doneLbl) // BEQ: the 0,0 terminator
+    a68Emit(OpMove, 2, AmPostInc, 0, 0, AmDn, 1, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmDisp16, 6, -4)
+    a68Emit(OpMovea, 4, AmAn, 5, 0, AmAn, 0, 0)
+    a68Emit(OpAdda, 2, AmDn, 0, 0, AmAn, 0, 0)
+    k = 0
+    while k < kindTypes.count {
+        nextLbl = -1
+        if k < kindTypes.count - 1 {
+            nextLbl = a68NewLabel()
+            a68Emit(OpCmp, 2, AmImm, 0, k, AmDn, 1, 0)
+            a68EmitBr(OpBcc, 6, nextLbl) // BNE: not this kind
+        }
+        cgReleaseAt(0, 0, kindTypes[k])
+        a68EmitBr(OpBra, 0, loopLbl)
+        if nextLbl != -1 {
+            a68Bind(nextLbl)
+        }
+        k = k + 1
+    }
+    a68Bind(doneLbl)
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+    a68Bind(tblLbl)
+    i = 0
+    while i < offs.count {
+        a68DcW(offs[i])
+        a68DcW(kinds[i])
+        i = i + 1
+    }
+    a68DcW(0)
+    a68DcW(0)
 }
 
 // ================================================================

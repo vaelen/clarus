@@ -258,7 +258,7 @@ LBL_0:
         MOVE.L D0,-(A7)
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 1666(A5)
+        BSR.W LBL_200
         ADDQ.L #8,A7
 LBL_239:
         UNLK A6
@@ -6244,7 +6244,7 @@ LBL_525:
 LBL_524:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1778(A5)
+        JSR 1770(A5)
         ADDQ.L #4,A7
 LBL_522:
         UNLK A6
@@ -8994,7 +8994,7 @@ LBL_155:
         BEQ.W LBL_686
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1762(A5)
+        JSR 1754(A5)
         ADDQ.L #4,A7
 LBL_686:
         MOVE.L 8(A6),D0
@@ -12796,18 +12796,29 @@ LBL_862:
 LBL_859:
         UNLK A6
         RTS
-        ; func natLastErrCode  (JT slot 201)
+        ; func nat_CoreSetLastErr  (JT slot 201)
+        ;   param code : 12(A6)  size 4
+        ;   param msg : 8(A6)  size 4
 LBL_200:
         LINK A6,#-2100
-        MOVE.L -7134(A5),D0
-        BRA.W LBL_863
+        MOVE.L 12(A6),D0
+        MOVE.L D0,-7134(A5)
+        LEA -7390(A5),A0
+        MOVE.L A0,-(A7)
+        MOVE.L #255,D0
+        MOVE.L D0,-(A7)
+        MOVEA.L 8(A6),A0
+        MOVE.L A0,-(A7)
+        BSR.W LBL_5
+        ADDA.W #12,A7
 LBL_863:
         UNLK A6
         RTS
-        ; func nat_UiConnPump  (JT slot 202)
+        ; func natLastErrCode  (JT slot 202)
 LBL_201:
         LINK A6,#-2100
-        JSR 1866(A5)
+        MOVE.L -7134(A5),D0
+        BRA.W LBL_864
 LBL_864:
         UNLK A6
         RTS
@@ -12965,66 +12976,61 @@ LBL_876:
         RTS
 LBL_235:
         ; cg_free_globals
-        LINK A6,#-48
+        LINK A6,#-52
+        LEA LBL_877(PC),A0
+        MOVE.L A0,-4(A6)
+LBL_878:
+        MOVEA.L -4(A6),A0
+        MOVE.W (A0)+,D0
+        BEQ.W LBL_879
+        MOVE.W (A0)+,D1
+        MOVE.L A0,-4(A6)
+        MOVEA.L A5,A0
+        ADDA.W D0,A0
+        CMPI.W #0,D1
+        BNE.W LBL_880
         MOVE.L A1,-(A7)
-        MOVE.L -6650(A5),D0
+        MOVE.L 0(A0),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_13
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
+        BRA.W LBL_878
+LBL_880:
+        MOVE.L 0(A0),D0
+        MOVE.L D0,-8(A6)
+LBL_881:
         MOVE.L A1,-(A7)
-        MOVE.L -6646(A5),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_13
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        MOVE.L A1,-(A7)
-        MOVE.L -6642(A5),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_13
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        MOVE.L A1,-(A7)
-        MOVE.L -6638(A5),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_13
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        MOVE.L A1,-(A7)
-        MOVE.L -6634(A5),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_13
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        MOVE.L A1,-(A7)
-        MOVE.L -6630(A5),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_13
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        MOVE.L A1,-(A7)
-        MOVE.L -6626(A5),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_13
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        MOVE.L A1,-(A7)
-        MOVE.L -6622(A5),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_13
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        MOVE.L -7096(A5),D0
-        MOVE.L D0,-4(A6)
-LBL_877:
-        MOVE.L A1,-(A7)
-        MOVE.L -4(A6),D0
+        MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_22
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
+        BRA.W LBL_878
+LBL_879:
         UNLK A6
         RTS
+LBL_877:
+        DC.W $E606
+        DC.W $0000
+        DC.W $E60A
+        DC.W $0000
+        DC.W $E60E
+        DC.W $0000
+        DC.W $E612
+        DC.W $0000
+        DC.W $E616
+        DC.W $0000
+        DC.W $E61A
+        DC.W $0000
+        DC.W $E61E
+        DC.W $0000
+        DC.W $E622
+        DC.W $0000
+        DC.W $E448
+        DC.W $0001
+        DC.W $0000
+        DC.W $0000
         ; constant pool: string literals
 LBL_230:
         DC.B $10

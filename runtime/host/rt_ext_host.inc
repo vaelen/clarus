@@ -150,6 +150,17 @@ void rt_ext_BakeReadLog(int32_t id, int32_t bytes) {
         fprintf(stderr, "bakeread: %ld %ld\n", (long)id, (long)bytes);
 }
 
+/* rt_ext_FreeGlobalsDump: host body of clarusc/cg68k.cla's FreeGlobalsDump
+ * (SE wave 5) -- one `freeglobals: SEG IDX A5OFF KIND` line on stderr per
+ * cg_free_globals table entry when CLARUS_FREEGLOBALS_DUMP=1
+ * (tests/cg68k/freeglobals.sh), else silent. The 68k lane resolves the
+ * extern to cg68k.cla's no-op nat_FreeGlobalsDump. */
+void rt_ext_FreeGlobalsDump(int32_t seg, int32_t idx, int32_t off, int32_t kind) {
+    const char *v = getenv("CLARUS_FREEGLOBALS_DUMP");
+    if (v && strcmp(v, "1") == 0)
+        fprintf(stderr, "freeglobals: %ld %ld %ld %ld\n", (long)seg, (long)idx, (long)off, (long)kind);
+}
+
 /* rt_ext_CoreSetLastErr: core.cla's own extern name (Plan native-5d Task
  * 12.5, lastError storage-inversion fix) -- same "own prefixed name" and
  * str255-to-NUL-terminated-C-string conversion shape as rt_ext_CorePanic
