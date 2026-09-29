@@ -1330,7 +1330,8 @@ func rtUiPumpPassive() {
 
     rtUiTablesSync()
     ev = UiNewPtr(16)
-    gotEvent = UiGetNextEvent(0x0140, ev) // updateMask|activMask
+    gotEvent = UiGetNextEvent(0x01C0, ev) // updateMask|diskMask|activMask
+    // a disk-inserted event is pulled so the Event Manager mounts the volume (System 6 without the Finder: the second SCSI disk mounts only this way); the pump then drops it
     while gotEvent {
         what = peekw(ev + 0)
         if what == 6 {
@@ -1338,7 +1339,7 @@ func rtUiPumpPassive() {
         } else if what == 8 {
             rtUiHandleActivate(ptr(peekl(ev + 2)), (peekw(ev + 14) & 0x1) != 0)
         }
-        gotEvent = UiGetNextEvent(0x0140, ev)
+        gotEvent = UiGetNextEvent(0x01C0, ev)
     }
     UiDisposePtr(ev)
 }
