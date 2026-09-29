@@ -1,13 +1,13 @@
         ; func clar_ui_fire_launchdoc  (JT slot 194)
         ;   param path : 8(A6)  size 4
 LBL_0:
-        LINK A6,#-2100
+        LINK A6,#-52
 LBL_11:
         UNLK A6
         RTS
         ; func clar_ui_fire_startempty  (JT slot 195)
 LBL_1:
-        LINK A6,#-2100
+        LINK A6,#-52
 LBL_12:
         UNLK A6
         RTS

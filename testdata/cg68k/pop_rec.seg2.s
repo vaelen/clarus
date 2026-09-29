@@ -1,7 +1,7 @@
         ; func clar_ui_fire_every  (JT slot 198)
         ;   param idx : 8(A6)  size 4
 LBL_0:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA LBL_6(PC),A0
         MOVE.L A0,-(A7)
         JSR 1266(A5)
@@ -18,7 +18,7 @@ LBL_16:
         ;   param winIdx : 12(A6)  size 4
         ;   param inst : 8(A6)  size 4
 LBL_1:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA LBL_7(PC),A0
         MOVE.L A0,-(A7)
         JSR 1266(A5)
@@ -34,7 +34,7 @@ LBL_17:
         ; func clar_ui_fire_staterows  (JT slot 200)
         ;   param rowsIdx : 8(A6)  size 4
 LBL_2:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D1
         MOVE.L #153,D0
         CMP.L D0,D1

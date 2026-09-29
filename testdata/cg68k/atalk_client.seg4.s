@@ -7,7 +7,7 @@
         ;   local wErr : -16(A6)  size 4
         ;   local slot : -20(A6)  size 4
 LBL_0:
-        LINK A6,#-2120
+        LINK A6,#-72
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -343,7 +343,7 @@ LBL_128:
         ;   param h : 8(A6)  size 4
         ;   local slot : -4(A6)  size 4
 LBL_1:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVE.L 8(A6),D1
@@ -492,7 +492,7 @@ LBL_143:
         ;   local __store1 : -30(A6)  size 4
         ;   local __store2 : -34(A6)  size 4
 LBL_2:
-        LINK A6,#-2138
+        LINK A6,#-90
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         LEA -8(A6),A0
@@ -1120,7 +1120,7 @@ LBL_148:
         ;   local p : -4(A6)  size 4
         ;   local i : -8(A6)  size 4
 LBL_3:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -1197,7 +1197,7 @@ LBL_176:
         ; func rtConn68kBaudWord  (JT slot 421)
         ;   param baud : 8(A6)  size 4
 LBL_4:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D1
         MOVE.L #300,D0
         CMP.L D0,D1
@@ -1315,7 +1315,7 @@ LBL_180:
         ;   local resetPb : -712(A6)  size 50
         ;   local err : -716(A6)  size 4
 LBL_5:
-        LINK A6,#-2816
+        LINK A6,#-768
         LEA -256(A6),A0
         CLR.B (A0)
         LEA -512(A6),A0
@@ -1597,7 +1597,7 @@ LBL_191:
         ;   local countPb : -50(A6)  size 50
         ;   local err : -54(A6)  size 4
 LBL_6:
-        LINK A6,#-2154
+        LINK A6,#-106
         LEA -50(A6),A0
         MOVE.W #11,D0
 LBL_203:
@@ -1661,7 +1661,7 @@ LBL_202:
         ;   local pb : -50(A6)  size 50
         ;   local err : -54(A6)  size 4
 LBL_7:
-        LINK A6,#-2154
+        LINK A6,#-106
         LEA -50(A6),A0
         MOVE.W #11,D0
 LBL_206:
@@ -1746,7 +1746,7 @@ LBL_205:
         ;   param n : 8(A6)  size 4
         ;   local pb : -50(A6)  size 50
 LBL_8:
-        LINK A6,#-2150
+        LINK A6,#-102
         LEA -50(A6),A0
         MOVE.W #11,D0
 LBL_210:
@@ -1798,7 +1798,7 @@ LBL_209:
         ;   param slot : 8(A6)  size 4
         ;   local pb : -50(A6)  size 50
 LBL_9:
-        LINK A6,#-2150
+        LINK A6,#-102
         LEA -50(A6),A0
         MOVE.W #11,D0
 LBL_212:
@@ -1836,7 +1836,7 @@ LBL_211:
         ; func rtAtEnsureUp  (JT slot 427)
         ;   local e : -4(A6)  size 4
 LBL_10:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         BSR.W LBL_44
@@ -1865,7 +1865,7 @@ LBL_213:
         ;   param code : 12(A6)  size 4
         ;   param msg : 8(A6)  size 4
 LBL_11:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -3452(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 16(A6),D0
@@ -1938,7 +1938,7 @@ LBL_215:
         ;   param code : 12(A6)  size 4
         ;   param msg : 8(A6)  size 4
 LBL_12:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -2910(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 16(A6),D0
@@ -2009,7 +2009,7 @@ LBL_217:
         ; func rtAdspFailed  (JT slot 430)
         ;   param slot : 8(A6)  size 4
 LBL_13:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
         LEA -6044(A5),A0
@@ -2054,7 +2054,7 @@ LBL_219:
         ;   param code : 12(A6)  size 4
         ;   param msg : 8(A6)  size 4
 LBL_14:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -2382(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 16(A6),D0
@@ -2128,7 +2128,7 @@ LBL_220:
         ;   local i : -8(A6)  size 4
         ;   local n : -12(A6)  size 4
 LBL_15:
-        LINK A6,#-2112
+        LINK A6,#-64
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -2205,7 +2205,7 @@ LBL_222:
         ;   param n : 8(A6)  size 4
         ;   local i : -4(A6)  size 4
 LBL_16:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVE.L 12(A6),D1
@@ -2259,7 +2259,7 @@ LBL_227:
         ;   local code : -12(A6)  size 4
         ;   local p : -16(A6)  size 4
 LBL_17:
-        LINK A6,#-2116
+        LINK A6,#-68
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -2443,7 +2443,7 @@ LBL_231:
         ;   local addr : -8(A6)  size 4
         ;   local idx : -12(A6)  size 4
 LBL_18:
-        LINK A6,#-2112
+        LINK A6,#-1088
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -2664,7 +2664,7 @@ LBL_241:
         ;   local e : -8(A6)  size 4
         ;   local z : -264(A6)  size 256
 LBL_19:
-        LINK A6,#-2364
+        LINK A6,#-316
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -2790,7 +2790,7 @@ LBL_250:
         ;   param h : 12(A6)  size 4
         ;   param out : 8(A6)  size 4
 LBL_20:
-        LINK A6,#-2100
+        LINK A6,#-564
         MOVE.L 12(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -2871,7 +2871,7 @@ LBL_255:
         ;   param h : 8(A6)  size 4
         ;   local slot : -4(A6)  size 4
 LBL_21:
-        LINK A6,#-2104
+        LINK A6,#-1080
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVE.L 8(A6),D1
@@ -3065,7 +3065,7 @@ LBL_262:
         ;   local e : -4(A6)  size 4
         ;   local idx : -8(A6)  size 4
 LBL_22:
-        LINK A6,#-2108
+        LINK A6,#-1084
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -3224,7 +3224,7 @@ LBL_267:
         ;   param addr : 8(A6)  size 4
         ;   local e : -4(A6)  size 4
 LBL_23:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         BSR.W LBL_10
@@ -3308,7 +3308,7 @@ LBL_271:
         ;   local e : -4(A6)  size 4
         ;   local addr : -8(A6)  size 4
 LBL_24:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -3502,7 +3502,7 @@ LBL_274:
         ; func rtAdspAvail  (JT slot 442)
         ;   param slot : 8(A6)  size 4
 LBL_25:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_76
@@ -3518,7 +3518,7 @@ LBL_282:
         ;   local got : -8(A6)  size 4
         ;   local scratch : -12(A6)  size 4
 LBL_26:
-        LINK A6,#-2112
+        LINK A6,#-64
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -3611,7 +3611,7 @@ LBL_283:
         ;   param p : 12(A6)  size 4
         ;   param n : 8(A6)  size 4
 LBL_27:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 16(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L 12(A6),D0
@@ -3627,7 +3627,7 @@ LBL_288:
         ; func rtAdspClose  (JT slot 445)
         ;   param slot : 8(A6)  size 4
 LBL_28:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_80
@@ -3642,7 +3642,7 @@ LBL_289:
         ; func rtAdspGone  (JT slot 446)
         ;   param slot : 8(A6)  size 4
 LBL_29:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_79
@@ -3657,7 +3657,7 @@ LBL_290:
         ;   local slot : -4(A6)  size 4
         ;   local e : -8(A6)  size 4
 LBL_30:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -3748,7 +3748,7 @@ LBL_291:
         ;   local e : -32(A6)  size 4
         ;   local __store3 : -36(A6)  size 4
 LBL_31:
-        LINK A6,#-2140
+        LINK A6,#-604
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -4942,7 +4942,7 @@ LBL_295:
         ; func rtAtalkAlive  (JT slot 449)
         ;   local i : -4(A6)  size 4
 LBL_32:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -5329,7 +5329,7 @@ LBL_369:
         ; func rtAt68SignW  (JT slot 451)
         ;   param v : 8(A6)  size 4
 LBL_34:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D1
         MOVE.L #32768,D0
         CMP.L D0,D1
@@ -5353,7 +5353,7 @@ LBL_370:
         ;   param n : 8(A6)  size 4
         ;   local i : -4(A6)  size 4
 LBL_35:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVE.L 12(A6),D1
@@ -5418,7 +5418,7 @@ LBL_372:
         ; func rtAt68Pending  (JT slot 453)
         ;   param pb : 8(A6)  size 4
 LBL_36:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -5447,7 +5447,7 @@ LBL_378:
         ; func rtAt68Result  (JT slot 454)
         ;   param pb : 8(A6)  size 4
 LBL_37:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D1
         MOVEQ #16,D0
         ADD.L D1,D0
@@ -5467,7 +5467,7 @@ LBL_380:
         ;   local i : -4(A6)  size 4
         ;   local n : -8(A6)  size 4
 LBL_38:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -5550,7 +5550,7 @@ LBL_381:
         ;   local i : -260(A6)  size 4
         ;   local n : -264(A6)  size 4
 LBL_39:
-        LINK A6,#-2364
+        LINK A6,#-316
         LEA -256(A6),A0
         CLR.B (A0)
         MOVEQ #0,D0
@@ -5617,7 +5617,7 @@ LBL_386:
         ; func rtAt68SkipPStr  (JT slot 457)
         ;   param p : 8(A6)  size 4
 LBL_40:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D1
         MOVEQ #1,D0
         ADD.L D1,D0
@@ -5635,7 +5635,7 @@ LBL_389:
         ; func rtAt68PackAddr  (JT slot 458)
         ;   param p : 8(A6)  size 4
 LBL_41:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D0
         MOVEA.L D0,A0
         CLR.L D0
@@ -5674,7 +5674,7 @@ LBL_390:
         ;   param p : 12(A6)  size 4
         ;   param addr : 8(A6)  size 4
 LBL_42:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 12(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D1
@@ -5717,7 +5717,7 @@ LBL_391:
         ;   local nm : -54(A6)  size 4
         ;   local e : -58(A6)  size 4
 LBL_43:
-        LINK A6,#-2158
+        LINK A6,#-110
         LEA -50(A6),A0
         MOVE.W #11,D0
 LBL_393:
@@ -5792,7 +5792,7 @@ LBL_392:
         RTS
         ; func rtAtDevUp  (JT slot 461)
 LBL_44:
-        LINK A6,#-2100
+        LINK A6,#-52
         CLR.L D0
         MOVE.B -6098(A5),D0
         TST.L D0
@@ -5875,7 +5875,7 @@ LBL_396:
         ;   local i : -4(A6)  size 4
         ;   local n : -8(A6)  size 4
 LBL_45:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -5971,7 +5971,7 @@ LBL_402:
         ;   local i : -4(A6)  size 4
         ;   local ent : -8(A6)  size 4
 LBL_46:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -6095,7 +6095,7 @@ LBL_409:
         ;   local k : -56(A6)  size 4
         ;   local e : -60(A6)  size 4
 LBL_47:
-        LINK A6,#-2160
+        LINK A6,#-112
         LEA -52(A6),A0
         MOVE.W #12,D0
 LBL_419:
@@ -6209,7 +6209,7 @@ LBL_418:
         ; func rtAt68LkEnsure  (JT slot 465)
         ;   param lk : 8(A6)  size 4
 LBL_48:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6146(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -6432,7 +6432,7 @@ LBL_423:
         ;   local z : -268(A6)  size 256
         ;   local e : -272(A6)  size 4
 LBL_49:
-        LINK A6,#-2372
+        LINK A6,#-324
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -6662,7 +6662,7 @@ LBL_431:
         ; func rtAtDevLookupDone  (JT slot 467)
         ;   param lk : 8(A6)  size 4
 LBL_50:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6146(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -6715,7 +6715,7 @@ LBL_438:
         ;   param lk : 8(A6)  size 4
         ;   local pb : -4(A6)  size 4
 LBL_51:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         LEA -6146(A5),A0
@@ -6803,7 +6803,7 @@ LBL_440:
         ;   local p : -4(A6)  size 4
         ;   local j : -8(A6)  size 4
 LBL_52:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -6895,7 +6895,7 @@ LBL_444:
         ;   param i : 8(A6)  size 4
         ;   local t : -4(A6)  size 4
 LBL_53:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVE.L 12(A6),D0
@@ -6933,7 +6933,7 @@ LBL_450:
         ;   local obj : -260(A6)  size 256
         ;   local typ : -516(A6)  size 256
 LBL_54:
-        LINK A6,#-2616
+        LINK A6,#-1080
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         LEA -260(A6),A0
@@ -7029,7 +7029,7 @@ LBL_452:
         ;   local last : -136(A6)  size 4
         ;   local guard : -140(A6)  size 4
 LBL_55:
-        LINK A6,#-2240
+        LINK A6,#-704
         LEA -112(A6),A0
         MOVE.W #27,D0
 LBL_455:
@@ -7224,7 +7224,7 @@ LBL_454:
         ; func rtAt68SvcEnsure  (JT slot 473)
         ;   param slot : 8(A6)  size 4
 LBL_56:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6262(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -7584,7 +7584,7 @@ LBL_465:
         ;   local pb : -4(A6)  size 4
         ;   local e : -8(A6)  size 4
 LBL_57:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -7752,7 +7752,7 @@ LBL_479:
         ;   local pb : -4(A6)  size 4
         ;   local res : -8(A6)  size 4
 LBL_58:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -7964,7 +7964,7 @@ LBL_484:
         ; func rtAtDevAtpReqOp  (JT slot 476)
         ;   param slot : 8(A6)  size 4
 LBL_59:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6312(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -7987,7 +7987,7 @@ LBL_488:
         ; func rtAtDevAtpReqFrom  (JT slot 477)
         ;   param slot : 8(A6)  size 4
 LBL_60:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6320(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -8010,7 +8010,7 @@ LBL_489:
         ; func rtAtDevAtpReqLen  (JT slot 478)
         ;   param slot : 8(A6)  size 4
 LBL_61:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6328(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -8033,7 +8033,7 @@ LBL_490:
         ; func rtAtDevAtpReqPtr  (JT slot 479)
         ;   param slot : 8(A6)  size 4
 LBL_62:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6270(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -8068,7 +8068,7 @@ LBL_491:
         ;   local cnt : -32(A6)  size 4
         ;   local e : -36(A6)  size 4
 LBL_63:
-        LINK A6,#-2136
+        LINK A6,#-88
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -8517,7 +8517,7 @@ LBL_492:
         ; func rtAtDevAtpRespBusy  (JT slot 481)
         ;   param slot : 8(A6)  size 4
 LBL_64:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6278(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -8567,7 +8567,7 @@ LBL_509:
         RTS
         ; func rtAt68CallEnsure  (JT slot 482)
 LBL_65:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L -6348(A5),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -8628,7 +8628,7 @@ LBL_511:
         ;   local ds : -72(A6)  size 4
         ;   local e : -76(A6)  size 4
 LBL_66:
-        LINK A6,#-2176
+        LINK A6,#-128
         LEA -56(A6),A0
         MOVE.W #13,D0
 LBL_517:
@@ -8935,7 +8935,7 @@ LBL_516:
         RTS
         ; func rtAtDevAtpCallCode  (JT slot 484)
 LBL_67:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L -6356(A5),D0
         BRA.W LBL_529
 LBL_529:
@@ -8943,7 +8943,7 @@ LBL_529:
         RTS
         ; func rtAtDevAtpCallPtr  (JT slot 485)
 LBL_68:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L -6348(A5),D0
         BRA.W LBL_530
 LBL_530:
@@ -8951,7 +8951,7 @@ LBL_530:
         RTS
         ; func rtAt68DspAuxPb  (JT slot 486)
 LBL_69:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L -6586(A5),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -8988,7 +8988,7 @@ LBL_531:
         ; func rtAt68CcbEnsure  (JT slot 487)
         ;   param slot : 8(A6)  size 4
 LBL_70:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6414(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -9345,7 +9345,7 @@ LBL_534:
         ; func rtAt68DspFree  (JT slot 488)
         ;   param slot : 8(A6)  size 4
 LBL_71:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6414(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -9608,7 +9608,7 @@ LBL_548:
         ;   local pb : -4(A6)  size 4
         ;   local e : -8(A6)  size 4
 LBL_72:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -9849,7 +9849,7 @@ LBL_553:
         ;   param slot : 8(A6)  size 4
         ;   local aux : -4(A6)  size 4
 LBL_73:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         LEA -6574(A5),A0
@@ -9959,7 +9959,7 @@ LBL_557:
         ;   local pb : -4(A6)  size 4
         ;   local e : -8(A6)  size 4
 LBL_74:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -10135,7 +10135,7 @@ LBL_560:
         ;   local pb : -4(A6)  size 4
         ;   local res : -8(A6)  size 4
 LBL_75:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -10249,7 +10249,7 @@ LBL_564:
         ;   param slot : 8(A6)  size 4
         ;   local pb : -4(A6)  size 4
 LBL_76:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVE.L -6096(A5),D1
@@ -10406,7 +10406,7 @@ LBL_569:
         ;   local pb : -4(A6)  size 4
         ;   local e : -8(A6)  size 4
 LBL_77:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -10571,7 +10571,7 @@ LBL_575:
         ;   local pb : -4(A6)  size 4
         ;   local e : -8(A6)  size 4
 LBL_78:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -10739,7 +10739,7 @@ LBL_582:
         ; func rtAdspDevGone  (JT slot 496)
         ;   param slot : 8(A6)  size 4
 LBL_79:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6574(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -10825,7 +10825,7 @@ LBL_589:
         ;   param slot : 8(A6)  size 4
         ;   local aux : -4(A6)  size 4
 LBL_80:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         LEA -6574(A5),A0
@@ -10964,7 +10964,7 @@ LBL_593:
         ;   local pb : -4(A6)  size 4
         ;   local e : -8(A6)  size 4
 LBL_81:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -11123,7 +11123,7 @@ LBL_596:
         ;   local pb : -4(A6)  size 4
         ;   local res : -8(A6)  size 4
 LBL_82:
-        LINK A6,#-2108
+        LINK A6,#-60
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -11222,7 +11222,7 @@ LBL_602:
         ;   local pb : -8(A6)  size 4
         ;   local e : -12(A6)  size 4
 LBL_83:
-        LINK A6,#-2112
+        LINK A6,#-64
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -11474,7 +11474,7 @@ LBL_606:
         ;   local aux : -8(A6)  size 4
         ;   local e : -12(A6)  size 4
 LBL_84:
-        LINK A6,#-2112
+        LINK A6,#-64
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVEQ #0,D0
@@ -11627,7 +11627,7 @@ LBL_612:
         ;   param slot : 8(A6)  size 4
         ;   local aux : -4(A6)  size 4
 LBL_85:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         LEA -6380(A5),A0
@@ -11818,7 +11818,7 @@ LBL_618:
         ;   local v : -276(A6)  size 4
         ;   local ip : -280(A6)  size 4
 LBL_86:
-        LINK A6,#-2380
+        LINK A6,#-844
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         LEA -260(A6),A0
@@ -12085,7 +12085,7 @@ LBL_622:
         ; func rtTcpEnsureUp  (JT slot 504)
         ;   local e : -4(A6)  size 4
 LBL_87:
-        LINK A6,#-2104
+        LINK A6,#-56
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         CLR.L D0
@@ -12119,7 +12119,7 @@ LBL_638:
         ; func rtTcpFree  (JT slot 505)
         ;   param slot : 8(A6)  size 4
 LBL_88:
-        LINK A6,#-2100
+        LINK A6,#-52
         LEA -6618(A5),A0
         MOVE.L A0,-(A7)
         MOVE.L 8(A6),D0
@@ -12147,7 +12147,7 @@ LBL_641:
         ; func rtTcpRelease  (JT slot 506)
         ;   param slot : 8(A6)  size 4
 LBL_89:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         JSR 4330(A5)
@@ -12271,7 +12271,7 @@ LBL_642:
         ; func rtTcpDevLsnDeny  (JT slot 507)
         ;   param lsn : 8(A6)  size 4
 LBL_90:
-        LINK A6,#-2100
+        LINK A6,#-52
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         JSR 4338(A5)
@@ -12282,7 +12282,7 @@ LBL_644:
         ; func clar_ui_fire_launchdoc  (JT slot 508)
         ;   param path : 8(A6)  size 4
 LBL_91:
-        LINK A6,#-2100
+        LINK A6,#-52
 LBL_645:
         UNLK A6
         RTS
