@@ -8074,10 +8074,10 @@ from-source build in every task (the identity check and the
   differently from real Standard File; a real launch is still the final
   word.
 
-**Gates.** T2 (`scripts/test-merge.sh`, on the final tip): <T2 result>.
+**Gates.** T2 (`scripts/test-merge.sh`, on the final tip): PASS in 1332 s (t1 body 130 s, perfgate, `selfhost/` 6/6 in 207 s, `mactest/` in 988 s, `bake/` full corpus in 7 s), after the final-review fix wave (`75756d3a`, snapshot `f764a741`).
 `CLARUS_SNOW_TESTS=1 make test T='mactest/snow/clarusc_bake
 mactest/snow/macresident mactest/snow/macresident_failed_compile'`, on
-the Mac IIcx: <clarusc_bake result>. Task 9's first IIcx pass had all
+the Mac IIcx: `clarusc_bake` PASS in 136 s on the final tip, again on the bake path (`clarusc: bake path (CLIR library in the data fork)`). Task 9's first IIcx pass had all
 four Snow scripts green: `clarusc_bake` PASS in 129 s on the bake path
 (`clarusc: bake path (CLIR library in the data fork)`, no `CLFS`
 fallback; "Installed baked runtime" 226 ticks), `macresident` and
