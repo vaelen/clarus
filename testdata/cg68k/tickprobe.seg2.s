@@ -1594,7 +1594,7 @@ LBL_206:
 LBL_204:
 LBL_200:
         JSR 1634(A5)
-        JSR 3522(A5)
+        JSR 3394(A5)
         BSR.W LBL_60
         JSR 1650(A5)
         JSR 2530(A5)

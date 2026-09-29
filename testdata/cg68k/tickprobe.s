@@ -188,7 +188,7 @@ LBL_250:
         JSR 3250(A5)
         ; UI startup: rtUiStartup / [App.launch] / rtUiLaunch / rtUiRun
         BSR.W LBL_200
-        JSR 3530(A5)
+        JSR 3522(A5)
         JSR 1842(A5)
         JSR 1834(A5)
         BSR.W LBL_247
@@ -7953,7 +7953,7 @@ LBL_619:
 LBL_618:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 3394(A5)
+        JSR 3490(A5)
         ADDQ.L #4,A7
 LBL_616:
         UNLK A6
