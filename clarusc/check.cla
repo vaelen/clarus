@@ -1878,6 +1878,13 @@ func buildMethodTables() {
     sigAdd(psPlain(strT(255)))
     fileFuncs["openRF"] = sigEnd(fileHandleT)
 
+    // file.openRead(path) (SE wave 4): file.open read-only -- same
+    // signature and nil-plus-lastError contract; writes through the
+    // handle fail with false + lastError.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["openRead"] = sigEnd(fileHandleT)
+
     sigStart()
     sigAdd(psPlain(strT(255)))
     sigAdd(psPlain(strT(255)))

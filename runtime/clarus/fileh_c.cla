@@ -30,6 +30,7 @@
 
 external func FhHOpen(path: string): int
 external func FhHOpenRF(path: string): int
+external func FhHOpenRead(path: string): int
 external func FhHCreate(path: string): int
 external func FhHReadAt(h: int, pos: int, p: ptr, n: int): int
 external func FhHWriteAt(h: int, pos: int, p: ptr, n: int): int
@@ -59,6 +60,11 @@ func rtFhDevOpen(path: string): int {
 // ordinary fd + 1, so every other rtFhDev* below works unchanged.
 func rtFhDevOpenRF(path: string): int {
     return FhHOpenRF(path)
+}
+
+// rtFhDevOpenRead (SE wave 4): file.openRead's read-only open, O_RDONLY.
+func rtFhDevOpenRead(path: string): int {
+    return FhHOpenRead(path)
 }
 
 func rtFhDevCreate(path: string, ftype: string, fcreator: string): int {

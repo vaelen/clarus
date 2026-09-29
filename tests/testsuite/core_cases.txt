@@ -87,4 +87,5 @@ NarrowInts
 SerV1Enum
 EnumStorage
 LogFile
+OpenRead
 SelfCheck

@@ -127,6 +127,26 @@ func rtFhDevOpenRF(path: string): int {
     return pb.ioRefNum
 }
 
+// rtFhDevOpenRead (SE wave 4): rtFhDevOpen with ioPermssn = fsRdPerm, for
+// file.openRead. PBWriteSync/PBSetEOFSync on the refNum then return
+// wrPermErr (-61), which fileh.cla surfaces as false + lastError.
+func rtFhDevOpenRead(path: string): int {
+    var pb: IOParam
+    var namePtr: ptr
+
+    namePtr = rtFh68kName(path)
+    pb.ioNamePtr = namePtr
+    pb.ioVRefNum = 0
+    pb.ioPermssn = fsRdPerm
+    rtFh68kLastErr = PBOpenSync(pb)
+    SerDisposePtr(namePtr)
+
+    if rtFh68kLastErr != 0 {
+        return 0
+    }
+    return pb.ioRefNum
+}
+
 // rtFhDevCreate: PBCreateSync's own result is deliberately ignored for
 // the dupFNErr case (the file already existing, the one error
 // filehandle.create treats as fine) -- the PBOpenSync below is the

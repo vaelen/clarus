@@ -2153,6 +2153,9 @@ func lowFileCall(e: int, fn: int, ty: int): int {
         // file.openRF(path) (language-runtime-cleanup, spec %6): the same
         // ordinary runtime call as "open" just above, a different fork.
         return newIRCallFn(intern("rtFhOpenRF"), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "openRead" {
+        // file.openRead(path) (SE wave 4): "open" read-only.
+        return newIRCallFn(intern("rtFhOpenRead"), lowArgs(callArgsHead(e)), ty)
     } else if nm == "create" {
         // file.create(path, type, creator) -- same mandatory-literal-4CC
         // rule as writeText above (lowCheckLiteral4CCArg).

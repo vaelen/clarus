@@ -79,6 +79,20 @@ func rtFhOpenRF(path: string): int {
     return h
 }
 
+// rtFhOpenRead (SE wave 4): file.openRead -- the data fork, read-only.
+// Writes through the handle fail at the device (the lane's own permission
+// error) and surface as writeAt/append/setSize's ordinary false +
+// lastError; nothing here tracks the mode.
+func rtFhOpenRead(path: string): int {
+    var h: int
+
+    h = rtFhDevOpenRead(path)
+    if h == 0 {
+        rtSetLastErr(rtFhDevLastOSErr(), "open failed")
+    }
+    return h
+}
+
 // rtFhCreate: type/creator are mandatory compile-time-literal 4-character
 // strings (lowFileCall's own lowCheckLiteral4CCArg, exactly like
 // file.writeText) -- stamped on the Mac lane, ignored on the host (the
