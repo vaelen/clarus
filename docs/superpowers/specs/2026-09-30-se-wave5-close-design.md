@@ -1,6 +1,11 @@
 # SE memory program, Wave 5: Close on the SE, with margin (spec, 2026-09-30)
 
-Status: **spec, awaiting review.** Branch `se-wave5-close`.
+Status: **complete (2026-09-30), not yet merged.** Branch
+`se-wave5-close`. ClarusC compiles `bookmarks.cla` on the Snow SE with
+a lowest free of 1130 KB; the floor is 1017 KB. Numbers: umbrella §9.6;
+rulings: `docs/HISTORY.md`'s Wave 5 entry. Two changes from this spec:
+a controller-added Task 7a (the recursive walkers' frames, see §7), and
+the Wave 6 answer, **no-go** (Andrew, 2026-09-30).
 Umbrella: `2026-09-27-se-memory-program-design.md` (§6 Wave 5 is the
 brief; D1, D9, D11 are the inputs this spec revises or closes). Wave 4's
 numbers: umbrella §9.5.
@@ -234,9 +239,15 @@ a written reason per golden family.
 - The `segment` directive, `UnloadSeg` and ClarusC phase overlays (V2),
   now a later phase.
 - Smaller frames on the recursive walkers, and a streamed output fork
-  (TODO).
+  (TODO). **The frames were done after all** (Task 7a, 2026-09-30): at
+  close, `macresident_failed_compile` tripped the depth guard on the SE,
+  and the cause was cg68k's 4 × 512-byte big-temp floor in every native
+  frame. It now applies on the measure pass only, and the cold abort
+  strings left the walkers (umbrella §9.6). Only the streamed fork
+  stays in TODO.
 - The Wave 4 leftovers: the `strIndex` rewrite, `a68Items`' 68-byte
   record and `reserve`'s power-of-two slack. They go to TODO unless the
   wave-close census makes one necessary.
 - Wave 6 (separate compilation plus a linker): decided at close, not
-  built here.
+  built here. **Decided: no-go** (Andrew, 2026-09-30); recorded in
+  `docs/FUTURE.md`.

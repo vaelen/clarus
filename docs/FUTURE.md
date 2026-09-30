@@ -96,6 +96,31 @@ Real debt and needed improvements stay in `docs/TODO.md`.
 
 ## Performance levers (measure first)
 
+### SE memory program, Wave 5 (2026-09-30)
+
+- **Separate compilation plus a streaming linker (the program's
+  "Wave 6").** Decided no-go at the program's close (Andrew,
+  2026-09-30): ClarusC compiles `bookmarks.cla` on the Snow SE with
+  1130 KB free at its low point, so the memory goal needs no linker.
+  Pull this lever if:
+  - larger programs run short of heap on the SE (a compile holds the
+    whole user program's IR and per-function codegen state, which
+    grows with program size);
+  - a real SE with more INITs/cdevs has too little free memory (the
+    1017 KB floor is measured on Snow's clean System 6 image);
+  - rebuild speed matters (a changed file would recompile alone, and
+    the rest would only be re-linked).
+
+  Sketch (program design §6's decision point and the findings doc §4):
+  per-file objects (an interface summary, code bytes, holes, global
+  counts and a local literal pool) and a linker that streams them into
+  the output fork. The foundation is the existing object-code
+  machinery (`cgObjRuns`/`cgObjHoles`, the paste hole kinds,
+  `cgObjPasteFunc`) that already pastes the runtime library. Language
+  surface: `import` (interface only) beside the textual `include`.
+  Related: "Caching precompiled user code" in `docs/ROADMAP.md`'s
+  Later list, and "Smart linking" under Bake / CLIR below.
+
 ### AppleTalk phase (2026-09-07)
 
 - **T1's wall clock went 34 s -> ~2:14, and the cost is the network

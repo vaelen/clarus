@@ -12,6 +12,34 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Test coverage gaps (recorded by audits, mostly need real input/hardware)
 
+### SE memory program, Wave 5 (2026-09-30)
+
+- **Nothing pins Task 7a's stack reduction.** The recursive walkers'
+  per-level stack fell 25–30× (umbrella §9.6), but a change that puts
+  a big temp back into `parseStmt`/`cgStmt`/`lowExpr` would pass every
+  test until an SE compile trips the depth guard. The controller's
+  probe (a 150-arm `else if` chain plus 12 nested `if`s, 51 KB on the
+  SE) is uncommitted scratch (`.superpowers/sdd/2026-09-30-se-wave5-close/
+  realdepth.cla`, `zz_realdepth.sh`). Commit it as a Snow script, or
+  add a host check on the walkers' `LINK` sizes from `emit68k
+  --listing`.
+- **No runtime-observable finalizer-order fixture for the table-driven
+  `cg_free_globals`.** Host releases only free memory and `filehandle`
+  has no finalizer, so the fixtures' `quit` paths cannot show release
+  order. The committed `testdata/cg68k/freeglobals/*.order` dumps
+  (compared against the old unrolled code's order) stand in.
+- **`tests/cg68k/freeglobals.sh`'s 512 + 4N size bound needs vasm** and
+  is skipped without it.
+- **`tests/bake/stackguard.sh`'s `abort_codegen` subcase does not check
+  that the abort lands in codegen**, only that it aborts cleanly and the
+  next compile is byte-identical. Its guard-call bisection also adds
+  ~11 s to T1.
+- **`clarusc_deep.sh` lexes a 40 KB single-line source** (`DEPTH=20000`
+  nested parentheses) before the guard can fire. After Task 7a the guard
+  fires much deeper than before; if the lexer or parser runs out of
+  heap on the SE first, the script fails without the diagnostic
+  instead of proving the guard. It passed at the final tip.
+
 ### Opt-in log file (2026-09-29)
 
 - **Native `app.trace(false)` is untested.** `nolog`'s `tracelog`
@@ -457,6 +485,17 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Native code size
 
+### SE memory program, Wave 5 (2026-09-30)
+
+- **The table-driven `cg_free_globals` tests kind 0 with `CMPI.W
+  #0,D1`** where `TST.W D1` is 2 bytes shorter, in every segment of
+  every native program. Moves every `testdata/cg68k` golden.
+- **Two helpers Task 7a split out keep big frames:** `lowUnary` (568 B)
+  stays on a nested-unary recursion such as `-(-(-x))` (evaluating its
+  operand first would reorder `intern` against IR allocation), and
+  `expectKind` (564 B) returns before any recursion. Neither is on a
+  common deep path.
+
 ### Opt-in log file (2026-09-29)
 
 - **The log writer is in every native program.** `cg68AddRoots` roots
@@ -499,13 +538,39 @@ it. Recorded so the work is not lost, not scheduled.
 The SE memory program (2026-09-27) resumed work on this target. See
 `docs/ROADMAP.md`.
 
+### SE memory program, Wave 5 (2026-09-30)
+
+The wave spec's "smaller frames on the recursive walkers" item was
+resolved in the wave (Task 7a), not deferred, so it has no entry here.
+Neither does the record-walk follow-up: Task 2 measured the duplicated
+record walks at 21 KB across ClarusC and left them (the RESOLVED entry
+under "ABI / performance" below).
+
+- **ClarusC's stack reserve is now generous.** It is 384 KB
+  (`stack: 393216` in `clarusc/macgui.cla`); after Task 7a the
+  `bookmarks.cla` high-water is 49 KB on the SE and 163 KB on the IIcx.
+  The spec's V3 rule (2× the largest measured high-water) would give
+  326 KB. Re-apply the rule at the next ClarusC-affecting close, and
+  give the freed heap to the SE. Why the IIcx uses over 3× the SE's
+  stack for the same compile is not measured.
+- **Stream the output fork.** `app68BuildFork`/`app68WrapFork`
+  (`app68k.cla`) still assemble the whole output fork in the heap
+  before it is written (Wave 4 pre-sized it and releases each segment
+  as it is copied). Writing each CODE segment as it is finished would
+  keep the image out of the heap. Parked by the wave spec (V2).
+- **The Wave 4 leftovers are still open:** the `strIndex` rewrite, the
+  `a68Items` 68-byte record and `reserve`'s power-of-two slack (the
+  Wave 4 entries below). Wave 5 did not need them; its low point on
+  the SE is 1130 KB free.
+
 ### SE memory program, Wave 4 (2026-09-29)
 
 - **`strIndex` is the largest entry at the rtbake peak** (164 KB: a
   `map of int` whose keypool duplicates `strBlob`). An open-addressed
   index over `strBlob`/`strOff` saves ~130 KB but rewrites `intern`,
-  the hot path of every compile, and bake's pool install. Wave 5
-  lever, with `a68Items`' 68-byte record (139 KB at the peak).
+  the hot path of every compile, and bake's pool install. A lever
+  with `a68Items`' 68-byte record (139 KB at the peak); Wave 5 left
+  both open.
 - **The Toolbox calls ClarusC's discovery uses are not in the
   catalog** (ruling R11): `PBGetVolSync`, `PBGetFCBInfoSync`,
   `PBHGetVolSync`, `PBHSetVolSync` and the `FCBPBRec`/`WDPBRec` records
@@ -569,8 +634,8 @@ The SE memory program (2026-09-27) resumed work on this target. See
   and `cg68k.cla` ~l.2004 (`cgSizeOf`'s `cgSizeMemo.reserve(irTypes.count
   + 64)`) aim for small fixed headroom instead of doubling slack, but if
   list `reserve(n)` rounds up to a power of two they save less than
-  their comments claim (or nothing). Wave 5: verify against the rtbake
-  census at the peak, then keep, drop or reword them.
+  their comments claim (or nothing). Verify against the rtbake census
+  at the peak, then keep, drop or reword them (Wave 5 left this open).
 
 ### Opt-in log file (2026-09-29)
 

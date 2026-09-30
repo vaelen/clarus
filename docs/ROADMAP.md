@@ -92,7 +92,9 @@ Everything through the `appletalk` phase is merged to `main` and pushed
   2026-09-05). It works and stays tested, but its compile-time
   performance, the bake/CLIR machinery behind it, and its Snow boots
   are not being advanced; that debt sits in `docs/TODO.md`'s own
-  "Compiler-on-Mac" section until the target resumes.
+  "Compiler-on-Mac" section until the target resumes. (The SE memory
+  program, 2026-09-27 to 2026-09-30, resumed it for memory only: ClarusC
+  now compiles `bookmarks.cla` on a 4 MB SE. See the Roadmap below.)
 
 **`language-runtime-cleanup` is COMPLETE and MERGED to `main`**
 (fast-forward, 2026-09-06 morning, merge tip `d36e728`; the status line
@@ -160,7 +162,15 @@ of Toolbox managers Clarus programs can reach, add the language features
 that work needs, and retire old parts of the toolchain. The user-module
 compilation cache is deliberately de-prioritized (see "Later").
 
-### Now: the SE memory program (2026-09-27)
+### Done: the SE memory program (2026-09-27 to 2026-09-30)
+
+**Closed 2026-09-30.** ClarusC.APPL compiles `examples/bookmarks.cla` on
+the Snow SE (4 MB, System 6.0.8, single-app) with 1130 KB free at its
+low point, and `tests/mactest/snow/clarusc_memprobe.sh` fails under a
+1017 KB floor. Wave 6 (separate compilation + a linker) is **no-go**
+(Andrew, 2026-09-30); it is recorded in `docs/FUTURE.md` as the lever
+for larger programs, a real SE with less free memory, or rebuild speed.
+The original brief follows.
 
 Make `ClarusC.APPL` compile a small program on a 4 MB Macintosh SE
 under System 6 (today it needs ~14 MB of heap, 1.56 MB of code and a
@@ -231,11 +241,28 @@ measured analysis:
   6,919,612. On the IIcx the launch→low heap use fell from 6111 KB to
   2443 KB (the SE target is 2221 KB) and the compile from 35,298 to
   4,993 ticks. Numbers: the program design's §9.5 and
-  `docs/HISTORY.md`. Wave 5 (code and stack) is next.
+  `docs/HISTORY.md`.
+- **Wave 5 (close on the SE): complete** (branch `se-wave5-close`,
+  2026-09-30, not yet merged). A spike showed ClarusC already fitting
+  the SE after Wave 4, so the wave closed the program with margin
+  instead of building overlays: the scripted UI pump pulls
+  disk-inserted events (so the `Clarus` volume mounts on System 6
+  without the Finder); `cg_free_globals` is one table-driven loop per
+  segment (ClarusC's CODE 1,607,548 → 1,141,980 bytes, 50 → 36
+  resources); ClarusC gets a measured 384 KB stack reserve and a
+  `source too deeply nested` depth guard; the ClarusC Snow scripts
+  default to the SE, with a floor; and, added at close, cg68k sizes big
+  temps to need on the real pass, so every native frame is ~2 KB
+  smaller (the recursive walkers' per-level stack fell 25–30×). The
+  host memory gate is unchanged. On the SE the low point is 1130 KB
+  free (the spike's was 342 KB); on the IIcx heap used fell from 2443
+  to 2027 KB. Numbers: the program design's §9.6 and
+  `docs/HISTORY.md`. The `segment` directive and overlays left the
+  program (D9 amended) and are entered under "Later" below.
 
-The DNR/UDP items below resume after this program.
+The DNR/UDP items below resume now that the program is closed.
 
-### Next: language usability
+### Now: language usability
 
 Items 1 (binary streams and files), 2 (serial ports) and 3 (AppleTalk)
 of the original list are DONE — `binary-files`, `transfer-crcs`,
@@ -290,6 +317,17 @@ later over MacTCP networking.
   boilerplate code.
 
 ### Later (no particular order)
+
+- **`segment` directive + overlays** (from the SE memory program's D9,
+  amended by Wave 5, 2026-09-30) — a user-facing `segment "name"`
+  directive that packs named groups of declarations into their own
+  CODE segments (no directive: today's packing, unchanged), `UnloadSeg`
+  at safe points (callback bodies forced resident), and ClarusC.APPL's
+  front end, checker, lowering and codegen as unloadable phase overlays.
+  Plus/SE apps need overlays as much as the compiler does (the
+  `#pragma segment` idiom). The SE program closed without it; the
+  original brief is the program design's §6 Wave 5 entry
+  (`docs/superpowers/specs/2026-09-27-se-memory-program-design.md`).
 
 - **Caching precompiled user code** — per-module precompiled artifacts
   for USER code, extending the runtime-side CLIR work. Staging notes:

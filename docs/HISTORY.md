@@ -8100,6 +8100,201 @@ per-task briefs, reports and ledger are git-ignored scratch; the
 rulings are in this entry.
 
 
+## SE memory program, Wave 5: close on the SE (2026-09-30, branch `se-wave5-close`)
+
+Complete on the branch 2026-09-30; not yet merged (merge only on
+Andrew's request). This entry covers Tasks 1–6, the controller-added
+Task 7a and Task 7's wave close (121 files, +70,764/−68,833 from `main`
+at `6d3c8f0e` before this docs commit, most of it the twice-regenerated
+`clarusc/clarusc.c` snapshot and the reblessed `testdata/cg68k/*.s`).
+Wave A (Tasks 1–4) ran as four parallel worktrees (`../clarus-w5-tN`,
+branch `w5-tN`) from the plan commit `f5a38fc1` and merged in the order
+1, 3, 4, 2 with no conflicts (`92ada6e4`); Tasks 5–7 ran alone on the
+branch. Every task was implemented and reviewed on Opus.
+
+**Why the wave was smaller than its brief.** The program design's
+Wave 5 (overlays, a `segment` directive, smaller frames, a streamed
+fork) assumed ClarusC would still be over the SE's 2221 KB heap target
+after Wave 4. A throwaway spike on 2026-09-30 (Wave 4's tip plus a
+scripted disk mount) compiled `bookmarks.cla` on the Snow SE with
+342 KB free at its low point. The only blocker was a harness gap. So
+the wave fixed the harness, made the SE the standing gate, bought margin
+with the two cheapest large levers and closed the program. D9 was
+amended: the directive, `UnloadSeg` and ClarusC phase overlays became
+their own later ROADMAP phase.
+
+**What it did.**
+
+- **Task 1 (W1): the scripted pump mounts disks.** `rtUiPumpPassive`
+  (`runtime/clarus/uiscript.cla`) widens its `UiGetNextEvent` mask from
+  `0x0140` to `0x01C0` (adding `diskMask`), so the Event Manager mounts
+  an inserted volume as it returns the event, and the pump drops it. On
+  System 6 without the Finder, in scripted (`--events`) mode, the
+  `Clarus` volume had never mounted. Rebless: 5 `testdata/cg68k`
+  `.seg3.s` and 14 emitui `.c.golden` files, the mask immediate only
+  (320 → 448); the frozen UI snaps did not move.
+- **Task 2 (W2): table-driven `cg_free_globals`.** Each segment's copy
+  was one unrolled release per handle-typed global (10,972 bytes × 49
+  segments in ClarusC). It is now one loop over a `DC.W` (A5 offset,
+  kind) table plus one release body per distinct kind, in the same
+  release order (checked against dumps of the old code's order,
+  committed as `testdata/cg68k/freeglobals/*.order`). ClarusC's CODE
+  went **1,607,548 → 1,141,980 bytes (−29%), 50 → 36 resources**. The
+  record walks (432 B a segment) and arithmetic helpers (352 B) were
+  measured and stay duplicated. New `tests/cg68k/freeglobals.sh` and
+  `tests/bake/clarusc_codesize.sh` (limit 1,193,734); rebless of 42
+  cg68k fixtures (75 files), with repacked multi-segment fixtures
+  verified equal function by function after normalizing labels and
+  call forms.
+- **Task 3 (W3): measured stack reserve plus a depth guard.**
+  ClarusC's `app` section gets `stack: 393216` (384 KB: 2× the IIcx's
+  Wave 4 high-water of 194 KB, rounded). `drvStackGuard()` reads SP
+  (`inline sp`) and `ApplLimit` and aborts with `source too deeply
+  nested` when fewer than 64 KB remain; it is called at the entry of
+  the parser's, checker's, lowerer's and cg68k's recursive walkers. On
+  the host `DrvStackPtr` returns 0 and the guard returns at once;
+  `CLARUS_STACKGUARD_FORCE=N` makes it abort on its Nth call, which new
+  `tests/bake/stackguard.sh` uses to prove the abort is a clean compile
+  error at parse, mid-compile and in codegen, with the next compile
+  byte-identical. Every other program is byte-identical.
+- **Task 4 (W4): the SE is the default ClarusC machine.**
+  `snow_clarusc_system` defaults to `SNOW_SYSTEM=6`
+  (`CLARUS_SNOW_CLARUSC` is gone; `SNOW_SYSTEM=7` runs the IIcx).
+  `clarusc_memprobe` fails on the SE under
+  `tests/mactest/snow/se_floor.txt`. New `clarusc_deep.sh` compiles
+  20,000 nested parentheses and requires `source too deeply nested`
+  and a normal quit. CLAUDE.md's standing rule is now `clarusc_bake`
+  on the SE; `docs/FUTURE.md`'s "ClarusC.APPL on the SE" entry was
+  deleted.
+- **Task 5:** merge and combined rebless. No commit: the regenerated
+  goldens equalled the auto-merge.
+- **Task 6:** snapshot regeneration (`c4ebb7d3`).
+- **Task 7a (controller-added at close): need-sized frames.** On the
+  SE, `macresident_failed_compile` failed: its `badabort.cla` (40
+  nested `attempt`s) now tripped the depth guard in the parser at 332
+  of 392 KB. A controller probe (150 `else if` arms plus 12 nested
+  `if`s) tripped it at 331 KB. The root cause: cg68k gave every native
+  function a 4 × 512-byte big-temp floor (`cgBigTmpFloor`) on the real
+  pass, so nearly all of ClarusC's 2645 functions had frames of 2.1 KB
+  or more. The floor now applies on the measure pass only (the real
+  pass sizes big temps to need, as `cg_init_globals` already did), and
+  the cold abort and diagnostic strings moved out of `cgStmt`,
+  `cgExpr`, `lowStmt`/`lowExpr`, `parsePrimary` and friends into
+  helpers. Per else-if arm the stack cost fell from ~13.7 KB across the
+  passes to under 0.5 KB; per nested `attempt` level from ~28 KB to
+  ~1 KB (25–30× in each pass). Every native program uses ~2 KB less
+  stack per active call; code bytes are unchanged (ClarusC +384 B of
+  helpers). The existing `cgAllocBigTmpOff` abort already catches a
+  real-pass need above the measured one. Rebless: 73 cg68k `.s` files,
+  frame offsets only (the listing diffs normalize to identical);
+  snapshot regenerated (`16e29ff9`).
+- **Task 7:** the wave close: T2, the SE and IIcx runs, the floor
+  (`22fb8bdc`, 1017 KB), and these docs.
+
+The core suite stays at 91 cases and the toolbox suite at 41. The host
+memory gate did not move (`bookmarks_rtbake` 1,194,728, 16 bytes under
+Wave 4; not ratcheted).
+
+**The numbers.** Full tables are in the program design's §9.6.
+
+| Measure                              | Wave 4 / spike |    Wave 5 |
+|--------------------------------------|---------------:|----------:|
+| SE lowest free (KB)                  |        342 [a] |  **1130** |
+| SE heap used at the low point (KB)   |       2441 [a] |      2024 |
+| IIcx heap used at the low point (KB) |           2443 |      2027 |
+| ClarusC CODE (bytes)                 |      1,607,548 | 1,141,980 |
+| Stack high-water, SE (KB of reserve) |    128/736 [a] |    49/392 |
+| Stack high-water, IIcx               |        194/752 |   163/408 |
+| Compile, SE (guest)                  |     4m 39s [a] |    4m 35s |
+| Compile, IIcx (ticks)                |           4993 |      4771 |
+
+[a] The spike: Wave 4's tip on the SE.
+
+- **D1 is done.** The floor is floor(0.9 × 1130) = 1017 KB, measured on
+  Snow's clean System 6 image; a real SE with more INITs/cdevs has
+  less free memory.
+- **Wave 6 is no-go** (Andrew, 2026-09-30), with these numbers in hand.
+  Separate compilation plus a streaming linker is recorded in
+  `docs/FUTURE.md` as the lever for larger programs, a real SE with
+  less free memory, or rebuild speed.
+
+**Rulings** (from the ledger, each with its stated cost if wrong):
+
+- **R1.** Wave A's Tasks 1–4 ran concurrently in separate worktrees
+  (CLAUDE.md and the plan mandate parallel tracks, overriding the
+  skill's serial-implementer default). Cost: merge conflicts at Task 5,
+  handled there (there were none).
+- **R2.** `tests/bake/clarusc_codesize.sh` builds with clarusc-current
+  itself, so it is valid in T1 at every point of the branch, before
+  and after the snapshot regeneration. Cost: a T1 test that needs
+  rewiring after Task 6.
+- **R3.** `drvStackGuard` checks the `CLARUS_STACKGUARD_FORCE` counter
+  before the host's `sp == 0` early return; otherwise the host test
+  could never fire. Cost: none on native (the variable is unset).
+- **R4.** `hostrt/pool_edges` red on the branch between Task 2 and
+  Task 6 was accepted: it diffs snapshot against current output, and
+  any output-changing codegen task trips it until the plan's own
+  snapshot regeneration. Cost: a real `pool_edges` regression hides
+  until Task 6, which must show it green (it did).
+- **R5.** Task 6 (a generated 4 MB snapshot) had no reviewer seat:
+  `selfhost/fixedpoint` (a byte-for-byte self re-emit) plus a green T1
+  is the only meaningful review. Cost: none beyond the final review's
+  whole-branch look.
+- **R6.** When the SE runs tripped the depth guard, fix the root cause
+  (oversized frames on the recursive walker path, the else-if chain
+  first) instead of raising the reserve or weakening the tests: V3's
+  reserve rule assumed `bookmarks`-shaped depth, and a realistic
+  dispatch chain must compile on the SE. Cost: an extra task of frame
+  work the spec had parked in TODO; the fallback was a larger reserve,
+  which the 1130 KB heap margin could afford.
+- **R7.** Apply `cgBigTmpFloor` on the measure pass only, and move the
+  cold abort strings out of the hot recursive walkers: the root cause,
+  it helps every native program's stack, and code bytes are unchanged.
+  Cost: every cg68k golden, bake twin, `rt.clir` and selfhost oracle
+  moves (one rebless; in the event only the cg68k `.s` family moved),
+  and an under-counted big-temp need would corrupt a frame. Mitigated
+  by the real-pass overflow abort, the T2 native suites and the SE
+  reruns.
+- **R8.** ClarusC's reserve stays at 384 KB this wave; the high-water is
+  re-measured after the fix and recorded, and V3's rule is re-applied
+  at the next ClarusC-affecting close. Cost: ~200 KB of heap left
+  unclaimed on the SE.
+
+**Gates.** T2 (`scripts/test-merge.sh`) at `c4ebb7d3`, before Task 7a:
+PASS in 1299 s (t1 129 s, perfgate 1 s, `selfhost/` 202 s, `mactest/`
+961 s, `bake/` full corpus 6 s). After Task 7a: T1 green (135 pass,
+39 skip, 0 fail; perfgate 1/1), `selfhost/` 6/6, `CLARUS_BAKE_FULL=1`
+`bake/` 40/40, and on Mini vMac `coresuite_68k` (91/91),
+`toolbox_68k` (41/41), `ui_scenarios`, `smoke_bounce`, `runerr_68k`,
+`dblcompile`, `dblcompile_abort` and `dblcompile_bake` all PASS. Final
+T2 on the tip: <T2 result>.
+
+The SE (`CLARUS_SNOW_TESTS=1`, final tip `16e29ff9`): `clarusc_memprobe`
+PASS in 272 s (lowest free 1130 KB, stack 49 of 392 KB),
+`clarusc_bake` PASS in 262 s, `macresident` PASS in 484 s,
+`macresident_failed_compile` PASS in 354 s (stack 32 and 76 KB),
+`clarusc_deep` PASS in 170 s, and the realdepth probe PASS in 282 s
+(stack 51 KB). The floor re-run printed `PASS se_floor` (1130 vs 1017).
+At `c4ebb7d3` every SE script had passed except
+`macresident_failed_compile` (see Task 7a). The IIcx
+(`SNOW_SYSTEM=7`): `clarusc_bake` PASS in 129 s, `clarusc_memprobe`
+PASS in 134 s (stack 163 of 408 KB).
+
+**Deferred / recorded.** In `docs/TODO.md`'s Wave 5 sections: the
+generous stack reserve (re-apply the 2× rule), the streamed fork, the
+Wave 4 leftovers still open (`strIndex`, `a68Items`' 68-byte record,
+`reserve`'s power-of-two slack), no committed pin on Task 7a's frame
+cut, the finalizer-order and test-harness minors, `CMPI.W #0` over
+`TST.W`, and the two helpers that keep big frames. In `docs/FUTURE.md`:
+separate compilation plus a streaming linker. In `docs/ROADMAP.md`'s
+Later list: the `segment` directive and overlays.
+
+Spec: `docs/superpowers/specs/2026-09-30-se-wave5-close-design.md`;
+plan `docs/superpowers/plans/2026-09-30-se-wave5-close.md`. The
+per-task briefs, reports and ledger are git-ignored scratch; the
+rulings are in this entry.
+
+
 ## Archived from ROADMAP, 2026-09-05 (verbatim)
 
 The "Where we are" paragraphs for four merged phases that had no entry of

@@ -8,7 +8,11 @@ bytes against its 4 MB target (§9.3). Wave 3 (narrow scalars) is
 merged (2026-09-29), at 3,399,176 bytes against its
 3.5 MB target (§9.4). Wave 4 (lazy runtime library) is merged to
 main (2026-09-29, `f62e67d5`), at 1,194,744 bytes against its 1.2 MB target
-(§9.5).**
+(§9.5). Wave 5 (close on the SE) is complete on branch `se-wave5-close`
+(2026-09-30, not yet merged): ClarusC.APPL compiles `bookmarks.cla` on
+the Snow SE with a lowest free of 1130 KB, gated by a 1017 KB floor
+(§9.6). D1 is done; the program is closed. Wave 6 is no-go (Andrew,
+2026-09-30).**
 This is the umbrella document for a multi-wave program. Each wave gets
 its own spec (`docs/superpowers/specs/`) and plan
 (`docs/superpowers/plans/`) when it starts. This document holds
@@ -76,20 +80,20 @@ CLIR bake:
 Every decision below was made with Andrew on 2026-09-27. Each wave's
 spec takes them as given.
 
-| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                              | Why                                                                                                                                                        |
-|-----|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| D1  | "Done" = Waves 0–5 plus an on-target compile of `bookmarks.cla` on the SE. Wave 6 (separate compilation + linker) is a **go/no-go decided after Wave 5**.                                                                                                                                                                                                                                                                                             | The memory goal is reachable without a linker (findings §4, Wave 3 → ~1 MB heap).                                                                          |
-| D2  | **Memory wins over speed.** Compile #2 in a ClarusC session may get slower until Wave 4 (bake staging copies are freed). The host perfgate must not regress; on-target compile time is recorded but not gated.                                                                                                                                                                                                                                        | The ~3.2 MB of staging kept for a fast second compile is unaffordable on the SE.                                                                           |
-| D3  | New scalar types **`uint8`, `int16`, `uint16`**. No 32-bit unsigned type (`uint`) for now; record it in `docs/FUTURE.md`.                                                                                                                                                                                                                                                                                                                             | `uint16` is cheap once `int16` exists. `uint` alone needs unsigned compares and divide, a new `rtUIntToStr`, literal-range work and C-lane mixing hazards. |
-| D4  | **Mixing rule A**: implicit widening of `uint8`/`int16`/`uint16` → `int`, and arithmetic happens at 32 bits. Narrowing is explicit via `uint8(x)`/`int16(x)`/`uint16(x)` and **truncates** (like `char(i)` today). In-range literals are accepted wherever a narrow type is expected.                                                                                                                                                                 | Least noise without silent truncation. It also matches codegen: widen at load, truncate only at an explicit conversion.                                    |
-| D5  | **Extern boundary rule**: at an `external func`/`= ptr` argument and an `extern record` field store, an `int` value is accepted for a narrow-typed slot and truncated, exactly as today's marshaling does. Everywhere else narrowing stays explicit.                                                                                                                                                                                                  | This keeps the ~317 existing `word` declarations' call sites compiling unchanged after the rename (D6).                                                    |
-| D6  | The contextual extern types **`word` → `int16` and `byte` → `uint8`** are renamed repo-wide (`.cla`, the language reference, the cookbook, fixtures), then the old spellings are **removed**, with no aliases.                                                                                                                                                                                                                                        | Andrew: one set of integer names, not Toolbox terminology drifting from the language's. There are no external users (`m68k-bbs` has zero uses).            |
-| D7  | **Enums become 2 bytes on the native lane**, as the language reference (`docs/clarus-language-reference.md` ~l.157, ~l.314) already specifies. Today `cgSizeOfUncached` stores them as 4 (`clarusc/cg68k.cla` ~l.1939). **Revised by Wave 3's N8:** enums are 2 bytes on both lanes; the C lane stores an enum field or element as `uint16_t` (locals, parameters, globals and returns stay `int32_t`).                                               | Spec conformance, and it shares the 16-bit storage plumbing with `int16`.                                                                                  |
-| D8  | **Serializer v2**: `file.save` writes format version 2 with **2-byte enum fields**. `file.load` accepts v1 (4-byte enums) and v2. One deliberate re-pin of the frozen CLRD goldens (`CLRD_BLESS=1`), plus a new frozen **v1** fixture proving old files still load. New narrow field types take their natural widths (1/2/2 bytes). No other format guard is needed: the file carries no type codes, which live in the program's compiled descriptor. | The only real users are `examples/bookmarks.cla` (its record has an enum field) and the test suite.                                                        |
-| D9  | A user-facing **`segment "name"` directive** plus runtime segment unloading, with ClarusC.APPL as its first user. With no directive, packing stays exactly as today.                                                                                                                                                                                                                                                                                  | Plus/SE apps need overlays as much as the compiler does (the `#pragma segment` idiom).                                                                     |
-| D10 | **`list`/`map`/`text` `.release()` and `.shrink()`** join the language. `release()` drops storage back to canonical empty. `shrink()` trims capacity to count. `clear()` keeps its current keep-capacity meaning, now documented.                                                                                                                                                                                                                     | Today the only way to free a container is to reassign a fresh one, and `astReset()` gets that wrong (`.clear()` frees nothing).                            |
-| D11 | **Acceptance machine**: the Snow SE (4 MB, System 6.0.8) with ClarusC launched **single-app via boot-block autostart**, no MultiFinder. **Measurement machine**: the Snow Mac IIcx (128 MB, System 7.1, 32-bit addressing), where ClarusC runs today.                                                                                                                                                                                                 | Andrew's choice. Single-app gives ClarusC all free RAM.                                                                                                    |
-| D12 | Process: **Opus** for implementation and review; plans **maximize parallelism**; **emulator runs only at the end of each wave** (Wave 0 excepted).                                                                                                                                                                                                                                                                                                    | Andrew: fewer follow-up fixes, and faster implementation.                                                                                                  |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Why                                                                                                                                                        |
+|-----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| D1  | "Done" = Waves 0–5 plus an on-target compile of `bookmarks.cla` on the SE. Wave 6 (separate compilation + linker) is a **go/no-go decided after Wave 5**. **Done (2026-09-30, §9.6):** ClarusC compiles `bookmarks.cla` on the Snow SE, lowest free 1130 KB. **Wave 6: no-go** (Andrew, 2026-09-30); separate compilation plus a streaming linker is recorded in `docs/FUTURE.md`.                                                                             | The memory goal is reachable without a linker (findings §4, Wave 3 → ~1 MB heap).                                                                          |
+| D2  | **Memory wins over speed.** Compile #2 in a ClarusC session may get slower until Wave 4 (bake staging copies are freed). The host perfgate must not regress; on-target compile time is recorded but not gated.                                                                                                                                                                                                                                                 | The ~3.2 MB of staging kept for a fast second compile is unaffordable on the SE.                                                                           |
+| D3  | New scalar types **`uint8`, `int16`, `uint16`**. No 32-bit unsigned type (`uint`) for now; record it in `docs/FUTURE.md`.                                                                                                                                                                                                                                                                                                                                      | `uint16` is cheap once `int16` exists. `uint` alone needs unsigned compares and divide, a new `rtUIntToStr`, literal-range work and C-lane mixing hazards. |
+| D4  | **Mixing rule A**: implicit widening of `uint8`/`int16`/`uint16` → `int`, and arithmetic happens at 32 bits. Narrowing is explicit via `uint8(x)`/`int16(x)`/`uint16(x)` and **truncates** (like `char(i)` today). In-range literals are accepted wherever a narrow type is expected.                                                                                                                                                                          | Least noise without silent truncation. It also matches codegen: widen at load, truncate only at an explicit conversion.                                    |
+| D5  | **Extern boundary rule**: at an `external func`/`= ptr` argument and an `extern record` field store, an `int` value is accepted for a narrow-typed slot and truncated, exactly as today's marshaling does. Everywhere else narrowing stays explicit.                                                                                                                                                                                                           | This keeps the ~317 existing `word` declarations' call sites compiling unchanged after the rename (D6).                                                    |
+| D6  | The contextual extern types **`word` → `int16` and `byte` → `uint8`** are renamed repo-wide (`.cla`, the language reference, the cookbook, fixtures), then the old spellings are **removed**, with no aliases.                                                                                                                                                                                                                                                 | Andrew: one set of integer names, not Toolbox terminology drifting from the language's. There are no external users (`m68k-bbs` has zero uses).            |
+| D7  | **Enums become 2 bytes on the native lane**, as the language reference (`docs/clarus-language-reference.md` ~l.157, ~l.314) already specifies. Today `cgSizeOfUncached` stores them as 4 (`clarusc/cg68k.cla` ~l.1939). **Revised by Wave 3's N8:** enums are 2 bytes on both lanes; the C lane stores an enum field or element as `uint16_t` (locals, parameters, globals and returns stay `int32_t`).                                                        | Spec conformance, and it shares the 16-bit storage plumbing with `int16`.                                                                                  |
+| D8  | **Serializer v2**: `file.save` writes format version 2 with **2-byte enum fields**. `file.load` accepts v1 (4-byte enums) and v2. One deliberate re-pin of the frozen CLRD goldens (`CLRD_BLESS=1`), plus a new frozen **v1** fixture proving old files still load. New narrow field types take their natural widths (1/2/2 bytes). No other format guard is needed: the file carries no type codes, which live in the program's compiled descriptor.          | The only real users are `examples/bookmarks.cla` (its record has an enum field) and the test suite.                                                        |
+| D9  | A user-facing **`segment "name"` directive** plus runtime segment unloading, with ClarusC.APPL as its first user. With no directive, packing stays exactly as today. **Amended by Wave 5's V2 (2026-09-30):** the directive, `UnloadSeg` and ClarusC's phase overlays leave the SE program, which closed without them, and become their own later ROADMAP phase. Smaller walker frames and a streamed fork went to TODO; Wave 5's Task 7a then did the frames. | Plus/SE apps need overlays as much as the compiler does (the `#pragma segment` idiom).                                                                     |
+| D10 | **`list`/`map`/`text` `.release()` and `.shrink()`** join the language. `release()` drops storage back to canonical empty. `shrink()` trims capacity to count. `clear()` keeps its current keep-capacity meaning, now documented.                                                                                                                                                                                                                              | Today the only way to free a container is to reassign a fresh one, and `astReset()` gets that wrong (`.clear()` frees nothing).                            |
+| D11 | **Acceptance machine**: the Snow SE (4 MB, System 6.0.8) with ClarusC launched **single-app via boot-block autostart**, no MultiFinder. **Measurement machine**: the Snow Mac IIcx (128 MB, System 7.1, 32-bit addressing), where ClarusC runs today.                                                                                                                                                                                                          | Andrew's choice. Single-app gives ClarusC all free RAM.                                                                                                    |
+| D12 | Process: **Opus** for implementation and review; plans **maximize parallelism**; **emulator runs only at the end of each wave** (Wave 0 excepted).                                                                                                                                                                                                                                                                                                             | Andrew: fewer follow-up fixes, and faster implementation.                                                                                                  |
 
 ## 3. Environment (Linux, as of 2026-09-27)
 
@@ -232,14 +236,14 @@ spec decides the exact model).
 
 Each wave commits a lower budget, and no later change may exceed it:
 
-| After wave | `bookmarks --rtbake` peak | Other exit criterion                                                             |
-|------------|--------------------------:|----------------------------------------------------------------------------------|
-| 0          |     11.79 MB (11,789,468) | SE app budget 3808 KB recorded; Mac IIcx per-phase baseline recorded (§9.1)      |
-| 1          |   6.32 MB (6,324,316) [a] | every task byte-identical                                                        |
-| 2          |   3.67 MB (3,668,312) [b] | ≤ 4 MB met                                                                       |
-| 3          |   3.40 MB (3,399,176) [c] | serializer writes v2, loads v1                                                   |
-| 4          |   1.19 MB (1,194,744) [d] | runtime library read with `readAt`; no whole-resource read                       |
-| 5          |      within the SE budget | ClarusC compiles `bookmarks.cla` on the SE; `snow/clarusc_bake` passes on the SE |
+| After wave | `bookmarks --rtbake` peak | Other exit criterion                                                                                                       |
+|------------|--------------------------:|----------------------------------------------------------------------------------------------------------------------------|
+| 0          |     11.79 MB (11,789,468) | SE app budget 3808 KB recorded; Mac IIcx per-phase baseline recorded (§9.1)                                                |
+| 1          |   6.32 MB (6,324,316) [a] | every task byte-identical                                                                                                  |
+| 2          |   3.67 MB (3,668,312) [b] | ≤ 4 MB met                                                                                                                 |
+| 3          |   3.40 MB (3,399,176) [c] | serializer writes v2, loads v1                                                                                             |
+| 4          |   1.19 MB (1,194,744) [d] | runtime library read with `readAt`; no whole-resource read                                                                 |
+| 5          |   1.19 MB (1,194,728) [e] | met: ClarusC compiles `bookmarks.cla` on the SE (lowest free 1130 KB, floor 1017 KB); `snow/clarusc_bake` passes on the SE |
 
 The budgets are targets. A wave's spec may revise its own number with a
 measured justification. It may not remove the ratchet.
@@ -263,6 +267,12 @@ the same Wave 1 code measured that way peaks at 5,836,696 (§9.3).
 [d] Wave 4's target was ≤ 1.2 MB (1,258,291) and it measured 1,194,744
 (budget 1,206,692), 63,547 bytes (5.1%) under. The wave spec's §1
 number stands (§9.5).
+
+[e] Wave 5 did not target the host heap. Its gate is on the SE:
+`clarusc_memprobe` fails when ClarusC's lowest per-phase free drops
+under `tests/mactest/snow/se_floor.txt` (1017 KB, 90% of the measured
+1130 KB). The host peak fell 16 bytes and the budgets were not
+ratcheted (§9.6).
 
 ### 5.6 Documentation
 
@@ -573,6 +583,14 @@ ClarusC's compile path.
 
 Output-changing.
 
+**Revised by the wave spec** (`2026-09-30-se-wave5-close-design.md`,
+V1/V2): a spike showed ClarusC already fitting the SE after Wave 4, so
+Wave 5 shipped the table-driven `cg_free_globals`, a measured stack
+reserve with a depth guard, the scripted pump's disk mount and the SE
+gate. The directive, unloading and overlays became a later ROADMAP
+phase (D9 amended). Task 7a did the smaller frames at close; the
+streamed fork is in `docs/TODO.md`. The brief below is kept as written.
+
 **Scope**
 - **Table-driven `cg_free_globals` + RC walks.** Today these are
   unrolled into every segment (`cgEmitFreeGlobalsStub`, `cg68k.cla`
@@ -628,6 +646,11 @@ streaming linker. The existing object-code machinery (`cgObjRuns`/
 Language surface: `import` (interface-only) alongside the textual
 `include`.
 
+**Decided: no-go** (Andrew, 2026-09-30), with Wave 5's numbers in hand:
+the SE compile has 1130 KB free at its low point and ClarusC's CODE is
+1.14 MB. The lever is recorded in `docs/FUTURE.md`: pull it for larger
+programs, for a real SE with less free memory, or for rebuild speed.
+
 ## 7. Per-wave on-target measurement (the Mac IIcx)
 
 At each wave close, run ClarusC.APPL on the Mac IIcx compiling
@@ -656,16 +679,16 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 
 ## 9. Status
 
-| Wave                               | Status                                    | Branch                    | Numbers recorded                                                                                                                                                                                       |
-|------------------------------------|-------------------------------------------|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| prerequisite: Linux emulator lanes | merged to main 2026-09-27 (`62b718c4`)    | `emulator-linux`          | T1 116 pass / 0 fail; `mactest/` 30 pass, 6 opt-in skips, 0 fail (all 9 Snow scripts pass)                                                                                                             |
-| 0 Measurement                      | merged to main 2026-09-28 (`87dcf389`)    | `se-wave0-measurement`    | memgate peaks 11,789,468 (rtbake) / 14,190,252 (src) / 10,194,664 (hello); SE app space 3808 KB, ClarusC target 2221 KB; IIcx low point 12035 KB used, stack 187 KB; peak calibration 0.96–1.08 (§9.1) |
-| 1 Lifetimes                        | merged to main 2026-09-28 (`fadb19af`)    | `se-wave1-lifetimes`      | memgate peaks 6,324,316 (rtbake, target 6 MB missed by 32,860) / 8,605,188 (src) / 8,531,984 (hello); IIcx low point 7977 KB used (−4058 KB), stack 187 KB (§9.2)                                      |
-| 2 Representation                   | merged to main 2026-09-28 (`378ccd10`)    | `se-wave2-representation` | memgate peaks 3,668,312 (rtbake, 4 MB target met) / 7,639,484 (src) / 7,570,224 (hello); IIcx low point 6272 KB used (−1705 KB), stack 187 KB (§9.3)                                                   |
-| 3 Narrow scalars                   | merged to main 2026-09-29 (`3642e8ec`)    | `se-wave3-narrow-scalars` | memgate peaks 3,399,176 (rtbake, 3.5 MB target met) / 7,377,444 (src) / 7,308,336 (hello); IIcx low point 6111 KB used (−161 KB), stack 187 KB (§9.4)                                                  |
-| 4 Lazy runtime library             | merged to main 2026-09-29 (`f62e67d5`)    | `se-wave4-lazy-library`   | memgate peaks 1,194,744 (rtbake, 1.2 MB target met) / 6,923,184 (src) / 6,919,612 (hello); IIcx low point 2443 KB used (−3668 KB), stack 194 KB (§9.5)                                                 |
-| 5 Code and stack                   | not started                               | —                         | —                                                                                                                                                                                                      |
-| Wave 6 decision                    | pending                                   | —                         | —                                                                                                                                                                                                      |
+| Wave                               | Status                                 | Branch                    | Numbers recorded                                                                                                                                                                                       |
+|------------------------------------|----------------------------------------|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| prerequisite: Linux emulator lanes | merged to main 2026-09-27 (`62b718c4`) | `emulator-linux`          | T1 116 pass / 0 fail; `mactest/` 30 pass, 6 opt-in skips, 0 fail (all 9 Snow scripts pass)                                                                                                             |
+| 0 Measurement                      | merged to main 2026-09-28 (`87dcf389`) | `se-wave0-measurement`    | memgate peaks 11,789,468 (rtbake) / 14,190,252 (src) / 10,194,664 (hello); SE app space 3808 KB, ClarusC target 2221 KB; IIcx low point 12035 KB used, stack 187 KB; peak calibration 0.96–1.08 (§9.1) |
+| 1 Lifetimes                        | merged to main 2026-09-28 (`fadb19af`) | `se-wave1-lifetimes`      | memgate peaks 6,324,316 (rtbake, target 6 MB missed by 32,860) / 8,605,188 (src) / 8,531,984 (hello); IIcx low point 7977 KB used (−4058 KB), stack 187 KB (§9.2)                                      |
+| 2 Representation                   | merged to main 2026-09-28 (`378ccd10`) | `se-wave2-representation` | memgate peaks 3,668,312 (rtbake, 4 MB target met) / 7,639,484 (src) / 7,570,224 (hello); IIcx low point 6272 KB used (−1705 KB), stack 187 KB (§9.3)                                                   |
+| 3 Narrow scalars                   | merged to main 2026-09-29 (`3642e8ec`) | `se-wave3-narrow-scalars` | memgate peaks 3,399,176 (rtbake, 3.5 MB target met) / 7,377,444 (src) / 7,308,336 (hello); IIcx low point 6111 KB used (−161 KB), stack 187 KB (§9.4)                                                  |
+| 4 Lazy runtime library             | merged to main 2026-09-29 (`f62e67d5`) | `se-wave4-lazy-library`   | memgate peaks 1,194,744 (rtbake, 1.2 MB target met) / 6,923,184 (src) / 6,919,612 (hello); IIcx low point 2443 KB used (−3668 KB), stack 194 KB (§9.5)                                                 |
+| 5 Close on the SE                  | complete 2026-09-30, not yet merged    | `se-wave5-close`          | SE lowest free 1130 KB (2024 KB used; spike 342 KB), floor 1017 KB; IIcx low point 2027 KB used (−416 KB); CODE 1,607,548 → 1,141,980 B; stack 49/392 KB SE, 163/408 KB IIcx; memgate unchanged (§9.6) |
+| Wave 6 decision                    | **no-go** (Andrew, 2026-09-30)         | —                         | lever recorded in `docs/FUTURE.md`                                                                                                                                                                     |
 
 `emulator-linux` is merged (2026-09-27); Wave 0 relied on its Snow
 lane. That branch also carried a host AppleTalk fix for routed
@@ -1497,3 +1520,204 @@ Observations, not claims:
   from ~2.7 MB. The CLIR resource term of Wave 0's calibration is gone;
   the ~1 MB of CODE loaded after launch would cover most of the rest,
   but it was not re-measured (`docs/TODO.md`).
+
+### 9.6 Wave 5 measurements (2026-09-30)
+
+All of these come from branch `se-wave5-close`. The wave spec is
+`2026-09-30-se-wave5-close-design.md`. The rulings are in
+`docs/HISTORY.md`'s Wave 5 entry. Units are as in §9.1. Saved logs, in
+`build-run/memprobe-saved/`:
+
+- `clarusc_memprobe.wave5-se.log`: the SE, final tip (`16e29ff9`);
+- `clarusc_memprobe.wave5-se-pre7a.log`: the SE at `c4ebb7d3`, before
+  Task 7a;
+- `clarusc_memprobe.wave5.log`: the IIcx, final tip;
+- `clarusc_memprobe.wave4.log`: the IIcx, Wave 4 (§9.5).
+
+One compile per boot, one run per side. Every compile took the bake
+path (`clarusc: bake path (CLIR library in the data fork)`).
+
+**Host memory gate** (`tests/memgate/budget.txt`). Wave 5 did not target
+the host heap, and the budgets are unchanged:
+
+| Subcase                      | Wave 4 peak | Wave 5 peak | Change |    Budget |
+|------------------------------|------------:|------------:|-------:|----------:|
+| `bookmarks_rtbake` (primary) |   1,194,744 |   1,194,728 |    −16 | 1,206,692 |
+| `bookmarks_src`              |   6,923,184 |   6,923,184 |      0 | 6,992,416 |
+| `hello_src`                  |   6,919,612 |   6,919,612 |      0 | 6,988,809 |
+
+- The −16 bytes were not ratcheted: 1% of the new value moves the budget
+  by 17 bytes, and the drift may predate the wave.
+
+**The SE, the acceptance machine** (Snow SE, 4 MB, System 6.0.8,
+single-app through boot-block autostart, D11). The "spike" column is
+Wave 4's tip plus a scripted disk mount, run on 2026-09-30 (the wave
+spec's §1); it recorded only these points. "Used" is measured from each
+run's own launch free: 3154 KB for Wave 5 and 2783 KB for the spike. The
+zones are 3383 KB and 3038 KB.
+
+| Point                   | Spike free KB | W5 free KB | Spike used KB | W5 used KB | W5 − spike KB | W5 ticks |
+|-------------------------|--------------:|-----------:|--------------:|-----------:|--------------:|---------:|
+| launch                  |          2783 |       3154 |             0 |          0 |             — |        — |
+| pre-compile             |             — |       2885 |             — |        269 |             — |        — |
+| Parsed user program     |          1666 |       2165 |          1117 |        989 |          −128 |      381 |
+| Checked user program    |             — |       1983 |             — |       1171 |             — |      524 |
+| Installed baked runtime |             — |       1987 |             — |       1167 |             — |      635 |
+| Lowered                 |             — |       1872 |             — |       1282 |             — |      357 |
+| Shaken                  |             — |       1685 |             — |       1469 |             — |     1193 |
+| Measured                |           531 |       1286 |          2252 |       1868 |          −384 |     4079 |
+| Packed 4 segments       |             — |       1285 |             — |       1869 |             — |      493 |
+| Emitted segment 1       |             — |       1211 |             — |       1943 |             — |     3509 |
+| Emitted segment 2       |             — |       1179 |             — |       1975 |             — |     1012 |
+| Emitted segment 3       |             — |       1142 |             — |       2012 |             — |     1608 |
+| Emitted segment 4       |           342 |   **1130** |          2441 |   **2024** |          −417 |     2359 |
+| Built fork              |           617 |       1404 |          2166 |       1750 |          −416 |      288 |
+| Finished                |             — |       1409 |             — |       1745 |             — |        — |
+| **Compile total**       |               |            |               |            |               |    16515 |
+
+- **D1 is met.** ClarusC compiles `bookmarks.cla` on the SE with its
+  lowest free at **1130 KB** (`Emitted segment 4`), against the spike's
+  342 KB (+788 KB). Heap used at that point is 2024 KB, 197 KB under
+  Wave 0's 2221 KB target (§9.1). That target assumed a 64 KB stack
+  and all CODE resident, so the free figure is the one gated.
+- **Where the margin came from.** The zone grew 345 KB, which is the
+  stack reserve falling from 736 KB to 392 KB (W3). Heap used fell
+  128 KB by `Parsed` and 417 KB by the low point. That fits the 465 KB
+  of CODE that W2 removed, since ClarusC's segments load into the
+  heap, but it is not attributed per segment.
+- **The floor is 1017 KB** (`tests/mactest/snow/se_floor.txt`,
+  floor(0.9 × 1130)). The re-run printed `PASS se_floor`. It is
+  measured on Snow's clean System 6 image; Andrew's real SE has more
+  INITs/cdevs and less free memory.
+- **Before Task 7a** (`c4ebb7d3`, `.wave5-se-pre7a.log`), every point
+  from `Lowered` on read the same free KB to within 1 KB. At
+  `pre-compile`, `Checked` and `Installed` the final tip has 32–33 KB
+  less free; not attributed. The stack high-water was 128 KB there
+  (see below).
+
+**The Mac IIcx** (same machine and input as §9.1–§9.5; saved log
+`clarusc_memprobe.wave5.log`). Launch free is 48502 KB (Wave 4:
+48122 KB) and the zone 48726 KB (Wave 4: 48382 KB, +344 KB: the stack
+reserve).
+
+| Point                   | W4 free KB | W5 free KB | W4 used KB | W5 used KB | W5 − W4 KB | W4 ticks | W5 ticks |
+|-------------------------|-----------:|-----------:|-----------:|-----------:|-----------:|---------:|---------:|
+| pre-compile             |      47851 |      48231 |        271 |        271 |          0 |        — |        — |
+| Parsed user program     |      47003 |      47511 |       1119 |        991 |       −128 |      184 |      136 |
+| Checked user program    |      46757 |      47329 |       1365 |       1173 |       −192 |      196 |      159 |
+| Installed baked runtime |      46729 |      47333 |       1393 |       1169 |       −224 |      269 |      191 |
+| Lowered                 |      46518 |      47217 |       1604 |       1285 |       −319 |      125 |      101 |
+| Shaken                  |      46332 |      47031 |       1790 |       1471 |       −319 |      477 |      532 |
+| Measured                |      45868 |      46632 |       2254 |       1870 |       −384 |     1079 |     1145 |
+| Packed 4 segments       |      45866 |      46630 |       2256 |       1872 |       −384 |      135 |      138 |
+| Emitted segment 1       |      45761 |      46556 |       2361 |       1946 |       −415 |     1056 |      906 |
+| Emitted segment 2       |      45728 |      46524 |       2394 |       1978 |       −416 |      275 |      277 |
+| Emitted segment 3       |      45691 |      46487 |       2431 |       2015 |       −416 |      427 |      427 |
+| Emitted segment 4       |      45679 |      46475 |   **2443** |   **2027** |       −416 |      619 |      626 |
+| Built fork              |      45954 |      46749 |       2168 |       1753 |       −415 |      131 |      113 |
+| Finished                |      45958 |      46754 |       2164 |       1748 |       −416 |        — |        — |
+| **Compile total**       |            |            |            |            |            |     4993 |     4771 |
+
+- **Launch→low heap used: 2443 KB → 2027 KB, −416 KB (−17.0%)**;
+  −10008 KB (−83.2%) from Wave 0's 12035 KB.
+- The SE and the IIcx agree to within 3 KB of heap used at every
+  point (2024 vs 2027 KB at the low point).
+
+**Summary**
+
+| Metric                                      | W4 IIcx | W5 IIcx | Spike SE |   W5 SE |
+|---------------------------------------------|--------:|--------:|---------:|--------:|
+| Launch→low heap used (KB)                   |    2443 |    2027 |     2441 |    2024 |
+| Lowest free (KB)                            |   45679 |   46475 |      342 |    1130 |
+| Stack high-water (KB of reserve)            | 194/752 | 163/408 |  128/736 |  49/392 |
+| Compile ticks (total)                       |    4993 |    4771 |        — |   16515 |
+| Compile wall clock (guest)                  |  1m 23s |  1m 19s |   4m 39s |  4m 35s |
+| "Verifying Baked Runtime" → "Starting" span |     27s |     31s |        — | ~1m 13s |
+
+**ClarusC.APPL's CODE** (the sum of every `CODE` resource, `CODE 0`
+included; `tests/bake/clarusc_codesize.sh` holds it under 1,193,734):
+
+| Build                                      |     CODE bytes | CODE resources |
+|--------------------------------------------|---------------:|---------------:|
+| Wave 0 baseline (§1)                       |       ~1.56 MB |             47 |
+| Wave 5 start (Wave 4 compiler, `f5a38fc1`) |      1,607,548 |             50 |
+| Task 2: table-driven `cg_free_globals`     |      1,141,980 |             36 |
+| Task 6: snapshot build                     |      1,142,308 |             36 |
+| Task 7a: cold abort helpers                | ~1,142,692 [a] |             36 |
+
+[a] Task 7a measured `ClarusC.bin` at +384 bytes (1,143,808 →
+1,144,192); the CODE sum was not re-taken.
+
+- **−465,568 bytes (−29%) and 14 fewer segments.** The duplicated glue
+  per segment, before and after W2 (Task 2's measurement, from the
+  listing):
+
+| Program            | Segments | free-globals B/seg | record walks B/seg | mul/div/mod B/seg | free-globals total |
+|--------------------|---------:|-------------------:|-------------------:|------------------:|-------------------:|
+| ClarusC (before)   |       49 |             10,972 |                432 |               352 |            537,628 |
+| ClarusC (after)    |       35 |              2,404 |                432 |               352 |             84,140 |
+| bookmarks (before) |        4 |                184 |                  0 |               352 |                736 |
+| bookmarks (after)  |        4 |                136 |                  0 |               352 |                544 |
+
+- ClarusC's 2,404-byte stub is a 1,512-byte table (377 entries) plus
+  892 bytes of loop and nine kind bodies. Five kinds are list walks that
+  differ only in the element release; a shared walk would save ~13 KB
+  (`docs/TODO.md`). The record walks (21 KB in all) stay duplicated.
+
+**Stack.** ClarusC's `app` section asks for `stack: 393216` (384 KB, W3:
+2× the IIcx's Wave 4 high-water of 194 KB, rounded). The memprobe line
+reads the region as 392 KB on the SE and 408 KB on the IIcx.
+
+| Build                         | Machine | Reserve read (KB) | High-water (KB) |
+|-------------------------------|---------|------------------:|----------------:|
+| Wave 4 tip (§9.5)             | IIcx    |               752 |             194 |
+| Spike (Wave 4 tip)            | SE      |               736 |             128 |
+| Wave 5 `c4ebb7d3` (before 7a) | SE      |               392 |             128 |
+| Wave 5 final (`16e29ff9`)     | SE      |               392 |              49 |
+| Wave 5 final (`16e29ff9`)     | IIcx    |               408 |             163 |
+
+- **Task 7a cut the frames.** At `c4ebb7d3`, `macresident_failed_compile`
+  failed on the SE: its `badabort.cla` (40 nested `attempt`s) tripped
+  `drvStackGuard` in the parser at 332 of 392 KB, before cg68k's own
+  bail-depth abort. A controller probe (a 150-arm `else if` chain plus
+  12 nested `if`s) tripped it at 331 KB. The cause: cg68k gave every
+  native function a 4 × 512-byte big-temp floor (`cgBigTmpFloor`) on
+  the real pass, so almost all of ClarusC's 2645 functions had frames
+  of 2.1 KB or more. Task 7a keeps the floor on the measure pass only
+  and moves cold abort strings out of the recursive walkers:
+
+| Path, pass           |  Before | After | Reduction |
+|----------------------|--------:|------:|----------:|
+| else-if arm, parse   | 2.14 KB |  88 B |       24× |
+| else-if arm, check   | 2.12 KB |  68 B |       31× |
+| else-if arm, lower   | 2.13 KB |  84 B |       25× |
+| else-if arm, cg68k   | 7.41 KB | 242 B |       31× |
+| attempt level, parse | 8.56 KB | 348 B |       25× |
+| attempt level, check | 6.36 KB | 218 B |       29× |
+| attempt level, lower | 6.39 KB | 246 B |       26× |
+| attempt level, cg68k | 7.41 KB | 246 B |       30× |
+
+- After 7a on the SE: the probe compiled at a 51 KB high-water,
+  `macresident_failed_compile`'s two compiles at 32 and 76 KB, and
+  `bookmarks.cla` at 49 KB. `clarusc_deep` still reports `source too
+  deeply nested` (at `c4ebb7d3` the guard fired at 333 of 392 KB).
+  Every native program now uses about 2 KB less stack per active call;
+  code bytes are unchanged.
+- **The reserve is now generous.** V3's rule (2× the largest measured
+  high-water) gives 2 × 163 = 326 KB. The reserve stays at 384 KB this
+  wave (ruling); the rule is re-applied at the next ClarusC-affecting
+  close (`docs/TODO.md`).
+
+**Compile time** (recorded, not gated, D2): IIcx 4993 → 4771 ticks
+(1m 23s → 1m 19s), within fast-forward noise. SE 4m 39s (spike, and
+16,752 ticks at `c4ebb7d3`) → 4m 35s (16,515 ticks) at the final tip.
+The "Verifying → Starting" span is ~1m 13s on the SE and 31 s on the
+IIcx (Wave 4: 27 s).
+
+Observations, not claims:
+
+- The IIcx's stack high-water (163 KB) is over 3× the SE's (49 KB) for
+  the same compile. System 7's own stack use is a candidate, but it is
+  not measured.
+- Launch free grew 380 KB on the IIcx and 371 KB on the SE, more than
+  the 344 KB of stack reserve; the rest is not attributed.
