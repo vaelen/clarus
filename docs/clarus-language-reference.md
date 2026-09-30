@@ -2,6 +2,8 @@
 
 Version: v1 draft. 
 
+For what changed between language versions, see `docs/clarus-language-changelog.md`.
+
 Clarus is a small, compiled, event-driven language for building native
 System 6/7 applications on 68k Macintosh computers.
 
