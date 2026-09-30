@@ -306,6 +306,10 @@ Tiered test gates:
   message prints the Go-free regeneration recipe.
 - Bootstrap from C alone:
   `cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c`
+- `clarusc --version` prints `clarusc <V>` (drive.cla's `claruscVersion`)
+  and exits 0. ClarusC.APPL logs `ClarusC <V>` at the start of each
+  compile, and its `app` `version:` literal in `macgui.cla` must match
+  (`tests/claruscboot/version.sh`).
 - `--testapi` (`clarusc emit`/`emit68k`/`appinfo`, ui-scenario-retirement
   phase): for a UI program, splices the UI runtime modules PLUS
   `runtime/clarus/uitest.cla` (`UiTestVerb` + wrappers +

@@ -529,7 +529,7 @@ func feProgressTick() {
 
 app ClarusC {
     name: "ClarusC"
-    version: "1.0"
+    version: "1.1"   // = claruscVersion (drive.cla); literal-only property
     author: "Andrew C. Young <andrew@vaelen.org>"
     about: "The Mac-resident Clarus compiler."
     id: "CLRC"
@@ -852,6 +852,7 @@ func gcCompileRun(w: Log, p: string) {
     gcBaseLog = w.Output.text
     gcTickerRing.clear()
     gcLiveActive = true
+    log("ClarusC " + claruscVersion)
     hostPaths = false
     wantEmit = true
     want68k = true

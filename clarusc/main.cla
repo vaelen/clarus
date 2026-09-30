@@ -255,8 +255,18 @@ on App.startCLI(args: list of string) {
     hostPaths = true
 
     if args.count == 0 {
-        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo] FILE...")
+        log("usage: clarusc [--version | emit -o OUT.c | emit68k -o OUT.bin | appinfo] FILE...")
         quit 2
+    }
+    // --version anywhere prints the version and exits, whatever else is
+    // on the command line.
+    i = 0
+    while i < args.count {
+        if args[i] == "--version" {
+            alert("clarusc " + claruscVersion)
+            quit 0
+        }
+        i = i + 1
     }
 
     // Subcommand: `clarusc emit -o OUT.c FILE...` runs the same pipeline as
@@ -317,7 +327,7 @@ on App.startCLI(args: list of string) {
     // feed it.
     checkMode = not emitMode and not emitMode68k and not appinfoMode and not bakeIrMode
     if startArg >= args.count {
-        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo | --bake-ir --lane 68k|c -o OUT.clir] FILE...")
+        log("usage: clarusc [--version | emit -o OUT.c | emit68k -o OUT.bin | appinfo | --bake-ir --lane 68k|c -o OUT.clir] FILE...")
         quit 2
     }
 
@@ -575,7 +585,7 @@ on App.startCLI(args: list of string) {
         quit 2
     }
     if fileArgs.count == 0 and not bakeIrMode {
-        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo | --bake-ir --lane 68k|c -o OUT.clir] FILE...")
+        log("usage: clarusc [--version | emit -o OUT.c | emit68k -o OUT.bin | appinfo | --bake-ir --lane 68k|c -o OUT.clir] FILE...")
         quit 2
     }
 
