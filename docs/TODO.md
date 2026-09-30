@@ -466,6 +466,14 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   Not folded into a TCP task because fixing it changes every native
   program's stack reserve and so moves every `testdata/cg68k` golden --
   do it in a phase that is already reblessing the corpus.
+  **SE wave 5 addendum:** the measure pass lays the big pool out at
+  `cgBigTmpFloor` (4 × 512 B), not empty, and since Task 7a the real
+  pass drops that floor. So the heuristic now OVER-counts about 2 KB
+  per frame on the priced chain for most functions: a native program
+  without `stack:` keeps its old default reserve, and 7a's ~2 KB per
+  frame saving never reaches its heap. Safe (it over-reserves), but
+  pricing the real-pass frame needs the same `--rtbake` agreement
+  described above.
 
 ### native-array-return-and-fileh-guards phase (2026-09-06)
 
@@ -770,7 +778,8 @@ under "ABI / performance" below).
   a DC.W (A5 offset, kind) table plus one release body per distinct kind
   (`cgEmitFreeGlobalsStub`), 2,404 bytes for ClarusC's 377 table entries
   and 9 kinds. ClarusC.APPL's CODE total went 1,607,548 -> 1,141,980
-  bytes (50 -> 36 CODE resources); `tests/bake/clarusc_codesize.sh`
+  bytes in Task 2's build (1,142,758 at the wave's tip; 50 -> 36 CODE
+  resources); `tests/bake/clarusc_codesize.sh`
   holds it under 1,193,734. What is left, if it ever matters: the 9 kind
   bodies are 892 bytes a segment, 5 of them inline list walks that
   differ only in the per-element release (a shared walk taking the

@@ -167,7 +167,8 @@ between Waves 3 and 4. The history behind each item is in
   implies it. Without either, a build is a production build (see
   above). `scripts/build-68k.sh` accepts `--capture`
   (reference §Log File and Tracing).
-- **`clarusc --version`** prints the language version (`1.1`).
+- **`clarusc --version`** prints the compiler's version (`clarusc 1.1`),
+  which is also the language version it implements.
 - **ClarusC.APPL runs on a 4 MB Macintosh SE** (System 6.0.8), where
   it compiles `examples/bookmarks.cla` with about 1.1 MB to spare.
 - **New compile error `source too deeply nested`** from ClarusC.APPL

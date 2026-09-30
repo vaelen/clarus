@@ -15,11 +15,12 @@
 // `driveEmit68k` (or, C target, do its own shakeProgram+emitProgram --
 // main.cla still owns that fork, see its own startCLI).
 
-// claruscVersion: the compiler's version, the one source of truth for
+// claruscVersion: the compiler's version (also the language version it
+// implements; docs/clarus-language-changelog.md), the one source of truth for
 // both front ends -- `clarusc --version` (main.cla) and ClarusC.APPL's
 // per-compile log banner (macgui.cla). macgui.cla's `app ClarusC`
 // `version:` must be a literal, so it repeats this value;
-// tests/selfhost/version.sh fails if the two disagree.
+// tests/claruscboot/version.sh fails if the two disagree.
 const claruscVersion: string = "1.1"
 
 // hostPaths: true selects '/' path semantics (main.cla, the host CLI);

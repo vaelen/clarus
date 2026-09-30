@@ -248,7 +248,7 @@ Tiered test gates:
     has more INITs/cdevs and so less free memory, so passing it does not
     guarantee the real machine fits.
     `CLARUS_SNOW_TESTS=1 make test T=mactest/snow/clarusc_bake` (on the
-    SE) is the standing rule after any change to
+    SE, about 262–270 s; about 129 s on the IIcx) is the standing rule after any change to
     `clarusc/bake.cla` or `clarusc/macgui.cla` — the only on-target proof
     `ClarusC.APPL`'s default bake path works, and neither T1 nor T2's
     host stages boot it. `snow/adsp_listener` (System 7 IIcx listener,

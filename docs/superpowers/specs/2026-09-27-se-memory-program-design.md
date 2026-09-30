@@ -687,7 +687,7 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 | 2 Representation                   | merged to main 2026-09-28 (`378ccd10`) | `se-wave2-representation` | memgate peaks 3,668,312 (rtbake, 4 MB target met) / 7,639,484 (src) / 7,570,224 (hello); IIcx low point 6272 KB used (−1705 KB), stack 187 KB (§9.3)                                                   |
 | 3 Narrow scalars                   | merged to main 2026-09-29 (`3642e8ec`) | `se-wave3-narrow-scalars` | memgate peaks 3,399,176 (rtbake, 3.5 MB target met) / 7,377,444 (src) / 7,308,336 (hello); IIcx low point 6111 KB used (−161 KB), stack 187 KB (§9.4)                                                  |
 | 4 Lazy runtime library             | merged to main 2026-09-29 (`f62e67d5`) | `se-wave4-lazy-library`   | memgate peaks 1,194,744 (rtbake, 1.2 MB target met) / 6,923,184 (src) / 6,919,612 (hello); IIcx low point 2443 KB used (−3668 KB), stack 194 KB (§9.5)                                                 |
-| 5 Close on the SE                  | complete 2026-09-30, not yet merged    | `se-wave5-close`          | SE lowest free 1130 KB (2024 KB used; spike 342 KB), floor 1017 KB; IIcx low point 2027 KB used (−416 KB); CODE 1,607,548 → 1,141,980 B; stack 49/392 KB SE, 163/408 KB IIcx; memgate unchanged (§9.6) |
+| 5 Close on the SE                  | complete 2026-09-30, not yet merged    | `se-wave5-close`          | SE lowest free 1130 KB (2024 KB used; spike 342 KB), floor 1017 KB; IIcx low point 2027 KB used (−416 KB); CODE 1,607,548 → 1,142,758 B; stack 49/392 KB SE, 163/408 KB IIcx; memgate unchanged (§9.6) |
 | Wave 6 decision                    | **no-go** (Andrew, 2026-09-30)         | —                         | lever recorded in `docs/FUTURE.md`                                                                                                                                                                     |
 
 `emulator-linux` is merged (2026-09-27); Wave 0 relied on its Snow
@@ -1644,9 +1644,11 @@ included; `tests/bake/clarusc_codesize.sh` holds it under 1,193,734):
 | Task 2: table-driven `cg_free_globals`     |      1,141,980 |             36 |
 | Task 6: snapshot build                     |      1,142,308 |             36 |
 | Task 7a: cold abort helpers                | ~1,142,692 [a] |             36 |
+| Wave 5 tip (`f0b2d9ff`, ClarusC 1.1)       |      1,142,758 |             36 |
 
 [a] Task 7a measured `ClarusC.bin` at +384 bytes (1,143,808 →
-1,144,192); the CODE sum was not re-taken.
+1,144,192); the CODE sum was not re-taken for that task. The tip row is
+`tests/bake/clarusc_codesize.sh`'s own sum.
 
 - **−465,568 bytes (−29%) and 14 fewer segments.** The duplicated glue
   per segment, before and after W2 (Task 2's measurement, from the

@@ -1559,10 +1559,11 @@ var cgSerdescLabels: list of int
 // demand (no ceiling, no "bump cgBigTmpSlots" abort) while measuring,
 // recording each function's own high-water need into
 // cgFuncBigTmpNeed[f] (cgFuncBigTmpHigh, below); cgEmitFunc's real pass
-// then lays out exactly max(cgBigTmpFloor, cgFuncBigTmpNeed[f]) slots.
-// cgBigTmpFloor keeps small/no-big-temp functions' frames cheap and
-// stable (most functions need 0-2); only a function that previously
-// could not compile at all now pays for its own real need. The real
+// then lays out exactly cgFuncBigTmpNeed[f] slots. cgBigTmpFloor applies
+// on the MEASURE pass only (SE wave 5), where it is cgAllocBigTmpOff's
+// growth anchor; the real pass pays for no slot the body never uses (most
+// functions need 0-2), and only a function that previously could not
+// compile at all pays for its own real need. The real
 // pass's cgAllocBigTmpOff must never need to extend past what the
 // measure pass recorded -- both passes walk the identical IR, so a
 // mismatch there is a compiler bug, not a ceiling, and aborts loudly
@@ -1635,8 +1636,8 @@ var cgInitGlobalsBigNeed: int
 // empty -- recorded by cgEmitFunc's frame layout below the whole rest of
 // the frame, so a measure-pass slot grown here can never collide with
 // cgRetSaveOff, the big pool or the deep scratch. (The big pool needs no
-// such anchor: cgBigTmpFloor keeps it non-empty, so it always has a last
-// slot to grow below.) Growth only ever happens on the measure pass, whose
+// such anchor: on the measure pass cgBigTmpFloor keeps it non-empty, so
+// it always has a last slot to grow below.) Growth only ever happens on the measure pass, whose
 // bytes are discarded, so an offset past frameSize there is harmless --
 // every frame reference is AmDisp16 and encodes to the same size either
 // way -- but keeping it disjoint means the measure pass never emits two
@@ -4518,15 +4519,15 @@ func cgAllocTmpOff(t: int): int {
 // needed -- the size split is the ONLY thing that changed.
 //
 // binary-files phase Task 8: no more per-statement ceiling. The pool
-// (cgBigTmpBaseOffs) starts each function at cgBigTmpFloor slots
-// (cgEmitFunc's frame layout); when a statement needs one more slot than
+// (cgBigTmpBaseOffs) starts each function's MEASURE pass at
+// cgBigTmpFloor slots (cgEmitFunc's frame layout); when a statement needs one more slot than
 // currently reserved, this function grows the pool by one more
 // cgBigTmpSize-wide offset below the last -- but ONLY during the measure
 // pass (a function's cgRecMode == 1, or cg_init_globals' own cgRecMode ==
 // 2), whose bytes are thrown away, so growing here costs nothing real and
 // simply records the true need. The real pass
 // (cgRecMode == 0) already had cgFuncBigTmpNeed[f]'s recorded max laid
-// out up front by cgEmitFunc, so it must NEVER hit this growth branch --
+// out up front by cgEmitFunc (no floor there since SE wave 5), so it must NEVER hit this growth branch --
 // if it does, the two passes disagreed about how many big temps this
 // function's body needs, which can only mean a codegen bug (both walk
 // the identical IR), not a real ceiling -- hence the hard abort rather
@@ -5464,8 +5465,8 @@ func cgEmitInitGlobalsStub(lbl: int) {
     // The cgBigTmpFloor floor applies on the MEASURE pass only, where it
     // is purely cgAllocBigTmpOff's growth anchor (that branch reads the
     // list's last slot, so the list must not be empty). The real pass lays
-    // out the exact recorded need instead of max(floor, need) as
-    // cgEmitFunc does -- cg_init_globals is emitted once per program and
+    // out the exact recorded need, as cgEmitFunc also does since SE
+    // wave 5 -- cg_init_globals is emitted once per program and
     // most programs' initializers need no big temp at all, so the floor
     // would put 2048 bytes of never-touched frame on the 68k stack in
     // every single program (and move every cg68k golden's LINK line) to
@@ -6037,20 +6038,18 @@ func cgEmitFunc(f: int) {
     // contiguous-negative-offset discipline, reserved right after the
     // small pool -- sized to this function's OWN recorded need
     // (cgFuncBigTmpNeed[f], pre-sized to 0 by cg68Measure before either
-    // pass runs), floored at cgBigTmpFloor so a tiny/no-big-temp function
-    // still gets a cheap, stable pool. On the MEASURE pass (cgRecMode ==
-    // 1) cgFuncBigTmpNeed[f] is still its pre-sized 0 here (this
-    // function's own measure hasn't run yet), so this lays out exactly
-    // cgBigTmpFloor slots and cgAllocBigTmpOff grows the list on demand
-    // if the body needs more; cgFuncBigTmpHigh (reset just below) then
-    // records the true high-water mark at the end of this same call. On
-    // the REAL pass, cgFuncBigTmpNeed[f] already holds that recorded
-    // max, so this lays out the exact right size up front and
+    // pass runs). On the MEASURE pass (cgRecMode == 1)
+    // cgFuncBigTmpNeed[f] is still its pre-sized 0 here (this function's
+    // own measure hasn't run yet), so this lays out exactly cgBigTmpFloor
+    // slots and cgAllocBigTmpOff grows the list on demand if the body
+    // needs more; cgFuncBigTmpHigh (reset just below) then records the
+    // true high-water mark at the end of this same call. On the REAL
+    // pass, cgFuncBigTmpNeed[f] already holds that recorded max, so this
+    // lays out exactly that many slots (zero for most functions) and
     // cgAllocBigTmpOff never needs to grow the list again.
     // SE wave 5: the floor applies on the MEASURE pass only (it is
-    // cgAllocBigTmpOff's growth anchor there, nothing more); the real
-    // pass lays out exactly the recorded need, as cg_init_globals
-    // already does. The floor used to put 2048 never-touched bytes in
+    // cgAllocBigTmpOff's growth anchor there, nothing more), as
+    // cg_init_globals already did. Before that the floor used to put 2048 never-touched bytes in
     // EVERY native frame -- ~2 KB per active call, which made ClarusC's
     // recursive walkers ~2.1 KB per frame on the SE's stack. Code size is
     // unchanged (LINK's immediate and every d16(A6) are fixed-width), and
@@ -6100,8 +6099,10 @@ func cgEmitFunc(f: int) {
     // 1). The two passes do NOT compute the same frameSize -- the measure
     // pass lays the small pool out EMPTY and the big pool at
     // cgBigTmpFloor (cgFuncSmallTmpNeed[f]/cgFuncBigTmpNeed[f] are still
-    // 0 there, by construction), so the real pass's value is larger by
-    // whatever those two pools ended up needing. cgStackHeuristic is this
+    // 0 there, by construction), so the two differ by whatever those
+    // pools ended up needing: since SE wave 5 the real pass usually lays
+    // out the big pool SMALLER (no floor; most functions need 0 slots),
+    // about 2 KB less than the measure value. cgStackHeuristic is this
     // list's only reader and it runs from cgEmitStartup, which
     // cg68ProgramFork emits BEFORE any real-pass cgEmitFunc call -- so
     // the heuristic has always seen the measure-pass numbers, and an

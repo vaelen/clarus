@@ -8104,9 +8104,11 @@ rulings are in this entry.
 
 Complete on the branch 2026-09-30; not yet merged (merge only on
 Andrew's request). This entry covers Tasks 1–6, the controller-added
-Task 7a and Task 7's wave close (121 files, +70,764/−68,833 from `main`
-at `6d3c8f0e` before this docs commit, most of it the twice-regenerated
-`clarusc/clarusc.c` snapshot and the reblessed `testdata/cg68k/*.s`).
+Task 7a, Task 7's wave close and the two tasks Andrew added at close,
+Task 8 (the language changelog) and Task 9 (`--version` and ClarusC
+1.1): 128 files, +71,727/−68,985 from `main` at `6d3c8f0e` to the
+tip `f0b2d9ff`, most of it the three-times-regenerated
+`clarusc/clarusc.c` snapshot and the reblessed `testdata/cg68k/*.s`.
 Wave A (Tasks 1–4) ran as four parallel worktrees (`../clarus-w5-tN`,
 branch `w5-tN`) from the plan commit `f5a38fc1` and merged in the order
 1, 3, 4, 2 with no conflicts (`92ada6e4`); Tasks 5–7 ran alone on the
@@ -8139,7 +8141,8 @@ their own later ROADMAP phase.
   kind) table plus one release body per distinct kind, in the same
   release order (checked against dumps of the old code's order,
   committed as `testdata/cg68k/freeglobals/*.order`). ClarusC's CODE
-  went **1,607,548 → 1,141,980 bytes (−29%), 50 → 36 resources**. The
+  went **1,607,548 → 1,141,980 bytes (−29%), 50 → 36 resources** in
+  Task 2's build (1,142,758 at the wave's tip). The
   record walks (432 B a segment) and arithmetic helpers (352 B) were
   measured and stay duplicated. New `tests/cg68k/freeglobals.sh` and
   `tests/bake/clarusc_codesize.sh` (limit 1,193,734); rebless of 42
@@ -8189,7 +8192,24 @@ their own later ROADMAP phase.
   frame offsets only (the listing diffs normalize to identical);
   snapshot regenerated (`16e29ff9`).
 - **Task 7:** the wave close: T2, the SE and IIcx runs, the floor
-  (`22fb8bdc`, 1017 KB), and these docs.
+  (`22fb8bdc`, 1017 KB), and these docs (`ff054e9b`).
+- **Task 8 (added by Andrew at close): the language changelog.** New
+  `docs/clarus-language-changelog.md` lists what changed from language
+  1.0 to 1.1 (the narrow integer types and conversions, serializer
+  format v2, the opt-in log, `--capture`, `--version`, the new compile
+  error and the catalog additions), each entry pointing into the
+  reference, with **Action:** marks where a program may need a change.
+  CLAUDE.md and the reference's header point to it (`75badefd`, worktree
+  branch `w5-changelog`, merged as `f0b2d9ff`).
+- **Task 9 (added by Andrew at close): `--version` and ClarusC 1.1.**
+  `claruscVersion` (`clarusc/drive.cla`, `"1.1"`) is the one source of
+  truth: `clarusc --version` prints `clarusc 1.1` and exits 0, and
+  ClarusC.APPL (whose `app` section's `version:` is now `"1.1"`, a
+  literal it must repeat) logs `ClarusC 1.1` at the start of every
+  compile. New T1 `tests/claruscboot/version.sh` checks the output and
+  that the two literals agree. The compiler's version is also the
+  language version it implements. Snapshot regenerated (`9e95c8ec`;
+  code `0abed74c`).
 
 The core suite stays at 91 cases and the toolbox suite at 41. The host
 memory gate did not move (`bookmarks_rtbake` 1,194,728, 16 bytes under
@@ -8202,13 +8222,15 @@ Wave 4; not ratcheted).
 | SE lowest free (KB)                  |        342 [a] |  **1130** |
 | SE heap used at the low point (KB)   |       2441 [a] |      2024 |
 | IIcx heap used at the low point (KB) |           2443 |      2027 |
-| ClarusC CODE (bytes)                 |      1,607,548 | 1,141,980 |
+| ClarusC CODE (bytes) [b]             |      1,607,548 | 1,142,758 |
 | Stack high-water, SE (KB of reserve) |    128/736 [a] |    49/392 |
 | Stack high-water, IIcx               |        194/752 |   163/408 |
 | Compile, SE (guest)                  |     4m 39s [a] |    4m 35s |
 | Compile, IIcx (ticks)                |           4993 |      4771 |
 
 [a] The spike: Wave 4's tip on the SE.
+[b] Wave 5's figure is the tip's (`tests/bake/clarusc_codesize.sh`);
+Task 2's build alone was 1,141,980.
 
 - **D1 is done.** The floor is floor(0.9 × 1130) = 1017 KB, measured on
   Snow's clean System 6 image; a real SE with more INITs/cdevs has
@@ -8259,6 +8281,13 @@ Wave 4; not ratcheted).
   re-measured after the fix and recorded, and V3's rule is re-applied
   at the next ClarusC-affecting close. Cost: ~200 KB of heap left
   unclaimed on the SE.
+- **R9.** Language "1.0" is `main` as it stood before the SE memory
+  program's first commit (`c9c8d2b4^`); 1.1 is this branch's merge,
+  the only baseline Andrew's request implies. Cost: the changelog's
+  scope shifts, which is an easy edit.
+
+**Tag.** Andrew's instruction (2026-09-30): tag `v1.1` after this
+branch merges to `main`. Not done yet; the merging session does it.
 
 **Gates.** T2 (`scripts/test-merge.sh`) at `c4ebb7d3`, before Task 7a:
 PASS in 1299 s (t1 129 s, perfgate 1 s, `selfhost/` 202 s, `mactest/`
@@ -8267,9 +8296,15 @@ PASS in 1299 s (t1 129 s, perfgate 1 s, `selfhost/` 202 s, `mactest/`
 `bake/` 40/40, and on Mini vMac `coresuite_68k` (91/91),
 `toolbox_68k` (41/41), `ui_scenarios`, `smoke_bounce`, `runerr_68k`,
 `dblcompile`, `dblcompile_abort` and `dblcompile_bake` all PASS. Final
-T2 on the tip: <T2 result>.
+T2 on the tip `f0b2d9ff`: PASS in 1316 s (t1 131 s, perfgate 0 s,
+`selfhost/` 223 s, `mactest/` 955 s, `bake/` full corpus 7 s).
 
-The SE (`CLARUS_SNOW_TESTS=1`, final tip `16e29ff9`): `clarusc_memprobe`
+The SE at the tip `f0b2d9ff` (`CLARUS_SNOW_TESTS=1`): `clarusc_bake`
+PASS in 270 s, `clarusc_memprobe` PASS in 282 s (lowest free 1129 KB
+against the 1017 KB floor; stack 49 of 392 KB),
+`macresident_failed_compile` PASS in 365 s and `macresident` PASS in
+494 s; the compile log shows `ClarusC 1.1`. Earlier, at `16e29ff9`
+(after Task 7a, before Tasks 8/9): `clarusc_memprobe`
 PASS in 272 s (lowest free 1130 KB, stack 49 of 392 KB),
 `clarusc_bake` PASS in 262 s, `macresident` PASS in 484 s,
 `macresident_failed_compile` PASS in 354 s (stack 32 and 76 KB),
@@ -8277,7 +8312,8 @@ PASS in 272 s (lowest free 1130 KB, stack 49 of 392 KB),
 (stack 51 KB). The floor re-run printed `PASS se_floor` (1130 vs 1017).
 At `c4ebb7d3` every SE script had passed except
 `macresident_failed_compile` (see Task 7a). The IIcx
-(`SNOW_SYSTEM=7`): `clarusc_bake` PASS in 129 s, `clarusc_memprobe`
+(`SNOW_SYSTEM=7`, at `16e29ff9`; not re-run at the tip):
+`clarusc_bake` PASS in 129 s, `clarusc_memprobe`
 PASS in 134 s (stack 163 of 408 KB).
 
 **Deferred / recorded.** In `docs/TODO.md`'s Wave 5 sections: the
@@ -8285,7 +8321,10 @@ generous stack reserve (re-apply the 2× rule), the streamed fork, the
 Wave 4 leftovers still open (`strIndex`, `a68Items`' 68-byte record,
 `reserve`'s power-of-two slack), no committed pin on Task 7a's frame
 cut, the finalizer-order and test-harness minors, `CMPI.W #0` over
-`TST.W`, and the two helpers that keep big frames. In `docs/FUTURE.md`:
+`TST.W`, and the two helpers that keep big frames; next to the older
+stack-heuristic entry, that `cgStackHeuristic` still prices the
+measure pass's floored big pool, so programs on the default reserve
+do not get 7a's saving. In `docs/FUTURE.md`:
 separate compilation plus a streaming linker. In `docs/ROADMAP.md`'s
 Later list: the `segment` directive and overlays.
 

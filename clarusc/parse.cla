@@ -337,10 +337,6 @@ func expect(k: TokKind): Token {
     return t
 }
 
-// expectIdentIdx consumes the current token if it is an IDENT whose
-// interned name equals idx (the contextual keyword `of` in `list
-// of`/`map of`, etc.), else records a syntax error quoting s (the display
-// text for the diagnostic).
 // expectIdentName is expect(TkIdent).nameIdx with the returned Token (a
 // record result, so a 512-byte big-temp slot in the native frame) held in
 // ITS frame rather than the caller's -- parseAttemptStmt/parsePrimary are
@@ -364,6 +360,10 @@ func parseErrorFound(line: int, col: int, msg: string, k: TokKind) {
     parseErrorf(line, col, msg + tokKindQuoted(k))
 }
 
+// expectIdentIdx consumes the current token if it is an IDENT whose
+// interned name equals idx (the contextual keyword `of` in `list
+// of`/`map of`, etc.), else records a syntax error quoting s (the display
+// text for the diagnostic).
 func expectIdentIdx(idx: int, s: string) {
     if not curIsIdentIdx(idx) {
         parseErrorf(curLine(), curCol(), "expected \"" + s + "\", found " + tokKindQuoted(curKind()))

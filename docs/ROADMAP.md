@@ -248,8 +248,8 @@ measured analysis:
   instead of building overlays: the scripted UI pump pulls
   disk-inserted events (so the `Clarus` volume mounts on System 6
   without the Finder); `cg_free_globals` is one table-driven loop per
-  segment (ClarusC's CODE 1,607,548 → 1,141,980 bytes, 50 → 36
-  resources); ClarusC gets a measured 384 KB stack reserve and a
+  segment (ClarusC's CODE 1,607,548 → 1,141,980 bytes in Task 2's
+  build, 1,142,758 at the tip; 50 → 36 resources); ClarusC gets a measured 384 KB stack reserve and a
   `source too deeply nested` depth guard; the ClarusC Snow scripts
   default to the SE, with a floor; and, added at close, cg68k sizes big
   temps to need on the real pass, so every native frame is ~2 KB
