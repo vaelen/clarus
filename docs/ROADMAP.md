@@ -242,8 +242,8 @@ measured analysis:
   2443 KB (the SE target is 2221 KB) and the compile from 35,298 to
   4,993 ticks. Numbers: the program design's §9.5 and
   `docs/HISTORY.md`.
-- **Wave 5 (close on the SE): complete** (branch `se-wave5-close`,
-  2026-09-30, not yet merged). A spike showed ClarusC already fitting
+- **Wave 5 (close on the SE): merged to main** (branch `se-wave5-close`,
+  2026-09-30, fast-forward to `9c738c32`; tagged `v1.1`). A spike showed ClarusC already fitting
   the SE after Wave 4, so the wave closed the program with margin
   instead of building overlays: the scripted UI pump pulls
   disk-inserted events (so the `Clarus` volume mounts on System 6

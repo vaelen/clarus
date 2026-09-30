@@ -8,8 +8,8 @@ bytes against its 4 MB target (§9.3). Wave 3 (narrow scalars) is
 merged (2026-09-29), at 3,399,176 bytes against its
 3.5 MB target (§9.4). Wave 4 (lazy runtime library) is merged to
 main (2026-09-29, `f62e67d5`), at 1,194,744 bytes against its 1.2 MB target
-(§9.5). Wave 5 (close on the SE) is complete on branch `se-wave5-close`
-(2026-09-30, not yet merged): ClarusC.APPL compiles `bookmarks.cla` on
+(§9.5). Wave 5 (close on the SE) is merged to main
+(2026-09-30, `9c738c32`, tagged `v1.1`): ClarusC.APPL compiles `bookmarks.cla` on
 the Snow SE with a lowest free of 1130 KB, gated by a 1017 KB floor
 (§9.6). D1 is done; the program is closed. Wave 6 is no-go (Andrew,
 2026-09-30).**
@@ -687,7 +687,7 @@ Wave 0 ─┬─> Wave 1 ─> Wave 2 ─> Wave 3 ─> Wave 4 ─> Wave 5 ─> de
 | 2 Representation                   | merged to main 2026-09-28 (`378ccd10`) | `se-wave2-representation` | memgate peaks 3,668,312 (rtbake, 4 MB target met) / 7,639,484 (src) / 7,570,224 (hello); IIcx low point 6272 KB used (−1705 KB), stack 187 KB (§9.3)                                                   |
 | 3 Narrow scalars                   | merged to main 2026-09-29 (`3642e8ec`) | `se-wave3-narrow-scalars` | memgate peaks 3,399,176 (rtbake, 3.5 MB target met) / 7,377,444 (src) / 7,308,336 (hello); IIcx low point 6111 KB used (−161 KB), stack 187 KB (§9.4)                                                  |
 | 4 Lazy runtime library             | merged to main 2026-09-29 (`f62e67d5`) | `se-wave4-lazy-library`   | memgate peaks 1,194,744 (rtbake, 1.2 MB target met) / 6,923,184 (src) / 6,919,612 (hello); IIcx low point 2443 KB used (−3668 KB), stack 194 KB (§9.5)                                                 |
-| 5 Close on the SE                  | complete 2026-09-30, not yet merged    | `se-wave5-close`          | SE lowest free 1130 KB (2024 KB used; spike 342 KB), floor 1017 KB; IIcx low point 2027 KB used (−416 KB); CODE 1,607,548 → 1,142,758 B; stack 49/392 KB SE, 163/408 KB IIcx; memgate unchanged (§9.6) |
+| 5 Close on the SE                  | merged to main 2026-09-30 (`9c738c32`) | `se-wave5-close`          | SE lowest free 1130 KB (2024 KB used; spike 342 KB), floor 1017 KB; IIcx low point 2027 KB used (−416 KB); CODE 1,607,548 → 1,142,758 B; stack 49/392 KB SE, 163/408 KB IIcx; memgate unchanged (§9.6) |
 | Wave 6 decision                    | **no-go** (Andrew, 2026-09-30)         | —                         | lever recorded in `docs/FUTURE.md`                                                                                                                                                                     |
 
 `emulator-linux` is merged (2026-09-27); Wave 0 relied on its Snow

@@ -8102,8 +8102,7 @@ rulings are in this entry.
 
 ## SE memory program, Wave 5: close on the SE (2026-09-30, branch `se-wave5-close`)
 
-Complete on the branch 2026-09-30; not yet merged (merge only on
-Andrew's request). This entry covers Tasks 1–6, the controller-added
+Merged to `main` 2026-09-30 (fast-forward to `9c738c32`), tagged `v1.1`. This entry covers Tasks 1–6, the controller-added
 Task 7a, Task 7's wave close and the two tasks Andrew added at close,
 Task 8 (the language changelog) and Task 9 (`--version` and ClarusC
 1.1): 128 files, +71,727/−68,985 from `main` at `6d3c8f0e` to the
@@ -8287,7 +8286,7 @@ Task 2's build alone was 1,141,980.
   scope shifts, which is an easy edit.
 
 **Tag.** Andrew's instruction (2026-09-30): tag `v1.1` after this
-branch merges to `main`. Not done yet; the merging session does it.
+branch merges to `main`. Done: `v1.1` tags the mark-merged commit.
 
 **Gates.** T2 (`scripts/test-merge.sh`) at `c4ebb7d3`, before Task 7a:
 PASS in 1299 s (t1 129 s, perfgate 1 s, `selfhost/` 202 s, `mactest/`

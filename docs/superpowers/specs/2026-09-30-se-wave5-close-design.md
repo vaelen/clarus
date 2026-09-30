@@ -1,6 +1,6 @@
 # SE memory program, Wave 5: Close on the SE, with margin (spec, 2026-09-30)
 
-Status: **complete (2026-09-30), not yet merged.** Branch
+Status: **merged to main** (2026-09-30, fast-forward to `9c738c32`; tagged `v1.1`). Branch
 `se-wave5-close`. ClarusC compiles `bookmarks.cla` on the Snow SE with
 a lowest free of 1130 KB; the floor is 1017 KB. Numbers: umbrella §9.6;
 rulings: `docs/HISTORY.md`'s Wave 5 entry. Two changes from this spec:
