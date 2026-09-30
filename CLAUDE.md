@@ -7,6 +7,7 @@ and strategy; completed (merged-to-main) phases are archived verbatim in
 maybe-someday ideas / if-it-ever-bites levers in `docs/FUTURE.md`.
 `docs/clarus-language-reference.md` is the normative
 language spec; where any other doc disagrees, the reference wins.
+`docs/clarus-language-changelog.md` lists language changes per version.
 `docs/clarus-toolbox-cookbook.md` is a how-to companion for transcribing
 Inside Macintosh declarations into Clarus `extern`/`callback` forms.
 
