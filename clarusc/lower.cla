@@ -6091,10 +6091,20 @@ func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
     var recNameIdx: int
     var fieldIdx: int
     var col: int
+    var sawWidth: bool
+    var height: int
+    var fontNameIdx: int
+    var fontSize: int
+    var face: int
+    var align: int
+    var maxLines: int
+    var divStyle: int
+    var word: string
+    var wd: int
 
     kind = poolGet(widgetKindName(w))
     wgName = poolGet(widgetName(w))
-    if kind != "button" and kind != "check" and kind != "canvas" and kind != "label" and kind != "field" and kind != "textview" and kind != "popup" and kind != "table" {
+    if kind != "button" and kind != "check" and kind != "canvas" and kind != "label" and kind != "field" and kind != "textview" and kind != "popup" and kind != "table" and kind != "logpanel" and kind != "divider" {
         lowUnsupported("widget kind " + kind)
     }
 
@@ -6116,6 +6126,14 @@ func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
     rowsGlobalIdx = -1
     columnsHead = -1
     colsTail = -1
+    sawWidth = false
+    height = 0
+    fontNameIdx = -1
+    fontSize = 0
+    face = 0
+    align = 0
+    maxLines = 0
+    divStyle = 0
 
     p = widgetPropsHead(w)
     while p != -1 {
@@ -6145,6 +6163,7 @@ func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
                     y = lowRequireIntLit(v1)
                 }
             } else if pname == "width" {
+                sawWidth = true
                 if exprKind(vh) == ExIdent and poolGet(identName(vh)) == "fill" {
                     widthIsFill = true
                     width = 0
@@ -6169,6 +6188,41 @@ func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
                 scrollVal = poolGet(identName(vh))
                 isScrollV = true
                 isScrollH = scrollVal == "both"
+            } else if pname == "height" {
+                // ui-widgets Task 1: the checker (checkWidgetPropValue)
+                // already validated every value below.
+                height = intLitVal(vh)
+            } else if pname == "font" {
+                fontNameIdx = stringLitIdx(vh)
+                fontSize = intLitVal(exprNext(vh))
+            } else if pname == "style" and kind == "divider" {
+                if poolGet(identName(vh)) == "double" {
+                    divStyle = 1
+                }
+            } else if pname == "style" {
+                // QuickDraw Style bits (rtUiFace*): bold 1, italic 2,
+                // underline 4; plain is 0.
+                v1 = vh
+                while v1 != -1 {
+                    word = poolGet(identName(v1))
+                    if word == "bold" {
+                        face = face | 1
+                    } else if word == "italic" {
+                        face = face | 2
+                    } else if word == "underline" {
+                        face = face | 4
+                    }
+                    v1 = exprNext(v1)
+                }
+            } else if pname == "align" {
+                word = poolGet(identName(vh))
+                if word == "center" {
+                    align = 1
+                } else if word == "right" {
+                    align = 2
+                }
+            } else if pname == "maxLines" {
+                maxLines = intLitVal(vh)
             }
         }
         p = declNext(p)
@@ -6222,7 +6276,12 @@ func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
         // absent any per-widget knob to say otherwise (rt_ui.h's
         // RTUI_TABLE_W natural-size fallback exists only for hand-rolled
         // descs like uiprobe's; clarusc always emits the fill sentinel).
-        widthIsFill = true
+        // ui-widgets Task 1 (spec 3.1, R1.4): a table now takes `width:`;
+        // only one WITHOUT it keeps the forced fill, so every existing
+        // table is unchanged.
+        if not sawWidth {
+            widthIsFill = true
+        }
         rowsGlobalIdx = lowTableRowsGlobalName(lowTableRowsVh(w))
         rowRecType = typeElem(exprTypeGet(lowTableRowsVh(w)))
         recNameIdx = typeNameIdx(rowRecType)
@@ -6232,8 +6291,18 @@ func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
         p = widgetPropsHead(w)
         while p != -1 {
             if declKind(p) == DkColumn {
-                fieldIdx = lowColumnFieldIndex(rowRecType, poolGet(columnShows(p)))
-                col = newIRColumnDesc(columnHeader(p), fieldIdx, columnWidthPx(p), columnWidthFill(p))
+                // A formatted column (`shows f(...)`, ui-widgets Task 1)
+                // has no field of its own: fieldIndex -1, and its call AST
+                // rides along in fmtExpr for Task 3's UiColFmt dispatcher.
+                // Until then its fmtId stays -1 and the LDEF draws the
+                // cell empty (rtUiTableDrawField's fieldIdx < 0 guard).
+                if columnShows(p) == -1 {
+                    fieldIdx = -1
+                    col = newIRColumnDesc(columnHeader(p), fieldIdx, columnWidthPx(p), columnWidthFill(p), columnAlign(p), columnShowsExpr(p))
+                } else {
+                    fieldIdx = lowColumnFieldIndex(rowRecType, poolGet(columnShows(p)))
+                    col = newIRColumnDesc(columnHeader(p), fieldIdx, columnWidthPx(p), columnWidthFill(p), columnAlign(p), -1)
+                }
                 if columnsHead == -1 {
                     columnsHead = col
                 }
@@ -6251,7 +6320,9 @@ func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
         }
     }
 
-    return newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered, isScrollV, isScrollH, bindsIdx, rowsGlobalIdx, columnsHead)
+    wd = newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered, isScrollV, isScrollH, bindsIdx, rowsGlobalIdx, columnsHead)
+    irWidgetDescSetLook(wd, height, fontNameIdx, fontSize, face, align, maxLines, divStyle)
+    return wd
 }
 
 // lowWindowDecl lowers `window W { ... }` (Ch8) into an IRWindowDesc: the
@@ -6444,6 +6515,7 @@ func lowMenuDecl(d: int) {
     var idx: int
     var it: int
     var isStdEdit: bool
+    var subIdx: int
 
     nameIdx = menuDeclName(d)
     menuName = poolGet(nameIdx)
@@ -6467,14 +6539,20 @@ func lowMenuDecl(d: int) {
             isStdEdit = true
         } else if menuEntryIsItem(e) {
             uiMenuItemIdx[menuKey(menuName, poolGet(menuEntryName(e)))] = idx
-            it = newIRMenuItemDesc(menuEntryName(e), menuEntryCaption(e), menuEntryKey(e), false)
+            subIdx = -1
+            if menuEntrySubmenu(e) != -1 {
+                // C12: the submenu is declared above, so lowMenuDecl has
+                // already recorded its declaration index.
+                subIdx = uiMenuIdx.get(numToStr(progGen) + "|" + poolGet(menuEntrySubmenu(e)), -1)
+            }
+            it = newIRMenuItemDesc(menuEntryName(e), menuEntryCaption(e), menuEntryKey(e), false, menuEntryIsChecked(e), subIdx)
             if itemsHead == -1 {
                 itemsHead = it
             }
             itemsTail = irMenuItemDescListAppend(itemsTail, it)
             idx = idx + 1
         } else {
-            it = newIRMenuItemDesc(-1, -1, -1, true)
+            it = newIRMenuItemDesc(-1, -1, -1, true, false, -1)
             if itemsHead == -1 {
                 itemsHead = it
             }

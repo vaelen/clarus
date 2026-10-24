@@ -1,0 +1,14 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+menu Speed {
+    item S9600 "9600"
+}
+
+menu Modem {
+    item Port "Port Speed" submenu Speed
+}
+
+window W {
+    menus: Modem, Speed
+}

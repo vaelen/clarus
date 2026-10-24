@@ -1288,6 +1288,7 @@ var cgCurFuncSegment: int
 
 // cgSegCount is the total number of segments cgPackProgram produced.
 var cgSegCount: int
+var cgSegReserve: list of int
 
 // cgSeg1ExtraSize/cgGlueBundleSize/cgPoolSize are the three fixed,
 // non-function byte costs cgPackProgram charges against segment budgets:
@@ -15217,6 +15218,24 @@ func cgPackProgram(): bool {
     }
 
     cgSegCount = segUsed.count
+    // cgSegReserve (ui-widgets Task 1): each segment's whole estimated
+    // size -- its packed bytes plus the fixed header/glue every segment
+    // carries, plus segment 1's own extra -- for a68ReserveOut, so a
+    // segment just past a power of two is not held at twice its size at
+    // the emit peak. The estimate runs ~4 bytes over the real size, but a
+    // pool-heavy segment can come out a few dozen under it (seen: 42), so
+    // 64 bytes of slack. ponytail: fixed slack, not a bound; an
+    // underestimate past it only costs the old doubling growth back.
+    cgSegReserve = cgFreshIntList()
+    i = 0
+    while i < segUsed.count {
+        if i == 0 {
+            cgSegReserve.add(segUsed[i] + fixedBase + cgSeg1ExtraSize + 64)
+        } else {
+            cgSegReserve.add(segUsed[i] + fixedBase + 64)
+        }
+        i = i + 1
+    }
     cgSegStrLitSets = segStrSets
     cgSegArrLitSets = segArrSets
     cgSegEnumTableSets = segEnumSets
@@ -16400,6 +16419,7 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
         stageLine = "Writing Segment " + numToStr(s)
         driveProgressStage(stageLine)
         a68Reset()
+        a68ReserveOut(cgSegReserve[s - 1])
         cgAssignSegFuncLabels(s)
 
         // Task 13: this segment's own deduped pool need-set

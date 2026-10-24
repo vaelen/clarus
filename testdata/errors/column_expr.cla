@@ -1,0 +1,16 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+record Row {
+    a: int
+    b: int
+}
+
+var rows: list of Row
+
+window W {
+    table T {
+        rows: rows
+        column "Sum" shows a + b width fill
+    }
+}

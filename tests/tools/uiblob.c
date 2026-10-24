@@ -48,13 +48,13 @@
 /* Record sizes, in bytes, from uiblob.cla's own emission order. */
 #define HEADER_SIZE 44 /* 11 int32 */
 #define WINDOW_SIZE 52 /* 13 int32 */
-#define WIDGET_SIZE 52 /* 13 int32 */
+#define WIDGET_SIZE 80 /* 20 int32 (blob v2) */
 #define MENU_SIZE 20   /*  5 int32 */
-#define ITEM_SIZE 16   /*  4 int32 */
+#define ITEM_SIZE 24   /*  6 int32 (blob v2) */
 #define MH_SIZE 24     /*  6 int32 */
 #define EVERY_SIZE 4   /*  1 int32 */
 #define BIND_SIZE 8    /*  2 int32 */
-#define COL_SIZE 16    /*  4 int32 */
+#define COL_SIZE 28    /*  7 int32 (blob v2) */
 #define LFIELD_SIZE 24 /*  6 int32 per Layout field entry */
 
 static unsigned char *blob;
@@ -207,10 +207,16 @@ int main(int argc, char **argv) {
             putStr(i32(wb + 8));
             printf(" atKind=%ld x=%ld yIsBottom=%ld y=%ld widthIsFill=%ld"
                    " width=%ld fillBoth=%ld flags=%ld eventMask=%ld"
-                   " tableOff=%ld\n",
+                   " tableOff=%ld height=%ld font=",
                    i32(wb + 12), i32(wb + 16), i32(wb + 20), i32(wb + 24),
                    i32(wb + 28), i32(wb + 32), i32(wb + 36), i32(wb + 40),
-                   i32(wb + 44), tableOff);
+                   i32(wb + 44), tableOff, i32(wb + 52));
+            /* fontNameOff's "none" sentinel is 0, not -1 (blob v2). */
+            putStr(i32(wb + 56) == 0 ? -1 : i32(wb + 56));
+            printf(" fontSize=%ld face=%ld align=%ld maxLines=%ld"
+                   " divStyle=%ld\n",
+                   i32(wb + 60), i32(wb + 64), i32(wb + 68), i32(wb + 72),
+                   i32(wb + 76));
             if (tableOff != -1) {
                 long layoutOff = i32(tableOff + 4);
                 long nCols = i32(tableOff + 8);
@@ -224,8 +230,10 @@ int main(int argc, char **argv) {
                     long cb = colsOff + ci * COL_SIZE;
                     printf("col %ld %ld %ld header=", i, wi, ci);
                     putStr(i32(cb));
-                    printf(" widthPx=%ld widthFill=%ld fieldIndex=%ld\n",
-                           i32(cb + 4), i32(cb + 8), i32(cb + 12));
+                    printf(" widthPx=%ld widthFill=%ld fieldIndex=%ld"
+                           " align=%ld fmtId=%ld fmtLayoutOff=%ld\n",
+                           i32(cb + 4), i32(cb + 8), i32(cb + 12),
+                           i32(cb + 16), i32(cb + 20), i32(cb + 24));
                 }
                 snprintf(tag, sizeof tag, "table%ld.%ld", i, wi);
                 dumpLayout(tag, layoutOff);
@@ -270,7 +278,8 @@ int main(int argc, char **argv) {
             putStr(i32(ib));
             printf(" caption=");
             putStr(i32(ib + 4));
-            printf(" key=%ld separator=%ld\n", i32(ib + 8), i32(ib + 12));
+            printf(" key=%ld separator=%ld itemFlags=%ld submenuIdx=%ld\n",
+                   i32(ib + 8), i32(ib + 12), i32(ib + 16), i32(ib + 20));
         }
     }
 

@@ -58,6 +58,8 @@
 #define RTUI_TEXTVIEW 5   /* multi-line TextEdit, optional scrollbar via flags below */
 #define RTUI_POPUP    6   /* System 6 popup menu (manual PopUpMenuSelect path), mac-target-4d Task 3 */
 #define RTUI_TABLE    7   /* List Manager-backed table (JMP-stub LDEF), mac-target-4d Task 4 */
+#define RTUI_LOGPANEL 8   /* line-ring log view (ui-widgets) */
+#define RTUI_DIVIDER  9   /* single/double rule (ui-widgets) */
 
 /* rt_ui_widget_desc.atKind (Ch8 Layout: "at x,y" / "at right,y" / "at next,bottom") */
 #define RTUI_AT_XY    0   /* x, y both explicit */
@@ -93,6 +95,7 @@
                              width: content that fits the view leaves the bar dimmed
                              (thumbless), and the view auto-scrolls to keep the caret
                              visible (TEAutoView). */
+#define RTUI_FONTSET  32  /* blob v2: the widget declared `font:` (ui-widgets) */
 
 /* rt_ui_handlers.winEvent `event` values (Ch8 Window Events) */
 #define RTUI_EV_OPENED       0

@@ -38,13 +38,18 @@
 //     stateSize, handlerMask, formOff (-1 if the window has no `form for T`),
 //     menuMask (bit i = declared menu i is claimed by this window type via
 //     `menus:`; 0 for a window with no such clause).
-//   Widget (13 int32, 52 bytes, base = widgetsOff + widgetIdx*52): kind,
+//   Widget (20 int32, 80 bytes, base = widgetsOff + widgetIdx*80): kind,
 //     nameOff, captionOff, atKind, x, yIsBottom, y, widthIsFill, width,
-//     fillBoth, flags, eventMask, tableOff (-1 unless kind == table).
+//     fillBoth, flags, eventMask, tableOff (-1 unless kind == table), then
+//     (blob v2, ui-widgets Task 1) height (0 = kind default), fontNameOff
+//     (0 = none, NOT -1), fontSize (0 = none), face (QuickDraw Style
+//     bits), align (0 left, 1 center, 2 right), maxLines (logpanel; 0 =
+//     default), divStyle (0 single, 1 double).
 //   Menu (5 int32, 20 bytes, base = menusOff + menuIdx*20): nameOff,
 //     titleOff, nItems, itemsOff, isStandardEdit.
-//   Item (4 int32, 16 bytes, base = a menu's own itemsOff + itemIdx*16):
-//     nameOff, labelOff, key, separator.
+//   Item (6 int32, 24 bytes, base = a menu's own itemsOff + itemIdx*24):
+//     nameOff, labelOff, key, separator, itemFlags (bit 0 = checked),
+//     submenuIdx (-1 = none) -- the last two blob v2.
 //   MenuHandler (6 int32, 24 bytes, base = mhOff + k*24): menuIdx, itemIdx,
 //     handlerIdx, scopeWinIdx, menuNameOff, itemNameOff.
 //   Every (1 int32, 4 bytes, base = everyOff + k*4): ticks.
@@ -57,8 +62,11 @@
 //   Table (4 int32, 16 bytes, at a widget's own tableOff): rowsIdx (the
 //     UiTableRows extern's own argument -- clarusc/uiblob.cla's own
 //     "rowsIdx" header note), layoutOff, nCols, colsOff (-1 if nCols == 0).
-//   Col (4 int32, 16 bytes, base = a table's own colsOff + k*16):
-//     headerOff, widthPx, widthFill, fieldIndex.
+//   Col (7 int32, 28 bytes, base = a table's own colsOff + k*28):
+//     headerOff, widthPx, widthFill, fieldIndex (-1 for a formatted
+//     column), then (blob v2) align, fmtId (-1 = plain field),
+//     fmtLayoutOff (a one-field Layout entry for the formatter's result
+//     type; 0 when fmtId == -1).
 //   Layout (2 + nFields*6 int32, at a form's or table's own layoutOff):
 //     recSize, nFields, then nFields field blocks of 6 int32 each (base =
 //     layoutOff + 8 + k*24): ftype (RtFtInt/Fixed/Bool/Char/Str/Enum/U8/I16/U16,
@@ -376,11 +384,11 @@ func uidWinMenuMask(winIdx: int): int {
 }
 
 // ================================================================
-// Widget (13 int32, 52 bytes/entry, base = widgetsOff + widgetIdx*52)
+// Widget (20 int32, 80 bytes/entry, base = widgetsOff + widgetIdx*80)
 // ================================================================
 
 func uidWidgetBase(winIdx: int, widgetIdx: int): ptr {
-    return UiProgDesc() + uidWinWidgetsOff(winIdx) + widgetIdx * 52
+    return UiProgDesc() + uidWinWidgetsOff(winIdx) + widgetIdx * 80
 }
 
 func uidWidgetKind(winIdx: int, widgetIdx: int): int {
@@ -443,6 +451,44 @@ func uidWidgetTableOff(winIdx: int, widgetIdx: int): int {
     return uidI32(uidWidgetBase(winIdx, widgetIdx) + 48)
 }
 
+// ---- blob v2 widget fields (ui-widgets Task 1) ----
+
+func uidWidgetHeight(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 52)
+}
+
+// uidWidgetFontName: the `font:` name as a Str255 ptr, ptr(0) when none
+// (the blob's own sentinel for this field is offset 0, not -1).
+func uidWidgetFontName(winIdx: int, widgetIdx: int): ptr {
+    var off: int
+
+    off = uidI32(uidWidgetBase(winIdx, widgetIdx) + 56)
+    if off == 0 {
+        return ptr(0)
+    }
+    return UiProgDesc() + off
+}
+
+func uidWidgetFontSize(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 60)
+}
+
+func uidWidgetFace(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 64)
+}
+
+func uidWidgetAlign(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 68)
+}
+
+func uidWidgetMaxLines(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 72)
+}
+
+func uidWidgetDivStyle(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 76)
+}
+
 // ================================================================
 // Menu (5 int32, 20 bytes/entry, base = menusOff + menuIdx*20)
 // ================================================================
@@ -480,15 +526,15 @@ func uidMenuIsStandardEdit(menuIdx: int): bool {
 }
 
 // ================================================================
-// Item (4 int32, 16 bytes/entry, base = a menu's own itemsOff +
-// itemIdx*16) -- indexed (menuIdx, itemIdx) rather than a bare items-
+// Item (6 int32, 24 bytes/entry, base = a menu's own itemsOff +
+// itemIdx*24) -- indexed (menuIdx, itemIdx) rather than a bare items-
 // section-global index, matching Widget's own (winIdx, widgetIdx) shape:
 // callers always have menuIdx on hand (iterating a menu's own items) and
 // this spares them re-deriving itemsOff themselves.
 // ================================================================
 
 func uidItemBase(menuIdx: int, itemIdx: int): ptr {
-    return UiProgDesc() + uidMenuItemsOff(menuIdx) + itemIdx * 16
+    return UiProgDesc() + uidMenuItemsOff(menuIdx) + itemIdx * 24
 }
 
 func uidItemNameOff(menuIdx: int, itemIdx: int): int {
@@ -513,6 +559,16 @@ func uidItemKey(menuIdx: int, itemIdx: int): int {
 
 func uidItemSeparator(menuIdx: int, itemIdx: int): bool {
     return uidI32(uidItemBase(menuIdx, itemIdx) + 12) != 0
+}
+
+// uidItemFlags (blob v2): bit 0 = declared `checked`.
+func uidItemFlags(menuIdx: int, itemIdx: int): int {
+    return uidI32(uidItemBase(menuIdx, itemIdx) + 16)
+}
+
+// uidItemSubmenu (blob v2): the `submenu M` menu's index, -1 = none.
+func uidItemSubmenu(menuIdx: int, itemIdx: int): int {
+    return uidI32(uidItemBase(menuIdx, itemIdx) + 20)
 }
 
 // ================================================================
@@ -705,11 +761,11 @@ func uidTableColsOff(off: int): int {
 }
 
 // ================================================================
-// Col (4 int32, 16 bytes/entry, base = a table's own colsOff + k*16)
+// Col (7 int32, 28 bytes/entry, base = a table's own colsOff + k*28)
 // ================================================================
 
 func uidColBase(colsOff: int, k: int): ptr {
-    return UiProgDesc() + colsOff + k * 16
+    return UiProgDesc() + colsOff + k * 28
 }
 
 func uidColHeaderOff(colsOff: int, k: int): int {
@@ -730,6 +786,20 @@ func uidColWidthFill(colsOff: int, k: int): bool {
 
 func uidColFieldIndex(colsOff: int, k: int): int {
     return uidI32(uidColBase(colsOff, k) + 12)
+}
+
+// ---- blob v2 column fields (ui-widgets Task 1) ----
+
+func uidColAlign(colsOff: int, k: int): int {
+    return uidI32(uidColBase(colsOff, k) + 16)
+}
+
+func uidColFmtId(colsOff: int, k: int): int {
+    return uidI32(uidColBase(colsOff, k) + 20)
+}
+
+func uidColFmtLayout(colsOff: int, k: int): int {
+    return uidI32(uidColBase(colsOff, k) + 24)
 }
 
 // ================================================================

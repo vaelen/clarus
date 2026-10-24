@@ -1,0 +1,62 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// ui_batch_decl.cla (ui-widgets Task 1): the declaration surface of the
+// 68kBBS UI batch -- one of every new widget attribute (height, width on
+// textview/canvas/table, font, style, align, maxLines, scrollbar on a
+// logpanel), both new kinds (logpanel, divider), a formatted + aligned
+// table column, a `checked` menu item and a submenu. Pins the blob v2
+// bytes through emitui/goldens.sh.
+
+record Caller {
+    name: string(31)
+    secs: int
+}
+
+var callers: list of Caller
+
+func durationStr(s: int): string {
+    return string(s / 60) + "m"
+}
+
+window Main {
+    title: "BBS"
+    size: 480, 320
+    resizable
+
+    label Status { at: 10, 10; text: "Idle"; height: 20; font: "Monaco", 9; style: bold, underline; align: right }
+    field Who { label: "Who:"; height: 30; font: "Geneva", 12; style: italic }
+    textview Notes { width: 200; height: 60; font: "Monaco", 9; style: plain }
+    canvas Meter { width: 120; height: 40; font: "Chicago", 12 }
+    table Callers {
+        rows: callers
+        width: 300
+        height: 120
+        font: "Geneva", 9
+        column "Name" shows name width 120
+        column "Time" shows durationStr(secs) width fill align right
+    }
+    divider TopRule { style: double; height: 3; width: fill }
+    divider SideRule { }
+    logpanel Log { maxLines: 100; font: "Monaco", 9; style: bold; scrollbar: both; fill: both }
+}
+
+menu Speed {
+    item S2400 "2400"
+    item S9600 "9600" checked
+}
+
+menu Modem {
+    item Init "Init" key "I" checked
+    item Port "Port Speed" submenu Speed
+}
+
+on App.launch {
+    open Main
+}
+
+extend Speed {
+    on S9600.select {
+        quit
+    }
+}

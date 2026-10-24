@@ -1,0 +1,1 @@
+../../testdata/errors/column_expr.cla:14:9: column shows expects a field name or a function call

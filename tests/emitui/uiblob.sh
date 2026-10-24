@@ -54,6 +54,47 @@ else
     t_fail blob_structure "uiblob decode failed: $(tr '\n' ' ' < "$WORK/probe.err")"
 fi
 
+# Blob v2 (ui-widgets Task 1): decode testdata/emitui/ui_batch_decl.cla's
+# FRESHLY EMITTED blob and assert every new field reached it -- a widget's
+# height/font/fontSize/face/align/maxLines/divStyle, a column's align (and
+# a formatted column's fieldIndex -1 / fmtId -1), and a menu item's
+# itemFlags/submenuIdx. Field-by-field greps rather than a frozen dump, so
+# the emitui/goldens.sh .c.golden stays this fixture's one byte pin.
+batch=testdata/emitui/ui_batch_decl.cla
+if "$CLARUSC" emit -o "$WORK/batch.c" "$batch" > "$WORK/batch.err" 2>&1; then
+    awk '/clar_ui_blob\[\] *= *\{/{f=1;next} f&&/\};/{exit} f' "$WORK/batch.c" \
+      | tr -d ' \n' | tr ',' '\n' | grep -v '^$' \
+      | awk '{printf "%02x", $1+0}' | xxd -r -p > "$WORK/batch.blob"
+    if "$TOOLS/uiblob" "$WORK/batch.blob" > "$WORK/batch.dump" 2> "$WORK/batch.derr"; then
+        for want in \
+            'header magic=0x434C5549 version=2 ' \
+            'widget 0 0 kind=3 name="Status" .* flags=32 .* height=20 font="Monaco" fontSize=9 face=5 align=2 maxLines=0 divStyle=0$' \
+            'widget 0 1 kind=4 name="Who" .* height=30 font="Geneva" fontSize=12 face=2 ' \
+            'widget 0 2 kind=5 name="Notes" .* width=200 .* height=60 font="Monaco" fontSize=9 face=0 ' \
+            'widget 0 3 kind=2 name="Meter" .* width=120 .* height=40 font="Chicago" ' \
+            'widget 0 4 kind=7 name="Callers" .* widthIsFill=0 width=300 .* height=120 font="Geneva" fontSize=9 ' \
+            'col 0 4 0 header="Name" widthPx=120 widthFill=0 fieldIndex=0 align=0 fmtId=-1 fmtLayoutOff=0$' \
+            'col 0 4 1 header="Time" widthPx=0 widthFill=1 fieldIndex=-1 align=2 fmtId=-1 fmtLayoutOff=0$' \
+            'widget 0 5 kind=9 name="TopRule" .* widthIsFill=1 .* flags=0 .* height=3 font=- fontSize=0 face=0 align=0 maxLines=0 divStyle=1$' \
+            'widget 0 6 kind=9 name="SideRule" .* height=0 font=- .* divStyle=0$' \
+            'widget 0 7 kind=8 name="Log" .* fillBoth=1 flags=56 .* font="Monaco" fontSize=9 face=1 align=0 maxLines=100 divStyle=0$' \
+            'item 0 1 name="S9600" .* itemFlags=1 submenuIdx=-1$' \
+            'item 1 0 name="Init" .* key=73 .* itemFlags=1 submenuIdx=-1$' \
+            'item 1 1 name="Port" .* itemFlags=0 submenuIdx=0$'
+        do
+            if grep -q -- "$want" "$WORK/batch.dump"; then
+                t_pass "batch_v2: $want"
+            else
+                t_fail batch_v2 "no dump line matches '$want' in $WORK/batch.dump"
+            fi
+        done
+    else
+        t_fail batch_v2 "uiblob decode failed: $(tr '\n' ' ' < "$WORK/batch.derr")"
+    fi
+else
+    t_fail batch_v2 "clarusc emit $batch failed: $(head -3 "$WORK/batch.err" | tr '\n' ' ')"
+fi
+
 # The Go test also m68k compile-checks the FRESHLY EMITTED C (not the
 # golden -- that half is emitui/goldens.sh's job). Compile only, no link.
 GCC=$ROOT/toolchain/bin/m68k-apple-macos-gcc

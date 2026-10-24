@@ -241,7 +241,8 @@ func uibStr(poolIdx: int): int {
 // Kind/type numeric mappings -- the blob stores rt_ui.h's #define values
 // directly (no C macro spelling needed, unlike cprint.cla's
 // cpWidgetKindMacro/cpSerFieldRow, which this mirrors): RTUI_BUTTON..
-// RTUI_TABLE are 0..7 (runtime/mac/rt_ui.h:53-60); RT_FT_INT..RT_FT_ENUM
+// RTUI_TABLE are 0..7 (runtime/mac/rt_ui.h:53-60), RTUI_LOGPANEL 8 and
+// RTUI_DIVIDER 9 (ui-widgets Task 1); RT_FT_INT..RT_FT_ENUM
 // are 0..5 and RT_FT_U8/I16/U16 6..8 (cpEmitSerDescs' own doc comment). Both fail
 // closed (Global Constraints' fail-closed rule) on an unrecognized kind,
 // matching cpWidgetKindMacro's own precedent exactly.
@@ -274,6 +275,12 @@ func uibWidgetKindNum(kindIdx: int): int {
     }
     if kind == "table" {
         return 7
+    }
+    if kind == "logpanel" {
+        return 8
+    }
+    if kind == "divider" {
+        return 9
     }
     abort("uiblob: unknown widget kind " + kind)
     return -1
@@ -741,6 +748,12 @@ func uibEmitTable(w: int): int {
         uibI32(uibCols, irColumnDescWidthPx(c))
         uibI32(uibCols, uibBool(irColumnDescWidthFill(c)))
         uibI32(uibCols, irColumnDescFieldIndex(c))
+        // blob v2 (ui-widgets Task 1): align, fmtId (-1 = plain field),
+        // fmtLayoutOff (0 while fmtId is -1; Task 3 adds the one-field
+        // Layout entry for a real formatter's result type).
+        uibI32(uibCols, irColumnDescAlign(c))
+        uibI32(uibCols, irColumnDescFmtId(c))
+        uibI32(uibCols, 0)
         nCols = nCols + 1
         c = irColumnDescNext(c)
     }
@@ -791,7 +804,9 @@ func uibEmitForm(win: int): int {
     return off
 }
 
-// uibEmitWidget builds widget desc w's 13-int32 Widget entry into
+// uibEmitWidget builds widget desc w's 20-int32 Widget entry (blob v2:
+// the original 13, then height, fontNameOff, fontSize, face, align,
+// maxLines, divStyle -- ui-widgets Task 1) into
 // uibWidgets. whIdx is w's window's irWinHandlers index (-1 if that
 // window has no `extend` block); widgetIndex is w's own 0-based position
 // within its window's declared widget list (uibWidgetEventMask's lookup
@@ -817,6 +832,10 @@ func uibEmitWidget(w: int, whIdx: int, widgetIndex: int) {
     if irWidgetDescIsScrollH(w) {
         flags = flags | 16
     }
+    // rtUiFlagFontSet (blob v2): the widget declared `font:`.
+    if irWidgetDescFontName(w) != -1 {
+        flags = flags | 32
+    }
 
     tableOff = -1
     if poolGet(irWidgetDescKind(w)) == "table" {
@@ -836,9 +855,24 @@ func uibEmitWidget(w: int, whIdx: int, widgetIndex: int) {
     uibI32(uibWidgets, flags)
     uibI32(uibWidgets, uibWidgetEventMask(whIdx, widgetIndex))
     uibI32(uibWidgets, tableOff)
+    uibI32(uibWidgets, irWidgetDescHeight(w))
+    // fontNameOff: 0 = none (blob v2's own sentinel for this field, not
+    // -1 -- offset 0 is the header magic, never a string).
+    if irWidgetDescFontName(w) == -1 {
+        uibI32(uibWidgets, 0)
+    } else {
+        uibI32(uibWidgets, uibStr(irWidgetDescFontName(w)))
+    }
+    uibI32(uibWidgets, irWidgetDescFontSize(w))
+    uibI32(uibWidgets, irWidgetDescFace(w))
+    uibI32(uibWidgets, irWidgetDescAlign(w))
+    uibI32(uibWidgets, irWidgetDescMaxLines(w))
+    uibI32(uibWidgets, irWidgetDescDivStyle(w))
 }
 
-// uibEmitMenuItem builds item m's 4-int32 Item entry into uibItems.
+// uibEmitMenuItem builds item m's 6-int32 Item entry into uibItems (blob
+// v2: nameOff, labelOff, key, separator, itemFlags -- bit 0 checked --,
+// submenuIdx -- -1 none).
 func uibEmitMenuItem(m: int) {
     var keyIdx: int
     var keyVal: int
@@ -856,6 +890,8 @@ func uibEmitMenuItem(m: int) {
     uibI32(uibItems, uibStr(irMenuItemDescCaption(m)))
     uibI32(uibItems, keyVal)
     uibI32(uibItems, uibBool(irMenuItemDescIsSeparator(m)))
+    uibI32(uibItems, uibBool(irMenuItemDescIsChecked(m)))
+    uibI32(uibItems, irMenuItemDescSubmenu(m))
 }
 
 // ================================================================
@@ -940,9 +976,9 @@ func uibBuild(): list of int {
     // sizing pre-pass's totals above.
     uibBaseWindows = 44
     uibBaseWidgets = uibBaseWindows + irWindowDescs.count * 52
-    uibBaseMenus = uibBaseWidgets + irWidgetDescs.count * 52
+    uibBaseMenus = uibBaseWidgets + irWidgetDescs.count * 80
     uibBaseItems = uibBaseMenus + irMenuDescs.count * 20
-    uibBaseMenuHandlers = uibBaseItems + irMenuItemDescs.count * 16
+    uibBaseMenuHandlers = uibBaseItems + irMenuItemDescs.count * 24
     uibBaseEvery = uibBaseMenuHandlers + irMenuHandlerCount * 24
     uibBaseApp = uibBaseEvery + irEveryCount * 4
     uibBaseForms = uibBaseApp
@@ -952,7 +988,7 @@ func uibBuild(): list of int {
     uibBaseBinds = uibBaseForms + nFormsThis * 12
     uibBaseTables = uibBaseBinds + irBindDescs.count * 8
     uibBaseCols = uibBaseTables + nTablesThis * 16
-    uibBaseLayouts = uibBaseCols + irColumnDescs.count * 16
+    uibBaseLayouts = uibBaseCols + irColumnDescs.count * 28
     uibBaseEnumArrays = uibBaseLayouts + uibSizeLayoutsAcc
     uibBaseStrings = uibBaseEnumArrays + uibSizeEnumArraysAcc
 
@@ -1010,13 +1046,16 @@ func uibBuild(): list of int {
     while i < irMenuDescs.count {
         itemsOffThis = uibBaseItems + uibItems.count
         nItemsThis = 0
-        if not irMenuDescIsStandardEdit(i) {
-            m = irMenuDescItemsHead(i)
-            while m != -1 {
-                uibEmitMenuItem(m)
-                nItemsThis = nItemsThis + 1
-                m = irMenuItemDescNext(m)
-            }
+        // C11 (ui-widgets Task 1): a menu that mixes `standard edit` with
+        // its own items keeps those items too, in declaration order --
+        // this used to drop every one of them (lowMenuDecl had already
+        // built them; the item array is just empty for a pure std-edit
+        // menu, so nothing changes there).
+        m = irMenuDescItemsHead(i)
+        while m != -1 {
+            uibEmitMenuItem(m)
+            nItemsThis = nItemsThis + 1
+            m = irMenuItemDescNext(m)
         }
         if nItemsThis == 0 {
             itemsOffThis = -1
@@ -1066,7 +1105,7 @@ func uibBuild(): list of int {
         appOffVal = uibBaseApp
     }
     uibI32(uibHeader, 0x434C5549)
-    uibI32(uibHeader, 1)
+    uibI32(uibHeader, 2)
     uibI32(uibHeader, irWindowDescs.count)
     uibI32(uibHeader, uibBaseWindows)
     uibI32(uibHeader, irMenuDescs.count)

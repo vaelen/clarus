@@ -148,7 +148,12 @@
 //                chained via ExprNode.next, -1 if none) -- a window/widget
 //                property, e.g. `title: "x"` or a bare `resizable`
 //   DkColumn     nameIdx=header (interned string content); a=shows name
-//                (interned); intVal=widthPx; b=widthFill flag (0/1)
+//                (interned; -1 when `shows` is a call, not a bare field
+//                name); intVal=widthPx; b=widthFill flag (bit 0) | align
+//                << 1 (0 left, 1 center, 2 right -- `align IDENT`, ui-
+//                widgets Task 1); c=the `shows` expression (exprs arena:
+//                an ExIdent for a plain field, an ExCall for a formatted
+//                column)
 //   DkFormFor    nameIdx=record type name                -- `form for T`
 //   DkWidget     nameIdx=widget instance name; a=widget kind (interned,
 //                e.g. "button"); b=props list head (DkProperty/DkColumn
@@ -156,7 +161,9 @@
 //   DkMenuEntry  nameIdx=item name (-1 if separator/standard-edit);
 //                a=caption (interned, -1 if none); b=key (interned, -1 if
 //                none); intVal=flags bitmask (bit0 IsItem, bit1
-//                IsSeparator, bit2 IsStandardEdit)
+//                IsSeparator, bit2 IsStandardEdit, bit3 Checked -- ui-
+//                widgets Task 1); c=submenu menu name (interned, -1 if
+//                none -- `item X "x" submenu M`)
 //   DkApp        nameIdx=label; a=props head (DkProperty chain); b=path
 //                pool idx
 //   DkExternFunc (Task 3, Ch13: `external func`) nameIdx=name; a=params
@@ -1920,14 +1927,15 @@ func propertyValuesHead(i: int): int {
     return decls[i].a
 }
 
-func newColumn(headerIdx: int, showsIdx: int, widthPx: int, widthFill: bool, line: int, col: int): int {
+func newColumn(headerIdx: int, showsIdx: int, showsExpr: int, widthPx: int, widthFill: bool, align: int, line: int, col: int): int {
     var n: DeclNode
 
     n.kind = DkColumn
     n.nameIdx = headerIdx
     n.a = showsIdx
     n.intVal = widthPx
-    n.b = boolToInt(widthFill)
+    n.b = boolToInt(widthFill) | (align << 1)
+    n.c = showsExpr
     n.next = -1
     n.line = line
     n.col = col
@@ -1948,7 +1956,18 @@ func columnWidthPx(i: int): int {
 }
 
 func columnWidthFill(i: int): bool {
-    return intToBool(decls[i].b)
+    return (decls[i].b & 1) != 0
+}
+
+// columnAlign: 0 left (the default), 1 center, 2 right.
+func columnAlign(i: int): int {
+    return decls[i].b >> 1
+}
+
+// columnShowsExpr: the `shows` expression -- an ExIdent (columnShows is
+// then its name) or an ExCall (a formatted column; columnShows is -1).
+func columnShowsExpr(i: int): int {
+    return decls[i].c
 }
 
 func newFormFor(recordNameIdx: int, line: int, col: int): int {
@@ -1993,7 +2012,7 @@ func widgetPropsHead(i: int): int {
     return decls[i].b
 }
 
-func newMenuEntry(nameIdx: int, captionIdx: int, keyIdx: int, isItem: bool, isSeparator: bool, isStandardEdit: bool, line: int, col: int): int {
+func newMenuEntry(nameIdx: int, captionIdx: int, keyIdx: int, isItem: bool, isSeparator: bool, isStandardEdit: bool, isChecked: bool, submenuIdx: int, line: int, col: int): int {
     var n: DeclNode
     var flags: int
 
@@ -2007,11 +2026,15 @@ func newMenuEntry(nameIdx: int, captionIdx: int, keyIdx: int, isItem: bool, isSe
     if isStandardEdit {
         flags = flags + 4
     }
+    if isChecked {
+        flags = flags + 8
+    }
 
     n.kind = DkMenuEntry
     n.nameIdx = nameIdx
     n.a = captionIdx
     n.b = keyIdx
+    n.c = submenuIdx
     n.intVal = flags
     n.next = -1
     n.line = line
@@ -2042,6 +2065,15 @@ func menuEntryIsSeparator(i: int): bool {
 
 func menuEntryIsStandardEdit(i: int): bool {
     return (decls[i].intVal & 4) != 0
+}
+
+func menuEntryIsChecked(i: int): bool {
+    return (decls[i].intVal & 8) != 0
+}
+
+// menuEntrySubmenu: the `submenu M` menu name (interned), -1 if none.
+func menuEntrySubmenu(i: int): int {
+    return decls[i].c
 }
 
 // ================================================================

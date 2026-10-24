@@ -1235,11 +1235,24 @@ func rtTextRemoveFirst(t: ptr, n: int) {
 // per doubling boundary when a per-char producer grows implicitly
 // (measured ~6 traps filling 0->128 one char at a time). No-op when
 // capacity already suffices; never shrinks; panics "out of memory" on
-// failure exactly like implicit growth (rtTextGrow above).
+// failure exactly like implicit growth (rtTextGrow above). Sized to
+// exactly n (ui-widgets Task 1), like rtListReserve, not rounded up to
+// rtTextGrow's next doubling: a caller that knows its size should not pay
+// up to twice it (clarusc's per-segment output buffer, a68ReserveOut).
+// Later implicit growth doubles from n as usual.
 func rtTextReserve(t: ptr, n: int) {
-    if n > 0 {
-        rtTextGrow(t, n)
+    var rt: RtText
+    var err: int
+
+    rt = RtText(t)
+    if n <= rt.cap {
+        return
     }
+    err = TextSetHandleSize(rt.h, n)
+    if err != 0 {
+        rtPanic("out of memory")
+    }
+    rt.cap = n
 }
 
 // rtTextAppendText (rt_core.inc:452-464): src may alias t (self-append

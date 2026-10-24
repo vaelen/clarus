@@ -553,6 +553,13 @@ record IREnumLayout {
 // cpFindGlobalRecName scans irGlobals by this name to find the row record's
 // clar_layout_NAME); columnsHead chains this table's IRColumnDesc list (-1
 // if none, though a real table always has >=1 column by Ch10 grammar).
+//
+// height..divStyle (ui-widgets Task 1, blob v2) are set after construction
+// by irWidgetDescSetLook: height (0 = kind default), fontNameIdx (interned
+// `font:` name, -1 = none), fontSize (0 = none), face (QuickDraw Style
+// bits: bold 1, italic 2, underline 4), align (0 left, 1 center, 2
+// right), maxLines (logpanel; 0 = default), divStyle (0 single, 1
+// double).
 record IRWidgetDesc {
     nameIdx: int
     kindIdx: int
@@ -572,6 +579,13 @@ record IRWidgetDesc {
     bindsIdx: int
     rowsGlobalIdx: int
     columnsHead: int
+    height: int
+    fontNameIdx: int
+    fontSize: int
+    face: int
+    align: int
+    maxLines: int
+    divStyle: int
     next: int
 }
 
@@ -581,11 +595,19 @@ record IRWidgetDesc {
 // field's 0-based position in the row record's own field order (the same
 // order cpEmitLayouts' rt_field_desc[] uses), resolved once at lowering time
 // (lower.cla's lowColumnFieldIndex) so cprint never re-walks the record.
+// align (ui-widgets Task 1): 0 left, 1 center, 2 right. fmtExpr: the
+// `shows f(...)` call's AST (exprs arena) for a formatted column, -1 for a
+// plain field (fieldIndex is then -1 for a formatted one); fmtId: the
+// formatter's UiColFmt switch id, -1 = plain field (Task 3 assigns real
+// ids; until then every column is -1 and a formatted one draws empty).
 record IRColumnDesc {
     headerIdx: int
     fieldIndex: int
     widthPx: int
     widthFill: bool
+    align: int
+    fmtExpr: int
+    fmtId: int
     next: int
 }
 
@@ -648,11 +670,15 @@ record IRWindowDesc {
 // `rt_ui_menu_enable`'s itemIdx is this entry's 0-based position in the
 // FULL declared list, separators included (see probe_ui.c's kProbeMenuItems
 // and lower.cla's lowMenuEnableAssign).
+// isChecked/submenuIdx (ui-widgets Task 1): the declared `checked` flag
+// and the `submenu M` menu's declaration index (-1 = none).
 record IRMenuItemDesc {
     nameIdx: int
     captionIdx: int
     keyIdx: int
     isSeparator: bool
+    isChecked: bool
+    submenuIdx: int
     next: int
 }
 
@@ -2785,9 +2811,56 @@ func newIRWidgetDesc(nameIdx: int, kindIdx: int, captionIdx: int, atKind: int, x
     n.bindsIdx = bindsIdx
     n.rowsGlobalIdx = rowsGlobalIdx
     n.columnsHead = columnsHead
+    n.height = 0
+    n.fontNameIdx = -1
+    n.fontSize = 0
+    n.face = 0
+    n.align = 0
+    n.maxLines = 0
+    n.divStyle = 0
     n.next = -1
     irWidgetDescs.add(n)
     return irWidgetDescs.count - 1
+}
+
+// irWidgetDescSetLook sets the blob-v2 fields (see IRWidgetDesc's doc
+// comment) -- a setter rather than more constructor params.
+func irWidgetDescSetLook(i: int, height: int, fontNameIdx: int, fontSize: int, face: int, align: int, maxLines: int, divStyle: int) {
+    irWidgetDescs[i].height = height
+    irWidgetDescs[i].fontNameIdx = fontNameIdx
+    irWidgetDescs[i].fontSize = fontSize
+    irWidgetDescs[i].face = face
+    irWidgetDescs[i].align = align
+    irWidgetDescs[i].maxLines = maxLines
+    irWidgetDescs[i].divStyle = divStyle
+}
+
+func irWidgetDescHeight(i: int): int {
+    return irWidgetDescs[i].height
+}
+
+func irWidgetDescFontName(i: int): int {
+    return irWidgetDescs[i].fontNameIdx
+}
+
+func irWidgetDescFontSize(i: int): int {
+    return irWidgetDescs[i].fontSize
+}
+
+func irWidgetDescFace(i: int): int {
+    return irWidgetDescs[i].face
+}
+
+func irWidgetDescAlign(i: int): int {
+    return irWidgetDescs[i].align
+}
+
+func irWidgetDescMaxLines(i: int): int {
+    return irWidgetDescs[i].maxLines
+}
+
+func irWidgetDescDivStyle(i: int): int {
+    return irWidgetDescs[i].divStyle
 }
 
 func irWidgetDescName(i: int): int {
@@ -2876,13 +2949,16 @@ func irColumnDescListAppend(tailIdx: int, idx: int): int {
     return idx
 }
 
-func newIRColumnDesc(headerIdx: int, fieldIndex: int, widthPx: int, widthFill: bool): int {
+func newIRColumnDesc(headerIdx: int, fieldIndex: int, widthPx: int, widthFill: bool, align: int, fmtExpr: int): int {
     var n: IRColumnDesc
 
     n.headerIdx = headerIdx
     n.fieldIndex = fieldIndex
     n.widthPx = widthPx
     n.widthFill = widthFill
+    n.align = align
+    n.fmtExpr = fmtExpr
+    n.fmtId = -1
     n.next = -1
     irColumnDescs.add(n)
     return irColumnDescs.count - 1
@@ -2902,6 +2978,18 @@ func irColumnDescWidthPx(i: int): int {
 
 func irColumnDescWidthFill(i: int): bool {
     return irColumnDescs[i].widthFill
+}
+
+func irColumnDescAlign(i: int): int {
+    return irColumnDescs[i].align
+}
+
+func irColumnDescFmtExpr(i: int): int {
+    return irColumnDescs[i].fmtExpr
+}
+
+func irColumnDescFmtId(i: int): int {
+    return irColumnDescs[i].fmtId
 }
 
 func irColumnDescNext(i: int): int {
@@ -3011,13 +3099,15 @@ func irMenuItemDescListAppend(tailIdx: int, idx: int): int {
     return idx
 }
 
-func newIRMenuItemDesc(nameIdx: int, captionIdx: int, keyIdx: int, isSeparator: bool): int {
+func newIRMenuItemDesc(nameIdx: int, captionIdx: int, keyIdx: int, isSeparator: bool, isChecked: bool, submenuIdx: int): int {
     var n: IRMenuItemDesc
 
     n.nameIdx = nameIdx
     n.captionIdx = captionIdx
     n.keyIdx = keyIdx
     n.isSeparator = isSeparator
+    n.isChecked = isChecked
+    n.submenuIdx = submenuIdx
     n.next = -1
     irMenuItemDescs.add(n)
     return irMenuItemDescs.count - 1
@@ -3037,6 +3127,14 @@ func irMenuItemDescKey(i: int): int {
 
 func irMenuItemDescIsSeparator(i: int): bool {
     return irMenuItemDescs[i].isSeparator
+}
+
+func irMenuItemDescIsChecked(i: int): bool {
+    return irMenuItemDescs[i].isChecked
+}
+
+func irMenuItemDescSubmenu(i: int): int {
+    return irMenuItemDescs[i].submenuIdx
 }
 
 func irMenuItemDescNext(i: int): int {

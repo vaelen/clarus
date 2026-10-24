@@ -1,0 +1,21 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+record Row {
+    name: string(63)
+}
+
+var rows: list of Row
+
+func f(s: string): text {
+    var t: text
+    t.append(s)
+    return t
+}
+
+window W {
+    table T {
+        rows: rows
+        column "Name" shows f(name) width fill
+    }
+}

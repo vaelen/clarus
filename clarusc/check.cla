@@ -1001,6 +1001,48 @@ func buildUiTables() {
     widgetDeclProps["label.at"] = 1
     widgetDeclProps["label.width"] = 1
 
+    // ui-widgets Task 1 (spec 3.1-3.6): `height` on every kind; `width`
+    // on textview/canvas/table; `font`/`style` on the text-drawing kinds;
+    // label `align`; the two new kinds' own sets. Values are validated
+    // by checkWidgetPropValue, not here.
+    widgetDeclProps["button.height"] = 1
+    widgetDeclProps["field.height"] = 1
+    widgetDeclProps["textview.height"] = 1
+    widgetDeclProps["check.height"] = 1
+    widgetDeclProps["popup.height"] = 1
+    widgetDeclProps["table.height"] = 1
+    widgetDeclProps["canvas.height"] = 1
+    widgetDeclProps["label.height"] = 1
+    widgetDeclProps["textview.width"] = 1
+    widgetDeclProps["canvas.width"] = 1
+    widgetDeclProps["table.width"] = 1
+    widgetDeclProps["label.font"] = 1
+    widgetDeclProps["field.font"] = 1
+    widgetDeclProps["textview.font"] = 1
+    widgetDeclProps["table.font"] = 1
+    widgetDeclProps["canvas.font"] = 1
+    widgetDeclProps["label.style"] = 1
+    widgetDeclProps["field.style"] = 1
+    widgetDeclProps["textview.style"] = 1
+    widgetDeclProps["table.style"] = 1
+    widgetDeclProps["canvas.style"] = 1
+    widgetDeclProps["label.align"] = 1
+
+    widgetDeclProps["logpanel.maxLines"] = 1
+    widgetDeclProps["logpanel.scrollbar"] = 1
+    widgetDeclProps["logpanel.fill"] = 1
+    widgetDeclProps["logpanel.at"] = 1
+    widgetDeclProps["logpanel.width"] = 1
+    widgetDeclProps["logpanel.height"] = 1
+    widgetDeclProps["logpanel.font"] = 1
+    widgetDeclProps["logpanel.style"] = 1
+
+    widgetDeclProps["divider.style"] = 1
+    widgetDeclProps["divider.at"] = 1
+    widgetDeclProps["divider.width"] = 1
+    widgetDeclProps["divider.height"] = 1
+    widgetDeclProps["divider.fill"] = 1
+
     widgetRuntimeProps["button.caption"] = strT(255)
     widgetRuntimeProps["button.enabled"] = BoolT
     widgetRuntimeProps["field.text"] = strT(255)
@@ -3872,8 +3914,11 @@ func checkWindowDecl(d: int) {
                             emitDiag(exprLine(vh), exprCol(vh), mname + " is not a declared menu")
                         } else if seenMenus.has(mname) {
                             emitDiag(exprLine(vh), exprCol(vh), "menus: " + mname + " listed twice")
+                        } else if menuUsedAsSubmenu.has(mname) {
+                            emitDiag(exprLine(vh), exprCol(vh), "menu " + mname + " is a submenu and cannot appear in menus:")
                         } else {
                             seenMenus[mname] = 1
+                            menuInWindowMenus[mname] = 1
                         }
                     }
                     vh = exprNext(vh)
@@ -4123,10 +4168,16 @@ func checkWidget(w: int, formRecType: int): int {
     while p != -1 {
         if declKind(p) == DkProperty {
             pname = poolGet(propertyName(p))
-            if not widgetDeclProps.has(kind + "." + pname) {
+            if (pname == "font" or pname == "style") and (kind == "button" or kind == "check" or kind == "popup") {
+                // spec C8: a Control Manager control draws in the system
+                // font; a per-widget font is not offered for them.
+                emitDiag(declLine(p), declCol(p), "buttons, checks and popups use the system font")
+            } else if not widgetDeclProps.has(kind + "." + pname) {
                 emitDiag(declLine(p), declCol(p), "unknown property " + pname + " for " + kind)
             } else if pname == "binds" {
                 binds = checkBindsProperty(p, kind, formRecType)
+            } else {
+                checkWidgetPropValue(p, kind, pname)
             }
         } else if declKind(p) == DkColumn {
             if kind != "table" {
@@ -4165,12 +4216,27 @@ func checkRowsProperty(p: int): int {
 
 // checkColumn checks `column "Header" shows field` (Ch10) -- field must be a
 // field of the row record. rowRecType is -1 when `rows:` was missing or
-// misdiagnosed; skip silently to avoid a cascading second error.
+// misdiagnosed; skip silently to avoid a cascading second error. A
+// formatted column (`shows f(field, ...)`, ui-widgets Task 1) is queued
+// for checkFmtColumns instead: its callee may be a func declared below
+// the window, which phase 1 (source order) has not declared yet.
 func checkColumn(col: int, rowRecType: int) {
     var want: int
     var fh: int
+    var e: int
 
     if rowRecType == -1 {
+        return
+    }
+    e = columnShowsExpr(col)
+    if e != -1 and exprKind(e) == ExCall {
+        fmtColDecls.add(col)
+        fmtColRowRec.add(rowRecType)
+        fmtColPath.add(curPathIdx)
+        return
+    }
+    if e == -1 or exprKind(e) != ExIdent {
+        emitDiag(declLine(col), declCol(col), "column shows expects a field name or a function call")
         return
     }
     want = columnShows(col)
@@ -4182,6 +4248,144 @@ func checkColumn(col: int, rowRecType: int) {
         fh = fieldInfos[fh].next
     }
     emitDiag(declLine(col), declCol(col), "no field " + poolGet(want) + " on " + poolGet(typeNameIdx(rowRecType)))
+}
+
+// fmtColDecls/fmtColRowRec (ui-widgets Task 1): the formatted columns
+// checkColumn queued in phase 1, each with its row record type, checked by
+// checkFmtColumns at the start of phase 2 against the complete top scope.
+var fmtColDecls: list of int
+var fmtColRowRec: list of int
+var fmtColPath: list of int
+
+// checkFmtColumns checks each queued `shows f(args)` call (spec 3.5): the
+// call is checked in a scope declaring the row record's fields bare
+// (windowScope's shape), the callee must be a top-level user func, and its
+// result must be a type a column can render.
+func checkFmtColumns() {
+    var i: int
+    var col: int
+    var e: int
+    var fn: int
+    var symIdx: int
+    var mark: int
+    var saved: int
+    var fh: int
+    var t: int
+    var k: TypeKind
+
+    i = 0
+    while i < fmtColDecls.count {
+        col = fmtColDecls[i]
+        curPathIdx = fmtColPath[i]
+        e = columnShowsExpr(col)
+        fn = callFn(e)
+        symIdx = -1
+        if exprKind(fn) == ExIdent {
+            symIdx = scopes[topScope].names.get(identName(fn), -1)
+        }
+        if symIdx == -1 or not symbols[symIdx].isFunc or symbols[symIdx].isExtern or symbols[symIdx].isCallback {
+            emitDiag(declLine(col), declCol(col), "column shows expects a field name or a function call")
+        } else {
+            mark = scopes.count
+            saved = curScope
+            curScope = scopeNew(topScope)
+            fh = recordFieldsHead(typeNameIdx(fmtColRowRec[i]))
+            while fh != -1 {
+                declScopeVar(curScope, fieldInfos[fh].nameIdx, fieldInfos[fh].typeIdx)
+                fh = fieldInfos[fh].next
+            }
+            t = checkExpr(e, -1)
+            curScope = saved
+            scopesTruncate(mark)
+            if t != InvalidT {
+                k = typeKind(t)
+                if k != TyStr and k != TyInt and k != TyFixed and k != TyBool and k != TyChar and k != TyEnum {
+                    emitDiag(declLine(col), declCol(col), "column function must return a string, number, bool, char or enum")
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+// checkWidgetPropValue validates one already-name-checked widget property's
+// VALUES (ui-widgets Task 1, spec 4.4) -- only the properties this phase
+// added; the older ones keep their lowering-time interpretation.
+func checkWidgetPropValue(p: int, kind: string, pname: string) {
+    var vh: int
+    var n: int
+    var v: int
+    var word: string
+    var sawPlain: bool
+    var line: int
+    var col: int
+
+    vh = propertyValuesHead(p)
+    n = exprListCount(vh)
+    line = declLine(p)
+    col = declCol(p)
+    if pname == "font" {
+        v = exprNext(vh)
+        if n != 2 or exprKind(vh) != ExStringLit or exprKind(v) != ExIntLit or intLitVal(v) < 1 or intLitVal(v) > 127 {
+            emitDiag(line, col, "font: expects a font name string and a size from 1 to 127")
+        }
+    } else if pname == "style" and kind == "divider" {
+        word = ""
+        if n == 1 and exprKind(vh) == ExIdent {
+            word = poolGet(identName(vh))
+        }
+        if word != "single" and word != "double" {
+            emitDiag(line, col, "divider style: expects single or double")
+        }
+    } else if pname == "style" {
+        if n == 0 {
+            emitDiag(line, col, "style: expects plain, bold, italic or underline")
+            return
+        }
+        sawPlain = false
+        v = vh
+        while v != -1 {
+            if exprKind(v) != ExIdent {
+                emitDiag(line, col, "style: expects plain, bold, italic or underline")
+                return
+            }
+            word = poolGet(identName(v))
+            if word == "plain" {
+                sawPlain = true
+            } else if word != "bold" and word != "italic" and word != "underline" {
+                emitDiag(line, col, "unknown style " + word + " (expected plain, bold, italic or underline)")
+                return
+            }
+            v = exprNext(v)
+        }
+        if sawPlain and n > 1 {
+            emitDiag(line, col, "plain cannot be combined with other styles")
+        }
+    } else if pname == "align" {
+        word = ""
+        if n == 1 and exprKind(vh) == ExIdent {
+            word = poolGet(identName(vh))
+        }
+        if word != "left" and word != "center" and word != "right" {
+            emitDiag(line, col, "align: expects left, center or right")
+        }
+    } else if pname == "maxLines" {
+        if n != 1 or exprKind(vh) != ExIntLit or intLitVal(vh) < 1 {
+            emitDiag(line, col, "maxLines: expects an integer literal of at least 1")
+        }
+    } else if pname == "height" {
+        if n != 1 or exprKind(vh) != ExIntLit {
+            emitDiag(line, col, "height: expects an integer literal")
+        }
+    } else if pname == "scrollbar" and kind == "logpanel" {
+        word = ""
+        if n == 1 and exprKind(vh) == ExIdent {
+            word = poolGet(identName(vh))
+        }
+        if word != "vertical" and word != "both" {
+            emitDiag(line, col, "scrollbar: expects vertical or both")
+        }
+    }
 }
 
 // checkBindsProperty checks `binds: name` on a field/check/popup widget
@@ -4253,6 +4457,13 @@ func checkBindsProperty(p: int, kind: string, formRecType: int): int {
 // every other cross-decl checker state.
 var menuDeclCount: int
 
+// menuUsedAsSubmenu / menuInWindowMenus (ui-widgets Task 1, spec C12): the
+// menus some item names as its `submenu`, and the menus some window names
+// in `menus:` -- a menu may be in at most one of the two, and a submenu
+// may belong to only one item. Both name-keyed; reset in checkReset.
+var menuUsedAsSubmenu: map of int
+var menuInWindowMenus: map of int
+
 // checkMenuDecl builds a menu's item set (Ch9) and declares its name as a
 // menu symbol -- entry shape is already validated by the parser; only
 // duplicate item names are a checker concern.
@@ -4263,6 +4474,9 @@ func checkMenuDecl(d: int) {
     var iname: string
     var seen: map of int
     var sym: Symbol
+    var subIdx: int
+    var subName: string
+    var symIdx: int
 
     menuDeclCount = menuDeclCount + 1
     if menuDeclCount == 32 {
@@ -4280,6 +4494,22 @@ func checkMenuDecl(d: int) {
                 seen[iname] = 1
             }
             menuItems[menuKey(menuName, iname)] = 1
+            // `submenu M` (C12): M must be a menu declared ABOVE this one
+            // (single pass, the same rule `menus:` follows).
+            subIdx = menuEntrySubmenu(e)
+            if subIdx != -1 {
+                subName = poolGet(subIdx)
+                symIdx = scopeLookup(curScope, subIdx)
+                if symIdx == -1 or not symbols[symIdx].isMenu {
+                    emitDiag(declLine(e), declCol(e), subName + " is not a declared menu")
+                } else if menuUsedAsSubmenu.has(subName) {
+                    emitDiag(declLine(e), declCol(e), "menu " + subName + " is already a submenu")
+                } else if menuInWindowMenus.has(subName) {
+                    emitDiag(declLine(e), declCol(e), "menu " + subName + " is a submenu and cannot appear in menus:")
+                } else {
+                    menuUsedAsSubmenu[subName] = 1
+                }
+            }
         }
         e = declNext(e)
     }
@@ -6644,6 +6874,8 @@ func checkReset() {
     var freshConstFirstDeclByName: map of int
     var freshArrLitIdxOf: intmap of int
     var freshConstUseArr: intmap of int
+    var freshMenuUsedAsSubmenu: map of int
+    var freshMenuInWindowMenus: map of int
 
     // cnInit's own guard (cnInited) is a process-lifetime lazy-init idiom
     // (see its own decl comment) -- reset here, right before calling it,
@@ -6705,6 +6937,11 @@ func checkReset() {
     // bounded-memory fold, plain-key style (no former progGen namespace
     // to drop -- this map is new, born already in its final shape).
     constFirstDeclByName = freshConstFirstDeclByName
+    menuUsedAsSubmenu = freshMenuUsedAsSubmenu
+    menuInWindowMenus = freshMenuInWindowMenus
+    fmtColDecls.clear()
+    fmtColRowRec.clear()
+    fmtColPath.clear()
 
     connectionT = pushSimple(TyConnection)
     listenerT = pushSimple(TyListener)
@@ -6839,6 +7076,7 @@ func checkPhase1(declHead: int) {
 func checkPhase2(declHead: int) {
     var d: int
 
+    checkFmtColumns()
     d = declHead
     while d != -1 {
         setCheckPath(d)

@@ -1,0 +1,1 @@
+../../testdata/errors/maxlines_bad.cla:5:18: maxLines: expects an integer literal of at least 1

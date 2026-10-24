@@ -579,6 +579,15 @@ func a68Flush() {
     a68DataTexts.clear()
 }
 
+// a68ReserveOut pre-sizes this segment's (fresh, after a68Reset) output
+// buffer to n bytes -- the packer's own size estimate -- so it is not
+// grown by doubling past the segment's real size (ui-widgets Task 1: a
+// segment just over a power of two held twice its bytes at the emit
+// peak). Contents and output are unchanged; only capacity moves.
+func a68ReserveOut(n: int) {
+    a68BytesOut.reserve(n)
+}
+
 func a68Bytes(): text {
     return a68BytesOut
 }

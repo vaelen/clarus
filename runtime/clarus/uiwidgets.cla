@@ -161,6 +161,10 @@ const rtUiKindTextview: int = 5
 // makes the splice order irrelevant; this file's own rtUiKindHeight/
 // rtUiKindWidth/rtUiLayout/rtUiMakeWidgets bodies below reference them by
 // name.
+// LOGPANEL=8/DIVIDER=9 (ui-widgets Task 1, blob v2; RTUI_LOGPANEL/
+// RTUI_DIVIDER in rt_ui.h).
+const rtUiKindLogpanel: int = 8
+const rtUiKindDivider: int = 9
 
 const rtUiAtXY: int = 0
 const rtUiAtNext: int = 1
@@ -175,6 +179,17 @@ const rtUiFlagBuffered: int = 4
 // SCROLL_V/SCROLL_H (rt_ui.h): textview-only -- live as of Task 8.
 const rtUiFlagScrollV: int = 8
 const rtUiFlagScrollH: int = 16
+// FONTSET (blob v2): the widget declared `font:` (uidWidgetFontName/Size).
+const rtUiFlagFontSet: int = 32
+
+// Blob v2 face bits (QuickDraw Style bits) and align codes, as the blob's
+// own uidWidgetFace/uidWidgetAlign/uidColAlign fields store them.
+const rtUiFaceBold: int = 1
+const rtUiFaceItalic: int = 2
+const rtUiFaceUnderline: int = 4
+const rtUiAlignLeft: int = 0
+const rtUiAlignCenter: int = 1
+const rtUiAlignRight: int = 2
 
 const rtUiPropCaption: int = 0
 const rtUiPropText: int = 1
@@ -205,6 +220,11 @@ const rtUiButtonW: int = 80
 const rtUiCheckW: int = 90
 const rtUiLabelW: int = 150
 const rtUiCanvasW: int = 200
+// logpanel/divider natural size (ui-widgets Task 1).
+const rtUiLogpanelH: int = 100
+const rtUiLogpanelW: int = 200
+const rtUiDividerH: int = 1
+const rtUiDividerW: int = 1
 const rtUiScrollbarW: int = 15
 
 // field/textview natural size + labeled-field lane width (rt_ui.c:180-195,
@@ -369,6 +389,12 @@ func rtUiKindHeight(kind: int): int {
     case rtUiKindTable {
         return rtUiTableH
     }
+    case rtUiKindLogpanel {
+        return rtUiLogpanelH
+    }
+    case rtUiKindDivider {
+        return rtUiDividerH
+    }
     else {
         return rtUiCheckH
     }
@@ -401,6 +427,12 @@ func rtUiKindWidth(kind: int): int {
     }
     case rtUiKindTable {
         return rtUiTableW
+    }
+    case rtUiKindLogpanel {
+        return rtUiLogpanelW
+    }
+    case rtUiKindDivider {
+        return rtUiDividerW
     }
     else {
         return rtUiCheckW
@@ -800,6 +832,16 @@ func rtUiMakeWidgets(inst: ptr) {
             stubH = rtUiMakeLdefStub()
             pokel(UiHandleDeref(lh) + rtUiListDefProc, int(stubH))
             UiLSetDrawingMode(true, lh) // see this function's own header note
+        }
+        case rtUiKindLogpanel {
+            // ui-widgets Task 1: a stub. Task 2 wires the Make op here
+            // (UiLogOp(rtUiLogOpMake, ...), uilog.cla) -- that extern and
+            // its module do not exist yet.
+            rtUiSetCtrlAt(w, i, ptr(0))
+        }
+        case rtUiKindDivider {
+            // Nothing to create: a divider is drawn from its rect alone.
+            rtUiSetCtrlAt(w, i, ptr(0))
         }
         else {
             log("uiport: unrecognized widget kind")

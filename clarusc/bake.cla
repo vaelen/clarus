@@ -1298,6 +1298,13 @@ func bkWriteIrWidgetDescs(): text {
         bkPutU32(sec, irWidgetDescs[i].bindsIdx)
         bkPutU32(sec, irWidgetDescs[i].rowsGlobalIdx)
         bkPutU32(sec, irWidgetDescs[i].columnsHead)
+        bkPutU32(sec, irWidgetDescs[i].height)
+        bkPutU32(sec, irWidgetDescs[i].fontNameIdx)
+        bkPutU32(sec, irWidgetDescs[i].fontSize)
+        bkPutU32(sec, irWidgetDescs[i].face)
+        bkPutU32(sec, irWidgetDescs[i].align)
+        bkPutU32(sec, irWidgetDescs[i].maxLines)
+        bkPutU32(sec, irWidgetDescs[i].divStyle)
         bkPutU32(sec, irWidgetDescs[i].next)
         i = i + 1
     }
@@ -1315,6 +1322,9 @@ func bkWriteIrColumnDescs(): text {
         bkPutU32(sec, irColumnDescs[i].fieldIndex)
         bkPutU32(sec, irColumnDescs[i].widthPx)
         bkPutBool(sec, irColumnDescs[i].widthFill)
+        bkPutU32(sec, irColumnDescs[i].align)
+        bkPutU32(sec, irColumnDescs[i].fmtExpr)
+        bkPutU32(sec, irColumnDescs[i].fmtId)
         bkPutU32(sec, irColumnDescs[i].next)
         i = i + 1
     }
@@ -1371,6 +1381,8 @@ func bkWriteIrMenuItemDescs(): text {
         bkPutU32(sec, irMenuItemDescs[i].captionIdx)
         bkPutU32(sec, irMenuItemDescs[i].keyIdx)
         bkPutBool(sec, irMenuItemDescs[i].isSeparator)
+        bkPutBool(sec, irMenuItemDescs[i].isChecked)
+        bkPutU32(sec, irMenuItemDescs[i].submenuIdx)
         bkPutU32(sec, irMenuItemDescs[i].next)
         i = i + 1
     }
@@ -3211,6 +3223,13 @@ func bkReadIrWidgetDescs(): list of IRWidgetDesc {
         e.bindsIdx = bkGetU32()
         e.rowsGlobalIdx = bkGetU32()
         e.columnsHead = bkGetU32()
+        e.height = bkGetU32()
+        e.fontNameIdx = bkGetU32()
+        e.fontSize = bkGetU32()
+        e.face = bkGetU32()
+        e.align = bkGetU32()
+        e.maxLines = bkGetU32()
+        e.divStyle = bkGetU32()
         e.next = bkGetU32()
         l.add(e)
         i = i + 1
@@ -3232,6 +3251,9 @@ func bkReadIrColumnDescs(): list of IRColumnDesc {
         e.fieldIndex = bkGetU32()
         e.widthPx = bkGetU32()
         e.widthFill = bkGetBool()
+        e.align = bkGetU32()
+        e.fmtExpr = bkGetU32()
+        e.fmtId = bkGetU32()
         e.next = bkGetU32()
         l.add(e)
         i = i + 1
@@ -3300,6 +3322,8 @@ func bkReadIrMenuItemDescs(): list of IRMenuItemDesc {
         e.captionIdx = bkGetU32()
         e.keyIdx = bkGetU32()
         e.isSeparator = bkGetBool()
+        e.isChecked = bkGetBool()
+        e.submenuIdx = bkGetU32()
         e.next = bkGetU32()
         l.add(e)
         i = i + 1

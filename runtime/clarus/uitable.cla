@@ -466,6 +466,11 @@ func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr) {
     var lbl: ptr
     var found: bool
 
+    // A formatted column (ui-widgets Task 1) has no field: fieldIdx -1
+    // draws an empty cell until Task 3's UiColFmt dispatcher draws it.
+    if fieldIdx < 0 {
+        return
+    }
     base = rec + uidFieldOffset(layoutOff, fieldIdx)
     ftype = uidFieldFtype(layoutOff, fieldIdx)
     UiMoveTo(peekw(colRect + 2) + 2, peekw(colRect + 4) - 3)

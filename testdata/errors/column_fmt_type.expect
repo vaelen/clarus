@@ -1,0 +1,1 @@
+../../testdata/errors/column_fmt_type.cla:19:9: column function must return a string, number, bool, char or enum
