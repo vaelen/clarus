@@ -523,12 +523,13 @@ typedef struct {
 } clar_rec_RtSortedMap;
 
 static const unsigned char clar_ui_blob[] = {
-    67, 76, 85, 73, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 44, 0, 0, 0, 2,
-    0, 0, 0, 44, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 100,
-    255, 255, 255, 255, 0, 0, 0, 105, 0, 0, 0, 105, 0, 0, 0, 1, 0, 0, 0, 84,
-    0, 0, 0, 0, 0, 0, 0, 110, 0, 0, 0, 110, 0, 0, 0, 0, 255, 255, 255, 255,
-    0, 0, 0, 1, 0, 0, 0, 100, 0, 0, 0, 100, 0, 0, 0, 81, 0, 0, 0, 0,
-    4, 81, 117, 105, 116, 4, 70, 105, 108, 101, 4, 69, 100, 105, 116, 0,
+    67, 76, 85, 73, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 44, 0, 0, 0, 2,
+    0, 0, 0, 44, 0, 0, 0, 0, 0, 0, 0, 108, 0, 0, 0, 0, 0, 0, 0, 108,
+    255, 255, 255, 255, 0, 0, 0, 113, 0, 0, 0, 113, 0, 0, 0, 1, 0, 0, 0, 84,
+    0, 0, 0, 0, 0, 0, 0, 118, 0, 0, 0, 118, 0, 0, 0, 0, 255, 255, 255, 255,
+    0, 0, 0, 1, 0, 0, 0, 108, 0, 0, 0, 108, 0, 0, 0, 81, 0, 0, 0, 0,
+    0, 0, 0, 0, 255, 255, 255, 255, 4, 81, 117, 105, 116, 4, 70, 105, 108, 101, 4, 69,
+    100, 105, 116, 0,
 };
 
 
@@ -1993,7 +1994,7 @@ static int32_t clar_fn_uidWinMenuMask(int32_t cv_winIdx) {
 }
 
 static void * clar_fn_uidWidgetBase(int32_t cv_winIdx, int32_t cv_widgetIdx) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidWinWidgetsOff(cv_winIdx)))) + (CLAR_MUL32(cv_widgetIdx, 52)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidWinWidgetsOff(cv_winIdx)))) + (CLAR_MUL32(cv_widgetIdx, 80)));
     return 0;
 }
 
@@ -2098,7 +2099,7 @@ static int32_t clar_fn_uidMenuIsStandardEdit(int32_t cv_menuIdx) {
 }
 
 static void * clar_fn_uidItemBase(int32_t cv_menuIdx, int32_t cv_itemIdx) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidMenuItemsOff(cv_menuIdx)))) + (CLAR_MUL32(cv_itemIdx, 16)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (clar_fn_uidMenuItemsOff(cv_menuIdx)))) + (CLAR_MUL32(cv_itemIdx, 24)));
     return 0;
 }
 
@@ -2299,7 +2300,7 @@ static int32_t clar_fn_uidTableColsOff(int32_t cv_off) {
 }
 
 static void * clar_fn_uidColBase(int32_t cv_colsOff, int32_t cv_k) {
-    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_colsOff))) + (CLAR_MUL32(cv_k, 16)));
+    return (void *)((char *)((void *)((char *)((&clar_ui_blob[0])) + (cv_colsOff))) + (CLAR_MUL32(cv_k, 28)));
     return 0;
 }
 
@@ -4464,6 +4465,10 @@ static int32_t clar_fn_rtUiKindHeight(int32_t cv_kind) {
         return 20;
     } else if (cv___switch2 == 7) {
         return 120;
+    } else if (cv___switch2 == 8) {
+        return 100;
+    } else if (cv___switch2 == 9) {
+        return 1;
     } else {
         return 16;
     }
@@ -4491,6 +4496,10 @@ static int32_t clar_fn_rtUiKindWidth(int32_t cv_kind) {
         return 200;
     } else if (cv___switch3 == 7) {
         return 300;
+    } else if (cv___switch3 == 8) {
+        return 200;
+    } else if (cv___switch3 == 9) {
+        return 1;
     } else {
         return 90;
     }
@@ -4810,6 +4819,10 @@ static void clar_fn_rtUiMakeWidgets(void * cv_inst) {
             cv_stubH = clar_fn_rtUiMakeLdefStub();
             rt_pokel((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (64)), ((int32_t)(intptr_t)(cv_stubH)));
             rt_ext_UiLSetDrawingMode(1, cv_lh);
+        } else if (cv___switch5 == 8) {
+            clar_fn_rtUiSetCtrlAt(cv_w, cv_i, (void *)(intptr_t)(0));
+        } else if (cv___switch5 == 9) {
+            clar_fn_rtUiSetCtrlAt(cv_w, cv_i, (void *)(intptr_t)(0));
         } else {
             rt_log((const uint8_t*)&(clar_lit_32));
             rt_quit((int32_t)(1));
@@ -6492,6 +6505,9 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
     cv_lbl = 0;
     int32_t cv_found;
     cv_found = 0;
+    if (cv_fieldIdx < 0) {
+        return;
+    }
     cv_base = (void *)((char *)(cv_rec) + (clar_fn_uidFieldOffset(cv_layoutOff, cv_fieldIdx)));
     cv_ftype = clar_fn_uidFieldFtype(cv_layoutOff, cv_fieldIdx);
     rt_ext_UiMoveTo(CLAR_ADD32(rt_peekw((void *)((char *)(cv_colRect) + (2))), 2), CLAR_SUB32(rt_peekw((void *)((char *)(cv_colRect) + (4))), 3));
