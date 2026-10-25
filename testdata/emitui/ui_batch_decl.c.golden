@@ -449,6 +449,13 @@ typedef struct {
     int32_t cv_cap;
 } clar_rec_RtList;
 typedef struct {
+    void * cv_box;
+    int32_t cv_gen;
+    int32_t cv_mark;
+    uint8_t cv_live;
+    uint8_t clar_pad0;
+} clar_rec_RtListObs;
+typedef struct {
     int32_t cv_rc;
     void * cv_keys;
     void * cv_vals;
@@ -602,7 +609,7 @@ static const unsigned char clar_ui_blob[] = {
     255, 255, 255, 255, 0, 0, 4, 131, 0, 0, 4, 131, 0, 0, 0, 73, 0, 0, 0, 0,
     0, 0, 0, 1, 255, 255, 255, 255, 0, 0, 4, 136, 0, 0, 4, 141, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 4, 125, 0, 0, 4, 114, 0, 0, 0, 48,
+    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 4, 125, 0, 0, 4, 114, 0, 0, 0, 50,
     0, 0, 3, 200, 0, 0, 0, 2, 0, 0, 3, 144, 0, 0, 4, 55, 0, 0, 0, 120,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 0,
     0, 0, 4, 60, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 0, 0, 0, 2,
@@ -1038,6 +1045,8 @@ void clar_fn_clar_ui_fire_startempty(void);
 static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_t cv_wIdx, int32_t cv_a, int32_t cv_b);
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out);
 
+static void * cv_rtListObsBlk;
+static int32_t cv_rtListObsCount;
 static void * cv_rtUiMenuHandlesArr;
 static int32_t cv_rtUiNMenusVal;
 static int32_t cv_rtUiClaimedMask;
@@ -1088,6 +1097,8 @@ static int32_t cv_rtSerPos;
 static int32_t cv_rtSerBad;
 static rt_list * cv_callers;
 static void clar_init_globals(void) {
+    cv_rtListObsBlk = 0;
+    cv_rtListObsCount = 0;
     cv_rtUiMenuHandlesArr = 0;
     cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
     cv_rtUiNMenusVal = 0;
@@ -9399,7 +9410,7 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
 }
 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
-    if (cv_rowsIdx == 48) {
+    if (cv_rowsIdx == 50) {
         return ((void*)&(cv_callers));
     } else {
         rt_log((const uint8_t*)&(clar_lit_132));

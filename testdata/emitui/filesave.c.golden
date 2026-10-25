@@ -449,6 +449,13 @@ typedef struct {
     int32_t cv_cap;
 } clar_rec_RtList;
 typedef struct {
+    void * cv_box;
+    int32_t cv_gen;
+    int32_t cv_mark;
+    uint8_t cv_live;
+    uint8_t clar_pad0;
+} clar_rec_RtListObs;
+typedef struct {
     int32_t cv_rc;
     void * cv_keys;
     void * cv_vals;
@@ -596,6 +603,8 @@ static void clar_fn_rtListRetain(void * cv_l);
 static void clar_fn_rtListRelease(void * cv_l);
 static int32_t clar_fn_rtListLastref(void * cv_l);
 static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i);
+static clar_rec_RtListObs * clar_fn_rtListObsEnt(int32_t cv_e);
+static void clar_fn_rtListObsNote(void * cv_l, int32_t cv_op, int32_t cv_i);
 static void clar_fn_rtListPush(void * cv_l, void * cv_elem);
 static int32_t clar_fn_rtListCount(void * cv_l);
 static void clar_fn_rtListClear(void * cv_l);
@@ -669,6 +678,8 @@ void clar_fn_clar_ui_fire_startempty(void);
 static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_t cv_wIdx, int32_t cv_a, int32_t cv_b);
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out);
 
+static void * cv_rtListObsBlk;
+static int32_t cv_rtListObsCount;
 static void * cv_rtUiMenuHandlesArr;
 static int32_t cv_rtUiNMenusVal;
 static int32_t cv_rtUiClaimedMask;
@@ -721,6 +732,8 @@ static clar_rec_Bookmark cv_one;
 static rt_list * cv_many;
 static rt_map * cv_byName;
 static void clar_init_globals(void) {
+    cv_rtListObsBlk = 0;
+    cv_rtListObsCount = 0;
     cv_rtUiMenuHandlesArr = 0;
     cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
     cv_rtUiNMenusVal = 0;
@@ -1105,6 +1118,52 @@ static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i) {
     return 0;
 }
 
+static clar_rec_RtListObs * clar_fn_rtListObsEnt(int32_t cv_e) {
+    return ((clar_rec_RtListObs *)((void *)((char *)((void *)((char *)(cv_rtListObsBlk) + (8))) + (CLAR_MUL32(cv_e, 24)))));
+    return 0;
+}
+
+static void clar_fn_rtListObsNote(void * cv_l, int32_t cv_op, int32_t cv_i) {
+    int32_t cv_cap;
+    cv_cap = 0;
+    int32_t cv_e;
+    cv_e = 0;
+    clar_rec_RtListObs * cv_o;
+    cv_o = 0;
+    int32_t cv_m;
+    cv_m = 0;
+    cv_cap = rt_peekl(cv_rtListObsBlk);
+    cv_e = 0;
+    while (1) {
+        if (!((cv_e < cv_cap))) break;
+        cv_o = clar_fn_rtListObsEnt(cv_e);
+        if ((cv_o)->cv_live && ((cv_o)->cv_box == cv_l)) {
+            (cv_o)->cv_gen = CLAR_ADD32((cv_o)->cv_gen, 1);
+            cv_m = (cv_o)->cv_mark;
+            if (cv_m >= 0) {
+                if (cv_op == 3) {
+                    (cv_o)->cv_mark = CLAR_ADD32(cv_m, 1);
+                } else if (cv_op == 2) {
+                    (cv_o)->cv_mark = CLAR_SUB32(cv_m, 1);
+                } else if (cv_op == 4) {
+                    if (cv_i == cv_m) {
+                        (cv_o)->cv_mark = CLAR_NEG32(1);
+                    } else if (cv_i < cv_m) {
+                        (cv_o)->cv_mark = CLAR_SUB32(cv_m, 1);
+                    }
+                } else if (cv_op == 1) {
+                    if (cv_m == CLAR_SUB32((((clar_rec_RtList *)(cv_l)))->cv_count, 1)) {
+                        (cv_o)->cv_mark = CLAR_NEG32(1);
+                    }
+                } else if (cv_op == 5) {
+                    (cv_o)->cv_mark = CLAR_NEG32(1);
+                }
+            }
+        }
+        cv_e = CLAR_ADD32(cv_e, 1);
+    }
+}
+
 static void clar_fn_rtListPush(void * cv_l, void * cv_elem) {
     clar_rec_RtList * cv_rl;
     cv_rl = 0;
@@ -1112,6 +1171,9 @@ static void clar_fn_rtListPush(void * cv_l, void * cv_elem) {
     cv_mp = 0;
     int32_t cv_off;
     cv_off = 0;
+    if (cv_rtListObsCount != 0) {
+        clar_fn_rtListObsNote(cv_l, 0, 0);
+    }
     cv_rl = ((clar_rec_RtList *)(cv_l));
     clar_fn_rtListGrow(cv_l, CLAR_ADD32((cv_rl)->cv_count, 1));
     cv_rl = ((clar_rec_RtList *)(cv_l));
@@ -1129,6 +1191,9 @@ static int32_t clar_fn_rtListCount(void * cv_l) {
 static void clar_fn_rtListClear(void * cv_l) {
     clar_rec_RtList * cv_rl;
     cv_rl = 0;
+    if (cv_rtListObsCount != 0) {
+        clar_fn_rtListObsNote(cv_l, 5, 0);
+    }
     cv_rl = ((clar_rec_RtList *)(cv_l));
     (cv_rl)->cv_count = 0;
 }
@@ -2250,7 +2315,7 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
 }
 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
-    if (cv_rowsIdx == 49) {
+    if (cv_rowsIdx == 51) {
         return ((void*)&(cv_many));
     } else {
         rt_log((const uint8_t*)&(clar_lit_133));
