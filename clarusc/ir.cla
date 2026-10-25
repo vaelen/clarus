@@ -598,8 +598,10 @@ record IRWidgetDesc {
 // align (ui-widgets Task 1): 0 left, 1 center, 2 right. fmtExpr: the
 // `shows f(...)` call's AST (exprs arena) for a formatted column, -1 for a
 // plain field (fieldIndex is then -1 for a formatted one); fmtId: the
-// formatter's UiColFmt switch id, -1 = plain field (Task 3 assigns real
-// ids; until then every column is -1 and a formatted one draws empty).
+// formatter's UiColFmt switch id, -1 = plain field, else 0..n-1 in
+// program-wide column declaration order (ui-widgets Task 3); fmtType: the
+// formatter's IR result type (-1 for a plain field), which sizes the
+// one-field Layout entry uiblob.cla writes at the col's fmtLayoutOff.
 record IRColumnDesc {
     headerIdx: int
     fieldIndex: int
@@ -608,6 +610,7 @@ record IRColumnDesc {
     align: int
     fmtExpr: int
     fmtId: int
+    fmtType: int
     next: int
 }
 
@@ -2978,6 +2981,7 @@ func newIRColumnDesc(headerIdx: int, fieldIndex: int, widthPx: int, widthFill: b
     n.align = align
     n.fmtExpr = fmtExpr
     n.fmtId = -1
+    n.fmtType = -1
     n.next = -1
     irColumnDescs.add(n)
     return irColumnDescs.count - 1
@@ -3009,6 +3013,50 @@ func irColumnDescFmtExpr(i: int): int {
 
 func irColumnDescFmtId(i: int): int {
     return irColumnDescs[i].fmtId
+}
+
+func irColumnDescFmtType(i: int): int {
+    return irColumnDescs[i].fmtType
+}
+
+// irFmtValueSize: the byte size of a formatted column's result value in
+// UiColFmt's `out` buffer -- the width lowSynthColFmtArm stores at and the
+// recSize of the one-field Layout uiblob.cla describes it with. The same
+// widths rtUiTableDrawField reads a row field at.
+func irFmtValueSize(t: int): int {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KStr {
+        return irtN(t) + 1
+    } else if k == KBool or k == KChar {
+        return 1
+    } else if k == KEnum {
+        return 2
+    } else if k == KInt and irtN(t) == 8 {
+        return 1
+    } else if k == KInt and (irtN(t) == 16 or irtN(t) == -16) {
+        return 2
+    }
+    return 4
+}
+
+// irColumnDescSetFmt makes column i formatted: the next free fmtId (one
+// more than the formatted columns already declared) and result type t.
+func irColumnDescSetFmt(i: int, t: int) {
+    var j: int
+    var n: int
+
+    n = 0
+    j = 0
+    while j < irColumnDescs.count {
+        if irColumnDescs[j].fmtId != -1 {
+            n = n + 1
+        }
+        j = j + 1
+    }
+    irColumnDescs[i].fmtId = n
+    irColumnDescs[i].fmtType = t
 }
 
 func irColumnDescNext(i: int): int {
