@@ -51,3 +51,4 @@ testsuite/toolbox/cases_divider.cla
 testsuite/toolbox/gui.cla
 testsuite/toolbox/cases_logring.cla
 testsuite/toolbox/cases_logfollow.cla
+testsuite/toolbox/cases_logselect.cla

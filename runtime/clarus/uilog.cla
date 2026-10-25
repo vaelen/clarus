@@ -63,7 +63,8 @@ external func UiGetFontName(familyID: int16, name: ptr) = trap 0xA8FF
 external func UiInvalRgn(badRgn: ptr) = trap 0xA927
 
 // uitest.cla's UiTestLogTop/UiTestLogSel read top/selFirst/selLast at
-// their offsets (28/36/40): keep those three fields where they are.
+// their offsets (28/36/40), and the toolbox LogPanelSelect case reads
+// lineH at 48: keep those four fields where they are.
 overlay record RtUiLog {
     ringH: ptr
     cap: int
@@ -1060,6 +1061,8 @@ func rtUiLogAppend(instV: ptr, wIdx: int, s: ptr) {
     var k: int
     var start: int
     var c: int
+    var hadSel: bool
+    var hadLines: bool
 
     w = RtUiWinst(instV)
     st = rtUiLogSt(w, wIdx)
@@ -1067,6 +1070,8 @@ func rtUiLogAppend(instV: ptr, wIdx: int, s: ptr) {
         return
     }
     lg = RtUiLog(st)
+    hadSel = lg.selFirst >= 0
+    hadLines = lg.count > 0
     savedPort = rtUiGetPortSaved()
     UiSetPort(w.wp)
     if lg.hbar != ptr(0) {
@@ -1093,18 +1098,32 @@ func rtUiLogAppend(instV: ptr, wIdx: int, s: ptr) {
         rtUiLogFontOff(lg)
     }
     UiSetPort(savedPort)
+    rtUiLogNoteEdit(lg, w, wIdx, hadSel, hadLines)
+}
+
+// rtUiLogNoteEdit re-dims the Edit menu when an append or clear() changed
+// a focused panel's "has a selection" or "has lines" (spec 3.4: Copy and
+// Select All follow them).
+func rtUiLogNoteEdit(lg: RtUiLog, w: RtUiWinst, i: int, hadSel: bool, hadLines: bool) {
+    if w.focusIdx == i and (hadSel != (lg.selFirst >= 0) or hadLines != (lg.count > 0)) {
+        rtUiMenuRecomputeDim()
+    }
 }
 
 // rtUiLogClear: `clear()` -- drops every line and the selection.
 func rtUiLogClear(instV: ptr, wIdx: int) {
     var st: ptr
     var lg: RtUiLog
+    var hadSel: bool
+    var hadLines: bool
 
     st = rtUiLogSt(RtUiWinst(instV), wIdx)
     if st == ptr(0) {
         return
     }
     lg = RtUiLog(st)
+    hadSel = lg.selFirst >= 0
+    hadLines = lg.count > 0
     lg.count = 0
     lg.used = 0
     lg.tail = 0
@@ -1119,6 +1138,7 @@ func rtUiLogClear(instV: ptr, wIdx: int) {
     lg.hoff = 0
     lg.drawnTop = -1
     lg.dirty = 1
+    rtUiLogNoteEdit(lg, RtUiWinst(instV), wIdx, hadSel, hadLines)
 }
 
 // rtUiLogLineCount: `lineCount`.

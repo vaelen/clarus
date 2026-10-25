@@ -15,7 +15,7 @@
 
 # body FILE FN : the C body of static function FN (prototype line excluded).
 body() {
-    awk -v fn="clar_fn_$2(" 'index($0, fn) && /\{$/ {f=1} f {print} f && /^}$/ {exit}' "$1"
+    awk -v fn="clar_fn_$2(" 'index($0, fn) && /^static/ && /\{$/ {f=1} f {print} f && /^}$/ {exit}' "$1"
 }
 
 batch=testdata/emitui/ui_batch_decl.cla

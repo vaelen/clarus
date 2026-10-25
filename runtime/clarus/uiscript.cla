@@ -356,7 +356,7 @@ var rtUiTraceWinCounts: ptr = ptr(0)
 var rtUiTraceLastFront: ptr = ptr(0)
 var rtUiDimPrevArr: ptr = ptr(0)
 var rtUiDimFirst: bool = true
-var rtUiStdEditDimPrev: bool = false
+var rtUiStdEditDimPrev: uint8 = 0
 
 // rtUiTraceInit: rt_ui_startup's own trace-bookkeeping setup
 // (rt_ui.c:3742-3748), ported here (uiscript.cla owns every trace-only
@@ -378,7 +378,7 @@ func rtUiTraceInit() {
         rtUiDimPrevArr = ptr(0)
     }
     rtUiDimFirst = true
-    rtUiStdEditDimPrev = false
+    rtUiStdEditDimPrev = 0
     rtUiTraceLastFront = ptr(0)
 }
 
@@ -534,52 +534,39 @@ func rtUiTraceDimCheck(k: int, enable: bool) {
 }
 
 // rtUiTraceStdEditDim: same change-detection contract as
-// rtUiTraceDimCheck, but for the 4 fixed Cut/Copy/Paste/Clear items
-// (rt_ui.c:2513-2518) -- traced as a group of 4 T DIM lines.
-func rtUiTraceStdEditDim(enable: bool) {
-    var enableInt: int
+// rtUiTraceDimCheck, but for the fixed Cut/Copy/Paste/Clear/Select All
+// items (rt_ui.c:2513-2518) -- traced as a group of 5 T DIM lines. mask
+// bit n is item n's enable (a field/textview focus sets all five, a
+// logpanel focus only Copy/Select All).
+func rtUiTraceStdEditDim(mask: int) {
     var t: ptr
+    var j: int
 
-    if enable {
-        enableInt = 1
-    } else {
-        enableInt = 0
-    }
-    if rtUiDimFirst or rtUiStdEditDimPrev == enable or not UiTraceOn() {
-        rtUiStdEditDimPrev = enable
+    if rtUiDimFirst or rtUiStdEditDimPrev == mask or not UiTraceOn() {
+        rtUiStdEditDimPrev = uint8(mask)
         return
     }
-    t = rtTextNew()
-    rtTextAppendStr(t, UiStrAddr("T DIM "))
-    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
-    rtTextAppendStr(t, UiStrAddr(".Cut "))
-    rtUiTextAppendInt(t, enableInt)
-    rtUiEmitLine(t)
-    t = rtTextNew()
-    rtTextAppendStr(t, UiStrAddr("T DIM "))
-    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
-    rtTextAppendStr(t, UiStrAddr(".Copy "))
-    rtUiTextAppendInt(t, enableInt)
-    rtUiEmitLine(t)
-    t = rtTextNew()
-    rtTextAppendStr(t, UiStrAddr("T DIM "))
-    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
-    rtTextAppendStr(t, UiStrAddr(".Paste "))
-    rtUiTextAppendInt(t, enableInt)
-    rtUiEmitLine(t)
-    t = rtTextNew()
-    rtTextAppendStr(t, UiStrAddr("T DIM "))
-    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
-    rtTextAppendStr(t, UiStrAddr(".Clear "))
-    rtUiTextAppendInt(t, enableInt)
-    rtUiEmitLine(t)
-    t = rtTextNew()
-    rtTextAppendStr(t, UiStrAddr("T DIM "))
-    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
-    rtTextAppendStr(t, UiStrAddr(".SelectAll "))
-    rtUiTextAppendInt(t, enableInt)
-    rtUiEmitLine(t)
-    rtUiStdEditDimPrev = enable
+    j = 3
+    while j <= rtUiStdEditCount {
+        t = rtTextNew()
+        rtTextAppendStr(t, UiStrAddr("T DIM "))
+        rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
+        if j == 3 {
+            rtTextAppendStr(t, UiStrAddr(".Cut "))
+        } else if j == 4 {
+            rtTextAppendStr(t, UiStrAddr(".Copy "))
+        } else if j == 5 {
+            rtTextAppendStr(t, UiStrAddr(".Paste "))
+        } else if j == 6 {
+            rtTextAppendStr(t, UiStrAddr(".Clear "))
+        } else {
+            rtTextAppendStr(t, UiStrAddr(".SelectAll "))
+        }
+        rtUiTextAppendInt(t, (mask >> j) & 1)
+        rtUiEmitLine(t)
+        j = j + 1
+    }
+    rtUiStdEditDimPrev = uint8(mask)
 }
 
 func rtUiTraceDimFirstDone() {
