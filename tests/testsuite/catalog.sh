@@ -33,6 +33,7 @@ on App.startCLI(args: list of string) {
     var dp: DSPParam
     var bd: BDSElement
     var hr: HIOParamRename
+    var fi: FontInfo
 
     t0 = TickCount()
     p = NewPtr(4)
@@ -147,6 +148,8 @@ on App.startCLI(args: list of string) {
     bd.buffSize = 0
     err = PBControlAsync(np)
     t0 = t0 + registerName + nteSize + ccbSize + atpMaxData + nbpDuplicate
+    GetFontInfo(fi)
+    t0 = t0 + fi.ascent + applFont
 }
 CLA_EOF
 
@@ -165,6 +168,7 @@ if "$CLARUSC" "$WORK/driver.cla" \
         "$ROOT/toolbox/appletalk.cla" \
         "$ROOT/toolbox/mactcp.cla" \
         "$ROOT/toolbox/segload.cla" \
+        "$ROOT/toolbox/fonts.cla" \
         > "$WORK/catalog.log" 2>&1; then
     t_pass "$n"
 else

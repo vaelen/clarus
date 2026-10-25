@@ -2498,6 +2498,17 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
         }
 
         rfCon = peekl(UiHandleDeref(ctrl) + 36)
+        if (rfCon & 0x8000) != 0 and uidWidgetKind(w.winIdx, rfCon & 0x3FFF) == rtUiKindLogpanel {
+            // A logpanel's own scroll bar (tagged like a textview's):
+            // the panel's Click op resolves and tracks it itself.
+            if shiftDown {
+                mods = 0x200
+            } else {
+                mods = 0
+            }
+            UiLogOp(rtUiLogOpClick, inst, rfCon & 0x3FFF, localPt, mods)
+            return
+        }
         if (rfCon & 0x8000) != 0 {
             // A textview's own scrollbar (tagged at creation,
             // rtUiMakeWidgets) -- scrolls its TE, never fires a widget

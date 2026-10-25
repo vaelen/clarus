@@ -1,0 +1,76 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_logfollow.cla: LogPanelFollow (ui-widgets Task 8, spec 3.4) -- a
+// following panel keeps its end in view as lines arrive; scrolled up, it
+// stays on the same text while lines drop off the top; scrollToEnd()
+// resumes following.
+//
+// F (widget 0) is 70 px tall with no horizontal bar: its text area is
+// 68 px, exactly 4 rows for any line height from 14 to 17 (the system
+// font's is 15 or 16), so the case needs no font metrics.
+// UiTestLogTop(0) (uitest.cla) reads F's first visible line index off the
+// front window. The scroll-up step sends the Scroll op straight to the
+// panel through UiLogOp (one line per call) -- the same entry a scroll
+// bar arrow nudge takes, without needing global screen coordinates.
+window LogFollowWin {
+    title: "LogFollow"
+    size: 300, 120
+
+    logpanel F { maxLines: 50; height: 70 }
+}
+
+func tbLogFollowAppend(w: LogFollowWin, n: int) {
+    var i: int
+
+    i = 0
+    while i < n {
+        w.F.appendLine("line " + tkIntToStr(w.F.lineCount))
+        i = i + 1
+    }
+}
+
+func caseLogPanelFollow(): TestResult {
+    var w: LogFollowWin
+    var t0: int
+    var t1: int
+    var t2: int
+    var t3: int
+    var t4: int
+    var n: int
+    var detail: string
+
+    w = open LogFollowWin
+    tbLogFollowAppend(w, 10)
+    UiTestTick(1)
+    t0 = UiTestLogTop(0)
+
+    UiLogOp(rtUiLogOpScroll, rtUiWinstOf(UiFrontWindow()), 0, -1, 0)
+    UiLogOp(rtUiLogOpScroll, rtUiWinstOf(UiFrontWindow()), 0, -1, 0)
+    t1 = UiTestLogTop(0)
+    tbLogFollowAppend(w, 3)
+    UiTestTick(1)
+    t2 = UiTestLogTop(0)
+
+    tbLogFollowAppend(w, 40)
+    UiTestTick(1)
+    t3 = UiTestLogTop(0)
+
+    w.F.scrollToEnd()
+    tbLogFollowAppend(w, 1)
+    UiTestTick(1)
+    t4 = UiTestLogTop(0)
+    n = w.F.lineCount
+    close w
+
+    if t0 == 6 and t1 == 4 and t2 == 4 and t3 == 1 and n == 50 and t4 == n - 4 {
+        return tkPass("LogPanelFollow")
+    }
+    detail = "tops " + tkIntToStr(t0)
+    detail = detail + " " + tkIntToStr(t1)
+    detail = detail + " " + tkIntToStr(t2)
+    detail = detail + " " + tkIntToStr(t3)
+    detail = detail + " " + tkIntToStr(t4)
+    detail = detail + " count " + tkIntToStr(n)
+    return tkFail("LogPanelFollow", detail)
+}

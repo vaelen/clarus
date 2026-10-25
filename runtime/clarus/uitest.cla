@@ -359,3 +359,33 @@ func UiTestCanvasBlits(i: int): int {
     }
     return buf.blits
 }
+
+// UiTestLogTop/UiTestLogSel (ui-widgets Task 8): the FRONT window's
+// logpanel i -- its first visible line index (0 = oldest), and its
+// selection packed (selFirst << 16) | (selLast & 0xFFFF), -1 when nothing
+// is selected. Both are -1 when widget i has no logpanel state. Bridges
+// for testsuite/toolbox's LogPanel cases; Ch8 exposes neither.
+func UiTestLogTop(i: int): int {
+    var st: ptr
+
+    st = rtUiLogSt(RtUiWinst(rtUiWinstOf(UiFrontWindow())), i)
+    if st == ptr(0) {
+        return -1
+    }
+    return RtUiLog(st).top
+}
+
+func UiTestLogSel(i: int): int {
+    var st: ptr
+    var lg: RtUiLog
+
+    st = rtUiLogSt(RtUiWinst(rtUiWinstOf(UiFrontWindow())), i)
+    if st == ptr(0) {
+        return -1
+    }
+    lg = RtUiLog(st)
+    if lg.selFirst < 0 {
+        return -1
+    }
+    return (lg.selFirst << 16) | (lg.selLast & 0xFFFF)
+}

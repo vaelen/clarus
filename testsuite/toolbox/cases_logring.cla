@@ -1,0 +1,93 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_logring.cla: LogPanelRing (ui-widgets Task 8, spec 3.4) -- the
+// logpanel's ring storage: the maxLines drop, line(i)/lineCount, CR/LF/
+// CRLF splitting with empty lines kept, clear(), and compact storage.
+//
+// Widget indices in LogRingWin: G 0 (maxLines 5), D 1 (default 200).
+//
+// Compact storage arithmetic: a 3-byte line costs 4 ring bytes (length
+// byte + 3) plus 4 bytes of offset table, and the offset table is
+// allocated whole when the panel is made, before m0 below. 200 lines are
+// 800 ring bytes; the ring starts at 256 and doubles, so it ends at 1024
+// (+768 over its start) plus Memory Manager block slop. The bound is
+// 200 x 16 = 3200 bytes -- a 256-byte-per-line (Str255) store would cost
+// 51200.
+external func TbFreeMem(): int = trap 0xA01C reg
+
+window LogRingWin {
+    title: "LogRing"
+    size: 300, 200
+
+    logpanel G { maxLines: 5; height: 60 }
+    logpanel D { height: 60 }
+}
+
+func caseLogPanelRing(): TestResult {
+    var w: LogRingWin
+    var detail: string
+    var n: int
+    var c0: int
+    var m0: int
+    var m1: int
+    var i: int
+
+    w = open LogRingWin
+    w.G.appendLine("a")
+    w.G.appendLine("b")
+    w.G.appendLine("c")
+    w.G.appendLine("d")
+    w.G.appendLine("e")
+    w.G.appendLine("f")
+    w.G.appendLine("g")
+    if w.G.lineCount != 5 or w.G.line(0) != "c" or w.G.line(4) != "g" {
+        detail = "drop: count " + tkIntToStr(w.G.lineCount)
+        detail = detail + " first " + w.G.line(0)
+        close w
+        return tkFail("LogPanelRing", detail)
+    }
+
+    w.G.appendLine("x\x0Dy\x0A\x0Az")
+    if w.G.line(1) != "x" or w.G.line(2) != "y" or w.G.line(3) != "" or w.G.line(4) != "z" {
+        detail = "split: " + w.G.line(1)
+        detail = detail + "|" + w.G.line(2)
+        detail = detail + "|" + w.G.line(3)
+        detail = detail + "|" + w.G.line(4)
+        close w
+        return tkFail("LogPanelRing", detail)
+    }
+
+    w.G.clear()
+    w.G.appendLine("t\x0D")
+    w.G.appendLine("u\x0D\x0Av")
+    n = w.G.lineCount
+    if n != 3 or w.G.line(0) != "t" or w.G.line(1) != "u" or w.G.line(2) != "v" {
+        close w
+        return tkFail("LogPanelRing", "terminator: count " + tkIntToStr(n))
+    }
+
+    w.G.clear()
+    if w.G.lineCount != 0 {
+        close w
+        return tkFail("LogPanelRing", "clear left " + tkIntToStr(w.G.lineCount))
+    }
+
+    c0 = w.D.lineCount
+    m0 = TbFreeMem()
+    i = 0
+    while i < 200 {
+        w.D.appendLine("abc")
+        i = i + 1
+    }
+    m1 = TbFreeMem()
+    n = w.D.lineCount
+    close w
+    if c0 != 0 or n != 200 {
+        return tkFail("LogPanelRing", "compact: count " + tkIntToStr(n))
+    }
+    if m0 - m1 >= 200 * 16 {
+        return tkFail("LogPanelRing", "compact: FreeMem dropped " + tkIntToStr(m0 - m1))
+    }
+    return tkPass("LogPanelRing")
+}

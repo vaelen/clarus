@@ -3,7 +3,7 @@
 
 // uilog.cla: the `logpanel` widget (ui-widgets spec 3.4) -- a scrolling,
 // line-selectable log with no TextEdit behind it. Its state hangs off a
-// per-widget handle (never a module global), and the whole module is
+// per-widget record (never a module global), and the whole module is
 // reached only through the compiler-synthesized UiLogOp dispatcher plus
 // the rtUiLog* member entry points the compiler roots when a program
 // declares a logpanel, so every other program shakes it out entirely (C4).
@@ -12,42 +12,1107 @@
 // the per-pass flush, relayout), and uiwidgets.cla's rtUiMakeWidgets calls
 // it with rtUiLogOpMake; rtUiLogDo is the op switch the dispatcher calls.
 //
-// ui-widgets Task 2: rtUiLogDefaultMax and stub bodies only. Task 8
-// replaces the stubs (ring storage, drawing, following, selection).
-
 // The UiLogOp extern and its rtUiLogOp* op codes live in uiwidgets.cla,
 // beside rtUiKindLogpanel, until the bootstrap snapshot is regenerated
 // (Task 12): ui.cla/uiwidgets.cla are spliced into every program, and the
 // committed snapshot -- which builds clarusc-current -- does not splice
 // this module, so names they use must come from a module it knows.
+//
+// STATE. One non-relocatable RtUiLog record per panel (NewPtrClear), its
+// address kept in the panel's own RtUiCanvasBuf slot's `pixels` field --
+// a slot every widget has and a logpanel never uses as a canvas (its
+// `port` stays nil, so no canvas code looks at it). The record is
+// followed by the maxLines-entry int32 offset table, so the table never
+// moves.
+//
+// STORAGE. One relocatable handle holds the line bytes as a ring of
+// [len byte][bytes] records; offs[(head + k) mod maxLines] is line k's
+// ring offset (k = 0 is the oldest). A record may wrap the ring's end.
+// The ring starts at rtUiLogInitCap and doubles when an append lacks
+// room, capped at maxLines * 64 bytes unless a bigger size is the only
+// way the new line fits; if SetHandleSize fails, the oldest lines drop
+// until it fits, and a line still too long for an empty ring is cut to
+// what fits. An append never panics.
+//
+// SCREEN. `base` counts every line ever dropped, so base + k is line k's
+// absolute number; drawnTop/drawnRows record what the screen shows
+// (drawnTop -1 = a full repaint is pending). The per-pass Flush compares
+// that with the current top: a forward move of fewer than a panel of
+// lines, in the front window, is a ScrollRect plus the newly exposed
+// rows; anything else is an InvalRect. The vertical bar is also stored
+// in the widget's `hbars` slot so rtUiHandleActivate dims it with the
+// window; the horizontal bar (`scrollbar: both`) is not dimmed.
+//
+// SCROLL op: a = lines (negative = up), b = pixels horizontally.
+// SETFONT op (Task 10): a = font number, b = (size << 8) | face.
+// CLICK op: a = local (v << 16) | (h & 0xFFFF), b = 0x200 on shift;
+// returns 1 when the selection changed.
 
 // maxLines: when a logpanel declares none (C9).
 const rtUiLogDefaultMax: int = 200
+const rtUiLogInitCap: int = 256
+// sizeof(RtUiLog): 29 fields x 4. The offset table starts here.
+const rtUiLogHdr: int = 116
+// Text inset from the frame's left edge.
+const rtUiLogTextInset: int = 2
+const rtUiLogScrapText: int = 0x54455854 // 'TEXT'
 
-// rtUiLogDo performs one UiLogOp op on logpanel wIdx; the result is the
-// op's own (HasSel/HasLines: 1 or 0), 0 for the rest.
-func rtUiLogDo(op: int, instV: ptr, wIdx: int, a: int, b: int): int {
+external func UiScrollRect(r: ptr, dh: int16, dv: int16, updateRgn: ptr) = trap 0xA8EF
+external func UiGetFNum(name: ptr, familyID: ptr) = trap 0xA900
+external func UiGetFontName(familyID: int16, name: ptr) = trap 0xA8FF
+
+overlay record RtUiLog {
+    ringH: ptr
+    cap: int
+    used: int
+    tail: int
+    head: int
+    count: int
+    maxLines: int
+    top: int
+    follow: int
+    selFirst: int
+    selLast: int
+    anchor: int
+    lineH: int
+    ascent: int
+    widest: int
+    widestIdx: int    // index of a widest line; -1 = rescan before use
+    hoff: int         // horizontal scroll, pixels
+    vbar: ptr
+    hbar: ptr
+    font: int
+    size: int
+    face: int
+    dirty: int
+    base: int
+    drawnTop: int
+    drawnRows: int
+    savFont: int
+    savSize: int
+    savFace: int
+}
+
+func rtUiLogSt(w: RtUiWinst, i: int): ptr {
+    return RtUiCanvasBuf(rtUiCanvasBufAt(w, i)).pixels
+}
+
+func rtUiLogSetSt(w: RtUiWinst, i: int, st: ptr) {
+    var buf: RtUiCanvasBuf
+
+    buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, i))
+    buf.pixels = st
+}
+
+func rtUiLogOff(lg: RtUiLog, k: int): ptr {
+    return ptr(lg) + rtUiLogHdr + ((lg.head + k) mod lg.maxLines) * 4
+}
+
+// ---- ring ----
+
+// rtUiLogRingMove copies n bytes between the ring at offset off (wrapping)
+// and the flat buffer p: toRing true writes p into the ring.
+func rtUiLogRingMove(lg: RtUiLog, off: int, p: ptr, n: int, toRing: bool) {
+    var first: int
+    var base: ptr
+
+    first = lg.cap - off
+    if first > n {
+        first = n
+    }
+    base = UiHandleDeref(lg.ringH)
+    if toRing {
+        UiBlockMoveData(p, base + off, first)
+        UiBlockMoveData(p + first, base, n - first)
+    } else {
+        UiBlockMoveData(base + off, p, first)
+        UiBlockMoveData(base, p + first, n - first)
+    }
+}
+
+func rtUiLogLenAt(lg: RtUiLog, k: int): int {
+    return peekb(UiHandleDeref(lg.ringH) + peekl(rtUiLogOff(lg, k)))
+}
+
+// rtUiLogGet copies line k into the Str255 at dst.
+func rtUiLogGet(lg: RtUiLog, k: int, dst: ptr) {
+    var off: int
+    var n: int
+
+    off = peekl(rtUiLogOff(lg, k))
+    n = peekb(UiHandleDeref(lg.ringH) + off)
+    pokeb(dst, n)
+    rtUiLogRingMove(lg, (off + 1) mod lg.cap, dst + 1, n, false)
+}
+
+// rtUiLogDrop drops the d oldest lines, keeping the view, selection and
+// widest-line index on the same text.
+func rtUiLogDrop(lg: RtUiLog, d: int) {
+    var k: int
+
+    k = 0
+    while k < d and lg.count > 0 {
+        lg.used = lg.used - rtUiLogLenAt(lg, 0) - 1
+        lg.head = (lg.head + 1) mod lg.maxLines
+        lg.count = lg.count - 1
+        k = k + 1
+    }
+    lg.base = lg.base + k
+    lg.top = lg.top - k
+    if lg.top < 0 {
+        lg.top = 0
+    }
+    if lg.selFirst >= 0 {
+        if lg.selLast - k < 0 {
+            lg.selFirst = -1
+            lg.selLast = -1
+            lg.anchor = -1
+        } else {
+            lg.selFirst = lg.selFirst - k
+            lg.selLast = lg.selLast - k
+            lg.anchor = lg.anchor - k
+            if lg.selFirst < 0 {
+                lg.selFirst = 0
+            }
+            if lg.anchor < 0 {
+                lg.anchor = 0
+            }
+        }
+    }
+    if lg.widestIdx >= 0 {
+        lg.widestIdx = lg.widestIdx - k
+        if lg.widestIdx < 0 {
+            lg.widestIdx = -1
+        }
+    }
+    lg.dirty = 1
+}
+
+// rtUiLogGrow tries to give the ring room for `want` bytes in use; the
+// ring is unchanged if the Memory Manager says no.
+func rtUiLogGrow(lg: RtUiLog, want: int) {
+    var newCap: int
+    var lim: int
+    var oldCap: int
+    var headOff: int
+    var delta: int
+    var base: ptr
+    var k: int
+    var slot: ptr
+
+    oldCap = lg.cap
+    newCap = oldCap * 2
+    lim = lg.maxLines * 64
+    if newCap > lim {
+        newCap = lim
+    }
+    if newCap < want {
+        newCap = want
+    }
+    if newCap <= oldCap {
+        return
+    }
+    if TextSetHandleSize(lg.ringH, newCap) != 0 {
+        return
+    }
+    lg.cap = newCap
+    if lg.count == 0 {
+        lg.tail = 0
+        return
+    }
+    headOff = peekl(rtUiLogOff(lg, 0))
+    if headOff + lg.used <= oldCap {
+        lg.tail = headOff + lg.used
+        return
+    }
+    // Wrapped: move the high part [headOff, oldCap) to the new end; the
+    // low part (and tail) stay put.
+    delta = newCap - oldCap
+    base = UiHandleDeref(lg.ringH)
+    UiBlockMoveData(base + headOff, base + headOff + delta, oldCap - headOff)
+    k = 0
+    while k < lg.count {
+        slot = rtUiLogOff(lg, k)
+        if peekl(slot) >= headOff {
+            pokel(slot, peekl(slot) + delta)
+        }
+        k = k + 1
+    }
+}
+
+// rtUiLogPush appends one line of n0 bytes at p (not in a handle). With
+// a horizontal bar, the panel's font must already be on (rtUiLogFontOn).
+func rtUiLogPush(lg: RtUiLog, p: ptr, n0: int) {
+    var n: int
+    var off: int
+    var wd: int
+
+    n = n0
+    if lg.count >= lg.maxLines {
+        rtUiLogDrop(lg, lg.count - lg.maxLines + 1)
+    }
+    if lg.cap - lg.used < n + 1 {
+        rtUiLogGrow(lg, lg.used + n + 1)
+    }
+    while lg.cap - lg.used < n + 1 and lg.count > 0 {
+        rtUiLogDrop(lg, 1)
+    }
+    if lg.cap - lg.used < n + 1 {
+        n = lg.cap - lg.used - 1
+        if n < 0 {
+            return
+        }
+    }
+    off = lg.tail
+    pokeb(UiHandleDeref(lg.ringH) + off, n)
+    rtUiLogRingMove(lg, (off + 1) mod lg.cap, p, n, true)
+    lg.tail = (off + 1 + n) mod lg.cap
+    lg.used = lg.used + n + 1
+    pokel(rtUiLogOff(lg, lg.count), off)
+    lg.count = lg.count + 1
+    lg.dirty = 1
+    if lg.hbar != ptr(0) and lg.widestIdx >= 0 {
+        wd = UiTextWidth(p, 0, n)
+        if wd > lg.widest {
+            lg.widest = wd
+            lg.widestIdx = lg.count - 1
+        }
+    }
+}
+
+// ---- font (port = the panel's window) ----
+
+// GrafPort txFont @68 (word), txFace @70 (Style byte), txSize @74 (word).
+func rtUiLogFontOn(lg: RtUiLog, wp: ptr) {
+    lg.savFont = peekw(wp + 68)
+    lg.savFace = peekb(wp + 70)
+    lg.savSize = peekw(wp + 74)
+    UiTextFont(lg.font)
+    UiTextSize(lg.size)
+    UiTextFace(lg.face)
+}
+
+func rtUiLogFontOff(lg: RtUiLog) {
+    UiTextFont(lg.savFont)
+    UiTextSize(lg.savSize)
+    UiTextFace(lg.savFace)
+}
+
+// rtUiLogMetrics: line height (ascent + descent + leading) and ascent for
+// the panel's font; the widest line is rescanned at the next flush.
+func rtUiLogMetrics(lg: RtUiLog, wp: ptr) {
+    var fi: ptr
+
+    fi = UiNewPtr(8)
+    rtUiLogFontOn(lg, wp)
+    UiGetFontInfo(fi)
+    rtUiLogFontOff(lg)
+    lg.ascent = peekw(fi + 0)
+    lg.lineH = peekw(fi + 0) + peekw(fi + 2) + peekw(fi + 6)
+    if lg.lineH <= 0 {
+        lg.lineH = 1
+    }
+    UiDisposePtr(fi)
+    lg.widestIdx = -1
+}
+
+// rtUiLogRescan recomputes the widest line (font on).
+func rtUiLogRescan(lg: RtUiLog) {
+    var buf: ptr
+    var k: int
+    var wd: int
+
+    buf = UiNewPtr(256)
+    lg.widest = 0
+    lg.widestIdx = 0
+    k = 0
+    while k < lg.count {
+        rtUiLogGet(lg, k, buf)
+        wd = UiTextWidth(buf + 1, 0, peekb(buf))
+        if wd > lg.widest {
+            lg.widest = wd
+            lg.widestIdx = k
+        }
+        k = k + 1
+    }
+    UiDisposePtr(buf)
+}
+
+func rtUiLogPstrEq(a: ptr, b: ptr): bool {
+    var k: int
+
+    k = 0
+    while k <= peekb(a) {
+        if peekb(a + k) != peekb(b + k) {
+            return false
+        }
+        k = k + 1
+    }
+    return true
+}
+
+// ---- geometry ----
+
+// rtUiLogFrame: the panel rect less its bars, overlapping each bar's own
+// edge by 1 px; rtUiLogText: the text area inside that frame.
+func rtUiLogFrame(lg: RtUiLog, w: RtUiWinst, i: int, f: ptr) {
+    var r: ptr
+    var right: int
+    var bottom: int
+
+    r = rtUiRectAt(w, i)
+    right = peekw(r + 6) - rtUiScrollbarW + 1
+    bottom = peekw(r + 4)
+    if lg.hbar != ptr(0) {
+        bottom = bottom - rtUiScrollbarW + 1
+    }
+    if right < peekw(r + 2) {
+        right = peekw(r + 2)
+    }
+    if bottom < peekw(r + 0) {
+        bottom = peekw(r + 0)
+    }
+    UiSetRect(f, peekw(r + 2), peekw(r + 0), right, bottom)
+}
+
+func rtUiLogText(lg: RtUiLog, w: RtUiWinst, i: int, t: ptr) {
+    rtUiLogFrame(lg, w, i, t)
+    if peekw(t + 6) - peekw(t + 2) >= 2 and peekw(t + 4) - peekw(t + 0) >= 2 {
+        UiInsetRect(t, 1, 1)
+    }
+}
+
+func rtUiLogVisible(lg: RtUiLog, t: ptr): int {
+    return (peekw(t + 4) - peekw(t + 0)) / lg.lineH
+}
+
+func rtUiLogMaxTop(lg: RtUiLog, vis: int): int {
+    if lg.count > vis {
+        return lg.count - vis
+    }
     return 0
 }
 
-// rtUiLogAppend: `appendLine(s)`, s a Str255.
-func rtUiLogAppend(instV: ptr, wIdx: int, s: ptr) {
+func rtUiLogRowCount(lg: RtUiLog, vis: int): int {
+    if lg.count - lg.top < vis {
+        return lg.count - lg.top
+    }
+    return vis
 }
 
-// rtUiLogClear: `clear()`.
+func rtUiLogClamp16(v: int): int {
+    if v > 32767 {
+        return 32767
+    }
+    return v
+}
+
+// rtUiLogSyncBars: bar ranges/values from the state. Only real changes
+// touch a control, so an idle flush draws nothing.
+func rtUiLogSyncBars(lg: RtUiLog, t: ptr, vis: int) {
+    var mx: int
+
+    mx = rtUiLogClamp16(rtUiLogMaxTop(lg, vis))
+    if UiGetControlMaximum(lg.vbar) != mx {
+        UiSetControlMaximum(lg.vbar, mx)
+    }
+    if UiGetControlValue(lg.vbar) != rtUiLogClamp16(lg.top) {
+        UiSetControlValue(lg.vbar, rtUiLogClamp16(lg.top))
+    }
+    if lg.hbar != ptr(0) {
+        mx = lg.widest + rtUiLogTextInset * 2 - (peekw(t + 6) - peekw(t + 2))
+        if mx < 0 {
+            mx = 0
+        }
+        mx = rtUiLogClamp16(mx)
+        if lg.hoff > mx {
+            lg.hoff = mx
+        }
+        if UiGetControlMaximum(lg.hbar) != mx {
+            UiSetControlMaximum(lg.hbar, mx)
+        }
+        if UiGetControlValue(lg.hbar) != lg.hoff {
+            UiSetControlValue(lg.hbar, lg.hoff)
+        }
+    }
+}
+
+// ---- drawing (port = the panel's window) ----
+
+// rtUiLogRows draws view rows [fromRow, toRow) (font on, clipped to t); a
+// selected row is drawn, then inverted.
+func rtUiLogRows(lg: RtUiLog, t: ptr, fromRow: int, toRow: int) {
+    var buf: ptr
+    var row: ptr
+    var k: int
+    var y: int
+
+    buf = UiNewPtr(256)
+    row = UiNewPtr(rtUiRectSize)
+    k = fromRow
+    while k < toRow {
+        y = peekw(t + 0) + k * lg.lineH
+        UiSetRect(row, peekw(t + 2), y, peekw(t + 6), y + lg.lineH)
+        UiEraseRect(row)
+        rtUiLogGet(lg, lg.top + k, buf)
+        UiMoveTo(peekw(t + 2) + rtUiLogTextInset - lg.hoff, y + lg.ascent)
+        UiDrawText(buf + 1, 0, peekb(buf))
+        if lg.selFirst >= 0 and lg.top + k >= lg.selFirst and lg.top + k <= lg.selLast {
+            UiInvertRect(row)
+        }
+        k = k + 1
+    }
+    UiDisposePtr(row)
+    UiDisposePtr(buf)
+}
+
+// rtUiLogPaint draws the whole panel now -- or, with fast, ScrollRects
+// the text up `shift` rows and draws only rows [from0, rows).
+func rtUiLogPaint(lg: RtUiLog, w: RtUiWinst, i: int, fast: bool, shift: int, from0: int) {
+    var t: ptr
+    var f: ptr
+    var saveClip: ptr
+    var rgn: ptr
+    var rows: int
+    var firstRow: int
+
+    t = UiNewPtr(rtUiRectSize)
+    rtUiLogText(lg, w, i, t)
+    rows = rtUiLogRowCount(lg, rtUiLogVisible(lg, t))
+    saveClip = UiNewRgn()
+    UiGetClip(saveClip)
+    firstRow = from0
+    if fast {
+        if shift > 0 {
+            rgn = UiNewRgn()
+            UiScrollRect(t, 0, 0 - shift * lg.lineH, rgn)
+            UiDisposeRgn(rgn)
+        }
+    } else {
+        f = UiNewPtr(rtUiRectSize)
+        rtUiLogFrame(lg, w, i, f)
+        UiFrameRect(f)
+        UiDisposePtr(f)
+        UiEraseRect(t)
+        firstRow = 0
+    }
+    rtUiLogFontOn(lg, w.wp)
+    UiClipRect(t)
+    rtUiLogRows(lg, t, firstRow, rows)
+    UiSetClip(saveClip)
+    rtUiLogFontOff(lg)
+    UiDisposeRgn(saveClip)
+    UiDisposePtr(t)
+    lg.drawnTop = lg.base + lg.top
+    lg.drawnRows = rows
+}
+
+// rtUiLogInval: repaint at the next update.
+func rtUiLogInval(lg: RtUiLog, w: RtUiWinst, i: int) {
+    UiInvalRect(rtUiRectAt(w, i))
+    lg.drawnTop = -1
+}
+
+// rtUiLogFlush: the per-pass screen update (see the header).
+func rtUiLogFlush(lg: RtUiLog, w: RtUiWinst, i: int) {
+    var t: ptr
+    var vis: int
+    var rows: int
+    var delta: int
+    var valid: int
+
+    if lg.dirty == 0 {
+        return
+    }
+    lg.dirty = 0
+    if lg.hbar != ptr(0) and lg.widestIdx < 0 {
+        rtUiLogFontOn(lg, w.wp)
+        rtUiLogRescan(lg)
+        rtUiLogFontOff(lg)
+    }
+    t = UiNewPtr(rtUiRectSize)
+    rtUiLogText(lg, w, i, t)
+    vis = rtUiLogVisible(lg, t)
+    if lg.follow != 0 or lg.top > rtUiLogMaxTop(lg, vis) {
+        lg.top = rtUiLogMaxTop(lg, vis)
+    }
+    rtUiLogSyncBars(lg, t, vis)
+    UiDisposePtr(t)
+    rows = rtUiLogRowCount(lg, vis)
+    delta = lg.base + lg.top - lg.drawnTop
+    if lg.drawnTop >= 0 and delta >= 0 and delta < vis and w.wp == UiFrontWindow() {
+        valid = lg.drawnRows - delta
+        if valid < 0 {
+            valid = 0
+        }
+        if delta > 0 or rows > valid {
+            rtUiLogPaint(lg, w, i, true, delta, valid)
+        }
+        return
+    }
+    rtUiLogInval(lg, w, i)
+}
+
+// rtUiLogScrollBy scrolls the view dv lines and dh pixels and repaints;
+// reaching the last line resumes following.
+func rtUiLogScrollBy(lg: RtUiLog, w: RtUiWinst, i: int, dv: int, dh: int) {
+    var t: ptr
+    var vis: int
+    var mt: int
+
+    t = UiNewPtr(rtUiRectSize)
+    rtUiLogText(lg, w, i, t)
+    vis = rtUiLogVisible(lg, t)
+    mt = rtUiLogMaxTop(lg, vis)
+    lg.top = lg.top + dv
+    if lg.top > mt {
+        lg.top = mt
+    }
+    if lg.top < 0 {
+        lg.top = 0
+    }
+    if lg.top == mt {
+        lg.follow = 1
+    } else {
+        lg.follow = 0
+    }
+    lg.hoff = lg.hoff + dh
+    if lg.hoff < 0 {
+        lg.hoff = 0
+    }
+    rtUiLogSyncBars(lg, t, vis)
+    UiDisposePtr(t)
+    rtUiLogPaint(lg, w, i, false, 0, 0)
+}
+
+// ---- scroll bars ----
+
+// rtUiLogBarStep: one arrow/page step of a logpanel bar part.
+func rtUiLogBarStep(ctrl: ptr, part: int) {
+    var ctrlMp: ptr
+    var inst: ptr
+    var rfCon: int
+    var wIdx: int
+    var w: RtUiWinst
+    var lg: RtUiLog
+    var t: ptr
+    var page: int
+    var step: int
+    var horiz: bool
+
+    ctrlMp = UiHandleDeref(ctrl)
+    inst = rtUiWinstOf(ptr(peekl(ctrlMp + rtUiCtrlOwner)))
+    if inst == ptr(0) {
+        return
+    }
+    rfCon = peekl(ctrlMp + 36)
+    horiz = (rfCon & 0x4000) != 0
+    wIdx = rfCon & 0x3FFF
+    w = RtUiWinst(inst)
+    if rtUiLogSt(w, wIdx) == ptr(0) {
+        return
+    }
+    lg = RtUiLog(rtUiLogSt(w, wIdx))
+    t = UiNewPtr(rtUiRectSize)
+    rtUiLogText(lg, w, wIdx, t)
+    if horiz {
+        page = peekw(t + 6) - peekw(t + 2)
+    } else {
+        page = rtUiLogVisible(lg, t)
+    }
+    UiDisposePtr(t)
+    if page < 1 {
+        page = 1
+    }
+    if part == rtUiCtlUpButton {
+        step = -1
+    } else if part == rtUiCtlDownButton {
+        step = 1
+    } else if part == rtUiCtlPageUp {
+        step = 0 - page
+    } else if part == rtUiCtlPageDown {
+        step = page
+    } else {
+        return
+    }
+    if horiz {
+        if part == rtUiCtlUpButton or part == rtUiCtlDownButton {
+            step = step * rtUiHscrollStep
+        }
+        rtUiLogScrollBy(lg, w, wIdx, 0, step)
+    } else {
+        rtUiLogScrollBy(lg, w, wIdx, step, 0)
+    }
+}
+
+// rtUiLogBarAction: TrackControl's actionProc for arrow/page parts.
+callback func rtUiLogBarAction(ctrl: ptr, part: int16) {
+    if part != 0 {
+        rtUiLogBarStep(ctrl, part)
+    }
+}
+
+func rtUiLogBarClick(lg: RtUiLog, w: RtUiWinst, i: int, ctrl: ptr, part: int, pt: int) {
+    if rtUiScripted {
+        // No live mouse: one discrete nudge per scripted click (a thumb
+        // click is a no-op), as rtUiHandleScrollbarClick does.
+        rtUiLogBarStep(ctrl, part)
+        return
+    }
+    if part != rtUiCtlIndicator {
+        UiTrackControl(ctrl, pt, rtUiLogBarAction)
+        return
+    }
+    if UiTrackControl(ctrl, pt, ptr(0)) == 0 {
+        return
+    }
+    if ctrl == lg.hbar {
+        rtUiLogScrollBy(lg, w, i, 0, UiGetControlValue(ctrl) - lg.hoff)
+    } else {
+        rtUiLogScrollBy(lg, w, i, UiGetControlValue(ctrl) - lg.top, 0)
+    }
+}
+
+// ---- selection ----
+
+// rtUiLogSelTo selects anchor..k (either order); true when it changed.
+func rtUiLogSelTo(lg: RtUiLog, k: int): bool {
+    var first: int
+    var last: int
+
+    first = lg.anchor
+    last = k
+    if k < first {
+        first = k
+        last = lg.anchor
+    }
+    if first == lg.selFirst and last == lg.selLast {
+        return false
+    }
+    lg.selFirst = first
+    lg.selLast = last
+    return true
+}
+
+// rtUiLogLineAt: the line under local v, clamped to the shown lines.
+func rtUiLogLineAt(lg: RtUiLog, t: ptr, v: int): int {
+    var k: int
+    var last: int
+
+    k = lg.top
+    if v >= peekw(t + 0) {
+        k = lg.top + (v - peekw(t + 0)) / lg.lineH
+    }
+    last = lg.top + rtUiLogRowCount(lg, rtUiLogVisible(lg, t)) - 1
+    if k > last {
+        k = last
+    }
+    return k
+}
+
+func rtUiLogTraceSel(lg: RtUiLog, w: RtUiWinst, i: int) {
+    var v: int
+
+    v = -1
+    if lg.selFirst >= 0 {
+        v = (lg.selFirst << 16) | (lg.selLast & 0xFFFF)
+    }
+    rtUiTraceSetInt(uidWinName(w.winIdx), uidWidgetName(w.winIdx, i), rtUiPropSelected, v)
+}
+
+func rtUiLogClick(lg: RtUiLog, w: RtUiWinst, i: int, pt: int, mods: int): int {
+    var slot: ptr
+    var part: int
+    var ctrl: ptr
+    var t: ptr
+    var changed: bool
+    var k: int
+    var v: int
+    var vis: int
+    var mouse: ptr
+
+    slot = UiNewPtr(4)
+    part = UiFindControl(pt, w.wp, slot)
+    ctrl = ptr(peekl(slot))
+    UiDisposePtr(slot)
+    if part != 0 and ctrl != ptr(0) and (ctrl == lg.vbar or ctrl == lg.hbar) {
+        rtUiLogBarClick(lg, w, i, ctrl, part, pt)
+        return 0
+    }
+    if lg.count == 0 {
+        return 0
+    }
+    t = UiNewPtr(rtUiRectSize)
+    rtUiLogText(lg, w, i, t)
+    if not UiPtInRect(pt, t) {
+        UiDisposePtr(t)
+        return 0
+    }
+    k = rtUiLogLineAt(lg, t, pt >> 16)
+    if (mods & 0x200) == 0 or lg.anchor < 0 {
+        lg.anchor = k
+    }
+    changed = rtUiLogSelTo(lg, k)
+    if changed {
+        rtUiLogPaint(lg, w, i, false, 0, 0)
+    }
+    if not rtUiScripted {
+        // Drag: extend from the anchor, autoscrolling a line per pass at
+        // the view's top/bottom edge. No event is handled inside this
+        // loop, so no append can move the ring under it.
+        mouse = UiNewPtr(4)
+        while UiStillDown() {
+            UiGetMouse(mouse)
+            v = rtUiPeekSw(mouse)
+            vis = rtUiLogVisible(lg, t)
+            if v < peekw(t + 0) and lg.top > 0 {
+                rtUiLogScrollBy(lg, w, i, -1, 0)
+            } else if v >= peekw(t + 0) + vis * lg.lineH and lg.top < rtUiLogMaxTop(lg, vis) {
+                rtUiLogScrollBy(lg, w, i, 1, 0)
+            }
+            if rtUiLogSelTo(lg, rtUiLogLineAt(lg, t, v)) {
+                changed = true
+                rtUiLogPaint(lg, w, i, false, 0, 0)
+            }
+        }
+        UiDisposePtr(mouse)
+    }
+    UiDisposePtr(t)
+    if changed {
+        rtUiLogTraceSel(lg, w, i)
+        return 1
+    }
+    return 0
+}
+
+// rtUiLogCopy puts the selected lines, CR-joined (no trailing CR), on the
+// desk scrap as TEXT; 1 when it did.
+func rtUiLogCopy(lg: RtUiLog, w: RtUiWinst, i: int): int {
+    var total: int
+    var k: int
+    var p: ptr
+    var q: ptr
+    var n: int
+
+    if lg.selFirst < 0 {
+        return 0
+    }
+    total = 0
+    k = lg.selFirst
+    while k <= lg.selLast {
+        total = total + rtUiLogLenAt(lg, k) + 1
+        k = k + 1
+    }
+    p = UiNewPtr(total)
+    if p == ptr(0) {
+        return 0
+    }
+    q = p
+    k = lg.selFirst
+    while k <= lg.selLast {
+        n = rtUiLogLenAt(lg, k)
+        rtUiLogRingMove(lg, (peekl(rtUiLogOff(lg, k)) + 1) mod lg.cap, q, n, false)
+        pokeb(q + n, 13)
+        q = q + n + 1
+        k = k + 1
+    }
+    UiZeroScrap()
+    UiPutScrap(total - 1, rtUiLogScrapText, p)
+    UiDisposePtr(p)
+    rtUiTraceFire2(uidWinName(w.winIdx), uidWidgetName(w.winIdx, i), "copy")
+    return 1
+}
+
+// ---- lifecycle ----
+
+// rtUiLogFontNum: GetFNum, falling back to applFont (1) when the name is
+// unknown (GetFNum's 0, unless the name really is the system font's).
+func rtUiLogFontNum(name: ptr): int {
+    var slot: ptr
+    var num: int
+    var nm: ptr
+
+    slot = UiNewPtr(2)
+    pokew(slot, 0)
+    UiGetFNum(name, slot)
+    num = peekw(slot)
+    UiDisposePtr(slot)
+    if num == 0 {
+        nm = UiNewPtr(256)
+        UiGetFontName(0, nm)
+        if not rtUiLogPstrEq(nm, name) {
+            num = 1
+        }
+        UiDisposePtr(nm)
+    }
+    return num
+}
+
+func rtUiLogMake(w: RtUiWinst, i: int) {
+    var maxLines: int
+    var lg: RtUiLog
+    var st: ptr
+    var placeholder: ptr
+    var empty: ptr
+
+    maxLines = uidWidgetMaxLines(w.winIdx, i)
+    if maxLines <= 0 {
+        maxLines = rtUiLogDefaultMax
+    }
+    st = UiNewPtrClear(rtUiLogHdr + maxLines * 4)
+    if st == ptr(0) {
+        rtPanic("out of memory")
+    }
+    lg = RtUiLog(st)
+    lg.maxLines = maxLines
+    lg.cap = rtUiLogInitCap
+    if lg.cap > maxLines * 64 {
+        lg.cap = maxLines * 64
+    }
+    lg.ringH = TextNewHandle(lg.cap)
+    if lg.ringH == ptr(0) {
+        rtPanic("out of memory")
+    }
+    lg.follow = 1
+    lg.selFirst = -1
+    lg.selLast = -1
+    lg.anchor = -1
+    lg.drawnTop = -1
+    lg.face = uidWidgetFace(w.winIdx, i)
+    if (uidWidgetFlags(w.winIdx, i) & rtUiFlagFontSet) != 0 {
+        lg.size = uidWidgetFontSize(w.winIdx, i)
+        lg.font = rtUiLogFontNum(uidWidgetFontName(w.winIdx, i))
+    }
+    placeholder = UiNewPtr(rtUiRectSize)
+    UiSetRect(placeholder, 0, 0, 0, 0)
+    empty = UiNewPtr(1)
+    pokeb(empty, 0)
+    lg.vbar = UiNewControl(w.wp, placeholder, empty, true, 0, 0, 0, rtUiProcIdScrollBar, 0)
+    pokel(UiHandleDeref(lg.vbar) + 36, 0x8000 | i)
+    rtUiSetHbarAt(w, i, lg.vbar)
+    if (uidWidgetFlags(w.winIdx, i) & rtUiFlagScrollH) != 0 {
+        lg.hbar = UiNewControl(w.wp, placeholder, empty, true, 0, 0, 0, rtUiProcIdScrollBar, 0)
+        pokel(UiHandleDeref(lg.hbar) + 36, 0xC000 | i)
+    }
+    UiDisposePtr(empty)
+    UiDisposePtr(placeholder)
+    rtUiLogMetrics(lg, w.wp)
+    rtUiLogSetSt(w, i, st)
+}
+
+func rtUiLogRelayout(lg: RtUiLog, w: RtUiWinst, i: int) {
+    var r: ptr
+    var t: ptr
+    var hH: int
+    var vis: int
+
+    r = rtUiRectAt(w, i)
+    hH = 0
+    if lg.hbar != ptr(0) {
+        hH = rtUiScrollbarW - 1
+        UiMoveControl(lg.hbar, peekw(r + 2), peekw(r + 4) - rtUiScrollbarW)
+        UiSizeControl(lg.hbar, peekw(r + 6) - peekw(r + 2) - rtUiScrollbarW + 1, rtUiScrollbarW)
+    }
+    UiMoveControl(lg.vbar, peekw(r + 6) - rtUiScrollbarW, peekw(r + 0))
+    UiSizeControl(lg.vbar, rtUiScrollbarW, peekw(r + 4) - peekw(r + 0) - hH)
+    t = UiNewPtr(rtUiRectSize)
+    rtUiLogText(lg, w, i, t)
+    vis = rtUiLogVisible(lg, t)
+    if lg.follow != 0 or lg.top > rtUiLogMaxTop(lg, vis) {
+        lg.top = rtUiLogMaxTop(lg, vis)
+    }
+    rtUiLogSyncBars(lg, t, vis)
+    UiDisposePtr(t)
+    rtUiLogInval(lg, w, i)
+}
+
+// rtUiLogDo performs one UiLogOp op on logpanel wIdx; the result is the
+// op's own (HasSel/HasLines/Copy/SelectAll/Click: 1 or 0), 0 for the rest.
+func rtUiLogDo(op: int, instV: ptr, wIdx: int, a: int, b: int): int {
+    var w: RtUiWinst
+    var st: ptr
+    var lg: RtUiLog
+    var savedPort: ptr
+    var r: int
+
+    w = RtUiWinst(instV)
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    if op == rtUiLogOpMake {
+        rtUiLogMake(w, wIdx)
+        UiSetPort(savedPort)
+        return 0
+    }
+    r = 0
+    st = rtUiLogSt(w, wIdx)
+    if st != ptr(0) {
+        lg = RtUiLog(st)
+        if op == rtUiLogOpDispose {
+            // The window, and so both bars, is already gone.
+            UiDisposeHandle(lg.ringH)
+            UiDisposePtr(st)
+            rtUiLogSetSt(w, wIdx, ptr(0))
+        } else if op == rtUiLogOpHasSel {
+            if lg.selFirst >= 0 {
+                r = 1
+            }
+        } else if op == rtUiLogOpHasLines {
+            if lg.count > 0 {
+                r = 1
+            }
+        } else if op == rtUiLogOpDraw {
+            rtUiLogPaint(lg, w, wIdx, false, 0, 0)
+        } else if op == rtUiLogOpClick {
+            r = rtUiLogClick(lg, w, wIdx, a, b)
+        } else if op == rtUiLogOpFlush {
+            rtUiLogFlush(lg, w, wIdx)
+        } else if op == rtUiLogOpCopy {
+            r = rtUiLogCopy(lg, w, wIdx)
+        } else if op == rtUiLogOpSelectAll {
+            if lg.count > 0 {
+                lg.anchor = 0
+                if rtUiLogSelTo(lg, lg.count - 1) {
+                    rtUiLogPaint(lg, w, wIdx, false, 0, 0)
+                    rtUiLogTraceSel(lg, w, wIdx)
+                }
+                r = 1
+            }
+        } else if op == rtUiLogOpRelayout {
+            rtUiLogRelayout(lg, w, wIdx)
+        } else if op == rtUiLogOpSetFont {
+            lg.font = a
+            lg.size = b >> 8
+            lg.face = b & 0xFF
+            rtUiLogMetrics(lg, w.wp)
+            lg.dirty = 1
+            rtUiLogRelayout(lg, w, wIdx)
+        } else if op == rtUiLogOpScroll {
+            rtUiLogScrollBy(lg, w, wIdx, a, b)
+        }
+    }
+    UiSetPort(savedPort)
+    return r
+}
+
+// ---- member entry points ----
+
+// rtUiLogAppend: `appendLine(s)`, s a Str255. CR, LF and CRLF each end a
+// line; a trailing terminator adds no empty line after it.
+func rtUiLogAppend(instV: ptr, wIdx: int, s: ptr) {
+    var w: RtUiWinst
+    var st: ptr
+    var lg: RtUiLog
+    var savedPort: ptr
+    var n: int
+    var k: int
+    var start: int
+    var c: int
+
+    w = RtUiWinst(instV)
+    st = rtUiLogSt(w, wIdx)
+    if st == ptr(0) {
+        return
+    }
+    lg = RtUiLog(st)
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    if lg.hbar != ptr(0) {
+        rtUiLogFontOn(lg, w.wp)
+    }
+    n = peekb(s)
+    start = 1
+    k = 1
+    while k <= n {
+        c = peekb(s + k)
+        if c == 13 or c == 10 {
+            rtUiLogPush(lg, s + start, k - start)
+            if c == 13 and k < n and peekb(s + k + 1) == 10 {
+                k = k + 1
+            }
+            start = k + 1
+        }
+        k = k + 1
+    }
+    if start <= n or n == 0 {
+        rtUiLogPush(lg, s + start, n + 1 - start)
+    }
+    if lg.hbar != ptr(0) {
+        rtUiLogFontOff(lg)
+    }
+    UiSetPort(savedPort)
+}
+
+// rtUiLogClear: `clear()` -- drops every line and the selection.
 func rtUiLogClear(instV: ptr, wIdx: int) {
+    var st: ptr
+    var lg: RtUiLog
+
+    st = rtUiLogSt(RtUiWinst(instV), wIdx)
+    if st == ptr(0) {
+        return
+    }
+    lg = RtUiLog(st)
+    lg.count = 0
+    lg.used = 0
+    lg.tail = 0
+    lg.head = 0
+    lg.top = 0
+    lg.follow = 1
+    lg.selFirst = -1
+    lg.selLast = -1
+    lg.anchor = -1
+    lg.widest = 0
+    lg.widestIdx = 0
+    lg.hoff = 0
+    lg.drawnTop = -1
+    lg.dirty = 1
 }
 
 // rtUiLogLineCount: `lineCount`.
 func rtUiLogLineCount(instV: ptr, wIdx: int): int {
-    return 0
+    var st: ptr
+
+    st = rtUiLogSt(RtUiWinst(instV), wIdx)
+    if st == ptr(0) {
+        return 0
+    }
+    return RtUiLog(st).count
 }
 
 // rtUiLogLine: `line(i)`, copied into the Str255 at dst255.
 func rtUiLogLine(instV: ptr, wIdx: int, i: int, dst255: ptr) {
-    pokeb(dst255, 0)
+    var st: ptr
+    var n: int
+
+    st = rtUiLogSt(RtUiWinst(instV), wIdx)
+    n = 0
+    if st != ptr(0) {
+        n = RtUiLog(st).count
+    }
+    if i < 0 or i >= n {
+        rtPanic("logpanel line out of range")
+    }
+    rtUiLogGet(RtUiLog(st), i, dst255)
 }
 
-// rtUiLogScrollToEnd: `scrollToEnd()`.
+// rtUiLogScrollToEnd: `scrollToEnd()` -- resume following; the next
+// flush brings the end into view.
 func rtUiLogScrollToEnd(instV: ptr, wIdx: int) {
+    var w: RtUiWinst
+    var st: ptr
+    var lg: RtUiLog
+    var t: ptr
+
+    w = RtUiWinst(instV)
+    st = rtUiLogSt(w, wIdx)
+    if st == ptr(0) {
+        return
+    }
+    lg = RtUiLog(st)
+    lg.follow = 1
+    t = UiNewPtr(rtUiRectSize)
+    rtUiLogText(lg, w, wIdx, t)
+    lg.top = rtUiLogMaxTop(lg, rtUiLogVisible(lg, t))
+    UiDisposePtr(t)
+    lg.dirty = 1
 }

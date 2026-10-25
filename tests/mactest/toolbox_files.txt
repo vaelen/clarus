@@ -45,3 +45,5 @@ testsuite/toolbox/cases_casestable.cla
 testsuite/toolbox/cases_winmenus.cla
 testsuite/toolbox/cases_narrowform.cla
 testsuite/toolbox/gui.cla
+testsuite/toolbox/cases_logring.cla
+testsuite/toolbox/cases_logfollow.cla
