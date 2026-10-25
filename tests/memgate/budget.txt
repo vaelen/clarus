@@ -1,5 +1,6 @@
 # tests/memgate/peak.sh budgets: peak live heap, 68k-equivalent bytes.
 # One "name bytes" line per subcase. Change log (newest first):
+# 2026-10-25 ui-widgets Task 12b: newIRType interns (k, n, elem, name), so the type arena holds each distinct IRType once (the baked library's ~5400 entries were mostly duplicates). bookmarks_rtbake 1265797 -> 1159210, bookmarks_src 6904773 -> 6774947, hello_src 6898987 -> 6768903 (measured 1147732 / 6707868 / 6701884 + 1%).
 # 2026-10-25 ui-widgets Task 12b, the phase's one raise (Andrew, 2026-10-25): bookmarks_rtbake 1206692 -> 1265797 (measured 1253264 + 1%). Main (9121955a) measured 1200872; the +52 KB is the phase's runtime: at the peak, cv_irTypes 4369 -> 5413 types (+16.7 KB, the baked install loads every runtime function's types whether or not shaking keeps it), cv_bkObjBuf +12.7 KB (bookmarks links ~10 KB more always-linked widget code, spec 4.9), and smaller IR/string tables. The SE floor (tests/mactest/snow/se_floor.txt) stays the hard limit.
 # 2026-10-25 ui-widgets Task 12b: checker's exprTypeOf intmap -> list indexed by expr (4 B/expr, no power-of-two doubling). bookmarks_src 6992416 -> 6904773, hello_src 6988809 -> 6898987 (measured 6836408 / 6830680 + 1%).
 # 2026-09-29 wave 4: lazy runtime library (no IR bodies, indexed object code, data-fork readAt). Measured peaks 1194744 / 6923184 / 6919612 + 1%.
@@ -19,6 +20,6 @@
 # formula would raise it by 182 B; lower-only rule.
 # 2026-09-28 SE wave 1 Task 4 (bake install-by-move, re-parse per compile, rtbakeBytes freed after parse): bookmarks_rtbake 11789468 -> 6324136, + 1%.
 # 2026-09-27 wave 0 baseline: measured peaks 11789468 / 14190252 / 10194664 + 1%.
-bookmarks_rtbake 1265797
-bookmarks_src 6904773
-hello_src 6898987
+bookmarks_rtbake 1159210
+bookmarks_src 6774947
+hello_src 6768903

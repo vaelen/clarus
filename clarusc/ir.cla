@@ -1193,6 +1193,7 @@ var irWordT: int
 // typesReset).
 func irReset() {
     irTypes.clear()
+    irTypeRehash()
     irStmts.clear()
     irExprs.clear()
     irLocals.clear()
@@ -1499,15 +1500,60 @@ func irReset() {
 // IRType constructors and accessors (irTypes arena)
 // ================================================================
 
+// newIRType interns: an existing entry with the same (k, n, elem, name)
+// is returned instead of a new one (ui-widgets Task 12b). IRTypes are
+// never mutated after creation, so sharing one is safe; before interning
+// every irtInt()/irStrType() call appended a fresh 16-byte entry, and the
+// baked library alone carried ~5400 of them, mostly duplicates.
+// irTypeHashHead maps irTypeHash to the newest index with that hash;
+// irTypeHashNext chains to the previous one (-1 ends), parallel to irTypes.
+var irTypeHashHead: intmap of int
+var irTypeHashNext: list of int
+
+func irTypeHash(k: IRKind, n: int, elem: int, name: int): int {
+    return (int(k) * 7919 + (n & 0xFFFF) * 31 + (elem & 0xFFFFF) * 131 + (name & 0xFFFFF) * 17) & 0x3FFFFFFF
+}
+
 func newIRType(k: IRKind, n: int, elem: int, name: int): int {
     var t: IRType
+    var h: int
+    var i: int
 
+    h = irTypeHash(k, n, elem, name)
+    i = irTypeHashHead.get(h, -1)
+    while i >= 0 {
+        if irTypes[i].k == k and irTypes[i].n == n and irTypes[i].elem == elem and irTypes[i].name == name {
+            return i
+        }
+        i = irTypeHashNext[i]
+    }
     t.k = k
     t.n = n
     t.elem = elem
     t.name = name
     irTypes.add(t)
+    irTypeHashNext.add(irTypeHashHead.get(h, -1))
+    irTypeHashHead[h] = irTypes.count - 1
     return irTypes.count - 1
+}
+
+// irTypeRehash rebuilds the intern chains from irTypes as it stands --
+// after irReset, and after the bake install moves a library arena in.
+func irTypeRehash() {
+    var fresh: intmap of int
+    var i: int
+    var h: int
+
+    irTypeHashHead = fresh
+    irTypeHashNext.clear()
+    irTypeHashNext.reserve(irTypes.count)
+    i = 0
+    while i < irTypes.count {
+        h = irTypeHash(irTypes[i].k, irTypes[i].n, irTypes[i].elem, irTypes[i].name)
+        irTypeHashNext.add(irTypeHashHead.get(h, -1))
+        irTypeHashHead[h] = i
+        i = i + 1
+    }
 }
 
 func irtKind(i: int): IRKind {

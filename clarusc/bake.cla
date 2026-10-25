@@ -4865,6 +4865,7 @@ func bkInstallArenas(testapi: bool, dropUilog: bool) {
     // because the storage now belongs to the live global.
     irTypes = bkLdIrTypes
     bkLdIrTypes = eTypes
+    irTypeRehash()
     irStmts = bkLdIrStmts
     bkLdIrStmts = eStmts
     irExprs = bkLdIrExprs
