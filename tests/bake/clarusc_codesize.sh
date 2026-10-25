@@ -4,8 +4,12 @@
 # segment (~11 KB x ~50 segments of ClarusC's ~1.6 MB of CODE); it is
 # table-driven now. Builds ClarusC.bin with scripts/build-clarusc-mac.sh
 # and sums every CODE resource's length (CODE 0 included) from the
-# resource map; fails over 1193734 bytes (the pre-table 1,603,334 minus
-# 400 KB).
+# resource map; fails over LIMIT. SE wave 5 set 1193734 (the pre-table
+# 1,603,334 minus 400 KB; measured 1,141,980). ui-widgets Task 12b raised
+# it once, like tests/memgate/budget.txt, to measured + 1%: 1198592 ->
+# 1210578 (the phase's always-linked widget runtime, spec 4.9, plus
+# lower.cla's dispatcher synthesis; the SE floor in
+# tests/mactest/snow/se_floor.txt stays the hard check).
 #
 # CLARUSC_BIN/CLARUSC_MAC_OUT: as tests/bake/clarusc_container.sh -- the
 # harness's own clarusc-current, output under $WORK.
@@ -14,7 +18,7 @@
 RESFORK=$TOOLS/resfork
 OUT=$WORK/mac
 BIN=$OUT/ClarusC.bin
-LIMIT=1193734
+LIMIT=1210578
 
 CLARUSC_BIN=$CLARUSC CLARUSC_MAC_OUT=$OUT "$ROOT/scripts/build-clarusc-mac.sh" \
     > "$WORK/build.log" 2>&1 || die "build-clarusc-mac.sh failed: $(tail -5 "$WORK/build.log" | tr '\n' ' ')"
