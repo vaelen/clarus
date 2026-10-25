@@ -6,8 +6,10 @@
 // stays on the same text while lines drop off the top; scrollToEnd()
 // resumes following.
 //
-// F (widget 0) is 70 px tall with no horizontal bar: its text area is
-// 68 px, exactly 4 rows for any line height from 14 to 17 (the system
+// F (widget 0) fills the 88 px content below y 10 less the 8 px gap, so
+// it is 70 px tall with no horizontal bar: its text area is 68 px (fill
+// rather than `height:`, which another track's layout work honors),
+// exactly 4 rows for any line height from 14 to 17 (the system
 // font's is 15 or 16), so the case needs no font metrics.
 // UiTestLogTop(0) (uitest.cla) reads F's first visible line index off the
 // front window. The scroll-up step sends the Scroll op straight to the
@@ -15,9 +17,9 @@
 // bar arrow nudge takes, without needing global screen coordinates.
 window LogFollowWin {
     title: "LogFollow"
-    size: 300, 120
+    size: 300, 88
 
-    logpanel F { maxLines: 50; height: 70 }
+    logpanel F { maxLines: 50; at: 10, 10; fill: both }
 }
 
 func tbLogFollowAppend(w: LogFollowWin, n: int) {
