@@ -3295,11 +3295,11 @@ static int32_t clar_fn_rtUiMenuGetChecked(int32_t cv_menuIdx, int32_t cv_itemIdx
     if (cv_mh == (void *)(intptr_t)(0)) {
         return 0;
     }
-    cv_buf = clar_fn_UiNewPtrClear(2);
+    cv_buf = clar_fn_UiNewPtr(2);
     rt_ext_UiGetItemMark(cv_mh, clar_fn_rtUiMenuItemNum(cv_menuIdx, cv_itemIdx), cv_buf);
     cv_mark = rt_peekw(cv_buf);
     rt_ext_UiDisposePtr(cv_buf);
-    return ((cv_mark == 18) || (cv_mark == 4608));
+    return (cv_mark == 18);
     return 0;
 }
 
