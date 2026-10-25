@@ -163,6 +163,9 @@
 // NarrowForm (cases_narrowform.cla) is SE wave 3 Task 4's addition: a
 // form field bound to a `uint16` refuses an out-of-range value and a minus
 // sign at OK, then accepts an in-range one (spec N3).
+// SetBounds (cases_setbounds.cla) and Divider (cases_divider.cla) are
+// ui-widgets Task 6's additions: code placement through setBounds (deferred
+// apply, one paint, resize survival, zero size) and the divider widget.
 
 enum ToolboxTest {
     All
@@ -206,15 +209,17 @@ enum ToolboxTest {
     WindowMenus
     AdspLeak
     NarrowForm
+    SetBounds
+    Divider
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 40 real cases
+// nTbCases is ToolboxTest's member count minus All: the 42 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 41
+const nTbCases: int = 43
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -343,6 +348,12 @@ func tbCaseName(t: ToolboxTest): string {
     case NarrowForm {
         return "NarrowForm"
     }
+    case SetBounds {
+        return "SetBounds"
+    }
+    case Divider {
+        return "Divider"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -394,6 +405,8 @@ func tbAllCases(): list of ToolboxTest {
     l.add(WindowMenus)
     l.add(AdspLeak)
     l.add(NarrowForm)
+    l.add(SetBounds)
+    l.add(Divider)
     l.add(SelfCheck)
     return l
 }
@@ -590,6 +603,14 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, NarrowForm) {
         results.add(caseNarrowForm())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, SetBounds) {
+        results.add(caseSetBounds())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Divider) {
+        results.add(caseDivider())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
