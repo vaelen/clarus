@@ -598,6 +598,8 @@ void rt_ext_UiLSetDrawingMode(int32_t drawIt, void *lHandle) { LSetDrawingMode((
 void rt_ext_UiLUpdate(void *theRgn, void *lHandle) { LUpdate((RgnHandle)theRgn, (ListHandle)lHandle); }
 int32_t rt_ext_UiLClick(int32_t pt, short modifiers, void *lHandle) { return (int32_t)LClick(rt_ext_ui_pt(pt), (EventModifiers)modifiers, (ListHandle)lHandle); }
 void rt_ext_UiLScroll(short dCols, short dRows, void *lHandle) { LScroll(dCols, dRows, (ListHandle)lHandle); }
+/* ui-widgets Task 10: a table's setFont. */
+void rt_ext_UiLCellSize(int32_t cSize, void *lHandle) { LCellSize(rt_ext_ui_pt(cSize), (ListHandle)lHandle); }
 
 void rt_ext_UiSetMenuItemText(void *theMenu, short item, void *itemString) { SetMenuItemText((MenuRef)theMenu, item, (ConstStr255Param)itemString); }
 void *rt_ext_UiGetMenuHandle(short menuId) { return (void *)GetMenuHandle(menuId); }
@@ -606,7 +608,8 @@ int32_t rt_ext_UiPopUpMenuSelect(void *theMenu, short top, short left, short pop
 void rt_ext_UiInvertRect(void *r) { InvertRect((const Rect *)r); }
 void rt_ext_UiDrawText(void *textBuf, short firstByte, short byteCount) { DrawText(textBuf, firstByte, byteCount); }
 void rt_ext_UiGetFontInfo(void *info) { GetFontInfo((FontInfo *)info); }
-/* ui-widgets Task 8: uilog.cla's own QuickDraw/Font Manager externs. */
+/* ui-widgets Task 8: uilog.cla's own QuickDraw/Font Manager externs
+ * (UiGetFNum/UiGetFontName moved to uifont.cla in Task 10). */
 void rt_ext_UiScrollRect(void *r, short dh, short dv, void *updateRgn) { ScrollRect((const Rect *)r, dh, dv, (RgnHandle)updateRgn); }
 void rt_ext_UiGetFNum(void *name, void *familyID) { GetFNum((ConstStr255Param)name, (short *)familyID); }
 void rt_ext_UiGetFontName(short familyID, void *name) { GetFontName(familyID, (unsigned char *)name); }

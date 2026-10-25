@@ -867,6 +867,7 @@ func rtUiOpen(winIdx: int): ptr {
     w.oldRectsH = rtUiAllocLocked(nWidgets * rtUiRectSize)
     w.oldRects = UiHandleDeref(w.oldRectsH)
     w.focusIdx = -1
+    UiFontsInit(inst)
 
     i = 0
     while i < nWidgets {
@@ -1087,6 +1088,9 @@ func rtUiTeardownWindow(inst: ptr) {
     UiDisposeHandle(w.popupSelH)
     UiDisposeHandle(w.placedH)
     UiDisposeHandle(w.oldRectsH)
+    if w.fontsH != ptr(0) {
+        UiDisposeHandle(w.fontsH)
+    }
     UiDisposeHandle(w.selfH)
 }
 
@@ -2061,8 +2065,7 @@ func rtUiHandleUpdate(wp: ptr) {
                 kind = -1 // a zero-size widget draws nothing
             }
             if kind == rtUiKindLabel {
-                s = rtUiLabelAt(w, i)
-                UiTextBox(s + 1, peekb(s), rtUiRectAt(w, i), 0)
+                rtUiDrawLabel(inst, i)
             } else if kind == rtUiKindButton {
                 flags = uidWidgetFlags(w.winIdx, i)
                 if (flags & rtUiFlagDefault) != 0 {
@@ -2099,7 +2102,9 @@ func rtUiHandleUpdate(wp: ptr) {
                     UiBlockMoveData(rtUiRectAt(w, i), labelRect, rtUiRectSize)
                     pokew(labelRect + 6, peekw(labelRect + 2) + rtUiFieldLabelW - 4)
                     s = rtUiLabelAt(w, i)
+                    rtUiFontApply(inst, i) // the label lane uses the field's font
                     UiTextBox(s + 1, peekb(s), labelRect, 0)
+                    rtUiFontRestore()
                     UiDisposePtr(labelRect)
                 }
             } else if kind == rtUiKindPopup and rtUiCtrlAt(w, i) == ptr(0) {
@@ -2173,6 +2178,7 @@ func rtUiHandleUpdate(wp: ptr) {
                 UiFrameRect(box)
                 fillW = rtUiTableFillWidth(colsOff, nCols, peekw(lhMp + rtUiListRView + 6) - peekw(lhMp + rtUiListRView + 2))
                 hx = peekw(lhMp + rtUiListRView + 2)
+                rtUiFontApply(inst, i) // the header uses the table's font
                 ck = 0
                 while ck < nCols {
                     if uidColWidthFill(colsOff, ck) {
@@ -2187,6 +2193,7 @@ func rtUiHandleUpdate(wp: ptr) {
                     hx = hx + cw
                     ck = ck + 1
                 }
+                rtUiFontRestore()
                 UiMoveTo(peekw(box + 2), peekw(headerRect + 4) - 1)
                 UiLineTo(peekw(box + 6), peekw(headerRect + 4) - 1)
                 // ((GrafPtr)wp)->visRgn -- GrafPort.visRgn @ offset 24 (device

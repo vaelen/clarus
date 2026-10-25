@@ -278,9 +278,11 @@ func rtUiTeWidestLine(te: ptr): int {
     // heap-layout change (filesystem-api phase, 2026-08-26; the loop
     // below already re-derived teMp for the same hazard).
     savedPort = rtUiGetPortSaved()
+    rtUiFontScratchGet() // allocates once: before teMp, same rule
     teMp = UiHandleDeref(te)
     n = peekw(teMp + rtUiTeNLines)
     UiSetPort(ptr(peekl(teMp + 82))) // (*te)->inPort
+    rtUiFontSave()
     UiTextFont(peekw(teMp + 74))
     UiTextSize(peekw(teMp + 80))
     UiTextFace(peekb(teMp + 76))
@@ -318,6 +320,7 @@ func rtUiTeWidestLine(te: ptr): int {
         i = i + 1
     }
     UiHSetState(hText, state)
+    rtUiFontRestore() // the TE's font must not stay in its window's port
     UiSetPort(savedPort)
     return widest
 }

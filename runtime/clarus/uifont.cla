@@ -1,23 +1,127 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// uifont.cla: per-widget fonts (ui-widgets spec 3.2) and canvas text
-// measurement (spec 3.8) -- setFont/setStyle on the text-drawing kinds and
-// canvas.textWidth. The draw sites themselves (TextFont/TextSize/TextFace
-// set and restore around each non-TE draw) live with each kind's drawing
-// code.
+// uifont.cla: per-widget fonts (ui-widgets spec 3.2), label drawing (spec
+// 3.3) and canvas text measurement (spec 3.8).
 //
-// ui-widgets Task 2: stub bodies only; Task 10 replaces them.
+// Storage: RtUiWinst.fonts holds one 4-byte slot per widget -- the font
+// number + 1 (word @0; 0 = none set), size (byte @2; 0 = none set) and
+// face (byte @3, the rtUiFace* bits). It is allocated at window open only
+// when some widget declares `font:` or `style:`, or later by the first
+// setFont/setStyle; while it is nil, and for whatever a slot leaves unset,
+// a widget draws in its port's defaults (a window port starts in the
+// application font, a canvas buffer in the system font).
+//
+// Every non-TE draw site (label, field label lane, table header and LDEF
+// rows, canvas text) brackets its drawing with rtUiFontApply, which saves
+// the port's font first, and rtUiFontRestore, which puts it back.
+// TE widgets keep their font in the TERec instead: TENew picks it up from
+// the port at creation, setFont pokes it afterwards.
+//
+// A canvas reads its font from the same slot at every text op, so a
+// buffered canvas keeps its font across rtUiCanvasMake (OpenPort resets a
+// port's font) without a copy in its RtUiCanvasBuf.
+//
+// The always-linked half -- the slot table, rtUiFontApply/Restore,
+// rtUiFontInfo, rtUiDrawLabel, rtUiFontNum -- lives in uiwidgets.cla's
+// "Fonts and labels" section until Task 12: the committed snapshot
+// compiler's runtime module list predates this file, so code it builds
+// (clarusc-current itself) cannot reach a function defined here. This file
+// holds only what the lowering roots by name when a program calls it.
 
 // rtUiWidgetSetFont: `w.X.setFont(name, size)`, name a Str255.
 func rtUiWidgetSetFont(instV: ptr, wIdx: int, name: ptr, size: int) {
+    var p: ptr
+    var num: int
+
+    num = rtUiFontNum(name)
+    p = rtUiFontSlot(instV, wIdx)
+    pokew(p, num + 1)
+    pokeb(p + 2, size)
+    rtUiFontChanged(instV, wIdx)
 }
 
 // rtUiWidgetSetStyle: `w.X.setStyle(...)`, face the folded rtUiFace* bits.
 func rtUiWidgetSetStyle(instV: ptr, wIdx: int, face: int) {
+    pokeb(rtUiFontSlot(instV, wIdx) + 3, face)
+    rtUiFontChanged(instV, wIdx)
+}
+
+// rtUiFontSlot: widget wIdx's font slot, allocating the window's table
+// first when no widget declared a font.
+func rtUiFontSlot(instV: ptr, wIdx: int): ptr {
+    var w: RtUiWinst
+
+    w = RtUiWinst(instV)
+    if w.fonts == ptr(0) {
+        rtUiFontsInit(instV, true)
+    }
+    return w.fonts + wIdx * 4
+}
+
+// rtUiFontChanged redraws widget wIdx in its new font: a logpanel through
+// its own SetFont op; a field/textview through its TERec (font, line
+// height and ascent, then TECalText); a table gets the new row height
+// (and, in rtUiTableRelayout, header height); every kind is invalidated.
+func rtUiFontChanged(instV: ptr, wIdx: int) {
+    var w: RtUiWinst
+    var savedPort: ptr
+    var p: ptr
+    var fi: ptr
+    var te: ptr
+    var teMp: ptr
+    var lh: ptr
+    var f: int
+
+    w = RtUiWinst(instV)
+    p = w.fonts + wIdx * 4
+    if uidWidgetKind(w.winIdx, wIdx) == rtUiKindLogpanel {
+        // No font set (a setStyle alone): the panel's own default, 0/0.
+        f = peekw(p) - 1
+        if f < 0 {
+            f = 0
+        }
+        UiLogOp(rtUiLogOpSetFont, instV, wIdx, f, (peekb(p + 2) << 8) | peekb(p + 3))
+        return
+    }
+    fi = rtUiFontInfo(instV, wIdx)
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    te = rtUiTeAt(w, wIdx)
+    lh = rtUiListAt(w, wIdx)
+    if te != ptr(0) {
+        // Font and size only when set: otherwise the TERec keeps the
+        // window's, which TENew gave it (and which fi was measured in).
+        teMp = UiHandleDeref(te)
+        if peekw(p) != 0 {
+            pokew(teMp + 74, peekw(p) - 1) // txFont
+        }
+        if peekb(p + 2) != 0 {
+            pokew(teMp + 80, peekb(p + 2)) // txSize
+        }
+        pokeb(teMp + 76, peekb(p + 3))     // txFace
+        pokew(teMp + rtUiTeLineHeight, rtUiFontLineH(fi))
+        pokew(teMp + 26, peekw(fi + 0))   // fontAscent
+        UiTECalText(te)
+        rtUiTeScrollSync(instV, wIdx)
+    } else if lh != ptr(0) {
+        UiLCellSize((rtUiFontLineH(fi) << 16) | peekw(UiHandleDeref(lh) + rtUiListCellSizeH), lh)
+        rtUiTableRelayout(instV, wIdx)
+    }
+    UiInvalRect(rtUiRectAt(w, wIdx))
+    UiSetPort(savedPort)
 }
 
 // rtUiCanvasTextWidth: `c.textWidth(s)` in the canvas's font, s a Str255.
 func rtUiCanvasTextWidth(instV: ptr, wIdx: int, s: ptr): int {
-    return 0
+    var savedPort: ptr
+    var tw: int
+
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(RtUiWinst(instV).wp)
+    rtUiFontApply(instV, wIdx)
+    tw = UiTextWidth(s + 1, 0, peekb(s))
+    rtUiFontRestore()
+    UiSetPort(savedPort)
+    return tw
 }

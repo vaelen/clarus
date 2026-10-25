@@ -58,8 +58,6 @@ const rtUiLogTextInset: int = 2
 const rtUiLogScrapText: int = 0x54455854 // 'TEXT'
 
 external func UiScrollRect(r: ptr, dh: int16, dv: int16, updateRgn: ptr) = trap 0xA8EF
-external func UiGetFNum(name: ptr, familyID: ptr) = trap 0xA900
-external func UiGetFontName(familyID: int16, name: ptr) = trap 0xA8FF
 external func UiInvalRgn(badRgn: ptr) = trap 0xA927
 
 // uitest.cla's UiTestLogTop/UiTestLogSel read top/selFirst/selLast at
@@ -340,19 +338,6 @@ func rtUiLogRescan(lg: RtUiLog) {
         k = k + 1
     }
     UiDisposePtr(buf)
-}
-
-func rtUiLogPstrEq(a: ptr, b: ptr): bool {
-    var k: int
-
-    k = 0
-    while k <= peekb(a) {
-        if peekb(a + k) != peekb(b + k) {
-            return false
-        }
-        k = k + 1
-    }
-    return true
 }
 
 // ---- geometry ----
@@ -869,29 +854,6 @@ func rtUiLogCopy(lg: RtUiLog, w: RtUiWinst, i: int): int {
 
 // ---- lifecycle ----
 
-// rtUiLogFontNum: GetFNum, falling back to applFont (1) when the name is
-// unknown (GetFNum's 0, unless the name really is the system font's).
-func rtUiLogFontNum(name: ptr): int {
-    var slot: ptr
-    var num: int
-    var nm: ptr
-
-    slot = UiNewPtr(2)
-    pokew(slot, 0)
-    UiGetFNum(name, slot)
-    num = peekw(slot)
-    UiDisposePtr(slot)
-    if num == 0 {
-        nm = UiNewPtr(256)
-        UiGetFontName(0, nm)
-        if not rtUiLogPstrEq(nm, name) {
-            num = 1
-        }
-        UiDisposePtr(nm)
-    }
-    return num
-}
-
 func rtUiLogMake(w: RtUiWinst, i: int) {
     var maxLines: int
     var lg: RtUiLog
@@ -925,7 +887,7 @@ func rtUiLogMake(w: RtUiWinst, i: int) {
     lg.face = uidWidgetFace(w.winIdx, i)
     if (uidWidgetFlags(w.winIdx, i) & rtUiFlagFontSet) != 0 {
         lg.size = uidWidgetFontSize(w.winIdx, i)
-        lg.font = rtUiLogFontNum(uidWidgetFontName(w.winIdx, i))
+        lg.font = rtUiFontNum(uidWidgetFontName(w.winIdx, i))
     }
     placeholder = UiNewPtr(rtUiRectSize)
     UiSetRect(placeholder, 0, 0, 0, 0)

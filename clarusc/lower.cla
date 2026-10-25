@@ -104,6 +104,12 @@ var lowMarkStrLits: int
 var lowUsesSetBounds: bool
 var lowUsesContentSize: bool
 
+// lowUsesSetFont / lowUsesTextWidth (ui-widgets Task 10): the same gate for
+// setFont/setStyle and canvas textWidth -- their entry points are rooted
+// only when the program calls them.
+var lowUsesSetFont: bool
+var lowUsesTextWidth: bool
+
 // ---- `on App.log(line: string)` (onlog phase) ----
 //
 // lowHasAppLog is set by lowerProgram's own pre-pass (a scan of the
@@ -2113,6 +2119,7 @@ func lowCanvasMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
         intrName = IUiCanvasDrawText()
     } else if nm == "textWidth" {
         intrName = IUiTextWidth()
+        lowUsesTextWidth = true
     } else {
         lowUnsupported("canvas method " + nm)
         return -1
@@ -2189,6 +2196,7 @@ func lowCommonWidgetMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
         lowUsesSetBounds = true
         return lowWidgetIntr(e, IUiSetBounds(), ty, recv)
     }
+    lowUsesSetFont = true
     if nm == "setFont" {
         return lowWidgetIntr(e, IUiSetFont(), ty, recv)
     }
@@ -8079,6 +8087,36 @@ func lowSynthUiDispatchers() {
     lowSynthColFmt()
     lowSynthFmtCell()
     lowSynthGeomApply()
+    lowSynthFontsInit()
+}
+
+// lowSynthFontsInit builds clar_ui_fire_fontsinit(inst), the UiFontsInit
+// dispatcher rtUiOpen calls (ui-widgets Task 10): it fills the window's
+// per-widget font table (rtUiFontsInit) only in a program where some widget
+// declares `font:` or `style:`, so font-name resolution is shaken out of
+// every other one. setFont/setStyle reach rtUiFontsInit on their own.
+func lowSynthFontsInit() {
+    var paramsHead: int
+    var args: int
+    var body: int
+    var fnameIdx: int
+    var i: int
+
+    paramsHead = newIRLocal(intern("inst"), irPtrT)
+    body = -1
+    i = 0
+    while i < irWidgetDescs.count {
+        if irWidgetDescs[i].fontNameIdx != -1 or irWidgetDescs[i].face != 0 {
+            i = irWidgetDescs.count
+            args = lowSynthPtrRef("inst")
+            irExprListAppend(args, newIRIntConst(0, irBoolT))
+            body = newIRExprStmt(newIRCallFn(intern("rtUiFontsInit"), args, irVoidT))
+        }
+        i = i + 1
+    }
+    fnameIdx = intern("clar_ui_fire_fontsinit")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, body)
+    shakeAddRoot(fnameIdx)
 }
 
 // lowSynthGeomApply builds clar_ui_fire_geomapply(), the UiGeomApply
@@ -8993,6 +9031,7 @@ func lowUiSynthExternName(externNameIdx: int): int {
     if nm == "UiColFmt" { return intern("clar_ui_fire_colfmt") }
     if nm == "UiFmtCell" { return intern("clar_ui_fire_fmtcell") }
     if nm == "UiGeomApply" { return intern("clar_ui_fire_geomapply") }
+    if nm == "UiFontsInit" { return intern("clar_ui_fire_fontsinit") }
     // Connection dispatchers (serial-connection phase, Task 5): conn.cla
     // declares these as `external func clar_conn_fire_NAME` (Task 4) and
     // rtConnPump calls them by that same literal name -- UNLIKE the UI
@@ -9109,6 +9148,8 @@ func lowerProgram(declHead: int): int {
     lowCurAcceptedParam = -1
     lowUsesSetBounds = false
     lowUsesContentSize = false
+    lowUsesSetFont = false
+    lowUsesTextWidth = false
     // lowTitleIdx (memory-leak-fix Task 7): same process-lifetime
     // lazy-init idiom as ir.cla's ~162 IXxx() intrinsic-name helpers (see
     // irReset's own doc comment) -- reset to -1 here so
@@ -9714,9 +9755,13 @@ func lowUiPortAddRoots() {
         shakeAddRoot(intern("rtUiWinContentW"))
         shakeAddRoot(intern("rtUiWinContentH"))
     }
-    shakeAddRoot(intern("rtUiWidgetSetFont"))
-    shakeAddRoot(intern("rtUiWidgetSetStyle"))
-    shakeAddRoot(intern("rtUiCanvasTextWidth"))
+    if lowUsesSetFont {
+        shakeAddRoot(intern("rtUiWidgetSetFont"))
+        shakeAddRoot(intern("rtUiWidgetSetStyle"))
+    }
+    if lowUsesTextWidth {
+        shakeAddRoot(intern("rtUiCanvasTextWidth"))
+    }
     shakeAddRoot(intern("rtUiTableScrollTo"))
     shakeAddRoot(intern("rtUiMenuSetChecked"))
     shakeAddRoot(intern("rtUiMenuGetChecked"))

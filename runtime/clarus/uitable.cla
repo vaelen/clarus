@@ -76,6 +76,9 @@ external func UiLDelRow(count: int16, rowNum: int16, lHandle: ptr) = trap 0xA9E7
 external func UiLGetSelect(next: bool, theCell: ptr, lHandle: ptr): bool = trap 0xA9E7 sel 0x003C
 external func UiLSetSelect(setIt: bool, theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x005C
 external func UiLSize(listWidth: int16, listHeight: int16, lHandle: ptr) = trap 0xA9E7 sel 0x0060
+// LCellSize (Lists.h: THREEWORDINLINE(0x3F3C, 0x0014, 0xA9E7)); cSize a
+// packed Point. ui-widgets Task 10: a table's setFont changes cellSize.v.
+external func UiLCellSize(cSize: int, lHandle: ptr) = trap 0xA9E7 sel 0x0014
 external func UiLActivate(act: bool, lHandle: ptr) = trap 0xA9E7 sel 0x0000
 external func UiLSetDrawingMode(drawIt: bool, lHandle: ptr) = trap 0xA9E7 sel 0x002C
 external func UiLUpdate(theRgn: ptr, lHandle: ptr) = trap 0xA9E7 sel 0x0064
@@ -282,6 +285,7 @@ const rtUiFtU16: int = 8
 // clikTime/...) are never read or poked anywhere in this port.
 // ================================================================
 const rtUiListRView: int = 0            // Rect: top@+0 left@+2 bottom@+4 right@+6
+const rtUiListPort: int = 8             // GrafPtr: the owning window
 const rtUiListCellSizeV: int = 16
 const rtUiListCellSizeH: int = 18
 const rtUiListVisibleTop: int = 20      // ListBounds(Rect).top
@@ -310,9 +314,11 @@ overlay record RtUiTableSt {
     gen: int
     mark: int
     logged: int
+    wIdx: int      // ui-widgets Task 10: the LDEF applies this widget's font
 }
 
-const rtUiTableStSize: int = 40
+// 3 pointers + 5 ints: 32 bytes on 68k, 44 on a 64-bit host.
+const rtUiTableStSize: int = 48
 
 // UiFmtCell: synthesized by lower.cla's lowSynthFmtCell into
 // clar_ui_fire_fmtcell -- calls rtUiTableFmtCell in a program with a
@@ -632,7 +638,7 @@ func rtUiTableFmtCell(stP: ptr, rec: ptr, recH: ptr, hstate: int, layoutOff: int
 // rtUiTableRowH/rtUiTableHeaderH (rt_ui.c:1131-1144): row height (a table's
 // LM cellSize.v) and header-strip height, both from the CURRENT port's font
 // metrics -- read fresh at creation and at every relayout rather than
-// cached (nothing in this port ever changes the window's default font).
+// cached; callers apply the table's own font first (ui-widgets Task 10).
 func rtUiTableRowH(): int {
     var fi: ptr
     var h: int
@@ -741,6 +747,11 @@ callback func rtUiLdefDraw(msg: int16, select: bool, rectPtr: ptr, cellPacked: i
         colsOff = uidTableColsOff(tableOff)
 
         UiEraseRect(rectPtr)
+        // The table's font (ui-widgets Task 10): its window from the
+        // ListRec's port, its widget index from the state block.
+        if stP != ptr(0) {
+            rtUiFontApply(rtUiWinstOf(ptr(peekl(UiHandleDeref(lh) + rtUiListPort))), RtUiTableSt(stP).wIdx)
+        }
         rowsAddr = UiTableRows(rowsIdx)
         rows = ptr(peekl(rowsAddr))
         count = rtListCount(rows)
@@ -849,6 +860,9 @@ callback func rtUiLdefDraw(msg: int16, select: bool, rectPtr: ptr, cellPacked: i
                 UiHSetState(recH, hstate)
             }
         }
+        if stP != ptr(0) {
+            rtUiFontRestore()
+        }
         if select {
             UiInvertRect(rectPtr)
         }
@@ -885,7 +899,9 @@ func rtUiTableRelayout(inst: ptr, i: int) {
     UiBlockMoveData(rtUiRectAt(w, i), box, rtUiRectSize)
     listRect = UiNewPtr(rtUiRectSize)
     UiBlockMoveData(box, listRect, rtUiRectSize)
+    rtUiFontApply(inst, i)
     headerH = rtUiTableHeaderH()
+    rtUiFontRestore()
     pokew(listRect + 0, peekw(listRect + 0) + headerH)
     if peekw(listRect + 4) < peekw(listRect + 0) {
         pokew(listRect + 4, peekw(listRect + 0))
@@ -1096,6 +1112,7 @@ func rtUiTableInitState(inst: ptr, wIdx: int, lh: ptr) {
     st.entry = rtListObserve(st.box)
     st.gen = rtListObsGen(st.entry)
     st.logged = 0
+    st.wIdx = wIdx
     pokel(UiHandleDeref(lh) + rtUiListUserHandle, int(stP)) // after the allocations: lh can move
 }
 
