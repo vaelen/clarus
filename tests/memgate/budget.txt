@@ -1,5 +1,6 @@
 # tests/memgate/peak.sh budgets: peak live heap, 68k-equivalent bytes.
 # One "name bytes" line per subcase. Change log (newest first):
+# 2026-10-25 ui-widgets Task 12b: checker's exprTypeOf intmap -> list indexed by expr (4 B/expr, no power-of-two doubling). bookmarks_src 6992416 -> 6904773, hello_src 6988809 -> 6898987 (measured 6836408 / 6830680 + 1%).
 # 2026-09-29 wave 4: lazy runtime library (no IR bodies, indexed object code, data-fork readAt). Measured peaks 1194744 / 6923184 / 6919612 + 1%.
 # 2026-09-28 wave 3: narrow ints, 2-byte enums both lanes, arena field grouping. Measured peaks 3399176 / 7377444 / 7308336 + 1%.
 # (Host counts ~75 KB of IRExpr/A68Item saving the 68k layout does not
@@ -18,5 +19,5 @@
 # 2026-09-28 SE wave 1 Task 4 (bake install-by-move, re-parse per compile, rtbakeBytes freed after parse): bookmarks_rtbake 11789468 -> 6324136, + 1%.
 # 2026-09-27 wave 0 baseline: measured peaks 11789468 / 14190252 / 10194664 + 1%.
 bookmarks_rtbake 1206692
-bookmarks_src 6992416
-hello_src 6988809
+bookmarks_src 6904773
+hello_src 6898987

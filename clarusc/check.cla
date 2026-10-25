@@ -746,14 +746,22 @@ var constUseArr: intmap of int
 // path) read it via exprTypeGet AFTER checkProgram, in the SAME process, with
 // no astReset in between -- `clarusc emit` runs one program per process, so
 // those indices still name the AST that produced these entries.
-var exprTypeOf: intmap of int
+// A list indexed by e, not an intmap (ui-widgets Task 12b): the keys are
+// the dense arena indices 0..exprs.count-1, so a list costs 4 bytes per
+// expr where the intmap cost 12 plus a doubling past a power of two (786 KB
+// at 33208 entries for a from-source bookmarks). checkExpr presizes it to
+// the arena's count; unset slots hold InvalidT.
+var exprTypeOf: list of int
 
 func enumConstGet(e: int): int {
     return enumConstOf.get(e, 0)
 }
 
 func exprTypeGet(e: int): int {
-    return exprTypeOf.get(e, InvalidT)
+    if e < 0 or e >= exprTypeOf.count {
+        return InvalidT
+    }
+    return exprTypeOf[e]
 }
 
 // ================================================================
@@ -6883,14 +6891,20 @@ func checkCall(e: int, expected: int): int {
 //
 // checkExpr is a single-tail wrapper around checkExprInner (below, which
 // has the real per-ExprKind logic and its many return sites): it records
-// the resolved type in exprTypeOf, an intmap keyed directly by e (the
-// expr's own arena index) same as enumConstOf, so a later lowering pass
+// the resolved type in exprTypeOf, a list indexed directly by e (the
+// expr's own arena index), so a later lowering pass
 // can read it back via exprTypeGet -- mirroring Go's Info.Types -- before
 // returning it.
 func checkExpr(e: int, expected: int): int {
     var t: int
     drvStackGuard()
     t = checkExprInner(e, expected)
+    if e >= exprTypeOf.count {
+        exprTypeOf.reserve(exprs.count)
+        while exprTypeOf.count <= e {
+            exprTypeOf.add(InvalidT)
+        }
+    }
     exprTypeOf[e] = t
     return t
 }
@@ -7027,7 +7041,7 @@ func checkReset() {
     var freshConstUseIsStr: intmap of int
     var freshConstUseInt: intmap of int
     var freshConstUseStr: intmap of string
-    var freshExprTypeOf: intmap of int
+    var freshExprTypeOf: list of int
     var freshRecFieldsHeadByName: intmap of int
     var freshWindowIsForm: map of int
     var freshWindowFormRecType: map of int

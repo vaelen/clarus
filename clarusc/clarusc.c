@@ -6713,7 +6713,7 @@ static rt_list * cv_arrLitLen;
 static rt_list * cv_arrLitVals;
 static rt_intmap * cv_arrLitIdxOf;
 static rt_intmap * cv_constUseArr;
-static rt_intmap * cv_exprTypeOf;
+static rt_list * cv_exprTypeOf;
 static int32_t cv_loopDepth;
 static int32_t cv_inCloseRequest;
 static int32_t cv_appDeclSeen;
@@ -7956,7 +7956,7 @@ static void clar_init_globals(void) {
     cv_arrLitVals = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     cv_arrLitIdxOf = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
     cv_constUseArr = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
-    cv_exprTypeOf = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
+    cv_exprTypeOf = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     cv_loopDepth = 0;
     cv_inCloseRequest = 0;
     cv_appDeclSeen = 0;
@@ -9181,7 +9181,7 @@ static void cl_free_globals(void) {
     clar_fn_rtListRelease((void*)cv_arrLitVals);
     clar_fn_rtIntMapRelease((void*)cv_arrLitIdxOf);
     clar_fn_rtIntMapRelease((void*)cv_constUseArr);
-    clar_fn_rtIntMapRelease((void*)cv_exprTypeOf);
+    clar_fn_rtListRelease((void*)cv_exprTypeOf);
     clar_fn_rtListRelease((void*)cv_widgetInfos);
     clar_fn_rtMapRelease((void*)cv_windowIsForm);
     clar_fn_rtMapRelease((void*)cv_windowFormRecType);
@@ -19549,10 +19549,10 @@ static int32_t clar_fn_enumConstGet(int32_t cv_e) {
 static int32_t clar_fn_exprTypeGet(int32_t cv_e) {
     int32_t cv___ret397;
     cv___ret397 = 0;
-    int32_t t1;
-    t1 = cv_InvalidT;
-    clar_fn_rtIntMapGetDv((void*)cv_exprTypeOf, cv_e, (void*)&t1);
-    return t1;
+    if ((cv_e < 0) || (cv_e >= clar_fn_rtListCount((void*)cv_exprTypeOf))) {
+        return cv_InvalidT;
+    }
+    return (*(int32_t*)rt_list_at(cv_exprTypeOf, (int32_t)(cv_e)));
     return 0;
 }
 
@@ -26874,11 +26874,16 @@ static int32_t clar_fn_checkExpr(int32_t cv_e, int32_t cv_expected) {
     t1 = clar_fn_checkExprInner(cv_e, cv_expected);
     if (clar_aborting) goto bail;
     cv_t = t1;
-    int32_t t2;
-    t2 = cv_e;
-    int32_t t3;
-    t3 = cv_t;
-    clar_fn_rtIntMapSet((void*)cv_exprTypeOf, t2, (void*)&(t3));
+    if (cv_e >= clar_fn_rtListCount((void*)cv_exprTypeOf)) {
+        clar_fn_rtListReserve((void*)cv_exprTypeOf, (int32_t)(clar_fn_rtListCount((void*)cv_exprs)));
+        while (1) {
+            if (!((clar_fn_rtListCount((void*)cv_exprTypeOf) <= cv_e))) break;
+            int32_t t2;
+            t2 = cv_InvalidT;
+            clar_fn_rtListPush((void*)cv_exprTypeOf, (void*)&(t2));
+        }
+    }
+    (*(int32_t*)rt_list_at(cv_exprTypeOf, (int32_t)(cv_e))) = cv_t;
     return cv_t;
     bail:;
     return cv___ret469;
@@ -26987,8 +26992,8 @@ static void clar_fn_checkReset(void) {
     cv_freshConstUseInt = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
     rt_intmap * cv_freshConstUseStr;
     cv_freshConstUseStr = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(clar_str_255));
-    rt_intmap * cv_freshExprTypeOf;
-    cv_freshExprTypeOf = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
+    rt_list * cv_freshExprTypeOf;
+    cv_freshExprTypeOf = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_intmap * cv_freshRecFieldsHeadByName;
     cv_freshRecFieldsHeadByName = (rt_intmap *)clar_fn_rtIntMapNew(sizeof(int32_t));
     rt_map * cv_freshWindowIsForm;
@@ -27062,9 +27067,9 @@ static void clar_fn_checkReset(void) {
     clar_fn_rtListClear((void*)cv_arrLitStart);
     clar_fn_rtListClear((void*)cv_arrLitLen);
     clar_fn_rtListClear((void*)cv_arrLitVals);
-        clar_fn_rtIntMapRetain((void*)cv_freshExprTypeOf);
+        clar_fn_rtListRetain((void*)cv_freshExprTypeOf);
 
-        clar_fn_rtIntMapRelease((void*)cv_exprTypeOf);
+        clar_fn_rtListRelease((void*)cv_exprTypeOf);
 
     cv_exprTypeOf = cv_freshExprTypeOf;
         clar_fn_rtIntMapRetain((void*)cv_freshRecFieldsHeadByName);
@@ -27184,7 +27189,7 @@ static void clar_fn_checkReset(void) {
 
         clar_fn_rtIntMapRelease((void*)cv_freshConstUseStr);
 
-        clar_fn_rtIntMapRelease((void*)cv_freshExprTypeOf);
+        clar_fn_rtListRelease((void*)cv_freshExprTypeOf);
 
         clar_fn_rtIntMapRelease((void*)cv_freshRecFieldsHeadByName);
 
@@ -101974,6 +101979,8 @@ static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
         return ((void*)&(cv_arrLitLen));
     } else if (cv_rowsIdx == 243) {
         return ((void*)&(cv_arrLitVals));
+    } else if (cv_rowsIdx == 246) {
+        return ((void*)&(cv_exprTypeOf));
     } else if (cv_rowsIdx == 258) {
         return ((void*)&(cv_widgetInfos));
     } else if (cv_rowsIdx == 268) {
