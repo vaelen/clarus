@@ -447,7 +447,7 @@ snow_run() {
     shift 2
     [ -x "$ROOT/snow/clarus-snow" ] || skip "snow/clarus-snow not present"
     [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] \
-        || die "DISPLAY is not set -- emulator boots need an X display (e.g. DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority)"
+        || die "DISPLAY is not set -- emulator boots need an X display (e.g. DISPLAY=:0 XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.*)"
     snow_lock
     # The exec path is unique to this run, so `ps` tells our boot apart
     # from every other clarus-snow on the machine.

@@ -14,7 +14,10 @@ would be a bug in this document, not a second opinion.
 Every declaration shown below either already ships in the repository — the
 curated catalog under `toolbox/` (`memory.cla`, `events.cla`, `osutils.cla`,
 `scrap.cla`, `devices.cla`, `files.cla`, `standardfile.cla`, `serial.cla`,
-`resources.cla`, `appleevents.cla`, `appletalk.cla`), the runtime
+`resources.cla`, `appleevents.cla`, `appletalk.cla`, `mactcp.cla`,
+`segload.cla`, `menus.cla` (the Menu Manager, hierarchical menus
+included), `fonts.cla` (Font Manager and QuickDraw text) and `lists.cla`
+(the List Manager, Package 0)), the runtime
 (`runtime/clarus/ui.cla`, `runtime/clarus/uitext.cla`), or a test suite
 case (`testsuite/toolbox/`) — or is the reference's own worked example.
 None of it is invented for this document; each walkthrough below cites its

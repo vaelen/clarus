@@ -240,6 +240,16 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Compiler: type checking
 
+### ui-widgets phase (2026-10-25)
+
+- **A user function named like a builtin is silently replaced by the
+  builtin.** `lowCall` (`lower.cla`) maps `durationStr`, `dateTimeStr`
+  and `now` to the runtime's own functions before it looks at user
+  symbols, so a program's own `func durationStr(...)` is never called
+  (found by ui-widgets Task 3: `testdata/emitui/ui_batch_decl.cla`'s
+  formatter calls `rtDurationStr`). Pre-existing. Fix: resolve user
+  symbols first, or make redeclaring a builtin a check error.
+
 ### SE memory program, Wave 3 (2026-09-29)
 
 - **Boundary `int16`/`uint8` read back as `int`** (Task 6, ruling R10).
@@ -361,6 +371,34 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   and ignore (or record for the scripted-UI trace).
 
 ## Runtime / Toolbox robustness
+
+### ui-widgets phase (2026-10-25)
+
+- **Popup menu IDs collide across windows.** A popup's menu ID is
+  `rtUiPopupMenuIdBase + widgetIdx` (`uiwidgets.cla` `rtUiMakeWidgets`),
+  so popup 0 of one window and popup 0 of another open window get the
+  same ID, and the Menu Manager's menu list holds two menus with one
+  ID. Found in recon (spec §6); out of the phase's scope. Fix: number
+  popups program-wide (window index × widgets + widget index), or
+  allocate IDs from a free range at open.
+- **`rtUiMenuRecomputeDim` overwrites a program-set `.enabled`.** On
+  every front-window change it re-enables or dims each window-scoped
+  item (and std-edit items 3–7) from the front window alone, so an
+  `Item.enabled = false` the program set on such an item is lost at
+  the next window switch. It never touches `checked`. Fix: keep a
+  per-item "program disabled" bit and AND it into the computed state.
+- **The host C lane's `file.load` bypasses the observed-list hook.**
+  `runtime/host/rt_ser.inc` fills a list through `rt_list_*` calls
+  that do not go through `list.cla`'s `rtListObsNote`, so a table bound
+  to that list would not redraw. Harmless today (no host UI lane, spec
+  C1); it matters if one is ever built.
+- **`setBounds` writes no UI-trace line.** Scripted builds trace every
+  other widget property write; a frozen scenario that moves widgets
+  would not show it in its trace. No scenario calls it today.
+- **No Window Manager catalog file in `toolbox/`.**
+  `testsuite/toolbox/cases_setbounds.cla` declares `FrontWindow`
+  (0xA924) locally for want of one. Add `toolbox/windows.cla` with the
+  rest of the Window Manager, per the Toolbox-first principle.
 
 ### Opt-in log file (2026-09-29)
 

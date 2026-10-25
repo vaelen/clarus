@@ -6,6 +6,131 @@ which stays the normative spec: where this file and the reference
 disagree, the reference wins. Entries marked **Action:** may need a
 change to an existing program.
 
+## 1.2
+
+The ui-widgets phase (2026-10-25): the widget, menu and table features
+68kBBS asked for (its `docs/clarus-ui-requirements.md`, items R1–R9),
+plus two visible changes to existing programs (Select All, literal menu
+captions). The design is
+`docs/superpowers/specs/2026-10-25-ui-widgets-design.md`.
+
+### New syntax and types
+
+- **`height:` on every widget, `width:` on `textview`, `canvas` and
+  `table`** (R1). `field`, `button`, `check` and `popup` keep their
+  natural height: `height:` is accepted on them and ignored
+  (reference §Layout, Mac note — natural heights).
+- **`font: "Name", size` and `style: word, ...`** on `label`, `field`,
+  `textview`, `table`, `canvas` and `logpanel`, with the style words
+  `plain`, `bold`, `italic`, `underline` (R2). An unknown font name
+  falls back to Geneva. `font:`/`style:` on a `button`, `check` or
+  `popup` is a build error (reference §Fonts and Styles).
+- **`label` gains `align: left | center | right`** (R3) (reference
+  §Labels).
+- **New widget `logpanel`**: a scrolling list of read-only lines with
+  `maxLines:` (default 200) and `scrollbar: vertical | both` (R4)
+  (reference §Log Panels).
+
+  ```rust
+  logpanel Log { maxLines: 100; font: "Monaco", 9; scrollbar: both; fill: both }
+  ```
+
+- **Formatted and aligned table columns**: `shows` takes a call to a
+  top-level function, with the row's fields in scope bare, and a
+  column may end with `align left | center | right` (R5) (reference
+  §Table Columns).
+
+  ```rust
+  column "Time" shows minutes(secs) width fill align right
+  ```
+
+- **New widget `divider`**, a horizontal or vertical rule with
+  `style: single | double` (R6) (reference §Dividers).
+- **Menu items take `checked` and `submenu Name`** (R7). A submenu must
+  be declared above the menu that uses it, never appears in the menu
+  bar, and cannot be named in a window's `menus:`
+  (reference §Checkmarks and Submenus).
+
+  ```rust
+  item PortSpeed "Port Speed" submenu Speed
+  item S9600 "9600" checked
+  ```
+
+### New built-ins and methods
+
+- **Widget geometry** (R1): read-only `x`, `y`, `width`, `height` on
+  every widget; `w.X.setBounds(x, y, width, height)`, which places a
+  widget by code from then on and is applied once, without flicker,
+  after the handler returns; read-only window `contentWidth` and
+  `contentHeight` (reference §Geometry and Code Placement, §Window
+  Instances).
+- **`setFont(name, size)` and `setStyle(word, ...)`** on the
+  font-carrying widgets (R2). `setStyle` replaces the whole style;
+  `setStyle(plain)` clears it (reference §Fonts and Styles).
+- **`logpanel` members** `appendLine(s)`, `clear()`, `lineCount`,
+  `line(i)` and `scrollToEnd()` (R4). Lines are selectable, and Copy
+  and Select All work on them (reference §Log Panels).
+- **Table `scrollTo(i)`**, and `selected` is now documented as
+  assignable (`-1` clears) (R5) (reference §Table Selection).
+- **Menu item `checked`**, readable and assignable, and `enabled` is
+  now readable as well as assignable (R7) (reference §Runtime Menu-Item
+  Properties).
+- **Canvas `textWidth(s)`, `lineHeight` and `ascent`**, in the
+  canvas's own font, which also survives a resize (R8) (reference
+  §Canvas Text).
+
+### Changed behaviour
+
+- **Select All in `standard edit`.** Every program's standard Edit menu
+  gains a seventh item, Select All (⌘A), for fields, textviews and
+  logpanels. **Action:** a menu item of your own with `key "A"` now
+  collides with it silently; give it another key
+  (reference §Standard Edit).
+- **Menu captions are literal** (R9). `(`, `/`, `^`, `!`, `<` and `;`
+  in an item caption are shown as written instead of being read as
+  Menu Manager commands, so `"Init (Hayes); Reset"` shows exactly that.
+  **Action:** none needed. A program that avoided those characters
+  (68kBBS's "no `(` in captions" rule) can drop the workaround
+  (reference §Menu Declaration).
+- **A menu that mixes `standard edit` with its own items keeps both.**
+  The seven standard items come first, then the declared items in
+  order. Before 1.2 the declared items were silently dropped
+  (reference §Standard Edit).
+- **Tables follow every change to their list** (R5). Every list
+  mutation, element store, element field write, `edit` writeback and
+  reassignment of the bound variable redraws the table; before 1.2 a
+  change that kept the row count the same could leave it stale. The
+  selection now follows its record: after `unshift` the same record
+  stays selected, and removing the selected record clears `selected`
+  to `-1` (it used to stay on the row number) (reference §Table
+  Binding, §Table Selection).
+- **A table with `width:` honors it.** A table without `width:` still
+  fills the window, as before (reference §Layout).
+- **Labels draw directly**, with no TextEdit, and assigning a label
+  the text it already shows does nothing (R3) (reference §Labels).
+- **After a resize, zoom or applied `setBounds`, the update erases the
+  invalidated area**, so moved widgets leave no stale pixels. An
+  unbuffered canvas is wiped there and must be redrawn by the program
+  (reference §Geometry and Code Placement, Mac note).
+- **`text.reserve(n)` sizes to exactly `n`**, as `list.reserve(n)`
+  does, instead of rounding up. Contents and the "at least `n`"
+  contract are unchanged (reference §Text).
+
+### Compiler and tooling
+
+- **New build errors** for the new properties' values, for example
+  `font: expects a font name string and a size from 1 to 127`,
+  `unknown style X (expected plain, bold, italic or underline)`,
+  `plain cannot be combined with other styles`,
+  `align: expects left, center or right`,
+  `maxLines: expects an integer literal of at least 1`,
+  `column shows expects a field name or a function call`, and
+  `cannot assign to read-only property x` for the geometry
+  properties.
+- The `toolbox/` catalog gained `menus.cla` (the Menu Manager),
+  `fonts.cla` (Font Manager and QuickDraw text) and `lists.cla` (the
+  List Manager).
+
 ## 1.1 (2026-09-30)
 
 Everything user-visible that landed during the SE memory program

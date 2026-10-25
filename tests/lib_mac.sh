@@ -38,7 +38,7 @@ mac_launch() {
     _bin=${CLARUS_MINIVMAC:-$_d/$1}
     [ -x "$_bin" ] || skip "$_bin (Linux Mini vMac) not present"
     [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] \
-        || die "DISPLAY is not set -- emulator boots need an X display (e.g. DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority)"
+        || die "DISPLAY is not set -- emulator boots need an X display (e.g. DISPLAY=:0 XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.*)"
     MAC_LAUNCH="$ROOT/toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
         --minivmac-dir $_d --minivmac-path $_bin --minivmac-rom ./vMac.ROM \
         --system-image ./disk1.dsk --autoquit-image ./autoquit-1.1.1.dsk \
