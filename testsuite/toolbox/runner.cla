@@ -169,6 +169,9 @@
 // SetBounds (cases_setbounds.cla) and Divider (cases_divider.cla) are
 // ui-widgets Task 6's additions: code placement through setBounds (deferred
 // apply, one paint, resize survival, zero size) and the divider widget.
+// LogPanelRing/LogPanelFollow (cases_logring.cla/cases_logfollow.cla) are
+// ui-widgets Task 8's addition: the logpanel's ring storage and its
+// follow/scroll-position rules (spec 3.4).
 
 enum ToolboxTest {
     All
@@ -215,15 +218,17 @@ enum ToolboxTest {
     MenuCheckSub
     SetBounds
     Divider
+    LogPanelRing
+    LogPanelFollow
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 43 real cases
+// nTbCases is ToolboxTest's member count minus All: the 45 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 44
+const nTbCases: int = 46
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -361,6 +366,12 @@ func tbCaseName(t: ToolboxTest): string {
     case Divider {
         return "Divider"
     }
+    case LogPanelRing {
+        return "LogPanelRing"
+    }
+    case LogPanelFollow {
+        return "LogPanelFollow"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -415,6 +426,8 @@ func tbAllCases(): list of ToolboxTest {
     l.add(MenuCheckSub)
     l.add(SetBounds)
     l.add(Divider)
+    l.add(LogPanelRing)
+    l.add(LogPanelFollow)
     l.add(SelfCheck)
     return l
 }
@@ -623,6 +636,14 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, Divider) {
         results.add(caseDivider())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, LogPanelRing) {
+        results.add(caseLogPanelRing())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, LogPanelFollow) {
+        results.add(caseLogPanelFollow())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

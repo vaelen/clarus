@@ -35,6 +35,7 @@
 #include <Lists.h>     /* List Manager -- Task 9's uitable.cla externs (rt_ui.c's own precedent, :69) */
 #include <NumberFormatting.h> /* NumToString -- Task 9 table cell int/fixed rendering, no libc needed */
 #include <StandardFile.h> /* SFGetFile/SFPutFile -- Task 10's rt_ext_UiSFGetFile/rt_ext_UiSFPutFile (rt_ui.c's own precedent, :73) */
+#include <Fonts.h>      /* GetFNum/GetFontName -- ui-widgets Task 8's rt_ext_UiGetFNum/rt_ext_UiGetFontName */
 
 /* ---- 5a: ptr/Handle waist (Plan 5a Task 3) ---- */
 void *rt_ext_NewHandle(int32_t size) { return (void *)NewHandle((Size)size); }
@@ -604,6 +605,11 @@ int32_t rt_ext_UiPopUpMenuSelect(void *theMenu, short top, short left, short pop
 void rt_ext_UiInvertRect(void *r) { InvertRect((const Rect *)r); }
 void rt_ext_UiDrawText(void *textBuf, short firstByte, short byteCount) { DrawText(textBuf, firstByte, byteCount); }
 void rt_ext_UiGetFontInfo(void *info) { GetFontInfo((FontInfo *)info); }
+/* ui-widgets Task 8: uilog.cla's own QuickDraw/Font Manager externs. */
+void rt_ext_UiScrollRect(void *r, short dh, short dv, void *updateRgn) { ScrollRect((const Rect *)r, dh, dv, (RgnHandle)updateRgn); }
+void rt_ext_UiGetFNum(void *name, void *familyID) { GetFNum((ConstStr255Param)name, (short *)familyID); }
+void rt_ext_UiGetFontName(short familyID, void *name) { GetFontName(familyID, (unsigned char *)name); }
+void rt_ext_UiInvalRgn(void *badRgn) { InvalRgn((RgnHandle)badRgn); }
 void rt_ext_UiLocalToGlobal(void *pt) { LocalToGlobal((Point *)pt); }
 
 /* rt_ext_UiCbAddr (Task 9, toolbox-integration Feature C: `callback func`

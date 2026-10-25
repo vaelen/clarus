@@ -193,7 +193,7 @@ LBL_251:
         JSR 1898(A5)
         BSR.W LBL_248
         CLR.L -(A7)
-        JSR 3530(A5)
+        JSR 3538(A5)
         RTS
 LBL_250:
         ; cg_init_globals
@@ -261,7 +261,7 @@ LBL_0:
         MOVE.L D0,-(A7)
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3546(A5)
+        JSR 3554(A5)
         ADDQ.L #8,A7
 LBL_252:
         UNLK A6
@@ -272,7 +272,7 @@ LBL_1:
         LINK A6,#-52
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3538(A5)
+        JSR 3546(A5)
         ADDQ.L #4,A7
 LBL_253:
         UNLK A6
@@ -7481,7 +7481,7 @@ LBL_595:
         MOVE.L D0,-(A7)
         MOVE.L -96(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2666(A5)
+        JSR 2650(A5)
         ADDQ.L #8,A7
 LBL_597:
         MOVE.L -96(A6),D1
@@ -7799,7 +7799,7 @@ LBL_612:
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2482(A5)
+        JSR 2498(A5)
         ADDQ.L #8,A7
         MOVE.L D0,D1
         MOVEQ #0,D0
@@ -7817,7 +7817,7 @@ LBL_612:
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2482(A5)
+        JSR 2498(A5)
         ADDQ.L #8,A7
         MOVE.L D0,-(A7)
         DC.W $A932  ; UiDisposeMenu
@@ -11441,7 +11441,7 @@ LBL_814:
         MOVE.L D0,-(A7)
         MOVE.L -56(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2538(A5)
+        JSR 2530(A5)
         ADDA.W #12,A7
         MOVE.L -56(A6),D0
         MOVE.L D0,-(A7)
@@ -11513,7 +11513,7 @@ LBL_814:
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2482(A5)
+        JSR 2498(A5)
         ADDQ.L #8,A7
         MOVE.L D0,-68(A6)
         MOVE.L -68(A6),D1
@@ -11539,7 +11539,7 @@ LBL_814:
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2498(A5)
+        JSR 2514(A5)
         ADDQ.L #8,A7
         MOVE.L D0,D1
         MOVEQ #1,D0
@@ -11819,7 +11819,7 @@ LBL_819:
         SUB.L D0,D1
         MOVE.L D1,D0
         MOVE.L D0,-(A7)
-        JSR 2546(A5)
+        JSR 2538(A5)
         ADDA.W #12,A7
         MOVE.L D0,-104(A6)
         MOVE.L -88(A6),D1

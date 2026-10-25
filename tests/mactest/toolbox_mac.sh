@@ -37,5 +37,5 @@ run_mac "$bin" 420
 [ "$MAC_EXIT" = 0 ] || die "toolbox suite (Retro68) exit code $MAC_EXIT, want 0
 capture:
 $(cat "$WORK/cap.out")"
-suite_report_check "$WORK/cap.out" 44
+suite_report_check "$WORK/cap.out" 46
 t_done

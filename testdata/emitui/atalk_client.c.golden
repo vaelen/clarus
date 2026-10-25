@@ -315,6 +315,10 @@ extern int32_t rt_ext_TcpHLsnPoll(int32_t);
 extern int32_t rt_ext_TcpHLsnAccept(int32_t, int32_t);
 extern void rt_ext_TcpHLsnDeny(int32_t);
 extern void rt_ext_TcpHLsnClose(int32_t);
+extern void rt_ext_UiScrollRect(void *, short, short, void *);
+extern void rt_ext_UiGetFNum(void *, void *);
+extern void rt_ext_UiGetFontName(short, void *);
+extern void rt_ext_UiInvalRgn(void *);
 
 static const clar_str_255 clar_lit_0 = {24, {97, 114, 114, 97, 121, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 static const clar_str_255 clar_lit_1 = {25, {110, 111, 32, 101, 110, 117, 109, 32, 109, 101, 109, 98, 101, 114, 32, 119, 105, 116, 104, 32, 118, 97, 108, 117, 101}};
@@ -475,16 +479,18 @@ static const clar_str_255 clar_lit_155 = {27, {99, 111, 117, 108, 100, 32, 110, 
 static const clar_str_255 clar_lit_156 = {12, {105, 110, 118, 97, 108, 105, 100, 32, 112, 111, 114, 116}};
 static const clar_str_255 clar_lit_157 = {15, {84, 67, 80, 32, 117, 110, 97, 118, 97, 105, 108, 97, 98, 108, 101}};
 static const clar_str_255 clar_lit_158 = {11, {112, 111, 114, 116, 32, 105, 110, 32, 117, 115, 101}};
-static const clar_str_255 clar_lit_159 = {17, {67, 108, 111, 99, 107, 58, 67, 108, 97, 114, 117, 115, 67, 108, 111, 99, 107}};
-static const clar_str_255 clar_lit_160 = {8, {110, 97, 109, 101, 100, 32, 111, 107}};
-static const clar_str_255 clar_lit_161 = {7, {97, 100, 100, 114, 32, 111, 107}};
-static const clar_str_255 clar_lit_162 = {8, {112, 101, 101, 114, 32, 105, 115, 32}};
-static const clar_str_255 clar_lit_163 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_164 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_165 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_166 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_167 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_168 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_159 = {4, {99, 111, 112, 121}};
+static const clar_str_255 clar_lit_160 = {26, {108, 111, 103, 112, 97, 110, 101, 108, 32, 108, 105, 110, 101, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_161 = {17, {67, 108, 111, 99, 107, 58, 67, 108, 97, 114, 117, 115, 67, 108, 111, 99, 107}};
+static const clar_str_255 clar_lit_162 = {8, {110, 97, 109, 101, 100, 32, 111, 107}};
+static const clar_str_255 clar_lit_163 = {7, {97, 100, 100, 114, 32, 111, 107}};
+static const clar_str_255 clar_lit_164 = {8, {112, 101, 101, 114, 32, 105, 115, 32}};
+static const clar_str_255 clar_lit_165 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_166 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_167 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_168 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_169 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_170 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -613,6 +619,37 @@ typedef struct {
     int32_t cv_cap;
     int32_t cv_valcap;
 } clar_rec_RtSortedMap;
+typedef struct {
+    void * cv_ringH;
+    int32_t cv_cap;
+    int32_t cv_used;
+    int32_t cv_tail;
+    int32_t cv_head;
+    int32_t cv_count;
+    int32_t cv_maxLines;
+    int32_t cv_top;
+    int32_t cv_follow;
+    int32_t cv_selFirst;
+    int32_t cv_selLast;
+    int32_t cv_anchor;
+    int32_t cv_lineH;
+    int32_t cv_ascent;
+    int32_t cv_widest;
+    int32_t cv_widestIdx;
+    int32_t cv_hoff;
+    void * cv_vbar;
+    void * cv_hbar;
+    int32_t cv_font;
+    int32_t cv_size;
+    int32_t cv_face;
+    int32_t cv_dirty;
+    int32_t cv_base;
+    int32_t cv_drawnTop;
+    int32_t cv_drawnRows;
+    int32_t cv_savFont;
+    int32_t cv_savSize;
+    int32_t cv_savFace;
+} clar_rec_RtUiLog;
 typedef struct { int32_t e[8]; } clar_arr_int_8;
 typedef struct { uint8_t e[8]; } clar_arr_bool_8;
 typedef struct { clar_str_255 e[8]; } clar_arr_str255_8;
@@ -2330,16 +2367,16 @@ static void clar_fn_rtTcpDevLsnClose(int32_t cv_lsn) {
 }
 
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
-    if (clar_fn_rtSvcCallName(cv_svc, &(clar_lit_159), 1, cv_req, cv_reply)) {
-        rt_log((const uint8_t*)&(clar_lit_160));
+    if (clar_fn_rtSvcCallName(cv_svc, &(clar_lit_161), 1, cv_req, cv_reply)) {
+        rt_log((const uint8_t*)&(clar_lit_162));
     }
     if (clar_fn_rtSvcCallAddr(cv_svc, cv_peer, 2, cv_req, cv_reply)) {
-        rt_log((const uint8_t*)&(clar_lit_161));
+        rt_log((const uint8_t*)&(clar_lit_163));
     }
     clar_str_255 t1;
     t1 = clar_fn_rtAtalkAddrStr(cv_peer);
     clar_str_255 t2;
-    clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(clar_lit_162), (void*)(const uint8_t*)&(t1));
+    clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(clar_lit_164), (void*)(const uint8_t*)&(t1));
     rt_log((const uint8_t*)&(t2));
 }
 
@@ -2386,32 +2423,32 @@ static void clar_fn_clar_svc_fire_failed(int32_t cv_slot, int32_t cv_code, void 
 }
 
 static void clar_fn_clar_ui_fire_winevent(int32_t cv_winIdx, void * cv_inst, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
-    rt_log((const uint8_t*)&(clar_lit_163));
-    rt_quit((int32_t)(1));
-}
-
-static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
-    rt_log((const uint8_t*)&(clar_lit_164));
-    rt_quit((int32_t)(1));
-}
-
-static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil) {
     rt_log((const uint8_t*)&(clar_lit_165));
     rt_quit((int32_t)(1));
 }
 
-static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
+static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
     rt_log((const uint8_t*)&(clar_lit_166));
     rt_quit((int32_t)(1));
 }
 
-static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) {
+static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil) {
     rt_log((const uint8_t*)&(clar_lit_167));
     rt_quit((int32_t)(1));
 }
 
-static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
+static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
     rt_log((const uint8_t*)&(clar_lit_168));
+    rt_quit((int32_t)(1));
+}
+
+static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) {
+    rt_log((const uint8_t*)&(clar_lit_169));
+    rt_quit((int32_t)(1));
+}
+
+static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
+    rt_log((const uint8_t*)&(clar_lit_170));
     rt_quit((int32_t)(1));
     return 0;
     return 0;

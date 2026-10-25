@@ -1,0 +1,46 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/fonts.cla: curated Font Manager and QuickDraw text declarations
+// (Inside Macintosh I, "The Font Manager" and "QuickDraw" text routines).
+// All pascal-convention traps. Added by the ui-widgets phase (Task 8),
+// whose logpanel resolves a declared `font:` name with GetFNum.
+//
+// Provenance (Apple's Universal Interfaces 3.4, Retro68/
+// InterfacesAndLibraries/Interfaces):
+//   GetFontName  CIncludes/Fonts.h:169-171 `GetFontName(short familyID,
+//                Str255 name) ONEWORDINLINE(0xA8FF)`.
+//   GetFNum      CIncludes/Fonts.h:183-185 `GetFNum(ConstStr255Param
+//                name, short * familyID) ONEWORDINLINE(0xA900)`. An
+//                unknown name yields 0, which is also the system font's
+//                number: compare GetFontName(0) to tell them apart.
+//   RealFont     CIncludes/Fonts.h:197-199 `Boolean RealFont(short
+//                fontNum, short size) ONEWORDINLINE(0xA902)`.
+//   TextFont, TextFace, TextSize, StringWidth, GetFontInfo
+//                CIncludes/QuickdrawText.h:450/462/486/564/606
+//                (0xA887/0xA888/0xA88A/0xA88C/0xA88B). TextFace's
+//                StyleParameter is a short holding the Style bits.
+//   All eight trap words are confirmed by AIncludes/Fonts.a's OPWORD
+//   lines. FontInfo: QuickdrawText.h:133-138, four shorts in this order.
+//
+// Name and size are pstrings (Str255): pass a `string`'s address.
+// Line height = ascent + descent + leading.
+
+extern record FontInfo {
+    ascent: int16
+    descent: int16
+    widMax: int16
+    leading: int16
+}
+
+const systemFont: int = 0
+const applFont: int = 1
+
+external func GetFontName(familyID: int16, name: ptr) = trap 0xA8FF
+external func GetFNum(name: ptr, familyID: ptr) = trap 0xA900
+external func RealFont(fontNum: int16, size: int16): bool = trap 0xA902
+external func TextFont(font: int16) = trap 0xA887
+external func TextFace(face: int16) = trap 0xA888
+external func TextSize(size: int16) = trap 0xA88A
+external func StringWidth(s: ptr): int16 = trap 0xA88C
+external func GetFontInfo(info: ptr) = trap 0xA88B

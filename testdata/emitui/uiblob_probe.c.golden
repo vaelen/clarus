@@ -276,6 +276,10 @@ extern int32_t rt_ext_SerFileReadTextInto(void *, rt_text *);
 extern void rt_ext_SerBlockMoveData(void *, void *, int32_t);
 extern void * rt_ext_SerNewPtr(int32_t);
 extern void rt_ext_SerDisposePtr(void *);
+extern void rt_ext_UiScrollRect(void *, short, short, void *);
+extern void rt_ext_UiGetFNum(void *, void *);
+extern void rt_ext_UiGetFontName(short, void *);
+extern void rt_ext_UiInvalRgn(void *);
 
 static const clar_str_255 clar_lit_0 = {24, {97, 114, 114, 97, 121, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 static const clar_str_255 clar_lit_1 = {25, {110, 111, 32, 101, 110, 117, 109, 32, 109, 101, 109, 98, 101, 114, 32, 119, 105, 116, 104, 32, 118, 97, 108, 117, 101}};
@@ -399,13 +403,15 @@ static const clar_str_255 clar_lit_118 = {31, {114, 101, 99, 111, 114, 100, 32, 
 static const clar_str_255 clar_lit_119 = {20, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 119, 114, 105, 116, 101, 32, 102, 105, 108, 101}};
 static const clar_str_255 clar_lit_120 = {15, {98, 97, 100, 32, 102, 105, 108, 101, 32, 102, 111, 114, 109, 97, 116}};
 static const clar_str_255 clar_lit_121 = {19, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 97, 100, 32, 102, 105, 108, 101}};
-static const clar_str_255 clar_lit_122 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_123 = {43, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 100, 103, 101, 116, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_124 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_125 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_126 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_127 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_128 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_122 = {4, {99, 111, 112, 121}};
+static const clar_str_255 clar_lit_123 = {26, {108, 111, 103, 112, 97, 110, 101, 108, 32, 108, 105, 110, 101, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_124 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_125 = {43, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 100, 103, 101, 116, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_126 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_127 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_128 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_129 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_130 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -534,6 +540,37 @@ typedef struct {
     int32_t cv_cap;
     int32_t cv_valcap;
 } clar_rec_RtSortedMap;
+typedef struct {
+    void * cv_ringH;
+    int32_t cv_cap;
+    int32_t cv_used;
+    int32_t cv_tail;
+    int32_t cv_head;
+    int32_t cv_count;
+    int32_t cv_maxLines;
+    int32_t cv_top;
+    int32_t cv_follow;
+    int32_t cv_selFirst;
+    int32_t cv_selLast;
+    int32_t cv_anchor;
+    int32_t cv_lineH;
+    int32_t cv_ascent;
+    int32_t cv_widest;
+    int32_t cv_widestIdx;
+    int32_t cv_hoff;
+    void * cv_vbar;
+    void * cv_hbar;
+    int32_t cv_font;
+    int32_t cv_size;
+    int32_t cv_face;
+    int32_t cv_dirty;
+    int32_t cv_base;
+    int32_t cv_drawnTop;
+    int32_t cv_drawnRows;
+    int32_t cv_savFont;
+    int32_t cv_savSize;
+    int32_t cv_savFace;
+} clar_rec_RtUiLog;
 typedef struct {
     clar_str_63 cv_name;
     int32_t cv_count;
@@ -4505,6 +4542,15 @@ static void clar_fn_rtUiHandleContentClick(void * cv_wp, void * cv_inst, int32_t
             cv_ti = CLAR_ADD32(cv_ti, 1);
         }
         cv_rfCon = rt_peekl((void *)((char *)(rt_ext_UiHandleDeref(cv_ctrl)) + (36)));
+        if (((cv_rfCon & 32768) != 0) && (clar_fn_uidWidgetKind((cv_w)->cv_winIdx, (cv_rfCon & 16383)) == 8)) {
+            if (cv_shiftDown) {
+                cv_mods = 512;
+            } else {
+                cv_mods = 0;
+            }
+            clar_fn_clar_ui_fire_logop(3, cv_inst, (cv_rfCon & 16383), cv_localPt, cv_mods);
+            return;
+        }
         if ((cv_rfCon & 32768) != 0) {
             clar_fn_rtUiHandleScrollbarClick(cv_inst, cv_ctrl, (cv_rfCon & 16383), cv_cpart, cv_localPt);
             return;
@@ -9671,7 +9717,7 @@ static void clar_fn_clar_ui_fire_winevent(int32_t cv_winIdx, void * cv_inst, int
             clar_fn_ui_EditForm_cancelled(cv_inst);
         }
     } else {
-        rt_log((const uint8_t*)&(clar_lit_122));
+        rt_log((const uint8_t*)&(clar_lit_124));
         rt_quit((int32_t)(1));
     }
 }
@@ -9705,7 +9751,7 @@ static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32
                 clar_fn_ui_Main_Rows_doubleClick(cv_inst, cv_a);
             }
         } else {
-            rt_log((const uint8_t*)&(clar_lit_123));
+            rt_log((const uint8_t*)&(clar_lit_125));
             rt_quit((int32_t)(1));
         }
     } else if (cv_winIdx == 1) {
@@ -9715,11 +9761,11 @@ static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32
         } else if (cv_widgetIdx == 3) {
         } else if (cv_widgetIdx == 4) {
         } else {
-            rt_log((const uint8_t*)&(clar_lit_123));
+            rt_log((const uint8_t*)&(clar_lit_125));
             rt_quit((int32_t)(1));
         }
     } else {
-        rt_log((const uint8_t*)&(clar_lit_124));
+        rt_log((const uint8_t*)&(clar_lit_126));
         rt_quit((int32_t)(1));
     }
 }
@@ -9730,7 +9776,7 @@ static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInst
     } else if (cv_handlerIdx == 1) {
         clar_fn_ui_menuh_File_Quit_app(cv_frontInstOrNil);
     } else {
-        rt_log((const uint8_t*)&(clar_lit_125));
+        rt_log((const uint8_t*)&(clar_lit_127));
         rt_quit((int32_t)(1));
     }
 }
@@ -9739,7 +9785,7 @@ static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
     if (cv_idx == 0) {
         clar_fn_ui_every_0();
     } else {
-        rt_log((const uint8_t*)&(clar_lit_126));
+        rt_log((const uint8_t*)&(clar_lit_128));
         rt_quit((int32_t)(1));
     }
 }
@@ -9749,7 +9795,7 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
         clar_fn_rtTextRelease((void*)((*(clar_uistate_Main *)clar_fn_rtUiState(cv_inst))).cv_note);
     } else if (cv_winIdx == 1) {
     } else {
-        rt_log((const uint8_t*)&(clar_lit_127));
+        rt_log((const uint8_t*)&(clar_lit_129));
         rt_quit((int32_t)(1));
     }
 }
@@ -9758,7 +9804,7 @@ static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
     if (cv_rowsIdx == 48) {
         return ((void*)&(cv_rows));
     } else {
-        rt_log((const uint8_t*)&(clar_lit_128));
+        rt_log((const uint8_t*)&(clar_lit_130));
         rt_quit((int32_t)(1));
         return 0;
     }

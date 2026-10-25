@@ -397,7 +397,7 @@ enum + runner, not one boot per case.
   SE wave 4's `OpenRead` case, which proves `file.openRead`'s read-only
   `filehandle`: reads work, writes fail with `lastError`, a missing path
   is nil) runs on
-  host and natively; `testsuite/toolbox/` (44 `ToolboxTest` cases: 43 real +
+  host and natively; `testsuite/toolbox/` (46 `ToolboxTest` cases: 45 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -456,7 +456,9 @@ enum + runner, not one boot per case.
   captions, std-edit Select All, and a menu mixing `standard edit` with
   its own items -- then to 43 real by ui-widgets Task 6's
   `SetBounds` (deferred code placement: read-back, one paint, resize
-  survival, zero size) and `Divider` cases)
+  survival, zero size) and `Divider` cases -- then to 45 real by ui-widgets Task 8's
+  `LogPanelRing`/`LogPanelFollow` cases, the logpanel's ring storage and
+  its follow/scroll-position rules)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end

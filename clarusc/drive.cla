@@ -1296,6 +1296,30 @@ func driveIsUiProgram(declHead: int): bool {
     return false
 }
 
+// driveHasLogpanel: does any window in the user program declare a
+// `logpanel` widget? (gates the uilog.cla splice, driveManifestSplice).
+func driveHasLogpanel(declHead: int): bool {
+    var d: int
+    var it: int
+    var lp: int
+
+    lp = intern("logpanel")
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkWindow {
+            it = windowDeclItemsHead(d)
+            while it != -1 {
+                if declKind(it) == DkWidget and widgetKindName(it) == lp {
+                    return true
+                }
+                it = declNext(it)
+            }
+        }
+        d = declNext(d)
+    }
+    return false
+}
+
 func driveEarlySplice(testapi: bool): bool {
     var earlyMods: list of string
     var earlyRtHeads: list of int
@@ -1340,7 +1364,6 @@ func driveEarlySplice(testapi: bool): bool {
     earlyMods.add("uiwidgets.cla")
     earlyMods.add("uitext.cla")
     earlyMods.add("uitable.cla")
-    earlyMods.add("uilog.cla")
     earlyMods.add("uifont.cla")
     earlyMods.add("uiscript.cla")
     earlyMods.add("uidialogs.cla")
@@ -1688,7 +1711,6 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         neededMods.add("uiwidgets.cla")
         neededMods.add("uitext.cla")
         neededMods.add("uitable.cla")
-        neededMods.add("uilog.cla")
         neededMods.add("uifont.cla")
         neededMods.add("uiscript.cla")
         neededMods.add("uidialogs.cla")
@@ -1823,6 +1845,23 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     } else if usesFileh {
         neededMods.add("fileh.cla")
         neededMods.add("fileh_c.cla")
+    }
+
+    // ui-widgets Task 8 (memgate ruling): uilog.cla, the logpanel widget,
+    // is spliced (68k lane) only into a program that declares a logpanel -- checking
+    // and lowering its ~40 functions in every UI program cost ~500 KB of
+    // compiler peak (arena doubling) for code shaking then drops. LAST in
+    // the manifest, after every unconditional module, so its absence
+    // shifts no other module's IR indices; bakeModuleList carries it at
+    // the same last spot. Nothing outside it names its symbols: ui.cla/
+    // uiwidgets.cla reach it only through the synthesized UiLogOp
+    // dispatcher, and uitest.cla reads its state by offset. 68k lane
+    // only: cprint declares every spliced extern whether reached or not,
+    // so on the C lane a gated module would make a non-logpanel
+    // program's --rtbake output (whose library always has it) differ
+    // from its from-source output; the C lane keeps it unconditionally.
+    if not want68k or driveHasLogpanel(entriesOnlyHead) {
+        neededMods.add("uilog.cla")
     }
 
     // runtime-ir-bake Task 5, fix round 2: for testapi, combined2 gets
