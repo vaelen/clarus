@@ -6,8 +6,8 @@
 # literals: out of cg68Measure's whole pool AND out of the by-value dedup
 # map. Without the second half, log("copy") deduped to a dropped pool index
 # and the --rtbake build panicked "list index out of range". Covers the
-# plain, --testapi (uitest.cla's literals follow the hidden range) and
-# logpanel (nothing hidden) installs.
+# plain, --testapi (uitest.cla's literals follow the hidden range),
+# logpanel (nothing hidden) and production logpanel (no --testapi) installs.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_bake.sh" || die "helper lib failed to load"
 
@@ -72,5 +72,15 @@ if detail=$(emit68k_pair ui_log "$WORK/ui_log.cla"); then
     t_pass testapi_logpanel
 else
     t_fail testapi_logpanel "$detail"
+fi
+
+# The production path (ClarusC.APPL building a logpanel program): no
+# --testapi, so the fixture drops its UiTestVerb line.
+grep -v UiTestVerb "$WORK/ui_log.cla" > "$WORK/ui_prod.cla"
+PAIRFLAGS=
+if detail=$(emit68k_pair ui_prod "$WORK/ui_prod.cla"); then
+    t_pass production_logpanel
+else
+    t_fail production_logpanel "$detail"
 fi
 t_done

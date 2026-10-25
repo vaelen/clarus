@@ -8577,8 +8577,9 @@ ClarusC's CODE growth (+55.8 KB before the intern fix's extra segment)
 is +34.3 KB compiler code for the new features, +10.7 KB always-linked
 UI runtime, +5.1 KB string pool and +3.8 KB of `cg_free_globals`
 tables (new handle globals × 37 segments). `bake/clarusc_codesize` and
-the memgate rtbake budget were raised once (Andrew, 2026-10-25) and then
-lowered again by the intern fix; the SE floor (1017 KB) was never
+the memgate rtbake budget were raised once (Andrew, 2026-10-25); the
+intern fix then lowered the memgate budget only, and the codesize LIMIT
+stays 1210578 (measured 1,203,844 at the tip); the SE floor (1017 KB) was never
 loosened. Before the intern fix the SE low point was 1003 KB, under the
 floor. T2 green; Snow `clarusc_bake` and `clarusc_memprobe` pass on the
 SE.

@@ -1593,9 +1593,8 @@ func irtIntSigned(t: int): bool {
 }
 
 // irNarrowIntType builds a narrow KInt IRType from its width tag (8, 16
-// or -16; see the KInt schema line). A fresh entry per call, like
-// irStrType: narrow types are never singletons, so no existing program's
-// irTypes indices move.
+// or -16; see the KInt schema line). Interned by newIRType like every
+// other IRType, so repeated calls return the same index.
 func irNarrowIntType(tag: int): int {
     return newIRType(KInt, tag, -1, -1)
 }

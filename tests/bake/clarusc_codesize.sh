@@ -9,7 +9,8 @@
 # it once, like tests/memgate/budget.txt, to measured + 1%: 1198592 ->
 # 1210578 (the phase's always-linked widget runtime, spec 4.9, plus
 # lower.cla's dispatcher synthesis; the SE floor in
-# tests/mactest/snow/se_floor.txt stays the hard check).
+# tests/mactest/snow/se_floor.txt stays the hard check). Measured at the
+# ui-widgets tip: 1203844 (about 0.56% under LIMIT).
 #
 # CLARUSC_BIN/CLARUSC_MAC_OUT: as tests/bake/clarusc_container.sh -- the
 # harness's own clarusc-current, output under $WORK.

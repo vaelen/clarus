@@ -11602,8 +11602,9 @@ func cgEmitAbortDefaultCheck(ui: bool) {
 //   - a lowering-synthesized UI event dispatcher (the `clar_ui_fire_*`
 //     family, cgCurFuncIsUiDispatcher -- built by lower.cla's
 //     lowSynthUiDispatchers via newIRFunc directly, NEVER through
-//     lowFuncBody, so irFuncBail is always -1 for these: they can never
-//     have a propagating bail chain of their own): the §3.5 UI default
+//     lowFuncBody, so irFuncBail is -1 for all of them but one:
+//     clar_ui_fire_colfmt (ui-widgets Task 3) builds its own bail chain
+//     and takes the bail-chain shape below instead): the §3.5 UI default
 //     fires IN PLACE, UNCONDITIONALLY (never narrowed by fi's own
 //     irFuncCanAbort -- design doc %8/Task 6b ruling: a dispatcher calls
 //     its user `on` handler dynamically by event, not by a fixed call

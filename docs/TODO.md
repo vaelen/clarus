@@ -249,6 +249,19 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   (found by ui-widgets Task 3: `testdata/emitui/ui_batch_decl.cla`'s
   formatter calls `rtDurationStr`). Pre-existing. Fix: resolve user
   symbols first, or make redeclaring a builtin a check error.
+- **A window var named `contentWidth` (or `contentHeight`) may resolve
+  differently in the checker and in lowering.** `check.cla` declares
+  `contentWidth` as a window-scope int and also treats it as a window
+  property; `lower.cla` (`:1163`, `:3200`) special-cases the name. A
+  user `var contentWidth` in a window was not verified to mean the same
+  thing in both, the same shape as `title`. Found in ui-widgets Task 2.
+  Fix: make a window var shadowing a window property a check error.
+- **Dense-key intmaps may be a perf trap.** Task 12b turned
+  `check.cla`'s `exprTypeOf` from an intmap keyed by the dense expr
+  index into a list, and self-emit went from 6.15 s to 0.89 s. The cause
+  was not verified (a guess: host intmap probe clustering on sequential
+  keys). Other dense-index intmaps (`enumConstOf`, `constUse*`) and the
+  host intmap hash may have the same cost; they are small today.
 
 ### SE memory program, Wave 3 (2026-09-29)
 
@@ -394,6 +407,31 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   `testsuite/toolbox/cases_setbounds.cla` declares `FrontWindow`
   (0xA924) locally for want of one. Add `toolbox/windows.cla` with the
   rest of the Window Manager, per the Toolbox-first principle.
+- **`rtUiMenuGetEnabled` ignores the whole-menu enable bit (bit 0).** It
+  reads only the item's own bit of `enableFlags`, so an item in a
+  disabled menu reads as enabled. Latent: nothing in the runtime
+  disables a whole menu. Fix: AND in bit 0 (ui-widgets Task 7).
+- **A logpanel's horizontal scroll bar is not dimmed on deactivate.**
+  Only the vertical bar sits in the widget's `hbars` slot, which
+  `rtUiHandleActivate` dims; the horizontal bar has no slot (noted in
+  `uilog.cla`'s header). Cosmetic. Fix: dim it from the logpanel's own
+  op on activate/deactivate (ui-widgets Task 8).
+- **A table formatter that re-enters its table runs inside the LDEF.**
+  A formatter that closes its own window, assigns `tbl.selected`
+  (`rtUiTableSyncOne` then calls LAddRow/LDelRow/LSetSelect inside an
+  LDEF draw), or mutates the bound list (which bumps `gen` on every
+  draw: a perpetual redraw loop) is not detected. Fix: a formatter must
+  not mutate its table, its list or its window; set an in-LDEF flag and
+  log + skip such ops (ui-widgets Tasks 5 and final review M3).
+- **Widget access in a `closed` handler reaches disposed Toolbox
+  objects.** `ui.cla` fires `closed` after `UiDisposeWindow` but before
+  the log Dispose op, so `Log.appendLine` in `closed` calls SetPort on
+  the dead window and writes txFont/txSize/txFace into a disposed block,
+  and `setFont` calls MoveControl on disposed controls. Pre-existing
+  class: a label `text =` already drew into the dead port and a table
+  `.selected =` already dereferenced the disposed ListHandle. Fix: nil
+  the instance's widget handles before firing `closed`, or make widget
+  ops no-ops once teardown begins (ui-widgets final review M2).
 
 ### Opt-in log file (2026-09-29)
 
@@ -903,6 +941,16 @@ under "ABI / performance" below).
   `bkGetByte` as a setter (four exist); `rtTextStringAt` cites a moved
   idiom. SE Wave 4 left `scripts/memcensus.sh` ~l.46 naming
   `cv_rtbakeBytes` (gone).
+
+### ui-widgets phase (2026-10-25)
+
+- **`mactest/snow/macresident`'s `tickprobe_fork_identity` flaked once
+  in five `clarusc_bake` runs** (Task 12b). The forks were the same size
+  (119820) and every data byte matched; the first difference was at
+  resource-map offset 33, the first type-list entry ('ALRT' in the host
+  oracle). `$WORK` was deleted, so there is no dump. A guess: the guest
+  had not flushed the file when `hcopy` read it. If it recurs, keep
+  `$WORK` and diff the maps.
 
 ### Test coverage
 
