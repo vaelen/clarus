@@ -11,6 +11,8 @@
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
+# The GUI's queue timer runs one case per scripted `tick 1` line.
+[ "$(grep -cx 'tick 1' testdata/ui/toolboxsuite.events)" -ge 53 ] || die "add ticks to testdata/ui/toolboxsuite.events (one per case)"
 
 toolbox_emit68k "$WORK/toolboxsuite_gui.bin" testdata/ui/toolboxsuite.events
 # 420, not 300: the suite's own wall clock on a Mac Plus was already

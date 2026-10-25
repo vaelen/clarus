@@ -12,15 +12,20 @@
 //
 // Asserts: after open, and again after UiTestResize(500, 320), every
 // widget's bounds equal layoutMain's arithmetic over contentWidth/
-// contentHeight (the labels keep their declared rects); 20 appends plus
-// an unshift/pop at count 50 in one handler leave the window stable on a
-// second tick (one update); Log.line(0) reads back; the Modem menu holds
-// three items and the submenus' checkmarks move radio-style.
+// contentHeight (the six labels keep their declared rects); 20 appends
+// plus an unshift/pop at count 50 in one handler leave the window stable
+// on a second tick (one update); Log.line(0) reads back; the Modem menu
+// holds three items, its Speed/Port items are hierarchical (cmd 0x1B,
+// mark = the submenu's MenuID), and the submenus' checkmarks move
+// radio-style.
 //
 // Geometry: `size: 480, 280` -> content top-left ((512-480)/2, 44) =
-// (16, 44); 16 is a multiple of 8, so the stability band (local 0..487 x
-// 0..279, inside the screen at both sizes) is byte-aligned for
-// UiTestChecksum.
+// (16, 44); 16 is a multiple of 8, so the one-update band is
+// byte-aligned for UiTestChecksum. That check runs at the opening size,
+// where the whole content (global 16..495 x 44..323) is on the 512x342
+// screen and the band covers all of it: both scroll bars and the Log's
+// bottom rows, where followed lines land. At 500x320 the window runs off
+// the screen's right and bottom edges, so only bounds are checked there.
 //
 // Menu IDs (rtUiMenuIdBase 2 + whole-program declaration index): this
 // file sits after gui.cla in toolbox_files.txt, so after File(7) come
@@ -29,6 +34,8 @@
 
 const tbBbsOrgX: int = 16
 const tbBbsOrgY: int = 44
+const tbBbsSpeedId: int = 10
+const tbBbsPortId: int = 11
 const tbBbsModemId: int = 12
 
 // The 68kBBS callers record: 52 bytes, timestamps kept as ints.
@@ -132,9 +139,43 @@ func tbBbsBounds(m: BbsMain, cw: int, ch: int): string {
     d = d + tbSbRect("SideRule", m.SideRule.x, m.SideRule.y, m.SideRule.width, m.SideRule.height, 160, 0, 1, top)
     d = d + tbSbRect("Log", m.Log.x, m.Log.y, m.Log.width, m.Log.height, 0, top + 3, cw, ch - top - 3)
     d = d + tbSbRect("StatusK", m.StatusK.x, m.StatusK.y, m.StatusK.width, m.StatusK.height, 8, 8, 56, 16)
+    d = d + tbSbRect("StatusV", m.StatusV.x, m.StatusV.y, m.StatusV.width, m.StatusV.height, 64, 8, 88, 16)
+    d = d + tbSbRect("UserK", m.UserK.x, m.UserK.y, m.UserK.width, m.UserK.height, 8, 26, 56, 16)
     d = d + tbSbRect("UserV", m.UserV.x, m.UserV.y, m.UserV.width, m.UserV.height, 64, 26, 88, 16)
+    d = d + tbSbRect("ScreenK", m.ScreenK.x, m.ScreenK.y, m.ScreenK.width, m.ScreenK.height, 8, 44, 56, 16)
     d = d + tbSbRect("ScreenV", m.ScreenV.x, m.ScreenV.y, m.ScreenV.width, m.ScreenV.height, 64, 44, 88, 16)
     return d
+}
+
+// tbBbsMenuChar reads Modem item `item`'s mark (GetItemMark) or command
+// char (GetItemCmd) through a cleared 2-byte CharParameter buffer
+// (toolbox/menus.cla's header); the char is in the low byte.
+func tbBbsMenuChar(item: int, cmd: bool): int {
+    var buf: ptr
+    var v: int
+
+    buf = NewPtrClear(2)
+    if cmd {
+        GetItemCmd(GetMenuHandle(tbBbsModemId), item, buf)
+    } else {
+        GetItemMark(GetMenuHandle(tbBbsModemId), item, buf)
+    }
+    v = peekw(buf) & 0xFF
+    DisposePtr(buf)
+    return v
+}
+
+// tbBbsHier checks Modem item `item` opens submenu `subId`.
+func tbBbsHier(nm: string, item: int, subId: int): string {
+    var c: int
+    var k: int
+
+    c = tbBbsMenuChar(item, true)
+    k = tbBbsMenuChar(item, false)
+    if c == 0x1B and k == subId {
+        return ""
+    }
+    return nm + " cmd " + tkIntToStr(c) + " mark " + tkIntToStr(k) + "; "
 }
 
 // tbBbsDeclaredMarks puts the checkmarks back on the declared choices.
@@ -181,15 +222,15 @@ func caseBbsLayout(): TestResult {
     n = CountMItems(GetMenuHandle(tbBbsModemId))
     if n != 3 {
         d = d + "Modem items " + tkIntToStr(n) + "; "
+    } else {
+        d = d + tbBbsHier("Speed", 2, tbBbsSpeedId)
+        d = d + tbBbsHier("Port", 3, tbBbsPortId)
     }
 
-    UiTestResize(500, 320)
-    UiTestTick(1)
-    d = d + tbBbsBounds(m, 500, 320)
-
     // One handler: 20 appends plus unshift/pop at count 50, then one
-    // update -- the second tick repaints nothing.
-    c0 = UiTestChecksum(tbBbsOrgX, tbBbsOrgY, 488, 280)
+    // update -- the second tick repaints nothing. The band is the whole
+    // on-screen content.
+    c0 = UiTestChecksum(tbBbsOrgX, tbBbsOrgY, 480, 280)
     i = 0
     while i < 20 {
         m.Log.appendLine("20:40:" + tkIntToStr(10 + i) + " line " + tkIntToStr(i))
@@ -198,9 +239,9 @@ func caseBbsLayout(): TestResult {
     tbBbsCallers.unshift(tbBbsCaller(100))
     tbBbsCallers.pop()
     UiTestTick(1)
-    c1 = UiTestChecksum(tbBbsOrgX, tbBbsOrgY, 488, 280)
+    c1 = UiTestChecksum(tbBbsOrgX, tbBbsOrgY, 480, 280)
     UiTestTick(1)
-    c2 = UiTestChecksum(tbBbsOrgX, tbBbsOrgY, 488, 280)
+    c2 = UiTestChecksum(tbBbsOrgX, tbBbsOrgY, 480, 280)
     if c1 == c0 {
         d = d + "nothing drew after the appends; "
     }
@@ -210,6 +251,10 @@ func caseBbsLayout(): TestResult {
     if tbBbsCallers.count != 50 {
         d = d + "callers " + tkIntToStr(tbBbsCallers.count) + "; "
     }
+
+    UiTestResize(500, 320)
+    UiTestTick(1)
+    d = d + tbBbsBounds(m, 500, 320)
     if m.Log.lineCount != 20 or m.Log.line(0) != "20:40:10 line 0" {
         d = d + "Log line(0) " + m.Log.line(0) + "; "
     }

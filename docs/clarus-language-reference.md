@@ -1282,7 +1282,7 @@ Declaration properties: `maxLines:` (an int literal of at least 1, default 200),
 - **Following.** A panel whose last line is in view is *following*: appends keep the end in view, scrolling the existing lines up rather than repainting the panel. When the user has scrolled up, appends do not move the view; when old lines drop off the top, the view shifts with them so the same text stays on screen. Scrolling back to the bottom resumes following. `scrollbar: both` adds a horizontal scroll bar whose range is the widest line held.
 - **Selection.** A click selects one whole line; a drag or a shift-click extends the selection to a contiguous range. Selected lines draw inverted. Appends leave the selection on the same lines; dropped lines shrink it, and it clears when all its lines have dropped. `clear()` clears it.
 - **Edit menu.** Clicking a panel makes it the window's edit focus, in the place of a `field` or `textview`. With a panel focused, Copy (enabled only when lines are selected) puts the selected lines on the clipboard, joined by Return with no trailing Return; Select All (enabled when the panel has lines) selects every line; Cut, Paste and Clear are disabled.
-- **Keys.** Typing into a focused panel inserts nothing: keys reach the window as if nothing were focused. Return and Escape still press the window's `default` and `cancel` buttons, and every other key fires the window's `key` event.
+- **Keys.** Typing into a focused panel inserts nothing: keys reach the window as if nothing were focused. Return/Enter and Escape press `default`/`cancel` when the window has one; otherwise, and for every other key, the window's `key` event fires.
 - A `logpanel` has no events.
 
 ### Dividers

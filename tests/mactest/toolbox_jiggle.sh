@@ -19,6 +19,8 @@
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
+# The GUI's queue timer runs one case per scripted `tick 1` line.
+[ "$(grep -cx 'tick 1' testdata/ui/toolboxsuite_jiggle.events)" -ge 53 ] || die "add ticks to testdata/ui/toolboxsuite_jiggle.events (one per case)"
 
 toolbox_emit68k "$WORK/toolboxsuite_jiggle_gui.bin" testdata/ui/toolboxsuite_jiggle.events
 run_mac "$WORK/toolboxsuite_jiggle_gui.bin" 900

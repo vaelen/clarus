@@ -488,7 +488,11 @@ enum + runner, not one boot per case.
   `testsuite/core_cli` fails without it), and this file; toolbox = the
   runner's `nTbCases`, `tests/mactest/toolbox_68k.sh`,
   `toolbox_jiggle.sh`, `toolbox_mac.sh`, and this file. A task adding a
-  case bumps all five.
+  case bumps all five. The toolbox suite has a sixth: its GUI runs one
+  case per scripted `tick 1`, so `testdata/ui/toolboxsuite.events` and
+  `toolboxsuite_jiggle.events` need at least one `tick 1` line per case
+  (64 today); `toolbox_68k.sh`/`toolbox_jiggle.sh` die with "add ticks
+  to ..." when they fall short.
 - **Run `core` on host** (compose recipe — no single-file entry point,
   `clarusc emit`/`emit68k` both take multiple `.cla` files positionally):
   ```sh
