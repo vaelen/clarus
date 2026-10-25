@@ -399,3 +399,20 @@ func UiTestLogSel(i: int): int {
     }
     return (peekl(st + rtUiTestLogSelFirstOff) << 16) | (peekl(st + rtUiTestLogSelLastOff) & 0xFFFF)
 }
+
+// UiTestEditEnabled: the standard Edit menu's item `item` (1-based, the
+// std-edit numbering: Cut 3, Copy 4, Paste 5, Clear 6, Select All 7)
+// enabled, read from its MenuInfo enableFlags bit; false with no
+// std-edit menu.
+func UiTestEditEnabled(item: int): bool {
+    var mh: ptr
+
+    if rtUiStdEditMenuIdx < 0 {
+        return false
+    }
+    mh = rtUiMenuHandleAt(rtUiStdEditMenuIdx)
+    if mh == ptr(0) {
+        return false
+    }
+    return ((peekl(ptr(peekl(mh)) + 10) >> item) & 1) != 0
+}

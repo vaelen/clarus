@@ -172,6 +172,8 @@
 // LogPanelRing/LogPanelFollow (cases_logring.cla/cases_logfollow.cla) are
 // ui-widgets Task 8's addition: the logpanel's ring storage and its
 // follow/scroll-position rules (spec 3.4).
+// LogPanelSelect (cases_logselect.cla) is ui-widgets Task 9's addition:
+// logpanel focus, selection across appends/drops, Copy and Select All.
 
 enum ToolboxTest {
     All
@@ -223,15 +225,16 @@ enum ToolboxTest {
     ListObserve
     TableBinding
     TableFormat
+    LogPanelSelect
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 48 real cases
+// nTbCases is ToolboxTest's member count minus All: the 49 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 49
+const nTbCases: int = 50
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -384,6 +387,9 @@ func tbCaseName(t: ToolboxTest): string {
     case TableFormat {
         return "TableFormat"
     }
+    case LogPanelSelect {
+        return "LogPanelSelect"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -443,6 +449,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(ListObserve)
     l.add(TableBinding)
     l.add(TableFormat)
+    l.add(LogPanelSelect)
     l.add(SelfCheck)
     return l
 }
@@ -671,6 +678,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, TableFormat) {
         results.add(caseTableFormat())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, LogPanelSelect) {
+        results.add(caseLogPanelSelect())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

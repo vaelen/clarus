@@ -696,7 +696,10 @@ func rtUiTeRelayout(inst: ptr, i: int) {
 // rt_ui_te_set_focus (rt_ui.c:1961-1976) -> rtUiTeSetFocus. Click-to-focus
 // ("one focused TE per window"): TEDeactivate's the previously focused TE
 // (if any) and TEActivate's the new one. A no-op when the click lands on
-// the already-focused TE.
+// the already-focused TE. newIdx may also be a logpanel (ui-widgets spec
+// 4.6): it has no TE (its tes slot stays nil), so the nil checks below
+// are the focused-kind check -- the old TE is deactivated, nothing is
+// activated.
 func rtUiTeSetFocus(inst: ptr, newIdx: int) {
     var w: RtUiWinst
     var te: ptr

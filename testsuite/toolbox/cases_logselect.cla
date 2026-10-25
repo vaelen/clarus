@@ -1,0 +1,189 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_logselect.cla: LogPanelSelect (ui-widgets Task 9, spec 3.4 "Focus
+// and Edit menu", 4.6) -- a click on a logpanel makes it the window's edit
+// focus; with it focused Copy follows "has a selection", Select All "has
+// lines", and Cut/Paste/Clear stay dimmed; keys are ignored; the
+// selection stays on the same text across appends and drops (review
+// focus 3: an append from a timer between the press and the shift-click);
+// focus moves back to the textview cleanly.
+//
+// Widget indices in LogSelWin: Body 0, A 1 (default maxLines), B 2
+// (maxLines 10). Each panel is 170 px tall, so all 10 rows show for any
+// system-font line height up to 16 and B never scrolls (top stays 0).
+// Clicks go through the real rtUiHandleMouseDown with a built event
+// record (UiTestClick has no shift); the point is the panel's local rect
+// mapped to global coordinates by the port's portBits.bounds (+8 top,
+// +10 left). A row's height is RtUiLog's lineH, read at its fixed offset
+// (uilog.cla keeps it there for this case).
+window LogSelWin {
+    title: "LogSel"
+    size: 300, 240
+
+    textview Body { at: 10, 10; width: 280; height: 40 }
+    logpanel A { at: 10, 60; width: 135; height: 170 }
+    logpanel B { maxLines: 10; at: 155, 60; width: 135; height: 170 }
+}
+
+const tbLsEditId: int = 3
+const tbLsCut: int = 3
+const tbLsCopy: int = 4
+const tbLsPaste: int = 5
+const tbLsClear: int = 6
+const tbLsSelectAll: int = 7
+const tbLsLineHOff: int = 48
+
+var tbLsArmed: bool
+
+// The review-focus-3 timer: one append to B, once armed.
+every 1 ticks {
+    var g: LogSelWin = LogSelWin.front
+    if tbLsArmed and g != nil {
+        g.B.appendLine("b10")
+        tbLsArmed = false
+    }
+}
+
+// tbLsClickAt sends a real mouseDown at local point (x, y) of the front
+// window, shift-modified when `shift`.
+func tbLsClickAt(x: int, y: int, shift: bool) {
+    var wp: ptr
+    var ev: ptr
+
+    wp = UiFrontWindow()
+    ev = NewPtrClear(16)
+    pokew(ev + 0, 1)
+    pokew(ev + 10, y - rtUiPeekSw(wp + 8))
+    pokew(ev + 12, x - rtUiPeekSw(wp + 10))
+    if shift {
+        pokew(ev + 14, 0x200)
+    }
+    rtUiHandleMouseDown(ev)
+    DisposePtr(ev)
+}
+
+// tbLsClickRow clicks row `row` of logpanel widget `wi`.
+func tbLsClickRow(wi: int, row: int, shift: bool) {
+    var w: RtUiWinst
+    var r: ptr
+    var lineH: int
+
+    w = RtUiWinst(rtUiWinstOf(UiFrontWindow()))
+    r = rtUiRectAt(w, wi)
+    lineH = peekl(RtUiCanvasBuf(rtUiCanvasBufAt(w, wi)).pixels + tbLsLineHOff)
+    tbLsClickAt(rtUiPeekSw(r + 2) + 10, rtUiPeekSw(r + 0) + 1 + row * lineH + lineH / 2, shift)
+}
+
+func tbLsFail(w: LogSelWin, detail: string): TestResult {
+    close w
+    return tkFail("LogPanelSelect", detail)
+}
+
+func caseLogPanelSelect(): TestResult {
+    var w: LogSelWin
+    var i: int
+    var s: string
+    var err: int
+
+    tbLsArmed = false
+    w = open LogSelWin
+    w.Body.text = "hello"
+    i = 0
+    while i < 10 {
+        w.A.appendLine("l" + tkIntToStr(i))
+        w.B.appendLine("b" + tkIntToStr(i))
+        i = i + 1
+    }
+    UiTestTick(1)
+    err = ZeroScrap()
+
+    // Click line 2, shift-click line 4.
+    tbLsClickRow(1, 2, false)
+    if UiTestEditEnabled(tbLsCut) {
+        return tbLsFail(w, "Cut enabled after a panel click")
+    }
+    tbLsClickRow(1, 4, true)
+    if UiTestLogSel(1) != ((2 << 16) | 4) {
+        return tbLsFail(w, "A sel " + tkIntToStr(UiTestLogSel(1)))
+    }
+    if not UiTestEditEnabled(tbLsCopy) or not UiTestEditEnabled(tbLsSelectAll) {
+        return tbLsFail(w, "Copy/Select All dimmed with a selection")
+    }
+    if UiTestEditEnabled(tbLsCut) or UiTestEditEnabled(tbLsPaste) or UiTestEditEnabled(tbLsClear) {
+        return tbLsFail(w, "Cut/Paste/Clear enabled with a panel focused")
+    }
+
+    // Copy.
+    UiTestMenu(tbLsEditId, tbLsCopy)
+    s = tbMcsScrapText()
+    if s != "l2\x0Dl3\x0Dl4" {
+        return tbLsFail(w, "scrap " + s)
+    }
+
+    // Appends leave the selection on the same lines.
+    w.A.appendLine("l10")
+    w.A.appendLine("l11")
+    w.A.appendLine("l12")
+    UiTestTick(1)
+    if UiTestLogSel(1) != ((2 << 16) | 4) {
+        return tbLsFail(w, "A sel after appends " + tkIntToStr(UiTestLogSel(1)))
+    }
+
+    // Keys to a focused panel are ignored.
+    UiTestType("x")
+    if w.A.lineCount != 13 or w.A.line(12) != "l12" or w.Body.text != "hello" {
+        return tbLsFail(w, "a key reached a widget")
+    }
+
+    // Review focus 3: press on b3, a timer append drops b0, then a
+    // shift-click on the row now showing b5: the selection is b3..b5.
+    tbLsClickRow(2, 3, false)
+    tbLsArmed = true
+    UiTestTick(2)
+    tbLsArmed = false
+    tbLsClickRow(2, 4, true)
+    if UiTestLogSel(2) != ((2 << 16) | 4) or w.B.line(2) != "b3" or w.B.line(4) != "b5" {
+        return tbLsFail(w, "B sel " + tkIntToStr(UiTestLogSel(2)) + " " + w.B.line(2))
+    }
+
+    // Drops shrink the selection, then clear it (and Copy dims).
+    w.B.appendLine("b11")
+    w.B.appendLine("b12")
+    w.B.appendLine("b13")
+    if UiTestLogSel(2) != ((0 << 16) | 1) {
+        return tbLsFail(w, "B sel after drop 3 " + tkIntToStr(UiTestLogSel(2)))
+    }
+    w.B.appendLine("b14")
+    w.B.appendLine("b15")
+    if UiTestLogSel(2) != -1 {
+        return tbLsFail(w, "B sel after drop 5 " + tkIntToStr(UiTestLogSel(2)))
+    }
+    if UiTestEditEnabled(tbLsCopy) {
+        return tbLsFail(w, "Copy enabled with no selection")
+    }
+
+    // Select All.
+    UiTestMenu(tbLsEditId, tbLsSelectAll)
+    if UiTestLogSel(2) != ((0 << 16) | 9) {
+        return tbLsFail(w, "B sel after Select All " + tkIntToStr(UiTestLogSel(2)))
+    }
+    if not UiTestEditEnabled(tbLsCopy) {
+        return tbLsFail(w, "Copy dimmed after Select All")
+    }
+
+    // Back to the textview: Select All + Copy work on it.
+    tbLsClickAt(150, 30, false)
+    if not UiTestEditEnabled(tbLsCut) {
+        return tbLsFail(w, "Cut dimmed with the textview focused")
+    }
+    err = ZeroScrap()
+    UiTestMenu(tbLsEditId, tbLsSelectAll)
+    UiTestMenu(tbLsEditId, tbLsCopy)
+    s = tbMcsScrapText()
+    close w
+    if s != "hello" {
+        return tkFail("LogPanelSelect", "textview scrap " + s)
+    }
+    return tkPass("LogPanelSelect")
+}

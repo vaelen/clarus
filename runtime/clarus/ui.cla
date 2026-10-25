@@ -1619,6 +1619,8 @@ func rtUiMenuRecomputeDim() {
     var mh: ptr
     var i: int
     var j: int
+    var inst: ptr
+    var mask: int
 
     nMh = uidNMenuHandlers()
     k = 0
@@ -1632,24 +1634,37 @@ func rtUiMenuRecomputeDim() {
         k = k + 1
     }
     // Std edit: Cut/Copy/Paste/Clear/Select All (items 3-7) follow a
-    // field/textview focus, in every std-edit menu. Program-set `checked`
-    // is never touched here.
+    // field/textview focus, in every std-edit menu; a logpanel focus
+    // enables only Copy (it has a selection) and Select All (it has
+    // lines). mask bit n = item n. Program-set `checked` is never touched
+    // here.
     if rtUiStdEditMenuIdx >= 0 {
-        kind = rtUiFocusKind(rtUiWinstOf(UiFrontWindow()))
-        enable = kind == rtUiKindField or kind == rtUiKindTextview
+        inst = rtUiWinstOf(UiFrontWindow())
+        kind = rtUiFocusKind(inst)
+        mask = 0
+        if kind == rtUiKindField or kind == rtUiKindTextview {
+            mask = 0xF8
+        } else if kind == rtUiKindLogpanel {
+            if UiLogOp(rtUiLogOpHasSel, inst, RtUiWinst(inst).focusIdx, 0, 0) != 0 {
+                mask = 0x10
+            }
+            if UiLogOp(rtUiLogOpHasLines, inst, RtUiWinst(inst).focusIdx, 0, 0) != 0 {
+                mask = mask | 0x80
+            }
+        }
         i = rtUiStdEditMenuIdx
         while i < rtUiNMenusVal {
             if uidMenuIsStandardEdit(i) {
                 mh = rtUiMenuHandleAt(i)
                 j = 3
                 while j <= rtUiStdEditCount {
-                    rtUiMenuEnableNum(mh, j, enable)
+                    rtUiMenuEnableNum(mh, j, ((mask >> j) & 1) != 0)
                     j = j + 1
                 }
             }
             i = i + 1
         }
-        rtUiTraceStdEditDim(enable)
+        rtUiTraceStdEditDim(mask)
     }
     rtUiTraceDimFirstDone()
 }
@@ -1697,6 +1712,15 @@ func rtUiStdEditDispatch(itemIdx: int) {
     }
     w = RtUiWinst(inst)
     if w.focusIdx < 0 {
+        return
+    }
+    if uidWidgetKind(w.winIdx, w.focusIdx) == rtUiKindLogpanel {
+        // Only Copy and Select All apply (Cut/Paste/Clear stay dimmed).
+        if itemIdx == 3 {
+            UiLogOp(rtUiLogOpCopy, inst, w.focusIdx, 0, 0)
+        } else if itemIdx == 6 and UiLogOp(rtUiLogOpSelectAll, inst, w.focusIdx, 0, 0) != 0 {
+            rtUiMenuRecomputeDim()
+        }
         return
     }
     te = rtUiTeAt(w, w.focusIdx)
@@ -2676,12 +2700,8 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
         if (rfCon & 0x8000) != 0 and uidWidgetKind(w.winIdx, rfCon & 0x3FFF) == rtUiKindLogpanel {
             // A logpanel's own scroll bar (tagged like a textview's):
             // the panel's Click op resolves and tracks it itself.
-            if shiftDown {
-                mods = 0x200
-            } else {
-                mods = 0
-            }
-            UiLogOp(rtUiLogOpClick, inst, rfCon & 0x3FFF, localPt, mods)
+            rtUiTeSetFocus(inst, rfCon & 0x3FFF)
+            UiLogOp(rtUiLogOpClick, inst, rfCon & 0x3FFF, localPt, 0)
             return
         }
         if (rfCon & 0x8000) != 0 {
@@ -2764,7 +2784,12 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
             } else {
                 mods = 0
             }
-            UiLogOp(rtUiLogOpClick, inst, ti, localPt, mods)
+            // The click makes the panel the window's edit focus (spec
+            // 3.4); a selection change re-dims Copy.
+            rtUiTeSetFocus(inst, ti)
+            if UiLogOp(rtUiLogOpClick, inst, ti, localPt, mods) != 0 {
+                rtUiMenuRecomputeDim()
+            }
             return
         }
         ti = ti + 1
@@ -2879,6 +2904,7 @@ func rtUiHandleKey(ev: ptr) {
     var savedPort: ptr
     var fieldIdx: int
     var ftype: int
+    var kind: int
 
     ch = peekb(ev + 5)
     modifiers = peekw(ev + 14)
@@ -2894,8 +2920,11 @@ func rtUiHandleKey(ev: ptr) {
     w = RtUiWinst(inst)
     winIdx = w.winIdx
 
-    if w.focusIdx >= 0 {
-        if uidWidgetKind(winIdx, w.focusIdx) == rtUiKindField and (ch == 13 or ch == 3) {
+    // Only a field/textview focus takes keys; a focused logpanel ignores
+    // them (no TEKey), as if nothing were focused.
+    kind = rtUiFocusKind(inst)
+    if kind == rtUiKindField or kind == rtUiKindTextview {
+        if kind == rtUiKindField and (ch == 13 or ch == 3) {
             rtUiTraceFire2(uidWinName(winIdx), uidWidgetName(winIdx, w.focusIdx), "enter")
             UiFireWidget(winIdx, inst, w.focusIdx, rtUiWevEnter, 0, 0)
             return
@@ -2982,6 +3011,7 @@ func rtUiRun() {
     var sleepTicks: int
     var what: int
     var gotEvent: bool
+    var focusKind: int
 
     if peekb(UiTestScript()) != 0 {
         rtUiRunScripted()
@@ -2991,7 +3021,10 @@ func rtUiRun() {
     evBuf = UiNewPtr(16)
     while true {
         frontInst = rtUiWinstOf(UiFrontWindow())
-        if rtUiNEveryVal > 0 or (frontInst != ptr(0) and RtUiWinst(frontInst).focusIdx >= 0) {
+        // Only a TE focus needs the 1-tick caret blink (a logpanel has no
+        // caret).
+        focusKind = rtUiFocusKind(frontInst)
+        if rtUiNEveryVal > 0 or focusKind == rtUiKindField or focusKind == rtUiKindTextview {
             sleepTicks = 1
         } else {
             sleepTicks = 30
