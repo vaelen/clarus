@@ -915,6 +915,7 @@ func rtUiMakeWidgets(inst: ptr) {
             stubH = rtUiMakeLdefStub()
             pokel(UiHandleDeref(lh) + rtUiListDefProc, int(stubH))
             UiLSetDrawingMode(true, lh) // see this function's own header note
+            rtUiTableInitState(inst, i, lh) // observe the bound list (uitable.cla)
         }
         case rtUiKindLogpanel {
             // The panel's own state is uilog.cla's, reached through the

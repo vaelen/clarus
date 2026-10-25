@@ -13,9 +13,11 @@
 #   - both fixtures also compile on the native lane (emit68k).
 . "$(dirname "$0")/../lib.sh" || exit 2
 
-# body FILE FN : the C body of static function FN (prototype line excluded).
+# body FILE FN : the C body of static function FN (prototype line excluded;
+# the definition starts in column 0, a call site such as the LDEF's
+# `if (clar_fn_clar_ui_fire_colfmt(...)) {` does not).
 body() {
-    awk -v fn="clar_fn_$2(" 'index($0, fn) && /\{$/ {f=1} f {print} f && /^}$/ {exit}' "$1"
+    awk -v fn="clar_fn_$2(" 'index($0, fn) && /^[^ \t]/ && /\{$/ {f=1} f {print} f && /^}$/ {exit}' "$1"
 }
 
 batch=testdata/emitui/ui_batch_decl.cla
@@ -48,7 +50,8 @@ else
     t_fail batch_field_store_hook "callers[0].secs = n not followed by rtListNoteSet(callers)"
 fi
 
-# No table: the same statement gets no hook (and rtListNoteSet is shaken).
+# No table: the same statement gets no hook. (rtListNoteSet itself can still
+# be linked: the runtime's form writeback calls it, ui-widgets Task 5.)
 cp testdata/emitui/win_basic.cla "$WORK/win_basic.cla"
 cat >> "$WORK/win_basic.cla" <<'X'
 
@@ -62,7 +65,7 @@ X
     || die "clarusc emit win_basic+store: $(head -3 "$WORK/err" | tr '\n' ' ')"
 if ! grep -q 'cv_counts' "$WORK/basic.c"; then
     t_fail notable_no_hook "the store itself is missing from the emitted C"
-elif grep -q 'rtListNoteSet' "$WORK/basic.c"; then
+elif body "$WORK/basic.c" bump | grep -q 'rtListNoteSet'; then
     t_fail notable_no_hook "rtListNoteSet emitted in a program without a table"
 else
     t_pass notable_no_hook

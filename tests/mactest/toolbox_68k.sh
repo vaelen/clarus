@@ -5,7 +5,7 @@
 # (toolbox_files.txt, `--testapi` + `--bake`), driven by
 # testdata/ui/toolboxsuite.events (one click on Run All, then quit). Every
 # case here calls a REAL Toolbox trap or reads the REAL screen framebuffer
-# in-process. Content-based gate, no trace/snap goldens; each of the 46
+# in-process. Content-based gate, no trace/snap goldens; each of the 49
 # result lines is re-emitted so the runner reports per case.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
@@ -23,5 +23,10 @@ run_mac "$WORK/toolboxsuite_gui.bin" 420
 [ "$MAC_EXIT" = 0 ] || die "toolbox suite exit code $MAC_EXIT, want 0
 capture:
 $(cat "$WORK/cap.out")"
-suite_report_check "$WORK/cap.out" 46
+suite_report_check "$WORK/cap.out" 49
+# TableFormat's aborting column logs once per window instance (spec C5);
+# the line itself only shows in the capture's log section, so it is
+# counted here.
+_n=$(grep -c 'table column Abort: formatter aborted$' "$WORK/cap.log" | tr -d ' ')
+[ "$_n" = 1 ] && t_pass TableFormatLog || t_fail TableFormatLog "formatter aborted lines $_n, want 1"
 t_done

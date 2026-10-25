@@ -1,0 +1,64 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/lists.cla: curated List Manager (Package 0) declarations (Inside
+// Macintosh IV, "The List Manager Package"), ui-widgets Task 5 --
+// runtime/clarus/uitable.cla's table widget needed LScroll, so the rest
+// of the manager comes with it, per the Toolbox-first principle
+// (CLAUDE.md). The runtime keeps its own Ui-prefixed private copies of the
+// routines it calls; these are the user-facing escape hatch.
+//
+// Every routine dispatches through _Pack0 (0xA9E7) with a selector word
+// pushed last, verified against Apple's Universal Interfaces 3.4
+// (toolchain/universal/CIncludes/Lists.h: each is
+// `THREEWORDINLINE(0x3F3C, <sel>, 0xA9E7)`, i.e. MOVE.W #sel,-(SP); _Pack0,
+// which is exactly the `sel` clause). LActivate alone is spelled
+// `TWOWORDINLINE(0x4267, 0xA9E7)` -- CLR.W -(SP), selector 0 -- the same
+// push as `sel 0x0000`. Pascal convention, stack arguments left to right.
+//
+// Type mapping (cookbook): short is int16, Boolean bool, a by-value Point
+// or Cell is ONE int packed v (high 16) / h (low 16), every pointer or
+// Handle (Rect *, ListBounds *, Cell *, short *, ListHandle, RgnHandle,
+// WindowRef, a search-proc UPP) is ptr. LLastClick returns a Cell, packed
+// the same way. ListRec field offsets for peek/poke (Lists.h struct
+// ListRec): rView 0, port 8, indent 12, cellSize 16, visible 20, vScroll
+// 28, hScroll 32, selFlags 36, lActive 37, listFlags 39, clikTime 40,
+// clikLoc 44, mouseLoc 48, lClickLoop 52, lastClick 56, refCon 60,
+// listDefProc 64, userHandle 68, dataBounds 72, cells 80, maxIndex 84,
+// cellArray 86.
+
+external func LNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: int16, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7 sel 0x0044
+external func LDispose(lHandle: ptr) = trap 0xA9E7 sel 0x0028
+external func LAddColumn(count: int16, colNum: int16, lHandle: ptr): int16 = trap 0xA9E7 sel 0x0004
+external func LAddRow(count: int16, rowNum: int16, lHandle: ptr): int16 = trap 0xA9E7 sel 0x0008
+external func LDelColumn(count: int16, colNum: int16, lHandle: ptr) = trap 0xA9E7 sel 0x0020
+external func LDelRow(count: int16, rowNum: int16, lHandle: ptr) = trap 0xA9E7 sel 0x0024
+external func LGetSelect(next: bool, theCell: ptr, lHandle: ptr): bool = trap 0xA9E7 sel 0x003C
+external func LLastClick(lHandle: ptr): int = trap 0xA9E7 sel 0x0040
+external func LNextCell(hNext: bool, vNext: bool, theCell: ptr, lHandle: ptr): bool = trap 0xA9E7 sel 0x0048
+external func LSearch(dataPtr: ptr, dataLen: int16, searchProc: ptr, theCell: ptr, lHandle: ptr): bool = trap 0xA9E7 sel 0x0054
+external func LSize(listWidth: int16, listHeight: int16, lHandle: ptr) = trap 0xA9E7 sel 0x0060
+external func LSetDrawingMode(drawIt: bool, lHandle: ptr) = trap 0xA9E7 sel 0x002C
+external func LScroll(dCols: int16, dRows: int16, lHandle: ptr) = trap 0xA9E7 sel 0x0050
+external func LAutoScroll(lHandle: ptr) = trap 0xA9E7 sel 0x0010
+external func LUpdate(theRgn: ptr, lHandle: ptr) = trap 0xA9E7 sel 0x0064
+external func LActivate(act: bool, lHandle: ptr) = trap 0xA9E7 sel 0x0000
+external func LCellSize(cSize: int, lHandle: ptr) = trap 0xA9E7 sel 0x0014
+external func LClick(pt: int, modifiers: int16, lHandle: ptr): bool = trap 0xA9E7 sel 0x0018
+external func LAddToCell(dataPtr: ptr, dataLen: int16, theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x000C
+external func LClrCell(theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x001C
+external func LGetCell(dataPtr: ptr, dataLen: ptr, theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x0038
+external func LRect(cellRect: ptr, theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x004C
+external func LSetCell(dataPtr: ptr, dataLen: int16, theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x0058
+external func LSetSelect(setIt: bool, theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x005C
+external func LDraw(theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x0030
+external func LGetCellDataLocation(offset: ptr, len: ptr, theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x0034
+
+// ListRec.selFlags bits (Lists.h).
+const lOnlyOne: int = 0x80
+const lExtendDrag: int = 0x40
+const lNoDisjoint: int = 0x20
+const lNoExtend: int = 0x10
+const lNoRect: int = 0x08
+const lUseSense: int = 0x04
+const lNoNilHilite: int = 0x02

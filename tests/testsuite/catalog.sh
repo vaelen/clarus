@@ -152,6 +152,12 @@ on App.startCLI(args: list of string) {
     t0 = t0 + CountMItems(ptr(0)) + checkMark + hMenuCmd
     GetFontInfo(fi)
     t0 = t0 + fi.ascent + applFont
+    rh = LNew(p, p, 0, 0, ptr(0), false, false, false, true)
+    LScroll(0, 1, rh)
+    if LGetSelect(false, p, rh) {
+        t0 = t0 + LLastClick(rh) + lOnlyOne
+    }
+    LDispose(rh)
 }
 CLA_EOF
 
@@ -172,6 +178,7 @@ if "$CLARUSC" "$WORK/driver.cla" \
         "$ROOT/toolbox/segload.cla" \
         "$ROOT/toolbox/menus.cla" \
         "$ROOT/toolbox/fonts.cla" \
+        "$ROOT/toolbox/lists.cla" \
         > "$WORK/catalog.log" 2>&1; then
     t_pass "$n"
 else

@@ -299,6 +299,179 @@ func rtListAt(l: ptr, i: int): ptr {
     return mp + off
 }
 
+// ================================================================
+// Observed-list registry (ui-widgets Task 4, spec 4.5). A bound table
+// observes its list's box: one entry per table instance, {box, gen,
+// mark, live}. Every mutating op below tests rtListObsCount first and,
+// only when something is observed, calls the cold rtListObsNote, which
+// bumps gen on each of the box's entries and keeps mark (the table's
+// selected index) on the same element. A program with no tables pays the
+// two globals and one count test per mutating call.
+//
+// The block is ListNewPtr'd on first observe: an 8-byte header holding
+// the capacity (8, doubling), then cap entries of rtListObsStride bytes.
+// ================================================================
+
+var rtListObsBlk: ptr
+var rtListObsCount: int
+
+overlay record RtListObs {
+    box: ptr
+    gen: int
+    mark: int
+    live: bool
+}
+
+// 24 covers the host C struct (8-byte ptr + padding); 68k needs 14.
+// ponytail: one stride for both lanes wastes 10 bytes/entry on 68k; move
+// to the boxsize pair if the registry ever grows large.
+const rtListObsStride: int = 24
+const rtListObsHdr: int = 8
+
+// Op codes for rtListObsNote. Touch is every op that leaves mark alone
+// (add/push, reserve, shrink, element store).
+const rtListOpTouch: int = 0
+const rtListOpPop: int = 1
+const rtListOpShift: int = 2
+const rtListOpUnshift: int = 3
+const rtListOpRemove: int = 4
+const rtListOpClear: int = 5
+
+func rtListObsEnt(e: int): RtListObs {
+    return RtListObs(rtListObsBlk + rtListObsHdr + e * rtListObsStride)
+}
+
+// rtListObsNote runs BEFORE the op mutates l, so count is the old count.
+func rtListObsNote(l: ptr, op: int, i: int) {
+    var cap: int
+    var e: int
+    var o: RtListObs
+    var m: int
+
+    cap = peekl(rtListObsBlk)
+    e = 0
+    while e < cap {
+        o = rtListObsEnt(e)
+        if o.live and o.box == l {
+            o.gen = o.gen + 1
+            m = o.mark
+            if m >= 0 {
+                if op == rtListOpUnshift {
+                    o.mark = m + 1
+                } else if op == rtListOpShift {
+                    o.mark = m - 1
+                } else if op == rtListOpRemove {
+                    if i == m {
+                        o.mark = -1
+                    } else if i < m {
+                        o.mark = m - 1
+                    }
+                } else if op == rtListOpPop {
+                    if m == RtList(l).count - 1 {
+                        o.mark = -1
+                    }
+                } else if op == rtListOpClear {
+                    o.mark = -1
+                }
+            }
+        }
+        e = e + 1
+    }
+}
+
+// rtListObserve registers box with the registry; returns its entry.
+// Entry ids are stable: growth copies the block, it never renumbers.
+func rtListObserve(box: ptr): int {
+    var cap: int
+    var ncap: int
+    var e: int
+    var nb: ptr
+    var o: RtListObs
+
+    cap = 0
+    if rtListObsBlk != ptr(0) {
+        cap = peekl(rtListObsBlk)
+    }
+    e = 0
+    while e < cap and rtListObsEnt(e).live {
+        e = e + 1
+    }
+    if e == cap {
+        ncap = cap * 2
+        if ncap == 0 {
+            ncap = 8
+        }
+        nb = ListNewPtr(rtListObsHdr + ncap * rtListObsStride)
+        if nb == ptr(0) {
+            rtPanic("out of memory")
+        }
+        if cap > 0 {
+            ListBlockMoveData(rtListObsBlk, nb, rtListObsHdr + cap * rtListObsStride)
+            ListDisposePtr(rtListObsBlk)
+        }
+        rtListObsBlk = nb
+        pokel(nb, ncap)
+        while e < ncap {
+            o = rtListObsEnt(e)
+            o.live = false
+            e = e + 1
+        }
+        e = cap
+    }
+    o = rtListObsEnt(e)
+    o.box = box
+    o.gen = 0
+    o.mark = -1
+    o.live = true
+    rtListObsCount = rtListObsCount + 1
+    return e
+}
+
+// rtListUnobserve frees entry e (a stale or repeated e is ignored); the
+// block goes when the last entry does.
+func rtListUnobserve(e: int) {
+    var o: RtListObs
+
+    if rtListObsBlk == ptr(0) or e < 0 or e >= peekl(rtListObsBlk) {
+        return
+    }
+    o = rtListObsEnt(e)
+    if not o.live {
+        return
+    }
+    o.live = false
+    rtListObsCount = rtListObsCount - 1
+    if rtListObsCount == 0 {
+        ListDisposePtr(rtListObsBlk)
+        rtListObsBlk = ptr(0)
+    }
+}
+
+// rtListObsGen is entry e's change counter.
+func rtListObsGen(e: int): int {
+    return rtListObsEnt(e).gen
+}
+
+// rtListObsMark/rtListObsSetMark: entry e's tracked (selected) index.
+func rtListObsMark(e: int): int {
+    return rtListObsEnt(e).mark
+}
+
+func rtListObsSetMark(e: int, i: int) {
+    var o: RtListObs
+
+    o = rtListObsEnt(e)
+    o.mark = i
+}
+
+// rtListNoteSet: the compiler's hook after an inline element store into
+// box (emitted only in programs that declare a table). Bumps gen only.
+func rtListNoteSet(box: ptr) {
+    if rtListObsCount != 0 {
+        rtListObsNote(box, rtListOpTouch, 0)
+    }
+}
+
 // rtListPush (rt_core.inc:521-526): grow-then-append. mp is derived AFTER
 // rtListGrow (which can move l's block).
 func rtListPush(l: ptr, elem: ptr) {
@@ -306,6 +479,9 @@ func rtListPush(l: ptr, elem: ptr) {
     var mp: ptr
     var off: int
 
+    if rtListObsCount != 0 {
+        rtListObsNote(l, rtListOpTouch, 0)
+    }
     rl = RtList(l)
     rtListGrow(l, rl.count + 1)
     rl = RtList(l)
@@ -323,6 +499,9 @@ func rtListPop(l: ptr, out: ptr) {
     var mp: ptr
     var off: int
 
+    if rtListObsCount != 0 {
+        rtListObsNote(l, rtListOpPop, 0)
+    }
     rl = RtList(l)
     if rl.count == 0 {
         rtPanic("pop on empty list")
@@ -343,6 +522,9 @@ func rtListShift(l: ptr, out: ptr) {
     var mp: ptr
     var tailBytes: int
 
+    if rtListObsCount != 0 {
+        rtListObsNote(l, rtListOpShift, 0)
+    }
     rl = RtList(l)
     if rl.count == 0 {
         rtPanic("shift on empty list")
@@ -363,6 +545,9 @@ func rtListUnshift(l: ptr, elem: ptr) {
     var mp: ptr
     var bodyBytes: int
 
+    if rtListObsCount != 0 {
+        rtListObsNote(l, rtListOpUnshift, 0)
+    }
     rl = RtList(l)
     rtListGrow(l, rl.count + 1)
     rl = RtList(l)
@@ -420,6 +605,9 @@ func rtListRemove(l: ptr, i: int) {
     var mp: ptr
     var tail: int
 
+    if rtListObsCount != 0 {
+        rtListObsNote(l, rtListOpRemove, i)
+    }
     rl = RtList(l)
     if i < 0 or i >= rl.count {
         rtPanic("list index out of range")
@@ -444,6 +632,9 @@ func rtListCount(l: ptr): int {
 func rtListClear(l: ptr) {
     var rl: RtList
 
+    if rtListObsCount != 0 {
+        rtListObsNote(l, rtListOpClear, 0)
+    }
     rl = RtList(l)
     rl.count = 0
 }
@@ -457,6 +648,9 @@ func rtListDropStorage(l: ptr) {
     var rl: RtList
     var err: int
 
+    if rtListObsCount != 0 {
+        rtListObsNote(l, rtListOpClear, 0)
+    }
     rl = RtList(l)
     err = ListSetHandleSize(rl.data, 0)
     rl.count = 0
@@ -469,6 +663,9 @@ func rtListShrink(l: ptr) {
     var rl: RtList
     var err: int
 
+    if rtListObsCount != 0 {
+        rtListObsNote(l, rtListOpTouch, 0)
+    }
     rl = RtList(l)
     if rl.cap > rl.count {
         err = ListSetHandleSize(rl.data, rl.count * rl.elemsize)
@@ -487,6 +684,9 @@ func rtListReserve(l: ptr, n: int) {
     var rl: RtList
     var err: int
 
+    if rtListObsCount != 0 {
+        rtListObsNote(l, rtListOpTouch, 0)
+    }
     rl = RtList(l)
     if n <= rl.cap {
         return
@@ -539,36 +739,4 @@ func rtListClone(dst: ptr, src: ptr, elemSize: int) {
     dstmp = ListHandleDeref(rd.data)
     ListBlockMoveData(srcmp, dstmp, n * elemSize)
     rd.count = n
-}
-
-// ================================================================
-// Observed-list registry (ui-widgets, spec 4.5) -- Task 2 stubs. Task 4
-// replaces these bodies (and adds rtListObsBlk/rtListObsCount); the names
-// and signatures are fixed by the plan's Shared Interfaces.
-// ================================================================
-
-// rtListObserve registers box with the registry; returns its entry.
-func rtListObserve(box: ptr): int {
-    return 0
-}
-
-func rtListUnobserve(e: int) {
-}
-
-// rtListObsGen is entry e's change counter.
-func rtListObsGen(e: int): int {
-    return 0
-}
-
-// rtListObsMark/rtListObsSetMark: entry e's tracked (selected) index.
-func rtListObsMark(e: int): int {
-    return 0
-}
-
-func rtListObsSetMark(e: int, i: int) {
-}
-
-// rtListNoteSet: the compiler's hook after an inline element store into
-// box (emitted only in programs that declare a table).
-func rtListNoteSet(box: ptr) {
 }

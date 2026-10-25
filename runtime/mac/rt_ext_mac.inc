@@ -597,6 +597,7 @@ void rt_ext_UiLActivate(int32_t act, void *lHandle) { LActivate((Boolean)act, (L
 void rt_ext_UiLSetDrawingMode(int32_t drawIt, void *lHandle) { LSetDrawingMode((Boolean)drawIt, (ListHandle)lHandle); }
 void rt_ext_UiLUpdate(void *theRgn, void *lHandle) { LUpdate((RgnHandle)theRgn, (ListHandle)lHandle); }
 int32_t rt_ext_UiLClick(int32_t pt, short modifiers, void *lHandle) { return (int32_t)LClick(rt_ext_ui_pt(pt), (EventModifiers)modifiers, (ListHandle)lHandle); }
+void rt_ext_UiLScroll(short dCols, short dRows, void *lHandle) { LScroll(dCols, dRows, (ListHandle)lHandle); }
 
 void rt_ext_UiSetMenuItemText(void *theMenu, short item, void *itemString) { SetMenuItemText((MenuRef)theMenu, item, (ConstStr255Param)itemString); }
 void *rt_ext_UiGetMenuHandle(short menuId) { return (void *)GetMenuHandle(menuId); }

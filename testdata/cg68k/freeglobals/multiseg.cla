@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 // multiseg.cla (SE wave 5, tests/cg68k/freeglobals.sh): big enough to
-// pack into several CODE segments (forty padding functions, each a few
+// pack into several CODE segments (a hundred padding functions --
+// grown from forty when non-UI programs stopped linking the UI runtime,
+// ui-widgets Task 5 fix round 1 -- each a few
 // hundred bytes of straight-line code), with `quit` executed from
 // fgQuitter, which the packer places past segment 1. Every segment
 // carries its own table-driven cg_free_globals; the quit site must reach
@@ -539,6 +541,786 @@ func fgPad40(n: int): int {
     return s
 }
 
+func fgPad41(n: int): int {
+    var s: int
+    s = n * 41
+    s = s + (n / 3) * (n mod 7) + 41
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 41) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 41
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad42(n: int): int {
+    var s: int
+    s = n * 42
+    s = s + (n / 3) * (n mod 7) + 42
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 42) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 42
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad43(n: int): int {
+    var s: int
+    s = n * 43
+    s = s + (n / 3) * (n mod 7) + 43
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 43) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 43
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad44(n: int): int {
+    var s: int
+    s = n * 44
+    s = s + (n / 3) * (n mod 7) + 44
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 44) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 44
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad45(n: int): int {
+    var s: int
+    s = n * 45
+    s = s + (n / 3) * (n mod 7) + 45
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 45) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 45
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad46(n: int): int {
+    var s: int
+    s = n * 46
+    s = s + (n / 3) * (n mod 7) + 46
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 46) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 46
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad47(n: int): int {
+    var s: int
+    s = n * 47
+    s = s + (n / 3) * (n mod 7) + 47
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 47) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 47
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad48(n: int): int {
+    var s: int
+    s = n * 48
+    s = s + (n / 3) * (n mod 7) + 48
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 48) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 48
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad49(n: int): int {
+    var s: int
+    s = n * 49
+    s = s + (n / 3) * (n mod 7) + 49
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 49) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 49
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad50(n: int): int {
+    var s: int
+    s = n * 50
+    s = s + (n / 3) * (n mod 7) + 50
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 50) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 50
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad51(n: int): int {
+    var s: int
+    s = n * 51
+    s = s + (n / 3) * (n mod 7) + 51
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 51) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 51
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad52(n: int): int {
+    var s: int
+    s = n * 52
+    s = s + (n / 3) * (n mod 7) + 52
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 52) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 52
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad53(n: int): int {
+    var s: int
+    s = n * 53
+    s = s + (n / 3) * (n mod 7) + 53
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 53) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 53
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad54(n: int): int {
+    var s: int
+    s = n * 54
+    s = s + (n / 3) * (n mod 7) + 54
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 54) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 54
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad55(n: int): int {
+    var s: int
+    s = n * 55
+    s = s + (n / 3) * (n mod 7) + 55
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 55) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 55
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad56(n: int): int {
+    var s: int
+    s = n * 56
+    s = s + (n / 3) * (n mod 7) + 56
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 56) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 56
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad57(n: int): int {
+    var s: int
+    s = n * 57
+    s = s + (n / 3) * (n mod 7) + 57
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 57) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 57
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad58(n: int): int {
+    var s: int
+    s = n * 58
+    s = s + (n / 3) * (n mod 7) + 58
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 58) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 58
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad59(n: int): int {
+    var s: int
+    s = n * 59
+    s = s + (n / 3) * (n mod 7) + 59
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 59) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 59
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad60(n: int): int {
+    var s: int
+    s = n * 60
+    s = s + (n / 3) * (n mod 7) + 60
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 60) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 60
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad61(n: int): int {
+    var s: int
+    s = n * 61
+    s = s + (n / 3) * (n mod 7) + 61
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 61) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 61
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad62(n: int): int {
+    var s: int
+    s = n * 62
+    s = s + (n / 3) * (n mod 7) + 62
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 62) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 62
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad63(n: int): int {
+    var s: int
+    s = n * 63
+    s = s + (n / 3) * (n mod 7) + 63
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 63) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 63
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad64(n: int): int {
+    var s: int
+    s = n * 64
+    s = s + (n / 3) * (n mod 7) + 64
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 64) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 64
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad65(n: int): int {
+    var s: int
+    s = n * 65
+    s = s + (n / 3) * (n mod 7) + 65
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 65) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 65
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad66(n: int): int {
+    var s: int
+    s = n * 66
+    s = s + (n / 3) * (n mod 7) + 66
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 66) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 66
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad67(n: int): int {
+    var s: int
+    s = n * 67
+    s = s + (n / 3) * (n mod 7) + 67
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 67) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 67
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad68(n: int): int {
+    var s: int
+    s = n * 68
+    s = s + (n / 3) * (n mod 7) + 68
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 68) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 68
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad69(n: int): int {
+    var s: int
+    s = n * 69
+    s = s + (n / 3) * (n mod 7) + 69
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 69) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 69
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad70(n: int): int {
+    var s: int
+    s = n * 70
+    s = s + (n / 3) * (n mod 7) + 70
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 70) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 70
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad71(n: int): int {
+    var s: int
+    s = n * 71
+    s = s + (n / 3) * (n mod 7) + 71
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 71) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 71
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad72(n: int): int {
+    var s: int
+    s = n * 72
+    s = s + (n / 3) * (n mod 7) + 72
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 72) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 72
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad73(n: int): int {
+    var s: int
+    s = n * 73
+    s = s + (n / 3) * (n mod 7) + 73
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 73) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 73
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad74(n: int): int {
+    var s: int
+    s = n * 74
+    s = s + (n / 3) * (n mod 7) + 74
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 74) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 74
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad75(n: int): int {
+    var s: int
+    s = n * 75
+    s = s + (n / 3) * (n mod 7) + 75
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 75) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 75
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad76(n: int): int {
+    var s: int
+    s = n * 76
+    s = s + (n / 3) * (n mod 7) + 76
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 76) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 76
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad77(n: int): int {
+    var s: int
+    s = n * 77
+    s = s + (n / 3) * (n mod 7) + 77
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 77) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 77
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad78(n: int): int {
+    var s: int
+    s = n * 78
+    s = s + (n / 3) * (n mod 7) + 78
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 78) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 78
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad79(n: int): int {
+    var s: int
+    s = n * 79
+    s = s + (n / 3) * (n mod 7) + 79
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 79) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 79
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad80(n: int): int {
+    var s: int
+    s = n * 80
+    s = s + (n / 3) * (n mod 7) + 80
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 80) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 80
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad81(n: int): int {
+    var s: int
+    s = n * 81
+    s = s + (n / 3) * (n mod 7) + 81
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 81) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 81
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad82(n: int): int {
+    var s: int
+    s = n * 82
+    s = s + (n / 3) * (n mod 7) + 82
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 82) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 82
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad83(n: int): int {
+    var s: int
+    s = n * 83
+    s = s + (n / 3) * (n mod 7) + 83
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 83) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 83
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad84(n: int): int {
+    var s: int
+    s = n * 84
+    s = s + (n / 3) * (n mod 7) + 84
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 84) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 84
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad85(n: int): int {
+    var s: int
+    s = n * 85
+    s = s + (n / 3) * (n mod 7) + 85
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 85) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 85
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad86(n: int): int {
+    var s: int
+    s = n * 86
+    s = s + (n / 3) * (n mod 7) + 86
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 86) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 86
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad87(n: int): int {
+    var s: int
+    s = n * 87
+    s = s + (n / 3) * (n mod 7) + 87
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 87) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 87
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad88(n: int): int {
+    var s: int
+    s = n * 88
+    s = s + (n / 3) * (n mod 7) + 88
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 88) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 88
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad89(n: int): int {
+    var s: int
+    s = n * 89
+    s = s + (n / 3) * (n mod 7) + 89
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 89) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 89
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad90(n: int): int {
+    var s: int
+    s = n * 90
+    s = s + (n / 3) * (n mod 7) + 90
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 90) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 90
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad91(n: int): int {
+    var s: int
+    s = n * 91
+    s = s + (n / 3) * (n mod 7) + 91
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 91) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 91
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad92(n: int): int {
+    var s: int
+    s = n * 92
+    s = s + (n / 3) * (n mod 7) + 92
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 92) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 92
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad93(n: int): int {
+    var s: int
+    s = n * 93
+    s = s + (n / 3) * (n mod 7) + 93
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 93) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 93
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad94(n: int): int {
+    var s: int
+    s = n * 94
+    s = s + (n / 3) * (n mod 7) + 94
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 94) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 94
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad95(n: int): int {
+    var s: int
+    s = n * 95
+    s = s + (n / 3) * (n mod 7) + 95
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 95) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 95
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad96(n: int): int {
+    var s: int
+    s = n * 96
+    s = s + (n / 3) * (n mod 7) + 96
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 96) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 96
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad97(n: int): int {
+    var s: int
+    s = n * 97
+    s = s + (n / 3) * (n mod 7) + 97
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 97) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 97
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad98(n: int): int {
+    var s: int
+    s = n * 98
+    s = s + (n / 3) * (n mod 7) + 98
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 98) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 98
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad99(n: int): int {
+    var s: int
+    s = n * 99
+    s = s + (n / 3) * (n mod 7) + 99
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 99) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 99
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
+func fgPad100(n: int): int {
+    var s: int
+    s = n * 100
+    s = s + (n / 3) * (n mod 7) + 100
+    s = s - (s / 5) + (n * n) mod 11
+    s = s + (s mod 13) * (n + 100) / 2
+    s = s * 3 + (s / 7) - (n mod 5) * 100
+    s = s + (s mod 17) + (n * 19) / 3
+    s = s - (s / 9) + (n mod 23) * 2
+    s = s + (s * 5) mod 29 + (n / 2)
+    return s
+}
+
 func fgQuitter(total: int) {
     title = "multiseg"
     pair.a = "left"
@@ -591,5 +1373,65 @@ on App.launch {
     t = t + fgPad38(38) mod 1000
     t = t + fgPad39(39) mod 1000
     t = t + fgPad40(40) mod 1000
+    t = t + fgPad41(41) mod 1000
+    t = t + fgPad42(42) mod 1000
+    t = t + fgPad43(43) mod 1000
+    t = t + fgPad44(44) mod 1000
+    t = t + fgPad45(45) mod 1000
+    t = t + fgPad46(46) mod 1000
+    t = t + fgPad47(47) mod 1000
+    t = t + fgPad48(48) mod 1000
+    t = t + fgPad49(49) mod 1000
+    t = t + fgPad50(50) mod 1000
+    t = t + fgPad51(51) mod 1000
+    t = t + fgPad52(52) mod 1000
+    t = t + fgPad53(53) mod 1000
+    t = t + fgPad54(54) mod 1000
+    t = t + fgPad55(55) mod 1000
+    t = t + fgPad56(56) mod 1000
+    t = t + fgPad57(57) mod 1000
+    t = t + fgPad58(58) mod 1000
+    t = t + fgPad59(59) mod 1000
+    t = t + fgPad60(60) mod 1000
+    t = t + fgPad61(61) mod 1000
+    t = t + fgPad62(62) mod 1000
+    t = t + fgPad63(63) mod 1000
+    t = t + fgPad64(64) mod 1000
+    t = t + fgPad65(65) mod 1000
+    t = t + fgPad66(66) mod 1000
+    t = t + fgPad67(67) mod 1000
+    t = t + fgPad68(68) mod 1000
+    t = t + fgPad69(69) mod 1000
+    t = t + fgPad70(70) mod 1000
+    t = t + fgPad71(71) mod 1000
+    t = t + fgPad72(72) mod 1000
+    t = t + fgPad73(73) mod 1000
+    t = t + fgPad74(74) mod 1000
+    t = t + fgPad75(75) mod 1000
+    t = t + fgPad76(76) mod 1000
+    t = t + fgPad77(77) mod 1000
+    t = t + fgPad78(78) mod 1000
+    t = t + fgPad79(79) mod 1000
+    t = t + fgPad80(80) mod 1000
+    t = t + fgPad81(81) mod 1000
+    t = t + fgPad82(82) mod 1000
+    t = t + fgPad83(83) mod 1000
+    t = t + fgPad84(84) mod 1000
+    t = t + fgPad85(85) mod 1000
+    t = t + fgPad86(86) mod 1000
+    t = t + fgPad87(87) mod 1000
+    t = t + fgPad88(88) mod 1000
+    t = t + fgPad89(89) mod 1000
+    t = t + fgPad90(90) mod 1000
+    t = t + fgPad91(91) mod 1000
+    t = t + fgPad92(92) mod 1000
+    t = t + fgPad93(93) mod 1000
+    t = t + fgPad94(94) mod 1000
+    t = t + fgPad95(95) mod 1000
+    t = t + fgPad96(96) mod 1000
+    t = t + fgPad97(97) mod 1000
+    t = t + fgPad98(98) mod 1000
+    t = t + fgPad99(99) mod 1000
+    t = t + fgPad100(100) mod 1000
     fgQuitter(t)
 }

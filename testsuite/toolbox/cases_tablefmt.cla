@@ -1,0 +1,127 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_tablefmt.cla: TableFormat (ui-widgets Task 5, spec 3.5/4.7, C5) --
+// formatted columns draw through the UiColFmt dispatcher: a right-aligned
+// column's text sits at the cell's right edge, a formatter that aborts
+// leaves its cell blank (and only that cell), and the abort is logged
+// once per window instance and column. The once-only log LINE itself is
+// counted by tests/mactest/toolbox_68k.sh in the capture; this case checks
+// the table's own logged-column mask, through the runtime's per-table
+// state (the --testapi early-visible UI modules).
+//
+// The formatters concatenate (review focus 2: the user function allocates
+// while the row block may be near a heap boundary), and the rows are
+// released and refilled after the first paint so the redraw runs over a
+// freshly allocated block.
+//
+// Geometry: TbFmtWin is 420 wide, content at global (46, 44); table F at
+// local (18,10), 300x200, spans global (64,54)-(364,254), so its LM view
+// starts at x 65: column R spans 65..125, column Abort 125..185. Row i's
+// cell top is 74 + 16*i (header 20, row 16); bands use y 75+16*i, h 14.
+// Rows 0..10 show whole.
+
+record TbFmtRow {
+    n: int
+}
+
+var tbFmtRows: list of TbFmtRow
+
+func tbFmtN(n: int): string {
+    return "#" + string(n)
+}
+
+func tbFmtAbort(n: int): string {
+    if n == 7 {
+        abort("seven")
+    }
+    return "x" + string(n)
+}
+
+window TbFmtWin {
+    title: "TableFormat"
+    size: 420, 280
+    table F {
+        at: 18, 10
+        height: 200
+        rows: tbFmtRows
+        column "R" shows tbFmtN(n) width 60 align right
+        column "Abort" shows tbFmtAbort(n) width 60
+    }
+}
+
+func tbFmtBand(x: int, w: int, row: int): int {
+    return UiTestChecksum(x, 75 + 16 * row, w, 14)
+}
+
+func tbFmtFill() {
+    var r: TbFmtRow
+    var i: int
+
+    i = 0
+    while i < 50 {
+        r.n = i
+        tbFmtRows.add(r)
+        i = i + 1
+    }
+}
+
+// tbFmtLoggedMask reads the front window's table 0 state block (the
+// ListRec's userHandle, uitable.cla's RtUiTableSt) logged-column bits.
+func tbFmtLoggedMask(): int {
+    var w: RtUiWinst
+    var lh: ptr
+
+    w = RtUiWinst(rtUiWinstOf(UiFrontWindow()))
+    lh = rtUiListAt(w, 0)
+    return RtUiTableSt(ptr(peekl(UiHandleDeref(lh) + rtUiListUserHandle))).logged
+}
+
+func caseTableFormat(): TestResult {
+    var w: TbFmtWin
+    var row: int
+    var mask: int
+    var detail: string
+
+    tbFmtRows.clear()
+    tbFmtFill()
+    w = open TbFmtWin
+    UiTestTick(1)
+    tbFmtRows.release()
+    tbFmtFill()
+    UiTestTick(1)
+
+    // Right alignment: the left of each cell is blank, its right is not.
+    row = 0
+    while row < 11 {
+        if tbFmtBand(72, 8, row) != 0 {
+            detail = "right-aligned cell's left band not blank at row " + tkIntToStr(row)
+            close w
+            return tkFail("TableFormat", detail)
+        }
+        if tbFmtBand(112, 8, row) == 0 {
+            detail = "right-aligned cell blank at row " + tkIntToStr(row)
+            close w
+            return tkFail("TableFormat", detail)
+        }
+        if row != 7 and tbFmtBand(128, 48, row) == 0 {
+            detail = "formatted cell blank at row " + tkIntToStr(row)
+            close w
+            return tkFail("TableFormat", detail)
+        }
+        row = row + 1
+    }
+    if tbFmtBand(128, 48, 7) != 0 {
+        close w
+        return tkFail("TableFormat", "aborting cell not blank")
+    }
+    mask = tbFmtLoggedMask()
+    close w
+    UiTestTick(1)
+    tbFmtRows.clear()
+    if mask != 2 {
+        detail = "logged mask " + tkIntToStr(mask)
+        return tkFail("TableFormat", detail)
+    }
+    return tkPass("TableFormat")
+}

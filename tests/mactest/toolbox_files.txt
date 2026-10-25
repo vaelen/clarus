@@ -48,6 +48,9 @@ testsuite/toolbox/cases_narrowform.cla
 testsuite/toolbox/cases_menuchecksub.cla
 testsuite/toolbox/cases_setbounds.cla
 testsuite/toolbox/cases_divider.cla
+testsuite/toolbox/cases_listobs.cla
+testsuite/toolbox/cases_tablebind.cla
+testsuite/toolbox/cases_tablefmt.cla
 testsuite/toolbox/gui.cla
 testsuite/toolbox/cases_logring.cla
 testsuite/toolbox/cases_logfollow.cla

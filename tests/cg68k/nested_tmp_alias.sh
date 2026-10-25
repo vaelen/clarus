@@ -52,8 +52,11 @@ if ! out=$("$CLARUSC" emit68k -o "$run/out.bin" --listing --rtdir "$RTDIR" "$FIX
     t_done
 fi
 
-S=$run/out.seg1.s
-[ -f "$S" ] || die "no listing at $S"
+# App.launch's own segment: the native runtime alone can fill more than
+# one 32 KB segment (ui-widgets Task 5), and the release walk is duplicated
+# glue in every segment.
+S=$(grep -l '; func handler_App_launch' "$run"/out.seg*.s | head -1)
+[ -f "$S" ] || die "no listing defines handler_App_launch under $run"
 
 # One pass over App.launch's body: remember every declared local's own
 # frame offset, then count stores to the first non-local temp offset.

@@ -397,7 +397,7 @@ enum + runner, not one boot per case.
   SE wave 4's `OpenRead` case, which proves `file.openRead`'s read-only
   `filehandle`: reads work, writes fail with `lastError`, a missing path
   is nil) runs on
-  host and natively; `testsuite/toolbox/` (46 `ToolboxTest` cases: 45 real +
+  host and natively; `testsuite/toolbox/` (49 `ToolboxTest` cases: 48 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -458,7 +458,13 @@ enum + runner, not one boot per case.
   `SetBounds` (deferred code placement: read-back, one paint, resize
   survival, zero size) and `Divider` cases -- then to 45 real by ui-widgets Task 8's
   `LogPanelRing`/`LogPanelFollow` cases, the logpanel's ring storage and
-  its follow/scroll-position rules)
+  its follow/scroll-position rules -- then to 46 real by the
+  ui-widgets `ListObserve` case, which proves `list.cla`'s observed-list
+  registry: `gen` bumps and `mark` tracking per op, two observers per box,
+  growth past 8 entries, and an unobserved list leaving every `gen` alone
+  -- then to 48 real by the ui-widgets `TableBinding` and `TableFormat`
+  cases, which prove a bound table's live refresh, selection following its
+  record, `scrollTo`, and formatted/aligned/aborting columns)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end

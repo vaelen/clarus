@@ -741,6 +741,9 @@ func rtUiFormAccept(inst: ptr) {
         // accepted.
         if rtUiModalLst != ptr(0) and rtUiModalIdx >= 0 and rtUiModalIdx < rtListCount(rtUiModalLst) {
             UiBlockMoveData(rtUiModalBuf, rtListAt(rtUiModalLst, rtUiModalIdx), recSize)
+            // An element store like any inline l[i] = v: a table bound
+            // to this list redraws (ui-widgets Task 5, spec 3.5).
+            rtListNoteSet(rtUiModalLst)
         }
     } else if rtUiModalWbKind == rtUiWbMap {
         if rtUiModalMp != ptr(0) {
