@@ -173,6 +173,8 @@ extern void rt_ext_UiClosePort(void *);
 extern void rt_ext_UiPortSize(short, short);
 extern void rt_ext_UiSetOrigin(short, short);
 extern void rt_ext_UiSetPortBits(void *);
+extern void rt_ext_UiGetFNum(void *, void *);
+extern void rt_ext_UiGetFontName(short, void *);
 extern void * rt_ext_UiTENewRaw(void *, void *);
 extern void rt_ext_UiTEDispose(void *);
 extern void rt_ext_UiTESetText(void *, int32_t, void *);
@@ -211,6 +213,7 @@ extern void rt_ext_UiLDelRow(short, short, void *);
 extern int32_t rt_ext_UiLGetSelect(int32_t, void *, void *);
 extern void rt_ext_UiLSetSelect(int32_t, int32_t, void *);
 extern void rt_ext_UiLSize(short, short, void *);
+extern void rt_ext_UiLCellSize(int32_t, void *);
 extern void rt_ext_UiLActivate(int32_t, void *);
 extern void rt_ext_UiLSetDrawingMode(int32_t, void *);
 extern void rt_ext_UiLUpdate(void *, void *);
@@ -275,8 +278,6 @@ extern void rt_ext_SerBlockMoveData(void *, void *, int32_t);
 extern void * rt_ext_SerNewPtr(int32_t);
 extern void rt_ext_SerDisposePtr(void *);
 extern void rt_ext_UiScrollRect(void *, short, short, void *);
-extern void rt_ext_UiGetFNum(void *, void *);
-extern void rt_ext_UiGetFontName(short, void *);
 extern void rt_ext_UiInvalRgn(void *);
 extern void * rt_ext_NewPtr(int32_t);
 extern short rt_ext_WordEcho(short);
@@ -510,6 +511,8 @@ typedef struct {
     void * cv_oldRectsH;
     void * cv_oldRects;
     int32_t cv_geom;
+    void * cv_fontsH;
+    void * cv_fonts;
 } clar_rec_RtUiWinst;
 typedef struct {
     void * cv_port;
@@ -547,6 +550,7 @@ typedef struct {
     int32_t cv_gen;
     int32_t cv_mark;
     int32_t cv_logged;
+    int32_t cv_wIdx;
 } clar_rec_RtUiTableSt;
 typedef struct {
     int32_t cv_rc;
@@ -639,6 +643,7 @@ static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out);
 static void clar_fn_clar_ui_fire_fmtcell(void * cv_stP, void * cv_rec, void * cv_recH, int32_t cv_hstate, int32_t cv_layoutOff, int32_t cv_colsOff, int32_t cv_k, void * cv_colRect);
 static void clar_fn_clar_ui_fire_geomapply(void);
+static void clar_fn_clar_ui_fire_fontsinit(void * cv_inst);
 
 static void * cv_rtListObsBlk;
 static int32_t cv_rtListObsCount;
@@ -654,6 +659,7 @@ static int32_t cv_rtUiNEveryVal;
 static void * cv_rtUiEmptyPStrCache;
 static void * cv_rtUiScratchBitMap;
 static void * cv_rtUiGrayPats;
+static void * cv_rtUiFontScratch;
 static int32_t cv_rtUiScripted;
 static int32_t cv_rtUiScriptDbl;
 static int32_t cv_rtUiJiggle;
@@ -717,6 +723,8 @@ static void clar_init_globals(void) {
     cv_rtUiScratchBitMap = (void *)(intptr_t)(0);
     cv_rtUiGrayPats = 0;
     cv_rtUiGrayPats = (void *)(intptr_t)(0);
+    cv_rtUiFontScratch = 0;
+    cv_rtUiFontScratch = (void *)(intptr_t)(0);
     cv_rtUiScripted = 0;
     cv_rtUiScripted = 0;
     cv_rtUiScriptDbl = 0;
@@ -1259,6 +1267,9 @@ static void clar_fn_clar_ui_fire_fmtcell(void * cv_stP, void * cv_rec, void * cv
 }
 
 static void clar_fn_clar_ui_fire_geomapply(void) {
+}
+
+static void clar_fn_clar_ui_fire_fontsinit(void * cv_inst) {
 }
 
 int main(int argc, char **argv) {

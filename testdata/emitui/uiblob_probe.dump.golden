@@ -7,7 +7,7 @@ widget 0 3 kind=3 name="Lbl" caption="Status" atKind=1 x=0 yIsBottom=1 y=0 width
 widget 0 4 kind=4 name="Name" caption="Name:" atKind=3 x=0 yIsBottom=0 y=0 widthIsFill=0 width=0 fillBoth=0 flags=0 eventMask=8 tableOff=-1 height=0 font=- fontSize=0 face=0 align=0 maxLines=0 divStyle=0
 widget 0 5 kind=5 name="Body" caption=- atKind=1 x=0 yIsBottom=1 y=0 widthIsFill=0 width=0 fillBoth=1 flags=8 eventMask=0 tableOff=-1 height=0 font=- fontSize=0 face=0 align=0 maxLines=0 divStyle=0
 widget 0 6 kind=7 name="Rows" caption=- atKind=1 x=0 yIsBottom=1 y=0 widthIsFill=1 width=0 fillBoth=0 flags=0 eventMask=48 tableOff=1324 height=0 font=- fontSize=0 face=0 align=0 maxLines=0 divStyle=0
-table 0 6 rowsIdx=50 layoutOff=1396 nCols=2 colsOff=1340
+table 0 6 rowsIdx=51 layoutOff=1396 nCols=2 colsOff=1340
 col 0 6 0 header="Name" widthPx=140 widthFill=0 fieldIndex=0 align=0 fmtId=-1 fmtLayoutOff=0
 col 0 6 1 header="Count" widthPx=0 widthFill=1 fieldIndex=1 align=0 fmtId=-1 fmtLayoutOff=0
 layout table0.6 recSize=68 nFields=2
