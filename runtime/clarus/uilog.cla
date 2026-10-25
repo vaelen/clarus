@@ -51,6 +51,7 @@
 const rtUiLogDefaultMax: int = 200
 const rtUiLogInitCap: int = 256
 // sizeof(RtUiLog): 29 fields x 4. The offset table starts here.
+// Assumes 4-byte pointers (68k only; UI never runs on a 64-bit host, C14).
 const rtUiLogHdr: int = 116
 // Text inset from the frame's left edge.
 const rtUiLogTextInset: int = 2
@@ -917,6 +918,13 @@ func rtUiLogRelayout(lg: RtUiLog, w: RtUiWinst, i: int) {
         hH = rtUiScrollbarW - 1
         UiMoveControl(lg.hbar, peekw(r + 2), peekw(r + 4) - rtUiScrollbarW)
         UiSizeControl(lg.hbar, peekw(r + 6) - peekw(r + 2) - rtUiScrollbarW + 1, rtUiScrollbarW)
+        // The apply pass hides only the `hbars` slot, which holds the
+        // vertical bar, so the horizontal bar follows the rect here.
+        if rtUiRectIsEmpty(r) {
+            rtUiSetCtrlVis(lg.hbar, 0)
+        } else {
+            rtUiSetCtrlVis(lg.hbar, 255)
+        }
     }
     UiMoveControl(lg.vbar, peekw(r + 6) - rtUiScrollbarW, peekw(r + 0))
     UiSizeControl(lg.vbar, rtUiScrollbarW, peekw(r + 4) - peekw(r + 0) - hH)

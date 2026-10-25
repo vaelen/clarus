@@ -1492,7 +1492,7 @@ LBL_144:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4658(A5)
+        JSR 4666(A5)
         ADDA.W #24,A7
         BRA.W LBL_142
 LBL_141:
@@ -1598,7 +1598,7 @@ LBL_152:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4658(A5)
+        JSR 4666(A5)
         ADDA.W #24,A7
 LBL_153:
 LBL_149:
@@ -1957,7 +1957,7 @@ LBL_173:
         SUB.L D0,D1
         MOVE.L D1,D0
         MOVE.L D0,-(A7)
-        JSR 4658(A5)
+        JSR 4666(A5)
         ADDA.W #24,A7
 LBL_171:
         UNLK A6
@@ -2860,7 +2860,7 @@ LBL_221:
         MOVE.L D0,-24(A6)
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
-        JSR 4514(A5)
+        JSR 4522(A5)
         ADDQ.L #4,A7
         MOVE.L -24(A6),D0
         MOVE.L D0,-(A7)
@@ -3232,7 +3232,7 @@ LBL_250:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4658(A5)
+        JSR 4666(A5)
         ADDA.W #24,A7
         BRA.W LBL_243
 LBL_253:
@@ -3565,7 +3565,7 @@ LBL_283:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4650(A5)
+        JSR 4658(A5)
         ADDA.W #20,A7
 LBL_243:
         UNLK A6
@@ -3787,7 +3787,7 @@ LBL_301:
 LBL_299:
 LBL_295:
         JSR 1858(A5)
-        JSR 4530(A5)
+        JSR 4538(A5)
         JSR 2602(A5)
         JSR 1882(A5)
         JSR 2834(A5)
@@ -4160,7 +4160,7 @@ LBL_308:
         EORI.L #1,D0
         TST.L D0
         BEQ.W LBL_336
-        JSR 4698(A5)
+        JSR 3506(A5)
 LBL_336:
 LBL_305:
         UNLK A6
@@ -6651,12 +6651,12 @@ LBL_499:
 LBL_501:
         LEA LBL_87(PC),A0
         MOVE.L A0,-(A7)
-        JSR 4354(A5)
+        JSR 4362(A5)
         ADDQ.L #4,A7
         BSR.W LBL_93
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
-        JSR 4362(A5)
+        JSR 4370(A5)
         ADDQ.L #4,A7
 LBL_502:
 LBL_500:
@@ -11892,7 +11892,7 @@ LBL_711:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 4658(A5)
+        JSR 4666(A5)
         ADDA.W #24,A7
 LBL_707:
         UNLK A6

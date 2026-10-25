@@ -1116,8 +1116,14 @@ func rtUiTableInitState(inst: ptr, wIdx: int, lh: ptr) {
     w = RtUiWinst(inst)
     tableOff = uidWidgetTableOff(w.winIdx, wIdx)
     stP = UiNewPtr(rtUiTableStSize)
+    if stP == ptr(0) {
+        rtPanic("out of memory")
+    }
     st = RtUiTableSt(stP)
     st.scratch = UiNewPtr(uidLayoutRecSize(uidTableLayoutOff(tableOff)))
+    if st.scratch == ptr(0) {
+        rtPanic("out of memory")
+    }
     st.out = ptr(0)
     st.mark = -1
     st.box = ptr(peekl(UiTableRows(uidTableRowsIdx(tableOff))))
@@ -1204,6 +1210,7 @@ func rtUiTableSyncOne(inst: ptr, wIdx: int) {
     st = RtUiTableSt(stP)
     tableOff = uidWidgetTableOff(w.winIdx, wIdx)
     rows = ptr(peekl(UiTableRows(uidTableRowsIdx(tableOff))))
+    // ponytail: address-only compare; a new list reusing the freed box's address keeps the old mark (gen still redraws). Add a box generation if it bites.
     if rows != st.box {
         rtListUnobserve(st.entry)
         st.entry = -1

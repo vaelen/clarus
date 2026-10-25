@@ -12730,7 +12730,7 @@ LBL_906:
         BEQ.W LBL_907
         MOVE.L 12(A6),D0
         MOVE.L D0,-(A7)
-        JSR 3466(A5)
+        JSR 3458(A5)
         ADDQ.L #4,A7
         BRA.W LBL_908
 LBL_907:

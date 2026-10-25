@@ -7566,8 +7566,14 @@ static void clar_fn_rtUiTableInitState(void * cv_inst, int32_t cv_wIdx, void * c
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     cv_tableOff = clar_fn_uidWidgetTableOff((cv_w)->cv_winIdx, cv_wIdx);
     cv_stP = clar_fn_UiNewPtr(48);
+    if (cv_stP == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(&(clar_lit_9));
+    }
     cv_st = ((clar_rec_RtUiTableSt *)(cv_stP));
     (cv_st)->cv_scratch = clar_fn_UiNewPtr(clar_fn_uidLayoutRecSize(clar_fn_uidTableLayoutOff(cv_tableOff)));
+    if ((cv_st)->cv_scratch == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(&(clar_lit_9));
+    }
     (cv_st)->cv_out = (void *)(intptr_t)(0);
     (cv_st)->cv_mark = CLAR_NEG32(1);
     (cv_st)->cv_box = (void *)(intptr_t)(rt_peekl(clar_fn_clar_ui_fire_staterows(clar_fn_uidTableRowsIdx(cv_tableOff))));

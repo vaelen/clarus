@@ -171,7 +171,8 @@ const rtUiKindDivider: int = 9
 // program, and on the 68k lane uilog.cla is spliced only into a program
 // that declares a logpanel (drive.cla's driveManifestSplice). a/b
 // carry the op's own arguments: Click passes a = (v << 16) | (h & 0xFFFF)
-// and b = the event modifiers.
+// and b = 0x200 when shift is down (only the shift bit; other modifiers
+// are not passed).
 const rtUiLogOpMake: int = 0
 const rtUiLogOpDispose: int = 1
 const rtUiLogOpDraw: int = 2
