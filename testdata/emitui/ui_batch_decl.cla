@@ -8,6 +8,8 @@
 // table column, a `checked` menu item and a submenu. Pins the blob v2
 // bytes through emitui/goldens.sh. ui-widgets Task 2 added the `opened`
 // handler and layoutMain, which use every new runtime member once.
+// ui-widgets Task 3 added the two element stores (counts[0], callers[0].secs)
+// tests/emitui/colfmt.sh expects an rtListNoteSet call after.
 
 record Caller {
     name: string(31)
@@ -15,6 +17,7 @@ record Caller {
 }
 
 var callers: list of Caller
+var counts: list of int
 
 func durationStr(s: int): string {
     return string(s / 60) + "m"
@@ -86,6 +89,8 @@ func layoutMain(m: Main) {
     m.Log.clear()
     Speed.S9600.checked = true
     flag = Speed.S2400.checked or Modem.Init.enabled
+    counts[0] = n
+    callers[0].secs = n
     m.Status.text = s + string(n)
 }
 

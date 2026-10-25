@@ -406,6 +406,7 @@ static const clar_str_255 clar_lit_129 = {42, {99, 108, 97, 114, 95, 117, 105, 9
 static const clar_str_255 clar_lit_130 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 static const clar_str_255 clar_lit_131 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 static const clar_str_255 clar_lit_132 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_133 = {39, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 99, 111, 108, 102, 109, 116, 58, 32, 102, 109, 116, 73, 100, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -556,68 +557,70 @@ typedef char clar_ui_layoutassert_Caller[(sizeof(clar_rec_Caller) == 36 && offse
 
 typedef struct { char clar_ui_unused; } clar_uistate_Main;
 
+typedef struct { uint8_t e[12]; } clar_arr_char_12;
 
 static const unsigned char clar_ui_blob[] = {
     67, 76, 85, 73, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 44, 0, 0, 0, 2,
     0, 0, 2, 224, 0, 0, 0, 1, 0, 0, 3, 104, 0, 0, 0, 0, 0, 0, 3, 128,
-    255, 255, 255, 255, 0, 0, 4, 94, 0, 0, 4, 99, 0, 0, 1, 224, 0, 0, 1, 64,
+    255, 255, 255, 255, 0, 0, 4, 126, 0, 0, 4, 131, 0, 0, 1, 224, 0, 0, 1, 64,
     0, 0, 0, 1, 0, 0, 1, 224, 0, 0, 1, 64, 0, 0, 0, 8, 0, 0, 0, 96,
     0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 3,
-    0, 0, 4, 0, 0, 0, 4, 7, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0,
+    0, 0, 4, 32, 0, 0, 4, 39, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0,
     0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32,
-    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 20, 0, 0, 4, 12, 0, 0, 0, 9,
+    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 20, 0, 0, 4, 44, 0, 0, 0, 9,
     0, 0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
-    0, 0, 4, 19, 0, 0, 4, 23, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 4, 51, 0, 0, 4, 55, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32,
-    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 30, 0, 0, 4, 28, 0, 0, 0, 12,
+    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 30, 0, 0, 4, 60, 0, 0, 0, 12,
     0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5,
-    0, 0, 4, 35, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 4, 67, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 32,
-    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 60, 0, 0, 4, 12, 0, 0, 0, 9,
+    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 60, 0, 0, 4, 44, 0, 0, 0, 9,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
-    0, 0, 4, 41, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 120, 0, 0, 0, 0, 0, 0, 0, 32,
-    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 40, 0, 0, 4, 47, 0, 0, 0, 12,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7,
-    0, 0, 4, 65, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 44, 0, 0, 0, 0, 0, 0, 0, 32,
-    0, 0, 0, 0, 0, 0, 3, 128, 0, 0, 0, 120, 0, 0, 4, 28, 0, 0, 0, 9,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9,
     0, 0, 4, 73, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 120, 0, 0, 0, 0, 0, 0, 0, 32,
+    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 40, 0, 0, 4, 79, 0, 0, 0, 12,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7,
+    0, 0, 4, 97, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 44, 0, 0, 0, 0, 0, 0, 0, 32,
+    0, 0, 0, 0, 0, 0, 3, 128, 0, 0, 0, 120, 0, 0, 4, 60, 0, 0, 0, 9,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9,
+    0, 0, 4, 105, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 9,
-    0, 0, 4, 81, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 4, 113, 255, 255, 255, 255, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8,
-    0, 0, 4, 90, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 4, 122, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 56,
-    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 4, 12, 0, 0, 0, 9,
-    0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 4, 125,
-    0, 0, 4, 125, 0, 0, 0, 2, 0, 0, 3, 8, 0, 0, 0, 0, 0, 0, 4, 152,
-    0, 0, 4, 152, 0, 0, 0, 2, 0, 0, 3, 56, 0, 0, 0, 0, 0, 0, 4, 103,
-    0, 0, 4, 109, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255,
-    0, 0, 4, 114, 0, 0, 4, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    255, 255, 255, 255, 0, 0, 4, 131, 0, 0, 4, 131, 0, 0, 0, 73, 0, 0, 0, 0,
-    0, 0, 0, 1, 255, 255, 255, 255, 0, 0, 4, 136, 0, 0, 4, 141, 0, 0, 0, 0,
+    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 4, 44, 0, 0, 0, 9,
+    0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 4, 157,
+    0, 0, 4, 157, 0, 0, 0, 2, 0, 0, 3, 8, 0, 0, 0, 0, 0, 0, 4, 184,
+    0, 0, 4, 184, 0, 0, 0, 2, 0, 0, 3, 56, 0, 0, 0, 0, 0, 0, 4, 135,
+    0, 0, 4, 141, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255,
+    0, 0, 4, 146, 0, 0, 4, 152, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    255, 255, 255, 255, 0, 0, 4, 163, 0, 0, 4, 163, 0, 0, 0, 73, 0, 0, 0, 0,
+    0, 0, 0, 1, 255, 255, 255, 255, 0, 0, 4, 168, 0, 0, 4, 173, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 4, 125, 0, 0, 4, 114, 0, 0, 0, 48,
-    0, 0, 3, 200, 0, 0, 0, 2, 0, 0, 3, 144, 0, 0, 4, 55, 0, 0, 0, 120,
+    0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 4, 157, 0, 0, 4, 146, 0, 0, 0, 48,
+    0, 0, 3, 200, 0, 0, 0, 2, 0, 0, 3, 144, 0, 0, 4, 87, 0, 0, 0, 120,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 0,
-    0, 0, 4, 60, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 0, 0, 0, 2,
-    255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 36, 0, 0, 0, 2, 0, 0, 0, 4,
+    0, 0, 4, 92, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 0, 0, 0, 2,
+    0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 36, 0, 0, 0, 2, 0, 0, 0, 4,
     0, 0, 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
     0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255,
-    255, 255, 255, 255, 6, 83, 116, 97, 116, 117, 115, 4, 73, 100, 108, 101, 6, 77, 111, 110,
-    97, 99, 111, 3, 87, 104, 111, 4, 87, 104, 111, 58, 6, 71, 101, 110, 101, 118, 97, 5,
-    78, 111, 116, 101, 115, 5, 77, 101, 116, 101, 114, 7, 67, 104, 105, 99, 97, 103, 111, 4,
-    78, 97, 109, 101, 4, 84, 105, 109, 101, 7, 67, 97, 108, 108, 101, 114, 115, 7, 84, 111,
-    112, 82, 117, 108, 101, 8, 83, 105, 100, 101, 82, 117, 108, 101, 3, 76, 111, 103, 4, 77,
-    97, 105, 110, 3, 66, 66, 83, 5, 83, 50, 52, 48, 48, 4, 50, 52, 48, 48, 5, 83,
-    57, 54, 48, 48, 4, 57, 54, 48, 48, 5, 83, 112, 101, 101, 100, 4, 73, 110, 105, 116,
-    4, 80, 111, 114, 116, 10, 80, 111, 114, 116, 32, 83, 112, 101, 101, 100, 5, 77, 111, 100,
-    101, 109, 0, 0,
+    255, 255, 255, 255, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 4, 0, 0, 0, 0,
+    0, 0, 0, 255, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 6, 83, 116, 97,
+    116, 117, 115, 4, 73, 100, 108, 101, 6, 77, 111, 110, 97, 99, 111, 3, 87, 104, 111, 4,
+    87, 104, 111, 58, 6, 71, 101, 110, 101, 118, 97, 5, 78, 111, 116, 101, 115, 5, 77, 101,
+    116, 101, 114, 7, 67, 104, 105, 99, 97, 103, 111, 4, 78, 97, 109, 101, 4, 84, 105, 109,
+    101, 7, 67, 97, 108, 108, 101, 114, 115, 7, 84, 111, 112, 82, 117, 108, 101, 8, 83, 105,
+    100, 101, 82, 117, 108, 101, 3, 76, 111, 103, 4, 77, 97, 105, 110, 3, 66, 66, 83, 5,
+    83, 50, 52, 48, 48, 4, 50, 52, 48, 48, 5, 83, 57, 54, 48, 48, 4, 57, 54, 48,
+    48, 5, 83, 112, 101, 101, 100, 4, 73, 110, 105, 116, 4, 80, 111, 114, 116, 10, 80, 111,
+    114, 116, 32, 83, 112, 101, 101, 100, 5, 77, 111, 100, 101, 109, 0, 0,
 };
 
 
@@ -626,8 +629,10 @@ static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
 
 static void clar_fn_rtSetLastErr(int32_t cv_code, const clar_str_255 *cv_msg);
 static void clar_fn_rtPanic(const clar_str_255 *cv_msg);
+static int32_t clar_fn_rtArrCheck(int32_t cv_i, int32_t cv_n);
 static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
 static void clar_fn_rtStrConcat(void * cv_out, void * cv_a, void * cv_b);
+static void clar_fn_rtStrConcatChar(void * cv_out, void * cv_a, int32_t cv_c);
 static void clar_fn_rtStrPrependChar(void * cv_out, int32_t cv_c, void * cv_a);
 static clar_str_255 clar_fn_rtIntToStr(int32_t cv_n);
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need);
@@ -646,6 +651,7 @@ static void clar_fn_rtListRelease(void * cv_l);
 static int32_t clar_fn_rtListLastref(void * cv_l);
 static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i);
 static int32_t clar_fn_rtListCount(void * cv_l);
+static void clar_fn_rtListNoteSet(void * cv_box);
 static void * clar_fn_mapEntrySlot(void * cv_m, int32_t cv_i);
 static void * clar_fn_mapValSlot(void * cv_m, int32_t cv_i);
 static void * clar_fn_mapIndexSlot(void * cv_m, int32_t cv_i);
@@ -1023,6 +1029,8 @@ static void clar_fn_rtSortedMapRelease(void * cv_m);
 static int32_t clar_fn_rtSortedMapLastref(void * cv_m);
 static int32_t clar_fn_rtSortedMapCount(void * cv_m);
 static void clar_fn_rtSortedMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
+static clar_str_255 clar_fn_dtIntToStr(int32_t cv_n);
+static clar_str_255 clar_fn_rtDurationStr(int32_t cv_secs);
 static void clar_fn_handler_App_launch(void);
 static void clar_fn_layoutMain(void * cv_m);
 static void clar_fn_ui_Main_opened(void * cv_window);
@@ -1087,6 +1095,7 @@ static void * cv_rtUiModalKey255;
 static int32_t cv_rtSerPos;
 static int32_t cv_rtSerBad;
 static rt_list * cv_callers;
+static rt_list * cv_counts;
 static void clar_init_globals(void) {
     cv_rtUiMenuHandlesArr = 0;
     cv_rtUiMenuHandlesArr = (void *)(intptr_t)(0);
@@ -1183,10 +1192,12 @@ static void clar_init_globals(void) {
     cv_rtSerPos = 0;
     cv_rtSerBad = 0;
     cv_callers = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_Caller));
+    cv_counts = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
 }
 
 static void cl_free_globals(void) {
     clar_fn_rtListRelease((void*)cv_callers);
+    clar_fn_rtListRelease((void*)cv_counts);
 
 }
 
@@ -1205,6 +1216,14 @@ static void clar_fn_rtSetLastErr(int32_t cv_code, const clar_str_255 *cv_msg) {
 
 static void clar_fn_rtPanic(const clar_str_255 *cv_msg) {
     rt_ext_CorePanic((const uint8_t*)&((*cv_msg)));
+}
+
+static int32_t clar_fn_rtArrCheck(int32_t cv_i, int32_t cv_n) {
+    if ((cv_i < 0) || (cv_i >= cv_n)) {
+        clar_fn_rtPanic(&(clar_lit_0));
+    }
+    return cv_i;
+    return 0;
 }
 
 static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src) {
@@ -1254,6 +1273,37 @@ static void clar_fn_rtStrConcat(void * cv_out, void * cv_a, void * cv_b) {
     cv_fromB = CLAR_SUB32(cv_n, cv_fromA);
     rt_ext_StrBlockMoveData((void *)((char *)(cv_a) + (1)), (void *)((char *)(cv_out) + (1)), cv_fromA);
     rt_ext_StrBlockMoveData((void *)((char *)(cv_b) + (1)), (void *)((char *)((void *)((char *)(cv_out) + (1))) + (cv_fromA)), cv_fromB);
+    rt_pokeb(cv_out, cv_n);
+    if (cv_n < cv_total) {
+        clar_fn_rtSetLastErr(1, &(clar_lit_3));
+    }
+}
+
+static void clar_fn_rtStrConcatChar(void * cv_out, void * cv_a, int32_t cv_c) {
+    int32_t cv_la;
+    cv_la = 0;
+    int32_t cv_total;
+    cv_total = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_copyLen;
+    cv_copyLen = 0;
+    cv_la = rt_peekb(cv_a);
+    cv_total = CLAR_ADD32(cv_la, 1);
+    if (cv_total > 255) {
+        cv_n = 255;
+    } else {
+        cv_n = cv_total;
+    }
+    if (cv_n < cv_la) {
+        cv_copyLen = cv_n;
+    } else {
+        cv_copyLen = cv_la;
+    }
+    rt_ext_StrBlockMoveData((void *)((char *)(cv_a) + (1)), (void *)((char *)(cv_out) + (1)), cv_copyLen);
+    if (cv_n > cv_la) {
+        rt_pokeb((void *)((char *)(cv_out) + (cv_n)), cv_c);
+    }
     rt_pokeb(cv_out, cv_n);
     if (cv_n < cv_total) {
         clar_fn_rtSetLastErr(1, &(clar_lit_3));
@@ -1593,6 +1643,9 @@ static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i) {
 static int32_t clar_fn_rtListCount(void * cv_l) {
     return (((clar_rec_RtList *)(cv_l)))->cv_count;
     return 0;
+}
+
+static void clar_fn_rtListNoteSet(void * cv_box) {
 }
 
 static void * clar_fn_mapEntrySlot(void * cv_m, int32_t cv_i) {
@@ -9284,6 +9337,99 @@ static void clar_fn_rtSortedMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
     rt_ext_SortedMapBlockMoveData(clar_fn_sortedmapValSlot(cv_m, cv_i), cv_out, (((clar_rec_RtSortedMap *)(cv_m)))->cv_valsize);
 }
 
+static clar_str_255 clar_fn_dtIntToStr(int32_t cv_n) {
+    clar_arr_char_12 cv_digits;
+    for (int32_t ix1 = 0; ix1 < 12; ix1++) {
+        cv_digits.e[ix1] = 0;
+    }
+    int32_t cv_count;
+    cv_count = 0;
+    int32_t cv_v;
+    cv_v = 0;
+    clar_str_255 cv_s;
+    cv_s = (clar_str_255){0};
+    int32_t cv_i;
+    cv_i = 0;
+    cv_count = 0;
+    cv_v = cv_n;
+    while (1) {
+        if (!((cv_v > 0))) break;
+        (cv_digits).e[clar_fn_rtArrCheck((int32_t)(cv_count), 12)] = ((uint8_t)(CLAR_ADD32(CLAR_MOD32(cv_v, 10), ((int32_t)(48)))));
+        cv_v = CLAR_DIV32(cv_v, 10);
+        cv_count = CLAR_ADD32(cv_count, 1);
+    }
+    if (cv_count == 0) {
+        (cv_digits).e[clar_fn_rtArrCheck((int32_t)(0), 12)] = 48;
+        cv_count = 1;
+    }
+    cv_i = CLAR_SUB32(cv_count, 1);
+    while (1) {
+        if (!((cv_i >= 0))) break;
+        clar_str_255 t1;
+        clar_fn_rtStrConcatChar((void*)&t1, (void*)(const uint8_t*)&(cv_s), (int32_t)((cv_digits).e[clar_fn_rtArrCheck((int32_t)(cv_i), 12)]));
+        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t1));
+        cv_i = CLAR_SUB32(cv_i, 1);
+    }
+    return cv_s;
+    return (clar_str_255){0};
+}
+
+static clar_str_255 clar_fn_rtDurationStr(int32_t cv_secs) {
+    clar_str_255 cv_s;
+    cv_s = (clar_str_255){0};
+    int32_t cv_v;
+    cv_v = 0;
+    int32_t cv_h;
+    cv_h = 0;
+    int32_t cv_m;
+    cv_m = 0;
+    int32_t cv_sec;
+    cv_sec = 0;
+    clar_str_255 cv_part;
+    cv_part = (clar_str_255){0};
+    cv_v = cv_secs;
+    if (cv_v < 0) {
+        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(clar_lit_7));
+        cv_v = CLAR_NEG32(cv_v);
+    }
+    cv_h = CLAR_DIV32(cv_v, 3600);
+    cv_m = CLAR_DIV32(CLAR_MOD32(cv_v, 3600), 60);
+    cv_sec = CLAR_MOD32(cv_v, 60);
+    if (cv_h > 0) {
+        clar_str_255 t1;
+        t1 = clar_fn_dtIntToStr(cv_h);
+        clar_fn_rtStrStore((void*)&(cv_part), 255, (void*)(const uint8_t*)&(t1));
+        clar_str_255 t2;
+        clar_fn_rtStrConcat((void*)&t2, (void*)(const uint8_t*)&(cv_s), (void*)(const uint8_t*)&(cv_part));
+        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t2));
+        clar_str_255 t3;
+        clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(cv_s), (void*)(const uint8_t*)&(clar_lit_113));
+        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t3));
+    }
+    if ((cv_h > 0) || (cv_m > 0)) {
+        clar_str_255 t4;
+        t4 = clar_fn_dtIntToStr(cv_m);
+        clar_fn_rtStrStore((void*)&(cv_part), 255, (void*)(const uint8_t*)&(t4));
+        clar_str_255 t5;
+        clar_fn_rtStrConcat((void*)&t5, (void*)(const uint8_t*)&(cv_s), (void*)(const uint8_t*)&(cv_part));
+        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t5));
+        clar_str_255 t6;
+        clar_fn_rtStrConcat((void*)&t6, (void*)(const uint8_t*)&(cv_s), (void*)(const uint8_t*)&(clar_lit_114));
+        clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t6));
+    }
+    clar_str_255 t7;
+    t7 = clar_fn_dtIntToStr(cv_sec);
+    clar_fn_rtStrStore((void*)&(cv_part), 255, (void*)(const uint8_t*)&(t7));
+    clar_str_255 t8;
+    clar_fn_rtStrConcat((void*)&t8, (void*)(const uint8_t*)&(cv_s), (void*)(const uint8_t*)&(cv_part));
+    clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t8));
+    clar_str_255 t9;
+    clar_fn_rtStrConcat((void*)&t9, (void*)(const uint8_t*)&(cv_s), (void*)(const uint8_t*)&(clar_lit_115));
+    clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t9));
+    return cv_s;
+    return (clar_str_255){0};
+}
+
 static void clar_fn_handler_App_launch(void) {
     clar_fn_rtUiOpen(0);
 }
@@ -9326,6 +9472,10 @@ static void clar_fn_layoutMain(void * cv_m) {
     clar_fn_rtUiLogClear(cv_m, 7);
     clar_fn_rtUiMenuSetChecked(0, 1, (int32_t)(1));
     cv_flag = (clar_fn_rtUiMenuGetChecked(0, 0) || clar_fn_rtUiMenuGetEnabled(1, 0));
+    (*(int32_t*)rt_list_at(cv_counts, (int32_t)(0))) = cv_n;
+    clar_fn_rtListNoteSet(cv_counts);
+    ((*(clar_rec_Caller*)rt_list_at(cv_callers, (int32_t)(0)))).cv_secs = cv_n;
+    clar_fn_rtListNoteSet(cv_callers);
     clar_str_255 t2;
     t2 = clar_fn_rtIntToStr((int32_t)(cv_n));
     clar_str_255 t3;
@@ -9401,6 +9551,8 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
     if (cv_rowsIdx == 48) {
         return ((void*)&(cv_callers));
+    } else if (cv_rowsIdx == 49) {
+        return ((void*)&(cv_counts));
     } else {
         rt_log((const uint8_t*)&(clar_lit_132));
         rt_quit((int32_t)(1));
@@ -9416,12 +9568,23 @@ void clar_fn_clar_ui_fire_startempty(void) {
 }
 
 static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_t cv_wIdx, int32_t cv_a, int32_t cv_b) {
-    return 0;
+    return clar_fn_rtUiLogDo(cv_op, cv_instV, cv_wIdx, cv_a, cv_b);
     return 0;
 }
 
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out) {
-    return 0;
+    clar_str_255 cv___fmt0;
+    cv___fmt0 = (clar_str_255){0};
+    if (cv_fmtId == 0) {
+        clar_str_255 t1;
+        t1 = clar_fn_rtDurationStr(((*(clar_rec_Caller *)(cv_rec))).cv_secs);
+        clar_fn_rtStrStore((void*)&(cv___fmt0), 255, (void*)(const uint8_t*)&(t1));
+        clar_fn_rtStrStore((void*)&((*(const clar_str_255 *)(cv_out))), 255, (void*)(const uint8_t*)&(cv___fmt0));
+    } else {
+        rt_log((const uint8_t*)&(clar_lit_133));
+        rt_quit((int32_t)(1));
+    }
+    return 1;
     return 0;
 }
 

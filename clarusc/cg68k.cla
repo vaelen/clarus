@@ -11633,10 +11633,15 @@ func cgAbortCheckAfterCall(fi: int) {
     if not lowUsesAbort or irFuncIsRuntimeOrigin(fi) {
         return
     }
-    if cgCurFuncIsUiDispatcher {
+    // A bail chain wins over the dispatcher default: clar_ui_fire_colfmt
+    // is the one dispatcher with one (ui-widgets Task 3), so its formatter
+    // calls branch to its own attempt handler (C5) instead of quitting.
+    if cgCurFuncHasBail {
+        if irFuncCanAbort(fi) {
+            cgEmitAbortCheck()
+        }
+    } else if cgCurFuncIsUiDispatcher {
         cgEmitAbortDefaultCheck(true)
-    } else if cgCurFuncHasBail and irFuncCanAbort(fi) {
-        cgEmitAbortCheck()
     }
 }
 

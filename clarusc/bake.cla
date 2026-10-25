@@ -1327,6 +1327,7 @@ func bkWriteIrColumnDescs(): text {
         bkPutU32(sec, irColumnDescs[i].align)
         bkPutU32(sec, irColumnDescs[i].fmtExpr)
         bkPutU32(sec, irColumnDescs[i].fmtId)
+        bkPutU32(sec, irColumnDescs[i].fmtType)
         bkPutU32(sec, irColumnDescs[i].next)
         i = i + 1
     }
@@ -3256,6 +3257,7 @@ func bkReadIrColumnDescs(): list of IRColumnDesc {
         e.align = bkGetU32()
         e.fmtExpr = bkGetU32()
         e.fmtId = bkGetU32()
+        e.fmtType = bkGetU32()
         e.next = bkGetU32()
         l.add(e)
         i = i + 1

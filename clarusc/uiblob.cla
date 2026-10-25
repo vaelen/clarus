@@ -588,14 +588,6 @@ func uibEmitLayout(recNameIdx: int): int {
     var f: int
     var nFields: int
     var off: int
-    var t: int
-    var k: IRKind
-    var strCap: int
-    var enumCount: int
-    var enumLabelsOff: int
-    var enumValuesOff: int
-    var ei: int
-    var m: int
 
     ri = cgFindRecordByName(recNameIdx)
     if ri == -1 {
@@ -619,42 +611,70 @@ func uibEmitLayout(recNameIdx: int): int {
 
     f = irRecordLayoutFieldsHead(ri)
     while f != -1 {
-        t = irFieldSlotType(f)
-        k = irtKind(t)
-        strCap = 0
-        enumCount = 0
-        enumLabelsOff = -1
-        enumValuesOff = -1
-        if k == KStr {
-            strCap = irtN(t)
-        } else if k == KEnum {
-            enumCount = cpEnumCount(irtName(t))
-            ei = uibFindEnumIdx(irtName(t))
-            enumLabelsOff = uibBaseEnumArrays + uibEnumArrays.count
-            m = irEnumLayoutMembersHead(ei)
-            while m != -1 {
-                uibI32(uibEnumArrays, uibStr(irEnumMemberLabel(m)))
-                m = irEnumMemberNext(m)
-            }
-            enumValuesOff = uibBaseEnumArrays + uibEnumArrays.count
-            m = irEnumLayoutMembersHead(ei)
-            while m != -1 {
-                uibI32(uibEnumArrays, irEnumMemberValue(m))
-                m = irEnumMemberNext(m)
-            }
-        }
-        uibI32(uibLayouts, uibFieldTypeNum(t))
         if uibNativeLane {
-            uibI32(uibLayouts, cgFieldOffset(recNameIdx, irFieldSlotName(f)))
+            uibEmitLayoutField(irFieldSlotType(f), cgFieldOffset(recNameIdx, irFieldSlotName(f)))
         } else {
-            uibI32(uibLayouts, cpCFieldOffset(recNameIdx, irFieldSlotName(f)))
+            uibEmitLayoutField(irFieldSlotType(f), cpCFieldOffset(recNameIdx, irFieldSlotName(f)))
         }
-        uibI32(uibLayouts, strCap)
-        uibI32(uibLayouts, enumCount)
-        uibI32(uibLayouts, enumLabelsOff)
-        uibI32(uibLayouts, enumValuesOff)
         f = irFieldSlotNext(f)
     }
+    return off
+}
+
+// uibEmitLayoutField appends one Layout field block (ftype, offset,
+// strCap, enumCount, enumLabelsOff, enumValuesOff) for a field of type t
+// at byte offset fieldOff, plus an enum field's label/value arrays.
+func uibEmitLayoutField(t: int, fieldOff: int) {
+    var k: IRKind
+    var strCap: int
+    var enumCount: int
+    var enumLabelsOff: int
+    var enumValuesOff: int
+    var ei: int
+    var m: int
+
+    k = irtKind(t)
+    strCap = 0
+    enumCount = 0
+    enumLabelsOff = -1
+    enumValuesOff = -1
+    if k == KStr {
+        strCap = irtN(t)
+    } else if k == KEnum {
+        enumCount = cpEnumCount(irtName(t))
+        ei = uibFindEnumIdx(irtName(t))
+        enumLabelsOff = uibBaseEnumArrays + uibEnumArrays.count
+        m = irEnumLayoutMembersHead(ei)
+        while m != -1 {
+            uibI32(uibEnumArrays, uibStr(irEnumMemberLabel(m)))
+            m = irEnumMemberNext(m)
+        }
+        enumValuesOff = uibBaseEnumArrays + uibEnumArrays.count
+        m = irEnumLayoutMembersHead(ei)
+        while m != -1 {
+            uibI32(uibEnumArrays, irEnumMemberValue(m))
+            m = irEnumMemberNext(m)
+        }
+    }
+    uibI32(uibLayouts, uibFieldTypeNum(t))
+    uibI32(uibLayouts, fieldOff)
+    uibI32(uibLayouts, strCap)
+    uibI32(uibLayouts, enumCount)
+    uibI32(uibLayouts, enumLabelsOff)
+    uibI32(uibLayouts, enumValuesOff)
+}
+
+// uibEmitFmtLayout builds formatted column c's one-field Layout entry
+// (ui-widgets Task 3): the formatter's result value alone in UiColFmt's
+// `out` buffer, at offset 0, irFmtValueSize bytes -- both lanes, since
+// `out` is a runtime scratch buffer, not a C struct.
+func uibEmitFmtLayout(c: int): int {
+    var off: int
+
+    off = uibBaseLayouts + uibLayouts.count
+    uibI32(uibLayouts, irFmtValueSize(irColumnDescFmtType(c)))
+    uibI32(uibLayouts, 1)
+    uibEmitLayoutField(irColumnDescFmtType(c), 0)
     return off
 }
 
@@ -749,11 +769,15 @@ func uibEmitTable(w: int): int {
         uibI32(uibCols, uibBool(irColumnDescWidthFill(c)))
         uibI32(uibCols, irColumnDescFieldIndex(c))
         // blob v2 (ui-widgets Task 1): align, fmtId (-1 = plain field),
-        // fmtLayoutOff (0 while fmtId is -1; Task 3 adds the one-field
-        // Layout entry for a real formatter's result type).
+        // fmtLayoutOff (0 for a plain field, else the formatter result's
+        // one-field Layout entry, Task 3).
         uibI32(uibCols, irColumnDescAlign(c))
         uibI32(uibCols, irColumnDescFmtId(c))
-        uibI32(uibCols, 0)
+        if irColumnDescFmtId(c) == -1 {
+            uibI32(uibCols, 0)
+        } else {
+            uibI32(uibCols, uibEmitFmtLayout(c))
+        }
         nCols = nCols + 1
         c = irColumnDescNext(c)
     }
@@ -944,6 +968,17 @@ func uibBuild(): list of int {
     while i < irWidgetDescs.count {
         if poolGet(irWidgetDescKind(i)) == "table" {
             uibSizeLayoutFor(cpFindGlobalRecName(irWidgetDescRowsGlobalIdx(i)))
+        }
+        i = i + 1
+    }
+    // ... plus one one-field Layout per formatted column (uibEmitFmtLayout).
+    i = 0
+    while i < irColumnDescs.count {
+        if irColumnDescFmtId(i) != -1 {
+            uibSizeLayoutsAcc = uibSizeLayoutsAcc + 32
+            if irtKind(irColumnDescFmtType(i)) == KEnum {
+                uibSizeEnumArraysAcc = uibSizeEnumArraysAcc + cpEnumCount(irtName(irColumnDescFmtType(i))) * 8
+            }
         }
         i = i + 1
     }
