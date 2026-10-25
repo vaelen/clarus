@@ -57,3 +57,4 @@ testsuite/toolbox/cases_logfollow.cla
 testsuite/toolbox/cases_logselect.cla
 testsuite/toolbox/cases_labelfont.cla
 testsuite/toolbox/cases_canvastext.cla
+testsuite/toolbox/cases_bbslayout.cla

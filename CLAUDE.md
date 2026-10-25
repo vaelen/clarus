@@ -397,7 +397,7 @@ enum + runner, not one boot per case.
   SE wave 4's `OpenRead` case, which proves `file.openRead`'s read-only
   `filehandle`: reads work, writes fail with `lastError`, a missing path
   is nil) runs on
-  host and natively; `testsuite/toolbox/` (52 `ToolboxTest` cases: 51 real +
+  host and natively; `testsuite/toolbox/` (53 `ToolboxTest` cases: 52 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -469,7 +469,11 @@ enum + runner, not one boot per case.
   and drops, Copy/Select All and their Edit-menu enabling -- then to 51
   real by ui-widgets Task 10's `LabelFontAlign` (label DrawText, align,
   clip, same-text no-op, setFont/setStyle) and `CanvasText` (canvas
-  textWidth/lineHeight/ascent in its own font, across a resize) cases)
+  textWidth/lineHeight/ascent in its own font, across a resize) cases --
+  then to 52 real by ui-widgets Task 12's `BbsLayout` acceptance case:
+  68kBBS's three-pane window laid out by code from `opened`/`resized`,
+  one update for a handler's 20 appends plus a table unshift/pop, and a
+  window-owned menu with checkmarked submenus)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end

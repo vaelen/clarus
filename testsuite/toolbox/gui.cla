@@ -7,9 +7,20 @@
 // installed File menu; CanvasChecksum needs the Board canvas), so a
 // front-end without a window makes no sense for this suite. Mirrors
 // testsuite/core/gui.cla's own shape (table of case names, Run All / Run
-// Selected buttons, status textview, tkReport-funneled log, TestLog.txt)
+// Selected buttons, status pane, tkReport-funneled log, TestLog.txt)
 // with `tb`-prefixed identifiers, plus one extra widget core's gui.cla
 // doesn't need: the Board canvas CanvasChecksum draws into.
+//
+// Live progress (ui-widgets Task 12): Run All / Run Selected only queue
+// the selection; the `every 1 ticks` timer below runs ONE case per tick,
+// so the window repaints between cases, and the Status logpanel shows
+// each PASS/FAIL line as its case finishes. The tkReport alerts and
+// TestLog.txt still come out once, at the end, in the same order and
+// bytes as when every case ran inside the click handler. In a scripted
+// boot a timer fires only on a `tick` line, so toolboxsuite.events (and
+// its jiggle twin) carry one `tick 1` per case after the click, plus
+// slack: a script with fewer ticks than cases quits mid-run, and the
+// gate's TOTAL check fails loudly.
 //
 // Every widget uses an explicit, fixed `at:` (no `right`/`next` relative
 // placement), same convention and same derivation as
@@ -22,7 +33,7 @@
 //   button RunAll        local (10,140)-(90,160)
 //   button RunSelected   local (100,140)-(180,160)
 //   canvas Board local (12,170)-(212,270) [default 200x100]
-//   textview Status      local (222,170)-(422,270) [default 200x100]
+//   logpanel Status      local (222,170)-(422,270) [default 200x100]
 //
 // -> global:
 //   RunAll      (46,184)-(126,204), center (86,194)  -- toolboxsuite.events' `click 86 194`
@@ -59,56 +70,98 @@ window Suite {
     button RunAll      { at: 10, 140;  caption: "Run All" }
     button RunSelected { at: 100, 140; caption: "Run Selected" }
     canvas Board       { at: 12, 170 }
-    textview Status    { at: 222, 170; scrollbar: both }
+    logpanel Status    { at: 222, 170; scrollbar: both }
 }
 
 menu File {
     item Quit "Quit" key "Q"
 }
 
-// tbRunAndReport: same shape as testsuite/core/gui.cla's own
-// guiRunAndReport -- runs sel through runToolboxTests, appends every
-// PASS/FAIL line plus a final TOTAL line to w's Status textview AND to
-// TestLog.txt, and funnels the same results through kit.cla's tkReport
-// so every line ALSO alert()s (the scripted boot's captured console,
-// which testdata/ui/toolboxsuite.events' gate parses). Built up
-// line-by-line into an intermediate `line: string` var for the same
-// native-68k per-statement str/rec temp-slot budget reason
-// guiRunAndReport's own doc comment gives. Does NOT quit on a fail --
-// interactive GUI, a fail should show in the log, not end the session.
-func tbRunAndReport(w: Suite, sel: list of ToolboxTest) {
-    var results: list of TestResult
+// The run queue: tbQueue[tbQPos..] are still to run, tbQResults holds
+// what has run, in order. tbQBusy keeps a case's own UiTestTick (which
+// pumps timers in a scripted boot) from re-entering the timer.
+var tbQueue: list of ToolboxTest
+var tbQResults: list of TestResult
+var tbQPos: int
+var tbQBusy: bool
+
+// tbQueueRun starts a run of sel, unless one is still going. tbCasesRun
+// (runner.cla) counts across the run's single-case calls, for SelfCheck.
+func tbQueueRun(w: Suite, sel: list of ToolboxTest) {
+    var t: ToolboxTest
+
+    if tbQPos < tbQueue.count {
+        return
+    }
+    tbQueue.clear()
+    tbQResults.clear()
+    for t in sel {
+        tbQueue.add(t)
+    }
+    tbQPos = 0
+    tbCasesRun = 0
+    w.Status.clear()
+}
+
+// The queue's timer runs the next queued case and shows its line; after
+// the last one, tbFinish reports the whole run.
+every 1 ticks {
+    var w: Suite = Suite.front
+    var one: list of ToolboxTest
     var r: TestResult
-    var status: text
+
+    if tbQBusy or tbQPos >= tbQueue.count {
+        return
+    }
+    tbQBusy = true
+    one.add(tbQueue[tbQPos])
+    tbQPos = tbQPos + 1
+    for r in runToolboxTests(one) {
+        tbQResults.add(r)
+        if w != nil {
+            w.Status.appendLine(tbResultLine(r))
+        }
+    }
+    if tbQPos >= tbQueue.count {
+        tbFinish(w)
+    }
+    tbQBusy = false
+}
+
+func tbResultLine(r: TestResult): string {
+    if r.passed {
+        return "PASS " + r.name
+    }
+    return "FAIL " + r.name + ": " + r.detail
+}
+
+// tbFinish: the TOTAL line on the Status panel AND in TestLog.txt, with
+// every PASS/FAIL line before it, and the same results funneled through
+// kit.cla's tkReport so every line ALSO alert()s (the scripted boot's
+// captured console, which tests/mactest/toolbox_68k.sh parses). Does NOT
+// quit on a fail -- interactive GUI, a fail should show in the log, not
+// end the session.
+func tbFinish(w: Suite) {
+    var r: TestResult
     var log: text
     var fails: int
     var total: int
     var line: string
     var ok: bool
 
-    results = runToolboxTests(sel)
-
-    for r in results {
-        if r.passed {
-            line = "PASS " + r.name
-        } else {
-            line = "FAIL " + r.name + ": " + r.detail
-        }
-        status.append(line)
-        status.append("\n")
-        log.append(line)
+    for r in tbQResults {
+        log.append(tbResultLine(r))
         log.append("\n")
     }
-
-    fails = tkReport(results)
-    total = results.count
+    fails = tkReport(tbQResults)
+    total = tbQResults.count
     line = "TOTAL " + tkIntToStr(total)
     line = line + " PASS " + tkIntToStr(total - fails)
     line = line + " FAIL " + tkIntToStr(fails)
-    status.append(line)
     log.append(line)
-
-    w.Status.text = status
+    if w != nil {
+        w.Status.appendLine(line)
+    }
     ok = file.writeText("TestLog.txt", log, app.doctype, app.id)
 }
 
@@ -126,10 +179,7 @@ on App.startEmpty {
 
 extend Suite {
     on RunAll.click {
-        var sel: list of ToolboxTest
-
-        sel.add(All)
-        tbRunAndReport(window, sel)
+        tbQueueRun(window, tbAllCases())
     }
     on RunSelected.click {
         var sel: list of ToolboxTest
@@ -138,7 +188,7 @@ extend Suite {
         idx = Cases.selected
         if idx >= 0 {
             sel.add(caseOrder[idx])
-            tbRunAndReport(window, sel)
+            tbQueueRun(window, sel)
         }
     }
 }

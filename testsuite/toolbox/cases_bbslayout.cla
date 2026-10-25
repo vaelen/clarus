@@ -1,0 +1,224 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_bbslayout.cla: BbsLayout (ui-widgets Task 12, the acceptance
+// case). It rebuilds 68kBBS's target window from
+// m68k-bbs/docs/clarus-ui-requirements.md: three label pairs, a double
+// TopRule and a single SideRule, the Callers table (four columns, two
+// formatted, Time right-aligned, Geneva 9) over 50 records, and a
+// Monaco 9 logpanel, laid out by R1.5's layoutMain from `opened` and
+// `resized`, with a window-owned Modem menu whose Speed and Port items
+// open checkmarked submenus (R7).
+//
+// Asserts: after open, and again after UiTestResize(500, 320), every
+// widget's bounds equal layoutMain's arithmetic over contentWidth/
+// contentHeight (the labels keep their declared rects); 20 appends plus
+// an unshift/pop at count 50 in one handler leave the window stable on a
+// second tick (one update); Log.line(0) reads back; the Modem menu holds
+// three items and the submenus' checkmarks move radio-style.
+//
+// Geometry: `size: 480, 280` -> content top-left ((512-480)/2, 44) =
+// (16, 44); 16 is a multiple of 8, so the stability band (local 0..487 x
+// 0..279, inside the screen at both sizes) is byte-aligned for
+// UiTestChecksum.
+//
+// Menu IDs (rtUiMenuIdBase 2 + whole-program declaration index): this
+// file sits after gui.cla in toolbox_files.txt, so after File(7) come
+// BbsSpeed(8), BbsPort(9) and Modem(10): Modem's MenuID is 12. Nothing
+// declared before them moves.
+
+const tbBbsOrgX: int = 16
+const tbBbsOrgY: int = 44
+const tbBbsModemId: int = 12
+
+// The 68kBBS callers record: 52 bytes, timestamps kept as ints.
+record TbBbsCaller {
+    name: string(31)
+    connected: int
+    term: string(10)
+    secs: int
+}
+
+var tbBbsCallers: list of TbBbsCaller
+
+// The two formatters concatenate (they allocate at draw time).
+func tbBbsWhen(t: int): string {
+    return "10/24 " + tkIntToStr(t / 60) + ":" + tkIntToStr(t mod 60)
+}
+
+func tbBbsDur(s: int): string {
+    return tkIntToStr(s / 3600) + ":" + tkIntToStr((s / 60) mod 60) + ":" + tkIntToStr(s mod 60)
+}
+
+menu BbsSpeed {
+    item S2400 "2400"
+    item S9600 "9600" checked
+    item S19200 "19200"
+}
+
+menu BbsPort {
+    item ModemPort "Modem Port" checked
+    item PrinterPort "Printer Port"
+}
+
+menu Modem {
+    item Init "Initialize Modem"
+    item Speed "Speed" submenu BbsSpeed
+    item Port "Port" submenu BbsPort
+}
+
+window BbsMain {
+    title: "68kBBS"
+    size: 480, 280
+    resizable: min(300, 200)
+    menus: Modem
+
+    label StatusK { at: 8, 8; width: 56; text: "Status:"; style: bold }
+    label StatusV { at: 64, 8; width: 88; text: "Connected" }
+    label UserK   { at: 8, 26; width: 56; text: "User:"; style: bold }
+    label UserV   { at: 64, 26; width: 88; text: "andrew" }
+    label ScreenK { at: 8, 44; width: 56; text: "Screen:"; style: bold }
+    label ScreenV { at: 64, 44; width: 88; text: "Boards" }
+    divider TopRule  { style: double }
+    divider SideRule { }
+    table Callers {
+        rows: tbBbsCallers
+        font: "Geneva", 9
+        column "User"      shows name                width 90
+        column "Connected" shows tbBbsWhen(connected) width 80
+        column "Terminal"  shows term                width 64
+        column "Time"      shows tbBbsDur(secs)      width fill align right
+    }
+    logpanel Log { maxLines: 100; font: "Monaco", 9; scrollbar: both }
+}
+
+extend BbsMain {
+    on opened { tbBbsLayoutMain(window) }
+    on resized { tbBbsLayoutMain(window) }
+}
+
+// tbBbsLayoutMain is R1.5's layoutMain, verbatim.
+func tbBbsLayoutMain(m: BbsMain) {
+    var w: int = m.contentWidth
+    var h: int = m.contentHeight
+    var top: int = h / 2
+    m.Callers.setBounds(161, 0, w - 161, top)
+    m.TopRule.setBounds(0, top, w, 3)
+    m.SideRule.setBounds(160, 0, 1, top)
+    m.Log.setBounds(0, top + 3, w, h - top - 3)
+}
+
+func tbBbsCaller(i: int): TbBbsCaller {
+    var c: TbBbsCaller
+
+    c.name = "caller" + tkIntToStr(i)
+    c.connected = 1200 + i
+    c.term = "ANSI"
+    c.secs = 1000 + 17 * i
+    return c
+}
+
+// tbBbsBounds checks every widget against layoutMain's arithmetic for
+// content size (cw, ch), and that the window reports that size.
+func tbBbsBounds(m: BbsMain, cw: int, ch: int): string {
+    var d: string
+    var top: int = ch / 2
+
+    if m.contentWidth != cw or m.contentHeight != ch {
+        d = "content " + tkIntToStr(m.contentWidth) + "x" + tkIntToStr(m.contentHeight) + "; "
+    }
+    d = d + tbSbRect("Callers", m.Callers.x, m.Callers.y, m.Callers.width, m.Callers.height, 161, 0, cw - 161, top)
+    d = d + tbSbRect("TopRule", m.TopRule.x, m.TopRule.y, m.TopRule.width, m.TopRule.height, 0, top, cw, 3)
+    d = d + tbSbRect("SideRule", m.SideRule.x, m.SideRule.y, m.SideRule.width, m.SideRule.height, 160, 0, 1, top)
+    d = d + tbSbRect("Log", m.Log.x, m.Log.y, m.Log.width, m.Log.height, 0, top + 3, cw, ch - top - 3)
+    d = d + tbSbRect("StatusK", m.StatusK.x, m.StatusK.y, m.StatusK.width, m.StatusK.height, 8, 8, 56, 16)
+    d = d + tbSbRect("UserV", m.UserV.x, m.UserV.y, m.UserV.width, m.UserV.height, 64, 26, 88, 16)
+    d = d + tbSbRect("ScreenV", m.ScreenV.x, m.ScreenV.y, m.ScreenV.width, m.ScreenV.height, 64, 44, 88, 16)
+    return d
+}
+
+// tbBbsDeclaredMarks puts the checkmarks back on the declared choices.
+func tbBbsDeclaredMarks() {
+    BbsSpeed.S2400.checked = false
+    BbsSpeed.S9600.checked = true
+    BbsSpeed.S19200.checked = false
+    BbsPort.ModemPort.checked = true
+    BbsPort.PrinterPort.checked = false
+}
+
+func caseBbsLayout(): TestResult {
+    var m: BbsMain
+    var d: string
+    var i: int
+    var n: int
+    var c0: int
+    var c1: int
+    var c2: int
+
+    // Declared checkmarks, then a radio-style move.
+    if not BbsSpeed.S9600.checked or BbsSpeed.S2400.checked or not BbsPort.ModemPort.checked {
+        d = "declared marks wrong; "
+    }
+    BbsSpeed.S9600.checked = false
+    BbsSpeed.S19200.checked = true
+    BbsPort.ModemPort.checked = false
+    BbsPort.PrinterPort.checked = true
+    if BbsSpeed.S9600.checked or not BbsSpeed.S19200.checked or not BbsPort.PrinterPort.checked {
+        d = d + "marks did not move; "
+    }
+    tbBbsDeclaredMarks()
+
+    tbBbsCallers.clear()
+    i = 0
+    while i < 50 {
+        tbBbsCallers.add(tbBbsCaller(i))
+        i = i + 1
+    }
+
+    m = open BbsMain
+    d = d + tbBbsBounds(m, 480, 280)
+    UiTestTick(1)
+    n = CountMItems(GetMenuHandle(tbBbsModemId))
+    if n != 3 {
+        d = d + "Modem items " + tkIntToStr(n) + "; "
+    }
+
+    UiTestResize(500, 320)
+    UiTestTick(1)
+    d = d + tbBbsBounds(m, 500, 320)
+
+    // One handler: 20 appends plus unshift/pop at count 50, then one
+    // update -- the second tick repaints nothing.
+    c0 = UiTestChecksum(tbBbsOrgX, tbBbsOrgY, 488, 280)
+    i = 0
+    while i < 20 {
+        m.Log.appendLine("20:40:" + tkIntToStr(10 + i) + " line " + tkIntToStr(i))
+        i = i + 1
+    }
+    tbBbsCallers.unshift(tbBbsCaller(100))
+    tbBbsCallers.pop()
+    UiTestTick(1)
+    c1 = UiTestChecksum(tbBbsOrgX, tbBbsOrgY, 488, 280)
+    UiTestTick(1)
+    c2 = UiTestChecksum(tbBbsOrgX, tbBbsOrgY, 488, 280)
+    if c1 == c0 {
+        d = d + "nothing drew after the appends; "
+    }
+    if c1 != c2 {
+        d = d + "second update " + tkIntToStr(c1) + "->" + tkIntToStr(c2) + "; "
+    }
+    if tbBbsCallers.count != 50 {
+        d = d + "callers " + tkIntToStr(tbBbsCallers.count) + "; "
+    }
+    if m.Log.lineCount != 20 or m.Log.line(0) != "20:40:10 line 0" {
+        d = d + "Log line(0) " + m.Log.line(0) + "; "
+    }
+
+    close m
+    UiTestTick(1)
+    tbBbsCallers.clear()
+    if d == "" {
+        return tkPass("BbsLayout")
+    }
+    return tkFail("BbsLayout", d)
+}

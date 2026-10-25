@@ -3,9 +3,10 @@
 # mactest/toolbox_68k -- port of internal/mactest/coresuite_test.go's
 # TestToolboxSuiteOn68k: ONE native 68k boot of the toolbox suite's GUI
 # (toolbox_files.txt, `--testapi` + `--bake`), driven by
-# testdata/ui/toolboxsuite.events (one click on Run All, then quit). Every
+# testdata/ui/toolboxsuite.events (one click on Run All, one `tick 1` per
+# case -- the GUI's queue timer runs one case per tick -- then quit). Every
 # case here calls a REAL Toolbox trap or reads the REAL screen framebuffer
-# in-process. Content-based gate, no trace/snap goldens; each of the 52
+# in-process. Content-based gate, no trace/snap goldens; each of the 53
 # result lines is re-emitted so the runner reports per case.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
@@ -23,7 +24,7 @@ run_mac "$WORK/toolboxsuite_gui.bin" 420
 [ "$MAC_EXIT" = 0 ] || die "toolbox suite exit code $MAC_EXIT, want 0
 capture:
 $(cat "$WORK/cap.out")"
-suite_report_check "$WORK/cap.out" 52
+suite_report_check "$WORK/cap.out" 53
 # TableFormat's aborting column logs once per window instance (spec C5);
 # the line itself only shows in the capture's log section, so it is
 # counted here.

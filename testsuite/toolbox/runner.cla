@@ -177,6 +177,9 @@
 // LabelFontAlign/CanvasText (cases_labelfont.cla/cases_canvastext.cla) are
 // ui-widgets Task 10's additions: label DrawText/align/clip/same-text and
 // per-widget fonts; canvas textWidth/lineHeight/ascent in its own font.
+// BbsLayout (cases_bbslayout.cla) is ui-widgets Task 12's acceptance case:
+// 68kBBS's three-pane window, laid out from code across a resize, with
+// one update per handler and a checkmarked submenu Modem menu.
 
 enum ToolboxTest {
     All
@@ -231,15 +234,16 @@ enum ToolboxTest {
     LogPanelSelect
     LabelFontAlign
     CanvasText
+    BbsLayout
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 51 real cases
+// nTbCases is ToolboxTest's member count minus All: the 52 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
-// casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
-// a forgotten branch leaves casesRun short and SelfCheck fails instead of
+// tbCasesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
+// a forgotten branch leaves tbCasesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 52
+const nTbCases: int = 53
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -401,6 +405,9 @@ func tbCaseName(t: ToolboxTest): string {
     case CanvasText {
         return "CanvasText"
     }
+    case BbsLayout {
+        return "BbsLayout"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -463,6 +470,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(LogPanelSelect)
     l.add(LabelFontAlign)
     l.add(CanvasText)
+    l.add(BbsLayout)
     l.add(SelfCheck)
     return l
 }
@@ -486,12 +494,17 @@ func tbHas(l: list of ToolboxTest, want: ToolboxTest): bool {
 // arg-matching loop, which needs careful iteration to stay within budget;
 // see coreMatchAndAdd's doc comment in testsuite/core/cli.cla. Moot here
 // besides: this suite has no CLI front end).
+//
+// tbCasesRun counts the cases run since its caller last zeroed it, across
+// calls: gui.cla's queue runs one case per call, and SelfCheck, queued
+// last, compares the run's whole count.
+var tbCasesRun: int
+
 func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     var deduped: list of ToolboxTest
     var t: ToolboxTest
     var results: list of TestResult
     var wantAll: bool
-    var casesRun: int = 0
     var selfDetail: string
 
     for t in sel {
@@ -503,213 +516,217 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
 
     if wantAll or tbHas(deduped, TickCountAdvances) {
         results.add(caseTickCountAdvances())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, MenuKeyMatches) {
         results.add(caseMenuKeyMatches())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, CanvasChecksum) {
         results.add(caseCanvasChecksum())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, A5Live) {
         results.add(caseA5Live())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, GestaltNamed) {
         results.add(caseGestaltNamed())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, EventXRec) {
         results.add(caseEventXRec())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, UiTestVerbSmoke) {
         results.add(caseUiTestVerbSmoke())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, PostEventClick) {
         results.add(casePostEventClick())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Pattern) {
         results.add(casePattern())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Buttons) {
         results.add(caseButtons())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Winvar) {
         results.add(caseWinvar())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Textwidgets) {
         results.add(caseTextwidgets())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Menus) {
         results.add(caseMenus())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Editmenu) {
         results.add(caseEditmenu())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Canvas) {
         results.add(caseCanvas())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Zoomwin) {
         results.add(caseZoomwin())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Hscroll) {
         results.add(caseHscroll())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Popuptable) {
         results.add(casePopuptable())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Dialogs) {
         results.add(caseDialogs())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Hdim) {
         results.add(caseHdim())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, FormEdit) {
         results.add(caseFormEdit())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, FieldCap) {
         results.add(caseFieldCap())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, BigText) {
         results.add(caseBigText())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Catalog) {
         results.add(caseCatalog())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, FInfoStamp) {
         results.add(caseFInfoStamp())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, ResourceBake) {
         results.add(caseResourceBake())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, WriteResStamp) {
         results.add(caseWriteResStamp())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, DateTimeRoundTrip) {
         results.add(caseDateTimeRoundTrip())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, LivePaint) {
         results.add(caseLivePaint())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, SerialOpenWrite) {
         results.add(caseSerialOpenWrite())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, AtalkSelf) {
         results.add(caseAtalkSelf())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, NarrowPopup) {
         results.add(caseNarrowPopup())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, LeakCheck) {
         results.add(caseLeakCheck())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, ScrollToEnd) {
         results.add(caseScrollToEnd())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, ClearWarm) {
         results.add(caseClearWarm())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, CasesTable) {
         results.add(caseCasesTable())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, CanvasIdle) {
         results.add(caseCanvasIdle())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, WindowMenus) {
         results.add(caseWindowMenus())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, AdspLeak) {
         results.add(caseAdspLeak())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, NarrowForm) {
         results.add(caseNarrowForm())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, MenuCheckSub) {
         results.add(caseMenuCheckSub())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, SetBounds) {
         results.add(caseSetBounds())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, Divider) {
         results.add(caseDivider())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, LogPanelRing) {
         results.add(caseLogPanelRing())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, LogPanelFollow) {
         results.add(caseLogPanelFollow())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, ListObserve) {
         results.add(caseListObserve())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, TableBinding) {
         results.add(caseTableBinding())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, TableFormat) {
         results.add(caseTableFormat())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, LogPanelSelect) {
         results.add(caseLogPanelSelect())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, LabelFontAlign) {
         results.add(caseLabelFontAlign())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, CanvasText) {
         results.add(caseCanvasText())
-        casesRun = casesRun + 1
+        tbCasesRun = tbCasesRun + 1
+    }
+    if wantAll or tbHas(deduped, BbsLayout) {
+        results.add(caseBbsLayout())
+        tbCasesRun = tbCasesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
-        if casesRun == nTbCases - 1 {
+        if tbCasesRun == nTbCases - 1 {
             results.add(tkPass(tbCaseName(SelfCheck)))
         } else {
-            selfDetail = "casesRun " + tkIntToStr(casesRun) + " != " + tkIntToStr(nTbCases - 1)
+            selfDetail = "tbCasesRun " + tkIntToStr(tbCasesRun) + " != " + tkIntToStr(nTbCases - 1)
             results.add(tkFail(tbCaseName(SelfCheck), selfDetail))
         }
     }
