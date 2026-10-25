@@ -13,8 +13,10 @@
 // application font, a canvas buffer in the system font).
 //
 // Every non-TE draw site (label, field label lane, table header and LDEF
-// rows, canvas text) brackets its drawing with rtUiFontApply, which saves
-// the port's font first, and rtUiFontRestore, which puts it back.
+// rows, canvas text and metrics) brackets its drawing with rtUiFontApply,
+// which saves the port's font first, and rtUiFontRestore, which puts it
+// back. A canvas measures and draws in its own port (its buffer when
+// buffered), the others in their window's.
 // TE widgets keep their font in the TERec instead: TENew picks it up from
 // the port at creation, setFont pokes it afterwards.
 //
@@ -22,22 +24,49 @@
 // buffered canvas keeps its font across rtUiCanvasMake (OpenPort resets a
 // port's font) without a copy in its RtUiCanvasBuf.
 //
-// The always-linked half -- the slot table, rtUiFontApply/Restore,
-// rtUiFontInfo, rtUiDrawLabel, rtUiFontNum -- lives in uiwidgets.cla's
-// "Fonts and labels" section until Task 12: the committed snapshot
-// compiler's runtime module list predates this file, so code it builds
-// (clarusc-current itself) cannot reach a function defined here. This file
-// holds only what the lowering roots by name when a program calls it.
+// The rest -- the slot table fill, rtUiFontApply/Save/Restore,
+// rtUiDrawLabel and rtUiLabelSetText, rtUiCanvasMetric, rtUiFontNum --
+// lives in uiwidgets.cla's "Fonts and labels" section until Task 12: the
+// committed snapshot compiler's runtime module list predates this file, so
+// code ui.cla/uiwidgets.cla/uitable.cla/uitext.cla call must not live here.
+// Most of it is reached only through synthesized dispatchers (UiFontsInit,
+// UiDrawLabel, UiLabelSetText, UiCanvasMetric) and is shaken out of a
+// program that does not use it. This file holds only what the lowering
+// roots by name when a program calls setFont/setStyle/textWidth.
+
+// rtUiFontInfo: GetFontInfo in widget wIdx's font, measured in its
+// window's port, into the scratch FontInfo (returned).
+func rtUiFontInfo(instV: ptr, wIdx: int): ptr {
+    var savedPort: ptr
+    var fi: ptr
+
+    fi = rtUiFontScratchGet()
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(RtUiWinst(instV).wp)
+    rtUiFontApply(instV, wIdx)
+    UiGetFontInfo(fi)
+    rtUiFontRestore()
+    UiSetPort(savedPort)
+    return fi
+}
 
 // rtUiWidgetSetFont: `w.X.setFont(name, size)`, name a Str255.
 func rtUiWidgetSetFont(instV: ptr, wIdx: int, name: ptr, size: int) {
     var p: ptr
     var num: int
+    var sz: int
 
     num = rtUiFontNum(name)
     p = rtUiFontSlot(instV, wIdx)
     pokew(p, num + 1)
-    pokeb(p + 2, size)
+    // The declared range, 1..127 (the slot holds one byte).
+    sz = size
+    if sz < 1 {
+        sz = 1
+    } else if sz > 127 {
+        sz = 127
+    }
+    pokeb(p + 2, sz)
     rtUiFontChanged(instV, wIdx)
 }
 
@@ -113,15 +142,15 @@ func rtUiFontChanged(instV: ptr, wIdx: int) {
 }
 
 // rtUiCanvasTextWidth: `c.textWidth(s)` in the canvas's font, s a Str255.
+// Measured in the port the canvas draws on (its buffer when buffered).
 func rtUiCanvasTextWidth(instV: ptr, wIdx: int, s: ptr): int {
-    var savedPort: ptr
+    var t: RtUiCanvasTarget
     var tw: int
 
-    savedPort = rtUiGetPortSaved()
-    UiSetPort(RtUiWinst(instV).wp)
+    t = rtUiCanvasBegin(instV, wIdx)
     rtUiFontApply(instV, wIdx)
     tw = UiTextWidth(s + 1, 0, peekb(s))
     rtUiFontRestore()
-    UiSetPort(savedPort)
+    rtUiCanvasEnd(t)
     return tw
 }

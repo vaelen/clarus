@@ -79,11 +79,20 @@ func caseCanvasText(): TestResult {
         d = d + "after rows " + tkIntToStr(v) + "; "
     }
 
+    // After a resize the buffer port is new: the font must be re-applied,
+    // so the same row draws the same pixels.
     UiTestResize(320, 220)
     UiTestTick(1)
     v = w.T.textWidth("M")
     if v != m1 {
         d = d + "resized width " + tkIntToStr(v) + "; "
+    }
+    w.T.clear()
+    w.T.drawText(0, asc, "MMMM")
+    UiTestTick(1)
+    v = tbCtBand(0, lh)
+    if v != c0 {
+        d = d + "resized row " + tkIntToStr(v) + " want " + tkIntToStr(c0) + "; "
     }
 
     w.T.setFont("Geneva", 12)

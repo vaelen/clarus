@@ -109,6 +109,9 @@ var lowUsesContentSize: bool
 // only when the program calls them.
 var lowUsesSetFont: bool
 var lowUsesTextWidth: bool
+// lowUsesCanvasMetric: a canvas `lineHeight`/`ascent` read was lowered
+// (gates clar_ui_fire_canvasmetric's body, lowSynthFontOps).
+var lowUsesCanvasMetric: bool
 
 // ---- `on App.log(line: string)` (onlog phase) ----
 //
@@ -3246,8 +3249,10 @@ func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
         intrName = IUiGetY()
     } else if widgetKind == "canvas" and propName == "lineHeight" {
         intrName = IUiGetLineHeight()
+        lowUsesCanvasMetric = true
     } else if widgetKind == "canvas" and propName == "ascent" {
         intrName = IUiGetAscent()
+        lowUsesCanvasMetric = true
     } else if widgetKind == "logpanel" and propName == "lineCount" {
         intrName = IUiLogLineCount()
     } else if widgetKind == "field" and propName == "text" {
@@ -8087,35 +8092,95 @@ func lowSynthUiDispatchers() {
     lowSynthColFmt()
     lowSynthFmtCell()
     lowSynthGeomApply()
-    lowSynthFontsInit()
+    lowSynthFontOps()
 }
 
-// lowSynthFontsInit builds clar_ui_fire_fontsinit(inst), the UiFontsInit
-// dispatcher rtUiOpen calls (ui-widgets Task 10): it fills the window's
-// per-widget font table (rtUiFontsInit) only in a program where some widget
-// declares `font:` or `style:`, so font-name resolution is shaken out of
-// every other one. setFont/setStyle reach rtUiFontsInit on their own.
-func lowSynthFontsInit() {
+// lowSynthFontOps builds the font/label dispatchers (ui-widgets Task 10),
+// each a forward to its runtime callee in a program that uses it and
+// empty (or `return 0`) in every other one, so that runtime code is
+// shaken out:
+//   clar_ui_fire_fontsinit(inst)          UiFontsInit -> rtUiFontsInit(inst, false)
+//       when a widget declares `font:` or `style:`;
+//   clar_ui_fire_drawlabel(instV, i)      UiDrawLabel -> rtUiDrawLabel
+//   clar_ui_fire_labelsettext(instV, wIdx, s)  UiLabelSetText -> rtUiLabelSetText
+//       when a window declares a `label`;
+//   clar_ui_fire_canvasmetric(instV, wIdx, prop)  UiCanvasMetric -> rtUiCanvasMetric
+//       when a canvas `lineHeight`/`ascent` is read.
+// setFont/setStyle reach rtUiFontsInit on their own.
+func lowSynthFontOps() {
     var paramsHead: int
     var args: int
     var body: int
     var fnameIdx: int
     var i: int
+    var fonts: bool
+    var labels: bool
 
-    paramsHead = newIRLocal(intern("inst"), irPtrT)
-    body = -1
+    fonts = false
+    labels = false
     i = 0
     while i < irWidgetDescs.count {
         if irWidgetDescs[i].fontNameIdx != -1 or irWidgetDescs[i].face != 0 {
-            i = irWidgetDescs.count
-            args = lowSynthPtrRef("inst")
-            irExprListAppend(args, newIRIntConst(0, irBoolT))
-            body = newIRExprStmt(newIRCallFn(intern("rtUiFontsInit"), args, irVoidT))
+            fonts = true
+        }
+        if poolGet(irWidgetDescs[i].kindIdx) == "label" {
+            labels = true
         }
         i = i + 1
     }
+    paramsHead = newIRLocal(intern("inst"), irPtrT)
+    body = -1
+    if fonts {
+        args = lowSynthPtrRef("inst")
+        irExprListAppend(args, newIRIntConst(0, irBoolT))
+        body = newIRExprStmt(newIRCallFn(intern("rtUiFontsInit"), args, irVoidT))
+    }
     fnameIdx = intern("clar_ui_fire_fontsinit")
     newIRFunc(fnameIdx, paramsHead, irVoidT, -1, body)
+    shakeAddRoot(fnameIdx)
+
+    lowSynthFwd("clar_ui_fire_drawlabel", "rtUiDrawLabel", labels, "i", "", false)
+    lowSynthFwd("clar_ui_fire_labelsettext", "rtUiLabelSetText", labels, "wIdx", "s", false)
+    lowSynthFwd("clar_ui_fire_canvasmetric", "rtUiCanvasMetric", lowUsesCanvasMetric, "wIdx", "prop", true)
+}
+
+// lowSynthFwd builds `fname(instV: ptr, p2: int[, p3])`, forwarding every
+// parameter to `callee` when `enabled`, else empty. p3 is "" for none, "s" for
+// a ptr, anything else an int; retInt makes it return the callee's int
+// (0 when not `enabled`).
+func lowSynthFwd(fname: string, callee: string, enabled: bool, p2: string, p3: string, retInt: bool) {
+    var params: int
+    var tail: int
+    var args: int
+    var atail: int
+    var body: int
+    var retT: int
+    var fnameIdx: int
+
+    params = newIRLocal(intern("instV"), irPtrT)
+    tail = irLocalListAppend(params, newIRLocal(intern(p2), irIntT))
+    args = lowSynthPtrRef("instV")
+    atail = irExprListAppend(args, lowSynthIntRef(p2))
+    if p3 == "s" {
+        irLocalListAppend(tail, newIRLocal(intern(p3), irPtrT))
+        irExprListAppend(atail, lowSynthPtrRef(p3))
+    } else if p3 != "" {
+        irLocalListAppend(tail, newIRLocal(intern(p3), irIntT))
+        irExprListAppend(atail, lowSynthIntRef(p3))
+    }
+    body = -1
+    retT = irVoidT
+    if retInt {
+        retT = irIntT
+        body = newIRReturn(newIRIntConst(0, irIntT))
+        if enabled {
+            body = newIRReturn(newIRCallFn(intern(callee), args, irIntT))
+        }
+    } else if enabled {
+        body = newIRExprStmt(newIRCallFn(intern(callee), args, irVoidT))
+    }
+    fnameIdx = intern(fname)
+    newIRFunc(fnameIdx, params, retT, -1, body)
     shakeAddRoot(fnameIdx)
 }
 
@@ -9032,6 +9097,9 @@ func lowUiSynthExternName(externNameIdx: int): int {
     if nm == "UiFmtCell" { return intern("clar_ui_fire_fmtcell") }
     if nm == "UiGeomApply" { return intern("clar_ui_fire_geomapply") }
     if nm == "UiFontsInit" { return intern("clar_ui_fire_fontsinit") }
+    if nm == "UiDrawLabel" { return intern("clar_ui_fire_drawlabel") }
+    if nm == "UiLabelSetText" { return intern("clar_ui_fire_labelsettext") }
+    if nm == "UiCanvasMetric" { return intern("clar_ui_fire_canvasmetric") }
     // Connection dispatchers (serial-connection phase, Task 5): conn.cla
     // declares these as `external func clar_conn_fire_NAME` (Task 4) and
     // rtConnPump calls them by that same literal name -- UNLIKE the UI
@@ -9150,6 +9218,7 @@ func lowerProgram(declHead: int): int {
     lowUsesContentSize = false
     lowUsesSetFont = false
     lowUsesTextWidth = false
+    lowUsesCanvasMetric = false
     // lowTitleIdx (memory-leak-fix Task 7): same process-lifetime
     // lazy-init idiom as ir.cla's ~162 IXxx() intrinsic-name helpers (see
     // irReset's own doc comment) -- reset to -1 here so

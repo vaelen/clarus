@@ -2032,6 +2032,7 @@ func rtUiHandleUpdate(wp: ptr) {
     var ck: int
     var cw: int
     var hdr: ptr
+    var hdesc: int
 
     UiSetPort(wp)
     UiBeginUpdate(wp)
@@ -2065,7 +2066,7 @@ func rtUiHandleUpdate(wp: ptr) {
                 kind = -1 // a zero-size widget draws nothing
             }
             if kind == rtUiKindLabel {
-                rtUiDrawLabel(inst, i)
+                UiDrawLabel(inst, i)
             } else if kind == rtUiKindButton {
                 flags = uidWidgetFlags(w.winIdx, i)
                 if (flags & rtUiFlagDefault) != 0 {
@@ -2179,6 +2180,8 @@ func rtUiHandleUpdate(wp: ptr) {
                 fillW = rtUiTableFillWidth(colsOff, nCols, peekw(lhMp + rtUiListRView + 6) - peekw(lhMp + rtUiListRView + 2))
                 hx = peekw(lhMp + rtUiListRView + 2)
                 rtUiFontApply(inst, i) // the header uses the table's font
+                UiGetFontInfo(rtUiFontScratch)
+                hdesc = peekw(rtUiFontScratch + 2)
                 ck = 0
                 while ck < nCols {
                     if uidColWidthFill(colsOff, ck) {
@@ -2188,7 +2191,7 @@ func rtUiHandleUpdate(wp: ptr) {
                     }
                     // The header follows its column's align (spec 3.5).
                     hdr = uidColHeader(colsOff, ck)
-                    UiMoveTo(rtUiTableTextX(hx, cw, hdr + 1, peekb(hdr), uidColAlign(colsOff, ck)), peekw(headerRect + 4) - 3)
+                    UiMoveTo(rtUiTableTextX(hx, cw, hdr + 1, peekb(hdr), uidColAlign(colsOff, ck)), peekw(headerRect + 4) - hdesc)
                     UiDrawText(hdr + 1, 0, peekb(hdr))
                     hx = hx + cw
                     ck = ck + 1

@@ -608,8 +608,8 @@ int32_t rt_ext_UiPopUpMenuSelect(void *theMenu, short top, short left, short pop
 void rt_ext_UiInvertRect(void *r) { InvertRect((const Rect *)r); }
 void rt_ext_UiDrawText(void *textBuf, short firstByte, short byteCount) { DrawText(textBuf, firstByte, byteCount); }
 void rt_ext_UiGetFontInfo(void *info) { GetFontInfo((FontInfo *)info); }
-/* ui-widgets Task 8: uilog.cla's own QuickDraw/Font Manager externs
- * (UiGetFNum/UiGetFontName moved to uifont.cla in Task 10). */
+/* ui-widgets Task 8: uilog.cla's QuickDraw/Font Manager externs
+ * (UiGetFNum/UiGetFontName are uiwidgets.cla's since Task 10). */
 void rt_ext_UiScrollRect(void *r, short dh, short dv, void *updateRgn) { ScrollRect((const Rect *)r, dh, dv, (RgnHandle)updateRgn); }
 void rt_ext_UiGetFNum(void *name, void *familyID) { GetFNum((ConstStr255Param)name, (short *)familyID); }
 void rt_ext_UiGetFontName(short familyID, void *name) { GetFontName(familyID, (unsigned char *)name); }

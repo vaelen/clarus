@@ -1591,7 +1591,7 @@ All coordinates are `int` pixels. The origin `(0, 0)` is the canvas's top-left c
 
 ### Canvas Text
 
-`drawText` uses the canvas's own font, set by `font:` and `style:` at declaration or by `setFont`/`setStyle` at runtime (Fonts and Styles, Chapter 8); without one it uses the system font. A buffered canvas keeps its font when it is resized.
+`drawText` uses the canvas's own font, set by `font:` and `style:` at declaration or by `setFont`/`setStyle` at runtime (Fonts and Styles, Chapter 8). Without one, a `buffered` canvas uses the system font (Chicago) and an unbuffered canvas its window's application font (Geneva). A buffered canvas keeps its font when it is resized.
 
 `textWidth(s)` returns the width of `s` in pixels in that font. `lineHeight` (ascent + descent + leading) and `ascent` are read-only `int` properties giving the font's metrics. Since `drawText`'s `y` is the baseline, text whose top should sit at `t` is drawn at `t + c.ascent`, and the next line goes `c.lineHeight` below:
 

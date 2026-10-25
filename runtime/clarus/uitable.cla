@@ -582,7 +582,10 @@ func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr, a
         n = peekb(buf)
     }
     if n > 0 {
-        UiMoveTo(rtUiTableTextX(peekw(colRect + 2), peekw(colRect + 6) - peekw(colRect + 2), txt, n, align), peekw(colRect + 4) - 3)
+        // Baseline: the cell's bottom less the font's descent (the
+        // caller applied the table's font; the scratch already exists).
+        UiGetFontInfo(rtUiFontScratchGet())
+        UiMoveTo(rtUiTableTextX(peekw(colRect + 2), peekw(colRect + 6) - peekw(colRect + 2), txt, n, align), peekw(colRect + 4) - peekw(rtUiFontScratch + 2))
         UiDrawText(txt, 0, n)
     }
     if buf != ptr(0) {
@@ -617,6 +620,9 @@ func rtUiTableLogAbort(hdr: ptr) {
 func rtUiTableFmtCell(stP: ptr, rec: ptr, recH: ptr, hstate: int, layoutOff: int, colsOff: int, k: int, colRect: ptr) {
     var st: RtUiTableSt
     var fmtLay: int
+    var savFont: int
+    var savSize: int
+    var ok: bool
 
     st = RtUiTableSt(stP)
     UiBlockMoveData(rec, st.scratch, uidLayoutRecSize(layoutOff))
@@ -625,7 +631,14 @@ func rtUiTableFmtCell(stP: ptr, rec: ptr, recH: ptr, hstate: int, layoutOff: int
         st.out = UiNewPtr(256) // the largest result: a Str255
     }
     fmtLay = uidColFmtLayout(colsOff, k)
-    if UiColFmt(uidColFmtId(colsOff, k), st.scratch, st.out) {
+    // The user call may apply/restore a font itself, overwriting the one
+    // save slot the LDEF's own restore reads: keep it across the call.
+    savFont = peekl(rtUiFontScratch + 16) // txFont, txFace
+    savSize = peekw(rtUiFontScratch + 20)
+    ok = UiColFmt(uidColFmtId(colsOff, k), st.scratch, st.out)
+    pokel(rtUiFontScratch + 16, savFont)
+    pokew(rtUiFontScratch + 20, savSize)
+    if ok {
         rtUiTableDrawField(st.out, fmtLay, 0, colRect, uidColAlign(colsOff, k))
     } else if k < 32 and (st.logged & (1 << k)) == 0 {
         // ponytail: one logged bit per column, so a 33rd+ column's
@@ -641,16 +654,10 @@ func rtUiTableFmtCell(stP: ptr, rec: ptr, recH: ptr, hstate: int, layoutOff: int
 // cached; callers apply the table's own font first (ui-widgets Task 10).
 func rtUiTableRowH(): int {
     var fi: ptr
-    var h: int
 
-    fi = UiNewPtr(8)
+    fi = rtUiFontScratchGet()
     UiGetFontInfo(fi)
-    h = peekw(fi + 0) + peekw(fi + 2) + peekw(fi + 6) // ascent + descent + leading
-    UiDisposePtr(fi)
-    if h > 0 {
-        return h
-    }
-    return 1
+    return rtUiFontLineH(fi)
 }
 
 func rtUiTableHeaderH(): int {
@@ -736,6 +743,7 @@ callback func rtUiLdefDraw(msg: int16, select: bool, rectPtr: ptr, cellPacked: i
     var stP: ptr
     var fmtId: int
     var locked: bool
+    var inst: ptr
 
     if msg == rtUiLDrawMsg {
         lhMp = UiHandleDeref(lh)
@@ -749,8 +757,12 @@ callback func rtUiLdefDraw(msg: int16, select: bool, rectPtr: ptr, cellPacked: i
         UiEraseRect(rectPtr)
         // The table's font (ui-widgets Task 10): its window from the
         // ListRec's port, its widget index from the state block.
+        inst = ptr(0)
         if stP != ptr(0) {
-            rtUiFontApply(rtUiWinstOf(ptr(peekl(UiHandleDeref(lh) + rtUiListPort))), RtUiTableSt(stP).wIdx)
+            inst = rtUiWinstOf(ptr(peekl(UiHandleDeref(lh) + rtUiListPort)))
+        }
+        if inst != ptr(0) {
+            rtUiFontApply(inst, RtUiTableSt(stP).wIdx)
         }
         rowsAddr = UiTableRows(rowsIdx)
         rows = ptr(peekl(rowsAddr))
@@ -860,7 +872,7 @@ callback func rtUiLdefDraw(msg: int16, select: bool, rectPtr: ptr, cellPacked: i
                 UiHSetState(recH, hstate)
             }
         }
-        if stP != ptr(0) {
+        if inst != ptr(0) {
             rtUiFontRestore()
         }
         if select {

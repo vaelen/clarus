@@ -196,6 +196,19 @@ external func UiLogOp(op: int, instV: ptr, wIdx: int, a: int, b: int): int
 // apply is linked only where it can do anything.
 external func UiGeomApply()
 
+// UiDrawLabel / UiLabelSetText (ui-widgets Task 10): synthesized as
+// clar_ui_fire_drawlabel / clar_ui_fire_labelsettext (lowSynthLabelOps).
+// They call rtUiDrawLabel / rtUiLabelSetText in a program that declares a
+// label, and do nothing in every other one.
+external func UiDrawLabel(instV: ptr, i: int)
+external func UiLabelSetText(instV: ptr, wIdx: int, s: ptr)
+
+// UiCanvasMetric (ui-widgets Task 10): synthesized as
+// clar_ui_fire_canvasmetric (lowSynthCanvasMetric). It calls
+// rtUiCanvasMetric in a program that reads a canvas's lineHeight or
+// ascent, and returns 0 in every other one.
+external func UiCanvasMetric(instV: ptr, wIdx: int, prop: int): int
+
 // UiFontsInit (ui-widgets Task 10): synthesized as clar_ui_fire_fontsinit
 // (lower.cla's lowSynthFontsInit). It calls rtUiFontsInit(inst, false) in
 // a program where some widget declares font:/style:, and does nothing in
@@ -988,27 +1001,17 @@ func rtUiWidgetSetStr(instV: ptr, wIdx: int, prop: int, s: ptr) {
     savedPort = rtUiGetPortSaved()
     UiSetPort(w.wp)
     kind = uidWidgetKind(winIdx, wIdx)
-    // A label assigned the text it already shows: nothing at all -- no
-    // trace, no erase, no draw (spec 3.3).
-    if kind == rtUiKindLabel and prop == rtUiPropText and rtUiPstrEq(rtUiLabelAt(w, wIdx), s) {
+    // A label's text goes through the UiLabelSetText dispatcher, which is
+    // empty in a program without labels (ui-widgets Task 10).
+    if kind == rtUiKindLabel and prop == rtUiPropText {
+        UiLabelSetText(instV, wIdx, s)
         UiSetPort(savedPort)
         return
     }
     rtUiTraceSetStr(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), prop, s)
     ctrl = rtUiCtrlAt(w, wIdx)
     te = rtUiTeAt(w, wIdx)
-    if kind == rtUiKindLabel and prop == rtUiPropText {
-        rtUiPstrcpy(rtUiLabelAt(w, wIdx), s)
-        // Live paint (live-log phase): drawn now, mid-handler, the way the
-        // update path draws it (rtUiDrawLabel erases the rect first, so
-        // shorter text leaves no residue) -- ClarusC.APPL's status line
-        // and the toolbox LivePaint case need it before any update event.
-        // No InvalRect (the paint is done) and no ValidRect (that would
-        // cancel other pending updates under the label).
-        if not rtUiRectIsEmpty(rtUiRectAt(w, wIdx)) {
-            rtUiDrawLabel(instV, wIdx)
-        }
-    } else if kind == rtUiKindButton and prop == rtUiPropCaption and ctrl != ptr(0) {
+    if kind == rtUiKindButton and prop == rtUiPropCaption and ctrl != ptr(0) {
         UiSetControlTitle(ctrl, s)
     } else if kind == rtUiKindField and prop == rtUiPropText and te != ptr(0) {
         // Str255 is already capped at 255 bytes structurally, so
@@ -1385,11 +1388,8 @@ func rtUiWidgetGetInt(instV: ptr, wIdx: int, prop: int): int {
     if prop == rtUiPropY {
         return peekw(r + 0)
     }
-    if prop == rtUiPropLineHeight {
-        return rtUiFontLineH(rtUiFontInfo(instV, wIdx))
-    }
-    if prop == rtUiPropAscent {
-        return peekw(rtUiFontInfo(instV, wIdx))
+    if prop == rtUiPropLineHeight or prop == rtUiPropAscent {
+        return UiCanvasMetric(instV, wIdx, prop)
     }
     kind = uidWidgetKind(w.winIdx, wIdx)
     if prop == rtUiPropSelected and kind == rtUiKindPopup {
@@ -2220,22 +2220,6 @@ func rtUiFontRestore() {
     UiTextSize(peekw(sc + 20))
 }
 
-// rtUiFontInfo: GetFontInfo in widget wIdx's font, measured in its
-// window's port, into the scratch FontInfo (returned).
-func rtUiFontInfo(instV: ptr, wIdx: int): ptr {
-    var savedPort: ptr
-    var fi: ptr
-
-    fi = rtUiFontScratchGet()
-    savedPort = rtUiGetPortSaved()
-    UiSetPort(RtUiWinst(instV).wp)
-    rtUiFontApply(instV, wIdx)
-    UiGetFontInfo(fi)
-    rtUiFontRestore()
-    UiSetPort(savedPort)
-    return fi
-}
-
 // rtUiFontLineH: ascent + descent + leading, at least 1.
 func rtUiFontLineH(fi: ptr): int {
     var h: int
@@ -2293,4 +2277,44 @@ func rtUiDrawLabel(instV: ptr, i: int) {
     UiDrawText(s + 1, 0, peekb(s))
     UiSetClip(clip)
     rtUiFontRestore()
+}
+
+// rtUiLabelSetText: `w.L.text = s` (port = the label's window). The text
+// it already shows is a no-op -- no trace, no erase, no draw (spec 3.3).
+// New text is traced, stored and painted at once (live-log phase: drawn
+// mid-handler the way the update path draws it -- ClarusC.APPL's status
+// line and the toolbox LivePaint case need it before any update event),
+// with no InvalRect (the paint is done) and no ValidRect (that would
+// cancel other pending updates under the label).
+func rtUiLabelSetText(instV: ptr, wIdx: int, s: ptr) {
+    var w: RtUiWinst
+
+    w = RtUiWinst(instV)
+    if rtUiPstrEq(rtUiLabelAt(w, wIdx), s) {
+        return
+    }
+    rtUiTraceSetStr(uidWinName(w.winIdx), uidWidgetName(w.winIdx, wIdx), rtUiPropText, s)
+    rtUiPstrcpy(rtUiLabelAt(w, wIdx), s)
+    if not rtUiRectIsEmpty(rtUiRectAt(w, wIdx)) {
+        rtUiDrawLabel(instV, wIdx)
+    }
+}
+
+// rtUiCanvasMetric: a canvas's lineHeight (ascent + descent + leading) or
+// ascent, measured in the port it draws on (a buffered canvas's own
+// buffer, in the system font unless it has one) in its font.
+func rtUiCanvasMetric(instV: ptr, wIdx: int, prop: int): int {
+    var t: RtUiCanvasTarget
+    var fi: ptr
+
+    fi = rtUiFontScratchGet()
+    t = rtUiCanvasBegin(instV, wIdx)
+    rtUiFontApply(instV, wIdx)
+    UiGetFontInfo(fi)
+    rtUiFontRestore()
+    rtUiCanvasEnd(t)
+    if prop == rtUiPropAscent {
+        return peekw(fi + 0)
+    }
+    return rtUiFontLineH(fi)
 }
