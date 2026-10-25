@@ -1,0 +1,1 @@
+../../testdata/errors/setstyle_bad.cla:10:20: setStyle expects style words: plain, bold, italic, underline

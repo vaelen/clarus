@@ -669,7 +669,7 @@ record IRWindowDesc {
 // none. Separators occupy a real array slot, like every other entry --
 // `rt_ui_menu_enable`'s itemIdx is this entry's 0-based position in the
 // FULL declared list, separators included (see probe_ui.c's kProbeMenuItems
-// and lower.cla's lowMenuEnableAssign).
+// and lower.cla's lowMenuItemAssign).
 // isChecked/submenuIdx (ui-widgets Task 1): the declared `checked` flag
 // and the `submenu M` menu's declaration index (-1 = none).
 record IRMenuItemDesc {
@@ -771,7 +771,7 @@ record IRWidgetHandlerEntry {
 // (scopeWinTypeNameIdx == -1) or window-scoped (nested inside `extend Win`,
 // per Ch9's Window-Scoped Commands). menuIdx/itemIdx are the SAME 0-based
 // indices lower.cla's uiMenuIdx/uiMenuItemIdx already compute for
-// `Menu.Item.enabled = b` (lowMenuEnableAssign) -- one registry, two
+// `Menu.Item.enabled = b` (lowMenuItemAssign) -- one registry, two
 // readers. menuNameIdx/itemNameIdx are carried only for cprint's raw C
 // string literals in the rt_ui_menu_handler struct (trace/debugging field,
 // mirroring probe_ui.c's kProbeMenuHandlers).
@@ -1446,6 +1446,25 @@ func irReset() {
     iUiGetSelectedIdx = -1
     iUiSetSelectedIdx = -1
     iUiCanvasDrawTextIdx = -1
+    iUiSetBoundsIdx = -1
+    iUiGetXIdx = -1
+    iUiGetYIdx = -1
+    iUiContentWIdx = -1
+    iUiContentHIdx = -1
+    iUiSetFontIdx = -1
+    iUiSetStyleIdx = -1
+    iUiTextWidthIdx = -1
+    iUiGetLineHeightIdx = -1
+    iUiGetAscentIdx = -1
+    iUiTableScrollToIdx = -1
+    iUiLogAppendIdx = -1
+    iUiLogClearIdx = -1
+    iUiLogLineCountIdx = -1
+    iUiLogLineIdx = -1
+    iUiLogScrollToEndIdx = -1
+    iUiMenuSetCheckedIdx = -1
+    iUiMenuGetCheckedIdx = -1
+    iUiMenuGetEnabledIdx = -1
     iUiEditIdx = -1
     iUiFormIsNewIdx = -1
     iUiSetCancelFlagIdx = -1
@@ -5265,6 +5284,183 @@ func IUiCanvasDrawText(): int {
         iUiCanvasDrawTextIdx = intern("ui_canvas_draw_text")
     }
     return iUiCanvasDrawTextIdx
+}
+
+// ui-widgets Task 2: one intrinsic per new runtime entry point (shared.md's
+// Shared Interfaces table). Every argument list matches its runtime
+// function's own parameters IN ORDER (lowering appends any prop/face
+// constant itself), so most backend arms are a plain forward; the str
+// arguments (setFont's name, textWidth's/appendLine's s) go by address and
+// IUiLogLine fills a Str255 the way IUiGetLabelText does.
+var iUiSetBoundsIdx: int = -1
+
+func IUiSetBounds(): int {
+    if iUiSetBoundsIdx == -1 {
+        iUiSetBoundsIdx = intern("ui_set_bounds")
+    }
+    return iUiSetBoundsIdx
+}
+
+var iUiGetXIdx: int = -1
+
+func IUiGetX(): int {
+    if iUiGetXIdx == -1 {
+        iUiGetXIdx = intern("ui_get_x")
+    }
+    return iUiGetXIdx
+}
+
+var iUiGetYIdx: int = -1
+
+func IUiGetY(): int {
+    if iUiGetYIdx == -1 {
+        iUiGetYIdx = intern("ui_get_y")
+    }
+    return iUiGetYIdx
+}
+
+var iUiContentWIdx: int = -1
+
+func IUiContentW(): int {
+    if iUiContentWIdx == -1 {
+        iUiContentWIdx = intern("ui_content_w")
+    }
+    return iUiContentWIdx
+}
+
+var iUiContentHIdx: int = -1
+
+func IUiContentH(): int {
+    if iUiContentHIdx == -1 {
+        iUiContentHIdx = intern("ui_content_h")
+    }
+    return iUiContentHIdx
+}
+
+var iUiSetFontIdx: int = -1
+
+func IUiSetFont(): int {
+    if iUiSetFontIdx == -1 {
+        iUiSetFontIdx = intern("ui_set_font")
+    }
+    return iUiSetFontIdx
+}
+
+var iUiSetStyleIdx: int = -1
+
+func IUiSetStyle(): int {
+    if iUiSetStyleIdx == -1 {
+        iUiSetStyleIdx = intern("ui_set_style")
+    }
+    return iUiSetStyleIdx
+}
+
+var iUiTextWidthIdx: int = -1
+
+func IUiTextWidth(): int {
+    if iUiTextWidthIdx == -1 {
+        iUiTextWidthIdx = intern("ui_text_width")
+    }
+    return iUiTextWidthIdx
+}
+
+var iUiGetLineHeightIdx: int = -1
+
+func IUiGetLineHeight(): int {
+    if iUiGetLineHeightIdx == -1 {
+        iUiGetLineHeightIdx = intern("ui_get_line_height")
+    }
+    return iUiGetLineHeightIdx
+}
+
+var iUiGetAscentIdx: int = -1
+
+func IUiGetAscent(): int {
+    if iUiGetAscentIdx == -1 {
+        iUiGetAscentIdx = intern("ui_get_ascent")
+    }
+    return iUiGetAscentIdx
+}
+
+var iUiTableScrollToIdx: int = -1
+
+func IUiTableScrollTo(): int {
+    if iUiTableScrollToIdx == -1 {
+        iUiTableScrollToIdx = intern("ui_table_scroll_to")
+    }
+    return iUiTableScrollToIdx
+}
+
+var iUiLogAppendIdx: int = -1
+
+func IUiLogAppend(): int {
+    if iUiLogAppendIdx == -1 {
+        iUiLogAppendIdx = intern("ui_log_append")
+    }
+    return iUiLogAppendIdx
+}
+
+var iUiLogClearIdx: int = -1
+
+func IUiLogClear(): int {
+    if iUiLogClearIdx == -1 {
+        iUiLogClearIdx = intern("ui_log_clear")
+    }
+    return iUiLogClearIdx
+}
+
+var iUiLogLineCountIdx: int = -1
+
+func IUiLogLineCount(): int {
+    if iUiLogLineCountIdx == -1 {
+        iUiLogLineCountIdx = intern("ui_log_line_count")
+    }
+    return iUiLogLineCountIdx
+}
+
+var iUiLogLineIdx: int = -1
+
+func IUiLogLine(): int {
+    if iUiLogLineIdx == -1 {
+        iUiLogLineIdx = intern("ui_log_line")
+    }
+    return iUiLogLineIdx
+}
+
+var iUiLogScrollToEndIdx: int = -1
+
+func IUiLogScrollToEnd(): int {
+    if iUiLogScrollToEndIdx == -1 {
+        iUiLogScrollToEndIdx = intern("ui_log_scroll_to_end")
+    }
+    return iUiLogScrollToEndIdx
+}
+
+var iUiMenuSetCheckedIdx: int = -1
+
+func IUiMenuSetChecked(): int {
+    if iUiMenuSetCheckedIdx == -1 {
+        iUiMenuSetCheckedIdx = intern("ui_menu_set_checked")
+    }
+    return iUiMenuSetCheckedIdx
+}
+
+var iUiMenuGetCheckedIdx: int = -1
+
+func IUiMenuGetChecked(): int {
+    if iUiMenuGetCheckedIdx == -1 {
+        iUiMenuGetCheckedIdx = intern("ui_menu_get_checked")
+    }
+    return iUiMenuGetCheckedIdx
+}
+
+var iUiMenuGetEnabledIdx: int = -1
+
+func IUiMenuGetEnabled(): int {
+    if iUiMenuGetEnabledIdx == -1 {
+        iUiMenuGetEnabledIdx = intern("ui_menu_get_enabled")
+    }
+    return iUiMenuGetEnabledIdx
 }
 
 // IUiEdit (mac-target-4d Task 7, Ch10's Edit Statement) is `edit F, target`

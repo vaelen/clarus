@@ -6,7 +6,8 @@
 // textview/canvas/table, font, style, align, maxLines, scrollbar on a
 // logpanel), both new kinds (logpanel, divider), a formatted + aligned
 // table column, a `checked` menu item and a submenu. Pins the blob v2
-// bytes through emitui/goldens.sh.
+// bytes through emitui/goldens.sh. ui-widgets Task 2 added the `opened`
+// handler and layoutMain, which use every new runtime member once.
 
 record Caller {
     name: string(31)
@@ -53,6 +54,47 @@ menu Modem {
 
 on App.launch {
     open Main
+}
+
+func layoutMain(m: Main) {
+    var w: int = m.contentWidth
+    var h: int = m.contentHeight
+    var n: int
+    var s: string
+    var flag: bool
+
+    m.Callers.setBounds(161, 0, w - 161, h / 2)
+    m.TopRule.setBounds(0, h / 2, w, 3)
+    m.SideRule.setBounds(160, 0, 1, h / 2)
+    m.Log.setBounds(0, h / 2 + 3, w, h - h / 2 - 3)
+    n = m.Status.x + m.Status.y + m.Status.width + m.Status.height
+    n = n + m.TopRule.x + m.Who.y + m.Notes.width + m.Meter.height
+    m.Status.setFont("Monaco", 9)
+    m.Status.setStyle(bold, italic, underline)
+    m.Who.setStyle(plain)
+    m.Notes.setFont("Geneva", 10)
+    m.Callers.setStyle(bold)
+    m.Callers.scrollTo(0)
+    m.Meter.setFont("Chicago", 12)
+    n = n + m.Meter.textWidth("abc") + m.Meter.lineHeight + m.Meter.ascent
+    m.Log.setFont("Monaco", 9)
+    m.Log.setStyle(italic)
+    m.Log.appendLine("hello")
+    n = n + m.Log.lineCount
+    s = m.Log.line(0)
+    m.Log.scrollToEnd()
+    m.Log.clear()
+    Speed.S9600.checked = true
+    flag = Speed.S2400.checked or Modem.Init.enabled
+    m.Status.text = s + string(n)
+}
+
+extend Main {
+    on opened {
+        layoutMain(window)
+        Status.setBounds(contentWidth - 100, 0, 100, 20)
+        Log.appendLine(string(contentHeight))
+    }
 }
 
 extend Speed {

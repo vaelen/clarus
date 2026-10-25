@@ -10037,6 +10037,10 @@ const cgRtuiPropChecked: int = 3
 const cgRtuiPropSelected: int = 4
 const cgRtuiPropWidth: int = 5
 const cgRtuiPropHeight: int = 6
+const cgRtuiPropX: int = 7
+const cgRtuiPropY: int = 8
+const cgRtuiPropLineHeight: int = 9
+const cgRtuiPropAscent: int = 10
 
 // cgIntrUiEdit implements IUiEdit (Ch10's `edit F, target` / `edit F, new
 // T`) -- mirrors cprint.cla's fpUiEditStmt arm exactly, four kinds decoded
@@ -10605,8 +10609,107 @@ func cgIntrUi(e: int, nm: int) {
         cgIntrUiEdit(e, a0, a1, a2, winName)
         return
     }
+    if cgIntrUiMembers(e, nm) {
+        return
+    }
 
     abort("cg68k: cgIntrUi: unsupported UI intrinsic " + poolGet(nm))
+}
+
+// cgIntrUiMembers (ui-widgets Task 2) emits the new widget/window/menu
+// member intrinsics, kept out of cgIntrUi's own body for its segment
+// budget. Returns false for any other name. Every intrinsic's argument
+// list is its runtime function's own parameter list (ir.cla's block doc
+// comment), so most are a cgIntrUiForward; the x/y/metric getters push
+// their prop like IUiGetWidth does, and the str-taking ones pass that
+// argument by address (cgIntrUiFwdAddr). IUiLogLine is a KStr result,
+// filled in place by cgEmitStoreStr's own arm.
+func cgIntrUiMembers(e: int, nm: int): bool {
+    var prop: int
+
+    if nm == IUiGetX() or nm == IUiGetY() or nm == IUiGetLineHeight() or nm == IUiGetAscent() {
+        prop = cgRtuiPropX
+        if nm == IUiGetY() {
+            prop = cgRtuiPropY
+        } else if nm == IUiGetLineHeight() {
+            prop = cgRtuiPropLineHeight
+        } else if nm == IUiGetAscent() {
+            prop = cgRtuiPropAscent
+        }
+        cgExpr(irIntrArgsHead(e))
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(irExprNext(irIntrArgsHead(e)))
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgPushIntLit(prop)
+        cgJsrByName(rnUiWidgetGetInt)
+        cgCleanupStack(12)
+        return true
+    }
+    if nm == IUiSetFont() {
+        cgIntrUiFwdAddr(e, intern("rtUiWidgetSetFont"), 2)
+        return true
+    }
+    if nm == IUiTextWidth() {
+        cgIntrUiFwdAddr(e, intern("rtUiCanvasTextWidth"), 2)
+        return true
+    }
+    if nm == IUiLogAppend() {
+        cgIntrUiFwdAddr(e, intern("rtUiLogAppend"), 2)
+        return true
+    }
+    if nm == IUiLogLine() {
+        abort("cg68k: ui_log_line: KStr materialization reached cgExpr value context -- bind/store it instead (cgEmitStoreStr's own arm)")
+    }
+    if nm == IUiSetBounds() {
+        cgIntrUiForward(e, intern("rtUiWidgetSetBounds"))
+    } else if nm == IUiContentW() {
+        cgIntrUiForward(e, intern("rtUiWinContentW"))
+    } else if nm == IUiContentH() {
+        cgIntrUiForward(e, intern("rtUiWinContentH"))
+    } else if nm == IUiSetStyle() {
+        cgIntrUiForward(e, intern("rtUiWidgetSetStyle"))
+    } else if nm == IUiTableScrollTo() {
+        cgIntrUiForward(e, intern("rtUiTableScrollTo"))
+    } else if nm == IUiLogClear() {
+        cgIntrUiForward(e, intern("rtUiLogClear"))
+    } else if nm == IUiLogLineCount() {
+        cgIntrUiForward(e, intern("rtUiLogLineCount"))
+    } else if nm == IUiLogScrollToEnd() {
+        cgIntrUiForward(e, intern("rtUiLogScrollToEnd"))
+    } else if nm == IUiMenuSetChecked() {
+        cgIntrUiForward(e, intern("rtUiMenuSetChecked"))
+    } else if nm == IUiMenuGetChecked() {
+        cgIntrUiForward(e, intern("rtUiMenuGetChecked"))
+    } else if nm == IUiMenuGetEnabled() {
+        cgIntrUiForward(e, intern("rtUiMenuGetEnabled"))
+    } else {
+        return false
+    }
+    return true
+}
+
+// cgIntrUiFwdAddr calls nameIdx with the intrinsic's arguments in order,
+// all pushed as longs except argument addrPos, a str pushed BY ADDRESS
+// (a `ptr` parameter) -- cgIntrUiCanvasDrawText's shape, generalized.
+func cgIntrUiFwdAddr(e: int, nameIdx: int, addrPos: int) {
+    var a: int
+    var i: int
+
+    a = irIntrArgsHead(e)
+    i = 0
+    while a != -1 {
+        if i == addrPos {
+            cgExprAddr(a)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        } else {
+            cgExpr(a)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        }
+        a = irExprNext(a)
+        i = i + 1
+    }
+    cgJsrByName(nameIdx)
+    cgCleanupStack(i * 4)
 }
 
 // cgIntrUiForward is the common shape for every UI canvas-draw intrinsic
@@ -12666,6 +12769,23 @@ func cgEmitStoreStr(dst: int, src: int) {
             cgExprAddr(dst)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
             cgCallFunc(fi)
+            cgCleanupStack(16)
+            return
+        } else if nm == "ui_log_line" {
+            // ui-widgets Task 2: `logpanel.line(i)` -- fills dst in place
+            // via rtUiLogLine(instV, wIdx, i, dst255), the
+            // ui_get_field_text shape with the index in the prop's slot.
+            a0e = irIntrArgsHead(src2)
+            a1e = irExprNext(a0e)
+            cgExpr(a0e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgExpr(a1e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgExpr(irExprNext(a1e))
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(dst)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgJsrByName(intern("rtUiLogLine"))
             cgCleanupStack(16)
             return
         } else if nm == "ui_get_title" {

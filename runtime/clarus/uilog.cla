@@ -1,0 +1,53 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uilog.cla: the `logpanel` widget (ui-widgets spec 3.4) -- a scrolling,
+// line-selectable log with no TextEdit behind it. Its state hangs off a
+// per-widget handle (never a module global), and the whole module is
+// reached only through the compiler-synthesized UiLogOp dispatcher plus
+// the rtUiLog* member entry points the compiler roots when a program
+// declares a logpanel, so every other program shakes it out entirely (C4).
+//
+// ui.cla calls UiLogOp at each hook site (teardown, update, content click,
+// the per-pass flush, relayout), and uiwidgets.cla's rtUiMakeWidgets calls
+// it with rtUiLogOpMake; rtUiLogDo is the op switch the dispatcher calls.
+//
+// ui-widgets Task 2: rtUiLogDefaultMax and stub bodies only. Task 8
+// replaces the stubs (ring storage, drawing, following, selection).
+
+// The UiLogOp extern and its rtUiLogOp* op codes live in uiwidgets.cla,
+// beside rtUiKindLogpanel, until the bootstrap snapshot is regenerated
+// (Task 12): ui.cla/uiwidgets.cla are spliced into every program, and the
+// committed snapshot -- which builds clarusc-current -- does not splice
+// this module, so names they use must come from a module it knows.
+
+// maxLines: when a logpanel declares none (C9).
+const rtUiLogDefaultMax: int = 200
+
+// rtUiLogDo performs one UiLogOp op on logpanel wIdx; the result is the
+// op's own (HasSel/HasLines: 1 or 0), 0 for the rest.
+func rtUiLogDo(op: int, instV: ptr, wIdx: int, a: int, b: int): int {
+    return 0
+}
+
+// rtUiLogAppend: `appendLine(s)`, s a Str255.
+func rtUiLogAppend(instV: ptr, wIdx: int, s: ptr) {
+}
+
+// rtUiLogClear: `clear()`.
+func rtUiLogClear(instV: ptr, wIdx: int) {
+}
+
+// rtUiLogLineCount: `lineCount`.
+func rtUiLogLineCount(instV: ptr, wIdx: int): int {
+    return 0
+}
+
+// rtUiLogLine: `line(i)`, copied into the Str255 at dst255.
+func rtUiLogLine(instV: ptr, wIdx: int, i: int, dst255: ptr) {
+    pokeb(dst255, 0)
+}
+
+// rtUiLogScrollToEnd: `scrollToEnd()`.
+func rtUiLogScrollToEnd(instV: ptr, wIdx: int) {
+}

@@ -209,7 +209,7 @@ var lowSwitchN: int
 
 // uiMenuCount/uiMenuIdx/uiMenuItemIdx (Task 4) are lowMenuDecl's own
 // declaration-order registries, existing solely so `Menu.Item.enabled = b`
-// (lowMenuEnableAssign) can resolve rt_ui_menu_enable's two indices:
+// (lowMenuItemAssign) can resolve rt_ui_menu_enable's two indices:
 // uiMenuIdx maps a menu name to its 0-based declaration-order position
 // (rt_ui_menu_enable's menuIdx parameter is 0-based -- see rt_ui.c's
 // gMenuHandles/gNMenus bounds check; the 1-based "Nth declared menu" phrasing
@@ -1130,6 +1130,12 @@ func lowIdent(e: int): int {
         if poolGet(nm) == "title" {
             return newIRIntr(IUiGetTitle(), lowWinInstRef(), ty)
         }
+        if poolGet(nm) == "contentWidth" {
+            return newIRIntr(IUiContentW(), lowWinInstRef(), ty)
+        }
+        if poolGet(nm) == "contentHeight" {
+            return newIRIntr(IUiContentH(), lowWinInstRef(), ty)
+        }
     }
     global = not lowIsLocal(nm)
     return newIRVarRef(nm, global, ty)
@@ -1546,11 +1552,23 @@ func lowMethodCall(e: int, fn: int): int {
         // waste.
         wr = lowWidgetRecv(selectX(fn))
         wkind = findWidgetKind(wr.winNameIdx, wr.wgName)
+        // ui-widgets Task 2: the methods every kind (setBounds) or every
+        // font-bearing kind (setFont/setStyle) shares come first -- the
+        // checker (checkWidgetMethod) already limited them to those kinds.
+        if lowIsCommonWidgetMethod(poolGet(selectName(fn))) {
+            return lowCommonWidgetMethod(e, fn, ty, wr)
+        }
         if wkind == "textview" {
             return lowTextviewMethod(e, fn, ty, wr)
         }
         if wkind == "canvas" {
             return lowCanvasMethod(e, fn, ty, wr)
+        }
+        if wkind == "logpanel" {
+            return lowLogpanelMethod(e, fn, ty, wr)
+        }
+        if wkind == "table" {
+            return lowTableMethod(e, fn, ty, wr)
         }
         lowUnsupported("method on " + wkind + " widget")
         return -1
@@ -2070,6 +2088,8 @@ func lowCanvasMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
         intrName = IUiCanvasPattern()
     } else if nm == "drawText" {
         intrName = IUiCanvasDrawText()
+    } else if nm == "textWidth" {
+        intrName = IUiTextWidth()
     } else {
         lowUnsupported("canvas method " + nm)
         return -1
@@ -2107,6 +2127,103 @@ func lowTextviewMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
     head = recv.instIR
     irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
     return newIRIntr(IUiScrollToEnd(), head, ty)
+}
+
+// lowWidgetIntr builds a widget method's intrinsic call: (instance, widget
+// index, then each call argument in order) -- the runtime entry point's own
+// parameter list (ui-widgets Task 2). Same shape as lowCanvasMethod's,
+// minus its fill literal.
+func lowWidgetIntr(e: int, intrName: int, ty: int, recv: LowWidgetRecv): int {
+    var head: int
+    var tail: int
+    var a: int
+
+    head = recv.instIR
+    tail = irExprListAppend(head, newIRIntConst(uiWidgetIndex(recv.winNameIdx, recv.wgName), irIntT))
+    a = callArgsHead(e)
+    while a != -1 {
+        tail = irExprListAppend(tail, lowExpr(a))
+        a = exprNext(a)
+    }
+    return newIRIntr(intrName, head, ty)
+}
+
+func lowIsCommonWidgetMethod(nm: string): bool {
+    return nm == "setBounds" or nm == "setFont" or nm == "setStyle"
+}
+
+// lowCommonWidgetMethod lowers setBounds (every kind) and setFont/setStyle
+// (the font-bearing kinds). setStyle's style words are never lowered as
+// expressions: they fold to one face int here (lowStyleFace), passed as the
+// third argument.
+func lowCommonWidgetMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
+    var nm: string
+    var head: int
+    var tail: int
+
+    nm = poolGet(selectName(fn))
+    if nm == "setBounds" {
+        return lowWidgetIntr(e, IUiSetBounds(), ty, recv)
+    }
+    if nm == "setFont" {
+        return lowWidgetIntr(e, IUiSetFont(), ty, recv)
+    }
+    head = recv.instIR
+    tail = irExprListAppend(head, newIRIntConst(uiWidgetIndex(recv.winNameIdx, recv.wgName), irIntT))
+    irExprListAppend(tail, newIRIntConst(lowStyleFace(callArgsHead(e)), irIntT))
+    return newIRIntr(IUiSetStyle(), head, ty)
+}
+
+// lowStyleFace folds a chain of style-word Idents (a `style:` declaration
+// or setStyle's arguments, both already checked) to QuickDraw Style bits
+// (rtUiFace*): bold 1, italic 2, underline 4; plain is 0.
+func lowStyleFace(head: int): int {
+    var face: int
+    var v: int
+    var word: string
+
+    face = 0
+    v = head
+    while v != -1 {
+        word = poolGet(identName(v))
+        if word == "bold" {
+            face = face | 1
+        } else if word == "italic" {
+            face = face | 2
+        } else if word == "underline" {
+            face = face | 4
+        }
+        v = exprNext(v)
+    }
+    return face
+}
+
+// lowLogpanelMethod lowers the logpanel's methods (spec 3.4) onto the
+// rtUiLog* entry points (uilog.cla).
+func lowLogpanelMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
+    var nm: string
+
+    nm = poolGet(selectName(fn))
+    if nm == "appendLine" {
+        return lowWidgetIntr(e, IUiLogAppend(), ty, recv)
+    } else if nm == "clear" {
+        return lowWidgetIntr(e, IUiLogClear(), ty, recv)
+    } else if nm == "line" {
+        return lowWidgetIntr(e, IUiLogLine(), ty, recv)
+    } else if nm == "scrollToEnd" {
+        return lowWidgetIntr(e, IUiLogScrollToEnd(), ty, recv)
+    }
+    lowUnsupported("logpanel method " + nm)
+    return -1
+}
+
+// lowTableMethod lowers table.scrollTo(row) (spec 3.5).
+func lowTableMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
+    if poolGet(selectName(fn)) != "scrollTo" {
+        lowUnsupported("table method " + poolGet(selectName(fn)))
+        return -1
+    }
+    return lowWidgetIntr(e, IUiTableScrollTo(), ty, recv)
 }
 
 // lowAppCall lowers app.writeLog/flushLog/trace (log-trace-optin) to their
@@ -2982,6 +3099,12 @@ func lowSelect(e: int): int {
         return newIRIntr(ISortedMapCount(), lowExpr(xExpr), ty)
     } else if xk == TyIntMap and propName == "count" {
         return newIRIntr(IIntMapCount(), lowExpr(xExpr), ty)
+    } else if xk == TyMenuItem {
+        // `MenuName.ItemName.enabled`/`.checked` read (ui-widgets Task 2).
+        if propName == "checked" {
+            return newIRIntr(IUiMenuGetChecked(), lowMenuItemArgs(xExpr), ty)
+        }
+        return newIRIntr(IUiMenuGetEnabled(), lowMenuItemArgs(xExpr), ty)
     }
     lowUnsupported("select ." + propName)
     return -1
@@ -3039,6 +3162,12 @@ func lowWindowInstSelect(e: int, xExpr: int, propName: string, ty: int): int {
     if propName == "title" {
         return newIRIntr(IUiGetTitle(), lowExpr(xExpr), ty)
     }
+    if propName == "contentWidth" {
+        return newIRIntr(IUiContentW(), lowExpr(xExpr), ty)
+    }
+    if propName == "contentHeight" {
+        return newIRIntr(IUiContentH(), lowExpr(xExpr), ty)
+    }
     lowUnsupported("select ." + propName)
     return -1
 }
@@ -3073,10 +3202,20 @@ func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
         intrName = IUiGetChecked()
     } else if (widgetKind == "button" or widgetKind == "field") and propName == "enabled" {
         intrName = IUiGetEnabled()
-    } else if widgetKind == "canvas" and propName == "width" {
+    } else if propName == "width" {
         intrName = IUiGetWidth()
-    } else if widgetKind == "canvas" and propName == "height" {
+    } else if propName == "height" {
         intrName = IUiGetHeight()
+    } else if propName == "x" {
+        intrName = IUiGetX()
+    } else if propName == "y" {
+        intrName = IUiGetY()
+    } else if widgetKind == "canvas" and propName == "lineHeight" {
+        intrName = IUiGetLineHeight()
+    } else if widgetKind == "canvas" and propName == "ascent" {
+        intrName = IUiGetAscent()
+    } else if widgetKind == "logpanel" and propName == "lineCount" {
+        intrName = IUiLogLineCount()
     } else if widgetKind == "field" and propName == "text" {
         intrName = IUiGetFieldText()
     } else if widgetKind == "label" and propName == "text" {
@@ -4651,18 +4790,16 @@ func isMenuNameIdent(e: int): bool {
     return symIdx != -1 and symbols[symIdx].isMenu
 }
 
-// isMenuItemEnabledSelect reports whether e is `MenuName.ItemName.enabled`
-// (Ch9: Runtime Menu-Item Property) -- the only per-spec menu-item op, and
-// rt_ui.h has no getter for it (rt_ui_menu_enable is write-only), so this
-// shape is only ever handled as an assignment LHS; lowSelect has no
-// TyMenuItem case at all (see its own header note).
-func isMenuItemEnabledSelect(e: int): bool {
+// isMenuItemPropSelect reports whether e is `MenuName.ItemName.enabled` or
+// `.checked` (Ch9: Runtime Menu-Item Properties) as an assignment LHS; the
+// read half is lowSelect's TyMenuItem case (ui-widgets Task 2).
+func isMenuItemPropSelect(e: int): bool {
     var inner: int
 
     if exprKind(e) != ExSelect {
         return false
     }
-    if poolGet(selectName(e)) != "enabled" {
+    if poolGet(selectName(e)) != "enabled" and poolGet(selectName(e)) != "checked" {
         return false
     }
     inner = selectX(e)
@@ -4672,31 +4809,38 @@ func isMenuItemEnabledSelect(e: int): bool {
     return isMenuNameIdent(selectX(inner))
 }
 
-// lowMenuEnableAssign lowers `MenuName.ItemName.enabled = b` to
-// rt_ui_menu_enable(menuIdx, itemIdx, b) -- menuIdx is the 0-based
-// declaration-order index (uiMenuIdx, populated by lowMenuDecl) and itemIdx
-// is the item's 0-based position in its menu's declared entry list
-// (uiMenuItemIdx), matching rt_ui_menu_enable's contract (see rt_ui.c's
-// usage and probe_ui.c's kProbeMenuHandlers).
-func lowMenuEnableAssign(lhs: int, rhsAst: int): int {
-    var inner: int
+// lowMenuItemArgs lowers a `MenuName.ItemName` select to the (menuIdx,
+// itemIdx) argument pair every menu-item intrinsic starts with -- menuIdx is
+// the 0-based declaration-order index (uiMenuIdx, populated by lowMenuDecl)
+// and itemIdx is the item's 0-based position in its menu's declared entry
+// list (uiMenuItemIdx), matching rt_ui_menu_enable's contract (see rt_ui.c's
+// usage and probe_ui.c's kProbeMenuHandlers). Returns the chain head.
+func lowMenuItemArgs(inner: int): int {
     var menuName: string
     var itemName: string
-    var menuIdx: int
-    var itemIdx: int
     var head: int
-    var tail: int
 
-    inner = selectX(lhs)
     menuName = poolGet(identName(selectX(inner)))
     itemName = poolGet(selectName(inner))
-    menuIdx = uiMenuIdx.get(numToStr(progGen) + "|" + menuName, -1)
-    itemIdx = uiMenuItemIdx.get(menuKey(menuName, itemName), -1)
+    head = newIRIntConst(uiMenuIdx.get(numToStr(progGen) + "|" + menuName, -1), irIntT)
+    irExprListAppend(head, newIRIntConst(uiMenuItemIdx.get(menuKey(menuName, itemName), -1), irIntT))
+    return head
+}
 
-    head = newIRIntConst(menuIdx, irIntT)
-    tail = irExprListAppend(head, newIRIntConst(itemIdx, irIntT))
-    tail = irExprListAppend(tail, lowExpr(rhsAst))
-    return newIRExprStmt(newIRIntr(IUiMenuEnable(), head, irVoidT))
+// lowMenuItemAssign lowers `MenuName.ItemName.enabled = b` to
+// rtUiMenuEnable(menuIdx, itemIdx, b) and `.checked = b` to
+// rtUiMenuSetChecked (ui-widgets Task 2).
+func lowMenuItemAssign(lhs: int, rhsAst: int): int {
+    var head: int
+    var intrName: int
+
+    head = lowMenuItemArgs(selectX(lhs))
+    irExprListAppend(irExprNext(head), lowExpr(rhsAst))
+    intrName = IUiMenuEnable()
+    if poolGet(selectName(lhs)) == "checked" {
+        intrName = IUiMenuSetChecked()
+    }
+    return newIRExprStmt(newIRIntr(intrName, head, irVoidT))
 }
 
 // lowWidgetSetAssign lowers `w.Widget.prop = rhs` (Ch8: Widgets' runtime
@@ -4770,8 +4914,8 @@ func lowAssign(s: int): int {
         // is always a scalar leaf.
         return lowXRecFieldWrite(lhs, lowExpr(assignRHS(s)))
     }
-    if isMenuItemEnabledSelect(lhs) {
-        return lowMenuEnableAssign(lhs, assignRHS(s))
+    if isMenuItemPropSelect(lhs) {
+        return lowMenuItemAssign(lhs, assignRHS(s))
     }
     if isWindowTitleSelect(lhs) {
         head = lowExpr(selectX(lhs))
@@ -6200,20 +6344,7 @@ func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
                     divStyle = 1
                 }
             } else if pname == "style" {
-                // QuickDraw Style bits (rtUiFace*): bold 1, italic 2,
-                // underline 4; plain is 0.
-                v1 = vh
-                while v1 != -1 {
-                    word = poolGet(identName(v1))
-                    if word == "bold" {
-                        face = face | 1
-                    } else if word == "italic" {
-                        face = face | 2
-                    } else if word == "underline" {
-                        face = face | 4
-                    }
-                    v1 = exprNext(v1)
-                }
+                face = lowStyleFace(vh)
             } else if pname == "align" {
                 word = poolGet(identName(vh))
                 if word == "center" {
@@ -6504,7 +6635,7 @@ func lowWindowDecl(d: int) {
 
 // lowMenuDecl lowers `menu M { ... }` (Ch9) into an IRMenuDesc, and records
 // M's declaration-order menuIdx plus each item's 0-based position (separators
-// included) into uiMenuIdx/uiMenuItemIdx for lowMenuEnableAssign to read back
+// included) into uiMenuIdx/uiMenuItemIdx for lowMenuItemAssign to read back
 // later in this same pass (see those vars' own doc comment).
 func lowMenuDecl(d: int) {
     var nameIdx: int
@@ -7835,6 +7966,59 @@ func lowSynthUiDispatchers() {
     lowSynthTableRows()
     lowSynthLaunchDoc()
     lowSynthStartEmpty()
+    lowSynthLogOp()
+    lowSynthColFmt()
+}
+
+// lowSynthLogOp builds clar_ui_fire_logop(op, instV, wIdx, a, b): int, the
+// UiLogOp dispatcher ui.cla's logpanel hook sites call (shared.md). Task 2
+// stub: always `return 0`; Task 3 makes it call rtUiLogDo in a program that
+// declares a logpanel, so uilog.cla stays shaken out of every other one
+// (C4).
+func lowSynthLogOp() {
+    var paramsHead: int
+    var tail: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("op"), irIntT)
+    tail = irLocalListAppend(paramsHead, newIRLocal(intern("instV"), irPtrT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("wIdx"), irIntT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("a"), irIntT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("b"), irIntT))
+    fnameIdx = intern("clar_ui_fire_logop")
+    newIRFunc(fnameIdx, paramsHead, irIntT, -1, newIRReturn(newIRIntConst(0, irIntT)))
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthColFmt builds clar_ui_fire_colfmt(fmtId, rec, out): bool, the
+// UiColFmt formatted-column dispatcher (uitable.cla). Task 2 stub: always
+// `return false`; Task 3 adds one arm per formatted column.
+func lowSynthColFmt() {
+    var paramsHead: int
+    var tail: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("fmtId"), irIntT)
+    tail = irLocalListAppend(paramsHead, newIRLocal(intern("rec"), irPtrT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("out"), irPtrT))
+    fnameIdx = intern("clar_ui_fire_colfmt")
+    newIRFunc(fnameIdx, paramsHead, irBoolT, -1, newIRReturn(newIRIntConst(0, irBoolT)))
+    shakeAddRoot(fnameIdx)
+}
+
+// lowProgramHasLogpanel reports whether any window declares a logpanel
+// (ui-widgets Task 2): only then are the rtUiLog* entry points rooted.
+func lowProgramHasLogpanel(): bool {
+    var i: int
+
+    i = 0
+    while i < irWidgetDescs.count {
+        if poolGet(irWidgetDescs[i].kindIdx) == "logpanel" {
+            return true
+        }
+        i = i + 1
+    }
+    return false
 }
 
 // ================================================================
@@ -8506,6 +8690,8 @@ func lowUiSynthExternName(externNameIdx: int): int {
     if nm == "UiFireLaunchDoc" { return intern("clar_ui_fire_launchdoc") }
     if nm == "UiFireStartEmpty" { return intern("clar_ui_fire_startempty") }
     if nm == "UiTableRows" { return intern("clar_ui_fire_staterows") }
+    if nm == "UiLogOp" { return intern("clar_ui_fire_logop") }
+    if nm == "UiColFmt" { return intern("clar_ui_fire_colfmt") }
     // Connection dispatchers (serial-connection phase, Task 5): conn.cla
     // declares these as `external func clar_conn_fire_NAME` (Task 4) and
     // rtConnPump calls them by that same literal name -- UNLIKE the UI
@@ -9212,6 +9398,29 @@ func lowUiPortAddRoots() {
     shakeAddRoot(intern("rtUiAskSaveChanges"))
     shakeAddRoot(intern("rtUiEdit"))
     shakeAddRoot(intern("rtUiFormIsNew"))
+    // ui-widgets Task 2: the new members' entry points, called by name
+    // from the IUi* arms for the same reason as everything above.
+    shakeAddRoot(intern("rtUiWidgetSetBounds"))
+    shakeAddRoot(intern("rtUiWinContentW"))
+    shakeAddRoot(intern("rtUiWinContentH"))
+    shakeAddRoot(intern("rtUiWidgetSetFont"))
+    shakeAddRoot(intern("rtUiWidgetSetStyle"))
+    shakeAddRoot(intern("rtUiCanvasTextWidth"))
+    shakeAddRoot(intern("rtUiTableScrollTo"))
+    shakeAddRoot(intern("rtUiMenuSetChecked"))
+    shakeAddRoot(intern("rtUiMenuGetChecked"))
+    shakeAddRoot(intern("rtUiMenuGetEnabled"))
+    // The rtUiLog* family only when a logpanel exists, so uilog.cla is
+    // shaken out of every other program (C4). rtUiLogDo is rooted here
+    // until Task 3's UiLogOp dispatcher calls it.
+    if lowProgramHasLogpanel() {
+        shakeAddRoot(intern("rtUiLogAppend"))
+        shakeAddRoot(intern("rtUiLogClear"))
+        shakeAddRoot(intern("rtUiLogLineCount"))
+        shakeAddRoot(intern("rtUiLogLine"))
+        shakeAddRoot(intern("rtUiLogScrollToEnd"))
+        shakeAddRoot(intern("rtUiLogDo"))
+    }
     // Task 9 (toolbox-integration Feature C): rtUiLdefDraw (uitable.cla)
     // used to need the same hand-rooting treatment as the names above --
     // the OLD hand-written LDEF pascal wrapper in rt_ext_mac.inc called it

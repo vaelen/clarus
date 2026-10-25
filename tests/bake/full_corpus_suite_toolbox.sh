@@ -4,7 +4,7 @@
 # FLIPPED by fallback-trigger-narrowing Task 2): the toolbox suite's
 # --testapi gui.cla composition directly names toolbox/files.cla,
 # toolbox/standardfile.cla and toolbox/appleevents.cla, each ALSO a
-# transitive nested include of one of the thirteen early-spliced modules.
+# transitive nested include of one of the fifteen early-spliced modules.
 # The bake's own manifest fallback USED to treat that as an unconditional
 # collision and recompile the WHOLE composition from source, so this test
 # USED to assert the explicit fallback-class shape. Task 2's drift-hash +

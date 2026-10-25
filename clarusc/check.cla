@@ -132,6 +132,10 @@ var topScope: int
 var curScope: int
 var curFuncRet: int
 var curWindow: int
+// curWinScope is the windowScope of the handler being checked (valid while
+// curWindow != -1): checkAssignStmt uses it to tell the bare read-only
+// contentWidth/contentHeight from a local or param of the same name.
+var curWinScope: int
 
 // checkInExternPtrArgCtx (Task 7, toolbox-integration Feature C: `callback
 // func`) is true only while checkArgsCall's own per-argument checkExpr
@@ -578,6 +582,12 @@ var filehandleMethods: map of int
 var canvasMethods: map of int
 var canvasProperties: map of int
 var textviewMethods: map of int
+// ui-widgets Task 2: the per-kind widget method tables beyond canvas/
+// textview, plus the two shared ones (checkWidgetMethod).
+var logpanelMethods: map of int
+var tableMethods: map of int
+var commonWidgetMethods: map of int
+var fontWidgetMethods: map of int
 
 // ---- const values (Ch3: Constants) ----
 // CVal mirrors check.go's ConstVal: exactly one of intVal/strIdx holds the
@@ -1051,9 +1061,32 @@ func buildUiTables() {
     widgetRuntimeProps["check.checked"] = BoolT
     widgetRuntimeProps["popup.selected"] = IntT
     widgetRuntimeProps["table.selected"] = IntT
-    widgetRuntimeProps["canvas.width"] = IntT
-    widgetRuntimeProps["canvas.height"] = IntT
     widgetRuntimeProps["label.text"] = strT(255)
+    // ui-widgets Task 2: read-only geometry on every kind (readOnlyPropName
+    // rejects a write), the logpanel's lineCount and the canvas's font
+    // metrics.
+    addWidgetGeometryProps("button")
+    addWidgetGeometryProps("check")
+    addWidgetGeometryProps("field")
+    addWidgetGeometryProps("textview")
+    addWidgetGeometryProps("popup")
+    addWidgetGeometryProps("table")
+    addWidgetGeometryProps("canvas")
+    addWidgetGeometryProps("label")
+    addWidgetGeometryProps("logpanel")
+    addWidgetGeometryProps("divider")
+    widgetRuntimeProps["logpanel.lineCount"] = IntT
+    widgetRuntimeProps["canvas.lineHeight"] = IntT
+    widgetRuntimeProps["canvas.ascent"] = IntT
+}
+
+// addWidgetGeometryProps declares kind's read-only x/y/width/height
+// (ui-widgets Task 2).
+func addWidgetGeometryProps(kind: string) {
+    widgetRuntimeProps[kind + ".x"] = IntT
+    widgetRuntimeProps[kind + ".y"] = IntT
+    widgetRuntimeProps[kind + ".width"] = IntT
+    widgetRuntimeProps[kind + ".height"] = IntT
 }
 
 // ================================================================
@@ -2070,6 +2103,43 @@ func buildMethodTables() {
 
     canvasProperties["width"] = IntT
     canvasProperties["height"] = IntT
+
+    // ui-widgets Task 2. canvas.textWidth(s): int.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    canvasMethods["textWidth"] = sigEnd(IntT)
+
+    // logpanel (spec 3.4).
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    logpanelMethods["appendLine"] = sigEnd(-1)
+    sigStart()
+    logpanelMethods["clear"] = sigEnd(-1)
+    sigStart()
+    sigAdd(psPlain(IntT))
+    logpanelMethods["line"] = sigEnd(strT(255))
+    sigStart()
+    logpanelMethods["scrollToEnd"] = sigEnd(-1)
+
+    // table.scrollTo(row) (spec 3.5).
+    sigStart()
+    sigAdd(psPlain(IntT))
+    tableMethods["scrollTo"] = sigEnd(-1)
+
+    // setBounds(x, y, width, height) on every kind (spec 3.1).
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    commonWidgetMethods["setBounds"] = sigEnd(-1)
+
+    // setFont(name, size) on the font-bearing kinds (spec 3.2); setStyle's
+    // style-word arguments are checked by checkSetStyle instead.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(IntT))
+    fontWidgetMethods["setFont"] = sigEnd(-1)
 }
 
 // ================================================================
@@ -2495,22 +2565,88 @@ func checkMethodCall(sel: int, argsHead: int): int {
         return result
     }
     case TyWidget {
-        // canvas (Ch11: Drawing) and textview (Ch8: scrollToEnd) are the
-        // only widget kinds with methods; every other kind -- and
-        // window-ref/menu-item values -- has none, so it falls through
-        // to the "undefined" default below.
-        if poolGet(typeNameIdx(xt)) == "canvas" {
-            return checkTableMethod(canvasMethods, sel, argsHead)
-        }
-        if poolGet(typeNameIdx(xt)) == "textview" {
-            return checkTableMethod(textviewMethods, sel, argsHead)
-        }
-        emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
-        return InvalidT
+        return checkWidgetMethod(poolGet(typeNameIdx(xt)), sel, argsHead)
     }
     }
     emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
     return InvalidT
+}
+
+// widgetHasFont reports whether a widget kind takes setFont/setStyle (and
+// the `font:`/`style:` declarations): every text-drawing kind except the
+// system-font controls (C8) and the divider.
+func widgetHasFont(kind: string): bool {
+    return kind == "label" or kind == "field" or kind == "textview" or kind == "table" or kind == "canvas" or kind == "logpanel"
+}
+
+// checkWidgetMethod checks `w.Widget.name(args)` (ui-widgets Task 2): the
+// common table (setBounds) first, then setFont/setStyle on the font-bearing
+// kinds, then the kind's own table. A name in none of them -- including
+// any method on button/check/popup/divider beyond setBounds -- is
+// "undefined".
+func checkWidgetMethod(kind: string, sel: int, argsHead: int): int {
+    var name: string
+
+    name = poolGet(selectName(sel))
+    if commonWidgetMethods.has(name) {
+        return checkTableMethod(commonWidgetMethods, sel, argsHead)
+    }
+    if widgetHasFont(kind) and fontWidgetMethods.has(name) {
+        return checkTableMethod(fontWidgetMethods, sel, argsHead)
+    }
+    if widgetHasFont(kind) and name == "setStyle" {
+        checkSetStyle(sel, argsHead)
+        return VoidT
+    }
+    if kind == "canvas" {
+        return checkTableMethod(canvasMethods, sel, argsHead)
+    }
+    if kind == "textview" {
+        return checkTableMethod(textviewMethods, sel, argsHead)
+    }
+    if kind == "logpanel" {
+        return checkTableMethod(logpanelMethods, sel, argsHead)
+    }
+    if kind == "table" {
+        return checkTableMethod(tableMethods, sel, argsHead)
+    }
+    emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
+    return InvalidT
+}
+
+// checkSetStyle checks setStyle's arguments (D6): one to three bare style
+// words, `plain` only alone. The words are contextual -- never checked as
+// expressions, so they shadow nothing -- and lowering folds them to a face
+// int itself (lowStyleFace).
+func checkSetStyle(sel: int, argsHead: int) {
+    var n: int
+    var a: int
+    var word: string
+    var sawPlain: bool
+
+    n = exprListCount(argsHead)
+    if n < 1 or n > 3 {
+        emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to setStyle")
+        return
+    }
+    sawPlain = false
+    a = argsHead
+    while a != -1 {
+        word = ""
+        if exprKind(a) == ExIdent {
+            word = poolGet(identName(a))
+        }
+        if word == "plain" {
+            sawPlain = true
+        } else if word != "bold" and word != "italic" and word != "underline" {
+            emitDiag(exprLine(a), exprCol(a), "setStyle expects style words: plain, bold, italic, underline")
+            return
+        }
+        a = exprNext(a)
+    }
+    if sawPlain and n > 1 {
+        emitDiag(exprLine(sel), exprCol(sel), "plain cannot be combined with other styles")
+    }
 }
 
 // checkFileCall dispatches `file.fn(args)` -- the `file` namespace has no
@@ -4559,6 +4695,11 @@ func checkWindowRefSelect(e: int, xt: int): int {
     if name == "title" {
         return strT(255)
     }
+    // ui-widgets Task 2 (C13): the content area's size, read-only
+    // (readOnlyPropName).
+    if name == "contentWidth" or name == "contentHeight" {
+        return IntT
+    }
     fh = windowVarsHead.get(winNameIdx, -1)
     while fh != -1 {
         if fieldInfos[fh].nameIdx == want {
@@ -4634,6 +4775,8 @@ func windowScope(parent: int, winType: int): int {
     s = scopeNew(parent)
     winNameIdx = typeNameIdx(winType)
     declScopeVar(s, intern("title"), strT(255))
+    declScopeVar(s, intern("contentWidth"), IntT)
+    declScopeVar(s, intern("contentHeight"), IntT)
     fh = windowVarsHead.get(winNameIdx, -1)
     while fh != -1 {
         declScopeVar(s, fieldInfos[fh].nameIdx, fieldInfos[fh].typeIdx)
@@ -4683,6 +4826,7 @@ func checkHandlerBody(displayName: string, paramsHead: int, specIdx: int, body: 
     var savedScope: int
     var savedRet: int
     var savedWin: int
+    var savedWinScope: int
     var savedCR: bool
 
     p = paramsHead
@@ -4714,6 +4858,8 @@ func checkHandlerBody(displayName: string, paramsHead: int, specIdx: int, body: 
     if winType != -1 {
         base = windowScope(base, winType)
     }
+    savedWinScope = curWinScope
+    curWinScope = base
     fnScope = scopeNew(base)
     p = paramsHead
     i = 0
@@ -4748,6 +4894,7 @@ func checkHandlerBody(displayName: string, paramsHead: int, specIdx: int, body: 
     curScope = savedScope
     curFuncRet = savedRet
     curWindow = savedWin
+    curWinScope = savedWinScope
     inCloseRequest = savedCR
     scopesTruncate(mark)
 }
@@ -5110,6 +5257,19 @@ func readOnlyPropName(sel: int): string {
             return name
         }
     }
+    case TyWidget {
+        // ui-widgets Task 2: geometry and metrics are read-only (setBounds
+        // moves a widget); the receiver checked clean, so the property is
+        // one this kind has.
+        if name == "x" or name == "y" or name == "width" or name == "height" or name == "lineCount" or name == "lineHeight" or name == "ascent" {
+            return name
+        }
+    }
+    case TyWindowRef {
+        if name == "contentWidth" or name == "contentHeight" {
+            return name
+        }
+    }
     }
     return ""
 }
@@ -5134,6 +5294,15 @@ func checkAssignStmt(s: int) {
         if symIdx != -1 and symbols[symIdx].isConst {
             emitDiag(stmtLine(s), stmtCol(s), "cannot assign to constant " + poolGet(identName(rootIdent)))
             return
+        }
+        // ui-widgets Task 2: the bare contentWidth/contentHeight a window
+        // handler sees (windowScope) are read-only like `m.contentWidth`.
+        if exprKind(lhs) == ExIdent and curWindow != -1 and symIdx != -1 and symIdx == scopes[curWinScope].names.get(identName(lhs), -1) {
+            propName = poolGet(identName(lhs))
+            if propName == "contentWidth" or propName == "contentHeight" {
+                emitDiag(stmtLine(s), stmtCol(s), "cannot assign to read-only property " + propName)
+                return
+            }
         }
         // param-abi phase, Task 2: rebinding a param (LHS root ident IS
         // the target, e.g. `x = x + 1`) is always banned; a store THROUGH
@@ -6291,7 +6460,7 @@ func checkSelect(e: int): int {
         return checkWidgetSelect(e, xt)
     }
     case TyMenuItem {
-        if name == "enabled" {
+        if name == "enabled" or name == "checked" {
             return BoolT
         }
     }

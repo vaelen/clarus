@@ -4,8 +4,8 @@
 # every-byte-accounted-for section framing are clirhdr's own exit status)
 # plus the per-lane module manifest.
 #
-# modules 28 (68k) / 19 (c) mirrors clarusc/bake.cla's bakeModuleList and
-# the Go test's wantModuleCounts: 19 modules on both lanes, plus
+# modules 30 (68k) / 21 (c) mirrors clarusc/bake.cla's bakeModuleList and
+# the Go test's wantModuleCounts: 21 modules on both lanes, plus
 # conn.cla + conn_68k.cla + atalk.cla + atalk_68k.cla + tcp.cla +
 # tcp_68k.cla + fileh.cla + fileh_68k.cla + native.cla on the 68k lane's
 # unconditional full-superset splice (the c lane keeps conn/atalk/tcp/
@@ -13,7 +13,8 @@
 # 23 -> 25 in the AppleTalk phase's Task 9, when the atalk pair joined
 # that splice; 25 -> 27 in the MacTCP phase's Task 6, when the tcp pair
 # did; 27/18 -> 28/19 in SE wave 3 Task 2, when the boxsize lane pair
-# (boxsize_68k.cla / boxsize_c.cla, one per lane) joined both lists.
+# (boxsize_68k.cla / boxsize_c.cla, one per lane) joined both lists;
+# 28/19 -> 30/21 in ui-widgets Task 2, when uilog.cla and uifont.cla did.
 # sections 47 (68k) / 48 (c) are bkSectionCount68k/bkSectionCountC: 48
 # on both lanes after SE wave 4 Task 2 (+bkSecShakeSummary); CLIR v9 (SE
 # wave 4 Task 6) drops IrStmts/IrExprs from the 68k library and adds
@@ -25,8 +26,8 @@
 
 for lane in 68k c; do
     case $lane in
-        68k) modules=28 sections=47 ;;
-        c)   modules=19 sections=48 ;;
+        68k) modules=30 sections=47 ;;
+        c)   modules=21 sections=48 ;;
     esac
 
     bake_ir "$lane" "$WORK/$lane.clir"

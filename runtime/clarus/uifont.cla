@@ -1,0 +1,23 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uifont.cla: per-widget fonts (ui-widgets spec 3.2) and canvas text
+// measurement (spec 3.8) -- setFont/setStyle on the text-drawing kinds and
+// canvas.textWidth. The draw sites themselves (TextFont/TextSize/TextFace
+// set and restore around each non-TE draw) live with each kind's drawing
+// code.
+//
+// ui-widgets Task 2: stub bodies only; Task 10 replaces them.
+
+// rtUiWidgetSetFont: `w.X.setFont(name, size)`, name a Str255.
+func rtUiWidgetSetFont(instV: ptr, wIdx: int, name: ptr, size: int) {
+}
+
+// rtUiWidgetSetStyle: `w.X.setStyle(...)`, face the folded rtUiFace* bits.
+func rtUiWidgetSetStyle(instV: ptr, wIdx: int, face: int) {
+}
+
+// rtUiCanvasTextWidth: `c.textWidth(s)` in the canvas's font, s a Str255.
+func rtUiCanvasTextWidth(instV: ptr, wIdx: int, s: ptr): int {
+    return 0
+}

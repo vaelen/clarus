@@ -141,8 +141,12 @@
 #define RTUI_PROP_ENABLED  2   /* button */
 #define RTUI_PROP_CHECKED  3   /* check */
 #define RTUI_PROP_SELECTED 4   /* popup; table (mac-target-4d Task 4): current row, -1 if none */
-#define RTUI_PROP_WIDTH    5   /* canvas */
-#define RTUI_PROP_HEIGHT   6   /* canvas */
+#define RTUI_PROP_WIDTH    5   /* every kind (ui-widgets Task 2; canvas before) */
+#define RTUI_PROP_HEIGHT   6   /* every kind (ui-widgets Task 2; canvas before) */
+#define RTUI_PROP_X        7   /* every kind (ui-widgets) */
+#define RTUI_PROP_Y        8   /* every kind (ui-widgets) */
+#define RTUI_PROP_LINEHEIGHT 9 /* canvas (ui-widgets) */
+#define RTUI_PROP_ASCENT  10   /* canvas (ui-widgets) */
 
 /* ==================== descriptors (static const in emitted C / probe) ==================== */
 

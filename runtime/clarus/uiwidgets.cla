@@ -166,6 +166,30 @@ const rtUiKindTextview: int = 5
 const rtUiKindLogpanel: int = 8
 const rtUiKindDivider: int = 9
 
+// uilog.cla's UiLogOp dispatcher and its op codes (shared.md), declared
+// here rather than in uilog.cla until the snapshot regeneration (Task 12):
+// ui.cla/uiwidgets.cla are spliced into every program, including the
+// snapshot-built clarusc-current, whose module list has no uilog.cla. a/b
+// carry the op's own arguments: Click passes a = (v << 16) | (h & 0xFFFF)
+// and b = the event modifiers.
+const rtUiLogOpMake: int = 0
+const rtUiLogOpDispose: int = 1
+const rtUiLogOpDraw: int = 2
+const rtUiLogOpClick: int = 3
+const rtUiLogOpFlush: int = 4
+const rtUiLogOpCopy: int = 5
+const rtUiLogOpSelectAll: int = 6
+const rtUiLogOpHasSel: int = 7
+const rtUiLogOpHasLines: int = 8
+const rtUiLogOpRelayout: int = 9
+const rtUiLogOpSetFont: int = 10
+const rtUiLogOpScroll: int = 11
+
+// UiLogOp: synthesized by clarusc/lower.cla's lowSynthLogOp into
+// clar_ui_fire_logop -- calls rtUiLogDo in a program that declares a
+// logpanel, else returns 0.
+external func UiLogOp(op: int, instV: ptr, wIdx: int, a: int, b: int): int
+
 const rtUiAtXY: int = 0
 const rtUiAtNext: int = 1
 const rtUiAtRight: int = 2
@@ -198,6 +222,11 @@ const rtUiPropChecked: int = 3
 const rtUiPropSelected: int = 4
 const rtUiPropWidth: int = 5
 const rtUiPropHeight: int = 6
+// ui-widgets (shared.md): mirrored in cg68k.cla's cgRtuiProp* and rt_ui.h.
+const rtUiPropX: int = 7
+const rtUiPropY: int = 8
+const rtUiPropLineHeight: int = 9
+const rtUiPropAscent: int = 10
 
 const rtUiWevClick: int = 0
 const rtUiWevChange: int = 1
@@ -834,10 +863,10 @@ func rtUiMakeWidgets(inst: ptr) {
             UiLSetDrawingMode(true, lh) // see this function's own header note
         }
         case rtUiKindLogpanel {
-            // ui-widgets Task 1: a stub. Task 2 wires the Make op here
-            // (UiLogOp(rtUiLogOpMake, ...), uilog.cla) -- that extern and
-            // its module do not exist yet.
+            // The panel's own state is uilog.cla's, reached through the
+            // UiLogOp dispatcher (C4).
             rtUiSetCtrlAt(w, i, ptr(0))
+            UiLogOp(rtUiLogOpMake, inst, i, 0, 0)
         }
         case rtUiKindDivider {
             // Nothing to create: a divider is drawn from its rect alone.
@@ -1206,13 +1235,6 @@ func rtUiWidgetSetInt(instV: ptr, wIdx: int, prop: int, v: int) {
     var kind: int
     var count: int
     var sel: int
-    var lh: ptr
-    var hstate: int
-    var tableOff: int
-    var rowsIdx: int
-    var rowsAddr: ptr
-    var rows: ptr
-    var row: int
 
     w = RtUiWinst(instV)
     winIdx = w.winIdx
@@ -1240,26 +1262,7 @@ func rtUiWidgetSetInt(instV: ptr, wIdx: int, prop: int, v: int) {
         rtUiTraceSetInt(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), prop, sel)
     }
     if kind == rtUiKindTable and prop == rtUiPropSelected {
-        lh = rtUiListAt(w, wIdx)
-        tableOff = uidWidgetTableOff(winIdx, wIdx)
-        rowsIdx = uidTableRowsIdx(tableOff)
-        rowsAddr = UiTableRows(rowsIdx)
-        rows = ptr(peekl(rowsAddr))
-        count = rtListCount(rows)
-        row = v
-        if row >= count {
-            row = count - 1
-        }
-        rtUiTableSelectExclusive(lh, row)
-        // compiler-cleanup: InvalRect allocates (update-region growth) with
-        // the ListRec master pointer already evaluated as its argument --
-        // the relocation window is INSIDE the trap. Lock lh across the
-        // call; prior state restored, not a bare HUnlock.
-        hstate = UiHGetState(lh)
-        UiHLock(lh)
-        UiInvalRect(UiHandleDeref(lh) + rtUiListRView)
-        UiHSetState(lh, hstate)
-        rtUiTraceSetInt(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), prop, row)
+        rtUiTableSetSel(instV, wIdx, v)
     }
     UiSetPort(savedPort)
 }
@@ -1298,6 +1301,17 @@ func rtUiWidgetGetInt(instV: ptr, wIdx: int, prop: int): int {
     r = rtUiRectAt(w, wIdx)
     if prop == rtUiPropHeight {
         return peekw(r + 4) - peekw(r + 0)
+    }
+    // ui-widgets Task 2: x/y are the rect's left/top on every kind.
+    // LineHeight/Ascent are Task 10's (canvas font metrics); 0 until then.
+    if prop == rtUiPropX {
+        return peekw(r + 2)
+    }
+    if prop == rtUiPropY {
+        return peekw(r + 0)
+    }
+    if prop == rtUiPropLineHeight or prop == rtUiPropAscent {
+        return 0
     }
     kind = uidWidgetKind(w.winIdx, wIdx)
     if prop == rtUiPropSelected and kind == rtUiKindPopup {
@@ -1727,4 +1741,9 @@ func rtUiCanvasDrawText(instV: ptr, wIdx: int, x: int, y: int, s: ptr) {
     UiMoveTo(x + t.dx, y + t.dy)
     UiDrawString(s)
     rtUiCanvasEnd(t)
+}
+
+// rtUiWidgetSetBounds: `w.X.setBounds(x, y, width, height)` (spec 3.1).
+// Task 2 stub; Task 6 records the pending rect for the deferred apply.
+func rtUiWidgetSetBounds(instV: ptr, wIdx: int, x: int, y: int, ww: int, hh: int) {
 }

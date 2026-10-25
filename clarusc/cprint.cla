@@ -2504,6 +2504,11 @@ func fpIntrCall(x: int): text {
     if fpIntrMatched {
         return t
     }
+    fpIntrMatched = true
+    t = fpIntrCall14(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
     if irStorageRow(nm) >= 0 {
         return fpIntrStorage(nm, a0, a1)
     }
@@ -4077,6 +4082,68 @@ func fpIntrCall12(nm: int, x: int, a0: int, a1: int, a2: int): text {
         return "(*(clar_rec_" + poolGet(irtName(irExprType(x))) + " *)(" + fpExpr(a0) + "))"
     } else if nm == IUiAddrOfGlobal() {
         return "((void*)&(" + fpExpr(a0) + "))"
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+// fpIntrCall14 (ui-widgets Task 2): the new widget/window/menu members'
+// intrinsics, in their own chain step for the same segment-budget reason
+// as fpIntrCall11-13. Each is one clar_fn_<runtime fn>(...) call whose
+// arguments are the intrinsic's own, in order (ir.cla's doc comment on the
+// block); str arguments go by address (fpStrAddr) and IUiLogLine fills a
+// fresh clar_str_255 temp like IUiGetLabelText.
+func fpIntrCall14(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+
+    if nm == IUiSetBounds() {
+        fpEmit("clar_fn_rtUiWidgetSetBounds(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ");")
+        return toText("")
+    } else if nm == IUiGetX() {
+        return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_X)"
+    } else if nm == IUiGetY() {
+        return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_Y)"
+    } else if nm == IUiGetLineHeight() {
+        return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_LINEHEIGHT)"
+    } else if nm == IUiGetAscent() {
+        return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ASCENT)"
+    } else if nm == IUiContentW() {
+        return "clar_fn_rtUiWinContentW(" + fpExpr(a0) + ")"
+    } else if nm == IUiContentH() {
+        return "clar_fn_rtUiWinContentH(" + fpExpr(a0) + ")"
+    } else if nm == IUiSetFont() {
+        fpEmit("clar_fn_rtUiWidgetSetFont(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpStrAddr(a2) + ", " + fpExpr(fpArgAt(a0, 3)) + ");")
+        return toText("")
+    } else if nm == IUiSetStyle() {
+        fpEmit("clar_fn_rtUiWidgetSetStyle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
+        return toText("")
+    } else if nm == IUiTextWidth() {
+        return "clar_fn_rtUiCanvasTextWidth(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpStrAddr(a2) + ")"
+    } else if nm == IUiTableScrollTo() {
+        fpEmit("clar_fn_rtUiTableScrollTo(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
+        return toText("")
+    } else if nm == IUiLogAppend() {
+        fpEmit("clar_fn_rtUiLogAppend(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpStrAddr(a2) + ");")
+        return toText("")
+    } else if nm == IUiLogClear() {
+        fpEmit("clar_fn_rtUiLogClear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        return toText("")
+    } else if nm == IUiLogLineCount() {
+        return "clar_fn_rtUiLogLineCount(" + fpExpr(a0) + ", " + fpExpr(a1) + ")"
+    } else if nm == IUiLogLine() {
+        t = fpNewTmp("clar_str_255")
+        fpEmit("clar_fn_rtUiLogLine(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ", (uint8_t*)&" + t + ");")
+        return t
+    } else if nm == IUiLogScrollToEnd() {
+        fpEmit("clar_fn_rtUiLogScrollToEnd(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        return toText("")
+    } else if nm == IUiMenuSetChecked() {
+        fpEmit("clar_fn_rtUiMenuSetChecked(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        return toText("")
+    } else if nm == IUiMenuGetChecked() {
+        return "clar_fn_rtUiMenuGetChecked(" + fpExpr(a0) + ", " + fpExpr(a1) + ")"
+    } else if nm == IUiMenuGetEnabled() {
+        return "clar_fn_rtUiMenuGetEnabled(" + fpExpr(a0) + ", " + fpExpr(a1) + ")"
     }
     fpIntrMatched = false
     return toText("")

@@ -186,6 +186,11 @@ func rtUiIntToPStr(n: int, out255: ptr) {
 // e.g. a fresh `list of` value; this port never observes that case in a
 // golden scenario, but the re-read discipline is unconditional regardless).
 external func UiTableRows(rowsIdx: int): ptr
+// UiColFmt (ui-widgets, shared.md): synthesized by lower.cla's
+// lowSynthColFmt into clar_ui_fire_colfmt -- runs formatted column fmtId's
+// function on the row record at rec and stores its result in out; false
+// when there is no such column or the function aborted (C5).
+external func UiColFmt(fmtId: int, rec: ptr, out: ptr): bool
 // UiCbAddr (Task 9, toolbox-integration Feature C: `callback func`
 // migration): a trivial identity extern, ptr in, same ptr out. Its ONLY
 // job is to satisfy checkCallbackFunc's decay rule (check.cla: a bare
@@ -1144,4 +1149,52 @@ func rtUiPopupClick(inst: ptr, pIdx: int) {
     }
     UiDisposePtr(anchor)
     UiDisposePtr(box)
+}
+
+// rtUiTableScrollTo: `table.scrollTo(row)` (spec 3.5). Task 2 stub; Task 5
+// makes row visible with LScroll, clamped.
+func rtUiTableScrollTo(instV: ptr, wIdx: int, row: int) {
+}
+
+// rtUiTableSetSel: `table.selected = row` (moved verbatim out of
+// uiwidgets.cla's rtUiWidgetSetInt by ui-widgets Task 2; Task 5 extends it
+// to write the observed list's mark). The row clamp is upper-bound ONLY --
+// a negative row passes straight through to rtUiTableSelectExclusive,
+// whose own "unless negative, meaning deselect only" contract is exactly
+// what a negative `selected` write is supposed to do. The caller has
+// already set the window's port.
+func rtUiTableSetSel(instV: ptr, wIdx: int, v: int) {
+    var w: RtUiWinst
+    var winIdx: int
+    var count: int
+    var lh: ptr
+    var hstate: int
+    var tableOff: int
+    var rowsIdx: int
+    var rowsAddr: ptr
+    var rows: ptr
+    var row: int
+
+    w = RtUiWinst(instV)
+    winIdx = w.winIdx
+    lh = rtUiListAt(w, wIdx)
+    tableOff = uidWidgetTableOff(winIdx, wIdx)
+    rowsIdx = uidTableRowsIdx(tableOff)
+    rowsAddr = UiTableRows(rowsIdx)
+    rows = ptr(peekl(rowsAddr))
+    count = rtListCount(rows)
+    row = v
+    if row >= count {
+        row = count - 1
+    }
+    rtUiTableSelectExclusive(lh, row)
+    // compiler-cleanup: InvalRect allocates (update-region growth) with
+    // the ListRec master pointer already evaluated as its argument --
+    // the relocation window is INSIDE the trap. Lock lh across the
+    // call; prior state restored, not a bare HUnlock.
+    hstate = UiHGetState(lh)
+    UiHLock(lh)
+    UiInvalRect(UiHandleDeref(lh) + rtUiListRView)
+    UiHSetState(lh, hstate)
+    rtUiTraceSetInt(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), rtUiPropSelected, row)
 }

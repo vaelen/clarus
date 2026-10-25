@@ -1340,6 +1340,8 @@ func driveEarlySplice(testapi: bool): bool {
     earlyMods.add("uiwidgets.cla")
     earlyMods.add("uitext.cla")
     earlyMods.add("uitable.cla")
+    earlyMods.add("uilog.cla")
+    earlyMods.add("uifont.cla")
     earlyMods.add("uiscript.cla")
     earlyMods.add("uidialogs.cla")
     // MacTCP phase, debt 3 (docs/TODO.md's AdspLeak item): on the 68k
@@ -1686,6 +1688,8 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         neededMods.add("uiwidgets.cla")
         neededMods.add("uitext.cla")
         neededMods.add("uitable.cla")
+        neededMods.add("uilog.cla")
+        neededMods.add("uifont.cla")
         neededMods.add("uiscript.cla")
         neededMods.add("uidialogs.cla")
     }
@@ -2737,6 +2741,20 @@ func driveFreeFrontEnd() {
     // bookmarks scale) for a small fixed headroom.
     irTypes.shrink()
     irTypes.reserve(irTypes.count + 64)
+    // ui-widgets Task 2: lowering is irRegisterExtern's last caller, so the
+    // ten parallel extern arenas are final here; drop their power-of-two
+    // slack (~10 KB at bookmarks scale, where the library's 519 param
+    // entries had just doubled past 512).
+    irExternNames.shrink()
+    irExternRetTys.shrink()
+    irExternParamStart.shrink()
+    irExternParamCountArr.shrink()
+    irExternTrapWords.shrink()
+    irExternConvs.shrink()
+    irExternSels.shrink()
+    irExternRetRegs.shrink()
+    irExternParamTys.shrink()
+    irExternParamRegs.shrink()
 }
 
 // driveEmit68kFork (Task 9, mac-resident-clarusc) lowers the already-

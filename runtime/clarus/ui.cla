@@ -676,6 +676,16 @@ func rtUiSetTitle(instV: ptr, s: ptr) {
     UiSetWTitle(RtUiWinst(instV).wp, s)
 }
 
+// rtUiWinContentW/H: a window reference's contentWidth/contentHeight (C13)
+// -- the port rect's size. Task 2 stubs; Task 6 replaces them.
+func rtUiWinContentW(instV: ptr): int {
+    return 0
+}
+
+func rtUiWinContentH(instV: ptr): int {
+    return 0
+}
+
 func rtUiGetTitle(instV: ptr, dst255: ptr) {
     UiGetWTitle(RtUiWinst(instV).wp, dst255)
 }
@@ -926,6 +936,7 @@ func rtUiOpen(winIdx: int): ptr {
 
     rtUiMakeWidgets(inst)
     rtUiLayout(inst)
+    rtUiHookLogpanels(inst, rtUiLogOpRelayout)
     rtUiCanvasReallocAll(inst)
 
     // Initial row population for any table (rt_ui.c:4669-4680): AFTER
@@ -1028,6 +1039,9 @@ func rtUiTeardownWindow(inst: ptr) {
 
     i = 0
     while i < n {
+        if uidWidgetKind(winIdx, i) == rtUiKindLogpanel {
+            UiLogOp(rtUiLogOpDispose, inst, i, 0, 0)
+        }
         rtUiCanvasDispose(rtUiCanvasBufAt(w, i))
         // TEHandle is its own separate Handle, not covered by
         // UiDisposeHandle(w.teH) below (Task 8, rt_ui.c:4815).
@@ -1444,6 +1458,20 @@ func rtUiMenuEnable(menuIdx: int, itemIdx: int, enable: bool) {
     }
 }
 
+// rtUiMenuSetChecked/GetChecked/GetEnabled: `Menu.Item.checked = b`, its
+// read, and the `.enabled` read (ui-widgets spec 3.7). Task 2 stubs; Task 7
+// replaces them (CheckItem and the item flags).
+func rtUiMenuSetChecked(menuIdx: int, itemIdx: int, b: bool) {
+}
+
+func rtUiMenuGetChecked(menuIdx: int, itemIdx: int): bool {
+    return false
+}
+
+func rtUiMenuGetEnabled(menuIdx: int, itemIdx: int): bool {
+    return false
+}
+
 // rtUiMenuRecomputeDim (rt_ui.c:2483-2524). scopeWinIdx == -1 ("no
 // scope") mirrors the C reference's own `if (!h->scope) continue;`.
 func rtUiMenuRecomputeDim() {
@@ -1738,6 +1766,24 @@ func rtUiStartup() {
 // same windowKind/nextWindow offsets rtUiQuit/rtUiFront already use).
 // ================================================================
 
+// rtUiHookLogpanels sends op (Flush, Relayout) to every logpanel in inst --
+// one widget walk; a window without a logpanel never calls UiLogOp.
+func rtUiHookLogpanels(inst: ptr, op: int) {
+    var winIdx: int
+    var n: int
+    var i: int
+
+    winIdx = RtUiWinst(inst).winIdx
+    n = uidWinNWidgets(winIdx)
+    i = 0
+    while i < n {
+        if uidWidgetKind(winIdx, i) == rtUiKindLogpanel {
+            UiLogOp(op, inst, i, 0, 0)
+        }
+        i = i + 1
+    }
+}
+
 func rtUiFlushAllBuffered() {
     var wp: ptr
 
@@ -1745,6 +1791,7 @@ func rtUiFlushAllBuffered() {
     while wp != ptr(0) {
         if peekw(wp + 108) == rtUiWindowKind {
             rtUiFlushBufferedCanvases(ptr(UiGetWRefCon(wp)), false)
+            rtUiHookLogpanels(ptr(UiGetWRefCon(wp)), rtUiLogOpFlush)
         }
         wp = ptr(peekl(wp + 144))
     }
@@ -1955,6 +2002,8 @@ func rtUiHandleUpdate(wp: ptr) {
                 UiLUpdate(ptr(peekl(wp + 24)), lh)
                 UiDisposePtr(headerRect)
                 UiDisposePtr(box)
+            } else if kind == rtUiKindLogpanel {
+                UiLogOp(rtUiLogOpDraw, inst, i, 0, 0)
             }
             i = i + 1
         }
@@ -2053,6 +2102,7 @@ func rtUiApplyResize(wp: ptr, inst: ptr, newW: int, newH: int) {
     rtUiInvalGrowCorner(wp)
     UiSetPort(savedPort)
     rtUiLayout(inst)
+    rtUiHookLogpanels(inst, rtUiLogOpRelayout)
     rtUiCanvasReallocAll(inst)
     rtUiTraceFire1(uidWinName(w.winIdx), "resized")
     UiFireWinEvent(w.winIdx, inst, rtUiEvResized, 0, 0)
@@ -2515,6 +2565,24 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
         return
     }
     UiDisposePtr(tblIdxSlot)
+
+    // A logpanel takes the click itself (uilog.cla, through UiLogOp):
+    // localPt is already the packed (v << 16) | (h & 0xFFFF) the Click op
+    // expects; b carries the modifiers.
+    n = uidWinNWidgets(w.winIdx)
+    ti = 0
+    while ti < n {
+        if uidWidgetKind(w.winIdx, ti) == rtUiKindLogpanel and UiPtInRect(localPt, rtUiRectAt(w, ti)) {
+            if shiftDown {
+                mods = 0x200
+            } else {
+                mods = 0
+            }
+            UiLogOp(rtUiLogOpClick, inst, ti, localPt, mods)
+            return
+        }
+        ti = ti + 1
+    }
 }
 
 func rtUiHandleMouseDown(ev: ptr) {

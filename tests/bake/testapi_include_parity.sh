@@ -2,7 +2,7 @@
 # Port of internal/bake/bakeidentity_test.go's
 # TestRtbakeTestapiIncludeParity: a --testapi UI program that directly
 # `include`s toolbox/files.cla -- early-visible for EVERY testapi UI build
-# (uidialogs.cla, one of the 13 early-spliced modules, itself includes it)
+# (uidialogs.cla, one of the 15 early-spliced modules, itself includes it)
 # -- and calls one of its externs. Under Task 2's mechanism this is case
 # (b): hash-equal + early-visible -> full dedup, matching from-source's own
 # post-dedup state, so it must compile clean and byte-identical on both

@@ -540,3 +540,35 @@ func rtListClone(dst: ptr, src: ptr, elemSize: int) {
     ListBlockMoveData(srcmp, dstmp, n * elemSize)
     rd.count = n
 }
+
+// ================================================================
+// Observed-list registry (ui-widgets, spec 4.5) -- Task 2 stubs. Task 4
+// replaces these bodies (and adds rtListObsBlk/rtListObsCount); the names
+// and signatures are fixed by the plan's Shared Interfaces.
+// ================================================================
+
+// rtListObserve registers box with the registry; returns its entry.
+func rtListObserve(box: ptr): int {
+    return 0
+}
+
+func rtListUnobserve(e: int) {
+}
+
+// rtListObsGen is entry e's change counter.
+func rtListObsGen(e: int): int {
+    return 0
+}
+
+// rtListObsMark/rtListObsSetMark: entry e's tracked (selected) index.
+func rtListObsMark(e: int): int {
+    return 0
+}
+
+func rtListObsSetMark(e: int, i: int) {
+}
+
+// rtListNoteSet: the compiler's hook after an inline element store into
+// box (emitted only in programs that declare a table).
+func rtListNoteSet(box: ptr) {
+}

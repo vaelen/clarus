@@ -1,0 +1,1 @@
+../../testdata/errors/readonly_content.cla:9:5: cannot assign to read-only property contentWidth
