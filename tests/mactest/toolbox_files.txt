@@ -44,4 +44,5 @@ testsuite/toolbox/cases_clearwarm.cla
 testsuite/toolbox/cases_casestable.cla
 testsuite/toolbox/cases_winmenus.cla
 testsuite/toolbox/cases_narrowform.cla
+testsuite/toolbox/cases_listobs.cla
 testsuite/toolbox/gui.cla

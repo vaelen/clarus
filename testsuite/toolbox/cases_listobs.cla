@@ -1,0 +1,149 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_listobs.cla: ListObserve (ui-widgets Task 4, spec 4.5) -- the
+// observed-list registry in runtime/clarus/list.cla. A user program
+// cannot get at a list's box pointer (no extern takes a `list of T`), so
+// the observed list is a runtime-built box (rtListNew(4): a list of int)
+// driven through the same runtime entry points compiled list ops call.
+// The "unobserved list" half uses an ordinary Clarus list, so the
+// compiled call paths run with the registry non-empty.
+
+// lobsPush appends v to the runtime list box l.
+func lobsPush(l: ptr, cell: ptr, v: int) {
+    pokel(cell, v)
+    rtListPush(l, cell)
+}
+
+func caseListObserve(): TestResult {
+    var l: ptr
+    var cell: ptr
+    var e1: int
+    var e2: int
+    var g1: int
+    var g2: int
+    var i: int
+    var extra: list of int
+    var xs: list of int
+    var v: int
+
+    l = rtListNew(4)
+    cell = ListNewPtr(4)
+    i = 0
+    while i < 5 {
+        lobsPush(l, cell, i)
+        i = i + 1
+    }
+    e1 = rtListObserve(l)
+    e2 = rtListObserve(l)
+    if e1 < 0 or e2 < 0 or e1 == e2 {
+        return tkFail("ListObserve", "entries " + tkIntToStr(e1) + "/" + tkIntToStr(e2))
+    }
+    if rtListObsMark(e1) != -1 {
+        return tkFail("ListObserve", "fresh mark " + tkIntToStr(rtListObsMark(e1)))
+    }
+    rtListObsSetMark(e1, 2)
+    g1 = rtListObsGen(e1)
+    g2 = rtListObsGen(e2)
+
+    pokel(cell, 99)
+    rtListUnshift(l, cell)
+    if rtListObsMark(e1) != 3 {
+        return tkFail("ListObserve", "unshift mark " + tkIntToStr(rtListObsMark(e1)))
+    }
+    if rtListObsGen(e1) == g1 or rtListObsGen(e2) == g2 {
+        return tkFail("ListObserve", "unshift gen unchanged")
+    }
+    g1 = rtListObsGen(e1)
+    g2 = rtListObsGen(e2)
+
+    rtListPop(l, cell)
+    if rtListObsMark(e1) != 3 {
+        return tkFail("ListObserve", "pop mark " + tkIntToStr(rtListObsMark(e1)))
+    }
+    if rtListObsGen(e1) == g1 or rtListObsGen(e2) == g2 {
+        return tkFail("ListObserve", "pop gen unchanged")
+    }
+    g1 = rtListObsGen(e1)
+    g2 = rtListObsGen(e2)
+
+    rtListShift(l, cell)
+    if rtListObsMark(e1) != 2 {
+        return tkFail("ListObserve", "shift mark " + tkIntToStr(rtListObsMark(e1)))
+    }
+    rtListRemove(l, 0)
+    if rtListObsMark(e1) != 1 {
+        return tkFail("ListObserve", "remove(0) mark " + tkIntToStr(rtListObsMark(e1)))
+    }
+    rtListRemove(l, 1)
+    if rtListObsMark(e1) != -1 {
+        return tkFail("ListObserve", "remove(1) mark " + tkIntToStr(rtListObsMark(e1)))
+    }
+    if rtListObsGen(e1) == g1 or rtListObsGen(e2) == g2 {
+        return tkFail("ListObserve", "shift/remove gen unchanged")
+    }
+    if rtListObsGen(e1) - g1 != rtListObsGen(e2) - g2 {
+        return tkFail("ListObserve", "observers saw different gen changes")
+    }
+    if rtListObsMark(e2) != -1 {
+        return tkFail("ListObserve", "second observer mark " + tkIntToStr(rtListObsMark(e2)))
+    }
+
+    // clear resets a mark; a shrink, reserve or element store only bumps gen.
+    rtListObsSetMark(e1, 0)
+    g1 = rtListObsGen(e1)
+    rtListReserve(l, 16)
+    rtListShrink(l)
+    rtListNoteSet(l)
+    if rtListObsMark(e1) != 0 or rtListObsGen(e1) - g1 != 3 {
+        return tkFail("ListObserve", "touch ops mark " + tkIntToStr(rtListObsMark(e1)))
+    }
+    // Two elements left: popping the marked last one clears the mark.
+    rtListObsSetMark(e1, 1)
+    rtListPop(l, cell)
+    if rtListObsMark(e1) != -1 {
+        return tkFail("ListObserve", "pop-last mark " + tkIntToStr(rtListObsMark(e1)))
+    }
+    rtListObsSetMark(e1, 0)
+    rtListClear(l)
+    if rtListObsMark(e1) != -1 {
+        return tkFail("ListObserve", "clear mark " + tkIntToStr(rtListObsMark(e1)))
+    }
+
+    // An unobserved list's ops leave every entry's gen unchanged.
+    g1 = rtListObsGen(e1)
+    g2 = rtListObsGen(e2)
+    xs.add(1)
+    xs.add(2)
+    xs.unshift(0)
+    v = xs.pop()
+    v = xs.shift()
+    xs.remove(0)
+    xs.clear()
+    xs.release()
+    if rtListObsGen(e1) != g1 or rtListObsGen(e2) != g2 {
+        return tkFail("ListObserve", "unobserved list moved gen")
+    }
+
+    // Growth past the first 8-entry block keeps existing entries.
+    rtListObsSetMark(e2, 1)
+    i = 0
+    while i < 10 {
+        extra.add(rtListObserve(l))
+        i = i + 1
+    }
+    if rtListObsMark(e2) != 1 or rtListObsMark(extra[9]) != -1 {
+        return tkFail("ListObserve", "growth lost an entry")
+    }
+    for v in extra {
+        rtListUnobserve(v)
+    }
+    rtListUnobserve(e1)
+    rtListUnobserve(e2)
+    if rtListObsCount != 0 {
+        return tkFail("ListObserve", "count after unobserve " + tkIntToStr(rtListObsCount))
+    }
+    rtListRelease(l)
+    ListDisposePtr(cell)
+    return tkPass("ListObserve")
+}
