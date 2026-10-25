@@ -10802,7 +10802,7 @@ LBL_112:
         MOVE.W 8(A6),D0
         EXT.L D0
         MOVE.L D0,-(A7)
-        JSR 2618(A5)
+        JSR 2562(A5)
         ADDQ.L #8,A7
         UNLK A6
         MOVE.L (A7)+,A0
@@ -10833,7 +10833,7 @@ LBL_113:
         MOVE.L D0,-(A7)
         ;   lh : 8(A6)  pascal size 4
         MOVE.L 8(A6),-(A7)
-        JSR 2762(A5)
+        JSR 2730(A5)
         ADDA.W #26,A7
         UNLK A6
         MOVE.L (A7)+,A0

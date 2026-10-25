@@ -4146,7 +4146,7 @@ LBL_69:
         MOVE.W 8(A6),D0
         EXT.L D0
         MOVE.L D0,-(A7)
-        JSR 2610(A5)
+        JSR 2594(A5)
         ADDQ.L #8,A7
         UNLK A6
         MOVE.L (A7)+,A0
@@ -4177,7 +4177,7 @@ LBL_70:
         MOVE.L D0,-(A7)
         ;   lh : 8(A6)  pascal size 4
         MOVE.L 8(A6),-(A7)
-        JSR 2770(A5)
+        JSR 2730(A5)
         ADDA.W #26,A7
         UNLK A6
         MOVE.L (A7)+,A0

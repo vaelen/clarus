@@ -8960,7 +8960,7 @@ LBL_717:
         MOVE.L D0,-(A7)
         MOVE.L -96(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2890(A5)
+        JSR 2850(A5)
         ADDQ.L #8,A7
 LBL_719:
         MOVE.L -96(A6),D1
@@ -9021,7 +9021,7 @@ LBL_723:
         MOVE.L D0,-(A7)
         MOVE.L -96(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2586(A5)
+        JSR 2594(A5)
         ADDQ.L #8,A7
         MOVE.L -100(A6),D0
         MOVE.L D0,-(A7)
@@ -9066,7 +9066,7 @@ LBL_721:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 5162(A5)
+        JSR 5170(A5)
         ADDA.W #20,A7
         MOVE.L -8(A6),D0
         BRA.W LBL_698
@@ -9121,7 +9121,7 @@ LBL_727:
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2682(A5)
+        JSR 2570(A5)
         ADDQ.L #8,A7
         MOVE.L D0,-20(A6)
         MOVE.L -20(A6),D1
@@ -9133,7 +9133,7 @@ LBL_727:
         BEQ.W LBL_729
         MOVE.L -20(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2874(A5)
+        JSR 2834(A5)
         ADDQ.L #4,A7
         MOVE.L -20(A6),D0
         MOVEA.L D0,A0
@@ -9191,7 +9191,7 @@ LBL_728:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 5162(A5)
+        JSR 5170(A5)
         ADDA.W #20,A7
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
@@ -9208,7 +9208,7 @@ LBL_728:
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 5194(A5)
+        JSR 5202(A5)
         ADDQ.L #8,A7
 LBL_730:
         MOVEQ #0,D0
@@ -9282,7 +9282,7 @@ LBL_734:
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2698(A5)
+        JSR 2650(A5)
         ADDQ.L #8,A7
         MOVE.L D0,D1
         MOVEQ #0,D0
@@ -9300,7 +9300,7 @@ LBL_734:
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2698(A5)
+        JSR 2650(A5)
         ADDQ.L #8,A7
         MOVE.L D0,-(A7)
         DC.W $A932  ; UiDisposeMenu
@@ -9517,7 +9517,7 @@ LBL_741:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 5162(A5)
+        JSR 5170(A5)
         ADDA.W #20,A7
         MOVE.L -12(A6),D0
         MOVEA.L D0,A0
@@ -11686,7 +11686,7 @@ LBL_868:
         CLR.L -(A7)
         DC.W $A9FC  ; UiZeroScrap
         MOVE.L (A7)+,D0
-        JSR 2546(A5)
+        JSR 2506(A5)
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -12(A6),D0
@@ -11696,7 +11696,7 @@ LBL_868:
         MOVE.L D0,-(A7)
         MOVEQ #1,D0
         MOVE.B D0,-(A7)
-        JSR 2610(A5)
+        JSR 2554(A5)
         ADDA.W #10,A7
         BRA.W LBL_870
 LBL_869:
@@ -11713,7 +11713,7 @@ LBL_869:
         CLR.L -(A7)
         DC.W $A9FC  ; UiZeroScrap
         MOVE.L (A7)+,D0
-        JSR 2546(A5)
+        JSR 2506(A5)
         BRA.W LBL_872
 LBL_871:
         MOVE.L 8(A6),D1
@@ -11727,7 +11727,7 @@ LBL_871:
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2658(A5)
+        JSR 2634(A5)
         ADDQ.L #8,A7
         BRA.W LBL_874
 LBL_873:
@@ -11750,7 +11750,7 @@ LBL_873:
         MOVE.L D0,-(A7)
         MOVEQ #1,D0
         MOVE.B D0,-(A7)
-        JSR 2610(A5)
+        JSR 2554(A5)
         ADDA.W #10,A7
         BRA.W LBL_876
 LBL_875:
@@ -11982,7 +11982,7 @@ LBL_892:
         MOVE.L D0,-(A7)
         MOVE.L -28(A6),D0
         MOVE.L D0,-(A7)
-        JSR 5178(A5)
+        JSR 5186(A5)
         ADDQ.L #8,A7
 LBL_894:
 LBL_890:
@@ -12175,7 +12175,7 @@ LBL_905:
         ADDQ.L #4,A7
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 5186(A5)
+        JSR 5194(A5)
         ADDQ.L #4,A7
 LBL_907:
         MOVE.L -8(A6),D1
@@ -12586,7 +12586,7 @@ LBL_931:
         MOVE.L D0,-(A7)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2682(A5)
+        JSR 2570(A5)
         ADDQ.L #8,A7
         MOVE.L D0,-28(A6)
         MOVE.L -28(A6),D1
@@ -12756,7 +12756,7 @@ LBL_237:
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 5162(A5)
+        JSR 5170(A5)
         ADDA.W #20,A7
         JSR 5250(A5)
 LBL_939:

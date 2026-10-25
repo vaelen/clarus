@@ -175,8 +175,6 @@ extern void rt_ext_UiClosePort(void *);
 extern void rt_ext_UiPortSize(short, short);
 extern void rt_ext_UiSetOrigin(short, short);
 extern void rt_ext_UiSetPortBits(void *);
-extern void rt_ext_UiGetFNum(void *, void *);
-extern void rt_ext_UiGetFontName(short, void *);
 extern void * rt_ext_UiTENewRaw(void *, void *);
 extern void rt_ext_UiTEDispose(void *);
 extern void rt_ext_UiTESetText(void *, int32_t, void *);
@@ -229,6 +227,8 @@ extern void rt_ext_UiDrawText(void *, short, short);
 extern void rt_ext_UiGetFontInfo(void *);
 extern void rt_ext_UiLocalToGlobal(void *);
 extern void * rt_ext_UiCbAddr(void *);
+extern void rt_ext_UiGetFNum(void *, void *);
+extern void rt_ext_UiGetFontName(short, void *);
 extern void * rt_ext_UiStrAddr(const uint8_t *);
 extern void rt_ext_UiTestEmit(void *);
 extern int32_t rt_ext_UiTraceOn(void);
@@ -896,11 +896,6 @@ static void clar_fn_rtUiCanvasDrawText(void * cv_instV, int32_t cv_wIdx, int32_t
 static void * clar_fn_rtUiClipEmpty(void);
 static void clar_fn_rtUiClipRestore(void * cv_rgn);
 static void clar_fn_rtUiDrawDivider(void * cv_r, int32_t cv_style);
-static void * clar_fn_rtUiFontScratchGet(void);
-static void clar_fn_rtUiFontSave(void);
-static void clar_fn_rtUiFontApply(void * cv_instV, int32_t cv_wIdx);
-static void clar_fn_rtUiFontRestore(void);
-static int32_t clar_fn_rtUiFontLineH(void * cv_fi);
 static void * clar_fn_UiTENew(void * cv_dst, void * cv_view);
 static int32_t clar_fn_rtUiTeWidestLine(void * cv_te);
 static void clar_fn_rtUiTeScrollSync(void * cv_inst, int32_t cv_wIdx);
@@ -951,6 +946,11 @@ static void clar_fn_rtUiPopupPick(void * cv_inst, int32_t cv_wIdx, int32_t cv_ne
 static void clar_fn_rtUiPopupClick(void * cv_inst, int32_t cv_pIdx);
 static void clar_fn_rtUiTableScrollTo(void * cv_instV, int32_t cv_wIdx, int32_t cv_row);
 static void clar_fn_rtUiTableSetSel(void * cv_instV, int32_t cv_wIdx, int32_t cv_v);
+static void * clar_fn_rtUiFontScratchGet(void);
+static void clar_fn_rtUiFontSave(void);
+static void clar_fn_rtUiFontApply(void * cv_instV, int32_t cv_wIdx);
+static void clar_fn_rtUiFontRestore(void);
+static int32_t clar_fn_rtUiFontLineH(void * cv_fi);
 static void clar_fn_rtUiJiggleTick(void);
 static void clar_fn_rtUiScriptJiggle(void);
 static void clar_fn_rtUiAnswerInit(void);
@@ -6243,71 +6243,6 @@ static void clar_fn_rtUiDrawDivider(void * cv_r, int32_t cv_style) {
     rt_ext_UiLineTo(CLAR_ADD32(cv_left, cv_ex), CLAR_ADD32(cv_top, cv_ey));
 }
 
-static void * clar_fn_rtUiFontScratchGet(void) {
-    void * cv_rgn;
-    cv_rgn = 0;
-    if (cv_rtUiFontScratch == (void *)(intptr_t)(0)) {
-        cv_rgn = clar_fn_UiNewRgn();
-        cv_rtUiFontScratch = clar_fn_UiNewPtr(24);
-        rt_pokel((void *)((char *)(cv_rtUiFontScratch) + (8)), ((int32_t)(intptr_t)(cv_rgn)));
-    }
-    return cv_rtUiFontScratch;
-    return 0;
-}
-
-static void clar_fn_rtUiFontSave(void) {
-    void * cv_sc;
-    cv_sc = 0;
-    void * cv_port;
-    cv_port = 0;
-    cv_sc = clar_fn_rtUiFontScratchGet();
-    rt_ext_UiGetPort((void *)((char *)(cv_sc) + (12)));
-    cv_port = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_sc) + (12))));
-    rt_pokew((void *)((char *)(cv_sc) + (16)), rt_peekw((void *)((char *)(cv_port) + (68))));
-    rt_pokew((void *)((char *)(cv_sc) + (18)), rt_peekb((void *)((char *)(cv_port) + (70))));
-    rt_pokew((void *)((char *)(cv_sc) + (20)), rt_peekw((void *)((char *)(cv_port) + (74))));
-}
-
-static void clar_fn_rtUiFontApply(void * cv_instV, int32_t cv_wIdx) {
-    clar_rec_RtUiWinst * cv_w;
-    cv_w = 0;
-    void * cv_p;
-    cv_p = 0;
-    clar_fn_rtUiFontSave();
-    cv_w = ((clar_rec_RtUiWinst *)(cv_instV));
-    if ((cv_w)->cv_fonts == (void *)(intptr_t)(0)) {
-        return;
-    }
-    cv_p = (void *)((char *)((cv_w)->cv_fonts) + (CLAR_MUL32(cv_wIdx, 4)));
-    if (rt_peekw(cv_p) != 0) {
-        rt_ext_UiTextFont(CLAR_SUB32(rt_peekw(cv_p), 1));
-    }
-    if (rt_peekb((void *)((char *)(cv_p) + (2))) != 0) {
-        rt_ext_UiTextSize(rt_peekb((void *)((char *)(cv_p) + (2))));
-    }
-    rt_ext_UiTextFace(rt_peekb((void *)((char *)(cv_p) + (3))));
-}
-
-static void clar_fn_rtUiFontRestore(void) {
-    void * cv_sc;
-    cv_sc = 0;
-    cv_sc = cv_rtUiFontScratch;
-    rt_ext_UiTextFont(rt_peekw((void *)((char *)(cv_sc) + (16))));
-    rt_ext_UiTextFace(rt_peekw((void *)((char *)(cv_sc) + (18))));
-    rt_ext_UiTextSize(rt_peekw((void *)((char *)(cv_sc) + (20))));
-}
-
-static int32_t clar_fn_rtUiFontLineH(void * cv_fi) {
-    int32_t cv_h;
-    cv_h = 0;
-    cv_h = CLAR_ADD32(CLAR_ADD32(rt_peekw((void *)((char *)(cv_fi) + (0))), rt_peekw((void *)((char *)(cv_fi) + (2)))), rt_peekw((void *)((char *)(cv_fi) + (6))));
-    if (cv_h < 1) {
-        return 1;
-    }
-    return cv_h;
-    return 0;
-}
-
 static void * clar_fn_UiTENew(void * cv_dst, void * cv_view) {
     clar_fn_rtUiJiggleTick();
     return rt_ext_UiTENewRaw(cv_dst, cv_view);
@@ -7962,6 +7897,71 @@ static void clar_fn_rtUiTableSetSel(void * cv_instV, int32_t cv_wIdx, int32_t cv
     rt_ext_UiInvalRect((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (0)));
     rt_ext_UiHSetState(cv_lh, cv_hstate);
     clar_fn_rtUiTraceSetInt(clar_fn_uidWinName(cv_winIdx), clar_fn_uidWidgetName(cv_winIdx, cv_wIdx), 4, cv_row);
+}
+
+static void * clar_fn_rtUiFontScratchGet(void) {
+    void * cv_rgn;
+    cv_rgn = 0;
+    if (cv_rtUiFontScratch == (void *)(intptr_t)(0)) {
+        cv_rgn = clar_fn_UiNewRgn();
+        cv_rtUiFontScratch = clar_fn_UiNewPtr(24);
+        rt_pokel((void *)((char *)(cv_rtUiFontScratch) + (8)), ((int32_t)(intptr_t)(cv_rgn)));
+    }
+    return cv_rtUiFontScratch;
+    return 0;
+}
+
+static void clar_fn_rtUiFontSave(void) {
+    void * cv_sc;
+    cv_sc = 0;
+    void * cv_port;
+    cv_port = 0;
+    cv_sc = clar_fn_rtUiFontScratchGet();
+    rt_ext_UiGetPort((void *)((char *)(cv_sc) + (12)));
+    cv_port = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_sc) + (12))));
+    rt_pokew((void *)((char *)(cv_sc) + (16)), rt_peekw((void *)((char *)(cv_port) + (68))));
+    rt_pokew((void *)((char *)(cv_sc) + (18)), rt_peekb((void *)((char *)(cv_port) + (70))));
+    rt_pokew((void *)((char *)(cv_sc) + (20)), rt_peekw((void *)((char *)(cv_port) + (74))));
+}
+
+static void clar_fn_rtUiFontApply(void * cv_instV, int32_t cv_wIdx) {
+    clar_rec_RtUiWinst * cv_w;
+    cv_w = 0;
+    void * cv_p;
+    cv_p = 0;
+    clar_fn_rtUiFontSave();
+    cv_w = ((clar_rec_RtUiWinst *)(cv_instV));
+    if ((cv_w)->cv_fonts == (void *)(intptr_t)(0)) {
+        return;
+    }
+    cv_p = (void *)((char *)((cv_w)->cv_fonts) + (CLAR_MUL32(cv_wIdx, 4)));
+    if (rt_peekw(cv_p) != 0) {
+        rt_ext_UiTextFont(CLAR_SUB32(rt_peekw(cv_p), 1));
+    }
+    if (rt_peekb((void *)((char *)(cv_p) + (2))) != 0) {
+        rt_ext_UiTextSize(rt_peekb((void *)((char *)(cv_p) + (2))));
+    }
+    rt_ext_UiTextFace(rt_peekb((void *)((char *)(cv_p) + (3))));
+}
+
+static void clar_fn_rtUiFontRestore(void) {
+    void * cv_sc;
+    cv_sc = 0;
+    cv_sc = cv_rtUiFontScratch;
+    rt_ext_UiTextFont(rt_peekw((void *)((char *)(cv_sc) + (16))));
+    rt_ext_UiTextFace(rt_peekw((void *)((char *)(cv_sc) + (18))));
+    rt_ext_UiTextSize(rt_peekw((void *)((char *)(cv_sc) + (20))));
+}
+
+static int32_t clar_fn_rtUiFontLineH(void * cv_fi) {
+    int32_t cv_h;
+    cv_h = 0;
+    cv_h = CLAR_ADD32(CLAR_ADD32(rt_peekw((void *)((char *)(cv_fi) + (0))), rt_peekw((void *)((char *)(cv_fi) + (2)))), rt_peekw((void *)((char *)(cv_fi) + (6))));
+    if (cv_h < 1) {
+        return 1;
+    }
+    return cv_h;
+    return 0;
 }
 
 static void clar_fn_rtUiJiggleTick(void) {
