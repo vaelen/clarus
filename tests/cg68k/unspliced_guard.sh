@@ -99,7 +99,9 @@ LC_ALL=C sed '/^func rtStrStore(/,/^}$/d' "$rtbase/runtime/clarus/str.cla" > "$W
 grep -q 'func rtStrStore(' "$WORK/str.stripped" \
     && die "sed did not remove rtStrStore from str.cla"
 cp "$WORK/str.stripped" "$WORK/nofn/runtime/clarus/str.cla"
+# Which reachable store hits the hole first decides the wording ("cg68k:
+# rtStrStore ..." or "cg68k: runtime function rtStrStore ..."); both name it.
 guard_check missing_function "$WORK/nofn/runtime/clarus/" "$WORK/needs_ss.cla" \
-    'cg68k: rtStrStore not found/reachable'
+    'rtStrStore not found/reachable'
 
 t_done

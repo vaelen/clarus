@@ -1020,6 +1020,7 @@ func rtUiTeardownWindow(inst: ptr) {
     while i < n {
         lh = rtUiListAt(w, i)
         if lh != ptr(0) {
+            rtUiTableFreeState(lh) // unobserve (uitable.cla)
             ldefH = ptr(peekl(UiHandleDeref(lh) + rtUiListDefProc))
             UiLDispose(lh)
             UiDisposeHandle(ldefH)
@@ -1846,6 +1847,8 @@ func rtUiHandleUpdate(wp: ptr) {
     var hx: int
     var headerRect: ptr
     var ck: int
+    var cw: int
+    var hdr: ptr
 
     UiSetPort(wp)
     UiBeginUpdate(wp)
@@ -1983,13 +1986,16 @@ func rtUiHandleUpdate(wp: ptr) {
                 hx = peekw(lhMp + rtUiListRView + 2)
                 ck = 0
                 while ck < nCols {
-                    UiMoveTo(hx + 2, peekw(headerRect + 4) - 3)
-                    UiDrawText(uidColHeader(colsOff, ck) + 1, 0, peekb(uidColHeader(colsOff, ck)))
                     if uidColWidthFill(colsOff, ck) {
-                        hx = hx + fillW
+                        cw = fillW
                     } else {
-                        hx = hx + uidColWidthPx(colsOff, ck)
+                        cw = uidColWidthPx(colsOff, ck)
                     }
+                    // The header follows its column's align (spec 3.5).
+                    hdr = uidColHeader(colsOff, ck)
+                    UiMoveTo(rtUiTableTextX(hx, cw, hdr + 1, peekb(hdr), uidColAlign(colsOff, ck)), peekw(headerRect + 4) - 3)
+                    UiDrawText(hdr + 1, 0, peekb(hdr))
+                    hx = hx + cw
                     ck = ck + 1
                 }
                 UiMoveTo(peekw(box + 2), peekw(headerRect + 4) - 1)

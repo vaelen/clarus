@@ -26,6 +26,7 @@ func caseListObserve(): TestResult {
     var extra: list of int
     var xs: list of int
     var v: int
+    var base: int
 
     l = rtListNew(4)
     cell = ListNewPtr(4)
@@ -34,6 +35,9 @@ func caseListObserve(): TestResult {
         lobsPush(l, cell, i)
         i = i + 1
     }
+    // The suite GUI's own bound table observes too (Task 5): count from
+    // whatever is already registered.
+    base = rtListObsCount
     e1 = rtListObserve(l)
     e2 = rtListObserve(l)
     if e1 < 0 or e2 < 0 or e1 == e2 {
@@ -140,7 +144,7 @@ func caseListObserve(): TestResult {
     }
     rtListUnobserve(e1)
     rtListUnobserve(e2)
-    if rtListObsCount != 0 {
+    if rtListObsCount != base {
         return tkFail("ListObserve", "count after unobserve " + tkIntToStr(rtListObsCount))
     }
     rtListRelease(l)

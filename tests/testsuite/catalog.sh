@@ -147,6 +147,12 @@ on App.startCLI(args: list of string) {
     bd.buffSize = 0
     err = PBControlAsync(np)
     t0 = t0 + registerName + nteSize + ccbSize + atpMaxData + nbpDuplicate
+    rh = LNew(p, p, 0, 0, ptr(0), false, false, false, true)
+    LScroll(0, 1, rh)
+    if LGetSelect(false, p, rh) {
+        t0 = t0 + LLastClick(rh) + lOnlyOne
+    }
+    LDispose(rh)
 }
 CLA_EOF
 
@@ -165,6 +171,7 @@ if "$CLARUSC" "$WORK/driver.cla" \
         "$ROOT/toolbox/appletalk.cla" \
         "$ROOT/toolbox/mactcp.cla" \
         "$ROOT/toolbox/segload.cla" \
+        "$ROOT/toolbox/lists.cla" \
         > "$WORK/catalog.log" 2>&1; then
     t_pass "$n"
 else

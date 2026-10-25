@@ -80,6 +80,7 @@ external func UiLActivate(act: bool, lHandle: ptr) = trap 0xA9E7 sel 0x0000
 external func UiLSetDrawingMode(drawIt: bool, lHandle: ptr) = trap 0xA9E7 sel 0x002C
 external func UiLUpdate(theRgn: ptr, lHandle: ptr) = trap 0xA9E7 sel 0x0064
 external func UiLClick(pt: int, modifiers: int16, lHandle: ptr): bool = trap 0xA9E7 sel 0x0018
+external func UiLScroll(dCols: int16, dRows: int16, lHandle: ptr) = trap 0xA9E7 sel 0x0050
 
 // ---- Menu Manager additions (SetMenuItemText/GetMenuHandle/PopUpMenuSelect
 // -- ui.cla already declares NewMenu/AppendMenu/AppendMenuStr/InsertMenu/
@@ -289,6 +290,25 @@ const rtUiListSelFlags: int = 36
 const rtUiListRefCon: int = 60
 const rtUiListDefProc: int = 64
 const rtUiListDataBoundsBottom: int = 76 // dataBounds(Rect) base 72, .bottom @+4
+const rtUiListUserHandle: int = 68      // our RtUiTableSt block (a Ptr), see below
+
+// RtUiTableSt: one table instance's live-binding state (ui-widgets Task 5,
+// spec 4.5/4.7), a UiNewPtr block whose address sits in the ListRec's
+// userHandle field, so the LDEF (which only gets the ListHandle) reaches
+// it too. box/entry: the observed list box and its registry entry (-1 once
+// unobserved); gen: the entry's gen as last drawn; scratch: a row-sized
+// copy UiColFmt reads (never the relocatable row block itself); logged:
+// one bit per column whose formatter abort has been logged (C5). Pointers
+// first, so the host C struct packs to rtUiTableStSize too.
+overlay record RtUiTableSt {
+    box: ptr
+    scratch: ptr
+    entry: int
+    gen: int
+    logged: int
+}
+
+const rtUiTableStSize: int = 32
 
 // ================================================================
 // Per-instance array-slot accessors (RtUiWinst.lists/popups/popupSel are
@@ -452,88 +472,122 @@ func rtUiIntFieldLoad(base: ptr, ftype: int): int {
     return v
 }
 
+// rtUiTableTextX: the pen x for n bytes of text at txt in a column whose
+// left edge is `left` and width colW, per the column's align (spec 3.5):
+// left keeps the 2 px inset, center = (colW - textW) / 2, right =
+// colW - textW - 2. Shared by the LDEF's cells and the header strip
+// (ui.cla's rtUiHandleUpdate), so the two always agree.
+func rtUiTableTextX(left: int, colW: int, txt: ptr, n: int, align: int): int {
+    var tw: int
+
+    if align == rtUiAlignLeft {
+        return left + 2
+    }
+    tw = UiTextWidth(txt, 0, n)
+    if align == rtUiAlignCenter {
+        return left + (colW - tw) / 2
+    }
+    return left + colW - tw - 2
+}
+
 // rtUiTableDrawField (rt_ui.c:1075-1122): renders one field's value into
-// colRect (already ClipRect'd by the caller) by ftype -- mirrors
-// rt_ser.inc's own ser_put_field byte layout exactly, including RtFtBool's
-// 1-byte field at its base address (small-scalar-width phase). Unknown
-// enum value draws '?' (rt_ui.h's defensive "draw something, never crash"
-// contract).
-func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr) {
+// colRect (already ClipRect'd by the caller) by ftype, aligned per align --
+// mirrors rt_ser.inc's own ser_put_field byte layout exactly, including
+// RtFtBool's 1-byte field at its base address (small-scalar-width phase).
+// Every arm reads the field BEFORE its own UiNewPtr (an allocation can
+// move an unlocked row block; the LDEF also locks it), then the one tail
+// measures and draws. Unknown enum value draws '?' (rt_ui.h's defensive
+// "draw something, never crash" contract).
+func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr, align: int) {
     var base: ptr
     var ftype: int
     var v: int
-    var numbuf: ptr
-    var chBuf: ptr
+    var buf: ptr
+    var txt: ptr
+    var n: int
     var enumCount: int
     var enumLabelsOff: int
     var enumValuesOff: int
     var k: int
-    var lbl: ptr
-    var found: bool
 
-    // A formatted column (ui-widgets Task 1) has no field: fieldIdx -1
-    // draws an empty cell until Task 3's UiColFmt dispatcher draws it.
+    // A formatted column has no field (fieldIdx -1): the LDEF draws it
+    // through UiColFmt instead.
     if fieldIdx < 0 {
         return
     }
     base = rec + uidFieldOffset(layoutOff, fieldIdx)
     ftype = uidFieldFtype(layoutOff, fieldIdx)
-    UiMoveTo(peekw(colRect + 2) + 2, peekw(colRect + 4) - 3)
+    buf = ptr(0)
+    txt = ptr(0)
+    n = 0
 
     if ftype == rtUiFtStr {
-        UiDrawText(base + 1, 0, peekb(base))
+        txt = base + 1
+        n = peekb(base)
     } else if ftype == rtUiFtInt or ftype >= rtUiFtU8 {
         v = rtUiIntFieldLoad(base, ftype)
-        numbuf = UiNewPtr(256)
-        rtUiIntToPStr(v, numbuf)
-        UiDrawText(numbuf + 1, 0, peekb(numbuf))
-        UiDisposePtr(numbuf)
+        buf = UiNewPtr(256)
+        rtUiIntToPStr(v, buf)
     } else if ftype == rtUiFtFixed {
         v = peekl(base)
-        numbuf = UiNewPtr(256)
-        rtUiFixedToStr(v, numbuf)
-        UiDrawText(numbuf + 1, 0, peekb(numbuf))
-        UiDisposePtr(numbuf)
+        buf = UiNewPtr(256)
+        rtUiFixedToStr(v, buf)
     } else if ftype == rtUiFtBool {
-        v = peekb(base) // bool: 1 byte at base, both lanes
-        if v != 0 {
-            chBuf = UiNewPtr(1)
-            pokeb(chBuf, 0xC3) // MacRoman check mark
-            UiDrawText(chBuf, 0, 1)
-            UiDisposePtr(chBuf)
+        if peekb(base) != 0 { // bool: 1 byte at base, both lanes
+            buf = UiNewPtr(2)
+            pokeb(buf, 1)
+            pokeb(buf + 1, 0xC3) // MacRoman check mark
         }
     } else if ftype == rtUiFtChar {
-        // Read the byte BEFORE the allocation (same relocation rule as
-        // the LDEF's own `rec` above, and as RtFtBool's arm just above
-        // already follows): UiNewPtr can compact the heap and move the
-        // rt_list element block `base` points into.
         v = peekb(base)
-        chBuf = UiNewPtr(1)
-        pokeb(chBuf, v)
-        UiDrawText(chBuf, 0, 1)
-        UiDisposePtr(chBuf)
+        buf = UiNewPtr(2)
+        pokeb(buf, 1)
+        pokeb(buf + 1, v)
     } else if ftype == rtUiFtEnum {
         v = peekw(base) // enum: a 2-byte word, both lanes (SE wave 3)
         enumCount = uidFieldEnumCount(layoutOff, fieldIdx)
         enumLabelsOff = uidFieldEnumLabelsOff(layoutOff, fieldIdx)
         enumValuesOff = uidFieldEnumValuesOff(layoutOff, fieldIdx)
-        found = false
+        txt = UiStrAddr("?")
         k = 0
         while k < enumCount {
             if uidEnumValue(enumValuesOff, k) == v {
-                lbl = uidEnumLabel(enumLabelsOff, k)
-                UiDrawText(lbl + 1, 0, peekb(lbl))
-                found = true
+                txt = uidEnumLabel(enumLabelsOff, k)
                 k = enumCount
             } else {
                 k = k + 1
             }
         }
-        if not found {
-            lbl = UiStrAddr("?")
-            UiDrawText(lbl + 1, 0, peekb(lbl))
-        }
+        n = peekb(txt)
+        txt = txt + 1
     }
+    if buf != ptr(0) {
+        txt = buf + 1
+        n = peekb(buf)
+    }
+    if n > 0 {
+        UiMoveTo(rtUiTableTextX(peekw(colRect + 2), peekw(colRect + 6) - peekw(colRect + 2), txt, n, align), peekw(colRect + 4) - 3)
+        UiDrawText(txt, 0, n)
+    }
+    if buf != ptr(0) {
+        UiDisposePtr(buf)
+    }
+}
+
+// rtUiTableLogAbort: the once-per-(window instance, column) line for a
+// formatter that aborted (spec C5), naming the column by its header.
+func rtUiTableLogAbort(hdr: ptr) {
+    var s: string
+    var i: int
+
+    s = "table column "
+    i = 0
+    while i < peekb(hdr) {
+        s = s + char(peekb(hdr + 1 + i))
+        i = i + 1
+    }
+    s = s + ": formatter aborted"
+    log(s)
 }
 
 // rtUiTableRowH/rtUiTableHeaderH (rt_ui.c:1131-1144): row height (a table's
@@ -634,10 +688,17 @@ callback func rtUiLdefDraw(msg: int16, select: bool, rectPtr: ptr, cellPacked: i
     var w: int
     var colRect: ptr
     var saveClip: ptr
+    var stP: ptr
+    var st: RtUiTableSt
+    var fmtId: int
+    var fmtLay: int
+    var out: ptr
+    var locked: bool
 
     if msg == rtUiLDrawMsg {
         lhMp = UiHandleDeref(lh)
         tableOff = peekl(lhMp + rtUiListRefCon)
+        stP = ptr(peekl(lhMp + rtUiListUserHandle)) // a Ptr: never moves
         rowsIdx = uidTableRowsIdx(tableOff)
         layoutOff = uidTableLayoutOff(tableOff)
         nCols = uidTableNCols(tableOff)
@@ -670,13 +731,15 @@ callback func rtUiLdefDraw(msg: int16, select: bool, rectPtr: ptr, cellPacked: i
             // here. Nothing in the loop needs the block RELOCATABLE --
             // it only allocates (UiNewPtr/UiNewRgn) and never resizes
             // this handle -- so holding the lock across all the columns
-            // is safe. Restore the handle's PRIOR state rather than a
-            // bare HUnlock: a caller may already hold it locked. There
-            // is no `return`/`break` inside the loop, so the single
-            // UiHSetState below the loop is on every path out.
+            // is safe -- except across a formatted column's user call,
+            // which unlocks it and re-locks after (below). Restore the
+            // handle's PRIOR state rather than a bare HUnlock: a caller
+            // may already hold it locked. `locked` tracks whether the
+            // single UiHSetState below the loop still owes a restore.
             recH = RtList(rows).data
             hstate = UiHGetState(recH)
             UiHLock(recH)
+            locked = true
             k = 0
             while k < nCols {
                 if uidColWidthFill(colsOff, k) {
@@ -716,15 +779,53 @@ callback func rtUiLdefDraw(msg: int16, select: bool, rectPtr: ptr, cellPacked: i
                 // the cheap, local statement of the rule bff3268 pinned:
                 // never cache an rt_list element pointer across
                 // allocating calls.
-                rec = rtListAt(rows, row)
-                rtUiTableDrawField(rec, layoutOff, uidColFieldIndex(colsOff, k), colRect)
+                fmtId = uidColFmtId(colsOff, k)
+                if fmtId < 0 {
+                    rec = rtListAt(rows, row)
+                    rtUiTableDrawField(rec, layoutOff, uidColFieldIndex(colsOff, k), colRect, uidColAlign(colsOff, k))
+                } else if stP != ptr(0) {
+                    st = RtUiTableSt(stP)
+                    // A formatted column (spec 4.7): the user function may
+                    // allocate and move memory, so it gets a COPY of the
+                    // row (st.scratch, a Ptr) and the row block is
+                    // unlocked across the call; its result lands in `out`,
+                    // a Ptr too, and draws through the column's one-field
+                    // fmtLayoutOff descriptor.
+                    UiBlockMoveData(rtListAt(rows, row), st.scratch, uidLayoutRecSize(layoutOff))
+                    UiHSetState(recH, hstate)
+                    locked = false
+                    fmtLay = uidColFmtLayout(colsOff, k)
+                    out = UiNewPtr(uidLayoutRecSize(fmtLay))
+                    if UiColFmt(fmtId, st.scratch, out) {
+                        rtUiTableDrawField(out, fmtLay, 0, colRect, uidColAlign(colsOff, k))
+                    } else if k < 32 and (st.logged & (1 << k)) == 0 {
+                        // ponytail: one logged bit per column, so a 33rd+
+                        // column's abort is never logged; widen if needed.
+                        st.logged = st.logged | (1 << k)
+                        rtUiTableLogAbort(uidColHeader(colsOff, k))
+                    }
+                    UiDisposePtr(out)
+                    // Re-derive: the call may have grown, shrunk or
+                    // replaced the list. A row that is gone ends the row.
+                    rows = ptr(peekl(rowsAddr))
+                    if row < rtListCount(rows) {
+                        recH = RtList(rows).data
+                        hstate = UiHGetState(recH)
+                        UiHLock(recH)
+                        locked = true
+                    } else {
+                        k = nCols
+                    }
+                }
                 UiSetClip(saveClip)
                 UiDisposeRgn(saveClip)
                 UiDisposePtr(colRect)
                 x = x + w
                 k = k + 1
             }
-            UiHSetState(recH, hstate)
+            if locked {
+                UiHSetState(recH, hstate)
+            }
         }
         if select {
             UiInvertRect(rectPtr)
@@ -928,6 +1029,7 @@ func rtUiTableClick(inst: ptr, wIdx: int, localPt: int, mods: int) {
             row = 0 // ponytail: no upper clamp against rtListCount -- our own scripts only ever click real rows
         }
         rtUiTableSelectExclusive(lh, row)
+        rtUiTableSetMark(lh, row)
         rtUiTableFireSelect(inst, wIdx, row)
         if rtUiScriptDbl {
             rtUiTableFireDblclick(inst, wIdx, row)
@@ -936,28 +1038,93 @@ func rtUiTableClick(inst: ptr, wIdx: int, localPt: int, mods: int) {
     }
     dbl = UiLClick(localPt, mods, lh)
     row = rtUiTableGetSelected(lh)
+    rtUiTableSetMark(lh, row)
     rtUiTableFireSelect(inst, wIdx, row)
     if dbl {
         rtUiTableFireDblclick(inst, wIdx, row)
     }
 }
 
-// rtUiTableSyncOne (rt_ui.c:1594-1613): re-syncs ONE table's native LM row
-// count to its bound rt_list's current count -- diff, then LAddRow/LDelRow
-// AT THE END (keeps every rendered row's CONTENT correct regardless of
-// where in the underlying list a push/remove actually happened, since the
-// LDEF always re-derives content by fresh index; it can leave a stale LM
-// selection bit on whatever row index was previously highlighted if a
-// MIDDLE row was the one removed -- known, brief-prescribed limitation).
+// rtUiTableStOf: table lh's RtUiTableSt block address (ptr(0) before
+// rtUiTableInitState / after rtUiTableFreeState).
+func rtUiTableStOf(lh: ptr): ptr {
+    return ptr(peekl(UiHandleDeref(lh) + rtUiListUserHandle))
+}
+
+// rtUiTableInitState: table wIdx's live-binding state (spec 4.5), made
+// right after its ListRec (uiwidgets.cla's rtUiMakeWidgets): observe the
+// bound list's current box, and a row-sized scratch for UiColFmt.
+func rtUiTableInitState(inst: ptr, wIdx: int, lh: ptr) {
+    var w: RtUiWinst
+    var tableOff: int
+    var stP: ptr
+    var st: RtUiTableSt
+
+    w = RtUiWinst(inst)
+    tableOff = uidWidgetTableOff(w.winIdx, wIdx)
+    stP = UiNewPtr(rtUiTableStSize)
+    st = RtUiTableSt(stP)
+    st.scratch = UiNewPtr(uidLayoutRecSize(uidTableLayoutOff(tableOff)))
+    st.box = ptr(peekl(UiTableRows(uidTableRowsIdx(tableOff))))
+    st.entry = rtListObserve(st.box)
+    st.gen = rtListObsGen(st.entry)
+    st.logged = 0
+    pokel(UiHandleDeref(lh) + rtUiListUserHandle, int(stP)) // after the allocations: lh can move
+}
+
+// rtUiTableFreeState: unobserve and free (ui.cla's rtUiTeardownWindow,
+// before UiLDispose). entry goes to -1 first: after rtListUnobserve the
+// registry block may be gone, and its accessors do not validate.
+func rtUiTableFreeState(lh: ptr) {
+    var stP: ptr
+    var st: RtUiTableSt
+
+    stP = rtUiTableStOf(lh)
+    if stP == ptr(0) {
+        return
+    }
+    st = RtUiTableSt(stP)
+    rtListUnobserve(st.entry)
+    st.entry = -1
+    pokel(UiHandleDeref(lh) + rtUiListUserHandle, 0)
+    UiDisposePtr(st.scratch)
+    UiDisposePtr(stP)
+}
+
+// rtUiTableSetMark: records the table's selected row in its registry
+// entry, so list ops keep it on the same record (D3). A row past the LM
+// rows (an unclamped scripted click) or negative is -1.
+func rtUiTableSetMark(lh: ptr, row: int) {
+    var stP: ptr
+    var m: int
+
+    stP = rtUiTableStOf(lh)
+    if stP == ptr(0) {
+        return
+    }
+    m = row
+    if m < 0 or m >= peekw(UiHandleDeref(lh) + rtUiListDataBoundsBottom) {
+        m = -1
+    }
+    rtListObsSetMark(RtUiTableSt(stP).entry, m)
+}
+
+// rtUiTableSyncOne (rt_ui.c:1594-1613, live binding per spec 4.5): if the
+// bound global now holds a different box (whole-list reassignment),
+// re-observe it, which also drops the selection. Then, when the entry's
+// gen moved or the counts differ: fix LM's row count at the end (the LDEF
+// re-derives every row's content by index), select the entry's mark
+// (or nothing), and invalidate the whole view (small tables: spec 3.5).
 // Idempotent: a no-op, cheap check when nothing changed.
 func rtUiTableSyncOne(inst: ptr, wIdx: int) {
     var w: RtUiWinst
     var lh: ptr
     var lhMp: ptr
     var tableOff: int
-    var rowsIdx: int
-    var rowsAddr: ptr
     var rows: ptr
+    var stP: ptr
+    var st: RtUiTableSt
+    var gen: int
     var dataCount: int
     var lmCount: int
     var hstate: int
@@ -968,23 +1135,36 @@ func rtUiTableSyncOne(inst: ptr, wIdx: int) {
     if lh == ptr(0) {
         return
     }
+    stP = rtUiTableStOf(lh)
+    if stP == ptr(0) {
+        return
+    }
+    st = RtUiTableSt(stP)
     tableOff = uidWidgetTableOff(w.winIdx, wIdx)
-    rowsIdx = uidTableRowsIdx(tableOff)
-    rowsAddr = UiTableRows(rowsIdx)
-    rows = ptr(peekl(rowsAddr))
+    rows = ptr(peekl(UiTableRows(uidTableRowsIdx(tableOff))))
+    if rows != st.box {
+        rtListUnobserve(st.entry)
+        st.entry = -1
+        st.box = rows
+        st.entry = rtListObserve(rows)
+        st.gen = rtListObsGen(st.entry) - 1 // force the redraw below
+    }
+    gen = rtListObsGen(st.entry)
     dataCount = rtListCount(rows)
     lhMp = UiHandleDeref(lh)
     lmCount = peekw(lhMp + rtUiListDataBoundsBottom)
-    if dataCount == lmCount {
+    if gen == st.gen and dataCount == lmCount {
         return
     }
+    st.gen = gen
     savedPort = rtUiGetPortSaved()
     UiSetPort(w.wp)
     if dataCount > lmCount {
         UiLAddRow(dataCount - lmCount, lmCount, lh)
-    } else {
+    } else if dataCount < lmCount {
         UiLDelRow(lmCount - dataCount, dataCount, lh)
     }
+    rtUiTableSelectExclusive(lh, rtListObsMark(st.entry))
     // compiler-cleanup: re-deriving after LAddRow/LDelRow is necessary but
     // NOT sufficient -- InvalRect itself allocates (update-region growth)
     // while holding the ListRec's master pointer as its argument, so the
@@ -1151,14 +1331,37 @@ func rtUiPopupClick(inst: ptr, pIdx: int) {
     UiDisposePtr(box)
 }
 
-// rtUiTableScrollTo: `table.scrollTo(row)` (spec 3.5). Task 2 stub; Task 5
-// makes row visible with LScroll, clamped.
+// rtUiTableScrollTo: `table.scrollTo(row)` (spec 3.5): row, clamped to
+// 0..count-1, becomes the top visible row (LM itself stops at the last
+// full page). The caller has already set the window's port.
 func rtUiTableScrollTo(instV: ptr, wIdx: int, row: int) {
+    var lh: ptr
+    var count: int
+    var r: int
+
+    rtUiTableSyncOne(instV, wIdx) // LM's rows current before the clamp
+    lh = rtUiListAt(RtUiWinst(instV), wIdx)
+    if lh == ptr(0) {
+        return
+    }
+    count = peekw(UiHandleDeref(lh) + rtUiListDataBoundsBottom)
+    if count == 0 {
+        return
+    }
+    r = row
+    if r >= count {
+        r = count - 1
+    }
+    if r < 0 {
+        r = 0
+    }
+    UiLScroll(0, r - peekw(UiHandleDeref(lh) + rtUiListVisibleTop), lh)
 }
 
 // rtUiTableSetSel: `table.selected = row` (moved verbatim out of
 // uiwidgets.cla's rtUiWidgetSetInt by ui-widgets Task 2; Task 5 extends it
-// to write the observed list's mark). The row clamp is upper-bound ONLY --
+// to write the observed list's mark, so the selection then follows its
+// record; it never fires `select`). The row clamp is upper-bound ONLY --
 // a negative row passes straight through to rtUiTableSelectExclusive,
 // whose own "unless negative, meaning deselect only" contract is exactly
 // what a negative `selected` write is supposed to do. The caller has
@@ -1175,6 +1378,9 @@ func rtUiTableSetSel(instV: ptr, wIdx: int, v: int) {
     var rows: ptr
     var row: int
 
+    // Sync first: a handler that adds rows and then selects the new one
+    // must find LM's rows (and the mark's range) current.
+    rtUiTableSyncOne(instV, wIdx)
     w = RtUiWinst(instV)
     winIdx = w.winIdx
     lh = rtUiListAt(w, wIdx)
@@ -1188,6 +1394,7 @@ func rtUiTableSetSel(instV: ptr, wIdx: int, v: int) {
         row = count - 1
     }
     rtUiTableSelectExclusive(lh, row)
+    rtUiTableSetMark(lh, row)
     // compiler-cleanup: InvalRect allocates (update-region growth) with
     // the ListRec master pointer already evaluated as its argument --
     // the relocation window is INSIDE the trap. Lock lh across the

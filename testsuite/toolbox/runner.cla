@@ -207,15 +207,17 @@ enum ToolboxTest {
     AdspLeak
     NarrowForm
     ListObserve
+    TableBinding
+    TableFormat
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 41 real cases
+// nTbCases is ToolboxTest's member count minus All: the 43 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 42
+const nTbCases: int = 44
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -347,6 +349,12 @@ func tbCaseName(t: ToolboxTest): string {
     case ListObserve {
         return "ListObserve"
     }
+    case TableBinding {
+        return "TableBinding"
+    }
+    case TableFormat {
+        return "TableFormat"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -399,6 +407,8 @@ func tbAllCases(): list of ToolboxTest {
     l.add(AdspLeak)
     l.add(NarrowForm)
     l.add(ListObserve)
+    l.add(TableBinding)
+    l.add(TableFormat)
     l.add(SelfCheck)
     return l
 }
@@ -599,6 +609,14 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, ListObserve) {
         results.add(caseListObserve())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, TableBinding) {
+        results.add(caseTableBinding())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, TableFormat) {
+        results.add(caseTableFormat())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

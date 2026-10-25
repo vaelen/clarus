@@ -1,0 +1,189 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_tablebind.cla: TableBinding (ui-widgets Task 5, spec 3.5/4.5) --
+// a bound table follows its list live: the selection follows its record
+// across unshift/pop (D3), an element store redraws its row, removing the
+// selected record clears the selection, scrollTo moves the first visible
+// row, and assigning `selected` never fires `select`. A second window on
+// the same list keeps its own highlight, and closing it leaves the first
+// window's registry entry alone (review focus 4).
+//
+// Geometry: TbBindWin is 420 wide, so its content starts at global
+// ((512-420)/2, 44) = (46, 44); table T sits at local (10,10), and
+// it keeps its default 300x120 (global (56,54)-(356,174)): `height:` is
+// not live until Task 6. Header strip 20, row height 16 (the
+// Chicago 12 metrics PopupTableWin's row-click math already relies on):
+// row i's cell top is 74 + 16*i. The band is x 64..112 (8-aligned, inside
+// column N's 57..117) and y 75+16*i..+14 (inside the row, off its edges).
+// The view is 99 px tall, so rows 0..5 show whole (the element store is
+// therefore checked on row 2, not the brief's row 10), and with 49 rows
+// LM allows a top as deep as 42: scrollTo(40) is a real, unclamped scroll.
+
+record TbRow {
+    n: int
+}
+
+var tbRows: list of TbRow
+var tbBindSelects: int
+
+window TbBindWin {
+    title: "TableBind"
+    size: 420, 280
+    table T {
+        at: 10, 10
+        rows: tbRows
+        column "N" shows n width 60
+    }
+}
+
+extend TbBindWin {
+    on T.select(i: int) {
+        tbBindSelects = tbBindSelects + 1
+    }
+}
+
+// TbBindWin2: the second window on tbRows (review focus 4). Same size, so
+// it sits exactly over TbBindWin while open; only its `selected` is read.
+window TbBindWin2 {
+    title: "TableBind2"
+    size: 420, 280
+    table T {
+        at: 10, 10
+        rows: tbRows
+        column "N" shows n width 60
+    }
+}
+
+func tbBindBand(row: int): int {
+    return UiTestChecksum(64, 75 + 16 * row, 48, 14)
+}
+
+func tbBindRow(n: int): TbRow {
+    var r: TbRow
+
+    r.n = n
+    return r
+}
+
+func caseTableBinding(): TestResult {
+    var w: TbBindWin
+    var w2: TbBindWin2
+    var i: int
+    var c: int
+    var top: int
+    var detail: string
+
+    tbBindSelects = 0
+    tbRows.clear()
+    i = 0
+    while i < 50 {
+        tbRows.add(tbBindRow(i))
+        i = i + 1
+    }
+    w = open TbBindWin
+    UiTestTick(1)
+
+    // Selection follows the record across unshift + pop (D3).
+    w.T.selected = 3
+    UiTestTick(1)
+    c = tbBindBand(0)
+    tbRows.unshift(tbBindRow(100))
+    tbRows.pop()
+    UiTestTick(1)
+    if w.T.selected != 4 {
+        detail = "after unshift selected " + tkIntToStr(w.T.selected)
+        close w
+        return tkFail("TableBinding", detail)
+    }
+    if tbBindBand(0) == c {
+        close w
+        return tkFail("TableBinding", "row 0 not redrawn after unshift")
+    }
+
+    // An element store redraws its row and keeps the selection.
+    c = tbBindBand(2)
+    tbRows[2] = tbBindRow(999)
+    UiTestTick(1)
+    if tbBindBand(2) == c {
+        close w
+        return tkFail("TableBinding", "row 2 not redrawn after l[2] = v")
+    }
+    if w.T.selected != 4 {
+        detail = "after store selected " + tkIntToStr(w.T.selected)
+        close w
+        return tkFail("TableBinding", detail)
+    }
+
+    // Two tables on one list: separate highlights, and closing the second
+    // leaves the first one's entry observed (review focus 4).
+    w2 = open TbBindWin2
+    UiTestTick(1)
+    w2.T.selected = 1
+    UiTestTick(1)
+    if w.T.selected != 4 or w2.T.selected != 1 {
+        detail = "two windows selected " + tkIntToStr(w.T.selected) + "/" + tkIntToStr(w2.T.selected)
+        close w2
+        close w
+        return tkFail("TableBinding", detail)
+    }
+    tbRows.unshift(tbBindRow(101))
+    tbRows.pop()
+    UiTestTick(1)
+    if w.T.selected != 5 or w2.T.selected != 2 {
+        detail = "two windows after unshift " + tkIntToStr(w.T.selected) + "/" + tkIntToStr(w2.T.selected)
+        close w2
+        close w
+        return tkFail("TableBinding", detail)
+    }
+    close w2
+    UiTestTick(1)
+    c = tbBindBand(0)
+    tbRows.unshift(tbBindRow(102))
+    tbRows.pop()
+    UiTestTick(1)
+    if w.T.selected != 6 {
+        detail = "after closing the second window selected " + tkIntToStr(w.T.selected)
+        close w
+        return tkFail("TableBinding", detail)
+    }
+    if tbBindBand(0) == c {
+        close w
+        return tkFail("TableBinding", "row 0 not redrawn after closing the second window")
+    }
+
+    // Removing the selected record clears the selection.
+    tbRows.remove(6)
+    UiTestTick(1)
+    if w.T.selected != -1 {
+        detail = "after remove selected " + tkIntToStr(w.T.selected)
+        close w
+        return tkFail("TableBinding", detail)
+    }
+
+    // scrollTo(40): the first visible row shows row 40. Proof by content:
+    // the band changes on the scroll, then reads row 0's old checksum once
+    // row 40 is given row 0's value.
+    top = tbBindBand(0)
+    w.T.scrollTo(40)
+    UiTestTick(1)
+    if tbBindBand(0) == top {
+        close w
+        return tkFail("TableBinding", "first visible row unchanged after scrollTo(40)")
+    }
+    tbRows[40] = tbBindRow(tbRows[0].n)
+    UiTestTick(1)
+    if tbBindBand(0) != top {
+        close w
+        return tkFail("TableBinding", "first visible row is not row 40 after scrollTo(40)")
+    }
+
+    close w
+    UiTestTick(1)
+    tbRows.clear()
+    if tbBindSelects != 0 {
+        detail = "assigning selected fired select " + tkIntToStr(tbBindSelects) + " times"
+        return tkFail("TableBinding", detail)
+    }
+    return tkPass("TableBinding")
+}
