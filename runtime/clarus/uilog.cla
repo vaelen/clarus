@@ -645,32 +645,48 @@ func rtUiLogBarStep(ctrl: ptr, part: int) {
     }
 }
 
-// rtUiLogBarAction: TrackControl's actionProc for arrow/page parts.
-callback func rtUiLogBarAction(ctrl: ptr, part: int16) {
-    if part != 0 {
-        rtUiLogBarStep(ctrl, part)
-    }
-}
-
+// rtUiLogBarClick: a press on one of the panel's own bars. Arrows and
+// page parts step once, then once per pass while the mouse stays down
+// over the same part -- TrackControl's actionProc would need a `callback
+// func`, and those are rooted in every program, logpanel or not.
+// ponytail: one step per pass, no autorepeat delay; add a tick throttle
+// if stepping proves too fast on a fast Mac.
 func rtUiLogBarClick(lg: RtUiLog, w: RtUiWinst, i: int, ctrl: ptr, part: int, pt: int) {
+    var mouse: ptr
+    var slot: ptr
+    var p: int
+
+    if part == rtUiCtlIndicator {
+        if rtUiScripted or UiTrackControl(ctrl, pt, ptr(0)) == 0 {
+            return
+        }
+        if ctrl == lg.hbar {
+            rtUiLogScrollBy(lg, w, i, 0, UiGetControlValue(ctrl) - lg.hoff)
+        } else {
+            rtUiLogScrollBy(lg, w, i, UiGetControlValue(ctrl) - lg.top, 0)
+        }
+        return
+    }
+    rtUiLogBarStep(ctrl, part)
     if rtUiScripted {
-        // No live mouse: one discrete nudge per scripted click (a thumb
-        // click is a no-op), as rtUiHandleScrollbarClick does.
-        rtUiLogBarStep(ctrl, part)
         return
     }
-    if part != rtUiCtlIndicator {
-        UiTrackControl(ctrl, pt, rtUiLogBarAction)
-        return
+    mouse = UiNewPtr(4)
+    slot = UiNewPtr(4)
+    UiHiliteControl(ctrl, part)
+    while UiStillDown() {
+        UiGetMouse(mouse)
+        p = UiFindControl(peekl(mouse), w.wp, slot)
+        if p == part and ptr(peekl(slot)) == ctrl {
+            UiHiliteControl(ctrl, part)
+            rtUiLogBarStep(ctrl, part)
+        } else {
+            UiHiliteControl(ctrl, 0)
+        }
     }
-    if UiTrackControl(ctrl, pt, ptr(0)) == 0 {
-        return
-    }
-    if ctrl == lg.hbar {
-        rtUiLogScrollBy(lg, w, i, 0, UiGetControlValue(ctrl) - lg.hoff)
-    } else {
-        rtUiLogScrollBy(lg, w, i, UiGetControlValue(ctrl) - lg.top, 0)
-    }
+    UiHiliteControl(ctrl, 0)
+    UiDisposePtr(slot)
+    UiDisposePtr(mouse)
 }
 
 // ---- selection ----
