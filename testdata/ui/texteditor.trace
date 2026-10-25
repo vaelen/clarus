@@ -6,6 +6,7 @@ T DIM Edit.Cut 1
 T DIM Edit.Copy 1
 T DIM Edit.Paste 1
 T DIM Edit.Clear 1
+T DIM Edit.SelectAll 1
 T FRONT Doc 1
 T OPENDOC My Notes.txt
 T OPEN Doc 2
@@ -22,6 +23,7 @@ T DIM Edit.Cut 0
 T DIM Edit.Copy 0
 T DIM Edit.Paste 0
 T DIM Edit.Clear 0
+T DIM Edit.SelectAll 0
 T FIRE Doc.closed
 T FIRE File.New.select
 T OPEN Doc 3
@@ -31,6 +33,7 @@ T DIM Edit.Cut 1
 T DIM Edit.Copy 1
 T DIM Edit.Paste 1
 T DIM Edit.Clear 1
+T DIM Edit.SelectAll 1
 T FRONT Doc 3
 T FIRE Doc.Body.change
 T FIRE Doc.Body.change
@@ -56,6 +59,7 @@ T DIM Edit.Cut 0
 T DIM Edit.Copy 0
 T DIM Edit.Paste 0
 T DIM Edit.Clear 0
+T DIM Edit.SelectAll 0
 T FIRE Doc.closed
 T FIRE File.Open.select
 T ASKOPEN texteditor-roundtrip.txt
@@ -66,6 +70,7 @@ T DIM Edit.Cut 1
 T DIM Edit.Copy 1
 T DIM Edit.Paste 1
 T DIM Edit.Clear 1
+T DIM Edit.SelectAll 1
 T FRONT Doc 4
 T FIRE Doc.Body.change
 T FIRE Doc.Body.change
@@ -111,4 +116,5 @@ T DIM Edit.Cut 0
 T DIM Edit.Copy 0
 T DIM Edit.Paste 0
 T DIM Edit.Clear 0
+T DIM Edit.SelectAll 0
 T FIRE Doc.closed
