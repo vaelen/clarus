@@ -16,6 +16,18 @@
 // 51200.
 external func TbFreeMem(): int = trap 0xA01C reg
 
+// tbLogWrapLine: line i of the ring-wrap step -- 60 bytes ("w" + two
+// digits + 57 filler), doubled to 120 from line 10 on.
+func tbLogWrapLine(i: int): string {
+    var s: string
+
+    s = "w" + tkIntToStr(10 + i) + "-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST"
+    if i >= 10 {
+        s = s + s
+    }
+    return s
+}
+
 window LogRingWin {
     title: "LogRing"
     size: 300, 200
@@ -72,6 +84,29 @@ func caseLogPanelRing(): TestResult {
         close w
         return tkFail("LogPanelRing", "clear left " + tkIntToStr(w.G.lineCount))
     }
+
+    // Ring wrap: G's ring starts at 256 bytes and grows flat to its
+    // 5 x 64 = 320 cap at the fifth 61-byte record; the next records wrap
+    // it, and the 121-byte records 10 and 11 force growth past the cap,
+    // line 11's while the ring is wrapped (a host model of rtUiLogPush/
+    // rtUiLogGrow traced this sequence). The last five of 12 lines must
+    // read back intact.
+    i = 0
+    while i < 12 {
+        w.G.appendLine(tbLogWrapLine(i))
+        i = i + 1
+    }
+    i = 0
+    while i < 5 {
+        if w.G.line(i) != tbLogWrapLine(7 + i) {
+            detail = "wrap: line " + tkIntToStr(i)
+            detail = detail + " " + w.G.line(i)
+            close w
+            return tkFail("LogPanelRing", detail)
+        }
+        i = i + 1
+    }
+    w.G.clear()
 
     c0 = w.D.lineCount
     m0 = TbFreeMem()

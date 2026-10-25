@@ -365,27 +365,37 @@ func UiTestCanvasBlits(i: int): int {
 // selection packed (selFirst << 16) | (selLast & 0xFFFF), -1 when nothing
 // is selected. Both are -1 when widget i has no logpanel state. Bridges
 // for testsuite/toolbox's LogPanel cases; Ch8 exposes neither.
+// uilog.cla is spliced only into a program that declares a logpanel, so
+// this file cannot name its RtUiLog record: it reads the record's
+// address from the widget's RtUiCanvasBuf `pixels` slot and the fields
+// at RtUiLog's own offsets (top = field 7, selFirst 9, selLast 10).
+const rtUiTestLogTopOff: int = 28
+const rtUiTestLogSelFirstOff: int = 36
+const rtUiTestLogSelLastOff: int = 40
+
+func rtUiTestLogSt(i: int): ptr {
+    return RtUiCanvasBuf(rtUiCanvasBufAt(RtUiWinst(rtUiWinstOf(UiFrontWindow())), i)).pixels
+}
+
 func UiTestLogTop(i: int): int {
     var st: ptr
 
-    st = rtUiLogSt(RtUiWinst(rtUiWinstOf(UiFrontWindow())), i)
+    st = rtUiTestLogSt(i)
     if st == ptr(0) {
         return -1
     }
-    return RtUiLog(st).top
+    return peekl(st + rtUiTestLogTopOff)
 }
 
 func UiTestLogSel(i: int): int {
     var st: ptr
-    var lg: RtUiLog
 
-    st = rtUiLogSt(RtUiWinst(rtUiWinstOf(UiFrontWindow())), i)
+    st = rtUiTestLogSt(i)
     if st == ptr(0) {
         return -1
     }
-    lg = RtUiLog(st)
-    if lg.selFirst < 0 {
+    if peekl(st + rtUiTestLogSelFirstOff) < 0 {
         return -1
     }
-    return (lg.selFirst << 16) | (lg.selLast & 0xFFFF)
+    return (peekl(st + rtUiTestLogSelFirstOff) << 16) | (peekl(st + rtUiTestLogSelLastOff) & 0xFFFF)
 }

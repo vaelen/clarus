@@ -604,6 +604,7 @@ void rt_ext_UiGetFontInfo(void *info) { GetFontInfo((FontInfo *)info); }
 void rt_ext_UiScrollRect(void *r, short dh, short dv, void *updateRgn) { ScrollRect((const Rect *)r, dh, dv, (RgnHandle)updateRgn); }
 void rt_ext_UiGetFNum(void *name, void *familyID) { GetFNum((ConstStr255Param)name, (short *)familyID); }
 void rt_ext_UiGetFontName(short familyID, void *name) { GetFontName(familyID, (unsigned char *)name); }
+void rt_ext_UiInvalRgn(void *badRgn) { InvalRgn((RgnHandle)badRgn); }
 void rt_ext_UiLocalToGlobal(void *pt) { LocalToGlobal((Point *)pt); }
 
 /* rt_ext_UiCbAddr (Task 9, toolbox-integration Feature C: `callback func`

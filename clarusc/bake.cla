@@ -495,7 +495,6 @@ func bakeModuleList(lane: int): list of string {
     mods.add("uiwidgets.cla")
     mods.add("uitext.cla")
     mods.add("uitable.cla")
-    mods.add("uilog.cla")
     mods.add("uifont.cla")
     mods.add("uiscript.cla")
     mods.add("uidialogs.cla")
@@ -575,6 +574,9 @@ func bakeModuleList(lane: int): list of string {
         mods.add("fileh.cla")
         mods.add("fileh_68k.cla")
     }
+    // ui-widgets Task 8: last on both lanes, where driveManifestSplice
+    // appends it for a logpanel program only (see its comment).
+    mods.add("uilog.cla")
     return mods
 }
 

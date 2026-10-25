@@ -60,7 +60,10 @@ const rtUiLogScrapText: int = 0x54455854 // 'TEXT'
 external func UiScrollRect(r: ptr, dh: int16, dv: int16, updateRgn: ptr) = trap 0xA8EF
 external func UiGetFNum(name: ptr, familyID: ptr) = trap 0xA900
 external func UiGetFontName(familyID: int16, name: ptr) = trap 0xA8FF
+external func UiInvalRgn(badRgn: ptr) = trap 0xA927
 
+// uitest.cla's UiTestLogTop/UiTestLogSel read top/selFirst/selLast at
+// their offsets (28/36/40): keep those three fields where they are.
 overlay record RtUiLog {
     ringH: ptr
     cap: int
@@ -486,6 +489,10 @@ func rtUiLogPaint(lg: RtUiLog, w: RtUiWinst, i: int, fast: bool, shift: int, fro
         if shift > 0 {
             rgn = UiNewRgn()
             UiScrollRect(t, 0, 0 - shift * lg.lineH, rgn)
+            // The exposed strip, plus any part whose source was covered:
+            // the rows drawn below repaint the strip now, the update
+            // event repaints whatever else is in rgn.
+            UiInvalRgn(rgn)
             UiDisposeRgn(rgn)
         }
     } else {
@@ -559,7 +566,11 @@ func rtUiLogScrollBy(lg: RtUiLog, w: RtUiWinst, i: int, dv: int, dh: int) {
     var t: ptr
     var vis: int
     var mt: int
+    var oldTop: int
+    var oldHoff: int
 
+    oldTop = lg.top
+    oldHoff = lg.hoff
     t = UiNewPtr(rtUiRectSize)
     rtUiLogText(lg, w, i, t)
     vis = rtUiLogVisible(lg, t)
@@ -582,6 +593,9 @@ func rtUiLogScrollBy(lg: RtUiLog, w: RtUiWinst, i: int, dv: int, dh: int) {
     }
     rtUiLogSyncBars(lg, t, vis)
     UiDisposePtr(t)
+    if lg.top == oldTop and lg.hoff == oldHoff {
+        return
+    }
     rtUiLogPaint(lg, w, i, false, 0, 0)
 }
 
@@ -655,6 +669,8 @@ func rtUiLogBarClick(lg: RtUiLog, w: RtUiWinst, i: int, ctrl: ptr, part: int, pt
     var mouse: ptr
     var slot: ptr
     var p: int
+    var lit: int
+    var want: int
 
     if part == rtUiCtlIndicator {
         if rtUiScripted or UiTrackControl(ctrl, pt, ptr(0)) == 0 {
@@ -674,17 +690,25 @@ func rtUiLogBarClick(lg: RtUiLog, w: RtUiWinst, i: int, ctrl: ptr, part: int, pt
     mouse = UiNewPtr(4)
     slot = UiNewPtr(4)
     UiHiliteControl(ctrl, part)
+    lit = part
     while UiStillDown() {
         UiGetMouse(mouse)
         p = UiFindControl(peekl(mouse), w.wp, slot)
+        want = 0
         if p == part and ptr(peekl(slot)) == ctrl {
-            UiHiliteControl(ctrl, part)
+            want = part
+        }
+        if want != lit {
+            UiHiliteControl(ctrl, want)
+            lit = want
+        }
+        if want != 0 {
             rtUiLogBarStep(ctrl, part)
-        } else {
-            UiHiliteControl(ctrl, 0)
         }
     }
-    UiHiliteControl(ctrl, 0)
+    if lit != 0 {
+        UiHiliteControl(ctrl, 0)
+    }
     UiDisposePtr(slot)
     UiDisposePtr(mouse)
 }
@@ -722,6 +746,9 @@ func rtUiLogLineAt(lg: RtUiLog, t: ptr, v: int): int {
     last = lg.top + rtUiLogRowCount(lg, rtUiLogVisible(lg, t)) - 1
     if k > last {
         k = last
+    }
+    if k < lg.top {
+        k = lg.top // no row fits (vis 0): never -1
     }
     return k
 }
@@ -952,6 +979,16 @@ func rtUiLogDo(op: int, instV: ptr, wIdx: int, a: int, b: int): int {
     var r: int
 
     w = RtUiWinst(instV)
+    if op == rtUiLogOpFlush {
+        // The per-pass call: an idle panel costs no NewPtr/SetPort.
+        st = rtUiLogSt(w, wIdx)
+        if st == ptr(0) {
+            return 0
+        }
+        if RtUiLog(st).dirty == 0 {
+            return 0
+        }
+    }
     savedPort = rtUiGetPortSaved()
     UiSetPort(w.wp)
     if op == rtUiLogOpMake {
