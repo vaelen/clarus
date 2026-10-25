@@ -1,0 +1,62 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/menus.cla: curated Menu Manager declarations (Inside Macintosh
+// I, "The Menu Manager"; hierarchical menus, IM V). Every routine the UI
+// runtime declares privately (runtime/clarus/ui.cla, uitable.cla) plus
+// the item mark/command/check family (ui-widgets Task 7). All pascal-
+// convention single-word A-line traps.
+//
+// Provenance: every trap word is checked against Apple's Universal
+// Interfaces, toolchain/universal/CIncludes/Menus.h (CR line endings),
+// ONEWORDINLINE values: NewMenu A931, DisposeMenu A932, AppendMenu A933,
+// InsertMenu A935, DeleteMenu A936, DrawMenuBar A937, HiliteMenu A938,
+// EnableItem A939, DisableItem A93A, MenuSelect A93D, MenuKey A93E,
+// GetItemMark A943, SetItemMark A944, CheckItem A945, GetMenuItemText
+// (GetItem) A946, SetMenuItemText (SetItem) A947, GetMenuHandle A949,
+// AppendResMenu A94D, CountMItems A950, PopUpMenuSelect A80B, GetItemCmd
+// A84E, SetItemCmd A84F.
+//
+// Shapes (cookbook): MenuRef/MenuHandle is `ptr`; item numbers and MenuIDs
+// are `int16`. A `CharParameter` (mark, command and MenuKey chars) is a
+// 16-bit short with the char in the LOW byte, so it is `int16`, never
+// `char` (a `char` extern param pads into the high byte). GetItemMark/
+// GetItemCmd write a CharParameter through `markChar`/`cmdChar`: pass a
+// cleared 2-byte buffer. A Point (MenuSelect's startPt) is packed
+// (v << 16) | h. MenuSelect/MenuKey/PopUpMenuSelect return
+// (menuID << 16) | item. Str255 params are a 256-byte buffer's address.
+//
+// Hierarchical menus: InsertMenu(m, -1) puts a menu in the submenu list;
+// the parent item gets SetItemCmd(parent, n, 0x1B) and SetItemMark(parent,
+// n, submenuID). CheckItem marks with checkMark (0x12).
+//
+// MenuInfo (peek through the handle, peekl(mh)): +0 menuID word, +2
+// menuWidth, +4 menuHeight, +6 menuProc handle, +10 enableFlags long (bit
+// 0 = whole menu, bit n = item n; items past 31 are always enabled), +14
+// menuData (the title Str255).
+
+external func NewMenu(menuId: int16, menuTitle: ptr): ptr = trap 0xA931
+external func DisposeMenu(theMenu: ptr) = trap 0xA932
+external func AppendMenu(theMenu: ptr, data: ptr) = trap 0xA933
+external func InsertMenu(theMenu: ptr, beforeId: int16) = trap 0xA935
+external func DeleteMenu(menuId: int16) = trap 0xA936
+external func DrawMenuBar() = trap 0xA937
+external func HiliteMenu(menuId: int16) = trap 0xA938
+external func EnableItem(theMenu: ptr, item: int16) = trap 0xA939
+external func DisableItem(theMenu: ptr, item: int16) = trap 0xA93A
+external func MenuSelect(startPt: int): int = trap 0xA93D
+external func MenuKey(ch: int16): int = trap 0xA93E
+external func GetItemMark(theMenu: ptr, item: int16, markChar: ptr) = trap 0xA943
+external func SetItemMark(theMenu: ptr, item: int16, markChar: int16) = trap 0xA944
+external func CheckItem(theMenu: ptr, item: int16, checked: bool) = trap 0xA945
+external func GetMenuItemText(theMenu: ptr, item: int16, itemString: ptr) = trap 0xA946
+external func SetMenuItemText(theMenu: ptr, item: int16, itemString: ptr) = trap 0xA947
+external func GetMenuHandle(menuId: int16): ptr = trap 0xA949
+external func AppendResMenu(theMenu: ptr, theType: int) = trap 0xA94D
+external func CountMItems(theMenu: ptr): int16 = trap 0xA950
+external func PopUpMenuSelect(theMenu: ptr, top: int16, left: int16, popUpItem: int16): int = trap 0xA80B
+external func GetItemCmd(theMenu: ptr, item: int16, cmdChar: ptr) = trap 0xA84E
+external func SetItemCmd(theMenu: ptr, item: int16, cmdChar: int16) = trap 0xA84F
+
+const checkMark: int = 0x12
+const hMenuCmd: int = 0x1B

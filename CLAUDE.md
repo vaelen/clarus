@@ -397,7 +397,7 @@ enum + runner, not one boot per case.
   SE wave 4's `OpenRead` case, which proves `file.openRead`'s read-only
   `filehandle`: reads work, writes fail with `lastError`, a missing path
   is nil) runs on
-  host and natively; `testsuite/toolbox/` (44 `ToolboxTest` cases: 43 real +
+  host and natively; `testsuite/toolbox/` (47 `ToolboxTest` cases: 46 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -452,10 +452,15 @@ enum + runner, not one boot per case.
   wave 3's `NarrowForm` case, which proves a form `field` bound to a
   `uint16` refuses an out-of-range value and a minus sign at OK and
   accepts an in-range one -- then to 41 real by the ui-widgets phase's
-  `ListObserve` case, which proves `list.cla`'s observed-list registry:
-  `gen` bumps and `mark` tracking per op, two observers per box, growth
-  past 8 entries, and an unobserved list leaving every `gen` alone -- then
-  to 43 real by the ui-widgets phase's `TableBinding` and `TableFormat`
+  `MenuCheckSub` case: checked items, a submenu's dispatch, literal
+  captions, std-edit Select All, and a menu mixing `standard edit` with
+  its own items -- then to 43 real by ui-widgets Task 6's
+  `SetBounds` (deferred code placement: read-back, one paint, resize
+  survival, zero size) and `Divider` cases -- then to 44 real by the
+  ui-widgets `ListObserve` case, which proves `list.cla`'s observed-list
+  registry: `gen` bumps and `mark` tracking per op, two observers per box,
+  growth past 8 entries, and an unobserved list leaving every `gen` alone
+  -- then to 46 real by the ui-widgets `TableBinding` and `TableFormat`
   cases, which prove a bound table's live refresh, selection following its
   record, `scrollTo`, and formatted/aligned/aborting columns)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
@@ -506,11 +511,11 @@ enum + runner, not one boot per case.
   (pack3-standardfile phase, 2026-08-07) to an opt-in diagnostic behind
   `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under bare `CLARUS_MAC_TESTS=1`, so
   they no longer run as part of T2 by default.
-- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk,mactcp,segload}.cla`
+- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk,mactcp,segload,menus}.cla`
   (toolbox-cookbook phase; `standardfile`/`files` added by
   pack3-standardfile, `appletalk` by the AppleTalk phase, `mactcp` by the
   MacTCP phase, `segload` — `GetAppParms`/`UnloadSeg`/`ExitToShell` — by
-  SE wave 4) is a
+  SE wave 4, `menus` -- the Menu Manager -- by the ui-widgets phase) is a
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new
   UI code instead of hand-declaring traps; `tests/testsuite/catalog.sh`

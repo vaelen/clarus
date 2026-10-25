@@ -190,6 +190,12 @@ const rtUiLogOpScroll: int = 11
 // logpanel, else returns 0.
 external func UiLogOp(op: int, instV: ptr, wIdx: int, a: int, b: int): int
 
+// UiGeomApply (ui-widgets Task 6): synthesized as clar_ui_fire_geomapply
+// (lower.cla's lowSynthGeomApply). It calls rtUiApplyAllPending in a
+// program that uses setBounds and is empty otherwise, so the deferred
+// apply is linked only where it can do anything.
+external func UiGeomApply()
+
 const rtUiAtXY: int = 0
 const rtUiAtNext: int = 1
 const rtUiAtRight: int = 2
@@ -214,6 +220,13 @@ const rtUiFaceUnderline: int = 4
 const rtUiAlignLeft: int = 0
 const rtUiAlignCenter: int = 1
 const rtUiAlignRight: int = 2
+
+// ui-widgets Task 6: RtUiWinst.placed[i] bits and RtUiWinst.geom bits.
+const rtUiPlacedCode: int = 1
+const rtUiPlacedPending: int = 2
+const rtUiPlacedHidden: int = 4
+const rtUiGeomPending: int = 1
+const rtUiGeomErase: int = 2
 
 const rtUiPropCaption: int = 0
 const rtUiPropText: int = 1
@@ -341,6 +354,18 @@ func rtUiSetHbarAt(w: RtUiWinst, i: int, v: ptr) {
     pokel(w.hbars + i * 4, int(v))
 }
 
+// rtUiPlacedAt: widget i was given setBounds (ui-widgets Task 6) --
+// rtUiLayout and the resize path never move it again.
+func rtUiPlacedAt(w: RtUiWinst, i: int): bool {
+    return (peekb(w.placed + i) & rtUiPlacedCode) != 0
+}
+
+// rtUiRectIsEmpty: QuickDraw's EmptyRect rule (right <= left or
+// bottom <= top) -- a zero-size widget draws nothing and takes no clicks.
+func rtUiRectIsEmpty(r: ptr): bool {
+    return peekw(r + 6) <= peekw(r + 2) or peekw(r + 4) <= peekw(r + 0)
+}
+
 func rtUiEnabledAt(w: RtUiWinst, i: int): bool {
     return peekb(w.logicalEnabled + i) != 0
 }
@@ -429,6 +454,24 @@ func rtUiKindHeight(kind: int): int {
     }
     }
     return rtUiCheckH
+}
+
+// rtUiNaturalH: field/button/check/popup keep their natural height
+// whatever `height:` or setBounds asks for (spec C8).
+func rtUiNaturalH(kind: int): bool {
+    return kind == rtUiKindField or kind == rtUiKindButton or kind == rtUiKindCheck or kind == rtUiKindPopup
+}
+
+// rtUiDeclHeight: a widget's declared `height:` (blob v2), or its kind's
+// default when it has none or keeps its natural height.
+func rtUiDeclHeight(winIdx: int, i: int, kind: int): int {
+    var hh: int
+
+    hh = uidWidgetHeight(winIdx, i)
+    if hh > 0 and not rtUiNaturalH(kind) {
+        return hh
+    }
+    return rtUiKindHeight(kind)
 }
 
 func rtUiKindWidth(kind: int): int {
@@ -528,6 +571,7 @@ func rtUiLayout(inst: ptr) {
     var flushR: bool
     var flushB: bool
     var ctrl: ptr
+    var r: ptr
 
     w = RtUiWinst(inst)
     winIdx = w.winIdx
@@ -551,9 +595,19 @@ func rtUiLayout(inst: ptr) {
     n = uidWinNWidgets(winIdx)
     i = 0
     while i < n {
+        if rtUiPlacedAt(w, i) {
+            // Code-placed (setBounds): keeps its rect, which the prev*
+            // chain reads like any other widget's.
+            r = rtUiRectAt(w, i)
+            prevLeft = peekw(r + 2)
+            prevRight = peekw(r + 6)
+            prevBottom = peekw(r + 4)
+            i = i + 1
+            continue
+        }
         kind = uidWidgetKind(winIdx, i)
         atKind = uidWidgetAtKind(winIdx, i)
-        hh = rtUiKindHeight(kind)
+        hh = rtUiDeclHeight(winIdx, i, kind)
 
         switch atKind {
         case rtUiAtRight {
@@ -1438,7 +1492,7 @@ func rtUiCanvasReallocAll(inst: ptr) {
     while i < n {
         kind = uidWidgetKind(winIdx, i)
         flags = uidWidgetFlags(winIdx, i)
-        if kind == rtUiKindCanvas and (flags & rtUiFlagBuffered) != 0 {
+        if kind == rtUiKindCanvas and (flags & rtUiFlagBuffered) != 0 and not rtUiPlacedAt(w, i) {
             r = rtUiRectAt(w, i)
             rtUiCanvasDispose(rtUiCanvasBufAt(w, i))
             rtUiCanvasMake(rtUiCanvasBufAt(w, i), peekw(r + 6) - peekw(r + 2), peekw(r + 4) - peekw(r + 0))
@@ -1744,7 +1798,248 @@ func rtUiCanvasDrawText(instV: ptr, wIdx: int, x: int, y: int, s: ptr) {
     rtUiCanvasEnd(t)
 }
 
-// rtUiWidgetSetBounds: `w.X.setBounds(x, y, width, height)` (spec 3.1).
-// Task 2 stub; Task 6 records the pending rect for the deferred apply.
+// rtUiWidgetSetBounds: `w.X.setBounds(x, y, width, height)` (spec 3.1,
+// C3). Writes the new rect at once, so x/y/width/height read it back
+// immediately, and marks the widget code-placed and pending; the first
+// pending call since the last apply saves the old rect into oldRects for
+// rtUiApplyPendingBounds to invalidate. Nothing is drawn or moved here.
+// One exception: a buffered canvas whose size changes gets its new
+// offscreen buffer NOW, not at apply, so drawing done later in the same
+// handler lands in the buffer that will be shown (the blit counter is
+// carried over; rtUiApplyPendingBounds clears the dirty flag because the
+// update event repaints it).
 func rtUiWidgetSetBounds(instV: ptr, wIdx: int, x: int, y: int, ww: int, hh: int) {
+    var w: RtUiWinst
+    var kind: int
+    var r: ptr
+    var nw: int
+    var nh: int
+    var cb: ptr
+    var buf: RtUiCanvasBuf
+    var blits: int
+    var savedPort: ptr
+
+    w = RtUiWinst(instV)
+    kind = uidWidgetKind(w.winIdx, wIdx)
+    r = rtUiRectAt(w, wIdx)
+    nw = ww
+    if nw < 0 {
+        nw = 0
+    }
+    nh = hh
+    if nh < 0 {
+        nh = 0
+    }
+    if rtUiNaturalH(kind) {
+        nh = rtUiKindHeight(kind)
+    }
+    if (peekb(w.placed + wIdx) & rtUiPlacedPending) == 0 {
+        UiBlockMoveData(r, w.oldRects + wIdx * rtUiRectSize, rtUiRectSize)
+    }
+    pokeb(w.placed + wIdx, peekb(w.placed + wIdx) | rtUiPlacedCode | rtUiPlacedPending)
+    w.geom = w.geom | rtUiGeomPending
+
+    cb = rtUiCanvasBufAt(w, wIdx)
+    buf = RtUiCanvasBuf(cb)
+    if buf.port != ptr(0) and (nw != peekw(r + 6) - peekw(r + 2) or nh != peekw(r + 4) - peekw(r + 0)) {
+        blits = buf.blits
+        savedPort = rtUiGetPortSaved()
+        rtUiCanvasDispose(cb)
+        rtUiCanvasMake(cb, nw, nh)
+        buf.blits = blits
+        UiSetPort(savedPort)
+    }
+    UiSetRect(r, x, y, x + nw, y + nh)
+}
+
+// rtUiSetCtrlVis: shows or hides a control WITHOUT drawing or erasing
+// (ControlRecord.contrlVis, offset 16: 255 visible, 0 hidden -- what
+// ShowControl/HideControl set, minus their own paint/erase, which the
+// apply pass leaves to the update event). A hidden control is skipped by
+// DrawControls and FindControl, so a zero-size one draws nothing and
+// takes no clicks. Only the apply pass calls it, and only to hide a
+// widget's controls when its rect goes empty and to show them again when
+// it stops being empty (rtUiPlacedHidden), so a control the Toolbox
+// itself keeps hidden is never forced visible. vis: 255 or 0.
+func rtUiSetCtrlVis(ctrl: ptr, vis: int) {
+    if ctrl != ptr(0) {
+        pokeb(UiHandleDeref(ctrl) + 16, vis)
+    }
+}
+
+// rtUiClipEmpty / rtUiClipRestore: clip the current port to nothing (so a
+// relayout draws nothing until the update event) and put the saved clip
+// region back (disposing it).
+func rtUiClipEmpty(): ptr {
+    var saved: ptr
+    var r: ptr
+
+    saved = UiNewRgn()
+    UiGetClip(saved)
+    r = UiNewPtr(rtUiRectSize)
+    UiSetRect(r, 0, 0, 0, 0)
+    UiClipRect(r)
+    UiDisposePtr(r)
+    return saved
+}
+
+func rtUiClipRestore(rgn: ptr) {
+    UiSetClip(rgn)
+    UiDisposeRgn(rgn)
+}
+
+// rtUiApplyPendingBounds (spec 3.1/4.2, C3): applies every pending
+// setBounds of one window, once per event-loop pass (rtUiRun, before the
+// flush point) and from the scripted pump. Per widget: invalidates the old
+// and new rects (outset 4px, which covers a default button's outline and
+// a flush scrollbar's 1px), then repositions it under an EMPTY clip so no
+// control, TE frame or list draws: controls are moved/sized, TE and
+// tables relayout, logpanels get their Relayout op, and every control the
+// widget owns is shown or hidden by whether its new rect is empty. The
+// window then paints once, in its update event (rtUiGeomErase makes
+// rtUiHandleUpdate erase first, so the old rects really go blank).
+func rtUiApplyPendingBounds(inst: ptr) {
+    var w: RtUiWinst
+    var winIdx: int
+    var n: int
+    var i: int
+    var kind: int
+    var r: ptr
+    var tmp: ptr
+    var savedPort: ptr
+    var saveClip: ptr
+    var ctrl: ptr
+    var hbar: ptr
+    var vis: bool
+    var hid: bool
+    var v: int
+    var buf: RtUiCanvasBuf
+    var lh: ptr
+
+    w = RtUiWinst(inst)
+    if (w.geom & rtUiGeomPending) == 0 {
+        return
+    }
+    w.geom = rtUiGeomErase
+    winIdx = w.winIdx
+
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    tmp = UiNewPtr(rtUiRectSize)
+    saveClip = rtUiClipEmpty()
+
+    n = uidWinNWidgets(winIdx)
+    i = 0
+    while i < n {
+        if (peekb(w.placed + i) & rtUiPlacedPending) != 0 {
+            hid = (peekb(w.placed + i) & rtUiPlacedHidden) != 0
+            kind = uidWidgetKind(winIdx, i)
+            r = rtUiRectAt(w, i)
+
+            UiBlockMoveData(w.oldRects + i * rtUiRectSize, tmp, rtUiRectSize)
+            UiInsetRect(tmp, -4, -4)
+            UiInvalRect(tmp)
+            UiBlockMoveData(r, tmp, rtUiRectSize)
+            UiInsetRect(tmp, -4, -4)
+            UiInvalRect(tmp)
+
+            vis = not rtUiRectIsEmpty(r)
+            ctrl = rtUiCtrlAt(w, i)
+            hbar = rtUiHbarAt(w, i)
+            if kind == rtUiKindField or kind == rtUiKindTextview {
+                rtUiTeRelayout(inst, i)
+            } else if kind == rtUiKindTable {
+                rtUiTableRelayout(inst, i)
+                lh = rtUiListAt(w, i)
+                if lh != ptr(0) {
+                    ctrl = ptr(peekl(UiHandleDeref(lh) + rtUiListVScroll))
+                }
+            } else if kind == rtUiKindLogpanel {
+                UiLogOp(rtUiLogOpRelayout, inst, i, 0, 0)
+            } else if ctrl != ptr(0) {
+                UiMoveControl(ctrl, peekw(r + 2), peekw(r + 0))
+                UiSizeControl(ctrl, peekw(r + 6) - peekw(r + 2), peekw(r + 4) - peekw(r + 0))
+            }
+            if vis == hid {
+                hid = not vis
+                v = 0
+                if vis {
+                    v = 255
+                }
+                rtUiSetCtrlVis(ctrl, v)
+                rtUiSetCtrlVis(hbar, v)
+            }
+            if hid {
+                pokeb(w.placed + i, rtUiPlacedCode | rtUiPlacedHidden)
+            } else {
+                pokeb(w.placed + i, rtUiPlacedCode)
+            }
+
+            // The update event force-blits every buffered canvas, so a
+            // dirty one must not also blit at this pass's flush point.
+            buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, i))
+            if buf.port != ptr(0) {
+                buf.dirty = 0
+            }
+        }
+        i = i + 1
+    }
+
+    rtUiClipRestore(saveClip)
+    UiDisposePtr(tmp)
+    UiSetPort(savedPort)
+}
+
+// rtUiApplyAllPending: rtUiApplyPendingBounds over every open Clarus
+// window (the rtUiFlushAllBuffered walk).
+func rtUiApplyAllPending() {
+    var wp: ptr
+
+    wp = UiFrontWindow()
+    while wp != ptr(0) {
+        if peekw(wp + 108) == rtUiWindowKind {
+            rtUiApplyPendingBounds(ptr(UiGetWRefCon(wp)))
+        }
+        wp = ptr(peekl(wp + 144))
+    }
+}
+
+// rtUiDrawDivider (spec 3.6): horizontal when wider than tall, else
+// vertical. Single: one line through the center; double: lines at
+// offsets 0 and 2 across the thickness (style 1). r is the widget rect;
+// rtUiHandleUpdate skips a zero-size divider before calling this.
+func rtUiDrawDivider(r: ptr, style: int) {
+    var top: int
+    var left: int
+    var ww: int
+    var hh: int
+    var ex: int
+    var ey: int
+
+    top = peekw(r + 0)
+    left = peekw(r + 2)
+    hh = peekw(r + 4) - top
+    ww = peekw(r + 6) - left
+    ex = 0
+    ey = 0
+    if ww > hh {
+        ex = ww - 1
+    } else {
+        ey = hh - 1
+    }
+    if style == 1 {
+        UiMoveTo(left, top)
+        UiLineTo(left + ex, top + ey)
+        if ex > 0 {
+            top = top + 2
+        } else {
+            left = left + 2
+        }
+    } else if ex > 0 {
+        top = top + hh / 2
+    } else {
+        left = left + ww / 2
+    }
+    UiMoveTo(left, top)
+    UiLineTo(left + ex, top + ey)
 }

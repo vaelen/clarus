@@ -295,6 +295,14 @@ external func UiDisableItem(theMenu: ptr, item: int16) = trap 0xA93A
 external func UiCountMItems(theMenu: ptr): int16 = trap 0xA950
 external func UiGetMenuItemText(theMenu: ptr, item: int16, itemString: ptr) = trap 0xA946
 external func UiAppendResMenu(theMenu: ptr, theType: int) = trap 0xA94D
+// Item marks/commands/checks (ui-widgets Task 7; Menus.h ONEWORDINLINE
+// GetItemMark A943, SetItemMark A944, CheckItem A945, SetItemCmd A84F).
+// A CharParameter is a 16-bit short, char in the LOW byte: `int16`, never
+// `char` (see UiMenuKey below). GetItemMark writes one through markChar.
+external func UiGetItemMark(theMenu: ptr, item: int16, markChar: ptr) = trap 0xA943
+external func UiSetItemMark(theMenu: ptr, item: int16, markChar: int16) = trap 0xA944
+external func UiCheckItem(theMenu: ptr, item: int16, checked: bool) = trap 0xA945
+external func UiSetItemCmd(theMenu: ptr, item: int16, cmdChar: int16) = trap 0xA84F
 external func UiMenuSelect(startPt: int): int = trap 0xA93D
 // ch is `int16`, not `char`: MenuKey's real ABI is CharParameter (a
 // numeric 16-bit short, char code in the word's LOW byte -- Menus.h),
@@ -611,7 +619,8 @@ var rtUiNMenusVal: int = 0
 // set currently INSERTED in the bar. Both are bitmasks over whole-program
 // menu declaration indices; a program with no `menus:` clause anywhere
 // leaves rtUiClaimedMask 0 and rtUiBarMask "every menu", exactly today's
-// bar.
+// bar. Submenus (ui-widgets 3.7) are OR'd into rtUiClaimedMask too, so
+// they never join the bar; see rtUiBuildMenus' tail.
 var rtUiClaimedMask: int = 0
 var rtUiBarMask: int = 0
 var rtUiAppleMenuHandle: ptr = ptr(0)
@@ -677,13 +686,20 @@ func rtUiSetTitle(instV: ptr, s: ptr) {
 }
 
 // rtUiWinContentW/H: a window reference's contentWidth/contentHeight (C13)
-// -- the port rect's size. Task 2 stubs; Task 6 replaces them.
+// -- the port rect's size (GrafPort.portRect at WindowPtr offset 16,
+// top/left/bottom/right shorts; same reads as rtUiLayout's contentW/H).
 func rtUiWinContentW(instV: ptr): int {
-    return 0
+    var wp: ptr
+
+    wp = RtUiWinst(instV).wp
+    return peekw(wp + 22) - peekw(wp + 18)
 }
 
 func rtUiWinContentH(instV: ptr): int {
-    return 0
+    var wp: ptr
+
+    wp = RtUiWinst(instV).wp
+    return peekw(wp + 20) - peekw(wp + 16)
 }
 
 func rtUiGetTitle(instV: ptr, dst255: ptr) {
@@ -723,7 +739,7 @@ func rtUiNaturalSize(winIdx: int, outW: ptr, outH: ptr) {
     while i < n {
         kind = uidWidgetKind(winIdx, i)
         atKind = uidWidgetAtKind(winIdx, i)
-        hh = rtUiKindHeight(kind)
+        hh = rtUiDeclHeight(winIdx, i, kind)
 
         switch atKind {
         case rtUiAtRight {
@@ -753,10 +769,6 @@ func rtUiNaturalSize(winIdx: int, outW: ptr, outH: ptr) {
         } else {
             ww = uidWidgetWidth(winIdx, i)
         }
-        if uidWidgetFillBoth(winIdx, i) {
-            hh = rtUiKindHeight(kind)
-        }
-
         right = x + ww
         if right > maxRight {
             maxRight = right
@@ -850,6 +862,10 @@ func rtUiOpen(winIdx: int): ptr {
     w.popups = UiHandleDeref(w.popupsH)
     w.popupSelH = rtUiAllocLocked(nWidgets * 4)
     w.popupSel = UiHandleDeref(w.popupSelH)
+    w.placedH = rtUiAllocLocked(nWidgets)
+    w.placed = UiHandleDeref(w.placedH)
+    w.oldRectsH = rtUiAllocLocked(nWidgets * rtUiRectSize)
+    w.oldRects = UiHandleDeref(w.oldRectsH)
     w.focusIdx = -1
 
     i = 0
@@ -1069,6 +1085,8 @@ func rtUiTeardownWindow(inst: ptr) {
     UiDisposeHandle(w.listsH)
     UiDisposeHandle(w.popupsH)
     UiDisposeHandle(w.popupSelH)
+    UiDisposeHandle(w.placedH)
+    UiDisposeHandle(w.oldRectsH)
     UiDisposeHandle(w.selfH)
 }
 
@@ -1248,7 +1266,10 @@ func rtUiBuildAppleMenu() {
         n = n + appNameLen
         pokeb(buf + 1 + n, 0xC9) // MacRoman ellipsis
         pokeb(buf, n + 1)
-        UiAppendMenu(rtUiAppleMenuHandle, buf)
+        // Literal caption (spec 3.9): the app name is user text, so a
+        // placeholder item gets the real text through SetItem.
+        UiAppendMenuStr(rtUiAppleMenuHandle, "x")
+        UiSetMenuItemText(rtUiAppleMenuHandle, 1, buf)
         UiDisposePtr(buf)
         UiAppendMenuStr(rtUiAppleMenuHandle, "-")
     } else {
@@ -1307,7 +1328,36 @@ func rtUiAppleSelect(itemNum: int) {
     UiDisposePtr(itemNameBuf)
 }
 
-// rtUiBuildMenus (rt_ui.c:2308-2373).
+// rtUiStdEditCount: `standard edit`'s fixed block, Undo 1, - 2, Cut 3,
+// Copy 4, Paste 5, Clear 6, Select All 7. A std-edit menu's own declared
+// items follow it (C11), so their Menu Manager item numbers are shifted by
+// this much (rtUiMenuItemNum).
+const rtUiStdEditCount: int = 7
+
+// rtUiMenuHandleAt: menu menuIdx's MenuHandle, nil when out of range.
+func rtUiMenuHandleAt(menuIdx: int): ptr {
+    if rtUiMenuHandlesArr == ptr(0) or menuIdx < 0 or menuIdx >= rtUiNMenusVal {
+        return ptr(0)
+    }
+    return ptr(peekl(rtUiMenuHandlesArr + menuIdx * 4))
+}
+
+// rtUiMenuItemNum: the Menu Manager item number of declared item itemIdx.
+func rtUiMenuItemNum(menuIdx: int, itemIdx: int): int {
+    if uidMenuIsStandardEdit(menuIdx) {
+        return itemIdx + 1 + rtUiStdEditCount
+    }
+    return itemIdx + 1
+}
+
+// rtUiBuildMenus (rt_ui.c:2308-2373). Every declared caption is literal
+// (spec 3.9): a placeholder "x" (carrying `/K` when keyed) is appended and
+// SetItem then writes the real text, so `( / ^ ! < ;` are never parsed.
+// A menu named by some item's `submenu` (C12: declared above its parent)
+// goes in the hierarchical list (InsertMenu -1), never the bar; its parent
+// item gets cmd 0x1B and mark = the submenu's MenuID. Its selections come
+// back from MenuSelect with the submenu's own ID, so rtUiMenuDispatch's
+// ID -> menuIdx path needs nothing new.
 func rtUiBuildMenus() {
     var nMenus: int
     var nWins: int
@@ -1315,9 +1365,11 @@ func rtUiBuildMenus() {
     var j: int
     var mh: ptr
     var nItems: int
-    var buf: ptr
+    var keyBuf: ptr
     var n: int
     var key: int
+    var sub: int
+    var subMask: int
 
     nMenus = uidNMenus()
     rtUiNMenusVal = nMenus
@@ -1339,6 +1391,25 @@ func rtUiBuildMenus() {
         rtUiClaimedMask = rtUiClaimedMask | uidWinMenuMask(i)
         i = i + 1
     }
+    subMask = 0
+    i = 0
+    while i < nMenus {
+        nItems = uidMenuNItems(i)
+        j = 0
+        while j < nItems {
+            sub = uidItemSubmenu(i, j)
+            if sub >= 0 {
+                subMask = subMask | (1 << sub)
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    // "x/K" placeholder, K poked per item.
+    keyBuf = UiNewPtr(4)
+    pokeb(keyBuf, 3)
+    pokeb(keyBuf + 1, int('x'))
+    pokeb(keyBuf + 2, int('/'))
     i = 0
     while i < nMenus {
         mh = UiNewMenu(rtUiMenuIdBase + i, uidMenuTitle(i))
@@ -1349,39 +1420,54 @@ func rtUiBuildMenus() {
             UiAppendMenuStr(mh, "Copy/C")
             UiAppendMenuStr(mh, "Paste/V")
             UiAppendMenuStr(mh, "Clear")
+            UiAppendMenuStr(mh, "Select All/A")
             UiDisableItem(mh, 1)
             if rtUiStdEditMenuIdx < 0 {
                 rtUiStdEditMenuIdx = i
             }
-        } else {
-            nItems = uidMenuNItems(i)
-            j = 0
-            while j < nItems {
-                if uidItemSeparator(i, j) {
-                    UiAppendMenuStr(mh, "-")
-                } else {
-                    buf = UiNewPtr(258)
-                    rtUiPstrcpy(buf, uidItemLabel(i, j))
-                    n = peekb(buf)
-                    key = uidItemKey(i, j)
-                    if key != 0 {
-                        pokeb(buf + 1 + n, int('/'))
-                        pokeb(buf + 2 + n, key)
-                        pokeb(buf, n + 2)
-                    }
-                    UiAppendMenu(mh, buf)
-                    UiDisposePtr(buf)
-                }
-                j = j + 1
-            }
         }
-        if (rtUiClaimedMask & (1 << i)) == 0 {
+        nItems = uidMenuNItems(i)
+        j = 0
+        while j < nItems {
+            if uidItemSeparator(i, j) {
+                UiAppendMenuStr(mh, "-")
+            } else {
+                key = uidItemKey(i, j)
+                if key != 0 {
+                    pokeb(keyBuf + 3, key)
+                    UiAppendMenu(mh, keyBuf)
+                } else {
+                    UiAppendMenuStr(mh, "x")
+                }
+                n = UiCountMItems(mh)
+                UiSetMenuItemText(mh, n, uidItemLabel(i, j))
+                if (uidItemFlags(i, j) & 1) != 0 {
+                    UiCheckItem(mh, n, true)
+                }
+                sub = uidItemSubmenu(i, j)
+                if sub >= 0 {
+                    UiSetItemCmd(mh, n, 0x1B)
+                    UiSetItemMark(mh, n, rtUiMenuIdBase + sub)
+                }
+            }
+            j = j + 1
+        }
+        if (subMask & (1 << i)) != 0 {
+            UiInsertMenu(mh, -1)
+        } else if (rtUiClaimedMask & (1 << i)) == 0 {
             UiInsertMenu(mh, 0)
             rtUiBarMask = rtUiBarMask | (1 << i)
         }
         pokel(rtUiMenuHandlesArr + i * 4, int(mh))
         i = i + 1
     }
+    UiDisposePtr(keyBuf)
+    // Submenus join the claimed mask AFTER insertion. No window can claim
+    // one (C12), so no front window's set ever contains it: rtUiSyncMenuBar
+    // then leaves it out of the app-scope target and never deletes or
+    // re-inserts it, i.e. it stays out of every bar computation without a
+    // separate mask global.
+    rtUiClaimedMask = rtUiClaimedMask | subMask
     UiDrawMenuBar()
 }
 
@@ -1442,35 +1528,84 @@ func rtUiSyncMenuBar() {
     UiDrawMenuBar()
 }
 
+func rtUiMenuEnableNum(mh: ptr, itemNum: int, enable: bool) {
+    if enable {
+        UiEnableItem(mh, itemNum)
+    } else {
+        UiDisableItem(mh, itemNum)
+    }
+}
+
 func rtUiMenuEnable(menuIdx: int, itemIdx: int, enable: bool) {
     var mh: ptr
 
-    if rtUiMenuHandlesArr == ptr(0) or menuIdx < 0 or menuIdx >= rtUiNMenusVal {
-        return
-    }
-    mh = ptr(peekl(rtUiMenuHandlesArr + menuIdx * 4))
+    mh = rtUiMenuHandleAt(menuIdx)
     if mh == ptr(0) {
         return
     }
-    if enable {
-        UiEnableItem(mh, itemIdx + 1)
-    } else {
-        UiDisableItem(mh, itemIdx + 1)
-    }
+    rtUiMenuEnableNum(mh, rtUiMenuItemNum(menuIdx, itemIdx), enable)
 }
 
 // rtUiMenuSetChecked/GetChecked/GetEnabled: `Menu.Item.checked = b`, its
-// read, and the `.enabled` read (ui-widgets spec 3.7). Task 2 stubs; Task 7
-// replaces them (CheckItem and the item flags).
+// read, and the `.enabled` read (ui-widgets spec 3.7).
 func rtUiMenuSetChecked(menuIdx: int, itemIdx: int, b: bool) {
+    var mh: ptr
+
+    mh = rtUiMenuHandleAt(menuIdx)
+    if mh == ptr(0) {
+        return
+    }
+    UiCheckItem(mh, rtUiMenuItemNum(menuIdx, itemIdx), b)
 }
 
+// GetItemMark stores a CharParameter: a whole word, char in the low byte
+// (hardware-checked, MenuCheckSub). checkMark is 0x12.
 func rtUiMenuGetChecked(menuIdx: int, itemIdx: int): bool {
-    return false
+    var mh: ptr
+    var buf: ptr
+    var mark: int
+
+    mh = rtUiMenuHandleAt(menuIdx)
+    if mh == ptr(0) {
+        return false
+    }
+    buf = UiNewPtr(2)
+    UiGetItemMark(mh, rtUiMenuItemNum(menuIdx, itemIdx), buf)
+    mark = peekw(buf)
+    UiDisposePtr(buf)
+    return mark == 0x12
 }
 
+// MenuInfo.enableFlags (+10): bit n = item n; items past 31 are always
+// enabled.
 func rtUiMenuGetEnabled(menuIdx: int, itemIdx: int): bool {
-    return false
+    var mh: ptr
+    var n: int
+
+    mh = rtUiMenuHandleAt(menuIdx)
+    if mh == ptr(0) {
+        return false
+    }
+    n = rtUiMenuItemNum(menuIdx, itemIdx)
+    if n > 31 {
+        return true
+    }
+    return ((peekl(ptr(peekl(mh)) + 10) >> n) & 1) != 0
+}
+
+// rtUiFocusKind: the kind of inst's focused widget, -1 for no focus (or no
+// instance). The std-edit dim rule and dispatch key off it.
+func rtUiFocusKind(inst: ptr): int {
+    var w: RtUiWinst
+
+    if inst == ptr(0) {
+        return -1
+    }
+    w = RtUiWinst(inst)
+    if w.focusIdx < 0 {
+        return -1
+    }
+    return uidWidgetKind(w.winIdx, w.focusIdx)
 }
 
 // rtUiMenuRecomputeDim (rt_ui.c:2483-2524). scopeWinIdx == -1 ("no
@@ -1480,7 +1615,9 @@ func rtUiMenuRecomputeDim() {
     var nMh: int
     var scopeWinIdx: int
     var enable: bool
-    var front: ptr
+    var kind: int
+    var mh: ptr
+    var i: int
     var j: int
 
     nMh = uidNMenuHandlers()
@@ -1494,13 +1631,23 @@ func rtUiMenuRecomputeDim() {
         }
         k = k + 1
     }
+    // Std edit: Cut/Copy/Paste/Clear/Select All (items 3-7) follow a
+    // field/textview focus, in every std-edit menu. Program-set `checked`
+    // is never touched here.
     if rtUiStdEditMenuIdx >= 0 {
-        front = rtUiWinstOf(UiFrontWindow())
-        enable = front != ptr(0) and RtUiWinst(front).focusIdx >= 0
-        j = 2
-        while j <= 5 {
-            rtUiMenuEnable(rtUiStdEditMenuIdx, j, enable)
-            j = j + 1
+        kind = rtUiFocusKind(rtUiWinstOf(UiFrontWindow()))
+        enable = kind == rtUiKindField or kind == rtUiKindTextview
+        i = rtUiStdEditMenuIdx
+        while i < rtUiNMenusVal {
+            if uidMenuIsStandardEdit(i) {
+                mh = rtUiMenuHandleAt(i)
+                j = 3
+                while j <= rtUiStdEditCount {
+                    rtUiMenuEnableNum(mh, j, enable)
+                    j = j + 1
+                }
+            }
+            i = i + 1
         }
         rtUiTraceStdEditDim(enable)
     }
@@ -1515,7 +1662,7 @@ func rtUiAfterFrontChange() {
 
 // rtUiStdEditDispatch (rt_ui.c:2560-2619). itemIdx is 0-based, matching
 // the fixed layout rtUiBuildMenus appended (0=Undo, 1=separator, 2=Cut,
-// 3=Copy, 4=Paste, 5=Clear) -- Undo/the separator fall out silently, no
+// 3=Copy, 4=Paste, 5=Clear, 6=Select All) -- Undo/the separator fall out silently, no
 // focused TE is a silent no-op (native dimming ordinarily keeps a real
 // click/cmd-key from reaching here otherwise, but a scripted `menu M I`
 // call bypasses that gate, so both are guarded defensively here too).
@@ -1541,7 +1688,7 @@ func rtUiStdEditDispatch(itemIdx: int) {
         // DA-interop scenario is ever added.
         return
     }
-    if itemIdx < 2 or itemIdx > 5 {
+    if itemIdx < 2 or itemIdx >= rtUiStdEditCount {
         return // Undo (permanently disabled) or the separator
     }
     inst = rtUiWinstOf(front)
@@ -1572,6 +1719,8 @@ func rtUiStdEditDispatch(itemIdx: int) {
     } else if itemIdx == 5 { // Clear
         UiTEDelete(te)
         rtUiTeMutated(inst, w.focusIdx, true)
+    } else { // Select All: selection only -- no change trace/event
+        UiTESetSelect(0, 32767, te)
     }
     UiSetPort(savedPort)
 }
@@ -1602,9 +1751,14 @@ func rtUiMenuDispatch(result: int) {
     }
     menuIdx = menuID - rtUiMenuIdBase
     itemIdx = itemNum - 1
-    if menuIdx == rtUiStdEditMenuIdx {
-        rtUiStdEditDispatch(itemIdx)
-        return
+    // A std-edit menu's items 1-7 are the edit block; its own declared
+    // items follow (C11).
+    if menuIdx >= 0 and menuIdx < rtUiNMenusVal and uidMenuIsStandardEdit(menuIdx) {
+        if itemIdx < rtUiStdEditCount {
+            rtUiStdEditDispatch(itemIdx)
+            return
+        }
+        itemIdx = itemIdx - rtUiStdEditCount
     }
     nMh = uidNMenuHandlers()
     k = 0
@@ -1788,6 +1942,7 @@ func rtUiHookLogpanels(inst: ptr, op: int) {
 func rtUiFlushAllBuffered() {
     var wp: ptr
 
+    UiGeomApply() // deferred setBounds before any blit (ui-widgets Task 6)
     wp = UiFrontWindow()
     while wp != ptr(0) {
         if peekw(wp + 108) == rtUiWindowKind {
@@ -1855,6 +2010,13 @@ func rtUiHandleUpdate(wp: ptr) {
     inst = rtUiWinstOf(wp)
     if inst != ptr(0) {
         w = RtUiWinst(inst)
+        // After a setBounds apply or a resize, the update region holds old
+        // widget rects nothing else repaints: erase it (EraseRect of the
+        // port rect, clipped to the update region by BeginUpdate).
+        if (w.geom & rtUiGeomErase) != 0 {
+            w.geom = w.geom - rtUiGeomErase
+            UiEraseRect(wp + 16)
+        }
         UiDrawControls(wp)
         if uidWinResizable(w.winIdx) {
             corner = UiNewPtr(rtUiRectSize)
@@ -1871,6 +2033,9 @@ func rtUiHandleUpdate(wp: ptr) {
         i = 0
         while i < n {
             kind = uidWidgetKind(w.winIdx, i)
+            if rtUiRectIsEmpty(rtUiRectAt(w, i)) {
+                kind = -1 // a zero-size widget draws nothing
+            }
             if kind == rtUiKindLabel {
                 s = rtUiLabelAt(w, i)
                 UiTextBox(s + 1, peekb(s), rtUiRectAt(w, i), 0)
@@ -2008,6 +2173,8 @@ func rtUiHandleUpdate(wp: ptr) {
                 UiLUpdate(ptr(peekl(wp + 24)), lh)
                 UiDisposePtr(headerRect)
                 UiDisposePtr(box)
+            } else if kind == rtUiKindDivider {
+                rtUiDrawDivider(rtUiRectAt(w, i), uidWidgetDivStyle(w.winIdx, i))
             } else if kind == rtUiKindLogpanel {
                 UiLogOp(rtUiLogOpDraw, inst, i, 0, 0)
             }
@@ -2086,32 +2253,34 @@ func rtUiHandleActivate(wp: ptr, activating: bool) {
 // Resize / zoom (rt_ui.c:2966-3096).
 // ================================================================
 
-func rtUiInvalGrowCorner(wp: ptr) {
-    var r: ptr
-
-    r = UiNewPtr(rtUiRectSize)
-    UiSetRect(r, peekw(wp + 22) - rtUiScrollbarW, peekw(wp + 20) - rtUiScrollbarW, peekw(wp + 22), peekw(wp + 20))
-    UiEraseRect(r)
-    UiInvalRect(r)
-    UiDisposePtr(r)
-}
-
+// ui-widgets Task 6 (spec 4.2) order: SizeWindow; rtUiLayout (which skips
+// code-placed widgets) under an empty clip so no control draws at its
+// new place before the update; the whole port rect invalidated and
+// marked for erase (old widget pixels never linger); canvas realloc for
+// the widgets layout moved; `resized`; then the single deferred apply of
+// whatever setBounds the handler made. The window paints once. The
+// whole-port InvalRect + erase also covers the old and new grow-box
+// corners (the old rtUiInvalGrowCorner erase/inval pair).
 func rtUiApplyResize(wp: ptr, inst: ptr, newW: int, newH: int) {
     var w: RtUiWinst
     var savedPort: ptr
+    var saveClip: ptr
 
     w = RtUiWinst(inst)
     savedPort = rtUiGetPortSaved()
     UiSetPort(wp)
-    rtUiInvalGrowCorner(wp)
     UiSizeWindow(wp, newW, newH, true)
-    rtUiInvalGrowCorner(wp)
-    UiSetPort(savedPort)
+    saveClip = rtUiClipEmpty()
     rtUiLayout(inst)
     rtUiHookLogpanels(inst, rtUiLogOpRelayout)
+    rtUiClipRestore(saveClip)
+    UiInvalRect(wp + 16)
+    w.geom = w.geom | rtUiGeomErase
+    UiSetPort(savedPort)
     rtUiCanvasReallocAll(inst)
     rtUiTraceFire1(uidWinName(w.winIdx), "resized")
     UiFireWinEvent(w.winIdx, inst, rtUiEvResized, 0, 0)
+    UiGeomApply()
 }
 
 // rtUiHandleGrow (rt_ui.c:3010-3040): the oracle reads

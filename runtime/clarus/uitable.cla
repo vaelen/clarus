@@ -896,6 +896,9 @@ func rtUiTableRelayout(inst: ptr, i: int) {
     // out-of-range row) AND corrupt six bytes of whatever moved in. Same
     // re-derive discipline rtUiTableSyncOne's own LAddRow/LDelRow comment
     // already states below.
+    // The OLD area needs no InvalRect here: every caller already covers
+    // it (rtUiApplyPendingBounds' old+new outset, rtUiApplyResize's
+    // whole-port inval; open runs before the window is shown).
     lhMp = UiHandleDeref(lh)
     pokew(lhMp + rtUiListRView + 0, peekw(listRect + 0))
     pokew(lhMp + rtUiListRView + 2, peekw(listRect + 2))

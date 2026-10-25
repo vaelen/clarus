@@ -89,6 +89,15 @@ var lowResumeFromBake: bool
 // wave".
 var lowSkipUiDispatchers: bool
 
+// lowUsesSetBounds / lowUsesContentSize (ui-widgets Task 6 fix round 1):
+// set while lowering a `setBounds` call / a `contentWidth`/`contentHeight`
+// read, reset per lowerProgram. They gate the entry points' shake roots
+// and clar_ui_fire_geomapply's body, so a program that never places a
+// widget by code links no deferred-apply code (lowUiPortAddRoots,
+// lowSynthGeomApply).
+var lowUsesSetBounds: bool
+var lowUsesContentSize: bool
+
 // ---- `on App.log(line: string)` (onlog phase) ----
 //
 // lowHasAppLog is set by lowerProgram's own pre-pass (a scan of the
@@ -1137,9 +1146,11 @@ func lowIdent(e: int): int {
             return newIRIntr(IUiGetTitle(), lowWinInstRef(), ty)
         }
         if poolGet(nm) == "contentWidth" {
+            lowUsesContentSize = true
             return newIRIntr(IUiContentW(), lowWinInstRef(), ty)
         }
         if poolGet(nm) == "contentHeight" {
+            lowUsesContentSize = true
             return newIRIntr(IUiContentH(), lowWinInstRef(), ty)
         }
     }
@@ -2169,6 +2180,7 @@ func lowCommonWidgetMethod(e: int, fn: int, ty: int, recv: LowWidgetRecv): int {
 
     nm = poolGet(selectName(fn))
     if nm == "setBounds" {
+        lowUsesSetBounds = true
         return lowWidgetIntr(e, IUiSetBounds(), ty, recv)
     }
     if nm == "setFont" {
@@ -3169,9 +3181,11 @@ func lowWindowInstSelect(e: int, xExpr: int, propName: string, ty: int): int {
         return newIRIntr(IUiGetTitle(), lowExpr(xExpr), ty)
     }
     if propName == "contentWidth" {
+        lowUsesContentSize = true
         return newIRIntr(IUiContentW(), lowExpr(xExpr), ty)
     }
     if propName == "contentHeight" {
+        lowUsesContentSize = true
         return newIRIntr(IUiContentH(), lowExpr(xExpr), ty)
     }
     lowUnsupported("select ." + propName)
@@ -8057,6 +8071,25 @@ func lowSynthUiDispatchers() {
     lowSynthStartEmpty()
     lowSynthLogOp()
     lowSynthColFmt()
+    lowSynthGeomApply()
+}
+
+// lowSynthGeomApply builds clar_ui_fire_geomapply(), the UiGeomApply
+// dispatcher the event loop's flush point and the scripted pump call
+// (ui-widgets Task 6 fix round 1): it calls rtUiApplyAllPending only in a
+// program that uses setBounds, so the deferred apply is shaken out of
+// every other one.
+func lowSynthGeomApply() {
+    var body: int
+    var fnameIdx: int
+
+    body = -1
+    if lowUsesSetBounds {
+        body = newIRExprStmt(newIRCallFn(intern("rtUiApplyAllPending"), -1, irVoidT))
+    }
+    fnameIdx = intern("clar_ui_fire_geomapply")
+    newIRFunc(fnameIdx, -1, irVoidT, -1, body)
+    shakeAddRoot(fnameIdx)
 }
 
 // lowSynthLogOp builds clar_ui_fire_logop(op, instV, wIdx, a, b): int, the
@@ -8892,6 +8925,7 @@ func lowUiSynthExternName(externNameIdx: int): int {
     if nm == "UiTableRows" { return intern("clar_ui_fire_staterows") }
     if nm == "UiLogOp" { return intern("clar_ui_fire_logop") }
     if nm == "UiColFmt" { return intern("clar_ui_fire_colfmt") }
+    if nm == "UiGeomApply" { return intern("clar_ui_fire_geomapply") }
     // Connection dispatchers (serial-connection phase, Task 5): conn.cla
     // declares these as `external func clar_conn_fire_NAME` (Task 4) and
     // rtConnPump calls them by that same literal name -- UNLIKE the UI
@@ -9006,6 +9040,8 @@ func lowerProgram(declHead: int): int {
     lowCurWinType = -1
     lowCurHandlerEvent = -1
     lowCurAcceptedParam = -1
+    lowUsesSetBounds = false
+    lowUsesContentSize = false
     // lowTitleIdx (memory-leak-fix Task 7): same process-lifetime
     // lazy-init idiom as ir.cla's ~162 IXxx() intrinsic-name helpers (see
     // irReset's own doc comment) -- reset to -1 here so
@@ -9601,9 +9637,13 @@ func lowUiPortAddRoots() {
     shakeAddRoot(intern("rtUiFormIsNew"))
     // ui-widgets Task 2: the new members' entry points, called by name
     // from the IUi* arms for the same reason as everything above.
-    shakeAddRoot(intern("rtUiWidgetSetBounds"))
-    shakeAddRoot(intern("rtUiWinContentW"))
-    shakeAddRoot(intern("rtUiWinContentH"))
+    if lowUsesSetBounds {
+        shakeAddRoot(intern("rtUiWidgetSetBounds"))
+    }
+    if lowUsesContentSize {
+        shakeAddRoot(intern("rtUiWinContentW"))
+        shakeAddRoot(intern("rtUiWinContentH"))
+    }
     shakeAddRoot(intern("rtUiWidgetSetFont"))
     shakeAddRoot(intern("rtUiWidgetSetStyle"))
     shakeAddRoot(intern("rtUiCanvasTextWidth"))
