@@ -6882,6 +6882,20 @@ LBL_545:
         DC.W $A023  ; UiDisposeHandle
         MOVE.L -4(A6),D0
         MOVEA.L D0,A0
+        LEA 108(A0),A0
+        MOVE.L (A0),D0
+        MOVE.L D0,-(A7)
+        MOVEA.L (A7)+,A0
+        DC.W $A023  ; UiDisposeHandle
+        MOVE.L -4(A6),D0
+        MOVEA.L D0,A0
+        LEA 116(A0),A0
+        MOVE.L (A0),D0
+        MOVE.L D0,-(A7)
+        MOVEA.L (A7)+,A0
+        DC.W $A023  ; UiDisposeHandle
+        MOVE.L -4(A6),D0
+        MOVEA.L D0,A0
         LEA 0(A0),A0
         MOVE.L (A0),D0
         MOVE.L D0,-(A7)
@@ -7053,7 +7067,7 @@ LBL_554:
 LBL_553:
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
-        JSR 1714(A5)
+        BSR.W LBL_197
         ADDQ.L #4,A7
 LBL_551:
         UNLK A6
@@ -9812,7 +9826,7 @@ LBL_158:
         BEQ.W LBL_716
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        JSR 1698(A5)
+        JSR 1706(A5)
         ADDQ.L #4,A7
 LBL_716:
         MOVE.L 8(A6),D0
@@ -12722,27 +12736,14 @@ LBL_863:
 LBL_862:
         UNLK A6
         RTS
-        ; func natFileFlush  (JT slot 198)
+        ; func nat_UiRtQuit  (JT slot 198)
+        ;   param code : 8(A6)  size 4
 LBL_197:
         LINK A6,#-52
-        MOVE.L -7394(A5),D1
-        MOVEQ #18,D0
-        ADD.L D1,D0
+        MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
-        MOVEQ #0,D0
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
-        MOVE.L -7394(A5),D1
-        MOVEQ #22,D0
-        ADD.L D1,D0
-        MOVE.L D0,-(A7)
-        MOVEQ #0,D0
-        MOVEA.L (A7)+,A0
-        MOVE.W D0,(A0)
-        MOVE.L -7394(A5),D0
-        MOVE.L D0,-(A7)
-        MOVEA.L (A7)+,A0
-        DC.W $A013  ; NatFlushVol
+        JSR 1626(A5)
+        ADDQ.L #4,A7
 LBL_864:
         UNLK A6
         RTS

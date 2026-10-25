@@ -491,6 +491,11 @@ typedef struct {
     void * cv_popups;
     void * cv_popupSelH;
     void * cv_popupSel;
+    void * cv_placedH;
+    void * cv_placed;
+    void * cv_oldRectsH;
+    void * cv_oldRects;
+    int32_t cv_geom;
 } clar_rec_RtUiWinst;
 typedef struct {
     void * cv_port;
