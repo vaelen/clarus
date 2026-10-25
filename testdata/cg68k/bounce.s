@@ -193,7 +193,7 @@ LBL_252:
         JSR 1858(A5)
         BSR.W LBL_249
         CLR.L -(A7)
-        JSR 3474(A5)
+        JSR 3450(A5)
         RTS
 LBL_251:
         ; cg_init_globals
@@ -261,7 +261,7 @@ LBL_0:
         MOVE.L D0,-(A7)
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3442(A5)
+        JSR 3466(A5)
         ADDQ.L #8,A7
 LBL_253:
         UNLK A6
@@ -272,7 +272,7 @@ LBL_1:
         LINK A6,#-52
         MOVEA.L 8(A6),A0
         MOVE.L A0,-(A7)
-        JSR 3482(A5)
+        JSR 3458(A5)
         ADDQ.L #4,A7
 LBL_254:
         UNLK A6
@@ -7379,7 +7379,7 @@ LBL_595:
         MOVE.L D0,-(A7)
         MOVE.L -96(A6),D0
         MOVE.L D0,-(A7)
-        JSR 2578(A5)
+        JSR 2586(A5)
         ADDQ.L #8,A7
 LBL_597:
         MOVE.L -96(A6),D1

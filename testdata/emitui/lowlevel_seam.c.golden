@@ -219,6 +219,9 @@ extern void rt_ext_UiDrawText(void *, short, short);
 extern void rt_ext_UiGetFontInfo(void *);
 extern void rt_ext_UiLocalToGlobal(void *);
 extern void * rt_ext_UiCbAddr(void *);
+extern void rt_ext_UiScrollRect(void *, short, short, void *);
+extern void rt_ext_UiGetFNum(void *, void *);
+extern void rt_ext_UiGetFontName(short, void *);
 extern void * rt_ext_UiStrAddr(const uint8_t *);
 extern void rt_ext_UiTestEmit(void *);
 extern int32_t rt_ext_UiTraceOn(void);
@@ -313,91 +316,93 @@ static const clar_str_255 clar_lit_37 = {120, {112, 111, 112, 117, 112, 58, 32, 
 static const clar_str_255 clar_lit_38 = {113, {112, 111, 112, 117, 112, 58, 32, 71, 101, 116, 77, 101, 110, 117, 72, 97, 110, 100, 108, 101, 32, 114, 101, 116, 117, 114, 110, 101, 100, 32, 97, 32, 109, 101, 110, 117, 32, 104, 97, 110, 100, 108, 101, 32, 116, 104, 97, 116, 32, 105, 115, 110, 39, 116, 32, 116, 104, 105, 115, 32, 105, 110, 115, 116, 97, 110, 99, 101, 39, 115, 32, 111, 119, 110, 32, 40, 115, 116, 97, 108, 101, 47, 108, 101, 97, 107, 101, 100, 32, 101, 110, 116, 114, 121, 32, 117, 110, 100, 101, 114, 32, 116, 104, 101, 32, 115, 97, 109, 101, 32, 73, 68, 41}};
 static const clar_str_255 clar_lit_39 = {87, {112, 111, 112, 117, 112, 58, 32, 109, 101, 110, 117, 32, 105, 116, 101, 109, 32, 99, 111, 117, 110, 116, 32, 100, 111, 101, 115, 110, 39, 116, 32, 109, 97, 116, 99, 104, 32, 116, 104, 101, 32, 98, 111, 117, 110, 100, 32, 101, 110, 117, 109, 32, 40, 114, 101, 98, 117, 105, 108, 116, 32, 119, 105, 116, 104, 32, 115, 116, 97, 108, 101, 47, 108, 101, 102, 116, 111, 118, 101, 114, 32, 105, 116, 101, 109, 115, 41}};
 static const clar_str_255 clar_lit_40 = {36, {112, 111, 112, 117, 112, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
-static const clar_str_255 clar_lit_41 = {2, {111, 110}};
-static const clar_str_255 clar_lit_42 = {3, {111, 102, 102}};
-static const clar_str_255 clar_lit_43 = {34, {106, 105, 103, 103, 108, 101, 58, 32, 98, 97, 100, 32, 97, 114, 103, 117, 109, 101, 110, 116, 32, 40, 119, 97, 110, 116, 32, 111, 110, 124, 111, 102, 102, 41}};
-static const clar_str_255 clar_lit_44 = {37, {115, 99, 114, 105, 112, 116, 101, 100, 32, 100, 105, 97, 108, 111, 103, 32, 97, 110, 115, 119, 101, 114, 32, 113, 117, 101, 117, 101, 32, 111, 118, 101, 114, 102, 108, 111, 119}};
-static const clar_str_255 clar_lit_45 = {37, {115, 99, 114, 105, 112, 116, 101, 100, 32, 100, 105, 97, 108, 111, 103, 32, 119, 105, 116, 104, 32, 110, 111, 32, 113, 117, 101, 117, 101, 100, 32, 97, 110, 115, 119, 101, 114}};
-static const clar_str_255 clar_lit_46 = {7, {84, 32, 79, 80, 69, 78, 32}};
-static const clar_str_255 clar_lit_47 = {1, {32}};
-static const clar_str_255 clar_lit_48 = {8, {84, 32, 67, 76, 79, 83, 69, 32}};
-static const clar_str_255 clar_lit_49 = {7, {84, 32, 70, 73, 82, 69, 32}};
-static const clar_str_255 clar_lit_50 = {1, {46}};
-static const clar_str_255 clar_lit_51 = {7, {46, 115, 101, 108, 101, 99, 116}};
-static const clar_str_255 clar_lit_52 = {13, {84, 32, 70, 73, 82, 69, 32, 101, 118, 101, 114, 121, 46}};
-static const clar_str_255 clar_lit_53 = {6, {84, 32, 68, 73, 77, 32}};
-static const clar_str_255 clar_lit_54 = {5, {46, 67, 117, 116, 32}};
-static const clar_str_255 clar_lit_55 = {6, {46, 67, 111, 112, 121, 32}};
-static const clar_str_255 clar_lit_56 = {7, {46, 80, 97, 115, 116, 101, 32}};
-static const clar_str_255 clar_lit_57 = {7, {46, 67, 108, 101, 97, 114, 32}};
-static const clar_str_255 clar_lit_58 = {8, {84, 32, 70, 82, 79, 78, 84, 32}};
-static const clar_str_255 clar_lit_59 = {8, {84, 32, 65, 66, 79, 85, 84, 32}};
-static const clar_str_255 clar_lit_60 = {1, {124}};
-static const clar_str_255 clar_lit_61 = {7, {99, 97, 112, 116, 105, 111, 110}};
-static const clar_str_255 clar_lit_62 = {4, {116, 101, 120, 116}};
-static const clar_str_255 clar_lit_63 = {7, {101, 110, 97, 98, 108, 101, 100}};
-static const clar_str_255 clar_lit_64 = {7, {99, 104, 101, 99, 107, 101, 100}};
-static const clar_str_255 clar_lit_65 = {8, {115, 101, 108, 101, 99, 116, 101, 100}};
-static const clar_str_255 clar_lit_66 = {5, {119, 105, 100, 116, 104}};
-static const clar_str_255 clar_lit_67 = {6, {104, 101, 105, 103, 104, 116}};
-static const clar_str_255 clar_lit_68 = {6, {84, 32, 83, 69, 84, 32}};
-static const clar_str_255 clar_lit_69 = {9, {46, 105, 110, 118, 97, 108, 105, 100, 46}};
-static const clar_str_255 clar_lit_70 = {2, {84, 32}};
-static const clar_str_255 clar_lit_71 = {10, {84, 32, 79, 80, 69, 78, 68, 79, 67, 32}};
-static const clar_str_255 clar_lit_72 = {4, {115, 97, 118, 101}};
-static const clar_str_255 clar_lit_73 = {7, {100, 105, 115, 99, 97, 114, 100}};
-static const clar_str_255 clar_lit_74 = {6, {99, 97, 110, 99, 101, 108}};
-static const clar_str_255 clar_lit_75 = {55, {97, 110, 115, 119, 101, 114, 45, 99, 104, 97, 110, 103, 101, 115, 58, 32, 98, 97, 100, 32, 97, 114, 103, 117, 109, 101, 110, 116, 32, 40, 119, 97, 110, 116, 32, 115, 97, 118, 101, 124, 100, 105, 115, 99, 97, 114, 100, 124, 99, 97, 110, 99, 101, 108, 41}};
-static const clar_str_255 clar_lit_76 = {35, {115, 110, 97, 112, 58, 32, 115, 99, 114, 101, 101, 110, 66, 105, 116, 115, 46, 114, 111, 119, 66, 121, 116, 101, 115, 32, 105, 115, 32, 110, 111, 116, 32, 54, 52}};
-static const clar_str_255 clar_lit_77 = {16, {35, 35, 67, 76, 65, 82, 85, 83, 45, 83, 78, 65, 80, 35, 35, 32}};
-static const clar_str_255 clar_lit_78 = {19, {35, 35, 67, 76, 65, 82, 85, 83, 45, 83, 78, 65, 80, 45, 69, 78, 68, 35, 35}};
-static const clar_str_255 clar_lit_79 = {44, {117, 105, 112, 111, 114, 116, 58, 32, 117, 110, 107, 110, 111, 119, 110, 32, 111, 114, 32, 117, 110, 115, 117, 112, 112, 111, 114, 116, 101, 100, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 118, 101, 114, 98}};
-static const clar_str_255 clar_lit_80 = {8, {100, 98, 108, 99, 108, 105, 99, 107}};
-static const clar_str_255 clar_lit_81 = {4, {116, 121, 112, 101}};
-static const clar_str_255 clar_lit_82 = {4, {109, 101, 110, 117}};
-static const clar_str_255 clar_lit_83 = {5, {99, 108, 111, 115, 101}};
-static const clar_str_255 clar_lit_84 = {6, {114, 101, 115, 105, 122, 101}};
-static const clar_str_255 clar_lit_85 = {4, {122, 111, 111, 109}};
-static const clar_str_255 clar_lit_86 = {5, {100, 101, 108, 97, 121}};
-static const clar_str_255 clar_lit_87 = {4, {116, 105, 99, 107}};
-static const clar_str_255 clar_lit_88 = {4, {115, 110, 97, 112}};
-static const clar_str_255 clar_lit_89 = {6, {106, 105, 103, 103, 108, 101}};
-static const clar_str_255 clar_lit_90 = {4, {113, 117, 105, 116}};
-static const clar_str_255 clar_lit_91 = {9, {108, 97, 117, 110, 99, 104, 100, 111, 99}};
-static const clar_str_255 clar_lit_92 = {12, {97, 110, 115, 119, 101, 114, 45, 112, 111, 112, 117, 112}};
-static const clar_str_255 clar_lit_93 = {11, {97, 110, 115, 119, 101, 114, 45, 111, 112, 101, 110}};
-static const clar_str_255 clar_lit_94 = {11, {97, 110, 115, 119, 101, 114, 45, 115, 97, 118, 101}};
-static const clar_str_255 clar_lit_95 = {14, {97, 110, 115, 119, 101, 114, 45, 99, 104, 97, 110, 103, 101, 115}};
-static const clar_str_255 clar_lit_96 = {13, {97, 110, 115, 119, 101, 114, 45, 99, 97, 110, 99, 101, 108}};
-static const clar_str_255 clar_lit_97 = {42, {97, 115, 107, 79, 112, 101, 110, 32, 102, 105, 108, 116, 101, 114, 32, 109, 117, 115, 116, 32, 104, 97, 118, 101, 32, 97, 116, 32, 109, 111, 115, 116, 32, 52, 32, 101, 110, 116, 114, 105, 101, 115}};
-static const clar_str_255 clar_lit_98 = {49, {97, 115, 107, 79, 112, 101, 110, 32, 102, 105, 108, 116, 101, 114, 32, 101, 110, 116, 114, 121, 32, 109, 117, 115, 116, 32, 98, 101, 32, 97, 116, 32, 109, 111, 115, 116, 32, 52, 32, 99, 104, 97, 114, 97, 99, 116, 101, 114, 115}};
-static const clar_str_255 clar_lit_99 = {8, {83, 97, 118, 101, 32, 97, 115, 58}};
-static const clar_str_255 clar_lit_100 = {8, {97, 99, 99, 101, 112, 116, 101, 100}};
-static const clar_str_255 clar_lit_101 = {9, {99, 97, 110, 99, 101, 108, 108, 101, 100}};
-static const clar_str_255 clar_lit_102 = {33, {101, 100, 105, 116, 32, 119, 104, 105, 108, 101, 32, 97, 32, 102, 111, 114, 109, 32, 105, 115, 32, 97, 108, 114, 101, 97, 100, 121, 32, 111, 112, 101, 110}};
-static const clar_str_255 clar_lit_103 = {24, {101, 100, 105, 116, 58, 32, 119, 105, 110, 100, 111, 119, 32, 104, 97, 115, 32, 110, 111, 32, 102, 111, 114, 109}};
-static const clar_str_255 clar_lit_104 = {16, {84, 32, 65, 83, 75, 79, 80, 69, 78, 32, 99, 97, 110, 99, 101, 108}};
-static const clar_str_255 clar_lit_105 = {38, {97, 115, 107, 79, 112, 101, 110, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
-static const clar_str_255 clar_lit_106 = {7, {65, 83, 75, 79, 80, 69, 78}};
-static const clar_str_255 clar_lit_107 = {16, {84, 32, 65, 83, 75, 83, 65, 86, 69, 32, 99, 97, 110, 99, 101, 108}};
-static const clar_str_255 clar_lit_108 = {38, {97, 115, 107, 83, 97, 118, 101, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
-static const clar_str_255 clar_lit_109 = {7, {65, 83, 75, 83, 65, 86, 69}};
-static const clar_str_255 clar_lit_110 = {45, {97, 115, 107, 83, 97, 118, 101, 67, 104, 97, 110, 103, 101, 115, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
-static const clar_str_255 clar_lit_111 = {13, {84, 32, 65, 83, 75, 67, 72, 65, 78, 71, 69, 83, 32}};
-static const clar_str_255 clar_lit_112 = {1, {58}};
-static const clar_str_255 clar_lit_113 = {2, {104, 32}};
-static const clar_str_255 clar_lit_114 = {2, {109, 32}};
-static const clar_str_255 clar_lit_115 = {1, {115}};
-static const clar_str_255 clar_lit_116 = {31, {114, 101, 99, 111, 114, 100, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 102, 111, 114, 32, 115, 101, 114, 105, 97, 108, 105, 122, 101, 114}};
-static const clar_str_255 clar_lit_117 = {20, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 119, 114, 105, 116, 101, 32, 102, 105, 108, 101}};
-static const clar_str_255 clar_lit_118 = {15, {98, 97, 100, 32, 102, 105, 108, 101, 32, 102, 111, 114, 109, 97, 116}};
-static const clar_str_255 clar_lit_119 = {19, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 97, 100, 32, 102, 105, 108, 101}};
-static const clar_str_255 clar_lit_120 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_121 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_122 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_123 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_124 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_125 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_41 = {4, {99, 111, 112, 121}};
+static const clar_str_255 clar_lit_42 = {26, {108, 111, 103, 112, 97, 110, 101, 108, 32, 108, 105, 110, 101, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_43 = {2, {111, 110}};
+static const clar_str_255 clar_lit_44 = {3, {111, 102, 102}};
+static const clar_str_255 clar_lit_45 = {34, {106, 105, 103, 103, 108, 101, 58, 32, 98, 97, 100, 32, 97, 114, 103, 117, 109, 101, 110, 116, 32, 40, 119, 97, 110, 116, 32, 111, 110, 124, 111, 102, 102, 41}};
+static const clar_str_255 clar_lit_46 = {37, {115, 99, 114, 105, 112, 116, 101, 100, 32, 100, 105, 97, 108, 111, 103, 32, 97, 110, 115, 119, 101, 114, 32, 113, 117, 101, 117, 101, 32, 111, 118, 101, 114, 102, 108, 111, 119}};
+static const clar_str_255 clar_lit_47 = {37, {115, 99, 114, 105, 112, 116, 101, 100, 32, 100, 105, 97, 108, 111, 103, 32, 119, 105, 116, 104, 32, 110, 111, 32, 113, 117, 101, 117, 101, 100, 32, 97, 110, 115, 119, 101, 114}};
+static const clar_str_255 clar_lit_48 = {7, {84, 32, 79, 80, 69, 78, 32}};
+static const clar_str_255 clar_lit_49 = {1, {32}};
+static const clar_str_255 clar_lit_50 = {8, {84, 32, 67, 76, 79, 83, 69, 32}};
+static const clar_str_255 clar_lit_51 = {7, {84, 32, 70, 73, 82, 69, 32}};
+static const clar_str_255 clar_lit_52 = {1, {46}};
+static const clar_str_255 clar_lit_53 = {7, {46, 115, 101, 108, 101, 99, 116}};
+static const clar_str_255 clar_lit_54 = {13, {84, 32, 70, 73, 82, 69, 32, 101, 118, 101, 114, 121, 46}};
+static const clar_str_255 clar_lit_55 = {6, {84, 32, 68, 73, 77, 32}};
+static const clar_str_255 clar_lit_56 = {5, {46, 67, 117, 116, 32}};
+static const clar_str_255 clar_lit_57 = {6, {46, 67, 111, 112, 121, 32}};
+static const clar_str_255 clar_lit_58 = {7, {46, 80, 97, 115, 116, 101, 32}};
+static const clar_str_255 clar_lit_59 = {7, {46, 67, 108, 101, 97, 114, 32}};
+static const clar_str_255 clar_lit_60 = {8, {84, 32, 70, 82, 79, 78, 84, 32}};
+static const clar_str_255 clar_lit_61 = {8, {84, 32, 65, 66, 79, 85, 84, 32}};
+static const clar_str_255 clar_lit_62 = {1, {124}};
+static const clar_str_255 clar_lit_63 = {7, {99, 97, 112, 116, 105, 111, 110}};
+static const clar_str_255 clar_lit_64 = {4, {116, 101, 120, 116}};
+static const clar_str_255 clar_lit_65 = {7, {101, 110, 97, 98, 108, 101, 100}};
+static const clar_str_255 clar_lit_66 = {7, {99, 104, 101, 99, 107, 101, 100}};
+static const clar_str_255 clar_lit_67 = {8, {115, 101, 108, 101, 99, 116, 101, 100}};
+static const clar_str_255 clar_lit_68 = {5, {119, 105, 100, 116, 104}};
+static const clar_str_255 clar_lit_69 = {6, {104, 101, 105, 103, 104, 116}};
+static const clar_str_255 clar_lit_70 = {6, {84, 32, 83, 69, 84, 32}};
+static const clar_str_255 clar_lit_71 = {9, {46, 105, 110, 118, 97, 108, 105, 100, 46}};
+static const clar_str_255 clar_lit_72 = {2, {84, 32}};
+static const clar_str_255 clar_lit_73 = {10, {84, 32, 79, 80, 69, 78, 68, 79, 67, 32}};
+static const clar_str_255 clar_lit_74 = {4, {115, 97, 118, 101}};
+static const clar_str_255 clar_lit_75 = {7, {100, 105, 115, 99, 97, 114, 100}};
+static const clar_str_255 clar_lit_76 = {6, {99, 97, 110, 99, 101, 108}};
+static const clar_str_255 clar_lit_77 = {55, {97, 110, 115, 119, 101, 114, 45, 99, 104, 97, 110, 103, 101, 115, 58, 32, 98, 97, 100, 32, 97, 114, 103, 117, 109, 101, 110, 116, 32, 40, 119, 97, 110, 116, 32, 115, 97, 118, 101, 124, 100, 105, 115, 99, 97, 114, 100, 124, 99, 97, 110, 99, 101, 108, 41}};
+static const clar_str_255 clar_lit_78 = {35, {115, 110, 97, 112, 58, 32, 115, 99, 114, 101, 101, 110, 66, 105, 116, 115, 46, 114, 111, 119, 66, 121, 116, 101, 115, 32, 105, 115, 32, 110, 111, 116, 32, 54, 52}};
+static const clar_str_255 clar_lit_79 = {16, {35, 35, 67, 76, 65, 82, 85, 83, 45, 83, 78, 65, 80, 35, 35, 32}};
+static const clar_str_255 clar_lit_80 = {19, {35, 35, 67, 76, 65, 82, 85, 83, 45, 83, 78, 65, 80, 45, 69, 78, 68, 35, 35}};
+static const clar_str_255 clar_lit_81 = {44, {117, 105, 112, 111, 114, 116, 58, 32, 117, 110, 107, 110, 111, 119, 110, 32, 111, 114, 32, 117, 110, 115, 117, 112, 112, 111, 114, 116, 101, 100, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 118, 101, 114, 98}};
+static const clar_str_255 clar_lit_82 = {8, {100, 98, 108, 99, 108, 105, 99, 107}};
+static const clar_str_255 clar_lit_83 = {4, {116, 121, 112, 101}};
+static const clar_str_255 clar_lit_84 = {4, {109, 101, 110, 117}};
+static const clar_str_255 clar_lit_85 = {5, {99, 108, 111, 115, 101}};
+static const clar_str_255 clar_lit_86 = {6, {114, 101, 115, 105, 122, 101}};
+static const clar_str_255 clar_lit_87 = {4, {122, 111, 111, 109}};
+static const clar_str_255 clar_lit_88 = {5, {100, 101, 108, 97, 121}};
+static const clar_str_255 clar_lit_89 = {4, {116, 105, 99, 107}};
+static const clar_str_255 clar_lit_90 = {4, {115, 110, 97, 112}};
+static const clar_str_255 clar_lit_91 = {6, {106, 105, 103, 103, 108, 101}};
+static const clar_str_255 clar_lit_92 = {4, {113, 117, 105, 116}};
+static const clar_str_255 clar_lit_93 = {9, {108, 97, 117, 110, 99, 104, 100, 111, 99}};
+static const clar_str_255 clar_lit_94 = {12, {97, 110, 115, 119, 101, 114, 45, 112, 111, 112, 117, 112}};
+static const clar_str_255 clar_lit_95 = {11, {97, 110, 115, 119, 101, 114, 45, 111, 112, 101, 110}};
+static const clar_str_255 clar_lit_96 = {11, {97, 110, 115, 119, 101, 114, 45, 115, 97, 118, 101}};
+static const clar_str_255 clar_lit_97 = {14, {97, 110, 115, 119, 101, 114, 45, 99, 104, 97, 110, 103, 101, 115}};
+static const clar_str_255 clar_lit_98 = {13, {97, 110, 115, 119, 101, 114, 45, 99, 97, 110, 99, 101, 108}};
+static const clar_str_255 clar_lit_99 = {42, {97, 115, 107, 79, 112, 101, 110, 32, 102, 105, 108, 116, 101, 114, 32, 109, 117, 115, 116, 32, 104, 97, 118, 101, 32, 97, 116, 32, 109, 111, 115, 116, 32, 52, 32, 101, 110, 116, 114, 105, 101, 115}};
+static const clar_str_255 clar_lit_100 = {49, {97, 115, 107, 79, 112, 101, 110, 32, 102, 105, 108, 116, 101, 114, 32, 101, 110, 116, 114, 121, 32, 109, 117, 115, 116, 32, 98, 101, 32, 97, 116, 32, 109, 111, 115, 116, 32, 52, 32, 99, 104, 97, 114, 97, 99, 116, 101, 114, 115}};
+static const clar_str_255 clar_lit_101 = {8, {83, 97, 118, 101, 32, 97, 115, 58}};
+static const clar_str_255 clar_lit_102 = {8, {97, 99, 99, 101, 112, 116, 101, 100}};
+static const clar_str_255 clar_lit_103 = {9, {99, 97, 110, 99, 101, 108, 108, 101, 100}};
+static const clar_str_255 clar_lit_104 = {33, {101, 100, 105, 116, 32, 119, 104, 105, 108, 101, 32, 97, 32, 102, 111, 114, 109, 32, 105, 115, 32, 97, 108, 114, 101, 97, 100, 121, 32, 111, 112, 101, 110}};
+static const clar_str_255 clar_lit_105 = {24, {101, 100, 105, 116, 58, 32, 119, 105, 110, 100, 111, 119, 32, 104, 97, 115, 32, 110, 111, 32, 102, 111, 114, 109}};
+static const clar_str_255 clar_lit_106 = {16, {84, 32, 65, 83, 75, 79, 80, 69, 78, 32, 99, 97, 110, 99, 101, 108}};
+static const clar_str_255 clar_lit_107 = {38, {97, 115, 107, 79, 112, 101, 110, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
+static const clar_str_255 clar_lit_108 = {7, {65, 83, 75, 79, 80, 69, 78}};
+static const clar_str_255 clar_lit_109 = {16, {84, 32, 65, 83, 75, 83, 65, 86, 69, 32, 99, 97, 110, 99, 101, 108}};
+static const clar_str_255 clar_lit_110 = {38, {97, 115, 107, 83, 97, 118, 101, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
+static const clar_str_255 clar_lit_111 = {7, {65, 83, 75, 83, 65, 86, 69}};
+static const clar_str_255 clar_lit_112 = {45, {97, 115, 107, 83, 97, 118, 101, 67, 104, 97, 110, 103, 101, 115, 58, 32, 115, 99, 114, 105, 112, 116, 101, 100, 32, 97, 110, 115, 119, 101, 114, 32, 107, 105, 110, 100, 32, 109, 105, 115, 109, 97, 116, 99, 104}};
+static const clar_str_255 clar_lit_113 = {13, {84, 32, 65, 83, 75, 67, 72, 65, 78, 71, 69, 83, 32}};
+static const clar_str_255 clar_lit_114 = {1, {58}};
+static const clar_str_255 clar_lit_115 = {2, {104, 32}};
+static const clar_str_255 clar_lit_116 = {2, {109, 32}};
+static const clar_str_255 clar_lit_117 = {1, {115}};
+static const clar_str_255 clar_lit_118 = {31, {114, 101, 99, 111, 114, 100, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 102, 111, 114, 32, 115, 101, 114, 105, 97, 108, 105, 122, 101, 114}};
+static const clar_str_255 clar_lit_119 = {20, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 119, 114, 105, 116, 101, 32, 102, 105, 108, 101}};
+static const clar_str_255 clar_lit_120 = {15, {98, 97, 100, 32, 102, 105, 108, 101, 32, 102, 111, 114, 109, 97, 116}};
+static const clar_str_255 clar_lit_121 = {19, {99, 111, 117, 108, 100, 32, 110, 111, 116, 32, 114, 101, 97, 100, 32, 102, 105, 108, 101}};
+static const clar_str_255 clar_lit_122 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 110, 101, 118, 101, 110, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_123 = {40, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 119, 105, 100, 103, 101, 116, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_124 = {42, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 109, 101, 110, 117, 58, 32, 104, 97, 110, 100, 108, 101, 114, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_125 = {36, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 101, 118, 101, 114, 121, 58, 32, 105, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_126 = {45, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 114, 101, 108, 101, 97, 115, 101, 118, 97, 114, 115, 58, 32, 119, 105, 110, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_127 = {44, {99, 108, 97, 114, 95, 117, 105, 95, 102, 105, 114, 101, 95, 115, 116, 97, 116, 101, 114, 111, 119, 115, 58, 32, 114, 111, 119, 115, 73, 100, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -512,6 +517,37 @@ static clar_rec_RtUiCanvasTarget clar_new_RtUiCanvasTarget(void) {
     return r;
 }
 
+typedef struct {
+    void * cv_ringH;
+    int32_t cv_cap;
+    int32_t cv_used;
+    int32_t cv_tail;
+    int32_t cv_head;
+    int32_t cv_count;
+    int32_t cv_maxLines;
+    int32_t cv_top;
+    int32_t cv_follow;
+    int32_t cv_selFirst;
+    int32_t cv_selLast;
+    int32_t cv_anchor;
+    int32_t cv_lineH;
+    int32_t cv_ascent;
+    int32_t cv_widest;
+    int32_t cv_widestIdx;
+    int32_t cv_hoff;
+    void * cv_vbar;
+    void * cv_hbar;
+    int32_t cv_font;
+    int32_t cv_size;
+    int32_t cv_face;
+    int32_t cv_dirty;
+    int32_t cv_base;
+    int32_t cv_drawnTop;
+    int32_t cv_drawnRows;
+    int32_t cv_savFont;
+    int32_t cv_savSize;
+    int32_t cv_savFace;
+} clar_rec_RtUiLog;
 typedef struct {
     int32_t cv_rc;
     void * cv_keys;
@@ -1135,32 +1171,32 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
 }
 
 static void clar_fn_clar_ui_fire_winevent(int32_t cv_winIdx, void * cv_inst, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
-    rt_log((const uint8_t*)&(clar_lit_120));
-    rt_quit((int32_t)(1));
-}
-
-static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
-    rt_log((const uint8_t*)&(clar_lit_121));
-    rt_quit((int32_t)(1));
-}
-
-static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil) {
     rt_log((const uint8_t*)&(clar_lit_122));
     rt_quit((int32_t)(1));
 }
 
-static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
+static void clar_fn_clar_ui_fire_widget(int32_t cv_winIdx, void * cv_inst, int32_t cv_widgetIdx, int32_t cv_ev, int32_t cv_a, int32_t cv_b) {
     rt_log((const uint8_t*)&(clar_lit_123));
     rt_quit((int32_t)(1));
 }
 
-static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) {
+static void clar_fn_clar_ui_fire_menu(int32_t cv_handlerIdx, void * cv_frontInstOrNil) {
     rt_log((const uint8_t*)&(clar_lit_124));
     rt_quit((int32_t)(1));
 }
 
-static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
+static void clar_fn_clar_ui_fire_every(int32_t cv_idx) {
     rt_log((const uint8_t*)&(clar_lit_125));
+    rt_quit((int32_t)(1));
+}
+
+static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) {
+    rt_log((const uint8_t*)&(clar_lit_126));
+    rt_quit((int32_t)(1));
+}
+
+static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
+    rt_log((const uint8_t*)&(clar_lit_127));
     rt_quit((int32_t)(1));
     return 0;
     return 0;
