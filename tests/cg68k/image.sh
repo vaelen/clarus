@@ -45,21 +45,19 @@ else
     t_fail header "got [$hdrfixed], want [$want] (full line: $hdr)"
 fi
 
-# -- resource inventory: CODE 0, CODE 1..N (contiguous), SIZE(-1), nothing
-# else. The native runtime alone now fills more than one 32 KB segment
-# (ui-widgets Tasks 2/5: the table/logpanel teardown and LDEF are linked
-# into every native program), so N is not pinned to 1. --
+# -- resource inventory: exactly CODE 0, CODE 1, SIZE(-1), nothing else --
 if ! lst=$("$RESFORK" list "$IMG" 2>&1); then
     t_fail inventory "$lst"
     t_done
 fi
 inv=$(echo "$lst" | awk '{print $1, $2}' | sort)
-nseg=$(echo "$lst" | awk '$1 == "CODE" && $2 > 0' | wc -l | tr -d ' ')
-wantinv=$( { echo "CODE 0"; i=1; while [ "$i" -le "$nseg" ]; do echo "CODE $i"; i=$((i + 1)); done; echo "SIZE -1"; } | sort)
-if [ "$nseg" -ge 1 ] && [ "$inv" = "$wantinv" ]; then
+wantinv='CODE 0
+CODE 1
+SIZE -1'
+if [ "$inv" = "$wantinv" ]; then
     t_pass inventory
 else
-    t_fail inventory "resources [$(echo "$inv" | tr '\n' ',')], want CODE 0, CODE 1..$nseg, SIZE -1"
+    t_fail inventory "resources [$(echo "$inv" | tr '\n' ',')], want CODE 0, CODE 1, SIZE -1"
 fi
 
 # -- SIZE(-1): exactly 10 bytes, flags 0x0080, preferred/minimum 2MB --
@@ -75,25 +73,19 @@ else
     fi
 fi
 
-# -- every CODE n's own 4-byte header: first-JT-entry offset (CODE 1's is
-# 0, each next one starts where the previous segment's entries end) and
-# entry count --
-entrycount=0
-seg=1
-while [ "$seg" -le "$nseg" ]; do
-    if ! "$RESFORK" get "$IMG" CODE "$seg" "$WORK/code$seg.bin" 2>"$WORK/get.err"; then
-        t_fail code_header "$(cat "$WORK/get.err")"
-        t_done
-    fi
-    set -- $(od -An -tx1 -N4 "$WORK/code$seg.bin")
-    firstoff=$(( 0x$1 * 256 + 0x$2 ))
-    if [ "$firstoff" -ne $(( entrycount * 8 )) ]; then
-        t_fail code_first_entry_off "CODE $seg first-JT-entry offset = $firstoff, want $(( entrycount * 8 ))"
-    fi
-    entrycount=$(( entrycount + 0x$3 * 256 + 0x$4 ))
-    seg=$(( seg + 1 ))
-done
-t_pass code_first_entry_off
+# -- CODE 1's own 4-byte header: first-JT-entry offset 0, entry count --
+if ! "$RESFORK" get "$IMG" CODE 1 "$WORK/code1.bin" 2>"$WORK/get.err"; then
+    t_fail code1_header "$(cat "$WORK/get.err")"
+    t_done
+fi
+set -- $(od -An -tx1 -N4 "$WORK/code1.bin")
+firstoff=$(( 0x$1 * 256 + 0x$2 ))
+entrycount=$(( 0x$3 * 256 + 0x$4 ))
+if [ "$firstoff" -eq 0 ]; then
+    t_pass code1_first_entry_off
+else
+    t_fail code1_first_entry_off "CODE 1 first-JT-entry offset = $firstoff, want 0 (single segment)"
+fi
 
 # -- CODE 0: A5-world header + every jump-table slot --
 if ! c0=$("$RESFORK" code0 "$IMG" 2>&1); then
@@ -115,7 +107,7 @@ fi
 if [ "$nentries" -eq "$entrycount" ]; then
     t_pass code0_entry_count
 else
-    t_fail code0_entry_count "CODE 0 JT entry count ($nentries) != the CODE n headers' summed count ($entrycount)"
+    t_fail code0_entry_count "CODE 0 JT entry count ($nentries) != CODE 1 header's own count ($entrycount)"
 fi
 # globals.cla declares two below-A5 globals (an int and a string(255)).
 if [ "$below" -gt 0 ]; then
@@ -145,12 +137,12 @@ if [ -z "$badslots" ]; then
 else
     t_fail code0_slots "malformed JT slot(s): $(echo "$badslots" | tr '\n' ';')"
 fi
-# Every slot names a real segment, in non-decreasing order.
-badseg=$(echo "$slots" | awk -v n="$nseg" '$2 < 1 || $2 > n || $2 < prev { c++ } { prev = $2 } END { print c + 0 }')
-if [ "$badseg" -eq 0 ]; then
+# Single segment: every slot must name segment 1.
+notseg1=$(echo "$slots" | grep -vc '^slot 1 ')
+if [ "$notseg1" -eq 0 ]; then
     t_pass code0_slot_segments
 else
-    t_fail code0_slot_segments "$badseg JT slot(s) name a segment outside 1..$nseg or out of order"
+    t_fail code0_slot_segments "$notseg1 JT slot(s) name a segment other than 1"
 fi
 # JT entry 0 is the synthesized startup routine, always the very first
 # thing emitted -- its offset must be exactly 0 (a stray +4 enters startup

@@ -16,11 +16,10 @@
 // freshly allocated block.
 //
 // Geometry: TbFmtWin is 420 wide, content at global (46, 44); table F at
-// local (18,10), default 300x120, spans global (64,54)-(364,174), so its LM view
+// local (18,10), 300x200, spans global (64,54)-(364,254), so its LM view
 // starts at x 65: column R spans 65..125, column Abort 125..185. Row i's
 // cell top is 74 + 16*i (header 20, row 16); bands use y 75+16*i, h 14.
-// Only rows 0..5 show whole, so the aborting row is 3 (the brief's 7 is
-// below the fold).
+// Rows 0..10 show whole.
 
 record TbFmtRow {
     n: int
@@ -33,7 +32,7 @@ func tbFmtN(n: int): string {
 }
 
 func tbFmtAbort(n: int): string {
-    if n == 3 {
+    if n == 7 {
         abort("seven")
     }
     return "x" + string(n)
@@ -44,6 +43,7 @@ window TbFmtWin {
     size: 420, 280
     table F {
         at: 18, 10
+        height: 200
         rows: tbFmtRows
         column "R" shows tbFmtN(n) width 60 align right
         column "Abort" shows tbFmtAbort(n) width 60
@@ -91,26 +91,27 @@ func caseTableFormat(): TestResult {
     tbFmtFill()
     UiTestTick(1)
 
-    // Right alignment: the left of the cell is blank, its right is not.
-    if tbFmtBand(72, 8, 1) != 0 {
-        close w
-        return tkFail("TableFormat", "right-aligned cell's left band not blank")
-    }
+    // Right alignment: the left of each cell is blank, its right is not.
     row = 0
-    while row < 6 {
+    while row < 11 {
+        if tbFmtBand(72, 8, row) != 0 {
+            detail = "right-aligned cell's left band not blank at row " + tkIntToStr(row)
+            close w
+            return tkFail("TableFormat", detail)
+        }
         if tbFmtBand(112, 8, row) == 0 {
             detail = "right-aligned cell blank at row " + tkIntToStr(row)
             close w
             return tkFail("TableFormat", detail)
         }
-        if row != 3 and tbFmtBand(128, 48, row) == 0 {
+        if row != 7 and tbFmtBand(128, 48, row) == 0 {
             detail = "formatted cell blank at row " + tkIntToStr(row)
             close w
             return tkFail("TableFormat", detail)
         }
         row = row + 1
     }
-    if tbFmtBand(128, 48, 3) != 0 {
+    if tbFmtBand(128, 48, 7) != 0 {
         close w
         return tkFail("TableFormat", "aborting cell not blank")
     }

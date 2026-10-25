@@ -363,6 +363,7 @@ func tbCaseName(t: ToolboxTest): string {
     }
     case Divider {
         return "Divider"
+    }
     case ListObserve {
         return "ListObserve"
     }
@@ -637,6 +638,8 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, Divider) {
         results.add(caseDivider())
+        casesRun = casesRun + 1
+    }
     if wantAll or tbHas(deduped, ListObserve) {
         results.add(caseListObserve())
         casesRun = casesRun + 1

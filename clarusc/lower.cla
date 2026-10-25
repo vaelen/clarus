@@ -8071,6 +8071,7 @@ func lowSynthUiDispatchers() {
     lowSynthStartEmpty()
     lowSynthLogOp()
     lowSynthColFmt()
+    lowSynthFmtCell()
     lowSynthGeomApply()
 }
 
@@ -8237,6 +8238,65 @@ func lowSynthColFmtArm(c: int): int {
     irExprListAppend(args, newIRVarRef(tmp, false, t))
     irStmtListAppend(head, newIRExprStmt(newIRIntr(poke, args, irVoidT)))
     return head
+}
+
+// lowSynthFmtCell builds clar_ui_fire_fmtcell(stP, rec, recH, hstate,
+// layoutOff, colsOff, k, colRect), the UiFmtCell hook the table LDEF calls for a
+// formatted cell (ui-widgets Task 5 review): it forwards to
+// rtUiTableFmtCell only in a program with a formatted column, so that
+// path (and UiColFmt's caller side) is shaken out of every other one (C4).
+func lowSynthFmtCell() {
+    var paramsHead: int
+    var tail: int
+    var args: int
+    var body: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("stP"), irPtrT)
+    tail = irLocalListAppend(paramsHead, newIRLocal(intern("rec"), irPtrT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("recH"), irPtrT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("hstate"), irIntT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("layoutOff"), irIntT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("colsOff"), irIntT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("k"), irIntT))
+    tail = irLocalListAppend(tail, newIRLocal(intern("colRect"), irPtrT))
+    body = -1
+    if lowProgramHasFmtCol() {
+        args = lowSynthPtrRef("stP")
+        tail = irExprListAppend(args, lowSynthPtrRef("rec"))
+        tail = irExprListAppend(tail, lowSynthPtrRef("recH"))
+        tail = irExprListAppend(tail, lowSynthIntRef("hstate"))
+        tail = irExprListAppend(tail, lowSynthIntRef("layoutOff"))
+        tail = irExprListAppend(tail, lowSynthIntRef("colsOff"))
+        tail = irExprListAppend(tail, lowSynthIntRef("k"))
+        irExprListAppend(tail, lowSynthPtrRef("colRect"))
+        body = newIRExprStmt(newIRCallFn(intern("rtUiTableFmtCell"), args, irVoidT))
+    }
+    fnameIdx = intern("clar_ui_fire_fmtcell")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, body)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowProgramHasFmtCol reports whether any table declares a formatted
+// column (`shows f(...)`).
+func lowProgramHasFmtCol(): bool {
+    var w: int
+    var c: int
+
+    w = 0
+    while w < irWidgetDescs.count {
+        if poolGet(irWidgetDescKind(w)) == "table" {
+            c = irWidgetDescColumnsHead(w)
+            while c != -1 {
+                if irColumnDescFmtId(c) != -1 {
+                    return true
+                }
+                c = irColumnDescNext(c)
+            }
+        }
+        w = w + 1
+    }
+    return false
 }
 
 // lowProgramHasLogpanel reports whether any window declares a logpanel
@@ -8925,6 +8985,7 @@ func lowUiSynthExternName(externNameIdx: int): int {
     if nm == "UiTableRows" { return intern("clar_ui_fire_staterows") }
     if nm == "UiLogOp" { return intern("clar_ui_fire_logop") }
     if nm == "UiColFmt" { return intern("clar_ui_fire_colfmt") }
+    if nm == "UiFmtCell" { return intern("clar_ui_fire_fmtcell") }
     if nm == "UiGeomApply" { return intern("clar_ui_fire_geomapply") }
     // Connection dispatchers (serial-connection phase, Task 5): conn.cla
     // declares these as `external func clar_conn_fire_NAME` (Task 4) and

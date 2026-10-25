@@ -10,15 +10,14 @@
 // window's registry entry alone (review focus 4).
 //
 // Geometry: TbBindWin is 420 wide, so its content starts at global
-// ((512-420)/2, 44) = (46, 44); table T sits at local (10,10), and
-// it keeps its default 300x120 (global (56,54)-(356,174)): `height:` is
-// not live until Task 6. Header strip 20, row height 16 (the
+// ((512-420)/2, 44) = (46, 44); table T sits at local (10,10), 300x200
+// (global (56,54)-(356,254)). Header strip 20, row height 16 (the
 // Chicago 12 metrics PopupTableWin's row-click math already relies on):
 // row i's cell top is 74 + 16*i. The band is x 64..112 (8-aligned, inside
 // column N's 57..117) and y 75+16*i..+14 (inside the row, off its edges).
-// The view is 99 px tall, so rows 0..5 show whole (the element store is
-// therefore checked on row 2, not the brief's row 10), and with 49 rows
-// LM allows a top as deep as 42: scrollTo(40) is a real, unclamped scroll.
+// The view is 179 px tall, so rows 0..10 show whole and 12 are visible;
+// with 59 rows (60, less the removed one) LM allows a top as deep as 47,
+// so scrollTo(40) is a real, unclamped scroll.
 
 record TbRow {
     n: int
@@ -32,6 +31,7 @@ window TbBindWin {
     size: 420, 280
     table T {
         at: 10, 10
+        height: 200
         rows: tbRows
         column "N" shows n width 60
     }
@@ -50,6 +50,7 @@ window TbBindWin2 {
     size: 420, 280
     table T {
         at: 10, 10
+        height: 200
         rows: tbRows
         column "N" shows n width 60
     }
@@ -77,7 +78,7 @@ func caseTableBinding(): TestResult {
     tbBindSelects = 0
     tbRows.clear()
     i = 0
-    while i < 50 {
+    while i < 60 {
         tbRows.add(tbBindRow(i))
         i = i + 1
     }
@@ -102,12 +103,12 @@ func caseTableBinding(): TestResult {
     }
 
     // An element store redraws its row and keeps the selection.
-    c = tbBindBand(2)
-    tbRows[2] = tbBindRow(999)
+    c = tbBindBand(10)
+    tbRows[10] = tbBindRow(999)
     UiTestTick(1)
-    if tbBindBand(2) == c {
+    if tbBindBand(10) == c {
         close w
-        return tkFail("TableBinding", "row 2 not redrawn after l[2] = v")
+        return tkFail("TableBinding", "row 10 not redrawn after l[10] = v")
     }
     if w.T.selected != 4 {
         detail = "after store selected " + tkIntToStr(w.T.selected)

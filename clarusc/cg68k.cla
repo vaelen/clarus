@@ -1843,7 +1843,11 @@ func cg68AddRoots() {
     i = 0
     while i < irFuncs.count {
         nm = poolGet(irFuncName(i))
-        if nm.length >= 3 and nm[0] == 'n' and nm[1] == 'a' and nm[2] == 't' {
+        // A non-UI program roots no nat_Ui* glue (ui-widgets Task 5 review):
+        // they reach the window teardown/table LDEF, which such a program
+        // never uses. Gated together with the UI callback glue below --
+        // gating only one breaks --bake-ir.
+        if nm.length >= 3 and nm[0] == 'n' and nm[1] == 'a' and nm[2] == 't' and (irIsUiProgram() or nm.length < 6 or nm[3] != '_' or nm[4] != 'U' or nm[5] != 'i') {
             shakeAddRoot(irFuncName(i))
         }
         i = i + 1
@@ -1913,8 +1917,12 @@ func cg68SynthCbGlue() {
         }
         glueName = intern("clar_cb_" + poolGet(nameIdx))
         glueFi = newIRFunc(glueName, -1, irVoidT, -1, -1)
-        shakeAddRoot(glueName)
-        shakeAddRoot(nameIdx)
+        // A runtime callback (the table LDEF, the scrollbar action proc)
+        // is rooted only in a UI program; see cg68AddRoots.
+        if irIsUiProgram() or not irFuncIsRuntimeOrigin(bodyFi) {
+            shakeAddRoot(glueName)
+            shakeAddRoot(nameIdx)
+        }
         cgCbGlueFuncIdx.add(glueFi)
         cgCbGlueBodyFuncIdx.add(bodyFi)
         i = i + 1
