@@ -595,6 +595,8 @@ func driveReset() {
     // right before ITS OWN driveCompile) -- both run strictly before any
     // `if haveRtbake` block that would legitimately re-install.
     bkRuntimeFuncBoundary = 0
+    bkLdUilogIrStrLitsStart = 0
+    bkLdBaseIrStrLitsCount = 0
     // SE wave 4 Task 6: the previous compile's lazily read object code
     // (bkLoadObjCode) -- codegen is done with it once its fork is built.
     bkObjBuf.release()
@@ -2675,7 +2677,8 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         // either (driveEarlySplice's own UI gate), so there is nothing
         // for a non-UI --testapi bake install to keep that a plain
         // truncated (non-testapi-shaped) install wouldn't already match.
-        bkInstallArenas(testapi and isUiProg)
+        // dropUilog: driveManifestSplice's uilog.cla gate, bake-path twin.
+        bkInstallArenas(testapi and isUiProg, want68k and not driveHasLogpanel(combined))
         // SE wave 1: the install sequence is complete -- drop what it
         // left in the parse staging (bkLdObj* stays for codegen).
         bkFreeParseStaging()

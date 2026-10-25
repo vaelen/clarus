@@ -176,6 +176,10 @@ const bkSecDeclFileTab: int = 43
 // content a from-source non-testapi compile would (which never splices
 // uitest.cla at all -- bakeModuleList's own doc comment). See task-5-
 // report.md's "inherited problem" section for the full root-cause chain.
+// v8 appended the array-literal boundary (bkGenBaseIrArrLitsCount); v10
+// (ui-widgets) appends uilog.cla's string-literal start
+// (bkGenUilogIrStrLitsStart), the range bkInstallArenas hides in a
+// logpanel-less 68k program -- four counts in all.
 const bkSecUitestBounds: int = 44
 // bkSecCheckerVisibility (format version 3, Task 5 fix round 2): two
 // counts -- funcSigs.count/symbols.count captured right after the
@@ -597,11 +601,14 @@ var bkGenBaseIrStrLitsCount: int
 // module -- so [this, bkGenBaseIrStrLitsCount) is uilog.cla's own string
 // literals. The 68k lane splices uilog.cla from source only for a logpanel
 // program (driveManifestSplice), so cg68Measure leaves that range out of a
-// logpanel-less program's whole-pool set (cgPoolSkipStr*): the single-
+// logpanel-less program's whole-pool set (bkInstallArenas): the single-
 // segment shortcut walks irStrLits by presence, and without this a
 // --rtbake build carries uilog.cla's literals that its from-source twin
 // never has. uilog.cla has no array literals, enums or records today; one
 // that adds them needs the same treatment (bake/ identity fails if not).
+// Assumes uilog.cla stays the LAST base module and that nothing after the
+// generator's decl walk (post-walk synthesis) interns a string literal, so
+// the range holds uilog.cla's literals and only those.
 var bkGenUilogIrStrLitsStart: int
 // bkGenBaseIrArrLitsCount (format version 8): the array-literal pool's own
 // base/uitest boundary, the exact twin of bkGenBaseIrStrLitsCount above.
@@ -885,15 +892,12 @@ func bakeGenerateChain(lane: int): bool {
     // dispatcher-synthesis pass always puts them -- after every runtime
     // AND user literal.
     lowSkipUiDispatchers = true
-    lowMarkStrLits = -1
     if baseHead != -1 {
         lowerProgram(baseHead)
     }
+    // bakeModuleList always has uilog.cla, so the mark always fires.
     lowMarkDecl = 0
     bkGenUilogIrStrLitsStart = lowMarkStrLits
-    if bkGenUilogIrStrLitsStart == -1 {
-        bkGenUilogIrStrLitsStart = irStrLits.count
-    }
     if diags.count > 0 {
         lowSkipUiDispatchers = false
         return false
@@ -2789,6 +2793,9 @@ var bkLoadedRecFieldsHeadByName: intmap of int
 var bkLdBaseIrFuncsCount: int
 var bkLdBaseIrStrLitsCount: int
 // bkLdUilogIrStrLitsStart: bkGenUilogIrStrLitsStart, read back (v10).
+// With bkLdBaseIrStrLitsCount it bounds the irStrLits range bkInstallArenas
+// hides (empty unless dropUilog; driveReset zeroes both for a from-source
+// compile).
 var bkLdUilogIrStrLitsStart: int
 var bkLdBaseIrArrLitsCount: int
 
@@ -4810,7 +4817,7 @@ func bkComputeManifestPaths() {
 // full, unchanged from Task 4's own behavior -- a from-source --testapi
 // build ALSO always carries uitest.cla (driveEarlySplice), so there is no
 // gap to close on that path.
-func bkInstallArenas(testapi: bool) {
+func bkInstallArenas(testapi: bool, dropUilog: bool) {
     var i: int
     var filteredIdx: intmap of int
     var nm: int
@@ -5068,8 +5075,19 @@ func bkInstallArenas(testapi: bool) {
     // index hazard, and the two maps are the only by-name/by-value
     // indexes into a truncatable arena. Cheap: one pass over a map with a
     // few hundred entries, once per compile.
+    // ui-widgets: dropUilog (a 68k program with no logpanel, whose from-
+    // source twin never splices uilog.cla) hides uilog.cla's own literals
+    // the same way -- out of the dedup map here, so a user literal equal to
+    // one gets a fresh index at the end exactly as from source, and out of
+    // cg68Measure's whole pool, both via the hidden range
+    // [bkLdUilogIrStrLitsStart, bkLdBaseIrStrLitsCount), emptied here when
+    // not dropUilog. Excluded, not truncated: a testapi install keeps
+    // uitest.cla's literals after them.
+    if not dropUilog {
+        bkLdUilogIrStrLitsStart = bkLdBaseIrStrLitsCount
+    }
     for strKey, strVal in bkLdLowStrIdx {
-        if strVal < irStrLits.count {
+        if strVal < irStrLits.count and (strVal < bkLdUilogIrStrLitsStart or strVal >= bkLdBaseIrStrLitsCount) {
             freshStrIdx[strKey] = strVal
         }
     }

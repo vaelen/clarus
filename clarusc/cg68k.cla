@@ -14756,8 +14756,6 @@ func cg68Measure(): bool {
     var allArrLits: list of int
     var allEnumTables: list of int
     var allSerdescs: list of int
-    var skipLo: int
-    var skipHi: int
 
     a68Reset()
     cgResetCodegenState()
@@ -14784,16 +14782,10 @@ func cg68Measure(): bool {
     // carries uilog.cla's string literals, which its from-source twin never
     // splices -- leave them out of the whole pool (see
     // bkGenUilogIrStrLitsStart, bake.cla). Nothing reachable names them.
-    skipLo = 0
-    skipHi = 0
-    if bkRuntimeFuncBoundary > 0 and not lowProgramHasLogpanel() {
-        skipLo = bkLdUilogIrStrLitsStart
-        skipHi = bkLdBaseIrStrLitsCount
-    }
     allStrLits = cgFreshIntList()
     i = 0
     while i < irStrLits.count {
-        if i < skipLo or i >= skipHi {
+        if i < bkLdUilogIrStrLitsStart or i >= bkLdBaseIrStrLitsCount {
             allStrLits.add(i)
         }
         i = i + 1
