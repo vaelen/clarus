@@ -1122,6 +1122,12 @@ func lowIdent(e: int): int {
     if lowIsUnshadowedLastError(nm) {
         return newIRIntr(ILastErr(), -1, ty)
     }
+    if lowFmtRowRec != -1 and (not lowIsLocal(nm)) and lowFmtIsRowField(nm) {
+        // A row field named bare inside a formatted column's call
+        // (lowSynthColFmt): a field of the record at clar_ui_fire_colfmt's
+        // `rec` param, the same scope checkFmtColumns checked it in.
+        return newIRFieldRef(newIRIntr(IUiValueAtPtr(), lowSynthPtrRef("rec"), irRecType(lowFmtRowRec)), nm, ty)
+    }
     if (not lowIsLocal(nm)) and lowCurWinType != -1 {
         winRef = lowBareWindowMemberRef(nm, ty)
         if winRef != -1 {
@@ -4904,7 +4910,7 @@ func lowAssign(s: int): int {
 
     lhs = assignLHS(s)
     if exprKind(lhs) == ExIndex {
-        return lowIndexAssign(lhs, assignRHS(s))
+        return lowNoteListStore(lhs, lowIndexAssign(lhs, assignRHS(s)))
     }
     if exprKind(lhs) == ExSelect and typeKind(exprTypeGet(selectX(lhs))) == TyXRec {
         // Task 4 (toolbox-integration Feature B): a scalar extern-record
@@ -4931,7 +4937,90 @@ func lowAssign(s: int): int {
         return lowWidgetSetAssign(lhs, assignRHS(s))
     }
     ty = lowMustType(lhs)
-    return lowCountedStore(lowExpr(lhs), assignRHS(s), ty)
+    return lowNoteListStore(lhs, lowCountedStore(lowExpr(lhs), assignRHS(s), ty))
+}
+
+// lowHasTable: the program declares a `table` widget (lowerProgram's
+// pre-pass), the gate for the element-store hook below.
+var lowHasTable: bool
+
+// lowNoteListStore (ui-widgets Task 3, spec 4.5) appends
+// `rtListNoteSet(box)` after st, the lowered store to lhs, when lhs writes
+// a list element or a field inside one (`l[i] = v`, `l[i].f = v`,
+// `l[i].a[j] = v`) -- inline addressing that never goes through list.cla,
+// so a table bound to that list would not see it. Only in a program that
+// declares a table, and never in runtime code (a bake could not match).
+// ponytail: the box expression is lowered a second time, so it is hooked
+// only when pure (names, fields, constant/name indexes); a store through a
+// call-produced list (`f()[i] = v`) is not noted.
+func lowNoteListStore(lhs: int, st: int): int {
+    var e: int
+    var box: int
+    var tail: int
+
+    if not lowHasTable or lowCurFnRuntimeOrigin {
+        return st
+    }
+    box = -1
+    e = lhs
+    while box == -1 and e != -1 {
+        if exprKind(e) == ExIndex {
+            if typeKind(exprTypeGet(indexX(e))) == TyList {
+                box = indexX(e)
+            } else {
+                e = indexX(e)
+            }
+        } else if exprKind(e) == ExSelect {
+            e = selectX(e)
+        } else {
+            e = -1
+        }
+    }
+    if box == -1 or not lowAstIsPure(box) {
+        return st
+    }
+    tail = st
+    while irStmtNext(tail) != -1 {
+        tail = irStmtNext(tail)
+    }
+    irStmtListAppend(tail, newIRExprStmt(newIRCallFn(intern("rtListNoteSet"), lowExpr(box), irVoidT)))
+    return st
+}
+
+// lowDeclsHaveTable: some window in the decl chain declares a table.
+func lowDeclsHaveTable(declHead: int): bool {
+    var d: int
+    var item: int
+
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkWindow {
+            item = windowDeclItemsHead(d)
+            while item != -1 {
+                if declKind(item) == DkWidget and poolGet(widgetKindName(item)) == "table" {
+                    return true
+                }
+                item = declNext(item)
+            }
+        }
+        d = declNext(d)
+    }
+    return false
+}
+
+// lowAstIsPure: e can be lowered twice with no side effect.
+func lowAstIsPure(e: int): bool {
+    var k: ExprKind
+
+    k = exprKind(e)
+    if k == ExIdent or k == ExIntLit {
+        return true
+    } else if k == ExSelect {
+        return lowAstIsPure(selectX(e))
+    } else if k == ExIndex {
+        return lowAstIsPure(indexX(e)) and lowAstIsPure(indexI(e))
+    }
+    return false
 }
 
 // lowIndexAssign lowers `x[i] = rhs` (stmt.go's lowerIndexAssign): a fixed
@@ -6424,12 +6513,12 @@ func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
             if declKind(p) == DkColumn {
                 // A formatted column (`shows f(...)`, ui-widgets Task 1)
                 // has no field of its own: fieldIndex -1, and its call AST
-                // rides along in fmtExpr for Task 3's UiColFmt dispatcher.
-                // Until then its fmtId stays -1 and the LDEF draws the
-                // cell empty (rtUiTableDrawField's fieldIdx < 0 guard).
+                // rides along in fmtExpr for lowSynthColFmt, which lowers
+                // it as the column's UiColFmt arm (fmtId, Task 3).
                 if columnShows(p) == -1 {
                     fieldIdx = -1
                     col = newIRColumnDesc(columnHeader(p), fieldIdx, columnWidthPx(p), columnWidthFill(p), columnAlign(p), columnShowsExpr(p))
+                    irColumnDescSetFmt(col, lowMustType(columnShowsExpr(p)))
                 } else {
                     fieldIdx = lowColumnFieldIndex(rowRecType, poolGet(columnShows(p)))
                     col = newIRColumnDesc(columnHeader(p), fieldIdx, columnWidthPx(p), columnWidthFill(p), columnAlign(p), -1)
@@ -7971,39 +8060,150 @@ func lowSynthUiDispatchers() {
 }
 
 // lowSynthLogOp builds clar_ui_fire_logop(op, instV, wIdx, a, b): int, the
-// UiLogOp dispatcher ui.cla's logpanel hook sites call (shared.md). Task 2
-// stub: always `return 0`; Task 3 makes it call rtUiLogDo in a program that
-// declares a logpanel, so uilog.cla stays shaken out of every other one
-// (C4).
+// UiLogOp dispatcher ui.cla's logpanel hook sites call (shared.md): it
+// forwards to rtUiLogDo in a program that declares a logpanel and returns 0
+// in every other one, so uilog.cla stays shaken out of them (C4).
 func lowSynthLogOp() {
     var paramsHead: int
     var tail: int
     var fnameIdx: int
+    var args: int
+    var body: int
 
     paramsHead = newIRLocal(intern("op"), irIntT)
     tail = irLocalListAppend(paramsHead, newIRLocal(intern("instV"), irPtrT))
     tail = irLocalListAppend(tail, newIRLocal(intern("wIdx"), irIntT))
     tail = irLocalListAppend(tail, newIRLocal(intern("a"), irIntT))
     tail = irLocalListAppend(tail, newIRLocal(intern("b"), irIntT))
+    body = newIRReturn(newIRIntConst(0, irIntT))
+    if lowProgramHasLogpanel() {
+        args = lowSynthIntRef("op")
+        tail = irExprListAppend(args, lowSynthPtrRef("instV"))
+        tail = irExprListAppend(tail, lowSynthIntRef("wIdx"))
+        tail = irExprListAppend(tail, lowSynthIntRef("a"))
+        irExprListAppend(tail, lowSynthIntRef("b"))
+        body = newIRReturn(newIRCallFn(intern("rtUiLogDo"), args, irIntT))
+    }
     fnameIdx = intern("clar_ui_fire_logop")
-    newIRFunc(fnameIdx, paramsHead, irIntT, -1, newIRReturn(newIRIntConst(0, irIntT)))
+    newIRFunc(fnameIdx, paramsHead, irIntT, -1, body)
     shakeAddRoot(fnameIdx)
 }
 
+// lowFmtRowRec: while lowSynthColFmt lowers one formatted column's call,
+// the row record's name (lowIdent then lowers a bare row field as a field
+// of `rec`); -1 otherwise.
+var lowFmtRowRec: int = -1
+
+func lowFmtIsRowField(nm: int): bool {
+    var fh: int
+
+    fh = recordFieldsHead(lowFmtRowRec)
+    while fh != -1 {
+        if fieldInfos[fh].nameIdx == nm {
+            return true
+        }
+        fh = fieldInfos[fh].next
+    }
+    return false
+}
+
 // lowSynthColFmt builds clar_ui_fire_colfmt(fmtId, rec, out): bool, the
-// UiColFmt formatted-column dispatcher (uitable.cla). Task 2 stub: always
-// `return false`; Task 3 adds one arm per formatted column.
+// UiColFmt formatted-column dispatcher (uitable.cla; spec 4.7): one arm per
+// formatted column, keyed by its fmtId. An arm evaluates the column's call
+// with row fields read from `rec` (a pointer to the row record -- the
+// runtime passes a copy) into a local, then stores the local into `out`:
+// a string by Str255 copy, a scalar poked at its irFmtValueSize width (the
+// one-field Layout uiblob.cla writes at the col's fmtLayoutOff describes
+// the same bytes). In an abort-enabled program the whole switch sits in an
+// attempt frame whose handler returns false (C5: an abort in a formatter is
+// contained); otherwise, and after a normal store, it returns true. A
+// program with no formatted column gets `return false`; an fmtId past the
+// last column panics (lowSynthPanic), like every index dispatcher here.
 func lowSynthColFmt() {
     var paramsHead: int
     var tail: int
     var fnameIdx: int
+    var conds: list of int
+    var bodies: list of int
+    var w: int
+    var c: int
+    var body: int
+    var binder: int
+    var fn: int
 
     paramsHead = newIRLocal(intern("fmtId"), irIntT)
     tail = irLocalListAppend(paramsHead, newIRLocal(intern("rec"), irPtrT))
     tail = irLocalListAppend(tail, newIRLocal(intern("out"), irPtrT))
+    lowLocalsHead = -1
+    lowLocalsTail = -1
+
+    w = 0
+    while w < irWidgetDescs.count {
+        if poolGet(irWidgetDescKind(w)) == "table" {
+            lowFmtRowRec = cpFindGlobalRecName(irWidgetDescRowsGlobalIdx(w))
+            c = irWidgetDescColumnsHead(w)
+            while c != -1 {
+                if irColumnDescFmtId(c) != -1 {
+                    conds.add(lowSynthEqInt("fmtId", irColumnDescFmtId(c)))
+                    bodies.add(lowSynthColFmtArm(c))
+                }
+                c = irColumnDescNext(c)
+            }
+        }
+        w = w + 1
+    }
+    lowFmtRowRec = -1
+
+    body = newIRReturn(newIRIntConst(0, irBoolT))
+    if conds.count > 0 {
+        body = lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_colfmt", "fmtId", -1))
+        if lowUsesAbort {
+            binder = intern("__fmtAbort")
+            lowAddLocal(binder, irStrType(255))
+            body = newIRAttempt(body, binder, newIRReturn(newIRIntConst(0, irBoolT)))
+        }
+        irStmtListAppend(body, newIRReturn(newIRIntConst(1, irBoolT)))
+    }
     fnameIdx = intern("clar_ui_fire_colfmt")
-    newIRFunc(fnameIdx, paramsHead, irBoolT, -1, newIRReturn(newIRIntConst(0, irBoolT)))
+    fn = newIRFunc(fnameIdx, paramsHead, irBoolT, lowLocalsHead, body)
+    if lowUsesAbort {
+        // A bail target makes both backends check each formatter call
+        // (fpCurFuncHasBail/cgCurFuncHasBail); inside the attempt the
+        // check branches to its handler, so this block is never reached.
+        irFuncSetBail(fn, newIRReturn(newIRIntConst(0, irBoolT)))
+    }
     shakeAddRoot(fnameIdx)
+}
+
+// lowSynthColFmtArm builds formatted column c's arm: `__fmtN = <call>`,
+// then the store of __fmtN into `out`.
+func lowSynthColFmtArm(c: int): int {
+    var t: int
+    var tmp: int
+    var head: int
+    var args: int
+    var sz: int
+    var poke: int
+
+    t = irColumnDescFmtType(c)
+    tmp = intern("__fmt" + numToStr(irColumnDescFmtId(c)))
+    lowAddLocal(tmp, t)
+    head = lowStoreStmt(newIRVarRef(tmp, false, t), lowExpr(irColumnDescFmtExpr(c)), t)
+    if irtKind(t) == KStr {
+        irStmtListAppend(head, newIRStoreStr(newIRIntr(IUiValueAtPtr(), lowSynthPtrRef("out"), t), newIRVarRef(tmp, false, t)))
+        return head
+    }
+    sz = irFmtValueSize(t)
+    poke = IPokeL()
+    if sz == 1 {
+        poke = IPokeB()
+    } else if sz == 2 {
+        poke = IPokeW()
+    }
+    args = lowSynthPtrRef("out")
+    irExprListAppend(args, newIRVarRef(tmp, false, t))
+    irStmtListAppend(head, newIRExprStmt(newIRIntr(poke, args, irVoidT)))
+    return head
 }
 
 // lowProgramHasLogpanel reports whether any window declares a logpanel
@@ -8859,6 +9059,7 @@ func lowerProgram(declHead: int): int {
     // baked value would always be false anyway).
     lowHasAppLog = false
     lowCurFnRuntimeOrigin = false
+    lowHasTable = lowDeclsHaveTable(declHead)
     d = declHead
     while d != -1 {
         if declKind(d) == DkHandler and poolGet(handlerDeclPath(d)) == "App.log" {
@@ -9411,15 +9612,14 @@ func lowUiPortAddRoots() {
     shakeAddRoot(intern("rtUiMenuGetChecked"))
     shakeAddRoot(intern("rtUiMenuGetEnabled"))
     // The rtUiLog* family only when a logpanel exists, so uilog.cla is
-    // shaken out of every other program (C4). rtUiLogDo is rooted here
-    // until Task 3's UiLogOp dispatcher calls it.
+    // shaken out of every other program (C4). rtUiLogDo needs no root:
+    // clar_ui_fire_logop (lowSynthLogOp) calls it.
     if lowProgramHasLogpanel() {
         shakeAddRoot(intern("rtUiLogAppend"))
         shakeAddRoot(intern("rtUiLogClear"))
         shakeAddRoot(intern("rtUiLogLineCount"))
         shakeAddRoot(intern("rtUiLogLine"))
         shakeAddRoot(intern("rtUiLogScrollToEnd"))
-        shakeAddRoot(intern("rtUiLogDo"))
     }
     // Task 9 (toolbox-integration Feature C): rtUiLdefDraw (uitable.cla)
     // used to need the same hand-rooting treatment as the names above --

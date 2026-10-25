@@ -57,7 +57,7 @@ fi
 # Blob v2 (ui-widgets Task 1): decode testdata/emitui/ui_batch_decl.cla's
 # FRESHLY EMITTED blob and assert every new field reached it -- a widget's
 # height/font/fontSize/face/align/maxLines/divStyle, a column's align (and
-# a formatted column's fieldIndex -1 / fmtId -1), and a menu item's
+# a formatted column's fieldIndex -1 / fmtId 0 + its Layout), and a menu item's
 # itemFlags/submenuIdx. Field-by-field greps rather than a frozen dump, so
 # the emitui/goldens.sh .c.golden stays this fixture's one byte pin.
 batch=testdata/emitui/ui_batch_decl.cla
@@ -74,7 +74,7 @@ if "$CLARUSC" emit -o "$WORK/batch.c" "$batch" > "$WORK/batch.err" 2>&1; then
             'widget 0 3 kind=2 name="Meter" .* width=120 .* height=40 font="Chicago" ' \
             'widget 0 4 kind=7 name="Callers" .* widthIsFill=0 width=300 .* height=120 font="Geneva" fontSize=9 ' \
             'col 0 4 0 header="Name" widthPx=120 widthFill=0 fieldIndex=0 align=0 fmtId=-1 fmtLayoutOff=0$' \
-            'col 0 4 1 header="Time" widthPx=0 widthFill=1 fieldIndex=-1 align=2 fmtId=-1 fmtLayoutOff=0$' \
+            'col 0 4 1 header="Time" widthPx=0 widthFill=1 fieldIndex=-1 align=2 fmtId=0 fmtLayoutOff=[1-9][0-9]*$' \
             'widget 0 5 kind=9 name="TopRule" .* widthIsFill=1 .* flags=0 .* height=3 font=- fontSize=0 face=0 align=0 maxLines=0 divStyle=1$' \
             'widget 0 6 kind=9 name="SideRule" .* height=0 font=- .* divStyle=0$' \
             'widget 0 7 kind=8 name="Log" .* fillBoth=1 flags=56 .* font="Monaco" fontSize=9 face=1 align=0 maxLines=100 divStyle=0$' \

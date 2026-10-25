@@ -1,0 +1,40 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// ui_colfmt_abort.cla (ui-widgets Task 3): a table whose formatted column
+// aborts (spec C5: contained -- the UiColFmt dispatcher returns false), plus
+// a second, int-typed formatted column, so tests/emitui/colfmt.sh sees one
+// dispatcher arm per formatted column and both store shapes (Str255 copy,
+// scalar poke).
+
+record Call {
+    who: string(31)
+    secs: int
+}
+
+var calls: list of Call
+
+func risky(s: string): string {
+    if s.length == 0 {
+        abort("no name")
+    }
+    return s
+}
+
+func doubled(n: int): int {
+    return n * 2
+}
+
+window Calls {
+    title: "Calls"
+    size: 300, 200
+    table List {
+        rows: calls
+        column "Who" shows risky(who) width 120
+        column "Twice" shows doubled(secs) width fill align right
+    }
+}
+
+on App.launch {
+    open Calls
+}
