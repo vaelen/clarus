@@ -379,36 +379,36 @@ on App.launch {
 EOF
 if ! emit_fixture "$DIR"; then
     t_fail recmaterialize_emit "emit68k failed on the record-materialize fixture"
-elif [ "$(seg_count "$DIR")" != 1 ]; then
-    # The walk is duplicated glue in every segment, so a same-segment BSR is
-    # the only call form this fixture can see -- keep it to one segment.
-    t_fail recmaterialize_seg "fixture packed into $(seg_count "$DIR") segments, want 1"
 else
-    # The LBL_n: bound immediately before cg_release_R's own comment line.
-    rlbl=$(awk '
-        match($0, /LBL_[0-9]+:/) { lbl = substr($0, RSTART, RLENGTH - 1) }
-        index($0, "; cg_release_R(") > 0 { print lbl; exit }
-    ' "$DIR/out.seg1.s")
-    if [ -z "$rlbl" ]; then
-        t_fail recmaterialize_walk "no cg_release_R walk in the listing"
-    else
-        for pair in recArg:1 recRecv:1; do
-            fn=${pair%:*}
-            want=${pair#*:}
-            seg=$(func_seg "$DIR" "$fn") || { t_fail "recmaterialize_$fn" "no segment defines func $fn"; continue; }
-            body=$(func_body "$DIR" "$seg" "$fn")
-            got=$(printf '%s\n' "$body" | awk -v lbl="$rlbl" '
-                BEGIN { re = "(BSR\\.W|JSR)[ \t]+" lbl "[^0-9A-Za-z_]" }
-                { line = $0 " "; while (match(line, re)) { n++; line = substr(line, RSTART + RLENGTH) } }
-                END { print n + 0 }')
-            if [ "$got" != "$want" ]; then
-                t_fail "recmaterialize_$fn" "$fn: $got $rlbl (cg_release_R) calls, want $want"
-                printf '%s\n' "$body"
-            else
-                t_pass "recmaterialize_$fn"
-            fi
-        done
-    fi
+    # The walk is duplicated glue in every segment, so a same-segment BSR is
+    # the only call form a caller can use: look the walk's label up in the
+    # caller's OWN segment (ui-widgets Task 2: the runtime alone now fills
+    # more than one 32 KB segment, so this fixture no longer fits in one).
+    for pair in recArg:1 recRecv:1; do
+        fn=${pair%:*}
+        want=${pair#*:}
+        seg=$(func_seg "$DIR" "$fn") || { t_fail "recmaterialize_$fn" "no segment defines func $fn"; continue; }
+        # The LBL_n: bound immediately before cg_release_R's own comment line.
+        rlbl=$(awk '
+            match($0, /LBL_[0-9]+:/) { lbl = substr($0, RSTART, RLENGTH - 1) }
+            index($0, "; cg_release_R(") > 0 { print lbl; exit }
+        ' "$DIR/out.seg$seg.s")
+        if [ -z "$rlbl" ]; then
+            t_fail "recmaterialize_$fn" "no cg_release_R walk in segment $seg's listing"
+            continue
+        fi
+        body=$(func_body "$DIR" "$seg" "$fn")
+        got=$(printf '%s\n' "$body" | awk -v lbl="$rlbl" '
+            BEGIN { re = "(BSR\\.W|JSR)[ \t]+" lbl "[^0-9A-Za-z_]" }
+            { line = $0 " "; while (match(line, re)) { n++; line = substr(line, RSTART + RLENGTH) } }
+            END { print n + 0 }')
+        if [ "$got" != "$want" ]; then
+            t_fail "recmaterialize_$fn" "$fn: $got $rlbl (cg_release_R) calls, want $want"
+            printf '%s\n' "$body"
+        else
+            t_pass "recmaterialize_$fn"
+        fi
+    done
 fi
 
 # ==== pop/shift tracked in every position (compiler-cleanup) ==========
