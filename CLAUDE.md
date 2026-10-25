@@ -397,7 +397,7 @@ enum + runner, not one boot per case.
   SE wave 4's `OpenRead` case, which proves `file.openRead`'s read-only
   `filehandle`: reads work, writes fail with `lastError`, a missing path
   is nil) runs on
-  host and natively; `testsuite/toolbox/` (41 `ToolboxTest` cases: 40 real +
+  host and natively; `testsuite/toolbox/` (42 `ToolboxTest` cases: 41 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
@@ -451,7 +451,10 @@ enum + runner, not one boot per case.
   set does not include it, see `docs/TODO.md` -- then to 40 real by SE
   wave 3's `NarrowForm` case, which proves a form `field` bound to a
   `uint16` refuses an out-of-range value and a minus sign at OK and
-  accepts an in-range one)
+  accepts an in-range one -- then to 41 real by the ui-widgets phase's
+  `MenuCheckSub` case: checked items, a submenu's dispatch, literal
+  captions, std-edit Select All, and a menu mixing `standard edit` with
+  its own items)
   needs the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -500,11 +503,11 @@ enum + runner, not one boot per case.
   (pack3-standardfile phase, 2026-08-07) to an opt-in diagnostic behind
   `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under bare `CLARUS_MAC_TESTS=1`, so
   they no longer run as part of T2 by default.
-- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk,mactcp,segload}.cla`
+- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk,mactcp,segload,menus}.cla`
   (toolbox-cookbook phase; `standardfile`/`files` added by
   pack3-standardfile, `appletalk` by the AppleTalk phase, `mactcp` by the
   MacTCP phase, `segload` — `GetAppParms`/`UnloadSeg`/`ExitToShell` — by
-  SE wave 4) is a
+  SE wave 4, `menus` -- the Menu Manager -- by the ui-widgets phase) is a
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new
   UI code instead of hand-declaring traps; `tests/testsuite/catalog.sh`

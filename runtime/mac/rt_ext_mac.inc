@@ -430,6 +430,11 @@ void rt_ext_UiDisableItem(void *theMenu, short item) { DisableItem((MenuRef)theM
 short rt_ext_UiCountMItems(void *theMenu) { return (short)CountMItems((MenuRef)theMenu); }
 void rt_ext_UiGetMenuItemText(void *theMenu, short item, void *itemString) { GetMenuItemText((MenuRef)theMenu, item, (unsigned char *)itemString); }
 void rt_ext_UiAppendResMenu(void *theMenu, int32_t theType) { AppendResMenu((MenuRef)theMenu, (ResType)theType); }
+/* ui-widgets Task 7: item mark/command/check (CharParameter is a short). */
+void rt_ext_UiGetItemMark(void *theMenu, short item, void *markChar) { GetItemMark((MenuRef)theMenu, item, (CharParameter *)markChar); }
+void rt_ext_UiSetItemMark(void *theMenu, short item, short markChar) { SetItemMark((MenuRef)theMenu, item, (CharParameter)markChar); }
+void rt_ext_UiCheckItem(void *theMenu, short item, int32_t checked) { CheckItem((MenuRef)theMenu, item, (Boolean)checked); }
+void rt_ext_UiSetItemCmd(void *theMenu, short item, short cmdChar) { SetItemCmd((MenuRef)theMenu, item, (CharParameter)cmdChar); }
 int32_t rt_ext_UiMenuSelect(int32_t startPt) { return (int32_t)MenuSelect(rt_ext_ui_pt(startPt)); }
 int32_t rt_ext_UiMenuKey(short ch) { return (int32_t)MenuKey((CharParameter)ch); }
 

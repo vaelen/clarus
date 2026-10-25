@@ -573,6 +573,12 @@ func rtUiTraceStdEditDim(enable: bool) {
     rtTextAppendStr(t, UiStrAddr(".Clear "))
     rtUiTextAppendInt(t, enableInt)
     rtUiEmitLine(t)
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T DIM "))
+    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
+    rtTextAppendStr(t, UiStrAddr(".SelectAll "))
+    rtUiTextAppendInt(t, enableInt)
+    rtUiEmitLine(t)
     rtUiStdEditDimPrev = enable
 }
 
