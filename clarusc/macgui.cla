@@ -529,7 +529,7 @@ func feProgressTick() {
 
 app ClarusC {
     name: "ClarusC"
-    version: "1.1"   // = claruscVersion (drive.cla); literal-only property
+    version: "1.2"   // = claruscVersion (drive.cla); literal-only property
     author: "Andrew C. Young <andrew@vaelen.org>"
     about: "The Mac-resident Clarus compiler."
     id: "CLRC"

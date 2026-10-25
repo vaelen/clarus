@@ -21,7 +21,7 @@
 // per-compile log banner (macgui.cla). macgui.cla's `app ClarusC`
 // `version:` must be a literal, so it repeats this value;
 // tests/claruscboot/version.sh fails if the two disagree.
-const claruscVersion: string = "1.1"
+const claruscVersion: string = "1.2"
 
 // hostPaths: true selects '/' path semantics (main.cla, the host CLI);
 // false selects HFS ':' semantics (Task 8: drivePathJoin/driveKeyResolve
