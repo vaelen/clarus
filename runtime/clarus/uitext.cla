@@ -570,6 +570,13 @@ func rtUiTeRelayout(inst: ptr, i: int) {
     flags = uidWidgetFlags(winIdx, i)
     widthIsFill = uidWidgetWidthIsFill(winIdx, i)
     fillBoth = uidWidgetFillBoth(winIdx, i)
+    if rtUiPlacedAt(w, i) {
+        // Code-placed (setBounds, ui-widgets Task 6): the rect is exactly
+        // what code asked for -- the blob's fill flags no longer apply, so
+        // no flush-to-frame scrollbar adjustment.
+        widthIsFill = false
+        fillBoth = false
+    }
 
     // Same flushR/flushB tests as rtUiLayout (kept in sync there).
     flushR = false

@@ -1,0 +1,74 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_divider.cla: Divider (ui-widgets Task 6, spec 3.6). A horizontal
+// single rule draws one line through its center row, a horizontal double
+// draws rows 0 and 2 of a 3-pixel rect with row 1 blank, a vertical
+// single draws one column; a divider set to 0x0 leaves its old rect blank
+// after the next update.
+//
+// Geometry: `size: 304, 120` -> content top-left (104, 44), byte-aligned
+// (104 = 13*8), so local x 16 is global 120. H1/H2 span local x 16..115;
+// the 96-px band 16..111 is all black on a drawn row: 12 bytes * 255.
+// V1 is local column 200 (global 304, the top bit of its byte: 0x80 per
+// row), rows 48..97.
+
+const tbDvOrgX: int = 104
+const tbDvOrgY: int = 44
+const tbDvBlack: int = 3060
+
+window DividerWin {
+    title: "Divider"
+    size: 304, 120
+
+    divider H1 { at: 16, 16; width: 100; height: 1 }
+    divider H2 { at: 16, 32; width: 100; height: 3; style: double }
+    divider V1 { at: 200, 48; width: 1; height: 50 }
+}
+
+func tbDvRow(y: int): int {
+    return UiTestChecksum(tbDvOrgX + 16, tbDvOrgY + y, 96, 1)
+}
+
+func caseDivider(): TestResult {
+    var w: DividerWin
+    var d: string
+    var v: int
+
+    w = open DividerWin
+    UiTestTick(1)
+
+    v = tbDvRow(16)
+    if v != tbDvBlack {
+        d = d + "H1 " + tkIntToStr(v) + "; "
+    }
+    v = tbDvRow(32)
+    if v != tbDvBlack {
+        d = d + "H2 top " + tkIntToStr(v) + "; "
+    }
+    v = tbDvRow(33)
+    if v != 0 {
+        d = d + "H2 mid " + tkIntToStr(v) + "; "
+    }
+    v = tbDvRow(34)
+    if v != tbDvBlack {
+        d = d + "H2 bottom " + tkIntToStr(v) + "; "
+    }
+    v = UiTestChecksum(tbDvOrgX + 200, tbDvOrgY + 48, 8, 50)
+    if v != 50 * 128 {
+        d = d + "V1 " + tkIntToStr(v) + "; "
+    }
+
+    w.H1.setBounds(16, 16, 0, 0)
+    UiTestTick(1)
+    v = tbDvRow(16)
+    if v != 0 {
+        d = d + "H1 zero " + tkIntToStr(v) + "; "
+    }
+
+    close w
+    if d == "" {
+        return tkPass("Divider")
+    }
+    return tkFail("Divider", d)
+}

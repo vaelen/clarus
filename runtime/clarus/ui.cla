@@ -686,13 +686,20 @@ func rtUiSetTitle(instV: ptr, s: ptr) {
 }
 
 // rtUiWinContentW/H: a window reference's contentWidth/contentHeight (C13)
-// -- the port rect's size. Task 2 stubs; Task 6 replaces them.
+// -- the port rect's size (GrafPort.portRect at WindowPtr offset 16,
+// top/left/bottom/right shorts; same reads as rtUiLayout's contentW/H).
 func rtUiWinContentW(instV: ptr): int {
-    return 0
+    var wp: ptr
+
+    wp = RtUiWinst(instV).wp
+    return peekw(wp + 22) - peekw(wp + 18)
 }
 
 func rtUiWinContentH(instV: ptr): int {
-    return 0
+    var wp: ptr
+
+    wp = RtUiWinst(instV).wp
+    return peekw(wp + 20) - peekw(wp + 16)
 }
 
 func rtUiGetTitle(instV: ptr, dst255: ptr) {
@@ -732,7 +739,7 @@ func rtUiNaturalSize(winIdx: int, outW: ptr, outH: ptr) {
     while i < n {
         kind = uidWidgetKind(winIdx, i)
         atKind = uidWidgetAtKind(winIdx, i)
-        hh = rtUiKindHeight(kind)
+        hh = rtUiDeclHeight(winIdx, i, kind)
 
         switch atKind {
         case rtUiAtRight {
@@ -762,10 +769,6 @@ func rtUiNaturalSize(winIdx: int, outW: ptr, outH: ptr) {
         } else {
             ww = uidWidgetWidth(winIdx, i)
         }
-        if uidWidgetFillBoth(winIdx, i) {
-            hh = rtUiKindHeight(kind)
-        }
-
         right = x + ww
         if right > maxRight {
             maxRight = right
@@ -859,6 +862,10 @@ func rtUiOpen(winIdx: int): ptr {
     w.popups = UiHandleDeref(w.popupsH)
     w.popupSelH = rtUiAllocLocked(nWidgets * 4)
     w.popupSel = UiHandleDeref(w.popupSelH)
+    w.placedH = rtUiAllocLocked(nWidgets)
+    w.placed = UiHandleDeref(w.placedH)
+    w.oldRectsH = rtUiAllocLocked(nWidgets * rtUiRectSize)
+    w.oldRects = UiHandleDeref(w.oldRectsH)
     w.focusIdx = -1
 
     i = 0
@@ -1077,6 +1084,8 @@ func rtUiTeardownWindow(inst: ptr) {
     UiDisposeHandle(w.listsH)
     UiDisposeHandle(w.popupsH)
     UiDisposeHandle(w.popupSelH)
+    UiDisposeHandle(w.placedH)
+    UiDisposeHandle(w.oldRectsH)
     UiDisposeHandle(w.selfH)
 }
 
@@ -1932,6 +1941,7 @@ func rtUiHookLogpanels(inst: ptr, op: int) {
 func rtUiFlushAllBuffered() {
     var wp: ptr
 
+    UiGeomApply() // deferred setBounds before any blit (ui-widgets Task 6)
     wp = UiFrontWindow()
     while wp != ptr(0) {
         if peekw(wp + 108) == rtUiWindowKind {
@@ -1997,6 +2007,13 @@ func rtUiHandleUpdate(wp: ptr) {
     inst = rtUiWinstOf(wp)
     if inst != ptr(0) {
         w = RtUiWinst(inst)
+        // After a setBounds apply or a resize, the update region holds old
+        // widget rects nothing else repaints: erase it (EraseRect of the
+        // port rect, clipped to the update region by BeginUpdate).
+        if (w.geom & rtUiGeomErase) != 0 {
+            w.geom = w.geom - rtUiGeomErase
+            UiEraseRect(wp + 16)
+        }
         UiDrawControls(wp)
         if uidWinResizable(w.winIdx) {
             corner = UiNewPtr(rtUiRectSize)
@@ -2013,6 +2030,9 @@ func rtUiHandleUpdate(wp: ptr) {
         i = 0
         while i < n {
             kind = uidWidgetKind(w.winIdx, i)
+            if rtUiRectIsEmpty(rtUiRectAt(w, i)) {
+                kind = -1 // a zero-size widget draws nothing
+            }
             if kind == rtUiKindLabel {
                 s = rtUiLabelAt(w, i)
                 UiTextBox(s + 1, peekb(s), rtUiRectAt(w, i), 0)
@@ -2147,6 +2167,8 @@ func rtUiHandleUpdate(wp: ptr) {
                 UiLUpdate(ptr(peekl(wp + 24)), lh)
                 UiDisposePtr(headerRect)
                 UiDisposePtr(box)
+            } else if kind == rtUiKindDivider {
+                rtUiDrawDivider(rtUiRectAt(w, i), uidWidgetDivStyle(w.winIdx, i))
             } else if kind == rtUiKindLogpanel {
                 UiLogOp(rtUiLogOpDraw, inst, i, 0, 0)
             }
@@ -2225,32 +2247,34 @@ func rtUiHandleActivate(wp: ptr, activating: bool) {
 // Resize / zoom (rt_ui.c:2966-3096).
 // ================================================================
 
-func rtUiInvalGrowCorner(wp: ptr) {
-    var r: ptr
-
-    r = UiNewPtr(rtUiRectSize)
-    UiSetRect(r, peekw(wp + 22) - rtUiScrollbarW, peekw(wp + 20) - rtUiScrollbarW, peekw(wp + 22), peekw(wp + 20))
-    UiEraseRect(r)
-    UiInvalRect(r)
-    UiDisposePtr(r)
-}
-
+// ui-widgets Task 6 (spec 4.2) order: SizeWindow; rtUiLayout (which skips
+// code-placed widgets) under an empty clip so no control draws at its
+// new place before the update; the whole port rect invalidated and
+// marked for erase (old widget pixels never linger); canvas realloc for
+// the widgets layout moved; `resized`; then the single deferred apply of
+// whatever setBounds the handler made. The window paints once. The
+// whole-port InvalRect + erase also covers the old and new grow-box
+// corners (the old rtUiInvalGrowCorner erase/inval pair).
 func rtUiApplyResize(wp: ptr, inst: ptr, newW: int, newH: int) {
     var w: RtUiWinst
     var savedPort: ptr
+    var saveClip: ptr
 
     w = RtUiWinst(inst)
     savedPort = rtUiGetPortSaved()
     UiSetPort(wp)
-    rtUiInvalGrowCorner(wp)
     UiSizeWindow(wp, newW, newH, true)
-    rtUiInvalGrowCorner(wp)
-    UiSetPort(savedPort)
+    saveClip = rtUiClipEmpty()
     rtUiLayout(inst)
     rtUiHookLogpanels(inst, rtUiLogOpRelayout)
+    rtUiClipRestore(saveClip)
+    UiInvalRect(wp + 16)
+    w.geom = w.geom | rtUiGeomErase
+    UiSetPort(savedPort)
     rtUiCanvasReallocAll(inst)
     rtUiTraceFire1(uidWinName(w.winIdx), "resized")
     UiFireWinEvent(w.winIdx, inst, rtUiEvResized, 0, 0)
+    UiGeomApply()
 }
 
 // rtUiHandleGrow (rt_ui.c:3010-3040): the oracle reads

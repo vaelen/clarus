@@ -1,5 +1,22 @@
-        ; func clar_cb_aeQuitHandler (JT slot 209) -- pascal callback glue for aeQuitHandler
+        ; func clar_ui_fire_colfmt  (JT slot 208)
+        ;   param fmtId : 16(A6)  size 4
+        ;   param rec : 12(A6)  size 4
+        ;   param out : 8(A6)  size 4
 LBL_0:
+        LINK A6,#-52
+        MOVEQ #0,D0
+        BRA.W LBL_11
+LBL_11:
+        UNLK A6
+        RTS
+        ; func clar_ui_fire_geomapply  (JT slot 209)
+LBL_1:
+        LINK A6,#-52
+LBL_12:
+        UNLK A6
+        RTS
+        ; func clar_cb_aeQuitHandler (JT slot 210) -- pascal callback glue for aeQuitHandler
+LBL_2:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
         MOVE.L 16(A6),-(A7)
@@ -14,8 +31,8 @@ LBL_0:
         MOVE.L (A7)+,A0
         ADDA.W #12,A7
         JMP (A0)
-        ; func clar_cb_aeOappHandler (JT slot 210) -- pascal callback glue for aeOappHandler
-LBL_1:
+        ; func clar_cb_aeOappHandler (JT slot 211) -- pascal callback glue for aeOappHandler
+LBL_3:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
         MOVE.L 16(A6),-(A7)
@@ -30,8 +47,8 @@ LBL_1:
         MOVE.L (A7)+,A0
         ADDA.W #12,A7
         JMP (A0)
-        ; func clar_cb_rtUiScrollbarAction (JT slot 211) -- pascal callback glue for rtUiScrollbarAction
-LBL_2:
+        ; func clar_cb_rtUiScrollbarAction (JT slot 212) -- pascal callback glue for rtUiScrollbarAction
+LBL_4:
         LINK A6,#0
         ;   ctrl : 10(A6)  pascal size 4
         MOVE.L 10(A6),-(A7)
@@ -45,8 +62,8 @@ LBL_2:
         MOVE.L (A7)+,A0
         ADDQ.L #6,A7
         JMP (A0)
-        ; func clar_cb_rtUiLdefDraw (JT slot 212) -- pascal callback glue for rtUiLdefDraw
-LBL_3:
+        ; func clar_cb_rtUiLdefDraw (JT slot 213) -- pascal callback glue for rtUiLdefDraw
+LBL_5:
         LINK A6,#0
         ;   msg : 26(A6)  pascal size 2
         MOVE.W 26(A6),D0
@@ -76,7 +93,7 @@ LBL_3:
         MOVE.L (A7)+,A0
         ADDA.W #20,A7
         JMP (A0)
-LBL_5:
+LBL_7:
         ; cg_mul32: D1=left * D0=right -> D0 (32x32->32, MULU partial products)
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
@@ -101,22 +118,22 @@ LBL_5:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_6:
+LBL_8:
         ; cg_div32: D1=left / D0=right -> D0 (truncate toward zero, C99)
         TST.L D0
-        BNE.W LBL_9
+        BNE.W LBL_13
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
         MOVE.L #255,-(A7)
-        LEA LBL_4(PC),A0
+        LEA LBL_6(PC),A0
         MOVE.L A0,-(A7)
         JSR 82(A5)
         ADDA.W #12,A7
         MOVEA.L A7,A0
         MOVE.L A0,-(A7)
         JSR 50(A5)
-LBL_9:
+LBL_13:
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
         MOVE.L D4,-(A7)
@@ -127,19 +144,19 @@ LBL_9:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_10
+        BPL.W LBL_14
         NEG.L D2
         MOVE.L #1,D4
-LBL_10:
+LBL_14:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_11
+        BPL.W LBL_15
         NEG.L D3
         MOVE.L #1,D5
-LBL_11:
+LBL_15:
         CLR.L D6
         MOVE.W #31,D7
-LBL_12:
+LBL_16:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -147,16 +164,16 @@ LBL_12:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_13
+        BCS.W LBL_17
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_13:
-        DBRA D7,LBL_12
+LBL_17:
+        DBRA D7,LBL_16
         EOR.L D5,D4
         TST.L D4
-        BEQ.W LBL_14
+        BEQ.W LBL_18
         NEG.L D2
-LBL_14:
+LBL_18:
         MOVE.L D2,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -165,22 +182,22 @@ LBL_14:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_7:
+LBL_9:
         ; cg_mod32: D1=left mod D0=right -> D0 (sign follows dividend, C99)
         TST.L D0
-        BNE.W LBL_15
+        BNE.W LBL_19
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.L A1,-(A7)
         MOVE.L #255,-(A7)
-        LEA LBL_4(PC),A0
+        LEA LBL_6(PC),A0
         MOVE.L A0,-(A7)
         JSR 82(A5)
         ADDA.W #12,A7
         MOVEA.L A7,A0
         MOVE.L A0,-(A7)
         JSR 50(A5)
-LBL_15:
+LBL_19:
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
         MOVE.L D4,-(A7)
@@ -191,19 +208,19 @@ LBL_15:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_16
+        BPL.W LBL_20
         NEG.L D2
         MOVE.L #1,D4
-LBL_16:
+LBL_20:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_17
+        BPL.W LBL_21
         NEG.L D3
         MOVE.L #1,D5
-LBL_17:
+LBL_21:
         CLR.L D6
         MOVE.W #31,D7
-LBL_18:
+LBL_22:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -211,15 +228,15 @@ LBL_18:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_19
+        BCS.W LBL_23
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_19:
-        DBRA D7,LBL_18
+LBL_23:
+        DBRA D7,LBL_22
         TST.L D4
-        BEQ.W LBL_20
+        BEQ.W LBL_24
         NEG.L D6
-LBL_20:
+LBL_24:
         MOVE.L D6,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -228,43 +245,43 @@ LBL_20:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_8:
+LBL_10:
         ; cg_free_globals
         LINK A6,#-52
-        LEA LBL_21(PC),A0
+        LEA LBL_25(PC),A0
         MOVE.L A0,-4(A6)
-LBL_22:
+LBL_26:
         MOVEA.L -4(A6),A0
         MOVE.W (A0)+,D0
-        BEQ.W LBL_23
+        BEQ.W LBL_27
         MOVE.W (A0)+,D1
         MOVE.L A0,-4(A6)
         MOVEA.L A5,A0
         ADDA.W D0,A0
         CMPI.W #0,D1
-        BNE.W LBL_24
+        BNE.W LBL_28
         MOVE.L A1,-(A7)
         MOVE.L 0(A0),D0
         MOVE.L D0,-(A7)
         JSR 138(A5)
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-        BRA.W LBL_22
-LBL_24:
+        BRA.W LBL_26
+LBL_28:
         MOVE.L 0(A0),D0
         MOVE.L D0,-8(A6)
-LBL_25:
+LBL_29:
         MOVE.L A1,-(A7)
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
         JSR 210(A5)
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-        BRA.W LBL_22
-LBL_23:
+        BRA.W LBL_26
+LBL_27:
         UNLK A6
         RTS
-LBL_21:
+LBL_25:
         DC.W $E606
         DC.W $0000
         DC.W $E60A
@@ -286,7 +303,7 @@ LBL_21:
         DC.W $0000
         DC.W $0000
         ; constant pool: string literals
-LBL_4:
+LBL_6:
         DC.B $10
         DC.B $64,$69,$76,$69,$73,$69,$6F,$6E,$20,$62,$79,$20,$7A,$65,$72,$6F
         DC.B $00

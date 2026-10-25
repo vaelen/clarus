@@ -921,17 +921,30 @@ overlay record RtUiWinst {
     popups: ptr
     popupSelH: ptr
     popupSel: ptr
+    // ui-widgets Task 6 (spec 3.1, setBounds). `placed[i]` is one byte per
+    // widget: rtUiPlacedCode (code-placed, never moved by rtUiLayout
+    // again) | rtUiPlacedPending (a setBounds not yet applied).
+    // `oldRects[i]` holds the rect the widget had before its first
+    // pending setBounds -- the area the apply pass invalidates besides
+    // the new rect. `geom` is the window's rtUiGeomPending /
+    // rtUiGeomErase bits.
+    placedH: ptr
+    placed: ptr
+    oldRectsH: ptr
+    oldRects: ptr
+    geom: int
 }
 
 // rtUiWinstBoxSize is UiNewPtr's argument for allocating an RtUiWinst box
-// (via rtUiAllocLocked, a later step). EXACT, not a guess: 27 fields (Task
-// 9 added listsH/lists/popupsH/popups/popupSelH/popupSel), each exactly 4
+// (via rtUiAllocLocked, a later step). EXACT, not a guess: 32 fields (Task
+// 9 added listsH/lists/popupsH/popups/popupSelH/popupSel, ui-widgets Task 6
+// placedH/placed/oldRectsH/oldRects/geom), each exactly 4
 // bytes as an overlay-record field (see the file header comment, "Field
-// width" paragraph) = 108 bytes, +12 bytes fixed slack (rounding to 120)
+// width" paragraph) = 128 bytes, +12 bytes fixed slack (rounding to 140)
 // purely as free insurance against a future field-count edit, not because
 // of any real sizing ambiguity the way rtTextBoxSize/rtListBoxSize
 // (text.cla/list.cla) have for their own C-struct `Handle`-width question.
-const rtUiWinstBoxSize: int = 120
+const rtUiWinstBoxSize: int = 140
 
 // RtUiCanvasBuf: SCATTERED fields (not an embedded BitMap-shaped region --
 // see the file header comment's "RECT / BITMAP HANDLING" section for why
