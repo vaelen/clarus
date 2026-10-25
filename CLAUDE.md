@@ -507,11 +507,12 @@ enum + runner, not one boot per case.
   (pack3-standardfile phase, 2026-08-07) to an opt-in diagnostic behind
   `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under bare `CLARUS_MAC_TESTS=1`, so
   they no longer run as part of T2 by default.
-- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk,mactcp,segload,menus}.cla`
+- `toolbox/{memory,events,osutils,scrap,standardfile,files,appletalk,mactcp,segload,menus,fonts,lists}.cla`
   (toolbox-cookbook phase; `standardfile`/`files` added by
   pack3-standardfile, `appletalk` by the AppleTalk phase, `mactcp` by the
   MacTCP phase, `segload` — `GetAppParms`/`UnloadSeg`/`ExitToShell` — by
-  SE wave 4, `menus` -- the Menu Manager -- by the ui-widgets phase) is a
+  SE wave 4, `menus` (the Menu Manager), `fonts` (Font Manager and
+  QuickDraw text) and `lists` (the List Manager) by the ui-widgets phase) is a
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new
   UI code instead of hand-declaring traps; `tests/testsuite/catalog.sh`
@@ -599,9 +600,12 @@ make -C build    # produces Name.bin (for LaunchAPPL), Name.APPL, Name.dsk
 ## Running Mac apps in the emulator
 
 Emulator boots need an X display. This machine's shells often have none
-set, so export `DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority`
-first (`tests/lib_mac.sh`/`tests/lib_snow.sh` die with that hint when
-both `DISPLAY` and `WAYLAND_DISPLAY` are empty). There is no
+set, and the desktop session is Wayland (the emulators run under
+Xwayland), so export
+`DISPLAY=:0 XAUTHORITY=$(ls /run/user/1000/.mutter-Xwaylandauth.* | head -1)`
+first; the `.mutter-Xwaylandauth.*` name changes every login.
+`tests/lib_mac.sh`/`tests/lib_snow.sh` die with that hint when
+both `DISPLAY` and `WAYLAND_DISPLAY` are empty. There is no
 `~/.LaunchAPPL.cfg`; pass every option explicitly, exactly as
 `tests/lib_mac.sh`'s `mac_launch` does:
 
@@ -768,7 +772,7 @@ no scripted click/keyboard tool installed (`xdotool` is absent;
 here) — prefer scripted `--events` builds over driving a live window.
 
 ```sh
-export DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority
+export DISPLAY=:0 XAUTHORITY=$(ls /run/user/1000/.mutter-Xwaylandauth.* | head -1)
 xwininfo -root -tree | grep -i -E 'mini vmac|snow'   # find the window id
 import -window <id> shot.png                         # screenshot it
 ```

@@ -127,7 +127,7 @@ title size resizable min at fill scrollbar
 caption label default ticks
 ```
 
-This list is representative, not exhaustive: later chapters introduce further contextual words in property and value positions (`right`, `next`, `bottom`, `vertical`, `both`, `buffered`, `appletalk`, and others). Outside their positions, all contextual keywords are ordinary identifiers.
+This list is representative, not exhaustive: later chapters introduce further contextual words in property and value positions (`right`, `next`, `bottom`, `vertical`, `both`, `buffered`, `appletalk`, `checked`, `submenu`, `align`, the style words `plain`, `bold`, `italic`, `underline`, the divider styles `single` and `double`, and others). Outside their positions, all contextual keywords are ordinary identifiers.
 
 ### Literals
 
@@ -424,7 +424,7 @@ A `text` is an unbounded, resizable buffer of characters. A `string` value may b
 - `t.clear()` — reset length to 0 in place. Capacity and the underlying buffer are kept (no allocation, no shrink), so a reused buffer cleared each cycle appends again without re-growing — pair with `reserve` for trap-free hot loops. Capacity is kept; use `release()` to free it.
 - `t.release()` — reset length to 0 and free the buffer: capacity becomes 0, as for a freshly declared `text`. The text stays usable; the next `append` allocates again. It acts on the text itself, so every reference to it (an alias made by assignment, a parameter, a global) sees the result.
 - `t.shrink()` — trim capacity to the current length, freeing the unused tail of the buffer. The contents are kept; a no-op when already tight. Like `release()`, it acts on the text itself, shared by every reference to it.
-- `t.reserve(n)` — pre-grow capacity to at least `n` bytes (at most one underlying resize; a no-op when capacity already suffices; never shrinks). Fails the same way growth during `append` does if memory is exhausted. For producers that must append byte-at-a-time and cannot batch.
+- `t.reserve(n)` — pre-grow capacity to at least `n` bytes (sized to exactly `n`, with at most one underlying resize; a no-op when capacity already suffices; never shrinks). Fails the same way growth during `append` does if memory is exhausted. For producers that must append byte-at-a-time and cannot batch.
 - `t.removeFirst(n)` — drop the first `n` bytes in place: the rest moves down, the length drops by `n`, and the buffer is resized to the new length (capacity becomes the new length). `n` is clamped to `0..length`. Never allocates. It acts on the shared container, so every reference sees it.
 - `t[i]` — the character at index `i` (returns `char`), 0-based; `t[i] = c` assigns in place
 - `t[start, len]` — slice, yielding a `string`; same strict-bounds rules as string slicing (above)
@@ -487,6 +487,7 @@ The following operations may raise runtime errors (Chapter 12 specifies how erro
 - Accessing a map with the `[]` form using a key that does not exist (`get` never errors)
 - A checked enum conversion (`EnumType(i)`) with a value that matches no member
 - Dereferencing a `nil` window reference
+- Reading a `logpanel` line out of range with `line(i)` (Chapter 8)
 - Dividing an `int` by zero, or taking `mod` by zero
 
 ## Chapter 4: Expressions and Operators
@@ -1083,6 +1084,7 @@ window Doc {
 - `var d: Doc` declares a nil window reference. Dereferencing a nil reference is a runtime error (Chapter 3).
 - `Doc.front` is the frontmost open instance of type `Doc`, or `nil` if none is open.
 - Inside a `Doc` handler, the keyword `window` names the firing instance — the one whose event is being handled — so it can be passed to functions that take a `Doc`.
+- `contentWidth` and `contentHeight` are read-only `int` properties of an instance: the current size of the window's content area (the area widgets live in), in pixels. They are reached through a reference (`m.contentWidth`) or bare inside the window's own `extend` handlers, like `title`; inside those handlers they shadow a global of the same name. Assigning either is a check error.
 - Per-instance state (the `var`s declared in the window body) lives in a handle hung off the instance's `WindowRecord`; it is allocated when the instance opens and freed when it closes.
 - Bare names inside `extend Doc` resolve first against the firing instance's properties, fields, and widgets, then against globals — this is why two different window types may each declare an `Add` button without conflict.
 - `close ref` closes an open instance, but only after its `closeRequest` handler runs. Inside a `closeRequest` handler, `cancel` aborts the pending close (or, during `quit`, aborts the whole quit) — see Chapter 5.
@@ -1101,22 +1103,26 @@ A window's own events are handled with the bare event name inside its `extend` b
 
 ### Widgets
 
-Widget declarations appear inside a `window` body. Each widget has declaration-time properties (set in the `window` block), runtime properties (readable and assignable as `Widget.property` from handlers), and events (handled as `on Widget.event { }` in the window's `extend` block). 
+Widget declarations appear inside a `window` body. Each widget has declaration-time properties (set in the `window` block), runtime properties (read as `Widget.property` from handlers; the assignable ones are marked below), methods (called as statements, `Widget.method(...)`), and events (handled as `on Widget.event { }` in the window's `extend` block).
 
-| Widget | Properties | Runtime properties | Events |
-|---|---|---|---|
-| `button` | `caption`, `at`, `width`, `default`, `cancel` | `caption`, `enabled` | `click` |
-| `field` | `label`, `at`, `width`, `binds` | `text`, `enabled` | `change`, `enter` |
-| `textview` | `at`, `fill`, `scrollbar` (`vertical`\|`both`) | `text` | `change` |
-| `check` | `caption`, `at`, `binds` | `checked` | `change` |
-| `popup` | `label`, `at`, `width`, `binds` | `selected` (int index) | `change` |
-| `table` | `rows`, `column ...` (Chapter 10), `at`, `fill` | `selected` (int, −1 none) | `select(i: int)`, `doubleClick(i: int)` |
-| `canvas` | `at`, `fill`, `buffered` | `width`, `height` | `click(x: int, y: int)`, `drag(x: int, y: int)` |
-| `label` | `text`, `at`, `width` | `text` | — |
+Every widget, of every kind, also has the read-only geometry properties `x`, `y`, `width` and `height` and the `setBounds` method (Geometry, below); the table leaves them out. Every kind accepts `height:` at declaration. Runtime properties not marked *assignable* are read-only, and assigning one is a check error (`cannot assign to read-only property x`).
+
+| Widget | Properties | Runtime properties | Methods | Events |
+|---|---|---|---|---|
+| `button` | `caption`, `at`, `width`, `height`, `default`, `cancel` | `caption`, `enabled` (both assignable) | — | `click` |
+| `field` | `label`, `at`, `width`, `height`, `binds`, `font`, `style` | `text`, `enabled` (both assignable) | `setFont`, `setStyle` | `change`, `enter` |
+| `textview` | `at`, `width`, `height`, `fill`, `scrollbar` (`vertical`\|`both`), `font`, `style` | `text` (assignable) | `scrollToEnd`, `setFont`, `setStyle` | `change` |
+| `check` | `caption`, `at`, `height`, `binds` | `checked` (assignable) | — | `change` |
+| `popup` | `label`, `at`, `width`, `height`, `binds` | `selected` (int index; assignable) | — | `change` |
+| `table` | `rows`, `column ...` (Chapter 10), `at`, `width`, `height`, `fill`, `font`, `style` | `selected` (int, −1 none; assignable) | `scrollTo`, `setFont`, `setStyle` | `select(i: int)`, `doubleClick(i: int)` |
+| `canvas` | `at`, `width`, `height`, `fill`, `buffered`, `font`, `style` | `lineHeight`, `ascent` | drawing methods (Chapter 11), `textWidth`, `setFont`, `setStyle` | `click(x: int, y: int)`, `drag(x: int, y: int)` |
+| `label` | `text`, `at`, `width`, `height`, `align`, `font`, `style` | `text` (assignable) | `setFont`, `setStyle` | — |
+| `logpanel` | `maxLines`, `scrollbar` (`vertical`\|`both`), `at`, `width`, `height`, `fill`, `font`, `style` | `lineCount` | `appendLine`, `clear`, `line`, `scrollToEnd`, `setFont`, `setStyle` | — |
+| `divider` | `style` (`single`\|`double`), `at`, `width`, `height`, `fill` | — | — | — |
 
 `binds` connects a `field`, `check`, or `popup` to a record field inside a form window (Chapter 10); `default` and `cancel` on a `button` wire the Return and Escape keys respectively. A `field`'s `text` runtime property is a `string`; a `textview`'s is a `text`.
 
-A `textview` has one method, `scrollToEnd()`, callable as a statement from any handler (`Body.scrollToEnd()` inside the window's own `extend` block, or `w.Body.scrollToEnd()` through a window reference) — the same call shape a `canvas`'s drawing methods use (Chapter 11). It scrolls the view so its last line is visible and moves the vertical scrollbar to match; when the content already fits it does nothing, and the horizontal position is never changed. Like every programmatic write to a widget, it never fires `change`. A log window fed from `on App.log` (Chapter 7) assigns its `text` and then calls `scrollToEnd()` so the newest line is always the one on screen. It is a `textview` method only — on any other widget kind it is a check error.
+Besides the font methods, a `textview` has one method, `scrollToEnd()`, callable as a statement from any handler (`Body.scrollToEnd()` inside the window's own `extend` block, or `w.Body.scrollToEnd()` through a window reference) — the same call shape a `canvas`'s drawing methods use (Chapter 11). It scrolls the view so its last line is visible and moves the vertical scrollbar to match; when the content already fits it does nothing, and the horizontal position is never changed. Like every programmatic write to a widget, it never fires `change`. A log window fed from `on App.log` (Chapter 7) assigns its `text` and then calls `scrollToEnd()` so the newest line is always the one on screen. Only a `textview` and a `logpanel` (Log Panels, below) have it — on any other widget kind it is a check error. A method a kind does not have (for example `setFont` on a `button`) is a check error, `undefined: setFont`.
 
 A `button`, `check`, `field`, `popup`, or `label` declared without its caption-like property (`caption`, `label`, or `text`, respectively) displays its own widget name instead — the same "member name when unlabeled" default Chapter 3 gives an enum member with no label. Appendix C's Bookmark Manager relies on this for its `EditForm` buttons: `button OK { default }` and `button Cancel { cancel }` give no `caption:` at all, so they display "OK" and "Cancel".
 
@@ -1142,11 +1148,150 @@ extend Doc {
 
 ### Layout
 
-`at: x, y` positions a widget's top-left corner; `at: right, y` and `at: next, bottom` position it relative to the previous widget's right or bottom edge. `width: fill` and `fill: both` stretch a widget to fill remaining width, or both dimensions, of the window. Resize re-layout is automatic: the runtime keeps edge-relative widgets pinned to the edges they were declared relative to; no resize handler is needed for ordinary layouts.
+`at: x, y` positions a widget's top-left corner; `at: right, y` and `at: next, bottom` position it relative to the previous widget's right or bottom edge. `width: fill` and `fill: both` stretch a widget to fill remaining width, or both dimensions, of the window. `width: N` and `height: N` give a fixed size in pixels (Mac note — natural heights, below). Resize re-layout is automatic for fill: when the window is resized or zoomed, the runtime re-runs the declared layout, so a `width: fill` or `fill: both` widget tracks the window's new size. Nothing else moves with the window; in particular, a widget is not pinned to the right or bottom edge. A window whose layout needs more than fill places its widgets from code with `setBounds` (Geometry and Code Placement, below), typically from its `opened` and `resized` handlers.
+
+A `table` declared without `width:` fills the window's width, as before; with `width: N` it is `N` pixels wide.
 
 On a `field` with a `label:`, `width:` gives the width of the edit box alone — the fixed label lane is added to its left, so every field's edit box in a form starts at the same x regardless of each field's own `width:`. `width: fill` is the exception: it sizes the whole widget (label lane included), same as any other widget. Omitting `width:` keeps the field's natural overall size (label lane plus a default box width) unchanged from a bare, un-widthed field. A `popup` with a `label:` follows the identical rule — `width:` gives the popup's own visible box, with the label lane added to its left — so a labeled `popup` and a labeled `field` of the same declared `width:` line up the same way.
 
 A widget declared with no `at:` at all defaults to a vertical stack — placed one gap below the previous widget (or the window's top edge, for the first widget), at a fixed left margin — unless it also declares `fill: both`, which defaults instead to the window's own top-left origin, since a widget filling both dimensions is meant to occupy the whole window regardless of declaration order. A window declared with no `size:` at all sizes itself to fit its widgets' laid-out extent (their declared or default sizes, stacked per the rule above) plus margin, the same way an explicit `size:` is itself only a request (see the Mac note above). Appendix C's Bookmark Manager `EditForm` relies on both defaults: it gives its window no `size:` and none of its widgets an `at:`. Auto-placed and explicitly placed widgets share one running layout cursor: an at:-less widget stacks one gap below whatever widget preceded it, whether that widget was itself placed explicitly or by default, and a later `at: next`/`at: right` widget measures from an auto-placed widget's rect the same way it would from an explicitly placed one.
+
+**Mac note — natural heights:** a `field`, `button`, `check` or `popup` always keeps its natural Macintosh height. `height:` is accepted on them and ignored, and `setBounds` moves them and sets their width but keeps their height. The other kinds (`label`, `textview`, `table`, `canvas`, `logpanel`, `divider`) honor `height:` and `setBounds` in full.
+
+### Geometry and Code Placement
+
+Every widget has four read-only `int` properties, `x`, `y`, `width` and `height`: its rectangle in the window's content coordinates (origin at the content area's top-left corner). Assigning any of them is a check error.
+
+`w.X.setBounds(x, y, width, height)` is a statement, callable from any handler. It moves and sizes the widget; a negative width or height counts as 0. A widget of size 0 draws nothing and takes no clicks.
+
+- **Code placement.** From its first `setBounds` on, a widget is *placed by code*: the automatic re-layout on resize or zoom never moves or sizes it again, even if it was declared with `fill`. Widgets never given `setBounds` keep the declared layout. A later widget placed by `at: next`, `at: right` or the default stack measures from a code-placed widget's current rectangle.
+- **Deferred apply.** `setBounds` records the new rectangle, and `x`/`y`/`width`/`height` read the new values at once. The widgets themselves move when control returns to the event loop, after the handler: the runtime applies every pending rectangle together, and the window repaints once. Calling `setBounds` on every widget from `resized` therefore does not flicker.
+- **`opened` runs before the window's first paint**, so a layout done in `opened` is painted once, already in place.
+
+A window that splits itself into regions lays them out from code, using `contentWidth`/`contentHeight` (Window Instances, above):
+
+```rust
+record Caller {
+    name: string(31)
+    city: string(31)
+}
+
+var callers: list of Caller
+
+window Main {
+    title: "BBS"
+    size: 480, 300
+    resizable: min(300, 200)
+
+    table Callers {
+        rows: callers
+        column "Name" shows name width 120
+        column "City" shows city width fill
+    }
+    divider TopRule  { style: double }
+    divider SideRule { }
+    logpanel Log { maxLines: 100; font: "Monaco", 9; scrollbar: both }
+}
+
+extend Main {
+    on opened { layoutMain(window) }
+    on resized { layoutMain(window) }
+}
+
+func layoutMain(m: Main) {
+    var w: int = m.contentWidth
+    var h: int = m.contentHeight
+    var top: int = h / 2
+    m.Callers.setBounds(161, 0, w - 161, top)
+    m.TopRule.setBounds(0, top, w, 3)
+    m.SideRule.setBounds(160, 0, 1, top)
+    m.Log.setBounds(0, top + 3, w, h - top - 3)
+}
+```
+
+**Mac note — repaint after a move:** when widgets move (a resize, a zoom, or an applied `setBounds`), the update that follows erases the invalidated area before redrawing the widgets. A `buffered` canvas repaints itself from its bitmap; an **unbuffered** canvas does not, so its drawing in that area is lost. A program with an unbuffered canvas redraws it in `resized` (and in `opened`), or declares the canvas `buffered`.
+
+### Fonts and Styles
+
+`label`, `field`, `textview`, `table` (rows and header), `canvas` and `logpanel` take a font and a style:
+
+- `font: "Name", size` names the font and its point size: a string literal and an int literal from 1 to 127. The name is looked up when the window opens; a font the Macintosh does not have falls back to the application font (Geneva), silently.
+- `style: word, ...` takes one or more of `plain`, `bold`, `italic`, `underline`. `plain` is valid only alone. An unknown word is a check error.
+- At runtime, `X.setFont(name: string, size: int)` and `X.setStyle(word, ...)` change them (one to three style words, `plain` only alone). `setStyle` **replaces** the whole style, so `setStyle(plain)` clears it. Each call redraws the widget; a `table` or `logpanel` also recomputes its row height from the new font.
+
+The style words are contextual: they are valid only as `style:` values and `setStyle` arguments, never as general identifiers, and they shadow nothing.
+
+`button`, `check` and `popup` always use the system font: `font:` or `style:` on one is a check error (`buttons, checks and popups use the system font`), and they have no `setFont`/`setStyle`.
+
+### Labels
+
+A `label` shows one line of text, clipped to its rectangle. It is drawn directly (it holds no TextEdit record and is never editable), and it takes no clicks.
+
+- `align: left | center | right` (default `left`) aligns the text within the label's rectangle.
+- When `height:` is taller than one line, the line is centered vertically in the rectangle.
+- Assigning a label the text it already shows does nothing at all: no redraw and no UI-trace line. A status label driven from a one-second timer costs one string compare when its text has not changed.
+
+```rust
+window Status {
+    title: "Status"
+    size: 300, 80
+    label Caption { at: 10, 10; width: 120; text: "Callers:"; style: bold }
+    label Count   { at: 130, 10; width: 60; text: "0"; align: right; font: "Geneva", 12 }
+}
+
+extend Status {
+    on opened {
+        Count.setFont("Monaco", 9)
+        Count.setStyle(bold, underline)
+        Caption.setStyle(plain)
+    }
+}
+```
+
+### Log Panels
+
+A `logpanel` is a scrolling, read-only list of text lines for logs and transcripts, built for appending: it holds no TextEdit record, has no 32,000-byte limit, and draws only the lines in view.
+
+```rust
+window Console {
+    title: "Log"
+    size: 400, 200
+    logpanel Lines { fill: both; maxLines: 500; font: "Monaco", 9 }
+}
+
+func note(s: string) {
+    var c: Console = Console.front
+    if c != nil {
+        c.Lines.appendLine(s)
+    }
+}
+```
+
+Declaration properties: `maxLines:` (an int literal of at least 1, default 200), `scrollbar: vertical | both` (default `vertical`), plus `at`, `width`, `height`, `fill`, `font` and `style`.
+
+| Member | Meaning |
+|---|---|
+| `appendLine(s)` | Adds `s` (a `string`). Each CR or LF in `s` ends a line (CRLF counts once); empty lines are kept; a trailing CR or LF does not add an empty line after it. `appendLine("")` adds one empty line. |
+| `clear()` | Drops every line and clears the selection. |
+| `lineCount` | The number of lines held (`int`, read-only). |
+| `line(i)` | Line `i` (`string`), 0 = the oldest held. Out of range is a runtime error (`logpanel line out of range`), as for lists. |
+| `scrollToEnd()` | Scrolls so the last line is in view, and resumes following. |
+
+- **Capacity.** Once `maxLines` lines are held, each new line drops the oldest. Each line costs its own length plus a small fixed overhead, never a full 256 bytes. If memory runs short, the oldest lines are dropped until the new line fits; an append never fails or stops the program.
+- **Batched drawing.** Appends do not draw. The screen is updated once per pass of the event loop, after the handler returns, however many lines were appended.
+- **Following.** A panel whose last line is in view is *following*: appends keep the end in view, scrolling the existing lines up rather than repainting the panel. When the user has scrolled up, appends do not move the view; when old lines drop off the top, the view shifts with them so the same text stays on screen. Scrolling back to the bottom resumes following. `scrollbar: both` adds a horizontal scroll bar whose range is the widest line held.
+- **Selection.** A click selects one whole line; a drag or a shift-click extends the selection to a contiguous range. Selected lines draw inverted. Appends leave the selection on the same lines; dropped lines shrink it, and it clears when all its lines have dropped. `clear()` clears it.
+- **Edit menu.** Clicking a panel makes it the window's edit focus, in the place of a `field` or `textview`. With a panel focused, Copy (enabled only when lines are selected) puts the selected lines on the clipboard, joined by Return with no trailing Return; Select All (enabled when the panel has lines) selects every line; Cut, Paste and Clear are disabled. Typing into a focused panel does nothing.
+- A `logpanel` has no events.
+
+### Dividers
+
+A `divider` is a rule that separates regions of a window. It is horizontal when its rectangle is wider than tall, and vertical otherwise. `style: single` (the default) draws a 1-pixel line along the rectangle's center; `style: double` draws two 1-pixel lines with a 1-pixel gap between them, for a rectangle 3 pixels thick. It is placed with `at`, `width`, `height`, `fill` or `setBounds`, and has no events and no members beyond its geometry.
+
+```
+divider TopRule  { style: double }
+divider SideRule { }
+```
 
 ## Chapter 9: Menus
 
@@ -1162,13 +1307,60 @@ menu File {
 
 A `menu` block declares a menu — like `window`, it is a declaration compiled to a real resource (MENU), not code. `item Ident "Caption"` declares one item, named `Ident` for handlers and captioned `"Caption"` on screen; `key "K"` is the optional ⌘-equivalent. `separator` inserts a dividing line between items.
 
+A caption is shown exactly as written. Characters the Menu Manager would otherwise treat as commands (`(` `/` `^` `!` `<` `;`) appear literally: `item Init "Init (Hayes); Reset"` shows that text, parentheses and semicolon included.
+
+### Checkmarks and Submenus
+
+An item may be declared `checked` (it starts with a checkmark) and may open a submenu with `submenu Name`, where `Name` is a `menu` declared **above** the one that uses it:
+
+```rust
+menu Speed {
+    item S2400 "2400"
+    item S9600 "9600" checked
+}
+
+menu Modem {
+    item Init      "Init (Hayes); Reset" key "I"
+    item PortSpeed "Port Speed" submenu Speed
+}
+
+extend Speed {
+    on S2400.select {
+        Speed.S2400.checked = true
+        Speed.S9600.checked = false
+    }
+    on S9600.select {
+        Speed.S2400.checked = false
+        Speed.S9600.checked = true
+    }
+}
+```
+
+- A submenu's items fire `select` like any other menu's, handled in `extend Speed`.
+- A menu used as a submenu never appears in the menu bar by itself. It may be the submenu of only one item (`menu Speed is already a submenu`), and it cannot also be named in a window's `menus:` (`menu Speed is a submenu and cannot appear in menus:`). A submenu named before its declaration is an error (`Speed is not a declared menu`).
+- Submenus count toward the 31-menu limit (Window-Scoped Commands, below).
+- Checkmarks never change on their own: choosing a `checked` item does not toggle it. The handler sets `checked` itself, as above.
+- **Mac note:** submenus are hierarchical menus, which every Macintosh from the Plus on supports under System 6 and System 7.
+
 ### Standard Edit
 
 ```rust
 menu Edit { standard edit }
 ```
 
-`standard edit` supplies the Mac-standard Edit menu items (Undo/Cut/Copy/Paste/Clear) with clipboard behavior already wired to `field` and `textview` widgets — required for a native feel (and for desk accessories) but otherwise pure boilerplate. The behavior comes from the `edit` keyword, not from the menu's own name — a menu declared under a different name could still use `standard edit`. Cut/Copy/Paste/Clear act on whichever `field` or `textview` currently has the caret, dim together when nothing does, and forward to the frontmost desk accessory instead when one is active. Undo is always present but permanently dimmed — there is no undo stack — an honest placeholder for the standard menu shape rather than a working command.
+`standard edit` supplies the Mac-standard Edit menu items (Undo, a separator, Cut/Copy/Paste/Clear, and Select All) with clipboard behavior already wired to `field` and `textview` widgets — required for a native feel (and for desk accessories) but otherwise pure boilerplate. The behavior comes from the `edit` keyword, not from the menu's own name — a menu declared under a different name could still use `standard edit`. Cut/Copy/Paste/Clear act on whichever `field` or `textview` currently has the caret, dim together when nothing does, and forward to the frontmost desk accessory instead when one is active. Undo is always present but permanently dimmed — there is no undo stack — an honest placeholder for the standard menu shape rather than a working command.
+
+**Select All** (⌘A) selects all the text of the focused `field` or `textview`, or every line of a focused `logpanel` (Chapter 8). It is enabled when a `field` or `textview` has the caret, or when a focused `logpanel` has lines. Like every programmatic change, it fires no `change` event. Every program that uses `standard edit` has ⌘A taken by Select All: a user item declared with `key "A"` collides with it silently, so do not give an item that key.
+
+A menu may combine `standard edit` with its own items. The seven standard items always come first, then the menu's declared items, in declaration order, wherever `standard edit` is written among them:
+
+```
+menu Edit {
+    standard edit
+    separator
+    item Prefs "Preferences…"
+}
+```
 
 ### Item Events
 
@@ -1196,13 +1388,18 @@ The nesting means "these commands apply when a Doc is frontmost." The runtime au
 
 **Window-owned menus.** A window declaration may claim menus with `menus: A, B` (Chapter 8). A menu claimed by any window is not part of the application-wide menu bar; it appears, after the application-wide menus and in declaration order, only while a window of a claiming type is frontmost, and leaves the bar when that window closes or another window comes to the front. Menus no window claims form the application-wide bar, exactly as before. Item enabling and window-scoped dimming are unaffected: every menu exists for the whole run, only its presence in the bar changes. At most 31 menus may be declared.
 
-### Runtime Menu-Item Property
+### Runtime Menu-Item Properties
 
-`enabled` is a runtime property on a menu item, addressed as `MenuName.ItemName.enabled`, for app-level items that need manual control rather than the automatic window-scoped dimming above:
+A menu item has two runtime `bool` properties, both readable and assignable, addressed as `MenuName.ItemName.property`:
+
+- `enabled`, for app-level items that need manual control rather than the automatic window-scoped dimming above;
+- `checked`, the item's checkmark (Checkmarks and Submenus, above).
 
 ```rust
 File.Save.enabled = false
 ```
+
+**Mac note:** the runtime re-applies its own enabling when the front window changes, and that can override an `enabled` value the program set on an item that is also window-scoped (`docs/TODO.md`). It never changes `checked`.
 
 ### The Apple Menu
 
@@ -1296,15 +1493,68 @@ table Marks {
 }
 ```
 
-The table stays live: `add`, `remove`, and writeback to an element of the bound list (for instance, from an `edit` on that element) invalidate and redraw only the affected rows, with no handler code required.
+The table stays live, with no handler code required. Every change to the bound list redraws the table: `add`/`push`, `pop`, `shift`, `unshift`, `remove`, `clear`, `release`, `reserve`, `shrink`, an element store (`l[i] = v`), a write to an element's field (`l[i].name = x`), an `edit` writeback into an element, and assigning a different list to the bound variable. The table redraws when control returns to the event loop, after the handler, however many changes the handler made.
+
+A store through a list that a function call returns (`f()[i] = v`) is the one change the table does not see; it redraws at the bound list's next other change.
 
 ### Table Columns
 
-`column "Header" shows fieldName width N` declares one column. `fieldName` is resolved against the row type `T` the same way `binds:` is resolved in a form — bare, never dotted. `width N` gives a fixed pixel width; `width fill` gives the column the window's remaining width. A column's rendering also follows its field's type: a `bool` field renders as a checkmark, and an enum field renders its member label (member name when unlabeled — Chapter 3).
+`column "Header" shows fieldName width N` declares one column. `fieldName` is resolved against the row type `T` the same way `binds:` is resolved in a form — bare, never dotted. `width N` gives a fixed pixel width; `width fill` gives the column the table's remaining width. A column's rendering also follows its field's type: a `bool` field renders as a checkmark, and an enum field renders its member label (member name when unlabeled — Chapter 3).
+
+**Formatted columns.** `shows` also takes a call to a function, which computes the cell's text from the row:
+
+```rust
+record Caller {
+    name: string(31)
+    secs: int
+}
+
+var callers: list of Caller
+
+func minutes(secs: int): string {
+    return string(secs / 60) + " min"
+}
+
+window Main {
+    title: "Callers"
+    size: 300, 200
+    table Callers {
+        rows: callers
+        column "Name" shows name          width 160
+        column "Time" shows minutes(secs) width fill align right
+    }
+}
+```
+
+- The callee must be a top-level `func` of the program (not an `external func` or `callback func`, and not a method) that returns a `string`, an integer type, `fixed`, `bool`, `char` or an enum. The result renders as a field of that type would.
+- Inside the call's arguments, the row's fields are in scope bare, like `secs` above. Other arguments may be literals and globals.
+- Any other `shows` expression (an operator at the top, a method call) is a check error, `column shows expects a field name or a function call`; a function returning another type (`text`, a list, a record) is `column function must return a string, number, bool, char or enum`.
+- The function runs when a cell is drawn, for visible rows only, and may run many times for the same row. It should be quick and have no side effects.
+
+**Alignment.** A trailing `align left`, `align center` or `align right` aligns a column's cells (default `left`). The column's header follows its alignment.
+
+**Mac note — a formatter that aborts:** an `abort` (Chapter 5) raised inside a column's function, and not caught there, does not stop the program: that cell draws empty, and the first such abort per column in each open window logs one line, `table column <Header>: formatter aborted` (Logging, Chapter 12). A runtime error inside the function (an index out of range, a division by zero, ...) is still fatal, as it is everywhere else.
 
 ### Table Selection
 
-Tables are single-select. `selected` (Chapter 8) is a runtime `int` property: the index of the selected row, or `-1` if none is selected. `select(i: int)` fires when a row is clicked; `doubleClick(i: int)` fires on a double-click:
+Tables are single-select. `selected` (Chapter 8) is a runtime `int` property: the index of the selected row, or `-1` if none is selected. `select(i: int)` fires when a row is clicked; `doubleClick(i: int)` fires on a double-click.
+
+- **Assigning `selected`** selects a row from code: `-1` (or any negative value) clears the selection, and a value past the last row selects the last row. It never fires `select`.
+- **The selection follows its record**, not its row number. After `unshift`, the same record stays selected at its new index, and `selected` reads that index. Removing the selected record (by `pop`, `shift`, `remove`, `clear` or `release`) clears the selection to `-1`. Replacing the selected element in place (`l[i] = v`) keeps row `i` selected. Assigning a different list to the bound variable clears the selection. None of these fire `select`.
+- Two tables bound to the same list keep separate selections.
+- **`scrollTo(i)`** is a statement that scrolls the table so row `i` is the top visible row, as far as the table can scroll; `scrollTo(0)` scrolls to the top. An out-of-range `i` is clamped to the first or last row (not an error).
+
+```rust
+extend Main {
+    on opened {
+        callers.unshift(new Caller)
+        Callers.selected = 0
+        Callers.scrollTo(0)
+    }
+}
+```
+
+A double-click opens the clicked row for editing:
 
 ```rust
 extend Main {
@@ -1328,6 +1578,9 @@ c.circle(x, y, r: int)         c.fillCircle(x, y, r: int)
 c.drawText(x, y: int, s: string)
 c.pattern(level: int)          // fill pattern for fillRect/fillCircle
 c.width  c.height              // runtime properties, int
+c.textWidth(s: string): int    // width of s in the canvas's font
+c.lineHeight  c.ascent         // runtime properties, int: the font's metrics
+c.setFont(name: string, size: int)   c.setStyle(word, ...)   // Chapter 8
 ```
 
 `clear` erases the canvas to white. `line` draws a line from `(x1, y1)` to `(x2, y2)`. `rect`/`fillRect` draw a rectangle outline or a filled rectangle at `(x, y)` with width `w` and height `h`. `circle`/`fillCircle` draw a circle outline or a filled circle centered at `(x, y)` with radius `r`. `drawText` draws `s` with its baseline at `(x, y)`. `width` and `height` are read-only runtime properties giving the canvas's current size in pixels.
@@ -1336,9 +1589,35 @@ c.width  c.height              // runtime properties, int
 
 All coordinates are `int` pixels. The origin `(0, 0)` is the canvas's top-left corner; `x` increases rightward, `y` increases downward.
 
+### Canvas Text
+
+`drawText` uses the canvas's own font, set by `font:` and `style:` at declaration or by `setFont`/`setStyle` at runtime (Fonts and Styles, Chapter 8); without one it uses the system font. A buffered canvas keeps its font when it is resized.
+
+`textWidth(s)` returns the width of `s` in pixels in that font. `lineHeight` (ascent + descent + leading) and `ascent` are read-only `int` properties giving the font's metrics. Since `drawText`'s `y` is the baseline, text whose top should sit at `t` is drawn at `t + c.ascent`, and the next line goes `c.lineHeight` below:
+
+```rust
+window Sign {
+    title: "Sign"
+    size: 300, 100
+    canvas Board { fill: both; buffered; font: "Geneva", 12 }
+}
+
+extend Sign {
+    on opened { centre(window, "Hello") }
+    on resized { centre(window, "Hello") }
+}
+
+func centre(w: Sign, s: string) {
+    var x: int = (w.Board.width - w.Board.textWidth(s)) / 2
+    w.Board.clear()
+    w.Board.drawText(x, 10 + w.Board.ascent, s)
+    w.Board.drawText(x, 10 + w.Board.ascent + w.Board.lineHeight, s)
+}
+```
+
 ### Buffered vs. Unbuffered
 
-A `canvas` declared with `buffered` (Chapter 8) draws to an offscreen bitmap; the accumulated drawing is blitted to the screen in a single copy when the current handler or timer returns control to the event loop, so a sequence of drawing calls never flickers. An unbuffered canvas draws directly to the screen as each method is called, visible immediately.
+A `canvas` declared with `buffered` (Chapter 8) draws to an offscreen bitmap; the accumulated drawing is blitted to the screen in a single copy when the current handler or timer returns control to the event loop, so a sequence of drawing calls never flickers. An unbuffered canvas draws directly to the screen as each method is called, visible immediately. An unbuffered canvas keeps no copy of its drawing, so when its window is resized or its widgets move, the program draws it again (Mac note — repaint after a move, Chapter 8).
 
 ### Drawing Only Happens in a Handler or Timer
 
@@ -2145,15 +2424,16 @@ windowItem  = property | widgetDecl | varDecl | "form" "for" IDENT ;
 appDecl     = "app" IDENT "{" { property } "}" ;
 widgetDecl  = widgetKind IDENT [ "{" propertyList "}" ] ;
 widgetKind  = "button" | "field" | "textview" | "check" | "popup"
-            | "table" | "canvas" | "label" ;
+            | "table" | "canvas" | "label" | "logpanel" | "divider" ;
 propertyList= property { ";" property } ;
 property    = IDENT [ ":" propValue { "," propValue } ]
-            | "column" STRING "shows" IDENT "width" ( INT | "fill" )
+            | "column" STRING "shows" ( IDENT | IDENT "(" [ args ] ")" )
+              "width" ( INT | "fill" ) [ "align" ( "left" | "center" | "right" ) ]
             | "cancel" ;
 propValue   = expr | IDENT "(" [ args ] ")" ;
 
 menuDecl    = "menu" IDENT "{" { menuEntry } "}" ;
-menuEntry   = "item" IDENT STRING [ "key" STRING ]
+menuEntry   = "item" IDENT STRING [ "key" STRING ] [ "checked" ] [ "submenu" IDENT ]
             | "separator"
             | "standard" "edit" ;
 
@@ -2198,7 +2478,7 @@ args        = expr { "," expr } ;
 literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
 ```
 
-Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`. The two-expression index form (`s[start, len]`) is a slice, valid only in expression position — `lvalue` deliberately keeps the single-expression form. In `quit [expr]`, the expression must start on the same line as `quit` (a newline after `quit` ends the statement). `include` is likewise contextual, recognized only when it starts a top-level declaration and is followed by a STRING; `includeDecl` must precede every other `topDecl` in its file (Chapter 1) — an `include` appearing after any other top-level declaration is an error, not shown in the EBNF above. `app` is contextual the same way, recognized only when it starts a top-level declaration and is followed by an IDENT; unlike `include` it may appear anywhere among the top-level declarations, but at most once per program (Chapter 7). `external` is likewise contextual, recognized as the start of an `externDecl` only when immediately followed by `func`; elsewhere it is an ordinary identifier. Like `app`, an `externDecl` may appear anywhere among a program's top-level declarations (Chapter 13).
+Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`. The two-expression index form (`s[start, len]`) is a slice, valid only in expression position — `lvalue` deliberately keeps the single-expression form. In `quit [expr]`, the expression must start on the same line as `quit` (a newline after `quit` ends the statement). `include` is likewise contextual, recognized only when it starts a top-level declaration and is followed by a STRING; `includeDecl` must precede every other `topDecl` in its file (Chapter 1) — an `include` appearing after any other top-level declaration is an error, not shown in the EBNF above. `app` is contextual the same way, recognized only when it starts a top-level declaration and is followed by an IDENT; unlike `include` it may appear anywhere among the top-level declarations, but at most once per program (Chapter 7). `external` is likewise contextual, recognized as the start of an `externDecl` only when immediately followed by `func`; elsewhere it is an ordinary identifier. Like `app`, an `externDecl` may appear anywhere among a program's top-level declarations (Chapter 13). The widget kinds, `align`, `checked` and `submenu`, and the style words in `style:` values and `setStyle(...)` arguments (`plain`, `bold`, `italic`, `underline`; `single`, `double` for a divider) are contextual in the same way: special only in those positions. The `propValue`s a property accepts are checked per property (Chapter 8), not by the grammar.
 
 ## Appendix B: Event Handler Quick Reference
 
@@ -2227,6 +2507,7 @@ The following table is the complete per-resource inventory of every event handle
 | table | doubleClick | `on Name.doubleClick(i: int) { }` |
 | canvas | click | `on Name.click(x: int, y: int) { }` |
 | canvas | drag | `on Name.drag(x: int, y: int) { }` |
+| label, logpanel, divider | — | none |
 | menu item | select | `on Item.select { }` (in `extend Menu`) |
 | connection | opened | `on c.opened { }` |
 | connection | received | `on c.received(data: text) { }` |
@@ -2241,7 +2522,7 @@ The following table is the complete per-resource inventory of every event handle
 | service | failed | `on svc.failed(err: error) { }` |
 | (timer) | — | `every N ticks { }` |
 
-For `field`/`textview`/`check`/`popup`, `change` fires for a user edit — typing, cut, paste, or clear — and never for a program's own assignment to the widget's property (e.g. `Body.text = t`, or a `textview`'s `scrollToEnd()`), the same "programmatic writes are silent" rule every other runtime property already follows.
+For `field`/`textview`/`check`/`popup`, `change` fires for a user edit — typing, cut, paste, or clear — and never for a program's own assignment to the widget's property (e.g. `Body.text = t`, or a `textview`'s `scrollToEnd()`), the same "programmatic writes are silent" rule every other runtime property already follows. Likewise a table's `select` fires only for a click: assigning `selected`, `scrollTo`, and the selection following its record through list changes (Chapter 10) never fire it, and Select All (Chapter 9) fires no `change`.
 
 ## Appendix C: Worked Examples
 
