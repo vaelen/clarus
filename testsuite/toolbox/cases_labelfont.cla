@@ -1,0 +1,118 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_labelfont.cla: LabelFontAlign (ui-widgets Task 10, spec 3.2/3.3).
+// A label draws one DrawText line clipped to its rect, aligned per
+// `align:`, in its own font; assigning the text it already shows does
+// nothing (no erase, no draw); setStyle/setFont redraw it, and an unknown
+// font name falls back silently.
+//
+// Geometry: `size: 304, 200` centers the content at (104, 44); 104 is a
+// multiple of 8, so local x 16 is global 120, byte-aligned. Rows: A local
+// 16..31 (global 60), B 40..55 (84), G 64..79 (108), C 88..103 (132).
+// K is an unbuffered canvas over A: ink drawn into it stays on screen
+// until something erases or redraws A's rect.
+
+const tbLfOrgX: int = 104
+const tbLfOrgY: int = 44
+
+window LabelFontWin {
+    title: "LabelFont"
+    size: 304, 200
+
+    label A  { at: 16, 16; width: 100; text: "Hi"; align: right }
+    label B  { at: 16, 40; width: 100; text: "Hi"; font: "Monaco", 9; style: bold }
+    label G  { at: 16, 64; width: 100; text: "Hi"; font: "Geneva", 9 }
+    label C  { at: 16, 88; width: 60; text: "a very long label that will not fit" }
+    canvas K { at: 16, 16; width: 100; height: 16 }
+}
+
+func tbLfBand(x: int, y: int, ww: int): int {
+    return UiTestChecksum(tbLfOrgX + x, tbLfOrgY + y, ww, 16)
+}
+
+func caseLabelFontAlign(): TestResult {
+    var w: LabelFontWin
+    var d: string
+    var v: int
+    var b0: int
+    var g0: int
+    var b1: int
+
+    w = open LabelFontWin
+    UiTestTick(1)
+
+    // A, right-aligned in 100 px: its left 48 px are blank, the right
+    // 24 px (local 88..111) hold "Hi".
+    v = tbLfBand(16, 16, 48)
+    if v != 0 {
+        d = d + "A left " + tkIntToStr(v) + "; "
+    }
+    v = tbLfBand(88, 16, 24)
+    if v == 0 {
+        d = d + "A right blank; "
+    }
+
+    // B (Monaco 9 bold) differs from G (Geneva 9 plain).
+    b0 = tbLfBand(16, 40, 32)
+    g0 = tbLfBand(16, 64, 32)
+    if b0 == 0 or b0 == g0 {
+        d = d + "B " + tkIntToStr(b0) + " G " + tkIntToStr(g0) + "; "
+    }
+
+    // C: one line, clipped to its 60 px, height 16.
+    v = tbLfBand(16, 88, 48)
+    if v == 0 {
+        d = d + "C blank; "
+    }
+    v = tbLfBand(16, 104, 64)
+    if v != 0 {
+        d = d + "C below " + tkIntToStr(v) + "; "
+    }
+    v = tbLfBand(80, 88, 32)
+    if v != 0 {
+        d = d + "C clip " + tkIntToStr(v) + "; "
+    }
+    if w.C.height != 16 {
+        d = d + "C height " + tkIntToStr(w.C.height) + "; "
+    }
+
+    // Same text: no erase, no draw -- K's ink over A survives.
+    w.K.fillRect(0, 0, 100, 16)
+    v = tbLfBand(16, 16, 96)
+    if v != 12 * 255 * 16 {
+        d = d + "K ink " + tkIntToStr(v) + "; "
+    }
+    w.A.text = "Hi"
+    UiTestTick(1)
+    v = tbLfBand(16, 16, 96)
+    if v != 12 * 255 * 16 {
+        d = d + "same text redrew " + tkIntToStr(v) + "; "
+    }
+    // New text paints at once.
+    w.A.text = "Ho"
+    v = tbLfBand(16, 16, 96)
+    if v == 12 * 255 * 16 {
+        d = d + "new text not painted; "
+    }
+
+    // setStyle(plain) redraws B; an unknown font still draws.
+    w.B.setStyle(plain)
+    UiTestTick(1)
+    b1 = tbLfBand(16, 40, 32)
+    if b1 == b0 {
+        d = d + "setStyle unchanged; "
+    }
+    w.B.setFont("NoSuchFont", 12)
+    UiTestTick(1)
+    v = tbLfBand(16, 40, 32)
+    if v == 0 {
+        d = d + "NoSuchFont blank; "
+    }
+
+    close w
+    if d == "" {
+        return tkPass("LabelFontAlign")
+    }
+    return tkFail("LabelFontAlign", d)
+}

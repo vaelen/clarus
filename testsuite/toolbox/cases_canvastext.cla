@@ -1,0 +1,100 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_canvastext.cla: CanvasText (ui-widgets Task 10, spec 3.8). A
+// buffered canvas measures and draws in its own font: textWidth, lineHeight
+// and ascent; the font survives a resize (the offscreen port is
+// recreated); setFont changes the metrics; rows placed at
+// i * lineHeight + ascent do not overlap.
+//
+// Geometry: `size: 304, 200` centers the content at (104, 44), byte-
+// aligned; T sits at local (0, 0).
+
+const tbCtOrgX: int = 104
+const tbCtOrgY: int = 44
+
+window CanvasTextWin {
+    title: "CanvasText"
+    size: 304, 200
+    resizable: min(200, 150)
+
+    canvas T { at: 0, 0; width: 200; height: 120; buffered; font: "Monaco", 9 }
+}
+
+func tbCtBand(y: int, hh: int): int {
+    return UiTestChecksum(tbCtOrgX, tbCtOrgY + y, 64, hh)
+}
+
+func caseCanvasText(): TestResult {
+    var w: CanvasTextWin
+    var d: string
+    var m1: int
+    var m4: int
+    var lh: int
+    var asc: int
+    var c0: int
+    var v: int
+    var i: int
+
+    w = open CanvasTextWin
+    UiTestTick(1)
+
+    m1 = w.T.textWidth("M")
+    m4 = w.T.textWidth("MMMM")
+    if m1 <= 0 or m4 != 4 * m1 {
+        d = d + "widths " + tkIntToStr(m1) + " " + tkIntToStr(m4) + "; "
+    }
+    lh = w.T.lineHeight
+    asc = w.T.ascent
+    if not (lh > asc and asc > 0) {
+        d = d + "metrics " + tkIntToStr(lh) + " " + tkIntToStr(asc) + "; "
+    }
+
+    // One row alone, then four rows: each row's band matches the lone
+    // row's, and the band after the last is blank.
+    w.T.clear()
+    w.T.drawText(0, asc, "MMMM")
+    UiTestTick(1)
+    c0 = tbCtBand(0, lh)
+    if c0 == 0 {
+        d = d + "row blank; "
+    }
+    w.T.clear()
+    i = 0
+    while i < 4 {
+        w.T.drawText(0, i * lh + asc, "MMMM")
+        i = i + 1
+    }
+    UiTestTick(1)
+    i = 0
+    while i < 4 {
+        v = tbCtBand(i * lh, lh)
+        if v != c0 {
+            d = d + "row " + tkIntToStr(i) + " " + tkIntToStr(v) + "; "
+        }
+        i = i + 1
+    }
+    v = tbCtBand(4 * lh, lh)
+    if v != 0 {
+        d = d + "after rows " + tkIntToStr(v) + "; "
+    }
+
+    UiTestResize(320, 220)
+    UiTestTick(1)
+    v = w.T.textWidth("M")
+    if v != m1 {
+        d = d + "resized width " + tkIntToStr(v) + "; "
+    }
+
+    w.T.setFont("Geneva", 12)
+    v = w.T.lineHeight
+    if v == lh {
+        d = d + "setFont lineHeight " + tkIntToStr(v) + "; "
+    }
+
+    close w
+    if d == "" {
+        return tkPass("CanvasText")
+    }
+    return tkFail("CanvasText", d)
+}
