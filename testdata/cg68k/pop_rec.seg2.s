@@ -1,4 +1,4 @@
-        ; func clar_ui_fire_winevent  (JT slot 197)
+        ; func clar_ui_fire_winevent  (JT slot 198)
         ;   param winIdx : 24(A6)  size 4
         ;   param inst : 20(A6)  size 4
         ;   param ev : 16(A6)  size 4
@@ -18,7 +18,7 @@ LBL_0:
 LBL_25:
         UNLK A6
         RTS
-        ; func clar_ui_fire_widget  (JT slot 198)
+        ; func clar_ui_fire_widget  (JT slot 199)
         ;   param winIdx : 28(A6)  size 4
         ;   param inst : 24(A6)  size 4
         ;   param widgetIdx : 20(A6)  size 4
@@ -39,7 +39,7 @@ LBL_1:
 LBL_26:
         UNLK A6
         RTS
-        ; func clar_ui_fire_menu  (JT slot 199)
+        ; func clar_ui_fire_menu  (JT slot 200)
         ;   param handlerIdx : 12(A6)  size 4
         ;   param frontInstOrNil : 8(A6)  size 4
 LBL_2:
@@ -56,7 +56,7 @@ LBL_2:
 LBL_27:
         UNLK A6
         RTS
-        ; func clar_ui_fire_every  (JT slot 200)
+        ; func clar_ui_fire_every  (JT slot 201)
         ;   param idx : 8(A6)  size 4
 LBL_3:
         LINK A6,#-52
@@ -72,7 +72,7 @@ LBL_3:
 LBL_28:
         UNLK A6
         RTS
-        ; func clar_ui_fire_releasevars  (JT slot 201)
+        ; func clar_ui_fire_releasevars  (JT slot 202)
         ;   param winIdx : 12(A6)  size 4
         ;   param inst : 8(A6)  size 4
 LBL_4:
@@ -89,7 +89,7 @@ LBL_4:
 LBL_29:
         UNLK A6
         RTS
-        ; func clar_ui_fire_staterows  (JT slot 202)
+        ; func clar_ui_fire_staterows  (JT slot 203)
         ;   param rowsIdx : 8(A6)  size 4
 LBL_5:
         LINK A6,#-52
@@ -133,7 +133,7 @@ LBL_32:
 LBL_30:
         UNLK A6
         RTS
-        ; func clar_ui_fire_logop  (JT slot 203)
+        ; func clar_ui_fire_logop  (JT slot 204)
         ;   param op : 24(A6)  size 4
         ;   param instV : 20(A6)  size 4
         ;   param wIdx : 16(A6)  size 4
@@ -146,7 +146,7 @@ LBL_6:
 LBL_35:
         UNLK A6
         RTS
-        ; func clar_ui_fire_colfmt  (JT slot 204)
+        ; func clar_ui_fire_colfmt  (JT slot 205)
         ;   param fmtId : 16(A6)  size 4
         ;   param rec : 12(A6)  size 4
         ;   param out : 8(A6)  size 4
@@ -157,7 +157,7 @@ LBL_7:
 LBL_36:
         UNLK A6
         RTS
-        ; func clar_cb_aeQuitHandler (JT slot 205) -- pascal callback glue for aeQuitHandler
+        ; func clar_cb_aeQuitHandler (JT slot 206) -- pascal callback glue for aeQuitHandler
 LBL_8:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
@@ -173,7 +173,7 @@ LBL_8:
         MOVE.L (A7)+,A0
         ADDA.W #12,A7
         JMP (A0)
-        ; func clar_cb_aeOappHandler (JT slot 206) -- pascal callback glue for aeOappHandler
+        ; func clar_cb_aeOappHandler (JT slot 207) -- pascal callback glue for aeOappHandler
 LBL_9:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
@@ -189,7 +189,7 @@ LBL_9:
         MOVE.L (A7)+,A0
         ADDA.W #12,A7
         JMP (A0)
-        ; func clar_cb_rtUiScrollbarAction (JT slot 207) -- pascal callback glue for rtUiScrollbarAction
+        ; func clar_cb_rtUiScrollbarAction (JT slot 208) -- pascal callback glue for rtUiScrollbarAction
 LBL_10:
         LINK A6,#0
         ;   ctrl : 10(A6)  pascal size 4
@@ -204,7 +204,7 @@ LBL_10:
         MOVE.L (A7)+,A0
         ADDQ.L #6,A7
         JMP (A0)
-        ; func clar_cb_rtUiLdefDraw (JT slot 208) -- pascal callback glue for rtUiLdefDraw
+        ; func clar_cb_rtUiLdefDraw (JT slot 209) -- pascal callback glue for rtUiLdefDraw
 LBL_11:
         LINK A6,#0
         ;   msg : 26(A6)  pascal size 2

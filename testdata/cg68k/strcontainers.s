@@ -5129,7 +5129,7 @@ LBL_111:
         MOVE.L D0,-(A7)
         MOVE.L #1903520116,D0
         MOVE.L D0,-(A7)
-        LEA 1850(A5),A0
+        LEA 1858(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0
@@ -5147,7 +5147,7 @@ LBL_111:
         MOVE.L D0,-(A7)
         MOVE.L #1868656752,D0
         MOVE.L D0,-(A7)
-        LEA 1858(A5),A0
+        LEA 1866(A5),A0
         MOVE.L A0,D0
         MOVE.L D0,-(A7)
         MOVEQ #0,D0

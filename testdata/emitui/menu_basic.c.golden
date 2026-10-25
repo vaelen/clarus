@@ -712,8 +712,6 @@ static void * clar_fn_rtUiWinstOf(void * cv_wp);
 static void * clar_fn_rtUiFront(int32_t cv_winIdx);
 static void * clar_fn_rtUiState(void * cv_instV);
 static void clar_fn_rtUiSetTitle(void * cv_instV, void * cv_s);
-static int32_t clar_fn_rtUiWinContentW(void * cv_instV);
-static int32_t clar_fn_rtUiWinContentH(void * cv_instV);
 static void clar_fn_rtUiGetTitle(void * cv_instV, void * cv_dst255);
 static void clar_fn_rtUiNaturalSize(int32_t cv_winIdx, void * cv_outW, void * cv_outH);
 static void * clar_fn_rtUiOpen(int32_t cv_winIdx);
@@ -749,7 +747,6 @@ static void clar_fn_rtUiFlushAllBuffered(void);
 static void clar_fn_rtUiDrawDefaultOutline(void * cv_box);
 static void clar_fn_rtUiHandleUpdate(void * cv_wp);
 static void clar_fn_rtUiHandleActivate(void * cv_wp, int32_t cv_activating);
-static void clar_fn_rtUiInvalGrowCorner(void * cv_wp);
 static void clar_fn_rtUiApplyResize(void * cv_wp, void * cv_inst, int32_t cv_newW, int32_t cv_newH);
 static void clar_fn_rtUiHandleGrow(void * cv_wp, void * cv_inst, int32_t cv_wherePt);
 static void clar_fn_rtUiApplyZoom(void * cv_wp, void * cv_inst, int32_t cv_part);
@@ -814,11 +811,9 @@ static void clar_fn_rtUiCanvasRect(void * cv_instV, int32_t cv_wIdx, int32_t cv_
 static void clar_fn_rtUiCanvasFillCircle(void * cv_instV, int32_t cv_wIdx, int32_t cv_x, int32_t cv_y, int32_t cv_radius);
 static void clar_fn_rtUiCanvasCircle(void * cv_instV, int32_t cv_wIdx, int32_t cv_x, int32_t cv_y, int32_t cv_radius);
 static void clar_fn_rtUiCanvasDrawText(void * cv_instV, int32_t cv_wIdx, int32_t cv_x, int32_t cv_y, void * cv_s);
-static void clar_fn_rtUiWidgetSetBounds(void * cv_instV, int32_t cv_wIdx, int32_t cv_x, int32_t cv_y, int32_t cv_ww, int32_t cv_hh);
-static void clar_fn_rtUiSetCtrlVis(void * cv_ctrl, int32_t cv_vis);
-static void clar_fn_rtUiApplyPendingBounds(void * cv_inst);
-static void clar_fn_rtUiApplyAllPending(void);
-static void clar_fn_rtUiDrawDivider(void * cv_inst, int32_t cv_i);
+static void * clar_fn_rtUiClipEmpty(void);
+static void clar_fn_rtUiClipRestore(void * cv_rgn);
+static void clar_fn_rtUiDrawDivider(void * cv_r, int32_t cv_style);
 static void * clar_fn_UiTENew(void * cv_dst, void * cv_view);
 static int32_t clar_fn_rtUiTeWidestLine(void * cv_te);
 static void clar_fn_rtUiTeScrollSync(void * cv_inst, int32_t cv_wIdx);
@@ -959,6 +954,7 @@ void clar_fn_clar_ui_fire_launchdoc(void * cv_path);
 void clar_fn_clar_ui_fire_startempty(void);
 static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_t cv_wIdx, int32_t cv_a, int32_t cv_b);
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out);
+static void clar_fn_clar_ui_fire_geomapply(void);
 
 static void * cv_rtUiMenuHandlesArr;
 static int32_t cv_rtUiNMenusVal;
@@ -2521,22 +2517,6 @@ static void clar_fn_rtUiSetTitle(void * cv_instV, void * cv_s) {
     rt_ext_UiSetWTitle((((clar_rec_RtUiWinst *)(cv_instV)))->cv_wp, cv_s);
 }
 
-static int32_t clar_fn_rtUiWinContentW(void * cv_instV) {
-    void * cv_wp;
-    cv_wp = 0;
-    cv_wp = (((clar_rec_RtUiWinst *)(cv_instV)))->cv_wp;
-    return CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (22))), rt_peekw((void *)((char *)(cv_wp) + (18))));
-    return 0;
-}
-
-static int32_t clar_fn_rtUiWinContentH(void * cv_instV) {
-    void * cv_wp;
-    cv_wp = 0;
-    cv_wp = (((clar_rec_RtUiWinst *)(cv_instV)))->cv_wp;
-    return CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (20))), rt_peekw((void *)((char *)(cv_wp) + (16))));
-    return 0;
-}
-
 static void clar_fn_rtUiGetTitle(void * cv_instV, void * cv_dst255) {
     rt_ext_UiGetWTitle((((clar_rec_RtUiWinst *)(cv_instV)))->cv_wp, cv_dst255);
 }
@@ -2602,9 +2582,6 @@ static void clar_fn_rtUiNaturalSize(int32_t cv_winIdx, void * cv_outW, void * cv
             cv_ww = clar_fn_rtUiKindWidth(cv_kind);
         } else {
             cv_ww = clar_fn_uidWidgetWidth(cv_winIdx, cv_i);
-        }
-        if (clar_fn_uidWidgetFillBoth(cv_winIdx, cv_i)) {
-            cv_hh = clar_fn_rtUiDeclHeight(cv_winIdx, cv_i, cv_kind);
         }
         cv_right = CLAR_ADD32(cv_x, cv_ww);
         if (cv_right > cv_maxRight) {
@@ -3492,6 +3469,7 @@ static void clar_fn_rtUiHookLogpanels(void * cv_inst, int32_t cv_op) {
 static void clar_fn_rtUiFlushAllBuffered(void) {
     void * cv_wp;
     cv_wp = 0;
+    clar_fn_clar_ui_fire_geomapply();
     cv_wp = rt_ext_UiFrontWindow();
     while (1) {
         if (!((cv_wp != (void *)(intptr_t)(0)))) break;
@@ -3706,7 +3684,7 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                 rt_ext_UiDisposePtr(cv_headerRect);
                 rt_ext_UiDisposePtr(cv_box);
             } else if (cv_kind == 9) {
-                clar_fn_rtUiDrawDivider(cv_inst, cv_i);
+                clar_fn_rtUiDrawDivider(clar_fn_rtUiRectAt(cv_w, cv_i), clar_fn_uidWidgetDivStyle((cv_w)->cv_winIdx, cv_i));
             } else if (cv_kind == 8) {
                 clar_fn_clar_ui_fire_logop(2, cv_inst, cv_i, 0, 0);
             }
@@ -3781,16 +3759,6 @@ static void clar_fn_rtUiHandleActivate(void * cv_wp, int32_t cv_activating) {
     }
 }
 
-static void clar_fn_rtUiInvalGrowCorner(void * cv_wp) {
-    void * cv_r;
-    cv_r = 0;
-    cv_r = clar_fn_UiNewPtr(8);
-    rt_ext_UiSetRect(cv_r, CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (22))), 15), CLAR_SUB32(rt_peekw((void *)((char *)(cv_wp) + (20))), 15), rt_peekw((void *)((char *)(cv_wp) + (22))), rt_peekw((void *)((char *)(cv_wp) + (20))));
-    rt_ext_UiEraseRect(cv_r);
-    rt_ext_UiInvalRect(cv_r);
-    rt_ext_UiDisposePtr(cv_r);
-}
-
 static void clar_fn_rtUiApplyResize(void * cv_wp, void * cv_inst, int32_t cv_newW, int32_t cv_newH) {
     clar_rec_RtUiWinst * cv_w;
     cv_w = 0;
@@ -3798,31 +3766,21 @@ static void clar_fn_rtUiApplyResize(void * cv_wp, void * cv_inst, int32_t cv_new
     cv_savedPort = 0;
     void * cv_saveClip;
     cv_saveClip = 0;
-    void * cv_r;
-    cv_r = 0;
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     cv_savedPort = clar_fn_rtUiGetPortSaved();
     rt_ext_UiSetPort(cv_wp);
-    clar_fn_rtUiInvalGrowCorner(cv_wp);
     rt_ext_UiSizeWindow(cv_wp, cv_newW, cv_newH, 1);
-    clar_fn_rtUiInvalGrowCorner(cv_wp);
-    cv_saveClip = clar_fn_UiNewRgn();
-    rt_ext_UiGetClip(cv_saveClip);
-    cv_r = clar_fn_UiNewPtr(8);
-    rt_ext_UiSetRect(cv_r, 0, 0, 0, 0);
-    rt_ext_UiClipRect(cv_r);
-    rt_ext_UiDisposePtr(cv_r);
+    cv_saveClip = clar_fn_rtUiClipEmpty();
     clar_fn_rtUiLayout(cv_inst);
     clar_fn_rtUiHookLogpanels(cv_inst, 9);
-    rt_ext_UiSetClip(cv_saveClip);
-    rt_ext_UiDisposeRgn(cv_saveClip);
+    clar_fn_rtUiClipRestore(cv_saveClip);
     rt_ext_UiInvalRect((void *)((char *)(cv_wp) + (16)));
     (cv_w)->cv_geom = ((cv_w)->cv_geom | 2);
     rt_ext_UiSetPort(cv_savedPort);
     clar_fn_rtUiCanvasReallocAll(cv_inst);
     clar_fn_rtUiTraceFire1(clar_fn_uidWinName((cv_w)->cv_winIdx), &(clar_lit_26));
     clar_fn_clar_ui_fire_winevent((cv_w)->cv_winIdx, cv_inst, 3, 0, 0);
-    clar_fn_rtUiApplyPendingBounds(cv_inst);
+    clar_fn_clar_ui_fire_geomapply();
 }
 
 static void clar_fn_rtUiHandleGrow(void * cv_wp, void * cv_inst, int32_t cv_wherePt) {
@@ -4439,7 +4397,6 @@ static void clar_fn_rtUiRun(void) {
         clar_fn_rtUiEveryPump();
         rt_ext_UiConnPump();
         clar_fn_rtUiTeIdleFront();
-        clar_fn_rtUiApplyAllPending();
         clar_fn_rtUiFlushAllBuffered();
         clar_fn_rtUiTablesSync();
     }
@@ -5784,182 +5741,27 @@ static void clar_fn_rtUiCanvasDrawText(void * cv_instV, int32_t cv_wIdx, int32_t
     clar_fn_rtUiCanvasEnd(&(cv_t));
 }
 
-static void clar_fn_rtUiWidgetSetBounds(void * cv_instV, int32_t cv_wIdx, int32_t cv_x, int32_t cv_y, int32_t cv_ww, int32_t cv_hh) {
-    clar_rec_RtUiWinst * cv_w;
-    cv_w = 0;
-    int32_t cv_kind;
-    cv_kind = 0;
+static void * clar_fn_rtUiClipEmpty(void) {
+    void * cv_saved;
+    cv_saved = 0;
     void * cv_r;
     cv_r = 0;
-    int32_t cv_nw;
-    cv_nw = 0;
-    int32_t cv_nh;
-    cv_nh = 0;
-    void * cv_cb;
-    cv_cb = 0;
-    clar_rec_RtUiCanvasBuf * cv_buf;
-    cv_buf = 0;
-    int32_t cv_blits;
-    cv_blits = 0;
-    void * cv_savedPort;
-    cv_savedPort = 0;
-    cv_w = ((clar_rec_RtUiWinst *)(cv_instV));
-    cv_kind = clar_fn_uidWidgetKind((cv_w)->cv_winIdx, cv_wIdx);
-    cv_r = clar_fn_rtUiRectAt(cv_w, cv_wIdx);
-    cv_nw = cv_ww;
-    if (cv_nw < 0) {
-        cv_nw = 0;
-    }
-    cv_nh = cv_hh;
-    if (cv_nh < 0) {
-        cv_nh = 0;
-    }
-    if (clar_fn_rtUiNaturalH(cv_kind)) {
-        cv_nh = clar_fn_rtUiKindHeight(cv_kind);
-    }
-    if ((rt_peekb((void *)((char *)((cv_w)->cv_placed) + (cv_wIdx))) & 2) == 0) {
-        rt_ext_UiBlockMoveData(cv_r, (void *)((char *)((cv_w)->cv_oldRects) + (CLAR_MUL32(cv_wIdx, 8))), 8);
-    }
-    rt_pokeb((void *)((char *)((cv_w)->cv_placed) + (cv_wIdx)), ((rt_peekb((void *)((char *)((cv_w)->cv_placed) + (cv_wIdx))) | 1) | 2));
-    (cv_w)->cv_geom = ((cv_w)->cv_geom | 1);
-    cv_cb = clar_fn_rtUiCanvasBufAt(cv_w, cv_wIdx);
-    cv_buf = ((clar_rec_RtUiCanvasBuf *)(cv_cb));
-    if (((cv_buf)->cv_port != (void *)(intptr_t)(0)) && ((cv_nw != CLAR_SUB32(rt_peekw((void *)((char *)(cv_r) + (6))), rt_peekw((void *)((char *)(cv_r) + (2))))) || (cv_nh != CLAR_SUB32(rt_peekw((void *)((char *)(cv_r) + (4))), rt_peekw((void *)((char *)(cv_r) + (0))))))) {
-        cv_blits = (cv_buf)->cv_blits;
-        cv_savedPort = clar_fn_rtUiGetPortSaved();
-        clar_fn_rtUiCanvasDispose(cv_cb);
-        clar_fn_rtUiCanvasMake(cv_cb, cv_nw, cv_nh);
-        (cv_buf)->cv_blits = cv_blits;
-        rt_ext_UiSetPort(cv_savedPort);
-    }
-    rt_ext_UiSetRect(cv_r, cv_x, cv_y, CLAR_ADD32(cv_x, cv_nw), CLAR_ADD32(cv_y, cv_nh));
+    cv_saved = clar_fn_UiNewRgn();
+    rt_ext_UiGetClip(cv_saved);
+    cv_r = clar_fn_UiNewPtr(8);
+    rt_ext_UiSetRect(cv_r, 0, 0, 0, 0);
+    rt_ext_UiClipRect(cv_r);
+    rt_ext_UiDisposePtr(cv_r);
+    return cv_saved;
+    return 0;
 }
 
-static void clar_fn_rtUiSetCtrlVis(void * cv_ctrl, int32_t cv_vis) {
-    if (cv_ctrl == (void *)(intptr_t)(0)) {
-        return;
-    }
-    if (cv_vis) {
-        rt_pokeb((void *)((char *)(rt_ext_UiHandleDeref(cv_ctrl)) + (16)), 255);
-    } else {
-        rt_pokeb((void *)((char *)(rt_ext_UiHandleDeref(cv_ctrl)) + (16)), 0);
-    }
+static void clar_fn_rtUiClipRestore(void * cv_rgn) {
+    rt_ext_UiSetClip(cv_rgn);
+    rt_ext_UiDisposeRgn(cv_rgn);
 }
 
-static void clar_fn_rtUiApplyPendingBounds(void * cv_inst) {
-    clar_rec_RtUiWinst * cv_w;
-    cv_w = 0;
-    int32_t cv_winIdx;
-    cv_winIdx = 0;
-    int32_t cv_n;
-    cv_n = 0;
-    int32_t cv_i;
-    cv_i = 0;
-    int32_t cv_kind;
-    cv_kind = 0;
-    void * cv_r;
-    cv_r = 0;
-    void * cv_tmp;
-    cv_tmp = 0;
-    void * cv_savedPort;
-    cv_savedPort = 0;
-    void * cv_saveClip;
-    cv_saveClip = 0;
-    void * cv_ctrl;
-    cv_ctrl = 0;
-    void * cv_hbar;
-    cv_hbar = 0;
-    int32_t cv_vis;
-    cv_vis = 0;
-    int32_t cv_hid;
-    cv_hid = 0;
-    clar_rec_RtUiCanvasBuf * cv_buf;
-    cv_buf = 0;
-    void * cv_lh;
-    cv_lh = 0;
-    cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
-    if (((cv_w)->cv_geom & 1) == 0) {
-        return;
-    }
-    (cv_w)->cv_geom = 2;
-    cv_winIdx = (cv_w)->cv_winIdx;
-    cv_savedPort = clar_fn_rtUiGetPortSaved();
-    rt_ext_UiSetPort((cv_w)->cv_wp);
-    cv_tmp = clar_fn_UiNewPtr(8);
-    cv_saveClip = clar_fn_UiNewRgn();
-    rt_ext_UiGetClip(cv_saveClip);
-    rt_ext_UiSetRect(cv_tmp, 0, 0, 0, 0);
-    rt_ext_UiClipRect(cv_tmp);
-    cv_n = clar_fn_uidWinNWidgets(cv_winIdx);
-    cv_i = 0;
-    while (1) {
-        if (!((cv_i < cv_n))) break;
-        if ((rt_peekb((void *)((char *)((cv_w)->cv_placed) + (cv_i))) & 2) != 0) {
-            cv_hid = ((rt_peekb((void *)((char *)((cv_w)->cv_placed) + (cv_i))) & 4) != 0);
-            cv_kind = clar_fn_uidWidgetKind(cv_winIdx, cv_i);
-            cv_r = clar_fn_rtUiRectAt(cv_w, cv_i);
-            rt_ext_UiBlockMoveData((void *)((char *)((cv_w)->cv_oldRects) + (CLAR_MUL32(cv_i, 8))), cv_tmp, 8);
-            rt_ext_UiInsetRect(cv_tmp, CLAR_NEG32(4), CLAR_NEG32(4));
-            rt_ext_UiInvalRect(cv_tmp);
-            rt_ext_UiBlockMoveData(cv_r, cv_tmp, 8);
-            rt_ext_UiInsetRect(cv_tmp, CLAR_NEG32(4), CLAR_NEG32(4));
-            rt_ext_UiInvalRect(cv_tmp);
-            cv_vis = (!(clar_fn_rtUiRectIsEmpty(cv_r)));
-            cv_ctrl = clar_fn_rtUiCtrlAt(cv_w, cv_i);
-            cv_hbar = clar_fn_rtUiHbarAt(cv_w, cv_i);
-            if ((cv_kind == 4) || (cv_kind == 5)) {
-                clar_fn_rtUiTeRelayout(cv_inst, cv_i);
-            } else if (cv_kind == 7) {
-                clar_fn_rtUiTableRelayout(cv_inst, cv_i);
-                cv_lh = clar_fn_rtUiListAt(cv_w, cv_i);
-                if (cv_lh != (void *)(intptr_t)(0)) {
-                    cv_ctrl = (void *)(intptr_t)(rt_peekl((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (28))));
-                }
-            } else if (cv_kind == 8) {
-                clar_fn_clar_ui_fire_logop(9, cv_inst, cv_i, 0, 0);
-            } else if (cv_ctrl != (void *)(intptr_t)(0)) {
-                rt_ext_UiMoveControl(cv_ctrl, rt_peekw((void *)((char *)(cv_r) + (2))), rt_peekw((void *)((char *)(cv_r) + (0))));
-                rt_ext_UiSizeControl(cv_ctrl, CLAR_SUB32(rt_peekw((void *)((char *)(cv_r) + (6))), rt_peekw((void *)((char *)(cv_r) + (2)))), CLAR_SUB32(rt_peekw((void *)((char *)(cv_r) + (4))), rt_peekw((void *)((char *)(cv_r) + (0)))));
-            }
-            if (cv_vis == cv_hid) {
-                clar_fn_rtUiSetCtrlVis(cv_ctrl, cv_vis);
-                clar_fn_rtUiSetCtrlVis(cv_hbar, cv_vis);
-                cv_hid = (!(cv_vis));
-            }
-            if (cv_hid) {
-                rt_pokeb((void *)((char *)((cv_w)->cv_placed) + (cv_i)), (1 | 4));
-            } else {
-                rt_pokeb((void *)((char *)((cv_w)->cv_placed) + (cv_i)), 1);
-            }
-            cv_buf = ((clar_rec_RtUiCanvasBuf *)(clar_fn_rtUiCanvasBufAt(cv_w, cv_i)));
-            if ((cv_buf)->cv_port != (void *)(intptr_t)(0)) {
-                (cv_buf)->cv_dirty = 0;
-            }
-        }
-        cv_i = CLAR_ADD32(cv_i, 1);
-    }
-    rt_ext_UiSetClip(cv_saveClip);
-    rt_ext_UiDisposeRgn(cv_saveClip);
-    rt_ext_UiDisposePtr(cv_tmp);
-    rt_ext_UiSetPort(cv_savedPort);
-}
-
-static void clar_fn_rtUiApplyAllPending(void) {
-    void * cv_wp;
-    cv_wp = 0;
-    cv_wp = rt_ext_UiFrontWindow();
-    while (1) {
-        if (!((cv_wp != (void *)(intptr_t)(0)))) break;
-        if (rt_peekw((void *)((char *)(cv_wp) + (108))) == 2001) {
-            clar_fn_rtUiApplyPendingBounds((void *)(intptr_t)(rt_ext_UiGetWRefCon(cv_wp)));
-        }
-        cv_wp = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_wp) + (144))));
-    }
-}
-
-static void clar_fn_rtUiDrawDivider(void * cv_inst, int32_t cv_i) {
-    void * cv_r;
-    cv_r = 0;
+static void clar_fn_rtUiDrawDivider(void * cv_r, int32_t cv_style) {
     int32_t cv_top;
     cv_top = 0;
     int32_t cv_left;
@@ -5972,7 +5774,6 @@ static void clar_fn_rtUiDrawDivider(void * cv_inst, int32_t cv_i) {
     cv_ex = 0;
     int32_t cv_ey;
     cv_ey = 0;
-    cv_r = clar_fn_rtUiRectAt(((clar_rec_RtUiWinst *)(cv_inst)), cv_i);
     cv_top = rt_peekw((void *)((char *)(cv_r) + (0)));
     cv_left = rt_peekw((void *)((char *)(cv_r) + (2)));
     cv_hh = CLAR_SUB32(rt_peekw((void *)((char *)(cv_r) + (4))), cv_top);
@@ -5984,7 +5785,7 @@ static void clar_fn_rtUiDrawDivider(void * cv_inst, int32_t cv_i) {
     } else {
         cv_ey = CLAR_SUB32(cv_hh, 1);
     }
-    if (clar_fn_uidWidgetDivStyle((((clar_rec_RtUiWinst *)(cv_inst)))->cv_winIdx, cv_i) == 1) {
+    if (cv_style == 1) {
         rt_ext_UiMoveTo(cv_left, cv_top);
         rt_ext_UiLineTo(CLAR_ADD32(cv_left, cv_ex), CLAR_ADD32(cv_top, cv_ey));
         if (cv_ex > 0) {
@@ -7119,13 +6920,6 @@ static void clar_fn_rtUiTableRelayout(void * cv_inst, int32_t cv_i) {
     if (rt_peekw((void *)((char *)(cv_listRect) + (6))) < rt_peekw((void *)((char *)(cv_listRect) + (2)))) {
         rt_pokew((void *)((char *)(cv_listRect) + (6)), rt_peekw((void *)((char *)(cv_listRect) + (2))));
     }
-    cv_lhMp = rt_ext_UiHandleDeref(cv_lh);
-    rt_ext_UiBlockMoveData((void *)((char *)(cv_lhMp) + (0)), cv_box, 8);
-    rt_pokew((void *)((char *)(cv_box) + (0)), CLAR_SUB32(rt_peekw((void *)((char *)(cv_box) + (0))), cv_headerH));
-    rt_pokew((void *)((char *)(cv_box) + (6)), CLAR_ADD32(rt_peekw((void *)((char *)(cv_box) + (6))), 15));
-    rt_ext_UiInsetRect(cv_box, CLAR_NEG32(1), CLAR_NEG32(1));
-    rt_ext_UiInvalRect(cv_box);
-    rt_ext_UiBlockMoveData(clar_fn_rtUiRectAt(cv_w, cv_i), cv_box, 8);
     cv_lhMp = rt_ext_UiHandleDeref(cv_lh);
     rt_pokew((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (0)), rt_peekw((void *)((char *)(cv_listRect) + (0))));
     rt_pokew((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (2)), rt_peekw((void *)((char *)(cv_listRect) + (2))));
@@ -8481,7 +8275,7 @@ static void clar_fn_rtUiPumpPassive(void) {
     cv_what = 0;
     int32_t cv_gotEvent;
     cv_gotEvent = 0;
-    clar_fn_rtUiApplyAllPending();
+    clar_fn_clar_ui_fire_geomapply();
     clar_fn_rtUiTablesSync();
     cv_ev = clar_fn_UiNewPtr(16);
     cv_gotEvent = rt_ext_UiGetNextEvent(448, cv_ev);
@@ -9448,6 +9242,9 @@ static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out) {
     return 0;
     return 0;
+}
+
+static void clar_fn_clar_ui_fire_geomapply(void) {
 }
 
 static CLAR_PASCAL void clar_cb_rtUiScrollbarAction(void * cv_ctrl, short cv_part) { clar_fn_rtUiScrollbarAction(cv_ctrl, cv_part); }

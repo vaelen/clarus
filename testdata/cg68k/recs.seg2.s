@@ -1,4 +1,4 @@
-        ; func clar_conn_fire_closed  (JT slot 186)
+        ; func clar_conn_fire_closed  (JT slot 187)
         ;   param slot : 8(A6)  size 4
 LBL_0:
         LINK A6,#-52
@@ -83,7 +83,7 @@ LBL_41:
 LBL_39:
         UNLK A6
         RTS
-        ; func clar_conn_fire_failed  (JT slot 187)
+        ; func clar_conn_fire_failed  (JT slot 188)
         ;   param slot : 16(A6)  size 4
         ;   param code : 12(A6)  size 4
         ;   param msg : 8(A6)  size 4
@@ -170,7 +170,7 @@ LBL_57:
 LBL_55:
         UNLK A6
         RTS
-        ; func clar_lsn_fire_failed  (JT slot 188)
+        ; func clar_lsn_fire_failed  (JT slot 189)
         ;   param slot : 16(A6)  size 4
         ;   param code : 12(A6)  size 4
         ;   param msg : 8(A6)  size 4
@@ -197,7 +197,7 @@ LBL_73:
 LBL_71:
         UNLK A6
         RTS
-        ; func clar_brs_fire_found  (JT slot 189)
+        ; func clar_brs_fire_found  (JT slot 190)
         ;   param slot : 16(A6)  size 4
         ;   param name : 12(A6)  size 4
         ;   param addr : 8(A6)  size 4
@@ -224,7 +224,7 @@ LBL_77:
 LBL_75:
         UNLK A6
         RTS
-        ; func clar_brs_fire_done  (JT slot 190)
+        ; func clar_brs_fire_done  (JT slot 191)
         ;   param slot : 8(A6)  size 4
 LBL_4:
         LINK A6,#-52
@@ -249,7 +249,7 @@ LBL_81:
 LBL_79:
         UNLK A6
         RTS
-        ; func clar_brs_fire_failed  (JT slot 191)
+        ; func clar_brs_fire_failed  (JT slot 192)
         ;   param slot : 16(A6)  size 4
         ;   param code : 12(A6)  size 4
         ;   param msg : 8(A6)  size 4
@@ -276,7 +276,7 @@ LBL_85:
 LBL_83:
         UNLK A6
         RTS
-        ; func clar_svc_fire_request  (JT slot 192)
+        ; func clar_svc_fire_request  (JT slot 193)
         ;   param slot : 20(A6)  size 4
         ;   param op : 16(A6)  size 4
         ;   param req : 12(A6)  size 4
@@ -304,7 +304,7 @@ LBL_89:
 LBL_87:
         UNLK A6
         RTS
-        ; func clar_svc_fire_failed  (JT slot 193)
+        ; func clar_svc_fire_failed  (JT slot 194)
         ;   param slot : 16(A6)  size 4
         ;   param code : 12(A6)  size 4
         ;   param msg : 8(A6)  size 4
@@ -331,7 +331,7 @@ LBL_93:
 LBL_91:
         UNLK A6
         RTS
-        ; func clar_ui_fire_winevent  (JT slot 194)
+        ; func clar_ui_fire_winevent  (JT slot 195)
         ;   param winIdx : 24(A6)  size 4
         ;   param inst : 20(A6)  size 4
         ;   param ev : 16(A6)  size 4
@@ -351,7 +351,7 @@ LBL_8:
 LBL_95:
         UNLK A6
         RTS
-        ; func clar_ui_fire_widget  (JT slot 195)
+        ; func clar_ui_fire_widget  (JT slot 196)
         ;   param winIdx : 28(A6)  size 4
         ;   param inst : 24(A6)  size 4
         ;   param widgetIdx : 20(A6)  size 4
@@ -372,7 +372,7 @@ LBL_9:
 LBL_96:
         UNLK A6
         RTS
-        ; func clar_ui_fire_menu  (JT slot 196)
+        ; func clar_ui_fire_menu  (JT slot 197)
         ;   param handlerIdx : 12(A6)  size 4
         ;   param frontInstOrNil : 8(A6)  size 4
 LBL_10:
@@ -389,7 +389,7 @@ LBL_10:
 LBL_97:
         UNLK A6
         RTS
-        ; func clar_ui_fire_every  (JT slot 197)
+        ; func clar_ui_fire_every  (JT slot 198)
         ;   param idx : 8(A6)  size 4
 LBL_11:
         LINK A6,#-52
@@ -405,7 +405,7 @@ LBL_11:
 LBL_98:
         UNLK A6
         RTS
-        ; func clar_ui_fire_releasevars  (JT slot 198)
+        ; func clar_ui_fire_releasevars  (JT slot 199)
         ;   param winIdx : 12(A6)  size 4
         ;   param inst : 8(A6)  size 4
 LBL_12:
@@ -422,7 +422,7 @@ LBL_12:
 LBL_99:
         UNLK A6
         RTS
-        ; func clar_ui_fire_staterows  (JT slot 199)
+        ; func clar_ui_fire_staterows  (JT slot 200)
         ;   param rowsIdx : 8(A6)  size 4
 LBL_13:
         LINK A6,#-52
@@ -453,7 +453,7 @@ LBL_102:
 LBL_100:
         UNLK A6
         RTS
-        ; func clar_ui_fire_logop  (JT slot 200)
+        ; func clar_ui_fire_logop  (JT slot 201)
         ;   param op : 24(A6)  size 4
         ;   param instV : 20(A6)  size 4
         ;   param wIdx : 16(A6)  size 4
@@ -466,7 +466,7 @@ LBL_14:
 LBL_103:
         UNLK A6
         RTS
-        ; func clar_ui_fire_colfmt  (JT slot 201)
+        ; func clar_ui_fire_colfmt  (JT slot 202)
         ;   param fmtId : 16(A6)  size 4
         ;   param rec : 12(A6)  size 4
         ;   param out : 8(A6)  size 4
@@ -477,7 +477,7 @@ LBL_15:
 LBL_104:
         UNLK A6
         RTS
-        ; func clar_cb_aeQuitHandler (JT slot 202) -- pascal callback glue for aeQuitHandler
+        ; func clar_cb_aeQuitHandler (JT slot 203) -- pascal callback glue for aeQuitHandler
 LBL_16:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
@@ -493,7 +493,7 @@ LBL_16:
         MOVE.L (A7)+,A0
         ADDA.W #12,A7
         JMP (A0)
-        ; func clar_cb_aeOappHandler (JT slot 203) -- pascal callback glue for aeOappHandler
+        ; func clar_cb_aeOappHandler (JT slot 204) -- pascal callback glue for aeOappHandler
 LBL_17:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
@@ -509,7 +509,7 @@ LBL_17:
         MOVE.L (A7)+,A0
         ADDA.W #12,A7
         JMP (A0)
-        ; func clar_cb_rtUiScrollbarAction (JT slot 204) -- pascal callback glue for rtUiScrollbarAction
+        ; func clar_cb_rtUiScrollbarAction (JT slot 205) -- pascal callback glue for rtUiScrollbarAction
 LBL_18:
         LINK A6,#0
         ;   ctrl : 10(A6)  pascal size 4
@@ -524,7 +524,7 @@ LBL_18:
         MOVE.L (A7)+,A0
         ADDQ.L #6,A7
         JMP (A0)
-        ; func clar_cb_rtUiLdefDraw (JT slot 205) -- pascal callback glue for rtUiLdefDraw
+        ; func clar_cb_rtUiLdefDraw (JT slot 206) -- pascal callback glue for rtUiLdefDraw
 LBL_19:
         LINK A6,#0
         ;   msg : 26(A6)  pascal size 2

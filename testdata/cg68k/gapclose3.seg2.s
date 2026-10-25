@@ -1,4 +1,4 @@
-        ; func clar_cb_rtUiLdefDraw (JT slot 208) -- pascal callback glue for rtUiLdefDraw
+        ; func clar_cb_rtUiLdefDraw (JT slot 209) -- pascal callback glue for rtUiLdefDraw
 LBL_0:
         LINK A6,#0
         ;   msg : 26(A6)  pascal size 2

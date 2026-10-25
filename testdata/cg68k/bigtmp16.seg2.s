@@ -1,4 +1,4 @@
-        ; func clar_ui_fire_every  (JT slot 197)
+        ; func clar_ui_fire_every  (JT slot 198)
         ;   param idx : 8(A6)  size 4
 LBL_0:
         LINK A6,#-52
@@ -14,7 +14,7 @@ LBL_0:
 LBL_15:
         UNLK A6
         RTS
-        ; func clar_ui_fire_releasevars  (JT slot 198)
+        ; func clar_ui_fire_releasevars  (JT slot 199)
         ;   param winIdx : 12(A6)  size 4
         ;   param inst : 8(A6)  size 4
 LBL_1:
@@ -31,7 +31,7 @@ LBL_1:
 LBL_16:
         UNLK A6
         RTS
-        ; func clar_ui_fire_staterows  (JT slot 199)
+        ; func clar_ui_fire_staterows  (JT slot 200)
         ;   param rowsIdx : 8(A6)  size 4
 LBL_2:
         LINK A6,#-52
@@ -62,7 +62,7 @@ LBL_19:
 LBL_17:
         UNLK A6
         RTS
-        ; func clar_cb_aeQuitHandler (JT slot 200) -- pascal callback glue for aeQuitHandler
+        ; func clar_cb_aeQuitHandler (JT slot 201) -- pascal callback glue for aeQuitHandler
 LBL_3:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
@@ -78,7 +78,7 @@ LBL_3:
         MOVE.L (A7)+,A0
         ADDA.W #12,A7
         JMP (A0)
-        ; func clar_cb_aeOappHandler (JT slot 201) -- pascal callback glue for aeOappHandler
+        ; func clar_cb_aeOappHandler (JT slot 202) -- pascal callback glue for aeOappHandler
 LBL_4:
         LINK A6,#0
         ;   theAppleEvent : 16(A6)  pascal size 4
@@ -94,7 +94,7 @@ LBL_4:
         MOVE.L (A7)+,A0
         ADDA.W #12,A7
         JMP (A0)
-        ; func clar_cb_rtUiScrollbarAction (JT slot 202) -- pascal callback glue for rtUiScrollbarAction
+        ; func clar_cb_rtUiScrollbarAction (JT slot 203) -- pascal callback glue for rtUiScrollbarAction
 LBL_5:
         LINK A6,#0
         ;   ctrl : 10(A6)  pascal size 4
@@ -109,7 +109,7 @@ LBL_5:
         MOVE.L (A7)+,A0
         ADDQ.L #6,A7
         JMP (A0)
-        ; func clar_cb_rtUiLdefDraw (JT slot 203) -- pascal callback glue for rtUiLdefDraw
+        ; func clar_cb_rtUiLdefDraw (JT slot 204) -- pascal callback glue for rtUiLdefDraw
 LBL_6:
         LINK A6,#0
         ;   msg : 26(A6)  pascal size 2

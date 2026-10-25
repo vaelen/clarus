@@ -582,6 +582,7 @@ void clar_fn_clar_ui_fire_launchdoc(void * cv_path);
 void clar_fn_clar_ui_fire_startempty(void);
 static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_t cv_wIdx, int32_t cv_a, int32_t cv_b);
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out);
+static void clar_fn_clar_ui_fire_geomapply(void);
 
 static void * cv_rtUiMenuHandlesArr;
 static int32_t cv_rtUiNMenusVal;
@@ -1299,6 +1300,9 @@ static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out) {
     return 0;
     return 0;
+}
+
+static void clar_fn_clar_ui_fire_geomapply(void) {
 }
 
 int main(int argc, char **argv) {

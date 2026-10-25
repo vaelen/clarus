@@ -1,4 +1,4 @@
-        ; func handler_App_startCLI  (JT slot 203)
+        ; func handler_App_startCLI  (JT slot 204)
         ;   param args : 8(A6)  size 4
         ;   local a : -16(A6)  size 16
         ;   local b : -32(A6)  size 16
