@@ -735,6 +735,8 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst);
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx);
 void clar_fn_clar_ui_fire_launchdoc(void * cv_path);
 void clar_fn_clar_ui_fire_startempty(void);
+static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_t cv_wIdx, int32_t cv_a, int32_t cv_b);
+static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out);
 
 static void * cv_rtUiMenuHandlesArr;
 static int32_t cv_rtUiNMenusVal;
@@ -2665,6 +2667,16 @@ void clar_fn_clar_ui_fire_launchdoc(void * cv_path) {
 }
 
 void clar_fn_clar_ui_fire_startempty(void) {
+}
+
+static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_t cv_wIdx, int32_t cv_a, int32_t cv_b) {
+    return 0;
+    return 0;
+}
+
+static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out) {
+    return 0;
+    return 0;
 }
 
 int main(int argc, char **argv) {
