@@ -4642,6 +4642,17 @@ func checkMenuDecl(d: int) {
             // (single pass, the same rule `menus:` follows).
             subIdx = menuEntrySubmenu(e)
             if subIdx != -1 {
+                // A submenu parent's mark byte holds the submenu's MenuID
+                // and its cmd byte is 0x1B, so `checked`/`key` would
+                // corrupt (or be overwritten by) the attachment. menuItems
+                // value 2 marks a parent for `.checked`/`select` checks.
+                menuItems[menuKey(menuName, iname)] = 2
+                if menuEntryIsChecked(e) {
+                    emitDiag(declLine(e), declCol(e), "submenu item " + iname + " cannot be checked")
+                }
+                if menuEntryKey(e) != -1 {
+                    emitDiag(declLine(e), declCol(e), "submenu item " + iname + " cannot have a key")
+                }
                 subName = poolGet(subIdx)
                 symIdx = scopeLookup(curScope, subIdx)
                 if symIdx == -1 or not symbols[symIdx].isMenu {
@@ -5093,6 +5104,8 @@ func checkMenuExtend(menuName: string, d: int, winType: int) {
                 event = parts[1]
                 if not menuItems.has(menuKey(menuName, item)) {
                     emitDiag(declLine(c), declCol(c), "undefined: " + item)
+                } else if menuItems.get(menuKey(menuName, item), 0) == 2 {
+                    emitDiag(declLine(c), declCol(c), "submenu item " + item + " has no events")
                 } else if not eventTable.has("menuItem." + event) {
                     emitDiag(declLine(c), declCol(c), "unknown event")
                 } else {
@@ -6468,6 +6481,12 @@ func checkSelect(e: int): int {
         return checkWidgetSelect(e, xt)
     }
     case TyMenuItem {
+        if name == "checked" and exprKind(x) == ExSelect and exprKind(selectX(x)) == ExIdent {
+            if menuItems.get(menuKey(poolGet(identName(selectX(x))), poolGet(selectName(x))), 0) == 2 {
+                emitDiag(exprLine(e), exprCol(e), "submenu item " + poolGet(selectName(x)) + " cannot be checked")
+                return InvalidT
+            }
+        }
         if name == "enabled" or name == "checked" {
             return BoolT
         }

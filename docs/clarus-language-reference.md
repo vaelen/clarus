@@ -1267,7 +1267,7 @@ func note(s: string) {
 }
 ```
 
-Declaration properties: `maxLines:` (an int literal of at least 1, default 200), `scrollbar: vertical | both` (default `vertical`), plus `at`, `width`, `height`, `fill`, `font` and `style`.
+Declaration properties: `maxLines:` (an int literal of at least 1, default 200), `scrollbar: vertical | both` (default `vertical`), plus `at`, `width`, `height`, `fill`, `font` and `style`. Without `font:` or `setFont`, a panel draws in the system font (Chicago 12), not its window's application font.
 
 | Member | Meaning |
 |---|---|
@@ -1339,6 +1339,7 @@ extend Speed {
 
 - A submenu's items fire `select` like any other menu's, handled in `extend Speed`.
 - A menu used as a submenu never appears in the menu bar by itself. It may be the submenu of only one item (`menu Speed is already a submenu`), and it cannot also be named in a window's `menus:` (`menu Speed is a submenu and cannot appear in menus:`). A submenu named before its declaration is an error (`Speed is not a declared menu`).
+- A submenu's parent item cannot be `checked`, have a `key` or a `select` handler, or have its `.checked` read or set: the Menu Manager stores the attachment in the item's mark and key bytes (`submenu item Port cannot be checked`, `... cannot have a key`, `... has no events`).
 - Submenus count toward the 31-menu limit (Window-Scoped Commands, below).
 - Checkmarks never change on their own: choosing a `checked` item does not toggle it. The handler sets `checked` itself, as above.
 - **Mac note:** submenus are hierarchical menus, which every Macintosh from the Plus on supports under System 6 and System 7.
