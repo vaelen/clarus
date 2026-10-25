@@ -347,6 +347,25 @@ Tiered test gates:
   them, so early-splicing them there would desynchronise from-source
   against bake for no gain — which is why the toolbox suite is
   68k-source-only and its cprint twin no longer builds.
+- **UI runtime modules `uifont.cla` and `uilog.cla` (ui-widgets phase,
+  2026-10-25).** `uifont.cla` (per-widget fonts, label drawing, canvas
+  text metrics) is spliced into every program on both lanes, right after
+  `uitable.cla`, and is early-visible under `--testapi`. `uilog.cla` (the
+  `logpanel` widget) is LAST in the manifest and, on the 68k lane only,
+  spliced only into a program that declares a `logpanel`
+  (`driveHasLogpanel` in `drive.cla`; checking it in every UI program
+  cost ~500 KB of compiler peak). The C lane keeps it unconditional
+  (cprint declares every spliced extern, so gating it there broke
+  `--rtbake` identity), and the baked library always carries it: CLIR v10
+  records `uilog.cla`'s string-literal range so a logpanel-less
+  `--rtbake` build drops those literals, as its from-source twin never
+  had them. `ui.cla`/`uiwidgets.cla` reach it only through the
+  compiler-synthesized `UiLogOp` dispatcher, so that extern and the
+  `rtUiLogOp*` op codes live in the always-spliced `uiwidgets.cla`.
+  `UiColFmt`, `UiGeomApply`, `UiDrawLabel`/`UiLabelSetText`,
+  `UiFontsInit` and `UiCanvasMetric` are synthesized the same way by
+  `lower.cla` and are empty in a program that does not use the feature
+  (spec `docs/superpowers/specs/2026-10-25-ui-widgets-design.md` §4.9).
 
 ### `core`/`toolbox` test suites (`testsuite/`)
 
@@ -491,7 +510,8 @@ enum + runner, not one boot per case.
   case bumps all five. The toolbox suite has a sixth: its GUI runs one
   case per scripted `tick 1`, so `testdata/ui/toolboxsuite.events` and
   `toolboxsuite_jiggle.events` need at least one `tick 1` line per case
-  (64 today); `toolbox_68k.sh`/`toolbox_jiggle.sh` die with "add ticks
+  (each file has 64 `tick 1` lines today, for 53 cases);
+  `toolbox_68k.sh`/`toolbox_jiggle.sh` die with "add ticks
   to ..." when they fall short.
 - **Run `core` on host** (compose recipe — no single-file entry point,
   `clarusc emit`/`emit68k` both take multiple `.cla` files positionally):
@@ -683,8 +703,10 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   runtime library (`clarusc --bake-ir --lane 68k`, written next to the
   `.bin` as `clarusc-mac.clir`) and passes it to `emit68k --bake-ir
   FILE`, which since SE wave 4 (2026-09-29) puts the library in the
-  app's DATA fork (CLIR v9: a header + section directory, no runtime IR
-  bodies, per-function object code read lazily with `readAt`) and only
+  app's DATA fork (CLIR v9, now v10: a header + section directory, no
+  runtime IR bodies, per-function object code read lazily with `readAt`;
+  v10, ui-widgets phase, adds `uilog.cla`'s string-literal start to the
+  uitest-bounds section) and only
   its 4-byte stamp in a `CLFS` resource (`__clarusc_stamp__`); the old
   whole-library `__clir_bake_68k__` resource is gone. ClarusC.APPL finds
   its own file with `GetAppParms` (name + resource-file refnum) and
