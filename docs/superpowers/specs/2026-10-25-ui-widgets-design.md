@@ -1,6 +1,6 @@
 # UI widgets batch for 68kBBS (spec, 2026-10-25)
 
-Status: **design, not started.** Source of the request:
+Status: **implemented** (branch `ui-widgets`, 2026-10-25; Tasks 1-12). Source of the request:
 `../m68k-bbs/docs/clarus-ui-requirements.md` (2026-10-24), "the
 requirements" below; its section numbers are cited as R1..R9. The
 requirements' syntax is a proposal: where this spec differs, this spec

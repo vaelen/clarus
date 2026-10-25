@@ -1,7 +1,7 @@
 # Clarus Roadmap
 
 Living document — the authoritative record of sequencing and strategy
-going forward. Updated 2026-09-28. Lists only unfinished work.
+going forward. Updated 2026-10-25. Lists only unfinished work.
 
 - Completed phases are archived verbatim in `docs/HISTORY.md`.
 - Recorded-but-unscheduled debt and needed improvements: `docs/TODO.md`.
@@ -261,6 +261,23 @@ measured analysis:
   program (D9 amended) and are entered under "Later" below.
 
 The DNR/UDP items below resume now that the program is closed.
+
+### Done: UI widgets batch for 68kBBS (2026-10-25, branch `ui-widgets`)
+
+**Complete on its branch, awaiting Andrew's merge.** Language and
+ClarusC 1.2. Everything 68kBBS's `docs/clarus-ui-requirements.md` asked
+for (R1–R9): code layout (`height:`/`width:`, `setBounds`,
+`contentWidth`/`contentHeight`), per-widget `font:`/`style:`, `label`
+`align:` drawn with `DrawText`, the `logpanel` widget, formatted and
+aligned table columns with live list binding and `scrollTo`, the
+`divider` widget, checked menu items and submenus with literal
+captions, Select All in the standard Edit menu, and canvas
+`textWidth`/`lineHeight`/`ascent`. Twelve new toolbox suite cases (53
+total), ending with `BbsLayout`, 68kBBS's own window. The close also
+interned the compiler's IRTypes, which keeps ClarusC above the SE floor
+(lowest free 1105 KB on the Snow SE; `main` 1129 KB). Spec:
+`docs/superpowers/specs/2026-10-25-ui-widgets-design.md`; details:
+`docs/HISTORY.md`'s ui-widgets entry.
 
 ### Now: language usability
 

@@ -8506,3 +8506,79 @@ binary (TODO.md). Spec:
 `docs/superpowers/specs/2026-09-02-string-perf-design.md`; plan
 `docs/superpowers/plans/2026-09-02-string-perf.md`; ledger
 `.superpowers/sdd/2026-09-02-string-perf/`.
+
+## UI widgets batch for 68kBBS (2026-10-25, branch `ui-widgets`)
+
+Complete on its branch (base `main` `9121955a`, v1.1), awaiting
+Andrew's merge. Language and ClarusC 1.2. Source of the request:
+`../m68k-bbs/docs/clarus-ui-requirements.md` (R1–R9); spec
+`docs/superpowers/specs/2026-10-25-ui-widgets-design.md`; plan and
+ledger under `docs/superpowers/plans/` and
+`.superpowers/sdd/2026-10-25-ui-widgets/`. Twelve tasks in four waves:
+Tasks 1–2 alone (declaration surface and blob v2; member plumbing and
+runtime stubs), Wave 2 as five parallel worktrees (Tracks A–E: Tasks 3,
+4, 6, 7, 8), Wave 3 (Tasks 5, 9, 10, 11), and Task 12 split into 12a
+and 12b. Every task was implemented and reviewed on Opus.
+
+**What it added** (user-facing detail: the changelog's `## 1.2`).
+
+- Code layout: `height:` on every widget, `width:` on
+  textview/canvas/table, `w.X.setBounds(x, y, w, h)` (deferred,
+  applied once per pass; a synthesized `UiGeomApply` hook links the
+  apply only into programs that call it), `contentWidth`/
+  `contentHeight`, readable `x`/`y`/`width`/`height`.
+- Per-widget `font:`/`style:` and `setFont`/`setStyle`; `label`
+  `align:`, drawn with `DrawText` instead of `TETextBox`; canvas
+  `textWidth`/`lineHeight`/`ascent`. New runtime module `uifont.cla`.
+- The `logpanel` widget (`uilog.cla`): a ring of read-only lines,
+  `maxLines:`, follow-the-tail scrolling, line selection, Copy and
+  Select All. On the 68k lane the module is spliced only into a program
+  that declares one (it cost ~500 KB of compiler peak in every UI
+  program); CLIR v10 records its string-literal range so `--rtbake`
+  stays byte-identical to from-source for programs without one.
+- Tables: live binding to a `list` through `list.cla`'s observed-list
+  registry (a table refreshes on `add`/`unshift`/`pop`/element stores,
+  its selection follows its record, and is cleared when that record is
+  removed), `scrollTo`, formatted columns (`shows f(field)`, through a
+  synthesized `UiColFmt` dispatcher that contains an `abort`), and
+  `align`.
+- The `divider` widget; menu items with `checked` and `submenu`, menu
+  captions taken literally (no metacharacters), and Select All in the
+  standard Edit menu (Cmd-A).
+- `toolbox/menus.cla`, `fonts.cla` and `lists.cla` catalog files.
+- Toolbox suite: 41 → 53 cases, ending with `BbsLayout` (68kBBS's
+  three-pane window laid out from `opened`/`resized`). The suite GUI now
+  runs one case per timer tick and shows results in a `logpanel` (12a).
+
+**Task 12b (close).** Snapshot regenerated for 1.2; Task 10's font code
+moved from `uiwidgets.cla` into `uifont.cla` (UiLogOp and its op codes
+stay in `uiwidgets.cla`, since `uilog.cla` is gated). Two compiler
+memory fixes: the checker's `exprTypeOf` became a list indexed by expr
+instead of an intmap (from-source peaks −630 KB; the compiler's
+self-emit went from 6.15 s to 0.89 s with identical output), and
+`newIRType` now interns, so the type arena holds each distinct IRType
+once (the baked library had installed 5413 mostly-duplicate entries;
+`bookmarks --rtbake` peak 1,253,264 → 1,147,732, below `main`'s
+1,200,872). Frozen goldens moved only where expected: six
+`T DIM Edit.SelectAll` lines in `texteditor.trace` and the bookmarks S5
+row-0 highlight (D3).
+
+**Numbers.**
+
+| Measure                               | main `9121955a` | ui-widgets |
+|---------------------------------------|-----------------|------------|
+| bookmarks CODE (bytes)                | 118,258         | 128,526    |
+| ClarusC.APPL CODE (bytes)             | 1,142,758       | 1,203,844  |
+| memgate bookmarks_rtbake              | 1,200,872       | 1,147,732  |
+| memgate bookmarks_src                 | 6,922,160       | 6,707,868  |
+| SE ClarusC lowest free (KB)           | 1129            | 1105       |
+
+ClarusC's CODE growth (+55.8 KB before the intern fix's extra segment)
+is +34.3 KB compiler code for the new features, +10.7 KB always-linked
+UI runtime, +5.1 KB string pool and +3.8 KB of `cg_free_globals`
+tables (new handle globals × 37 segments). `bake/clarusc_codesize` and
+the memgate rtbake budget were raised once (Andrew, 2026-10-25) and then
+lowered again by the intern fix; the SE floor (1017 KB) was never
+loosened. Before the intern fix the SE low point was 1003 KB, under the
+floor. T2 green; Snow `clarusc_bake` and `clarusc_memprobe` pass on the
+SE.
