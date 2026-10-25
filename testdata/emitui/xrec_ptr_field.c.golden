@@ -644,6 +644,9 @@ static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void
 static void clar_fn_clar_ui_fire_fmtcell(void * cv_stP, void * cv_rec, void * cv_recH, int32_t cv_hstate, int32_t cv_layoutOff, int32_t cv_colsOff, int32_t cv_k, void * cv_colRect);
 static void clar_fn_clar_ui_fire_geomapply(void);
 static void clar_fn_clar_ui_fire_fontsinit(void * cv_inst);
+static void clar_fn_clar_ui_fire_drawlabel(void * cv_instV, int32_t cv_i);
+static void clar_fn_clar_ui_fire_labelsettext(void * cv_instV, int32_t cv_wIdx, void * cv_s);
+static int32_t clar_fn_clar_ui_fire_canvasmetric(void * cv_instV, int32_t cv_wIdx, int32_t cv_prop);
 
 static void * cv_rtListObsBlk;
 static int32_t cv_rtListObsCount;
@@ -1265,6 +1268,17 @@ static void clar_fn_clar_ui_fire_geomapply(void) {
 }
 
 static void clar_fn_clar_ui_fire_fontsinit(void * cv_inst) {
+}
+
+static void clar_fn_clar_ui_fire_drawlabel(void * cv_instV, int32_t cv_i) {
+}
+
+static void clar_fn_clar_ui_fire_labelsettext(void * cv_instV, int32_t cv_wIdx, void * cv_s) {
+}
+
+static int32_t clar_fn_clar_ui_fire_canvasmetric(void * cv_instV, int32_t cv_wIdx, int32_t cv_prop) {
+    return 0;
+    return 0;
 }
 
 int main(int argc, char **argv) {

@@ -929,9 +929,9 @@ static void clar_fn_rtUiFontSave(void);
 static int32_t clar_fn_rtUiPstrEq(void * cv_a, void * cv_b);
 static void clar_fn_rtUiFontApply(void * cv_instV, int32_t cv_wIdx);
 static void clar_fn_rtUiFontRestore(void);
-static void * clar_fn_rtUiFontInfo(void * cv_instV, int32_t cv_wIdx);
 static int32_t clar_fn_rtUiFontLineH(void * cv_fi);
 static void clar_fn_rtUiDrawLabel(void * cv_instV, int32_t cv_i);
+static void clar_fn_rtUiLabelSetText(void * cv_instV, int32_t cv_wIdx, void * cv_s);
 static void * clar_fn_UiTENew(void * cv_dst, void * cv_view);
 static int32_t clar_fn_rtUiTeWidestLine(void * cv_te);
 static void clar_fn_rtUiTeScrollSync(void * cv_inst, int32_t cv_wIdx);
@@ -1086,6 +1086,9 @@ static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void
 static void clar_fn_clar_ui_fire_fmtcell(void * cv_stP, void * cv_rec, void * cv_recH, int32_t cv_hstate, int32_t cv_layoutOff, int32_t cv_colsOff, int32_t cv_k, void * cv_colRect);
 static void clar_fn_clar_ui_fire_geomapply(void);
 static void clar_fn_clar_ui_fire_fontsinit(void * cv_inst);
+static void clar_fn_clar_ui_fire_drawlabel(void * cv_instV, int32_t cv_i);
+static void clar_fn_clar_ui_fire_labelsettext(void * cv_instV, int32_t cv_wIdx, void * cv_s);
+static int32_t clar_fn_clar_ui_fire_canvasmetric(void * cv_instV, int32_t cv_wIdx, int32_t cv_prop);
 
 static void * cv_rtListObsBlk;
 static int32_t cv_rtListObsCount;
@@ -4003,6 +4006,8 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
     cv_cw = 0;
     void * cv_hdr;
     cv_hdr = 0;
+    int32_t cv_hdesc;
+    cv_hdesc = 0;
     rt_ext_UiSetPort(cv_wp);
     rt_ext_UiBeginUpdate(cv_wp);
     cv_inst = clar_fn_rtUiWinstOf(cv_wp);
@@ -4033,7 +4038,7 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                 cv_kind = CLAR_NEG32(1);
             }
             if (cv_kind == 3) {
-                clar_fn_rtUiDrawLabel(cv_inst, cv_i);
+                clar_fn_clar_ui_fire_drawlabel(cv_inst, cv_i);
             } else if (cv_kind == 0) {
                 cv_flags = clar_fn_uidWidgetFlags((cv_w)->cv_winIdx, cv_i);
                 if ((cv_flags & 1) != 0) {
@@ -4119,6 +4124,8 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                 cv_fillW = clar_fn_rtUiTableFillWidth(cv_colsOff, cv_nCols, CLAR_SUB32(rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (6))), rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (2)))));
                 cv_hx = rt_peekw((void *)((char *)((void *)((char *)(cv_lhMp) + (0))) + (2)));
                 clar_fn_rtUiFontApply(cv_inst, cv_i);
+                rt_ext_UiGetFontInfo(cv_rtUiFontScratch);
+                cv_hdesc = rt_peekw((void *)((char *)(cv_rtUiFontScratch) + (2)));
                 cv_ck = 0;
                 while (1) {
                     if (!((cv_ck < cv_nCols))) break;
@@ -4128,7 +4135,7 @@ static void clar_fn_rtUiHandleUpdate(void * cv_wp) {
                         cv_cw = clar_fn_uidColWidthPx(cv_colsOff, cv_ck);
                     }
                     cv_hdr = clar_fn_uidColHeader(cv_colsOff, cv_ck);
-                    rt_ext_UiMoveTo(clar_fn_rtUiTableTextX(cv_hx, cv_cw, (void *)((char *)(cv_hdr) + (1)), rt_peekb(cv_hdr), clar_fn_uidColAlign(cv_colsOff, cv_ck)), CLAR_SUB32(rt_peekw((void *)((char *)(cv_headerRect) + (4))), 3));
+                    rt_ext_UiMoveTo(clar_fn_rtUiTableTextX(cv_hx, cv_cw, (void *)((char *)(cv_hdr) + (1)), rt_peekb(cv_hdr), clar_fn_uidColAlign(cv_colsOff, cv_ck)), CLAR_SUB32(rt_peekw((void *)((char *)(cv_headerRect) + (4))), cv_hdesc));
                     rt_ext_UiDrawText((void *)((char *)(cv_hdr) + (1)), 0, rt_peekb(cv_hdr));
                     cv_hx = CLAR_ADD32(cv_hx, cv_cw);
                     cv_ck = CLAR_ADD32(cv_ck, 1);
@@ -5481,19 +5488,15 @@ static void clar_fn_rtUiWidgetSetStr(void * cv_instV, int32_t cv_wIdx, int32_t c
     cv_savedPort = clar_fn_rtUiGetPortSaved();
     rt_ext_UiSetPort((cv_w)->cv_wp);
     cv_kind = clar_fn_uidWidgetKind(cv_winIdx, cv_wIdx);
-    if (((cv_kind == 3) && (cv_prop == 1)) && clar_fn_rtUiPstrEq(clar_fn_rtUiLabelAt(cv_w, cv_wIdx), cv_s)) {
+    if ((cv_kind == 3) && (cv_prop == 1)) {
+        clar_fn_clar_ui_fire_labelsettext(cv_instV, cv_wIdx, cv_s);
         rt_ext_UiSetPort(cv_savedPort);
         return;
     }
     clar_fn_rtUiTraceSetStr(clar_fn_uidWinName(cv_winIdx), clar_fn_uidWidgetName(cv_winIdx, cv_wIdx), cv_prop, cv_s);
     cv_ctrl = clar_fn_rtUiCtrlAt(cv_w, cv_wIdx);
     cv_te = clar_fn_rtUiTeAt(cv_w, cv_wIdx);
-    if ((cv_kind == 3) && (cv_prop == 1)) {
-        clar_fn_rtUiPstrcpy(clar_fn_rtUiLabelAt(cv_w, cv_wIdx), cv_s);
-        if (!(clar_fn_rtUiRectIsEmpty(clar_fn_rtUiRectAt(cv_w, cv_wIdx)))) {
-            clar_fn_rtUiDrawLabel(cv_instV, cv_wIdx);
-        }
-    } else if (((cv_kind == 0) && (cv_prop == 0)) && (cv_ctrl != (void *)(intptr_t)(0))) {
+    if (((cv_kind == 0) && (cv_prop == 0)) && (cv_ctrl != (void *)(intptr_t)(0))) {
         rt_ext_UiSetControlTitle(cv_ctrl, cv_s);
     } else if (((cv_kind == 4) && (cv_prop == 1)) && (cv_te != (void *)(intptr_t)(0))) {
         if (cv_s != (void *)(intptr_t)(0)) {
@@ -5819,11 +5822,8 @@ static int32_t clar_fn_rtUiWidgetGetInt(void * cv_instV, int32_t cv_wIdx, int32_
     if (cv_prop == 8) {
         return rt_peekw((void *)((char *)(cv_r) + (0)));
     }
-    if (cv_prop == 9) {
-        return clar_fn_rtUiFontLineH(clar_fn_rtUiFontInfo(cv_instV, cv_wIdx));
-    }
-    if (cv_prop == 10) {
-        return rt_peekw(clar_fn_rtUiFontInfo(cv_instV, cv_wIdx));
+    if ((cv_prop == 9) || (cv_prop == 10)) {
+        return clar_fn_clar_ui_fire_canvasmetric(cv_instV, cv_wIdx, cv_prop);
     }
     cv_kind = clar_fn_uidWidgetKind((cv_w)->cv_winIdx, cv_wIdx);
     if ((cv_prop == 4) && (cv_kind == 6)) {
@@ -6357,22 +6357,6 @@ static void clar_fn_rtUiFontRestore(void) {
     rt_ext_UiTextSize(rt_peekw((void *)((char *)(cv_sc) + (20))));
 }
 
-static void * clar_fn_rtUiFontInfo(void * cv_instV, int32_t cv_wIdx) {
-    void * cv_savedPort;
-    cv_savedPort = 0;
-    void * cv_fi;
-    cv_fi = 0;
-    cv_fi = clar_fn_rtUiFontScratchGet();
-    cv_savedPort = clar_fn_rtUiGetPortSaved();
-    rt_ext_UiSetPort((((clar_rec_RtUiWinst *)(cv_instV)))->cv_wp);
-    clar_fn_rtUiFontApply(cv_instV, cv_wIdx);
-    rt_ext_UiGetFontInfo(cv_fi);
-    clar_fn_rtUiFontRestore();
-    rt_ext_UiSetPort(cv_savedPort);
-    return cv_fi;
-    return 0;
-}
-
 static int32_t clar_fn_rtUiFontLineH(void * cv_fi) {
     int32_t cv_h;
     cv_h = 0;
@@ -6436,6 +6420,20 @@ static void clar_fn_rtUiDrawLabel(void * cv_instV, int32_t cv_i) {
     rt_ext_UiDrawText((void *)((char *)(cv_s) + (1)), 0, rt_peekb(cv_s));
     rt_ext_UiSetClip(cv_clip);
     clar_fn_rtUiFontRestore();
+}
+
+static void clar_fn_rtUiLabelSetText(void * cv_instV, int32_t cv_wIdx, void * cv_s) {
+    clar_rec_RtUiWinst * cv_w;
+    cv_w = 0;
+    cv_w = ((clar_rec_RtUiWinst *)(cv_instV));
+    if (clar_fn_rtUiPstrEq(clar_fn_rtUiLabelAt(cv_w, cv_wIdx), cv_s)) {
+        return;
+    }
+    clar_fn_rtUiTraceSetStr(clar_fn_uidWinName((cv_w)->cv_winIdx), clar_fn_uidWidgetName((cv_w)->cv_winIdx, cv_wIdx), 1, cv_s);
+    clar_fn_rtUiPstrcpy(clar_fn_rtUiLabelAt(cv_w, cv_wIdx), cv_s);
+    if (!(clar_fn_rtUiRectIsEmpty(clar_fn_rtUiRectAt(cv_w, cv_wIdx)))) {
+        clar_fn_rtUiDrawLabel(cv_instV, cv_wIdx);
+    }
 }
 
 static void * clar_fn_UiTENew(void * cv_dst, void * cv_view) {
@@ -7398,7 +7396,8 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
         cv_n = rt_peekb(cv_buf);
     }
     if (cv_n > 0) {
-        rt_ext_UiMoveTo(clar_fn_rtUiTableTextX(rt_peekw((void *)((char *)(cv_colRect) + (2))), CLAR_SUB32(rt_peekw((void *)((char *)(cv_colRect) + (6))), rt_peekw((void *)((char *)(cv_colRect) + (2)))), cv_txt, cv_n, cv_align), CLAR_SUB32(rt_peekw((void *)((char *)(cv_colRect) + (4))), 3));
+        rt_ext_UiGetFontInfo(clar_fn_rtUiFontScratchGet());
+        rt_ext_UiMoveTo(clar_fn_rtUiTableTextX(rt_peekw((void *)((char *)(cv_colRect) + (2))), CLAR_SUB32(rt_peekw((void *)((char *)(cv_colRect) + (6))), rt_peekw((void *)((char *)(cv_colRect) + (2)))), cv_txt, cv_n, cv_align), CLAR_SUB32(rt_peekw((void *)((char *)(cv_colRect) + (4))), rt_peekw((void *)((char *)(cv_rtUiFontScratch) + (2)))));
         rt_ext_UiDrawText(cv_txt, 0, cv_n);
     }
     if (cv_buf != (void *)(intptr_t)(0)) {
@@ -7409,16 +7408,9 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
 static int32_t clar_fn_rtUiTableRowH(void) {
     void * cv_fi;
     cv_fi = 0;
-    int32_t cv_h;
-    cv_h = 0;
-    cv_fi = clar_fn_UiNewPtr(8);
+    cv_fi = clar_fn_rtUiFontScratchGet();
     rt_ext_UiGetFontInfo(cv_fi);
-    cv_h = CLAR_ADD32(CLAR_ADD32(rt_peekw((void *)((char *)(cv_fi) + (0))), rt_peekw((void *)((char *)(cv_fi) + (2)))), rt_peekw((void *)((char *)(cv_fi) + (6))));
-    rt_ext_UiDisposePtr(cv_fi);
-    if (cv_h > 0) {
-        return cv_h;
-    }
-    return 1;
+    return clar_fn_rtUiFontLineH(cv_fi);
     return 0;
 }
 
@@ -7493,6 +7485,8 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
     cv_fmtId = 0;
     int32_t cv_locked;
     cv_locked = 0;
+    void * cv_inst;
+    cv_inst = 0;
     if (cv_msg == 1) {
         cv_lhMp = rt_ext_UiHandleDeref(cv_lh);
         cv_tableOff = rt_peekl((void *)((char *)(cv_lhMp) + (60)));
@@ -7502,8 +7496,12 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
         cv_nCols = clar_fn_uidTableNCols(cv_tableOff);
         cv_colsOff = clar_fn_uidTableColsOff(cv_tableOff);
         rt_ext_UiEraseRect(cv_rectPtr);
+        cv_inst = (void *)(intptr_t)(0);
         if (cv_stP != (void *)(intptr_t)(0)) {
-            clar_fn_rtUiFontApply(clar_fn_rtUiWinstOf((void *)(intptr_t)(rt_peekl((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (8))))), (((clar_rec_RtUiTableSt *)(cv_stP)))->cv_wIdx);
+            cv_inst = clar_fn_rtUiWinstOf((void *)(intptr_t)(rt_peekl((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (8)))));
+        }
+        if (cv_inst != (void *)(intptr_t)(0)) {
+            clar_fn_rtUiFontApply(cv_inst, (((clar_rec_RtUiTableSt *)(cv_stP)))->cv_wIdx);
         }
         cv_rowsAddr = clar_fn_clar_ui_fire_staterows(cv_rowsIdx);
         cv_rows = (void *)(intptr_t)(rt_peekl(cv_rowsAddr));
@@ -7556,7 +7554,7 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
                 rt_ext_UiHSetState(cv_recH, cv_hstate);
             }
         }
-        if (cv_stP != (void *)(intptr_t)(0)) {
+        if (cv_inst != (void *)(intptr_t)(0)) {
             clar_fn_rtUiFontRestore();
         }
         if (cv_select) {
@@ -10115,6 +10113,19 @@ static void clar_fn_clar_ui_fire_geomapply(void) {
 }
 
 static void clar_fn_clar_ui_fire_fontsinit(void * cv_inst) {
+}
+
+static void clar_fn_clar_ui_fire_drawlabel(void * cv_instV, int32_t cv_i) {
+    clar_fn_rtUiDrawLabel(cv_instV, cv_i);
+}
+
+static void clar_fn_clar_ui_fire_labelsettext(void * cv_instV, int32_t cv_wIdx, void * cv_s) {
+    clar_fn_rtUiLabelSetText(cv_instV, cv_wIdx, cv_s);
+}
+
+static int32_t clar_fn_clar_ui_fire_canvasmetric(void * cv_instV, int32_t cv_wIdx, int32_t cv_prop) {
+    return 0;
+    return 0;
 }
 
 static CLAR_PASCAL void clar_cb_rtUiScrollbarAction(void * cv_ctrl, short cv_part) { clar_fn_rtUiScrollbarAction(cv_ctrl, cv_part); }
