@@ -190,6 +190,12 @@ const rtUiLogOpScroll: int = 11
 // logpanel, else returns 0.
 external func UiLogOp(op: int, instV: ptr, wIdx: int, a: int, b: int): int
 
+// UiGeomApply (ui-widgets Task 6): synthesized as clar_ui_fire_geomapply
+// (lower.cla's lowSynthGeomApply). It calls rtUiApplyAllPending in a
+// program that uses setBounds and is empty otherwise, so the deferred
+// apply is linked only where it can do anything.
+external func UiGeomApply()
+
 const rtUiAtXY: int = 0
 const rtUiAtNext: int = 1
 const rtUiAtRight: int = 2
@@ -1853,16 +1859,32 @@ func rtUiWidgetSetBounds(instV: ptr, wIdx: int, x: int, y: int, ww: int, hh: int
 // takes no clicks. Only the apply pass calls it, and only to hide a
 // widget's controls when its rect goes empty and to show them again when
 // it stops being empty (rtUiPlacedHidden), so a control the Toolbox
-// itself keeps hidden is never forced visible.
-func rtUiSetCtrlVis(ctrl: ptr, vis: bool) {
-    if ctrl == ptr(0) {
-        return
+// itself keeps hidden is never forced visible. vis: 255 or 0.
+func rtUiSetCtrlVis(ctrl: ptr, vis: int) {
+    if ctrl != ptr(0) {
+        pokeb(UiHandleDeref(ctrl) + 16, vis)
     }
-    if vis {
-        pokeb(UiHandleDeref(ctrl) + 16, 255)
-    } else {
-        pokeb(UiHandleDeref(ctrl) + 16, 0)
-    }
+}
+
+// rtUiClipEmpty / rtUiClipRestore: clip the current port to nothing (so a
+// relayout draws nothing until the update event) and put the saved clip
+// region back (disposing it).
+func rtUiClipEmpty(): ptr {
+    var saved: ptr
+    var r: ptr
+
+    saved = UiNewRgn()
+    UiGetClip(saved)
+    r = UiNewPtr(rtUiRectSize)
+    UiSetRect(r, 0, 0, 0, 0)
+    UiClipRect(r)
+    UiDisposePtr(r)
+    return saved
+}
+
+func rtUiClipRestore(rgn: ptr) {
+    UiSetClip(rgn)
+    UiDisposeRgn(rgn)
 }
 
 // rtUiApplyPendingBounds (spec 3.1/4.2, C3): applies every pending
@@ -1889,6 +1911,7 @@ func rtUiApplyPendingBounds(inst: ptr) {
     var hbar: ptr
     var vis: bool
     var hid: bool
+    var v: int
     var buf: RtUiCanvasBuf
     var lh: ptr
 
@@ -1902,10 +1925,7 @@ func rtUiApplyPendingBounds(inst: ptr) {
     savedPort = rtUiGetPortSaved()
     UiSetPort(w.wp)
     tmp = UiNewPtr(rtUiRectSize)
-    saveClip = UiNewRgn()
-    UiGetClip(saveClip)
-    UiSetRect(tmp, 0, 0, 0, 0)
-    UiClipRect(tmp)
+    saveClip = rtUiClipEmpty()
 
     n = uidWinNWidgets(winIdx)
     i = 0
@@ -1940,9 +1960,13 @@ func rtUiApplyPendingBounds(inst: ptr) {
                 UiSizeControl(ctrl, peekw(r + 6) - peekw(r + 2), peekw(r + 4) - peekw(r + 0))
             }
             if vis == hid {
-                rtUiSetCtrlVis(ctrl, vis)
-                rtUiSetCtrlVis(hbar, vis)
                 hid = not vis
+                v = 0
+                if vis {
+                    v = 255
+                }
+                rtUiSetCtrlVis(ctrl, v)
+                rtUiSetCtrlVis(hbar, v)
             }
             if hid {
                 pokeb(w.placed + i, rtUiPlacedCode | rtUiPlacedHidden)
@@ -1960,8 +1984,7 @@ func rtUiApplyPendingBounds(inst: ptr) {
         i = i + 1
     }
 
-    UiSetClip(saveClip)
-    UiDisposeRgn(saveClip)
+    rtUiClipRestore(saveClip)
     UiDisposePtr(tmp)
     UiSetPort(savedPort)
 }
@@ -1982,10 +2005,9 @@ func rtUiApplyAllPending() {
 
 // rtUiDrawDivider (spec 3.6): horizontal when wider than tall, else
 // vertical. Single: one line through the center; double: lines at
-// offsets 0 and 2 across the thickness. rtUiHandleUpdate skips a
-// zero-size divider before calling this.
-func rtUiDrawDivider(inst: ptr, i: int) {
-    var r: ptr
+// offsets 0 and 2 across the thickness (style 1). r is the widget rect;
+// rtUiHandleUpdate skips a zero-size divider before calling this.
+func rtUiDrawDivider(r: ptr, style: int) {
     var top: int
     var left: int
     var ww: int
@@ -1993,7 +2015,6 @@ func rtUiDrawDivider(inst: ptr, i: int) {
     var ex: int
     var ey: int
 
-    r = rtUiRectAt(RtUiWinst(inst), i)
     top = peekw(r + 0)
     left = peekw(r + 2)
     hh = peekw(r + 4) - top
@@ -2005,7 +2026,7 @@ func rtUiDrawDivider(inst: ptr, i: int) {
     } else {
         ey = hh - 1
     }
-    if uidWidgetDivStyle(RtUiWinst(inst).winIdx, i) == 1 {
+    if style == 1 {
         UiMoveTo(left, top)
         UiLineTo(left + ex, top + ey)
         if ex > 0 {

@@ -760,10 +760,6 @@ func rtUiNaturalSize(winIdx: int, outW: ptr, outH: ptr) {
         } else {
             ww = uidWidgetWidth(winIdx, i)
         }
-        if uidWidgetFillBoth(winIdx, i) {
-            hh = rtUiDeclHeight(winIdx, i, kind)
-        }
-
         right = x + ww
         if right > maxRight {
             maxRight = right
@@ -1800,6 +1796,7 @@ func rtUiHookLogpanels(inst: ptr, op: int) {
 func rtUiFlushAllBuffered() {
     var wp: ptr
 
+    UiGeomApply() // deferred setBounds before any blit (ui-widgets Task 6)
     wp = UiFrontWindow()
     while wp != ptr(0) {
         if peekw(wp + 108) == rtUiWindowKind {
@@ -2026,7 +2023,7 @@ func rtUiHandleUpdate(wp: ptr) {
                 UiDisposePtr(headerRect)
                 UiDisposePtr(box)
             } else if kind == rtUiKindDivider {
-                rtUiDrawDivider(inst, i)
+                rtUiDrawDivider(rtUiRectAt(w, i), uidWidgetDivStyle(w.winIdx, i))
             } else if kind == rtUiKindLogpanel {
                 UiLogOp(rtUiLogOpDraw, inst, i, 0, 0)
             }
@@ -2105,51 +2102,34 @@ func rtUiHandleActivate(wp: ptr, activating: bool) {
 // Resize / zoom (rt_ui.c:2966-3096).
 // ================================================================
 
-func rtUiInvalGrowCorner(wp: ptr) {
-    var r: ptr
-
-    r = UiNewPtr(rtUiRectSize)
-    UiSetRect(r, peekw(wp + 22) - rtUiScrollbarW, peekw(wp + 20) - rtUiScrollbarW, peekw(wp + 22), peekw(wp + 20))
-    UiEraseRect(r)
-    UiInvalRect(r)
-    UiDisposePtr(r)
-}
-
 // ui-widgets Task 6 (spec 4.2) order: SizeWindow; rtUiLayout (which skips
 // code-placed widgets) under an empty clip so no control draws at its
 // new place before the update; the whole port rect invalidated and
 // marked for erase (old widget pixels never linger); canvas realloc for
 // the widgets layout moved; `resized`; then the single deferred apply of
-// whatever setBounds the handler made. The window paints once.
+// whatever setBounds the handler made. The window paints once. The
+// whole-port InvalRect + erase also covers the old and new grow-box
+// corners (the old rtUiInvalGrowCorner erase/inval pair).
 func rtUiApplyResize(wp: ptr, inst: ptr, newW: int, newH: int) {
     var w: RtUiWinst
     var savedPort: ptr
     var saveClip: ptr
-    var r: ptr
 
     w = RtUiWinst(inst)
     savedPort = rtUiGetPortSaved()
     UiSetPort(wp)
-    rtUiInvalGrowCorner(wp)
     UiSizeWindow(wp, newW, newH, true)
-    rtUiInvalGrowCorner(wp)
-    saveClip = UiNewRgn()
-    UiGetClip(saveClip)
-    r = UiNewPtr(rtUiRectSize)
-    UiSetRect(r, 0, 0, 0, 0)
-    UiClipRect(r)
-    UiDisposePtr(r)
+    saveClip = rtUiClipEmpty()
     rtUiLayout(inst)
     rtUiHookLogpanels(inst, rtUiLogOpRelayout)
-    UiSetClip(saveClip)
-    UiDisposeRgn(saveClip)
+    rtUiClipRestore(saveClip)
     UiInvalRect(wp + 16)
     w.geom = w.geom | rtUiGeomErase
     UiSetPort(savedPort)
     rtUiCanvasReallocAll(inst)
     rtUiTraceFire1(uidWinName(w.winIdx), "resized")
     UiFireWinEvent(w.winIdx, inst, rtUiEvResized, 0, 0)
-    rtUiApplyPendingBounds(inst)
+    UiGeomApply()
 }
 
 // rtUiHandleGrow (rt_ui.c:3010-3040): the oracle reads
@@ -2870,7 +2850,6 @@ func rtUiRun() {
         rtUiEveryPump()
         UiConnPump()
         rtUiTeIdleFront()
-        rtUiApplyAllPending() // deferred setBounds, before the flush point (ui-widgets Task 6)
         rtUiFlushAllBuffered() // "returns control to the event loop" point, Ch11
         rtUiTablesSync() // re-sync every table's LM row count before the next UiWaitNextEvent (Task 9, rt_ui.c:4515)
     }

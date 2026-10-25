@@ -1328,7 +1328,7 @@ func rtUiPumpPassive() {
     var what: int
     var gotEvent: bool
 
-    rtUiApplyAllPending() // deferred setBounds first, so its InvalRects queue an update below (ui-widgets Task 6)
+    UiGeomApply() // deferred setBounds first, so its InvalRects queue an update below (ui-widgets Task 6)
     rtUiTablesSync()
     ev = UiNewPtr(16)
     gotEvent = UiGetNextEvent(0x01C0, ev) // updateMask|diskMask|activMask

@@ -795,18 +795,9 @@ func rtUiTableRelayout(inst: ptr, i: int) {
     // out-of-range row) AND corrupt six bytes of whatever moved in. Same
     // re-derive discipline rtUiTableSyncOne's own LAddRow/LDelRow comment
     // already states below.
-    // ui-widgets Task 6: invalidate the OLD area too (old union new), so a
-    // table that moved or shrank leaves no stale pixels: the old rView,
-    // grown back out by the header strip, the 1px frame and the
-    // scrollbar strip (the inverse of the listRect math above).
-    lhMp = UiHandleDeref(lh)
-    UiBlockMoveData(lhMp + rtUiListRView, box, rtUiRectSize)
-    pokew(box + 0, peekw(box + 0) - headerH)
-    pokew(box + 6, peekw(box + 6) + rtUiScrollbarW)
-    UiInsetRect(box, -1, -1)
-    UiInvalRect(box)
-    UiBlockMoveData(rtUiRectAt(w, i), box, rtUiRectSize)
-
+    // The OLD area needs no InvalRect here: every caller already covers
+    // it (rtUiApplyPendingBounds' old+new outset, rtUiApplyResize's
+    // whole-port inval; open runs before the window is shown).
     lhMp = UiHandleDeref(lh)
     pokew(lhMp + rtUiListRView + 0, peekw(listRect + 0))
     pokew(lhMp + rtUiListRView + 2, peekw(listRect + 2))

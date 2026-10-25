@@ -33,6 +33,7 @@ var tbSbRows: list of TbSbRow
 // widget (FillCP included, which only then becomes code-placed).
 var tbSbMode: int
 var tbSbClicks: int
+var tbSbBClicks: int
 
 window SetBoundsWin {
     title: "SetBounds"
@@ -82,6 +83,9 @@ extend SetBoundsWin {
     on C.click(x: int, y: int) {
         tbSbClicks = tbSbClicks + 1
     }
+    on B.click {
+        tbSbBClicks = tbSbBClicks + 1
+    }
 }
 
 func tbSbRect(nm: string, x: int, y: int, ww: int, hh: int, ex: int, ey: int, ew: int, eh: int): string {
@@ -123,6 +127,7 @@ func caseSetBounds(): TestResult {
 
     tbSbMode = 0
     tbSbClicks = 0
+    tbSbBClicks = 0
     tbSbRows.clear()
     r.name = "one"
     tbSbRows.add(r)
@@ -197,6 +202,16 @@ func caseSetBounds(): TestResult {
     UiTestClick(tbSbOrgX + 20, tbSbOrgY + 50)
     if tbSbClicks != 1 {
         d = d + "clicks " + tkIntToStr(tbSbClicks) + "; "
+    }
+
+    // A zero-size control is hidden (contrlVis): its old spot takes no
+    // click. B is at local (112,8)-(176,28), center (144,18).
+    UiTestClick(tbSbOrgX + 144, tbSbOrgY + 18)
+    w.B.setBounds(112, 8, 0, 0)
+    UiTestTick(1)
+    UiTestClick(tbSbOrgX + 144, tbSbOrgY + 18)
+    if tbSbBClicks != 1 {
+        d = d + "button clicks " + tkIntToStr(tbSbBClicks) + "; "
     }
 
     close w
