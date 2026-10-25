@@ -608,7 +608,10 @@ var bkGenBaseIrStrLitsCount: int
 // that adds them needs the same treatment (bake/ identity fails if not).
 // Assumes uilog.cla stays the LAST base module and that nothing after the
 // generator's decl walk (post-walk synthesis) interns a string literal, so
-// the range holds uilog.cla's literals and only those.
+// the range holds uilog.cla's literals and only those. It also assumes
+// uitest.cla (lowered after it) shares no literal that uilog.cla interns
+// first: the dedup map would hand uitest.cla uilog.cla's copy, which the
+// hidden range then drops from a logpanel-less --testapi build.
 var bkGenUilogIrStrLitsStart: int
 // bkGenBaseIrArrLitsCount (format version 8): the array-literal pool's own
 // base/uitest boundary, the exact twin of bkGenBaseIrStrLitsCount above.

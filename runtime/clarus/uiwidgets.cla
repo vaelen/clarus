@@ -197,20 +197,20 @@ external func UiLogOp(op: int, instV: ptr, wIdx: int, a: int, b: int): int
 external func UiGeomApply()
 
 // UiDrawLabel / UiLabelSetText (ui-widgets Task 10): synthesized as
-// clar_ui_fire_drawlabel / clar_ui_fire_labelsettext (lowSynthLabelOps).
+// clar_ui_fire_drawlabel / clar_ui_fire_labelsettext (lowSynthFontOps).
 // They call rtUiDrawLabel / rtUiLabelSetText in a program that declares a
 // label, and do nothing in every other one.
 external func UiDrawLabel(instV: ptr, i: int)
 external func UiLabelSetText(instV: ptr, wIdx: int, s: ptr)
 
 // UiCanvasMetric (ui-widgets Task 10): synthesized as
-// clar_ui_fire_canvasmetric (lowSynthCanvasMetric). It calls
+// clar_ui_fire_canvasmetric (lowSynthFontOps). It calls
 // rtUiCanvasMetric in a program that reads a canvas's lineHeight or
 // ascent, and returns 0 in every other one.
 external func UiCanvasMetric(instV: ptr, wIdx: int, prop: int): int
 
 // UiFontsInit (ui-widgets Task 10): synthesized as clar_ui_fire_fontsinit
-// (lower.cla's lowSynthFontsInit). It calls rtUiFontsInit(inst, false) in
+// (lower.cla's lowSynthFontOps). It calls rtUiFontsInit(inst, false) in
 // a program where some widget declares font:/style:, and does nothing in
 // every other one.
 external func UiFontsInit(inst: ptr)

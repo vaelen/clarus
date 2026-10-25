@@ -372,11 +372,21 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   `Item.enabled = false` the program set on such an item is lost at
   the next window switch. It never touches `checked`. Fix: keep a
   per-item "program disabled" bit and AND it into the computed state.
-- **The host C lane's `file.load` bypasses the observed-list hook.**
-  `runtime/host/rt_ser.inc` fills a list through `rt_list_*` calls
-  that do not go through `list.cla`'s `rtListObsNote`, so a table bound
-  to that list would not redraw. Harmless today (no host UI lane, spec
-  C1); it matters if one is ever built.
+- **An `every` block can be re-entered through the test API.** The
+  reference says a timer is never re-entered while it runs, and the real
+  event loop keeps that, but `UiTestTick` inside an `every` body pumps
+  every timer again, its own included (`rtUiScriptEveryPump` has no
+  busy flag). `testsuite/toolbox/gui.cla`'s queue timer guards itself
+  with `tbQBusy`. Fix: a per-timer busy bit in `rtUiEveryPump`/
+  `rtUiScriptEveryPump`.
+- **The core suite GUI still runs every case in one click handler.**
+  ui-widgets Task 12 gave `testsuite/toolbox/gui.cla` a queue, an
+  `every` timer that runs one case per tick and a logpanel that shows
+  each result live. `testsuite/core/gui.cla` was not mirrored: core's
+  `SelfCheck` counts cases inside one `runCoreTests` call, which the
+  host CLI shares, and its two boot scripts' events files would need
+  one `tick` per case. Mirror it with a run counter like the toolbox
+  runner's `tbCasesRun`.
 - **`setBounds` writes no UI-trace line.** Scripted builds trace every
   other widget property write; a frozen scenario that moves widgets
   would not show it in its trace. No scenario calls it today.

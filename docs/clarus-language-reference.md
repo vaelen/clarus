@@ -1217,7 +1217,7 @@ func layoutMain(m: Main) {
 
 - `font: "Name", size` names the font and its point size: a string literal and an int literal from 1 to 127. The name is looked up when the window opens; a font the Macintosh does not have falls back to the application font (Geneva), silently.
 - `style: word, ...` takes one or more of `plain`, `bold`, `italic`, `underline`. `plain` is valid only alone. An unknown word is a check error.
-- At runtime, `X.setFont(name: string, size: int)` and `X.setStyle(word, ...)` change them (one to three style words, `plain` only alone). `setStyle` **replaces** the whole style, so `setStyle(plain)` clears it. Each call redraws the widget; a `table` or `logpanel` also recomputes its row height from the new font.
+- At runtime, `X.setFont(name: string, size: int)` and `X.setStyle(word, ...)` change them (one to three style words, `plain` only alone). A `setFont` size outside 1 to 127 is clamped to that range. `setStyle` **replaces** the whole style, so `setStyle(plain)` clears it. Each call redraws the widget; a `table` or `logpanel` also recomputes its row height from the new font.
 
 The style words are contextual: they are valid only as `style:` values and `setStyle` arguments, never as general identifiers, and they shadow nothing.
 
@@ -1281,12 +1281,13 @@ Declaration properties: `maxLines:` (an int literal of at least 1, default 200),
 - **Batched drawing.** Appends do not draw. The screen is updated once per pass of the event loop, after the handler returns, however many lines were appended.
 - **Following.** A panel whose last line is in view is *following*: appends keep the end in view, scrolling the existing lines up rather than repainting the panel. When the user has scrolled up, appends do not move the view; when old lines drop off the top, the view shifts with them so the same text stays on screen. Scrolling back to the bottom resumes following. `scrollbar: both` adds a horizontal scroll bar whose range is the widest line held.
 - **Selection.** A click selects one whole line; a drag or a shift-click extends the selection to a contiguous range. Selected lines draw inverted. Appends leave the selection on the same lines; dropped lines shrink it, and it clears when all its lines have dropped. `clear()` clears it.
-- **Edit menu.** Clicking a panel makes it the window's edit focus, in the place of a `field` or `textview`. With a panel focused, Copy (enabled only when lines are selected) puts the selected lines on the clipboard, joined by Return with no trailing Return; Select All (enabled when the panel has lines) selects every line; Cut, Paste and Clear are disabled. Typing into a focused panel does nothing.
+- **Edit menu.** Clicking a panel makes it the window's edit focus, in the place of a `field` or `textview`. With a panel focused, Copy (enabled only when lines are selected) puts the selected lines on the clipboard, joined by Return with no trailing Return; Select All (enabled when the panel has lines) selects every line; Cut, Paste and Clear are disabled.
+- **Keys.** Typing into a focused panel inserts nothing: keys reach the window as if nothing were focused. Return and Escape still press the window's `default` and `cancel` buttons, and every other key fires the window's `key` event.
 - A `logpanel` has no events.
 
 ### Dividers
 
-A `divider` is a rule that separates regions of a window. It is horizontal when its rectangle is wider than tall, and vertical otherwise. `style: single` (the default) draws a 1-pixel line along the rectangle's center; `style: double` draws two 1-pixel lines with a 1-pixel gap between them, for a rectangle 3 pixels thick. It is placed with `at`, `width`, `height`, `fill` or `setBounds`, and has no events and no members beyond its geometry.
+A `divider` is a rule that separates regions of a window. It is horizontal when its rectangle is wider than tall, and vertical otherwise. `style: single` (the default) draws a 1-pixel line along the rectangle's center; `style: double` draws two 1-pixel lines with a 1-pixel gap between them, for a rectangle 3 pixels thick. It is placed with `at`, `width`, `height`, `fill` or `setBounds`, and has no events and no members beyond its geometry. Its default size is 1×1 pixels, so a divider always needs a size: a `width:`/`height:`, a `fill`, or `setBounds`.
 
 ```
 divider TopRule  { style: double }
@@ -1348,9 +1349,9 @@ extend Speed {
 menu Edit { standard edit }
 ```
 
-`standard edit` supplies the Mac-standard Edit menu items (Undo, a separator, Cut/Copy/Paste/Clear, and Select All) with clipboard behavior already wired to `field` and `textview` widgets — required for a native feel (and for desk accessories) but otherwise pure boilerplate. The behavior comes from the `edit` keyword, not from the menu's own name — a menu declared under a different name could still use `standard edit`. Cut/Copy/Paste/Clear act on whichever `field` or `textview` currently has the caret, dim together when nothing does, and forward to the frontmost desk accessory instead when one is active. Undo is always present but permanently dimmed — there is no undo stack — an honest placeholder for the standard menu shape rather than a working command.
+`standard edit` supplies the Mac-standard Edit menu items (Undo, a separator, Cut/Copy/Paste/Clear, and Select All) with clipboard behavior already wired to `field` and `textview` widgets — required for a native feel (and for desk accessories) but otherwise pure boilerplate. The behavior comes from the `edit` keyword, not from the menu's own name — a menu declared under a different name could still use `standard edit`. Cut/Copy/Paste/Clear act on whichever `field` or `textview` currently has the caret, dim together when nothing does, and forward to the frontmost desk accessory instead when one is active. With a `logpanel` focused (Chapter 8), Copy alone of the four is enabled, and only while the panel has lines selected; Cut, Paste and Clear stay dimmed. Undo is always present but permanently dimmed — there is no undo stack — an honest placeholder for the standard menu shape rather than a working command.
 
-**Select All** (⌘A) selects all the text of the focused `field` or `textview`, or every line of a focused `logpanel` (Chapter 8). It is enabled when a `field` or `textview` has the caret, or when a focused `logpanel` has lines. Like every programmatic change, it fires no `change` event. Every program that uses `standard edit` has ⌘A taken by Select All: a user item declared with `key "A"` collides with it silently, so do not give an item that key.
+**Select All** (⌘A) selects all the text of the focused `field` or `textview`, or every line of a focused `logpanel` (Chapter 8). It is enabled when a `field` or `textview` has the caret, or when a focused `logpanel` has lines. It changes only the selection, so it fires no `change` event. Every program that uses `standard edit` has ⌘A taken by Select All: a user item declared with `key "A"` collides with it silently, so do not give an item that key.
 
 A menu may combine `standard edit` with its own items. The seven standard items always come first, then the menu's declared items, in declaration order, wherever `standard edit` is written among them:
 
@@ -1592,6 +1593,8 @@ All coordinates are `int` pixels. The origin `(0, 0)` is the canvas's top-left c
 ### Canvas Text
 
 `drawText` uses the canvas's own font, set by `font:` and `style:` at declaration or by `setFont`/`setStyle` at runtime (Fonts and Styles, Chapter 8). Without one, a `buffered` canvas uses the system font (Chicago) and an unbuffered canvas its window's application font (Geneva). A buffered canvas keeps its font when it is resized.
+
+`textWidth`, `lineHeight` and `ascent` measure in the port the canvas draws on, so they match what `drawText` draws: a buffered canvas measures in its offscreen bitmap (the system font unless `font:` or `setFont` gives it one), an unbuffered canvas in its window (the application font unless given one).
 
 `textWidth(s)` returns the width of `s` in pixels in that font. `lineHeight` (ascent + descent + leading) and `ascent` are read-only `int` properties giving the font's metrics. Since `drawText`'s `y` is the baseline, text whose top should sit at `t` is drawn at `t + c.ascent`, and the next line goes `c.lineHeight` below:
 

@@ -58,8 +58,7 @@
 47
 48
 49
-# 50 (line 1234): ui-widgets: label align/font/style and setFont/setStyle -- runtime lands with
-#     Task 10; checks clean, add once Task 10 is merged
+50
 51
 52
 53
@@ -71,13 +70,11 @@
 # 59 (line 1455): bare edit-statement fragment (table/form binds example)
 # 60 (line 1473): undefined: EditForm (window extend block)
 # 61 (line 1487): bare table-widget-declaration fragment (table outside a window)
-# 62 (line 1506): ui-widgets: formatted column + align -- runtime lands with Task 5;
-#     checks clean, add once Task 5 is merged
+62
 # 63 (line 1547): bare extend-Main fragment (Main/callers/Caller declared in the previous
-#     fence) -- also table selected/scrollTo, runtime lands with Task 5
+#     fence)
 # 64 (line 1559): undefined: Main (window extend block)
-# 65 (line 1598): ui-widgets: canvas font/textWidth/lineHeight/ascent -- runtime lands with
-#     Task 10; checks clean, add once Task 10 is merged
+65
 66
 67
 68
@@ -101,8 +98,8 @@
 79
 # 80 (line 2169): extern record — waitClick usage example calls
 # UiWaitNextEvent/nilPtr/handleAt, none declared in the fence itself
-# (same "references a name declared only in surrounding prose" class as
-# 12-15, 20, 28, 29, 40, 41, 43, 50, 51, 53, 55 above).
+# (the same "references a name declared only in surrounding prose" class
+# as several exclusions above).
 81
 82
 83
