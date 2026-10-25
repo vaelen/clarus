@@ -813,7 +813,7 @@ static void * cv_rtUiTraceWinCounts;
 static void * cv_rtUiTraceLastFront;
 static void * cv_rtUiDimPrevArr;
 static int32_t cv_rtUiDimFirst;
-static int32_t cv_rtUiStdEditDimPrev;
+static uint8_t cv_rtUiStdEditDimPrev;
 static void * cv_rtUiScriptCursor;
 static int32_t cv_rtUiScriptCursorInit;
 static void * cv_rtUiScriptLineBuf;

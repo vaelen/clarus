@@ -1086,7 +1086,7 @@ static void clar_fn_rtUiTraceFire2(void * cv_namePtr, void * cv_wnamePtr, const 
 static void clar_fn_rtUiTraceMenuSelectFor(int32_t cv_k);
 static void clar_fn_rtUiTraceEveryFire(int32_t cv_n);
 static void clar_fn_rtUiTraceDimCheck(int32_t cv_k, int32_t cv_enable);
-static void clar_fn_rtUiTraceStdEditDim(int32_t cv_enable);
+static void clar_fn_rtUiTraceStdEditDim(int32_t cv_mask);
 static void clar_fn_rtUiTraceDimFirstDone(void);
 static void clar_fn_rtUiTraceFrontCheck(void);
 static void clar_fn_rtUiTraceAbout(void);
@@ -1202,7 +1202,7 @@ static void * cv_rtUiTraceWinCounts;
 static void * cv_rtUiTraceLastFront;
 static void * cv_rtUiDimPrevArr;
 static int32_t cv_rtUiDimFirst;
-static int32_t cv_rtUiStdEditDimPrev;
+static uint8_t cv_rtUiStdEditDimPrev;
 static void * cv_rtUiScriptCursor;
 static int32_t cv_rtUiScriptCursorInit;
 static void * cv_rtUiScriptLineBuf;
@@ -3630,6 +3630,10 @@ static void clar_fn_rtUiMenuRecomputeDim(void) {
     cv_i = 0;
     int32_t cv_j;
     cv_j = 0;
+    void * cv_inst;
+    cv_inst = 0;
+    int32_t cv_mask;
+    cv_mask = 0;
     cv_nMh = clar_fn_uidNMenuHandlers();
     cv_k = 0;
     while (1) {
@@ -3643,8 +3647,19 @@ static void clar_fn_rtUiMenuRecomputeDim(void) {
         cv_k = CLAR_ADD32(cv_k, 1);
     }
     if (cv_rtUiStdEditMenuIdx >= 0) {
-        cv_kind = clar_fn_rtUiFocusKind(clar_fn_rtUiWinstOf(rt_ext_UiFrontWindow()));
-        cv_enable = ((cv_kind == 4) || (cv_kind == 5));
+        cv_inst = clar_fn_rtUiWinstOf(rt_ext_UiFrontWindow());
+        cv_kind = clar_fn_rtUiFocusKind(cv_inst);
+        cv_mask = 0;
+        if ((cv_kind == 4) || (cv_kind == 5)) {
+            cv_mask = 248;
+        } else if (cv_kind == 8) {
+            if (clar_fn_clar_ui_fire_logop(7, cv_inst, (((clar_rec_RtUiWinst *)(cv_inst)))->cv_focusIdx, 0, 0) != 0) {
+                cv_mask = 16;
+            }
+            if (clar_fn_clar_ui_fire_logop(8, cv_inst, (((clar_rec_RtUiWinst *)(cv_inst)))->cv_focusIdx, 0, 0) != 0) {
+                cv_mask = (cv_mask | 128);
+            }
+        }
         cv_i = cv_rtUiStdEditMenuIdx;
         while (1) {
             if (!((cv_i < cv_rtUiNMenusVal))) break;
@@ -3653,13 +3668,13 @@ static void clar_fn_rtUiMenuRecomputeDim(void) {
                 cv_j = 3;
                 while (1) {
                     if (!((cv_j <= 7))) break;
-                    clar_fn_rtUiMenuEnableNum(cv_mh, cv_j, cv_enable);
+                    clar_fn_rtUiMenuEnableNum(cv_mh, cv_j, (((cv_mask >> cv_j) & 1) != 0));
                     cv_j = CLAR_ADD32(cv_j, 1);
                 }
             }
             cv_i = CLAR_ADD32(cv_i, 1);
         }
-        clar_fn_rtUiTraceStdEditDim(cv_enable);
+        clar_fn_rtUiTraceStdEditDim(cv_mask);
     }
     clar_fn_rtUiTraceDimFirstDone();
 }
@@ -3694,6 +3709,14 @@ static void clar_fn_rtUiStdEditDispatch(int32_t cv_itemIdx) {
     }
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     if ((cv_w)->cv_focusIdx < 0) {
+        return;
+    }
+    if (clar_fn_uidWidgetKind((cv_w)->cv_winIdx, (cv_w)->cv_focusIdx) == 8) {
+        if (cv_itemIdx == 3) {
+            clar_fn_clar_ui_fire_logop(5, cv_inst, (cv_w)->cv_focusIdx, 0, 0);
+        } else if ((cv_itemIdx == 6) && (clar_fn_clar_ui_fire_logop(6, cv_inst, (cv_w)->cv_focusIdx, 0, 0) != 0)) {
+            clar_fn_rtUiMenuRecomputeDim();
+        }
         return;
     }
     cv_te = clar_fn_rtUiTeAt(cv_w, (cv_w)->cv_focusIdx);
@@ -4543,12 +4566,8 @@ static void clar_fn_rtUiHandleContentClick(void * cv_wp, void * cv_inst, int32_t
         }
         cv_rfCon = rt_peekl((void *)((char *)(rt_ext_UiHandleDeref(cv_ctrl)) + (36)));
         if (((cv_rfCon & 32768) != 0) && (clar_fn_uidWidgetKind((cv_w)->cv_winIdx, (cv_rfCon & 16383)) == 8)) {
-            if (cv_shiftDown) {
-                cv_mods = 512;
-            } else {
-                cv_mods = 0;
-            }
-            clar_fn_clar_ui_fire_logop(3, cv_inst, (cv_rfCon & 16383), cv_localPt, cv_mods);
+            clar_fn_rtUiTeSetFocus(cv_inst, (cv_rfCon & 16383));
+            clar_fn_clar_ui_fire_logop(3, cv_inst, (cv_rfCon & 16383), cv_localPt, 0);
             return;
         }
         if ((cv_rfCon & 32768) != 0) {
@@ -4616,7 +4635,10 @@ static void clar_fn_rtUiHandleContentClick(void * cv_wp, void * cv_inst, int32_t
             } else {
                 cv_mods = 0;
             }
-            clar_fn_clar_ui_fire_logop(3, cv_inst, cv_ti, cv_localPt, cv_mods);
+            clar_fn_rtUiTeSetFocus(cv_inst, cv_ti);
+            if (clar_fn_clar_ui_fire_logop(3, cv_inst, cv_ti, cv_localPt, cv_mods) != 0) {
+                clar_fn_rtUiMenuRecomputeDim();
+            }
             return;
         }
         cv_ti = CLAR_ADD32(cv_ti, 1);
@@ -4719,6 +4741,8 @@ static void clar_fn_rtUiHandleKey(void * cv_ev) {
     cv_fieldIdx = 0;
     int32_t cv_ftype;
     cv_ftype = 0;
+    int32_t cv_kind;
+    cv_kind = 0;
     cv_ch = rt_peekb((void *)((char *)(cv_ev) + (5)));
     cv_modifiers = rt_peekw((void *)((char *)(cv_ev) + (14)));
     if ((cv_modifiers & 256) != 0) {
@@ -4732,8 +4756,9 @@ static void clar_fn_rtUiHandleKey(void * cv_ev) {
     }
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     cv_winIdx = (cv_w)->cv_winIdx;
-    if ((cv_w)->cv_focusIdx >= 0) {
-        if ((clar_fn_uidWidgetKind(cv_winIdx, (cv_w)->cv_focusIdx) == 4) && ((cv_ch == 13) || (cv_ch == 3))) {
+    cv_kind = clar_fn_rtUiFocusKind(cv_inst);
+    if ((cv_kind == 4) || (cv_kind == 5)) {
+        if ((cv_kind == 4) && ((cv_ch == 13) || (cv_ch == 3))) {
             clar_fn_rtUiTraceFire2(clar_fn_uidWinName(cv_winIdx), clar_fn_uidWidgetName(cv_winIdx, (cv_w)->cv_focusIdx), &(clar_lit_32));
             clar_fn_clar_ui_fire_widget(cv_winIdx, cv_inst, (cv_w)->cv_focusIdx, 3, 0, 0);
             return;
@@ -4790,6 +4815,8 @@ static void clar_fn_rtUiRun(void) {
     cv_what = 0;
     int32_t cv_gotEvent;
     cv_gotEvent = 0;
+    int32_t cv_focusKind;
+    cv_focusKind = 0;
     if (rt_peekb(rt_ext_UiTestScript()) != 0) {
         clar_fn_rtUiRunScripted();
         return;
@@ -4798,7 +4825,8 @@ static void clar_fn_rtUiRun(void) {
     while (1) {
         if (!(1)) break;
         cv_frontInst = clar_fn_rtUiWinstOf(rt_ext_UiFrontWindow());
-        if ((cv_rtUiNEveryVal > 0) || ((cv_frontInst != (void *)(intptr_t)(0)) && ((((clar_rec_RtUiWinst *)(cv_frontInst)))->cv_focusIdx >= 0))) {
+        cv_focusKind = clar_fn_rtUiFocusKind(cv_frontInst);
+        if (((cv_rtUiNEveryVal > 0) || (cv_focusKind == 4)) || (cv_focusKind == 5)) {
             cv_sleepTicks = 1;
         } else {
             cv_sleepTicks = 30;
@@ -8038,51 +8066,37 @@ static void clar_fn_rtUiTraceDimCheck(int32_t cv_k, int32_t cv_enable) {
     rt_pokeb((void *)((char *)(cv_rtUiDimPrevArr) + (cv_k)), cv_enableInt);
 }
 
-static void clar_fn_rtUiTraceStdEditDim(int32_t cv_enable) {
-    int32_t cv_enableInt;
-    cv_enableInt = 0;
+static void clar_fn_rtUiTraceStdEditDim(int32_t cv_mask) {
     void * cv_t;
     cv_t = 0;
-    if (cv_enable) {
-        cv_enableInt = 1;
-    } else {
-        cv_enableInt = 0;
-    }
-    if ((cv_rtUiDimFirst || (cv_rtUiStdEditDimPrev == cv_enable)) || (!(rt_ext_UiTraceOn()))) {
-        cv_rtUiStdEditDimPrev = cv_enable;
+    int32_t cv_j;
+    cv_j = 0;
+    if ((cv_rtUiDimFirst || (cv_rtUiStdEditDimPrev == cv_mask)) || (!(rt_ext_UiTraceOn()))) {
+        cv_rtUiStdEditDimPrev = ((uint8_t)(cv_mask));
         return;
     }
-    cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_55)));
-    clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
-    clar_fn_rtUiEmitLine(cv_t);
-    cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_56)));
-    clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
-    clar_fn_rtUiEmitLine(cv_t);
-    cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_57)));
-    clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
-    clar_fn_rtUiEmitLine(cv_t);
-    cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_58)));
-    clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
-    clar_fn_rtUiEmitLine(cv_t);
-    cv_t = clar_fn_rtTextNew();
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
-    clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
-    clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_59)));
-    clar_fn_rtUiTextAppendInt(cv_t, cv_enableInt);
-    clar_fn_rtUiEmitLine(cv_t);
-    cv_rtUiStdEditDimPrev = cv_enable;
+    cv_j = 3;
+    while (1) {
+        if (!((cv_j <= 7))) break;
+        cv_t = clar_fn_rtTextNew();
+        clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_54)));
+        clar_fn_rtUiTextAppendStrSafe(cv_t, clar_fn_uidMenuTitle(cv_rtUiStdEditMenuIdx));
+        if (cv_j == 3) {
+            clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_55)));
+        } else if (cv_j == 4) {
+            clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_56)));
+        } else if (cv_j == 5) {
+            clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_57)));
+        } else if (cv_j == 6) {
+            clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_58)));
+        } else {
+            clar_fn_rtTextAppendStr(cv_t, rt_ext_UiStrAddr((const uint8_t*)&(clar_lit_59)));
+        }
+        clar_fn_rtUiTextAppendInt(cv_t, ((cv_mask >> cv_j) & 1));
+        clar_fn_rtUiEmitLine(cv_t);
+        cv_j = CLAR_ADD32(cv_j, 1);
+    }
+    cv_rtUiStdEditDimPrev = ((uint8_t)(cv_mask));
 }
 
 static void clar_fn_rtUiTraceDimFirstDone(void) {
