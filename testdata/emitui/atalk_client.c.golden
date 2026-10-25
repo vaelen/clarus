@@ -617,8 +617,10 @@ static clar_rec_RtUiCanvasTarget clar_new_RtUiCanvasTarget(void) {
 typedef struct {
     void * cv_box;
     void * cv_scratch;
+    void * cv_out;
     int32_t cv_entry;
     int32_t cv_gen;
+    int32_t cv_mark;
     int32_t cv_logged;
 } clar_rec_RtUiTableSt;
 typedef struct {
@@ -749,6 +751,7 @@ void clar_fn_clar_ui_fire_launchdoc(void * cv_path);
 void clar_fn_clar_ui_fire_startempty(void);
 static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_t cv_wIdx, int32_t cv_a, int32_t cv_b);
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out);
+static void clar_fn_clar_ui_fire_fmtcell(void * cv_stP, void * cv_rec, void * cv_recH, int32_t cv_hstate, int32_t cv_layoutOff, int32_t cv_colsOff, int32_t cv_k, void * cv_colRect);
 static void clar_fn_clar_ui_fire_geomapply(void);
 
 static void * cv_rtListObsBlk;
@@ -2452,6 +2455,9 @@ static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out) {
     return 0;
     return 0;
+}
+
+static void clar_fn_clar_ui_fire_fmtcell(void * cv_stP, void * cv_rec, void * cv_recH, int32_t cv_hstate, int32_t cv_layoutOff, int32_t cv_colsOff, int32_t cv_k, void * cv_colRect) {
 }
 
 static void clar_fn_clar_ui_fire_geomapply(void) {

@@ -545,8 +545,10 @@ static clar_rec_RtUiCanvasTarget clar_new_RtUiCanvasTarget(void) {
 typedef struct {
     void * cv_box;
     void * cv_scratch;
+    void * cv_out;
     int32_t cv_entry;
     int32_t cv_gen;
+    int32_t cv_mark;
     int32_t cv_logged;
 } clar_rec_RtUiTableSt;
 typedef struct {
@@ -977,6 +979,7 @@ static int32_t clar_fn_rtUiIntFieldLoad(void * cv_base, int32_t cv_ftype);
 static int32_t clar_fn_rtUiTableTextX(int32_t cv_left, int32_t cv_colW, void * cv_txt, int32_t cv_n, int32_t cv_align);
 static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int32_t cv_fieldIdx, void * cv_colRect, int32_t cv_align);
 static void clar_fn_rtUiTableLogAbort(void * cv_hdr);
+static void clar_fn_rtUiTableFmtCell(void * cv_stP, void * cv_rec, void * cv_recH, int32_t cv_hstate, int32_t cv_layoutOff, int32_t cv_colsOff, int32_t cv_k, void * cv_colRect);
 static int32_t clar_fn_rtUiTableRowH(void);
 static int32_t clar_fn_rtUiTableHeaderH(void);
 static void * clar_fn_rtUiMakeLdefStub(void);
@@ -1106,6 +1109,7 @@ void clar_fn_clar_ui_fire_launchdoc(void * cv_path);
 void clar_fn_clar_ui_fire_startempty(void);
 static int32_t clar_fn_clar_ui_fire_logop(int32_t cv_op, void * cv_instV, int32_t cv_wIdx, int32_t cv_a, int32_t cv_b);
 static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void * cv_out);
+static void clar_fn_clar_ui_fire_fmtcell(void * cv_stP, void * cv_rec, void * cv_recH, int32_t cv_hstate, int32_t cv_layoutOff, int32_t cv_colsOff, int32_t cv_k, void * cv_colRect);
 static void clar_fn_clar_ui_fire_geomapply(void);
 
 static void * cv_rtListObsBlk;
@@ -7555,6 +7559,26 @@ static void clar_fn_rtUiTableLogAbort(void * cv_hdr) {
     rt_log((const uint8_t*)&(cv_s));
 }
 
+static void clar_fn_rtUiTableFmtCell(void * cv_stP, void * cv_rec, void * cv_recH, int32_t cv_hstate, int32_t cv_layoutOff, int32_t cv_colsOff, int32_t cv_k, void * cv_colRect) {
+    clar_rec_RtUiTableSt * cv_st;
+    cv_st = 0;
+    int32_t cv_fmtLay;
+    cv_fmtLay = 0;
+    cv_st = ((clar_rec_RtUiTableSt *)(cv_stP));
+    rt_ext_UiBlockMoveData(cv_rec, (cv_st)->cv_scratch, clar_fn_uidLayoutRecSize(cv_layoutOff));
+    rt_ext_UiHSetState(cv_recH, cv_hstate);
+    if ((cv_st)->cv_out == (void *)(intptr_t)(0)) {
+        (cv_st)->cv_out = clar_fn_UiNewPtr(256);
+    }
+    cv_fmtLay = clar_fn_uidColFmtLayout(cv_colsOff, cv_k);
+    if (clar_fn_clar_ui_fire_colfmt(clar_fn_uidColFmtId(cv_colsOff, cv_k), (cv_st)->cv_scratch, (cv_st)->cv_out)) {
+        clar_fn_rtUiTableDrawField((cv_st)->cv_out, cv_fmtLay, 0, cv_colRect, clar_fn_uidColAlign(cv_colsOff, cv_k));
+    } else if ((cv_k < 32) && (((cv_st)->cv_logged & CLAR_SHL32(1, cv_k)) == 0)) {
+        (cv_st)->cv_logged = ((cv_st)->cv_logged | CLAR_SHL32(1, cv_k));
+        clar_fn_rtUiTableLogAbort(clar_fn_uidColHeader(cv_colsOff, cv_k));
+    }
+}
+
 static int32_t clar_fn_rtUiTableRowH(void) {
     void * cv_fi;
     cv_fi = 0;
@@ -7638,14 +7662,8 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
     cv_saveClip = 0;
     void * cv_stP;
     cv_stP = 0;
-    clar_rec_RtUiTableSt * cv_st;
-    cv_st = 0;
     int32_t cv_fmtId;
     cv_fmtId = 0;
-    int32_t cv_fmtLay;
-    cv_fmtLay = 0;
-    void * cv_out;
-    cv_out = 0;
     int32_t cv_locked;
     cv_locked = 0;
     if (cv_msg == 1) {
@@ -7686,19 +7704,8 @@ void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, in
                     cv_rec = clar_fn_rtListAt(cv_rows, cv_row);
                     clar_fn_rtUiTableDrawField(cv_rec, cv_layoutOff, clar_fn_uidColFieldIndex(cv_colsOff, cv_k), cv_colRect, clar_fn_uidColAlign(cv_colsOff, cv_k));
                 } else if (cv_stP != (void *)(intptr_t)(0)) {
-                    cv_st = ((clar_rec_RtUiTableSt *)(cv_stP));
-                    rt_ext_UiBlockMoveData(clar_fn_rtListAt(cv_rows, cv_row), (cv_st)->cv_scratch, clar_fn_uidLayoutRecSize(cv_layoutOff));
-                    rt_ext_UiHSetState(cv_recH, cv_hstate);
+                    clar_fn_clar_ui_fire_fmtcell(cv_stP, clar_fn_rtListAt(cv_rows, cv_row), cv_recH, cv_hstate, cv_layoutOff, cv_colsOff, cv_k, cv_colRect);
                     cv_locked = 0;
-                    cv_fmtLay = clar_fn_uidColFmtLayout(cv_colsOff, cv_k);
-                    cv_out = clar_fn_UiNewPtr(clar_fn_uidLayoutRecSize(cv_fmtLay));
-                    if (clar_fn_clar_ui_fire_colfmt(cv_fmtId, (cv_st)->cv_scratch, cv_out)) {
-                        clar_fn_rtUiTableDrawField(cv_out, cv_fmtLay, 0, cv_colRect, clar_fn_uidColAlign(cv_colsOff, cv_k));
-                    } else if ((cv_k < 32) && (((cv_st)->cv_logged & CLAR_SHL32(1, cv_k)) == 0)) {
-                        (cv_st)->cv_logged = ((cv_st)->cv_logged | CLAR_SHL32(1, cv_k));
-                        clar_fn_rtUiTableLogAbort(clar_fn_uidColHeader(cv_colsOff, cv_k));
-                    }
-                    rt_ext_UiDisposePtr(cv_out);
                     cv_rows = (void *)(intptr_t)(rt_peekl(cv_rowsAddr));
                     if (cv_row < clar_fn_rtListCount(cv_rows)) {
                         cv_recH = (((clar_rec_RtList *)(cv_rows)))->cv_data;
@@ -7918,9 +7925,11 @@ static void clar_fn_rtUiTableInitState(void * cv_inst, int32_t cv_wIdx, void * c
     cv_st = 0;
     cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
     cv_tableOff = clar_fn_uidWidgetTableOff((cv_w)->cv_winIdx, cv_wIdx);
-    cv_stP = clar_fn_UiNewPtr(32);
+    cv_stP = clar_fn_UiNewPtr(40);
     cv_st = ((clar_rec_RtUiTableSt *)(cv_stP));
     (cv_st)->cv_scratch = clar_fn_UiNewPtr(clar_fn_uidLayoutRecSize(clar_fn_uidTableLayoutOff(cv_tableOff)));
+    (cv_st)->cv_out = (void *)(intptr_t)(0);
+    (cv_st)->cv_mark = CLAR_NEG32(1);
     (cv_st)->cv_box = (void *)(intptr_t)(rt_peekl(clar_fn_clar_ui_fire_staterows(clar_fn_uidTableRowsIdx(cv_tableOff))));
     (cv_st)->cv_entry = clar_fn_rtListObserve((cv_st)->cv_box);
     (cv_st)->cv_gen = clar_fn_rtListObsGen((cv_st)->cv_entry);
@@ -7942,12 +7951,17 @@ static void clar_fn_rtUiTableFreeState(void * cv_lh) {
     (cv_st)->cv_entry = CLAR_NEG32(1);
     rt_pokel((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (68)), 0);
     rt_ext_UiDisposePtr((cv_st)->cv_scratch);
+    if ((cv_st)->cv_out != (void *)(intptr_t)(0)) {
+        rt_ext_UiDisposePtr((cv_st)->cv_out);
+    }
     rt_ext_UiDisposePtr(cv_stP);
 }
 
 static void clar_fn_rtUiTableSetMark(void * cv_lh, int32_t cv_row) {
     void * cv_stP;
     cv_stP = 0;
+    clar_rec_RtUiTableSt * cv_st;
+    cv_st = 0;
     int32_t cv_m;
     cv_m = 0;
     cv_stP = clar_fn_rtUiTableStOf(cv_lh);
@@ -7958,7 +7972,9 @@ static void clar_fn_rtUiTableSetMark(void * cv_lh, int32_t cv_row) {
     if ((cv_m < 0) || (cv_m >= rt_peekw((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (76))))) {
         cv_m = CLAR_NEG32(1);
     }
-    clar_fn_rtListObsSetMark((((clar_rec_RtUiTableSt *)(cv_stP)))->cv_entry, cv_m);
+    cv_st = ((clar_rec_RtUiTableSt *)(cv_stP));
+    clar_fn_rtListObsSetMark((cv_st)->cv_entry, cv_m);
+    (cv_st)->cv_mark = cv_m;
 }
 
 static void clar_fn_rtUiTableSyncOne(void * cv_inst, int32_t cv_wIdx) {
@@ -8020,7 +8036,10 @@ static void clar_fn_rtUiTableSyncOne(void * cv_inst, int32_t cv_wIdx) {
     } else if (cv_dataCount < cv_lmCount) {
         rt_ext_UiLDelRow(CLAR_SUB32(cv_lmCount, cv_dataCount), cv_dataCount, cv_lh);
     }
-    clar_fn_rtUiTableSelectExclusive(cv_lh, clar_fn_rtListObsMark((cv_st)->cv_entry));
+    if (clar_fn_rtListObsMark((cv_st)->cv_entry) != (cv_st)->cv_mark) {
+        (cv_st)->cv_mark = clar_fn_rtListObsMark((cv_st)->cv_entry);
+        clar_fn_rtUiTableSelectExclusive(cv_lh, (cv_st)->cv_mark);
+    }
     cv_hstate = rt_ext_UiHGetState(cv_lh);
     rt_ext_UiHLock(cv_lh);
     rt_ext_UiInvalRect((void *)((char *)(rt_ext_UiHandleDeref(cv_lh)) + (0)));
@@ -10416,6 +10435,10 @@ static int32_t clar_fn_clar_ui_fire_colfmt(int32_t cv_fmtId, void * cv_rec, void
     }
     return 1;
     return 0;
+}
+
+static void clar_fn_clar_ui_fire_fmtcell(void * cv_stP, void * cv_rec, void * cv_recH, int32_t cv_hstate, int32_t cv_layoutOff, int32_t cv_colsOff, int32_t cv_k, void * cv_colRect) {
+    clar_fn_rtUiTableFmtCell(cv_stP, cv_rec, cv_recH, cv_hstate, cv_layoutOff, cv_colsOff, cv_k, cv_colRect);
 }
 
 static void clar_fn_clar_ui_fire_geomapply(void) {
