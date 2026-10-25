@@ -1,0 +1,197 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_menuchecksub.cla: MenuCheckSub (ui-widgets Task 7, spec 3.7, 3.9,
+// 3.10, C11). Declared and runtime `checked` items, a hierarchical
+// submenu whose item dispatches, literal captions (no Menu Manager
+// metacharacter parsing), the standard edit block's Select All (item 7),
+// and a menu that mixes `standard edit` with its own items (C11: the
+// std-edit block is items 1-7, the declared items follow it in
+// declaration order).
+//
+// Menu ID derivation (MenuID = rtUiMenuIdBase 2 + whole-program
+// declaration index; see cases_winmenus.cla's header). This file sits
+// after cases_winmenus.cla and before gui.cla in toolbox_files.txt, so the
+// order is Ops(0), Edit(1), WmAlpha(2), WmBeta(3), TbSpeed(4), TbModem(5),
+// TbEd(6), File(7). File's index moves 4 -> 7, which nothing pins.
+// TbSpeed is a submenu (never in the bar); TbModem and TbEd join the
+// app-scope bar ahead of File. The bar stays well inside 512 px, so
+// WindowMenus' claimed menu still lands on screen after File.
+
+menu TbSpeed {
+    item S300 "300"
+    item S9600 "9600" checked
+}
+
+menu TbModem {
+    item Init "Init (Hayes); Reset/Q"
+    item Speed "Speed" submenu TbSpeed
+}
+
+menu TbEd {
+    standard edit
+    item Meta "a(b/c^d!e<f;g" key "M"
+}
+
+window McsWin {
+    title: "MCS"
+    size: 200, 100
+    textview Body { at: 10, 10 }
+}
+
+var tbMcsS300Count: int
+var tbMcsMetaCount: int
+
+extend TbSpeed {
+    on S300.select {
+        tbMcsS300Count = tbMcsS300Count + 1
+    }
+}
+
+extend TbEd {
+    on Meta.select {
+        tbMcsMetaCount = tbMcsMetaCount + 1
+    }
+}
+
+const tbMcsEditId: int = 3
+const tbMcsSpeedId: int = 6
+const tbMcsModemId: int = 7
+const tbMcsEdId: int = 8
+const tbMcsSelectAll: int = 7
+const tbMcsCopy: int = 4
+const tbMcsMetaItem: int = 8
+const tbMcsTextType: int = 0x54455854 // 'TEXT'
+
+// tbMcsItemText reads item `item` of menu `menuId` back with
+// GetMenuItemText -- the literal-caption proof.
+func tbMcsItemText(menuId: int, item: int): string {
+    var buf: ptr
+    var s: string
+    var i: int
+    var n: int
+
+    buf = NewPtr(256)
+    GetMenuItemText(GetMenuHandle(menuId), item, buf)
+    n = peekb(buf)
+    s = ""
+    i = 1
+    while i <= n {
+        s = s + char(peekb(buf + i))
+        i = i + 1
+    }
+    DisposePtr(buf)
+    return s
+}
+
+// tbMcsItemEnabled: MenuInfo.enableFlags (offset 10) bit `item`.
+func tbMcsItemEnabled(menuId: int, item: int): bool {
+    var mh: ptr
+
+    mh = GetMenuHandle(menuId)
+    return ((peekl(ptr(peekl(mh)) + 10) >> item) & 1) != 0
+}
+
+// tbMcsScrapText returns the desk scrap's TEXT, or "?" when there is none.
+func tbMcsScrapText(): string {
+    var h: ptr
+    var off: ptr
+    var n: int
+    var i: int
+    var p: ptr
+    var s: string
+
+    h = NewHandle(0)
+    off = NewPtr(4)
+    n = GetScrap(h, tbMcsTextType, off)
+    s = "?"
+    if n >= 0 {
+        s = ""
+        p = ptr(peekl(h))
+        i = 0
+        while i < n {
+            s = s + char(peekb(p + i))
+            i = i + 1
+        }
+    }
+    DisposePtr(off)
+    DisposeHandle(h)
+    return s
+}
+
+func caseMenuCheckSub(): TestResult {
+    var w: McsWin
+    var r: int
+    var err: int
+    var detail: string
+
+    tbMcsS300Count = 0
+    tbMcsMetaCount = 0
+
+    // Checked: declared, then set and read back.
+    if not TbSpeed.S9600.checked or TbSpeed.S300.checked {
+        return tkFail("MenuCheckSub", "declared checked state wrong")
+    }
+    TbSpeed.S300.checked = true
+    TbSpeed.S9600.checked = false
+    if not TbSpeed.S300.checked or TbSpeed.S9600.checked {
+        return tkFail("MenuCheckSub", "checked did not read back")
+    }
+
+    // Submenu item dispatch, through the submenu's own MenuID.
+    if not UiTestMenu(tbMcsSpeedId, 1) or tbMcsS300Count != 1 {
+        return tkFail("MenuCheckSub", "submenu select count " + tkIntToStr(tbMcsS300Count))
+    }
+
+    // Literal captions: no split on `;`, no `(` dimming, no `/Q` key.
+    if CountMItems(GetMenuHandle(tbMcsModemId)) != 2 {
+        return tkFail("MenuCheckSub", "TbModem items " + tkIntToStr(CountMItems(GetMenuHandle(tbMcsModemId))))
+    }
+    if tbMcsItemText(tbMcsModemId, 1) != "Init (Hayes); Reset/Q" {
+        return tkFail("MenuCheckSub", "Init caption " + tbMcsItemText(tbMcsModemId, 1))
+    }
+    if not TbModem.Init.enabled {
+        return tkFail("MenuCheckSub", "Init not enabled")
+    }
+
+    // C11 + every metacharacter: TbEd is the 7 std-edit items, then Meta.
+    if CountMItems(GetMenuHandle(tbMcsEdId)) != 8 {
+        return tkFail("MenuCheckSub", "TbEd items " + tkIntToStr(CountMItems(GetMenuHandle(tbMcsEdId))))
+    }
+    if tbMcsItemText(tbMcsEdId, tbMcsMetaItem) != "a(b/c^d!e<f;g" {
+        return tkFail("MenuCheckSub", "Meta caption " + tbMcsItemText(tbMcsEdId, tbMcsMetaItem))
+    }
+    if not TbEd.Meta.enabled {
+        return tkFail("MenuCheckSub", "Meta not enabled")
+    }
+    // Cmd-M resolves (real MenuKey) to TbEd item 8, and that item fires.
+    r = MenuKey(int('M'))
+    HiliteMenu(0)
+    if r != ((tbMcsEdId << 16) | tbMcsMetaItem) {
+        return tkFail("MenuCheckSub", "MenuKey M = " + tkIntToStr(r))
+    }
+    if not UiTestMenu(r >> 16, r & 0xFFFF) or tbMcsMetaCount != 1 {
+        return tkFail("MenuCheckSub", "Meta select count " + tkIntToStr(tbMcsMetaCount))
+    }
+
+    // Select All (item 7), then Copy, puts the whole textview on the scrap.
+    if tbMcsItemText(tbMcsEditId, tbMcsSelectAll) != "Select All" {
+        return tkFail("MenuCheckSub", "Edit item 7 " + tbMcsItemText(tbMcsEditId, tbMcsSelectAll))
+    }
+    w = open McsWin
+    w.Body.text = "hello"
+    UiTestTick(1)
+    err = ZeroScrap()
+    if not tbMcsItemEnabled(tbMcsEditId, tbMcsSelectAll) {
+        close w
+        return tkFail("MenuCheckSub", "Select All dimmed with a textview focused")
+    }
+    UiTestMenu(tbMcsEditId, tbMcsSelectAll)
+    UiTestMenu(tbMcsEditId, tbMcsCopy)
+    detail = tbMcsScrapText()
+    close w
+    if detail != "hello" {
+        return tkFail("MenuCheckSub", "scrap " + detail)
+    }
+    return tkPass("MenuCheckSub")
+}

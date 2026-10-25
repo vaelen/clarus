@@ -147,6 +147,8 @@ on App.startCLI(args: list of string) {
     bd.buffSize = 0
     err = PBControlAsync(np)
     t0 = t0 + registerName + nteSize + ccbSize + atpMaxData + nbpDuplicate
+    CheckItem(GetMenuHandle(1), 1, true)
+    t0 = t0 + CountMItems(ptr(0)) + checkMark + hMenuCmd
 }
 CLA_EOF
 
@@ -165,6 +167,7 @@ if "$CLARUSC" "$WORK/driver.cla" \
         "$ROOT/toolbox/appletalk.cla" \
         "$ROOT/toolbox/mactcp.cla" \
         "$ROOT/toolbox/segload.cla" \
+        "$ROOT/toolbox/menus.cla" \
         > "$WORK/catalog.log" 2>&1; then
     t_pass "$n"
 else

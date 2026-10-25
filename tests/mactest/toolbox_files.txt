@@ -8,6 +8,7 @@ toolbox/resources.cla
 toolbox/devices.cla
 toolbox/serial.cla
 toolbox/appletalk.cla
+toolbox/menus.cla
 testsuite/toolbox/runner.cla
 testsuite/toolbox/cases_events.cla
 testsuite/toolbox/cases_draw.cla
@@ -44,4 +45,5 @@ testsuite/toolbox/cases_clearwarm.cla
 testsuite/toolbox/cases_casestable.cla
 testsuite/toolbox/cases_winmenus.cla
 testsuite/toolbox/cases_narrowform.cla
+testsuite/toolbox/cases_menuchecksub.cla
 testsuite/toolbox/gui.cla
