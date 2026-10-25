@@ -91,7 +91,9 @@ const bkMagic: string = "CLIR"
 // (offset, length) index so a compile reads just its reachable functions'
 // records. The c library keeps IrStmts/IrExprs/IrLocals whole -- the C
 // printer prints runtime bodies from IR, it has no object code to paste.
-const bkFormatVersion: int = 9
+// v10 (ui-widgets): one extra U32 in bkSecUitestBounds, the start of
+// uilog.cla's own string literals (bkGenUilogIrStrLitsStart).
+const bkFormatVersion: int = 10
 
 // bkStampResourceName (runtime-ir-bake Task 6, Mac integration): the
 // reserved 'CLFS' resource name ClarusC.APPL's own build (scripts/
@@ -589,6 +591,18 @@ func bakeModuleList(lane: int): list of string {
 // compile would have produced. See bkSecUitestBounds' own doc comment.
 var bkGenBaseIrFuncsCount: int
 var bkGenBaseIrStrLitsCount: int
+
+// bkGenUilogIrStrLitsStart (format version 10, ui-widgets): irStrLits.count
+// when the generator's base lowering reached uilog.cla, the last base
+// module -- so [this, bkGenBaseIrStrLitsCount) is uilog.cla's own string
+// literals. The 68k lane splices uilog.cla from source only for a logpanel
+// program (driveManifestSplice), so cg68Measure leaves that range out of a
+// logpanel-less program's whole-pool set (cgPoolSkipStr*): the single-
+// segment shortcut walks irStrLits by presence, and without this a
+// --rtbake build carries uilog.cla's literals that its from-source twin
+// never has. uilog.cla has no array literals, enums or records today; one
+// that adds them needs the same treatment (bake/ identity fails if not).
+var bkGenUilogIrStrLitsStart: int
 // bkGenBaseIrArrLitsCount (format version 8): the array-literal pool's own
 // base/uitest boundary, the exact twin of bkGenBaseIrStrLitsCount above.
 var bkGenBaseIrArrLitsCount: int
@@ -641,14 +655,16 @@ var bkGenShakeNames: list of int
 // base/uitest split (below) is once again the ONLY caller, and this
 // moved back here where it started.)
 func bkPathIsUitest(pathIdx: int): bool {
+    return bkPathHasSuffix(pathIdx, "uitest.cla")
+}
+
+func bkPathHasSuffix(pathIdx: int, want: string): bool {
     var p: string
-    var want: string
 
     if pathIdx == -1 {
         return false
     }
     p = poolGet(pathIdx)
-    want = "uitest.cla"
     return p.length >= want.length and p[p.length - want.length, want.length] == want
 }
 
@@ -835,6 +851,9 @@ func bakeGenerateChain(lane: int): bool {
                     baseTail = declListAppend(baseTail, h)
                 }
                 baseTail = asmTails[i]
+                if lowMarkDecl == 0 and bkPathHasSuffix(getDeclFile(h), "uilog.cla") {
+                    lowMarkDecl = h + 1
+                }
             }
         }
         i = i + 1
@@ -866,8 +885,14 @@ func bakeGenerateChain(lane: int): bool {
     // dispatcher-synthesis pass always puts them -- after every runtime
     // AND user literal.
     lowSkipUiDispatchers = true
+    lowMarkStrLits = -1
     if baseHead != -1 {
         lowerProgram(baseHead)
+    }
+    lowMarkDecl = 0
+    bkGenUilogIrStrLitsStart = lowMarkStrLits
+    if bkGenUilogIrStrLitsStart == -1 {
+        bkGenUilogIrStrLitsStart = irStrLits.count
     }
     if diags.count > 0 {
         lowSkipUiDispatchers = false
@@ -1794,6 +1819,7 @@ func bkWriteUitestBounds(): text {
     bkPutU32(sec, bkGenBaseIrFuncsCount)
     bkPutU32(sec, bkGenBaseIrStrLitsCount)
     bkPutU32(sec, bkGenBaseIrArrLitsCount)
+    bkPutU32(sec, bkGenUilogIrStrLitsStart)
     return sec
 }
 
@@ -2762,6 +2788,8 @@ var bkLoadedRecFieldsHeadByName: intmap of int
 // testapi install back to -- see bkSecUitestBounds' own doc comment.
 var bkLdBaseIrFuncsCount: int
 var bkLdBaseIrStrLitsCount: int
+// bkLdUilogIrStrLitsStart: bkGenUilogIrStrLitsStart, read back (v10).
+var bkLdUilogIrStrLitsStart: int
 var bkLdBaseIrArrLitsCount: int
 
 // bkLdEarlyFuncSigsCount/bkLdEarlySymbolsCount (format version 3, Task 5
@@ -3651,6 +3679,7 @@ func bkReadUitestBounds() {
     bkLdBaseIrFuncsCount = bkGetU32()
     bkLdBaseIrStrLitsCount = bkGetU32()
     bkLdBaseIrArrLitsCount = bkGetU32()
+    bkLdUilogIrStrLitsStart = bkGetU32()
 }
 
 // bkReadCheckerVisibility (format version 3, Task 5 fix round 2): the

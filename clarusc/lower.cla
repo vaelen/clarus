@@ -89,6 +89,12 @@ var lowResumeFromBake: bool
 // wave".
 var lowSkipUiDispatchers: bool
 
+// lowMarkDecl/lowMarkStrLits (ui-widgets): when lowMarkDecl is decl d + 1
+// (0 = unset), lowerProgram records irStrLits.count in lowMarkStrLits as
+// its main walk reaches d -- bakeGenerateChain's uilog.cla boundary.
+var lowMarkDecl: int
+var lowMarkStrLits: int
+
 // lowUsesSetBounds / lowUsesContentSize (ui-widgets Task 6 fix round 1):
 // set while lowering a `setBounds` call / a `contentWidth`/`contentHeight`
 // read, reset per lowerProgram. They gate the entry points' shake roots
@@ -9247,6 +9253,9 @@ func lowerProgram(declHead: int): int {
     }
     d = declHead
     while d != -1 {
+        if d + 1 == lowMarkDecl {
+            lowMarkStrLits = irStrLits.count
+        }
         lowDecl(d)
         d = declNext(d)
     }

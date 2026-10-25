@@ -18,7 +18,8 @@
 # sections 47 (68k) / 48 (c) are bkSectionCount68k/bkSectionCountC: 48
 # on both lanes after SE wave 4 Task 2 (+bkSecShakeSummary); CLIR v9 (SE
 # wave 4 Task 6) drops IrStmts/IrExprs from the 68k library and adds
-# bkSecGlobalInits, the c library keeps its bodies. version 9 is that
+# bkSecGlobalInits, the c library keeps its bodies. version 10 (ui-widgets)
+# adds one U32 to UitestBounds (uilog.cla's string-literal start); 9 is that
 # format: a section directory, no body hash, an indexed ObjCode section
 # (v8 was language-runtime-cleanup's IRWindowDesc.menuMask).
 . "$(dirname "$0")/../lib.sh" || exit 2
@@ -37,8 +38,8 @@ for lane in 68k c; do
     fi
 
     got=$(clir_field version "$WORK/$lane.hdr")
-    [ "$got" = 9 ] && t_pass "$lane/version" \
-        || t_fail "$lane/version" "version = $got, want 9 (SE wave 4 Task 6: section directory, no body hash, no 68k IR bodies, indexed ObjCode)"
+    [ "$got" = 10 ] && t_pass "$lane/version" \
+        || t_fail "$lane/version" "version = $got, want 10 (ui-widgets: uilog.cla string-literal boundary in UitestBounds; v9 SE wave 4 Task 6: section directory, no body hash, no 68k IR bodies, indexed ObjCode)"
 
     got=$(clir_field lane "$WORK/$lane.hdr")
     [ "$got" = "$lane" ] && t_pass "$lane/lanetag" \
