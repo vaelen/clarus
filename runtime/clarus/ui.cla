@@ -1548,9 +1548,8 @@ func rtUiMenuSetChecked(menuIdx: int, itemIdx: int, b: bool) {
     UiCheckItem(mh, rtUiMenuItemNum(menuIdx, itemIdx), b)
 }
 
-// GetItemMark stores a CharParameter (char in the low byte of a word) into
-// a cleared 2-byte buffer; 0x1200 also accepts a store of the char byte
-// alone at the buffer's start. checkMark is 0x12.
+// GetItemMark stores a CharParameter: a whole word, char in the low byte
+// (hardware-checked, MenuCheckSub). checkMark is 0x12.
 func rtUiMenuGetChecked(menuIdx: int, itemIdx: int): bool {
     var mh: ptr
     var buf: ptr
@@ -1560,11 +1559,11 @@ func rtUiMenuGetChecked(menuIdx: int, itemIdx: int): bool {
     if mh == ptr(0) {
         return false
     }
-    buf = UiNewPtrClear(2)
+    buf = UiNewPtr(2)
     UiGetItemMark(mh, rtUiMenuItemNum(menuIdx, itemIdx), buf)
     mark = peekw(buf)
     UiDisposePtr(buf)
-    return mark == 0x12 or mark == 0x1200
+    return mark == 0x12
 }
 
 // MenuInfo.enableFlags (+10): bit n = item n; items past 31 are always
