@@ -605,6 +605,11 @@ Content per spec §6. In addition:
     - after `UiTestResize(500, 320)`: the same bounds again;
     - 20 appends plus `unshift`/`pop` at count 50 within one handler cost one update (checksum stable on a second tick);
     - `Log.line(0)` reads back.
+- [ ] **Step 1b: Show live progress in the toolbox suite GUI (Andrew, 2026-10-25).**
+  - In `testsuite/toolbox/gui.cla`, `Run All`/`Run Selected` no longer run every case inside one click handler. They queue the selection, and an `every` timer runs one case per tick, so the screen repaints between cases.
+  - The results pane becomes a `logpanel`, which appends each `PASS`/`FAIL` line as its case finishes and the `TOTAL` line at the end.
+  - The `tkReport` alert lines, `TestLog.txt` and the captured log the harness parses must come out byte-identical, in the same order. `tests/mactest/toolbox_68k.sh`, `toolbox_jiggle.sh` and the events file still pass unchanged; if the scripted events need an extra tick to let the queue drain, add it there and explain why.
+  - Mirror the change in `testsuite/core/gui.cla` only if it is equally small; otherwise note it in `docs/TODO.md`.
 - [ ] **Step 2: Bump the version and regenerate the snapshot.** Then run `make test T=selfhost/ T=claruscboot/`. Expect PASS.
 - [ ] **Step 3: Rebless the frozen goldens.** `CLARUS_MAC_BLESS=1 make -j1 test T=mactest/smoke_bounce T=mactest/ui_scenarios`. Inspect every changed trace line (only std-edit and label-related changes are allowed) and view each changed PBM. Commit with the list of changes in the message.
 - [ ] **Step 4: Rebless the compile-only goldens on the merged tree.** Then run `scripts/test-merge.sh` and expect every stage PASS.
