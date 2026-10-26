@@ -13030,9 +13030,16 @@ func cgEmitReturnStr(src: int) {
             // below, which already computes cap from cgCurRetType (==
             // target, by lowCoerceStr's own construction).
             src2 = irIntrArgsHead(src2)
-        } else {
-            abort("cg68k: cgEmitReturnStr: intrinsic " + nm + " unsupported in return context")
         }
+        // Every other intrinsic (ui_log_line, ui_get_field_text,
+        // ui_get_label_text, ui_get_title, map_get_dv, list_pop,
+        // list_first, ...) has no arm of its own and falls through to the
+        // generic tail below, exactly like ECallFn: cgExprAddr's general
+        // fallback materializes it into a scratch temp via
+        // cgMaterializeToTemp -> cgEmitStoreStr (which has an arm for
+        // each), then rtStrStore clamp-copies that temp into the hidden
+        // pointer. This used to abort("... unsupported in return
+        // context") for every such intrinsic.
     }
 
     cap = irtN(cgCurRetType)
