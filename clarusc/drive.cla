@@ -613,9 +613,11 @@ func driveReset() {
 // UP from the current working directory looking for a "runtime/clarus/"
 // directory, probed by trying to read probeFile (the first needed module's
 // file name) out of each candidate. Tries the cwd itself plus up to 9 parent
-// levels (10 total) and returns the first candidate that has probeFile, or
-// "" if none of them do -- absence here is not itself an error; the caller
-// only reports one once a needed module truly can't be found.
+// levels (10 total) and returns the first candidate that has probeFile,
+// else the front end's feRtDirFallback (host: $CLARUS_DATADIR, then the
+// built-in default; ClarusC.APPL: "") -- "" if nothing resolves. Absence
+// here is not itself an error; the caller only reports one once a needed
+// module truly can't be found (wording from feRtDirSearched).
 func findRtDir(probeFile: string): string {
     var prefix: string
     var i: int
@@ -635,7 +637,7 @@ func findRtDir(probeFile: string): string {
         prefix = prefix + "../"
         i = i + 1
     }
-    return ""
+    return feRtDirFallback(probeFile)
 }
 
 // rtModuleKey computes the baked-resource key for a runtime module's bare
@@ -1488,7 +1490,7 @@ func driveEarlySplice(testapi: bool): bool {
             if haveRtDir {
                 abort("runtime module " + earlyMods[i] + " not found (searched " + rtDir + "); use --rtdir")
             } else {
-                abort("runtime module " + earlyMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
+                abort("runtime module " + earlyMods[i] + " not found (searched " + feRtDirSearched() + "); use --rtdir or set CLARUS_DATADIR")
             }
         }
         hoists = hoistDedups(beforeHits)
@@ -1949,7 +1951,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
                 if haveRtDir {
                     abort("runtime module " + neededMods[i] + " not found (searched " + rtDir + "); use --rtdir")
                 } else {
-                    abort("runtime module " + neededMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
+                    abort("runtime module " + neededMods[i] + " not found (searched " + feRtDirSearched() + "); use --rtdir or set CLARUS_DATADIR")
                 }
             }
             hoists = hoistDedups(beforeHits)

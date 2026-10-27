@@ -1,0 +1,65 @@
+// hostenv.cla -- the host front end's half of drive.cla's rtdir seam
+// (installed-toolchain phase). findRtDir's upward search failed; try
+// $CLARUS_DATADIR/runtime/clarus/, then the built-in CLARUS_DATADIR
+// default's. macgui.cla implements the same two functions with
+// ClarusC.APPL's unchanged behaviour (no fallback). The Host* externs
+// live in hostext.cla.
+
+// hostDataDir: the data dir `d` with one trailing '/' stripped, as an
+// rtdir ("<d>/runtime/clarus/"), or "" if `d` is empty.
+func hostDataDir(d: text): string {
+    var n: int
+    n = d.length
+    if n == 0 {
+        return ""
+    }
+    if d[n - 1] == '/' {
+        n = n - 1
+    }
+    return d[0, n] + "/runtime/clarus/"
+}
+
+// hostRtDirOk: true if probeFile reads out of candidate rtdir `dir`.
+func hostRtDirOk(dir: string, probeFile: string): bool {
+    var probe: text
+    if dir == "" {
+        return false
+    }
+    probe = ""
+    return file.readText(dir + probeFile, probe)
+}
+
+func feRtDirFallback(probeFile: string): string {
+    var v: text
+    var dir: string
+    v = ""
+    if HostGetEnv("CLARUS_DATADIR", v) {
+        dir = hostDataDir(v)
+        if hostRtDirOk(dir, probeFile) {
+            return dir
+        }
+    }
+    HostDefaultDataDir(v)
+    dir = hostDataDir(v)
+    if hostRtDirOk(dir, probeFile) {
+        return dir
+    }
+    return ""
+}
+
+func feRtDirSearched(): string {
+    var v: text
+    var s: string
+    v = ""
+    s = "runtime/clarus/ from the working directory upward, $CLARUS_DATADIR ("
+    if HostGetEnv("CLARUS_DATADIR", v) {
+        s = s + v[0, v.length] + "), "
+    } else {
+        s = s + "unset), "
+    }
+    HostDefaultDataDir(v)
+    if v.length == 0 {
+        return s + "no built-in default"
+    }
+    return s + v[0, v.length]
+}

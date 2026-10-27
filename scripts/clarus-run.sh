@@ -27,9 +27,11 @@ fi
 # 1. bootstrap clarusc from the committed snapshot (cached on clarusc.c's
 #    mtime, same caching convention as build-68k.sh/build-mac.sh).
 mkdir -p "$ROOT/build-run"
-CLARUSC="$ROOT/build-run/clarusc"
+# (-nodatadir: built with no CLARUS_DATADIR default, so it finds only the
+# repo's runtime; the new name retires any older cached build.)
+CLARUSC="$ROOT/build-run/clarusc-nodatadir"
 if [ ! -x "$CLARUSC" ] || [ "$ROOT/clarusc/clarusc.c" -nt "$CLARUSC" ]; then
-    cc -O1 -I"$ROOT/runtime/host" -o "$CLARUSC" \
+    cc -O1 -DCLARUS_DATADIR='""' -I"$ROOT/runtime/host" -o "$CLARUSC" \
         "$ROOT/clarusc/clarusc.c" "$ROOT/runtime/host/rt.c"
 fi
 

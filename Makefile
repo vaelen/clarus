@@ -1,6 +1,10 @@
 # Makefile -- Clarus test runner (go-retirement phase). GNU Make 3.81.
 # make t1 | make t2 | make test T='cg68k/goldens bake/' | make smoke
 CC ?= cc
+# Dev compilers get no built-in data dir and never see the caller's, so an
+# install or an exported CLARUS_DATADIR cannot change what a test sees.
+unexport CLARUS_DATADIR
+NODATADIR := -DCLARUS_DATADIR='""'
 BR := build-run
 J ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
@@ -36,11 +40,11 @@ $(BR)/tools/%: tests/tools/%.c
 # make's scheduling replaces the flock (every test depends on bootstrap).
 $(BR)/clarusc-snapshot: clarusc/clarusc.c $(RT_HOST)
 	@mkdir -p $(BR)
-	$(CC) -O1 -I runtime/host -o $@.tmp clarusc/clarusc.c runtime/host/rt.c && mv $@.tmp $@
+	$(CC) -O1 $(NODATADIR) -I runtime/host -o $@.tmp clarusc/clarusc.c runtime/host/rt.c && mv $@.tmp $@
 
 $(BR)/clarusc-current: $(BR)/clarusc-snapshot $(CLA_SRC)
 	$(BR)/clarusc-snapshot emit --rtdir runtime/clarus/ -o $@.c clarusc/main.cla
-	$(CC) -O1 -I runtime/host -o $@.tmp $@.c runtime/host/rt.c && mv $@.tmp $@
+	$(CC) -O1 $(NODATADIR) -I runtime/host -o $@.tmp $@.c runtime/host/rt.c && mv $@.tmp $@
 
 # Every result is rebuilt on every run (FORCE): there is no result cache.
 $(BR)/tests/%.result: tests/%.sh FORCE | tools bootstrap

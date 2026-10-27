@@ -60,6 +60,16 @@ func feProgressTick() {
 func feMemProbe(phase: string) {
 }
 
+// feRtDirFallback/feRtDirSearched (drive.cla's rtdir seam): this harness
+// keeps findRtDir's upward search alone, as ClarusC.APPL does.
+func feRtDirFallback(probeFile: string): string {
+    return ""
+}
+
+func feRtDirSearched(): string {
+    return "runtime/clarus/ from the working directory upward"
+}
+
 // feExpectedStamp (bake.cla's front-end seam, runtime-ir-bake Task 6):
 // same as main.cla's host CLI (disk read + hash) -- required for the
 // standalone check to resolve, since bake.cla's bkCheckRtbakeHeader now
