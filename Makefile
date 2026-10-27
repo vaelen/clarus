@@ -85,24 +85,26 @@ BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share/clarus
 DOCDIR ?= $(PREFIX)/share/doc/clarus
 DESTDIR ?=
+# Where install-bin builds clarusc-install(.cfg); tests point it at $WORK.
+INSTALL_BR ?= $(BR)
 DOCS := docs/clarus-language-reference.md docs/clarus-language-changelog.md docs/clarus-toolbox-cookbook.md
 
 .PHONY: install-bin install uninstall
-install-bin: $(BR)/clarusc-install
+install-bin: $(INSTALL_BR)/clarusc-install
 
-$(BR)/clarusc-install.cfg: FORCE
-	@mkdir -p $(BR)
+$(INSTALL_BR)/clarusc-install.cfg: FORCE
+	@mkdir -p $(INSTALL_BR)
 	@printf 'DATADIR=%s CC=%s\n' '$(DATADIR)' '$(CC)' > $@.tmp
 	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv $@.tmp $@
 
-$(BR)/clarusc-install: $(BR)/clarusc-install.cfg $(BR)/clarusc-current
+$(INSTALL_BR)/clarusc-install: $(INSTALL_BR)/clarusc-install.cfg $(BR)/clarusc-current
 	$(CC) -O1 -DCLARUS_DATADIR='"$(DATADIR)"' -DCLARUS_CC='"$(CC)"' -I runtime/host -o $@.tmp $(BR)/clarusc-current.c runtime/host/rt.c && mv $@.tmp $@
 
 install: install-bin
 	@test -n '$(DATADIR)' || { echo 'DATADIR is empty' >&2; exit 1; }
 	rm -rf '$(DESTDIR)$(DATADIR)/runtime' '$(DESTDIR)$(DATADIR)/toolbox'
 	install -d '$(DESTDIR)$(BINDIR)' '$(DESTDIR)$(DATADIR)/runtime/clarus' '$(DESTDIR)$(DATADIR)/runtime/host' '$(DESTDIR)$(DATADIR)/toolbox' '$(DESTDIR)$(DOCDIR)'
-	install -m 755 $(BR)/clarusc-install '$(DESTDIR)$(BINDIR)/clarusc'
+	install -m 755 $(INSTALL_BR)/clarusc-install '$(DESTDIR)$(BINDIR)/clarusc'
 	install -m 644 runtime/clarus/*.cla '$(DESTDIR)$(DATADIR)/runtime/clarus'
 	install -m 644 runtime/host/rt.c runtime/host/rt*.h runtime/host/rt*.inc '$(DESTDIR)$(DATADIR)/runtime/host'
 	install -m 644 toolbox/*.cla '$(DESTDIR)$(DATADIR)/toolbox'
@@ -111,6 +113,6 @@ install: install-bin
 uninstall:
 	@test -n '$(DATADIR)' || { echo 'DATADIR is empty' >&2; exit 1; }
 	rm -f '$(DESTDIR)$(BINDIR)/clarusc'
-	rm -rf '$(DESTDIR)$(DATADIR)'
+	rm -rf '$(DESTDIR)$(DATADIR)/runtime' '$(DESTDIR)$(DATADIR)/toolbox'
 	rm -f $(patsubst docs/%,'$(DESTDIR)$(DOCDIR)/%',$(DOCS))
-	rmdir '$(DESTDIR)$(DOCDIR)' 2>/dev/null || true
+	rmdir '$(DESTDIR)$(DATADIR)' '$(DESTDIR)$(DOCDIR)' 2>/dev/null || true

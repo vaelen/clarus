@@ -7,7 +7,11 @@
 . "$(dirname "$0")/../lib.sh" || exit 2
 unset CFLAGS
 # A nested make must not join the runner's jobserver.
-mk() { env -u MAKEFLAGS -u MAKELEVEL -u MFLAGS make -C "$ROOT" --no-print-directory "$@"; }
+# INSTALL_BR keeps the test off build-run/clarusc-install*, so a user's
+# later `sudo make install` never has to rebuild as root.
+mk() { env -u MAKEFLAGS -u MAKELEVEL -u MFLAGS make -C "$ROOT" --no-print-directory INSTALL_BR="$WORK/ibr" "$@"; }
+shared() { (cd "$BR" && ls -li clarusc-install* 2>/dev/null && cksum clarusc-install* 2>/dev/null); }
+before=$(shared)
 I=$WORK/inst
 
 # install_tree
@@ -54,11 +58,15 @@ CLA
 if [ $rc1 -eq 0 ] && [ $rc2 -ne 0 ]; then t_pass env_override
 else t_fail env_override "with var rc $rc1 ($(cat "$WORK/e1.err")); without rc $rc2"; fi
 
-# uninstall_clean
+# uninstall_clean (+ uninstall_keeps_foreign: a file install did not put
+# in DATADIR survives, and so does DATADIR itself).
+echo keep > "$I/share/clarus/keep.txt"
 mk uninstall PREFIX="$I" > "$WORK/un.log" 2>&1 || t_fail uninstall_clean "make uninstall: $(tail -5 "$WORK/un.log")"
-left=$(find "$I" -type f)
+left=$(find "$I" -type f ! -path "$I/share/clarus/keep.txt")
 if [ -z "$left" ]; then t_pass uninstall_clean
 else t_fail uninstall_clean "left behind: $left"; fi
+if [ -f "$I/share/clarus/keep.txt" ]; then t_pass uninstall_keeps_foreign
+else t_fail uninstall_keeps_foreign "uninstall removed a file install never put there"; fi
 
 # destdir: staged under DESTDIR, but the binary names the final path.
 R=$WORK/root
@@ -73,4 +81,7 @@ mk install PREFIX="$WORK/i2" DATADIR="$WORK/i2/data" > "$WORK/r.log" 2>&1 || die
 if grep -q "$WORK/i2/data" "$WORK/i2/bin/clarusc" && ! grep -q "$WORK/inst/share" "$WORK/i2/bin/clarusc"; then
     t_pass reinstall_datadir
 else t_fail reinstall_datadir "binary does not carry only $WORK/i2/data"; fi
+# shared_untouched: build-run/clarusc-install* unchanged by this run.
+if [ "$(shared)" = "$before" ]; then t_pass shared_untouched
+else t_fail shared_untouched "build-run/clarusc-install* changed"; fi
 t_done
