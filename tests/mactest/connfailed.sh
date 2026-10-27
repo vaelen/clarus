@@ -12,10 +12,10 @@
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 
-emit68k -o "$WORK/connfailprobe.bin" \
+build68k -o "$WORK/connfailprobe.bin" \
     --events testdata/cg68k/connfailprobe.events \
     testdata/cg68k/connfailprobe.cla > "$WORK/emit.log" 2>&1 \
-    || die "clarusc emit68k connfailprobe: $(tail -10 "$WORK/emit.log")"
+    || die "clarusc build68k connfailprobe: $(tail -10 "$WORK/emit.log")"
 
 run_mac "$WORK/connfailprobe.bin" 180
 if [ "$MAC_EXIT" != 0 ]; then

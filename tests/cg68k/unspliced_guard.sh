@@ -28,14 +28,14 @@
 # passing on the `rtStrStore` alternative.
 . "$(dirname "$0")/../lib.sh" || exit 2
 
-# guard_check NAME RTDIR PROG WANT : emit68k must exit nonzero with WANT
+# guard_check NAME RTDIR PROG WANT : build68k must exit nonzero with WANT
 # (a fixed string) in its output and no runtime-error crash.
 guard_check() {
     _name=$1
     _rt=$2
     _prog=$3
     _want=$4
-    "$CLARUSC" emit68k --rtdir "$_rt" -o "$WORK/$_name.bin" "$_prog" > "$WORK/$_name.out" 2>&1
+    "$CLARUSC" build68k --rtdir "$_rt" -o "$WORK/$_name.bin" "$_prog" > "$WORK/$_name.out" 2>&1
     _rc=$?
     if [ $_rc -eq 0 ]; then
         t_fail "$_name" "want nonzero exit, got 0"
@@ -80,7 +80,7 @@ on App.startCLI(args: list of string) {
 CLA
 
 # baseline: the untouched copy builds the program clean.
-if "$CLARUSC" emit68k --rtdir "$rtbase/runtime/clarus/" -o "$WORK/ok.bin" \
+if "$CLARUSC" build68k --rtdir "$rtbase/runtime/clarus/" -o "$WORK/ok.bin" \
         "$WORK/needs_ss.cla" > "$WORK/ok.out" 2>&1; then
     t_pass baseline
 else

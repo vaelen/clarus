@@ -4,7 +4,7 @@
 # TestToolboxSuiteOnMac: TestToolboxSuiteOn68k's Retro68/cprint-lane twin.
 # Same toolbox_files.txt composition, same toolboxsuite.events script, same
 # per-case result contract -- built via scripts/build-mac.sh instead of
-# `clarusc emit68k`.
+# `clarusc build68k`.
 #
 # No --bake on this lane (build-mac.sh has no such flag; the Go twin passes
 # none either), so cases_resources.cla's baked-resource lookup has nothing
@@ -14,7 +14,7 @@
 # and it fails in build_mac, not on a suite case. AdspLeak's section 4
 # (testsuite/toolbox/cases_atalk.cla, see its own header) names the NATIVE
 # AppleTalk waist -- rtAt68DspInitEnd/rtAdspDevClose -- which only
-# `clarusc emit68k --testapi` makes visible: drive.cla's driveEarlySplice
+# `clarusc build68k --testapi` makes visible: drive.cla's driveEarlySplice
 # gates that widening on want68k, and rtAt68DspInitEnd has no counterpart
 # in runtime/clarus/atalk_c.cla at all. build-mac.sh goes through
 # `clarusc emit` (want68k false), so this suite no longer checks on this

@@ -238,11 +238,11 @@ toolbox_emit68k() {
     done < "$ROOT/tests/mactest/toolbox_files.txt"
     # Word splitting is the point: the list has no spaces in it.
     # shellcheck disable=SC2086
-    ( cd "$BR/emitcwd" && "$CLARUSC" emit68k --rtdir "$RTDIR" -o "$1" \
+    ( cd "$BR/emitcwd" && "$CLARUSC" build68k --rtdir "$RTDIR" -o "$1" \
         --events "../../$2" --testapi \
         --bake ../../testdata/mac-resident/resbake.bin $_args ) \
         > "$WORK/emit.log" 2>&1 \
-        || die "clarusc emit68k toolbox suite: $(tail -20 "$WORK/emit.log")"
+        || die "clarusc build68k toolbox suite: $(tail -20 "$WORK/emit.log")"
 }
 
 # build_mac NAME ARGS... : scripts/build-mac.sh NAME ARGS... (the Retro68/

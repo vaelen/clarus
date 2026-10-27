@@ -3,7 +3,7 @@
 # depth guard at the top of every recursive parse/check/lower/codegen
 # walker.
 #   examples: on the host DrvStackPtr is 0, so the guard is a no-op --
-#             `clarusc emit68k` of every examples/*.cla still succeeds.
+#             `clarusc build68k` of every examples/*.cla still succeeds.
 #   abort_*:  a guard abort inside one resident compile (the TESTONLY
 #             CLARUS_STACKGUARD_FORCE=N fires it on the Nth guard call in
 #             the process, through the same abort -> attempt path a real
@@ -18,10 +18,10 @@
 
 for f in "$ROOT"/examples/*.cla; do
     b=$(basename "$f" .cla)
-    if emit68k -o "$WORK/$b.bin" "$f" > "$WORK/$b.log" 2>&1; then
+    if build68k -o "$WORK/$b.bin" "$f" > "$WORK/$b.log" 2>&1; then
         t_pass "examples_$b"
     else
-        t_fail "examples_$b" "emit68k failed: $(tail -3 "$WORK/$b.log" | tr '\n' ' ')"
+        t_fail "examples_$b" "build68k failed: $(tail -3 "$WORK/$b.log" | tr '\n' ' ')"
     fi
 done
 

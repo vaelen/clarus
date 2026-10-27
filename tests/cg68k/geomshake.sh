@@ -10,10 +10,10 @@
 
 FNS="rtUiWidgetSetBounds rtUiApplyPendingBounds rtUiApplyAllPending rtUiSetCtrlVis rtUiWinContentW rtUiWinContentH"
 
-emit68k -o "$WORK/bm.bin" --listing "$ROOT/examples/bookmarks.cla" > "$WORK/bm.log" 2>&1 \
-    || die "emit68k bookmarks: $(tail -5 "$WORK/bm.log")"
-emit68k -o "$WORK/ui.bin" --listing "$ROOT/testdata/emitui/ui_batch_decl.cla" > "$WORK/ui.log" 2>&1 \
-    || die "emit68k ui_batch_decl: $(tail -5 "$WORK/ui.log")"
+build68k -o "$WORK/bm.bin" --listing "$ROOT/examples/bookmarks.cla" > "$WORK/bm.log" 2>&1 \
+    || die "build68k bookmarks: $(tail -5 "$WORK/bm.log")"
+build68k -o "$WORK/ui.bin" --listing "$ROOT/testdata/emitui/ui_batch_decl.cla" > "$WORK/ui.log" 2>&1 \
+    || die "build68k ui_batch_decl: $(tail -5 "$WORK/ui.log")"
 
 found=
 missing=

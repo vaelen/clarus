@@ -32,11 +32,11 @@ fi
 # The native lane splices conn.cla unconditionally (drive.cla's want68k
 # arm), so this half never depended on usesConn -- pinned anyway so a
 # future narrowing of that arm cannot silently reintroduce the same gap.
-if emit68k -o "$WORK/fieldonly.bin" "$ROOT/tests/conntest/testdata/fieldonly.cla" \
-        > "$WORK/emit68k.log" 2>&1; then
+if build68k -o "$WORK/fieldonly.bin" "$ROOT/tests/conntest/testdata/fieldonly.cla" \
+        > "$WORK/build68k.log" 2>&1; then
     t_pass native_emit
 else
-    t_fail native_emit "emit68k failed: $(tail -20 "$WORK/emit68k.log")"
+    t_fail native_emit "build68k failed: $(tail -20 "$WORK/build68k.log")"
 fi
 
 t_done

@@ -1,8 +1,8 @@
 #!/bin/sh
 # Port of internal/bake/bakeidentity_test.go's TestBakePathByteIdentity:
 # for every fixture in its cg68kFixtures slice plus a self-compile,
-# `emit68k --rtbake` must produce a byte-identical fork to plain
-# from-source `emit68k`. Host-only, no emulator.
+# `build68k --rtbake` must produce a byte-identical fork to plain
+# from-source `build68k`. Host-only, no emulator.
 #
 # The slice is the six multi-segment testdata/cg68k fixtures the Go file
 # names verbatim; the exhaustive no-allowlist sweep is

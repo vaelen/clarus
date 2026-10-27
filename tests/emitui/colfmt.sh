@@ -10,7 +10,7 @@
 #   - an aborting formatter's arm sits inside the attempt frame (the
 #     `attN_h:` / `clar_aborting = 0;` shape fpAttemptStmt prints) whose
 #     handler returns false;
-#   - both fixtures also compile on the native lane (emit68k).
+#   - both fixtures also compile on the native lane (build68k).
 . "$(dirname "$0")/../lib.sh" || exit 2
 
 # body FILE FN : the C body of static function FN (prototype line excluded;
@@ -125,10 +125,10 @@ check_col 1 "4 1 0 0 0"
 
 # Native lane: both fixtures lower and assemble.
 for f in "$batch" "$fx"; do
-    if emit68k -o "$WORK/n.bin" "$f" > "$WORK/err" 2>&1; then
-        t_pass "emit68k $(basename "$f")"
+    if build68k -o "$WORK/n.bin" "$f" > "$WORK/err" 2>&1; then
+        t_pass "build68k $(basename "$f")"
     else
-        t_fail "emit68k $(basename "$f")" "$(head -3 "$WORK/err" | tr '\n' ' ')"
+        t_fail "build68k $(basename "$f")" "$(head -3 "$WORK/err" | tr '\n' ' ')"
     fi
 done
 

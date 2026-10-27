@@ -137,20 +137,20 @@ func cliResolveBake(bakePaths: list of string) {
     bi = 0
     while bi < bakePaths.count {
         if bakePaths[bi].length > 255 {
-            log("clarusc emit68k --bake: name too long (" + numToStr(bakePaths[bi].length) + " bytes, max 255): " + bakePaths[bi])
+            log("clarusc build68k --bake: name too long (" + numToStr(bakePaths[bi].length) + " bytes, max 255): " + bakePaths[bi])
             quit 2
         }
         bj = 0
         while bj < bi {
             if bakePaths[bj] == bakePaths[bi] {
-                log("clarusc emit68k --bake: duplicate name: " + bakePaths[bi])
+                log("clarusc build68k --bake: duplicate name: " + bakePaths[bi])
                 quit 2
             }
             bj = bj + 1
         }
         bakeBytes = ""
         if not file.readText(bakePaths[bi], bakeBytes) {
-            log("clarusc emit68k: cannot read " + bakePaths[bi] + ": " + lastError.message)
+            log("clarusc build68k: cannot read " + bakePaths[bi] + ": " + lastError.message)
             quit 1
         }
         cgBakeNames.add(bakePaths[bi])
@@ -185,7 +185,7 @@ func cliResolveBakeIr(clirPath: string) {
     bi = 0
     while bi < cgBakeNames.count {
         if cgBakeNames[bi] == bkStampResourceName {
-            log("clarusc emit68k --bake-ir: --bake name collides with reserved name: " + cgBakeNames[bi])
+            log("clarusc build68k --bake-ir: --bake name collides with reserved name: " + cgBakeNames[bi])
             quit 2
         }
         bi = bi + 1
@@ -194,7 +194,7 @@ func cliResolveBakeIr(clirPath: string) {
     stampPath = clirPath + ".stamp"
     bytes = ""
     if not file.readText(stampPath, bytes) {
-        log("clarusc emit68k --bake-ir: cannot read " + stampPath + " (the CLIR's own stamp sidecar -- regenerate with --bake-ir): " + lastError.message)
+        log("clarusc build68k --bake-ir: cannot read " + stampPath + " (the CLIR's own stamp sidecar -- regenerate with --bake-ir): " + lastError.message)
         quit 1
     }
     cgBakeNames.add(bkStampResourceName)
@@ -279,7 +279,7 @@ on App.startCLI(args: list of string) {
     // to IR, builds the C translation unit, and writes it to OUT.c via
     // file.writeText (byte-faithful, no per-line length cap -- unlike stdout
     // via alert, which is capped at a string's 255 bytes per line).
-    // `clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...` (native-5d
+    // `clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...` (native-5d
     // Task 7) runs the SAME check + runtime-manifest pipeline as emit, then
     // roots the native-only entry points (cg68AddRoots), shakes, and hands
     // off to driveEmit68k (drive.cla) instead of emitProgram -- see
@@ -367,7 +367,7 @@ on App.startCLI(args: list of string) {
                 if buildMode {
                     log("usage: clarusc build -o PROG [--rtdir DIR] [--keep-c] FILE...")
                 } else if emitMode68k {
-                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
+                    log("usage: clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
                 } else if bakeIrMode {
                     log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
                 } else {
@@ -383,7 +383,7 @@ on App.startCLI(args: list of string) {
                 if buildMode {
                     log("usage: clarusc build -o PROG [--rtdir DIR] [--keep-c] FILE...")
                 } else if emitMode68k {
-                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
+                    log("usage: clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
                 } else if bakeIrMode {
                     log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
                 } else if emitMode {
@@ -459,7 +459,7 @@ on App.startCLI(args: list of string) {
             i = i + 1
             if i >= args.count {
                 if emitMode68k {
-                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--rtbake FILE] FILE...")
+                    log("usage: clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--rtbake FILE] FILE...")
                 } else {
                     log("usage: clarusc emit -o OUT.c [--rtdir DIR] [--testapi] [--rtbake FILE] FILE...")
                 }
@@ -495,7 +495,7 @@ on App.startCLI(args: list of string) {
             // doc comment.
             i = i + 1
             if i >= args.count {
-                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] FILE...")
+                log("usage: clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] FILE...")
                 quit 2
             }
             segLimitFlag = cgParseDecimal(args[i])
@@ -510,7 +510,7 @@ on App.startCLI(args: list of string) {
             // escaping needed since nothing re-parses it as source.
             i = i + 1
             if i >= args.count {
-                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] FILE...")
+                log("usage: clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] FILE...")
                 quit 2
             }
             eventsPath = args[i]
@@ -531,7 +531,7 @@ on App.startCLI(args: list of string) {
             // duplicate-name check).
             i = i + 1
             if i >= args.count {
-                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] [--bake FILE]... FILE...")
+                log("usage: clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] [--bake FILE]... FILE...")
                 quit 2
             }
             bakePaths.add(args[i])
@@ -546,7 +546,7 @@ on App.startCLI(args: list of string) {
             // per build. Read at hand-off time below, same as --bake.
             i = i + 1
             if i >= args.count {
-                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] [--bake FILE]... [--bake-ir FILE] FILE...")
+                log("usage: clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] [--bake FILE]... [--bake-ir FILE] FILE...")
                 quit 2
             }
             bakeIrEmbedPath = args[i]
@@ -572,20 +572,20 @@ on App.startCLI(args: list of string) {
             // 2MB ClarusC.APPL that then can't compile anything.
             i = i + 1
             if i >= args.count {
-                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] [--bake FILE]... [--partition N] FILE...")
+                log("usage: clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] [--bake FILE]... [--partition N] FILE...")
                 quit 2
             }
             partitionDigitIdx = 0
             while partitionDigitIdx < args[i].length {
                 if not isDigit(args[i][partitionDigitIdx]) {
-                    log("clarusc emit68k --partition: not a positive number: " + args[i])
+                    log("clarusc build68k --partition: not a positive number: " + args[i])
                     quit 2
                 }
                 partitionDigitIdx = partitionDigitIdx + 1
             }
             cgSizePartitionBytes = cgParseDecimal(args[i])
             if args[i].length == 0 or cgSizePartitionBytes <= 0 {
-                log("clarusc emit68k --partition: not a positive number: " + args[i])
+                log("clarusc build68k --partition: not a positive number: " + args[i])
                 quit 2
             }
         } else {
@@ -602,7 +602,7 @@ on App.startCLI(args: list of string) {
         quit 2
     }
     if emitMode68k and not haveOutPath {
-        log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
+        log("usage: clarusc build68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
         quit 2
     }
     if bakeIrMode and not haveOutPath {
@@ -779,7 +779,7 @@ on App.startCLI(args: list of string) {
         if haveEvents {
             eventsBytes = ""
             if not file.readText(eventsPath, eventsBytes) {
-                log("clarusc emit68k: cannot read " + eventsPath + ": " + lastError.message)
+                log("clarusc build68k: cannot read " + eventsPath + ": " + lastError.message)
                 quit 1
             }
             cgEventsBytes = eventsBytes
@@ -802,7 +802,7 @@ on App.startCLI(args: list of string) {
         }
         ok68 = driveEmit68k(outPath, listingFlag, segLimitFlag, nopeepFlag)
         if not ok68 {
-            log("clarusc emit68k: driveEmit68k failed")
+            log("clarusc build68k: driveEmit68k failed")
             quit 1
         }
         driveProgressDone()

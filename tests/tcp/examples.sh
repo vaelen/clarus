@@ -9,7 +9,7 @@
 # reasoning): the transport caps and the address/port fences live in
 # LOWERING, which check-only never runs. There is no host `cc` half -- this
 # is a UI program and the host C lane only compiles non-UI ones -- so the
-# native emit68k is the second lane, and it carries --events so the boot's
+# native build68k is the second lane, and it carries --events so the boot's
 # scripted-event file is loaded and embedded here too, not first inside the
 # Snow boot. No network, no lock, no emulator; both emits take well under a
 # second.
@@ -22,7 +22,7 @@ else
     t_fail tcpchat_host "$(tail -20 "$WORK/host.log")"
 fi
 
-if emit68k -o "$WORK/TcpChat.bin" --events "$ROOT/testdata/ui/tcpchat_self.events" \
+if build68k -o "$WORK/TcpChat.bin" --events "$ROOT/testdata/ui/tcpchat_self.events" \
     "$ROOT/examples/tcpchat.cla" > "$WORK/68k.log" 2>&1; then
     t_pass tcpchat_68k
 else

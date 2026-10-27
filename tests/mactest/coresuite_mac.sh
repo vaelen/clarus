@@ -4,7 +4,7 @@
 # TestCoreSuiteGUIOnMac: TestCoreSuiteGUIOn68k's Retro68/cprint-lane twin.
 # Same coreGUIFiles composition, same coresuite.events script, same
 # PASS/FAIL/TOTAL contract -- built through scripts/build-mac.sh's
-# Retro68/cmake/gcc pipeline instead of `clarusc emit68k`.
+# Retro68/cmake/gcc pipeline instead of `clarusc build68k`.
 . "$(dirname "$0")/../lib.sh" || exit 2
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_CPRINT_MAC_TESTS

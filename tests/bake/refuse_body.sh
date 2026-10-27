@@ -18,9 +18,9 @@ CORRUPT=$WORK/corrupt-body-68k.clir
 bake_ir 68k "$VALID"
 "$CLIRHDR" --flip-body "$VALID" "$CORRUPT" || die "clirhdr --flip-body $VALID failed"
 
-if "$CLARUSC" emit68k --rtbake "$CORRUPT" -o "$WORK/out.bin" \
+if "$CLARUSC" build68k --rtbake "$CORRUPT" -o "$WORK/out.bin" \
         "$ROOT/testdata/cg68k/arith.cla" > "$WORK/log" 2>&1; then
-    t_fail exit "clarusc emit68k --rtbake <corrupt-body>: expected nonzero exit, got success: $(head -3 "$WORK/log" | tr '\n' ' ')"
+    t_fail exit "clarusc build68k --rtbake <corrupt-body>: expected nonzero exit, got success: $(head -3 "$WORK/log" | tr '\n' ' ')"
 else
     t_pass exit
 fi
@@ -38,9 +38,9 @@ fi
 # itself rather than parse a GlobalInits payload as statements.
 LANESET=$WORK/laneset-68k.clir
 clir_retag_section "$VALID" "$LANESET" 52 2 || die "clir_retag_section $VALID failed"
-if "$CLARUSC" emit68k --rtbake "$LANESET" -o "$WORK/out.bin" \
+if "$CLARUSC" build68k --rtbake "$LANESET" -o "$WORK/out.bin" \
         "$ROOT/testdata/cg68k/arith.cla" > "$WORK/laneset.log" 2>&1; then
-    t_fail lane_set "clarusc emit68k --rtbake <c-lane section in a 68k library>: expected nonzero exit, got success"
+    t_fail lane_set "clarusc build68k --rtbake <c-lane section in a 68k library>: expected nonzero exit, got success"
 elif grep -q 'corrupt header' "$WORK/laneset.log"; then
     t_pass lane_set
 else
@@ -55,9 +55,9 @@ SUMOFF=$("$CLIRHDR" "$VALID" | awk '$1 == "section" && $2 == 51 { print $4 }')
 cp "$VALID" "$WORK/corrupt-sum-68k.clir" || die "cp failed"
 printf '\177\377\377\377' | dd of="$WORK/corrupt-sum-68k.clir" bs=1 seek=$((SUMOFF + 12)) conv=notrunc 2>/dev/null \
     || die "dd failed"
-if "$CLARUSC" emit68k --rtbake "$WORK/corrupt-sum-68k.clir" -o "$WORK/sum.bin" \
+if "$CLARUSC" build68k --rtbake "$WORK/corrupt-sum-68k.clir" -o "$WORK/sum.bin" \
         "$ROOT/testdata/cg68k/arith.cla" > "$WORK/sum.log" 2>&1; then
-    t_fail summary_exit "clarusc emit68k --rtbake <corrupt-summary>: expected nonzero exit, got success"
+    t_fail summary_exit "clarusc build68k --rtbake <corrupt-summary>: expected nonzero exit, got success"
 else
     t_pass summary_exit
 fi

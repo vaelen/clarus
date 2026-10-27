@@ -1,6 +1,6 @@
 #!/bin/sh
 # tests/bake/atalk.sh (2026-09-06 appletalk spec, Task 9): the T1-speed
-# `emit68k --rtbake` byte-identity twin for the AppleTalk lowering sites,
+# `build68k --rtbake` byte-identity twin for the AppleTalk lowering sites,
 # in the shape connfileh.sh established for `connection`/`filehandle`.
 #
 # The standing rule (CLAUDE.md, compiler-cleanup phase): a phase that adds

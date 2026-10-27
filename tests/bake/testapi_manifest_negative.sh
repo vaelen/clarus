@@ -48,13 +48,13 @@ extend Probe {
 }
 CLA
 
-if "$CLARUSC" emit68k --testapi -o "$WORK/src.bin" "$FIXTURE" > "$WORK/src.log" 2>&1; then
+if "$CLARUSC" build68k --testapi -o "$WORK/src.bin" "$FIXTURE" > "$WORK/src.log" 2>&1; then
     t_fail src_exit "from-source --testapi naming rtFhSize: expected failure, got success: $(head -3 "$WORK/src.log" | tr '\n' ' ')"
 else
     t_pass src_exit
 fi
 
-if "$CLARUSC" emit68k --rtbake "$BAKE" --testapi -o "$WORK/bake.bin" "$FIXTURE" > "$WORK/bake.log" 2>&1; then
+if "$CLARUSC" build68k --rtbake "$BAKE" --testapi -o "$WORK/bake.bin" "$FIXTURE" > "$WORK/bake.log" 2>&1; then
     t_fail bake_exit "--rtbake --testapi naming rtFhSize: expected failure, got success: $(head -3 "$WORK/bake.log" | tr '\n' ' ')"
 else
     t_pass bake_exit

@@ -2,7 +2,7 @@
 # build-68k.sh NAME file.cla... [--events FILE] [--capture]
 # build-68k.sh file.cla... [--events FILE] [--capture]   (NAME derived, Task 13 parity
 #                                              with build-mac.sh's own Task 6)
-# Emits a native 68k .bin directly via `clarusc emit68k` -- no C, no cmake,
+# Emits a native 68k .bin directly via `clarusc build68k` -- no C, no cmake,
 # no Retro68. Bootstraps clarusc from the committed snapshot exactly like
 # build-mac.sh's own step 1 (cached on clarusc.c's mtime). Output:
 # build-68k/NAME/NAME.bin
@@ -12,18 +12,18 @@
 # .cla, NAME is derived from `clarusc appinfo`'s name= line (or, absent an
 # app section, its filename fallback), sanitized to [A-Za-z0-9_-]. Unlike
 # build-mac.sh, no separate appinfo-driven About/icon/CREATOR resource
-# generation step is needed here -- `clarusc emit68k` builds those
+# generation step is needed here -- `clarusc build68k` builds those
 # resources itself now (clarusc/app68k.cla + res68k.cla), so appinfo is
 # only consulted for the naming fallback.
 #
 # --events FILE (Task 12, native-5e): a scripted-event source file,
-# pass-through to `clarusc emit68k --events FILE` (pours the raw file
+# pass-through to `clarusc build68k --events FILE` (pours the raw file
 # bytes into the native constant pool -- see cg68k.cla's cgEmitUiEventsPool
 # doc comment) -- the native-boot counterpart to build-mac.sh's own
 # --events (which round-trips the file through a generated C string
 # literal for the cprint lane instead).
 #
-# --capture: pass-through to `clarusc emit68k --capture`, the test-capture
+# --capture: pass-through to `clarusc build68k --capture`, the test-capture
 # protocol (an `out` file with the ##CLARUS-EXIT## trailer). NOT implied
 # here: without it (and without --events, which implies it inside
 # clarusc) the build is a production app that writes no `out` file.
@@ -74,5 +74,5 @@ EVENTS_ARGS=()
 if [ -n "$EVENTS" ]; then
     EVENTS_ARGS=(--events "$EVENTS")
 fi
-"$CLARUSC" emit68k --rtdir "$ROOT/runtime/clarus/" -o "$OUT/$NAME.bin" "${EVENTS_ARGS[@]}" "${CAPTURE_ARGS[@]}" "${FILES[@]}"
+"$CLARUSC" build68k --rtdir "$ROOT/runtime/clarus/" -o "$OUT/$NAME.bin" "${EVENTS_ARGS[@]}" "${CAPTURE_ARGS[@]}" "${FILES[@]}"
 echo "built: $OUT/$NAME.bin"

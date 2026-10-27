@@ -15,7 +15,7 @@
 # A subdirectory: lowlevel/run host-RUNS every top-level fixture.
 SRC=$ROOT/testdata/lowlevel/narrow/extern_narrow.cla
 [ -f "$SRC" ] || die "missing $SRC"
-for lane in emit68k emit; do
+for lane in build68k emit; do
     if "$CLARUSC" $lane --rtdir "$RTDIR" -o "$WORK/out.$lane" "$SRC" > "$WORK/$lane.log" 2>&1; then
         t_pass "$lane-compiles"
     else

@@ -15,8 +15,8 @@ require_env CLARUS_SNOW_TESTS
 DRIVE=$TOOLS/tcpdrive
 [ -x "$DRIVE" ] || die "$DRIVE not built (make tools)"
 
-emit68k --capture -o "$WORK/SerialEcho.bin" "$ROOT/examples/serialecho.cla" > "$WORK/build.log" 2>&1 \
-    || die "clarusc emit68k examples/serialecho.cla: $(tail -5 "$WORK/build.log" | tr '\n' ' ')"
+build68k --capture -o "$WORK/SerialEcho.bin" "$ROOT/examples/serialecho.cla" > "$WORK/build.log" 2>&1 \
+    || die "clarusc build68k examples/serialecho.cla: $(tail -5 "$WORK/build.log" | tr '\n' ' ')"
 
 snow_disk
 snow_put_bin "$WORK/SerialEcho.bin" SerialEcho

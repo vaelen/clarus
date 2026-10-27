@@ -12,7 +12,7 @@
 # tracked-temp gate now covers that shape, so the end-of-statement flush
 # walks the copy's fields.
 #
-# The check: emit68k --listing testdata/cg68k/pop_rec.cla, find the
+# The check: build68k --listing testdata/cg68k/pop_rec.cla, find the
 # cg_release_<Rec> walk's label (the listing annotates the walk's own
 # binding site with "; cg_release_PopRec(...)" -- the label is the line
 # right above it; the label itself is a bare LBL_<n>), then count calls to
@@ -28,8 +28,8 @@ FIX=$ROOT/testdata/cg68k/pop_rec.cla
 run=$WORK/pop_rec_release
 mkdir -p "$run" || die "mkdir $run"
 
-if ! out=$("$CLARUSC" emit68k -o "$run/out.bin" --listing --rtdir "$RTDIR" "$FIX" 2>&1); then
-    t_fail emit "clarusc emit68k --listing $FIX failed"
+if ! out=$("$CLARUSC" build68k -o "$run/out.bin" --listing --rtdir "$RTDIR" "$FIX" 2>&1); then
+    t_fail emit "clarusc build68k --listing $FIX failed"
     echo "$out"
     t_done
 fi

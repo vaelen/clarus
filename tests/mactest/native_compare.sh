@@ -4,7 +4,7 @@
 # TestNativeSmoke / TestNativeStrContainers / TestNativeArrWholeAssign (all
 # three call runNativeHostCompare). Each fixture is built BOTH ways -- the
 # host expectation via `clarusc emit` + cc, the native image via `clarusc
-# emit68k --listing` -- and the emulator's captured `out` must be
+# build68k --listing` -- and the emulator's captured `out` must be
 # byte-identical to the host binary's stdout, with both exit codes 0.
 # The CODE-segment count each build produced is logged (visible evidence
 # that packing really did or did not split the app).
@@ -30,8 +30,8 @@ for name in smoke strcontainers arr_whole_assign; do
     # --- native image ---------------------------------------------------
     run=$WORK/nat_$name
     mkdir -p "$run" || die "mkdir $run"
-    if ! emit68k --capture -o "$run/native.bin" --listing "$fixture" > "$WORK/emit.log" 2>&1; then
-        t_fail "$name" "clarusc emit68k --listing $fixture failed: $(tail -10 "$WORK/emit.log")"
+    if ! build68k --capture -o "$run/native.bin" --listing "$fixture" > "$WORK/emit.log" 2>&1; then
+        t_fail "$name" "clarusc build68k --listing $fixture failed: $(tail -10 "$WORK/emit.log")"
         continue
     fi
     segs=0

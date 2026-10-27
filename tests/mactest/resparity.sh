@@ -2,7 +2,7 @@
 # tests/mactest/resparity.sh -- port of internal/mactest/resparity_test.go:
 # TestApp68kResourceParity, TestApp68kIconMissingWarns and
 # TestApp68kIconAcceptsCRLineEndings. No emulator, no Retro68, no cmake --
-# just `clarusc emit68k` plus resfork, an independent resource-fork reader.
+# just `clarusc build68k` plus resfork, an independent resource-fork reader.
 #
 # The testdata/mac/resparity/*.bin goldens are FROZEN, pinned once from a
 # real Retro68 build of the same two fixtures: any divergence is a real
@@ -14,10 +14,10 @@
 RESFORK=$TOOLS/resfork
 GOLD=$ROOT/testdata/mac/resparity
 
-# build_probe DIR FIXTURE : emit68k FIXTURE to DIR/out.bin, log to DIR/emit.log
+# build_probe DIR FIXTURE : build68k FIXTURE to DIR/out.bin, log to DIR/emit.log
 build_probe() {
     mkdir -p "$1" || return 1
-    emit68k -o "$1/out.bin" "$2" > "$1/emit.log" 2>&1
+    build68k -o "$1/out.bin" "$2" > "$1/emit.log" 2>&1
 }
 
 # check_goldens PREFIX IMG : read "TYPE ID" pairs on stdin, extract each
@@ -52,7 +52,7 @@ size_flags() { "$RESFORK" size "$1" | cut -c1-4; }
 # --------------------------------------------------------------------
 A=$WORK/appres
 if ! build_probe "$A" testdata/ui/appres.cla; then
-    t_fail appres_build "emit68k failed: $(tail -3 "$A/emit.log")"
+    t_fail appres_build "build68k failed: $(tail -3 "$A/emit.log")"
 else
     creator=$("$RESFORK" header "$A/out.bin" | sed -n 's/.*creator=\([^ ]*\).*/\1/p')
     if [ "$creator" = PRBR ]; then
@@ -96,7 +96,7 @@ fi
 # --------------------------------------------------------------------
 B=$WORK/about
 if ! build_probe "$B" testdata/ui/about.cla; then
-    t_fail about_build "emit68k failed: $(tail -3 "$B/emit.log")"
+    t_fail about_build "build68k failed: $(tail -3 "$B/emit.log")"
 else
     creator=$("$RESFORK" header "$B/out.bin" | sed -n 's/.*creator=\([^ ]*\).*/\1/p')
     if [ "$creator" = PRBA ]; then
@@ -145,19 +145,19 @@ mkdir -p "$WI" "$ST" || die "mkdir"
 cp testdata/ui/iconmissing.cla "$WI/iconmissing.cla" || die "cp"
 grep -v 'icon:' testdata/ui/iconmissing.cla > "$ST/iconmissing.cla" || die "strip"
 
-if ! emit68k -o "$WI/out.bin" "$WI/iconmissing.cla" > "$WI/emit.log" 2>&1; then
-    t_fail icon_missing_warns "clarusc emit68k (icon missing) failed (want success): $(tail -3 "$WI/emit.log")"
+if ! build68k -o "$WI/out.bin" "$WI/iconmissing.cla" > "$WI/emit.log" 2>&1; then
+    t_fail icon_missing_warns "clarusc build68k (icon missing) failed (want success): $(tail -3 "$WI/emit.log")"
 # The directory half of the path is matched with `.*` rather than pinned
 # to $WI: clarusc normalizes the "//" a TMPDIR ending in "/" leaves in
 # $WORK, so an exact-path pattern would spuriously miss.
 elif ! grep -q 'warning: cannot read app icon .*/no-such-file\.pbm: .*; using default icon' "$WI/emit.log"; then
-    t_fail icon_missing_warns "emit68k output missing the icon warning: $(grep -i warn "$WI/emit.log" | head -2)"
+    t_fail icon_missing_warns "build68k output missing the icon warning: $(grep -i warn "$WI/emit.log" | head -2)"
 else
     t_pass icon_missing_warns
 fi
 
-if ! emit68k -o "$ST/out.bin" "$ST/iconmissing.cla" > "$ST/emit.log" 2>&1; then
-    t_fail icon_stripped_silent "clarusc emit68k (icon stripped) failed: $(tail -3 "$ST/emit.log")"
+if ! build68k -o "$ST/out.bin" "$ST/iconmissing.cla" > "$ST/emit.log" 2>&1; then
+    t_fail icon_stripped_silent "clarusc build68k (icon stripped) failed: $(tail -3 "$ST/emit.log")"
 elif grep -q 'warning:' "$ST/emit.log"; then
     t_fail icon_stripped_silent "icon-stripped fixture unexpectedly warned: $(grep 'warning:' "$ST/emit.log" | head -1)"
 else
@@ -174,8 +174,8 @@ fi
 # resolves, so its compile must still succeed with no warning at all.
 MB=$WORK/mandel
 mkdir -p "$MB" || die "mkdir"
-if ! emit68k -o "$MB/mandel.bin" examples/mandelbrot.cla > "$MB/emit.log" 2>&1; then
-    t_fail icon_present_silent "clarusc emit68k examples/mandelbrot.cla failed: $(tail -3 "$MB/emit.log")"
+if ! build68k -o "$MB/mandel.bin" examples/mandelbrot.cla > "$MB/emit.log" 2>&1; then
+    t_fail icon_present_silent "clarusc build68k examples/mandelbrot.cla failed: $(tail -3 "$MB/emit.log")"
 elif grep -q 'warning:' "$MB/emit.log"; then
     t_fail icon_present_silent "examples/mandelbrot.cla (icon present, resolves) unexpectedly warned: $(grep 'warning:' "$MB/emit.log" | head -1)"
 else
@@ -221,11 +221,11 @@ crlf_variant() {
     mkdir -p "$_d" || return 1
     cp "$WORK/iconcrlf.cla" "$_d/iconcrlf.cla" || return 1
     cp "$2" "$_d/icon.pbm" || return 1
-    emit68k -o "$_d/out.bin" "$_d/iconcrlf.cla" > "$_d/emit.log" 2>&1
+    build68k -o "$_d/out.bin" "$_d/iconcrlf.cla" > "$_d/emit.log" 2>&1
 }
 
 if ! crlf_variant lf "$PBM"; then
-    t_fail icon_crlf "LF baseline emit68k failed: $(tail -3 "$WORK/crlf_lf/emit.log")"
+    t_fail icon_crlf "LF baseline build68k failed: $(tail -3 "$WORK/crlf_lf/emit.log")"
     t_done
 fi
 if grep -q 'warning:' "$WORK/crlf_lf/emit.log"; then
@@ -244,7 +244,7 @@ fi
 
 for v in cr crlf; do
     if ! crlf_variant "$v" "$WORK/icon_$v.pbm"; then
-        t_fail "icon_crlf_$v" "emit68k failed: $(tail -3 "$WORK/crlf_$v/emit.log")"
+        t_fail "icon_crlf_$v" "build68k failed: $(tail -3 "$WORK/crlf_$v/emit.log")"
     elif grep -q 'warning:' "$WORK/crlf_$v/emit.log"; then
         t_fail "icon_crlf_$v" "$v-terminated PBM produced a malformed-icon/cannot-read warning; want silent accept"
     elif cmp -s "$WORK/crlf_lf/out.bin" "$WORK/crlf_$v/out.bin"; then

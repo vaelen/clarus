@@ -1,6 +1,6 @@
 #!/bin/sh
 # tests/bake/tcp.sh (2026-09-07 mactcp spec, Task 9): the T1-speed
-# `emit68k --rtbake` byte-identity twin for the TCP lowering sites, in the
+# `build68k --rtbake` byte-identity twin for the TCP lowering sites, in the
 # shape connfileh.sh established for `connection`/`filehandle` and
 # atalk.sh repeated for AppleTalk.
 #

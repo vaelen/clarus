@@ -52,7 +52,7 @@ mkdir -p "$TMPROOT/bake-out" "$TMPROOT/src-out" || die mkdir
 BAKEOUT=$TMPROOT/bake-out/drift.bin
 SRCOUT=$TMPROOT/src-out/drift.bin
 
-if "$CLARUSC" emit68k --rtbake "$BAKE" -o "$BAKEOUT" "$FIXTURE" > "$WORK/bake.log" 2>&1; then
+if "$CLARUSC" build68k --rtbake "$BAKE" -o "$BAKEOUT" "$FIXTURE" > "$WORK/bake.log" 2>&1; then
     t_pass bake_compiles
     if grep -qF "$WANTLOG" "$WORK/bake.log"; then
         t_pass drift_note
@@ -64,7 +64,7 @@ else
     t_fail drift_note "--rtbake compile failed"
 fi
 
-if "$CLARUSC" emit68k -o "$SRCOUT" "$FIXTURE" > "$WORK/src.log" 2>&1; then
+if "$CLARUSC" build68k -o "$SRCOUT" "$FIXTURE" > "$WORK/src.log" 2>&1; then
     t_pass src_compiles
 else
     t_fail src_compiles "plain from-source compile of the drifted tree failed: $(head -5 "$WORK/src.log" | tr '\n' ' ')"

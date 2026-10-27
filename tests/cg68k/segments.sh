@@ -48,7 +48,7 @@ testsuite/core/cases_logfile.cla
 testsuite/core/cases_openread.cla
 testsuite/core/cli_mac.cla"
 # lib.sh already cd'd to $ROOT, so these relative paths are what clarusc
-# sees; $@ carries them for the three emit68k runs below.
+# sees; $@ carries them for the three build68k runs below.
 set -- $FIXTURE
 for f in "$@"; do
     [ -f "$f" ] || die "missing fixture file $f"
@@ -59,8 +59,8 @@ D2=$WORK/run2
 D3=$WORK/run3
 mkdir -p "$D1" "$D2" "$D3" || die "mkdir"
 
-if ! emit68k -o "$D1/out.bin" --listing "$@" > "$D1/emit.log" 2>&1; then
-    t_fail multisegment "emit68k --listing failed: $(tail -5 "$D1/emit.log")"
+if ! build68k -o "$D1/out.bin" --listing "$@" > "$D1/emit.log" 2>&1; then
+    t_fail multisegment "build68k --listing failed: $(tail -5 "$D1/emit.log")"
     t_done
 fi
 IMG=$D1/out.bin
@@ -177,12 +177,12 @@ mkdir -p "$OD" || die "mkdir"
     echo '    r = hugefn()'
     echo '}'
 } > "$OD/oversized.cla"
-if emit68k -o "$OD/out.bin" "$OD/oversized.cla" > "$OD/emit.log" 2>&1; then
-    t_fail oversized_function "emit68k unexpectedly succeeded on an oversized function"
+if build68k -o "$OD/out.bin" "$OD/oversized.cla" > "$OD/emit.log" 2>&1; then
+    t_fail oversized_function "build68k unexpectedly succeeded on an oversized function"
 elif ! grep -q 'function hugefn exceeds the 32KB segment limit' "$OD/emit.log"; then
     t_fail oversized_function "expected the named oversized-function error, got: $(tail -3 "$OD/emit.log")"
 elif [ -e "$OD/out.bin" ]; then
-    t_fail oversized_function "emit68k left a .bin behind despite the oversized-function error"
+    t_fail oversized_function "build68k left a .bin behind despite the oversized-function error"
 else
     t_pass oversized_function
 fi
@@ -203,14 +203,14 @@ awk 'BEGIN{
     for (i = 1; i <= n; i++) { if (i > 1) printf ", "; printf "\"a\" + \"%d\"", i }
     printf ")\n    quit 0\n}\n"
 }' > "$FD/oversizedframe.cla"
-if emit68k -o "$FD/out.bin" "$FD/oversizedframe.cla" > "$FD/emit.log" 2>&1; then
-    t_fail oversized_frame "emit68k unexpectedly succeeded on a function needing a >32KB frame"
+if build68k -o "$FD/out.bin" "$FD/oversizedframe.cla" > "$FD/emit.log" 2>&1; then
+    t_fail oversized_frame "build68k unexpectedly succeeded on a function needing a >32KB frame"
 elif ! grep -q 'needs a' "$FD/emit.log" \
     || ! grep -q -- '-byte frame' "$FD/emit.log" \
     || ! grep -q -- 'caps frames at 32767 bytes -- split the function or the statement' "$FD/emit.log"; then
     t_fail oversized_frame "expected the named oversized-frame error, got: $(tail -3 "$FD/emit.log")"
 elif [ -e "$FD/out.bin" ]; then
-    t_fail oversized_frame "emit68k left a .bin behind despite the oversized-frame error"
+    t_fail oversized_frame "build68k left a .bin behind despite the oversized-frame error"
 else
     t_pass oversized_frame
 fi
@@ -241,14 +241,14 @@ else
 fi
 
 # -- double-emit determinism on the multi-segment image itself --
-if ! emit68k -o "$D2/out.bin" "$@" > "$D2/emit.log" 2>&1; then
-    t_fail determinism "emit68k (run 2) failed: $(tail -5 "$D2/emit.log")"
-elif ! emit68k -o "$D3/out.bin" "$@" > "$D3/emit.log" 2>&1; then
-    t_fail determinism "emit68k (run 3) failed: $(tail -5 "$D3/emit.log")"
+if ! build68k -o "$D2/out.bin" "$@" > "$D2/emit.log" 2>&1; then
+    t_fail determinism "build68k (run 2) failed: $(tail -5 "$D2/emit.log")"
+elif ! build68k -o "$D3/out.bin" "$@" > "$D3/emit.log" 2>&1; then
+    t_fail determinism "build68k (run 3) failed: $(tail -5 "$D3/emit.log")"
 elif cmp -s "$D2/out.bin" "$D3/out.bin"; then
     t_pass determinism
 else
-    t_fail determinism "emit68k is non-deterministic on a multi-segment build: $(cmp "$D2/out.bin" "$D3/out.bin" 2>&1 | head -1)"
+    t_fail determinism "build68k is non-deterministic on a multi-segment build: $(cmp "$D2/out.bin" "$D3/out.bin" 2>&1 | head -1)"
 fi
 
 t_done

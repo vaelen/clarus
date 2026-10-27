@@ -27,8 +27,8 @@ measure() {
     case "$_budget" in
         ''|*[!0-9]*) t_fail "$_name" "no numeric budget for $_name in $BUDGET"; return ;;
     esac
-    if ! (cd "$MEASURE_CWD" && CLARUS_MEM_PEAK=1 "$CLARUSC" emit68k "$@" -o "$WORK/$_name.bin") > /dev/null 2> "$WORK/$_name.err"; then
-        t_fail "$_name" "emit68k failed: $(tail -3 "$WORK/$_name.err" | tr '\n' ' ')"
+    if ! (cd "$MEASURE_CWD" && CLARUS_MEM_PEAK=1 "$CLARUSC" build68k "$@" -o "$WORK/$_name.bin") > /dev/null 2> "$WORK/$_name.err"; then
+        t_fail "$_name" "build68k failed: $(tail -3 "$WORK/$_name.err" | tr '\n' ' ')"
         return
     fi
     grep '^memprobe:' "$WORK/$_name.err"

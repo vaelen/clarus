@@ -36,9 +36,9 @@ sed "s/^click 400 64\$/click 336 64/" "$ROOT/testdata/ui/tcpchat_self.events" \
     > "$WORK/self.events" || die "could not restamp the Self click"
 grep -qx 'click 336 64' "$WORK/self.events" \
     || die "Self click restamp did not take (testdata/ui/tcpchat_self.events changed?)"
-emit68k -o "$WORK/TcpChat.bin" --events "$WORK/self.events" \
+build68k -o "$WORK/TcpChat.bin" --events "$WORK/self.events" \
     "$ROOT/examples/tcpchat.cla" > "$WORK/build.log" 2>&1 \
-    || die "clarusc emit68k examples/tcpchat.cla: $(tail -5 "$WORK/build.log" | tr '\n' ' ')"
+    || die "clarusc build68k examples/tcpchat.cla: $(tail -5 "$WORK/build.log" | tr '\n' ' ')"
 
 snow_disk 7
 grep -q '"Ethernet"' "$SNOW_WS" || skip "snow/system7.snoww has no Ethernet SCSI target"

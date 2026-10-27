@@ -1,5 +1,5 @@
 #!/bin/sh
-# SE wave 3 (spec 3.5): T1-speed `emit68k --rtbake` byte-identity for the
+# SE wave 3 (spec 3.5): T1-speed `build68k --rtbake` byte-identity for the
 # box-size runtime lane pair (boxsize_68k.cla / boxsize_c.cla). Standing
 # rule (CLAUDE.md): a phase that adds a value-typed runtime module adds its
 # tests/bake/<module>.sh twin in the same task. The probe builds every

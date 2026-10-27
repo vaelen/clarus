@@ -1,6 +1,6 @@
 #!/bin/sh
 # Port of internal/bake/bakeidentity_test.go's TestBakeFullCorpusTestapi
-# (deliverable (a), fix round 2): a --testapi program's `emit68k --rtbake`
+# (deliverable (a), fix round 2): a --testapi program's `build68k --rtbake`
 # output must be byte-identical to from-source --testapi -- fix round 2
 # (driveManifestSplice reassembling combined2 from three separately-tracked
 # chains, in exactly the bake's own fixed order) closed the ordering gap

@@ -1,6 +1,6 @@
 #!/bin/sh
 # timeout: 10m
-# mactest/nolog -- a production native build (emit68k WITHOUT --capture or
+# mactest/nolog -- a production native build (build68k WITHOUT --capture or
 # --events) writes no `out` file at all. testdata/mactest/nolog.cla calls
 # log("x") and quits 0; booted with run_mac's own LaunchAPPL invocation.
 #
@@ -29,13 +29,13 @@
 . "$(dirname "$0")/../lib_mac.sh" || die "helper lib failed to load"
 require_env CLARUS_MAC_TESTS
 
-# prod_boot NAME SRC : a production emit68k (no --capture) of SRC, booted
+# prod_boot NAME SRC : a production build68k (no --capture) of SRC, booted
 # with run_mac's LaunchAPPL call minus capture_split (which dies on a
 # missing trailer -- the whole point here). Leaves the raw capture in
 # $WORK/NAME.raw and LaunchAPPL's exit code in $rc.
 prod_boot() {
-    emit68k -o "$WORK/$1.bin" "$2" > "$WORK/$1.emit" 2>&1 \
-        || die "clarusc emit68k $1: $(tail -10 "$WORK/$1.emit")"
+    build68k -o "$WORK/$1.bin" "$2" > "$WORK/$1.emit" 2>&1 \
+        || die "clarusc build68k $1: $(tail -10 "$WORK/$1.emit")"
     mkdir -p "$WORK/launch_$1"
     # shellcheck disable=SC2086
     ( cd "$WORK/launch_$1" && "$TOOLS/timeout" 180 $MAC_LAUNCH "$WORK/$1.bin" \
@@ -111,9 +111,9 @@ if [ $rc -eq 0 ]; then
     fi
 fi
 
-emit68k --capture -o "$WORK/initpanic.bin" testdata/mactest/initpanic.cla \
+build68k --capture -o "$WORK/initpanic.bin" testdata/mactest/initpanic.cla \
     > "$WORK/emit2.log" 2>&1 \
-    || die "clarusc emit68k initpanic: $(tail -10 "$WORK/emit2.log")"
+    || die "clarusc build68k initpanic: $(tail -10 "$WORK/emit2.log")"
 run_mac "$WORK/initpanic.bin" 180
 if [ "$MAC_EXIT" != 3 ]; then
     t_fail initpanic "exit code $MAC_EXIT, want 3"

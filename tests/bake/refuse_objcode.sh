@@ -18,9 +18,9 @@ CORRUPT=$WORK/corrupt-objcode-68k.clir
 "$CLARUSC" --bake-ir --lane 68k --corrupt-objcode-testonly -o "$CORRUPT" \
     || die "clarusc --bake-ir --lane 68k --corrupt-objcode-testonly failed"
 
-if "$CLARUSC" emit68k --rtbake "$CORRUPT" -o "$WORK/out.bin" \
+if "$CLARUSC" build68k --rtbake "$CORRUPT" -o "$WORK/out.bin" \
         "$ROOT/testdata/cg68k/arith.cla" > "$WORK/log" 2>&1; then
-    t_fail exit "clarusc emit68k --rtbake <corrupt-objcode>: expected nonzero exit, got success: $(head -3 "$WORK/log" | tr '\n' ' ')"
+    t_fail exit "clarusc build68k --rtbake <corrupt-objcode>: expected nonzero exit, got success: $(head -3 "$WORK/log" | tr '\n' ' ')"
 else
     t_pass exit
 fi
@@ -37,9 +37,9 @@ fi
 EMPTY=$WORK/empty-objcode-68k.clir
 "$CLARUSC" --bake-ir --lane 68k --empty-objcode-testonly -o "$EMPTY" \
     || die "clarusc --bake-ir --lane 68k --empty-objcode-testonly failed"
-if "$CLARUSC" emit68k --rtbake "$EMPTY" -o "$WORK/empty.bin" \
+if "$CLARUSC" build68k --rtbake "$EMPTY" -o "$WORK/empty.bin" \
         "$ROOT/testdata/cg68k/arith.cla" > "$WORK/empty.log" 2>&1; then
-    t_fail empty_exit "clarusc emit68k --rtbake <empty-objcode>: expected nonzero exit, got success"
+    t_fail empty_exit "clarusc build68k --rtbake <empty-objcode>: expected nonzero exit, got success"
 else
     t_pass empty_exit
 fi

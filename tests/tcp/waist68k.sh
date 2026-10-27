@@ -17,10 +17,10 @@
 
 PROBE=$ROOT/tests/tcp/testdata/waist68k_probe.cla
 
-if emit68k -o "$WORK/probe.bin" --listing "$PROBE" > "$WORK/emit.log" 2>&1; then
-    t_pass emit68k
+if build68k -o "$WORK/probe.bin" --listing "$PROBE" > "$WORK/emit.log" 2>&1; then
+    t_pass build68k
 else
-    t_fail emit68k "$(tail -20 "$WORK/emit.log")"
+    t_fail build68k "$(tail -20 "$WORK/emit.log")"
 fi
 
 if [ -s "$WORK/probe.bin" ]; then
