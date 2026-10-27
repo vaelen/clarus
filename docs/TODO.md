@@ -240,6 +240,15 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
 
 ## Compiler: type checking
 
+### installed-toolchain phase (2026-10-27)
+
+- **`quit EXPR` frees the enclosing handler's locals before evaluating
+  EXPR**, so `quit f(localText)` reads freed memory. Found writing
+  `clarusc build`: `clarusc/main.cla` works around it by assigning first
+  (`d = cliBuildHost(cSrc, ...)`, then `quit d`). Not fixed. Fix:
+  evaluate EXPR into a temp before the locals' release in the lowering
+  of `quit`.
+
 ### ui-widgets phase (2026-10-25)
 
 - **A user function named like a builtin is silently replaced by the

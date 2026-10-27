@@ -9,9 +9,7 @@
 . "$(dirname "$0")/../lib.sh" || exit 2
 src=testdata/lowlevel/pool_edges.cla
 mkdir -p "$WORK/a" "$WORK/b"
-# The committed snapshot predates `build68k`; it takes the old name until
-# the next snapshot regeneration.
-"$CLARUSC_SNAPSHOT" emit68k --rtdir "$RTDIR" -o "$WORK/a/pe.bin" "$src" || die "snapshot emit68k"
+"$CLARUSC_SNAPSHOT" build68k --rtdir "$RTDIR" -o "$WORK/a/pe.bin" "$src" || die "snapshot build68k"
 "$CLARUSC" build68k --rtdir "$RTDIR" -o "$WORK/b/pe.bin" "$src" || die "current build68k"
 cmp -s "$WORK/a/pe.bin" "$WORK/b/pe.bin" && t_pass build68k || t_fail build68k "snapshot/current .bin differ"
 "$CLARUSC_SNAPSHOT" emit --rtdir "$RTDIR" -o "$WORK/a/pe.c" "$src" || die "snapshot emit"
