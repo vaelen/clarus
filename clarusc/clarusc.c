@@ -101102,7 +101102,7 @@ static clar_str_255 clar_fn_hostDataDir(rt_text * cv_d) {
     clar_str_255 cv___ret1557;
     cv___ret1557 = (clar_str_255){0};
     clar_str_255 t1;
-    t1 = clar_fn_hostTextStr(cv_d, 239);
+    t1 = clar_fn_hostTextStr(cv_d, 240);
     clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t1));
     if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_s), (void*)(const uint8_t*)&(clar_lit_6)) == 0) {
         return clar_lit_6;
@@ -101111,6 +101111,9 @@ static clar_str_255 clar_fn_hostDataDir(rt_text * cv_d) {
         clar_str_255 t2;
         clar_fn_rtStrSlice((void*)&t2, (void*)(const uint8_t*)&(cv_s), (int32_t)(0), (int32_t)(CLAR_SUB32(clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_s)), 1)));
         clar_fn_rtStrStore((void*)&(cv_s), 255, (void*)(const uint8_t*)&(t2));
+    }
+    if (clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_s)) > 239) {
+        return clar_lit_6;
     }
     clar_str_255 t3;
     clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(cv_s), (void*)(const uint8_t*)&(clar_lit_2701));
@@ -101375,7 +101378,7 @@ static int32_t clar_fn_cliBuildHost(rt_text * cv_cSrc, const clar_str_255 *cv_ou
         return cv___ret1563;
     }
     clar_str_255 t7;
-    t7 = clar_fn_hostTextStr(cv_t, 255);
+    clar_fn_rtTextSlice((void*)&t7, (void*)cv_t, (int32_t)(0), (int32_t)(clar_fn_rtTextLen((void*)cv_t)));
     clar_fn_rtStrStore((void*)&(cv_tmp), 255, (void*)(const uint8_t*)&(t7));
     if (!(rt_file_write_text((const uint8_t*)&(cv_tmp), cv_cSrc, (const uint8_t*)&(clar_lit_604), (const uint8_t*)&(clar_lit_1132)))) {
         clar_str_255 t8;
