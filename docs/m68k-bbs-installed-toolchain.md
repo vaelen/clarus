@@ -193,10 +193,17 @@ CLARUS_DATADIR=~/repos/clarus-branch scripts/build.sh
 `clarusc` looks for its runtime in this order, taking the first that is
 really there: `--rtdir DIR`; a `runtime/clarus/` directory in the
 current directory or a parent; `$CLARUS_DATADIR/runtime/clarus/`; the
-installed data directory. `CLARUS_DATADIR` names the directory that
+installed data directory. So a `runtime/clarus/` directory in the
+current directory or any of its parents beats the install.
+`CLARUS_DATADIR` names the directory that
 holds `runtime/` and `toolbox/` — for a checkout, the checkout root.
 `toolbox/` includes follow the same tree. The runtime must match the
 compiler binary: a newer runtime with an older `clarusc` (or the
 reverse) can fail with `undefined: rt...`, so for a real branch test
 build that branch's compiler too (`make -j tools bootstrap` there, then
 use its `build-run/clarusc-current` with `--rtdir`), or install it.
+Note that `CLARUS_DATADIR=<checkout>` pairs the INSTALLED compiler with
+that checkout's runtime; it does not test the checkout's compiler. To
+test compiler changes, use the checkout's own compiler
+(`<checkout>/build-run/clarusc-current --rtdir <checkout>/runtime/clarus/`)
+or its `scripts/clarus-run.sh`.

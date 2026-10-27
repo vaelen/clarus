@@ -1,6 +1,6 @@
 # Installed toolchain — design
 
-Status: draft (brainstorm 2026-10-27)
+Status: implemented (2026-10-27)
 
 ## Intent
 
@@ -39,6 +39,8 @@ executable in one step the way `gcc -o prog foo.c` does.
 - **Not renaming `emit68k` across the repo's scripts/tests** in this
   work — a later cleanup does that (Andrew's decision). This work only
   adds the alias + deprecation line.
+  *Amended:* Andrew later (2026-10-27) folded the invocation rename
+  into this work (see the plan, Task 3).
 - **No change to ClarusC.APPL** (the Mac-resident compiler). It bakes the
   runtime into itself; none of the lookup or install machinery applies
   to it. Everything below is host-only.
@@ -146,6 +148,8 @@ stamp check, upward search for `clarusc/clarusc.c`) is only on the
 default), and the Makefile `unexport`s `CLARUS_DATADIR`, so an install
 on the machine or an exported variable in Andrew's shell can never
 change what a test sees. `tests/lib.sh` is frozen and is not touched.
+*Amended:* folding the rename in (2026-10-27, above) authorized the
+`emit68k` → `build68k` edit to `tests/lib.sh`'s helpers (the plan, Task 3).
 `scripts/clarus-run.sh` keeps today's behaviour too (no default baked).
 
 ### Build-time defaults
