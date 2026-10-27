@@ -131,15 +131,15 @@ This list is representative, not exhaustive: later chapters introduce further co
 
 ### Literals
 
-| Kind | Forms | Notes |
-|---|---|---|
-| Integer | `42`, `-7`, `0x1F` | 32-bit signed; hex with `0x` |
-| Fixed | `1.5`, `0.25` | 16.16 fixed-point (no float type) |
-| Character | `'A'`, `'\n'`, `'\xC9'` | single Mac Roman character; same escapes as strings |
-| String | `"hello"` | escapes: `\"` `\\` `\n` `\t` `\xHH`; `\n` emits CR (13), the Mac newline; `\xHH` (exactly two hex digits, case-insensitive) emits byte HH — the way to put MacRoman bytes (e.g. `\xC9` for `…`) in a literal while keeping source files pure ASCII. A string literal may be at most 255 bytes. |
-| Boolean | `true`, `false` | |
-| Nil | `nil` | window/resource references only (`connection`, `listener`, `serviceBrowser`, `service`, `filehandle`) |
-| Enum member | bare identifier | resolved against the expected enum type |
+| Kind        | Forms                   | Notes                                                                                                                                                                                                                                                                                          |
+|-------------|-------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Integer     | `42`, `-7`, `0x1F`      | 32-bit signed; hex with `0x`                                                                                                                                                                                                                                                                   |
+| Fixed       | `1.5`, `0.25`           | 16.16 fixed-point (no float type)                                                                                                                                                                                                                                                              |
+| Character   | `'A'`, `'\n'`, `'\xC9'` | single Mac Roman character; same escapes as strings                                                                                                                                                                                                                                            |
+| String      | `"hello"`               | escapes: `\"` `\\` `\n` `\t` `\xHH`; `\n` emits CR (13), the Mac newline; `\xHH` (exactly two hex digits, case-insensitive) emits byte HH — the way to put MacRoman bytes (e.g. `\xC9` for `…`) in a literal while keeping source files pure ASCII. A string literal may be at most 255 bytes. |
+| Boolean     | `true`, `false`         |                                                                                                                                                                                                                                                                                                |
+| Nil         | `nil`                   | window/resource references only (`connection`, `listener`, `serviceBrowser`, `service`, `filehandle`)                                                                                                                                                                                          |
+| Enum member | bare identifier         | resolved against the expected enum type                                                                                                                                                                                                                                                        |
 
 ### Statement Termination
 
@@ -149,30 +149,30 @@ A newline ends a statement (Go-style). A line ending in an operator, comma, or o
 
 Clarus is statically typed. All types are known at compile time; values are either stored inline or as opaque heap-allocated handles. The following table is the canonical inventory of types:
 
-| Type | Size | Storage | Description |
-|---|---|---|---|
-| `int` | 4 bytes | inline | 32-bit signed integer |
-| `uint8` | 1 byte | inline | unsigned 8-bit integer, 0..255 (see Narrow Integers below) |
-| `int16` | 2 bytes | inline | signed 16-bit integer, −32768..32767 |
-| `uint16` | 2 bytes | inline | unsigned 16-bit integer, 0..65535 |
-| `bool` | 1 byte | inline | `true` / `false` |
-| `fixed` | 4 bytes | inline | 16.16 fixed-point (Toolbox `Fixed`) |
-| `char` | 1 byte | inline | unsigned 8-bit Mac Roman character; doubles as a byte (0–255) for binary data |
-| `string(n)` | n+1 bytes | inline | length-prefixed Pascal string, n ≤ 255; `string` alone = `string(255)`; inside an aggregate it occupies n+1 rounded up to even bytes (Ch13 packing rule) |
-| enum | 2 bytes | inline | named type declared with `enum Name { … }` (see Enums below) |
-| `record` | sum of fields | inline | plain data aggregate; no methods |
-| `T[n]` | n × size(T) | inline* | fixed array, 0-indexed; literal initializer `[…]` for `const`/`var` declarations (Constants) |
-| `text` | 4-byte handle | heap | unbounded text buffer |
-| `list of T` | 4-byte handle | heap | growable sequence of fixed-size T |
-| `map of T` | 4-byte handle | heap | hashtable, string keys ≤ 255 bytes, values fixed-size |
-| `sortedmap of T` | 4-byte handle | heap | string-keyed container, values fixed-size; iterates in ascending key order |
-| `intmap of T` | 4-byte handle | heap | hashtable, int keys, values fixed-size |
-| window ref (e.g. `Doc`) | 4 bytes | inline | reference to a window instance; `nil` until assigned |
-| `connection`, `listener`, `serviceBrowser`, `service`, `filehandle` | opaque | resource | networking and file resources (Chapter 12) |
-| `error` | record | inline | `{ code: int, message: string }` |
-| `FileInfo` | record | inline | `{ size: int, rsrcSize: int, type: string, creator: string, created: int, modified: int, isDir: bool }` (Chapter 12) |
-| `address` | opaque | inline | network address from a `serviceBrowser`; 4 bytes laid out as the Toolbox `AddrBlock` (`net` 2 bytes, `node` 1, `socket` 1) |
-| `saveChoice` | enum | inline | built-in: `Save`, `Discard`, `Cancel` |
+| Type                                                                | Size          | Storage  | Description                                                                                                                                              |
+|---------------------------------------------------------------------|---------------|----------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `int`                                                               | 4 bytes       | inline   | 32-bit signed integer                                                                                                                                    |
+| `uint8`                                                             | 1 byte        | inline   | unsigned 8-bit integer, 0..255 (see Narrow Integers below)                                                                                               |
+| `int16`                                                             | 2 bytes       | inline   | signed 16-bit integer, −32768..32767                                                                                                                     |
+| `uint16`                                                            | 2 bytes       | inline   | unsigned 16-bit integer, 0..65535                                                                                                                        |
+| `bool`                                                              | 1 byte        | inline   | `true` / `false`                                                                                                                                         |
+| `fixed`                                                             | 4 bytes       | inline   | 16.16 fixed-point (Toolbox `Fixed`)                                                                                                                      |
+| `char`                                                              | 1 byte        | inline   | unsigned 8-bit Mac Roman character; doubles as a byte (0–255) for binary data                                                                            |
+| `string(n)`                                                         | n+1 bytes     | inline   | length-prefixed Pascal string, n ≤ 255; `string` alone = `string(255)`; inside an aggregate it occupies n+1 rounded up to even bytes (Ch13 packing rule) |
+| enum                                                                | 2 bytes       | inline   | named type declared with `enum Name { … }` (see Enums below)                                                                                             |
+| `record`                                                            | sum of fields | inline   | plain data aggregate; no methods                                                                                                                         |
+| `T[n]`                                                              | n × size(T)   | inline*  | fixed array, 0-indexed; literal initializer `[…]` for `const`/`var` declarations (Constants)                                                             |
+| `text`                                                              | 4-byte handle | heap     | unbounded text buffer                                                                                                                                    |
+| `list of T`                                                         | 4-byte handle | heap     | growable sequence of fixed-size T                                                                                                                        |
+| `map of T`                                                          | 4-byte handle | heap     | hashtable, string keys ≤ 255 bytes, values fixed-size                                                                                                    |
+| `sortedmap of T`                                                    | 4-byte handle | heap     | string-keyed container, values fixed-size; iterates in ascending key order                                                                               |
+| `intmap of T`                                                       | 4-byte handle | heap     | hashtable, int keys, values fixed-size                                                                                                                   |
+| window ref (e.g. `Doc`)                                             | 4 bytes       | inline   | reference to a window instance; `nil` until assigned                                                                                                     |
+| `connection`, `listener`, `serviceBrowser`, `service`, `filehandle` | opaque        | resource | networking and file resources (Chapter 12)                                                                                                               |
+| `error`                                                             | record        | inline   | `{ code: int, message: string }`                                                                                                                         |
+| `FileInfo`                                                          | record        | inline   | `{ size: int, rsrcSize: int, type: string, creator: string, created: int, modified: int, isDir: bool }` (Chapter 12)                                     |
+| `address`                                                           | opaque        | inline   | network address from a `serviceBrowser`; 4 bytes laid out as the Toolbox `AddrBlock` (`net` 2 bytes, `node` 1, `socket` 1)                               |
+| `saveChoice`                                                        | enum          | inline   | built-in: `Save`, `Discard`, `Cancel`                                                                                                                    |
 
 \* "inline" values past a size threshold are transparently promoted to handle-backed storage by the compiler (spec §6); semantics are identical.
 
@@ -496,15 +496,15 @@ The following operations may raise runtime errors (Chapter 12 specifies how erro
 
 The following table is normative. Operators bind tighter the lower their level number; within a level, operators are left-associative. Comparison operators do not chain: `a < b < c` is a compile error.
 
-| Level | Operators | Notes |
-|---|---|---|
-| 1 | `()` grouping, `f(args)` call, `a[i]` index, `a.b` field/property, `new T`, `open T` | postfix/primary |
-| 2 | unary `-`, `not`, `~` | `~` is bitwise NOT (int only) |
-| 3 | `*` `/` `mod` `<<` `>>` `&` | `/` on int truncates toward zero; `fixed` uses `FixMul`/`FixDiv`; shifts and `&` are int only; division or `mod` by zero is a runtime error (Chapter 3); the quotient of the most negative `int` and −1 is the most negative `int`, and the remainder is 0 |
-| 4 | `+` `-` `\|` `^` | `+` also concatenates strings and text; `\|` `^` are int only |
-| 5 | `==` `!=` `<` `<=` `>` `>=` | strings compare byte-wise, case-sensitive |
-| 6 | `and` | short-circuit |
-| 7 | `or` | short-circuit |
+| Level | Operators                                                                            | Notes                                                                                                                                                                                                                                                      |
+|-------|--------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1     | `()` grouping, `f(args)` call, `a[i]` index, `a.b` field/property, `new T`, `open T` | postfix/primary                                                                                                                                                                                                                                            |
+| 2     | unary `-`, `not`, `~`                                                                | `~` is bitwise NOT (int only)                                                                                                                                                                                                                              |
+| 3     | `*` `/` `mod` `<<` `>>` `&`                                                          | `/` on int truncates toward zero; `fixed` uses `FixMul`/`FixDiv`; shifts and `&` are int only; division or `mod` by zero is a runtime error (Chapter 3); the quotient of the most negative `int` and −1 is the most negative `int`, and the remainder is 0 |
+| 4     | `+` `-` `\|` `^`                                                                     | `+` also concatenates strings and text; `\|` `^` are int only                                                                                                                                                                                              |
+| 5     | `==` `!=` `<` `<=` `>` `>=`                                                          | strings compare byte-wise, case-sensitive                                                                                                                                                                                                                  |
+| 6     | `and`                                                                                | short-circuit                                                                                                                                                                                                                                              |
+| 7     | `or`                                                                                 | short-circuit                                                                                                                                                                                                                                              |
 
 ### Primary Expressions
 
@@ -916,13 +916,13 @@ A Clarus program responds to application-level events through top-level event ha
 
 ### Event Inventory
 
-| Event | Signature | When |
-|---|---|---|
-| `App.launch` | `on App.launch { }` | Always first, once, before any window exists. App-wide setup. |
-| `App.openDocument` | `on App.openDocument(path: string) { }` | Once per document the Finder launched the app with, or dropped on it while running. |
-| `App.startEmpty` | `on App.startEmpty { }` | After `launch`, only when the app was started with **no** documents. |
-| `App.startCLI` | `on App.startCLI(args: list of string) { }` | After `launch`, only on a command-line host, carrying the argument list. Never fires on the Macintosh. |
-| `App.log` | `on App.log(line: string) { }` | Once per `log(...)` call, at any point in the program's life, carrying that call's line. |
+| Event              | Signature                                   | When                                                                                                   |
+|--------------------|---------------------------------------------|--------------------------------------------------------------------------------------------------------|
+| `App.launch`       | `on App.launch { }`                         | Always first, once, before any window exists. App-wide setup.                                          |
+| `App.openDocument` | `on App.openDocument(path: string) { }`     | Once per document the Finder launched the app with, or dropped on it while running.                    |
+| `App.startEmpty`   | `on App.startEmpty { }`                     | After `launch`, only when the app was started with **no** documents.                                   |
+| `App.startCLI`     | `on App.startCLI(args: list of string) { }` | After `launch`, only on a command-line host, carrying the argument list. Never fires on the Macintosh. |
+| `App.log`          | `on App.log(line: string) { }`              | Once per `log(...)` call, at any point in the program's life, carrying that call's line.               |
 
 #### `App.log`
 
@@ -1005,16 +1005,16 @@ app Bookmarks {
 
 A program has at most one `app` section; a second is an error. Every property is optional. All but `stack` take a bare string literal — no expressions, no concatenation; `stack` takes a bare int literal:
 
-| Property | Meaning |
-|---|---|
-| `name` | The program's name: it appears in the Apple menu's About item ("About _name_...") and About box, and in the `vers` resource's long version string ("_name_ _version_"), which is what `Get Info` shows. If omitted, falls back to the `app` section's own label (e.g. `Mandelbrot` in `app Mandelbrot { }`); if there is no `app` section either, falls back to the first input file's basename. An explicitly empty `name: ""` behaves the same as omitting it — it falls back to the app label (or filename) and the About item/box fall back to their legacy no-app-section behavior. |
-| `version` | Version string, shown in the About box and in the `vers` resource (which `Get Info` reads). |
-| `author` | Author/copyright string, shown only in the About box (`ParamText`'s `^2` slot) — no Finder-visible resource carries it. |
-| `about` | A one-line description, shown only in the About box (`ParamText`'s `^3` slot) — no Finder-visible resource carries it. |
-| `icon` | Path to a PBM icon, relative to the file the `app` section is declared in. Requires `id` — the icon is stored under the application's own creator code, so one can't exist without the other. |
-| `id` | The application's four-character creator code (e.g. `"BMRK"`), used to tag the program and its documents for the Finder. Must be exactly four printable characters, not all lowercase (an all-lowercase four-character code is reserved by Apple for system use), and must not contain a `"` or `'` character (the build interpolates it verbatim into generated Rez and CMake source). |
-| `doctype` | The program's default document type code (e.g. `"TEXT"`), used to tag documents the program saves for the Finder. 1 to 4 printable characters, space-padded to four; must not contain a `"` or `'` character. Feeds `app.doctype` (see App Constants, below). Defaults to `"TEXT"` if omitted, or if there is no `app` section at all. |
-| `stack` | The native (68k) build's stack-reserve size in bytes, e.g. `stack: 65536`. An int literal between 4096 and 1048576. Native-lane semantics only — a Mac/host build compiled through the cprint (C) backend ignores this field entirely, though it still checks clean there. If omitted, the native backend computes a reserve itself: the deepest call chain reachable in the program plus fixed Toolbox headroom, floored at 32768 bytes. |
+| Property  | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+|-----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `name`    | The program's name: it appears in the Apple menu's About item ("About _name_...") and About box, and in the `vers` resource's long version string ("_name_ _version_"), which is what `Get Info` shows. If omitted, falls back to the `app` section's own label (e.g. `Mandelbrot` in `app Mandelbrot { }`); if there is no `app` section either, falls back to the first input file's basename. An explicitly empty `name: ""` behaves the same as omitting it — it falls back to the app label (or filename) and the About item/box fall back to their legacy no-app-section behavior. |
+| `version` | Version string, shown in the About box and in the `vers` resource (which `Get Info` reads).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `author`  | Author/copyright string, shown only in the About box (`ParamText`'s `^2` slot) — no Finder-visible resource carries it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `about`   | A one-line description, shown only in the About box (`ParamText`'s `^3` slot) — no Finder-visible resource carries it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `icon`    | Path to a PBM icon, relative to the file the `app` section is declared in. Requires `id` — the icon is stored under the application's own creator code, so one can't exist without the other.                                                                                                                                                                                                                                                                                                                                                                                            |
+| `id`      | The application's four-character creator code (e.g. `"BMRK"`), used to tag the program and its documents for the Finder. Must be exactly four printable characters, not all lowercase (an all-lowercase four-character code is reserved by Apple for system use), and must not contain a `"` or `'` character (the build interpolates it verbatim into generated Rez and CMake source).                                                                                                                                                                                                  |
+| `doctype` | The program's default document type code (e.g. `"TEXT"`), used to tag documents the program saves for the Finder. 1 to 4 printable characters, space-padded to four; must not contain a `"` or `'` character. Feeds `app.doctype` (see App Constants, below). Defaults to `"TEXT"` if omitted, or if there is no `app` section at all.                                                                                                                                                                                                                                                   |
+| `stack`   | The native (68k) build's stack-reserve size in bytes, e.g. `stack: 65536`. An int literal between 4096 and 1048576. Native-lane semantics only — a Mac/host build compiled through the cprint (C) backend ignores this field entirely, though it still checks clean there. If omitted, the native backend computes a reserve itself: the deepest call chain reachable in the program plus fixed Toolbox headroom, floored at 32768 bytes.                                                                                                                                                |
 
 ### App Constants
 
@@ -1022,12 +1022,12 @@ A program has at most one `app` section; a second is an error. Every property is
 
 A handful of common four-character type codes are predeclared as `string` constants, for use with `app.doctype` and anywhere else a document/file type or creator code is needed:
 
-| Constant | Value | Meaning |
-|---|---|---|
-| `fileTypeText` | `"TEXT"` | Plain text |
-| `fileTypeData` | `"CLRD"` | The serializer's conventional data-file type (Chapter 12) — recommended when a program wants its data files visually and behaviorally distinct from its documents, though any type code is legal for a data file |
-| `fileTypePicture` | `"PICT"` | QuickDraw picture |
-| `fileTypeApplication` | `"APPL"` | Application |
+| Constant              | Value    | Meaning                                                                                                                                                                                                          |
+|-----------------------|----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `fileTypeText`        | `"TEXT"` | Plain text                                                                                                                                                                                                       |
+| `fileTypeData`        | `"CLRD"` | The serializer's conventional data-file type (Chapter 12) — recommended when a program wants its data files visually and behaviorally distinct from its documents, though any type code is legal for a data file |
+| `fileTypePicture`     | `"PICT"` | QuickDraw picture                                                                                                                                                                                                |
+| `fileTypeApplication` | `"APPL"` | Application                                                                                                                                                                                                      |
 
 These constants are a convenience, not a closed set: any four-character string — a custom document type, `"ttro"`, another application's creator code — is an equally legal type or creator code wherever one is expected.
 
@@ -1037,13 +1037,13 @@ These constants are a convenience, not a closed set: any four-character string �
 
 A `window` block is a declaration, not code: it compiles to a real resource (WIND, plus CNTL/DITL for its widgets), the way a `record` compiles to a layout. The following properties may appear at the top of a window's body:
 
-| Property | Form | Meaning |
-|---|---|---|
-| `title` | `title: "Untitled"` | initial title; assignable at runtime (`w.title = ...`) |
-| `size` | `size: 400, 300` | content size in pixels |
-| `resizable` | `resizable` or `resizable: min(300, 200)` | grow box + zoom box + optional minimum |
-| `menus` | `menus: File, Edit` | the menus shown (after the app-wide ones) while a window of this type is frontmost; each must be declared above this window |
-| `form for T` | `form for Bookmark` | marks a form window (Chapter 10) |
+| Property     | Form                                      | Meaning                                                                                                                     |
+|--------------|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| `title`      | `title: "Untitled"`                       | initial title; assignable at runtime (`w.title = ...`)                                                                      |
+| `size`       | `size: 400, 300`                          | content size in pixels                                                                                                      |
+| `resizable`  | `resizable` or `resizable: min(300, 200)` | grow box + zoom box + optional minimum                                                                                      |
+| `menus`      | `menus: File, Edit`                       | the menus shown (after the app-wide ones) while a window of this type is frontmost; each must be declared above this window |
+| `form for T` | `form for Bookmark`                       | marks a form window (Chapter 10)                                                                                            |
 
 One additional window declaration — the document file-type declaration for Finder integration — is described in Chapter 12; its syntax is settled alongside the toolchain.
 
@@ -1091,13 +1091,13 @@ window Doc {
 
 ### Window Events
 
-| Event | Signature | When |
-|---|---|---|
-| `opened` | `on opened { }` | The instance has just been created and its window opened. |
+| Event          | Signature             | When                                                                          |
+|----------------|-----------------------|-------------------------------------------------------------------------------|
+| `opened`       | `on opened { }`       | The instance has just been created and its window opened.                     |
 | `closeRequest` | `on closeRequest { }` | The close box was clicked, or the app is quitting; `cancel` aborts the close. |
-| `closed` | `on closed { }` | The window has finished closing; its per-instance state is about to be freed. |
-| `resized` | `on resized { }` | The user resized or zoomed the window (resizable windows only). |
-| `key` | `on key(k: char) { }` | A key was typed while the window is frontmost and no widget consumed it. |
+| `closed`       | `on closed { }`       | The window has finished closing; its per-instance state is about to be freed. |
+| `resized`      | `on resized { }`      | The user resized or zoomed the window (resizable windows only).               |
+| `key`          | `on key(k: char) { }` | A key was typed while the window is frontmost and no widget consumed it.      |
 
 A window's own events are handled with the bare event name inside its `extend` block, e.g. `extend Doc { on closeRequest { ... } }`; widget events use `on Widget.event { }` in the same block (Chapter 9 covers nesting menu handlers there too).
 
@@ -1107,18 +1107,18 @@ Widget declarations appear inside a `window` body. Each widget has declaration-t
 
 Every widget, of every kind, also has the read-only geometry properties `x`, `y`, `width` and `height` and the `setBounds` method (Geometry, below); the table leaves them out. Every kind accepts `height:` at declaration. Runtime properties not marked *assignable* are read-only, and assigning one is a check error (`cannot assign to read-only property x`).
 
-| Widget | Properties | Runtime properties | Methods | Events |
-|---|---|---|---|---|
-| `button` | `caption`, `at`, `width`, `height`, `default`, `cancel` | `caption`, `enabled` (both assignable) | — | `click` |
-| `field` | `label`, `at`, `width`, `height`, `binds`, `font`, `style` | `text`, `enabled` (both assignable) | `setFont`, `setStyle` | `change`, `enter` |
-| `textview` | `at`, `width`, `height`, `fill`, `scrollbar` (`vertical`\|`both`), `font`, `style` | `text` (assignable) | `scrollToEnd`, `setFont`, `setStyle` | `change` |
-| `check` | `caption`, `at`, `height`, `binds` | `checked` (assignable) | — | `change` |
-| `popup` | `label`, `at`, `width`, `height`, `binds` | `selected` (int index; assignable) | — | `change` |
-| `table` | `rows`, `column ...` (Chapter 10), `at`, `width`, `height`, `fill`, `font`, `style` | `selected` (int, −1 none; assignable) | `scrollTo`, `setFont`, `setStyle` | `select(i: int)`, `doubleClick(i: int)` |
-| `canvas` | `at`, `width`, `height`, `fill`, `buffered`, `font`, `style` | `lineHeight`, `ascent` | drawing methods (Chapter 11), `textWidth`, `setFont`, `setStyle` | `click(x: int, y: int)`, `drag(x: int, y: int)` |
-| `label` | `text`, `at`, `width`, `height`, `align`, `font`, `style` | `text` (assignable) | `setFont`, `setStyle` | — |
-| `logpanel` | `maxLines`, `scrollbar` (`vertical`\|`both`), `at`, `width`, `height`, `fill`, `font`, `style` | `lineCount` | `appendLine`, `clear`, `line`, `scrollToEnd`, `setFont`, `setStyle` | — |
-| `divider` | `style` (`single`\|`double`), `at`, `width`, `height`, `fill` | — | — | — |
+| Widget     | Properties                                                                                     | Runtime properties                     | Methods                                                             | Events                                          |
+|------------|------------------------------------------------------------------------------------------------|----------------------------------------|---------------------------------------------------------------------|-------------------------------------------------|
+| `button`   | `caption`, `at`, `width`, `height`, `default`, `cancel`                                        | `caption`, `enabled` (both assignable) | —                                                                   | `click`                                         |
+| `field`    | `label`, `at`, `width`, `height`, `binds`, `font`, `style`                                     | `text`, `enabled` (both assignable)    | `setFont`, `setStyle`                                               | `change`, `enter`                               |
+| `textview` | `at`, `width`, `height`, `fill`, `scrollbar` (`vertical`\|`both`), `font`, `style`             | `text` (assignable)                    | `scrollToEnd`, `setFont`, `setStyle`                                | `change`                                        |
+| `check`    | `caption`, `at`, `height`, `binds`                                                             | `checked` (assignable)                 | —                                                                   | `change`                                        |
+| `popup`    | `label`, `at`, `width`, `height`, `binds`                                                      | `selected` (int index; assignable)     | —                                                                   | `change`                                        |
+| `table`    | `rows`, `column ...` (Chapter 10), `at`, `width`, `height`, `fill`, `font`, `style`            | `selected` (int, −1 none; assignable)  | `scrollTo`, `setFont`, `setStyle`                                   | `select(i: int)`, `doubleClick(i: int)`         |
+| `canvas`   | `at`, `width`, `height`, `fill`, `buffered`, `font`, `style`                                   | `lineHeight`, `ascent`                 | drawing methods (Chapter 11), `textWidth`, `setFont`, `setStyle`    | `click(x: int, y: int)`, `drag(x: int, y: int)` |
+| `label`    | `text`, `at`, `width`, `height`, `align`, `font`, `style`                                      | `text` (assignable)                    | `setFont`, `setStyle`                                               | —                                               |
+| `logpanel` | `maxLines`, `scrollbar` (`vertical`\|`both`), `at`, `width`, `height`, `fill`, `font`, `style` | `lineCount`                            | `appendLine`, `clear`, `line`, `scrollToEnd`, `setFont`, `setStyle` | —                                               |
+| `divider`  | `style` (`single`\|`double`), `at`, `width`, `height`, `fill`                                  | —                                      | —                                                                   | —                                               |
 
 `binds` connects a `field`, `check`, or `popup` to a record field inside a form window (Chapter 10); `default` and `cancel` on a `button` wire the Return and Escape keys respectively. A `field`'s `text` runtime property is a `string`; a `textview`'s is a `text`.
 
@@ -1269,13 +1269,13 @@ func note(s: string) {
 
 Declaration properties: `maxLines:` (an int literal of at least 1, default 200), `scrollbar: vertical | both` (default `vertical`), plus `at`, `width`, `height`, `fill`, `font` and `style`. Without `font:` or `setFont`, a panel draws in the system font (Chicago 12), not its window's application font.
 
-| Member | Meaning |
-|---|---|
+| Member          | Meaning                                                                                                                                                                                          |
+|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `appendLine(s)` | Adds `s` (a `string`). Each CR or LF in `s` ends a line (CRLF counts once); empty lines are kept; a trailing CR or LF does not add an empty line after it. `appendLine("")` adds one empty line. |
-| `clear()` | Drops every line and clears the selection. |
-| `lineCount` | The number of lines held (`int`, read-only). |
-| `line(i)` | Line `i` (`string`), 0 = the oldest held. Out of range is a runtime error (`logpanel line out of range`), as for lists. |
-| `scrollToEnd()` | Scrolls so the last line is in view, and resumes following. |
+| `clear()`       | Drops every line and clears the selection.                                                                                                                                                       |
+| `lineCount`     | The number of lines held (`int`, read-only).                                                                                                                                                     |
+| `line(i)`       | Line `i` (`string`), 0 = the oldest held. Out of range is a runtime error (`logpanel line out of range`), as for lists.                                                                          |
+| `scrollToEnd()` | Scrolls so the last line is in view, and resumes following.                                                                                                                                      |
 
 - **Capacity.** Once `maxLines` lines are held, each new line drops the oldest. Each line costs its own length plus a small fixed overhead, never a full 256 bytes. If memory runs short, the oldest lines are dropped until the new line fits; an append never fails or stops the program.
 - **Batched drawing.** Appends do not draw. The screen is updated once per pass of the event loop, after the handler returns, however many lines were appended.
@@ -1432,14 +1432,14 @@ window EditForm {
 
 A bound widget's behavior comes from the type of the field it binds to, with nothing specified twice:
 
-| Field type | Bound widget | Behavior |
-|---|---|---|
-| `string(n)` | `field` | typing is limited to n characters |
-| `int` | `field` | typing is restricted to numeric input; a non-numeric value fails OK validation |
-| `uint8`, `int16`, `uint16` | `field` | numeric input, as for `int`; OK validation also fails for a value outside the type's range, or with a minus sign for `uint8`/`uint16`. A table `column` shows the value in decimal |
-| `fixed` | `field` | numeric input, including a decimal point |
-| `bool` | `check` | checkbox; `checked` mirrors the field |
-| enum | `popup` | popup items are the enum's member labels (member name when unlabeled — Chapter 3), in declaration order |
+| Field type                 | Bound widget | Behavior                                                                                                                                                                           |
+|----------------------------|--------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `string(n)`                | `field`      | typing is limited to n characters                                                                                                                                                  |
+| `int`                      | `field`      | typing is restricted to numeric input; a non-numeric value fails OK validation                                                                                                     |
+| `uint8`, `int16`, `uint16` | `field`      | numeric input, as for `int`; OK validation also fails for a value outside the type's range, or with a minus sign for `uint8`/`uint16`. A table `column` shows the value in decimal |
+| `fixed`                    | `field`      | numeric input, including a decimal point                                                                                                                                           |
+| `bool`                     | `check`      | checkbox; `checked` mirrors the field                                                                                                                                              |
+| enum                       | `popup`      | popup items are the enum's member labels (member name when unlabeled — Chapter 3), in declaration order                                                                            |
 
 A `popup`'s items always come from its bound enum field — there is no form of `popup` with items given directly. A `popup` declared without `binds:` is rejected at build time.
 
@@ -1467,10 +1467,10 @@ A form window must be declared explicitly, as above. Generating one automaticall
 
 ### Form Events
 
-| Event | Signature | When |
-|---|---|---|
-| `accepted` | `on accepted(rec: T) { }` | OK was pressed and every bound widget validated; `rec` holds the clean, written-back data. |
-| `cancelled` | `on cancelled { }` | Cancel was pressed (or Escape, via a button's `cancel` property). Discarding the buffer is automatic; handling this event is optional. |
+| Event       | Signature                 | When                                                                                                                                   |
+|-------------|---------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `accepted`  | `on accepted(rec: T) { }` | OK was pressed and every bound widget validated; `rec` holds the clean, written-back data.                                             |
+| `cancelled` | `on cancelled { }`        | Cancel was pressed (or Escape, via a button's `cancel` property). Discarding the buffer is automatic; handling this event is optional. |
 
 ```rust
 extend EditForm {
@@ -1658,12 +1658,12 @@ every 1 ticks {
 
 A `connection` (Chapter 3) is a single reliable byte-stream abstraction over both AppleTalk (ADSP) and TCP (MacTCP); the transport is chosen at `open` and invisible afterward. 
 
-| Member | Form |
-|---|---|
-| `open` | `c.open(tcp "a.b.c.d:port")` — MacTCP, dotted quad only this release; `c.open(appletalk "Name:Type")` — ADSP, NBP inside; `c.open(serial "modem:9600")` — a Mac serial port, `"modem"` or `"printer"`, baud after the colon; `c.open(addr)` — from a browser `address` |
-| `send` | `c.send(t: text)` (also accepts string) |
-| `close` | `c.close()` |
-| events | `opened`, `received(data: text)`, `closed`, `failed(err: error)` |
+| Member  | Form                                                                                                                                                                                                                                                                   |
+|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `open`  | `c.open(tcp "a.b.c.d:port")` — MacTCP, dotted quad only this release; `c.open(appletalk "Name:Type")` — ADSP, NBP inside; `c.open(serial "modem:9600")` — a Mac serial port, `"modem"` or `"printer"`, baud after the colon; `c.open(addr)` — from a browser `address` |
+| `send`  | `c.send(t: text)` (also accepts string)                                                                                                                                                                                                                                |
+| `close` | `c.close()`                                                                                                                                                                                                                                                            |
+| events  | `opened`, `received(data: text)`, `closed`, `failed(err: error)`                                                                                                                                                                                                       |
 
 A `connection` value can be copied like any other value: passed as a function parameter, stored in a record field, held in an array element, or assigned to a local variable, and `open`/`send`/`close` work the same way through any of those (spec §3.2). `on <var>.<event>` handlers are the one exception — they still name a top-level global directly, never an expression, since a handler is bound at compile time. A `connection` that has never been assigned (a fresh local, an unset record field or array element) is `nil`; calling `open`, `send`, or `close` on a nil connection is a runtime error (`use of nil connection`) — a different message than, but the same category of contract violation as, `send`/`close` on a connection that was never opened (`connection not open`). The 8-connection-variable-per-program cap (only global `connection` variables count toward it) still applies.
 
@@ -1744,12 +1744,12 @@ on conn.received(data: text) {
 
 A `listener` accepts incoming connections from clients.
 
-| Member | Form |
-|---|---|
-| `listen` | `l.listen(tcp port: int)` — a TCP listening socket (MacTCP), for clients that dial a fixed port |
+| Member     | Form                                                                                                                          |
+|------------|-------------------------------------------------------------------------------------------------------------------------------|
+| `listen`   | `l.listen(tcp port: int)` — a TCP listening socket (MacTCP), for clients that dial a fixed port                               |
 | `register` | `l.register(name: string, type: string)` — an ADSP connection listener, advertised to the zone under the NBP name `name:type` |
-| `stop` | `l.stop()` — remove the name and the listener; idempotent |
-| events | `accepted(c: connection)`, `failed(err: error)` |
+| `stop`     | `l.stop()` — remove the name and the listener; idempotent                                                                     |
+| events     | `accepted(c: connection)`, `failed(err: error)`                                                                               |
 
 The `connection` delivered by `accepted` is bound to the parameter named in the handler — `c` below — a fresh reference the program must store somewhere to keep talking to that client. The usual pattern for a multi-client server is a fixed array of connections with a parallel `bool` array tracking which slots are in use:
 
@@ -1784,11 +1784,11 @@ When every connection slot is already in use the runtime denies the incoming req
 
 A `serviceBrowser` finds registered AppleTalk entities — other programs' services, and machines — in a zone.
 
-| Member | Form |
-|---|---|
-| `find` | `b.find(type: string)` — search the current zone; `b.find(type: string, zone: string)` — search a named zone |
-| `zones` | `b.zones(out: list of string)` — synchronous; empties `out` and fills it with the zone names |
-| events | `found(name: string, addr: address)`, `done`, `failed(err: error)` |
+| Member  | Form                                                                                                         |
+|---------|--------------------------------------------------------------------------------------------------------------|
+| `find`  | `b.find(type: string)` — search the current zone; `b.find(type: string, zone: string)` — search a named zone |
+| `zones` | `b.zones(out: list of string)` — synchronous; empties `out` and fills it with the zone names                 |
+| events  | `found(name: string, addr: address)`, `done`, `failed(err: error)`                                           |
 
 `find` is an NBP lookup of `=:type@zone`, with `*` — the current zone — when no zone is given. It fires `found` once per match and then `done`. `done` always arrives, even when nothing matched, so a program knows when the list it is building from `found` is complete; a search that matches nothing is `done` with no `found`, not a failure. `find("=")` matches every registered entity in the zone, of every type: AppleTalk has no node-enumeration protocol of its own, and this lookup is what "list the machines" means on it.
 
@@ -1825,13 +1825,13 @@ on browser.failed(err: error) { }
 
 A `service` is a request/response endpoint: a server advertises a name and answers integer-coded operations, and a client calls one and waits for the answer. It is the counterpart to `connection`'s byte stream — a whole request in, a whole reply out, with no framing to invent.
 
-| Member | Form |
-|---|---|
-| `serve` | `svc.serve(name: string, type: string)` — start answering requests, advertised to the zone under the NBP name `name:type` |
-| `reply` | `svc.reply(code: int, data: text)` (also accepts string) — answer the request being handled |
-| `stop` | `svc.stop()` — remove the name and stop answering; idempotent |
-| `call` | `svc.call(target, op: int, req: text, reply: text): bool` — send one request and wait for the answer; `target` is an `address` or a `"Name:Type"` string |
-| events | `request(op: int, req: text, from: address)`, `failed(err: error)` |
+| Member  | Form                                                                                                                                                     |
+|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `serve` | `svc.serve(name: string, type: string)` — start answering requests, advertised to the zone under the NBP name `name:type`                                |
+| `reply` | `svc.reply(code: int, data: text)` (also accepts string) — answer the request being handled                                                              |
+| `stop`  | `svc.stop()` — remove the name and stop answering; idempotent                                                                                            |
+| `call`  | `svc.call(target, op: int, req: text, reply: text): bool` — send one request and wait for the answer; `target` is an `address` or a `"Name:Type"` string |
+| events  | `request(op: int, req: text, from: address)`, `failed(err: error)`                                                                                       |
 
 `op` and `code` are 32-bit signed integers carried alongside the payload. They are the program's own operation and status namespaces; the language assigns no meaning to any value but `code` `0`, which means success.
 
@@ -1884,27 +1884,27 @@ A client holding an `address` from a browser calls that server with `clock.call(
 
 The `file` namespace covers documents and preferences. Every function but `file.name`, `file.open`, `file.openRead`, `file.openRF`, `file.create`, and `file.info` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong — except `file.exists`, whose `false` just means the path doesn't exist, never a failure. `open`/`openRead`/`openRF`/`create` return a `filehandle` (`nil` on failure — see below) instead, for positioned/random-access binary I/O; `info` returns a `FileInfo` record (Chapter 3), zeroed with `lastError` set on failure.
 
-| Function | Signature | Notes |
-|---|---|---|
-| `readText` | `file.readText(path: string, t: text): bool` | fills `t` in place |
-| `writeText` | `file.writeText(path: string, t: text, type: string, creator: string): bool` | writes `t`'s contents to `path`, stamped with `type`/`creator` |
-| `save` | `file.save(path: string, data, type: string, creator: string): bool` | `data`: any `record`, `list of` record, or `map of` record; stamped with `type`/`creator` |
-| `load` | `file.load(path: string, data): bool` | fills `data` in place |
-| `name` | `file.name(path: string): string` | the file's display name; always succeeds |
-| `readResource` | `file.readResource(name: string, out: text): bool` | fills `out` from the named resource; Macintosh only |
-| `writeRes` | `file.writeRes(path: string, fork: text, doctype: string, creator: string): bool` | writes `fork`'s contents as `path`'s resource fork, stamped with `doctype`/`creator`; Macintosh only |
-| `open` | `file.open(path: string): filehandle` | opens an existing file read/write; `nil` + `lastError` if it doesn't exist or can't be opened |
-| `openRead` | `file.openRead(path: string): filehandle` | opens an existing file read-only; `nil` + `lastError` if it doesn't exist or can't be opened; writes through the handle fail |
-| `openRF` | `file.openRF(path: string): filehandle` | opens an existing file's resource fork read/write; `nil` + `lastError` if the file does not exist |
-| `create` | `file.create(path: string, type: string, creator: string): filehandle` | creates the file if missing, truncates it to 0 bytes if it already exists, opens it read/write, stamped with `type`/`creator`; `nil` + `lastError` on failure |
-| `exists` | `file.exists(path: string): bool` | `true` for an existing file or folder; never sets `lastError` |
-| `info` | `file.info(path: string): FileInfo` | on failure returns a zeroed record and sets `lastError` |
-| `makeDir` | `file.makeDir(path: string): bool` | creates one folder; the parent must already exist; an existing folder or file at `path` is a failure (`dupFNErr` / `EEXIST`) |
-| `delete` | `file.delete(path: string): bool` | removes a file or an *empty* folder; a non-empty folder is a failure; on the Macintosh an open file is too (`fBsyErr`), while a POSIX host unlinks it |
-| `list` | `file.list(path: string, names: list of string): bool` | empties `names`, then appends the leaf name of every file **and** folder directly inside `path`, in catalog order; `""` names the program's own folder; a `path` that is not a folder is a failure; on failure `names` is empty |
-| `setInfo` | `file.setInfo(path: string, type: string, creator: string, created: int, modified: int): bool` | restamps an existing file's Finder type/creator and dates; a `0` date means "leave unchanged"; `type`/`creator` follow `writeText`'s four-character rule |
-| `rename` | `file.rename(path: string, newName: string): bool` | renames in place; `newName` is a leaf name, not a path -- a `newName` containing `:` fails, and so does an empty `path` or an empty `newName` (both `-37`) |
-| `move` | `file.move(path: string, dirPath: string): bool` | moves a file or folder into the folder `dirPath`, keeping its name; same volume only (`badMovErr` otherwise); an empty `path` fails (`-37`) |
+| Function       | Signature                                                                                      | Notes                                                                                                                                                                                                                           |
+|----------------|------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `readText`     | `file.readText(path: string, t: text): bool`                                                   | fills `t` in place                                                                                                                                                                                                              |
+| `writeText`    | `file.writeText(path: string, t: text, type: string, creator: string): bool`                   | writes `t`'s contents to `path`, stamped with `type`/`creator`                                                                                                                                                                  |
+| `save`         | `file.save(path: string, data, type: string, creator: string): bool`                           | `data`: any `record`, `list of` record, or `map of` record; stamped with `type`/`creator`                                                                                                                                       |
+| `load`         | `file.load(path: string, data): bool`                                                          | fills `data` in place                                                                                                                                                                                                           |
+| `name`         | `file.name(path: string): string`                                                              | the file's display name; always succeeds                                                                                                                                                                                        |
+| `readResource` | `file.readResource(name: string, out: text): bool`                                             | fills `out` from the named resource; Macintosh only                                                                                                                                                                             |
+| `writeRes`     | `file.writeRes(path: string, fork: text, doctype: string, creator: string): bool`              | writes `fork`'s contents as `path`'s resource fork, stamped with `doctype`/`creator`; Macintosh only                                                                                                                            |
+| `open`         | `file.open(path: string): filehandle`                                                          | opens an existing file read/write; `nil` + `lastError` if it doesn't exist or can't be opened                                                                                                                                   |
+| `openRead`     | `file.openRead(path: string): filehandle`                                                      | opens an existing file read-only; `nil` + `lastError` if it doesn't exist or can't be opened; writes through the handle fail                                                                                                    |
+| `openRF`       | `file.openRF(path: string): filehandle`                                                        | opens an existing file's resource fork read/write; `nil` + `lastError` if the file does not exist                                                                                                                               |
+| `create`       | `file.create(path: string, type: string, creator: string): filehandle`                         | creates the file if missing, truncates it to 0 bytes if it already exists, opens it read/write, stamped with `type`/`creator`; `nil` + `lastError` on failure                                                                   |
+| `exists`       | `file.exists(path: string): bool`                                                              | `true` for an existing file or folder; never sets `lastError`                                                                                                                                                                   |
+| `info`         | `file.info(path: string): FileInfo`                                                            | on failure returns a zeroed record and sets `lastError`                                                                                                                                                                         |
+| `makeDir`      | `file.makeDir(path: string): bool`                                                             | creates one folder; the parent must already exist; an existing folder or file at `path` is a failure (`dupFNErr` / `EEXIST`)                                                                                                    |
+| `delete`       | `file.delete(path: string): bool`                                                              | removes a file or an *empty* folder; a non-empty folder is a failure; on the Macintosh an open file is too (`fBsyErr`), while a POSIX host unlinks it                                                                           |
+| `list`         | `file.list(path: string, names: list of string): bool`                                         | empties `names`, then appends the leaf name of every file **and** folder directly inside `path`, in catalog order; `""` names the program's own folder; a `path` that is not a folder is a failure; on failure `names` is empty |
+| `setInfo`      | `file.setInfo(path: string, type: string, creator: string, created: int, modified: int): bool` | restamps an existing file's Finder type/creator and dates; a `0` date means "leave unchanged"; `type`/`creator` follow `writeText`'s four-character rule                                                                        |
+| `rename`       | `file.rename(path: string, newName: string): bool`                                             | renames in place; `newName` is a leaf name, not a path -- a `newName` containing `:` fails, and so does an empty `path` or an empty `newName` (both `-37`)                                                                      |
+| `move`         | `file.move(path: string, dirPath: string): bool`                                               | moves a file or folder into the folder `dirPath`, keeping its name; same volume only (`badMovErr` otherwise); an empty `path` fails (`-37`)                                                                                     |
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
 
@@ -1931,15 +1931,15 @@ var j: filehandle = file.create(path, "VDBJ", "68BB")   // create-or-truncate, r
 if f == nil { alert(lastError.message) }
 ```
 
-| Method | Signature | Notes |
-|---|---|---|
-| `readAt` | `f.readAt(pos: int, count: int, out: text): bool` | positioned read; replaces `out` entirely |
-| `writeAt` | `f.writeAt(pos: int, data: text \| string): bool` | positioned write; extends the file past EOF |
-| `append` | `f.append(data: text \| string): bool` | writes `data` at the current end of file |
-| `size` | `f.size(): int` | the logical end of file, in bytes |
-| `setSize` | `f.setSize(n: int): bool` | grows (new bytes zero) or truncates |
-| `flush` | `f.flush(): bool` | a durability barrier |
-| `close` | `f.close()` | idempotent; on a host build's AppleDouble sidecar path (a non-Apple host, or `CLARUS_FORCE_APPLEDOUBLE=1`) the resource-fork write-back at close is best-effort -- call `flush()` first when a failure must be observed |
+| Method    | Signature                                         | Notes                                                                                                                                                                                                                   |
+|-----------|---------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `readAt`  | `f.readAt(pos: int, count: int, out: text): bool` | positioned read; replaces `out` entirely                                                                                                                                                                                |
+| `writeAt` | `f.writeAt(pos: int, data: text \| string): bool` | positioned write; extends the file past EOF                                                                                                                                                                             |
+| `append`  | `f.append(data: text \| string): bool`            | writes `data` at the current end of file                                                                                                                                                                                |
+| `size`    | `f.size(): int`                                   | the logical end of file, in bytes                                                                                                                                                                                       |
+| `setSize` | `f.setSize(n: int): bool`                         | grows (new bytes zero) or truncates                                                                                                                                                                                     |
+| `flush`   | `f.flush(): bool`                                 | a durability barrier                                                                                                                                                                                                    |
+| `close`   | `f.close()`                                       | idempotent; on a host build's AppleDouble sidecar path (a non-Apple host, or `CLARUS_FORCE_APPLEDOUBLE=1`) the resource-fork write-back at close is best-effort -- call `flush()` first when a failure must be observed |
 
 - `readAt(pos, count, out)` reads up to `count` bytes starting at byte offset `pos` into `out`, replacing whatever `out` held. A read that crosses the end of file succeeds with a shorter `out`; a read starting at or past the end of file succeeds with an empty `out` — neither is an error. `readAt` returns `false` + `lastError` only on an actual I/O error. `pos < 0` or `count < 0` is a runtime error.
 - `writeAt(pos, data)` writes all of `data` (`text` or `string` — the same either-form `connection.send` accepts) at `pos`. A write that starts past the current end of file extends it (the Mac File Manager's own behavior on write); the gap between the old end of file and `pos`, if any, has unspecified contents on the Macintosh and reads as zero bytes on a host build — a program that cares about the gap's contents should `setSize` first to pin them down. `pos < 0` is a runtime error.
@@ -1973,11 +1973,11 @@ A program that declares `on App.log(line: string)` (Chapter 7) also receives eve
 
 A program writes nothing to disk for its diagnostics unless it asks to. Three statements in the `app` namespace control the log file; each may be called from any handler, any number of times:
 
-| Call | Effect |
-|---|---|
+| Call                         | Effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+|------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `app.writeLog(name: string)` | Turns the log file on. Opens `name` (a path resolved like every other `file` path), creating it as a `TEXT` file with the application's own creator (`app.id`) if it doesn't exist; an existing file is **appended to**, never truncated. Lines logged before the first call are not kept. Calling it again writes out anything pending to the current file, closes it, and switches to `name`. If `name` can't be opened, logging stays off and `lastError` is set; the call does not abort. |
-| `app.flushLog()` | Writes the pending lines to the log file now. Does nothing while logging is off or nothing is pending. Call it from a coarse timer (every few seconds) to bound how much a crash could lose; flushing on every tick reintroduces the disk wear the buffer exists to avoid. |
-| `app.trace(on: bool)` | Turns the Macintosh UI trace on or off (off by default). While on, the runtime adds a line for each window opened, menu chosen, timer fired, and similar UI event to the log. Does nothing on a command-line host or in a program with no windows or menus. |
+| `app.flushLog()`             | Writes the pending lines to the log file now. Does nothing while logging is off or nothing is pending. Call it from a coarse timer (every few seconds) to bound how much a crash could lose; flushing on every tick reintroduces the disk wear the buffer exists to avoid.                                                                                                                                                                                                                    |
+| `app.trace(on: bool)`        | Turns the Macintosh UI trace on or off (off by default). While on, the runtime adds a line for each window opened, menu chosen, timer fired, and similar UI event to the log. Does nothing on a command-line host or in a program with no windows or menus.                                                                                                                                                                                                                                   |
 
 With the log file on, it receives, in order: every `log(...)` line; the UI trace lines, while `app.trace(true)` is in effect; on the Macintosh, the text of each `alert(...)` in a program with no windows or menus; and the report of a runtime error or an uncaught `abort` (Chapter 5). Each line is written as its own text followed by a line feed, with any carriage return in it rendered as a line feed. There are no timestamps and no markers.
 
@@ -2042,14 +2042,14 @@ Like the other inline scalar types (`int`, `bool`, `fixed`, `char`), a `ptr` is 
 
 `peekb`, `peekw`, and `peekl` read 1, 2, and 4 bytes at address `p` respectively, returning an `int` (the 1- and 2-byte forms zero-extend). `pokeb`, `pokew`, and `pokel` write the low 1, 2, or 4 bytes of `v` to address `p`:
 
-| Function | Signature | Reads/writes |
-|---|---|---|
-| `peekb` | `peekb(p: ptr): int` | 1 byte, zero-extended |
-| `peekw` | `peekw(p: ptr): int` | 2 bytes, zero-extended |
-| `peekl` | `peekl(p: ptr): int` | 4 bytes |
-| `pokeb` | `pokeb(p: ptr, v: int)` | low byte of `v` |
-| `pokew` | `pokew(p: ptr, v: int)` | low 2 bytes of `v` |
-| `pokel` | `pokel(p: ptr, v: int)` | low 4 bytes of `v` |
+| Function | Signature               | Reads/writes           |
+|----------|-------------------------|------------------------|
+| `peekb`  | `peekb(p: ptr): int`    | 1 byte, zero-extended  |
+| `peekw`  | `peekw(p: ptr): int`    | 2 bytes, zero-extended |
+| `peekl`  | `peekl(p: ptr): int`    | 4 bytes                |
+| `pokeb`  | `pokeb(p: ptr, v: int)` | low byte of `v`        |
+| `pokew`  | `pokew(p: ptr, v: int)` | low 2 bytes of `v`     |
+| `pokel`  | `pokel(p: ptr, v: int)` | low 4 bytes of `v`     |
 
 ```rust
 var p: ptr = ptr(4096)
@@ -2151,16 +2151,16 @@ The one way to take an extern record's address is **decay at an `external func` 
 
 ### Field Palette
 
-| Clarus field type | bytes | alignment | notes |
-|---|---|---|---|
-| `bool` | 1 | 1 | Pascal `Boolean` |
-| `uint8` | 1 | 1 | unsigned byte (`SignedByte`/`Byte`); reads/writes as `int`, zero-extended |
-| `int16` | 2 | 2 | `INTEGER`; reads back sign-extended (same as an extern `int16` result) |
-| `int` | 4 | 2 | `LONGINT`/`OSType`/`Fixed` — 68k packs longs at 2 |
-| `ptr` | 4 | 2 | `Ptr`/`Handle`/`ProcPtr` fields |
-| nested `extern record` | its size | 2 | `Point` in `EventRecord`; nesting depth unbounded |
-| `str[N]` (1 ≤ N ≤ 255) | N+1 | 1 | Pascal string buffer (`Str63` = `str[63]`): length byte + N bytes. Reads as `string` (copy out), assigns from `string` (truncating at N, length byte updated) |
-| `pad[N]` (N ≥ 1) | N | 1 | reserved/unused byte runs (`ParamBlockRec` filler); not readable or writable, occupies layout only, needs no field name — `pad[4]` alone is a complete field line |
+| Clarus field type      | bytes    | alignment | notes                                                                                                                                                             |
+|------------------------|----------|-----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `bool`                 | 1        | 1         | Pascal `Boolean`                                                                                                                                                  |
+| `uint8`                | 1        | 1         | unsigned byte (`SignedByte`/`Byte`); reads/writes as `int`, zero-extended                                                                                         |
+| `int16`                | 2        | 2         | `INTEGER`; reads back sign-extended (same as an extern `int16` result)                                                                                            |
+| `int`                  | 4        | 2         | `LONGINT`/`OSType`/`Fixed` — 68k packs longs at 2                                                                                                                 |
+| `ptr`                  | 4        | 2         | `Ptr`/`Handle`/`ProcPtr` fields                                                                                                                                   |
+| nested `extern record` | its size | 2         | `Point` in `EventRecord`; nesting depth unbounded                                                                                                                 |
+| `str[N]` (1 ≤ N ≤ 255) | N+1      | 1         | Pascal string buffer (`Str63` = `str[63]`): length byte + N bytes. Reads as `string` (copy out), assigns from `string` (truncating at N, length byte updated)     |
+| `pad[N]` (N ≥ 1)       | N        | 1         | reserved/unused byte runs (`ParamBlockRec` filler); not readable or writable, occupies layout only, needs no field name — `pad[4]` alone is a complete field line |
 
 Total record size rounds up to even. Field offsets follow the classic MPW 68k packing rule exactly: each field aligned per the table above, no other padding inserted. `pad` is a contextual field-type name recognized ONLY inside an `extern record` body — elsewhere (a `var` declaration, an ordinary `record` field) it is an ordinary identifier. `pad` additionally has no named form: a field written `name: pad[N]` does NOT declare a pad run — "pad" is recognized only as a bare field line's own leading token, never after `name:`, so `name: pad[N]` instead falls through to the ordinary `type[N]` array-length grammar (an array of a nested type named `pad`), which is not itself in the palette and so is rejected with the same "extern record field type must be bool, uint8, int16, int, ptr, str[N], pad[N], or an extern record" diagnostic any other non-palette field type gets. `fixed`-typed fields are not supported in this phase (add on demand — `Fixed` transcribes as `int` and converts via the existing fixed conversions).
 
@@ -2190,18 +2190,18 @@ Like `overlay record`, an `extern record` rejects the same handful of whole-valu
 
 This is the normative mapping from Inside Macintosh's own type vocabulary to the Clarus types used above to transcribe a Toolbox or OS declaration as `extern record`, `external func`, and `callback func`. Where a row's mechanics are documented elsewhere in this chapter, the row cross-references that section instead of restating it.
 
-| Inside Macintosh | Clarus |
-|---|---|
-| `INTEGER` / `OSErr` | `int16` — `external func` parameter/result (The `int16` Extern Type, below) or extern-record field (Field Palette, above) |
-| `LONGINT` / `OSType` / `Fixed` | `int` |
-| `Boolean` | `bool` — 1 byte in every aggregate; word-marshaled into the high byte at the pascal trap boundary (Trap and Inline Clauses, below) |
-| `CHAR` (a CharParameter) | `int16` — **never** `char`. A CHAR parameter is a plain 16-bit `INTEGER` with the character code in the low byte; Clarus's `char` extern shape instead pads its value into the word's high byte, the same convention `bool` uses (Trap and Inline Clauses, below). Declaring a CHAR parameter `char` silently reads and writes the wrong byte at the trap boundary — the MenuKey lesson. |
-| `SignedByte` / `Byte` | `uint8` — extern-record field only (Field Palette, above) |
-| `Str255` / `StrN` | `str` parameter, the caller's Str255 address borrowed for the call (`external func`, above), or `str[N]` extern-record field (Field Palette, above) |
-| `VAR` parameter | `ptr` — an extern-record variable or field lvalue decays to its address at the call site (`extern record`, above) |
-| `Point` passed by value | a 4-byte extern record passed where the callee declares an `int` parameter (`extern record`, above) |
-| `Ptr` / `Handle` / `ProcPtr` | `ptr` |
-| a `ProcPtr` parameter you implement (an LDEF, action procedure, filter, or other Toolbox callback) | `callback func` (below) |
+| Inside Macintosh                                                                                   | Clarus                                                                                                                                                                                                                                                                                                                                                                                   |
+|----------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `INTEGER` / `OSErr`                                                                                | `int16` — `external func` parameter/result (The `int16` Extern Type, below) or extern-record field (Field Palette, above)                                                                                                                                                                                                                                                                |
+| `LONGINT` / `OSType` / `Fixed`                                                                     | `int`                                                                                                                                                                                                                                                                                                                                                                                    |
+| `Boolean`                                                                                          | `bool` — 1 byte in every aggregate; word-marshaled into the high byte at the pascal trap boundary (Trap and Inline Clauses, below)                                                                                                                                                                                                                                                       |
+| `CHAR` (a CharParameter)                                                                           | `int16` — **never** `char`. A CHAR parameter is a plain 16-bit `INTEGER` with the character code in the low byte; Clarus's `char` extern shape instead pads its value into the word's high byte, the same convention `bool` uses (Trap and Inline Clauses, below). Declaring a CHAR parameter `char` silently reads and writes the wrong byte at the trap boundary — the MenuKey lesson. |
+| `SignedByte` / `Byte`                                                                              | `uint8` — extern-record field only (Field Palette, above)                                                                                                                                                                                                                                                                                                                                |
+| `Str255` / `StrN`                                                                                  | `str` parameter, the caller's Str255 address borrowed for the call (`external func`, above), or `str[N]` extern-record field (Field Palette, above)                                                                                                                                                                                                                                      |
+| `VAR` parameter                                                                                    | `ptr` — an extern-record variable or field lvalue decays to its address at the call site (`extern record`, above)                                                                                                                                                                                                                                                                        |
+| `Point` passed by value                                                                            | a 4-byte extern record passed where the callee declares an `int` parameter (`extern record`, above)                                                                                                                                                                                                                                                                                      |
+| `Ptr` / `Handle` / `ProcPtr`                                                                       | `ptr`                                                                                                                                                                                                                                                                                                                                                                                    |
+| a `ProcPtr` parameter you implement (an LDEF, action procedure, filter, or other Toolbox callback) | `callback func` (below)                                                                                                                                                                                                                                                                                                                                                                  |
 
 A trap word's bit 11 (`trap & 0x0800`) is the normative test for which calling convention a `= trap` clause must declare: set means the Toolbox/Pascal convention (plain `trap NNNN`, or `trap NNNN sel SELECTOR` for a selector-dispatched routine); clear means the OS/register convention (`trap NNNN reg ...`, below). `TickCount`'s trap word is `0xA975`; bit 11 is set (`0xA975 & 0x0800 == 0x0800`), so it takes the plain convention, `trap 0xA975`, with no `reg` clause. `BlockMoveData`'s trap word is `0xA22E`; bit 11 is clear (`0xA22E & 0x0800 == 0`), so it takes the register convention, `trap 0xA22E reg`. An Inside Macintosh trap listing's own hex trap word settles the convention without relying on the surrounding prose. Two catalogued exceptions exist: `_SecondsToDate` (`0xA9C6`) and `_DateToSeconds` (`0xA9C7`) carry Toolbox-range trap words yet are register-based (Apple's own `DateTimeUtils.a` gives `secs => D0, d => A0`; Inside Macintosh II documents both as register-based), so their declarations use `reg` despite bit 11 being set — the bit-11 test is the rule, these two are the known exceptions. Both, plus `ReadDateTime`, have host C twins, so a host build that calls them links.
 
@@ -2488,43 +2488,43 @@ Newline sensitivity (statement termination, Chapter 2) is handled by the lexer a
 
 The following table is the complete per-resource inventory of every event handler; Chapters 7–12 give full semantics.
 
-| Resource | Event | Handler signature |
-|---|---|---|
-| App | launch | `on App.launch { }` |
-| App | startEmpty | `on App.startEmpty { }` |
-| App | startCLI | `on App.startCLI(args: list of string) { }` — command-line hosts only |
-| App | openDocument | `on App.openDocument(path: string) { }` |
-| window | opened | `on opened { }` (in `extend W`) |
-| window | closeRequest | `on closeRequest { }` — `cancel` allowed |
-| window | closed | `on closed { }` |
-| window | resized | `on resized { }` |
-| window | key | `on key(k: char) { }` |
-| form window | accepted | `on accepted(rec: T) { }` |
-| form window | cancelled | `on cancelled { }` |
-| button | click | `on Name.click { }` |
-| field | change | `on Name.change { }` |
-| field | enter | `on Name.enter { }` |
-| textview | change | `on Name.change { }` |
-| check | change | `on Name.change { }` |
-| popup | change | `on Name.change { }` |
-| table | select | `on Name.select(i: int) { }` |
-| table | doubleClick | `on Name.doubleClick(i: int) { }` |
-| canvas | click | `on Name.click(x: int, y: int) { }` |
-| canvas | drag | `on Name.drag(x: int, y: int) { }` |
-| label, logpanel, divider | — | none |
-| menu item | select | `on Item.select { }` (in `extend Menu`) |
-| connection | opened | `on c.opened { }` |
-| connection | received | `on c.received(data: text) { }` |
-| connection | closed | `on c.closed { }` |
-| connection | failed | `on c.failed(err: error) { }` |
-| listener | accepted | `on l.accepted(c: connection) { }` |
-| listener | failed | `on l.failed(err: error) { }` |
-| serviceBrowser | found | `on b.found(name: string, addr: address) { }` |
-| serviceBrowser | done | `on b.done { }` |
-| serviceBrowser | failed | `on b.failed(err: error) { }` |
-| service | request | `on svc.request(op: int, req: text, from: address) { }` |
-| service | failed | `on svc.failed(err: error) { }` |
-| (timer) | — | `every N ticks { }` |
+| Resource                 | Event        | Handler signature                                                     |
+|--------------------------|--------------|-----------------------------------------------------------------------|
+| App                      | launch       | `on App.launch { }`                                                   |
+| App                      | startEmpty   | `on App.startEmpty { }`                                               |
+| App                      | startCLI     | `on App.startCLI(args: list of string) { }` — command-line hosts only |
+| App                      | openDocument | `on App.openDocument(path: string) { }`                               |
+| window                   | opened       | `on opened { }` (in `extend W`)                                       |
+| window                   | closeRequest | `on closeRequest { }` — `cancel` allowed                              |
+| window                   | closed       | `on closed { }`                                                       |
+| window                   | resized      | `on resized { }`                                                      |
+| window                   | key          | `on key(k: char) { }`                                                 |
+| form window              | accepted     | `on accepted(rec: T) { }`                                             |
+| form window              | cancelled    | `on cancelled { }`                                                    |
+| button                   | click        | `on Name.click { }`                                                   |
+| field                    | change       | `on Name.change { }`                                                  |
+| field                    | enter        | `on Name.enter { }`                                                   |
+| textview                 | change       | `on Name.change { }`                                                  |
+| check                    | change       | `on Name.change { }`                                                  |
+| popup                    | change       | `on Name.change { }`                                                  |
+| table                    | select       | `on Name.select(i: int) { }`                                          |
+| table                    | doubleClick  | `on Name.doubleClick(i: int) { }`                                     |
+| canvas                   | click        | `on Name.click(x: int, y: int) { }`                                   |
+| canvas                   | drag         | `on Name.drag(x: int, y: int) { }`                                    |
+| label, logpanel, divider | —            | none                                                                  |
+| menu item                | select       | `on Item.select { }` (in `extend Menu`)                               |
+| connection               | opened       | `on c.opened { }`                                                     |
+| connection               | received     | `on c.received(data: text) { }`                                       |
+| connection               | closed       | `on c.closed { }`                                                     |
+| connection               | failed       | `on c.failed(err: error) { }`                                         |
+| listener                 | accepted     | `on l.accepted(c: connection) { }`                                    |
+| listener                 | failed       | `on l.failed(err: error) { }`                                         |
+| serviceBrowser           | found        | `on b.found(name: string, addr: address) { }`                         |
+| serviceBrowser           | done         | `on b.done { }`                                                       |
+| serviceBrowser           | failed       | `on b.failed(err: error) { }`                                         |
+| service                  | request      | `on svc.request(op: int, req: text, from: address) { }`               |
+| service                  | failed       | `on svc.failed(err: error) { }`                                       |
+| (timer)                  | —            | `every N ticks { }`                                                   |
 
 For `field`/`textview`/`check`/`popup`, `change` fires for a user edit — typing, cut, paste, or clear — and never for a program's own assignment to the widget's property (e.g. `Body.text = t`, or a `textview`'s `scrollToEnd()`), the same "programmatic writes are silent" rule every other runtime property already follows. Likewise a table's `select` fires only for a click: assigning `selected`, `scrollTo`, and the selection following its record through list changes (Chapter 10) never fire it, and Select All (Chapter 9) fires no `change`.
 

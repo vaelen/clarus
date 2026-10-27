@@ -419,13 +419,13 @@ extern record Point {
 alignment per the palette), so `Point` is 4 bytes total, `v`@0, `h`@2. Now
 `EventRecord`, walking the palette one field at a time:
 
-| Field | IM type | Clarus type | bytes | offset |
-|---|---|---|---|---|
-| `what` | `INTEGER` | `int16` | 2 | 0 |
-| `message` | `LONGINT` | `int` | 4 | 2 |
-| `when` | `LONGINT` | `int` | 4 | 6 |
-| `where` | `Point` | nested `extern record` | 4 | 10 |
-| `modifiers` | `INTEGER` | `int16` | 2 | 14 |
+| Field       | IM type   | Clarus type            | bytes | offset |
+|-------------|-----------|------------------------|-------|--------|
+| `what`      | `INTEGER` | `int16`                | 2     | 0      |
+| `message`   | `LONGINT` | `int`                  | 4     | 2      |
+| `when`      | `LONGINT` | `int`                  | 4     | 6      |
+| `where`     | `Point`   | nested `extern record` | 4     | 10     |
+| `modifiers` | `INTEGER` | `int16`                | 2     | 14     |
 
 Every field here is already 2-byte-aligned by the palette's own rule (`int16`
 aligns at 2, `int` aligns at 2, a nested extern record aligns at 2), so there
