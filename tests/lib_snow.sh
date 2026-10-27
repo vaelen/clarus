@@ -357,12 +357,12 @@ snow_fork_same() {
 }
 
 # snow_oracle FIXTURE OUT : FIXTURE compiled by the CURRENT-source host
-# compiler via plain emit68k -- no --bake, --events or --partition, the
+# compiler via plain build68k -- no --bake, --events or --partition, the
 # same flags the on-Mac compile never sets either (buildHostOracleFork's
 # build half; snow_fork does its fork slicing).
 snow_oracle() {
-    emit68k -o "$2" "$1" > "$WORK/oracle.log" 2>&1 \
-        || die "clarusc emit68k -o $2 $1: $(tail -5 "$WORK/oracle.log" | tr '\n' ' ')"
+    build68k -o "$2" "$1" > "$WORK/oracle.log" 2>&1 \
+        || die "clarusc build68k -o $2 $1: $(tail -5 "$WORK/oracle.log" | tr '\n' ' ')"
 }
 
 # snow_count NEEDLE FILE : occurrences of NEEDLE (strings.Count).

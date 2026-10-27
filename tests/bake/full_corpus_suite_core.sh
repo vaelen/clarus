@@ -1,7 +1,7 @@
 #!/bin/sh
 # Port of internal/bake/bakeidentity_test.go's TestBakeFullCorpusSuiteCore
 # (deliverable (e)'s suite-build addendum): the core suite's --testapi
-# gui.cla composition, host emit68k (no emulator boot needed for
+# gui.cla composition, host build68k (no emulator boot needed for
 # byte-identity), must be byte-identical via --rtbake.
 #
 # The file list is tests/mactest/coregui_files.txt, the same one the

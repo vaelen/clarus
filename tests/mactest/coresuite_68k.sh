@@ -17,10 +17,10 @@ require_env CLARUS_MAC_TESTS
 
 # Word splitting is the point: the list has no spaces in it.
 # shellcheck disable=SC2046
-emit68k -o "$WORK/coresuite_gui.bin" \
+build68k -o "$WORK/coresuite_gui.bin" \
     --events testdata/ui/coresuite.events \
     $(cat "$ROOT/tests/mactest/coregui_files.txt") > "$WORK/emit.log" 2>&1 \
-    || die "clarusc emit68k coresuite GUI: $(tail -20 "$WORK/emit.log")"
+    || die "clarusc build68k coresuite GUI: $(tail -20 "$WORK/emit.log")"
 
 run_mac "$WORK/coresuite_gui.bin" 300
 [ "$MAC_EXIT" = 0 ] || die "coresuite GUI exit code $MAC_EXIT, want 0

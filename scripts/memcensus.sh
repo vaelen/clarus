@@ -92,7 +92,7 @@ if [ -n "$BAKE" ]; then
     "$OUT/clarusc-census" --bake-ir --lane 68k --rtdir "$ROOT/runtime/clarus/" -o "$OUT/rt.clir"
     set -- --rtbake "$OUT/rt.clir" "$@"
 fi
-CLARUS_MEM_PEAK=$LVL "$OUT/clarusc-census" emit68k "$@" > "$OUT/log" 2>&1 \
+CLARUS_MEM_PEAK=$LVL "$OUT/clarusc-census" build68k "$@" > "$OUT/log" 2>&1 \
     || { cat "$OUT/log" >&2; exit 1; }
 if [ "$LVL" = 3 ]; then
     awk '/^memprobe: TOTAL /{print} /^memprobe: peakcensus at /{n=0} /^memprobe: peakcensus /{s[n++]=$0}

@@ -1,5 +1,5 @@
 #!/bin/sh
-# bake/arrlit -- `emit68k --rtbake` byte identity for the array-literal
+# bake/arrlit -- `build68k --rtbake` byte identity for the array-literal
 # constant-pool class (language-runtime-cleanup, spec %4.4). The class is
 # a genuine CLIR format extension: bkSecIrArrLits carries the pool, and
 # cgRelClsPoolArr is a new relocation class the object-code paste path

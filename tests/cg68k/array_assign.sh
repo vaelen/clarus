@@ -26,8 +26,8 @@ on App.launch {
 EOF
 
 # No --listing here, mirroring the Go test.
-if out=$("$CLARUSC" emit68k -o "$dir/out.bin" "$dir/wholearraytext.cla" 2>&1); then
-    t_fail handle_elem_fails_closed "emit68k unexpectedly succeeded on a handle-bearing whole-array assignment"
+if out=$("$CLARUSC" build68k -o "$dir/out.bin" "$dir/wholearraytext.cla" 2>&1); then
+    t_fail handle_elem_fails_closed "build68k unexpectedly succeeded on a handle-bearing whole-array assignment"
     echo "$out"
 elif ! printf '%s\n' "$out" | grep -q 'whole-array assignment of handle-bearing elements unsupported natively'; then
     t_fail handle_elem_fails_closed "expected the named handle-bearing-element fail-closed error"
@@ -36,7 +36,7 @@ else
     t_pass handle_elem_fails_closed
 fi
 if [ -f "$dir/out.bin" ]; then
-    t_fail handle_elem_no_bin "emit68k left a .bin behind despite the whole-array-assign error"
+    t_fail handle_elem_no_bin "build68k left a .bin behind despite the whole-array-assign error"
 else
     t_pass handle_elem_no_bin
 fi
@@ -64,8 +64,8 @@ on App.launch {
     }
 }
 EOF
-if out=$("$CLARUSC" emit68k -o "$dir/out.bin" "$dir/hparam.cla" 2>&1); then
-    t_fail handle_param_named_error "emit68k unexpectedly succeeded on a handle-bearing array parameter"
+if out=$("$CLARUSC" build68k -o "$dir/out.bin" "$dir/hparam.cla" 2>&1); then
+    t_fail handle_param_named_error "build68k unexpectedly succeeded on a handle-bearing array parameter"
     echo "$out"
 elif ! printf '%s\n' "$out" | grep -q 'cannot be passed by value natively'; then
     t_fail handle_param_named_error "expected the named handle-bearing-parameter error, got: $out"
@@ -75,7 +75,7 @@ else
     t_pass handle_param_named_error
 fi
 if [ -f "$dir/out.bin" ]; then
-    t_fail handle_param_no_bin "emit68k left a .bin behind despite the array-parameter error"
+    t_fail handle_param_no_bin "build68k left a .bin behind despite the array-parameter error"
 else
     t_pass handle_param_no_bin
 fi
@@ -97,8 +97,8 @@ on App.launch {
     g()
 }
 EOF
-if out=$("$CLARUSC" emit68k -o "$dir/out.bin" "$dir/hret.cla" 2>&1); then
-    t_fail handle_return_named_error "emit68k unexpectedly succeeded on a handle-bearing array return"
+if out=$("$CLARUSC" build68k -o "$dir/out.bin" "$dir/hret.cla" 2>&1); then
+    t_fail handle_return_named_error "build68k unexpectedly succeeded on a handle-bearing array return"
     echo "$out"
 elif ! printf '%s\n' "$out" | grep -q 'cannot be returned natively'; then
     t_fail handle_return_named_error "expected the named handle-bearing-return error, got: $out"
@@ -108,7 +108,7 @@ else
     t_pass handle_return_named_error
 fi
 if [ -f "$dir/out.bin" ]; then
-    t_fail handle_return_no_bin "emit68k left a .bin behind despite the array-return error"
+    t_fail handle_return_no_bin "build68k left a .bin behind despite the array-return error"
 else
     t_pass handle_return_no_bin
 fi
@@ -139,8 +139,8 @@ on App.launch {
     }
 }
 EOF
-if out=$("$CLARUSC" emit68k -o "$dir/out.bin" "$dir/hretcaller.cla" 2>&1); then
-    t_fail handle_return_caller_first "emit68k unexpectedly succeeded on a handle-bearing array return"
+if out=$("$CLARUSC" build68k -o "$dir/out.bin" "$dir/hretcaller.cla" 2>&1); then
+    t_fail handle_return_caller_first "build68k unexpectedly succeeded on a handle-bearing array return"
     echo "$out"
 elif ! printf '%s\n' "$out" | grep -q 'cannot be returned natively'; then
     t_fail handle_return_caller_first "expected the named handle-bearing-return error, got: $out"
@@ -152,7 +152,7 @@ else
     t_pass handle_return_caller_first
 fi
 if [ -f "$dir/out.bin" ]; then
-    t_fail handle_return_caller_first_no_bin "emit68k left a .bin behind despite the array-return error"
+    t_fail handle_return_caller_first_no_bin "build68k left a .bin behind despite the array-return error"
 else
     t_pass handle_return_caller_first_no_bin
 fi
@@ -175,12 +175,12 @@ on App.launch {
 EOF
 
 ok=1
-if ! out=$("$CLARUSC" emit68k -o "$dir/out.bin" --listing "$dir/wholearray.cla" 2>&1); then
-    t_fail whole_array_succeeds "clarusc emit68k --listing $dir/wholearray.cla failed"
+if ! out=$("$CLARUSC" build68k -o "$dir/out.bin" --listing "$dir/wholearray.cla" 2>&1); then
+    t_fail whole_array_succeeds "clarusc build68k --listing $dir/wholearray.cla failed"
     echo "$out"
     ok=0
 elif [ ! -f "$dir/out.bin" ]; then
-    t_fail whole_array_succeeds "emit68k reported success but left no .bin"
+    t_fail whole_array_succeeds "build68k reported success but left no .bin"
     ok=0
 fi
 if [ "$ok" = 1 ]; then

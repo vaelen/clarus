@@ -1,5 +1,5 @@
 #!/bin/sh
-# bake_named: bake_test.go's three host-side units for `emit68k --bake
+# bake_named: bake_test.go's three host-side units for `build68k --bake
 # FILE` (mac-resident-clarusc Task 5) -- the named-resource mechanism the
 # Mac-resident compiler carries its own runtime/toolbox sources with.
 #   TestBakeNamedResource      exactly one 'CLFS' resource, id 128, name =
@@ -64,8 +64,8 @@ clfs_entries() {
 
 # --- TestBakeNamedResource -------------------------------------------
 mkdir -p "$WORK/named"
-if ! emit68k -o "$WORK/named/out.bin" --bake "$bakefile" "$fixture" > "$WORK/named.log" 2>&1; then
-    t_fail BakeNamedResource "emit68k --bake failed: $(tail -3 "$WORK/named.log" | tr '\n' ' ')"
+if ! build68k -o "$WORK/named/out.bin" --bake "$bakefile" "$fixture" > "$WORK/named.log" 2>&1; then
+    t_fail BakeNamedResource "build68k --bake failed: $(tail -3 "$WORK/named.log" | tr '\n' ' ')"
 else
     clfs_entries "$WORK/named/out.bin" > "$WORK/clfs.list" 2> "$WORK/clfs.err"
     count=$(wc -l < "$WORK/clfs.list" | tr -d ' ')
@@ -87,11 +87,11 @@ fi
 
 # --- TestBakeDuplicateName -------------------------------------------
 mkdir -p "$WORK/dup"
-emit68k -o "$WORK/dup/out.bin" --bake "$bakefile" --bake "$bakefile" "$fixture" \
+build68k -o "$WORK/dup/out.bin" --bake "$bakefile" --bake "$bakefile" "$fixture" \
     > "$WORK/dup.log" 2>&1
 rc=$?
 if [ $rc -eq 0 ]; then
-    t_fail BakeDuplicateName "emit68k with a duplicate --bake name succeeded, want failure: $(tail -2 "$WORK/dup.log" | tr '\n' ' ')"
+    t_fail BakeDuplicateName "build68k with a duplicate --bake name succeeded, want failure: $(tail -2 "$WORK/dup.log" | tr '\n' ' ')"
 elif [ $rc -ne 2 ]; then
     t_fail BakeDuplicateName "exit code = $rc, want 2: $(tail -2 "$WORK/dup.log" | tr '\n' ' ')"
 elif [ -e "$WORK/dup/out.bin" ]; then
@@ -104,8 +104,8 @@ fi
 ok=1
 for d in noflag1 noflag2; do
     mkdir -p "$WORK/$d"
-    emit68k -o "$WORK/$d/out.bin" "$fixture" > "$WORK/$d.log" 2>&1 \
-        || { t_fail BakeNoFlagByteIdentity "emit68k -o $WORK/$d/out.bin failed: $(tail -3 "$WORK/$d.log" | tr '\n' ' ')"; ok=0; }
+    build68k -o "$WORK/$d/out.bin" "$fixture" > "$WORK/$d.log" 2>&1 \
+        || { t_fail BakeNoFlagByteIdentity "build68k -o $WORK/$d/out.bin failed: $(tail -3 "$WORK/$d.log" | tr '\n' ' ')"; ok=0; }
 done
 if [ "$ok" = 1 ]; then
     if cmp -s "$WORK/noflag1/out.bin" "$WORK/noflag2/out.bin"; then

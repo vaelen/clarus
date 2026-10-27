@@ -1,7 +1,7 @@
 #!/bin/sh
 # timeout: 15m
 # cg68k/goldens -- port of internal/cg68k/golden_test.go's TestCg68kGoldens.
-# For every testdata/cg68k/*.cla fixture: `clarusc emit68k -o out.bin
+# For every testdata/cg68k/*.cla fixture: `clarusc build68k -o out.bin
 # --listing <fixture>` in a fresh dir, then compare EVERY emitted
 # out.segN.s against its own committed golden (segment 1 keeps the
 # un-suffixed <name>.s; segment N>1 uses <name>.segN.s).
@@ -31,13 +31,13 @@ for fixture in "$GDIR"/*.cla; do
     mkdir -p "$run" || die "mkdir $run"
 
     # Mirrors the Go test exactly: no --rtdir (findRtDir's upward search).
-    if ! out=$("$CLARUSC" emit68k -o "$run/out.bin" --listing "$fixture" 2>&1); then
-        t_fail "$name" "clarusc emit68k -o $run/out.bin --listing $fixture failed"
+    if ! out=$("$CLARUSC" build68k -o "$run/out.bin" --listing "$fixture" 2>&1); then
+        t_fail "$name" "clarusc build68k -o $run/out.bin --listing $fixture failed"
         echo "$out"
         continue
     fi
 
-    # segCount: how many out.segN.s listings emit68k wrote (>=1 required).
+    # segCount: how many out.segN.s listings build68k wrote (>=1 required).
     n=0
     while [ -f "$run/out.seg$((n + 1)).s" ]; do n=$((n + 1)); done
     if [ "$n" -eq 0 ]; then
@@ -81,7 +81,7 @@ for fixture in "$GDIR"/*.cla; do
     fi
 
     mkdir -p "$run/flush" || die "mkdir $run/flush"
-    if ! out=$("$CLARUSC" emit68k -o "$run/flush/out.bin" "$fixture" 2>&1); then
+    if ! out=$("$CLARUSC" build68k -o "$run/flush/out.bin" "$fixture" 2>&1); then
         echo "$out"
         bad="$bad flush(emit failed)"
     elif ! cmp "$run/out.bin" "$run/flush/out.bin"; then

@@ -1,7 +1,7 @@
 #!/bin/sh
 # size-68k.sh -- emitted-native-size meter (peephole68k phase, Task 1).
 # Builds the CURRENT compiler (two-stage from the committed snapshot),
-# emit68k's three representative programs with --listing, and reports
+# build68k's three representative programs with --listing, and reports
 # total CODE bytes + segment count per target:
 #   SIZE <name> bytes=<sum of .segN.dat> segments=<N> bin=<bin size>
 # Deterministic and host-only; used to record before/after numbers for
@@ -28,7 +28,7 @@ cc -O1 -I runtime/host -o "$work/cur" "$work/cur.c" runtime/host/rt.c
 measure() {
     name=$1; shift
     out="$work/$name"
-    "$work/cur" emit68k --rtdir runtime/clarus/ --listing -o "$out.bin" "$@"
+    "$work/cur" build68k --rtdir runtime/clarus/ --listing -o "$out.bin" "$@"
     bytes=0
     segs=0
     for d in "$out".seg*.dat; do

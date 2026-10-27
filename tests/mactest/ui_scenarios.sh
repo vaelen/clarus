@@ -3,7 +3,7 @@
 # mactest/ui_scenarios -- port of internal/mactest/native_test.go's
 # TestUiScenariosOn68k (uiScenarios68k's three surviving frozen golden
 # scenarios: smoke_mandel, texteditor, bookmarks). One native `clarusc
-# emit68k --events` build + boot per row, each compared byte-exact against
+# build68k --events` build + boot per row, each compared byte-exact against
 # testdata/ui/<row>.trace and testdata/uisnaps/<row>.<snap>.pbm, plus the
 # two per-scenario successive-snap-differ checks ui_test.go's
 # checkSmokeMandelSnaps/checkBookmarksSnaps make. CLARUS_DEBUG_UI=1 dumps
@@ -28,9 +28,9 @@ snaps_differ() {
 # run_scenario NAME EVENTS CLA... : build, boot, compare goldens.
 run_scenario() {
     _name=$1; _events=$2; shift 2
-    emit68k -o "$WORK/$_name.bin" --events "$_events" "$@" \
+    build68k -o "$WORK/$_name.bin" --events "$_events" "$@" \
         > "$WORK/emit.log" 2>&1 \
-        || die "clarusc emit68k $_name: $(tail -10 "$WORK/emit.log")"
+        || die "clarusc build68k $_name: $(tail -10 "$WORK/emit.log")"
     run_mac "$WORK/$_name.bin" 180
     if env_set CLARUS_DEBUG_UI; then
         echo "$_name: exit=$MAC_EXIT"

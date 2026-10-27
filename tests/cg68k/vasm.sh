@@ -20,8 +20,8 @@ for fixture in "$GDIR"/*.cla; do
     run=$WORK/v_$base
     mkdir -p "$run" || die "mkdir $run"
 
-    if ! out=$("$CLARUSC" emit68k -o "$run/out.bin" --listing "$fixture" 2>&1); then
-        t_fail "$name" "clarusc emit68k -o $run/out.bin --listing $fixture failed"
+    if ! out=$("$CLARUSC" build68k -o "$run/out.bin" --listing "$fixture" 2>&1); then
+        t_fail "$name" "clarusc build68k -o $run/out.bin --listing $fixture failed"
         echo "$out"
         continue
     fi

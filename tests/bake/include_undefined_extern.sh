@@ -35,13 +35,13 @@ func main() {
 }
 CLA
 
-if "$CLARUSC" emit68k -o "$WORK/src.bin" "$NAME" > "$WORK/src.log" 2>&1; then
+if "$CLARUSC" build68k -o "$WORK/src.bin" "$NAME" > "$WORK/src.log" 2>&1; then
     t_fail src_exit "from-source: referencing SFReply/SFGetFile (declared only in toolbox/standardfile.cla, not toolbox/files.cla): expected failure, got success: $(head -3 "$WORK/src.log" | tr '\n' ' ')"
 else
     t_pass src_exit
 fi
 
-if "$CLARUSC" emit68k --rtbake "$BAKE" -o "$WORK/bake.bin" "$NAME" > "$WORK/bake.log" 2>&1; then
+if "$CLARUSC" build68k --rtbake "$BAKE" -o "$WORK/bake.bin" "$NAME" > "$WORK/bake.log" 2>&1; then
     t_fail bake_exit "--rtbake: referencing SFReply/SFGetFile (declared only in toolbox/standardfile.cla, not toolbox/files.cla): expected failure, got success: $(head -3 "$WORK/bake.log" | tr '\n' ' ')"
 else
     t_pass bake_exit

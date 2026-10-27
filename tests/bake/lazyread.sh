@@ -22,7 +22,7 @@ objlen=$(awk '$1 == "section" && $2 == 48 { print $3 }' "$WORK/hdr")
 [ -n "$objlen" ] || die "no ObjCode section (48) in the library"
 
 for nm in hello-mac bookmarks; do
-    if ! CLARUS_BAKE_READLOG=1 "$CLARUSC" emit68k --rtbake "$BAKE" -o "$WORK/$nm.bin" \
+    if ! CLARUS_BAKE_READLOG=1 "$CLARUSC" build68k --rtbake "$BAKE" -o "$WORK/$nm.bin" \
             "examples/$nm.cla" > "$WORK/$nm.log" 2>&1; then
         die "$nm --rtbake compile failed: $(tail -3 "$WORK/$nm.log" | tr '\n' ' ')"
     fi

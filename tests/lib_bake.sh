@@ -5,7 +5,7 @@ CLIRHDR=$TOOLS/clirhdr
 # bake_ir LANE OUT : mirrors internal/bake.RunBakeIR. lib.sh has already
 # cd'd to the repo root, which is what RunBakeIR's cmd.Dir does, so the
 # default --rtdir search finds runtime/clarus/ the way an ordinary
-# `clarusc emit68k` invocation does. RunBakeIR t.Fatalf's on a failed
+# `clarusc build68k` invocation does. RunBakeIR t.Fatalf's on a failed
 # bake; die is the script-side equivalent.
 bake_ir() {
     "$CLARUSC" --bake-ir --lane "$1" -o "$2" || die "clarusc --bake-ir --lane $1 -o $2 failed"
@@ -20,7 +20,7 @@ clir_field() {
 }
 
 # emit68k_pair NAME FILES... : compile FILES twice -- plain from-source and
-# `emit68k --rtbake "$BAKE"` -- and compare the two images. Mirrors
+# `build68k --rtbake "$BAKE"` -- and compare the two images. Mirrors
 # bakeidentity_test.go's runEmit68k, called once per fork.
 #
 # The two outputs share a BASENAME in separate subdirectories, never
@@ -47,11 +47,11 @@ emit68k_pair() {
     mkdir -p "$WORK/src/$_nm" "$WORK/bake/$_nm" || { echo "mkdir failed"; return 1; }
     _so=$WORK/src/$_nm/out.bin
     _bo=$WORK/bake/$_nm/out.bin
-    if ! "$CLARUSC" emit68k ${PAIRFLAGS:-} -o "$_so" "$@" > "$WORK/pair-src.log" 2>&1; then
+    if ! "$CLARUSC" build68k ${PAIRFLAGS:-} -o "$_so" "$@" > "$WORK/pair-src.log" 2>&1; then
         echo "from-source compile failed: $(head -3 "$WORK/pair-src.log" | tr '\n' ' ')"
         return 1
     fi
-    if ! "$CLARUSC" emit68k ${PAIRFLAGS:-} --rtbake "$BAKE" -o "$_bo" "$@" > "$WORK/pair-bake.log" 2>&1; then
+    if ! "$CLARUSC" build68k ${PAIRFLAGS:-} --rtbake "$BAKE" -o "$_bo" "$@" > "$WORK/pair-bake.log" 2>&1; then
         echo "--rtbake compile failed: $(head -3 "$WORK/pair-bake.log" | tr '\n' ' ')"
         return 1
     fi

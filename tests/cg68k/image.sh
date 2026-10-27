@@ -22,11 +22,11 @@ D2=$WORK/run2
 mkdir -p "$D1" "$D2" || die "mkdir"
 
 emit1() {
-    emit68k -o "$1/out.bin" "$FIXTURE" > "$1/emit.log" 2>&1
+    build68k -o "$1/out.bin" "$FIXTURE" > "$1/emit.log" 2>&1
 }
 
 if ! emit1 "$D1"; then
-    t_fail structure "emit68k failed: $(tail -3 "$D1/emit.log")"
+    t_fail structure "build68k failed: $(tail -3 "$D1/emit.log")"
     t_done
 fi
 IMG=$D1/out.bin
@@ -156,7 +156,7 @@ fi
 
 # -- determinism: the same fixture emitted into a second dir, byte-identical --
 if ! emit1 "$D2"; then
-    t_fail determinism "second emit68k failed: $(tail -3 "$D2/emit.log")"
+    t_fail determinism "second build68k failed: $(tail -3 "$D2/emit.log")"
 elif cmp -s "$IMG" "$D2/out.bin"; then
     t_pass determinism
 else

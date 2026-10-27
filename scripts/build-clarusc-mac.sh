@@ -18,13 +18,13 @@
 #                    CLIR library is written there too, as clarusc-mac.clir)
 #
 # --events FILE: a scripted-event source file, pass-through to
-# `clarusc emit68k --events FILE` -- same purpose as build-68k.sh's own
+# `clarusc build68k --events FILE` -- same purpose as build-68k.sh's own
 # --events (deterministic UI driving, e.g. a boot-smoke test that just
 # needs the app to open its window and quit, with no real input).
 #
 # CLIR bake (runtime-ir-bake Task 6, Mac integration): by DEFAULT, this
 # script also runs `clarusc --bake-ir --lane 68k` to generate the 68k-lane
-# runtime library, then embeds it via `emit68k --bake-ir FILE` -- the
+# runtime library, then embeds it via `build68k --bake-ir FILE` -- the
 # library as the application's DATA fork (SE wave 4 Task 7: read lazily
 # with file.openRead, never loaded whole), its stamp sidecar as a CLFS
 # resource -- so ClarusC.APPL consumes the baked runtime by default
@@ -121,6 +121,6 @@ fi
 # feProgressTick brackets around its own spinner repaint so it doesn't
 # flood the captured trace. Without --testapi, ordinary programs cannot
 # name ANY runtime/clarus symbol at all (see this repo's CLAUDE.md).
-"$CLARUSC" emit68k --testapi --rtdir runtime/clarus/ -o "$OUT/ClarusC.bin" \
+"$CLARUSC" build68k --testapi --rtdir runtime/clarus/ -o "$OUT/ClarusC.bin" \
     $BAKES $EVENTS_ARG $BAKE_IR_ARG --partition 50331648 clarusc/macgui.cla
 echo "built: $OUT/ClarusC.bin"

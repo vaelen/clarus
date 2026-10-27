@@ -1,7 +1,7 @@
 #!/bin/sh
 # Port of internal/bake/bakeidentity_test.go's
 # TestRtbakeConnFilehByteIdentity: the T1-speed regression for the bug
-# `emit68k --rtbake` had for ANY program calling a `connection` or
+# `build68k --rtbake` had for ANY program calling a `connection` or
 # `filehandle` method (lower.cla's old lowRtCoerceArg looked the target
 # runtime function's param type up by NAME through a symbol table
 # --rtbake never populates; fixed by lowCoerceTo). This fixture exercises

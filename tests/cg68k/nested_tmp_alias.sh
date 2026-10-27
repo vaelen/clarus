@@ -14,7 +14,7 @@
 # there. Hardware-reproduced on the toolbox suite: benign for one value,
 # a hard hang for the next.
 #
-# The check: emit68k --listing the fixture below, isolate App.launch's
+# The check: build68k --listing the fixture below, isolate App.launch's
 # body, take the first `MOVE.L D0,-N(A6)` whose N is NOT one of the
 # listing's own declared `; local ... : -N(A6)` offsets (that is the parked
 # handle's slot), and require exactly ONE store to it in the whole body.
@@ -46,8 +46,8 @@ on App.launch {
 }
 EOF
 
-if ! out=$("$CLARUSC" emit68k -o "$run/out.bin" --listing --rtdir "$RTDIR" "$FIX" 2>&1); then
-    t_fail emit "clarusc emit68k --listing $FIX failed"
+if ! out=$("$CLARUSC" build68k -o "$run/out.bin" --listing --rtdir "$RTDIR" "$FIX" 2>&1); then
+    t_fail emit "clarusc build68k --listing $FIX failed"
     echo "$out"
     t_done
 fi

@@ -86,12 +86,12 @@ atalk_skip_unless_multicast
 TYPE=ClarusChat$$
 sed "s/ClarusChat/$TYPE/g" examples/atalkchat.cla > "$WORK/atalkchat.cla" \
     || die "could not stamp a per-run NBP type into the example"
-emit68k -o "$WORK/chatsrv.bin" --events testdata/ui/atalkchat_server.events \
+build68k -o "$WORK/chatsrv.bin" --events testdata/ui/atalkchat_server.events \
     "$WORK/atalkchat.cla" > "$WORK/emit_srv.log" 2>&1 \
-    || die "clarusc emit68k atalkchat (server): $(tail -10 "$WORK/emit_srv.log")"
-emit68k -o "$WORK/chatcli.bin" --events testdata/ui/atalkchat_client.events \
+    || die "clarusc build68k atalkchat (server): $(tail -10 "$WORK/emit_srv.log")"
+build68k -o "$WORK/chatcli.bin" --events testdata/ui/atalkchat_client.events \
     "$WORK/atalkchat.cla" > "$WORK/emit_cli.log" 2>&1 \
-    || die "clarusc emit68k atalkchat (client): $(tail -10 "$WORK/emit_cli.log")"
+    || die "clarusc build68k atalkchat (client): $(tail -10 "$WORK/emit_cli.log")"
 
 # The fixture COMPILES above need no network; the lock is taken as late
 # as possible (tests/lib_atalk.sh's own rule).

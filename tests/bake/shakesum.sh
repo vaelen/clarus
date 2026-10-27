@@ -1,7 +1,7 @@
 #!/bin/sh
 # tests/bake/shakesum.sh (SE wave 4, Task 2): the baked call-graph summary
 # (bkSecShakeSummary) must drive shake to EXACTLY the marks and edges the
-# IR walk gives. For each program, `emit68k --shake-dump` from source (IR
+# IR walk gives. For each program, `build68k --shake-dump` from source (IR
 # walk) and from `--rtbake` (summary replay for every baked runtime
 # function and global initializer) must dump the same `M`/`E` lines. The
 # dump's trailing `R n` line counts the runtime bodies replayed from the
@@ -69,7 +69,7 @@ pair() {
 
 for f in examples/bookmarks.cla examples/hello-mac.cla examples/texteditor.cla \
          examples/tcpchat.cla "$WORK/atalk.cla" "$WORK/tcp.cla"; do
-    pair "$(basename "$f" .cla)" emit68k "$BAKE" "$f"
+    pair "$(basename "$f" .cla)" build68k "$BAKE" "$f"
 done
 # tcpchat and the twins use connection/AppleTalk, which the C-lane bake
 # omits (from-source fallback), so the C pair covers the other three.

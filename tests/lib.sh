@@ -59,8 +59,8 @@ host_build() {
     "$CLARUSC" emit --rtdir "$RTDIR" -o "$_out.c" "$@" || return 1
     $CC -O1 -I "$HOSTRT" -o "$_out" "$_out.c" "$HOSTRT/rt.c"
 }
-# emit68k ARGS... : clarusc emit68k with the runtime dir supplied
-emit68k() { "$CLARUSC" emit68k --rtdir "$RTDIR" "$@"; }
+# build68k ARGS... : clarusc build68k with the runtime dir supplied
+build68k() { "$CLARUSC" build68k --rtdir "$RTDIR" "$@"; }
 # run_c_test SRC.c : cc -std=c99 -Wall -Werror against rt.c, run, expect "OK"
 run_c_test() {
     _exe=$WORK/$(basename "$1" .c)

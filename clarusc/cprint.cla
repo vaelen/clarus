@@ -4226,7 +4226,7 @@ func fpIntrCall13(nm: int, x: int, a0: int, a1: int, a2: int): text {
 // fpIntrCall8 (map-hashtable phase, Task 2) -- sortedmap family, split out
 // of fpIntrCall5 into its own chain step: fpIntrCall5 plus this whole block
 // tripped TestSelfEmit68k's 32KB-per-function native-68k segment limit
-// (clarusc emit68k, self-hosted-compiling-itself) -- same "fpIntrCall split
+// (clarusc build68k, self-hosted-compiling-itself) -- same "fpIntrCall split
 // should have closed the last self-emit blocker" precedent that produced
 // fpIntrCall1..7 in the first place. TyMap's own IMap* twin above (still in
 // fpIntrCall5), name for name, minus the cpMapPorted "or raw C fallback"

@@ -16,7 +16,7 @@
 
 # --- helpers ---------------------------------------------------------
 
-# seg_count DIR : how many out.segN.s listings emit68k wrote (0 = none)
+# seg_count DIR : how many out.segN.s listings build68k wrote (0 = none)
 seg_count() {
     _n=0
     while [ -f "$1/out.seg$((_n + 1)).s" ]; do _n=$((_n + 1)); done
@@ -147,9 +147,9 @@ short_circuit_region() {
     '
 }
 
-# emit_fixture DIR : emit68k -o out.bin --listing --rtdir <rtdir> DIR/src.cla
+# emit_fixture DIR : build68k -o out.bin --listing --rtdir <rtdir> DIR/src.cla
 emit_fixture() {
-    if ! _out=$(emit68k -o "$1/out.bin" --listing "$1/src.cla" 2>&1); then
+    if ! _out=$(build68k -o "$1/out.bin" --listing "$1/src.cla" 2>&1); then
         echo "$_out"
         return 1
     fi
@@ -209,7 +209,7 @@ on App.launch {
 }
 EOF
 if ! emit_fixture "$DIR"; then
-    t_fail callresult_emit "emit68k failed on the call-result fixture"
+    t_fail callresult_emit "build68k failed on the call-result fixture"
 else
     find_release_info "$DIR"
     # direct: g()'s tracked result, released once after f returns.
@@ -245,7 +245,7 @@ on App.launch {
 }
 EOF
 if ! emit_fixture "$DIR"; then
-    t_fail getter_emit "emit68k failed on the textview-getter fixture"
+    t_fail getter_emit "build68k failed on the textview-getter fixture"
 else
     find_release_info "$DIR"
     # pinned: pre-fix 4 (confirmed leak), post-fix 4+1 (the getter's box).
@@ -296,7 +296,7 @@ on App.launch {
 }
 EOF
 if ! emit_fixture "$DIR"; then
-    t_fail andor_emit "emit68k failed on the and/or short-circuit fixture"
+    t_fail andor_emit "build68k failed on the and/or short-circuit fixture"
 else
     find_release_info "$DIR"
     # guarded: __store2's init box, s's old box before the store, g()'s
@@ -378,7 +378,7 @@ on App.launch {
 }
 EOF
 if ! emit_fixture "$DIR"; then
-    t_fail recmaterialize_emit "emit68k failed on the record-materialize fixture"
+    t_fail recmaterialize_emit "build68k failed on the record-materialize fixture"
 else
     # The walk is duplicated glue in every segment, so a same-segment BSR is
     # the only call form a caller can use: look the walk's label up in the
@@ -444,7 +444,7 @@ on App.launch {
 }
 EOF
 if ! emit_fixture "$DIR"; then
-    t_fail poprelease_emit "emit68k failed on the pop/shift-release fixture"
+    t_fail poprelease_emit "build68k failed on the pop/shift-release fixture"
 else
     find_release_info "$DIR"
     # popRecv: the popped text, released after .length reads it (0 before

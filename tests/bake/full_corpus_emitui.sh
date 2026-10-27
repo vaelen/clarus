@@ -11,7 +11,7 @@
 # per-script protocol has PASS/FAIL only), mirroring the Go subtest's
 # t.Skip.
 #
-# Unlike the emit68k halves, the C-lane forks are written side by side in
+# Unlike the build68k halves, the C-lane forks are written side by side in
 # ONE directory under distinct names, exactly as the Go original does: no
 # MacBinary wrap, so no embedded output filename to diverge on.
 . "$(dirname "$0")/../lib.sh" || exit 2

@@ -1,5 +1,5 @@
 #!/bin/sh
-# bake/uilog_dedup -- `emit68k --rtbake` byte identity when the user's own
+# bake/uilog_dedup -- `build68k --rtbake` byte identity when the user's own
 # literals equal strings only uilog.cla uses (ui-widgets, rtbake fix round
 # 1). A logpanel-less 68k program never splices uilog.cla from source, but
 # the baked library always has it, so bkInstallArenas hides uilog.cla's

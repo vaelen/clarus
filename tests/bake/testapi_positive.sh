@@ -12,7 +12,7 @@ bake_ir 68k "$BAKE"
 write_testapi_fixture "$WORK/testapi_fixture.cla"
 
 OUT=$WORK/out.bin
-if "$CLARUSC" emit68k --rtbake "$BAKE" --testapi -o "$OUT" \
+if "$CLARUSC" build68k --rtbake "$BAKE" --testapi -o "$OUT" \
         "$WORK/testapi_fixture.cla" > "$WORK/log" 2>&1; then
     t_pass compiles
     n=$(wc -c < "$OUT" | tr -d ' ')
@@ -22,7 +22,7 @@ if "$CLARUSC" emit68k --rtbake "$BAKE" --testapi -o "$OUT" \
         t_fail size "--rtbake --testapi output suspiciously small: $n bytes"
     fi
 else
-    t_fail compiles "clarusc emit68k --rtbake --testapi: unexpected failure: $(head -5 "$WORK/log" | tr '\n' ' ')"
+    t_fail compiles "clarusc build68k --rtbake --testapi: unexpected failure: $(head -5 "$WORK/log" | tr '\n' ' ')"
     t_fail size "compile failed"
 fi
 t_done

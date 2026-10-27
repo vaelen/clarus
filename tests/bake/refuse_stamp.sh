@@ -16,9 +16,9 @@ CORRUPT=$WORK/corrupt-stamp-68k.clir
 bake_ir 68k "$VALID"
 "$CLIRHDR" --flip-stamp "$VALID" "$CORRUPT" || die "clirhdr --flip-stamp $VALID failed"
 
-if "$CLARUSC" emit68k --rtbake "$CORRUPT" -o "$WORK/out.bin" \
+if "$CLARUSC" build68k --rtbake "$CORRUPT" -o "$WORK/out.bin" \
         "$ROOT/testdata/cg68k/arith.cla" > "$WORK/log" 2>&1; then
-    t_fail exit "clarusc emit68k --rtbake <corrupt-stamp>: expected nonzero exit, got success: $(head -3 "$WORK/log" | tr '\n' ' ')"
+    t_fail exit "clarusc build68k --rtbake <corrupt-stamp>: expected nonzero exit, got success: $(head -3 "$WORK/log" | tr '\n' ' ')"
 else
     t_pass exit
 fi

@@ -24,9 +24,9 @@ for name in emit_array; do
         ''|*[!0-9]*) die "malformed golden exit code \"$want_exit\"" ;;
     esac
 
-    emit68k --capture -o "$WORK/abort$name.bin" "testdata/run/$name.cla" \
+    build68k --capture -o "$WORK/abort$name.bin" "testdata/run/$name.cla" \
         > "$WORK/emit.log" 2>&1 \
-        || die "clarusc emit68k testdata/run/$name.cla: $(tail -10 "$WORK/emit.log")"
+        || die "clarusc build68k testdata/run/$name.cla: $(tail -10 "$WORK/emit.log")"
     run_mac "$WORK/abort$name.bin" 180
 
     bad=

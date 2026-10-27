@@ -3,7 +3,7 @@
 # over a per-segment (A5 offset, kind) table instead of one unrolled
 # release per global. For every testdata/cg68k/freeglobals/*.cla fixture:
 #   - the C lane builds and runs it to a clean `quit 0`;
-#   - native emit68k builds it;
+#   - native build68k builds it;
 #   - with a .order file: the table (CLARUS_FREEGLOBALS_DUMP=1's
 #     `freeglobals: SEG IDX A5OFF KIND` lines, every segment) equals the
 #     release order the pre-table unrolled code visited, dumped once from
@@ -32,10 +32,10 @@ for f in $FIXTURES; do
         t_fail "${f}_host" "C-lane build/run failed: $(tail -3 "$run/host.log" | tr '\n' ' ')"
     fi
 
-    if CLARUS_FREEGLOBALS_DUMP=1 emit68k -o "$run/out.bin" --listing "$src" > "$run/emit.log" 2>&1; then
+    if CLARUS_FREEGLOBALS_DUMP=1 build68k -o "$run/out.bin" --listing "$src" > "$run/emit.log" 2>&1; then
         t_pass "${f}_emit68k"
     else
-        t_fail "${f}_emit68k" "emit68k failed: $(tail -3 "$run/emit.log" | tr '\n' ' ')"
+        t_fail "${f}_emit68k" "build68k failed: $(tail -3 "$run/emit.log" | tr '\n' ' ')"
         continue
     fi
     grep '^freeglobals: ' "$run/emit.log" > "$run/dump"

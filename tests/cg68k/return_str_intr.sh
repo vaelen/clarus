@@ -48,10 +48,10 @@ extend Main {
 }
 EOF
 
-if out=$("$CLARUSC" emit68k -o "$run/out.bin" --rtdir "$RTDIR" "$run/r.cla" 2>&1); then
-    t_pass emit68k
+if out=$("$CLARUSC" build68k -o "$run/out.bin" --rtdir "$RTDIR" "$run/r.cla" 2>&1); then
+    t_pass build68k
 else
-    t_fail emit68k "clarusc emit68k failed: $(printf '%s\n' "$out" | grep -v '^\[' | head -3)"
+    t_fail build68k "clarusc build68k failed: $(printf '%s\n' "$out" | grep -v '^\[' | head -3)"
 fi
 
 t_done
