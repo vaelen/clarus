@@ -48,6 +48,37 @@ scripts/test-merge.sh             # T2: per-merge gate (~15m + selfhost, needs t
   snapshot's mtime), emits C for `FILE.cla`, compiles that against the
   on-disk host runtime (`runtime/host`), and execs the result with
   any args after `--`. No Go compiler involved.
+- **Commands** (installed-toolchain phase, 2026-10-27): `clarusc check
+  FILE...` (check only), `clarusc build -o PROG [--rtdir DIR] [--keep-c]
+  FILE...` (host executable: emits C to a temp file, then execs
+  `$CC $CFLAGS -I <rtdir>/../host -o PROG <tmp>.c <rtdir>/../host/rt.c`
+  directly, no shell; `CC` env if non-empty, else the baked `CLARUS_CC`;
+  `CFLAGS` env if set, even empty, split on spaces/tabs, else `-O1`),
+  `clarusc build68k -o APP.bin FILE...` (native 68k MacBinary; was
+  `emit68k`, which still works as an alias but prints `clarusc:
+  'emit68k' is deprecated; please use 'build68k'` on stderr) and
+  `clarusc emit -o OUT.c FILE...` (unchanged). A bare `clarusc FILE...`
+  still checks only, after printing `clarusc: checking only; use
+  'clarusc build' or 'clarusc build68k' to produce an executable` on
+  stderr; `-o` without a command does not build.
+- **Runtime lookup**: `--rtdir DIR` → the upward search from the cwd for
+  `runtime/clarus/` (`findRtDir`, so in-repo the working tree always
+  wins) → `$CLARUS_DATADIR/runtime/clarus/` → the built-in
+  `CLARUS_DATADIR` define + `/runtime/clarus/`. A candidate counts only
+  if its probe file reads; toolbox is still `<rtdir>/../../toolbox/`.
+- **`make install`** (`PREFIX=/usr/local`, `BINDIR=$(PREFIX)/bin`,
+  `DATADIR=$(PREFIX)/share/clarus`, `DOCDIR=$(PREFIX)/share/doc/clarus`,
+  `DESTDIR=`, `CC=cc`; `make uninstall` takes the same variables) builds
+  `build-run/clarusc-install` from the bootstrap's `clarusc-current.c`
+  with `-DCLARUS_DATADIR='"$(DATADIR)"'` (never `DESTDIR`-prefixed) and
+  `-DCLARUS_CC='"$(CC)"'`, then installs it plus
+  `$(DATADIR)/runtime/{clarus,host}`, `$(DATADIR)/toolbox` and the
+  reference/changelog/cookbook in `$(DOCDIR)`, replacing any older
+  runtime/toolbox tree. The dev compilers (`clarusc-snapshot`,
+  `clarusc-current`) are built with `-DCLARUS_DATADIR='""'` — no built-in
+  default — and the Makefile `unexport`s `CLARUS_DATADIR`, so neither an
+  install on the machine nor a variable in your shell can change what a
+  test sees. `scripts/clarus-run.sh` bakes no default either.
 
 The test harness is Make + POSIX shell + a handful of small C tools —
 no Go anywhere (the Go harness was deleted in the go-retirement phase,
@@ -86,7 +117,7 @@ script per Go test).
   back to the default rather than disabling the deadline).
 - `tests/lib.sh` is FROZEN and defines the whole vocabulary — `t_pass`,
   `t_fail`, `t_done`, `die`, `skip`, `require_env`, `require_tool`,
-  `require_vasm`, `golden_check`, `first_diff`, `host_build`, `emit68k`,
+  `require_vasm`, `golden_check`, `first_diff`, `host_build`, `build68k`,
   `run_c_test`, `mem_live`, and `ROOT BR TOOLS CLARUSC
   CLARUSC_SNAPSHOT RTDIR HOSTRT CC WORK`. Group helpers live in
   `tests/lib_<group>.sh`, sourced right after it as
@@ -176,7 +207,7 @@ Tiered test gates:
   coverage of `tcp.cla`'s chunk loop and `rtTcpDropFront`), `listen`,
   `failed`, `lfailed`, `deny`, `every`,
   `runerr`, `examples`, plus `waist68k`, which drives a probe through
-  the language surface and greps `emit68k --listing` for all sixteen
+  the language surface and greps `build68k --listing` for all sixteen
   native waist entry points),
   `tests/hostrt/tcp.sh` (the C unit test over `rt_tcp.inc`) and
   `tests/bake/tcp.sh` (the `--rtbake` byte-identity twin the standing
@@ -195,7 +226,7 @@ Tiered test gates:
     the Retro68/cprint-gcc twins — `tests/mactest/{coresuite_mac,
     toolbox_mac,runerr_mac,abort_mac,appres}.sh`. Demoted off T2 by the
     pack3-standardfile phase (2026-08-07) and kept only as a cross-lane
-    localization oracle: the native `emit68k` lane already covers every
+    localization oracle: the native `build68k` lane already covers every
     case they check. Three known failures in the cprint CORE-suite boot
     (cprint-lane runtime gaps): `FileHandleRW: create failed` and
     `DirOps: exists("") false`, unchanged from the retired Go lane, and
@@ -311,7 +342,7 @@ Tiered test gates:
   and exits 0. ClarusC.APPL logs `ClarusC <V>` at the start of each
   compile, and its `app` `version:` literal in `macgui.cla` must match
   (`tests/claruscboot/version.sh`).
-- `--testapi` (`clarusc emit`/`emit68k`/`appinfo`, ui-scenario-retirement
+- `--testapi` (`clarusc emit`/`build68k`/`appinfo`, ui-scenario-retirement
   phase): for a UI program, splices the UI runtime modules PLUS
   `runtime/clarus/uitest.cla` (`UiTestVerb` + wrappers +
   `UiTestChecksum`) in early, before the ordinary clean-standalone check,
@@ -514,7 +545,7 @@ enum + runner, not one boot per case.
   `toolbox_68k.sh`/`toolbox_jiggle.sh` die with "add ticks
   to ..." when they fall short.
 - **Run `core` on host** (compose recipe — no single-file entry point,
-  `clarusc emit`/`emit68k` both take multiple `.cla` files positionally):
+  `clarusc emit`/`build68k` both take multiple `.cla` files positionally):
   ```sh
   cc -O1 -I runtime/host -o build-run/clarusc clarusc/clarusc.c runtime/host/rt.c   # once
   build-run/clarusc emit --rtdir runtime/clarus/ -o /tmp/core_cli.c \
@@ -531,7 +562,7 @@ enum + runner, not one boot per case.
   (Toolbox/hardware-only) — it only runs via a Mac/native boot.
 - **The four gated suite-boot scripts**, one boot each, both platform
   lanes: `tests/mactest/coresuite_68k.sh`/`tests/mactest/coresuite_mac.sh`
-  (native `emit68k` / Retro68-cprint twins, `core/gui.cla` + `--events`,
+  (native `build68k` / Retro68-cprint twins, `core/gui.cla` + `--events`,
   the file list in `tests/mactest/coregui_files.txt`) and
   `tests/mactest/toolbox_68k.sh`/`tests/mactest/toolbox_mac.sh` (same,
   `toolbox/gui.cla` + `tests/mactest/toolbox_files.txt`). Each parses the
@@ -661,13 +692,13 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   under `build-mac/`).
 - Build a Clarus program as a NATIVE 68k binary (no C, no cmake, no
   Retro68): `scripts/build-68k.sh [Name] <files.cla...> [--events FILE]`
-  (snapshot-bootstrapped clarusc `emit68k` directly → `.bin` under
+  (snapshot-bootstrapped clarusc `build68k` directly → `.bin` under
   `build-68k/`; `Name` is optional — derived from `clarusc appinfo` when
   the first arg is a `.cla` file). `--events FILE` pours a scripted-event
   file into the native constant pool for deterministic UI driving, the
   native counterpart to `build-mac.sh`'s own `--events` below.
 - **Capture vs production (log-trace-optin phase, 2026-09-29).**
-  `clarusc emit68k --capture` selects the test capture protocol: the
+  `clarusc build68k --capture` selects the test capture protocol: the
   `out` file LaunchAPPL/Snow read back, with live alert/UI-trace lines
   and the `##CLARUS-EXIT##`/`##CLARUS-LOG##` trailer at quit. `--events`
   implies it. A build without either is PRODUCTION: it creates no `out`
@@ -687,7 +718,7 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   with `--events`. Both scripts use the snapshot compiler, so they need
   a snapshot that knows the flag.
 - Build the Mac-resident compiler itself (`ClarusC.APPL` — a real Mac app
-  that runs `clarusc emit68k` ON the Mac, compiling OTHER `.cla` programs
+  that runs `clarusc build68k` ON the Mac, compiling OTHER `.cla` programs
   with no host involved): `scripts/build-clarusc-mac.sh [--events FILE]`
   → `build-68k/ClarusC/ClarusC.bin`. `--bake FILE` (one flag per
   `runtime/clarus/*.cla` + `toolbox/*.cla` file, used verbatim as the
@@ -701,7 +732,7 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   the ordinary 2MB default — see `docs/HISTORY.md`'s mac-resident-clarusc
   phase entry). By default the script also bakes the 68k-lane CLIR
   runtime library (`clarusc --bake-ir --lane 68k`, written next to the
-  `.bin` as `clarusc-mac.clir`) and passes it to `emit68k --bake-ir
+  `.bin` as `clarusc-mac.clir`) and passes it to `build68k --bake-ir
   FILE`, which since SE wave 4 (2026-09-29) puts the library in the
   app's DATA fork (CLIR v9, now v10: a header + section directory, no
   runtime IR bodies, per-function object code read lazily with `readAt`;
@@ -765,11 +796,11 @@ toolchain/bin/LaunchAPPL --config-file /dev/null -e minivmac \
   PBM framebuffer snaps) under `testdata/uisnaps` — the snaps are viewable
   PBMs. `CLARUS_MAC_BLESS=1` regenerates both, via the **native** lane
   (`tests/mactest/smoke_bounce.sh` and `tests/mactest/ui_scenarios.sh`,
-  `clarusc emit68k` boots) — the
+  `clarusc build68k` boots) — the
   test-consolidation phase's Task 7 (2026-08-06) retired the Retro68/cprint
   scenario lane outright (its per-scenario cprint boots), so the native
   lane is now the ONLY lane that boots these scenarios, and the only place
-  `CLARUS_MAC_BLESS=1` has any effect (`ui_goldens`, `tests/lib_mac.sh`). `scripts/build-68k.sh`/`clarusc emit68k --events FILE`
+  `CLARUS_MAC_BLESS=1` has any effect (`ui_goldens`, `tests/lib_mac.sh`). `scripts/build-68k.sh`/`clarusc build68k --events FILE`
   compile a scripted event sequence into a test build for deterministic UI
   driving (no real input needed); `scripts/build-mac.sh` still takes
   `--events FILE` too, for the two opt-in Retro68/cprint suite-gate

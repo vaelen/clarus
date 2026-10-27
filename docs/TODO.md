@@ -21,7 +21,7 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   probe (a 150-arm `else if` chain plus 12 nested `if`s, 51 KB on the
   SE) is uncommitted scratch (`.superpowers/sdd/2026-09-30-se-wave5-close/
   realdepth.cla`, `zz_realdepth.sh`). Commit it as a Snow script, or
-  add a host check on the walkers' `LINK` sizes from `emit68k
+  add a host check on the walkers' `LINK` sizes from `build68k
   --listing`.
 - **No runtime-observable finalizer-order fixture for the table-driven
   `cg_free_globals`.** Host releases only free memory and `filehandle`
@@ -965,7 +965,7 @@ under "ABI / performance" below).
 
 #### filesystem-api phase (2026-08-26)
 
-- **No test exercises `emit68k --rtbake [--testapi]` over a
+- **No test exercises `build68k --rtbake [--testapi]` over a
   `file.info`-calling program** (Task 3's own deferred test gap) —
   closing test: one `tests/bake/` script asserting the bake path was
   taken (`bkRuntimeFuncBoundary > 0`) and that its output matches the

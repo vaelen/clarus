@@ -116,7 +116,7 @@ Transcribing that into Clarus takes four steps:
    re-checked against the AIncludes/CIncludes/PInterfaces sources above
    before being trusted on its own, and the FINAL word belongs to
    empirical boot verification (a
-   real native `emit68k` boot on Mini vMac, or one of the gated
+   real native `build68k` boot on Mini vMac, or one of the gated
    `tests/mactest/` suite boots) whenever the two disagree or the stakes are
    high enough to warrant it — a static header, however authoritative,
    still can't catch a ROM behaving differently than documented.
@@ -717,7 +717,7 @@ The `toolbox/*.cla` files are ordinary user-side declaration files, not
 runtime modules — they join a build the same way any other `.cla` file does,
 two ways:
 
-- **Positionally**, as one more file handed to `clarusc emit`/`emit68k`/
+- **Positionally**, as one more file handed to `clarusc emit`/`build68k`/
   `check`, the same compose-recipe pattern `testsuite/core`'s own CLI build
   uses (CLAUDE.md's own "Run `core` on host" recipe):
 

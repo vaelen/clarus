@@ -65,7 +65,7 @@ Everything through the `appletalk` phase is merged to `main` and pushed
   + POSIX shell + six small C tools; no Go anywhere (`go-retirement`).
 - **Both targets work**: host builds via C emission (`clarusc emit` +
   cc against `runtime/host`), native 68k `.APPL` binaries via direct
-  emission (`emit68k`, no C, no Retro68).
+  emission (`clarusc build68k`, no C, no Retro68).
 - **`ClarusC.APPL`** compiles Clarus programs ON a Mac: baked runtime
   source catalog (`'CLFS'`) + baked runtime IR/object code (`'CLIR'`),
   live progress UI, recoverable errors (`attempt`/`abort`).
@@ -351,7 +351,7 @@ later over MacTCP networking.
   `docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`.
 - **Retire Retro68** — the host-side cross-compiler keeps being built
   from clarusc-emitted C (`clarusc emit` + cc), but every on-Mac app
-  builds through the native 68k backend (`emit68k`); the opt-in
+  builds through the native 68k backend (`clarusc build68k`); the opt-in
   cprint/Retro68 Mac lane (kept until now as a cross-lane localization
   oracle) gets deleted.
 
