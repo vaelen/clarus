@@ -71,7 +71,8 @@ func feProgressTick() {
 func feMemProbe(phase: string) {
 }
 
-// feRtDirFallback/feRtDirSearched (drive.cla's rtdir seam): this harness
+// feRtDirFallback/feRtDirSearched/feRtDirHint (drive.cla's rtdir seam):
+// this harness
 // keeps findRtDir's upward search alone, as ClarusC.APPL does.
 func feRtDirFallback(probeFile: string): string {
     return ""
@@ -79,6 +80,10 @@ func feRtDirFallback(probeFile: string): string {
 
 func feRtDirSearched(): string {
     return "runtime/clarus/ from the working directory upward"
+}
+
+func feRtDirHint(): string {
+    return "use --rtdir"
 }
 
 // feExpectedStamp (bake.cla's front-end seam, runtime-ir-bake Task 6):

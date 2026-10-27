@@ -63,3 +63,8 @@ func feRtDirSearched(): string {
     }
     return s + v[0, v.length]
 }
+
+// feRtDirHint: the not-found abort's closing advice.
+func feRtDirHint(): string {
+    return "use --rtdir or set CLARUS_DATADIR"
+}

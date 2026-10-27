@@ -1490,7 +1490,7 @@ func driveEarlySplice(testapi: bool): bool {
             if haveRtDir {
                 abort("runtime module " + earlyMods[i] + " not found (searched " + rtDir + "); use --rtdir")
             } else {
-                abort("runtime module " + earlyMods[i] + " not found (searched " + feRtDirSearched() + "); use --rtdir or set CLARUS_DATADIR")
+                abort("runtime module " + earlyMods[i] + " not found (searched " + feRtDirSearched() + "); " + feRtDirHint())
             }
         }
         hoists = hoistDedups(beforeHits)
@@ -1951,7 +1951,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
                 if haveRtDir {
                     abort("runtime module " + neededMods[i] + " not found (searched " + rtDir + "); use --rtdir")
                 } else {
-                    abort("runtime module " + neededMods[i] + " not found (searched " + feRtDirSearched() + "); use --rtdir or set CLARUS_DATADIR")
+                    abort("runtime module " + neededMods[i] + " not found (searched " + feRtDirSearched() + "); " + feRtDirHint())
                 }
             }
             hoists = hoistDedups(beforeHits)
