@@ -73,7 +73,8 @@ func cliBuildHost(cSrc: text, outPath: string, keepC: bool): int {
         log("clarusc build: " + lastError.message)
         return 1
     }
-    tmp = hostTextStr(t, 255)
+    // HostMkTemp unlinks and refuses a path over 255 bytes, so it fits.
+    tmp = t[0, t.length]
     if not file.writeText(tmp, cSrc, app.doctype, app.id) {
         msg = lastError.message
         file.delete(tmp)

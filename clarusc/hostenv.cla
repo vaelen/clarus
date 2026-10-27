@@ -29,12 +29,15 @@ func hostShow(t: text): string {
 // that to fit a string.
 func hostDataDir(d: text): string {
     var s: string
-    s = hostTextStr(d, 239)
+    s = hostTextStr(d, 240)
     if s == "" {
         return ""
     }
     if s[s.length - 1] == '/' {
         s = s[0, s.length - 1]
+    }
+    if s.length > 239 {
+        return ""
     }
     return s + "/runtime/clarus/"
 }

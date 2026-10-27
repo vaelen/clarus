@@ -87,18 +87,24 @@ else
     t_fail build_cc_argv_cflags "rc $v2; argv: $(cat "$W/cc.log" 2>/dev/null); stderr: $(cat "$W/v.err")"
 fi
 
-# build_cc_missing / build_cc_fails
-CC=/nonexistent/cc "$CLARUSC" build --rtdir "$RTDIR" -o "$W/m" "$W/hello.cla" 2> "$W/m.err"; mrc=$?
+# build_cc_missing / build_cc_fails (each leaves TMPDIR empty)
+TMPDIR=$W/tmp CC=/nonexistent/cc "$CLARUSC" build --rtdir "$RTDIR" -o "$W/m" "$W/hello.cla" 2> "$W/m.err"; mrc=$?
 if [ $mrc -ne 0 ] && grep -q 'clarusc build:' "$W/m.err"; then t_pass build_cc_missing
 else t_fail build_cc_missing "rc $mrc; stderr: $(cat "$W/m.err")"; fi
-CC=false "$CLARUSC" build --rtdir "$RTDIR" -o "$W/f" "$W/hello.cla" 2> "$W/f.err"; frc=$?
+if [ -z "$(ls -A "$W/tmp")" ]; then t_pass build_cc_missing_clean
+else t_fail build_cc_missing_clean "left in TMPDIR: $(ls -A "$W/tmp")"; fi
+TMPDIR=$W/tmp CC=false "$CLARUSC" build --rtdir "$RTDIR" -o "$W/f" "$W/hello.cla" 2> "$W/f.err"; frc=$?
 if [ $frc -ne 0 ] && grep -q failed "$W/f.err"; then t_pass build_cc_fails
 else t_fail build_cc_fails "rc $frc; stderr: $(cat "$W/f.err")"; fi
+if [ -z "$(ls -A "$W/tmp")" ]; then t_pass build_cc_fails_clean
+else t_fail build_cc_fails_clean "left in TMPDIR: $(ls -A "$W/tmp")"; fi
 
 # keep_c: the temp .c survives, its path on stderr.
 TMPDIR=$W/tmp CC=$HOSTCC "$CLARUSC" build --keep-c --rtdir "$RTDIR" -o "$W/k" "$W/hello.cla" 2> "$W/k.err"; krc=$?
 kept=$(sed -n 's/^clarusc build: kept //p' "$W/k.err")
-if [ $krc -eq 0 ] && [ -n "$kept" ] && [ -s "$kept" ]; then t_pass keep_c
+# (in TMPDIR, so no_tmp_leak's empty dir really means TMPDIR was used)
+case $kept in "$W/tmp/"*.c) kin=1 ;; *) kin= ;; esac
+if [ $krc -eq 0 ] && [ -n "$kin" ] && [ -s "$kept" ]; then t_pass keep_c
 else t_fail keep_c "rc $krc; stderr: $(cat "$W/k.err")"; fi
 # Over-255-byte values (a Clarus string holds 255): each is refused with a
 # message, never a slice panic (exit 3) or a silent truncation.

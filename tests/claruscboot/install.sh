@@ -9,7 +9,9 @@ unset CFLAGS
 # A nested make must not join the runner's jobserver.
 # INSTALL_BR keeps the test off build-run/clarusc-install*, so a user's
 # later `sudo make install` never has to rebuild as root.
-mk() { env -u MAKEFLAGS -u MAKELEVEL -u MFLAGS make -C "$ROOT" --no-print-directory INSTALL_BR="$WORK/ibr" "$@"; }
+MKCMD=make
+command -v gmake > /dev/null 2>&1 && MKCMD=gmake
+mk() { env -u MAKEFLAGS -u MAKELEVEL -u MFLAGS $MKCMD -C "$ROOT" --no-print-directory INSTALL_BR="$WORK/ibr" "$@"; }
 shared() { (cd "$BR" && ls -li clarusc-install* 2>/dev/null && cksum clarusc-install* 2>/dev/null); }
 before=$(shared)
 I=$WORK/inst
@@ -25,6 +27,21 @@ done
 tests=$(ls "$I"/share/clarus/runtime/host/*_test.c 2>/dev/null)
 if [ -z "$miss" ] && [ -z "$tests" ]; then t_pass install_tree
 else t_fail install_tree "missing:$miss; test files: $tests"; fi
+
+# rebuild_noop: a second install-bin with the same variables rebuilds
+# nothing (a rebuild mv's a fresh file over the binary: a new inode).
+ino() { ls -i "$WORK/ibr/clarusc-install" | awk '{print $1}'; }
+i1=$(ino)
+mk install-bin PREFIX="$I" > "$WORK/nb.log" 2>&1 || die "make install-bin failed: $(tail -20 "$WORK/nb.log")"
+if [ -n "$i1" ] && [ "$(ino)" = "$i1" ]; then t_pass rebuild_noop
+else t_fail rebuild_noop "inode $i1 -> $(ino): $(cat "$WORK/nb.log")"; fi
+
+# relative_datadir: refused before anything is built or installed.
+mk install PREFIX="$WORK/rel" DATADIR=rel/data > "$WORK/rd.log" 2>&1; rc=$?
+if [ $rc -ne 0 ] && grep -q "DATADIR must be an absolute path" "$WORK/rd.log" \
+    && [ ! -e "$WORK/rel" ] && [ ! -e "$ROOT/rel" ] && [ "$(ino)" = "$i1" ]; then
+    t_pass relative_datadir
+else t_fail relative_datadir "rc $rc: $(cat "$WORK/rd.log")"; fi
 
 # installed_build: no --rtdir, cwd outside the repo, no CLARUS_DATADIR.
 mkdir -p "$WORK/proj"

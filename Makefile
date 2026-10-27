@@ -87,6 +87,10 @@ DOCDIR ?= $(PREFIX)/share/doc/clarus
 DESTDIR ?=
 # Where install-bin builds clarusc-install(.cfg); tests point it at $WORK.
 INSTALL_BR ?= $(BR)
+# A relative or empty dir would be baked in as-is and resolve per cwd.
+ifneq ($(filter install-bin install uninstall,$(MAKECMDGOALS)),)
+$(foreach v,BINDIR DATADIR DOCDIR,$(if $(filter /%,$(firstword $($(v)))),,$(error $(v) must be an absolute path (got '$($(v))'))))
+endif
 DOCS := docs/clarus-language-reference.md docs/clarus-language-changelog.md docs/clarus-toolbox-cookbook.md
 
 .PHONY: install-bin install uninstall
@@ -101,7 +105,6 @@ $(INSTALL_BR)/clarusc-install: $(INSTALL_BR)/clarusc-install.cfg $(BR)/clarusc-c
 	$(CC) -O1 -DCLARUS_DATADIR='"$(DATADIR)"' -DCLARUS_CC='"$(CC)"' -I runtime/host -o $@.tmp $(BR)/clarusc-current.c runtime/host/rt.c && mv $@.tmp $@
 
 install: install-bin
-	@test -n '$(DATADIR)' || { echo 'DATADIR is empty' >&2; exit 1; }
 	rm -rf '$(DESTDIR)$(DATADIR)/runtime' '$(DESTDIR)$(DATADIR)/toolbox'
 	install -d '$(DESTDIR)$(BINDIR)' '$(DESTDIR)$(DATADIR)/runtime/clarus' '$(DESTDIR)$(DATADIR)/runtime/host' '$(DESTDIR)$(DATADIR)/toolbox' '$(DESTDIR)$(DOCDIR)'
 	install -m 755 $(INSTALL_BR)/clarusc-install '$(DESTDIR)$(BINDIR)/clarusc'
@@ -111,7 +114,6 @@ install: install-bin
 	install -m 644 $(DOCS) '$(DESTDIR)$(DOCDIR)'
 
 uninstall:
-	@test -n '$(DATADIR)' || { echo 'DATADIR is empty' >&2; exit 1; }
 	rm -f '$(DESTDIR)$(BINDIR)/clarusc'
 	rm -rf '$(DESTDIR)$(DATADIR)/runtime' '$(DESTDIR)$(DATADIR)/toolbox'
 	rm -f $(patsubst docs/%,'$(DESTDIR)$(DOCDIR)/%',$(DOCS))
