@@ -37,6 +37,7 @@ include "cg68k.cla"
 include "uiblob.cla"
 include "drive.cla"
 include "bake.cla"
+include "hostext.cla"
 
 // feReadSource is main.cla's front end for drive.cla's expand() seam
 // (Task 6): the host CLI reads everything straight off disk via

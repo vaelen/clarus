@@ -1,0 +1,41 @@
+// hostext.cla -- the `clarusc build` host primitives (installed-toolchain
+// phase). Host bodies are rt_ext_Host* in runtime/host/rt_ext_host.inc;
+// on the 68k lane (selfemit / ClarusC.APPL) each clause-less extern
+// resolves to its nat_ fallback below, the MemProbe/nat_MemProbe pattern
+// in main.cla: nothing is set, nothing runs, nothing is created.
+
+// HostGetEnv: true + value in out if name is set (even empty), else false
+// with out emptied.
+external func HostGetEnv(name: string, out: text): bool
+// HostDefaultDataDir/HostDefaultCc: the build-time CLARUS_DATADIR /
+// CLARUS_CC strings the host runtime was compiled with.
+external func HostDefaultDataDir(out: text)
+external func HostDefaultCc(out: text)
+// HostSpawn: argv holds each argument followed by a NUL byte. Returns the
+// exit status, 128+signal if killed, -1 if it could not start (lastError).
+external func HostSpawn(argv: text): int
+// HostMkTemp: creates an empty $TMPDIR/clarusc-XXXXXX.c (else /tmp) and
+// puts its path in out; false + lastError on failure.
+external func HostMkTemp(out: text): bool
+
+func nat_HostGetEnv(name: string, out: text): bool {
+    out.clear()
+    return false
+}
+
+func nat_HostDefaultDataDir(out: text) {
+    out.clear()
+}
+
+func nat_HostDefaultCc(out: text) {
+    out.clear()
+}
+
+func nat_HostSpawn(argv: text): int {
+    return -1
+}
+
+func nat_HostMkTemp(out: text): bool {
+    out.clear()
+    return false
+}

@@ -560,4 +560,102 @@ int32_t rt_ext_DrvStackForce(void) {
     return v ? (int32_t)atol(v) : 0;
 }
 
+/* ---- installed-toolchain Task 1: `clarusc build` host primitives.
+ * HostGetEnv/HostDefaultDataDir/HostDefaultCc feed the runtime-directory
+ * lookup chain; HostSpawn runs cc; HostMkTemp names the emitted .c file.
+ * clarusc/hostext.cla declares them, with nat_ no-op fallbacks for the 68k
+ * lane. Bool returns are int32 0/1 like rt_ext_FileReadTextInto. Scratch
+ * buffers are plain malloc (transient, never visible to Clarus), so the
+ * memgate budgets are unaffected. */
+#include <errno.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#ifndef CLARUS_DATADIR
+#define CLARUS_DATADIR "/usr/local/share/clarus"
+#endif
+#ifndef CLARUS_CC
+#define CLARUS_CC "cc"
+#endif
+
+extern char **environ;
+
+static void rt_hostcli_settext(rt_text *out, const char *s)
+{
+    size_t n = strlen(s);
+    rt_text_from_bytes(out, (const uint8_t *)s, (int)n, (int32_t)n);
+}
+
+int32_t rt_ext_HostGetEnv(const uint8_t *name, rt_text *out)
+{
+    char buf[256];
+    const char *v;
+    memmove(buf, name + 1, (size_t)name[0]);
+    buf[name[0]] = '\0';
+    v = getenv(buf);
+    rt_hostcli_settext(out, v ? v : "");
+    return v != NULL;
+}
+
+void rt_ext_HostDefaultDataDir(rt_text *out) { rt_hostcli_settext(out, CLARUS_DATADIR); }
+void rt_ext_HostDefaultCc(rt_text *out) { rt_hostcli_settext(out, CLARUS_CC); }
+
+/* argv: each argument terminated by a NUL byte. Returns the child's exit
+ * status, 128+signal if it was killed, -1 if it could not be started (or
+ * argv is empty), with lastError set. A missing program is -1 where
+ * posix_spawnp reports it (glibc, macOS), 127 where the child does. */
+int32_t rt_ext_HostSpawn(rt_text *argv)
+{
+    int32_t len = rt_text_len(argv), i, argc = 0;
+    char *buf, **av;
+    pid_t pid;
+    int err, status;
+    char msg[300];
+
+    buf = malloc((size_t)len + 1);
+    av = malloc(sizeof(char *) * ((size_t)len + 1));
+    if (!buf || !av) { free(buf); free(av); rt_set_lasterr(ENOMEM, "out of memory"); return -1; }
+    rt_text_to_bytes(argv, (uint8_t *)buf, (int)len);
+    buf[len] = '\0';
+    for (i = 0; i < len; i += (int32_t)strlen(buf + i) + 1)
+        av[argc++] = buf + i;
+    av[argc] = NULL;
+    if (argc == 0) { free(buf); free(av); rt_set_lasterr(EINVAL, "empty command"); return -1; }
+    err = posix_spawnp(&pid, av[0], NULL, NULL, av, environ);
+    if (err != 0) {
+        snprintf(msg, sizeof msg, "cannot run %.200s: %s", av[0], strerror(err));
+        free(buf); free(av);
+        rt_set_lasterr(err, msg);
+        return -1;
+    }
+    free(buf); free(av);
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) { rt_set_lasterr(errno, strerror(errno)); return -1; }
+    }
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return -1;
+}
+
+/* Creates an empty $TMPDIR/clarusc-XXXXXX.c (else /tmp) and returns its
+ * path in out; 0 + lastError (out emptied) on failure. */
+int32_t rt_ext_HostMkTemp(rt_text *out)
+{
+    const char *dir = getenv("TMPDIR");
+    char path[1024];
+    int fd;
+    if (!dir || !*dir) dir = "/tmp";
+    snprintf(path, sizeof path, "%s/clarusc-XXXXXX.c", dir);
+    fd = mkstemps(path, 2);
+    if (fd < 0) {
+        rt_set_lasterr(errno, strerror(errno));
+        rt_hostcli_settext(out, "");
+        return 0;
+    }
+    close(fd);
+    rt_hostcli_settext(out, path);
+    return 1;
+}
+
 #endif /* CLARUS_RT_EXT_HOST_INC */
