@@ -54,7 +54,7 @@ scripts/test-merge.sh             # T2: per-merge gate (~15m + selfhost, needs t
   `$CC $CFLAGS -I <rtdir>/../host -o PROG <tmp>.c <rtdir>/../host/rt.c`
   directly, no shell; `CC` env if non-empty, else the baked `CLARUS_CC`;
   `CFLAGS` env if set, even empty, split on spaces/tabs, else `-O1`),
-  `clarusc build68k -o APP.bin FILE...` (native 68k MacBinary; was
+  `clarusc build68k -o APP.bin [--rtdir DIR] FILE...` (native 68k MacBinary; was
   `emit68k`, which still works as an alias but prints `clarusc:
   'emit68k' is deprecated; please use 'build68k'` on stderr) and
   `clarusc emit -o OUT.c FILE...` (unchanged). A bare `clarusc FILE...`
@@ -78,7 +78,12 @@ scripts/test-merge.sh             # T2: per-merge gate (~15m + selfhost, needs t
   `clarusc-current`) are built with `-DCLARUS_DATADIR='""'` — no built-in
   default — and the Makefile `unexport`s `CLARUS_DATADIR`, so neither an
   install on the machine nor a variable in your shell can change what a
-  test sees. `scripts/clarus-run.sh` bakes no default either.
+  test sees. `scripts/clarus-run.sh` bakes no default either. For a
+  root install, run `make install-bin` as yourself first, then
+  `sudo make install` with the SAME `PREFIX`/`DATADIR`/`CC` (sudo strips
+  the environment; a mismatch rebuilds the cfg sentinel as root and
+  leaves root-owned files in `build-run/`). `BINDIR`/`DATADIR`/`DOCDIR`
+  must be absolute (the Makefile refuses otherwise).
 
 The test harness is Make + POSIX shell + a handful of small C tools —
 no Go anywhere (the Go harness was deleted in the go-retirement phase,

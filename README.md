@@ -93,6 +93,16 @@ make install DESTDIR=/tmp/pkgroot PREFIX=/usr   # staging, for packagers
 make uninstall                                  # same variables
 ```
 
+To install as root, build as yourself first and pass `sudo make install`
+the SAME `PREFIX`/`DATADIR`/`CC` (sudo strips the environment, and a
+mismatch rebuilds `clarusc` as root, leaving root-owned files in
+`build-run/`):
+
+```sh
+make install-bin PREFIX=/usr
+sudo make install PREFIX=/usr
+```
+
 | Variable  | Default                      | What it sets                                |
 |-----------|------------------------------|---------------------------------------------|
 | `PREFIX`  | `/usr/local`                 | the base of the three paths below           |
@@ -148,15 +158,15 @@ another project, pass `--rtdir /path/to/clarus/runtime/clarus/` or set
 
 ## Repository layout
 
-| Path | Contents |
-|---|---|
-| `docs/` | Language reference, cookbook, roadmap, and history |
-| `clarusc/` | The self-hosted compiler, written in Clarus, plus its committed C snapshot |
-| `runtime/` | The Clarus and C runtime modules spliced into every build |
-| `toolbox/` | Curated Inside Macintosh trap declarations, per manager |
-| `examples/` | Complete sample programs (`atalkclock`, `texteditor`, `bookmarks`, …) |
-| `tests/` | The test harness: a Make + POSIX-shell runner plus its C tools |
-| `testdata/` | Golden tests: valid programs, diagnostics, runtime behavior |
+| Path        | Contents                                                                   |
+|-------------|----------------------------------------------------------------------------|
+| `docs/`     | Language reference, cookbook, roadmap, and history                         |
+| `clarusc/`  | The self-hosted compiler, written in Clarus, plus its committed C snapshot |
+| `runtime/`  | The Clarus and C runtime modules spliced into every build                  |
+| `toolbox/`  | Curated Inside Macintosh trap declarations, per manager                    |
+| `examples/` | Complete sample programs (`atalkclock`, `texteditor`, `bookmarks`, …)      |
+| `tests/`    | The test harness: a Make + POSIX-shell runner plus its C tools             |
+| `testdata/` | Golden tests: valid programs, diagnostics, runtime behavior                |
 
 ## License
 

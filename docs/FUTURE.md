@@ -457,3 +457,12 @@ Real debt and needed improvements stay in `docs/TODO.md`.
   resource of `:System Folder:Finder Startup`, an undocumented format; if
   a test ever needs MultiFinder specifically, reverse that resource (one
   Set Startup in a scratch boot, diff the file) and write it instead.
+
+### installed-toolchain phase (2026-10-27)
+
+- **Name the runtime a compile used.** A `runtime/clarus/` in the cwd or
+  any parent silently beats `$CLARUS_DATADIR` and the installed runtime
+  (`findRtDir`'s upward search comes first), so a stray checkout above a
+  project can change what an installed `clarusc` builds with no sign of
+  it. A `--verbose` flag (or a `clarusc --print-rtdir`) that names the
+  chosen rtdir would make that visible; add it if that ever bites.

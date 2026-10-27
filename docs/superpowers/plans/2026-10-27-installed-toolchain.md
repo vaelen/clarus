@@ -56,13 +56,13 @@ Task 1 (runtime routines) ──┬── Task 2 (rtdir chain)      ──┬─
 
 **Interfaces — Produces** (C, all in `rt_ext_host.inc`; the Clarus declarations are written by Tasks 2/3):
 
-| C                                                            | Clarus declaration                                     | Behaviour |
-|--------------------------------------------------------------|--------------------------------------------------------|-----------|
-| `int32_t rt_ext_HostGetEnv(const uint8_t *name, rt_text *out)` | `external func HostGetEnv(name: string, out: text): bool` | 1 + value in `out` if set (even empty); 0 + `out` emptied if unset |
-| `void rt_ext_HostDefaultDataDir(rt_text *out)`              | `external func HostDefaultDataDir(out: text)`          | the `CLARUS_DATADIR` macro (default `"/usr/local/share/clarus"`) |
-| `void rt_ext_HostDefaultCc(rt_text *out)`                   | `external func HostDefaultCc(out: text)`               | the `CLARUS_CC` macro (default `"cc"`) |
-| `int32_t rt_ext_HostSpawn(rt_text *argv)`                   | `external func HostSpawn(argv: text): int`             | `argv` = args each terminated by a NUL byte; `posix_spawnp` + `waitpid`; returns exit status, 128+signal if signalled, -1 if it could not start (errno text via `rt_ext_SetLastErr`) |
-| `int32_t rt_ext_HostMkTemp(rt_text *out)`                   | `external func HostMkTemp(out: text): bool`            | `mkstemps` on `$TMPDIR` (else `/tmp`) + `/clarusc-XXXXXX.c`; creates the file, closes the fd, path in `out` |
+| C                                                              | Clarus declaration                                        | Behaviour                                                                                                                                                                            |
+|----------------------------------------------------------------|-----------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `int32_t rt_ext_HostGetEnv(const uint8_t *name, rt_text *out)` | `external func HostGetEnv(name: string, out: text): bool` | 1 + value in `out` if set (even empty); 0 + `out` emptied if unset                                                                                                                   |
+| `void rt_ext_HostDefaultDataDir(rt_text *out)`                 | `external func HostDefaultDataDir(out: text)`             | the `CLARUS_DATADIR` macro (default `"/usr/local/share/clarus"`)                                                                                                                     |
+| `void rt_ext_HostDefaultCc(rt_text *out)`                      | `external func HostDefaultCc(out: text)`                  | the `CLARUS_CC` macro (default `"cc"`)                                                                                                                                               |
+| `int32_t rt_ext_HostSpawn(rt_text *argv)`                      | `external func HostSpawn(argv: text): int`                | `argv` = args each terminated by a NUL byte; `posix_spawnp` + `waitpid`; returns exit status, 128+signal if signalled, -1 if it could not start (errno text via `rt_ext_SetLastErr`) |
+| `int32_t rt_ext_HostMkTemp(rt_text *out)`                      | `external func HostMkTemp(out: text): bool`               | `mkstemps` on `$TMPDIR` (else `/tmp`) + `/clarusc-XXXXXX.c`; creates the file, closes the fd, path in `out`                                                                          |
 
 Bool returns use the int32 0/1 convention of `rt_ext_FileReadTextInto`. Names are Pascal strings (`const uint8_t *`, length byte first) as elsewhere in the file. Guard each macro with `#ifndef`.
 

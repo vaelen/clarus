@@ -81,8 +81,10 @@ clarusc build -o "$D/prog" "$t"
 
 and delete the `cc -O1 -I vendor/runtime/host ...` line. `clarusc build`
 emits the C to a temporary file and runs the C compiler itself (no
-shell): `$CC` if set and non-empty, else `cc`; `$CFLAGS` if set (split
-on spaces/tabs), else `-O1` — the same flags the script used. A check
+shell): `$CC` if set and non-empty, else the compiler baked into
+`clarusc` at install time (`CLARUS_CC`, the install's `CC`, normally
+`cc`); `$CFLAGS` if set (split on spaces/tabs; set but empty means no
+flags at all), else `-O1` — the same flags the script used. A check
 failure exits nonzero without running the C compiler, so `set -e` still
 stops on it. Fix the header comment too.
 
