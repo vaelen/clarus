@@ -3,7 +3,7 @@
 # `build68k --rtbake` byte-identity twin for the AppleTalk lowering sites,
 # in the shape connfileh.sh established for `connection`/`filehandle`.
 #
-# The standing rule (CLAUDE.md, compiler-cleanup phase): a phase that adds
+# The standing rule (AGENTS.md, compiler-cleanup phase): a phase that adds
 # a value-typed runtime module to the 68k superset adds its bake twin in
 # the SAME task, so --rtbake drift is a T1 failure rather than something
 # only the opt-in full-corpus sweep would find. atalk.cla + atalk_68k.cla

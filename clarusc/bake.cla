@@ -4395,7 +4395,7 @@ func bkLoadSection(id: int, off: int, len: int, testapi: bool): bool {
 // off disk, never the running binary's own (possibly different) source --
 // the generator and every loader share that exact same proxy, so a bake
 // generated and loaded by binaries built from the same checkout always
-// agree, and the snapshot is regenerated at every phase close (CLAUDE.md).
+// agree, and the snapshot is regenerated at every phase close (AGENTS.md).
 func bkCheckRtbakeHeader(fh: filehandle, base: int, wantLane: int): bool {
     if bkCheckRtbakeHeaderBody(fh, base, wantLane) {
         return true

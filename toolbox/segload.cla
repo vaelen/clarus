@@ -6,7 +6,7 @@
 // finds its own file with GetAppParms to read the runtime library out of
 // its data fork (clarusc/macgui.cla's gcOpenOwnDataFork). The rest of the
 // manager's trap interface comes with it, per the Toolbox-first
-// principle (CLAUDE.md).
+// principle (AGENTS.md).
 //
 // Every trap word below is confirmed against Apple's own Universal
 // Interfaces 3.4 (toolchain/universal/CIncludes, Retro68/

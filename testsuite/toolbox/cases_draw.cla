@@ -52,7 +52,7 @@ const tbCanvasChecksumExpected: int = 16320
 // internal helpers visible (main.cla's emit path: "the user program
 // must check CLEAN STANDALONE"), so a case file can only call externs it
 // declares itself, same as TbTickCount/TbMenuKey above. Hard-coded
-// instead: this suite always runs on the one fixed target CLAUDE.md's
+// instead: this suite always runs on the one fixed target AGENTS.md's
 // toolchain section pins (Mini vMac + System 6.0.8, a Mac Plus's fixed
 // 512x342 1-bit-deep screen), so rowBytes is always 512/8 = 64 --
 // confirmed by nat_UiScreenBits's own doc comment ("harmless for this

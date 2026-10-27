@@ -29,7 +29,7 @@
 // (no crash, no exit -- just stuck). This is a real, pre-existing cg68k
 // gap (a documented stub, not something this task's migration
 // introduced) -- fixing it is a clarusc source change, out of this
-// plan's scope (CLAUDE.md: "No clarusc source changes anywhere in this
+// plan's scope (AGENTS.md: "No clarusc source changes anywhere in this
 // plan... STOP and escalate" -- flagged in the task report instead).
 // `App.launch` sidesteps it entirely: it takes no parameters (nothing to
 // marshal), and both the UI and non-UI cg68k startup paths call it

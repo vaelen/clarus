@@ -33,7 +33,7 @@
 // heap block instead of crashing outright). Verified instead via a
 // dedicated hand-probe against clarusc only (task-7-report.md has the full
 // emitted-C evidence + rc arithmetic) -- committing it here would make this
-// shared-corpus fixture permanently fail under the compiler CLAUDE.md
+// shared-corpus fixture permanently fail under the compiler AGENTS.md
 // requires stay frozen.
 //
 // Expected strict-mode leak count: 0 (no ../arc_rec_copy.leaks file --

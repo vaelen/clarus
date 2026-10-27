@@ -122,7 +122,7 @@ external func PBSetFInfoSync(paramBlock: ptr): int = trap 0xA00D reg
 // mac-resident-clarusc phase): fill out the File Manager's own create/
 // open-resource-fork/write/close family -- `file.writeRes`'s native
 // implementation (runtime/clarus/native.cla's natWriteRes) needs all
-// four, and the Toolbox-first principle (CLAUDE.md) says to enable the
+// four, and the Toolbox-first principle (AGENTS.md) says to enable the
 // rest of a manager's interface at the same time a new feature needs
 // one piece of it. All four are register (OS) convention, same as every
 // other PBxxxSync trap already in this file.

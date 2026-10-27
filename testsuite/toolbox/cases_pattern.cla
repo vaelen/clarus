@@ -27,7 +27,7 @@
 // reasoning.
 //
 // Every tbPatXxxExpected constant below was recorded via the documented
-// FAIL-then-copy procedure (CLAUDE.md's toolbox-suite section): build
+// FAIL-then-copy procedure (AGENTS.md's toolbox-suite section): build
 // with the constant left at 0, boot the suite, read the reported actual
 // sum out of the FAIL detail line, then pin it here. NEVER computed by
 // hand -- see task-4-report.md for the capture transcript.

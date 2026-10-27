@@ -13,7 +13,7 @@
 # must SKIP, not fail.
 #
 # vasm/ in this repo ships only vasm's doc plus a gitignored binary (like
-# the Retro68/toolchain symlinks -- see repo CLAUDE.md); the binary is NOT
+# the Retro68/toolchain symlinks -- see repo AGENTS.md); the binary is NOT
 # committed and must be built locally from vasm 1.8g source with the bin
 # output module enabled:
 #

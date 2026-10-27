@@ -2,7 +2,7 @@
 # compiler-cleanup phase: T1-speed `build68k --rtbake` byte-identity for the
 # datetime runtime split (datetime_68k.cla / datetime_c.cla) -- the one
 # per-lane value-typed runtime module tests/bake/connfileh.sh and
-# identity.sh do not touch. Standing rule (CLAUDE.md): a phase that adds a
+# identity.sh do not touch. Standing rule (AGENTS.md): a phase that adds a
 # value-typed runtime module adds its tests/bake/<module>.sh twin in the
 # same task; a --rtbake-only bug in that module then fails HERE in T1, not
 # in the opt-in full-corpus sweep.

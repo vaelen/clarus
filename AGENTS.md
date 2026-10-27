@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Clarus is a compiled, event-driven language for System 6/7 68k Macs.
 Read `docs/ROADMAP.md` first — it is the authoritative record of sequencing

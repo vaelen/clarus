@@ -719,7 +719,7 @@ two ways:
 
 - **Positionally**, as one more file handed to `clarusc emit`/`build68k`/
   `check`, the same compose-recipe pattern `testsuite/core`'s own CLI build
-  uses (CLAUDE.md's own "Run `core` on host" recipe):
+  uses (AGENTS.md's own "Run `core` on host" recipe):
 
   ```sh
   clarusc emit --rtdir runtime/clarus/ -o out.c \

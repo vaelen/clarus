@@ -5,7 +5,7 @@
 // Macintosh IV, "The List Manager Package"), ui-widgets Task 5 --
 // runtime/clarus/uitable.cla's table widget needed LScroll, so the rest
 // of the manager comes with it, per the Toolbox-first principle
-// (CLAUDE.md). The runtime keeps its own Ui-prefixed private copies of the
+// (AGENTS.md). The runtime keeps its own Ui-prefixed private copies of the
 // routines it calls; these are the user-facing escape hatch.
 //
 // Every routine dispatches through _Pack0 (0xA9E7) with a selector word

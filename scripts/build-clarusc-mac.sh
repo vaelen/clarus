@@ -120,7 +120,7 @@ fi
 # comment): rtUiTraceSuppressed (runtime/clarus/uiscript.cla), which
 # feProgressTick brackets around its own spinner repaint so it doesn't
 # flood the captured trace. Without --testapi, ordinary programs cannot
-# name ANY runtime/clarus symbol at all (see this repo's CLAUDE.md).
+# name ANY runtime/clarus symbol at all (see this repo's AGENTS.md).
 "$CLARUSC" build68k --testapi --rtdir runtime/clarus/ -o "$OUT/ClarusC.bin" \
     $BAKES $EVENTS_ARG $BAKE_IR_ARG --partition 50331648 clarusc/macgui.cla
 echo "built: $OUT/ClarusC.bin"

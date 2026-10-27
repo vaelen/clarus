@@ -7919,7 +7919,7 @@ func cpEmitArrLits() {
 // %3.3's "synthesized UI event dispatcher... after each handler call"),
 // but that dispatch loop lives in runtime/clarus/ui.cla, not in
 // anything cprint.cla emits directly -- out of this bounded fix's
-// scope, and this lane is already a demoted diagnostic (CLAUDE.md).
+// scope, and this lane is already a demoted diagnostic (AGENTS.md).
 func cpEmitAbortDefaultCheck(ui: bool) {
     cpRestBuf.add(toText("    if (clar_aborting) {"))
     cpRestBuf.add(toText("        rt_log((const uint8_t*)&clar_abort_msg);"))

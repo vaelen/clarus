@@ -191,7 +191,7 @@ external func UiTEGetScrapLength(): int
 // compiled) rather than a clean, isolable "decay in a runtime module"
 // bug -- NOT a hard rule "decay never works here" (cases_event.cla is
 // living proof it does). clarusc/*.cla is off-limits to this task's own
-// scope (CLAUDE.md) either way, so the workaround below -- a real
+// scope (AGENTS.md) either way, so the workaround below -- a real
 // UiNewPtr(4)/UiDisposePtr scratch slot, the exact allocator pattern
 // rtUiScriptClick (uiscript.cla) already uses for a throwaway fixed-size
 // buffer -- sidesteps decay entirely rather than fixing or re-diagnosing

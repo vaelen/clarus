@@ -40,7 +40,7 @@
 //
 // Nested containers (`map of list of text`, `list of list of text`) check
 // and run cleanly under the FROZEN Go reference compiler too (hand-probed
-// directly, per CLAUDE.md's differential-testing-reference framing) -- so,
+// directly, per AGENTS.md's differential-testing-reference framing) -- so,
 // unlike arc_fixwave_arrays.cla's text[n]-reassignment UAF case, this
 // fixture needs no clarusc-only carve-out and lives in the normal shared
 // testdata/run corpus like arc_fixwave_containers.cla itself.

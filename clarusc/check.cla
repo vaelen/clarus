@@ -2250,7 +2250,7 @@ func checkTableMethod(table: map of int, sel: int, argsHead: int): int {
         // user file (drive.cla), but only when a runtime/clarus/ is
         // actually reachable (an explicit --rtdir, or found by the
         // upward search); a check-only compile with neither (both
-        // supported configurations, CLAUDE.md) never gets the splice, so
+        // supported configurations, AGENTS.md) never gets the splice, so
         // the name may genuinely be undeclared here. Same unguarded-
         // scopeLookup shape as checkFormFor's own "undefined record"
         // guard below (fix round 1, Task 3 review finding 1).

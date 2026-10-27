@@ -1241,7 +1241,7 @@ func rtUiEmptyPStrGet(): ptr {
 // rtUiBuildAppleMenu (rt_ui.c:2244-2281). The apple-logo title byte
 // (MacRoman 0x14) is built via `pokeb` with a NUMERIC literal, never
 // typed into this source file directly (project convention: MacRoman
-// bytes corrupt under the Edit tool -- see CLAUDE.md/project memory on
+// bytes corrupt under the Edit tool -- see AGENTS.md/project memory on
 // this; expressing the byte as `0x14` sidesteps the whole hazard, it's
 // plain ASCII source either way).
 func rtUiBuildAppleMenu() {

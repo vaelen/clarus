@@ -53,7 +53,7 @@ const tbWinvarBodyW: int = 128
 const tbWinvarBodyH: int = 24
 
 // tbWinvarBodyExpected: recorded via the documented FAIL-then-copy
-// procedure (CLAUDE.md's toolbox-suite section / cases_pattern.cla's own
+// procedure (AGENTS.md's toolbox-suite section / cases_pattern.cla's own
 // header comment) -- built+booted once with this constant left at 0, the
 // case FAILed with "bodyLen 14 checksum 11853 != 0" (bodyLen 14 already
 // confirming "clickedclicked".length independently), 11853 copied in as

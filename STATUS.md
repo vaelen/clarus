@@ -67,7 +67,7 @@ reports, reviews, and `progress.md`'s `Ruling:` lines).
   `##CLARUS-EXIT##` trailer, probed from the live disk image, instead of
   a fixed 55-minute settle timer that every run paid whether it passed
   or failed (`tests/lib_snow.sh` + the five `tests/mactest/snow/*.sh`
-  scripts; `CLAUDE.md`'s standing-rule note now says ~30 min).
+  scripts; `AGENTS.md`'s standing-rule note now says ~30 min).
 - **New debt filed** in `docs/TODO.md` under this phase's own
   sub-headings: array RETURNS still abort on `emit68k`
   (`cgRetNeedsHidden` lacks `KArr`); `cpParamByRef` omits `KErr` where
@@ -79,7 +79,7 @@ reports, reviews, and `progress.md`'s `Ruling:` lines).
   `cg_init_globals`' frame is invisible to `cgStackHeuristic`; three
   `rt_fileh.inc` minors; the AppleDouble sidecar minors.
 - **Suite case counts are hand-maintained in FIVE places each** — now
-  written into `CLAUDE.md`. Two tasks shipped one site short and were
+  written into `AGENTS.md`. Two tasks shipped one site short and were
   caught only in review.
 - **Carried over, unchanged, from earlier phases** (nothing here is
   discharged by this phase): the `macresident` /

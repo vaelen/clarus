@@ -18,7 +18,7 @@
 # corpus program to hit it: it logs "tick ", which uitest.cla also uses as
 # a literal. **Keep that string** -- change it and this test still passes
 # while proving nothing. (It is also the whole `every`-on-the-host-lane
-# shape, so this doubles as the AppleTalk phase Task 5 bake pair CLAUDE.md's
+# shape, so this doubles as the AppleTalk phase Task 5 bake pair AGENTS.md's
 # standing rule asks for.)
 #
 # C lane, so no MacBinary wrap and no embedded output filename: the two
