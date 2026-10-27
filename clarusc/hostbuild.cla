@@ -1,0 +1,91 @@
+// hostbuild.cla -- `clarusc build`'s C-compiler step (installed-toolchain
+// phase). Kept out of App.startCLI (main.cla) for its 32 KB native
+// segment budget. Uses hostext.cla's primitives; on the 68k lane those
+// are nat_ no-ops, so HostMkTemp fails and nothing is built.
+
+// cliArgvAdd: one NUL-terminated argument onto a HostSpawn argv.
+func cliArgvAdd(argv: text, s: string) {
+    argv.append(s)
+    argv.append(char(0))
+}
+
+// cliBuildHost: writes cSrc to a temp .c file and runs
+// `<cc> <cflags...> -I <rtDir>../host -o <outPath> <tmp> <rtDir>../host/rt.c`
+// as a direct argv exec. CC (non-empty) beats the built-in default;
+// CFLAGS (set, even empty) is split on spaces/tabs, else -O1. The temp
+// file is deleted unless keepC. Returns the clarusc exit status, 0 or 1.
+func cliBuildHost(cSrc: text, outPath: string, keepC: bool): int {
+    var t: text
+    var tmp: string
+    var cc: string
+    var argv: text
+    var flags: text
+    var word: string
+    var i: int
+    var c: char
+    var hostDir: string
+    var status: int
+    var msg: string
+
+    t = ""
+    if not HostMkTemp(t) {
+        log("clarusc build: cannot create a temp file: " + lastError.message)
+        return 1
+    }
+    tmp = t[0, t.length]
+    if not file.writeText(tmp, cSrc, app.doctype, app.id) {
+        msg = lastError.message
+        file.delete(tmp)
+        log("clarusc build: cannot write " + tmp + ": " + msg)
+        return 1
+    }
+
+    t = ""
+    if not HostGetEnv("CC", t) or t.length == 0 {
+        HostDefaultCc(t)
+    }
+    cc = t[0, t.length]
+    argv = ""
+    cliArgvAdd(argv, cc)
+    flags = ""
+    if HostGetEnv("CFLAGS", flags) {
+        word = ""
+        i = 0
+        while i <= flags.length {
+            if i < flags.length { c = flags[i] } else { c = ' ' }
+            if c == ' ' or c == char(9) {
+                if word.length > 0 { cliArgvAdd(argv, word) }
+                word = ""
+            } else {
+                word = word + c
+            }
+            i = i + 1
+        }
+    } else {
+        cliArgvAdd(argv, "-O1")
+    }
+    hostDir = rtDir + "../host"
+    cliArgvAdd(argv, "-I")
+    cliArgvAdd(argv, hostDir)
+    cliArgvAdd(argv, "-o")
+    cliArgvAdd(argv, outPath)
+    cliArgvAdd(argv, tmp)
+    cliArgvAdd(argv, hostDir + "/rt.c")
+
+    status = HostSpawn(argv)
+    msg = lastError.message
+    if keepC {
+        log("clarusc build: kept " + tmp)
+    } else {
+        file.delete(tmp)
+    }
+    if status == -1 {
+        log("clarusc build: " + msg)
+        return 1
+    }
+    if status != 0 {
+        log("clarusc build: " + cc + " failed (status " + numToStr(status) + ")")
+        return 1
+    }
+    return 0
+}

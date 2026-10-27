@@ -18,7 +18,7 @@ for idx in $(manifest_indices); do
     fi
     f=$WORK/f$idx.cla
     fences "$REFMD" "$idx" > "$f"
-    out=$("$CLARUSC" "$f" 2>&1)
+    out=$("$CLARUSC" check "$f" 2>&1)
     rc=$?
     # Go's check is err == nil AND len(bytes.TrimSpace(out)) == 0.
     if [ $rc -ne 0 ] || [ -n "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then

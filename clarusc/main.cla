@@ -38,6 +38,7 @@ include "uiblob.cla"
 include "drive.cla"
 include "bake.cla"
 include "hostext.cla"
+include "hostbuild.cla"
 
 // feReadSource is main.cla's front end for drive.cla's expand() seam
 // (Task 6): the host CLI reads everything straight off disk via
@@ -244,6 +245,9 @@ on App.startCLI(args: list of string) {
     var haveBakeIrEmbed: bool
     var stampBytes: text
     var checkMode: bool
+    var buildMode: bool
+    var bareCheck: bool
+    var keepC: bool
 
     // Reset-at-start: one clarusc invocation checks (or emits) one program
     // (each differential-harness case is a fresh exec). These resets clear the
@@ -256,7 +260,7 @@ on App.startCLI(args: list of string) {
     hostPaths = true
 
     if args.count == 0 {
-        log("usage: clarusc [--version | emit -o OUT.c | emit68k -o OUT.bin | appinfo] FILE...")
+        log("usage: clarusc [check | build -o PROG | build68k -o APP.bin | emit -o OUT.c | appinfo | --bake-ir ... | --version] FILE...")
         quit 2
     }
     // --version anywhere prints the version and exits, whatever else is
@@ -301,8 +305,21 @@ on App.startCLI(args: list of string) {
         emitMode = true
         startArg = 1
     }
-    if args[0] == "emit68k" {
+    // installed-toolchain: `build68k` is the native lane's name; `emit68k`
+    // is its deprecated alias. `check` is bare check without the info
+    // line; `build` is emit + the host C compiler (hostbuild.cla).
+    if args[0] == "build68k" or args[0] == "emit68k" {
+        if args[0] == "emit68k" {
+            log("clarusc: 'emit68k' is deprecated; please use 'build68k'")
+        }
         emitMode68k = true
+        startArg = 1
+    }
+    if args[0] == "check" {
+        startArg = 1
+    }
+    if args[0] == "build" {
+        buildMode = true
         startArg = 1
     }
     if args[0] == "appinfo" {
@@ -326,9 +343,10 @@ on App.startCLI(args: list of string) {
     // unrecognized here (falls to the positional-fileArgs branch, same as
     // before), since check-only has no early-splice/appinfo print step to
     // feed it.
-    checkMode = not emitMode and not emitMode68k and not appinfoMode and not bakeIrMode
+    checkMode = not emitMode and not emitMode68k and not appinfoMode and not bakeIrMode and not buildMode
+    bareCheck = checkMode and startArg == 0
     if startArg >= args.count {
-        log("usage: clarusc [--version | emit -o OUT.c | emit68k -o OUT.bin | appinfo | --bake-ir --lane 68k|c -o OUT.clir] FILE...")
+        log("usage: clarusc [check | build -o PROG | build68k -o APP.bin | emit -o OUT.c | appinfo | --bake-ir ... | --version] FILE...")
         quit 2
     }
 
@@ -343,10 +361,12 @@ on App.startCLI(args: list of string) {
     haveRtDir = false
     i = startArg
     while i < args.count {
-        if (emitMode or emitMode68k or bakeIrMode) and args[i] == "-o" {
+        if (emitMode or emitMode68k or bakeIrMode or buildMode) and args[i] == "-o" {
             i = i + 1
             if i >= args.count {
-                if emitMode68k {
+                if buildMode {
+                    log("usage: clarusc build -o PROG [--rtdir DIR] [--keep-c] FILE...")
+                } else if emitMode68k {
                     log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
                 } else if bakeIrMode {
                     log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
@@ -357,10 +377,12 @@ on App.startCLI(args: list of string) {
             }
             outPath = args[i]
             haveOutPath = true
-        } else if (emitMode or emitMode68k or bakeIrMode or checkMode) and args[i] == "--rtdir" {
+        } else if (emitMode or emitMode68k or bakeIrMode or checkMode or buildMode) and args[i] == "--rtdir" {
             i = i + 1
             if i >= args.count {
-                if emitMode68k {
+                if buildMode {
+                    log("usage: clarusc build -o PROG [--rtdir DIR] [--keep-c] FILE...")
+                } else if emitMode68k {
                     log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--capture] FILE...")
                 } else if bakeIrMode {
                     log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
@@ -376,6 +398,8 @@ on App.startCLI(args: list of string) {
                 rtDir = rtDir + "/"
             }
             haveRtDir = true
+        } else if buildMode and args[i] == "--keep-c" {
+            keepC = true
         } else if bakeIrMode and args[i] == "--lane" {
             i = i + 1
             if i >= args.count {
@@ -569,6 +593,10 @@ on App.startCLI(args: list of string) {
         }
         i = i + 1
     }
+    if buildMode and not haveOutPath {
+        log("usage: clarusc build -o PROG [--rtdir DIR] [--keep-c] FILE...")
+        quit 2
+    }
     if emitMode and not haveOutPath {
         log("usage: clarusc emit -o OUT.c FILE...")
         quit 2
@@ -586,7 +614,7 @@ on App.startCLI(args: list of string) {
         quit 2
     }
     if fileArgs.count == 0 and not bakeIrMode {
-        log("usage: clarusc [--version | emit -o OUT.c | emit68k -o OUT.bin | appinfo | --bake-ir --lane 68k|c -o OUT.clir] FILE...")
+        log("usage: clarusc [check | build -o PROG | build68k -o APP.bin | emit -o OUT.c | appinfo | --bake-ir ... | --version] FILE...")
         quit 2
     }
 
@@ -661,7 +689,10 @@ on App.startCLI(args: list of string) {
     // want68k tell it how far to go, mirroring the original
     // `if emitMode or emitMode68k` / `if emitMode68k` gates now that
     // check-only, appinfo, emit, and emit68k all share this one call.
-    wantEmit = emitMode or emitMode68k
+    if bareCheck {
+        log("clarusc: checking only; use 'clarusc build' or 'clarusc build68k' to produce an executable")
+    }
+    wantEmit = emitMode or emitMode68k or buildMode
     want68k = emitMode68k
     ok = driveCompile(fileArgs, testApiFlag)
     if not ok {
@@ -730,9 +761,15 @@ on App.startCLI(args: list of string) {
     // CLEAN STANDALONE, consulted the runtime-module manifest, re-checked,
     // and lowered to IR (wantEmit was set above) -- only the target-
     // specific back end is left here.
-    if emitMode {
+    if emitMode or buildMode {
         shakeProgram()
         cSrc = emitProgram()
+        if buildMode {
+            // Not `quit cliBuildHost(...)`: the lowering of `quit EXPR`
+            // releases the locals (cSrc) before evaluating EXPR.
+            d = cliBuildHost(cSrc, outPath, keepC)
+            quit d
+        }
         wrote = file.writeText(outPath, cSrc, app.doctype, app.id)
         if not wrote {
             log("clarusc emit: cannot write " + outPath + ": " + lastError.message)

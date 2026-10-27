@@ -8,7 +8,7 @@
 # own scripts cover the diagnostics.
 . "$(dirname "$0")/../lib.sh" || exit 2
 
-out=$("$CLARUSC" "$ROOT/testdata/valid/atalk_ok.cla" 2>&1)
+out=$("$CLARUSC" check "$ROOT/testdata/valid/atalk_ok.cla" 2>&1)
 rc=$?
 if [ $rc -ne 0 ] || [ -n "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then
     t_fail check "clarusc check not clean (exit $rc): $out"
