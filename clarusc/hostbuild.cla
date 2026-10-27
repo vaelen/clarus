@@ -9,30 +9,71 @@ func cliArgvAdd(argv: text, s: string) {
     argv.append(char(0))
 }
 
+// cliArgvSplit: appends each space/tab-separated word of s to argv.
+// False if a word is over 255 bytes (argv is then incomplete).
+func cliArgvSplit(argv: text, s: text): bool {
+    var i: int
+    var start: int
+    var c: char
+    start = 0
+    i = 0
+    while i <= s.length {
+        if i < s.length { c = s[i] } else { c = ' ' }
+        if c == ' ' or c == char(9) {
+            if i - start > 255 { return false }
+            if i > start { cliArgvAdd(argv, s[start, i - start]) }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return true
+}
+
 // cliBuildHost: writes cSrc to a temp .c file and runs
-// `<cc> <cflags...> -I <rtDir>../host -o <outPath> <tmp> <rtDir>../host/rt.c`
-// as a direct argv exec. CC (non-empty) beats the built-in default;
-// CFLAGS (set, even empty) is split on spaces/tabs, else -O1. The temp
-// file is deleted unless keepC. Returns the clarusc exit status, 0 or 1.
+// `<cc words> <cflags...> -I <rtDir>../host -o <outPath> <tmp> <rtDir>../host/rt.c`
+// as a direct argv exec. CC (non-empty) beats the built-in default; its
+// first word is the program, the rest lead the arguments. CFLAGS (set,
+// even empty) is split the same way, else -O1. The temp file is deleted
+// unless keepC. Returns the clarusc exit status, 0 or 1.
 func cliBuildHost(cSrc: text, outPath: string, keepC: bool): int {
     var t: text
     var tmp: string
     var cc: string
     var argv: text
-    var flags: text
-    var word: string
     var i: int
-    var c: char
     var hostDir: string
     var status: int
     var msg: string
 
     t = ""
-    if not HostMkTemp(t) {
-        log("clarusc build: cannot create a temp file: " + lastError.message)
+    if not HostGetEnv("CC", t) or t.length == 0 {
+        HostDefaultCc(t)
+    }
+    argv = ""
+    if not cliArgvSplit(argv, t) {
+        log("clarusc build: CC too long")
         return 1
     }
-    tmp = t[0, t.length]
+    i = 0
+    while i < argv.length and argv[i] != char(0) {
+        i = i + 1
+    }
+    cc = argv[0, i]
+    if HostGetEnv("CFLAGS", t) {
+        if not cliArgvSplit(argv, t) {
+            log("clarusc build: CFLAGS word too long")
+            return 1
+        }
+    } else {
+        cliArgvAdd(argv, "-O1")
+    }
+
+    t = ""
+    if not HostMkTemp(t) {
+        log("clarusc build: " + lastError.message)
+        return 1
+    }
+    tmp = hostTextStr(t, 255)
     if not file.writeText(tmp, cSrc, app.doctype, app.id) {
         msg = lastError.message
         file.delete(tmp)
@@ -40,30 +81,6 @@ func cliBuildHost(cSrc: text, outPath: string, keepC: bool): int {
         return 1
     }
 
-    t = ""
-    if not HostGetEnv("CC", t) or t.length == 0 {
-        HostDefaultCc(t)
-    }
-    cc = t[0, t.length]
-    argv = ""
-    cliArgvAdd(argv, cc)
-    flags = ""
-    if HostGetEnv("CFLAGS", flags) {
-        word = ""
-        i = 0
-        while i <= flags.length {
-            if i < flags.length { c = flags[i] } else { c = ' ' }
-            if c == ' ' or c == char(9) {
-                if word.length > 0 { cliArgvAdd(argv, word) }
-                word = ""
-            } else {
-                word = word + c
-            }
-            i = i + 1
-        }
-    } else {
-        cliArgvAdd(argv, "-O1")
-    }
     hostDir = rtDir + "../host"
     cliArgvAdd(argv, "-I")
     cliArgvAdd(argv, hostDir)

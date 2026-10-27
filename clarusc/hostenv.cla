@@ -5,18 +5,38 @@
 // ClarusC.APPL's unchanged behaviour (no fallback). The Host* externs
 // live in hostext.cla.
 
-// hostDataDir: the data dir `d` with one trailing '/' stripped, as an
-// rtdir ("<d>/runtime/clarus/"), or "" if `d` is empty.
-func hostDataDir(d: text): string {
-    var n: int
-    n = d.length
-    if n == 0 {
+// hostTextStr: t as a string, or "" if it is over max bytes. A Clarus
+// string holds 255, so every host text (env value, temp path) that becomes
+// one goes through here: slicing a longer one is a runtime panic.
+func hostTextStr(t: text, max: int): string {
+    if t.length > max {
         return ""
     }
-    if d[n - 1] == '/' {
-        n = n - 1
+    return t[0, t.length]
+}
+
+// hostShow: t for a message, capped at 32 bytes + "...", so the rtdir
+// not-found abort (one string) keeps its closing hint.
+func hostShow(t: text): string {
+    if t.length > 32 {
+        return t[0, 32] + "..."
     }
-    return d[0, n] + "/runtime/clarus/"
+    return t[0, t.length]
+}
+
+// hostDataDir: the data dir `d` with one trailing '/' stripped, as an
+// rtdir ("<d>/runtime/clarus/"), or "" if `d` is empty or too long for
+// that to fit a string.
+func hostDataDir(d: text): string {
+    var s: string
+    s = hostTextStr(d, 239)
+    if s == "" {
+        return ""
+    }
+    if s[s.length - 1] == '/' {
+        s = s[0, s.length - 1]
+    }
+    return s + "/runtime/clarus/"
 }
 
 // hostRtDirOk: true if probeFile reads out of candidate rtdir `dir`.
@@ -53,7 +73,7 @@ func feRtDirSearched(): string {
     v = ""
     s = "runtime/clarus/ from the working directory upward, $CLARUS_DATADIR ("
     if HostGetEnv("CLARUS_DATADIR", v) {
-        s = s + v[0, v.length] + "), "
+        s = s + hostShow(v) + "), "
     } else {
         s = s + "unset), "
     }
@@ -61,7 +81,7 @@ func feRtDirSearched(): string {
     if v.length == 0 {
         return s + "no built-in default"
     }
-    return s + v[0, v.length]
+    return s + hostShow(v)
 }
 
 // feRtDirHint: the not-found abort's closing advice.

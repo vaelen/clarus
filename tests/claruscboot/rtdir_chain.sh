@@ -57,6 +57,27 @@ else
     t_fail none_resolves_msg "stderr: $(cat "$WORK/none_resolves.err")"
 fi
 
+# env_too_long: a CLARUS_DATADIR too long for a 255-byte rtdir is skipped
+# (falls through to the default), and the not-found abort still ends with
+# its hint (the value is shown capped).
+A50=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+LONGD=/x/$A50/$A50/$A50/$A50/$A50/$A50
+expect env_too_long 0 env CLARUS_DATADIR="$LONGD" "$WORK/cc-dflt" emit -o x.c ../p_dflt.cla
+(cd "$WORK/proj" && env CLARUS_DATADIR="$LONGD" "$CLARUSC" emit -o x.c self.cla) > "$WORK/etl.err" 2>&1; rc=$?
+if [ $rc -ne 0 ] && [ $rc -ne 3 ] && tail -1 "$WORK/etl.err" | grep -q 'use --rtdir or set CLARUS_DATADIR$'; then
+    t_pass env_too_long_msg
+else
+    t_fail env_too_long_msg "exit $rc; stderr: $(cat "$WORK/etl.err")"
+fi
+
+# bakeir_msg: --bake-ir's not-found abort uses the same seam wording.
+(cd "$WORK/proj" && env -u CLARUS_DATADIR "$CLARUSC" --bake-ir --lane 68k -o x.clir) > "$WORK/bk.err" 2>&1; rc=$?
+if [ $rc -ne 0 ] && grep -q 'no built-in default); use --rtdir or set CLARUS_DATADIR$' "$WORK/bk.err"; then
+    t_pass bakeir_msg
+else
+    t_fail bakeir_msg "exit $rc; stderr: $(cat "$WORK/bk.err")"
+fi
+
 (cd "$WORK/proj" && env -u CLARUS_DATADIR "$CLARUSC" self.cla) > /dev/null 2>&1; a=$?
 (cd "$WORK/proj" && env -u CLARUS_DATADIR "$CLARUSC_SNAPSHOT" self.cla) > /dev/null 2>&1; b=$?
 if [ $a -eq $b ]; then t_pass check_unchanged; else t_fail check_unchanged "exit $a, snapshot $b"; fi

@@ -100,4 +100,38 @@ TMPDIR=$W/tmp CC=$HOSTCC "$CLARUSC" build --keep-c --rtdir "$RTDIR" -o "$W/k" "$
 kept=$(sed -n 's/^clarusc build: kept //p' "$W/k.err")
 if [ $krc -eq 0 ] && [ -n "$kept" ] && [ -s "$kept" ]; then t_pass keep_c
 else t_fail keep_c "rc $krc; stderr: $(cat "$W/k.err")"; fi
+# Over-255-byte values (a Clarus string holds 255): each is refused with a
+# message, never a slice panic (exit 3) or a silent truncation.
+A50=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+# longpath BASE LEN: BASE extended with /aaa... components to LEN bytes.
+longpath() {
+    _p=$1
+    while [ $(($2 - ${#_p})) -gt 51 ]; do _p=$_p/$A50; done
+    _p=$_p/$(echo "$A50" | cut -c1-$(($2 - ${#_p} - 1)))
+    echo "$_p"
+}
+# toolong NAME GREP: the last build (rc in $lrc, stderr in $W/NAME.err)
+# failed cleanly with GREP in its message.
+toolong() {
+    if [ $lrc -ne 0 ] && [ $lrc -ne 3 ] && grep -q "$2" "$W/$1.err"; then t_pass "$1"
+    else t_fail "$1" "rc $lrc; stderr: $(cat "$W/$1.err")"; fi
+}
+LT=$(longpath "$W/lt" 250)
+mkdir -p "$LT" || die "mkdir long TMPDIR"
+TMPDIR=$LT CC=$HOSTCC "$CLARUSC" build --rtdir "$RTDIR" -o "$W/lt1" "$W/hello.cla" 2> "$W/tmpdir_too_long.err"; lrc=$?
+toolong tmpdir_too_long 'clarusc build: temp path too long (set TMPDIR to a shorter directory)'
+if [ -z "$(ls -A "$LT")" ]; then t_pass tmpdir_too_long_clean
+else t_fail tmpdir_too_long_clean "left: $(ls -A "$LT")"; fi
+CC=$(longpath /x 300) "$CLARUSC" build --rtdir "$RTDIR" -o "$W/lt2" "$W/hello.cla" 2> "$W/cc_too_long.err"; lrc=$?
+toolong cc_too_long 'clarusc build: CC too long'
+CFLAGS="-O1 -D$(longpath X 300)" CC=$HOSTCC "$CLARUSC" build --rtdir "$RTDIR" -o "$W/lt3" "$W/hello.cla" 2> "$W/cflags_word_too_long.err"; lrc=$?
+toolong cflags_word_too_long 'clarusc build: CFLAGS word too long'
+
+# cc_with_args: CC's words after the first are leading cc arguments.
+rm -f "$W/cc.log"
+printf '#!/bin/sh\nfor a in "$@"; do printf "%%s\\n" "$a"; done >> "%s/cc.log"\n[ "$1" = --marker ] && shift\nexec %s "$@"\n' "$W" "$HOSTCC" > "$W/ccspy-marker"
+chmod +x "$W/ccspy-marker"
+CC="$W/ccspy-marker --marker" "$CLARUSC" build --rtdir "$RTDIR" -o "$W/ccargs" "$W/hello.cla" 2> "$W/ca.err"; carc=$?
+if [ $carc -eq 0 ] && [ "$(head -1 "$W/cc.log")" = --marker ] && [ "$("$W/ccargs" 2>&1)" = hi ]; then t_pass cc_with_args
+else t_fail cc_with_args "rc $carc; argv: $(cat "$W/cc.log" 2>/dev/null); stderr: $(cat "$W/ca.err")"; fi
 t_done

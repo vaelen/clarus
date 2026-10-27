@@ -639,21 +639,30 @@ int32_t rt_ext_HostSpawn(rt_text *argv)
 }
 
 /* Creates an empty $TMPDIR/clarusc-XXXXXX.c (else /tmp) and returns its
- * path in out; 0 + lastError (out emptied) on failure. */
+ * path in out; 0 + lastError (out emptied) on failure, the message ready
+ * to follow "clarusc build: ". A path over 255 bytes fits no Clarus
+ * string (nor file.delete's argument), so it is removed here and refused. */
 int32_t rt_ext_HostMkTemp(rt_text *out)
 {
     const char *dir = getenv("TMPDIR");
-    char path[1024];
+    char path[1024], msg[300];
     int fd;
     if (!dir || !*dir) dir = "/tmp";
     snprintf(path, sizeof path, "%s/clarusc-XXXXXX.c", dir);
     fd = mkstemps(path, 2);
     if (fd < 0) {
-        rt_set_lasterr(errno, strerror(errno));
+        snprintf(msg, sizeof msg, "cannot create a temp file: %s", strerror(errno));
+        rt_set_lasterr(errno, msg);
         rt_hostcli_settext(out, "");
         return 0;
     }
     close(fd);
+    if (strlen(path) > 255) {
+        unlink(path);
+        rt_set_lasterr(ENAMETOOLONG, "temp path too long (set TMPDIR to a shorter directory)");
+        rt_hostcli_settext(out, "");
+        return 0;
+    }
     rt_hostcli_settext(out, path);
     return 1;
 }
