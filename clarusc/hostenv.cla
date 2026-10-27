@@ -26,7 +26,10 @@ func hostShow(t: text): string {
 
 // hostDataDir: the data dir `d` with one trailing '/' stripped, as an
 // rtdir ("<d>/runtime/clarus/"), or "" if `d` is empty or too long for
-// that to fit a string.
+// that to fit a string. That 255-byte fit is the only cutoff applied
+// here; the effective limit is ~200 bytes, since the probe, module and
+// toolbox-include paths built on the rtdir are 255-byte strings too (see
+// docs/TODO.md, installed-toolchain phase, "A data dir over ~200 bytes").
 func hostDataDir(d: text): string {
     var s: string
     s = hostTextStr(d, 240)

@@ -70,15 +70,16 @@ else
     t_fail env_too_long_msg "exit $rc; stderr: $(cat "$WORK/etl.err")"
 fi
 
-# longpath BASE LEN: BASE extended with /aaa... components to LEN bytes.
+# longpath BASE LEN: BASE extended with /aaa... components to LEN bytes
+# (the last one 1..51 bytes, never empty).
 longpath() {
     _p=$1
-    while [ $(($2 - ${#_p})) -gt 51 ]; do _p=$_p/$A50; done
-    _p=$_p/$(echo "$A50" | cut -c1-$(($2 - ${#_p} - 1)))
+    while [ $(($2 - ${#_p})) -gt 52 ]; do _p=$_p/$A50; done
+    _p=$_p/$(echo "${A50}a" | cut -c1-$(($2 - ${#_p} - 1)))
     echo "$_p"
 }
 # env_long_slash: a 200-byte value with a trailing '/' (a symlink to envd)
-# resolves. env_240_slash: 240 bytes with the '/' still fits the 255-byte
+# resolves. env_240_slash_no_panic: 240 bytes with the '/' still fits the 255-byte
 # rtdir once stripped, but no module path fits after it, so it falls
 # through to the default cleanly (no slice panic).
 LD199=$(longpath "$WORK/ld199" 199)
@@ -87,7 +88,7 @@ for lp in "$LD199" "$LD239"; do
     mkdir -p "${lp%/*}" && ln -s "$WORK/envd" "$lp" || die "long data dir $lp"
 done
 expect env_long_slash 0 env CLARUS_DATADIR="$LD199/" "$WORK/cc-dflt" emit -o x.c ../p_envd.cla
-expect env_240_slash 0 env CLARUS_DATADIR="$LD239/" "$WORK/cc-dflt" emit -o x.c ../p_dflt.cla
+expect env_240_slash_no_panic 0 env CLARUS_DATADIR="$LD239/" "$WORK/cc-dflt" emit -o x.c ../p_dflt.cla
 
 # bakeir_msg: --bake-ir's not-found abort uses the same seam wording.
 (cd "$WORK/proj" && env -u CLARUS_DATADIR "$CLARUSC" --bake-ir --lane 68k -o x.clir) > "$WORK/bk.err" 2>&1; rc=$?

@@ -109,11 +109,12 @@ else t_fail keep_c "rc $krc; stderr: $(cat "$W/k.err")"; fi
 # Over-255-byte values (a Clarus string holds 255): each is refused with a
 # message, never a slice panic (exit 3) or a silent truncation.
 A50=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-# longpath BASE LEN: BASE extended with /aaa... components to LEN bytes.
+# longpath BASE LEN: BASE extended with /aaa... components to LEN bytes
+# (the last one 1..51 bytes, never empty).
 longpath() {
     _p=$1
-    while [ $(($2 - ${#_p})) -gt 51 ]; do _p=$_p/$A50; done
-    _p=$_p/$(echo "$A50" | cut -c1-$(($2 - ${#_p} - 1)))
+    while [ $(($2 - ${#_p})) -gt 52 ]; do _p=$_p/$A50; done
+    _p=$_p/$(echo "${A50}a" | cut -c1-$(($2 - ${#_p} - 1)))
     echo "$_p"
 }
 # toolong NAME GREP: the last build (rc in $lrc, stderr in $W/NAME.err)

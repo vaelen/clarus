@@ -363,6 +363,20 @@ Ideas, "if it ever bites" levers, and other maybe-someday items live in
   (`d = cliBuildHost(cSrc, ...)`, then `quit d`). Not fixed. Fix:
   evaluate EXPR into a temp before the locals' release in the lowering
   of `quit`.
+- **A data dir over ~200 bytes falls through silently, and long module
+  and include paths can be clamped.** `hostDataDir`
+  (`clarusc/hostenv.cla`) only refuses a `CLARUS_DATADIR` (or built-in
+  default) whose `<d>/runtime/clarus/` would not fit a 255-byte
+  `string`, but the probe path, every module path (`rtdir +
+  "<module>.cla"`) and the toolbox include fallback
+  (`<rtdir>/../../toolbox/<rest>`) are built as 255-byte `string`s too.
+  So from about 200 bytes the probe misses and the candidate falls
+  through to the next one with no message, and an rtdir that does probe
+  can have a longer module or include path clamped -- which could even
+  resolve a different file. `tests/claruscboot/rtdir_chain.sh`'s
+  `env_240_slash_no_panic` pins only the no-panic fall-through. Fix:
+  build those paths in `text` and refuse an over-long one with a
+  message instead of clamping.
 
 ## Language: feature-support queries (after the AppleTalk release)
 
