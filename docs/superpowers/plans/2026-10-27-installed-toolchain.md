@@ -19,14 +19,15 @@
 - Bare check prints, on stderr, before checking: `clarusc: checking only; use 'clarusc build' or 'clarusc build68k' to produce an executable`. Explicit `check` prints nothing extra.
 - `emit68k` prints on stderr: `clarusc: 'emit68k' is deprecated; please use 'build68k'`, then behaves exactly as `build68k`.
 - `-o` without a command does not build.
-- ClarusC.APPL: behaviour unchanged (bytes may move). `tests/lib.sh` is FROZEN — never edit it.
+- ClarusC.APPL: behaviour unchanged (bytes may move). `tests/lib.sh` is FROZEN except for Task 3's `emit68k` → `build68k` rename, which Andrew explicitly authorized (2026-10-27).
+- The `emit68k` rename covers invocations and user-visible text only. Internal identifiers (`emitMode68k`, `driveEmit68k`, `cg68*`), comments in `testdata/**/*.cla` fixtures, and historical docs (`docs/HISTORY.md`, `docs/superpowers/**` from before this phase) keep the old name.
 - Host-only externs need `nat_` no-op/empty fallbacks so `tests/cg68k/selfemit.sh` (clarusc self-compiled on the 68k lane) stays green.
 - Keep `App.startCLI` (`clarusc/main.cla:204`) lean: it has a 32 KB native per-function segment budget (selfemit's gate). New logic goes in functions in the new files.
 - Implementation and review subagents: `model: opus`.
 
 ## Review Focus
 
-1. `tests/lib.sh`'s `emit68k()` helper (line 63) calls `clarusc emit68k`, so every 68k test now gets the deprecation line on stderr. A test that diffs stderr goes red, and lib.sh is frozen. Task 3 runs full T1 and **stops and reports** any such failure rather than editing lib.sh. → Task 3 Step 6.
+1. A missed `emit68k` invocation would print the deprecation line into a test's stderr; a test that diffs stderr goes red, and an unrenamed one goes stale silently. → Task 3 Step 6's `grep` gate: no `emit68k` invocation remains outside `tests/claruscboot/commands.sh`.
 2. Relative `--rtdir` / relative `-o` with `build`: cc runs in clarusc's cwd, so relative paths must resolve the same way as for `emit`. → Task 3 `build_relative` test.
 3. A `CLARUS_DATADIR` with a trailing slash (`/usr/share/clarus/`) must work like one without. → Task 2 `env_trailing_slash` test.
 4. `make install` run twice with a different `DATADIR` must rebuild the installed binary (the default is baked in). → Task 4 `reinstall_datadir` test.
@@ -108,13 +109,16 @@ Data-dir values strip one trailing `/` before appending `/runtime/clarus/`.
 ### Task 3: `check`, `build`, `build68k` commands
 
 **Files:**
-- Modify: `clarusc/main.cla` (dispatch :257-330, flag loop :334+, emit tail :732+, usage strings)
+- Modify: `clarusc/main.cla` (dispatch :257-330, flag loop :334+, emit tail :732+, usage strings, the 9 `"clarusc emit68k: ..."` message prefixes → `clarusc build68k: ...`)
 - Create: `clarusc/hostbuild.cla`; Modify: `clarusc/main.cla` (one `include` line)
+- Modify (rename): `tests/lib.sh` (the `emit68k()` helper at line 63 becomes `build68k()`, calling `clarusc build68k`), every `tests/**/*.sh` that calls the helper or `clarusc emit68k` (~82 files), `scripts/build-68k.sh`, `scripts/build-clarusc-mac.sh`, and the other `scripts/*` that invoke it
 - Test: `tests/claruscboot/commands.sh`
 
 **Interfaces:**
 - Consumes: `HostGetEnv`, `HostDefaultCc`, `HostSpawn`, `HostMkTemp` (Task 1); the `rtDir` global (`drive.cla:89`), which holds the resolved rtdir after `driveCompile`.
 - Produces: `func cliBuildHost(cSrc: text, outPath: string, keepC: bool): int` in `hostbuild.cla`. It writes `cSrc` to a `HostMkTemp` path, runs `<cc> <cflags...> -I <rtDir>../host -o <outPath> <tmp> <rtDir>../host/rt.c`, deletes the temp file unless `keepC` (if kept, `log("clarusc build: kept " + path)`), and returns 0 or 1. On a nonzero status it logs `clarusc build: <cc> failed (status N)`, or `clarusc build: cannot run <cc>: <err>` if spawn returned -1. It also declares the Task 1 externs it uses (`nat_` fallbacks: `HostSpawn` → -1, `HostMkTemp` → false, `HostDefaultCc` → empty). If Task 2 already declared an extern, share one declaration; the integrator dedups.
+
+The rename is mechanical: per CLAUDE.md it may go to a `haiku` subagent once the command exists. Tests that grep for a `clarusc emit68k:` message prefix are updated to the new prefix in the same pass. `scripts/clarus-run.sh` is Task 2's; it doesn't use `emit68k`.
 
 Command dispatch (`args[0]`): `check` → checkMode with no info line; `build` → `buildMode` (implies the emit pipeline, accepts only `-o`, `--rtdir`, `--keep-c`, and requires `-o`); `build68k` → today's `emitMode68k`; `emit68k` → log the deprecation line, then `emitMode68k`; no command → checkMode plus the info line, logged after argument parsing and before `driveCompile`. Usage line: `usage: clarusc [check | build -o PROG | build68k -o APP.bin | emit -o OUT.c | appinfo | --bake-ir ... | --version] FILE...`. The existing `clarusc emit68k:`-prefixed error messages stay as they are (the later cleanup handles them).
 
@@ -135,8 +139,11 @@ Command dispatch (`args[0]`): `check` → checkMode with no info line; `build` �
 - [ ] **Step 3:** Implement `hostbuild.cla` and the dispatch. Add `include "hostbuild.cla"` after `include "bake.cla"`.
 - [ ] **Step 4:** `make test T=claruscboot/commands` → PASS.
 - [ ] **Step 5:** `make test T=cg68k/selfemit` → PASS (segment budget).
-- [ ] **Step 6:** `scripts/test-task.sh`. If any test fails **only** because of the new `emit68k` deprecation line (via `tests/lib.sh`'s frozen `emit68k()` helper or a direct call), do not edit lib.sh and do not silence the line: STOP and report the list to the top-level session, which takes it to Andrew. Fix any other failures.
-- [ ] **Step 7:** Commit `feat(clarusc): check/build/build68k commands; emit68k deprecated`.
+- [ ] **Step 6:** Commit `feat(clarusc): check/build/build68k commands; emit68k deprecated`.
+- [ ] **Step 7:** Rename every invocation (Files list above), as a separate commit.
+- [ ] **Step 8:** Gate: `grep -rn 'emit68k' tests scripts Makefile | grep -v '^tests/claruscboot/commands.sh'` prints only comment lines that describe history, and no invocation. `grep -rn 'clarusc emit68k' clarusc/*.cla` prints nothing outside the alias handling.
+- [ ] **Step 9:** `scripts/test-task.sh` → green. Then `CLARUS_MAC_TESTS=1 make -j1 test T=mactest/smoke_bounce` → PASS, which exercises the renamed `lib_mac.sh` path on a real boot.
+- [ ] **Step 10:** Commit `test,scripts: use build68k instead of emit68k`.
 
 ### Task 4: `make install` / `make uninstall`
 
@@ -173,6 +180,7 @@ Docs only; runs in parallel with Tasks 2–4. Command names and behaviour come f
 - Modify: `README.md` (an "Installing" section: `make install` variables, the lookup order, `CC`/`CFLAGS`, the command table)
 - Modify: `CLAUDE.md` ("Build and test": `make install`, the commands, the dev compilers having no built-in default, `CLARUS_DATADIR` being unexported by the Makefile)
 - Modify: `docs/clarus-language-changelog.md` (a short "Tooling (not language)" note under the current version: new commands, `emit68k` deprecated)
+- Modify (rename `emit68k` → `build68k` in current-usage text): `CLAUDE.md`, `README.md`, `docs/clarus-language-reference.md`, `docs/clarus-toolbox-cookbook.md`, and the live (non-history) parts of `docs/ROADMAP.md` and `docs/TODO.md`. Past-tense accounts of earlier phases keep the old name.
 - Create: `docs/m68k-bbs-installed-toolchain.md`
 
 The hand-off doc, addressed to the m68k-bbs agent, is self-contained. Cover:
