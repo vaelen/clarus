@@ -279,6 +279,21 @@ interned the compiler's IRTypes, which keeps ClarusC above the SE floor
 `docs/superpowers/specs/2026-10-25-ui-widgets-design.md`; details:
 `docs/HISTORY.md`'s ui-widgets entry.
 
+### Done: installed toolchain (2026-10-27, branch `installed-toolchain`)
+
+Merged to main 2026-10-27. ClarusC 1.2 (tooling only, no language
+change). `make install` puts `clarusc` in `$(PREFIX)/bin`, the runtime
+and toolbox in `$(PREFIX)/share/clarus`, the docs in
+`$(PREFIX)/share/doc/clarus` and `clarusc(1)` in `$(MANDIR)/man1`;
+clarusc finds an installed runtime from any directory through
+`CLARUS_DATADIR` or a default baked in at build time. New commands
+`check`, `build` (runs `cc` itself) and `build68k`; `emit68k` is a
+deprecated alias, and every in-repo caller was moved to `build68k`.
+68kBBS's migration off its pinned copy is described in
+`docs/m68k-bbs-installed-toolchain.md`. Spec:
+`docs/superpowers/specs/2026-10-27-installed-toolchain-design.md`;
+details: `docs/HISTORY.md`'s installed-toolchain entry.
+
 ### Now: language usability
 
 Items 1 (binary streams and files), 2 (serial ports) and 3 (AppleTalk)

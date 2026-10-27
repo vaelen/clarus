@@ -8583,3 +8583,61 @@ stays 1210578 (measured 1,203,844 at the tip); the SE floor (1017 KB) was never
 loosened. Before the intern fix the SE low point was 1003 KB, under the
 floor. T2 green; Snow `clarusc_bake` and `clarusc_memprobe` pass on the
 SE.
+
+## Installed toolchain (2026-10-27, branch `installed-toolchain`)
+
+Merged to main 2026-10-27 (base `28530084`). ClarusC 1.2; tooling
+only, no language change. Source of the request: 68kBBS built against a
+pinned copy of clarusc (`bin/clarusc` + `vendor/runtime`/`vendor/toolbox`)
+and wanted an installed compiler used like any other. Spec
+`docs/superpowers/specs/2026-10-27-installed-toolchain-design.md`; plan
+`docs/superpowers/plans/2026-10-27-installed-toolchain.md`. Six tasks:
+Task 1 alone (the host externs), Tasks 2, 3 and 5 as parallel
+worktrees, then Tasks 4 and 6; every task implemented and reviewed on
+Opus, then a final whole-branch review, one fix wave, a deferred-minor
+cleanup and the man page.
+
+**What it added.**
+
+- Host externs `HostGetEnv`, `HostDefaultDataDir`, `HostDefaultCc`,
+  `HostSpawn` (`posix_spawnp`, no shell; exit status, 128+signal, or
+  -1) and `HostMkTemp` (`$TMPDIR/clarusc-XXXXXX.c`), declared once in
+  `clarusc/hostext.cla` with `nat_` fallbacks for the 68k self-compile.
+- Runtime lookup: `--rtdir` → the upward `findRtDir` search →
+  `$CLARUS_DATADIR/runtime/clarus/` → the baked `CLARUS_DATADIR`
+  define. The last two steps sit behind a front-end seam
+  (`feRtDirFallback`/`feRtDirSearched`/`feRtDirHint`): `hostenv.cla`
+  for the host CLI, `macgui.cla` keeping ClarusC.APPL's behaviour and
+  message text byte-identical.
+- Commands: `check` (and bare `clarusc FILE...`, with a stderr hint
+  line), `build -o PROG [--rtdir DIR] [--keep-c]` (`hostbuild.cla`:
+  `$CC $CFLAGS -I <rtdir>/../host -o PROG tmp.c <rtdir>/../host/rt.c`;
+  CC and CFLAGS split on spaces/tabs; any value too long for a string
+  refused, never truncated) and `build68k`; `emit68k` prints a
+  deprecation line. Every test, script and doc moved to `build68k`,
+  including `tests/lib.sh`'s helper (Andrew authorized that frozen-file
+  edit).
+- `make install`/`install-bin`/`uninstall` with `PREFIX`, `BINDIR`,
+  `DATADIR`, `DOCDIR`, `MANDIR`, `DESTDIR` and `CC`; non-absolute paths
+  refused at parse time; a cfg sentinel so `sudo make install` after
+  `make install-bin` (same variables) never rebuilds as root; uninstall
+  removes only what install put there. The dev compilers bake no
+  default and the Makefile `unexport`s `CLARUS_DATADIR`, so an install
+  can never change what a test sees.
+- `docs/clarusc.1`, with a lint and command-drift check
+  (`tests/claruscboot/manpage.sh`).
+- Tests: `tests/claruscboot/{rtdir_chain,commands,install,manpage}.sh`,
+  `tests/hostrt/hostcli.sh` + `runtime/host/rt_hostcli_test.c`.
+
+**Found along the way.** `quit EXPR` frees the handler's locals before
+evaluating EXPR (`docs/TODO.md`); a data dir over ~200 bytes falls
+through because module and include paths are 255-byte strings
+(`docs/TODO.md`); a stray `runtime/clarus/` in a parent silently beats
+the install (`docs/FUTURE.md`, a way to print the chosen runtime).
+
+**Gates.** T1 with `--smoke` green, `selfhost/fixedpoint` fresh, Snow
+`clarusc_bake` PASS on the SE (280 s) after the last `bake.cla` change.
+T2 passed (1307 s) before the final review's fix wave and was not
+re-run before the merge, by Andrew's decision. A scratch install built
+68kBBS's `bbs`, `bbsconfig` and `bench` with `build68k` from outside
+both repos.
