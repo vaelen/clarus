@@ -84,12 +84,13 @@ PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share/clarus
 DOCDIR ?= $(PREFIX)/share/doc/clarus
+MANDIR ?= $(PREFIX)/share/man
 DESTDIR ?=
 # Where install-bin builds clarusc-install(.cfg); tests point it at $WORK.
 INSTALL_BR ?= $(BR)
 # A relative or empty dir would be baked in as-is and resolve per cwd.
 ifneq ($(filter install-bin install uninstall,$(MAKECMDGOALS)),)
-$(foreach v,BINDIR DATADIR DOCDIR,$(if $(filter /%,$(firstword $($(v)))),,$(error $(v) must be an absolute path (got '$($(v))'))))
+$(foreach v,BINDIR DATADIR DOCDIR MANDIR,$(if $(filter /%,$(firstword $($(v)))),,$(error $(v) must be an absolute path (got '$($(v))'))))
 endif
 DOCS := docs/clarus-language-reference.md docs/clarus-language-changelog.md docs/clarus-toolbox-cookbook.md
 
@@ -106,15 +107,17 @@ $(INSTALL_BR)/clarusc-install: $(INSTALL_BR)/clarusc-install.cfg $(BR)/clarusc-c
 
 install: install-bin
 	rm -rf '$(DESTDIR)$(DATADIR)/runtime' '$(DESTDIR)$(DATADIR)/toolbox'
-	install -d '$(DESTDIR)$(BINDIR)' '$(DESTDIR)$(DATADIR)/runtime/clarus' '$(DESTDIR)$(DATADIR)/runtime/host' '$(DESTDIR)$(DATADIR)/toolbox' '$(DESTDIR)$(DOCDIR)'
+	install -d '$(DESTDIR)$(BINDIR)' '$(DESTDIR)$(DATADIR)/runtime/clarus' '$(DESTDIR)$(DATADIR)/runtime/host' '$(DESTDIR)$(DATADIR)/toolbox' '$(DESTDIR)$(DOCDIR)' '$(DESTDIR)$(MANDIR)/man1'
 	install -m 755 $(INSTALL_BR)/clarusc-install '$(DESTDIR)$(BINDIR)/clarusc'
 	install -m 644 runtime/clarus/*.cla '$(DESTDIR)$(DATADIR)/runtime/clarus'
 	install -m 644 runtime/host/rt.c runtime/host/rt*.h runtime/host/rt*.inc '$(DESTDIR)$(DATADIR)/runtime/host'
 	install -m 644 toolbox/*.cla '$(DESTDIR)$(DATADIR)/toolbox'
 	install -m 644 $(DOCS) '$(DESTDIR)$(DOCDIR)'
+	install -m 644 docs/clarusc.1 '$(DESTDIR)$(MANDIR)/man1/clarusc.1'
 
 uninstall:
 	rm -f '$(DESTDIR)$(BINDIR)/clarusc'
 	rm -rf '$(DESTDIR)$(DATADIR)/runtime' '$(DESTDIR)$(DATADIR)/toolbox'
 	rm -f $(patsubst docs/%,'$(DESTDIR)$(DOCDIR)/%',$(DOCS))
+	rm -f '$(DESTDIR)$(MANDIR)/man1/clarusc.1'
 	rmdir '$(DESTDIR)$(DATADIR)' '$(DESTDIR)$(DOCDIR)' 2>/dev/null || true

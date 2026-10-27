@@ -32,6 +32,7 @@ That installs:
 /usr/local/share/doc/clarus/clarus-language-reference.md
 /usr/local/share/doc/clarus/clarus-language-changelog.md
 /usr/local/share/doc/clarus/clarus-toolbox-cookbook.md
+/usr/local/share/man/man1/clarusc.1
 ```
 
 A different location is `make install PREFIX=$HOME/.local` (no `sudo`;
@@ -42,7 +43,8 @@ three commands: `make install` replaces the old runtime and toolbox
 files rather than adding to them. `sudo make uninstall` (same variables)
 removes it all.
 
-Check it: `command -v clarusc` and `clarusc --version`.
+Check it: `command -v clarusc` and `clarusc --version`. `man clarusc`
+documents every command, option and environment variable.
 
 ## 2. Delete `bin/` and `vendor/`
 

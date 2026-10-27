@@ -20,7 +20,8 @@ I=$WORK/inst
 mk install PREFIX="$I" > "$WORK/inst.log" 2>&1 || die "make install failed: $(tail -20 "$WORK/inst.log")"
 miss=
 for f in share/clarus/runtime/clarus/core.cla share/clarus/runtime/host/rt.c \
-    share/clarus/toolbox/memory.cla share/doc/clarus/clarus-language-reference.md; do
+    share/clarus/toolbox/memory.cla share/doc/clarus/clarus-language-reference.md \
+    share/man/man1/clarusc.1; do
     [ -f "$I/$f" ] || miss="$miss $f"
 done
 [ -x "$I/bin/clarusc" ] || miss="$miss bin/clarusc(x)"
@@ -92,6 +93,17 @@ n=$(grep -c /usr/share/clarus "$R/usr/bin/clarusc" 2>/dev/null)
 if [ -x "$R/usr/bin/clarusc" ] && [ -f "$R/usr/share/clarus/runtime/clarus/core.cla" ] && [ "${n:-0}" -ge 1 ]; then
     t_pass destdir
 else t_fail destdir "binary/runtime missing or path not baked (grep -c $n)"; fi
+
+# mandir: MANDIR overrides where the page goes (under DESTDIR); uninstall
+# removes the page and leaves man1 (a shared system dir) in place.
+mk install DESTDIR="$R" PREFIX=/usr MANDIR=/usr/man > "$WORK/m.log" 2>&1 || die "MANDIR install failed: $(tail -20 "$WORK/m.log")"
+pg=$R/usr/man/man1/clarusc.1
+mode=$(ls -l "$pg" 2>/dev/null | cut -c1-10)
+if cmp -s "$pg" "$ROOT/docs/clarusc.1" && [ "$mode" = -rw-r--r-- ]; then t_pass mandir_install
+else t_fail mandir_install "page at $pg missing, different or mode '$mode'"; fi
+mk uninstall DESTDIR="$R" PREFIX=/usr MANDIR=/usr/man > "$WORK/mu.log" 2>&1 || t_fail mandir_uninstall "make uninstall: $(tail -5 "$WORK/mu.log")"
+if [ ! -e "$pg" ] && [ -d "$R/usr/man/man1" ]; then t_pass mandir_uninstall
+else t_fail mandir_uninstall "page left behind or man1 removed"; fi
 
 # reinstall_datadir: a changed DATADIR rebuilds the install binary.
 mk install PREFIX="$WORK/i2" DATADIR="$WORK/i2/data" > "$WORK/r.log" 2>&1 || die "DATADIR install failed: $(tail -20 "$WORK/r.log")"

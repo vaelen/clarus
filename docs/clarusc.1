@@ -1,0 +1,378 @@
+.TH CLARUSC 1 2026-10-27 Clarus "Clarus Manual"
+.SH NAME
+clarusc \- the Clarus compiler
+.SH SYNOPSIS
+.B clarusc
+.RB [ \-\-rtdir
+.IR DIR ]
+.IR FILE ...
+.br
+.B clarusc check
+.RB [ \-\-rtdir
+.IR DIR ]
+.IR FILE ...
+.br
+.B clarusc build
+.B \-o
+.I PROG
+.RB [ \-\-rtdir
+.IR DIR ]
+.RB [ \-\-keep\-c ]
+.IR FILE ...
+.br
+.B clarusc build68k
+.B \-o
+.I APP.bin
+.RB [ \-\-rtdir
+.IR DIR ]
+.RB [ \-\-testapi ]
+.RB [ \-\-listing ]
+.RB [ \-\-capture ]
+.RB [ \-\-events
+.IR EVFILE ]
+.RB [ \-\-rtbake
+.IR CLIR ]
+.IR FILE ...
+.br
+.B clarusc emit
+.B \-o
+.I OUT.c
+.RB [ \-\-rtdir
+.IR DIR ]
+.RB [ \-\-testapi ]
+.RB [ \-\-rtbake
+.IR CLIR ]
+.IR FILE ...
+.br
+.B clarusc appinfo
+.RB [ \-\-testapi ]
+.IR FILE ...
+.br
+.B clarusc \-\-version
+.SH DESCRIPTION
+.B clarusc
+compiles Clarus, an event-driven language for System 6 and System 7
+68k Macintosh computers.
+It builds native 68k Mac applications directly, with no C compiler,
+and it builds ordinary host executables by way of generated C.
+.PP
+Every
+.I FILE
+is a Clarus source file; together they form one program, and each
+file's
+.B include
+directives are followed.
+Diagnostics print to standard output as
+.IR path : line : col :\ message ,
+all parse errors before all type errors.
+The runtime modules a program needs are found in the runtime directory
+(see
+.BR FILES )
+and added automatically.
+.SH COMMANDS
+The command is the first argument.
+Without one,
+.B clarusc
+checks only.
+.TP
+.B check
+Type-check the program and print its diagnostics.
+Nothing is written.
+.TP
+.B build
+Build a host executable,
+.IR PROG .
+The C translation of the program is written to a temporary file, then
+the C compiler is run directly, never through a shell, with the
+arguments
+.RS
+.PP
+.I $CC $CFLAGS
+.B \-I
+.IB rtdir /../host
+.B \-o
+.I PROG tmp.c
+.IB rtdir /../host/rt.c
+.PP
+where
+.I rtdir
+is the runtime directory.
+The temporary file is removed afterwards unless
+.B \-\-keep\-c
+is given.
+.RE
+.TP
+.B build68k
+Build a native 68k Mac application,
+.IR APP.bin ,
+as MacBinary.
+No C compiler is used.
+.TP
+.B emit
+Write the C translation of the program to
+.I OUT.c
+and stop.
+.TP
+.B appinfo
+Check the program and print its application metadata as
+.IB key = value
+lines:
+.B app=1
+(when the program has an
+.B app
+section),
+.BR name= ,
+and
+.BR version= ,
+.BR id= ,
+.B icon=
+when set.
+.TP
+.B emit68k
+A deprecated alias for
+.BR build68k .
+It prints
+.B clarusc: 'emit68k' is deprecated; please use 'build68k'
+on standard error, then does the same.
+.PP
+A bare
+.B clarusc
+.I FILE ...
+is
+.B check
+plus the line
+.B clarusc: checking only; use 'clarusc build' or 'clarusc build68k' to produce an executable
+on standard error.
+.B \-o
+without a command does not build.
+.PP
+.B \-\-bake\-ir
+as the first argument builds the runtime library ClarusC.APPL
+carries; it is internal build tooling.
+.SH OPTIONS
+.TP
+.BI \-o \ PATH
+The output file.
+Required by
+.BR build ,
+.B build68k
+and
+.BR emit .
+.TP
+.BI \-\-rtdir \ DIR
+Use
+.I DIR
+as the runtime directory, the one holding the runtime modules (its path
+normally ends in
+.IR runtime/clarus/ ),
+skipping the search described in
+.BR FILES .
+Accepted by every command except
+.BR appinfo .
+.TP
+.B \-\-keep\-c
+.RB ( build )
+Keep the temporary C file and print its path on standard error.
+.TP
+.B \-\-testapi
+.RB ( build68k ,
+.BR emit ,
+.BR appinfo )
+For a UI program, make the UI runtime and its test hooks visible to the
+program.
+Used by test suites; it has no effect on a program without a UI.
+.TP
+.B \-\-listing
+.RB ( build68k )
+Also write, for each code segment
+.IR N ,
+an assembly listing
+.IB base .seg N .s
+and the segment's raw bytes
+.IB base .seg N .dat\c
+, where
+.I base
+is the
+.B \-o
+path without its extension.
+.TP
+.B \-\-capture
+.RB ( build68k )
+Build with the test capture protocol: the application writes an
+.B out
+file with its alerts, its UI trace and an exit trailer.
+Without
+.B \-\-capture
+or
+.B \-\-events
+the build is a production build and writes no such file.
+.TP
+.BI \-\-events \ EVFILE
+.RB ( build68k )
+Script the application's input from
+.I EVFILE
+for deterministic UI testing.
+Implies
+.BR \-\-capture .
+.TP
+.BI \-\-rtbake \ CLIR
+.RB ( build68k ,
+.BR emit )
+Take the runtime from the prebuilt library
+.I CLIR
+instead of compiling it from source.
+.TP
+.B \-\-version
+Print
+.B clarusc
+.I version
+and exit, wherever it appears on the command line.
+.SH ENVIRONMENT
+.TP
+.B CLARUS_DATADIR
+A share directory, such as
+.IR /usr/local/share/clarus ,
+whose
+.I runtime/clarus/
+is tried before the built-in default (see
+.BR FILES ).
+Keep it under about 200 bytes; a longer one is passed over.
+.TP
+.B CC
+.RB ( build )
+The C compiler.
+When set and non-empty it replaces the compiler chosen when
+.B clarusc
+was built (normally
+.BR cc ).
+It is split on spaces and tabs: the first word is the program, the rest
+are its leading arguments.
+.TP
+.B CFLAGS
+.RB ( build )
+When set, even to the empty string, its words (split on spaces and
+tabs, with no quote processing) replace the default
+.BR \-O1 .
+.TP
+.B TMPDIR
+.RB ( build )
+The directory for the temporary C file, else
+.IR /tmp .
+.SH FILES
+The runtime directory is the first of these whose files are actually
+there:
+.IP 1. 4
+.BI \-\-rtdir \ DIR\c
+;
+.IP 2. 4
+a
+.I runtime/clarus/
+directory in the current directory or any parent;
+.IP 3. 4
+.IR $CLARUS_DATADIR /runtime/clarus/\c
+;
+.IP 4. 4
+.IR /usr/local/share/clarus/runtime/clarus/ ,
+the built-in default.
+The data directory is set when
+.B clarusc
+is built
+.RB ( "make install DATADIR=" ...);
+a development build has none.
+.PP
+An
+.B include
+path not found relative to the including file is looked up in the
+.I toolbox/
+directory beside the runtime's
+.I runtime/
+directory,
+.IR rtdir /../../toolbox/.
+.PP
+An installed layout, with the default
+.BR PREFIX :
+.TP
+.I /usr/local/bin/clarusc
+the compiler
+.TP
+.I /usr/local/share/clarus/runtime/clarus/
+the Clarus runtime modules
+.TP
+.I /usr/local/share/clarus/runtime/host/
+the host C runtime
+.RI ( rt.c ,
+.IR rt*.h ,
+.IR rt*.inc )
+.TP
+.I /usr/local/share/clarus/toolbox/
+the Toolbox declaration catalog
+.TP
+.I /usr/local/share/doc/clarus/
+the language reference, changelog and Toolbox cookbook
+.TP
+.I /usr/local/share/man/man1/clarusc.1
+this page
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+The program has errors, an input or output file could not be read or
+written, or
+.B build
+failed (including a C compiler that exited non-zero).
+.TP
+.B 2
+A usage error.
+.TP
+.B 3
+.B clarusc
+itself hit a runtime error (it prints
+.BR "runtime error:" \ ...);
+this is a compiler bug.
+.SH EXAMPLES
+Check a program:
+.PP
+.RS
+clarusc check hello.cla
+.RE
+.PP
+Build and run a host executable:
+.PP
+.RS
+.nf
+clarusc build \-o hello hello.cla
+\&./hello
+.fi
+.RE
+.PP
+Build a Mac application:
+.PP
+.RS
+clarusc build68k \-o Hello.bin hello\-mac.cla
+.RE
+.PP
+Build with a different C compiler and flags:
+.PP
+.RS
+CC=clang CFLAGS="\-O2 \-g" clarusc build \-o hello hello.cla
+.RE
+.PP
+Use an uninstalled checkout's runtime:
+.PP
+.RS
+clarusc build \-\-rtdir ~/clarus/runtime/clarus/ \-o hello hello.cla
+.RE
+.SH SEE ALSO
+.BR cc (1)
+.PP
+The installed documentation, in
+.I /usr/local/share/doc/clarus/
+by default:
+.IR clarus\-language\-reference.md ,
+the normative language reference;
+.IR clarus\-language\-changelog.md ;
+and
+.IR clarus\-toolbox\-cookbook.md ,
+on declaring Inside Macintosh routines in Clarus.

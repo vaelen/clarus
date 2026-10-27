@@ -68,12 +68,16 @@ scripts/test-merge.sh             # T2: per-merge gate (~15m + selfhost, needs t
   if its probe file reads; toolbox is still `<rtdir>/../../toolbox/`.
 - **`make install`** (`PREFIX=/usr/local`, `BINDIR=$(PREFIX)/bin`,
   `DATADIR=$(PREFIX)/share/clarus`, `DOCDIR=$(PREFIX)/share/doc/clarus`,
-  `DESTDIR=`, `CC=cc`; `make uninstall` takes the same variables) builds
+  `MANDIR=$(PREFIX)/share/man`, `DESTDIR=`, `CC=cc`; `make uninstall`
+  takes the same variables) builds
   `build-run/clarusc-install` from the bootstrap's `clarusc-current.c`
   with `-DCLARUS_DATADIR='"$(DATADIR)"'` (never `DESTDIR`-prefixed) and
   `-DCLARUS_CC='"$(CC)"'`, then installs it plus
   `$(DATADIR)/runtime/{clarus,host}`, `$(DATADIR)/toolbox` and the
-  reference/changelog/cookbook in `$(DOCDIR)`, replacing any older
+  reference/changelog/cookbook in `$(DOCDIR)` and `docs/clarusc.1` (the
+  `man clarusc` page; `tests/claruscboot/manpage.sh` lints it and checks
+  its COMMANDS against `main.cla`'s usage lines) in `$(MANDIR)/man1`,
+  replacing any older
   runtime/toolbox tree. The dev compilers (`clarusc-snapshot`,
   `clarusc-current`) are built with `-DCLARUS_DATADIR='""'` — no built-in
   default — and the Makefile `unexport`s `CLARUS_DATADIR`, so neither an

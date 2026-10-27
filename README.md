@@ -105,17 +105,21 @@ sudo make install PREFIX=/usr
 
 | Variable  | Default                      | What it sets                                |
 |-----------|------------------------------|---------------------------------------------|
-| `PREFIX`  | `/usr/local`                 | the base of the three paths below           |
+| `PREFIX`  | `/usr/local`                 | the base of the four paths below            |
 | `BINDIR`  | `$(PREFIX)/bin`              | where `clarusc` goes                        |
 | `DATADIR` | `$(PREFIX)/share/clarus`     | `runtime/clarus`, `runtime/host`, `toolbox` |
 | `DOCDIR`  | `$(PREFIX)/share/doc/clarus` | language reference, changelog, cookbook     |
+| `MANDIR`  | `$(PREFIX)/share/man`        | the `clarusc(1)` page, in `man1/`           |
 | `DESTDIR` | (empty)                      | a staging root prefixed to every path       |
 | `CC`      | `cc`                         | builds `clarusc`; also its default compiler |
 
 `DATADIR` and `CC` are baked into the installed binary (`DESTDIR` is
 not), so `make install` rebuilds `clarusc` when either changes. An
 install replaces the previous version's runtime and toolbox files;
-there is one installed version at a time.
+there is one installed version at a time. After installing, `man
+clarusc` documents every command, option and environment variable
+(FreeBSD keeps local pages in `/usr/local/man`: pass
+`MANDIR=/usr/local/man`).
 
 ### Commands
 
