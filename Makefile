@@ -73,3 +73,44 @@ t2:
 	$(MAKE) test T=selfhost/
 	CLARUS_MAC_TESTS=1 $(MAKE) -j1 test T=mactest/
 	CLARUS_BAKE_FULL=1 $(MAKE) -j$(J) test T=bake/full_corpus_
+
+# Install (installed-toolchain phase). install-bin builds the release
+# clarusc as the user; `sudo make install` then only copies. The binary is
+# the working tree's emission (clarusc-current.c) with the FINAL data dir
+# and cc baked in -- never DESTDIR-prefixed. clarusc-install.cfg changes
+# only when DATADIR/CC do, so a changed value rebuilds and an unchanged one
+# does not.
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+DATADIR ?= $(PREFIX)/share/clarus
+DOCDIR ?= $(PREFIX)/share/doc/clarus
+DESTDIR ?=
+DOCS := docs/clarus-language-reference.md docs/clarus-language-changelog.md docs/clarus-toolbox-cookbook.md
+
+.PHONY: install-bin install uninstall
+install-bin: $(BR)/clarusc-install
+
+$(BR)/clarusc-install.cfg: FORCE
+	@mkdir -p $(BR)
+	@printf 'DATADIR=%s CC=%s\n' '$(DATADIR)' '$(CC)' > $@.tmp
+	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv $@.tmp $@
+
+$(BR)/clarusc-install: $(BR)/clarusc-install.cfg $(BR)/clarusc-current
+	$(CC) -O1 -DCLARUS_DATADIR='"$(DATADIR)"' -DCLARUS_CC='"$(CC)"' -I runtime/host -o $@.tmp $(BR)/clarusc-current.c runtime/host/rt.c && mv $@.tmp $@
+
+install: install-bin
+	@test -n '$(DATADIR)' || { echo 'DATADIR is empty' >&2; exit 1; }
+	rm -rf '$(DESTDIR)$(DATADIR)/runtime' '$(DESTDIR)$(DATADIR)/toolbox'
+	install -d '$(DESTDIR)$(BINDIR)' '$(DESTDIR)$(DATADIR)/runtime/clarus' '$(DESTDIR)$(DATADIR)/runtime/host' '$(DESTDIR)$(DATADIR)/toolbox' '$(DESTDIR)$(DOCDIR)'
+	install -m 755 $(BR)/clarusc-install '$(DESTDIR)$(BINDIR)/clarusc'
+	install -m 644 runtime/clarus/*.cla '$(DESTDIR)$(DATADIR)/runtime/clarus'
+	install -m 644 runtime/host/rt.c runtime/host/rt*.h runtime/host/rt*.inc '$(DESTDIR)$(DATADIR)/runtime/host'
+	install -m 644 toolbox/*.cla '$(DESTDIR)$(DATADIR)/toolbox'
+	install -m 644 $(DOCS) '$(DESTDIR)$(DOCDIR)'
+
+uninstall:
+	@test -n '$(DATADIR)' || { echo 'DATADIR is empty' >&2; exit 1; }
+	rm -f '$(DESTDIR)$(BINDIR)/clarusc'
+	rm -rf '$(DESTDIR)$(DATADIR)'
+	rm -f $(patsubst docs/%,'$(DESTDIR)$(DOCDIR)/%',$(DOCS))
+	rmdir '$(DESTDIR)$(DOCDIR)' 2>/dev/null || true
