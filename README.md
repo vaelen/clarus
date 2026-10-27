@@ -40,7 +40,7 @@ Project status and sequencing live in [docs/ROADMAP.md](docs/ROADMAP.md).
   byte-identical fixed point, and the generated C snapshot is committed at
   `clarusc/clarusc.c` so the compiler can be rebuilt from any C compiler
   with no prior Clarus toolchain.
-- **Macintosh target** — native 68k `.APPL` binaries (`clarusc emit68k`, no
+- **Macintosh target** — native 68k `.APPL` binaries (`clarusc build68k`, no
   C and no cross-compiler in the path), the full UI runtime — windows,
   menus, forms, tables, text editing, files — and `ClarusC.APPL`, which
   compiles Clarus programs on the Mac itself.
@@ -61,8 +61,9 @@ committed snapshot:
 ```sh
 cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c
 
-./clarusc FILE...               # type-check only
-./clarusc emit -o OUT.c FILE... # emit C for a host build
+./clarusc check FILE...               # type-check only
+./clarusc build -o PROG FILE...       # host executable (runs cc itself)
+./clarusc build68k -o APP.bin FILE... # native 68k Mac app (MacBinary)
 ```
 
 Day to day, one script does the bootstrap, the emission, the C compile and
@@ -79,6 +80,71 @@ second before merging:
 scripts/test-task.sh    # ~1-2 minutes
 scripts/test-merge.sh   # ~15 minutes; needs the emulator
 ```
+
+## Installing
+
+`make install` installs `clarusc` the way other compilers are installed:
+on `PATH`, finding its own runtime, with no `--rtdir` needed.
+
+```sh
+make install                                    # PREFIX=/usr/local
+make install PREFIX=/usr DATADIR=/usr/share/clarus
+make install DESTDIR=/tmp/pkgroot PREFIX=/usr   # staging, for packagers
+make uninstall                                  # same variables
+```
+
+| Variable  | Default                      | What it sets                                |
+|-----------|------------------------------|---------------------------------------------|
+| `PREFIX`  | `/usr/local`                 | the base of the three paths below           |
+| `BINDIR`  | `$(PREFIX)/bin`              | where `clarusc` goes                        |
+| `DATADIR` | `$(PREFIX)/share/clarus`     | `runtime/clarus`, `runtime/host`, `toolbox` |
+| `DOCDIR`  | `$(PREFIX)/share/doc/clarus` | language reference, changelog, cookbook     |
+| `DESTDIR` | (empty)                      | a staging root prefixed to every path       |
+| `CC`      | `cc`                         | builds `clarusc`; also its default compiler |
+
+`DATADIR` and `CC` are baked into the installed binary (`DESTDIR` is
+not), so `make install` rebuilds `clarusc` when either changes. An
+install replaces the previous version's runtime and toolbox files;
+there is one installed version at a time.
+
+### Commands
+
+| Command                                   | What it does                                             |
+|-------------------------------------------|----------------------------------------------------------|
+| `clarusc check FILE...`                   | type-check only                                          |
+| `clarusc FILE...`                         | the same, plus a stderr note that nothing was built      |
+| `clarusc build -o PROG FILE...`           | a host executable (`--keep-c` keeps the generated C)     |
+| `clarusc build68k -o APP.bin FILE...`     | a native 68k Mac application, as MacBinary               |
+| `clarusc emit -o OUT.c FILE...`           | the generated C only                                     |
+| `clarusc emit68k ...`                     | deprecated alias for `build68k` (warns on stderr)        |
+| `clarusc --version`                       | print the version                                        |
+
+`-o` without a command does not build. Every command that compiles
+takes `--rtdir DIR`.
+
+`clarusc build` writes the C to a temporary file and runs
+`$CC $CFLAGS -I <rtdir>/../host -o PROG <tmp>.c <rtdir>/../host/rt.c`
+directly, never through a shell. `CC` from the environment wins when it
+is non-empty; otherwise the compiler baked in at install time (`cc`).
+`CFLAGS` from the environment, if set (even to empty), is split on
+spaces and tabs with no quote processing; otherwise `-O1`.
+
+### Finding the runtime
+
+Every command looks for the `runtime/clarus/` directory in this order,
+taking the first whose files are actually there:
+
+1. `--rtdir DIR`;
+2. a `runtime/clarus/` directory in the current directory or any parent
+   (so inside this repository the working tree always wins);
+3. `$CLARUS_DATADIR/runtime/clarus/`, where `CLARUS_DATADIR` names a
+   share directory such as `/usr/share/clarus`;
+4. the installed `DATADIR` baked into `clarusc`.
+
+`include "toolbox/..."` resolves against the `toolbox/` directory next
+to whichever `runtime/` was found. To try an uninstalled checkout from
+another project, pass `--rtdir /path/to/clarus/runtime/clarus/` or set
+`CLARUS_DATADIR=/path/to/clarus`.
 
 ## Repository layout
 

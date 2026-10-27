@@ -131,6 +131,30 @@ captions). The design is
   `fonts.cla` (Font Manager and QuickDraw text) and `lists.cla` (the
   List Manager).
 
+### Tooling (not language)
+
+The installed-toolchain phase (2026-10-27); no language change. The
+design is `docs/superpowers/specs/2026-10-27-installed-toolchain-design.md`.
+
+- **`make install`** puts `clarusc` in `$(PREFIX)/bin`, the runtime and
+  `toolbox/` catalog in `$(PREFIX)/share/clarus`, and these docs in
+  `$(PREFIX)/share/doc/clarus`. An installed `clarusc` finds its
+  runtime with no `--rtdir`: `--rtdir`, then the upward
+  `runtime/clarus/` search, then `$CLARUS_DATADIR`, then the data
+  directory baked in when `clarusc` was built.
+- **New commands**: `clarusc check FILE...` (check only);
+  `clarusc build -o PROG FILE...` (a host executable in one step —
+  `clarusc` runs the C compiler itself, `$CC` or `cc`, with `$CFLAGS`
+  or `-O1`); `clarusc build68k -o APP.bin FILE...` (the native 68k
+  build).
+- **Action:** `clarusc emit68k` is deprecated. It still works, exactly
+  as `build68k`, but prints
+  `clarusc: 'emit68k' is deprecated; please use 'build68k'` on stderr.
+- A bare `clarusc FILE...` still only checks, and now says so on
+  stderr: `clarusc: checking only; use 'clarusc build' or 'clarusc
+  build68k' to produce an executable`. `-o` without a command does not
+  build.
+
 ## 1.1 (2026-09-30)
 
 Everything user-visible that landed during the SE memory program
