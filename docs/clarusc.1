@@ -86,7 +86,6 @@ The C translation of the program is written to a temporary file, then
 the C compiler is run directly, never through a shell, with the
 arguments
 .RS
-.PP
 .I $CC $CFLAGS
 .B \-I
 .IB rtdir /../host
@@ -107,6 +106,7 @@ Build a native 68k Mac application,
 .IR APP.bin ,
 as MacBinary.
 No C compiler is used.
+Progress is logged to standard error.
 .TP
 .B emit
 Write the C translation of the program to
@@ -259,19 +259,21 @@ tabs, with no quote processing) replace the default
 The directory for the temporary C file, else
 .IR /tmp .
 .SH FILES
-The runtime directory is the first of these whose files are actually
-there:
-.IP 1. 4
+With
 .BI \-\-rtdir \ DIR\c
-;
-.IP 2. 4
+,
+.I DIR
+is used as is, with no fallback.
+Otherwise the runtime directory is the first of these whose files are
+actually there:
+.IP 1. 4
 a
 .I runtime/clarus/
-directory in the current directory or any parent;
-.IP 3. 4
+directory in the current directory or up to nine parent directories;
+.IP 2. 4
 .IR $CLARUS_DATADIR /runtime/clarus/\c
 ;
-.IP 4. 4
+.IP 3. 4
 .IR /usr/local/share/clarus/runtime/clarus/ ,
 the built-in default.
 The data directory is set when
@@ -328,9 +330,9 @@ A usage error.
 .TP
 .B 3
 .B clarusc
-itself hit a runtime error (it prints
-.BR "runtime error:" \ ...);
-this is a compiler bug.
+itself hit an internal runtime error (it prints
+.BR "runtime error:" \ ...),
+such as running out of memory; otherwise a compiler bug.
 .SH EXAMPLES
 Check a program:
 .PP

@@ -101,7 +101,7 @@ pg=$R/usr/man/man1/clarusc.1
 mode=$(ls -l "$pg" 2>/dev/null | cut -c1-10)
 if cmp -s "$pg" "$ROOT/docs/clarusc.1" && [ "$mode" = -rw-r--r-- ]; then t_pass mandir_install
 else t_fail mandir_install "page at $pg missing, different or mode '$mode'"; fi
-mk uninstall DESTDIR="$R" PREFIX=/usr MANDIR=/usr/man > "$WORK/mu.log" 2>&1 || t_fail mandir_uninstall "make uninstall: $(tail -5 "$WORK/mu.log")"
+mk uninstall DESTDIR="$R" PREFIX=/usr MANDIR=/usr/man > "$WORK/mu.log" 2>&1 || die "MANDIR uninstall failed: $(tail -20 "$WORK/mu.log")"
 if [ ! -e "$pg" ] && [ -d "$R/usr/man/man1" ]; then t_pass mandir_uninstall
 else t_fail mandir_uninstall "page left behind or man1 removed"; fi
 
